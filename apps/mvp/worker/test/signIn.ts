@@ -1,13 +1,15 @@
 // Sign-in's real routes (worker/SignIn.ts) for the tests, on a test file's own schema of the compose Postgres, with the
 // scripted GitHub (worker/test/github.ts). Every log line, span and metric the routes record is kept, as in
 // worker/test/harness.ts. `RoleChecks` records the role checks a request starts, unless a test sets one;
-// worker/flows/RecheckRole.test.ts runs them. `TokenRevocations` records the GitHub token revocations a sign-out
-// starts; worker/flows/RevokeGitHubToken.test.ts runs them. `advance` moves the clock the routes read, so a test can ask an hour later.
+// worker/flows/RecheckRole.test.ts runs them. The routes start remote flows through a `FlowStarter` that records the
+// sessions a sign-out starts signing out (`revocations`), unless a test sets one; worker/flows/RevokeGitHubToken.test.ts
+// runs them. `advance` moves the clock the routes read, so a test can ask an hour later.
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Clock, ConfigProvider, Effect, Layer, Logger, Metric, Tracer } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../db/TestDatabase.ts"
+import * as Flows from "../Flows.ts"
 import * as SignIn from "../SignIn.ts"
 import { type ScriptedGitHub, scriptedGitHub } from "./github.ts"
 import type { testFile } from "./harness.ts"
@@ -55,8 +57,8 @@ export interface Options {
   readonly origin?: string
   /** Where a request starts a role check: one that records each start in `roleChecks` unless set. */
   readonly roleChecks?: SignIn.RoleChecks["Service"]
-  /** Where a sign-out starts revoking GitHub's token: one that records each start in `revocations` unless set. */
-  readonly revocations?: SignIn.TokenRevocations["Service"]
+  /** Where a route starts a remote flow: one that records each sign-out it starts in `revocations` unless set. */
+  readonly starter?: Flows.FlowStarter["Service"]
 }
 
 /** `clock`, read `offset()` milliseconds later. */
@@ -113,13 +115,11 @@ export const signInHarness = async (runtime: Runtime, options: Options = {}) => 
       }),
   )
   const revocations: Array<string> = []
-  const revoking = Layer.succeed(
-    SignIn.TokenRevocations,
-    options.revocations ??
-      SignIn.TokenRevocations.of({ start: (sessionId) => Effect.sync(() => void revocations.push(sessionId)) }),
-  )
+  const starter = options.starter ?? Flows.FlowStarter.of({
+    start: (_, { payload }) => Effect.sync(() => void revocations.push((payload as { readonly sessionId: string }).sessionId)),
+  })
   const handler = HttpEffect.toWebHandler(
-    observed(signIn.fetch.pipe(Effect.provide(Layer.merge(checks, revoking)))),
+    observed(signIn.fetch.pipe(Effect.provide(checks), Effect.provideService(Flows.FlowStarter, starter))),
   )
   const origin = options.origin ?? "http://smithers.test"
   const fetch = (path: string, init?: RequestInit) => handler(new Request(`${origin}${path}`, init))
@@ -153,7 +153,7 @@ export const signInHarness = async (runtime: Runtime, options: Options = {}) => 
     callback,
     signInAs,
     roleChecks,
-    /** The sessions whose GitHub token a request started revoking (`auth/RevokeGitHubToken`), in order. */
+    /** The sessions a request started signing out (`auth/RevokeGitHubToken`), in order, through the default starter. */
     revocations,
     /** Moves the clock the routes read `ms` later, for every request from now on. */
     advance: (ms: number) => void (offset += ms),

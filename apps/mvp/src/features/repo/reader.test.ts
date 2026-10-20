@@ -3,16 +3,18 @@ import { describe, expect, test } from "vitest"
 import { RepoClient, RepoRefused } from "./api"
 import { RepoNotFound, RepoReader, RepoReadsPaused, RepoReadUnavailable } from "./flows"
 import { readerLayer, readFailure } from "./reader"
+import type { Refs } from "./schema"
 
 // The device's `RepoReader`: what each RepoApi answer means to the agent's read steps. RepoApi's real answers reach it
 // in repo.test.ts; here a faulty `RepoClient` gives each refusal (test.faults-by-injection).
 
 const SHA = "e".repeat(40)
 
-/** A client whose reads answer `tree` and `blob`. */
+/** A client whose reads answer `tree`, `blob` and `refs`. */
 const client = (answers: {
   readonly tree?: Effect.Effect<{ readonly paths: ReadonlyArray<string>; readonly truncated: boolean }, RepoRefused>
   readonly blob?: Effect.Effect<{ readonly bytes: Uint8Array }, RepoRefused>
+  readonly refs?: Effect.Effect<Refs, RepoRefused>
 }) =>
   Layer.succeed(
     RepoClient,
@@ -20,6 +22,7 @@ const client = (answers: {
       clone: () => Effect.die(new Error("unused")),
       tree: () => answers.tree ?? Effect.die(new Error("unused")),
       blob: () => answers.blob ?? Effect.die(new Error("unused")),
+      refs: () => answers.refs ?? Effect.die(new Error("unused")),
     }),
   )
 
@@ -76,5 +79,23 @@ describe("readerLayer", () => {
     )
     expect(tree).toMatchObject({ _tag: "Failure", failure: new RepoReadsPaused() })
     expect(file).toMatchObject({ _tag: "Failure", failure: new RepoReadUnavailable({}) })
+  })
+})
+
+describe("refs", () => {
+  test("the branches and tags as RepoApi sent them; a repository that isn't ready is gone", async () => {
+    const refs: Refs = { defaultBranch: "main", head: SHA, branches: [{ name: "main", sha: SHA }], tags: [], truncated: false }
+    const refsOf = (answer: Effect.Effect<Refs, RepoRefused>) =>
+      Effect.runPromise(
+        Effect.service(RepoReader).pipe(
+          Effect.flatMap((reader) => Effect.result(reader.refs("o", "n"))),
+          Effect.provide(readerLayer.pipe(Layer.provide(client({ refs: answer })))),
+        ),
+      )
+    expect(await refsOf(Effect.succeed(refs))).toMatchObject({ _tag: "Success", success: refs })
+    expect(await refsOf(Effect.fail(new RepoRefused({ status: 404, code: "not_found" })))).toMatchObject({
+      _tag: "Failure",
+      failure: new RepoNotFound(),
+    })
   })
 })

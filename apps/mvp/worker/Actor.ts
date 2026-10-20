@@ -15,17 +15,31 @@ export type { Role }
 export interface Actor {
   readonly subject: { readonly kind: "person"; readonly id: string }
   readonly role: Role | null
+  /** The person's GitHub login when sign-in knows it: a snapshot for what they author, such as a terminal's owner. */
+  readonly login?: string
   readonly act?: { readonly kind: "agent" | "flow" | "sandbox"; readonly id: string }
+  /**
+   * The sign-in session the request came with, when sign-in resolved one: a person's own GitHub write runs with that
+   * session's GitHub token (decision 0012 §5). Absent for local development's developer and in tests that need none.
+   */
+  readonly session?: string
 }
 
-/** The roles that may ask Smithers (`repo:ask`, decision 0007 §2): Member or above. */
-const ASKERS: ReadonlySet<Role> = new Set(["admin", "maintainer", "member"])
+/** Member or above (decision 0007 §1): the roles that may ask Smithers (`repo:ask`) and clone. */
+const MEMBER_OR_ABOVE: ReadonlySet<Role> = new Set(["admin", "maintainer", "member"])
 
 /**
  * Whether `actor` may ask Smithers (`repo:ask`, decision 0007 §2): Member, Maintainer or Admin. A Guest, or a person
  * with no role, may not. An agent acting for a person asks with that person's role.
  */
-export const canAsk = (actor: Actor): boolean => actor.role !== null && ASKERS.has(actor.role)
+export const canAsk = (actor: Actor): boolean => actor.role !== null && MEMBER_OR_ABOVE.has(actor.role)
+
+/**
+ * Whether `actor` may clone a repository into Code Storage: Member, Maintainer or Admin, the tier of
+ * `repo:branch-create` (decision 0007 §2), because a clone spends the deployment's Code Storage budget and takes one of
+ * its repositories. A Guest, or a person with no role, may not.
+ */
+export const canClone = (actor: Actor): boolean => actor.role !== null && MEMBER_OR_ABOVE.has(actor.role)
 
 /** Sessions couldn't be read, for example because Postgres is unreachable: neither signed in nor signed out. */
 export class SessionsUnavailable extends Schema.TaggedError<SessionsUnavailable>()(

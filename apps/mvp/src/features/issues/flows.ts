@@ -1,0 +1,90 @@
+import { Action, Flow, RetryPolicy } from "@smthrs/flow"
+import { Node, Placement } from "@smthrs/plan"
+import { Schema } from "effect"
+import { RepoName } from "../repo/flows"
+import { MAX_BODY_LENGTH, MAX_ISSUE_NUMBER, MAX_TITLE_LENGTH } from "./contract"
+
+// The issue writes (decision 0012 §3, docs/features/issues.md#flows): `issue/create` opens an issue and `issue/comment`
+// comments on one. A person's button or slash command and the agent run the same declaration. Each is one step that
+// asks the tab that started the request to put the write in its outbox (src/features/issues/steps.ts), which sends it
+// to ChatApi's writes route; the server's remote flow writes to GitHub. Neither waits for GitHub: the result is
+// Requested, and the issues page shows the write until GitHub numbers it.
+
+/** An issue's title: 1 to `MAX_TITLE_LENGTH` characters, not blank. */
+export const Title = Schema.String.check(
+  Schema.makeFilter((value: string) => value.trim().length > 0 && value.length <= MAX_TITLE_LENGTH),
+)
+
+/** An issue's body: Markdown, up to `MAX_BODY_LENGTH` characters; empty is allowed. */
+export const IssueBody = Schema.String.check(Schema.isMaxLength(MAX_BODY_LENGTH))
+
+/** A comment: Markdown, 1 to `MAX_BODY_LENGTH` characters, not blank. */
+export const CommentBody = Schema.String.check(
+  Schema.makeFilter((value: string) => value.trim().length > 0 && value.length <= MAX_BODY_LENGTH),
+)
+
+/** An issue's number on GitHub. */
+export const IssueNumber = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MAX_ISSUE_NUMBER }))
+
+/** What `issue/create` takes. */
+export const createPayload = { repo: RepoName, title: Title, body: Schema.optional(IssueBody) }
+
+/** What `issue/comment` takes. */
+export const commentPayload = { repo: RepoName, number: IssueNumber, body: CommentBody }
+
+/** What a write answers: its id, and that it is requested, never done. */
+export const WriteRequested = Schema.Struct({ writeId: Schema.String, status: Schema.Literal("requested") })
+export type WriteRequested = typeof WriteRequested.Type
+
+/**
+ * The write wasn't queued: the tab that asked is gone (`tab_gone`), or its outbox wouldn't take the write
+ * (`not_admitted`).
+ */
+export class IssueWriteRefused extends Schema.TaggedError<IssueWriteRefused>()("@smthrs/mvp/issues/IssueWriteRefused", {
+  reason: Schema.Literals(["tab_gone", "not_admitted"]),
+}) {}
+
+/** How long a step keeps asking its tab: 1 s doubling to 8 s, for at most 30 s. */
+export const QUEUE_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 8_000, expirationMs: 30_000 })
+
+/** The step: put the new issue in the asking tab's outbox. */
+export const QueueCreate = Action.make("issue/create/queue", {
+  payload: createPayload,
+  success: WriteRequested,
+  error: IssueWriteRefused,
+  retryPolicy: QUEUE_RETRY,
+})
+
+/** The step: put the comment in the asking tab's outbox. */
+export const QueueComment = Action.make("issue/comment/queue", {
+  payload: commentPayload,
+  success: WriteRequested,
+  error: IssueWriteRefused,
+  retryPolicy: QUEUE_RETRY,
+})
+
+const requested = "Answers { writeId, status: \"requested\" }: requested, never done; it shows on the repository's " +
+  "issues page (/<owner>/<repo>/issues) once GitHub numbers it. IssueWriteRefused when the person's tab is gone " +
+  "(tab_gone) or couldn't queue the write (not_admitted)."
+
+/** `issue/create { repo, title, body? }`: opens an issue on GitHub. */
+export const IssueCreate = Flow.make("issue/create", {
+  description: "Open a GitHub issue. In repo (owner/name), with a title and an optional Markdown body. A person's " +
+    "own issue shows on GitHub as theirs; yours opens as the Smithers GitHub App, for the person. " + requested,
+  modelInvocable: true,
+  payload: createPayload,
+  success: WriteRequested,
+  error: IssueWriteRefused,
+  body: Node.capture({ action: QueueCreate.name }, (payload) => QueueCreate.call(payload)),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `issue/comment { repo, number, body }`: comments on an issue on GitHub. */
+export const IssueComment = Flow.make("issue/comment", {
+  description: "Comment on a GitHub issue. In repo (owner/name), on issue number, with a Markdown body. A person's own " +
+    "comment shows on GitHub as theirs; yours posts as the Smithers GitHub App, for the person. " + requested,
+  modelInvocable: true,
+  payload: commentPayload,
+  success: WriteRequested,
+  error: IssueWriteRefused,
+  body: Node.capture({ action: QueueComment.name }, (payload) => QueueComment.call(payload)),
+}).annotate(Flow.Placement, Placement.client())

@@ -1,6 +1,6 @@
-import { CAPACITY_COPY, FAILURE_COPY, SIGN_IN_TO_CLONE } from "./contract"
-import type { BlobRow, CloneRow, TreeRow } from "./rows"
-import type { Repository } from "./schema"
+import { CAPACITY_COPY, FAILURE_COPY, githubRawUrl, rawRoute, SIGN_IN_TO_CLONE } from "./contract"
+import type { BlobRow, CloneRow, RefsRow, TreeRow } from "./rows"
+import type { Ref, Repository } from "./schema"
 
 // What the view shows, from the rows the queries read (decision 0006 §2): pure functions, so a component only renders
 // their result and a TUI can show the same.
@@ -17,6 +17,51 @@ export type FileProps =
   | { readonly state: "text"; readonly contents: string; readonly size: number }
   | { readonly state: "binary" | "too-large"; readonly size: number }
   | { readonly state: "failed"; readonly message: string }
+
+/** Branches and tags as the picker takes them. */
+export type RefsProps =
+  | { readonly state: "loading" }
+  | {
+    readonly state: "ready"
+    readonly branches: ReadonlyArray<Ref>
+    readonly tags: ReadonlyArray<Ref>
+    readonly truncated: boolean
+  }
+  | { readonly state: "failed"; readonly message: string }
+
+/** A branches and tags row as the picker shows it; no row yet is loading. */
+export const refsProps = (row: RefsRow | undefined): RefsProps => {
+  if (row === undefined || row.state === "loading") return { state: "loading" }
+  if (row.state === "failed") return { state: "failed", message: row.message ?? "" }
+  return { state: "ready", branches: row.branches, tags: row.tags, truncated: row.truncated }
+}
+
+/** What the picker's button says for `revision`: a branch or tag name, or a commit's short SHA. */
+export const revisionLabel = (revision: string): string =>
+  /^[0-9a-f]{40}$/.test(revision) ? revision.slice(0, 7) : revision
+
+/**
+ * A file's toolbar links: `raw`, the bytes RepoApi serves as a page shows them, or GitHub's for a file over its limit;
+ * `download`, the same bytes saved under the file's name; and whether its text can be copied. None until it loads.
+ */
+export interface FileLinks {
+  readonly raw?: string
+  readonly download?: { readonly href: string; readonly name: string }
+  readonly copyContents: boolean
+}
+
+/** The toolbar links of the file at `view`, as loaded in `file`. */
+export const fileLinksOf = (
+  view: { readonly owner: string; readonly name: string; readonly sha: string | null; readonly path: string },
+  file: BlobRow | undefined,
+): FileLinks => {
+  if (view.sha === null || file === undefined || file.state === "loading" || file.state === "failed") {
+    return { copyContents: false }
+  }
+  if (file.state === "too-large") return { raw: githubRawUrl(view.owner, view.name, view.sha, view.path), copyContents: false }
+  const raw = rawRoute(view.owner, view.name, view.sha, view.path)
+  return { raw, download: { href: raw, name: view.path.split("/").at(-1)! }, copyContents: file.state === "text" }
+}
 
 /** A file list row as the view shows it; no row yet is loading. */
 export const treeProps = (row: TreeRow | undefined): TreeProps => {
@@ -116,9 +161,13 @@ export interface Commit {
   readonly at: number
 }
 
-/** The head commit of a ready repository; `undefined` before Settle wrote it. */
-export const commitOf = (repository: Repository | undefined): Commit | undefined => {
+/**
+ * The head commit of a ready repository, when the view is at it (`sha`, absent for any); `undefined` before Settle
+ * wrote it, or at another commit, whose details the view doesn't have.
+ */
+export const commitOf = (repository: Repository | undefined, sha?: string | null): Commit | undefined => {
   if (repository?.headSha == null || repository.headAt === null) return undefined
+  if (sha !== undefined && sha !== repository.headSha) return undefined
   return {
     message: (repository.headMessage ?? "").split("\n", 1)[0]!,
     author: repository.headAuthor ?? "",

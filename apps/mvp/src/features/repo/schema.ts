@@ -34,6 +34,32 @@ export type Repository = typeof Repository.Type
 export const TreeListing = Schema.Struct({ paths: Schema.Array(Schema.String), truncated: Schema.Boolean })
 export type TreeListing = typeof TreeListing.Type
 
+/** A branch or a tag: its name and the commit it names. */
+export const Ref = Schema.Struct({ name: Schema.String, sha: Schema.String })
+export type Ref = typeof Ref.Type
+
+/**
+ * A repository's branches and tags as Code Storage lists them at one sync, each in name order, and whether either list
+ * stopped before the end: what RepoApi keeps in the immutable cache under the default branch's head commit.
+ */
+export const RefsListing = Schema.Struct({
+  branches: Schema.Array(Ref),
+  tags: Schema.Array(Ref),
+  truncated: Schema.Boolean,
+})
+export type RefsListing = typeof RefsListing.Type
+
+/**
+ * `GET /api/repos/<owner>/<name>/refs`'s body: the default branch and its head commit, as Postgres has them, and every
+ * branch and tag as of that sync.
+ */
+export const Refs = Schema.Struct({
+  defaultBranch: Schema.String,
+  head: Schema.String,
+  ...RefsListing.fields,
+})
+export type Refs = typeof Refs.Type
+
 /** `POST /api/repos`'s answer: `202` with the transaction to wait for, or `200` for a clone already running or done. */
 export const CloneAccepted = Schema.Union([
   Schema.Struct({ txid: Schema.Number, id: Schema.String, attempt: Schema.Number }),
@@ -44,3 +70,9 @@ export type CloneAccepted = typeof CloneAccepted.Type
 /** A refusal's body: its code, and a too-large file's size. */
 export const RefusalBody = Schema.Struct({ code: Schema.String, size: Schema.optional(Schema.Number) })
 export type RefusalBody = typeof RefusalBody.Type
+
+/**
+ * What `repo/copy`'s step asks the tab that started its request (src/flows/askingTab.ts): put `text` on its clipboard,
+ * or, without one, only say which door it started the request through. The tab answers `Copied` (flows.ts).
+ */
+export const CopyCall = Schema.Struct({ text: Schema.optional(Schema.String) })

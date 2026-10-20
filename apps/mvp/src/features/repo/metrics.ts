@@ -10,12 +10,12 @@ export const cloneClicks = Metric.counter("smithers_web_repo_clone_clicks", {
 })
 
 /**
- * Clone requests that ended, by `outcome`: `accepted` (RepoApi took it and Electric delivered the row), `sign_in`
- * (401), `limit` (429), `refused` (another refusal), `unreachable` (no answer) or `unconfirmed` (Electric didn't
- * deliver the row in time).
+ * `repo/clone` requests, by `outcome`: `started` (202), `existing` (200: already cloning or ready), a refusal's reason
+ * (`sign_in`, `forbidden`, `limit`, `invalid`, `not_configured`) or `unavailable` (no answer, or RepoApi couldn't take
+ * it).
  */
 export const clones = Metric.counter("smithers_web_repo_clones", {
-  description: "Clone requests from this tab that ended, by outcome",
+  description: "repo/clone requests, by outcome",
   incremental: true,
 })
 
@@ -39,8 +39,17 @@ export const blobLoadMs = Metric.histogram("smithers_web_repo_blob_load_ms", {
   boundaries: loadBoundaries,
 })
 
-/** Copy permalink presses, by `outcome`: `copied` or `failed`. */
-export const permalinkCopies = Metric.counter("smithers_web_repo_permalink_copies", {
-  description: "Copy permalink presses, by outcome",
+/** Milliseconds a repository's branches and tags took to load, by `outcome`: `ready` or `failed`. */
+export const refsLoadMs = Metric.histogram("smithers_web_repo_refs_load_ms", {
+  description: "Milliseconds a repository's branches and tags took to load, by outcome",
+  boundaries: loadBoundaries,
+})
+
+/**
+ * Copies `repo/copy` ran, by `what` (`permalink`, `path`, `contents` or `clone-url`), `door` (`button`, `agent`, or
+ * `unknown` when the tab that asked is gone) and `outcome` (`copied`, `failed`, `refused`, `unavailable` or `gone`).
+ */
+export const copies = Metric.counter("smithers_web_repo_copies", {
+  description: "Copies to the clipboard, by what, door and outcome",
   incremental: true,
 })

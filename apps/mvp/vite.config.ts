@@ -2,6 +2,7 @@ import { join } from "node:path"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 import { VitePWA } from "vite-plugin-pwa"
+import { FRAME_POLICY, PAGE_HEADERS, shellCaches } from "./src/pwa.ts"
 
 // The app's shell, for the service worker to precache: everything a reload needs before it reaches the network.
 const SHELL = ["**/*.{js,css,html,woff2,svg,png}"]
@@ -12,6 +13,19 @@ const API = /^\/api\//
 // Alchemy injects the Cloudflare plugin, which runs worker/index.ts beside the app in dev and build.
 export default defineConfig({
   plugins: [
+    // The app's pages refuse to be framed under the dev server too, as public/_headers has Cloudflare serve them
+    // (src/pwa.ts PAGE_HEADERS). Cloudflare's Vite plugin skips _headers in dev, so this sets them on every response
+    // before any other middleware answers.
+    {
+      name: "smithers-page-headers",
+      enforce: "pre",
+      configureServer: (server) => {
+        server.middlewares.use((_request, response, next) => {
+          for (const [name, value] of Object.entries(PAGE_HEADERS)) response.setHeader(name, value)
+          next()
+        })
+      },
+    },
     react(),
     // The app is a PWA (docs/decisions/0011-the-agent-runs-in-the-browser.md §5): installable, and its service worker
     // serves the shell offline after one online visit (0002 §8). The service worker only serves files; it never runs
@@ -46,8 +60,8 @@ export default defineConfig({
         // offline reload still has it. The network answers first whenever it can.
         runtimeCaching: [
           {
-            urlPattern: ({ url, sameOrigin, request }) =>
-              sameOrigin && request.method === "GET" && !url.pathname.startsWith("/api/"),
+            // Never an embedded page: another origin's, which this worker never sees (src/pwa.ts).
+            urlPattern: shellCaches,
             handler: "NetworkFirst",
             options: { cacheName: "smithers-shell", networkTimeoutSeconds: 3 },
           },
@@ -63,6 +77,17 @@ export default defineConfig({
         resolveTempFolder: () => join(import.meta.dirname, "node_modules", ".vite-pwa-dev"),
       },
     }),
+    // What the app frames: only https: pages (src/pwa.ts FRAME_POLICY), in every build.
+    {
+      name: "smithers-frame-policy",
+      transformIndexHtml: () => [
+        {
+          tag: "meta",
+          attrs: { "http-equiv": "Content-Security-Policy", content: FRAME_POLICY },
+          injectTo: "head-prepend",
+        },
+      ],
+    },
   ],
   worker: { format: "es" },
   server: { port: 5190, strictPort: true, fs: { strict: false } },

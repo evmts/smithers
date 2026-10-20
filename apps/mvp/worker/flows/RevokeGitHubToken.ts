@@ -7,13 +7,18 @@ import { type GitHubAuth, GitHubRefused } from "../GitHubAuth.ts"
 import type { SessionKeys } from "../SessionKeys.ts"
 import * as SessionStore from "../SessionStore.ts"
 
-// `auth/RevokeGitHubToken { sessionId }` (docs/features/sign-in.md#signing-out): revokes an ended session's GitHub
-// token on GitHub, then forgets the session's GitHub tokens. Sign-in starts it when a person signs out, or signs in
-// again in the same browser, which ends the session they held; it keeps the session's sealed tokens until this flow
-// forgets them. A session GitHub refused needs none: its tokens are already dead and forgotten. It runs on any host;
-// the host injects Postgres and GitHub through `registration`. GitHub or Postgres failing fails the step, which its
-// retry policy repeats; after the last attempt `auth/ForgetTokens` forgets the tokens anyway, and the access token
-// lapses within its 8 hours.
+// `auth/RevokeGitHubToken { sessionId }` (docs/features/sign-in.md#signing-out): signs a session out. It ends the
+// session, then revokes its GitHub token on GitHub and forgets the session's GitHub tokens. Sign-in starts it when a
+// person signs out, or signs in again in the same browser, which ends the session they held, and answers only once the
+// start is recorded: the flow then owns the whole sign-out, so a session can't end with tokens nothing will revoke. The
+// handler ends the session too, so it is refused at once; ending it again changes nothing. A session GitHub refused
+// needs no revocation: its tokens are already dead and forgotten. It runs on any host; the host injects Postgres and
+// GitHub through `registration`. GitHub or Postgres failing fails a step, which its retry policy repeats; after the
+// revocation's last attempt `auth/ForgetTokens` forgets the tokens anyway, and the access token lapses within its 8
+// hours.
+
+/** The execution that signs session `sessionId` out: one per session, so starting it again is a no-op. */
+export const revokeExecutionId = (sessionId: string): string => `auth-revoke-${sessionId}`
 
 /**
  * What the flow did: revoked the token on GitHub and forgot it (GitHub no longer having it counts), forgot it after
@@ -30,13 +35,31 @@ export class RevocationFailed extends Schema.TaggedError<RevocationFailed>()("@s
   reason: Schema.Literals(["github_unavailable", "github_misconfigured", "database"]),
 }) {}
 
-/** Token revocations, by `outcome`: one of `Revoked`'s, or `failed` for one failed attempt. */
+/** What ending the session did: ended it, or found it over already. */
+const Ended = Schema.Struct({ outcome: Schema.Literals(["ended", "over"]) })
+
+/**
+ * Sign-out steps, by `step` (`end`, `revoke`, `forget`) and `outcome`: `Ended`'s or `Revoked`'s, or `failed` for one
+ * failed attempt.
+ */
 export const revocations = Metric.counter("smithers_auth_token_revocations", {
-  description: "GitHub token revocations at sign-out, by outcome",
+  description: "Sign-out steps and GitHub token revocations, by step and outcome",
   incremental: true,
 })
 
 const payload = { sessionId: Schema.String }
+
+/**
+ * The first step: end the session, keeping its sealed GitHub tokens for the revocation. Only Postgres can fail it, and
+ * the revocation waits for it, so its retry policy never gives up.
+ */
+export const EndSession = Action.make("auth/EndSession", {
+  payload,
+  success: Ended,
+  error: RevocationFailed,
+  capabilities: ["db:write:sessions"],
+  retryPolicy: RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000 }),
+})
 
 /** The step: revoke the ended session's GitHub access token on GitHub, then forget its tokens. */
 export const RevokeToken = Action.make("auth/RevokeToken", {
@@ -59,16 +82,18 @@ export const ForgetTokens = Action.make("auth/ForgetTokens", {
   retryPolicy: RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000 }),
 })
 
-/** `auth/RevokeGitHubToken`: revokes an ended session's GitHub token and forgets it. */
+/** `auth/RevokeGitHubToken`: signs a session out, revoking its GitHub token and forgetting it. */
 export const RevokeGitHubToken = Flow.make("auth/RevokeGitHubToken", {
-  description: "Revoke an ended session's GitHub token on GitHub, then forget the session's GitHub tokens.",
+  description: "Sign a session out: end it, revoke its GitHub token on GitHub, then forget its GitHub tokens.",
   capabilities: ["db:write:sessions"],
   modelInvocable: false,
   payload,
   success: Revoked,
   error: RevocationFailed,
   body: Node.capture({}, (request) =>
-    RevokeToken.call(request).pipe(Node.catch({ onFailure: () => ForgetTokens.call(request) }))),
+    EndSession.call(request).pipe(
+      Node.andThen(RevokeToken.call(request).pipe(Node.catch({ onFailure: () => ForgetTokens.call(request) }))),
+    )),
 })
 
 /** What the revocation needs besides Postgres: the session keys, to open the token, and GitHub. */
@@ -81,7 +106,7 @@ const outcome = (value: Revoked["outcome"]): Revoked => ({ outcome: value })
 
 /**
  * One revocation of session `sessionId`'s GitHub token, against the `SqlClient` in context. A live session is left
- * alone. Fails with GitHub's failure when GitHub was unavailable or refused the App, and with Postgres' failure.
+ * alone: the flow ends it first. Fails with GitHub's failure when GitHub was unavailable or refused the App, and with Postgres' failure.
  */
 export const revoke = (sessionId: string, services: Services) =>
   Effect.gen(function* () {
@@ -108,32 +133,46 @@ const failed = (error: unknown) =>
   })
 
 /**
- * One step over `database`, with its records: an `auth.revoke_token` log line and span, and
+ * One step over `database`, with its records: an `auth.revoke_token` log line and span, by `step`, and
  * `smithers_auth_token_revocations`. None carries a token, a login or GitHub's text.
  */
-const recorded = <E, R>(
+const recorded = <A extends { readonly outcome: string }, E, R>(
   sessionId: string,
-  step: Effect.Effect<Revoked, unknown, SqlClient.SqlClient>,
+  step: "end" | "revoke" | "forget",
+  effect: Effect.Effect<A, unknown, SqlClient.SqlClient>,
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
 ) =>
-  step.pipe(
+  effect.pipe(
     Effect.provide(database),
     Effect.tapError((error) =>
       Effect.andThen(
-        Metric.update(Metric.withAttributes(revocations, { outcome: "failed" }), 1),
+        Metric.update(Metric.withAttributes(revocations, { step, outcome: "failed" }), 1),
         Effect.logWarning("auth.revoke_token").pipe(
-          Effect.annotateLogs({ sessionId, outcome: "failed", errorCode: codeOf(error) }),
+          Effect.annotateLogs({ sessionId, step, outcome: "failed", errorCode: codeOf(error) }),
         ),
       )
     ),
     Effect.mapError(failed),
-    Effect.tap((revoked) =>
+    Effect.tap((result) =>
       Effect.andThen(
-        Metric.update(Metric.withAttributes(revocations, { outcome: revoked.outcome }), 1),
-        Effect.logInfo("auth.revoke_token").pipe(Effect.annotateLogs({ sessionId, outcome: revoked.outcome })),
+        Metric.update(Metric.withAttributes(revocations, { step, outcome: result.outcome }), 1),
+        Effect.logInfo("auth.revoke_token").pipe(Effect.annotateLogs({ sessionId, step, outcome: result.outcome })),
       )
     ),
-    Effect.withSpan("auth.revoke_token", { attributes: { "smithers.auth.session_id": sessionId } }),
+    Effect.withSpan("auth.revoke_token", {
+      attributes: { "smithers.auth.session_id": sessionId, "smithers.auth.step": step },
+    }),
+  )
+
+/** Ends session `sessionId` for signing out, over `database`, with its records; a session that ended is left alone. */
+export const end = <E, R>(sessionId: string, database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+  recorded(
+    sessionId,
+    "end",
+    Effect.map(SessionStore.revoke({ id: sessionId }, "sign_out"), (ended) => ({
+      outcome: Option.isSome(ended) ? "ended" as const : "over" as const,
+    })),
+    database,
   )
 
 /** One revocation over `database`, with its records. */
@@ -141,11 +180,11 @@ export const observed = <E, R>(
   sessionId: string,
   services: Services,
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
-) => recorded(sessionId, revoke(sessionId, services), database)
+) => recorded(sessionId, "revoke", revoke(sessionId, services), database)
 
 /** Forgets the session's tokens after a revocation that failed every attempt, over `database`, with its records. */
 export const forget = <E, R>(sessionId: string, database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
-  recorded(sessionId, Effect.as(SessionStore.forgetTokens(sessionId), outcome("forgotten")), database)
+  recorded(sessionId, "forget", Effect.as(SessionStore.forgetTokens(sessionId), outcome("forgotten")), database)
 
 /**
  * Registers `auth/RevokeGitHubToken` with its steps, reaching Postgres through `database` and GitHub through
@@ -154,7 +193,8 @@ export const forget = <E, R>(sessionId: string, database: Layer.Layer<SqlClient.
 export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, services: Services) =>
   Interpreter.layerWithImplementations(
     RevokeGitHubToken,
-    Layer.merge(
+    Layer.mergeAll(
+      EndSession.toLayer(({ sessionId }) => end(sessionId, database)),
       RevokeToken.toLayer(({ sessionId }) => observed(sessionId, services, database)),
       ForgetTokens.toLayer(({ sessionId }) => forget(sessionId, database)),
     ),

@@ -1,8 +1,7 @@
 // ChatApi's real handler for the worker tests, on a test file's own schema of the compose Postgres (`pnpm db:up`,
-// db/TestDatabase.ts). The model is the only stand-in: a scripted `Model` through HostModel. The remote door starts
+// db/TestDatabase.ts). The model is the only stand-in: a scripted `Model` through HostModel. ChatApi starts remote
 // flows through a `FlowStarter` that records each start, unless a test sets one. Every log line, span and metric the
 // handler records is kept for the test.
-import type { Flow } from "@smthrs/flow"
 import { Model, type ModelEvent, type ModelRequest } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
 import { Logger as StructuredLogger } from "@smthrs/observability"
@@ -23,6 +22,7 @@ import { SqlClient } from "effect/sql"
 import { afterAll, beforeAll, beforeEach } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../Actor.ts"
+import * as Conversations from "../branch/Conversations.ts"
 import * as Chat from "../Chat.ts"
 import * as Flows from "../Flows.ts"
 
@@ -34,7 +34,7 @@ export const testFile = (prefix: string) => {
   const runtime = ManagedRuntime.make(TestDatabase.layer(prefix))
   beforeAll(() => runtime.runPromise(Effect.void))
   beforeEach(() =>
-    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE messages RESTART IDENTITY`))
+    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE messages, views RESTART IDENTITY`))
   )
   afterAll(() => runtime.dispose())
   return runtime
@@ -64,10 +64,8 @@ interface HarnessOptions {
   readonly config?: Record<string, string>
   /** The database ChatApi connects to: the file's schema unless set. */
   readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
-  /** Where the remote door starts a flow: one that records each start in `starts` unless set. */
+  /** Where ChatApi starts a remote flow: one that records each start in `starts` unless set. */
   readonly starter?: Flows.FlowStarter["Service"]
-  /** The flows the remote door may start: the registry's remote flows unless set. */
-  readonly remoteFlows?: ReadonlyArray<Flow.Any>
   /** The fetch ChatApi calls Electric with: the global one unless set. */
   readonly fetch?: typeof globalThis.fetch
   /** Who is signed in on every request: nobody unless set, as in production before sign-in is configured. */
@@ -122,7 +120,7 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
     }),
   )
   const chat = await runtime.runPromise(
-    observed(Chat.make(database, options.remoteFlows).pipe(Effect.provide(hostModel))),
+    observed(Chat.make(database).pipe(Effect.provide(hostModel))),
   )
   const starter = options.starter ?? Flows.FlowStarter.of({
     start: (flow, { executionId, payload }) =>
@@ -151,7 +149,7 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
           body: typeof body === "string" ? body : JSON.stringify(body),
         }),
       ),
-    /** The flows the remote door started through the default `FlowStarter`, in order. */
+    /** The remote flows ChatApi started through the default `FlowStarter`, in order. */
     starts,
     count: (metric: Metric.Metric<number, Metric.CounterState<number>>, attributes: Record<string, string>) =>
       runtime.runSync(
@@ -249,3 +247,7 @@ export const eventually = async (check: () => boolean | Promise<boolean>, within
   }
   throw new Error("condition never held")
 }
+
+/** The home conversation's id (worker/branch/Conversations.ts): what an ask that names no conversation belongs to. */
+export const homeConversation = (runtime: Runtime) =>
+  runtime.runPromise(Effect.map(Conversations.home, (home) => home!))

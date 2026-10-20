@@ -8,74 +8,49 @@ import { createRoot } from "react-dom/client"
 import { ChatProvider } from "./AppContext"
 import { type BootOptions, type Host, realServices, start } from "./boot"
 import { AuthProvider } from "./features/auth/components/AuthContext"
+import { BranchProvider } from "./features/branch/components/BranchContext"
+import { CommandsProvider } from "./features/commands/components/CommandsContext"
+import { IssuesProvider } from "./features/issues/components/IssuesContext"
 import { RepoProvider } from "./features/repo/components/RepoContext"
+import { RunsProvider } from "./features/runs/components/RunsContext"
+import { FlowsUiProvider } from "./features/flows-ui/components/FlowsUiContext"
 import { THEME_ATTRIBUTE, THEME_MIRROR_KEY } from "./features/theme/contract"
 import { ENGINE_NAME } from "./flows/contract"
 import { ThemeProvider } from "./features/theme/components/ThemeButton"
+import { StatusProvider } from "./features/status/components/StatusContext"
+import { TerminalProvider } from "./features/terminal/components/TerminalContext"
+import { ViewsProvider } from "./features/views/components/ViewsContext"
+import { WebProvider } from "./features/web/components/WebContext"
 import { router } from "./router"
+import { pageWipe, unwiped } from "./wipe"
 import "./styles/fonts.css"
 
-// The page: `start` runs the app's one program, and React renders the chat, sign-in, theme and repository layers it
-// hands over.
+// The page: `start` runs the app's one program, and React renders the chat, sign-in, theme, repository and slash-command
+// layers it hands over.
 // This is the browser's host: everything platform-specific the app's layers take as arguments
 // (docs/decisions/0002-local-first.md §6).
 const root = createRoot(document.getElementById("root")!)
 
-// What sign-out wipes (decision 0008 §4.6): the engine's OPFS directory (@smthrs/platform-browser's
-// `BrowserRuntime.layerHost`), which holds the engine's store and the device store, the app's shared database, and
-// the outbox's IndexedDB database. The theme's mirror stays.
-const ENGINE_DIRECTORY = ["smithers", ENGINE_NAME] as const
+// Sign-out's wipe (src/wipe.ts, decision 0008 §4.6): this page hears wipes from the start and holds the device's data
+// while it runs. A boot a sign-out marked deletes the engine's OPFS directory (the engine's store and the device store)
+// and the outbox's IndexedDB database once no other page and no engine worker has them open. The theme's mirror stays.
 const OUTBOX_DATABASE = "smithers-outbox"
-
-// A worker's open handle blocks deleting an OPFS file, so a wipe only marks itself and has every tab reload; the next
-// boot deletes before anything opens. The mark is a localStorage key, and the other tabs hear of it on this channel.
-const WIPE_MARK = "smithers-wipe"
-const wipes = new BroadcastChannel(WIPE_MARK)
-wipes.onmessage = () => window.location.reload()
-
-const marked = () => {
-  try {
-    return localStorage.getItem(WIPE_MARK) !== null
-  } catch {
-    return false
-  }
-}
-
-/** Removes `name` from `directory`; one already gone is fine. */
-const removeEntry = async (directory: FileSystemDirectoryHandle, name: string) => {
-  try {
-    await directory.removeEntry(name, { recursive: true })
-  } catch (error) {
-    if (!(error instanceof DOMException && error.name === "NotFoundError")) throw error
-  }
-}
-
-/** Deletes an IndexedDB database; fails when another tab still holds it open. */
-const deleteDatabase = (name: string) =>
-  new Promise<void>((resolve, reject) => {
-    const request = indexedDB.deleteDatabase(name)
-    request.onsuccess = () => resolve()
-    request.onerror = () => reject(request.error)
-    request.onblocked = () => reject(new DOMException("blocked", "InvalidStateError"))
-  })
-
-/**
- * Finishes a wipe a sign-out marked, before `start` opens anything: one tab at a time, under an exclusive Web Lock,
- * deletes the device's databases, then clears the mark. When deleting fails, as when another tab still holds a
- * database open, the mark stays and the next boot tries again.
- */
-const finishWipe = async () => {
-  if (!marked()) return
-  await navigator.locks.request(WIPE_MARK, { mode: "exclusive" }, async () => {
-    if (!marked()) return
-    const root = await navigator.storage.getDirectory()
-    const [parent, engine] = ENGINE_DIRECTORY
-    const engines = await root.getDirectoryHandle(parent).catch(() => undefined)
-    if (engines !== undefined) await removeEntry(engines, engine)
-    await deleteDatabase(OUTBOX_DATABASE)
-    localStorage.removeItem(WIPE_MARK)
-  })
-}
+const wipe = pageWipe(
+  {
+    locks: navigator.locks,
+    // Read when used: a browser that blocks storage throws on reaching `localStorage`.
+    marks: {
+      getItem: (key) => localStorage.getItem(key),
+      setItem: (key, value) => localStorage.setItem(key, value),
+      removeItem: (key) => localStorage.removeItem(key),
+    },
+    directory: () => navigator.storage.getDirectory(),
+    indexedDB,
+    channel: (name) => new BroadcastChannel(name),
+    reload: () => window.location.reload(),
+  },
+  { engine: ENGINE_NAME, outbox: OUTBOX_DATABASE },
+)
 
 // The device store: the app's shared SQLite database in the engine worker's OPFS pool (@smthrs/platform-browser's
 // `SharedSqlite`), one per origin, reached by every tab through the leading tab's worker. The outbox: IndexedDB,
@@ -113,17 +88,42 @@ const host: Host = {
   },
   // Copy permalink writes here; the browser refuses without the page's focus or permission.
   clipboard: (text) => navigator.clipboard.writeText(text),
-  // This tab's engine worker: it runs every client flow, the agent among them, once its tab leads (decision 0011).
-  engineWorker: () => new Worker(new URL("./flows/engine.worker.ts", import.meta.url), { type: "module" }),
-  // Sign-out's wipe: mark it, have the other tabs reload, and reload; `finishWipe` deletes at the next boot.
-  wipe: async () => {
-    localStorage.setItem(WIPE_MARK, "1")
-    wipes.postMessage("wipe")
-    window.location.reload()
+  // `app/navigate` moves this tab through the router, never `history` or `location`. The location changes at once;
+  // the route's loader then opens what it shows.
+  navigate: (path) => void router.navigate({ href: path }),
+  // `app/web/open` (src/features/web/url.ts): `http:` pages on this machine open in a new tab only under the dev
+  // server. A person's own `/web … tab` opens its tab here, inside their keypress, when the browser still allows it:
+  // `window.open` takes the click's activation when it opens a tab, so an activation still there after it means the
+  // browser refused, and the flow adds a card instead. A browser that can't say opens nothing here.
+  web: {
+    policy: { localHttp: import.meta.env.DEV, appOrigin: window.location.origin },
+    openTab: (href) => {
+      const activation = navigator.userActivation
+      if (activation === undefined || !activation.isActive) return false
+      window.open(href, "_blank", "noopener,noreferrer")
+      return !activation.isActive
+    },
   },
+  // This tab's engine worker: it runs every client flow, the agent among them, once its tab leads (decision 0011). Under
+  // the dev server, `?agent=<script>` names a scripted model for the end-to-end tests (src/test/scriptedAgent.ts); the
+  // worker reads it from its name, and a production build drops the branch.
+  engineWorker: () =>
+    // Vite reads the worker's `type` statically, so it comes after the spread.
+    new Worker(new URL("./flows/engine.worker.ts", import.meta.url), {
+      ...(import.meta.env.DEV && new URLSearchParams(window.location.search).has("agent")
+        ? { name: `agent:${new URLSearchParams(window.location.search).get("agent")}` }
+        : {}),
+      type: "module",
+    }),
+  // The engine's Web Lock, channel and store: the one engine every tab on this origin shares (decision 0011).
+  engineName: ENGINE_NAME,
+  // The tab's title, which counts the agent's open questions (decision 0015).
+  title: { read: () => document.title, write: (title) => void (document.title = title) },
+  // Sign-out's wipe: mark it and tell every page, this one included; each stops and loads again (src/wipe.ts).
+  wipe: wipe.wipe,
 }
 
-const render: BootOptions["render"] = (chat, auth, theme, repo) =>
+const render: BootOptions["render"] = (chat, auth, theme, repo, commands, views, web, status, branch, terminal, issues, runs, flows) =>
   root.render(
     <StrictMode>
       <SmithersUiStyles withTheme />
@@ -131,8 +131,30 @@ const render: BootOptions["render"] = (chat, auth, theme, repo) =>
         <AuthProvider value={auth}>
           <ThemeProvider value={theme}>
             <RepoProvider value={repo}>
-              {/* The repository routes' loaders open their location through `repo` (src/router.tsx). */}
-              <RouterProvider router={router} context={{ repo }} />
+              <CommandsProvider value={commands}>
+                <ViewsProvider value={views}>
+                  <WebProvider value={web}>
+                    <StatusProvider value={status}>
+                      <BranchProvider value={branch}>
+                        <TerminalProvider value={terminal}>
+                          {/* The routes' loaders open what they show through `repo`, `views`, `branch` and `terminal`
+                              (src/router.tsx). */}
+                          <IssuesProvider value={issues}>
+                            <RunsProvider value={runs}>
+                              <FlowsUiProvider value={flows}>
+                                <RouterProvider
+                                  router={router}
+                                  context={{ repo, views, branch, terminal, issues, runs, flows }}
+                                />
+                              </FlowsUiProvider>
+                            </RunsProvider>
+                          </IssuesProvider>
+                        </TerminalProvider>
+                      </BranchProvider>
+                    </StatusProvider>
+                  </WebProvider>
+                </ViewsProvider>
+              </CommandsProvider>
             </RepoProvider>
           </ThemeProvider>
         </AuthProvider>
@@ -152,15 +174,20 @@ const page = {
 
 // Under the dev server, `?faults` opens the app on faulty services for the end-to-end tests of unhappy paths
 // (src/test/e2e.ts). A production build drops this branch, and the test module with it. Either way, a wipe a sign-out
-// marked finishes first.
-void finishWipe()
-  .catch(() => {
-    // The mark stays, and the next boot deletes again.
-  })
-  .then(() => {
-    if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("faults")) {
-      void import("./test/e2e").then((e2e) => e2e.startWithFaults(page, window.location.search, window))
-    } else {
-      start(page, realServices(page))
-    }
-  })
+// marked finishes first, and a page whose wipe couldn't delete starts on stores that aren't the device's
+// (src/wipe.ts `unwiped`). Leaving on a wipe drops the view, then stops the program.
+void wipe.open().then((wiped) => {
+  const opened = wiped ? page : { ...page, host: unwiped(host) }
+  const leaving = (stop: () => Promise<void>) =>
+    wipe.started(() => {
+      root.unmount()
+      return stop()
+    })
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("faults")) {
+    void import("./test/e2e")
+      .then((e2e) => e2e.startWithFaults(opened, window.location.search, window))
+      .then(({ stop }) => leaving(stop))
+  } else {
+    leaving(start(opened, realServices(opened)).stop)
+  }
+})

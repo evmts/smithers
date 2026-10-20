@@ -38,7 +38,16 @@ describe("turn", () => {
   test("tells its turn hasn't come from a settled answer, and everything else from both", async () => {
     const turn = (fetch: typeof globalThis.fetch) => over(fetch, (api) => api.turn("a"))
 
-    expect(failure(await turn(answering(409, JSON.stringify({ code: "not_your_turn" }))))).toEqual(new NotYourTurn())
+    // Vitest compares errors by name and message, so the waited time is read on its own.
+    const notYourTurn = failure(await turn(answering(409, JSON.stringify({ code: "not_your_turn", waitedMs: 1_500 }))))
+    expect(notYourTurn).toBeInstanceOf(NotYourTurn)
+    expect((notYourTurn as NotYourTurn).waitedMs).toBe(1_500)
+    // A refusal that doesn't say how long the turn has waited, or says something that isn't a duration, counts as none.
+    for (const waitedMs of [undefined, -1, "5", Number.NaN]) {
+      const unsaid = failure(await turn(answering(409, JSON.stringify({ code: "not_your_turn", waitedMs }))))
+      expect(unsaid).toBeInstanceOf(NotYourTurn)
+      expect((unsaid as NotYourTurn).waitedMs).toBe(0)
+    }
     expect(failure(await turn(answering(409, JSON.stringify({ code: "settled" }))))).toEqual(new AnswerSettled())
     expect(failure(await turn(answering(409, JSON.stringify({ code: "other" }))))).toEqual(
       new AnswersUnavailable({ status: 409 }),

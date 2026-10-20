@@ -3,7 +3,7 @@
 // the scripted GitHub holds; GitHub answers HEAD and size from the same table. A test arms a one-shot fault on either
 // through `fail`; the live tests (worker/RepoClone.live.test.ts) use the real ones.
 import { CodeStorage, GitRemote } from "@smthrs/effect-code-storage"
-import { Effect } from "effect"
+import { Effect, Redacted } from "effect"
 import type { Sized } from "../RepoUpstream.ts"
 import { RepoUpstream, UpstreamUnavailable } from "../RepoUpstream.ts"
 
@@ -14,6 +14,17 @@ export interface GitHubRepository {
   readonly files: Readonly<Record<string, string | Uint8Array>>
   /** GitHub's `size`, in KiB. */
   readonly sizeKb: number
+  /** Branches besides the default one: each name, its head commit and the files there. */
+  readonly branches?: ReadonlyArray<GitHubBranch> | undefined
+  /** Tags: each name and the commit it names, the default branch's or another branch's. */
+  readonly tags?: ReadonlyArray<{ readonly name: string; readonly sha: string }> | undefined
+}
+
+/** A branch on the scripted GitHub: its name, head commit and files. */
+export interface GitHubBranch {
+  readonly name: string
+  readonly sha: string
+  readonly files: Readonly<Record<string, string | Uint8Array>>
 }
 
 const encoder = new TextEncoder()
@@ -55,6 +66,23 @@ interface Mirror {
   pending: number
   commit?: GitHubRepository["commit"]
   files?: Readonly<Record<string, Uint8Array>>
+  /** Every synced commit's files, by SHA: the default branch's head and each other branch's. */
+  snapshots?: ReadonlyMap<string, Readonly<Record<string, Uint8Array>>>
+  /** Every branch with its head, the default one included, and every tag, by name. */
+  branches?: ReadonlyArray<{ readonly name: string; readonly sha: string }>
+  tags?: ReadonlyArray<{ readonly name: string; readonly sha: string }>
+}
+
+const encoded = (files: Readonly<Record<string, string | Uint8Array>>): Readonly<Record<string, Uint8Array>> =>
+  Object.fromEntries(Object.entries(files).map(([path, body]) => [path, typeof body === "string" ? encoder.encode(body) : body]))
+
+/** One page of `all` from `cursor`, `limit` long, as Code Storage pages a listing. */
+const pageOf = <A>(all: ReadonlyArray<A>, cursor: string | undefined, limit: number) => {
+  const start = Number(cursor ?? 0)
+  return {
+    page: all.slice(start, start + limit),
+    next: start + limit < all.length ? String(start + limit) : undefined,
+  }
 }
 
 /** A scripted Code Storage and GitHub, sharing one table of GitHub repositories (`owner/name`, lowercased). */
@@ -79,6 +107,15 @@ export const scripted = (options: { readonly syncPolls?: number; readonly pageSi
     new CodeStorage.CodeStorageError({ operation, code, status, ...extra })
 
   const client: CodeStorage.Client = {
+    // The mirror's git remote, with a credential that names the repository; nothing is sent.
+    gitRemote: (repo) =>
+      Effect.sync(() => {
+        calls.push(`gitRemote:${repo}`)
+        return {
+          url: `https://scripted.code.storage/${repo}.git`,
+          authorization: Redacted.make(`Basic ${btoa(`t:scripted-token-for-${repo}`)}`),
+        }
+      }),
     createRepo: (create) =>
       Effect.gen(function* () {
         calls.push(`createRepo:${create.name}`)
@@ -107,9 +144,17 @@ export const scripted = (options: { readonly syncPolls?: number; readonly pageSi
         if (source === undefined) return yield* error("pullUpstream", "github_repository_inaccessible", 403)
         mirror.pending = state.syncPolls
         mirror.commit = source.commit
-        mirror.files = Object.fromEntries(
-          Object.entries(source.files).map(([path, body]) => [path, typeof body === "string" ? encoder.encode(body) : body]),
-        )
+        mirror.files = encoded(source.files)
+        const others = source.branches ?? []
+        mirror.snapshots = new Map([
+          [source.commit.sha, mirror.files],
+          ...others.map((branch) => [branch.sha, encoded(branch.files)] as const),
+        ])
+        mirror.branches = [
+          ...(source.branch === undefined ? [] : [{ name: source.branch, sha: source.commit.sha }]),
+          ...others.map(({ name, sha }) => ({ name, sha })),
+        ].sort((a, b) => a.name.localeCompare(b.name))
+        mirror.tags = [...(source.tags ?? [])].sort((a, b) => a.name.localeCompare(b.name))
         mirror.synced = true
       }),
     listCommits: (repo, list = {}) =>
@@ -141,14 +186,13 @@ export const scripted = (options: { readonly syncPolls?: number; readonly pageSi
         if (mirror === undefined || !mirror.synced || mirror.pending > 0) {
           return yield* error("listFiles", "repository_not_found", 404)
         }
-        if (list.ref !== mirror.commit!.sha) return yield* error("listFiles", "ref_not_found", 404)
-        const paths = Object.keys(mirror.files!).sort()
-        const start = Number(list.cursor ?? 0)
+        const ref = list.ref ?? ""
+        const files = mirror.snapshots!.get(ref)
+        if (files === undefined) return yield* error("listFiles", "ref_not_found", 404)
         const limit = Math.min(list.limit ?? 5_000, options.pageSize ?? 5_000)
-        const page = paths.slice(start, start + limit)
-        const next = start + limit < paths.length ? String(start + limit) : undefined
+        const { page, next } = pageOf(Object.keys(files).sort(), list.cursor, limit)
         return {
-          ref: list.ref,
+          ref,
           paths: page,
           entries: page.map((path) => ({ path, type: "blob", mode: "100644" })),
           nextCursor: next,
@@ -160,10 +204,32 @@ export const scripted = (options: { readonly syncPolls?: number; readonly pageSi
         calls.push(`readFile:${repo}:${read.path}`)
         yield* fault("readFile")
         const mirror = mirrors.get(repo)
-        const body = mirror?.synced === true && read.ref === mirror.commit!.sha ? mirror.files![read.path] : undefined
+        const body = mirror?.synced === true ? mirror.snapshots!.get(read.ref ?? "")?.[read.path] : undefined
         if (body === undefined) return yield* error("readFile", "not_found", 404)
         if (body.length > read.maxBytes) return yield* error("readFile", "too_large", 200, { size: body.length })
         return { bytes: body, blobSha: shaOf(read.path) }
+      }),
+    listBranches: (repo, list = {}) =>
+      Effect.gen(function* () {
+        calls.push(`listBranches:${repo}`)
+        yield* fault("listBranches")
+        const mirror = mirrors.get(repo)
+        if (mirror === undefined || !mirror.synced) return yield* error("listBranches", "repository_not_found", 404)
+        const { page, next } = pageOf(mirror.branches!, list.cursor, list.limit ?? 20)
+        return {
+          branches: page.map(({ name, sha }) => ({ name, sha, createdAt: "2026-10-19T12:00:00Z" })),
+          nextCursor: next,
+          bytesRead: JSON.stringify(page).length,
+        }
+      }),
+    listTags: (repo, list = {}) =>
+      Effect.gen(function* () {
+        calls.push(`listTags:${repo}`)
+        yield* fault("listTags")
+        const mirror = mirrors.get(repo)
+        if (mirror === undefined || !mirror.synced) return yield* error("listTags", "repository_not_found", 404)
+        const { page, next } = pageOf(mirror.tags!, list.cursor, list.limit ?? 20)
+        return { tags: page, nextCursor: next, bytesRead: JSON.stringify(page).length }
       }),
   }
 

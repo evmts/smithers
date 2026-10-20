@@ -1,0 +1,341 @@
+import { AgentAction } from "@smthrs/agent"
+import { Action, Flow, RetryPolicy } from "@smthrs/flow"
+import { Node, Placement } from "@smthrs/plan"
+import { Schema } from "effect"
+import { FLOW_MODEL_ROLE, MAX_CALLS, MAX_FLOW_FRAMES, MAX_QUESTIONS } from "./contract"
+import { PROMPT_CATALOG } from "./callable"
+import { AUTHOR_SYSTEM, authorPrompt, FLOW_SYSTEM, flowPrompt } from "./instructions"
+import {
+  DraftNotReady,
+  FlowAnswerReference,
+  FlowDeleteReference,
+  FlowInvalid,
+  FlowListReference,
+  FlowNewReference,
+  FlowNotFound,
+  FlowPromptReference,
+  FlowRunReference,
+  FlowSaveReference,
+  FlowsRefused,
+  FlowsUnavailable,
+  NameTaken,
+  Pinned,
+  RouteFailure,
+  RoundEnded,
+  SavedFlow,
+} from "./reference"
+import { Description } from "./schema"
+
+// Your own flows, as an engine runs them (decision 0014 §2, docs/features/flows.md#your-own-flows):
+//
+//   flow/new { name, request }          execution <draftId>:<round>; any other id starts round 0 of a new draft
+//     flow/new/open   ─ the draft row (drafting), the flow it edits, the draft so far and the person's answers
+//     flow/new/draft  ─ the agent drafts: description, instructions, flows, questions ≤ 5 (AgentAction, seat agent)
+//     flow/new/write  ─ the SKILL.md, the static checks, the row: ready, needs_you or failed
+//   flow/answer { draftId, round, answers } ─ records them, then starts round n + 1
+//   flow/save { draftId }               ─ a ready draft becomes your flow
+//   flow/run { name, input?, revision? }
+//     flow/run/load   ─ the revision's SKILL.md, its digest and its checks: what it may call
+//     flow/run/prompt ─ a child execution, whose payload pins the revision and its list: the agent follows it
+//   flow/delete { flowId }, flow/list
+//
+// Every model call is a sealed step of its run through the server's model endpoint, role `agent`. A person's flow is
+// instructions the trusted agent loop reads: it reaches the world only through the calls its list allows
+// (src/flows/catalog.ts). What a step does is injected by the host (./steps.ts). This module imports @smthrs/agent, so
+// only an engine's host imports it; the tab dispatches by ./reference.ts.
+
+/** The steps that call ChatApi: tried for a minute while it can't answer; a refusal or a missing flow is final. */
+export const ROUTE_RETRY = RetryPolicy.make({
+  initialMs: 500,
+  factor: 2,
+  maxMs: 8_000,
+  expirationMs: 60_000,
+  nonRetryable: [
+    "@smthrs/mvp/flows/FlowsRefused",
+    "@smthrs/mvp/flows/FlowNotFound",
+    "@smthrs/mvp/flows/FlowInvalid",
+    "@smthrs/mvp/flows/NameTaken",
+    "@smthrs/mvp/flows/DraftNotReady",
+  ],
+})
+
+/** The tag `flow/run/prompt` fails with when its agent couldn't finish. */
+const FLOW_AGENT_FAILED = "@smthrs/mvp/flows/FlowAgentFailed" as const
+
+/** One question the drafting agent asks. */
+const Question = Schema.Struct({
+  text: Schema.String.check(Schema.isBetweenLength(1, 500)),
+  assumed: Schema.String.check(Schema.isMaxLength(500)),
+  blocking: Schema.Boolean,
+})
+
+/** What the drafting agent answers: the flow's description, its instructions, its calls and its questions. */
+export const Drafted = Schema.Struct({
+  description: Description.annotate({ description: "One sentence saying what the flow does, at most 1,024 characters" }),
+  instructions: Schema.String.check(Schema.isBetweenLength(1, 60_000)).annotate({
+    description: "What the agent running the flow does, in the second person",
+  }),
+  flows: Schema.Array(Schema.String).check(Schema.isMaxLength(MAX_CALLS)).annotate({
+    description: "The catalog flows it may call",
+  }),
+  questions: Schema.Array(Question).check(Schema.isMaxLength(MAX_QUESTIONS)),
+  summary: Schema.String.check(Schema.isMaxLength(500)).annotate({ description: "One sentence for the person" }),
+})
+export type Drafted = typeof Drafted.Type
+
+/** One answered question, as the drafting agent reads it. */
+const Answered = Schema.Struct({ question: Schema.String, answer: Schema.String })
+
+/** What a round opens with. */
+export const Opened = Schema.Struct({
+  draftId: Schema.String,
+  round: Schema.Number,
+  name: Schema.String,
+  request: Schema.String,
+  flowId: Schema.NullOr(Schema.String),
+  previous: Schema.NullOr(Schema.String),
+  answers: Schema.Array(Answered),
+  openedAtMs: Schema.Number,
+})
+export type Opened = typeof Opened.Type
+
+/** `flow/new/open`: the draft's row for this round, and what the agent drafts from. */
+export const OpenRound = Action.make("flow/new/open", {
+  payload: { name: Schema.String, request: Schema.String },
+  success: Opened,
+  error: RouteFailure,
+  tier: "sealed",
+  retryPolicy: ROUTE_RETRY,
+})
+
+/** `flow/new/draft`: the agent drafts the flow. A draft whose fields don't decode is corrected twice at most. */
+export const DraftFlow = AgentAction.make("flow/new/draft", {
+  payload: {
+    name: Schema.String,
+    request: Schema.String,
+    previous: Schema.NullOr(Schema.String),
+    answers: Schema.Array(Answered),
+  },
+  output: Drafted,
+  seat: FLOW_MODEL_ROLE,
+  system: AUTHOR_SYSTEM,
+  profile: "conversation",
+  prompt: (task) => authorPrompt({ ...task, catalog: PROMPT_CATALOG }),
+  corrections: 2,
+  maxFrames: MAX_FLOW_FRAMES,
+})
+
+/** `flow/new/write`: the SKILL.md, its checks and the round's status, on the draft's row. */
+export const WriteRound = Action.make("flow/new/write", {
+  payload: {
+    draftId: Schema.String,
+    round: Schema.Number,
+    name: Schema.String,
+    request: Schema.String,
+    flowId: Schema.NullOr(Schema.String),
+    drafted: Schema.NullOr(Drafted),
+    failure: Schema.NullOr(Schema.String),
+    openedAtMs: Schema.Number,
+  },
+  success: RoundEnded,
+  error: RouteFailure,
+  tier: "sealed",
+  retryPolicy: ROUTE_RETRY,
+})
+
+/** How a round's drafting ended: the draft, or why there is none. */
+const Outcome = Schema.Struct({ drafted: Schema.NullOr(Drafted), failure: Schema.NullOr(Schema.String) })
+type Outcome = typeof Outcome.Type
+
+/** `flow/new`: one round of a draft. Its tag and schemas are its reference's. */
+export const FlowNew = Flow.make(FlowNewReference._tag, {
+  description: FlowNewReference.description!,
+  modelInvocable: true,
+  payload: FlowNewReference.payloadSchema,
+  success: FlowNewReference.successSchema,
+  error: FlowNewReference.errorSchema,
+  body: Node.capture(
+    { open: OpenRound.name, draft: DraftFlow.name, write: WriteRound.name },
+    ({ name, request }) =>
+      OpenRound.call({ name, request }).pipe(
+        Node.bindPlanned(Node.capture({ draft: DraftFlow.name, write: WriteRound.name }, (opened) =>
+          DraftFlow.call({
+            name: opened.name,
+            request: opened.request,
+            previous: opened.previous,
+            answers: opened.answers,
+          }).pipe(
+            Node.map(Node.capture({ failure: null }, (drafted: Drafted): Outcome => ({ drafted, failure: null }))),
+            // The agent couldn't draft (the model failed, or its answer never decoded): the round fails, and the
+            // card offers another.
+            Node.catch({
+              onFailure: Node.capture({ failure: "draft" }, () => Node.succeed<Outcome>({ drafted: null, failure: "draft" })),
+            }),
+            Node.bindPlanned(Node.capture({ write: WriteRound.name }, (outcome) =>
+              WriteRound.call({
+                draftId: opened.draftId,
+                round: opened.round,
+                name: opened.name,
+                request: opened.request,
+                flowId: opened.flowId,
+                drafted: outcome.drafted,
+                failure: outcome.failure,
+                openedAtMs: opened.openedAtMs,
+              }))),
+          ))),
+      ),
+  ),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `flow/answer/record`: records the answers on the draft; answers its name and request for the next round. */
+export const RecordAnswers = Action.make("flow/answer/record", {
+  payload: FlowAnswerReference.payloadSchema.fields,
+  success: Schema.Struct({ name: Schema.String, request: Schema.String }),
+  error: RouteFailure,
+  tier: "sealed",
+  retryPolicy: ROUTE_RETRY,
+})
+
+/** `flow/answer/next`: starts the draft's next round, `<draftId>:<round + 1>`, without waiting for it. */
+export const NextRound = Action.make("flow/answer/next", {
+  payload: { draftId: Schema.String, round: Schema.Number, name: Schema.String, request: Schema.String },
+  success: FlowAnswerReference.successSchema,
+  tier: "sealed",
+})
+
+/** `flow/answer`: the person's answers start the next round. */
+export const FlowAnswer = Flow.make(FlowAnswerReference._tag, {
+  description: FlowAnswerReference.description!,
+  modelInvocable: false,
+  payload: FlowAnswerReference.payloadSchema,
+  success: FlowAnswerReference.successSchema,
+  error: FlowAnswerReference.errorSchema,
+  body: Node.capture(
+    { record: RecordAnswers.name, next: NextRound.name },
+    ({ draftId, round, answers }) =>
+      RecordAnswers.call({ draftId, round, answers }).pipe(
+        Node.bindPlanned(Node.capture({ next: NextRound.name }, (recorded) =>
+          NextRound.call({ draftId, round, name: recorded.name, request: recorded.request }))),
+      ),
+  ),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `flow/save/admit`: the draft's file, checked again, saved through ChatApi. */
+export const AdmitSave = Action.make("flow/save/admit", {
+  payload: FlowSaveReference.payloadSchema.fields,
+  success: SavedFlow,
+  error: Schema.Union([FlowsUnavailable, FlowsRefused, NameTaken, DraftNotReady]),
+  tier: "sealed",
+  retryPolicy: ROUTE_RETRY,
+})
+
+/** `flow/save`: a ready draft becomes your flow. */
+export const FlowSave = Flow.make(FlowSaveReference._tag, {
+  description: FlowSaveReference.description!,
+  modelInvocable: true,
+  payload: FlowSaveReference.payloadSchema,
+  success: FlowSaveReference.successSchema,
+  error: FlowSaveReference.errorSchema,
+  body: Node.capture({ admit: AdmitSave.name }, ({ draftId }) => AdmitSave.call({ draftId })),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `flow/run/load`: the revision's `SKILL.md`, checked, pinned with what it may call. */
+export const LoadFlow = Action.make("flow/run/load", {
+  payload: FlowRunReference.payloadSchema.fields,
+  success: Schema.Struct(Pinned),
+  error: Schema.Union([FlowsUnavailable, FlowsRefused, FlowNotFound, FlowInvalid]),
+  tier: "sealed",
+  retryPolicy: ROUTE_RETRY,
+})
+
+/** `flow/run/agent`: the agent follows the pinned instructions, calling only what they list. */
+export const PromptAgent = AgentAction.make("flow/run/agent", {
+  payload: { name: Schema.String, instructions: Schema.String, allowed: Schema.Array(Schema.String), input: Schema.String },
+  output: Schema.String,
+  seat: FLOW_MODEL_ROLE,
+  system: FLOW_SYSTEM,
+  profile: "conversation",
+  prompt: flowPrompt,
+  maxFrames: MAX_FLOW_FRAMES,
+})
+
+/** `flow/run/prompt`: one pinned revision, followed by the agent; its payload is what its calls are checked against. */
+export const FlowPrompt = Flow.make(FlowPromptReference._tag, {
+  description: FlowPromptReference.description!,
+  modelInvocable: false,
+  payload: FlowPromptReference.payloadSchema,
+  success: FlowPromptReference.successSchema,
+  error: FlowPromptReference.errorSchema,
+  body: Node.capture(
+    { agent: PromptAgent.name },
+    ({ name, instructions, allowed, input }) =>
+      PromptAgent.call({ name, instructions, allowed, input }).pipe(
+        // Why the agent failed stays on its step (the run page shows it); the run fails with a closed code.
+        Node.catch({
+          onFailure: Node.capture({ failed: "agent" }, () => Node.fail({ _tag: FLOW_AGENT_FAILED })),
+        }),
+      ),
+  ),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `flow/run`: runs your flow. */
+export const FlowRun = Flow.make(FlowRunReference._tag, {
+  description: FlowRunReference.description!,
+  modelInvocable: true,
+  payload: FlowRunReference.payloadSchema,
+  success: FlowRunReference.successSchema,
+  error: FlowRunReference.errorSchema,
+  body: Node.capture(
+    { load: LoadFlow.name, prompt: FlowPromptReference._tag },
+    ({ name, input, revision }) =>
+      LoadFlow.call({ name, input, revision }).pipe(
+        Node.bindPlanned(Node.capture({ prompt: FlowPromptReference._tag }, (pinned) =>
+          FlowPrompt.child({
+            flowId: pinned.flowId,
+            name: pinned.name,
+            revision: pinned.revision,
+            digest: pinned.digest,
+            instructions: pinned.instructions,
+            allowed: pinned.allowed,
+            input: pinned.input,
+          }))),
+      ),
+  ),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `flow/delete/remove`: deletes the flow through ChatApi. */
+export const RemoveFlow = Action.make("flow/delete/remove", {
+  payload: FlowDeleteReference.payloadSchema.fields,
+  success: FlowDeleteReference.successSchema,
+  error: RouteFailure,
+  tier: "sealed",
+  retryPolicy: ROUTE_RETRY,
+})
+
+/** `flow/delete`: deletes your flow. */
+export const FlowDelete = Flow.make(FlowDeleteReference._tag, {
+  description: FlowDeleteReference.description!,
+  modelInvocable: true,
+  payload: FlowDeleteReference.payloadSchema,
+  success: FlowDeleteReference.successSchema,
+  error: FlowDeleteReference.errorSchema,
+  body: Node.capture({ remove: RemoveFlow.name }, ({ flowId }) => RemoveFlow.call({ flowId })),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `flow/list/read`: your flows. */
+export const ReadFlows = Action.make("flow/list/read", {
+  payload: {},
+  success: FlowListReference.successSchema,
+  error: RouteFailure,
+  retryPolicy: ROUTE_RETRY,
+})
+
+/** `flow/list`: your flows. */
+export const FlowList = Flow.make(FlowListReference._tag, {
+  description: FlowListReference.description!,
+  modelInvocable: true,
+  payload: FlowListReference.payloadSchema,
+  success: FlowListReference.successSchema,
+  error: FlowListReference.errorSchema,
+  body: Node.capture({ read: ReadFlows.name }, () => ReadFlows.call({})),
+}).annotate(Flow.Placement, Placement.client())

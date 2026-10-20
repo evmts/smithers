@@ -1,0 +1,126 @@
+# Agent status
+
+What the agent is doing, and whether it needs you. The agent's run reports one of five states from its own durable steps, and the conversation, the header, a toast and the tab's title show it on every device the person has open. When the agent can't go on without the person, it asks with `app/agent/ask`; the person answers from the card, and the run in the asking browser goes on. Will, 2026-10-20: "I think the old one and our smithers agent has ability to give status updates like whether the thing needs help or not". Decision: [0015](../decisions/0015-agent-status.md), on [0009](../decisions/0009-notifications-and-live-work.md) and [0011](../decisions/0011-the-agent-runs-in-the-browser.md). Deep run inspection is decision 0014's run pages.
+
+```
+chat/Answer (this device's engine)
+  chat/LoadTurn ─ NotYourTurn: report waiting(turn), once ─ its turn: report working
+  chat/Respond ─ cell: ctx.call("app/agent/ask", { kind, prompt, options })
+                   app/agent/ask/request ─ report needs_you { execution, kind, prompt, options }   POST /api/runs/<id>
+                   HumanTask (system/human-task) ─ parks, at most 10 minutes
+                   app/agent/ask/answer ─ report working ─▶ { answered, answer } or { answered, approved }
+  chat/Settle ─ report done or failed
+                                         │
+Postgres runs ─▶ Electric (/api/shapes/runs, the person's own rows) ─▶ every device's `runs`
+                                         │
+card, toast or header Answer ─▶ run/answer { runId, version, execution, value }
+  run/answer/record ─ POST /api/runs/<id>/answer: the first answer settles the question
+  run/deliver/answer ─ HumanTask.answer on this device's engine, if it holds the run
+another device's answer ─▶ Electric ─▶ the device that holds the run: run/deliver (door sync), one per question
+```
+
+## States
+
+| State | When | Shows |
+|---|---|---|
+| Working | the run's turn came; a question was answered | the answer streaming; the header's `◌ Working` while it is the latest |
+| Waiting | an earlier answer holds its turn | `○ Waiting` under the answer and in the header |
+| Needs you | `app/agent/ask` is open and unanswered | the card, `◆ Needs you` in the header (a count above 1), a toast with Answer, `(N) Smithers` |
+| Failed | the answer settled failed | `Couldn't answer` and Retry, as before; `✕ Failed` in the header while it is the latest |
+| Done | the answer settled done | the answer; nothing else |
+
+The answer's own settled status always wins over the run's row (`src/features/status/queries.ts`), so a report that never landed can't leave an answer looking live.
+
+## The runs table
+
+Migration `0013_runs`: decision 0009's `runs`, with the columns this slice needs, under 0009's names.
+
+| Column | |
+|---|---|
+| `id` | the run's execution id: the answer's id for `chat/Answer` |
+| `flow` | `chat/Answer`: the route sets it, since every run that reports in this slice is an agent's answer |
+| `status`, `waiting` | the state, and why it waits: `turn`, or `input` and `approval` while it needs the person |
+| `wait` | the run's latest question: `{ execution, kind, prompt, options }`, kept after it closes so the card shows what was answered |
+| `version` | how many questions the run asked; an answer names the one it answers |
+| `answer`, `answered_at` | the accepted answer, `{ value }` |
+| `launched_by` | the asker's person id: never synced; the shape filters on it |
+
+CHECKs hold the shape: `waiting` is set exactly while `waiting` or `needs_you`; `needs_you` has a `wait`; `answer` and `answered_at` go together.
+
+## The routes
+
+`worker/Runs.ts`, in ChatApi. Only the person who asked the answer's question may report or answer, while they may still ask (Member or above); an agent acting for them is them.
+
+| Route | Answers |
+|---|---|
+| `POST /api/runs/<id>` `{ status, waiting?, wait? }` | `200 { txid }`; `200 { txid: null }` when it changes nothing: the same report again, the same question again, a question already answered, or any report to a settled run. A question with a new `execution` bumps `version` and clears the answer |
+| `POST /api/runs/<id>/answer` `{ version, value }` | `200 { txid }` for the first answer to the open question; `200 { txid: null }` for the same answer again; `409 { code: "not_open" }` once it is answered, closed or replaced; `400` for words to an approval or a decision to a question |
+| `GET /api/shapes/runs` | Electric's `runs` where `launched_by` is the signed-in person, without that column. Signed out, no one's rows; when sessions can't be read, `503` with `Retry-After: 5`, so the device keeps its rows and retries |
+| all | `401` signed out; `403 { code: "forbidden" }` for a Guest, no role, or anyone but the asker (logged `not_launcher`); `404` for an id that isn't an answer or a run; `405` for another method; `413` over 16 KiB; `503 { code: "unavailable" }` when Postgres can't be reached |
+
+## Flows
+
+`src/features/status/flows.ts`. The question is a durable wait: closing the tab keeps it, and the next tab's engine parks on it again. The tab dispatches only their references; their steps run in the engine worker.
+
+| Flow | Door | Steps |
+|---|---|---|
+| `app/agent/ask { kind, prompt, options? }` | the agent's cell | `app/agent/ask/request` reports the question (retried for a minute; a refusal is final), then `HumanTask` (`ask` for a question, `confirm` for an approval, one attempt, `ASK_WITHIN_MS`), then `app/agent/ask/answer` reports working. A question that couldn't be shown, or wasn't answered in time, answers `{ answered: false }` |
+| `run/answer { runId, version, execution, value }` | the card (`button`) | `run/answer/record` (retried for 10 minutes; `AnswerNotOpen` and `AnswerRefused` are final), then `run/deliver/answer` |
+| `run/deliver { execution, value }` | `sync` | `run/deliver/answer`: polls the run; a run this device never held is `not_here`, a finished one `closed`; otherwise `HumanTask.answer`, retried for two minutes while the run wakes and parks on its question again |
+
+`run/answer` and `run/deliver` are acts on a run, as 0009's Cancel and Retry are (`run/*`), so the agent's catalog leaves them out.
+
+## Reporting
+
+`RunReporter` (`src/features/status/reporter.ts`) sends a run's status from inside the step that reports it, so a step run again after a crash reports again, which the route takes as no change. The run is the execution's requester (`src/flows/requests.ts`). `report` never fails the step; it skips a status this engine already sent for the run, so `chat/LoadTurn`'s retries report `waiting` once. `reportOrFail` is for the question, which the person can't answer unless they see it.
+
+## The browser
+
+`src/features/status/` follows [state.md](../state.md):
+
+| Piece | What it is |
+|---|---|
+| `runs` | the person's `runs`, an Electric collection kept on the device (`persist: { schemaVersion: 1 }`) |
+| `status-local` | this tab's rows about each run's latest question: `draft`, `hidden`, `sending`, `focus`; a row for an older `version` counts as none |
+| `statuses` | each answer's state, question, answer, draft and focus: `messages` left-joined to `runs` and `status-local` |
+| `needs`, `latest` | the open questions, oldest first, with `hidden`; and the latest answer's state |
+| `answer(id, value)`, `setDraft`, `hide`, `focus`, `focusFirst` | the card's Answer, its field, a toast's Hide and Answer, and the header pill |
+| followers | delivery (`run/deliver` per answered question), the title (`TabTitle`, the host's `document.title`), and `agent.status.shown` |
+
+The views are `@smthrs/ui`'s `AgentStatusPill`, `NeedsYouCard`, `ToastStack` and `Toast` (`components/`): `AnswerStatus` under each answer, `HeaderStatus` first in the header row, and `NeedsYouToasts` under the header (`ToastStack`'s `inline` placement): the open composer docks over the column's foot, so a toast there would hide behind it. A toast fades in after 300 ms, so a question answered at once never flashes.
+
+## Observability
+
+| Record | Kind | Fields |
+|---|---|---|
+| `agent.status.report`, `agent.status.answer` | log, ChatApi | `runId`, `report` or `version`, `status`, `durationMs`, `bytes`, `existing`, `errorCode` (`not_launcher`, a SQL reason) |
+| `agent.status.request` | span, ChatApi | `smithers.run.id`, `http.response.status_code` |
+| `smithers_run_requests`, `smithers_run_shape_requests` | counter, ChatApi | `route` (`report`, `answer`), `status`; `status`, `live` |
+| `agent.status.report`, `agent.status.answer` | span, engine | `smithers.run.id`, `http.response.status_code` |
+| `agent.status.report` | log, engine | `runId`, `status`, `outcome` (`sent`, `failed` with `errorCode`) |
+| `smithers_agent_status_reports` | counter, engine | `status`, `outcome` (`sent`, `skipped`, `failed`) |
+| `agent.status.answer`, `agent.status.deliver` | log, engine | `outcome` |
+| `smithers_agent_status_answers` | counter, engine | `outcome`: `recorded`, `not_open`, `refused`, `unrecorded`, `delivered`, `not_here`, `closed` |
+| `agent.status.shown`, `smithers_agent_status_shown` | log and counter, tab | `runId`, `version`, `surface` |
+
+No record carries a question, an option or an answer (tests read the logs for them).
+
+## Limits
+
+- **Ten minutes to answer.** A question closes after `ASK_WITHIN_MS`, inside `chat/Expire`'s 25 minutes; a longer one needs `chat/Expire` to read the run's row (0015 phase 2).
+- **A waiting run writes nothing**, so after `ANSWER_TURN_LIVE_SECONDS` a later question starts beside it, as for any quiet answer.
+- **A tab closed while a question is open costs one model call.** The frame that asked was in flight, so the next tab's engine asks its model again; the call it makes joins the question already parked (`flows.test.ts`).
+- **Only the asker answers**, and only their own runs sync. Branch and repository scopes come with 0009's watches.
+- **No browser notification yet**, and no failed toast: 0015 phase 2.
+
+## Tests
+
+| Test | Proves |
+|---|---|
+| `src/features/status/flows.test.ts` | On the Node host with a scripted model and the real routes: the run reports working, needs you and done; an answer resumes it; an approval; an answer from another device delivered by `run/deliver`; a second answer is `not_open`; a question that can't be shown; a run killed while it needs you resumes and asks again; waiting reported once while the turn waits; a failed answer reports failed |
+| `src/features/status/status.test.ts` | The tab's layer on two Node devices whose engines lead: the question in `statuses`, `needs` and the title on both, this tab's draft, focus and Hide, an answer from the other device delivered through sync, an approval, waiting behind a question, a failure |
+| `src/features/status/faults.test.ts` | Injected `RunsClient` faults: a question reported again, a delivery before the question parks, an approval refused, an answer sent again, refusals final |
+| `src/features/status/api.test.ts`, `reporter.test.ts` | Every answer `RunsClient` reads; what the reporter sends, skips and fails with |
+| `worker/Runs.test.ts` | Every route and status, the CHECK-backed transitions, the shape's filter and columns, records without the question or answer |
+| `packages/smithers/ui/tests/agent-status.test.tsx` | The pill, the card, the toasts and the title |
+| `e2e/status.spec.ts` | In real browsers: the scripted agent asks; the card, header, toast and title show it on two devices; the second device answers from the toast; the first device's run goes on; and one live run where the real model asks |

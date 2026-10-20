@@ -6,7 +6,7 @@ import { Action } from "@smthrs/flow"
 import { Cause, Context, Effect, Exit, Layer, Scope } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { build } from "../../../worker/test/flowHost.ts"
-import { ClientEngine, FlowDispatch, RemoteFlows } from "../../flows/dispatch"
+import { ClientEngine, FlowDispatch } from "../../flows/dispatch"
 import { TabCallFailed, TabPort } from "../../flows/tabPort"
 import type { ThemeMode } from "./contract"
 import { Preferences, PreferencesUnavailable, registration, SetTheme, workerPreferences } from "./flows"
@@ -153,9 +153,6 @@ describe("the theme button's toggle", () => {
           Theme.layer.pipe(
             Layer.provide(FlowDispatch.layer),
             Layer.provide(ClientEngine.layerRuntime([SetTheme])),
-            Layer.provide(
-              Layer.succeed(RemoteFlows, RemoteFlows.of({ start: () => Effect.die("no remote flow here") })),
-            ),
             Layer.provide(Layer.succeedContext(context)),
           ),
         ),

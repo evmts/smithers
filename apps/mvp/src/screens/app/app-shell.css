@@ -20,6 +20,12 @@
 .app-shell-header { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; }
 .app-shell-header [aria-label="Account"] { display: flex; align-items: center; gap: 0.5rem; }
 
+/* The agent's pill, first in the header row; the rest stay at the end. */
+.app-shell-agent { display: flex; align-items: center; margin-inline-end: auto; }
+
 /* The connection pill's live region: always rendered, so screen readers hear each change; it takes no room while empty. */
 .app-shell-connection { display: flex; align-items: center; gap: 0.5rem; }
 .app-shell-connection:empty { margin-inline-end: -0.5rem; }
+
+/* The pages the header links to: Flows and Runs. */
+.app-shell-nav { display: flex; align-items: center; gap: 0.75rem; }

@@ -1,12 +1,13 @@
 import { Button, Spinner } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { useLocation } from "@tanstack/react-router"
+import { Link, useLocation } from "@tanstack/react-router"
 import { signInHref } from "../../auth/contract"
+import { ISSUES } from "../../issues/contract"
 import { CLONE, TRY_AGAIN } from "../contract"
 import { headerOf } from "../view"
 import { useRepo } from "./RepoContext"
 
-// The repository's name, then what can be done about it: Clone; one spinner while it clones; the sign-in link in
+// The repository's name and its Issues, then what can be done about it: Clone; one spinner while it clones; the sign-in link in
 // Clone's place for a signed-out person; or why a clone failed or was refused, with Try again.
 export function RepoHeader() {
   const { queries, actions } = useRepo()
@@ -18,6 +19,9 @@ export function RepoHeader() {
   return (
     <header className="repo-header" aria-label="Repository">
       <h1 className="repo-header-name">{view.owner} / {view.name}</h1>
+      <Button asChild variant="ghost">
+        <Link to="/$owner/$repo/issues" params={{ owner: view.owner, repo: view.name }}>{ISSUES}</Link>
+      </Button>
       {header.kind === "clone"
         ? <Button onClick={() => actions.clone(view.owner, view.name)}>{CLONE}</Button>
         : null}

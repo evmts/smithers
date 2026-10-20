@@ -66,3 +66,18 @@ export const storagePersisted = Metric.counter("smithers_web_storage_persisted",
   description: "Persistent storage requests at boot, by whether the browser granted them",
   incremental: true,
 })
+
+/**
+ * Copies of a message to the clipboard (`chat/copy`), by `door` (`button`, `slash`, `agent`), `which` (`message` or
+ * `latest`, the latest finished answer) and `outcome` (`COPY_OUTCOMES`).
+ */
+export const messageCopies = Metric.counter("smithers_web_message_copies", {
+  description: "Messages copied to the clipboard, by door, which message and outcome",
+  incremental: true,
+})
+
+/** Questions taken back into the composer (`chat/edit`), by `door` and `outcome` (`EDIT_OUTCOMES`). */
+export const questionEdits = Metric.counter("smithers_web_question_edits", {
+  description: "Questions taken back into the composer before Smithers had them, by door and outcome",
+  incremental: true,
+})

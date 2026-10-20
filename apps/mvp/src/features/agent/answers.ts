@@ -7,12 +7,17 @@ import { type AnswerWrite, AnswerWrite as AnswerWriteSchema, Turn } from "./sche
 // routes, through Effect `HttpClient`. The agent's flow reaches them only through `AnswerApi`, so the same flow runs in
 // the browser's engine, on the Node host and later in the native app, each with its own `HttpClient`.
 
-/** An earlier answer is still streaming: this one waits its turn. The step's retry policy asks again. */
-export class NotYourTurn extends Schema.TaggedError<NotYourTurn>()("@smthrs/mvp/agent/NotYourTurn", {}) {}
+/**
+ * An earlier answer is still streaming: this one waits its turn, and has waited `waitedMs` since the queue before it
+ * last moved (an earlier answer settled, or this one was asked), by ChatApi's clock. The step's retry policy asks again.
+ */
+export class NotYourTurn extends Schema.TaggedError<NotYourTurn>()("@smthrs/mvp/agent/NotYourTurn", {
+  waitedMs: Schema.Number,
+}) {}
 
 /**
- * The run's turn deadline passed while it still waited for its turn (`chat/LoadTurn`): the run settles the answer
- * `unfinished`, so this never ends a run.
+ * The queue before this answer didn't move for the turn wait while it waited for its turn (`chat/LoadTurn`): the run
+ * settles the answer `unfinished`, so this never ends a run.
  */
 export class TurnOutOfTime extends Schema.TaggedError<TurnOutOfTime>()("@smthrs/mvp/agent/TurnOutOfTime", {}) {}
 
@@ -71,13 +76,20 @@ export class AnswerApi extends Context.Service<
     )
 }
 
+/** How long a `not_your_turn` refusal says the turn has waited: 0 unless it says so as a non-negative number. */
+const waitedOf = (body: unknown): number => {
+  // Only a refusal whose body is an object with its code reaches here.
+  const waited = (body as { readonly waitedMs?: unknown }).waitedMs
+  return typeof waited === "number" && waited >= 0 ? waited : 0
+}
+
 /** A refusal as the agent handles it: its turn hasn't come, the answer settled, or the routes are unavailable. */
 const refused = (response: HttpClientResponse.HttpClientResponse) =>
   Effect.gen(function* () {
     if (response.status !== 409) return yield* new AnswersUnavailable({ status: response.status })
     const body = yield* response.json.pipe(Effect.orElseSucceed(() => null))
     const code = typeof body === "object" && body !== null && "code" in body ? body.code : undefined
-    if (code === "not_your_turn") return yield* new NotYourTurn()
+    if (code === "not_your_turn") return yield* new NotYourTurn({ waitedMs: waitedOf(body) })
     if (code === "settled") return yield* new AnswerSettled()
     return yield* new AnswersUnavailable({ status: response.status })
   })

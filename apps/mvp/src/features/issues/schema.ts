@@ -1,0 +1,159 @@
+import { Schema } from "effect"
+import { NOT_SENT_REASONS, WRITE_FAILURES, WRITE_OPS, WRITE_STATUSES, WRITE_VIAS } from "./contract"
+
+// The issues feature's rows (decision 0012 §6, docs/features/issues.md), as the Effect Schemas their collections check
+// them with. The synced rows match the contract's column lists, camelCased; timestamps are strings as Postgres prints
+// them. A row kept on the device is read by the next version of the app too: change its shape only with its
+// collection's `schemaVersion`, or its `v`.
+
+/** One row of Postgres `items` (`ITEM_COLUMNS`): an issue or pull request of a repository GitHub has. */
+export const Item = Schema.Struct({
+  id: Schema.String,
+  repoId: Schema.String,
+  number: Schema.Number,
+  kind: Schema.Literals(["issue", "pull"]),
+  githubId: Schema.Number,
+  title: Schema.String,
+  body: Schema.String,
+  state: Schema.Literals(["open", "closed"]),
+  stateReason: Schema.NullOr(Schema.String),
+  authorLogin: Schema.NullOr(Schema.String),
+  comments: Schema.Number,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  closedAt: Schema.NullOr(Schema.String),
+  deletedAt: Schema.NullOr(Schema.String),
+  writeId: Schema.NullOr(Schema.String),
+})
+export type Item = typeof Item.Type
+
+/** One row of Postgres `comments` (`COMMENT_COLUMNS`). */
+export const Comment = Schema.Struct({
+  id: Schema.String,
+  repoId: Schema.String,
+  itemId: Schema.String,
+  githubId: Schema.Number,
+  authorLogin: Schema.NullOr(Schema.String),
+  body: Schema.String,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  deletedAt: Schema.NullOr(Schema.String),
+  writeId: Schema.NullOr(Schema.String),
+})
+export type Comment = typeof Comment.Type
+
+/** Why a write's status says it failed for good. */
+export const Failure = Schema.Literals(WRITE_FAILURES)
+
+/** One row of Postgres `github_writes` (`WRITE_COLUMNS`): the status of a write the signed-in person asked for. */
+export const WriteRow = Schema.Struct({
+  id: Schema.String,
+  repoId: Schema.String,
+  op: Schema.Literals(WRITE_OPS),
+  status: Schema.Literals(WRITE_STATUSES),
+  failure: Schema.NullOr(Failure),
+  itemNumber: Schema.NullOr(Schema.Number),
+  createdAt: Schema.String,
+  settledAt: Schema.NullOr(Schema.String),
+})
+export type WriteRow = typeof WriteRow.Type
+
+/** One row of Postgres `github_sync` (`SYNC_COLUMNS`): when a repository's stream last synced, and whether completely. */
+export const SyncRow = Schema.Struct({
+  repoId: Schema.String,
+  stream: Schema.String,
+  syncedAt: Schema.NullOr(Schema.String),
+  complete: Schema.Boolean,
+  failure: Schema.NullOr(Schema.String),
+})
+export type SyncRow = typeof SyncRow.Type
+
+/** A sync row's key: `<repoId>/<stream>`. */
+export const syncKey = (row: SyncRow): string => `${row.repoId}/${row.stream}`
+
+/**
+ * A write as a step asks the tab to queue it: the write id the run derived, the repository (`owner/name`), who it acts
+ * for, and its text. `title` is an issue's (empty for a comment), `number` a comment's issue (0 for an issue).
+ */
+export const QueuedWrite = Schema.Struct({
+  id: Schema.String,
+  repo: Schema.String,
+  op: Schema.Literals(WRITE_OPS),
+  via: Schema.Literals(WRITE_VIAS),
+  title: Schema.String,
+  number: Schema.Number,
+  body: Schema.String,
+})
+export type QueuedWrite = typeof QueuedWrite.Type
+
+/**
+ * A write the outbox holds: the optimistic row of its outbox write (`issue-sending`), keyed by its write id. `queuedAt`
+ * (epoch ms) orders it among this device's own rows. `v` is the row's version in the outbox.
+ */
+export const Sending = Schema.Struct({
+  ...QueuedWrite.fields,
+  repoId: Schema.String,
+  queuedAt: Schema.Number,
+  v: Schema.Literal(1),
+})
+export type Sending = typeof Sending.Type
+
+/** Why a write stays Not sent: the route's refusal or the server's failure. */
+export const NotSentReason = Schema.Literals(NOT_SENT_REASONS)
+
+/**
+ * A write the server took (`requested`) or refused (`not_sent`, with why), kept on the device (`issue-requested`) until
+ * GitHub's row with its write id arrives, or the person edits or discards it.
+ */
+export const Requested = Schema.Struct({
+  ...QueuedWrite.fields,
+  repoId: Schema.String,
+  queuedAt: Schema.Number,
+  status: Schema.Literals(["requested", "not_sent"]),
+  reason: Schema.NullOr(NotSentReason),
+})
+export type Requested = typeof Requested.Type
+
+/** A draft: the new-issue form's title and body, or a comment's body (`title` empty), by `newDraftKey`/`commentDraftKey`. */
+export const Draft = Schema.Struct({ id: Schema.String, title: Schema.String, body: Schema.String })
+export type Draft = typeof Draft.Type
+
+/**
+ * What this tab's issue routes show: the repository and, on an issue's page, its number; the draft the page edits; and
+ * whether a write it pressed is on its way to the outbox. One row.
+ */
+export const VIEW = "view"
+export const IssueView = Schema.Struct({
+  id: Schema.Literal(VIEW),
+  owner: Schema.String,
+  name: Schema.String,
+  repoId: Schema.String,
+  number: Schema.NullOr(Schema.Number),
+  draftKey: Schema.String,
+  submitting: Schema.Boolean,
+})
+export type IssueView = typeof IssueView.Type
+
+/**
+ * Whether this person may read the repository's issues, from the shape's answers: `unknown` until one answers,
+ * `allowed`, or refused: `sign_in` (signed out, and GitHub hasn't said the repository is public) or `forbidden` (no
+ * role on it). One row; the screens show the sign-in link or Not found rather than loading forever.
+ */
+export const ACCESS = "access"
+export const ACCESS_STATES = ["unknown", "allowed", "sign_in", "forbidden"] as const
+export const Access = Schema.Struct({ id: Schema.Literal(ACCESS), status: Schema.Literals(ACCESS_STATES) })
+export type Access = typeof Access.Type
+
+/** What a write's step asks the tab that started its request (src/flows/askingTab.ts): queue `write`. */
+export const QueueCall = Schema.Struct({ write: QueuedWrite })
+
+/** What that tab answers: whether its outbox took the write. */
+export const Queued = Schema.Struct({ queued: Schema.Boolean })
+
+/** What `POST .../writes` answers when it takes a write: `202` with its transaction, `200` with an earlier one's status. */
+export const WriteTaken = Schema.Struct({
+  txid: Schema.NullOr(Schema.Number),
+  writeId: Schema.String,
+  status: Schema.optional(Schema.Literals(WRITE_STATUSES)),
+})
+export type WriteTaken = typeof WriteTaken.Type

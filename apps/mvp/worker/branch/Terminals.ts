@@ -1,0 +1,276 @@
+import { ShapeProxy } from "@smthrs/effect-electric"
+import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { SqlClient } from "effect/sql"
+import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
+import {
+  MAX_OPEN_BODY_BYTES,
+  OPEN_DEADLINE_SECONDS,
+  openExecutionId,
+  TERMINALS_TABLE,
+} from "../../src/features/terminal/contract.ts"
+import type { Actor } from "../Actor.ts"
+import { Sessions } from "../Actor.ts"
+import { readBounded } from "../Body.ts"
+import { codeOf } from "../ErrorCode.ts"
+import * as Flows from "../Flows.ts"
+import { TerminalOpen } from "../flows/TerminalOpen.ts"
+import * as ShapeAccess from "../ShapeAccess.ts"
+import { mayWatch, mayWrite } from "./Access.ts"
+import * as Conversations from "./Conversations.ts"
+import { TerminalSockets } from "./Sandboxes.ts"
+
+// The terminal routes (decision 0013 §2-§3, docs/features/branch-workspace.md#the-terminal):
+//
+// - `POST /api/terminals { terminalId, branchId, cols, rows }`: the write path of the client flow `terminal/open`. It
+//   admits the open (signed in, a Member, a branch that isn't locked), records the `opening` row, and starts the remote
+//   `terminal/Open`, one execution per terminal. A person has one terminal per branch: while theirs opens or is open,
+//   the answer names it instead.
+// - `GET /api/shapes/terminals?branch=<id>`: the branch's terminals, for everyone who may watch it.
+// - `GET /api/terminals/<id>` with `Upgrade: websocket`: attaches the page's socket to the terminal's shell, the owner
+//   to type and anyone else who may watch to read. Only this app's own pages may: the `Origin` must be the request's.
+//
+// The shell's bytes never reach a log line, a span or a metric: only ids, access, outcomes and statuses.
+
+/** Terminal route requests, by `route` (`open`, `connect`) and `outcome`. */
+export const requests = Metric.counter("smithers_terminal_requests", {
+  description: "Requests to the terminal routes, by route and outcome",
+  incremental: true,
+})
+
+/** `GET /api/shapes/terminals` requests, by `status` and `live`. */
+export const shapes = Metric.counter("smithers_terminal_shape_requests", {
+  description: "GET /api/shapes/terminals requests, by status and live",
+  incremental: true,
+})
+
+const Open = Schema.Struct({
+  terminalId: Schema.String.check(Schema.isUUID()),
+  branchId: Schema.String.check(Schema.isUUID()),
+  cols: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1000 })),
+  rows: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 })),
+})
+const decodeOpen = Schema.decodeUnknownEffect(Schema.fromJsonString(Open))
+const isUuid = Schema.is(Schema.String.check(Schema.isUUID()))
+
+/** What a shape filters on for someone who may not watch: no branch's id, so it holds no rows. */
+const NO_BRANCH = "00000000-0000-0000-0000-000000000000"
+
+const noStore = { "cache-control": "no-store" }
+const refusal = (status: number, code: string) => HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
+
+type Fields = Record<string, string | number | boolean>
+
+/** A repository id's owner and name: `github/<owner>/<name>`. */
+const partsOf = (repoId: string) => {
+  const [, owner = "", name = ""] = repoId.split("/")
+  return { owner, name }
+}
+
+/** The person's live terminal on the branch, if they have one: its id. */
+const liveOf = (branchId: string, ownerId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly id: string; readonly status: string }>`
+      SELECT id, status FROM terminal_sessions
+      WHERE branch_id = ${branchId} AND owner_id = ${ownerId} AND status IN ('opening', 'open')`
+    return row
+  })
+
+/**
+ * Records terminal `terminalId` as `opening` for `actor` on `branchId`, unless they have one there already, and drops
+ * their ended ones there: `{ created }` with the terminal's id, theirs or this one.
+ */
+const admit = (terminalId: string, branchId: string, actor: Actor) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    return yield* sql.withTransaction(Effect.gen(function* () {
+      // An open that never finished in time (its run stopped, or never started) settles failed here, so it can't lock
+      // the person out of the branch; `terminal/Open` no longer records it open either (worker/flows/TerminalOpen.ts).
+      yield* sql`
+        UPDATE terminal_sessions SET status = 'failed', failure = 'unavailable', ended_at = now(), updated_at = now()
+        WHERE branch_id = ${branchId} AND owner_id = ${actor.subject.id} AND status = 'opening'
+          AND created_at <= now() - make_interval(secs => ${OPEN_DEADLINE_SECONDS})`
+      const [inserted] = yield* sql<{ readonly id: string }>`
+        INSERT INTO terminal_sessions (id, branch_id, owner_id, owner_login, status)
+        VALUES (${terminalId}, ${branchId}, ${actor.subject.id}, ${actor.login ?? actor.subject.id}, 'opening')
+        ON CONFLICT DO NOTHING
+        RETURNING id`
+      if (inserted !== undefined) {
+        yield* sql`
+          DELETE FROM terminal_sessions
+          WHERE branch_id = ${branchId} AND owner_id = ${actor.subject.id} AND status IN ('ended', 'failed')`
+        return { created: true, terminalId }
+      }
+      const [same] = yield* sql<{ readonly id: string }>`
+        SELECT id FROM terminal_sessions
+        WHERE id = ${terminalId} AND branch_id = ${branchId} AND owner_id = ${actor.subject.id}`
+      if (same !== undefined) return { created: false, terminalId }
+      const live = yield* liveOf(branchId, actor.subject.id)
+      return live === undefined ? undefined : { created: false, terminalId: live.id }
+    }))
+  })
+
+/** Ends terminal `terminalId` as `lost` if it is still open: its machine no longer has its session. */
+const markLost = (terminalId: string) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql`
+      UPDATE terminal_sessions SET status = 'ended', ended_reason = 'lost', ended_at = now(), updated_at = now()
+      WHERE id = ${terminalId} AND status IN ('opening', 'open')`)
+
+/** Whether the request came from a page of this app: its `Origin` is the request's own. */
+const sameOrigin = (request: HttpServerRequest.HttpServerRequest) => {
+  const origin = request.headers.origin
+  return origin !== undefined && origin === new URL(request.originalUrl).origin
+}
+
+/**
+ * Reads Electric's connection and returns the terminal routes over `database`, which opens a Postgres client for each
+ * request's scope. They read who is asking from `Sessions`, start `terminal/Open` through `Flows.FlowStarter`, and
+ * reach the machine through `TerminalSockets`.
+ */
+export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+  Effect.gen(function* () {
+    const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+
+    /** One request's records: a log line `terminal.<route>`, its span's status, and a count. */
+    const recorded = <RR>(
+      route: "open" | "connect",
+      run: (fields: Fields) => Effect.Effect<HttpServerResponse.HttpServerResponse, never, RR>,
+    ) =>
+      Effect.gen(function* () {
+        const startedAt = yield* Clock.currentTimeMillis
+        const fields: Fields = {}
+        const response = yield* run(fields)
+        fields.status = response.status
+        fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+        // Every answer below 400 names its outcome; a refusal is its code, and a 405 has none.
+        const outcome = String(fields.outcome ?? fields.code ?? "refused")
+        yield* Metric.update(Metric.withAttributes(requests, { route, outcome }), 1)
+        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+          `terminal.${route}`,
+        ).pipe(Effect.annotateLogs({ ...fields, outcome }))
+        return response
+      }).pipe(Effect.withSpan(`terminal.${route}`, { kind: "server" }))
+
+    const refuse = (fields: Fields, status: number, code: string) => {
+      fields.code = code
+      return refusal(status, code)
+    }
+
+    /** `POST /api/terminals`. */
+    const open = Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const sessions = yield* Sessions
+      const starter = yield* Flows.FlowStarter
+      return yield* recorded("open", (fields) =>
+        Effect.gen(function* () {
+          if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
+          const actor = yield* sessions.resolve.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
+          if (Option.isNone(actor)) return refuse(fields, 401, "authentication")
+          const body = yield* readBounded(request, MAX_OPEN_BODY_BYTES).pipe(Effect.result)
+          if (body._tag === "Failure") return refuse(fields, body.failure.reason === "too_large" ? 413 : 400, "invalid")
+          const decoded = yield* decodeOpen(body.success).pipe(Effect.option)
+          if (Option.isNone(decoded)) return refuse(fields, 400, "invalid")
+          const terminalId = decoded.value.terminalId.toLowerCase()
+          const branchId = decoded.value.branchId.toLowerCase()
+          fields.terminalId = terminalId
+          fields.branchId = branchId
+          const branch = yield* Conversations.byId(branchId).pipe(Effect.provide(database))
+          if (branch === undefined) return refuse(fields, 404, "not_found")
+          if (!mayWatch(actor, "public")) return refuse(fields, 403, "forbidden")
+          if (!mayWrite(actor, branch.mode)) return refuse(fields, 409, "locked")
+          const admitted = yield* admit(terminalId, branchId, actor.value).pipe(Effect.provide(database))
+          if (admitted === undefined) return refuse(fields, 409, "id_taken")
+          if (admitted.terminalId === terminalId) {
+            const { owner, name } = partsOf(branch.repoId)
+            // A resend starts the same execution, a no-op, so an open whose first start was lost still gets one.
+            const started = yield* starter.start(TerminalOpen, {
+              executionId: openExecutionId(terminalId),
+              payload: {
+                terminalId,
+                ownerId: actor.value.subject.id,
+                branch: { branchId, owner, name, branch: branch.name },
+              },
+            }).pipe(Effect.result)
+            if (started._tag === "Failure") {
+              fields.errorCode = started.failure._tag
+              return refuse(fields, 503, "unavailable")
+            }
+          }
+          fields.outcome = admitted.created ? "opening" : "existing"
+          return HttpServerResponse.jsonUnsafe(
+            { terminalId: admitted.terminalId },
+            { status: admitted.created ? 202 : 200, headers: noStore },
+          )
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.sync(() => {
+              fields.errorCode = codeOf(Cause.squash(cause))
+              return refuse(fields, 503, "unavailable")
+            })
+          ),
+        ))
+    })
+
+    /** `GET /api/shapes/terminals?branch=<id>`; sessions unreadable, 503 (worker/ShapeAccess.ts). */
+    const shape = ShapeProxy.make({
+      ...connection,
+      shape: Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const named = new URL(request.url, "http://localhost").searchParams.get("branch")
+        const actor = yield* ShapeAccess.actor
+        const branch = named !== null && isUuid(named) && mayWatch(actor, "public") ? named.toLowerCase() : NO_BRANCH
+        return { table: TERMINALS_TABLE, where: "branch_id = $1", params: { "1": branch } }
+      }),
+      name: "terminal.shape",
+      metric: shapes,
+    })
+
+    /** `GET /api/terminals/<id>`: the socket. */
+    const connect = (terminalId: string) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const sessions = yield* Sessions
+        const sockets = yield* TerminalSockets
+        return yield* recorded("connect", (fields) =>
+          Effect.gen(function* () {
+            if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
+            if ((request.headers.upgrade ?? "").toLowerCase() !== "websocket") return refuse(fields, 426, "upgrade")
+            if (!sameOrigin(request)) return refuse(fields, 403, "origin")
+            if (!isUuid(terminalId)) return refuse(fields, 404, "not_found")
+            fields.terminalId = terminalId.toLowerCase()
+            const actor = yield* sessions.resolve.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
+            const [row] = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+              sql<{ readonly branchId: string; readonly ownerId: string; readonly status: string }>`
+                SELECT branch_id AS "branchId", owner_id AS "ownerId", status FROM terminal_sessions
+                WHERE id = ${terminalId.toLowerCase()}`).pipe(Effect.provide(database))
+            if (row === undefined) return refuse(fields, 404, "not_found")
+            const owner = Option.isSome(actor) && actor.value.subject.id === row.ownerId && mayWatch(actor, "public")
+            if (!owner && !mayWatch(actor, "public")) {
+              return refuse(fields, Option.isNone(actor) ? 401 : 403, Option.isNone(actor) ? "authentication" : "forbidden")
+            }
+            fields.access = owner ? "write" : "read"
+            if (row.status !== "open") return refuse(fields, 409, row.status)
+            if (!(yield* sockets.alive(row.branchId, terminalId.toLowerCase(), row.ownerId))) {
+              yield* markLost(terminalId.toLowerCase()).pipe(Effect.provide(database))
+              return refuse(fields, 410, "lost")
+            }
+            const attachment = { terminalId: terminalId.toLowerCase(), ownerId: row.ownerId, access: owner ? "write" : "read" } as const
+            const attached = yield* sockets.attach(row.branchId, attachment)
+              .pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
+            fields.outcome = "attached"
+            return attached
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Effect.sync(() => {
+                fields.errorCode = codeOf(Cause.squash(cause))
+                return refuse(fields, 503, "unavailable")
+              })
+            ),
+          ))
+      })
+
+    return { open, shape, connect }
+  })

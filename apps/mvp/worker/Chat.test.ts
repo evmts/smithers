@@ -2,7 +2,7 @@
 // (worker/test/harness.ts). ChatApi stores questions and never answers them: the browser's agent does
 // (src/features/agent/agent.test.ts). The contract is docs/features/chat.md; the records, docs/observability.md.
 import { Metric as OtlpMetric } from "@smthrs/observability"
-import { Data, Effect, Layer, Redacted } from "effect"
+import { Data, Deferred, Effect, Layer, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
@@ -10,7 +10,7 @@ import { type Actor, Sessions, SessionsUnavailable } from "./Actor.ts"
 import * as ChatMetrics from "./ChatMetrics.ts"
 import * as Flows from "./Flows.ts"
 import * as Expire from "./flows/Expire.ts"
-import { Pause } from "./flows/Pause.ts"
+import { tracked } from "./test/branch.ts"
 import { answers, harness, recorded, row, rowCount, testFile, uuid } from "./test/harness.ts"
 
 const runtime = testFile("chat")
@@ -159,7 +159,8 @@ describe("POST /api/questions", () => {
     const response = await h.ask(body)
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({
-      message: "Send JSON { id, answerId, text }: two different UUIDs and 1 to 8,000 characters of text.",
+      message:
+        "Send JSON { id, answerId, conversationId, text }: two different UUIDs, a conversation's id and 1 to 8,000 characters of text.",
     })
     expect(await rowCount(runtime)).toBe(0)
     expect(h.count(ChatMetrics.questions, { status: "400" })).toBe(1)
@@ -319,6 +320,40 @@ describe("POST /api/questions", () => {
   })
 })
 
+// A question belongs to one conversation (decision 0013 §1, docs/features/branch-workspace.md): the branch's it names,
+// or the home conversation.
+describe("a question's conversation", () => {
+  const conversationOf = async (id: string) =>
+    (await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly conversationId: string }>`
+        SELECT conversation_id AS "conversationId" FROM messages WHERE id = ${id}`)))[0]?.conversationId
+
+  test("is the one it names, its answer with it", async () => {
+    const h = await asMember()
+    const { conversationId } = await tracked(runtime, "github/octocat/spoon-knife", `chat-${uuid().slice(0, 8)}`)
+    const ids = { id: uuid(), answerId: uuid() }
+    expect((await h.ask({ ...ids, text: "On the branch", conversationId: conversationId.toUpperCase() })).status)
+      .toBe(202)
+    expect([await conversationOf(ids.id), await conversationOf(ids.answerId)]).toEqual([conversationId, conversationId])
+  })
+
+  test("one that doesn't exist is 404, and nothing is written", async () => {
+    const h = await asMember()
+    const response = await h.ask({ id: uuid(), answerId: uuid(), text: "Anyone?", conversationId: uuid() })
+    expect([response.status, await response.json()]).toEqual([404, { message: "No such conversation." }])
+    expect(h.only("chat.question")).toMatchObject({ annotations: { status: 404, errorCode: "conversation_not_found" } })
+    expect(await rowCount(runtime)).toBe(0)
+  })
+
+  test("naming none, with no home conversation to bind it to, is 503, and nothing is written", async () => {
+    const h = await asMember({ config: { GITHUB_REPOSITORY: "nobody/nothing" } })
+    const response = await h.ask({ id: uuid(), answerId: uuid(), text: "Home?" })
+    expect(response.status).toBe(503)
+    expect(h.only("chat.question")).toMatchObject({ annotations: { status: 503, errorCode: "no_home" } })
+    expect(await rowCount(runtime)).toBe(0)
+  })
+})
+
 describe("chat/Expire", () => {
   const expiryOf = (answerId: string) => ({
     flow: "chat/Expire",
@@ -341,22 +376,75 @@ describe("chat/Expire", () => {
     expect(h.line("chat.question").map((line) => line.annotations.expiry)).toEqual(["started", "started", "started"])
   })
 
+  // An ask is acknowledged only once its expiry is admitted: an answer with no expiry and no device would stream forever
+  // (Codex review 4, P2). A refused start is a 503, which the browser's outbox sends again with the same ids.
   test.each([
     ["unavailable", new Flows.StartUnavailable({ errorCode: "rpc" }), "rpc"],
     ["a conflict", new Flows.StartConflict(), "conflict"],
-  ])("a start the remote host refuses (%s) is logged and counted, and the ask is still 202", async (_, error, code) => {
-    const h = await asMember({ starter: Flows.FlowStarter.of({ start: () => Effect.fail(error) }) })
+  ])("a start the remote host refuses (%s) is 503, and the outbox's resend starts it", async (_, error, code) => {
+    const started: Array<string> = []
+    let refuse = true
+    const h = await asMember({
+      starter: Flows.FlowStarter.of({
+        start: (_, { executionId }) =>
+          refuse ? Effect.fail(error) : Effect.sync(() => void started.push(executionId)),
+      }),
+    })
     const ids = { id: uuid(), answerId: uuid() }
 
-    expect((await h.ask({ ...ids, text: "Asked" })).status).toBe(202)
+    const refused = await h.ask({ ...ids, text: "Asked" })
 
+    expect(refused.status).toBe(503)
+    expect(await refused.json()).toEqual({ message: "Smithers couldn't take the question. Try again." })
     expect(await row(runtime, ids.answerId)).toMatchObject({ status: "streaming" })
     expect(h.only("chat.answer.expire")).toMatchObject({
       level: "WARN",
       annotations: { answerId: ids.answerId, outcome: "not_started", errorCode: code },
     })
-    expect(h.only("chat.question").annotations).toMatchObject({ status: 202, expiry: "not_started" })
+    expect(h.only("chat.question")).toMatchObject({
+      level: "ERROR",
+      annotations: { status: 503, errorCode: "expiry_not_started" },
+    })
     expect(h.count(Expire.expiries, { outcome: "not_started" })).toBe(1)
+
+    refuse = false
+    const resent = await h.ask({ ...ids, text: "Asked" })
+
+    expect(resent.status).toBe(200)
+    expect(started).toEqual([Expire.executionId(ids.answerId)])
+    expect(h.line("chat.question").at(-1)!.annotations).toMatchObject({ status: 200, existing: true, expiry: "started" })
+  })
+
+  test("a caller that goes away after the question is stored still gets its expiry started", async () => {
+    const reached = Effect.runSync(Deferred.make<void>())
+    const release = Effect.runSync(Deferred.make<void>())
+    const started: Array<string> = []
+    const h = await asMember({
+      starter: Flows.FlowStarter.of({
+        start: (_, { executionId }) =>
+          Deferred.succeed(reached, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.andThen(Effect.sync(() => void started.push(executionId))),
+          ),
+      }),
+    })
+    const ids = { id: uuid(), answerId: uuid() }
+    const caller = new AbortController()
+
+    const response = h.fetch("/api/questions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...ids, text: "Asked" }),
+      signal: caller.signal,
+    })
+    await Effect.runPromise(Deferred.await(reached))
+    // The question is stored and its expiry is being started when the caller goes away.
+    expect(await row(runtime, ids.answerId)).toMatchObject({ status: "streaming" })
+    caller.abort()
+    await Effect.runPromise(Deferred.succeed(release, undefined))
+    await response.catch(() => undefined)
+
+    await expect.poll(() => started).toEqual([Expire.executionId(ids.answerId)])
   })
 
   test("a question ChatApi doesn't take starts nothing", async () => {
@@ -419,46 +507,6 @@ describe("who may ask", () => {
       level: "ERROR",
       annotations: { status: 503, errorCode: "@smthrs/mvp/auth/SessionsUnavailable" },
     })
-  })
-})
-
-describe("POST /api/flows/<name>", () => {
-  const start = (h: Awaited<ReturnType<typeof harness>>, name: string, body: unknown) =>
-    h.fetch(`/api/flows/${name}`, { method: "POST", body: JSON.stringify(body) })
-
-  test("ChatApi routes the door: a name the registry has no remote flow for is 404 not_found", async () => {
-    const h = await asMember()
-    const response = await start(h, "chat/Answer", { executionId: uuid(), payload: { answerId: uuid() } })
-    expect([response.status, await response.json()]).toEqual([404, { code: "not_found" }])
-    expect(h.only("flow.door").annotations).toMatchObject({ flow: "", status: 404 })
-    expect(h.starts).toEqual([])
-  })
-
-  test("a remote flow starts through the FlowStarter for a Member, and is 401 signed out", async () => {
-    const executionId = uuid()
-    const payload = { label: "door", pauseMs: 0 }
-    const signedOut = await harness(runtime, answers("never"), { remoteFlows: [Pause] })
-    const h = await asMember({ remoteFlows: [Pause] })
-
-    const refused = await start(signedOut, "probe/Pause", { executionId, payload })
-    const started = await start(h, "probe/Pause", { executionId, payload })
-
-    expect([refused.status, await refused.json()]).toEqual([401, { code: "authentication" }])
-    expect(signedOut.starts).toEqual([])
-    expect([started.status, await started.json()]).toEqual([202, { executionId }])
-    expect(h.starts).toEqual([{ flow: "probe/Pause", executionId, payload }])
-  })
-
-  test("a start the FlowStarter can't record is 503 with its code", async () => {
-    const h = await asMember({
-      remoteFlows: [Pause],
-      starter: Flows.FlowStarter.of({
-        start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "rpc" })),
-      }),
-    })
-    const response = await start(h, "probe/Pause", { executionId: uuid(), payload: { label: "x", pauseMs: 0 } })
-    expect([response.status, await response.json()]).toEqual([503, { code: "unavailable" }])
-    expect(h.only("flow.door").annotations).toMatchObject({ flow: "probe/Pause", status: 503, errorCode: "rpc" })
   })
 })
 

@@ -1,0 +1,144 @@
+import { GitHub } from "@smthrs/integrations"
+import { Clock, Effect, Metric, Option, type Redacted, Schema } from "effect"
+import type { SqlClient } from "effect/sql"
+import type { SessionKeys } from "../SessionKeys.ts"
+import { classify, statusOf } from "./Calls.ts"
+import type { Repository } from "./Config.ts"
+import * as Metrics from "./Metrics.ts"
+import * as Store from "./Store.ts"
+
+// `GitHubTokens` (decision 0012 §3, docs/features/issues.md#tokens): the two tokens a GitHub step acts with.
+// - `forSession`: a person's own GitHub user token (`ghu_`), opened from their session, so GitHub shows the person and
+//   applies their permissions. One within 5 minutes of expiry starts the session's `auth/RecheckRole`, the one redeemer
+//   of the single-use refresh token, and fails `refreshing`, which the step's retry policy waits out.
+// - `forInstallation`: the App's installation token for one repository, minted per step with only the permission it
+//   needs, so GitHub shows `smithers[bot]`.
+// No token enters a journal, a step key, an error or a record: a step asks for one when it calls GitHub and drops it.
+
+/** How long before a user token's stated expiry a write stops using it and has the session refresh it. */
+export const REFRESH_MARGIN_MS = 5 * 60 * 1000
+
+/** How long a write waits for a refresh before it asks again. */
+export const REFRESH_WAIT_MS = 5_000
+
+/**
+ * A token a step can't have:
+ * - `sign_in_required`: the session ended, or its token no longer opens;
+ * - `refreshing`: the session's token is being refreshed; retried after `retryAfterMillis`;
+ * - `app_not_installed`: the App isn't installed on the repository;
+ * - `not_allowed`: the App was refused the permission the step needs;
+ * - `unavailable`: GitHub or Postgres couldn't answer; retried, after `retryAfterMillis` when GitHub said.
+ */
+export class TokenUnavailable extends Schema.TaggedError<TokenUnavailable>()("@smthrs/mvp/github/TokenUnavailable", {
+  reason: Schema.Literals(["sign_in_required", "refreshing", "app_not_installed", "not_allowed", "unavailable"]),
+  retryAfterMillis: Schema.optional(Schema.Number),
+}) {}
+
+/** What the tokens need: the App, and, when sign-in is configured, the session keys and the role check that refreshes. */
+export interface Services {
+  readonly app: GitHub.AppAuth.AppAuth
+  /** Sign-in's keys, which open a session's sealed token; none without sign-in, and no person's write can run. */
+  readonly keys: Option.Option<SessionKeys>
+  /** Starts `auth/RecheckRole` for `sessionId`, named after the check it replaces (`generation`); never waits. */
+  readonly refresh: (sessionId: string, generation: number) => Effect.Effect<void>
+}
+
+/** The access an installation token is minted with: reading issues, or writing them. */
+export type Access = "read" | "write"
+
+const unavailable = (error: unknown) => {
+  const classified = classify(error)
+  return new TokenUnavailable(
+    classified.kind === "retry" && classified.retryAfterMillis !== undefined
+      ? { reason: "unavailable", retryAfterMillis: classified.retryAfterMillis }
+      : { reason: "unavailable" },
+  )
+}
+
+/** Counts and logs one token, by kind and outcome; never the token. */
+const counted = (kind: "user" | "app", outcome: string, fields: Record<string, string | number> = {}) =>
+  Effect.andThen(
+    Metric.update(Metric.withAttributes(Metrics.tokenMints, { kind, outcome }), 1),
+    Effect.logWithLevel(outcome === "minted" || outcome === "opened" ? "Debug" : "Warn")("github.token.mint").pipe(
+      Effect.annotateLogs({ kind, outcome, ...fields }),
+    ),
+  )
+
+/** The two tokens over `services`, each reading Postgres through the `SqlClient` in context. */
+export const make = (services: Services) => {
+  /** Session `sessionId`'s GitHub user token. */
+  const forSession = (sessionId: string): Effect.Effect<Redacted.Redacted<string>, TokenUnavailable, SqlClient.SqlClient> =>
+    Effect.gen(function* () {
+      const signInRequired = (reason: string) =>
+        Effect.andThen(counted("user", "sign_in_required", { reason }), new TokenUnavailable({ reason: "sign_in_required" }))
+      if (Option.isNone(services.keys)) return yield* signInRequired("sign_in_off")
+      const held = yield* Store.sessionToken(sessionId).pipe(
+        Effect.mapError(() => new TokenUnavailable({ reason: "unavailable" })),
+      )
+      if (Option.isNone(held) || !held.value.live || held.value.access === null) return yield* signInRequired("ended")
+      const session = held.value
+      const now = yield* Clock.currentTimeMillis
+      if (session.accessExpiresAt !== null && session.accessExpiresAt - now < REFRESH_MARGIN_MS) {
+        yield* services.refresh(sessionId, session.roleCheckedAt)
+        yield* counted("user", "refreshing")
+        return yield* new TokenUnavailable({ reason: "refreshing", retryAfterMillis: REFRESH_WAIT_MS })
+      }
+      const opened = yield* Effect.option(
+        services.keys.value.open(session.access!, { id: sessionId, name: "github_access", version: 1 }),
+      )
+      if (Option.isNone(opened)) return yield* signInRequired("unreadable")
+      yield* counted("user", "opened")
+      return opened.value
+    }).pipe(Effect.withSpan("github.token.mint", { attributes: { "smithers.github.token": "user" } }))
+
+  /** The installation the App has on `repository`: remembered, or asked of GitHub and remembered. */
+  const installation = (repository: Repository) =>
+    Effect.gen(function* () {
+      const known = yield* Store.installationOf(repository.id).pipe(Effect.mapError(unavailable))
+      if (Option.isSome(known)) return known.value
+      const found = yield* services.app.installation(repository.owner, repository.name).pipe(
+        Effect.mapError((error) =>
+          statusOf(error) === 404 ? new TokenUnavailable({ reason: "app_not_installed" }) : unavailable(error)
+        ),
+      )
+      yield* Store.rememberInstallation(repository.id, found.id).pipe(Effect.mapError(unavailable))
+      return found.id
+    })
+
+  /** An installation token for `repository`, minted with only `access` to its issues. */
+  const forInstallation = (
+    repository: Repository,
+    access: Access,
+  ): Effect.Effect<Redacted.Redacted<string>, TokenUnavailable, SqlClient.SqlClient> =>
+    Effect.gen(function* () {
+      const installationId = yield* installation(repository)
+      const minted = yield* services.app.installationToken({
+        installationId,
+        repositories: [repository.name],
+        permissions: { issues: access },
+      }).pipe(Effect.result)
+      if (minted._tag === "Success") {
+        yield* counted("app", "minted", { access })
+        return minted.success.token
+      }
+      const status = statusOf(minted.failure)
+      // The installation is gone, or no longer covers the repository: forget it, so the next step asks again.
+      if (status === 404) {
+        yield* Store.forgetInstallation(repository.id).pipe(Effect.mapError(unavailable))
+        yield* counted("app", "app_not_installed", { access })
+        return yield* new TokenUnavailable({ reason: "app_not_installed" })
+      }
+      // The App wasn't granted the permission (decision 0012 question 2): Will adds it in the App's settings.
+      if (status === 422 || status === 403) {
+        yield* counted("app", "not_allowed", { access, status })
+        return yield* new TokenUnavailable({ reason: "not_allowed" })
+      }
+      yield* counted("app", "unavailable", { access, ...(status === undefined ? {} : { status }) })
+      return yield* unavailable(minted.failure)
+    }).pipe(Effect.withSpan("github.token.mint", { attributes: { "smithers.github.token": "app", "smithers.github.access": access } }))
+
+  return { forSession, forInstallation }
+}
+
+/** The tokens' interface, as the GitHub flows take it. */
+export type GitHubTokens = ReturnType<typeof make>

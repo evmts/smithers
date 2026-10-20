@@ -142,7 +142,7 @@ describe("an engine worker that fails", () => {
     const dispatched = runtime.runPromise(
       Effect.flip(
         Effect.flatMap(Effect.service(ClientEngine), (client) =>
-          client.run(AnswerReference, { executionId: crypto.randomUUID(), payload: { answerId: crypto.randomUUID() } })),
+          client.start(AnswerReference, { executionId: crypto.randomUUID(), payload: { answerId: crypto.randomUUID() } })),
       ),
     )
 

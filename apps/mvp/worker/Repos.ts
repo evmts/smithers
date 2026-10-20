@@ -1,4 +1,4 @@
-import { Config, Effect, Schema } from "effect"
+import { Config, Effect, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import type { CapacityReason, Failure, Status } from "../src/features/repo/contract.ts"
 
@@ -224,6 +224,21 @@ export const meterRead = (bytes: number, limits: Budgets) =>
         RETURNING bytes_read::text AS read, bytes_imported::text AS imported, alerted_pct AS alerted`
       return yield* recompute(sql, limits, usageOf(row!))
     }))
+  })
+
+/** A ready repository's default branch and its head commit, as Settle wrote them. */
+export interface ReadyHead {
+  readonly defaultBranch: string
+  readonly sha: string
+}
+
+/** Repository `id`'s default branch and head commit when it is `ready`; none for any other row, or no row. */
+export const readyHead = (id: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<ReadyHead>`
+      SELECT default_branch AS "defaultBranch", head_sha AS sha FROM repositories WHERE id = ${id} AND status = 'ready'`
+    return Option.fromNullishOr(row)
   })
 
 /** A clone's head commit once Code Storage has synced it. */

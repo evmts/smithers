@@ -1,7 +1,8 @@
 import { Context, Data, Effect, Layer } from "effect"
 
 // The system clipboard, a host capability: main.tsx gives the browser's (`navigator.clipboard.writeText`), a test its
-// own. Copy permalink writes through it.
+// own. The tab's side of `repo/copy` (src/features/repo/tab.ts) and of `chat/copy` (src/features/chat/tab.ts) write
+// through it.
 
 /** The clipboard refused the write, for example without the page's focus or permission. */
 export class ClipboardRefused extends Data.TaggedError("ClipboardRefused") {}
@@ -9,7 +10,7 @@ export class ClipboardRefused extends Data.TaggedError("ClipboardRefused") {}
 export class Clipboard extends Context.Service<
   Clipboard,
   { readonly write: (text: string) => Effect.Effect<void, ClipboardRefused> }
->()("@smthrs/mvp/repo/Clipboard") {
+>()("@smthrs/mvp/Clipboard") {
   /** The clipboard `writeText` writes to: `(text) => navigator.clipboard.writeText(text)` in the browser. */
   static readonly layer = (writeText: (text: string) => Promise<void>) =>
     Layer.succeed(

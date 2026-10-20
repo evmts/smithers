@@ -1,7 +1,8 @@
-import { Context, Effect, Layer, Option } from "effect"
-import { clone, copyPermalink, open, retryClone } from "./actions"
+import { Context, Data, Effect, Layer, Option } from "effect"
+import type { FlowDispatch } from "../../flows/dispatch"
+import { clone, copy, navigate, open, rawHref, retryClone } from "./actions"
 import type { RepoClient } from "./api"
-import type { Clipboard } from "./clipboard"
+import type { CopyKind } from "./contract"
 import { type RouteParams, type Target, targetOf } from "./paths"
 import { reads } from "./queries"
 import type { BlobRow, TreeRow } from "./rows"
@@ -13,13 +14,20 @@ import { RepoStore } from "./store"
 
 type Store = RepoStore["Service"]
 
-/** What a frontend reads live: the routed view with its repository and clone request, its file list, file and README. */
+/**
+ * What a frontend reads live: the routed view with its repository and clone request, its branches and tags, its file
+ * list, file and README.
+ */
 export interface RepoQueries {
   readonly view: Store["viewState"]["tanstack"]
+  readonly refs: Store["refsState"]["tanstack"]
   readonly tree: Store["treeState"]["tanstack"]
   readonly file: Store["fileState"]["tanstack"]
   readonly readme: Store["readmeState"]["tanstack"]
 }
+
+/** A Copy button's flow didn't put its text on the clipboard. */
+export class NotCopied extends Data.TaggedError("NotCopied") {}
 
 /** What the device has of any repository now, by id and commit; `undefined` until it has it. */
 export interface RepoLookups {
@@ -29,7 +37,7 @@ export interface RepoLookups {
   readonly readme: (id: string, sha: string, dir: string) => BlobRow | undefined
 }
 
-/** What a person does, as plain functions. Each returns at once. */
+/** What a person does, as plain functions. Each returns at once, or with a promise of what the flow did. */
 export interface RepoActions {
   /** Clone pressed; `false` when `owner/name` isn't a GitHub repository. */
   readonly clone: (owner: string, name: string) => boolean
@@ -39,7 +47,12 @@ export interface RepoActions {
   readonly open: (target: Target) => void
   /** What a route's loader calls: opens the route's location. */
   readonly openRoute: (kind: "tree" | "blob", params: RouteParams, search: { readonly L?: unknown }) => void
-  readonly copyPermalink: () => void
+  /** What the raw route's loader calls: RepoApi's raw route of its file at its commit, or `undefined`. */
+  readonly rawRoute: (params: RouteParams) => Promise<string | undefined>
+  /** A Copy button, through `repo/copy`: resolves once the text is on the clipboard, rejects `NotCopied` otherwise. */
+  readonly copy: (what: CopyKind) => Promise<void>
+  /** A ref chosen in the picker: `app/navigate` to `to`, its location at that ref. */
+  readonly navigate: (to: string) => void
 }
 
 export class Repo extends Context.Service<
@@ -48,18 +61,21 @@ export class Repo extends Context.Service<
 >()("@smthrs/mvp/repo/Repo") {
   /**
    * Binds the store's queries and the actions for frontends. Each action runs its Effect with the services this layer
-   * was built with (`Effect.runSyncWith`).
+   * was built with: `Effect.runSyncWith`, or `Effect.runPromiseWith` for one a caller awaits.
    */
   static readonly layer = Layer.effect(
     Repo,
     Effect.gen(function* () {
       const store = yield* RepoStore
-      const run = Effect.runSyncWith(yield* Effect.context<RepoStore | RepoClient | Clipboard>())
+      const context = yield* Effect.context<RepoStore | RepoClient | FlowDispatch>()
+      const run = Effect.runSyncWith(context)
+      const promise = Effect.runPromiseWith(context)
       const now = <A>(read: Effect.Effect<Option.Option<A>>) => Option.getOrUndefined(run(read))
       const device = reads(store)
       return Repo.of({
         queries: {
           view: store.viewState.tanstack,
+          refs: store.refsState.tanstack,
           tree: store.treeState.tanstack,
           file: store.fileState.tanstack,
           readme: store.readmeState.tanstack,
@@ -75,7 +91,10 @@ export class Repo extends Context.Service<
           retryClone: (owner, name) => run(retryClone(owner, name)),
           open: (target) => run(open(target)),
           openRoute: (kind, params, search) => run(open(targetOf(kind, params, search))),
-          copyPermalink: () => run(Effect.asVoid(Effect.forkIn(copyPermalink, store.scope))),
+          rawRoute: (params) => promise(rawHref(targetOf("blob", params, {}))),
+          copy: (what) =>
+            promise(Effect.flatMap(copy(what), (copied) => (copied ? Effect.void : Effect.fail(new NotCopied())))),
+          navigate: (to) => run(Effect.asVoid(Effect.forkIn(navigate(to), store.scope))),
         },
       })
     }),

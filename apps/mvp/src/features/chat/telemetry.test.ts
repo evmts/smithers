@@ -1,7 +1,8 @@
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
-import { Effect } from "effect"
+import { Outbox } from "@smthrs/effect-tanstack-db"
+import { Effect, Metric } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
-import { openFaultyApp, type TabOptions, TestChatApi } from "../../test/chatApi"
+import { failingWorker, nodeDevice, openFaultyApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { QuestionFaults } from "../../test/faults"
 import { read } from "../../test/otlp"
 import { Chat } from "./chat"
@@ -40,6 +41,7 @@ const open = async (options: TabOptions = {}) => {
     ...chat,
     store,
     api,
+    runtime,
     questions,
     shapes,
     fault,
@@ -122,6 +124,22 @@ test("asking: asked, stored and not sent, one trace from the ask through the out
   expect(records.point("outbox_leader_changes", { leader: "true" })?.value).toBe(1)
   expect(records.point("persistence_restore_ms", { collection: "chat-messages" })?.count).toBe(1)
   expect(tab.api.telemetry.map(({ body }) => body).join("\n")).not.toContain(secret)
+})
+
+test("an answer not started: ChatApi took the question, but this tab has no engine to record its run, so it is sent again", async () => {
+  const tab = await open({ host: nodeDevice({ engineWorker: failingWorker }) })
+  const asked = tab.actions.ask(`What is ${sentinel()}?`)
+  if (!asked.asked) throw new Error("not asked")
+  const retried = Metric.withAttributes(Outbox.attempts, { name: "ask", outcome: "retry" })
+  await until(() => expect(tab.runtime.runSync(Metric.value(retried)).count).toBeGreaterThanOrEqual(1), 10_000)
+  const records = await tab.exported()
+
+  expect(records.log("answer not started")).toContainEqual(
+    expect.objectContaining({
+      severity: "Warn",
+      attributes: { feature: "chat", questionId: asked.questionId, answerId: asked.answerId, reason: "unavailable" },
+    }),
+  )
 })
 
 test("the connection and the window: offline, retried and up again, earlier messages shown, and their metrics", async () => {

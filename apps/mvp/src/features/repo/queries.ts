@@ -2,7 +2,7 @@ import type { ElectricCollection } from "@smthrs/effect-electric"
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { Effect, Option } from "effect"
 import { blobKey, readmeOf, treeKey } from "./paths"
-import type { BlobRow, CloneRow, TreeRow, ViewRow } from "./rows"
+import type { BlobRow, CloneRow, RefsRow, TreeRow, ViewRow } from "./rows"
 import type { Repository } from "./schema"
 
 // What every frontend reads. The live queries follow the routed view's one row, so React renders them with
@@ -31,6 +31,15 @@ export const treeQuery = (view: Rows<ViewRow>, trees: Rows<TreeRow>) =>
     q
       .from({ view: view.tanstack })
       .leftJoin({ tree: trees.tanstack }, ({ view, tree }) => Query.eq(view.treeKey, tree.key))
+      .findOne(),
+  )
+
+/** The view, with its repository's branches and tags when this tab has loaded or is loading them. */
+export const refsQuery = (view: Rows<ViewRow>, refs: Rows<RefsRow>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ view: view.tanstack })
+      .leftJoin({ refs: refs.tanstack }, ({ view, refs }) => Query.eq(view.refsKey, refs.key))
       .findOne(),
   )
 

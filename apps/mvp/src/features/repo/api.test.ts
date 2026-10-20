@@ -59,11 +59,13 @@ describe("RepoClient against a gateway", () => {
         Effect.result(client.clone("octocat", "Spoon-Knife")),
         Effect.result(client.tree("octocat", "Spoon-Knife", SHA)),
         Effect.result(client.blob("octocat", "Spoon-Knife", SHA, "a b/c#.md")),
+        Effect.result(client.refs("octocat", "Spoon-Knife")),
       ]))
     expect(s.paths).toEqual([
       "POST /api/repos",
       `GET /api/repos/octocat/Spoon-Knife/tree/${SHA}`,
       `GET /api/repos/octocat/Spoon-Knife/blob/${SHA}/a%20b/c%23.md`,
+      "GET /api/repos/octocat/Spoon-Knife/refs",
     ])
   })
 
@@ -128,6 +130,14 @@ describe("RepoClient against a gateway", () => {
       _tag: "RepoRefused",
       status: 503,
     })
+  })
+
+  test("the refs arrive decoded; a body outside the contract is refused with its status", async () => {
+    const refs = { defaultBranch: "main", head: SHA, branches: [{ name: "main", sha: SHA }], tags: [], truncated: false }
+    const good = await serve((_request, response) => response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(refs)))
+    expect(await withClient(good.origin, (client) => client.refs("o", "n"))).toMatchObject({ _tag: "Success", success: refs })
+    const bad = await serve((_request, response) => response.writeHead(200).end(JSON.stringify({ branches: [] })))
+    expect(failureOf(await withClient(bad.origin, (client) => client.refs("o", "n")))).toMatchObject({ status: 200 })
   })
 
   test("a file's bytes arrive as they were sent", async () => {

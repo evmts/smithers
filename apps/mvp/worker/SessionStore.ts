@@ -115,29 +115,38 @@ export const findLive = (tokenDigest: string) =>
   })
 
 /**
- * Ends the session with this id, or whose token has this digest, for `reason`. Returns the id of the session that
- * ended, `None` when none was live. A session GitHub refused, or whose tokens no longer open, forgets its GitHub tokens
- * at once; a signed-out one keeps them sealed until `auth/RevokeGitHubToken` revokes them on GitHub and calls
- * `forgetTokens`.
+ * Ends the session with this id for `reason`. Returns its id when it ended now, `None` when it had ended already. A
+ * session GitHub refused, or whose tokens no longer open, forgets its GitHub tokens at once; a signed-out one keeps them
+ * sealed until `auth/RevokeGitHubToken` revokes them on GitHub and calls `forgetTokens`.
  */
-export const revoke = (
-  session: { readonly id: string } | { readonly tokenDigest: string },
-  reason: RevokedReason,
-) =>
+export const revoke = (session: { readonly id: string }, reason: RevokedReason) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const match = "id" in session ? sql`id = ${session.id}` : sql`token_digest = ${session.tokenDigest}`
     const rows = yield* (reason === "sign_out"
       ? sql<{ readonly id: string }>`
         UPDATE sessions SET revoked_at = now(), revoked_reason = ${reason}
-        WHERE ${match} AND revoked_at IS NULL
+        WHERE id = ${session.id} AND revoked_at IS NULL
         RETURNING id`
       : sql<{ readonly id: string }>`
         UPDATE sessions SET revoked_at = now(), revoked_reason = ${reason}, github_access = NULL,
           github_access_expires_at = NULL, github_refresh = NULL, github_refresh_digest = NULL
-        WHERE ${match} AND revoked_at IS NULL
+        WHERE id = ${session.id} AND revoked_at IS NULL
         RETURNING id`)
     return Option.map(Option.fromNullishOr(rows[0]), (row) => row.id)
+  })
+
+/**
+ * The session whose token has `tokenDigest`, when signing it out has work left: it is live, or it ended and still holds
+ * GitHub tokens nothing has revoked yet. `None` otherwise.
+ */
+export const signingOut = (tokenDigest: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly id: string }>`
+      SELECT id FROM sessions
+      WHERE token_digest = ${tokenDigest}
+        AND ((revoked_at IS NULL AND expires_at > now()) OR github_access IS NOT NULL)`
+    return Option.map(Option.fromNullishOr(row), (found) => found.id)
   })
 
 /** Forgets session `id`'s GitHub tokens, once it has ended: a live session keeps them. */

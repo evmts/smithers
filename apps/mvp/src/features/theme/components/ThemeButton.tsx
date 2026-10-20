@@ -11,6 +11,14 @@ const ThemeContext = createContext<ThemeView | null>(null)
 /** Gives the button the theme layer (src/features/theme/theme.ts). */
 export const ThemeProvider = ThemeContext.Provider
 
+/** The mode the page shows, `light` or `dark`: what a frame that paints itself, such as the terminal's, follows. */
+export const useShownMode = (): "light" | "dark" => {
+  const theme = useContext(ThemeContext)
+  if (theme === null) throw new Error("useShownMode needs a ThemeProvider")
+  const { data: preference } = useLiveQuery(theme.queries.theme)
+  return (preference?.mode ?? theme.queries.shown()) === "dark" ? "dark" : "light"
+}
+
 export function ThemeButton() {
   const theme = useContext(ThemeContext)
   if (theme === null) throw new Error("ThemeButton needs a ThemeProvider")

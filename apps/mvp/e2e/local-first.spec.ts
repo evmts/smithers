@@ -1,4 +1,5 @@
-import { allServerRows, expect, expectSameThread, PAGE_SIZE, pairs, serverRows, test } from "./devices"
+import { allServerRows, expect, expectSameThread, NOT_SENT, PAGE_SIZE, pairs, serverRows, test } from "./devices"
+import { faults } from "./faults"
 
 // Local-first guarantees across real devices (docs/decisions/0002-local-first.md §7): separate browser contexts, each
 // keeping the conversation on the device (SQLite on OPFS) and every question in its outbox (IndexedDB) until Postgres
@@ -65,6 +66,24 @@ test("restart offline: a question asked offline survives closing the app, and a 
   expect(rows.map(({ role }) => role)).toEqual(["user", "assistant"])
 })
 
+test("closed before its run started: a question ChatApi took, whose tab closed before its engine recorded the run, is answered when the app opens again", async ({ devices, request }) => {
+  const word = devices.word
+  const [a] = await devices.openFaulty("A")
+  // This tab's engine takes its time, as a worker still loading wa-sqlite: the run that answers isn't recorded yet.
+  await faults(a.page).engine.holdStarts()
+  const asked = `Reply with exactly the word: unstarted-${word}`
+  await a.askAndWaitTaken(asked)
+  // Postgres has the question and its empty answer, and Electric delivered both. Then the tab closes.
+  await expect(a.answerTo(asked), "the answer's row arrived").toHaveAttribute("data-role", "assistant", { timeout: 30_000 })
+  await a.close()
+
+  // The app opens again on the device: the outbox still holds the question, sends it again, and the agent answers.
+  const again = await devices.tab(a.device, "A again")
+  await again.expectAnswered(asked, `unstarted-${word}`)
+  const rows = await serverRows(request, word)
+  expect(rows.map(({ role }) => role)).toEqual(["user", "assistant"])
+})
+
 test("late joiner: a device that opens later shows the same latest messages, and Load earlier pages back through Postgres' order", async ({ devices, request }) => {
   const word = devices.word
   const [a] = await devices.open("A")
@@ -102,7 +121,7 @@ test("late joiner: a device that opens later shows the same latest messages, and
   }).toPass({ timeout: 30_000 })
 })
 
-test("two tabs: each keeps its own composer; a question asked in the tab that doesn't lead is sent once it leads", async ({ devices }) => {
+test("two tabs: each keeps its own composer; the tab a person asks in leads, and sends at once", async ({ devices }) => {
   const word = devices.word
   const [one] = await devices.open("Tab 1")
   const two = await devices.tab(one.device, "Tab 2")
@@ -121,14 +140,18 @@ test("two tabs: each keeps its own composer; a question asked in the tab that do
   await one.composer.press("Enter")
   await two.expectAnswered(draft, `draft-${word}`)
 
-  // Tab 2 asks while tab 1 leads: the question stays on the device, not sent. Tab 1 closes, tab 2 leads and sends it.
+  // Tab 2 asks while tab 1 led: its composer took focus, so tab 2 leads and sends at once, with tab 1 still open.
   const handed = `Reply with exactly the word: handed-${word}`
   await two.ask(handed)
-  await two.expectNotSent(handed)
-  await one.page.close()
   await two.expectAnswered(handed, `handed-${word}`)
-  const thread = await expectSameThread([two], word, 4)
-  expect(pairs(thread).map(([question]) => question.text)).toEqual([draft, handed])
+  // And back: tab 1 asks, leads again, and is answered.
+  const back = `Reply with exactly the word: back-${word}`
+  await one.ask(back)
+  await one.expectAnswered(back, `back-${word}`)
+  const thread = await expectSameThread([one, two], word, 6)
+  expect(pairs(thread).map(([question]) => question.text)).toEqual([draft, handed, back])
+  // Neither question ever waited as Not sent.
+  for (const tab of [one, two]) await expect(tab.page.getByText(NOT_SENT, { exact: true })).toHaveCount(0)
 })
 
 test("two tabs offline: the leading tab closes, and the other restores its queued question and sends it once online", async ({ devices, request }) => {

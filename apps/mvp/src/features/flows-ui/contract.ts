@@ -1,0 +1,143 @@
+// Your own flows' contract (decision 0014, docs/features/flows.md#your-own-flows): the one home of the values the tab,
+// the engine worker, ChatApi and the tests share. Nothing here imports a library, so every side can.
+
+/**
+ * ChatApi's routes for a person's own flows:
+ * - `GET /api/flows`: the person's live flows;
+ * - `GET /api/flows/source?name=<name>[&revision=<n>]`: one flow's `SKILL.md` at a revision, the latest unless set;
+ * - `POST /api/flows/save`: a ready draft becomes a flow, or the next revision of the one it edits;
+ * - `POST /api/flows/<id>/delete`: deletes one.
+ */
+export const FLOWS_ROUTE = "/api/flows"
+
+/** `GET` and `POST /api/flow-drafts/<id>`: a draft round; `POST /api/flow-drafts/<id>/answers`: the person's answers. */
+export const FLOW_DRAFTS_ROUTE = "/api/flow-drafts"
+
+/** Electric's `flows`: the signed-in person's live flows. */
+export const FLOWS_SHAPE_ROUTE = "/api/shapes/flows"
+
+/** Electric's `flow_drafts`: the signed-in person's drafts. */
+export const FLOW_DRAFTS_SHAPE_ROUTE = "/api/shapes/flow-drafts"
+
+/** The Postgres tables the shapes serve. */
+export const FLOWS_TABLE = "flows"
+export const FLOW_DRAFTS_TABLE = "flow_drafts"
+
+/**
+ * A flow's name: the Agent Skills rule, 1 to 64 lowercase letters, digits and single hyphens, starting with a letter and
+ * ending without a hyphen.
+ */
+export const NAME_PATTERN = /^(?=.{1,64}$)[a-z](?:[a-z0-9]|-(?=[a-z0-9]))*$/
+
+/**
+ * Names a person's flow may not take: the app's namespaces (decision 0014 §2), so a person's flow never shadows an app
+ * flow, and the app's own slash commands.
+ */
+export const RESERVED_NAMES = [
+  "app",
+  "chat",
+  "repo",
+  "ui",
+  "view",
+  "flow",
+  "run",
+  "agent",
+  "theme",
+  "navigate",
+  "web",
+  "clone",
+] as const
+
+/** The namespaces a person's flow may never call: the authoring and run acts (decision 0014 §11). */
+export const FORBIDDEN_CALLS = ["flow/", "run/"] as const
+
+/** A description: 1 to 1,024 characters ([skills]). */
+export const MAX_DESCRIPTION_CHARS = 1024
+
+/** What a person asks `flow/new` for: 1 to 4,096 characters. */
+export const MAX_REQUEST_CHARS = 4096
+
+/** A `SKILL.md`, and a draft's files in all: 64 KiB. */
+export const MAX_SKILL_BYTES = 64 * 1024
+
+/** Questions one round may ask. */
+export const MAX_QUESTIONS = 5
+
+/** An answer to one question: 1 to 1,000 characters. */
+export const MAX_ANSWER_CHARS = 1000
+
+/** What a run of a person's flow takes as its input: up to 8,000 characters, like a question. */
+export const MAX_INPUT_CHARS = 8000
+
+/** The flows a person's flow may list in `flows:`. */
+export const MAX_CALLS = 20
+
+/** The largest body the flows and drafts routes read: the files plus room for the rest. */
+export const MAX_FLOWS_BODY_BYTES = 80 * 1024
+
+/** The draft's one file in this slice: a person's flow is a prompt flow. */
+export const SKILL_PATH = "SKILL.md"
+
+/** How a draft round ends, and the states before and after. */
+export const DRAFT_STATUSES = ["drafting", "needs_you", "ready", "failed", "saved", "proposed"] as const
+
+/** The static checks a draft passes before it can be saved (decision 0014 §2, "Static checks"). */
+export const CHECKS = ["parses", "name", "description", "calls", "model", "size"] as const
+
+/** The model role every model call of a person's flow uses: the endpoint's `agent` (decision 0011 §3). */
+export const FLOW_MODEL_ROLE = "agent"
+
+/** The flows `flow/new`'s drafting agent may call while it drafts: reads only (decision 0014 §2). */
+export const AUTHOR_TOOLS = ["repo/tree", "repo/read"] as const
+
+/** The most frames one draft or one run of a person's flow may take. */
+export const MAX_FLOW_FRAMES = 8
+
+/** The route that shows a draft's card full size. */
+export const draftPath = (draftId: string): string => `/app/flows/drafts/${draftId}`
+
+/** The route of every flow a person owns. */
+export const FLOWS_PATH = "/app/flows"
+
+/** The route that starts a new flow. */
+export const NEW_FLOW_PATH = "/app/flows/new"
+
+/**
+ * What your own flows record (docs/observability.md#your-own-flows): authoring rounds and saves, and the routes. None
+ * carries a request, a file, a question, an answer or a flow's name: only ids, counts and codes.
+ */
+export const FLOWS_UI_TELEMETRY = {
+  records: [
+    "flow.author",
+    "smithers_flow_author_rounds",
+    "flow.save",
+    "flow.save.unconfirmed",
+    "flow.run.load",
+    "smithers_flow_saves",
+    "flow.client.list",
+    "flow.client.source",
+    "flow.client.draft",
+    "flow.client.write_draft",
+    "flow.client.answer",
+    "flow.client.save",
+    "flow.client.delete",
+  ],
+  fields: ["draftId", "round", "scope", "target", "outcome", "checks", "questions", "durationMs", "code", "kind"],
+} as const
+
+/** The flows pages' buttons, links and lines (MINIMAL TEXT). */
+export const NEW_FLOW = "New flow"
+export const RUN = "Run"
+export const EDIT = "Edit"
+export const DELETE = "Delete"
+export const NO_FLOWS = "No flows yet"
+export const MINE = "Mine"
+
+/** What a refused save reads as on the draft card, by its code. */
+export const SAVE_REFUSALS: Readonly<Record<string, string>> = {
+  name_taken: "Name taken",
+  checks: "A check failed",
+  needs_you: "Answer the questions first",
+  not_ready: "Not ready",
+  unavailable: "Couldn't save. Try again.",
+}

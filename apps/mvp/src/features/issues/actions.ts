@@ -1,0 +1,143 @@
+import { Effect, Metric, Option } from "effect"
+import { FlowDispatch } from "../../flows/dispatch"
+import { repoId } from "../repo/contract"
+import {
+  commentDraftKey,
+  issuePath,
+  MAX_BODY_LENGTH,
+  MAX_TITLE_LENGTH,
+  newDraftKey,
+  newIssuePath,
+} from "./contract"
+import { pendingActions } from "./metrics"
+import { type Draft, VIEW } from "./schema"
+import { IssuesStore } from "./store"
+
+// What a person does on the issue pages, as Effects that finish synchronously. Opening an issue and commenting are the
+// flows `issue/create` and `issue/comment`, dispatched with door `button` in the store's scope: the press returns at
+// once, and the draft clears once the write is queued. Sending runs in the outbox, never in an action.
+
+/** What the route's loader calls: shows `owner/name`'s issues, or, with `number`, that issue; and starts the sync. */
+export const open = (owner: string, name: string, number?: number) =>
+  Effect.gen(function* () {
+    const store = yield* IssuesStore
+    const id = repoId(owner, name)
+    yield* store.view.update(VIEW, (row) => {
+      row.owner = owner
+      row.name = name
+      row.repoId = id
+      row.number = number ?? null
+      row.draftKey = number === undefined ? newDraftKey(id) : commentDraftKey(id, number)
+      row.submitting = false
+    })
+    yield* store.activate
+  }).pipe(Effect.orDie)
+
+/** Changes draft `key`, made empty first if the device has none. */
+const changeDraft = (key: string, change: Partial<Omit<Draft, "id">>) =>
+  Effect.gen(function* () {
+    const { drafts } = yield* IssuesStore
+    if (Option.isNone(yield* drafts.get(key))) yield* drafts.insert({ id: key, title: "", body: "", ...change })
+    else yield* drafts.update(key, (draft) => void Object.assign(draft, change))
+  }).pipe(Effect.orDie)
+
+export const setNewTitle = (owner: string, name: string, title: string) =>
+  changeDraft(newDraftKey(repoId(owner, name)), { title })
+
+export const setNewBody = (owner: string, name: string, body: string) =>
+  changeDraft(newDraftKey(repoId(owner, name)), { body })
+
+export const setCommentDraft = (owner: string, name: string, number: number, body: string) =>
+  changeDraft(commentDraftKey(repoId(owner, name), number), { body })
+
+/** A new issue's draft as `issue/create` takes it: a title that isn't blank, and both within GitHub's limits. */
+export const newIssueOf = (draft: Draft | undefined) => {
+  const title = draft?.title.trim() ?? ""
+  if (title === "" || title.length > MAX_TITLE_LENGTH || draft!.body.length > MAX_BODY_LENGTH) return undefined
+  return { title, body: draft!.body }
+}
+
+/** A comment's draft as `issue/comment` takes it: not blank, and within GitHub's limit. */
+export const commentBodyOf = (draft: Draft | undefined) => {
+  const body = draft?.body ?? ""
+  return body.trim() === "" || body.length > MAX_BODY_LENGTH ? undefined : body
+}
+
+const setSubmitting = (submitting: boolean) =>
+  Effect.flatMap(IssuesStore, ({ view }) => Effect.orDie(view.update(VIEW, (row) => void (row.submitting = submitting))))
+
+/**
+ * Runs `dispatch` in the store's scope while the view says it is submitting; once the flow answers, the draft `key`
+ * goes. A flow that failed, or didn't run, keeps it: the dispatch has logged and counted why.
+ */
+const submit = (key: string, dispatch: Effect.Effect<{ readonly _tag: string }, unknown, FlowDispatch>) =>
+  Effect.gen(function* () {
+    const store = yield* IssuesStore
+    yield* setSubmitting(true)
+    const done = Effect.gen(function* () {
+      const answered = yield* Effect.result(dispatch)
+      if (answered._tag === "Success" && answered.success._tag === "Done") yield* Effect.ignore(store.drafts.delete(key))
+      yield* setSubmitting(false)
+    })
+    yield* Effect.forkIn(done, store.scope, { startImmediately: true })
+  })
+
+/** The view's press is on its way already. */
+const submitting = Effect.flatMap(IssuesStore, ({ view }) => Effect.map(view.get(VIEW), (row) => Option.getOrThrow(row).submitting))
+
+/**
+ * Create issue on `owner/name`'s new-issue form: `issue/create` with its draft. Answers whether it ran: not for a
+ * blank title, a draft over the limits, or while a press is on its way.
+ */
+export const create = (owner: string, name: string) =>
+  Effect.gen(function* () {
+    const { drafts } = yield* IssuesStore
+    const key = newDraftKey(repoId(owner, name))
+    const issue = newIssueOf(Option.getOrUndefined(yield* drafts.get(key)))
+    if (issue === undefined || (yield* submitting)) return false
+    const flows = yield* FlowDispatch
+    yield* submit(key, flows.dispatch("issue/create", { repo: `${owner}/${name}`, ...issue }, { door: "button" }))
+    return true
+  })
+
+/** Comment on issue `number` of `owner/name`: `issue/comment` with its draft. Answers whether it ran. */
+export const comment = (owner: string, name: string, number: number) =>
+  Effect.gen(function* () {
+    const { drafts } = yield* IssuesStore
+    const key = commentDraftKey(repoId(owner, name), number)
+    const body = commentBodyOf(Option.getOrUndefined(yield* drafts.get(key)))
+    if (body === undefined || (yield* submitting)) return false
+    const flows = yield* FlowDispatch
+    yield* submit(key, flows.dispatch("issue/comment", { repo: `${owner}/${name}`, number, body }, { door: "button" }))
+    return true
+  })
+
+/**
+ * Edit (`edit`) or Discard on a write that wasn't sent: Edit puts its text back in its draft first. The write goes from
+ * the device. Answers where its draft is edited: the new-issue form, or the issue's page; nothing for a write the
+ * device doesn't have.
+ */
+const handle = (writeId: string, action: "edit" | "discard") =>
+  Effect.gen(function* () {
+    const { requested } = yield* IssuesStore
+    const found = yield* requested.get(writeId)
+    if (Option.isNone(found)) return undefined
+    const write = found.value
+    const [owner, name] = write.repo.split("/") as [string, string]
+    const created = write.op === "issue/create"
+    if (action === "edit") {
+      yield* created
+        ? changeDraft(newDraftKey(write.repoId), { title: write.title, body: write.body })
+        : changeDraft(commentDraftKey(write.repoId, write.number), { body: write.body })
+    }
+    yield* Effect.ignore(requested.delete(writeId))
+    yield* Metric.update(Metric.withAttributes(pendingActions, { action }), 1)
+    yield* Effect.logInfo("issues.pending").pipe(Effect.annotateLogs({ writeId, op: write.op, action, feature: "issues" }))
+    return created ? newIssuePath(owner, name) : issuePath(owner, name, write.number)
+  })
+
+/** Edit on a write that wasn't sent: its text goes back to its draft. Answers the path where that draft is edited. */
+export const edit = (writeId: string) => handle(writeId, "edit")
+
+/** Discard on a write that wasn't sent: it goes. */
+export const discard = (writeId: string) => Effect.asVoid(handle(writeId, "discard"))

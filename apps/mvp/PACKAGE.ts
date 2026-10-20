@@ -20,6 +20,18 @@ import { Smithers } from "@smthrs/targets"
 const cwd = "apps/mvp"
 
 /**
+ * Server code: every Worker source at any depth (worker/github, worker/branch, worker/flows), tests and test support
+ * (worker/test/ and a folder's own test/) left out. `!(*.test)` and `!(test)` each match one path segment, so the
+ * three globs cover the top level, one folder down, and every depth below a folder that is not test support.
+ * PACKAGE.test.ts fails if a Worker source escapes them.
+ */
+const workerSources = [
+  "worker/!(*.test).ts",
+  "worker/!(test)/!(*.test).ts",
+  "worker/!(test)/!(test)/**/!(*.test).ts"
+]
+
+/**
  * The app's own sources, tests and test support left out: the browser state machine and components, the Worker
  * and the database code. `src/main.tsx` is left out too: it calls the browser's one Effect boundary and hands it
  * the page's host capabilities.
@@ -28,13 +40,16 @@ const appSources = [
   "src/!(test)/**/!(*.test).ts",
   "src/!(*.test).ts",
   "src/**/!(main).tsx",
-  "worker/!(*.test).ts",
+  ...workerSources,
   "db/Database.ts",
   "db/migrations/*.ts"
 ]
 
-/** Every import rule the app holds its sources to, in report order. */
-const importRules: ReadonlyArray<ImportRule> = [
+/**
+ * Every import rule the app holds its sources to, in report order. Exported for PACKAGE.test.ts, which checks what
+ * each rule's `files` read.
+ */
+export const importRules: ReadonlyArray<ImportRule> = [
   {
     kind: "forbid",
     files: ["src/**/*.tsx"],
@@ -60,6 +75,9 @@ const importRules: ReadonlyArray<ImportRule> = [
   {
     kind: "rootImportsOnly",
     packages: ["@smthrs/*"],
+    // @smthrs/ui ships its heavy renderers (Shiki, Milkdown, xterm) behind adapter subpaths so its root stays light
+    // (decision 0006 question 2); apps/mvp/docs/rules.md names this one exception.
+    allow: ["@smthrs/ui/adapters/*"],
     because: "Import Smithers packages from their root entry only. See \"Use the Smithers SDK; extend it, never " +
       "hand-roll\" in apps/mvp/AGENTS.md and \"Use the Smithers libraries\" in the root AGENTS.md."
   },
@@ -164,7 +182,7 @@ const importRules: ReadonlyArray<ImportRule> = [
     files: [
       "src/**",
       "db/**",
-      "worker/!(ChatApi|DevChatApi|index|Executions|ExecutionHost).ts",
+      "worker/!(ChatApi|DevChatApi|index|Executions|ExecutionHost|BranchSandboxes).ts",
       "worker/*/**",
       "e2e/**",
       "bench/**"
@@ -172,7 +190,8 @@ const importRules: ReadonlyArray<ImportRule> = [
     modules: ["alchemy", "alchemy/**", "cloudflare:*", "@cloudflare/**", "@smthrs/platform-cloudflare"],
     because: "sdk.host-agnostic-flows: the agent and every flow run on Cloudflare, in the native app or in a sandbox, " +
       "so Cloudflare reaches them only as injected layers wired in the Worker entries (worker/ChatApi.ts, " +
-      "worker/DevChatApi.ts, worker/index.ts, and worker/Executions.ts with worker/ExecutionHost.ts for remote flows), alchemy.run.ts and " +
+      "worker/DevChatApi.ts, worker/index.ts, worker/Executions.ts with worker/ExecutionHost.ts for remote flows, and " +
+      "worker/BranchSandboxes.ts for the branches' machines), alchemy.run.ts and " +
       "infra/. See apps/mvp/docs/rules.md."
   },
   {
@@ -298,7 +317,7 @@ const importRules: ReadonlyArray<ImportRule> = [
   },
   {
     kind: "forbidCalls",
-    files: ["**/*.test.ts", "src/test/**", "worker/test/**", "db/TestDatabase.ts"],
+    files: ["**/*.test.ts", "src/test/**", "worker/**/test/**", "db/TestDatabase.ts"],
     callees: ["vi.mock", "vi.doMock", "vi.stubGlobal", "jest.mock"],
     because: "test.no-mocks-of-our-code: tests run our real code; only the model provider is a scripted seam. " +
       "See apps/mvp/docs/rules.md."
@@ -319,20 +338,17 @@ const importRules: ReadonlyArray<ImportRule> = [
  */
 const importRulesTarget = ImportRules({ cwd, rules: importRules })
 
-/** Server code: the Worker, tests and test support left out. */
-const workerSources = ["worker/!(*.test).ts"]
-
 /** Browser code: the state machine and components, tests and test support left out. */
 const browserSources = ["src/!(test)/**/!(*.test).ts", "src/!(*.test).ts", "src/**/*.tsx"]
 
 /** Every test and its support code. */
-const testSources = ["**/*.test.ts", "e2e/**/*.ts", "src/test/**/*.ts", "worker/test/**/*.ts", "db/TestDatabase.ts"]
+const testSources = ["**/*.test.ts", "e2e/**/*.ts", "src/test/**/*.ts", "worker/**/test/**/*.ts", "db/TestDatabase.ts"]
 
 /**
  * The judgment rules: Jev answers one yes-or-no question per rule about one file at a time. Each id, question and
- * pair of criteria is the rule's entry in apps/mvp/docs/rules.md; change both together.
+ * pair of criteria is the rule's entry in apps/mvp/docs/rules.md; change both together. Exported for PACKAGE.test.ts.
  */
-const jevRules: ReadonlyArray<JevRule> = [
+export const jevRules: ReadonlyArray<JevRule> = [
   {
     id: "durable.every-action-is-a-flow",
     files: workerSources,
@@ -574,6 +590,20 @@ const jevRules: ReadonlyArray<JevRule> = [
     violation: "Network input is unbounded, or the code adds an ad-hoc auth gate.",
     compliant: "Every network input is bounded by size, allowlist and length, and there is no ad-hoc auth gate; or " +
       "the file handles no network input of its own."
+  },
+  {
+    id: "github.no-actions",
+    // PACKAGE.test.ts scans the same files for GitHub's Actions, check and status API paths and events.
+    files: appSources,
+    lookFor: "Does this file read, write, subscribe to, store or show GitHub Actions, check runs, check suites or " +
+      "commit statuses: a GitHub API path under /actions/, check-runs, check-suites or statuses, a check_run, " +
+      "check_suite, status, workflow_run or workflow_job webhook event, @smthrs/integrations' GitHub.Actions.CheckRun, " +
+      "or a table or view of them? GitHub.Actions in @smthrs/integrations is that SDK's module of integration steps, " +
+      "not GitHub Actions, and the app's own /$owner/$repo/actions route lists Smithers flow runs; neither is a " +
+      "finding by itself.",
+    violation: "The file reads, writes, stores or shows GitHub Actions, check runs, check suites or commit statuses.",
+    compliant: "The file touches none of GitHub's Actions, check-run, check-suite or commit-status APIs or events; a " +
+      "pull request's checks are Smithers flow runs from the runs table."
   }
 ]
 

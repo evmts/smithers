@@ -1,5 +1,5 @@
 // The registry's laws (decision 0003 §1, docs/features/flows.md#the-registry): anything a person can do, the agent can
-// do; a flow runs remotely only when it needs to; the UI dispatches only registered names; and the declarations an
+// do; every registered flow runs on this device; the UI dispatches only registered names; and the declarations an
 // engine runs are the registry's flows, one to one, with the very schemas the tab dispatches by.
 import { Flow } from "@smthrs/flow"
 import { Placement } from "@smthrs/plan"
@@ -8,9 +8,9 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"
 import { agentFlows, childExecutionId, publicError } from "./catalog"
-import { clientFlows, declarationOf, declarations, flowsWhere, modelInvocable, remoteFlows } from "./declarations"
-import { directiveFor, NEEDS, whereFor } from "./placement"
-import { entryOf, names, registry, whereOf } from "./registry"
+import { clientFlows, declarationOf, declarations, modelInvocable } from "./declarations"
+import { entryOf, names, registry } from "./registry"
+import { requesterOf } from "./requests"
 
 /** Every source file under `src/`, tests and test support left out. */
 const sources = (dir: string): ReadonlyArray<string> =>
@@ -38,9 +38,35 @@ describe("the parity law", () => {
     for (const name of dispatched) expect(names).toContain(name)
   })
 
-  test("the agent's catalog is every model-invocable flow that runs on this device", () => {
-    expect(agentFlows).toEqual(names.filter((name) => modelInvocable(name) && whereOf(name) === "client"))
-    expect(agentFlows).toEqual(["app/theme/set", "repo/tree", "repo/read"])
+  test("the agent's catalog is every model-invocable flow", () => {
+    expect(agentFlows).toEqual(names.filter(modelInvocable))
+    expect(agentFlows).toEqual([
+      "app/theme/set",
+      "app/navigate",
+      "app/web/open",
+      "chat/copy",
+      "repo/tree",
+      "repo/read",
+      "repo/refs",
+      "repo/clone",
+      "repo/copy",
+      "app/jev/classify",
+      "app/jev/evaluate",
+      "app/agent/ask",
+      "flow/new",
+      "flow/save",
+      "flow/run",
+      "flow/delete",
+      "flow/list",
+      "run/cancel",
+      "run/retry",
+      "run/resume",
+      "run/list",
+      "run/inspect",
+      "branch/track",
+      "issue/create",
+      "issue/comment",
+    ])
   })
 })
 
@@ -48,7 +74,7 @@ describe("names and placement", () => {
   test("each entry is registered under its own flow's tag, in a namespace only the app claims", () => {
     for (const name of names) {
       expect(registry[name].flow._tag).toBe(name)
-      expect(name).toMatch(/^(app|chat|repo|ui|view)\//)
+      expect(name).toMatch(/^(app|chat|repo|ui|view|flow|run|branch|terminal|issue)\//)
     }
   })
 
@@ -67,21 +93,50 @@ describe("names and placement", () => {
     expect(Flow.isFlow(registry["chat/Answer"].flow)).toBe(false)
   })
 
-  test("a flow runs remotely only when it needs something this device lacks, and declares where it runs", () => {
+  test("every registered flow declares that it runs on this device", () => {
     for (const name of names) {
       const declared = Context.getOption(declarationOf(name).annotations, Flow.Placement)
-      expect([name, declared]).toEqual([name, Option.some(directiveFor(whereFor(entryOf(name).needs)))])
+      expect([name, declared]).toEqual([name, Option.some(Placement.client())])
     }
-    expect(whereFor([])).toBe("client")
-    for (const need of NEEDS) expect(whereFor([need])).toBe("remote")
-    expect(directiveFor("client")).toEqual(Placement.client())
-    expect(directiveFor("remote")).toEqual(Placement.remote())
   })
 
-  test("the engine runs the client flows, and the remote door starts the remote ones", () => {
-    expect(clientFlows).toEqual(flowsWhere("client"))
-    expect(clientFlows.map((flow) => flow._tag)).toEqual(["app/theme/set", "chat/Answer", "repo/tree", "repo/read"])
-    expect(remoteFlows).toEqual([])
+  test("the engine runs every registered flow", () => {
+    expect(clientFlows).toEqual(names.map(declarationOf))
+    expect(clientFlows.map((flow) => flow._tag)).toEqual([
+      "app/theme/set",
+      "app/navigate",
+      "app/web/open",
+      "chat/Answer",
+      "chat/Close",
+      "chat/copy",
+      "chat/edit",
+      "repo/tree",
+      "repo/read",
+      "repo/refs",
+      "repo/clone",
+      "repo/copy",
+      "app/jev/classify",
+      "app/jev/evaluate",
+      "app/agent/ask",
+      "run/answer",
+      "run/deliver",
+      "flow/new",
+      "flow/answer",
+      "flow/save",
+      "flow/run",
+      "flow/run/prompt",
+      "flow/delete",
+      "flow/list",
+      "run/cancel",
+      "run/retry",
+      "run/resume",
+      "run/list",
+      "run/inspect",
+      "branch/track",
+      "terminal/open",
+      "issue/create",
+      "issue/comment",
+    ])
   })
 })
 
@@ -90,6 +145,13 @@ describe("the agent's catalog", () => {
     expect(childExecutionId({ session: "answer-1/chat/Respond@abc:1", frame: 2, ordinal: 0 } as never)).toBe(
       "answer-1/chat/Respond@abc:1/call/2.0",
     )
+  })
+
+  test("a cell call's child execution belongs to the answer whose run made it, which the asking tab dispatched", () => {
+    const child = childExecutionId({ session: "answer-1/chat/Respond@abc:1", frame: 2, ordinal: 0 } as never)
+    expect(requesterOf(child)).toBe("answer-1")
+    // A tab's own dispatch is its own requester.
+    expect(requesterOf("8a7f0c2e-5d1b-4c4a-9a43-0f2a1f7e9b10")).toBe("8a7f0c2e-5d1b-4c4a-9a43-0f2a1f7e9b10")
   })
 
   test("tells a cell a flow's failure by its kind, never its message", () => {

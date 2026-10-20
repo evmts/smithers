@@ -19,7 +19,8 @@ const openReady = async (page: import("@playwright/test").Page) => {
   await page.goto(REPO)
   // The repository's header: the screen's main landmark carries the same label.
   const header = page.locator('header[aria-label="Repository"]')
-  await expect(header).toContainText("octocat / Spoon-Knife")
+  // The app's first render on a loaded machine can take seconds: the engine worker and the device store start first.
+  await expect(header).toContainText("octocat / Spoon-Knife", { timeout: 30_000 })
   const clone = header.getByRole("button", { name: "Clone" })
   if (await clone.isVisible()) await clone.click()
   await expect(page.getByText("Well hello there!")).toBeVisible({ timeout: 120_000 })
@@ -43,29 +44,32 @@ test("browse: a file from the listing, its lines, a reload, and the permalink at
   await openReady(page)
   await page.getByRole("link", { name: "index.html" }).first().click()
   await expect(page).toHaveURL(/\/octocat\/Spoon-Knife\/blob\/main\/index\.html$/)
-  await expect(page.getByText("<!DOCTYPE html>", { exact: false })).toBeVisible()
+  await expect(page.getByText("<!DOCTYPE html>", { exact: false })).toBeVisible({ timeout: 30_000 })
   // A line anchor survives a reload: the URL is the view's location.
   await page.goto(`${REPO}/blob/main/index.html?L=3`)
-  await expect(page.getByText("<!DOCTYPE html>", { exact: false })).toBeVisible()
+  await expect(page.getByText("<!DOCTYPE html>", { exact: false })).toBeVisible({ timeout: 30_000 })
+  // Copy permalink runs `repo/copy` on this browser's engine, which then writes this tab's clipboard.
   await page.getByRole("button", { name: "Copy permalink" }).click()
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()), { timeout: 30_000 })
+    .toMatch(/\/octocat\/Spoon-Knife\/blob\/[0-9a-f]{40}\/index\.html\?L=3$/)
   const permalink = await page.evaluate(() => navigator.clipboard.readText())
-  expect(permalink).toMatch(/\/octocat\/Spoon-Knife\/blob\/[0-9a-f]{40}\/index\.html\?L=3$/)
   await page.goto(new URL(permalink).pathname + new URL(permalink).search)
-  await expect(page.getByText("<!DOCTYPE html>", { exact: false })).toBeVisible()
+  await expect(page.getByText("<!DOCTYPE html>", { exact: false })).toBeVisible({ timeout: 30_000 })
   // Up the path trail, back to the README.
   await page.getByRole("link", { name: "Spoon-Knife" }).first().click()
-  await expect(page.getByText("Well hello there!")).toBeVisible()
+  await expect(page.getByText("Well hello there!")).toBeVisible({ timeout: 30_000 })
 })
 
 test("refusals: a repository GitHub doesn't have says Not found, and so does a missing file", async ({ page }) => {
   const name = `no-such-repo-${Date.now().toString(36)}`
   await page.goto(`/octocat/${name}`)
   const header = page.locator('header[aria-label="Repository"]')
-  await expect(header).toContainText(`octocat / ${name}`)
+  await expect(header).toContainText(`octocat / ${name}`, { timeout: 30_000 })
   await header.getByRole("button", { name: "Clone" }).click()
   await expect(header.getByRole("status").filter({ hasText: "Not found" })).toBeVisible({ timeout: 60_000 })
   await expect(header.getByRole("button", { name: "Try again" })).toBeVisible()
   await openReady(page)
   await page.goto(`${REPO}/blob/main/no-such-file.md`)
-  await expect(page.getByText("Not found").first()).toBeVisible()
+  await expect(page.getByText("Not found").first()).toBeVisible({ timeout: 30_000 })
 })

@@ -2,7 +2,10 @@
 // home of every value the browser, RepoApi, the flows, the end-to-end tests and the unit tests share. Nothing here
 // imports a library, so every side can.
 
-/** `POST <route>` `{ owner, name }` asks for a clone; `GET <route>/<owner>/<name>/{tree,blob}/<sha>[/<path>]` reads. */
+/**
+ * `POST <route>` `{ owner, name }` asks for a clone; `GET <route>/<owner>/<name>/{tree,blob,raw}/<sha>[/<path>]` reads at
+ * a commit, and `GET <route>/<owner>/<name>/refs` lists the branches and tags.
+ */
 export const REPOS_ROUTE = "/api/repos"
 
 /** RepoApi's Electric shape proxy for `repositories`: `GET`. */
@@ -56,13 +59,14 @@ export type CapacityReason = (typeof CAPACITY_REASONS)[number]
 
 /**
  * The refusal codes RepoApi answers with, as `{ code }`: `invalid` (400), `authentication` (401, cloning needs sign-in),
- * `not_found` (404), `too_large` (413, with `size` for a file), `repository_limit` (429), `capacity` (503, the read
- * budget is spent), `unavailable` (503, with `Retry-After` when Code Storage said when) and `not_configured` (503, no
- * Code Storage organization).
+ * `forbidden` (403, cloning needs the Member role or above), `not_found` (404), `too_large` (413, with `size` for a
+ * file), `repository_limit` (429), `capacity` (503, the read budget is spent), `unavailable` (503, with `Retry-After`
+ * when Code Storage said when) and `not_configured` (503, no Code Storage organization).
  */
 export const REFUSALS = [
   "invalid",
   "authentication",
+  "forbidden",
   "not_found",
   "too_large",
   "repository_limit",
@@ -103,6 +107,51 @@ export const blobRoute = (owner: string, name: string, sha: string, path: string
     path.split("/").map(encodeURIComponent).join("/")
   }`
 
+/** `GET` route of a file's bytes at `sha` as a page shows them: text as `text/plain`, what Raw opens and Download saves. */
+export const rawRoute = (owner: string, name: string, sha: string, path: string): string =>
+  `${REPOS_ROUTE}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/raw/${sha}/${
+    path.split("/").map(encodeURIComponent).join("/")
+  }`
+
+/** `GET` route of a repository's default branch, head commit, branches and tags, as of its sync. */
+export const refsRoute = (owner: string, name: string): string =>
+  `${REPOS_ROUTE}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/refs`
+
+/** One page of branches or tags from Code Storage. */
+export const REFS_PAGE_SIZE = 100
+
+/** What `git clone` takes for a repository: its GitHub URL, until Smithers serves git itself. */
+export const cloneUrl = (owner: string, name: string): string => `https://github.com/${owner}/${name}.git`
+
+/**
+ * What Copy puts on the clipboard: the location's link at its commit (`permalink`), the file's or directory's path
+ * (`path`), the file's text (`contents`), or the URL `git clone` takes (`clone-url`).
+ */
+export const COPY_KINDS = ["permalink", "path", "contents", "clone-url"] as const
+export type CopyKind = (typeof COPY_KINDS)[number]
+
+/** A file's raw bytes on GitHub: where Raw goes for a file over `MAX_BLOB_BYTES`, which RepoApi doesn't serve. */
+export const githubRawUrl = (owner: string, name: string, sha: string, path: string): string =>
+  `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/raw/${sha}/${
+    path.split("/").map(encodeURIComponent).join("/")
+  }`
+
+/** How long `repo/copy`'s step waits for the tab that asked: a tab that is open answers in milliseconds. */
+export const COPY_WITHIN = "5 seconds"
+
+/**
+ * The `BroadcastChannel` `repo/copy`'s step asks the tabs of engine `name` on, as `app/navigate`'s does on its own: only
+ * the tab that started the request writes its clipboard.
+ */
+export const clipboardChannel = (name: string): string => `${name}/clipboard`
+
+/**
+ * How a copy ended: on the clipboard (`copied`), refused by the clipboard (`failed`), nothing to copy (`refused`), the
+ * file unreadable (`unavailable`), or no tab answered because the one that asked is gone (`gone`).
+ */
+export const COPY_OUTCOMES = ["copied", "failed", "refused", "unavailable", "gone"] as const
+export type CopyOutcome = (typeof COPY_OUTCOMES)[number]
+
 /** The file list RepoApi answers: every file's path, and whether it stopped before the end. */
 export interface TreeListing {
   readonly paths: ReadonlyArray<string>
@@ -135,8 +184,26 @@ export const CLONE = "Clone"
 /** The button on a failed or refused clone. */
 export const TRY_AGAIN = "Try again"
 
-/** The view's one action: copies the location's link at the head commit. */
+/** Copies the location's link at its commit. */
 export const COPY_PERMALINK = "Copy permalink"
+
+/** Copies the location's path. */
+export const COPY_PATH = "Copy path"
+
+/** Copies the file's text. */
+export const COPY_CONTENTS = "Copy"
+
+/** Opens the file's bytes as plain text in a new tab. */
+export const RAW = "Raw"
+
+/** Saves the file. */
+export const DOWNLOAD = "Download"
+
+/** Opens the menu with the URL `git clone` takes. */
+export const CODE = "Code"
+
+/** Copies the URL `git clone` takes. */
+export const COPY_CLONE_URL = "Copy clone URL"
 
 /** Where Clone would be, for a signed-out person. */
 export const SIGN_IN_TO_CLONE = "Sign in to clone"
@@ -181,16 +248,25 @@ export const REPO_TELEMETRY = {
     "repo.open",
     "repo.tree.load",
     "repo.blob.load",
-    "repo.permalink",
+    "repo.refs.load",
+    "repo.clone.unconfirmed",
+    "repo.copy",
     "repo.clone.post",
     "repo.tree.get",
     "repo.blob.get",
+    "repo.refs.get",
     "smithers_web_repo_clone_clicks",
     "smithers_web_repo_clones",
     "smithers_web_repo_opens",
     "smithers_web_repo_tree_load_ms",
     "smithers_web_repo_blob_load_ms",
-    "smithers_web_repo_permalink_copies",
+    "smithers_web_repo_refs_load_ms",
+    "smithers_web_repo_copies",
+    "execute_tool repo/tree",
+    "execute_tool repo/read",
+    "execute_tool repo/refs",
+    "execute_tool repo/copy",
+    "execute_tool repo/clone",
   ],
-  fields: ["outcome", "status", "kind", "durationMs", "smithers.repo.kind"],
+  fields: ["outcome", "status", "kind", "what", "door", "durationMs", "smithers.repo.kind", "smithers.repo.copy"],
 } as const

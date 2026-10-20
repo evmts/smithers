@@ -2,8 +2,8 @@
 // this file's own schema of the compose Postgres. The model provider is the only scripted seam: the deployment's
 // default model is a scripted `Model` (worker/test/harness.ts), and a model an admin sets is a real HostModel reaching
 // a scripted provider on loopback HTTP. `admin/SetModel` runs on the Node host (worker/test/flowHost.ts).
-import { Model, ModelError, ModelProxy, ModelRequest } from "@smthrs/model"
-import { Effect, Exit, Layer, Redacted, Schema, Stream } from "effect"
+import { Model, ModelError, type ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
+import { Duration, Effect, Exit, Layer, Redacted, Schema, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http"
@@ -14,15 +14,19 @@ import * as TestDatabase from "../db/TestDatabase.ts"
 import { type Actor, CurrentActor, Sessions, SessionsUnavailable } from "./Actor.ts"
 import * as ModelEndpoint from "./ModelEndpoint.ts"
 import * as ModelRoles from "./ModelRoles.ts"
+import * as ModelUsage from "./ModelUsage.ts"
 import * as SetModel from "./SetModel.ts"
 import { runFlow } from "./test/flowHost.ts"
-import { delta, harness, recorded, stop, testFile, usage } from "./test/harness.ts"
+import { delta, eventually, harness, recorded, stop, testFile, usage } from "./test/harness.ts"
 
 const runtime = testFile("model_endpoint")
 
 beforeEach(() =>
   runtime.runPromise(
-    Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE model_roles, model_role_changes, model_usage`),
+    Effect.flatMap(
+      SqlClient.SqlClient,
+      (sql) => sql`TRUNCATE model_roles, model_role_changes, model_usage, model_budget_days`,
+    ),
   )
 )
 
@@ -70,6 +74,74 @@ const usageRows = () =>
           FROM model_usage ORDER BY created_at`,
     ),
   )
+
+/** What today's budget counter holds: settled spend plus what calls in flight reserved. */
+const committedToday = () =>
+  runtime.runPromise(
+    Effect.map(
+      Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly committed: string }>`
+          SELECT committed::text AS committed FROM model_budget_days
+          WHERE day = (now() AT TIME ZONE 'UTC')::date`),
+      ([row]) => Number(row?.committed ?? 0),
+    ),
+  )
+
+/** Every call's ledger row: what it reserved, what it spent, and whether it settled. */
+const ledger = () =>
+  runtime.runPromise(
+    Effect.flatMap(
+      SqlClient.SqlClient,
+      (sql) =>
+        sql<{
+          readonly invocationId: string
+          readonly reserved: number
+          readonly inputTokens: number
+          readonly outputTokens: number
+          readonly settled: boolean
+        }>`SELECT invocation_id AS "invocationId", reserved_tokens AS reserved, input_tokens AS "inputTokens",
+            output_tokens AS "outputTokens", settled_at IS NOT NULL AS settled
+          FROM model_usage ORDER BY created_at`,
+    ),
+  )
+
+/** Every call's charge (what it counts against its day) and how long its reservation lasts, in seconds. */
+const charges = () =>
+  runtime.runPromise(
+    Effect.flatMap(
+      SqlClient.SqlClient,
+      (sql) =>
+        sql<{ readonly invocationId: string; readonly charged: number; readonly expiresInSeconds: number }>`
+          SELECT invocation_id AS "invocationId", charged_tokens AS charged,
+            round(extract(epoch FROM expires_at - created_at))::int AS "expiresInSeconds"
+          FROM model_usage ORDER BY created_at`,
+    ),
+  )
+
+/** Whether today's committed tokens are what today's calls are charged. */
+const reconciled = async () => {
+  const [row] = await runtime.runPromise(
+    Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly charged: string }>`
+        SELECT coalesce(sum(charged_tokens), 0)::text AS charged FROM model_usage
+        WHERE day = (now() AT TIME ZONE 'UTC')::date`),
+  )
+  return Number(row!.charged) === (await committedToday())
+}
+
+/** Moves a call's reservation expiry into the past, as if it had been open longer than the expiry. */
+const expire = (invocationId: string) =>
+  runtime.runPromise(
+    Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE model_usage SET expires_at = now() - interval '1 second' WHERE invocation_id = ${invocationId}`),
+  )
+
+/** The expiry the direct `ModelUsage` tests reserve with. */
+const expiry = Duration.minutes(10)
+
+/** A model that waits for `gate` before it answers, reports 46 tokens (12 in, 34 out) and stops. */
+const gated = (gate: Promise<void>) => () =>
+  Stream.fromEffect(Effect.promise(() => gate)).pipe(Stream.flatMap(() => Stream.make(delta("late"), usage, stop)))
 
 const scratchDatabase = () =>
   runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.database))
@@ -238,6 +310,21 @@ describe("what the model receives", () => {
       ask("q", { messages: [ModelRequest.Message.user("a"), ModelRequest.Message.user("b"), ModelRequest.Message.user("c")] }),
       "Send at most 2 messages.",
     ],
+    // The reservation counts the output and thinking caps, so a cap that isn't a whole number of tokens would shrink
+    // it while the provider still spends (Opus review 4, P2-1).
+    ...([
+      ["a negative maxTokens", { maxTokens: -8_000 }],
+      ["a maxTokens of 0", { maxTokens: 0 }],
+      ["a fractional maxTokens", { maxTokens: 10.5 }],
+      ["a negative thinkingBudget", { thinkingBudget: -8_000 }],
+      ["a fractional thinkingBudget", { thinkingBudget: 0.5 }],
+    ] as const).map(([name, params]) =>
+      [
+        name,
+        ask("q", { params: ModelRequest.GenerationParams.make(params) }),
+        "Send maxTokens as a whole number above 0 and thinkingBudget as a whole number of at least 0.",
+      ] as const
+    ),
   ] as const)("refuses %s with 400", async (_, request, message) => {
     const h = await harness(runtime, answering, { actor: member, config: { MODEL_MAX_MESSAGES: "2" } })
 
@@ -246,6 +333,63 @@ describe("what the model receives", () => {
     expect(status).toBe(400)
     expect(error).toMatchObject({ code: "invalid_request", message })
     expect(h.requests).toEqual([])
+    expect(await ledger()).toEqual([])
+  })
+
+  test("a thinking budget of 0 is allowed and reserves nothing for thinking", async () => {
+    const h = await harness(runtime, answering, { actor: member, config: { MODEL_MAX_OUTPUT_TOKENS: "500" } })
+
+    expect((await call(h, ask("q", { params: ModelRequest.GenerationParams.make({ thinkingBudget: 0 }) }))).status)
+      .toBe(200)
+    expect(h.requests[0]!.params).toMatchObject({ maxTokens: 500, thinkingBudget: 0 })
+  })
+
+  test("concurrent calls with a negative thinking budget can't pass the budget: they never run", async () => {
+    // The reproduction from Opus review 4, P2-1: eight calls at once against a budget of 20,000, each asking for 8,000
+    // output tokens with a thinking budget of -8,000, all passed the budget and spent 64,800 tokens.
+    let open = () => {}
+    const gate = new Promise<void>((resolve) => (open = resolve))
+    const h = await harness(runtime, gated(gate), { actor: member, config: { MODEL_DAILY_TOKEN_BUDGET: "20000" } })
+    const request = ask("hi", { params: ModelRequest.GenerationParams.make({ maxTokens: 8_000, thinkingBudget: -8_000 }) })
+
+    const responses = await Promise.all(
+      Array.from({ length: 8 }, () => h.fetch("/api/model/agent", { method: "POST", body: body(request) })),
+    )
+    open()
+    await Promise.all(responses.map((response) => response.text()))
+
+    expect(responses.map((response) => response.status)).toEqual(Array.from({ length: 8 }, () => 400))
+    expect(h.requests).toEqual([])
+    expect(await committedToday()).toBe(0)
+  })
+})
+
+describe("the request's size", () => {
+  test("a body over MODEL_MAX_REQUEST_BYTES is 413 and never reaches a model or the budget", async () => {
+    const h = await harness(runtime, answering, { actor: member, config: { MODEL_MAX_REQUEST_BYTES: "512" } })
+    const small = ask("hi")
+    const large = ask("x".repeat(600))
+
+    const fits = await call(h, small)
+    const refused = await call(h, large)
+
+    expect(new TextEncoder().encode(body(small)).length).toBeLessThanOrEqual(512)
+    expect(fits.status).toBe(200)
+    expect(refused.status).toBe(413)
+    expect(refused.error).toMatchObject({ code: "invalid_request", message: "Send at most 512 bytes." })
+    expect(h.requests).toHaveLength(1)
+    expect(await ledger()).toHaveLength(1)
+  })
+
+  test("the bound is 192 KiB unless set, and a positive integer", async () => {
+    const h = await harness(runtime, answering, { actor: member })
+
+    const under = await call(h, ask("x".repeat(ModelEndpoint.MAX_REQUEST_BYTES - 1_024)))
+    const over = await call(h, ask("x".repeat(ModelEndpoint.MAX_REQUEST_BYTES)))
+
+    expect(ModelEndpoint.MAX_REQUEST_BYTES).toBe(192 * 1024)
+    expect([under.status, over.status]).toEqual([200, 413])
+    await expect(harness(runtime, answering, { config: { MODEL_MAX_REQUEST_BYTES: "0" } })).rejects.toThrow()
   })
 })
 
@@ -427,36 +571,331 @@ describe("budget and metering", () => {
   test("yesterday's spend doesn't count against today's budget", async () => {
     await runtime.runPromise(
       Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
-        INSERT INTO model_usage (invocation_id, request_id, role, model_id, input_tokens, output_tokens, created_at)
-        VALUES ('old', 'old', 'agent', 'test-model', 1000, 1000, now() - interval '2 days')`),
+        INSERT INTO model_budget_days (day, committed)
+        VALUES ((now() AT TIME ZONE 'UTC')::date - 1, 1000000)`),
     )
     const h = await harness(runtime, answering, { actor: member, config: { MODEL_DAILY_TOKEN_BUDGET: "50" } })
 
     expect((await call(h, ask("hi"))).status).toBe(200)
+    expect(await committedToday()).toBe(46)
   })
 
-  test("a usage row that can't be written is logged and counted, and the answer still ends cleanly", async () => {
+  test("concurrent calls can't overshoot: against a budget of 46, eight at once admit exactly one", async () => {
+    // Every admitted call holds its model until all eight have answered, so a budget read before the call and
+    // written after it would let all eight through.
+    let open = () => {}
+    const gate = new Promise<void>((resolve) => (open = resolve))
+    const h = await harness(runtime, gated(gate), { actor: member, config: { MODEL_DAILY_TOKEN_BUDGET: "46" } })
+
+    const responses = await Promise.all(
+      Array.from({ length: 8 }, () => h.fetch("/api/model/agent", { method: "POST", body: body(ask("hi")) })),
+    )
+    open()
+    const bodies = await Promise.all(responses.map((response) => response.text()))
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 429, 429, 429, 429, 429, 429, 429])
+    expect(bodies.filter((text) => text.includes("quota_exceeded"))).toHaveLength(7)
+    expect(h.requests).toHaveLength(1)
+    expect(await committedToday()).toBe(46)
+    expect(await ledger()).toEqual([
+      { invocationId: expect.any(String), reserved: expect.any(Number), inputTokens: 12, outputTokens: 34, settled: true },
+    ])
+  })
+
+  test("a call reserves its worst case before the model runs, then settles to what it spent", async () => {
+    const seen: Array<{ readonly committed: number; readonly rows: Awaited<ReturnType<typeof ledger>> }> = []
+    const h = await harness(
+      runtime,
+      () =>
+        Stream.fromEffect(
+          Effect.promise(async () => void seen.push({ committed: await committedToday(), rows: await ledger() })),
+        ).pipe(Stream.flatMap(() => Stream.make(delta("ok"), usage, stop))),
+      { actor: member, config: { MODEL_MAX_OUTPUT_TOKENS: "500" } },
+    )
+    const request = ask("hi", { params: ModelRequest.GenerationParams.make({ thinkingBudget: 9_000 }) })
+    const bytes = new TextEncoder().encode(body(request)).length
+
+    const { status } = await call(h, request)
+
+    // Every byte of the body counted as a prompt token, plus the output and thinking caps, both clamped to 500.
+    const reserved = bytes + 500 + 500
+    expect(status).toBe(200)
+    expect(seen).toEqual([{
+      committed: reserved,
+      rows: [{ invocationId: expect.any(String), reserved, inputTokens: 0, outputTokens: 0, settled: false }],
+    }])
+    expect(await committedToday()).toBe(46)
+    expect(await ledger()).toEqual([
+      { invocationId: seen[0]!.rows[0]!.invocationId, reserved, inputTokens: 12, outputTokens: 34, settled: true },
+    ])
+    // The ledger's key is the call the server served: the id its log line carries.
+    expect(h.only("model.proxy.serve").annotations.invocationId).toBe(seen[0]!.rows[0]!.invocationId)
+  })
+
+  // Usage is what the call spent only when the call ended normally and the model reported both its input and output.
+  // Anything less is unknown, never zero: the model may have spent tokens it never reported, so the call keeps its
+  // reservation (Codex review 4, P1). These calls all stream paid output before they end.
+  const reservationOf = (request: ModelRequest.ModelRequest) =>
+    new TextEncoder().encode(body(request)).length + ModelEndpoint.MAX_OUTPUT_TOKENS
+  const transportFailure = Stream.fail(new ModelError.ModelError({ code: "transport", message: "connection reset" }))
+
+  test("a call whose client goes away after its text, before usage, keeps its whole reservation", async () => {
+    const h = await harness(runtime, () => Stream.make(delta("paid output")).pipe(Stream.concat(Stream.never)), {
+      actor: member,
+    })
+    const request = ask("hi")
+
+    const response = await h.fetch("/api/model/agent", { method: "POST", body: body(request) })
+    const reader = response.body!.getReader()
+    await reader.read()
+    await reader.cancel()
+
+    await eventually(async () => (await ledger())[0]?.settled === true)
+    expect(await committedToday()).toBe(reservationOf(request))
+    expect(h.only("model.proxy.serve").annotations).toMatchObject({ outcome: "interrupted" })
+    expect(h.count(ModelEndpoint.usageWrites, { outcome: "kept" })).toBe(1)
+    expect(h.only("model.usage")).toMatchObject({
+      level: "INFO",
+      annotations: { role: "agent", outcome: "kept", ended: "interrupted", reported: "none" },
+    })
+  })
+
+  test("a call that fails after its text, before usage, keeps its whole reservation", async () => {
+    const h = await harness(runtime, () => Stream.make(delta("paid output")).pipe(Stream.concat(transportFailure)), {
+      actor: member,
+    })
+    const request = ask("hi")
+
+    const { lines } = await call(h, request)
+
+    expect(lines.at(-1)).toMatchObject({ type: "error", code: "transport" })
+    expect(await committedToday()).toBe(reservationOf(request))
+    expect(await ledger()).toEqual([
+      { invocationId: expect.any(String), reserved: reservationOf(request), inputTokens: 0, outputTokens: 0, settled: true },
+    ])
+    expect(h.only("model.usage").annotations).toMatchObject({ outcome: "kept", ended: "failed", reported: "none" })
+  })
+
+  test("a call that fails after partial or complete usage keeps its reservation, or what it reported when more", async () => {
+    const script: Array<Stream.Stream<ModelEvent.ModelEvent, ModelError.ModelError>> = [
+      // Only the input so far, as a provider reports it when the stream opens.
+      Stream.make(delta("paid"), { type: "usage", inputTokens: 12 } as const).pipe(Stream.concat(transportFailure)),
+      // Both counts, but not final: the call failed after them.
+      Stream.make(usage, delta("paid")).pipe(Stream.concat(transportFailure)),
+      // More than the reservation: the report is a lower bound, so the call counts at least that.
+      Stream.make({ type: "usage", inputTokens: 900_000, outputTokens: 1 } as const).pipe(Stream.concat(transportFailure)),
+    ]
+    const h = await harness(runtime, () => script.shift()!, { actor: member })
+    const request = ask("hi")
+
+    await call(h, request)
+    await call(h, request)
+    expect(await committedToday()).toBe(2 * reservationOf(request))
+    await call(h, request)
+
+    expect(await committedToday()).toBe(2 * reservationOf(request) + 900_001)
+    expect((await ledger()).map(({ inputTokens, outputTokens }) => [inputTokens, outputTokens])).toEqual([
+      [12, 0],
+      [12, 34],
+      [900_000, 1],
+    ])
+    expect(h.line("model.usage").map((line) => line.annotations.reported)).toEqual(["partial", "complete", "complete"])
+    expect(h.count(ModelEndpoint.usageWrites, { outcome: "kept" })).toBe(3)
+  })
+
+  test("a call that ends normally without both counts keeps its reservation", async () => {
+    const script: Array<Stream.Stream<ModelEvent.ModelEvent>> = [
+      Stream.make(delta("paid"), stop),
+      Stream.make(delta("paid"), { type: "usage", outputTokens: 34 } as const, stop),
+    ]
+    const h = await harness(runtime, () => script.shift()!, { actor: member })
+    const request = ask("hi")
+
+    expect((await call(h, request)).lines.at(-1)).toEqual({ type: "end" })
+    expect((await call(h, request)).lines.at(-1)).toEqual({ type: "end" })
+
+    expect(await committedToday()).toBe(2 * reservationOf(request))
+    expect(h.line("model.usage").map((line) => line.annotations)).toEqual([
+      expect.objectContaining({ outcome: "kept", ended: "success", reported: "none" }),
+      expect.objectContaining({ outcome: "kept", ended: "success", reported: "partial" }),
+    ])
+  })
+
+  test("calls cancelled after their text, before usage, spend the budget until they are refused", async () => {
+    const request = ask("hi")
+    // Two reservations' worth: the third call finds the budget spent.
+    const h = await harness(runtime, () => Stream.make(delta("paid output")).pipe(Stream.concat(Stream.never)), {
+      actor: member,
+      config: { MODEL_DAILY_TOKEN_BUDGET: String(2 * reservationOf(request)) },
+    })
+    const cancelled = async () => {
+      const response = await h.fetch("/api/model/agent", { method: "POST", body: body(request) })
+      if (response.status !== 200) return response.status
+      const reader = response.body!.getReader()
+      await reader.read()
+      await reader.cancel()
+      return response.status
+    }
+
+    expect(await cancelled()).toBe(200)
+    await eventually(async () => (await ledger())[0]?.settled === true)
+    expect(await cancelled()).toBe(200)
+    await eventually(async () => (await ledger())[1]?.settled === true)
+    expect(await cancelled()).toBe(429)
+
+    expect(h.requests).toHaveLength(2)
+    expect(await committedToday()).toBe(2 * reservationOf(request))
+  })
+
+  test("a settle that runs again changes nothing", async () => {
+    const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(effect)
+    const call = { invocationId: "call-1", requestId: "r", role: "agent" as const, modelId: "m" }
+    const reserved = await run(ModelUsage.reserve({ ...call, tokens: 100 }, { budget: 1_000, expiry }))
+    const spent = { invocationId: "call-1", inputTokens: 10, outputTokens: 5, complete: true }
+
+    const settled = [
+      await run(ModelUsage.settle(spent)),
+      await run(ModelUsage.settle(spent)),
+      await run(ModelUsage.settle({ ...spent, inputTokens: 999 })),
+    ]
+
+    expect(reserved).toBe(true)
+    expect(settled).toEqual([true, false, false])
+    expect(await committedToday()).toBe(15)
+    expect(await ledger()).toEqual([
+      { invocationId: "call-1", reserved: 100, inputTokens: 10, outputTokens: 5, settled: true },
+    ])
+  })
+
+  test("a reservation is refused only once committed spend reaches the budget, whatever its own size", async () => {
+    const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(effect)
+    const reserve = (invocationId: string, tokens: number) =>
+      run(ModelUsage.reserve({ invocationId, requestId: "r", role: "agent", modelId: "m", tokens }, { budget: 100, expiry }))
+
+    // The first call of the day is admitted even when it alone could pass the budget; the overshoot is one call's.
+    expect(await reserve("a", 150)).toBe(true)
+    expect(await reserve("b", 1)).toBe(false)
+    await run(ModelUsage.settle({ invocationId: "a", inputTokens: 60, outputTokens: 39, complete: true }))
+    expect(await reserve("c", 150)).toBe(true)
+    expect(await reserve("d", 1)).toBe(false)
+
+    expect(await committedToday()).toBe(249)
+    expect((await ledger()).map((row) => row.invocationId)).toEqual(["a", "c"])
+  })
+
+  // A reservation that never settles (its Worker died, or its settle never ran) is unknown spend, so it counts at its
+  // reservation. Its expiry makes that final, read by the statements themselves, never by a sweep (Opus review 4, P2-6).
+  test("a reservation that never settles counts in full, and once it expires a late settle changes nothing", async () => {
+    const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(effect)
+    const reserve = (invocationId: string, tokens: number) =>
+      run(ModelUsage.reserve({ invocationId, requestId: "r", role: "agent", modelId: "m", tokens }, { budget: 150, expiry }))
+
+    expect(await reserve("abandoned", 100)).toBe(true)
+    expect(await charges()).toEqual([
+      { invocationId: "abandoned", charged: 100, expiresInSeconds: Duration.toSeconds(expiry) },
+    ])
+    await expire("abandoned")
+
+    expect(await run(ModelUsage.settle({ invocationId: "abandoned", inputTokens: 1, outputTokens: 1, complete: true })))
+      .toBe(false)
+    expect(await committedToday()).toBe(100)
+    expect((await ledger())[0]).toMatchObject({ inputTokens: 0, outputTokens: 0, settled: false })
+    // Admission counts it: the next call fits, the one after doesn't.
+    expect(await reserve("next", 60)).toBe(true)
+    expect(await reserve("refused", 1)).toBe(false)
+    expect(await reconciled()).toBe(true)
+  })
+
+  test("a call whose settle comes after its reservation expired stays charged in full, logged and counted", async () => {
+    let open = () => {}
+    const gate = new Promise<void>((resolve) => (open = resolve))
+    const h = await harness(runtime, gated(gate), { actor: member, config: { MODEL_RESERVATION_EXPIRY: "1 minute" } })
+    const request = ask("hi")
+
+    const response = await h.fetch("/api/model/agent", { method: "POST", body: body(request) })
+    const [{ invocationId, expiresInSeconds }] = await charges()
+    await expire(invocationId)
+    open()
+    await response.text()
+
+    expect(expiresInSeconds).toBe(60)
+    expect(await committedToday()).toBe(reservationOf(request))
+    expect(h.count(ModelEndpoint.usageWrites, { outcome: "expired" })).toBe(1)
+    expect(h.only("model.usage")).toMatchObject({
+      level: "WARN",
+      annotations: { role: "agent", invocationId, outcome: "expired" },
+    })
+  })
+
+  test("the reservation expiry is an hour unless set", async () => {
+    const h = await harness(runtime, answering, { actor: member })
+
+    await call(h, ask("hi"))
+
+    expect(Duration.toSeconds(ModelEndpoint.RESERVATION_EXPIRY)).toBe(3_600)
+    expect((await charges())[0]!.expiresInSeconds).toBe(3_600)
+    expect(await reconciled()).toBe(true)
+    await expect(harness(runtime, answering, { config: { MODEL_RESERVATION_EXPIRY: "soon" } })).rejects.toThrow()
+  })
+
+  test("what each call is charged adds up to the day's committed tokens", async () => {
+    const script: Array<Stream.Stream<ModelEvent.ModelEvent, ModelError.ModelError>> = [
+      Stream.make(delta("ok"), usage, stop),
+      Stream.make(delta("paid")).pipe(Stream.concat(transportFailure)),
+      Stream.make({ type: "usage", inputTokens: 900_000, outputTokens: 1 } as const).pipe(Stream.concat(transportFailure)),
+    ]
+    const h = await harness(runtime, () => script.shift()!, { actor: member })
+    const request = ask("hi")
+
+    for (let i = 0; i < 3; i++) await call(h, request)
+
+    expect((await charges()).map((row) => row.charged)).toEqual([46, reservationOf(request), 900_001])
+    expect(await reconciled()).toBe(true)
+  })
+
+  test("a settle that can't be written is logged and counted, the answer still ends, and the reservation stays", async () => {
     await runtime.runPromise(
       Effect.flatMap(SqlClient.SqlClient, (sql) =>
         Effect.andThen(
           sql`CREATE FUNCTION refuse_usage() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN RAISE EXCEPTION 'refused'; END $$`,
-          sql`CREATE TRIGGER refuse_usage BEFORE INSERT ON model_usage FOR EACH ROW EXECUTE FUNCTION refuse_usage()`,
+          sql`CREATE TRIGGER refuse_usage BEFORE UPDATE ON model_usage FOR EACH ROW EXECUTE FUNCTION refuse_usage()`,
         )),
     )
     const h = await harness(runtime, answering, { actor: member })
+    const request = ask("hi")
 
     try {
-      const { lines } = await call(h, ask("hi"))
+      const { lines } = await call(h, request)
 
       expect(lines.at(-1)).toEqual({ type: "end" })
       expect(h.count(ModelEndpoint.usageWrites, { outcome: "error" })).toBe(1)
       expect(h.only("model.usage").annotations).toMatchObject({ role: "agent", errorCode: expect.stringMatching(/^sql:/) })
+      // Fail-closed: the call still counts at its worst case.
+      expect(await committedToday()).toBe(new TextEncoder().encode(body(request)).length + ModelEndpoint.MAX_OUTPUT_TOKENS)
     } finally {
       await runtime.runPromise(
         Effect.flatMap(SqlClient.SqlClient, (sql) =>
           Effect.andThen(sql`DROP TRIGGER refuse_usage ON model_usage`, sql`DROP FUNCTION refuse_usage()`)),
       )
+    }
+  })
+
+  test("a reservation Postgres refuses is a 503 provider_internal, logged by its SQL reason, before any model", async () => {
+    const sql = (statement: string) =>
+      runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe(statement)))
+    await sql("ALTER TABLE model_budget_days RENAME TO model_budget_days_away")
+    const h = await harness(runtime, answering, { actor: member })
+
+    try {
+      const { status, error } = await call(h, ask("hi"))
+
+      expect(status).toBe(503)
+      expect(error).toMatchObject({ code: "provider_internal" })
+      expect(h.only("model.endpoint").annotations).toMatchObject({ role: "agent", errorCode: expect.stringMatching(/^sql:/) })
+      expect(h.requests).toEqual([])
+    } finally {
+      await sql("ALTER TABLE model_budget_days_away RENAME TO model_budget_days")
     }
   })
 

@@ -42,6 +42,41 @@ export const QUEUED = "Queued"
 /** The badge on a question the server refused, or the outbox couldn't store. */
 export const NOT_SENT = "Not sent"
 
+// Message controls (docs/features/chat.md#message-controls).
+
+/** Copy's label on a message; the button says "Copied" once the text is on the clipboard. */
+export const COPY = "Copy"
+
+/** Edit's label on a question that Smithers doesn't have yet. */
+export const EDIT = "Edit"
+
+/** How long `chat/copy`'s and `chat/edit`'s steps wait for the tab that asked: a tab that is open answers at once. */
+export const ASK_TAB_WITHIN = "5 seconds"
+
+/** The channel `chat/copy`'s step asks the tabs of engine `name` on (src/flows/askingTab.ts). */
+export const copyChannel = (name: string): string => `${name}/chat-copy`
+
+/** The channel `chat/edit`'s step asks the tabs of engine `name` on. */
+export const editChannel = (name: string): string => `${name}/chat-edit`
+
+/**
+ * How a copy ended: on the clipboard (`copied`), refused by the clipboard (`failed`), no such message or no finished
+ * answer (`not_found`), or no tab answered because the one that asked is gone (`gone`).
+ */
+export const COPY_OUTCOMES = ["copied", "failed", "not_found", "gone"] as const
+/** What the tab that asked answers a copy with: every outcome but `gone`. */
+export const COPY_ANSWERS = ["copied", "failed", "not_found"] as const
+export type CopyOutcome = (typeof COPY_OUTCOMES)[number]
+
+/** Why a question can't be edited: none waiting (`not_found`), already being sent (`sent`), or the outbox failed. */
+export const EDIT_REFUSALS = ["not_found", "sent", "failed"] as const
+
+/** How an edit ended: the text back in the composer (`edited`), refused (`EDIT_REFUSALS`), or the tab gone (`gone`). */
+export const EDIT_OUTCOMES = ["edited", ...EDIT_REFUSALS, "gone"] as const
+/** What the tab that asked answers an edit with: every outcome but `gone`. */
+export const EDIT_ANSWERS = ["edited", ...EDIT_REFUSALS] as const
+export type EditOutcome = (typeof EDIT_OUTCOMES)[number]
+
 /** The compose Electric (`docker-compose.yml`): what `ELECTRIC_URL` defaults to, and the one tests use. */
 export const LOCAL_ELECTRIC_URL = "http://localhost:30001"
 
@@ -56,6 +91,7 @@ export const CHAT_TELEMETRY = {
     "question stored",
     "question not sent",
     "question not admitted",
+    "answer not started",
     "unsent question handled",
     "chat connection changed",
     "chat retried",
@@ -70,8 +106,18 @@ export const CHAT_TELEMETRY = {
     "smithers_web_sync_failures",
     "smithers_web_sync_retries",
     "smithers_web_history_loads",
+    // Message controls: the steps' records in the engine worker, and the tab's.
+    "chat.copy",
+    "chat.edit",
+    "execute_tool chat/copy",
+    "smithers_web_message_copies",
+    "smithers_web_question_edits",
+    "queued question taken back",
+    "chat draft restored",
     // The outbox every write goes through, and the device store (@smthrs/effect-tanstack-db).
     "outbox.send",
+    "outbox.withdraw",
+    "outbox write withdrawn",
     "outbox write failed",
     "outbox couldn't load its writes",
     "outbox_attempts",
@@ -102,5 +148,12 @@ export const CHAT_TELEMETRY = {
     "collection",
     "operation",
     "error",
+    "door",
+    "which",
+    "executionId",
+    "durationMs",
+    "smithers.chat.door",
+    "smithers.chat.outcome",
+    "draft.length",
   ],
 } as const

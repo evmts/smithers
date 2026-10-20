@@ -9,7 +9,7 @@ const runtime = testFile("flow_telemetry")
 const resource = { attributes: [{ key: "service.name", value: { stringValue: "smithers-mvp-web" } }] }
 const attribute = (key: string, stringValue: string) => ({ key, value: { stringValue } })
 
-test("relays flow.dispatch with its flow, placement, door, outcome and execution id, and drops the rest", async () => {
+test("relays flow.dispatch with its flow, door, outcome and execution id, and drops the rest", async () => {
   const h = await harness(runtime, () => Stream.empty)
   const body = JSON.stringify({
     resourceLogs: [{
@@ -20,7 +20,6 @@ test("relays flow.dispatch with its flow, placement, door, outcome and execution
           body: { stringValue: "flow.dispatch" },
           attributes: [
             attribute("flow", "app/theme/set"),
-            attribute("placement", "client"),
             attribute("door", "button"),
             attribute("outcome", "done"),
             attribute("executionId", "e-1"),
@@ -42,7 +41,6 @@ test("relays flow.dispatch with its flow, placement, door, outcome and execution
     {
       annotations: {
         flow: "app/theme/set",
-        placement: "client",
         door: "button",
         outcome: "done",
         executionId: "e-1",

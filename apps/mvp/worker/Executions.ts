@@ -1,12 +1,16 @@
 import { Logger } from "@smthrs/observability"
 import type { ExecutionObject } from "@smthrs/platform-cloudflare"
-import type { RuntimeContext } from "alchemy"
+import { RuntimeContext } from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect, Layer, Option, Redacted } from "effect"
+import { Cause, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import * as Database from "../db/Database.ts"
+import * as BranchSandboxes from "./BranchSandboxes.ts"
+import { codeOf } from "./ErrorCode.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Expire from "./flows/Expire.ts"
+import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
+import * as GitHubHost from "./github/Host.ts"
 import * as RepoConfig from "./RepoConfig.ts"
 import * as SignIn from "./SignIn.ts"
 
@@ -54,6 +58,13 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
       const app = { database: appDatabase, expiry: yield* Expire.expiry.pipe(Effect.orDie) }
       // `repo/Clone` runs here when this deployment has a Code Storage organization (docs/features/repo.md#the-clone).
       const repoClone = yield* RepoConfig.cloneServices(appDatabase).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
+      // The git loop's flows (`github/Apply`, `github/Reconcile`, `github/Write`) run here when the GitHub App is
+      // configured (docs/features/issues.md#remote-flows).
+      const github = yield* GitHubHost.ready(appDatabase).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
+      // `terminal/Open` wakes a branch's machine, its `SandboxObject` (docs/features/branch-workspace.md#opening-a-terminal).
+      const sandboxObjects = (yield* BranchSandboxes.SandboxObject) as Cloudflare.DurableObject<
+        BranchSandboxes.SandboxObjectShape
+      >
       // Workers Logs keeps every JSON line, as it does ChatApi's.
       const logs = Logger.layerStructuredJson()
       // The object's id exists only at runtime: Alchemy evaluates this outer effect at plan time with a stand-in state.
@@ -68,12 +79,39 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
               wake: (executionId) => Effect.asVoid(executions.getByName(executionId).wake()),
             },
           })
-        const base = Option.isSome(signIn)
-          ? ExecutionHost.remoteWithSignIn(app, signIn.value)
-          : ExecutionHost.remote(app)
+        const base = ExecutionHost.withTerminals(
+          Option.isSome(signIn) ? ExecutionHost.remoteWithSignIn(app, signIn.value) : ExecutionHost.remote(app),
+          appDatabase,
+          BranchSandboxes.sandboxesLayer(sandboxObjects),
+        )
+        // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
+        // object, the one redeemer of the refresh token, with the execution's own runtime context.
+        const githubServices = <GE, GR>(ready: GitHubHost.Ready<GE, GR>) =>
+          Effect.gen(function* () {
+            const runtime = yield* RuntimeContext
+            return GitHubHost.services(ready, {
+              keys: Option.map(signIn, (configured) => configured.keys),
+              refresh: (sessionId, generation) => {
+                const executionId = recheckExecutionId(sessionId, generation)
+                return ExecutionHost.intent(RecheckRole, { executionId, payload: { sessionId } }).pipe(
+                  Effect.flatMap((intent) => executions.getByName(executionId).start(intent)),
+                  Effect.provideService(RuntimeContext, runtime),
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("auth.role_check").pipe(
+                      Effect.annotateLogs({ sessionId, outcome: "not_started", errorCode: codeOf(Cause.squash(cause)) }),
+                    )
+                  ),
+                )
+              },
+            })
+          })
+        const withGitHub = <ROut, FE, FR>(flows: ExecutionHost.Flows<ROut, FE, FR>) =>
+          Option.isSome(github)
+            ? hostFor(ExecutionHost.withGitHub(flows, githubServices(github.value)))
+            : hostFor(flows)
         const host = Option.isSome(repoClone)
-          ? hostFor(ExecutionHost.withRepoClone(base, repoClone.value))
-          : hostFor(base)
+          ? withGitHub(ExecutionHost.withRepoClone(base, repoClone.value))
+          : withGitHub(base)
         return {
           start: (intent: ExecutionObject.Intent) => host.start(intent).pipe(Effect.provide(logs)),
           wake: () => host.wake().pipe(Effect.provide(logs)),

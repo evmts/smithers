@@ -1,0 +1,97 @@
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
+import type { AddressInfo } from "node:net"
+import { Effect } from "effect"
+import { FetchHttpClient } from "effect/http"
+import { afterEach, expect, test } from "vitest"
+import { IssuesClient, type WriteRequest } from "./api"
+
+// The real writes client from the browser's side, against a local HTTP server that plays a gateway: real sockets, so a
+// stalled body, a body cut short and nothing listening are what a browser would meet. Every answer ChatApi itself gives
+// is tested through its real handler in issues.test.ts.
+
+const write: WriteRequest = { writeId: crypto.randomUUID(), via: "person", op: "issue/create", title: "t", body: "" }
+
+const servers: Array<() => Promise<void>> = []
+afterEach(async () => {
+  for (const close of servers.splice(0)) await close()
+})
+
+/** A server that answers every request with `respond`, keeping what each asked for. */
+const serve = async (respond: (request: IncomingMessage, response: ServerResponse) => void) => {
+  const asked: Array<{ readonly method: string; readonly url: string; readonly body: string }> = []
+  const server = createServer((request, response) => {
+    let body = ""
+    request.on("data", (chunk) => (body += chunk))
+    request.on("end", () => {
+      asked.push({ method: request.method!, url: request.url!, body })
+      respond(request, response)
+    })
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  servers.push(
+    () =>
+      new Promise((resolve) => {
+        server.closeAllConnections()
+        server.close(() => resolve())
+      }),
+  )
+  return { origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, asked }
+}
+
+const send = (origin: string) =>
+  Effect.runPromise(
+    Effect.result(Effect.flatMap(IssuesClient, (client) => client.write("octo", "hello", write))).pipe(
+      Effect.provide(IssuesClient.layer({ origin, within: "300 millis" })),
+      Effect.provide(FetchHttpClient.layer),
+    ),
+  )
+
+const json = (status: number, body: unknown) => (_: IncomingMessage, response: ServerResponse) => {
+  response.writeHead(status, { "content-type": "application/json" })
+  response.end(JSON.stringify(body))
+}
+
+test("posts the write to its repository's writes route and reads what ChatApi took: new (202) or had (200)", async () => {
+  const taken = await serve(json(202, { txid: 41, writeId: write.writeId }))
+  const took = await send(taken.origin)
+  expect(took._tag === "Success" && took.success).toEqual({ txid: 41, writeId: write.writeId })
+  expect(taken.asked).toEqual([{ method: "POST", url: "/api/repos/octo/hello/writes", body: JSON.stringify(write) }])
+  const had = await serve(json(200, { txid: null, writeId: write.writeId, status: "done" }))
+  const existing = await send(had.origin)
+  expect(existing._tag === "Success" && existing.success).toEqual({ txid: null, writeId: write.writeId, status: "done" })
+})
+
+test("any other status is not taken, with its status", async () => {
+  const { origin } = await serve(json(409, { code: "conflict" }))
+  expect(await send(origin)).toMatchObject({ _tag: "Failure", failure: { _tag: "WriteNotTaken", status: 409 } })
+})
+
+test("a 202 whose body isn't the contract's, or is cut short, is not taken, with its status", async () => {
+  const wrong = await serve(json(202, { txid: "41" }))
+  expect(await send(wrong.origin)).toMatchObject({ _tag: "Failure", failure: { status: 202 } })
+  const cut = await serve((_, response) => {
+    response.writeHead(202, { "content-type": "application/json" })
+    response.end('{"txid":')
+  })
+  expect(await send(cut.origin)).toMatchObject({ _tag: "Failure", failure: { status: 202 } })
+})
+
+test("a body that stalls fails at the deadline with no status, as the network does", async () => {
+  const { origin } = await serve((_, response) => {
+    response.writeHead(202, { "content-type": "application/json" })
+    response.write('{"txid":')
+  })
+  const started = Date.now()
+  const result = await send(origin)
+  expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "WriteNotTaken" } })
+  expect(result._tag === "Failure" && result.failure.status).toBe(undefined)
+  expect(Date.now() - started).toBeLessThan(2_000)
+})
+
+test("nothing listening fails at once with no status", async () => {
+  const { origin } = await serve(() => {})
+  await servers.splice(0)[0]!()
+  const result = await send(origin)
+  expect(result._tag === "Failure" && result.failure).toEqual(expect.objectContaining({ _tag: "WriteNotTaken" }))
+  expect(result._tag === "Failure" && result.failure.status).toBe(undefined)
+})

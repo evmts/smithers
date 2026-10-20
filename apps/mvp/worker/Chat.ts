@@ -1,5 +1,4 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
-import type { Flow } from "@smthrs/flow"
 import { OtlpRelay } from "@smthrs/observability"
 import { Clock, Data, Effect, type Layer, Metric, Option, Schema, Tracer } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -14,11 +13,19 @@ import {
 } from "../src/features/chat/contract.ts"
 import { ANSWERS_ROUTE } from "../src/features/agent/contract.ts"
 import { MODEL_ROLES, MODEL_ROUTE, type ModelRole } from "../src/features/model/contract.ts"
-import { FLOWS_ROUTE } from "../src/flows/contract.ts"
-import { remoteFlows } from "../src/flows/declarations.ts"
+import { VIEWS_ROUTE, VIEWS_SHAPE_ROUTE } from "../src/features/views/contract.ts"
+import { RUNS_ROUTE, RUNS_SHAPE_ROUTE } from "../src/features/status/contract.ts"
+import {
+  FLOW_DRAFTS_ROUTE,
+  FLOW_DRAFTS_SHAPE_ROUTE,
+  FLOWS_ROUTE,
+  FLOWS_SHAPE_ROUTE,
+} from "../src/features/flows-ui/contract.ts"
 import { BROWSER_TELEMETRY } from "../src/telemetry.ts"
 import { canAsk, Sessions } from "./Actor.ts"
 import * as Answers from "./Answers.ts"
+import { mayWatch } from "./branch/Access.ts"
+import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "./Body.ts"
 import * as ChatMetrics from "./ChatMetrics.ts"
 import { codeOf } from "./ErrorCode.ts"
@@ -26,6 +33,10 @@ import * as Flows from "./Flows.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as Messages from "./Messages.ts"
 import * as ModelEndpoint from "./ModelEndpoint.ts"
+import * as PersonalFlows from "./PersonalFlows.ts"
+import * as Runs from "./Runs.ts"
+import * as ShapeAccess from "./ShapeAccess.ts"
+import * as Views from "./Views.ts"
 
 // ChatApi's routes (docs/features/chat.md#contract). ChatApi.ts runs them on Cloudflare; the tests run them as they
 // are. ChatApi only stores a question and its empty `streaming` answer: the browser's agent answers it, through the
@@ -33,6 +44,29 @@ import * as ModelEndpoint from "./ModelEndpoint.ts"
 
 /** The largest `POST /api/questions` body: 64 KiB. */
 const MAX_BODY_BYTES = 64 * 1024
+
+/**
+ * The `messages` columns every device syncs: all of them but `asked_by`, the asker's person id, which only the answer
+ * routes read (worker/Answers.ts). A column a migration adds stays on the server until it is listed here.
+ * `conversation_id` names the branch's conversation each row belongs to (decision 0013 §1).
+ */
+export const SYNCED_MESSAGE_COLUMNS = [
+  "id",
+  "conversation_id",
+  "role",
+  "text",
+  "status",
+  "question_id",
+  "failure",
+  "model_id",
+  "stop_reason",
+  "input_tokens",
+  "output_tokens",
+  "position",
+  "created_at",
+  "updated_at",
+  "parts",
+]
 
 /** The largest browser telemetry export ChatApi reads: 128 KiB. A larger one is answered 413 and not relayed. */
 const TELEMETRY_MAX_BODY_BYTES = 128 * 1024
@@ -58,12 +92,15 @@ const parentOf = (header: string | undefined) =>
 const Question = Schema.Struct({
   id: Schema.String.check(Schema.isUUID()),
   answerId: Schema.String.check(Schema.isUUID()),
+  // The branch's conversation (decision 0013 §1). For one release, a question without one belongs to the home
+  // conversation, so an ask queued by the build before branches still lands.
+  conversationId: Schema.optional(Schema.String.check(Schema.isUUID())),
   text: Schema.Trim.check(Schema.isBetweenLength(1, MAX_QUESTION_LENGTH)),
 }).check(Schema.makeFilter((question) => question.id.toLowerCase() !== question.answerId.toLowerCase()))
 
 const decodeQuestion = Schema.decodeUnknownEffect(Schema.fromJsonString(Question))
 
-const invalid = `Send JSON { id, answerId, text }: two different UUIDs and 1 to ${
+const invalid = `Send JSON { id, answerId, conversationId, text }: two different UUIDs, a conversation's id and 1 to ${
   MAX_QUESTION_LENGTH.toLocaleString("en-US")
 } characters of text.`
 
@@ -78,26 +115,50 @@ class Refusal extends Data.TaggedError("Refusal")<{
 }> {}
 
 /**
- * Reads the configuration (`ShapeProxy.config`, `ModelEndpoint.make`, `Answers.make`) and returns ChatApi's `fetch`
+ * Reads the configuration (`ShapeProxy.config`, `ModelEndpoint.make`, `Answers.make`, `Views.make`, with `localHttp`
+ * as `WEB_PAGES_LOCAL_HTTP`'s default) and returns ChatApi's `fetch`
  * handler. `database` opens a Postgres client for the scope that builds it: one per request. `fetch` reads who is
- * asking from `Sessions`, and the remote door starts `remote`, the registry's remote flows unless a test sets them,
- * through `Flows.FlowStarter`.
+ * asking from `Sessions`, and starts each answer's `chat/Expire` through `Flows.FlowStarter`.
  */
 export const make = <E, R>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
-  remote: ReadonlyArray<Flow.Any> = remoteFlows,
+  options: { readonly localHttp?: boolean } = {},
 ) =>
   Effect.gen(function* () {
     // POST /api/model/<role>: the metered model endpoint (docs/features/model-endpoint.md).
     const model = yield* ModelEndpoint.make(database)
     // GET and POST /api/answers/<id>: the write path for the browser's agent (docs/features/agent.md).
     const answers = yield* Answers.make(database)
-    // POST /api/flows/<name>: the remote door (docs/features/flows.md).
-    const door = Flows.make(remote)
-    // GET /api/shapes/messages: Electric's `messages`, which the browser pages by `position` a window at a time.
+    // POST /api/views and GET /api/shapes/views: the conversation's views (docs/features/web-pages.md).
+    const views = yield* Views.make(database, options)
+    // POST /api/runs/<id>[/answer] and GET /api/shapes/runs: agent status (docs/features/agent-status.md).
+    const runs = yield* Runs.make(database)
+    // /api/flows, /api/flow-drafts and their shapes: a person's own flows (docs/features/flows.md#your-own-flows).
+    const personalFlows = yield* PersonalFlows.make(database)
+    // GET /api/shapes/messages?conversation=<id>: one conversation's `messages` (decision 0013 §1), which the browser
+    // pages by `position` a window at a time. The server fixes the table, the columns and the `where`; the browser
+    // names only the conversation. Anyone who may not watch the branch gets a shape with no rows; a request the server
+    // can't decide, because sessions or the home conversation can't be read, is 503 (worker/ShapeAccess.ts).
+    const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
     const shape = ShapeProxy.make({
-      ...(yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })),
-      shape: { table: MESSAGES_TABLE },
+      ...connection,
+      shape: Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const named = new URL(request.url, "http://localhost").searchParams.get("conversation")
+        const conversation = named !== null && isUuid(named)
+          ? named.toLowerCase()
+          : named === null
+          ? yield* Conversations.home.pipe(Effect.provide(database), Effect.mapError(() => ShapeAccess.unavailable))
+          : undefined
+        const actor = yield* ShapeAccess.actor
+        const watched = conversation !== undefined && mayWatch(actor, "public") ? conversation : NO_CONVERSATION
+        return {
+          table: MESSAGES_TABLE,
+          columns: SYNCED_MESSAGE_COLUMNS,
+          where: "conversation_id = $1",
+          params: { "1": watched },
+        }
+      }),
       name: "chat.shape",
       metric: ChatMetrics.shapes,
     })
@@ -114,23 +175,40 @@ export const make = <E, R>(
       const fields: Record<string, string | number | boolean> = {}
       const response = yield* Effect.gen(function* () {
         if (request.method !== "POST") return yield* new Refusal({ status: 405, errorCode: "method" })
-        yield* mayAsk
+        const asker = yield* mayAsk
         const body = yield* readBody(request, fields)
         const decoded = yield* decodeQuestion(body).pipe(
           Effect.mapError(() => new Refusal({ status: 400, errorCode: "invalid", explanation: invalid })),
         )
         // Lowercase, as Postgres prints a uuid: one answer has one id in rows, logs and the browser's agent.
-        const question = { ...decoded, id: decoded.id.toLowerCase(), answerId: decoded.answerId.toLowerCase() }
+        // The asker is the session's person, never the body's: only they may write the answer (worker/Answers.ts).
+        const conversationId = yield* conversationOf(decoded.conversationId)
+        const question = {
+          id: decoded.id.toLowerCase(),
+          answerId: decoded.answerId.toLowerCase(),
+          conversationId,
+          text: decoded.text,
+          askedBy: asker.subject.id,
+        }
         fields.questionId = question.id
         fields.answerId = question.answerId
+        fields.conversationId = conversationId
         yield* Effect.annotateCurrentSpan({
           "smithers.chat.question_id": question.id,
           "smithers.chat.answer_id": question.answerId,
         })
-        const asked = yield* Messages.ask(question).pipe(Effect.provide(database), Effect.mapError(refuseStore))
-        if (asked.txid === null) fields.existing = true
-        // A resend starts the same execution, a no-op, so an ask whose first start was lost still gets one.
-        fields.expiry = yield* expire(question.answerId)
+        // The ask is acknowledged only once its expiry is admitted, so no answer is left with neither a device nor a
+        // server to settle it. A start the host refuses is a 503, which the outbox sends again: the resend finds the
+        // question stored and starts the same execution, a no-op once one started. The write and the start run as one
+        // uninterruptible unit, so a caller that goes away between them can't leave a stored ask without its expiry.
+        const asked = yield* Effect.uninterruptible(
+          Effect.gen(function* () {
+            const asked = yield* Messages.ask(question).pipe(Effect.provide(database), Effect.mapError(refuseStore))
+            if (asked.txid === null) fields.existing = true
+            fields.expiry = yield* expire(question.answerId)
+            return asked
+          }),
+        )
         return asked.txid === null
           ? HttpServerResponse.jsonUnsafe({ txid: null, existing: true }, { status: 200, headers: noStore })
           : HttpServerResponse.jsonUnsafe({ txid: asked.txid }, { status: 202, headers: noStore })
@@ -169,6 +247,31 @@ export const make = <E, R>(
       return response
     })
 
+    /**
+     * The conversation a question belongs to: the one it names, which must exist (404 otherwise), or the home
+     * conversation when it names none (503 when there is none to bind it to).
+     */
+    const conversationOf = (named: string | undefined) =>
+      Effect.gen(function* () {
+        if (named !== undefined) {
+          const id = named.toLowerCase()
+          const found = yield* Conversations.exists(id).pipe(Effect.provide(database), Effect.mapError(refuseStore))
+          if (!found) {
+            return yield* new Refusal({
+              status: 404,
+              errorCode: "conversation_not_found",
+              explanation: "No such conversation.",
+            })
+          }
+          return id
+        }
+        const home = yield* Conversations.home.pipe(Effect.provide(database), Effect.mapError(refuseStore))
+        if (home === undefined) {
+          return yield* new Refusal({ status: 503, errorCode: "no_home", explanation: unreachable })
+        }
+        return home
+      })
+
     const fetch = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
       const path = request.url.split("?")[0]!
@@ -177,6 +280,17 @@ export const make = <E, R>(
         return yield* questions.pipe(Effect.withSpan("chat.question", { kind: "server", parent }))
       }
       if (path === SHAPE_ROUTE) return yield* shape
+      if (path === VIEWS_ROUTE) return yield* views.add
+      if (path === VIEWS_SHAPE_ROUTE) return yield* views.shape
+      if (path === RUNS_SHAPE_ROUTE) return yield* runs.shape
+      if (path === FLOWS_SHAPE_ROUTE) return yield* personalFlows.flowsShape
+      if (path === FLOW_DRAFTS_SHAPE_ROUTE) return yield* personalFlows.draftsShape
+      if (path === FLOWS_ROUTE) return yield* personalFlows.flows("")
+      if (path.startsWith(`${FLOWS_ROUTE}/`)) return yield* personalFlows.flows(path.slice(FLOWS_ROUTE.length + 1))
+      if (path.startsWith(`${FLOW_DRAFTS_ROUTE}/`)) {
+        return yield* personalFlows.drafts(path.slice(FLOW_DRAFTS_ROUTE.length + 1))
+      }
+      if (path.startsWith(`${RUNS_ROUTE}/`)) return yield* runs.route(path.slice(RUNS_ROUTE.length + 1))
       if (path.startsWith(`${TELEMETRY_ROUTE}/`)) return yield* telemetry
       if (path.startsWith(`${MODEL_ROUTE}/`)) {
         const role = path.slice(MODEL_ROUTE.length + 1)
@@ -185,7 +299,6 @@ export const make = <E, R>(
       if (path.startsWith(`${ANSWERS_ROUTE}/`)) {
         return yield* answers(path.slice(ANSWERS_ROUTE.length + 1))
       }
-      if (path.startsWith(`${FLOWS_ROUTE}/`)) return yield* door(path.slice(FLOWS_ROUTE.length + 1))
       return HttpServerResponse.empty({ status: 404 })
     })
 
@@ -195,8 +308,8 @@ export const make = <E, R>(
 /**
  * Starts `chat/Expire` for an answer ChatApi took (worker/flows/Expire.ts), on the remote host through
  * `Flows.FlowStarter`, without waiting for it: one execution per answer, so starting it again is a no-op. It settles
- * the answer if no device ever does. It never fails the ask: a start the host can't record is a `chat.answer.expire`
- * line and a count, `not_started`, and the asking device's run still settles the answer as usual. Answers how it went.
+ * the answer if no device ever does. A start the host can't record is a `chat.answer.expire` line and a count,
+ * `not_started`, and refuses the ask with a 503, so the outbox sends it again.
  */
 const expire = (answerId: string) =>
   Effect.flatMap(
@@ -213,19 +326,25 @@ const expire = (answerId: string) =>
             outcome: "not_started",
             errorCode: error._tag === "@smthrs/mvp/flows/StartUnavailable" ? error.errorCode : "conflict",
           }),
-          Effect.as("not_started"),
+          Effect.andThen(
+            new Refusal({ status: 503, errorCode: "expiry_not_started", explanation: notTaken }),
+          ),
         ),
       )
     ),
   )
 
+/** The 503 message when ChatApi stored a question but couldn't start its expiry. */
+const notTaken = "Smithers couldn't take the question. Try again."
+
 /** The 503 message when Postgres, or the sessions in it, can't be read. */
 const unreachable = "Smithers can't reach its database. Try again."
 
 /**
- * Refuses a caller who may not ask Smithers (`repo:ask`, decision 0007): signed out (401), signed in without the Member
- * role or above (403), or whose session can't be read (503). Nothing is written for any of them: a Guest's question
- * would leave a `streaming` answer that no agent may answer, which holds up every later answer's turn.
+ * The actor asking, or a refusal of a caller who may not ask Smithers (`repo:ask`, decision 0007): signed out (401),
+ * signed in without the Member role or above (403), or whose session can't be read (503). Nothing is written for any
+ * of them: a Guest's question would leave a `streaming` answer that no agent may answer, which holds up every later
+ * answer's turn.
  */
 const mayAsk = Effect.gen(function* () {
   const actor = yield* (yield* Sessions).resolve.pipe(
@@ -241,9 +360,15 @@ const mayAsk = Effect.gen(function* () {
       explanation: "Asking Smithers needs the Member role.",
     })
   }
+  return actor.value
 })
 
 const noStore = { "cache-control": "no-store" }
+
+/** What a shape filters on for someone who may not watch a conversation: no conversation's id, so it holds no rows. */
+const NO_CONVERSATION = "00000000-0000-0000-0000-000000000000"
+
+const isUuid = Schema.is(Schema.String.check(Schema.isUUID()))
 
 const isModelRole = (value: string): value is ModelRole => (MODEL_ROLES as ReadonlyArray<string>).includes(value)
 

@@ -1,0 +1,5 @@
+# The app's pages refuse to be framed, its own frames included (src/pwa.ts PAGE_HEADERS,
+# docs/features/web-pages.md#security). Cloudflare serves these with every static asset and the single-page fallback.
+/*
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Frame-Options: DENY

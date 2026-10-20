@@ -6,6 +6,7 @@ import { SeatResolver } from "@smthrs/agent"
 import { ModelError, ModelRequest } from "@smthrs/model"
 import { Cause, Deferred, Effect, Exit, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
+import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test } from "vitest"
 import { eventually, stop, testFile, usage } from "../../../worker/test/harness.ts"
 import { answerRow as row, cell, type Engine, openAgent } from "../../test/agent"
@@ -248,7 +249,7 @@ describe("chat/Answer", () => {
     expect(await row(runtime, answerId)).toMatchObject({ status: "failed", failure: "empty" })
   })
 
-  test("a turn that never comes settles failed, unfinished, at the turn deadline, with no model call", async () => {
+  test("a turn whose queue doesn't move for the turn wait settles failed, unfinished, with no model call", async () => {
     const model = answering(`ctx.done("Never.")`)
     const agent = await openAgent(runtime, model.script)
     const engine = await agent.engine(undefined, { turnWait: "1 seconds" })
@@ -265,10 +266,50 @@ describe("chat/Answer", () => {
     expect(await row(runtime, first)).toMatchObject({ status: "streaming" })
   })
 
-  test("a run killed while it waits settles on resume by the turn deadline its first start set", async () => {
+  test("a burst's tail: an answer whose queue keeps moving waits past the turn wait counted from its start, and is answered", async () => {
+    const model = answering(`ctx.done("At last.")`)
+    const agent = await openAgent(runtime, model.script)
+    const engine = await agent.engine(undefined, { turnWait: "1 seconds" })
+    engines.push(engine)
+    // An earlier answer settled, and the routes count the turn's wait from then: here a moment the server's clock
+    // hasn't reached, so the queue has always just moved (worker/Answers.test.ts proves how the wait is counted).
+    const settled = await agent.ask("Answered before the burst")
+    await agent.fetch(`http://chat.test/api/answers/${settled}`, {
+      method: "POST",
+      body: JSON.stringify({ status: "done", text: "Done." }),
+    })
+    await runtime.runPromise(
+      Effect.flatMap(
+        SqlClient.SqlClient,
+        (sql) => sql`UPDATE messages SET updated_at = now() + interval '1 hour' WHERE id = ${settled}`,
+      ),
+    )
+    // The answer ahead is live, as on a device answering it; this device's run for the next one starts now.
+    const ahead = await agent.ask("Ahead in the burst")
+    const tail = await agent.ask("The burst's tail")
+    const refusals = () =>
+      agent.h.line("chat.answer.turn").filter((line) =>
+        line.annotations.answerId === tail && line.annotations.status === 409
+      ).length
+    const running = agent.start(engine, tail)
+
+    // Its fourth refusal comes at least 1.75 s after its start (the retries wait 250 ms, doubling): past a turn wait of
+    // 1 s counted from the start, which would have settled it there. Then the answer ahead settles.
+    await eventually(() => refusals() >= 4, 20_000)
+    await agent.fetch(`http://chat.test/api/answers/${ahead}`, {
+      method: "POST",
+      body: JSON.stringify({ status: "failed", failure: "model_error" }),
+    })
+
+    expect(await running.done).toEqual(Exit.succeed({ status: "done" }))
+    expect(model.calls).toHaveLength(1)
+    expect(await row(runtime, tail)).toMatchObject({ status: "done", text: "At last." })
+  })
+
+  test("the turn wait is the server's record: a run killed while it waits settles on resume once its queue hasn't moved for the turn wait", async () => {
     const model = answering(`ctx.done("Never.")`)
     const agent = await openAgent(runtime, model.script)
-    const first = await agent.engine(undefined, { turnWait: "2 seconds" })
+    const first = await agent.engine()
     await agent.ask("Asked on a device that went away")
     const answerId = await agent.ask("Asked here")
     const running = agent.start(first, answerId)
@@ -278,8 +319,15 @@ describe("chat/Answer", () => {
       20_000,
     )
 
-    // The tab dies. The next tab's engine would give a new run ten minutes; this run keeps the deadline it began with.
+    // The tab dies, and the app opens again an hour after the question was asked, with nothing ahead of it having
+    // moved: the next engine, with the default turn wait (10 minutes), settles it on its first turn request.
     await first.crash()
+    await runtime.runPromise(
+      Effect.flatMap(
+        SqlClient.SqlClient,
+        (sql) => sql`UPDATE messages SET created_at = now() - interval '1 hour' WHERE id = ${answerId}`,
+      ),
+    )
     const second = await agent.engine(first.schema)
     engines.push(second)
     const exit = await agent.resume(second, answerId)

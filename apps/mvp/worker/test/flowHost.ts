@@ -78,7 +78,10 @@ export const build = <ROut, RE, RR>(registration: Layer.Layer<ROut, RE, RR>, opt
         options.isAlive === undefined ? EngineStore.OwnerIdentity.layer : EngineStore.OwnerIdentity.layerWithoutPid,
       ),
       Layer.provide(NodeHost.layer),
-      Layer.provide(NodeHost.NodeCrypto.layer),
+      // Every durable composition needs `Crypto` where its executions run, not only where the runtime is built: a
+      // `.to()` handoff mints the next round's id with it. The deployed host merges it in the same way
+      // (`CloudflareHost.layer` in @smthrs/platform-cloudflare).
+      Layer.provideMerge(NodeHost.NodeCrypto.layer),
       Layer.provide(
         PostgresDatabase.layer({
           url: server.toString(),
@@ -135,7 +138,7 @@ export const runFlow = <
         const executionId = options.executionId ?? crypto.randomUUID()
         const flows = Context.get(context, FlowRuntime.FlowRuntime)
         const exit = yield* Effect.exit(
-          flows.execute(flow, { executionId, payload }) as Effect.Effect<
+          flows.execute(flow, { executionId, payload }).pipe(Effect.provide(context)) as Effect.Effect<
             Success["Type"],
             Error["Type"] | FlowRuntime.FlowCycleDetected
           >,

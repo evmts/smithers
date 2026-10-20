@@ -16,8 +16,9 @@ import {
   REPOSITORIES_SHAPE_ROUTE,
   REPOSITORIES_TABLE,
   SHA_PATTERN,
+  textOf,
 } from "../src/features/repo/contract.ts"
-import { Sessions } from "./Actor.ts"
+import { canClone, Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import { FlowStarter } from "./Flows.ts"
@@ -26,39 +27,57 @@ import * as RepoMetrics from "./RepoMetrics.ts"
 import * as RepoReads from "./RepoReads.ts"
 import * as Repos from "./Repos.ts"
 
-// RepoApi (decision 0006 §1, docs/features/repo.md#repoapi): asking for a clone, the `repositories` shape, and reading a
-// cloned repository at a commit. ChatApi routes `/api/repos/*` and `/api/shapes/repositories` here. Who is asking comes
+// RepoApi (decision 0006 §1, docs/features/repo.md#repoapi): asking for a clone, the `repositories` shape, reading a
+// cloned repository at a commit, and listing its branches and tags. ChatApi routes `/api/repos/*` and
+// `/api/shapes/repositories` here. Who is asking comes
 // from `Sessions`, where a clone runs from `FlowStarter` (a Durable Object in ChatApi), and the immutable cache from
 // `ImmutableCache` (the Workers Cache API in ChatApi): all three are in context per request.
 //
-// Reading is open to everyone; cloning needs sign-in (decision 0008, "Sign-in is needed to: import"). Every input is
-// bounded: the body, the owner and name, the SHA and the path.
+// Reading is open to everyone; cloning needs sign-in (decision 0008, "Sign-in is needed to: import") and the Member role
+// or above (decision 0007), because a clone spends the deployment's Code Storage budget. Every input is bounded: the
+// body, the owner and name, the SHA and the path.
 
 const noStore = { "cache-control": "no-store" }
 const immutable = { "cache-control": "public, max-age=31536000, immutable" }
+/** A raw file is shown as plain text, never sniffed, and runs nothing even if a browser would render it. */
+const rawHeaders = { "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox" }
 
 /** A refusal: its status, `{ code }` and any extra fields, never cached. */
 const refuse = (status: number, code: Refusal, extra: Record<string, number> = {}, headers: Record<string, string> = {}) =>
   HttpServerResponse.jsonUnsafe({ code, ...extra }, { status, headers: { ...noStore, ...headers } })
 
+const encoder = new TextEncoder()
+
 const CloneBody = Schema.fromJsonString(Schema.Struct({ owner: Schema.String, name: Schema.String }))
 const decodeCloneBody = Schema.decodeUnknownOption(CloneBody)
 
-/** A `/api/repos/<owner>/<name>/<kind>/<sha>[/<path>]` request, decoded, or `undefined` for any other path. */
+/** What a read route reads: a tree, a file's bytes (`blob`), a file as a page shows it (`raw`), or the refs. */
+type ReadKind = "tree" | "blob" | "raw" | "refs"
+const READ_KINDS: ReadonlySet<string> = new Set<ReadKind>(["tree", "blob", "raw", "refs"])
+
+/**
+ * A `/api/repos/<owner>/<name>/{tree,blob,raw}/<sha>[/<path>]` or `/api/repos/<owner>/<name>/refs` request, decoded, or
+ * `undefined` for any other path. `extra` counts segments the kind doesn't take: a tree's after its SHA, any after refs.
+ */
 const parseRead = (path: string) => {
   const segments = path.slice(REPOS_ROUTE.length + 1).split("/")
   const [rawOwner, rawName, rawKind, sha, ...rest] = segments
-  if (rawKind !== "tree" && rawKind !== "blob") return undefined
-  const kind: "tree" | "blob" = rawKind
+  if (rawKind === undefined || !READ_KINDS.has(rawKind)) return undefined
+  const kind = rawKind as ReadKind
   try {
     const owner = decodeURIComponent(rawOwner!)
     const name = decodeURIComponent(rawName!)
     const file = rest.map(decodeURIComponent).join("/")
-    return { owner, name, kind, sha: sha!, file, extra: kind === "tree" ? rest.length : 0 }
+    const extra = kind === "refs" ? segments.length - 3 : kind === "tree" ? rest.length : 0
+    return { owner, name, kind, sha: sha ?? "", file, extra }
   } catch {
     return undefined
   }
 }
+
+/** A raw file's type: text as UTF-8 plain text, anything else as bytes to save. */
+const rawType = (bytes: Uint8Array): string =>
+  textOf(bytes) === undefined ? "application/octet-stream" : "text/plain; charset=utf-8"
 
 /** What RepoApi needs besides its database: the Code Storage client, when this deployment has an organization. */
 export interface Options {
@@ -73,9 +92,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
   Effect.gen(function* () {
     const budgets = yield* Repos.budgets
     const maxTreePaths = yield* RepoReads.maxTreePaths
+    const maxRefs = yield* RepoReads.maxRefs
     const reads = Option.map(
       options.codeStorage,
-      (codeStorage) => RepoReads.make({ codeStorage, database, budgets, maxTreePaths }),
+      (codeStorage) => RepoReads.make({ codeStorage, database, budgets, maxTreePaths, maxRefs }),
     )
     // GET /api/shapes/repositories: Electric's `repositories`, whole, with no subset requests.
     const shape = ShapeProxy.make({
@@ -127,6 +147,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
         if (Option.isNone(actor)) return refused(503, "unavailable")
         if (Option.isNone(actor.value)) return refused(401, "authentication")
+        if (!canClone(actor.value.value)) return refused(403, "forbidden")
         if (Option.isNone(options.codeStorage)) return refused(503, "not_configured")
         const text = yield* readBounded(request, MAX_REQUEST_BYTES).pipe(Effect.result)
         if (text._tag === "Failure") {
@@ -184,7 +205,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       return response
     }).pipe(Effect.withSpan("repo.clone.request", { kind: "server" }))
 
-    /** A tree or file read: validated, answered from the cache or Code Storage, and recorded. */
+    /**
+     * A tree, file or refs read: validated, answered from the cache or Code Storage, and recorded. The refs answer
+     * follows the row's head, so it is never kept by a browser; everything read at a SHA is kept forever.
+     */
     const read = (path: string) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
@@ -197,12 +221,23 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             return refuse(404, "not_found")
           }
           if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
-          if (!SHA_PATTERN.test(target.sha)) return refuse(400, "invalid")
-          if (target.kind === "blob" && !isFilePath(target.file)) return refuse(400, "invalid")
+          if (target.kind !== "refs" && !SHA_PATTERN.test(target.sha)) return refuse(400, "invalid")
+          if ((target.kind === "blob" || target.kind === "raw") && !isFilePath(target.file)) return refuse(400, "invalid")
           fields.repoId = repoId(target.owner, target.name)
-          fields.sha = target.sha
+          if (target.kind !== "refs") fields.sha = target.sha
           if (Option.isNone(reads)) return refuse(503, "not_configured")
-          const answered = target.kind === "tree"
+          const answered = target.kind === "refs"
+            ? reads.value.refs(target.owner, target.name).pipe(
+              Effect.map((refs) => {
+                const bytes = encoder.encode(JSON.stringify(refs))
+                fields.bytes = bytes.length
+                return HttpServerResponse.uint8Array(bytes, {
+                  headers: { "cache-control": "no-cache" },
+                  contentType: "application/json",
+                })
+              }),
+            )
+            : target.kind === "tree"
             ? reads.value.tree(target.owner, target.name, target.sha).pipe(
               Effect.map((bytes) => {
                 fields.bytes = bytes.length
@@ -213,8 +248,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               Effect.map(({ bytes, metadata }) => {
                 fields.bytes = bytes.length
                 return HttpServerResponse.uint8Array(bytes, {
-                  headers: { ...immutable, ...(metadata.blobSha === undefined ? {} : { "x-blob-sha": metadata.blobSha }) },
-                  contentType: "application/octet-stream",
+                  headers: {
+                    ...immutable,
+                    ...(target.kind === "raw" ? rawHeaders : {}),
+                    ...(metadata.blobSha === undefined ? {} : { "x-blob-sha": metadata.blobSha }),
+                  },
+                  contentType: target.kind === "raw" ? rawType(bytes) : "application/octet-stream",
                 })
               }),
             )

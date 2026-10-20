@@ -5,10 +5,20 @@
 // Nothing here imports a library, so every side can.
 import { AGENT_TELEMETRY } from "./features/agent/contract"
 import { AUTH_TELEMETRY } from "./features/auth/contract"
+import { BRANCH_TELEMETRY } from "./features/branch/contract"
 import { CHAT_TELEMETRY } from "./features/chat/contract"
+import { ISSUES_TELEMETRY } from "./features/issues/contract"
+import { JEV_TELEMETRY } from "./features/jev/contract"
+import { COMMANDS_TELEMETRY } from "./features/commands/contract"
+import { NAVIGATION_TELEMETRY } from "./features/navigation/contract"
 import { REPO_TELEMETRY } from "./features/repo/contract"
 import { THEME_TELEMETRY } from "./features/theme/contract"
+import { WEB_TELEMETRY } from "./features/web/contract"
 import { FLOWS_TELEMETRY } from "./flows/contract"
+import { FLOWS_UI_TELEMETRY } from "./features/flows-ui/contract"
+import { RUNS_TELEMETRY } from "./features/runs/contract"
+import { STATUS_TELEMETRY } from "./features/status/contract"
+import { TERMINAL_TELEMETRY } from "./features/terminal/contract"
 
 /** Records by name (log messages, span names, metric names) and the fields a relayed line keeps. */
 export interface Telemetry {
@@ -94,11 +104,21 @@ export const WITHHELD = {
 const features: ReadonlyArray<Telemetry> = [
   APP_TELEMETRY,
   CHAT_TELEMETRY,
+  COMMANDS_TELEMETRY,
   AUTH_TELEMETRY,
   FLOWS_TELEMETRY,
   AGENT_TELEMETRY,
   THEME_TELEMETRY,
+  NAVIGATION_TELEMETRY,
   REPO_TELEMETRY,
+  WEB_TELEMETRY,
+  JEV_TELEMETRY,
+  ISSUES_TELEMETRY,
+  FLOWS_UI_TELEMETRY,
+  RUNS_TELEMETRY,
+  STATUS_TELEMETRY,
+  BRANCH_TELEMETRY,
+  TERMINAL_TELEMETRY,
 ]
 
 /**

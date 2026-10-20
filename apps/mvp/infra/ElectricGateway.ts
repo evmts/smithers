@@ -1,10 +1,12 @@
-// The Electric gateway Worker: answers `GET /v1/shape` carrying Electric's secret by forwarding it to the one
-// Durable Object that runs Electric's container, and refuses everything else before the container starts.
-// alchemy.run.ts declares it in production only; ChatApi reaches it at its workers.dev URL (infra/Electric.ts).
+// The Electric gateway Worker: answers `GET /v1/shape` carrying Electric's secret as a bearer token by forwarding it,
+// without the token, to the one Durable Object that runs Electric's container, and refuses everything else before the
+// container starts (infra/ElectricAccess.ts). alchemy.run.ts declares it in production only; ChatApi reaches it at its
+// workers.dev URL (infra/Electric.ts).
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect, Redacted } from "effect"
+import { Effect } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ElectricSecret } from "./Electric.ts"
+import { admit } from "./ElectricAccess.ts"
 import { directUrl, Postgres } from "./Postgres.ts"
 
 /** The Electric release the app is built against; docker-compose.yml runs the same one. */
@@ -17,14 +19,17 @@ const PORT = 3000
 const INSTANCE = "electric"
 
 /**
- * Electric itself, on Postgres' direct host with its secret set. Its storage directory is the container's disk, which
- * a restart empties: Electric then rebuilds its shapes and clients refetch (docs/infrastructure.md#limits).
+ * Electric itself, on Postgres' direct host. Its storage directory is the container's disk, which a restart empties:
+ * Electric then rebuilds its shapes and clients refetch (docs/infrastructure.md#limits).
+ *
+ * It runs without a secret of its own (`ELECTRIC_INSECURE`): a container has no way in but its Durable Object, and the
+ * gateway checks the secret before the object is reached. Electric takes its secret only as a URL parameter, and
+ * Workers Traces records a subrequest's URL, so a secret on the hop to the container would land in the traces.
  */
 class Electric extends Cloudflare.Container<Electric>()(
   "Electric",
   Effect.gen(function* () {
     const postgres = yield* Postgres
-    const secret = yield* ElectricSecret
     return {
       image: IMAGE,
       // 1/4 vCPU, 1 GiB of memory and 4 GB of disk; the default `lite` (256 MiB) is too small for Electric.
@@ -32,7 +37,7 @@ class Electric extends Cloudflare.Container<Electric>()(
       maxInstances: 1,
       env: {
         DATABASE_URL: directUrl(postgres),
-        ELECTRIC_SECRET: secret.text,
+        ELECTRIC_INSECURE: "true",
       },
     }
   }),
@@ -75,15 +80,9 @@ export default class ElectricGateway extends Cloudflare.Worker<ElectricGateway>(
     const secret = yield* (yield* ElectricSecret).text
     return {
       fetch: Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        const url = new URL(request.url, "http://electric")
-        if (request.method !== "GET" || url.pathname !== "/v1/shape") {
-          return HttpServerResponse.empty({ status: 404 })
-        }
-        if (url.searchParams.get("secret") !== Redacted.value(yield* secret)) {
-          return HttpServerResponse.empty({ status: 401 })
-        }
-        return yield* objects.getByName(INSTANCE).fetch(request)
+        const admission = admit(yield* HttpServerRequest.HttpServerRequest, yield* secret)
+        if (admission._tag === "Refused") return HttpServerResponse.empty({ status: admission.status })
+        return yield* objects.getByName(INSTANCE).fetch(admission.request)
       }),
     }
   }),

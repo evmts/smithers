@@ -3,7 +3,6 @@
 // object runs them in local workerd in worker/ExecutionHost.workerd.test.ts.
 import * as Pg from "@effect/sql-pg"
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { ExecutionObject } from "@smthrs/platform-cloudflare"
 import { Context, Duration, Effect, Layer, Logger, Metric, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
@@ -21,6 +20,10 @@ import * as Repos from "./Repos.ts"
 import { scripted } from "./test/codeStorage.ts"
 import { answers, harness, row, testFile } from "./test/harness.ts"
 import { repositoryRow, resetRepos } from "./test/repos.ts"
+import { resetBranches, terminal, terminalRows, tracked } from "./test/branch.ts"
+import { Sandboxes } from "./branch/Sandboxes.ts"
+import * as TerminalOpen from "./flows/TerminalOpen.ts"
+import { openExecutionId } from "../src/features/terminal/contract.ts"
 import { cookie, SECRET, signInHarness } from "./test/signIn.ts"
 
 // The app's own tables, for sign-in's role check (`auth/RecheckRole`) and `chat/Expire`, on a schema of this file's.
@@ -123,7 +126,7 @@ describe("ExecutionHost over the compose Postgres", () => {
         const settled = yield* host.alarm()
         expect(settled).toEqual({ _tag: "Settled", forgetAtMs: expect.any(Number) })
         const forgetAtMs = settled._tag === "Settled" ? settled.forgetAtMs : null
-        expect(forgetAtMs! - Date.now()).toBeGreaterThan(ExecutionObject.settledRetentionMs - 60_000)
+        expect(forgetAtMs! - Date.now()).toBeGreaterThan(ExecutionHost.settledRetentionMs - 60_000)
         expect(object.alarm()).toBe(forgetAtMs)
         expect(marks).toEqual(["x:before", "x:after"])
         expect(yield* status(sql, name, executionId)).toBe("completed")
@@ -277,6 +280,45 @@ describe("ExecutionHost over the compose Postgres", () => {
     expect(await row(app, answerId)).toMatchObject({ status: "failed", failure: "abandoned" })
   })
 
+  test("a chat/Expire round that finds the queue moved during its wait hands off to the next round's own object", async () => {
+    const h = await harness(app, answers("never"), {
+      actor: { subject: { kind: "person", id: "person-member" }, role: "member" },
+    })
+    const [ahead, last] = [crypto.randomUUID(), crypto.randomUUID()]
+    expect((await h.ask({ id: crypto.randomUUID(), answerId: ahead, text: "First" })).status).toBe(202)
+    expect((await h.ask({ id: crypto.randomUUID(), answerId: last, text: "Second" })).status).toBe(202)
+    const executionId = Expire.executionId(last)
+    const services = await appServices("10 seconds")
+    const router = recording()
+    await withSchema(({ name, url }) =>
+      Effect.gen(function* () {
+        const object = memory()
+        const host = ExecutionHost.make(object.storage, {
+          hostId: `object-${executionId}`,
+          database: ExecutionHost.database(url, name),
+          flows: ExecutionHost.remote(services),
+          router: router.router,
+        })
+        yield* host.start(yield* ExecutionHost.intent(Expire.Expire, { executionId, payload: { answerId: last } }))
+        const parked = yield* host.alarm()
+        // Parked on its durable timer: the round waits for the expiry before it reads the queue again.
+        expect(parked).toMatchObject({ _tag: "Parked", wakeAtMs: expect.any(Number) })
+        // The answer ahead of it settles while it waits: the queue moved, so its turn began then.
+        yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql`UPDATE messages SET status = 'done', text = 'Answered.', updated_at = now() WHERE id = ${ahead}`).pipe(
+          Effect.provide(services.database),
+          Effect.orDie,
+        )
+        yield* Effect.sleep(Math.max(0, (parked._tag === "Parked" ? (parked.wakeAtMs ?? 0) : 0) - Date.now()))
+        yield* host.alarm()
+      })
+    )
+    // This round ended without settling the answer, and its object handed the next round to that round's own object.
+    expect(await row(app, last)).toMatchObject({ status: "streaming" })
+    expect(router.routed).toEqual([expect.stringMatching(/^start /)])
+    expect(router.routed[0]).not.toBe(`start ${executionId}`)
+  }, 60_000)
+
   test("with sign-in configured, the deployed flows run auth/RecheckRole and auth/RevokeGitHubToken over the app's tables", async () => {
     const signIn = await signInHarness(app)
     const { cookies } = await signIn.signInAs()
@@ -388,5 +430,46 @@ describe("ExecutionHost over the compose Postgres", () => {
       })
     )
     expect(await repositoryRow(app, "github/octocat/spoon-knife")).toMatchObject({ status: "ready" })
+  })
+
+  test("with the branches' machines, the deployed flows run terminal/Open over the app's tables", async () => {
+    await resetBranches(app)
+    const database = (await app.runPromise(Effect.service(TestDatabase.Scratch))).database
+    const { branchId } = await tracked(app, "github/octocat/spoon-knife", "test-branch")
+    const terminalId = crypto.randomUUID()
+    await terminal(app, { id: terminalId, branchId, ownerId: "person-owner", status: "opening" })
+    const machines: Array<string> = []
+    const sandboxes = Layer.succeed(Sandboxes, Sandboxes.of({
+      wake: (branch) => Effect.sync(() => machines.push(`wake ${branch.branchId}`)).pipe(Effect.as({ generation: 7 })),
+      session: (_, id, ownerId) => Effect.sync(() => void machines.push(`session ${id} ${ownerId}`)),
+    }))
+    const flows = ExecutionHost.withTerminals(ExecutionHost.remote({ database, expiry: Expire.DEFAULT_EXPIRY }), database, sandboxes)
+    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, TerminalOpen.TerminalOpen])
+    await withSchema(({ name, sql, url }) =>
+      Effect.gen(function* () {
+        const object = memory()
+        const executionId = openExecutionId(terminalId)
+        const host = ExecutionHost.make(object.storage, {
+          hostId: `object-${executionId}`,
+          database: ExecutionHost.database(url, name),
+          flows,
+          router: recording().router,
+        })
+        yield* host.start(
+          yield* ExecutionHost.intent(TerminalOpen.TerminalOpen, {
+            executionId,
+            payload: {
+              terminalId,
+              ownerId: "person-owner",
+              branch: { branchId, owner: "octocat", name: "Spoon-Knife", branch: "test-branch" },
+            },
+          }),
+        )
+        expect(yield* host.alarm()).toMatchObject({ _tag: "Settled" })
+        expect(yield* status(sql, name, executionId)).toBe("completed")
+      })
+    )
+    expect(machines).toEqual([`wake ${branchId}`, `session ${terminalId} person-owner`])
+    expect((await terminalRows(app, branchId))[0]).toMatchObject({ status: "open", generation: "7" })
   })
 })

@@ -1,5 +1,17 @@
 import { describe, expect, test } from "vitest"
-import { blobKey, encodePath, hrefFor, lineSearch, parseLines, readmeOf, resolveRef, targetOf, treeKey } from "./paths"
+import {
+  blobKey,
+  copyPayloadOf,
+  encodePath,
+  hrefFor,
+  lineSearch,
+  parseLines,
+  readmeOf,
+  refsKey,
+  resolveRef,
+  targetOf,
+  treeKey,
+} from "./paths"
 
 // Where things are in a repository and in the app's URLs: the pure functions the actions, queries and views share.
 
@@ -11,6 +23,7 @@ describe("keys", () => {
   test("name a file list and a file by repository, commit and path", () => {
     expect(treeKey("github/o/n", SHA)).toBe(`github/o/n@${SHA}`)
     expect(blobKey("github/o/n", SHA, "docs/a.md")).toBe(`github/o/n@${SHA}:docs/a.md`)
+    expect(refsKey("github/o/n", SHA)).toBe(`github/o/n@${SHA}`)
   })
 })
 
@@ -51,6 +64,23 @@ describe("resolveRef", () => {
     expect(resolveRef(slashed, "release", "1.x")).toEqual({ revision: "release/1.x", sha: SHA, path: "" })
     expect(resolveRef(slashed, "release", "2.x/a.md")).toBeUndefined()
     expect(resolveRef(slashed, "release/1.x", "")).toEqual({ revision: "release/1.x", sha: SHA, path: "" })
+  })
+
+  test("with the refs, a branch or tag reads at its commit; the longest name leads, and a branch wins over a tag", () => {
+    const refs = {
+      branches: [{ name: "test-branch", sha: OTHER }, { name: "feature", sha: "c".repeat(40) }, { name: "feature/x", sha: "d".repeat(40) }],
+      tags: [{ name: "v1.0.0", sha: "e".repeat(40) }, { name: "test-branch", sha: "f".repeat(40) }],
+    }
+    expect(resolveRef(ready, "test-branch", "a.md", refs)).toEqual({ revision: "test-branch", sha: OTHER, path: "a.md" })
+    expect(resolveRef(ready, "v1.0.0", "", refs)).toEqual({ revision: "v1.0.0", sha: "e".repeat(40), path: "" })
+    expect(resolveRef(ready, "feature", "x/docs/a.md", refs)).toEqual({
+      revision: "feature/x",
+      sha: "d".repeat(40),
+      path: "docs/a.md",
+    })
+    expect(resolveRef(ready, "feature", "y/a.md", refs)).toEqual({ revision: "feature", sha: "c".repeat(40), path: "y/a.md" })
+    expect(resolveRef(ready, "main", "a.md", refs)).toEqual({ revision: "main", sha: SHA, path: "a.md" })
+    expect(resolveRef(ready, "dev", "a.md", refs)).toBeUndefined()
   })
 
   test("any other ref, or a repository without a head, names nothing", () => {
@@ -95,7 +125,7 @@ describe("hrefFor", () => {
     expect(hrefFor(repo, SHA, { kind: "tree", path: "" })).toBe(`/octocat/Spoon-Knife/tree/${SHA}`)
     expect(hrefFor(repo, "main", { kind: "tree", path: "docs" })).toBe("/octocat/Spoon-Knife/tree/main/docs")
     expect(hrefFor(repo, "release/1.x", { kind: "blob", path: "a b/c#.md" })).toBe(
-      "/octocat/Spoon-Knife/blob/release%2F1.x/a%20b/c%23.md",
+      "/octocat/Spoon-Knife/blob/release/1.x/a%20b/c%23.md",
     )
     expect(encodePath("a b/c")).toBe("a%20b/c")
   })
@@ -137,5 +167,53 @@ describe("targetOf", () => {
       lineEnd: 4,
     })
     expect(targetOf("blob", {}, {})).toMatchObject({ owner: "", name: "", path: "", line: null })
+  })
+})
+
+describe("copyPayloadOf", () => {
+  const view = {
+    owner: "octocat",
+    name: "Spoon-Knife",
+    kind: "blob" as const,
+    path: "src/a.ts",
+    sha: SHA,
+    line: 3,
+    lineEnd: 5,
+  }
+
+  test("each Copy's payload for repo/copy, from where the view is", () => {
+    expect(copyPayloadOf(view, "clone-url")).toEqual({ repo: "octocat/Spoon-Knife", what: "clone-url" })
+    expect(copyPayloadOf(view, "path")).toEqual({ repo: "octocat/Spoon-Knife", what: "path", path: "src/a.ts" })
+    expect(copyPayloadOf(view, "contents")).toEqual({
+      repo: "octocat/Spoon-Knife",
+      what: "contents",
+      revision: SHA,
+      path: "src/a.ts",
+    })
+    expect(copyPayloadOf(view, "permalink")).toEqual({
+      repo: "octocat/Spoon-Knife",
+      what: "permalink",
+      revision: SHA,
+      kind: "blob",
+      path: "src/a.ts",
+      line: 3,
+      lineEnd: 5,
+    })
+    expect(copyPayloadOf({ ...view, kind: "tree", path: "", line: null, lineEnd: null }, "permalink")).toEqual({
+      repo: "octocat/Spoon-Knife",
+      what: "permalink",
+      revision: SHA,
+      kind: "tree",
+    })
+    expect(copyPayloadOf({ ...view, kind: "tree", path: "src" }, "permalink")).not.toHaveProperty("line")
+    expect(copyPayloadOf({ ...view, lineEnd: null }, "permalink")).not.toHaveProperty("lineEnd")
+  })
+
+  test("nothing to copy: the root's path, a directory's contents, or anything at no commit yet", () => {
+    expect(copyPayloadOf({ ...view, kind: "tree", path: "" }, "path")).toBeUndefined()
+    expect(copyPayloadOf({ ...view, kind: "tree", path: "src" }, "contents")).toBeUndefined()
+    expect(copyPayloadOf({ ...view, path: "" }, "contents")).toBeUndefined()
+    expect(copyPayloadOf({ ...view, sha: null }, "permalink")).toBeUndefined()
+    expect(copyPayloadOf({ ...view, sha: null }, "contents")).toBeUndefined()
   })
 })

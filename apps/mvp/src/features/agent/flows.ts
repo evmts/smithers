@@ -1,9 +1,10 @@
 import { AgentAction } from "@smthrs/agent"
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
-import { Duration, Schema } from "effect"
+import { Schema } from "effect"
 import { AnswerSettled, AnswersUnavailable, NotYourTurn, TurnOutOfTime } from "./answers"
-import { ANSWER_SETTLE_WITHIN, MAX_FRAMES } from "./contract"
+import { SETTLE_RETRY } from "./close"
+import { MAX_FRAMES } from "./contract"
 import { CHAT_SYSTEM } from "./instructions"
 import { AnswerReference } from "./reference"
 import { Exchange, Turn } from "./schema"
@@ -11,12 +12,12 @@ import { Exchange, Turn } from "./schema"
 // The agent (docs/features/agent.md): `chat/Answer`, the flow that answers one question on this device's durable
 // engine (decision 0011), started with the answer's id as its execution id:
 //
-//   chat/TurnDeadline ─▶ chat/LoadTurn ─▶ chat/Respond (the agent: an AgentAction, @smthrs/agent's cell loop)
-//                     ─▶ chat/Settle: done, or failed with why
+//   chat/LoadTurn ─▶ chat/Respond (the agent: an AgentAction, @smthrs/agent's cell loop)
+//                 ─▶ chat/Settle: done, or failed with why
 //
 // Every typed way the run ends settles the answer, as a step of the same run, so a crash anywhere still settles it on
 // resume: the agent answering or failing, and the turn wait running out (`TurnOutOfTime`), which `chat/LoadTurn`
-// itself answers once the run's turn deadline passes. The flow declares no `deadline`: the engine ends a run past one
+// itself answers once the queue before the answer hasn't moved for the turn wait. The flow declares no `deadline`: the engine ends a run past one
 // with a defect, which settles nothing. A defect escapes a plan (`Node.catch` sees typed failures alone), and so does
 // a device that never comes back; the server's `chat/Expire` settles those answers (worker/flows/Expire.ts).
 //
@@ -27,9 +28,10 @@ import { Exchange, Turn } from "./schema"
 // @smthrs/agent, so only an engine's host imports it; the tab dispatches `chat/Answer` by its reference (./reference.ts).
 
 /**
- * How `chat/LoadTurn` keeps asking while an earlier answer streams, or while the routes are unreachable: until the step
- * answers `TurnOutOfTime`, once the run's turn deadline has passed. The deadline is the one bound, so the policy never
- * expires on its own.
+ * How `chat/LoadTurn` keeps asking while an earlier answer streams, or while the routes are unreachable: until its turn
+ * comes, the answer settles, or the step answers `TurnOutOfTime` because the queue before it hasn't moved for the turn
+ * wait. While the routes are unreachable nothing could be written anyway, so the policy never expires on its own;
+ * `chat/Expire` settles the answer of a device that never comes back.
  */
 export const TURN_RETRY = RetryPolicy.make({
   initialMs: 250,
@@ -38,31 +40,14 @@ export const TURN_RETRY = RetryPolicy.make({
   nonRetryable: ["@smthrs/mvp/agent/AnswerSettled", "@smthrs/mvp/agent/TurnOutOfTime"],
 })
 
-/** How long `chat/Settle` keeps trying to land the answer while the routes are unreachable. */
-export const SETTLE_RETRY = RetryPolicy.make({
-  initialMs: 500,
-  factor: 2,
-  maxMs: 8_000,
-  expirationMs: Duration.toMillis(Duration.fromInputUnsafe(ANSWER_SETTLE_WITHIN)),
-  nonRetryable: ["@smthrs/mvp/agent/AnswerSettled"],
-})
-
-/**
- * When the run stops waiting for its turn, in epoch milliseconds: its first start plus the host's turn wait
- * (`ANSWER_TURN_WAIT` unless the host sets one). Sealed, so a resumed run keeps the time its first start set.
- */
-export const TurnDeadline = Action.make("chat/TurnDeadline", {
-  payload: { answerId: Schema.String },
-  success: Schema.Number,
-  tier: "sealed",
-})
-
 /**
  * Reads the answer's turn: its question and history, once every earlier answer has settled (decision 0002). While it
- * waits, it answers `TurnOutOfTime` once `until` has passed.
+ * waits, it answers `TurnOutOfTime` once the routes say its turn has waited the host's turn wait since the queue before
+ * it last moved (`ANSWER_TURN_WAIT` unless the host sets one). The routes measure that wait on Postgres' clock, so a
+ * run resumed after a crash counts the time it waited before.
  */
 export const LoadTurn = Action.make("chat/LoadTurn", {
-  payload: { answerId: Schema.String, until: Schema.Number },
+  payload: { answerId: Schema.String },
   success: Turn,
   error: Schema.Union([NotYourTurn, AnswerSettled, AnswersUnavailable, TurnOutOfTime]),
   tier: "sealed",
@@ -118,25 +103,22 @@ export const Answer = Flow.make(AnswerReference._tag, {
   success: AnswerReference.successSchema,
   error: AnswerReference.errorSchema,
   body: Node.capture(
-    { deadline: TurnDeadline.name, load: LoadTurn.name, respond: Respond.name, settle: Settle.name },
+    { load: LoadTurn.name, respond: Respond.name, settle: Settle.name },
     ({ answerId }) =>
-      TurnDeadline.call({ answerId }).pipe(
-        Node.bindPlanned(Node.capture({ load: LoadTurn.name, respond: Respond.name }, (until) =>
-          LoadTurn.call({ answerId, until }).pipe(
-            Node.bindPlanned(Node.capture({ respond: Respond.name }, (turn) =>
-              Respond.call({ question: turn.question, history: turn.history }).pipe(
-                Node.map(Node.capture({ timedOut: false }, (text: string): Ending => ({ text, timedOut: false }))),
-                // The agent failed: the settle reads why from the run's progress.
-                Node.catch({
-                  onFailure: Node.capture({ text: null }, () => Node.succeed<Ending>({ text: null, timedOut: false })),
-                }),
-              ))),
+      LoadTurn.call({ answerId }).pipe(
+        Node.bindPlanned(Node.capture({ respond: Respond.name }, (turn) =>
+          Respond.call({ question: turn.question, history: turn.history }).pipe(
+            Node.map(Node.capture({ timedOut: false }, (text: string): Ending => ({ text, timedOut: false }))),
+            // The agent failed: the settle reads why from the run's progress.
             Node.catch({
-              // By its tag: a class schema has no identity that survives a process, so a resumed run couldn't match it.
-              error: Schema.Struct({ _tag: Schema.Literal("@smthrs/mvp/agent/TurnOutOfTime") }),
-              onFailure: Node.capture({ timedOut: true }, () => Node.succeed<Ending>({ text: null, timedOut: true })),
+              onFailure: Node.capture({ text: null }, () => Node.succeed<Ending>({ text: null, timedOut: false })),
             }),
           ))),
+        Node.catch({
+          // By its tag: a class schema has no identity that survives a process, so a resumed run couldn't match it.
+          error: Schema.Struct({ _tag: Schema.Literal("@smthrs/mvp/agent/TurnOutOfTime") }),
+          onFailure: Node.capture({ timedOut: true }, () => Node.succeed<Ending>({ text: null, timedOut: true })),
+        }),
         Node.bindPlanned(Node.capture({ settle: Settle.name }, (ending) => Settle.call({ answerId, ending }))),
       ),
   ),

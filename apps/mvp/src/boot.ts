@@ -1,11 +1,13 @@
 import { Otlp } from "@smthrs/observability"
 import { Persistence } from "@smthrs/effect-tanstack-db"
-import type { BrowserEngine, StoragePersistence } from "@smthrs/platform-browser"
+import { type BrowserEngine, type StoragePersistence, TabChannel } from "@smthrs/platform-browser"
 import type { BrowserWASQLiteDatabase } from "@tanstack/browser-db-sqlite-persistence"
 import { Clock, type Duration, Effect, Fiber, Layer, ManagedRuntime, Metric } from "effect"
 import { FetchHttpClient, type HttpClient } from "effect/http"
+import { Clipboard } from "./clipboard"
 import { AuthClient } from "./features/auth/api"
 import { Auth, type AuthView } from "./features/auth/auth"
+import { Branch, type BranchView } from "./features/branch/branch"
 import { DeviceWipe } from "./features/auth/device"
 import { AuthStore } from "./features/auth/store"
 import { ChatClient } from "./features/chat/api"
@@ -14,14 +16,35 @@ import { bindConnectivity } from "./features/chat/connectivity"
 import { QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "./features/chat/contract"
 import { storagePersisted } from "./features/chat/metrics"
 import { chatShortcuts } from "./features/chat/shortcuts"
+import { tabChat } from "./features/chat/tab"
 import { type ChatConfig, type ChatHost, ChatStore, chatConfig } from "./features/chat/store"
+import { Commands, type CommandsView } from "./features/commands/commands"
+import { FlowsUi, type FlowsUiView } from "./features/flows-ui/flowsUi"
+import { FlowsUiStore } from "./features/flows-ui/store"
+import { CommandsStore } from "./features/commands/store"
+import { IssuesClient } from "./features/issues/api"
+import { Issues, type IssuesLayer } from "./features/issues/issues"
+import { IssuesStore } from "./features/issues/store"
+import { tabIssues } from "./features/issues/tab"
+import { IssueWrites } from "./features/issues/writes"
+import { tabNavigation } from "./features/navigation/tab"
 import { RepoClient, REQUEST_WITHIN } from "./features/repo/api"
-import { Clipboard } from "./features/repo/clipboard"
+import { tabClipboard } from "./features/repo/tab"
 import { Repo, type RepoView } from "./features/repo/repo"
 import { RepoStore } from "./features/repo/store"
+import { RunsNavigation } from "./features/runs/actions"
+import { Runs, type RunsView } from "./features/runs/runs"
+import { RunsStore } from "./features/runs/store"
+import { Status, type StatusView } from "./features/status/status"
+import { Terminal, type TerminalView } from "./features/terminal/terminal"
+import { StatusStore, TabTitle } from "./features/status/store"
 import { type ThemeHost, ThemeStore } from "./features/theme/store"
 import { Theme, type ThemeView } from "./features/theme/theme"
-import { FlowDispatch, RemoteFlows } from "./flows/dispatch"
+import { ViewsStore } from "./features/views/store"
+import { Views, type ViewsView } from "./features/views/views"
+import { type WebHost, WebTab } from "./features/web/actions"
+import { Web, type WebView } from "./features/web/web"
+import { type ClientEngine, FlowDispatch } from "./flows/dispatch"
 import { failFastOnEngine, tabAnswers, tabEngine } from "./flows/engine"
 import type { Endpoint } from "./flows/tabPort"
 import { Page } from "./page"
@@ -45,12 +68,18 @@ export interface Host extends ChatHost {
   readonly storage: StoragePersistence.Service
   /** Where the theme paints, mirrors and reads the system's mode (src/features/theme/store.ts). */
   readonly theme: ThemeHost
-  /** Writes `text` to the system clipboard: Copy permalink (src/features/repo/clipboard.ts). */
+  /** Writes `text` to the system clipboard: `repo/copy` and `chat/copy`, in the tab that asked (src/clipboard.ts). */
   readonly clipboard: (text: string) => Promise<void>
+  /** The tab's title, which agent status counts open questions in (`document.title`); none unless set. */
+  readonly title?: TabTitle["Service"]
+  /** Takes this tab to `path`, an app path: the router's `navigate` (src/features/navigation/tab.ts). */
+  readonly navigate: (path: string) => void
+  /** Which outside pages open, and a tab opened from the person's own click or key (src/features/web/actions.ts). */
+  readonly web: WebHost
   /** Starts this tab's engine worker (src/flows/engine.worker.ts), which runs every client flow once it leads. */
   readonly engineWorker: () => BrowserEngine.WorkerLike & Endpoint
-  /** The engine's name: its Web Lock, channel and store. `ENGINE_NAME` unless set, so tests can keep engines apart. */
-  readonly engineName?: string
+  /** The engine's name: its Web Lock, channel and store. The browser's is `ENGINE_NAME`; each test device has its own. */
+  readonly engineName: string
   /**
    * Wipes what this device holds of a session that ended: its synced database, the engine's store and the outbox
    * (decision 0008 §4.6). Sign-out calls it once ChatApi has ended the session (src/features/auth/device.ts).
@@ -83,32 +112,82 @@ export const realServices = (options: Pick<AppOptions, "origin" | "answerWithin"
 }
 
 /**
- * The browser's services: the chat, sign-in, theme and repository layers; chat's store over the device store, which
- * dispatches each question it sends to this device's agent; the repository store, which reads who is signed in from
- * sign-in's store; dispatch over this tab's engine (its worker, `host.engineWorker`, started before the device store
- * opens) and the server's door; the tab's answers to its worker; the theme's store; RepoApi's client (`REQUEST_WITHIN`
- * for a whole request) and the host's clipboard; the page; and telemetry exported over OTLP to ChatApi's relay
- * (`/api/telemetry`), which every Effect log, span and metric goes through. Every request goes through `fetch`.
- * `services` is how the browser reaches ChatApi and Electric: `realServices`, or, for a test of an unhappy path or the
- * end-to-end entry (`/app?faults`, src/test/e2e.ts), faulty ones (src/test/faults.ts).
+ * The browser's services: the chat, sign-in, theme, repository and slash-command layers; the command menu's store over
+ * chat's composer; chat's store over the device store, which dispatches each question it sends to this device's agent;
+ * the repository store, which reads who is signed in from sign-in's store; dispatch over this tab's engine (its worker,
+ * `host.engineWorker`, started before the device store opens); the tab's answers to its worker; the theme's store;
+ * RepoApi's client (`REQUEST_WITHIN` for a whole request) and the host's clipboard; the page; and telemetry exported
+ * over OTLP to ChatApi's relay (`/api/telemetry`), which every Effect log, span and metric goes through. Every request
+ * goes through `fetch`. `services` is how the browser reaches ChatApi and Electric: `realServices`, or, for a test of
+ * an unhappy path or the end-to-end entry (`/app?faults`, src/test/e2e.ts), faulty ones (src/test/faults.ts), which may
+ * also put this tab's engine (`ClientEngine`) behind a switch.
  */
 export const appLayer = <S = never>(
   options: AppOptions,
-  services: Layer.Layer<ChatClient | AuthClient | S, never, HttpClient.HttpClient>,
+  services: Layer.Layer<ChatClient | AuthClient | S, never, HttpClient.HttpClient | ClientEngine>,
 ) => {
   const { origin, reload, host, fetch: _fetch, answerWithin: _answerWithin, ...chat } = options
   const auth = Auth.layer.pipe(Layer.provide(DeviceWipe.layer(host.wipe)))
-  return Layer.mergeAll(Chat.layer, auth, Theme.layer, Repo.layer).pipe(
-    Layer.provideMerge(ChatStore.layer(chatConfig(origin, chat), host)),
+  return Layer.mergeAll(
+    Chat.layer,
+    auth,
+    Theme.layer,
+    Repo.layer,
+    Commands.layer,
+    Views.layer,
+    Web.layer,
+    Status.layer,
+    // The branch workspace (docs/features/branch-workspace.md): the route's branch, and its terminal.
+    Branch.layer,
+    Terminal.layer({ origin }),
+    // Git issues (decision 0012): the issue pages, and this tab's answers to the issue writes' steps it started.
+    Issues.layer,
+    tabIssues({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
+    // Chat's Copy and Edit, answered by the tab that asked, from its conversation, clipboard and composer.
+    tabChat({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
+    // Your own flows and this device's runs (decision 0014): their pages, and the router's navigate their acts open.
+    Layer.merge(Runs.layer.pipe(Layer.provide(RunsStore.layer)), FlowsUi.layer.pipe(Layer.provide(FlowsUiStore.layer({
+      origin,
+      ...(chat.confirmWithin === undefined ? {} : { confirmWithin: chat.confirmWithin }),
+    }))))
+      .pipe(Layer.provide(Layer.succeed(RunsNavigation, RunsNavigation.of({ navigate: host.navigate })))),
+  ).pipe(
+    // Agent status reads chat's messages beside the runs, and answers through dispatch (decision 0015).
+    Layer.provideMerge(
+      StatusStore.layer({ origin }).pipe(Layer.provideMerge(Layer.succeed(TabTitle, host.title ?? TabTitle.none))),
+    ),
+    // The command menu completes chat's composer draft.
+    Layer.provideMerge(CommandsStore.layer),
+    // Chat's store, between the issues' two: an issue write goes through the device's one outbox, which chat's store
+    // builds over the writes below it hands over (src/outbox.ts) and leads for the store above it.
+    Layer.provideMerge(
+      IssuesStore.layer({ origin }).pipe(
+        Layer.provideMerge(ChatStore.layer(chatConfig(origin, chat), host)),
+        Layer.provideMerge(IssueWrites.layer),
+      ),
+    ),
+    // Below chat's store, whose conversation shows the views among the messages.
+    Layer.provideMerge(ViewsStore.layer({ origin })),
+    Layer.provideMerge(Layer.succeed(WebTab, host.web)),
     Layer.provideMerge(RepoStore.layer({ origin })),
     // Below the repository store, which shows the sign-in link in Clone's place from sign-in's row.
     Layer.provideMerge(AuthStore.layer),
+    // Above dispatch, which remembers this tab's requests: `app/navigate` moves only the tab that asked, and `repo/copy`
+    // writes only its clipboard.
+    Layer.provideMerge(
+      Layer.merge(
+        tabNavigation({ name: host.engineName, origin, navigate: host.navigate }),
+        tabClipboard({ name: host.engineName }),
+      ).pipe(Layer.provide(TabChannel.layer)),
+    ),
     Layer.provideMerge(FlowDispatch.layer),
-    Layer.provideMerge(RemoteFlows.layerHttp(origin)),
     Layer.provideMerge(tabAnswers),
     Layer.provideMerge(ThemeStore.layer(host.theme)),
     Layer.provideMerge(services),
-    Layer.provideMerge(RepoClient.layer({ origin, within: REQUEST_WITHIN })),
+    // Below `services`, so a test's services may give a faulty `IssuesClient` in its place.
+    Layer.provideMerge(
+      Layer.merge(IssuesClient.layer({ origin, within: REQUEST_WITHIN }), RepoClient.layer({ origin, within: REQUEST_WITHIN })),
+    ),
     Layer.provideMerge(Clipboard.layer(host.clipboard)),
     // The device store opens through the leading tab's engine worker; if this tab's worker fails, it opens in memory
     // at once instead of waiting for a leader that will never answer.
@@ -171,19 +250,33 @@ export const requestPersistentStorage = (storage: StoragePersistence.Service) =>
 
 /**
  * Where the boot program renders and listens: the window, the page's start, and a renderer for the chat, sign-in,
- * theme and repository layers.
+ * theme, repository, slash-command, views, web-page, agent-status, branch, terminal and issues layers.
  */
 export interface BootOptions {
   readonly target: EventTarget
   /** The page's start, in epoch milliseconds: `performance.timeOrigin`. */
   readonly startedAt: number
-  readonly render: (chat: ChatView, auth: AuthView, theme: ThemeView, repo: RepoView) => void
+  readonly render: (
+    chat: ChatView,
+    auth: AuthView,
+    theme: ThemeView,
+    repo: RepoView,
+    commands: CommandsView,
+    views: ViewsView,
+    web: WebView,
+    status: StatusView,
+    branch: BranchView,
+    terminal: TerminalView,
+    issues: IssuesLayer,
+    runs: RunsView,
+    flows: FlowsUiView,
+  ) => void
 }
 
 /**
- * The browser program: logs page errors, renders with the chat, sign-in, theme and repository layers, binds the chat
- * keys and the browser's connectivity, asks to keep the device's storage, records how long the conversation took to
- * show from the device, then holds everything open until it is stopped.
+ * The browser program: logs page errors, renders with the chat, sign-in, theme, repository, slash-command, views and
+ * web-page and agent-status layers, binds the chat keys and the browser's connectivity, asks to keep the device's storage, records how
+ * long the conversation took to show from the device, then holds everything open until it is stopped.
  */
 export const boot = (options: BootOptions & { readonly storage: StoragePersistence.Service }) =>
   Effect.gen(function* () {
@@ -192,8 +285,19 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const auth = yield* Auth
     const theme = yield* Theme
     const repo = yield* Repo
+    const commands = yield* Commands
+    const views = yield* Views
+    const web = yield* Web
+    const status = yield* Status
+    const branch = yield* Branch
+    const terminal = yield* Terminal
+    const issues = yield* Issues
+    const runs = yield* Runs
+    const flows = yield* FlowsUi
     const store = yield* ChatStore
-    yield* Effect.sync(() => options.render(chat, auth, theme, repo))
+    yield* Effect.sync(() =>
+      options.render(chat, auth, theme, repo, commands, views, web, status, branch, terminal, issues, runs, flows)
+    )
     yield* chatShortcuts(options.target)
     yield* bindConnectivity(options.target)
     yield* requestPersistentStorage(options.storage).pipe(Effect.forkScoped)
@@ -213,7 +317,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
  */
 export const start = <S = never>(
   options: AppOptions & BootOptions,
-  services: Layer.Layer<ChatClient | AuthClient | S, never, HttpClient.HttpClient>,
+  services: Layer.Layer<ChatClient | AuthClient | S, never, HttpClient.HttpClient | ClientEngine>,
 ) => {
   const { target, startedAt, render, ...app } = options
   const runtime = ManagedRuntime.make(appLayer(app, services))

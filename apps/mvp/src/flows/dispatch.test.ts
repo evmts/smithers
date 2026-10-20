@@ -1,67 +1,33 @@
-// Dispatch (src/flows/dispatch.ts) for both placements: a client flow on the Node host's engine over the compose
-// Postgres (`pnpm db:up`), and a remote one through the real remote door (worker/Flows.ts) on ChatApi's origin. Every
-// dispatch's records, read back without the flow's input. Unhappy paths inject the faulty service: an engine that
-// refuses or dies, a door that refuses, `Preferences` that can't be written.
+// Dispatch (src/flows/dispatch.ts): a flow on the Node host's engine over the compose Postgres (`pnpm db:up`), and
+// every dispatch's records, read back without the flow's input. Unhappy paths inject the faulty service: an engine
+// that refuses or dies, `Preferences` that can't be written.
 import { Persistence } from "@smthrs/effect-tanstack-db"
-import { Action, type Flow } from "@smthrs/flow"
+import { Action, type Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Cause, Effect, Exit, Layer, Logger, Metric, Schema, Scope, Tracer } from "effect"
-import { FetchHttpClient, HttpEffect, HttpServerRequest } from "effect/http"
+import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Logger, Metric, Option, Schema, Scope, Tracer } from "effect"
 import { afterEach, describe, expect, test } from "vitest"
-import { Sessions } from "../../worker/Actor.ts"
-import * as Flows from "../../worker/Flows.ts"
 import { Pause } from "../../worker/flows/Pause.ts"
 import { build } from "../../worker/test/flowHost.ts"
 import { Preferences, PreferencesUnavailable, registration as themeRegistration, SetTheme } from "../features/theme/flows"
 import { tabPreferences, ThemeStore } from "../features/theme/store"
 import { clientFlows } from "./declarations"
-import { ClientEngine, dispatches, DispatchFailed, FlowDispatch, makeDispatch, RemoteFlows } from "./dispatch"
+import { ClientEngine, dispatches, DispatchFailed, FlowDispatch, makeDispatch } from "./dispatch"
 import { registry } from "./registry"
-
-const ORIGIN = "http://chat.test"
+import { TabRequests } from "./requests"
 
 /** What an exit failed with, stack traces aside. */
 const failure = (exit: Exit.Exit<unknown, unknown>) => (Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit)
 
-/** The app's theme flow and a remote flow, the door's `probe/Pause`, in one registry. */
+/** The app's theme flow and `probe/Pause`, whose payload carries free text, in one registry. */
 const entries = {
   "app/theme/set": registry["app/theme/set"],
-  "probe/Pause": { flow: Pause, needs: ["server-key"] },
+  "probe/Pause": { flow: Pause },
 } as const
 
 const scopes: Array<Scope.Closeable> = []
 afterEach(async () => {
   for (const scope of scopes.splice(0)) await Effect.runPromise(Scope.close(scope, Exit.void))
 })
-
-/** The remote door over `probe/Pause`, signed in, recording each start; `refuse` makes it answer 409. */
-const door = (options: { readonly refuse?: boolean } = {}) => {
-  const started: Array<{ readonly executionId: string; readonly payload: unknown }> = []
-  const handler = HttpEffect.toWebHandler(
-    Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest
-      return yield* Flows.make([Pause])(request.url.split("/api/flows/")[1]!)
-    }).pipe(
-      Effect.provideService(
-        Flows.FlowStarter,
-        Flows.FlowStarter.of({
-          start: (_flow, start) =>
-            options.refuse === true
-              ? Effect.fail(new Flows.StartConflict())
-              : Effect.sync(() => void started.push(start)),
-        }),
-      ),
-      Effect.provide(
-        Layer.succeed(
-          Sessions,
-          Sessions.of({ resolve: Effect.succeedSome({ subject: { kind: "person", id: "p" }, role: "member" }) }),
-        ),
-      ),
-    ),
-  )
-  const fetch: typeof globalThis.fetch = (input, init) => handler(new Request(input, init))
-  return { started, fetch }
-}
 
 type Recorded = {
   readonly logs: Array<ReturnType<typeof Logger.formatStructured.log>>
@@ -71,13 +37,12 @@ type Recorded = {
 
 /**
  * Dispatch over `entries`, with `engine` as this device's engine (the Node host's, running the declarations in
- * `declared`, unless set) and the door at `fetch`; every record kept.
+ * `declared`, unless set); every record kept.
  */
 const open = async (
   options: {
     readonly engine?: Layer.Layer<ClientEngine>
     readonly declared?: ReadonlyArray<Flow.Any>
-    readonly fetch?: typeof globalThis.fetch
     readonly preferences?: Layer.Layer<Preferences>
   } = {},
 ) => {
@@ -106,14 +71,10 @@ const open = async (
       ),
     ),
   )
-  const services = Layer.mergeAll(
-    engine,
-    RemoteFlows.layerHttp(ORIGIN).pipe(
-      Layer.provide(FetchHttpClient.layer),
-      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, options.fetch ?? door().fetch)),
-    ),
-  )
-  const dispatch = await Effect.runPromise(Effect.provide(makeDispatch(entries), services))
+  const services = Layer.mergeAll(engine, TabRequests.layer())
+  const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(services)))
+  const dispatch = await Effect.runPromise(Effect.provide(makeDispatch(entries), context))
+  const requests = Context.get(context, TabRequests)
   const observed = <A, E>(effect: Effect.Effect<A, E>) =>
     Effect.runPromise(
       Effect.exit(effect).pipe(
@@ -140,11 +101,11 @@ const open = async (
         Effect.provideService(Metric.MetricRegistry, recorded.registry),
       ),
     ).count
-  return { dispatch, observed, recorded, count, painted }
+  return { dispatch, observed, recorded, count, painted, requests }
 }
 
 describe("a client flow", () => {
-  test("runs on this device's engine and answers its value, recorded by flow, placement, door and outcome", async () => {
+  test("runs on this device's engine and answers its value, recorded by flow, door and outcome", async () => {
     const d = await open()
 
     const exit = await d.observed(
@@ -153,13 +114,14 @@ describe("a client flow", () => {
 
     expect(exit).toEqual(Exit.succeed({ _tag: "Done", value: { mode: "dark" } }))
     expect(d.painted).toEqual(["dark"])
-    expect(d.count({ flow: "app/theme/set", placement: "client", door: "button", outcome: "done" })).toBe(1)
+    expect(d.count({ flow: "app/theme/set", door: "button", outcome: "done" })).toBe(1)
+    // The tab remembers the execution as its own, with its door: a step that acts on the tab that asked finds it.
+    expect(await Effect.runPromise(d.requests.doorOf("theme-1"))).toEqual(Option.some("button"))
     const line = d.recorded.logs.find((log) => log.message === "flow.dispatch")
     expect(line).toMatchObject({
       level: "INFO",
       annotations: {
         flow: "app/theme/set",
-        placement: "client",
         door: "button",
         outcome: "done",
         executionId: "theme-1",
@@ -168,7 +130,6 @@ describe("a client flow", () => {
     const span = d.recorded.spans.find((candidate) => candidate.name === "flow.dispatch")!
     expect(Object.fromEntries(span.attributes)).toMatchObject({
       "smithers.flow.name": "app/theme/set",
-      "smithers.flow.placement": "client",
       "smithers.flow.door": "button",
       "smithers.flow.outcome": "done",
     })
@@ -193,13 +154,16 @@ describe("a client flow", () => {
 
   test("fails as DispatchFailed when the flow dies, is interrupted, or the engine refuses it", async () => {
     const answering = (exit: Exit.Exit<unknown, unknown>) =>
-      Layer.succeed(ClientEngine, ClientEngine.of({ run: () => Effect.succeed(exit) }))
+      Layer.succeed(ClientEngine, ClientEngine.of({ start: () => Effect.void, result: () => Effect.succeed(exit) }))
     const died = await open({ engine: answering(Exit.die(new Error("bug"))) })
     const interrupted = await open({ engine: answering(Exit.interrupt()) })
     const refused = await open({
       engine: Layer.succeed(
         ClientEngine,
-        ClientEngine.of({ run: (flow) => Effect.fail(new DispatchFailed({ flow: flow._tag, reason: "refused" })) }),
+        ClientEngine.of({
+          start: (flow) => Effect.fail(new DispatchFailed({ flow: flow._tag, reason: "refused" })),
+          result: () => Effect.never,
+        }),
       ),
     })
 
@@ -219,6 +183,50 @@ describe("a client flow", () => {
     })
   })
 
+  test("a run the engine's interpreter refused fails with its refusal's code, which the log line carries", async () => {
+    const refusal = new Interpreter.InterpreterError({
+      code: "plan_changed",
+      flow: "app/theme/set",
+      node: "app/theme/write",
+      message: "The rebuilt plan differs from the recorded plan",
+    })
+    const d = await open({
+      engine: Layer.succeed(
+        ClientEngine,
+        ClientEngine.of({ start: () => Effect.void, result: () => Effect.succeed(Exit.die(refusal)) }),
+      ),
+    })
+
+    const exit = await d.observed(d.dispatch("app/theme/set", { mode: "dark" }, { door: "composer" }))
+
+    expect(failure(exit)).toEqual(
+      new DispatchFailed({ flow: "app/theme/set", reason: "defect", refusal: "plan_changed" }),
+    )
+    expect(d.recorded.logs.find((log) => log.message === "flow.dispatch")).toMatchObject({
+      level: "ERROR",
+      annotations: { outcome: "error", reason: "defect", refusal: "plan_changed" },
+    })
+  })
+
+  test("is refused by an engine in this process whose runtime refuses the start", async () => {
+    let results = 0
+    // A runtime that refuses every start (test.faults-by-injection); a result would be asked of it only after one.
+    const refusing = Layer.succeed(
+      FlowRuntime.FlowRuntime,
+      {
+        execute: (_flow: unknown, run: { readonly discard?: boolean }) =>
+          run.discard === true ? Effect.fail(new Error("the host refused the start")) : Effect.sync(() => void results++),
+      } as never,
+    )
+    const d = await open({ engine: ClientEngine.layerRuntime([SetTheme]).pipe(Layer.provide(refusing)) })
+
+    const exit = await d.observed(d.dispatch("app/theme/set", { mode: "dark" }, { door: "button" }))
+
+    expect(failure(exit)).toEqual(new DispatchFailed({ flow: "app/theme/set", reason: "refused" }))
+    expect(results).toBe(0)
+    expect(d.painted).toEqual([])
+  })
+
   test("is refused by an engine in this process that doesn't declare it", async () => {
     const d = await open({ declared: [] })
 
@@ -234,9 +242,9 @@ describe("the browser's engine as ClientEngine", () => {
     Effect.runPromise(
       Effect.gen(function* () {
         const client = yield* ClientEngine
-        return yield* Effect.exit(
-          client.run(registry["app/theme/set"].flow, { executionId: "e", payload: { mode: "dark" } }),
-        )
+        const flow = registry["app/theme/set"].flow
+        const run = { executionId: "e", payload: { mode: "dark" } }
+        return yield* Effect.exit(Effect.andThen(client.start(flow, run), client.result(flow, run)))
       }).pipe(
         Effect.provide(ClientEngine.layerBrowser),
         Effect.provide(
@@ -267,50 +275,95 @@ describe("the browser's engine as ClientEngine", () => {
     expect(failure(refused)).toEqual(new DispatchFailed({ flow: "app/theme/set", reason: "refused" }))
     expect(failure(invalid)).toEqual(new DispatchFailed({ flow: "app/theme/set", reason: "invalid" }))
   })
+
+  test("a tab with no engine is unavailable, at the start or while waiting for the end", async () => {
+    const gone = new BrowserEngine.EngineUnavailable({ reason: "worker-failed", error: "ReferenceError" })
+    const atStart = await over({ start: () => Effect.fail(gone), result: () => Effect.never })
+    const atResult = await over({ start: () => Effect.void, result: () => Effect.fail(gone) })
+
+    expect(failure(atStart)).toEqual(new DispatchFailed({ flow: "app/theme/set", reason: "unavailable" }))
+    expect(failure(atResult)).toEqual(new DispatchFailed({ flow: "app/theme/set", reason: "unavailable" }))
+  })
 })
 
-describe("a remote flow", () => {
-  test("starts at the remote door with its payload encoded, answers Started, and never records the payload", async () => {
-    const remote = door()
-    const d = await open({ fetch: remote.fetch })
-    const sentinel = `sentinel-${crypto.randomUUID()}`
+describe("admitted", () => {
+  const engineWith = (engine: ClientEngine["Service"]) => open({ engine: Layer.succeed(ClientEngine, engine) })
+  const waiting = () => Effect.runSync(Deferred.make<void, DispatchFailed>())
 
-    const exit = await d.observed(
-      d.dispatch("probe/Pause", { label: sentinel, pauseMs: 5 }, {
-        door: "slash",
-        executionId: "0f8fad5b-d9cb-469f-a165-70867728950e",
-      }),
-    )
+  test("completes once the engine recorded the run, while the run goes on", async () => {
+    const ended = Effect.runSync(Deferred.make<Exit.Exit<unknown, unknown>>())
+    const d = await engineWith({ start: () => Effect.void, result: () => Deferred.await(ended) })
+    const admitted = waiting()
 
-    expect(exit).toEqual(Exit.succeed({ _tag: "Started", executionId: "0f8fad5b-d9cb-469f-a165-70867728950e" }))
-    expect(remote.started).toEqual([
-      { executionId: "0f8fad5b-d9cb-469f-a165-70867728950e", payload: { label: sentinel, pauseMs: 5 } },
-    ])
-    expect(d.count({ flow: "probe/Pause", placement: "remote", door: "slash", outcome: "started" })).toBe(1)
-    expect(JSON.stringify(d.recorded.logs)).not.toContain(sentinel)
-    expect(JSON.stringify(d.recorded.spans.map((span) => [...span.attributes]))).not.toContain(sentinel)
+    const dispatching = Effect.runFork(d.dispatch("app/theme/set", { mode: "dark" }, { door: "composer", admitted }))
+    await Effect.runPromise(Deferred.await(admitted))
+
+    expect(dispatching.pollUnsafe()).toBeUndefined()
+    Effect.runSync(Deferred.succeed(ended, Exit.succeed({ mode: "dark" })))
+    expect(await Effect.runPromise(Fiber.join(dispatching))).toEqual({ _tag: "Done", value: { mode: "dark" } })
   })
 
-  test("is refused when the door refuses, when nothing answers, and invalid when its payload won't encode", async () => {
-    const conflicted = await open({ fetch: door({ refuse: true }).fetch })
-    const unreachable = await open({ fetch: () => Promise.reject(new TypeError("offline")) })
-    const start = (d: Awaited<ReturnType<typeof open>>, payload: unknown) =>
-      d.observed(d.dispatch("probe/Pause", payload as never, { door: "button", executionId: crypto.randomUUID() }))
+  test("a run on the Node host's engine is admitted, then answered", async () => {
+    const d = await open()
+    const admitted = waiting()
 
-    expect(failure(await start(conflicted, { label: "a", pauseMs: 1 }))).toEqual(
-      new DispatchFailed({ flow: "probe/Pause", reason: "refused" }),
+    const exit = await d.observed(d.dispatch("app/theme/set", { mode: "dark" }, { door: "composer", admitted }))
+
+    expect(exit).toEqual(Exit.succeed({ _tag: "Done", value: { mode: "dark" } }))
+    expect(Effect.runSync(Deferred.isDone(admitted))).toBe(true)
+    expect(d.painted).toEqual(["dark"])
+  })
+
+  test("fails with the dispatch's failure when the start is refused or dies", async () => {
+    const refused = await engineWith({
+      start: (flow) => Effect.fail(new DispatchFailed({ flow: flow._tag, reason: "unavailable" })),
+      result: () => Effect.never,
+    })
+    const died = await engineWith({ start: () => Effect.die(new Error("bug")), result: () => Effect.never })
+    const admittedAfter = async (d: Awaited<ReturnType<typeof open>>) => {
+      const admitted = waiting()
+      await d.observed(d.dispatch("app/theme/set", { mode: "dark" }, { door: "composer", admitted }))
+      return Effect.runPromise(Effect.flip(Deferred.await(admitted)))
+    }
+
+    expect(await admittedAfter(refused)).toEqual(new DispatchFailed({ flow: "app/theme/set", reason: "unavailable" }))
+    expect(await admittedAfter(died)).toEqual(new DispatchFailed({ flow: "app/theme/set", reason: "defect" }))
+  })
+
+  test("fails interrupted when the dispatch is interrupted before the engine recorded the run", async () => {
+    const d = await engineWith({ start: () => Effect.never, result: () => Effect.never })
+    const admitted = waiting()
+
+    const dispatching = Effect.runFork(d.dispatch("app/theme/set", { mode: "dark" }, { door: "composer", admitted }))
+    await Effect.runPromise(Fiber.interrupt(dispatching))
+
+    expect(await Effect.runPromise(Effect.flip(Deferred.await(admitted)))).toEqual(
+      new DispatchFailed({ flow: "app/theme/set", reason: "interrupted" }),
     )
-    expect(failure(await start(unreachable, { label: "a", pauseMs: 1 }))).toEqual(
-      new DispatchFailed({ flow: "probe/Pause", reason: "refused" }),
-    )
-    expect(failure(await start(unreachable, { label: 1 }))).toEqual(
-      new DispatchFailed({ flow: "probe/Pause", reason: "invalid" }),
-    )
+  })
+})
+
+describe("the records", () => {
+  test("never carry the flow's payload", async () => {
+    const d = await open({
+      engine: Layer.succeed(
+        ClientEngine,
+        ClientEngine.of({ start: () => Effect.void, result: () => Effect.succeed(Exit.void) }),
+      ),
+    })
+    const sentinel = `sentinel-${crypto.randomUUID()}`
+
+    const exit = await d.observed(d.dispatch("probe/Pause", { label: sentinel, pauseMs: 5 }, { door: "slash" }))
+
+    expect(exit).toEqual(Exit.succeed({ _tag: "Done", value: undefined }))
+    expect(d.count({ flow: "probe/Pause", door: "slash", outcome: "done" })).toBe(1)
+    expect(JSON.stringify(d.recorded.logs)).not.toContain(sentinel)
+    expect(JSON.stringify(d.recorded.spans.map((span) => [...span.attributes]))).not.toContain(sentinel)
   })
 })
 
 describe("FlowDispatch", () => {
-  test("binds the app's registry over this device's engine and the door, minting an execution id per dispatch", async () => {
+  test("binds the app's registry over this device's engine, minting an execution id per dispatch", async () => {
     const scope = Effect.runSync(Scope.make())
     scopes.push(scope)
     const painted: Array<"light" | "dark"> = []
@@ -336,7 +389,6 @@ describe("FlowDispatch", () => {
         .pipe(
           Effect.provide(FlowDispatch.layer),
           Effect.provide(ClientEngine.layerRuntime(clientFlows)),
-          Effect.provide(RemoteFlows.layerHttp(ORIGIN).pipe(Layer.provide(FetchHttpClient.layer))),
           Effect.provide(Layer.succeedContext(context)),
           Effect.exit,
         ),

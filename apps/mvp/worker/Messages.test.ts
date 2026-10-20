@@ -1,12 +1,21 @@
 // The statements ChatApi runs on `messages` (worker/Messages.ts), against the compose Postgres in this file's own schema.
 import { Deferred, Effect, Fiber } from "effect"
 import { SqlClient, SqlError } from "effect/sql"
-import { describe, expect, test } from "vitest"
+import { beforeAll, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import * as Messages from "./Messages.ts"
-import { eventually, row, rowCount, testFile, uuid } from "./test/harness.ts"
+import { eventually, homeConversation, row, rowCount, testFile, uuid } from "./test/harness.ts"
 
 const runtime = testFile("messages")
+
+/** The conversation every question here is asked in: the home conversation, as an ask that names none. */
+let conversationId: string
+beforeAll(async () => {
+  conversationId = await homeConversation(runtime)
+})
+
+/** Who asks, unless a test says otherwise: a person id, as ChatApi takes it from the session. */
+const asker = "person-asker"
 
 /** Runs `effect` on a connection of its own, as ChatApi does for each request. */
 const alone = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
@@ -41,10 +50,21 @@ const order = () =>
     ),
   )
 
+/** Every message's id and asker, in the conversation's order. */
+const askers = () =>
+  runtime.runPromise(
+    Effect.flatMap(
+      SqlClient.SqlClient,
+      (sql) =>
+        sql<{ readonly id: string; readonly askedBy: string | null }>`
+          SELECT id, asked_by AS "askedBy" FROM messages ORDER BY position`,
+    ),
+  )
+
 describe("ask", () => {
   test("inserts the question and its empty streaming answer in one transaction, the answer next", async () => {
     const ids = { id: uuid(), answerId: uuid() }
-    const asked = await runtime.runPromise(Messages.ask({ ...ids, text: "Say hi." }))
+    const asked = await runtime.runPromise(Messages.ask({ ...ids, text: "Say hi.", askedBy: asker, conversationId }))
     const question = await row(runtime, ids.id)
     const answer = await row(runtime, ids.answerId)
     expect(question).toMatchObject({
@@ -87,17 +107,17 @@ describe("ask", () => {
         const sql = yield* SqlClient.SqlClient
         yield* sql.withTransaction(
           Effect.gen(function* () {
-            yield* Messages.ask({ ...first, text: "first" })
+            yield* Messages.ask({ ...first, text: "first", askedBy: asker, conversationId })
             yield* sql`SELECT pg_advisory_xact_lock(${key})`
             yield* Deferred.succeed(locked, undefined)
             yield* Deferred.await(go)
-            yield* Messages.ask({ ...second, text: "second" })
+            yield* Messages.ask({ ...second, text: "second", askedBy: asker, conversationId })
           }),
         )
       }),
     )
     await runtime.runPromise(Deferred.await(locked))
-    const asking = alone(Messages.ask({ ...held, text: "held" }))
+    const asking = alone(Messages.ask({ ...held, text: "held", askedBy: asker, conversationId }))
     try {
       // What this file's connections wait on.
       const waiting = () =>
@@ -135,7 +155,7 @@ describe("ask", () => {
   })
 
   test("a retry of the same question changes nothing, whether its answer streams or has settled", async () => {
-    const question = { id: uuid(), answerId: uuid(), text: "Ask me once." }
+    const question = { id: uuid(), answerId: uuid(), text: "Ask me once.", askedBy: asker, conversationId }
     await runtime.runPromise(Messages.ask(question))
     expect(await runtime.runPromise(Messages.ask(question))).toEqual({ txid: null })
     await settle(question.answerId, "Once.", "done")
@@ -144,11 +164,24 @@ describe("ask", () => {
     expect(await row(runtime, question.answerId)).toMatchObject({ status: "done", text: "Once." })
   })
 
+  test("records the asker on the question only, and the same question from another person is IdTaken", async () => {
+    const question = { id: uuid(), answerId: uuid(), text: "Whose is this?", askedBy: asker, conversationId }
+    await runtime.runPromise(Messages.ask(question))
+
+    const error = await runtime.runPromise(Effect.flip(Messages.ask({ ...question, askedBy: "person-other", conversationId })))
+
+    expect(error).toBeInstanceOf(Messages.IdTaken)
+    expect(await askers()).toEqual([
+      { id: question.id, askedBy: asker },
+      { id: question.answerId, askedBy: null },
+    ])
+  })
+
   test("an answer id another message has fails the statement, and the question isn't written either", async () => {
     const answerId = uuid()
-    await runtime.runPromise(Messages.ask({ id: uuid(), answerId, text: "first" }))
+    await runtime.runPromise(Messages.ask({ id: uuid(), answerId, text: "first", askedBy: asker, conversationId }))
     const clash = uuid()
-    const error = await runtime.runPromise(Effect.flip(Messages.ask({ id: clash, answerId, text: "second" })))
+    const error = await runtime.runPromise(Effect.flip(Messages.ask({ id: clash, answerId, text: "second", askedBy: asker, conversationId })))
     expect(SqlError.isSqlError(error) && error.reason._tag).toBe("UniqueViolation")
     expect(await rowCount(runtime)).toBe(2)
     expect(await order()).not.toContain(clash)
@@ -161,7 +194,7 @@ describe("history", () => {
     runtime.runPromise(
       Effect.gen(function* () {
         const ids = { id: uuid(), answerId: uuid() }
-        yield* Messages.ask({ ...ids, text: question })
+        yield* Messages.ask({ ...ids, text: question, askedBy: asker, conversationId })
         return ids
       }),
     ).then(async (ids) => {

@@ -1,0 +1,44 @@
+import { Context, Effect, Layer, Option } from "effect"
+import type { Door } from "./dispatch"
+
+// Which tab a step reaches (docs/features/flows.md#navigation): every client flow runs in the leader tab's
+// engine worker, so a step that acts on the tab that asked, such as `app/navigate`'s, finds that tab by the run it
+// belongs to. Each tab remembers the executions it dispatched (`TabRequests`, which `FlowDispatch` fills); no other tab
+// or device claims them, and a tab that closed or reloaded claims nothing.
+
+/** How many of its latest dispatches a tab remembers: far more than one visit makes. */
+export const REMEMBERED = 1_024
+
+/**
+ * The run an execution belongs to, its requester: its id up to its first `/`. A tab's dispatch is its own requester;
+ * the agent's flow call (`<answerId>/chat/Respond@…/call/<frame>.<ordinal>`, src/flows/catalog.ts `childExecutionId`)
+ * belongs to the answer whose run made it, which the asking tab dispatched.
+ */
+export const requesterOf = (executionId: string): string => executionId.split("/", 1)[0]!
+
+/** The executions this tab started, each with the door it came through. */
+export class TabRequests extends Context.Service<
+  TabRequests,
+  {
+    /** Remembers that this tab started `executionId` through `door`. */
+    readonly add: (executionId: string, door: Door) => Effect.Effect<void>
+    /** The door this tab started `requester` through; none when another tab or device started it. */
+    readonly doorOf: (requester: string) => Effect.Effect<Option.Option<Door>>
+  }
+>()("@smthrs/mvp/flows/TabRequests") {
+  /** One tab's: its latest `remembered` dispatches, in memory, forgotten with the tab. */
+  static readonly layer = (remembered: number = REMEMBERED) =>
+    Layer.sync(TabRequests, () => {
+      const started = new Map<string, Door>()
+      return TabRequests.of({
+        add: (executionId, door) =>
+          Effect.sync(() => {
+            // Re-added, it is the latest again.
+            started.delete(executionId)
+            started.set(executionId, door)
+            if (started.size > remembered) started.delete(started.keys().next().value!)
+          }),
+        doorOf: (requester) => Effect.sync(() => Option.fromNullishOr(started.get(requester))),
+      })
+    })
+}

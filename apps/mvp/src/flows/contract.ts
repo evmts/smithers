@@ -1,14 +1,14 @@
-// Flows' contract between the browser and ChatApi (docs/features/flows.md#the-remote-door): the one home of the values
-// both sides share. Nothing here imports a library, so every side can.
-
-/** The remote door: `POST <route>/<flow name>` with `{ executionId, payload }`. */
-export const FLOWS_ROUTE = "/api/flows"
-
-/** The largest body the door reads: 64 KiB. A flow may bound its own payload lower. */
-export const MAX_FLOW_BODY_BYTES = 64 * 1024
+// Flows' contract between the tab, its engine worker and ChatApi's telemetry relay (docs/features/flows.md): the one
+// home of the values they share. Nothing here imports a library, so every side can.
 
 /** The engine's name in every tab and its worker: its Web Lock, its channel and its OPFS directory. */
 export const ENGINE_NAME = "smithers"
+
+/**
+ * What starts a dispatch: a button, a slash command, a view, the composer, the agent's cell, or sync, when a row another
+ * device wrote asks this device to act on a run it holds (an answer to deliver, decision 0015).
+ */
+export const DOORS = ["button", "slash", "view", "composer", "agent", "sync"] as const
 
 /**
  * What flows record in the browser (docs/observability.md#browser), by name, and the attributes they carry: dispatch in
@@ -69,13 +69,12 @@ export const FLOWS_TELEMETRY = {
   ],
   fields: [
     "flow",
-    "placement",
     "door",
     "executionId",
     "outcome",
+    "refusal",
     "durationMs",
     "smithers.flow.name",
-    "smithers.flow.placement",
     "smithers.flow.door",
     "smithers.flow.outcome",
     "request",

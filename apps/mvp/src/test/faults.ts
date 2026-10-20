@@ -1,11 +1,14 @@
 import { ShapeSource } from "@smthrs/effect-electric"
-import { Context, Effect, Layer, Ref } from "effect"
+import { Interpreter } from "@smthrs/flow"
+import { Context, Effect, Exit, Latch, Layer, Ref } from "effect"
 import { AuthClient } from "../features/auth/api"
 import { ChatClient, type Question, QuestionNotTaken } from "../features/chat/api"
 import { type AppOptions, realServices } from "../boot"
+import { ClientEngine, DispatchFailed } from "../flows/dispatch"
 
 // The test implementations of the services the browser reaches the world through (docs/rules.md,
-// test.faults-by-injection): ChatApi's client and Electric's shape source, each the real one behind switches. Unit
+// test.faults-by-injection): ChatApi's client, Electric's shape source and this tab's engine, each the real one behind
+// switches. Unit
 // tests of unhappy paths and the end-to-end entry (src/test/e2e.ts) use them; every happy-path test uses the real ones,
 // which is what proves them. Production never loads this file.
 
@@ -85,10 +88,68 @@ const faultyClient = Layer.effectContext(
 )
 
 /**
- * The browser's services with switches: ChatApi's real client behind `QuestionFaults`, sign-in's real client, and
- * Electric's real shape source behind `ShapeSource.Faults`. Pass it to `appLayer` or `start` in place of
- * `realServices`. `shapes` throws the shape source's switches before the app syncs, for an app that must open with
- * sync already failing.
+ * The switches of the faulty engine: `holdStarts` holds every run this tab starts until `releaseStarts`, as when its
+ * engine worker is still loading, so a run asked for isn't recorded yet; a run already started goes on.
+ * `refuseResults(flow, code)` makes the end of every run of `flow` read as the engine's interpreter refusing it with
+ * `code`, as a run parked under one build of the app and resumed under the next reads `plan_changed` from the store;
+ * the run itself goes on. `refuseStarts(flow)` makes every start of `flow` from now on refused, as an engine that can't
+ * record a run refuses it.
+ */
+export class EngineFaults extends Context.Service<
+  EngineFaults,
+  {
+    readonly holdStarts: Effect.Effect<void>
+    readonly releaseStarts: Effect.Effect<void>
+    readonly refuseResults: (flow: string, code: Interpreter.InterpreterError["code"]) => Effect.Effect<void>
+    readonly refuseStarts: (flow: string) => Effect.Effect<void>
+  }
+>()("@smthrs/mvp/test/EngineFaults") {}
+
+/** This tab's engine as the layer below gives it, behind `EngineFaults`. */
+const faultyEngine = Layer.effectContext(
+  Effect.gen(function* () {
+    const real = yield* ClientEngine
+    const starts = yield* Latch.make(true)
+    const refusing = yield* Ref.make<ReadonlyMap<string, Interpreter.InterpreterError["code"]>>(new Map())
+    const refusingStarts = yield* Ref.make<ReadonlySet<string>>(new Set())
+    const result: ClientEngine["Service"]["result"] = (flow, run) =>
+      Effect.flatMap(Ref.get(refusing), (refused) => {
+        const code = refused.get(flow._tag)
+        return code === undefined
+          ? real.result(flow, run)
+          : Effect.succeed(
+            Exit.die(new Interpreter.InterpreterError({ code, flow: flow._tag, node: flow._tag, message: "refused" })),
+          )
+      })
+    return Context.make(
+      ClientEngine,
+      ClientEngine.of({
+        start: (flow, run) =>
+          Effect.flatMap(Ref.get(refusingStarts), (refused) =>
+            refused.has(flow._tag)
+              ? Effect.fail(new DispatchFailed({ flow: flow._tag, reason: "refused" }))
+              : starts.whenOpen(real.start(flow, run))),
+        result,
+      }),
+    ).pipe(
+      Context.add(
+        EngineFaults,
+        EngineFaults.of({
+          holdStarts: Effect.asVoid(starts.close),
+          releaseStarts: Effect.asVoid(starts.open),
+          refuseResults: (flow, code) => Ref.update(refusing, (refused) => new Map([...refused, [flow, code]])),
+          refuseStarts: (flow) => Ref.update(refusingStarts, (refused) => new Set([...refused, flow])),
+        }),
+      ),
+    )
+  }),
+)
+
+/**
+ * The browser's services with switches: ChatApi's real client behind `QuestionFaults`, sign-in's real client,
+ * Electric's real shape source behind `ShapeSource.Faults`, and this tab's real engine behind `EngineFaults`. Pass it
+ * to `appLayer` or `start` in place of `realServices`. `shapes` throws the shape source's switches before the app
+ * syncs, for an app that must open with sync already failing.
  */
 export const faultyServices = (
   options: Pick<AppOptions, "origin" | "answerWithin">,
@@ -98,4 +159,5 @@ export const faultyServices = (
     faultyClient.pipe(Layer.provide(realServices(options))),
     AuthClient.layer({ origin: options.origin, within: options.answerWithin ?? "15 seconds" }),
     ShapeSource.layerFaulty(shapes),
+    faultyEngine,
   )

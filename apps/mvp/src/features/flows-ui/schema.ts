@@ -1,0 +1,162 @@
+import { Schema } from "effect"
+import {
+  CHECKS,
+  DRAFT_STATUSES,
+  MAX_ANSWER_CHARS,
+  MAX_DESCRIPTION_CHARS,
+  MAX_QUESTIONS,
+  MAX_REQUEST_CHARS,
+  NAME_PATTERN,
+} from "./contract"
+
+// Your own flows' rows and route bodies (decision 0014 §1): what Postgres keeps, what Electric syncs to the device and
+// what ChatApi's routes take and answer. A row stored on the device is read by the next version of the app too: change
+// its shape only with its collection's `schemaVersion`.
+
+/** A flow's name (contract.ts `NAME_PATTERN`). */
+export const FlowName = Schema.String.check(Schema.isPattern(NAME_PATTERN))
+
+/** A description: 1 to 1,024 characters. */
+export const Description = Schema.String.check(Schema.isBetweenLength(1, MAX_DESCRIPTION_CHARS))
+
+/** What a person asks `flow/new` for. */
+export const Request = Schema.Trim.check(Schema.isBetweenLength(1, MAX_REQUEST_CHARS))
+
+/** A draft's status. */
+export const DraftStatus = Schema.Literals(DRAFT_STATUSES)
+export type DraftStatus = typeof DraftStatus.Type
+
+/** One file of a draft: its path in the flow's directory and its text. */
+export const DraftFile = Schema.Struct({ path: Schema.String, text: Schema.String })
+export type DraftFile = typeof DraftFile.Type
+
+/** One static check and how it went: `code` names a failure, never quotes the file. */
+export const DraftCheck = Schema.Struct({
+  check: Schema.Literals(CHECKS),
+  ok: Schema.Boolean,
+  code: Schema.optional(Schema.String),
+})
+export type DraftCheck = typeof DraftCheck.Type
+
+/**
+ * One question a round asks, with the default it assumed: a blocking one holds Save until it is answered, an optional
+ * one never holds the round. `answer` is the person's, once given.
+ */
+export const DraftQuestion = Schema.Struct({
+  id: Schema.String.check(Schema.isBetweenLength(1, 64)),
+  text: Schema.String.check(Schema.isBetweenLength(1, 500)),
+  assumed: Schema.String.check(Schema.isMaxLength(500)),
+  blocking: Schema.Boolean,
+  answer: Schema.optional(Schema.String.check(Schema.isMaxLength(MAX_ANSWER_CHARS))),
+})
+export type DraftQuestion = typeof DraftQuestion.Type
+
+/** `POST /api/flow-drafts/<id>`: one round's state, written by `flow/new`'s steps. */
+export const DraftWrite = Schema.Struct({
+  scope: Schema.Literal("person"),
+  round: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  request: Request,
+  name: Schema.NullOr(FlowName),
+  status: Schema.Literals(["drafting", "needs_you", "ready", "failed"]),
+  summary: Schema.NullOr(Schema.String.check(Schema.isMaxLength(500))),
+  files: Schema.Array(DraftFile).check(Schema.isMaxLength(1)),
+  checks: Schema.Array(DraftCheck),
+  questions: Schema.Array(DraftQuestion).check(Schema.isMaxLength(MAX_QUESTIONS)),
+  failure: Schema.NullOr(Schema.String.check(Schema.isMaxLength(64))),
+  flowId: Schema.NullOr(Schema.String.check(Schema.isUUID())),
+})
+export type DraftWrite = typeof DraftWrite.Type
+
+/** `POST /api/flow-drafts/<id>/answers`: the person's answers to a round's questions, by question id. */
+export const DraftAnswers = Schema.Struct({
+  round: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  answers: Schema.Array(Schema.Struct({
+    id: Schema.String.check(Schema.isBetweenLength(1, 64)),
+    value: Schema.Trim.check(Schema.isBetweenLength(1, MAX_ANSWER_CHARS)),
+  })).check(Schema.isBetweenLength(1, MAX_QUESTIONS)),
+})
+export type DraftAnswers = typeof DraftAnswers.Type
+
+/**
+ * One row of Postgres `flow_drafts` as the device keeps it: columns in camelCase, the jsonb columns as values. Its
+ * author's id stays on the server.
+ */
+export const Draft = Schema.Struct({
+  id: Schema.String,
+  scope: Schema.Literals(["person", "repo"]),
+  repoId: Schema.NullOr(Schema.String),
+  target: Schema.Literals(["flow", "home"]),
+  name: Schema.NullOr(Schema.String),
+  request: Schema.String,
+  status: DraftStatus,
+  round: Schema.Number,
+  summary: Schema.NullOr(Schema.String),
+  files: Schema.Array(DraftFile),
+  checks: Schema.Array(DraftCheck),
+  questions: Schema.Array(DraftQuestion),
+  failure: Schema.NullOr(Schema.String),
+  flowId: Schema.NullOr(Schema.String),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+})
+export type Draft = typeof Draft.Type
+
+/** One row of Postgres `flows` as the device keeps it: a person's live flow. */
+export const FlowRow = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  revision: Schema.Number,
+  description: Schema.String,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+})
+export type FlowRow = typeof FlowRow.Type
+
+/** `GET /api/flows`: the person's live flows, newest first. */
+export const FlowList = Schema.Struct({
+  flows: Schema.Array(Schema.Struct({
+    id: Schema.String,
+    name: Schema.String,
+    revision: Schema.Number,
+    description: Schema.String,
+  })),
+})
+export type FlowList = typeof FlowList.Type
+
+/**
+ * `POST /api/flows/save`: a ready draft's `SKILL.md`, as `flow/save` read it from the draft, with its name, its
+ * description and its SHA-256. ChatApi admits it only when it is the draft's own file, unchanged.
+ */
+export const SaveRequest = Schema.Struct({
+  draftId: Schema.String.check(Schema.isUUID()),
+  name: FlowName,
+  description: Description,
+  source: Schema.String,
+  digest: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)),
+})
+export type SaveRequest = typeof SaveRequest.Type
+
+/** What `POST /api/flows/save` answers: the flow and the revision the draft became. */
+export const Saved = Schema.Struct({
+  flowId: Schema.String,
+  name: Schema.String,
+  revision: Schema.Number,
+  txid: Schema.NullOr(Schema.Number),
+})
+export type Saved = typeof Saved.Type
+
+/** What `GET /api/flows/source` answers: one revision of a person's flow, pinned by its digest. */
+export const FlowSource = Schema.Struct({
+  flowId: Schema.String,
+  name: Schema.String,
+  revision: Schema.Number,
+  digest: Schema.String,
+  source: Schema.String,
+})
+export type FlowSource = typeof FlowSource.Type
+
+/** What a write route answers: the transaction it wrote in, `null` when it changed nothing. */
+export const Written = Schema.Struct({ txid: Schema.NullOr(Schema.Number) })
+
+/** A refusal's body: its code. */
+export const FlowsRefusal = Schema.Struct({ code: Schema.String })

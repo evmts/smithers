@@ -1,0 +1,187 @@
+import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
+import { BrowserEngine } from "@smthrs/platform-browser"
+import { Clock, Context, Duration, Effect, Layer, Metric, Option, Stream } from "effect"
+import { JOURNAL_PAGE, RUN_LIST_LIMIT } from "./contract"
+import { type Inspection, RunPage, RunRow, RunView, VIEW } from "./schema"
+
+// Runs on this tab (decision 0014 §1 and §3, docs/features/runs.md#the-browser): the list of this device's runs, each
+// open run's read, and the run view, all local collections read from this device's engine through `BrowserEngine`. A
+// run's page follows the engine as it works: every event the leader commits reads the open run, and the list while it
+// shows, again, at most once per `FOLLOW_EVERY`; nothing polls. No value of a run reaches a record: a read is counted and
+// logged by its outcome, its event count and its size.
+
+/** How often an open run, and the list, are read again while the engine works. */
+export const FOLLOW_EVERY = Duration.millis(200)
+
+/** Reads of runs from the tab, by `read` (`run`, `list`) and `outcome`. */
+export const reads = Metric.counter("smithers_run_reads", {
+  description: "Reads of this device's runs from the tab, by read and outcome",
+  incremental: true,
+})
+
+/** The run of `view`, joined to its read: what the run page shows. */
+export const pageQuery = (view: Collection.Collection<RunView, string>, pages: Collection.Collection<RunPage, string>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ view: view.tanstack })
+      .innerJoin({ page: pages.tanstack }, ({ view, page }) => Query.eq(view.runId, page.id))
+      .select(({ view, page }) => ({ view, page }))
+      .findOne()
+  )
+
+/** The view's one row. */
+export const viewQuery = (view: Collection.Collection<RunView, string>) =>
+  LiveQuery.make((q) => q.from({ view: view.tanstack }).findOne())
+
+/** Every run of the list. */
+export const runsQuery = (runs: Collection.Collection<RunRow, string>) => LiveQuery.make((q) => q.from({ run: runs.tanstack }))
+
+/** A list row from the engine's summary of a run. */
+const rowOf = (run: Inspection["children"][number] | Omit<Inspection["run"], "input" | "result">): RunRow => ({
+  id: run.runId,
+  flow: run.flowName,
+  status: run.status,
+  cancelRequested: run.cancelRequestedAtMs !== null,
+  createdAtMs: run.createdAtMs,
+  startedAtMs: run.startedAtMs,
+  finishedAtMs: run.finishedAtMs,
+  seq: run.lastSeq,
+})
+
+/** Puts `row` into `collection`, replacing the one under its key. */
+const put = <A extends { readonly id: string }>(collection: Collection.Collection<A, string>, row: A) =>
+  Effect.gen(function* () {
+    const current = yield* collection.get(row.id)
+    if (Option.isNone(current)) return yield* Effect.asVoid(collection.insert(row))
+    yield* Effect.asVoid(collection.update(row.id, (draft) => void Object.assign(draft, row)))
+  })
+
+type Read = "run" | "list"
+
+/** Counts and logs one read of the engine: its outcome and, for a run, how many events it held. */
+const recordRead = (read: Read, outcome: string, startedAt: number, events?: number) =>
+  Effect.gen(function* () {
+    yield* Metric.update(Metric.withAttributes(reads, { read, outcome }), 1)
+    yield* Effect.logDebug("run.read").pipe(Effect.annotateLogs({
+      feature: "runs",
+      act: read,
+      outcome,
+      durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+      ...(events === undefined ? {} : { events }),
+    }))
+  })
+
+/**
+ * The runs' state for one tab:
+ * - `runs`: this device's runs, newest first, as the engine last listed them;
+ * - `pages`: each open run as the engine last read it;
+ * - `view`: the run this tab shows, the step and tab selected, an act in flight and why one was refused;
+ * - `readRun`, `readList`, `readMore`: read the engine again.
+ */
+export class RunsStore extends Context.Service<
+  RunsStore,
+  {
+    readonly runs: Collection.Collection<RunRow, string>
+    readonly pages: Collection.Collection<RunPage, string>
+    readonly view: Collection.Collection<RunView, string>
+    readonly page: Effect.Success<ReturnType<typeof pageQuery>>
+    readonly viewRow: Effect.Success<ReturnType<typeof viewQuery>>
+    readonly list: Effect.Success<ReturnType<typeof runsQuery>>
+    readonly readRun: (runId: string) => Effect.Effect<void>
+    readonly readList: Effect.Effect<void>
+    readonly readMore: (runId: string) => Effect.Effect<void>
+  }
+>()("@smthrs/mvp/runs/RunsStore") {
+  /** The store over this tab's `BrowserEngine`, following its events from when it is built until its scope closes. */
+  static readonly layer = Layer.effect(
+    RunsStore,
+    Effect.gen(function* () {
+      const engine = yield* BrowserEngine.BrowserEngine
+      const runs = yield* Collection.local<RunRow, string>({ id: "runs", schema: RunRow, getKey: (row) => row.id })
+      const pages = yield* Collection.local<RunPage, string>({ id: "run-pages", schema: RunPage, getKey: (row) => row.id })
+      const view = yield* Collection.local<RunView, string>({
+        id: "run-view",
+        schema: RunView,
+        getKey: (row) => row.id,
+        initialData: [{ id: VIEW, runId: null, listOpen: false, selected: null, tab: "steps", acting: null, refusal: null }],
+      })
+
+      const readRun = (runId: string) =>
+        Effect.gen(function* () {
+          const startedAt = yield* Clock.currentTimeMillis
+          const read = yield* Effect.result(engine.inspect(runId, { limit: JOURNAL_PAGE }))
+          if (read._tag === "Success") {
+            const inspection = read.success
+            const current = yield* pages.get(runId)
+            // A run read again keeps the pages More read only while the first page still ends where they begin.
+            const kept = Option.match(current, {
+              onNone: () => ({ more: [], hasMore: inspection.journal.hasMore }),
+              onSome: (page) => page.more.length > 0 && inspection.journal.hasMore
+                ? { more: page.more, hasMore: page.hasMore }
+                : { more: [], hasMore: inspection.journal.hasMore },
+            })
+            yield* put(pages, { id: runId, state: "read", inspection, ...kept })
+            yield* put(runs, rowOf(inspection.run))
+            return yield* recordRead("run", "read", startedAt, inspection.journal.events.length)
+          }
+          const notFound = read.failure._tag === "@smthrs/platform-browser/RequestRefused" &&
+            read.failure.error === "@smthrs/engine-store/RunNotFound"
+          const state = notFound ? "not_found" : "unavailable"
+          yield* put(pages, { id: runId, state, inspection: null, more: [], hasMore: false })
+          yield* recordRead("run", state, startedAt)
+        }).pipe(Effect.orDie)
+
+      const readMore = (runId: string) =>
+        Effect.gen(function* () {
+          const current = yield* pages.get(runId)
+          if (Option.isNone(current) || current.value.inspection === null) return
+          const page = current.value
+          const events = [...(page.inspection as Inspection).journal.events, ...(page.more as Inspection["journal"]["events"])]
+          const afterSeq = events.at(-1)?.seq ?? -1
+          const read = yield* Effect.result(engine.inspect(runId, { afterSeq, limit: JOURNAL_PAGE }))
+          if (read._tag === "Failure") return
+          yield* put(pages, {
+            ...page,
+            more: [...page.more, ...read.success.journal.events],
+            hasMore: read.success.journal.hasMore,
+          })
+        }).pipe(Effect.orDie)
+
+      const readList = Effect.gen(function* () {
+        const startedAt = yield* Clock.currentTimeMillis
+        const read = yield* Effect.result(engine.list({ limit: RUN_LIST_LIMIT }))
+        if (read._tag === "Failure") return yield* recordRead("list", "unavailable", startedAt)
+        const listedIds = new Set(read.success.runs.map((run) => run.runId))
+        const stale = (yield* runs.toArray).filter((row) => !listedIds.has(row.id)).map((row) => row.id)
+        if (stale.length > 0) yield* Effect.asVoid(runs.delete(stale))
+        for (const run of read.success.runs) yield* put(runs, rowOf(run))
+        yield* recordRead("list", "read", startedAt)
+      }).pipe(Effect.orDie)
+
+      // Every event the engine commits reads the open run, and the list while it shows, again.
+      yield* engine.events.pipe(
+        Stream.debounce(FOLLOW_EVERY),
+        Stream.runForEach(() =>
+          Effect.gen(function* () {
+            const current = Option.getOrThrow(yield* view.get(VIEW))
+            if (current.runId !== null) yield* readRun(current.runId)
+            if (current.listOpen) yield* readList
+          })
+        ),
+        Effect.forkScoped,
+      )
+
+      return RunsStore.of({
+        runs,
+        pages,
+        view,
+        page: yield* pageQuery(view, pages),
+        viewRow: yield* viewQuery(view),
+        list: yield* runsQuery(runs),
+        readRun,
+        readList,
+        readMore,
+      })
+    }),
+  )
+}

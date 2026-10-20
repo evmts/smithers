@@ -9,13 +9,13 @@ import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
-import { blobRoute, cloneExecutionId, treeRoute } from "../src/features/repo/contract.ts"
+import { blobRoute, cloneExecutionId, rawRoute, refsRoute, treeRoute } from "../src/features/repo/contract.ts"
 import * as RepoFlows from "../src/features/repo/flows.ts"
 import * as Actor from "./Actor.ts"
 import { FlowStarter, StartConflict, StartUnavailable } from "./Flows.ts"
 import * as RepoMetrics from "./RepoMetrics.ts"
 import * as Repos from "./Repos.ts"
-import { fixture, scripted } from "./test/codeStorage.ts"
+import { fixture, scripted, shaOf } from "./test/codeStorage.ts"
 import { runFlow } from "./test/flowHost.ts"
 import { recorded, testFile } from "./test/harness.ts"
 import { repoHarness, repositoryRow, resetRepos, usageRow } from "./test/repos.ts"
@@ -201,6 +201,18 @@ describe("POST /api/repos", () => {
     expect(await response.json()).toEqual({ code: "authentication" })
     expect(await repositoryRow(runtime, "github/octocat/spoon-knife")).toBeUndefined()
     expect(h.count(RepoMetrics.cloneRequests, { outcome: "authentication" })).toBe(1)
+  })
+
+  test.each([
+    ["a Guest", "guest" as const],
+    ["a person with no role", null],
+  ])("%s: 403 forbidden, and nothing is written or started", async (_, role) => {
+    const h = await repoHarness(runtime, { actor: { subject: { kind: "person", id: "person-other" }, role } })
+    const response = await h.clone("octocat", "Spoon-Knife")
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ code: "forbidden" })
+    expect(await repositoryRow(runtime, "github/octocat/spoon-knife")).toBeUndefined()
+    expect(h.count(RepoMetrics.cloneRequests, { outcome: "forbidden" })).toBe(1)
   })
 
   test("refuses what it can't take: method, body, names, size, and a deployment without Code Storage", async () => {
@@ -430,6 +442,101 @@ describe("reads", () => {
   })
 })
 
+describe("branches and tags", () => {
+  const branched = (count = 1) =>
+    fixture({
+      branches: Array.from({ length: count }, (_, index) => ({
+        name: `b${index}`,
+        sha: shaOf(`b${index}`),
+        files: { "a.md": `# b${index}` },
+      })),
+      tags: [{ name: "v1", sha: shaOf("b0") }],
+    })
+
+  test("the default branch, its head, and every branch and tag, cached under the head: a repeat costs Code Storage nothing", async () => {
+    const h = await repoHarness(runtime)
+    const { headSha } = await h.seed("octocat", "Spoon-Knife", branched())
+    const first = await h.fetch(refsRoute("octocat", "Spoon-Knife"))
+    expect(first.status).toBe(200)
+    expect(first.headers.get("cache-control")).toBe("no-cache")
+    expect(first.headers.get("content-type")).toContain("application/json")
+    expect(await first.json()).toEqual({
+      defaultBranch: "main",
+      head: headSha,
+      branches: [{ name: "b0", sha: shaOf("b0") }, { name: "main", sha: headSha }],
+      tags: [{ name: "v1", sha: shaOf("b0") }],
+      truncated: false,
+    })
+    expect((await h.fetch(refsRoute("octocat", "Spoon-Knife"))).status).toBe(200)
+    expect(h.scripted.calls.filter((call) => call.startsWith("listBranches") || call.startsWith("listTags"))).toEqual([
+      "listBranches:github/octocat/spoon-knife",
+      "listTags:github/octocat/spoon-knife",
+    ])
+    expect(h.count(RepoMetrics.reads, { kind: "refs", status: "200" })).toBe(2)
+    expect(h.line("repo.refs")[0]!.annotations).toMatchObject({ repoId: "github/octocat/spoon-knife", status: 200 })
+    expect(h.line("repo.refs")[0]!.annotations).not.toHaveProperty("sha")
+    expect((await usageRow(runtime))!.read).toBeGreaterThan(0)
+  })
+
+  test("pages of branches and tags, stopped at REPO_MAX_REFS saying so", async () => {
+    const h = await repoHarness(runtime, { config: { REPO_MAX_REFS: "120" } })
+    await h.seed("octocat", "Many", branched(150))
+    const listed = (response: Response) =>
+      response.json() as Promise<{ readonly branches: ReadonlyArray<unknown>; readonly truncated: boolean }>
+    const refs = await listed(await h.fetch(refsRoute("octocat", "Many")))
+    expect(refs.branches).toHaveLength(120)
+    expect(refs.truncated).toBe(true)
+    expect(h.scripted.calls.filter((call) => call.startsWith("listBranches"))).toHaveLength(2)
+    const all = await repoHarness(runtime, { scripted: h.scripted })
+    expect((await listed(await all.fetch(refsRoute("octocat", "Many")))).branches).toHaveLength(151)
+  })
+
+  test("a repository that isn't ready is 404; Code Storage busy is 503, never cached; bad input is refused", async () => {
+    const h = await repoHarness(runtime)
+    expect((await h.fetch(refsRoute("octocat", "Spoon-Knife"))).status).toBe(404)
+    await h.seed("octocat", "Spoon-Knife", branched())
+    h.scripted.fail("listTags", h.scripted.error("listTags", "rate_limited", 429, { retryAfterMillis: 1_200 }))
+    const busy = await h.fetch(refsRoute("octocat", "Spoon-Knife"))
+    expect(busy.status).toBe(503)
+    expect(busy.headers.get("retry-after")).toBe("2")
+    expect((await h.fetch(refsRoute("octocat", "Spoon-Knife"))).status).toBe(200)
+    expect((await h.fetch(`${refsRoute("octocat", "Spoon-Knife")}/extra`)).status).toBe(404)
+    expect((await h.fetch(refsRoute("octocat", "Spoon-Knife"), { method: "POST" })).status).toBe(405)
+    const down = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
+    const unreachable = await repoHarness(runtime, { database: down, scripted: h.scripted })
+    expect((await unreachable.fetch(refsRoute("octocat", "Spoon-Knife"))).status).toBe(503)
+    const none = await repoHarness(runtime, { codeStorage: "none" })
+    expect((await none.fetch(refsRoute("octocat", "Spoon-Knife"))).status).toBe(503)
+  })
+})
+
+describe("raw", () => {
+  test("a text file as plain UTF-8, a binary as bytes, never sniffed or run; cached forever like the file", async () => {
+    const h = await repoHarness(runtime)
+    const { headSha } = await h.seed("octocat", "Spoon-Knife", fixture({
+      files: { "index.html": "<script>alert(1)</script>", "logo.png": new Uint8Array([0x89, 0x50, 0, 1]) },
+    }))
+    const page = await h.fetch(rawRoute("octocat", "Spoon-Knife", headSha, "index.html"))
+    expect(page.status).toBe(200)
+    expect(page.headers.get("content-type")).toBe("text/plain; charset=utf-8")
+    expect(page.headers.get("x-content-type-options")).toBe("nosniff")
+    expect(page.headers.get("content-security-policy")).toBe("default-src 'none'; sandbox")
+    expect(page.headers.get("cache-control")).toBe("public, max-age=31536000, immutable")
+    expect(await page.text()).toBe("<script>alert(1)</script>")
+    const logo = await h.fetch(rawRoute("octocat", "Spoon-Knife", headSha, "logo.png"))
+    expect(logo.headers.get("content-type")).toBe("application/octet-stream")
+    expect(new Uint8Array(await logo.arrayBuffer())).toEqual(new Uint8Array([0x89, 0x50, 0, 1]))
+    // The file route and the raw route share one cached read.
+    await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "index.html"))
+    expect(h.scripted.calls.filter((call) => call.startsWith("readFile"))).toHaveLength(2)
+    expect(h.count(RepoMetrics.reads, { kind: "raw", status: "200" })).toBe(2)
+    expect(h.line("repo.raw")[0]!.annotations).toMatchObject({ sha: headSha, status: 200 })
+    expect((await h.fetch(rawRoute("octocat", "Spoon-Knife", headSha, "nope.md"))).status).toBe(404)
+    expect((await h.fetch(`/api/repos/octocat/Spoon-Knife/raw/${headSha}`)).status).toBe(400)
+    expect((await h.fetch(rawRoute("octocat", "Spoon-Knife", "main", "index.html"))).status).toBe(400)
+  })
+})
+
 describe("the agent's reads on the server", () => {
   test("repo/tree and repo/read run on the Node host over RepoApi's own reads and cache", async () => {
     const h = await repoHarness(runtime)
@@ -457,7 +564,18 @@ describe("the agent's reads on the server", () => {
     // One Code Storage read of the tree serves the GET route and the flow alike.
     await h.fetch(treeRoute("octocat", "Spoon-Knife", headSha))
     expect(h.scripted.calls.filter((call) => call.startsWith("listFiles"))).toHaveLength(1)
-  })
+    const refs = await runFlow(RepoFlows.RepoRefs, { repo: "octocat/Spoon-Knife" }, registration)
+    expect(refs.exit).toEqual(Exit.succeed({
+      defaultBranch: "main",
+      head: headSha,
+      branches: [{ name: "main", sha: headSha }],
+      tags: [],
+      truncated: false,
+    }))
+    const unknown = await runFlow(RepoFlows.RepoRefs, { repo: "octocat/Hello-World" }, registration)
+    expect(Exit.isFailure(unknown.exit) && Cause.squash(unknown.exit.cause)).toBeInstanceOf(RepoFlows.RepoNotFound)
+    // Each `runFlow` builds an engine of its own: seven builds take a loaded machine more than the default 30 s.
+  }, 90_000)
 
   test("a reader's failures are the flows' declared ones: paused reads and a busy Code Storage", async () => {
     const h = await repoHarness(runtime, { config: { REPO_MAX_READ_GB_PER_MONTH: "0.000001" } })
@@ -517,6 +635,8 @@ describe("GET /api/shapes/repositories", () => {
     const response = await h.fetch("/api/shapes/repositories?offset=-1&table=messages&where=true")
     expect(response.status).toBe(200)
     expect(response.headers.get("electric-handle")).toEqual(expect.any(String))
+    // No browser or CDN keeps it: Electric's `public, max-age=604800` is replaced.
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
     // A subset request's parameters are dropped, so it reads the whole shape too.
     const subset = await h.fetch("/api/shapes/repositories?offset=-1&subset__limit=1&subset__where=id")
     expect(subset.status).toBe(200)

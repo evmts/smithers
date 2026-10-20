@@ -1,0 +1,147 @@
+import type { Page } from "@playwright/test"
+import { expect, test } from "./fixtures"
+
+// The branch workspace's first slice (decision 0013 §9, docs/features/branch-workspace.md), end to end against the
+// real app, Worker, Durable Objects, Postgres, Electric and a real container: open a public repository's existing
+// branch, ask in that branch's conversation, open its terminal (our xterm in an opaque-origin frame) and run `git log`
+// in the branch's machine, which cloned the branch through the forge proxy; a reload keeps the same shell; another
+// branch has its own conversation and its own terminal. The fixture is the public `octocat/Spoon-Knife`, whose
+// `test-branch` and `change-the-title` branches GitHub already has; nothing is written to GitHub.
+
+const REPO = "/octocat/Spoon-Knife"
+
+/** A container's first start builds nothing but may take a while on a cold machine. */
+const MACHINE = 200_000
+
+const conversationOf = (page: Page) => page.getByRole("region", { name: "Conversation", exact: true })
+/** What the terminal frame shows: xterm's rows, read through the frame (an opaque origin to the page, not to the test). */
+const terminalRows = (page: Page) => page.frameLocator('iframe[title="Terminal"]').locator("body")
+
+/** Opens a branch's page and waits for its workspace: the branch's name in its chrome. */
+const openBranch = async (page: Page, branch: string, search = "") => {
+  await page.goto(`${REPO}/tree/${branch}${search}`)
+  await expect(page.getByRole("navigation", { name: "Branch" })).toContainText(branch, { timeout: 30_000 })
+}
+
+/** Asks Smithers `question` in the page's conversation. */
+const ask = async (page: Page, question: string) => {
+  const composer = page.getByRole("textbox", { name: "Message Smithers" })
+  if (!(await composer.isVisible())) await page.getByRole("button", { name: /Chat/ }).click()
+  await composer.fill(question)
+  await composer.press("Enter")
+  await expect(conversationOf(page).getByText(question)).toBeVisible()
+}
+
+/**
+ * Shows the person's shell on the page's branch: the terminal still open from an earlier run, or Open terminal when
+ * there is none or it ended (a dev server reload restarts the machines, so an earlier run's terminal can be `lost`).
+ */
+const openTerminal = async (page: Page) => {
+  const open = page.getByRole("button", { name: "Open terminal" })
+  await expect(async () => {
+    // isVisible answers at once; isEnabled alone would wait for a button an open terminal never shows.
+    if ((await open.isVisible()) && (await open.isEnabled())) await open.click()
+    await expect(terminalRows(page)).toContainText("/workspace", { timeout: 15_000 })
+  }).toPass({ timeout: MACHINE })
+}
+
+/** Types `line` into the terminal frame and presses Enter. */
+const type = async (page: Page, line: string) => {
+  await page.locator('iframe[title="Terminal"]').click()
+  await page.keyboard.type(line)
+  await page.keyboard.press("Enter")
+}
+
+test("branch conversation: a question asked on a branch is stored in that branch's conversation only", async ({ page }) => {
+  test.setTimeout(3 * 60_000)
+  const word = `branch-${Date.now()}`
+
+  await openBranch(page, "test-branch")
+  const first = `Reply with exactly the word: ${word}`
+  await ask(page, first)
+  // Stored in Postgres in this branch's conversation: a reload shows it from the device and from Electric.
+  await page.reload()
+  await expect(conversationOf(page).getByText(first)).toBeVisible({ timeout: 60_000 })
+
+  // Another branch has its own conversation, without it.
+  await openBranch(page, "change-the-title")
+  await expect(conversationOf(page).getByText(first)).toHaveCount(0)
+  const second = `Second branch ${word}`
+  await ask(page, second)
+
+  // Back on test-branch: its question, not the other branch's.
+  await openBranch(page, "test-branch")
+  await expect(conversationOf(page).getByText(first)).toBeVisible({ timeout: 60_000 })
+  await expect(conversationOf(page).getByText(second)).toHaveCount(0)
+
+  // The home conversation at /app has neither.
+  await page.goto("/app")
+  await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
+  await expect(conversationOf(page).getByText(first)).toHaveCount(0)
+  await expect(conversationOf(page).getByText(second)).toHaveCount(0)
+})
+
+test("branch terminal: Open terminal runs git log on the branch's machine in a frame, and a reload keeps the shell", async ({ page }) => {
+  test.setTimeout(5 * 60_000)
+  const word = `shell-${Date.now()}`
+  await openBranch(page, "test-branch")
+
+  // The terminal: our xterm in an opaque-origin frame, on the branch's own machine, checked out at the branch through
+  // the forge proxy. The person's terminal there is theirs again if it is still open.
+  await page.getByRole("navigation", { name: "Branch" }).getByRole("link", { name: "Terminal" }).click()
+  await expect(page).toHaveURL(/[?&]terminal=me/)
+  await openTerminal(page)
+  await expect(page.locator('iframe[title="Terminal"]')).toHaveAttribute("sandbox", "allow-scripts")
+  await type(page, "git log --oneline -3")
+  await expect(terminalRows(page)).toContainText("Create test.md", { timeout: 30_000 })
+  await type(page, `export KEPT=${word}; echo set-$KEPT`)
+  // The shell ran it before the reload: keys still in flight when a page unloads are lost, as in any web terminal.
+  await expect(terminalRows(page)).toContainText(`set-${word}`, { timeout: 30_000 })
+
+  // A reload keeps the shell: tmux redraws the screen, and the variable set before is still set.
+  await page.reload()
+  await expect(terminalRows(page)).toContainText("Create test.md", { timeout: 60_000 })
+  await type(page, "echo kept-$KEPT")
+  await expect(terminalRows(page)).toContainText(`kept-${word}`, { timeout: 30_000 })
+})
+
+test("second branch terminal: another branch has its own machine, checkout and shell", async ({ page }) => {
+  test.setTimeout(5 * 60_000)
+  await openBranch(page, "change-the-title", "?terminal=me")
+  await openTerminal(page)
+  await type(page, "git rev-parse --abbrev-ref HEAD; echo kept-$KEPT.")
+  await expect(terminalRows(page)).toContainText("change-the-title", { timeout: 30_000 })
+  // test-branch's shell exported KEPT; this one is another machine's shell, where it is unset.
+  await expect(terminalRows(page)).toContainText("kept-.", { timeout: 30_000 })
+})
+
+test("branch views: a page opened on a branch lands in that branch's conversation, and opens full screen from there and from its URL", async ({ page }) => {
+  test.setTimeout(3 * 60_000)
+  await openBranch(page, "change-the-title")
+  const conversation = conversationOf(page)
+  const url = `https://example.com/?run=${Date.now()}`
+
+  // `/web` on the branch, then straight to another branch before the flow's step runs: the page stays where it was
+  // asked for, because the conversation is pinned when the person dispatched it.
+  await page.getByRole("button", { name: /Chat/ }).click()
+  const composer = page.getByRole("textbox", { name: "Message Smithers" })
+  await composer.fill(`/web ${url}`)
+  await composer.press("Enter")
+  await openBranch(page, "test-branch")
+  await openBranch(page, "change-the-title")
+  const view = conversation.locator("[data-view]", { has: page.locator(`iframe[src="${url}"]`) })
+  await expect(view).toHaveCount(1, { timeout: 30_000 })
+  const id = await view.getAttribute("data-view")
+
+  // Full screen from the conversation, then the same URL loaded fresh.
+  await view.getByRole("link", { name: "Full screen" }).click()
+  await expect(page).toHaveURL(new RegExp(`/app/views/${id}\\?conversation=[0-9a-f-]{36}$`))
+  const main = page.getByRole("main", { name: "View" })
+  await expect(main.locator("iframe")).toBeVisible({ timeout: 30_000 })
+  await page.reload()
+  await expect(main.locator("iframe")).toBeVisible({ timeout: 30_000 })
+
+  // The other branch's conversation doesn't have it.
+  await openBranch(page, "test-branch")
+  await expect(conversationOf(page).locator(`[data-view="${id}"]`)).toHaveCount(0)
+})

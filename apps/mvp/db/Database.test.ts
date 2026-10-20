@@ -80,7 +80,8 @@ describe("migrateAndReport", () => {
         {
           message: ["db:migrate: applied"],
           applied: "1_messages, 2_answer_attempts, 3_paired_positions, 4_model_roles, 5_sign_in, 6_answer_parts, " +
-            "7_repositories, 8_browser_answering, 9_clone_ids",
+            "7_repositories, 8_browser_answering, 9_clone_ids, 10_views, 11_question_askers, 12_model_reservations, " +
+            "13_runs, 14_branch_workspace, 15_flows, 16_github_issues, 17_model_charges",
         },
         { message: ["db:migrate: up to date"], applied: "" },
       ])
@@ -205,5 +206,164 @@ describe("0009_clone_ids", () => {
       const ids = [...rows.map((row) => row.cloneId), added!.cloneId]
       for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
       expect(new Set(ids).size).toBe(4)
+    }))
+})
+
+describe("0010_views", () => {
+  test("adds views that sit among the messages by the conversation's own sequence, never on a message's position", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0009"))
+      const [question, answer, view, refused] = [
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+      ]
+      // A question and its answer before the table exists.
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`
+          WITH q AS (INSERT INTO messages (id, role, text, status) VALUES (${question}, 'user', 'Hi', 'done') RETURNING position)
+          INSERT INTO messages (id, role, status, question_id, position) OVERRIDING SYSTEM VALUE
+          SELECT ${answer}, 'assistant', 'streaming', ${question}, position + 1 FROM q`))
+
+      const applied = await on(through("0010"))
+
+      expect(applied.map(([id, name]) => `${id}_${name}`)).toEqual(["10_views"])
+      const [added] = await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly position: string }>`
+          INSERT INTO views (id, template, props) VALUES (${view}, 'webpage', '{"url":"https://example.com/"}')
+          RETURNING position::text AS position`))
+      const positions = await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly position: string }>`SELECT position::text AS position FROM messages ORDER BY position`))
+      // After the answer, on a position no message holds.
+      expect(Number(added!.position)).toBeGreaterThan(Number(positions.at(-1)!.position))
+      expect(positions.map((row) => row.position)).not.toContain(added!.position)
+      // Only the two templates, and props that are an object.
+      const rejected = await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        Effect.all([
+          Effect.flip(sql`INSERT INTO views (id, template, props) VALUES (${refused}, 'iframe', '{}')`),
+          Effect.flip(sql`INSERT INTO views (id, template, props) VALUES (${refused}, 'link', '[]')`),
+        ])))
+      expect(rejected.map((error) => error.reason._tag)).toEqual(["ConstraintError", "ConstraintError"])
+    }))
+})
+
+describe("0011_question_askers", () => {
+  test("adds the asker to questions only, and fails the answers no one may write any more", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0010"))
+      // Before askers: one answer still streaming, one finished.
+      const [asked, stuck, done, finished] = [
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+      ]
+      await on(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        yield* sql`INSERT INTO messages (id, role, text, status) VALUES
+          (${asked}, 'user', 'Still there?', 'done'), (${done}, 'user', 'Hello', 'done')`
+        yield* sql`INSERT INTO messages (id, role, text, status, question_id) VALUES
+          (${stuck}, 'assistant', 'Half an', 'streaming', ${asked}),
+          (${finished}, 'assistant', 'Hi.', 'done', ${done})`
+      }))
+
+      const applied = await on(through("0011"))
+
+      expect(applied.map(([id, name]) => `${id}_${name}`)).toEqual(["11_question_askers"])
+      const rows = await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly id: string; readonly status: string; readonly failure: string | null; readonly askedBy: null }>`
+          SELECT id, status, failure, asked_by AS "askedBy" FROM messages ORDER BY position`))
+      expect(rows).toEqual([
+        { id: asked, status: "done", failure: null, askedBy: null },
+        { id: done, status: "done", failure: null, askedBy: null },
+        { id: stuck, status: "failed", failure: "abandoned", askedBy: null },
+        { id: finished, status: "done", failure: null, askedBy: null },
+      ])
+      // A question records its asker; an answer can't.
+      const [question, answer] = [crypto.randomUUID(), crypto.randomUUID()]
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`INSERT INTO messages (id, role, text, status, asked_by) VALUES (${question}, 'user', 'Mine', 'done', 'p-1')`))
+      const refused = await on(Effect.flip(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`INSERT INTO messages (id, role, status, question_id, asked_by)
+          VALUES (${answer}, 'assistant', 'streaming', ${question}, 'p-1')`)))
+      expect(refused.reason._tag).toBe("ConstraintError")
+    }))
+})
+
+describe("0012_model_reservations", () => {
+  test("settles every earlier call, seeds each day's counter from them, and keeps the counter from going negative", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0011"))
+      // Three calls metered before reservations: two today (UTC), one two days ago.
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`
+          INSERT INTO model_usage (invocation_id, request_id, role, model_id, input_tokens, output_tokens, created_at)
+          VALUES ('a', 'r', 'agent', 'm', 10, 5, now()), ('b', 'r', 'agent', 'm', 1, 2, now()),
+            ('c', 'r', 'judge', 'm', 100, 0, now() - interval '2 days')`))
+
+      const applied = await on(through("0012"))
+
+      expect(applied.map(([id, name]) => `${id}_${name}`)).toEqual(["12_model_reservations"])
+      const rows = await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly id: string; readonly days: number; readonly reserved: number; readonly settled: boolean }>`
+          SELECT invocation_id AS id, ((now() AT TIME ZONE 'UTC')::date - day) AS days, reserved_tokens AS reserved,
+            settled_at = created_at AS settled
+          FROM model_usage ORDER BY invocation_id`))
+      expect(rows).toEqual([
+        { id: "a", days: 0, reserved: 0, settled: true },
+        { id: "b", days: 0, reserved: 0, settled: true },
+        { id: "c", days: 2, reserved: 0, settled: true },
+      ])
+      const counters = await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly days: number; readonly committed: string }>`
+          SELECT ((now() AT TIME ZONE 'UTC')::date - day) AS days, committed::text AS committed
+          FROM model_budget_days ORDER BY day DESC`))
+      expect(counters).toEqual([{ days: 0, committed: "18" }, { days: 2, committed: "100" }])
+      const refused = await on(Effect.flip(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`UPDATE model_budget_days SET committed = -1`)))
+      expect(refused.reason._tag).toBe("ConstraintError")
+    }))
+})
+
+describe("0017_model_charges", () => {
+  test("charges each earlier call what it settled to, or its reservation while open, and expires it after an hour", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0016"))
+      // One call settled to 15 of the 100 it reserved, and one still open with 40 reserved.
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`
+          INSERT INTO model_usage (invocation_id, request_id, role, model_id, input_tokens, output_tokens, day,
+            reserved_tokens, settled_at)
+          VALUES ('settled', 'r', 'agent', 'm', 10, 5, (now() AT TIME ZONE 'UTC')::date, 100, now()),
+            ('open', 'r', 'agent', 'm', 0, 0, (now() AT TIME ZONE 'UTC')::date, 40, NULL)`))
+
+      const applied = await on(through("0017"))
+
+      expect(applied.map(([id, name]) => `${id}_${name}`)).toEqual(["17_model_charges"])
+      const rows = await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly id: string; readonly charged: number; readonly expiresInSeconds: number }>`
+          SELECT invocation_id AS id, charged_tokens AS charged,
+            extract(epoch FROM expires_at - created_at)::int AS "expiresInSeconds"
+          FROM model_usage ORDER BY invocation_id`))
+      expect(rows).toEqual([
+        { id: "open", charged: 40, expiresInSeconds: 3_600 },
+        { id: "settled", charged: 15, expiresInSeconds: 3_600 },
+      ])
+      const refused = await on(Effect.flip(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`UPDATE model_usage SET charged_tokens = -1`)))
+      expect(refused.reason._tag).toBe("ConstraintError")
     }))
 })

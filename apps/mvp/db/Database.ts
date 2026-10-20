@@ -10,6 +10,14 @@ import answerParts from "./migrations/0006_answer_parts.ts"
 import repositories from "./migrations/0007_repositories.ts"
 import browserAnswering from "./migrations/0008_browser_answering.ts"
 import cloneIds from "./migrations/0009_clone_ids.ts"
+import views from "./migrations/0010_views.ts"
+import questionAskers from "./migrations/0011_question_askers.ts"
+import modelReservations from "./migrations/0012_model_reservations.ts"
+import runs from "./migrations/0013_runs.ts"
+import branchWorkspace from "./migrations/0014_branch_workspace.ts"
+import flows from "./migrations/0015_flows.ts"
+import githubIssues from "./migrations/0016_github_issues.ts"
+import modelCharges from "./migrations/0017_model_charges.ts"
 
 /** The compose Postgres (`docker-compose.yml`): what `DATABASE_URL` defaults to, and the only one tests use. */
 export const LOCAL_URL = "postgresql://smithers:smithers@localhost:54321/smithers"
@@ -55,6 +63,14 @@ export const migrations = {
   "0007_repositories": repositories,
   "0008_browser_answering": browserAnswering,
   "0009_clone_ids": cloneIds,
+  "0010_views": views,
+  "0011_question_askers": questionAskers,
+  "0012_model_reservations": modelReservations,
+  "0013_runs": runs,
+  "0014_branch_workspace": branchWorkspace,
+  "0015_flows": flows,
+  "0016_github_issues": githubIssues,
+  "0017_model_charges": modelCharges,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

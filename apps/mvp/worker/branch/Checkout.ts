@@ -1,0 +1,27 @@
+import { FORGE_HOST, WORKSPACE } from "../../src/features/terminal/contract.ts"
+
+// How a branch's machine checks the branch out (decision 0013 §2, `terminal/Open` step 2): a shallow clone of the one
+// branch into /workspace, through the forge proxy, whose remote names no credential. A machine that has a checkout
+// keeps it; one whose clone broke off starts it again on an empty /workspace.
+
+/** How many commits of the branch the machine clones: enough for `git log`, cheap to read from the forge. */
+export const DEPTH = 50
+
+/** The git remote the box clones from: the forge proxy's own host, which the box can't leave. */
+export const forgeRemote = (owner: string, name: string): string =>
+  `http://${FORGE_HOST}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+
+const script = [
+  "set -e",
+  // Files the clone writes are the `workspace` group's to change too: every person's shell shares the checkout.
+  "umask 002",
+  `if git -C ${WORKSPACE} rev-parse --verify -q HEAD >/dev/null 2>&1; then exit 0; fi`,
+  `find ${WORKSPACE} -mindepth 1 -delete`,
+  `git clone --quiet --depth ${DEPTH} --branch "$1" --single-branch "$2" ${WORKSPACE}`,
+].join("\n")
+
+/**
+ * The command that checks branch `branch` of `remote` out in /workspace unless it is there. The branch and the remote
+ * travel as arguments, never inside the script, so no name can change what runs.
+ */
+export const checkoutArgv = (branch: string, remote: string): Array<string> => ["sh", "-c", script, "checkout", branch, remote]

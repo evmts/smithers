@@ -45,5 +45,12 @@ export const faults = (page: Page) => {
         return page.evaluate(() => (window as unknown as OnWindow).faults.questions.asked())
       },
     },
+    engine: {
+      /** Every run this tab starts waits until released, as when its engine worker is still loading. */
+      holdStarts: async () => {
+        await built()
+        await page.evaluate(() => (window as unknown as OnWindow).faults.engine.holdStarts())
+      },
+    },
   }
 }

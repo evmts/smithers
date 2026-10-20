@@ -15,6 +15,8 @@ Times are Pacific (PDT, UTC−7), from the session transcript of 2026-10-19. Quo
 
 A rule can have more than one kind: an `ImportRules` entry catches the syntax, and a Jev item catches the shapes no syntax rule can name.
 
+`apps/mvp/PACKAGE.test.ts` checks each rule's `files` against the files on disk: a rule that reads a top-level Worker source must read every Worker source in a subdirectory (`worker/github`, `worker/branch`, `worker/flows`), and a rule that reads no tests must read no test support (`worker/test/**`, `worker/<folder>/test/**`). In a glob, `*` and `!(...)` match one path segment and only `**` crosses `/`.
+
 Jev sees one file per request, so a rule that compares files (docs against code, a feature against its e2e test) is not a Jev rule. Those use `ReviewDocsAgainstCode` or are listed as process. Jev reads about 32,000 tokens at once, so a file over 96 KiB is not judged: it gets a `not-judged` warning instead.
 
 Jev findings are `error` unless the rule says advisory. An advisory rule's findings are `warning`: they are reported and never fail the target, because on 2026-10-19 most of their findings were false. Each needs a sharper question before it can gate.
@@ -100,7 +102,7 @@ Import every package from its root entry. If something should be public, export 
 - **Will:** "I don't like that we are doing deep imports import only from the root if something is not public that should be public make it public" (14:42).
 - **Scope:** all of `apps/mvp`; SDK-wide.
 - **Enforced:** `ImportRules` `rootImportsOnly` `@smthrs/*` in `apps/mvp/PACKAGE.ts`, and in every SDK package's `src/` and `examples/` through `SdkRules`. Two packages declare known deep imports: `@smthrs/model-host` reads the command catalog from `@smthrs/cli/Catalog` and `@smthrs/cli/CatalogRequest`, because the `@smthrs/cli` root carries the whole CLI; `@smthrs/rpc` imports `@smthrs/canonical/Record` and `@smthrs/canonical/Serializer`, because its contracts stay runtime-free and the `@smthrs/canonical` root loads Effect.
-- **The app's one exception: `@smthrs/ui/adapters/*`** (decision [0006](decisions/0006-repo-clone-and-view.md) question 2, recommended answer). The heavy renderers (`CodeFileView` with Shiki, about 10 MB; `MarkdownEditor` with Milkdown, about 2.9 MB; and `RepoView`, which composes both) ship behind their adapter subpaths so `@smthrs/ui`'s root stays light for every page that shows no code. The app imports `@smthrs/ui/adapters/repo-view` in `src/features/repo/components/RepoPage.tsx`. `apps/mvp/PACKAGE.ts` must allow `@smthrs/ui/adapters/*` in `rootImportsOnly`; until it does, `importRules` reports that one import. The alternative, one package with a root entry per heavy renderer, waits on Will.
+- **The app's one exception: `@smthrs/ui/adapters/*`** (decision [0006](decisions/0006-repo-clone-and-view.md) question 2, recommended answer). The heavy renderers (`CodeFileView` with Shiki, about 10 MB; `MarkdownEditor` with Milkdown, about 2.9 MB; and `RepoView`, which composes both) ship behind their adapter subpaths so `@smthrs/ui`'s root stays light for every page that shows no code. The app imports `@smthrs/ui/adapters/repo-view` in `src/features/repo/components/RepoPage.tsx` and `@smthrs/ui/adapters/terminal-frame` in `src/features/terminal/components/TerminalPanel.tsx`. `apps/mvp/PACKAGE.ts` lets `@smthrs/ui/adapters/*` through with the `rootImportsOnly` rule's `allow` list; every other deep import still fails. The alternative, one package with a root entry per heavy renderer, waits on Will.
 
 ### sdk.platform-neutral
 
@@ -167,7 +169,7 @@ A flow runs locally (in the browser, later the native app) unless it needs somet
 The agent and every flow are host-agnostic Effect programs. Cloudflare (or any host) reaches them only as injected layers, so the same code runs on Cloudflare, locally in the native app, or in a sandbox.
 
 - **Will:** "make sure our cloudflare code is decoupled from cloudflare via dependency injection because our native app version later will just run the cloudflare code locally" (2026-10-19, night).
-- **Scope:** all of `apps/mvp` except the Worker entries (`worker/ChatApi.ts`, `worker/DevChatApi.ts` for `alchemy dev`, `worker/index.ts`, and `worker/Executions.ts` with `worker/ExecutionHost.ts`, which host remote flows), `alchemy.run.ts` and `infra/**`, which wire the Cloudflare layers.
+- **Scope:** all of `apps/mvp` except the Worker entries (`worker/ChatApi.ts`, `worker/DevChatApi.ts` for `alchemy dev`, `worker/index.ts`, `worker/Executions.ts` with `worker/ExecutionHost.ts`, which host remote flows, and `worker/BranchSandboxes.ts`, which hosts the branches' machines), `alchemy.run.ts` and `infra/**`, which wire the Cloudflare layers.
 - **Enforced:** `ImportRules` `forbid` `alchemy`, `alchemy/**`, `cloudflare:*`, `@cloudflare/**` and `@smthrs/platform-cloudflare` outside those files. A test runs each flow on a non-Cloudflare host. Jev for Cloudflare-only assumptions, such as a `Request` shape or `env` binding, reaching flow code. `worker/flows/Pause.test.ts` runs `probe/Pause` on the Node host, and `worker/ExecutionHost.workerd.test.ts` runs it in local workerd ([remote flows](features/remote-flows.md)).
 - **Jev asks:** Does this flow or app module assume it runs on Cloudflare, for example by reading a Worker `env` binding, a Durable Object, `ExecutionContext` or a Cloudflare-only API, instead of receiving that capability as an injected Effect service?
 
@@ -359,7 +361,7 @@ Unhappy paths (a sync service that is down, a refused write, a slow model) are t
 Tests never mock our own code. Unit tests run against the real compose Postgres and Electric; only the model provider is a scripted seam, and faults come from test implementations of Effect services (`test.faults-by-injection`).
 
 - **Will:** "Also why the fuck are we mocking?" (12:10).
-- **Scope:** `apps/mvp/**/*.test.ts`, `apps/mvp/e2e/**`, `apps/mvp/src/test/**`, `apps/mvp/worker/test/**`, `apps/mvp/db/TestDatabase.ts`.
+- **Scope:** `apps/mvp/**/*.test.ts`, `apps/mvp/e2e/**`, `apps/mvp/src/test/**`, `apps/mvp/worker/**/test/**`, `apps/mvp/db/TestDatabase.ts`.
 - **Enforced:** `ImportRules` `forbidCalls` `vi.mock`, `vi.doMock`, `vi.stubGlobal`, `jest.mock`. Jev for fake servers and fake implementations.
 - **Jev asks:** Does this file replace our own code or infrastructure, such as a Smithers package, ChatApi, the app's modules, Postgres or Electric, with a mock, stub, fake server, fake implementation or spy, instead of running the real thing? Scripting the model provider, standing in for Cloudflare's platform bindings, and providing a faulty test implementation of an Effect service for an unhappy path are allowed.
 
@@ -419,6 +421,17 @@ Every doc matches the code. Whoever makes a doc wrong fixes it in the same chang
 - **Source:** `RULES.md` 8 (lead, 2026-10-19), from Will's documentation-driven rule above.
 - **Scope:** `apps/mvp/docs/**`, `apps/mvp/AGENTS.md`.
 - **Enforced:** `ReviewDocsAgainstCode` (an `LlmLint` model review) in `apps/mvp/PACKAGE.ts`, because comparing a doc with code reads several files at once and Jev sees one.
+
+## GitHub
+
+### github.no-actions
+
+Smithers has no view of and no support for GitHub Actions: no workflows, workflow runs, check runs, check suites or commit statuses. Smithers flows take their place, and a pull request's Checks tab lists the Smithers flow runs on its head SHA ([0012](decisions/0012-git-end-to-end.md) decision 12).
+
+- **Will:** "Githubactions we don't support those at all we should not have any view or support for github actions. We support smithers workflows however which are very similar but run on our servers" (2026-10-20).
+- **Scope:** `apps/mvp/{src,worker,db}/**`, tests and test support excluded. The app's own `/$owner/$repo/actions` route lists Smithers flow runs ([0014](decisions/0014-flows-authoring-debugging-and-home-view.md)); it is not GitHub Actions.
+- **Enforced:** Jev, plus a test. `ImportRules` reads imports and calls, not the strings an API path or a webhook event is written in, so it can't ban them. `apps/mvp/PACKAGE.test.ts` fails when a file the Jev rule reads names a GitHub `/repos/…/actions/` path, `check-runs`, `check-suites`, `/statuses/`, a commit's `/status`, a `check_run` or `workflow_run` event, or the SDK's `CheckRun` step.
+- **Jev asks:** Does this file read, write, subscribe to, store or show GitHub Actions, check runs, check suites or commit statuses: a GitHub API path under `/actions/`, `check-runs`, `check-suites` or `statuses`, a `check_run`, `check_suite`, `status`, `workflow_run` or `workflow_job` webhook event, `@smthrs/integrations`' `GitHub.Actions.CheckRun`, or a table or view of them? `GitHub.Actions` in `@smthrs/integrations` is that SDK's module of integration steps, not GitHub Actions, and the app's own `/$owner/$repo/actions` route lists Smithers flow runs; neither is a finding by itself.
 
 ## Infrastructure, dependencies and auth
 

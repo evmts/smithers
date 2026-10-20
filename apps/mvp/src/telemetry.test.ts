@@ -206,6 +206,18 @@ describe("the contract", () => {
       "chat agent": "`chat ${request.modelId}`",
       // The agent names a tool call `execute_tool <flow name>`.
       "execute_tool app/theme/set": "`execute_tool ${call.flowName}`",
+      "execute_tool app/navigate": "`execute_tool ${call.flowName}`",
+      "execute_tool app/web/open": "`execute_tool ${call.flowName}`",
+      "execute_tool app/jev/classify": "`execute_tool ${call.flowName}`",
+      "execute_tool app/jev/evaluate": "`execute_tool ${call.flowName}`",
+      "execute_tool repo/tree": "`execute_tool ${call.flowName}`",
+      "execute_tool repo/read": "`execute_tool ${call.flowName}`",
+      "execute_tool repo/refs": "`execute_tool ${call.flowName}`",
+      "execute_tool repo/copy": "`execute_tool ${call.flowName}`",
+      "execute_tool repo/clone": "`execute_tool ${call.flowName}`",
+      "execute_tool issue/create": "`execute_tool ${call.flowName}`",
+      "execute_tool issue/comment": "`execute_tool ${call.flowName}`",
+      "execute_tool chat/copy": "`execute_tool ${call.flowName}`",
       // `@smthrs/observability`'s metrics are named after a prefix.
       flows_run_throughput: "`${prefix}run_throughput`",
       flows_seat_active: "`${prefix}seat_active`",

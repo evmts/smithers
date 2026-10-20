@@ -4722,6 +4722,9 @@ importers:
       '@smthrs/run-store':
         specifier: 1.0.0-rc.16
         version: link:../run-store
+      '@smthrs/sandbox':
+        specifier: 1.0.0-rc.16
+        version: link:../sandbox
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2
@@ -4762,6 +4765,9 @@ importers:
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
+      '@types/ws':
+        specifier: 8.18.2
+        version: 8.18.2
       '@vitest/coverage-v8':
         specifier: 5.0.0
         version: 5.0.0(vitest@5.0.0)
@@ -4804,6 +4810,9 @@ importers:
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      ws:
+        specifier: 8.22.0
+        version: 8.22.0
 
   packages/smithers/flows/platform-bun:
     dependencies:
@@ -4931,6 +4940,9 @@ importers:
       '@smthrs/run-store':
         specifier: 1.0.0-rc.16
         version: link:../run-store
+      '@smthrs/sandbox':
+        specifier: 1.0.0-rc.16
+        version: link:../sandbox
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2

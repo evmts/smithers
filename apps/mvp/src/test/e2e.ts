@@ -2,7 +2,7 @@ import { ShapeSource } from "@smthrs/effect-electric"
 import { Effect } from "effect"
 import { type AppOptions, type BootOptions, start } from "../boot"
 import type { Question } from "../features/chat/api"
-import { type QuestionFault, QuestionFaults, faultyServices } from "./faults"
+import { EngineFaults, type QuestionFault, QuestionFaults, faultyServices } from "./faults"
 
 // The app on faulty services, for the end-to-end tests of unhappy paths (docs/rules.md, test.faults-by-injection).
 // Under `alchemy dev`, main.tsx loads this module when the page's URL carries `?faults`; a production build drops that
@@ -20,6 +20,7 @@ export interface Switches {
     readonly heal: () => void
   }
   readonly questions: { readonly failNext: (fault: QuestionFault) => void; readonly asked: () => ReadonlyArray<Question> }
+  readonly engine: { readonly holdStarts: () => void; readonly releaseStarts: () => void }
 }
 
 /**
@@ -49,7 +50,7 @@ export const opening = (search: string): ((switches: ShapeSource.Switches) => Ef
  */
 export const startWithFaults = async (page: AppOptions & BootOptions, search: string, target: object) => {
   const { runtime, stop } = start(page, faultyServices(page, opening(search)))
-  const [shapes, questions] = await runtime.runPromise(Effect.all([ShapeSource.Faults, QuestionFaults]))
+  const [shapes, questions, engine] = await runtime.runPromise(Effect.all([ShapeSource.Faults, QuestionFaults, EngineFaults]))
   const faults: Switches = {
     shapes: {
       down: (requests) => runtime.runSync(shapes.down(requests)),
@@ -61,6 +62,10 @@ export const startWithFaults = async (page: AppOptions & BootOptions, search: st
     questions: {
       failNext: (fault) => runtime.runSync(questions.failNext(fault)),
       asked: () => runtime.runSync(questions.asked),
+    },
+    engine: {
+      holdStarts: () => runtime.runSync(engine.holdStarts),
+      releaseStarts: () => runtime.runSync(engine.releaseStarts),
     },
   }
   Object.assign(target, { faults })

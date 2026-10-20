@@ -1,4 +1,4 @@
-import { SHA_PATTERN } from "./contract"
+import { type CopyKind, SHA_PATTERN } from "./contract"
 
 // Where things are in a repository and in the app's URLs (decision 0006 §2, Routing). Pure functions: the actions,
 // the queries and the views share them.
@@ -8,6 +8,9 @@ export const treeKey = (id: string, sha: string): string => `${id}@${sha}`
 
 /** The key of a file at `sha`. */
 export const blobKey = (id: string, sha: string, path: string): string => `${id}@${sha}:${path}`
+
+/** The key of a repository's branches and tags as of the sync whose default branch is at `headSha`. */
+export const refsKey = (id: string, headSha: string): string => `${id}@${headSha}`
 
 /** The README of directory `dir` (`""` is the root): its direct entry named `README.md`, in any case. */
 export const readmeOf = (paths: ReadonlyArray<string>, dir: string): string | undefined => {
@@ -22,25 +25,44 @@ export interface Resolved {
   readonly path: string
 }
 
+/** A branch or tag as ref resolution matches it: its name and the commit it names. */
+export interface NamedRef {
+  readonly name: string
+  readonly sha: string
+}
+
+/** A repository's branches and tags, once the device has them. */
+export interface KnownRefs {
+  readonly branches: ReadonlyArray<NamedRef>
+  readonly tags: ReadonlyArray<NamedRef>
+}
+
 /**
- * Resolves a URL's `ref` (absent at `/$owner/$repo`) and the path after it against a ready repository: the default
- * branch reads at its head commit, a 40-hex SHA at itself. A default branch with a `/` arrives split across the ref and
- * the path, so the two are matched together. Anything else names nothing the view can read: `undefined`.
+ * Resolves a URL's `ref` (absent at `/$owner/$repo`) and the path after it against a ready repository, as GitHub does:
+ * a 40-hex SHA reads at itself, a branch or tag at its commit, the default branch at its head. A name with a `/`
+ * arrives split across the ref and the path, so the two are matched together, and the longest name that leads them
+ * wins; a branch wins over a tag of the same name. Without `refs` only the default branch and SHAs resolve. Anything
+ * else names nothing the view can read: `undefined`.
  */
 export const resolveRef = (
   repository: { readonly defaultBranch: string | null; readonly headSha: string | null },
   ref: string | null,
   splat: string,
+  refs?: KnownRefs,
 ): Resolved | undefined => {
   const { defaultBranch, headSha } = repository
   if (ref !== null && SHA_PATTERN.test(ref)) return { revision: ref, sha: ref, path: splat }
   if (defaultBranch === null || headSha === null) return undefined
-  if (ref === null || ref === defaultBranch) return { revision: defaultBranch, sha: headSha, path: splat }
+  if (ref === null) return { revision: defaultBranch, sha: headSha, path: splat }
   const joined = splat === "" ? ref : `${ref}/${splat}`
-  if (joined === defaultBranch) return { revision: defaultBranch, sha: headSha, path: "" }
-  return joined.startsWith(`${defaultBranch}/`)
-    ? { revision: defaultBranch, sha: headSha, path: joined.slice(defaultBranch.length + 1) }
-    : undefined
+  const named = [{ name: defaultBranch, sha: headSha }, ...(refs?.branches ?? []), ...(refs?.tags ?? [])]
+  const leading = named.filter(({ name }) => joined === name || joined.startsWith(`${name}/`))
+  const best = leading.reduce<NamedRef | undefined>(
+    (longest, candidate) => (longest === undefined || candidate.name.length > longest.name.length ? candidate : longest),
+    undefined,
+  )
+  if (best === undefined) return undefined
+  return { revision: best.name, sha: best.sha, path: joined === best.name ? "" : joined.slice(best.name.length + 1) }
 }
 
 /** A line anchor: `?L=<n>` or `?L=<a>-<b>`. The router may hand over `3` as a number. Anything else anchors nothing. */
@@ -65,7 +87,7 @@ export interface Location {
 
 /**
  * The app's URL of `location` in `owner/name` at `revision`, as GitHub writes it: `/$owner/$repo` for the root at the
- * default branch, else `/$owner/$repo/{tree,blob}/<revision>/<path>`, a file's line anchor in `?L=`.
+ * default branch, else `/$owner/$repo/{tree,blob}/<revision>/<path>`, a branch's `/` kept, a file's line anchor in `?L=`.
  */
 export const hrefFor = (
   repository: { readonly owner: string; readonly name: string; readonly defaultBranch: string | null },
@@ -74,7 +96,7 @@ export const hrefFor = (
 ): string => {
   const base = `/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`
   if (location.kind === "tree" && location.path === "" && revision === repository.defaultBranch) return base
-  const at = `${base}/${location.kind}/${encodeURIComponent(revision)}${
+  const at = `${base}/${location.kind}/${encodePath(revision)}${
     location.path === "" ? "" : `/${encodePath(location.path)}`
   }`
   if (location.kind !== "blob" || location.line === undefined) return at
@@ -121,3 +143,38 @@ export const targetOf = (
   path: (params._splat ?? "").replace(/\/+$/, ""),
   ...(kind === "blob" ? parseLines(search.L) : { line: null, lineEnd: null }),
 })
+
+/** Where the routed view is, as Copy reads it. */
+export interface CopySource {
+  readonly owner: string
+  readonly name: string
+  readonly kind: "tree" | "blob"
+  readonly path: string
+  readonly sha: string | null
+  readonly line: number | null
+  readonly lineEnd: number | null
+}
+
+/**
+ * `repo/copy`'s payload for what a Copy button copies from `view`: the clone URL always; the path of anything but the
+ * root; a permalink at the view's commit, with its lines; a file's contents at its commit. `undefined` when the view
+ * has nothing of that kind yet.
+ */
+export const copyPayloadOf = (view: CopySource, what: CopyKind) => {
+  const repo = `${view.owner}/${view.name}`
+  if (what === "clone-url") return { repo, what }
+  if (what === "path") return view.path === "" ? undefined : { repo, what, path: view.path }
+  if (view.sha === null) return undefined
+  if (what === "contents") {
+    return view.kind === "blob" && view.path !== "" ? { repo, what, revision: view.sha, path: view.path } : undefined
+  }
+  return {
+    repo,
+    what,
+    revision: view.sha,
+    kind: view.kind,
+    ...(view.path === "" ? {} : { path: view.path }),
+    ...(view.kind === "blob" && view.line !== null ? { line: view.line } : {}),
+    ...(view.kind === "blob" && view.lineEnd !== null ? { lineEnd: view.lineEnd } : {}),
+  }
+}

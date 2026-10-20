@@ -1,0 +1,60 @@
+import { Context, Effect, Layer } from "effect"
+import type { FlowDispatch } from "../../flows/dispatch"
+import type { AuthStore } from "../auth/store"
+import type { ChatStore } from "../chat/store"
+import { choose, dismiss, highlight, submit, type } from "./actions"
+import { CommandsStore } from "./store"
+
+// Slash commands as a frontend sees them: the menu's live query to read and plain functions to act, with no Effect in
+// sight. React renders the query with `useLiveQuery` and hands the actions to the composer; it holds no state.
+
+type Store = CommandsStore["Service"]
+
+/** What a frontend reads: the menu for the composer's draft. */
+export interface CommandsQueries {
+  readonly menu: Store["menuState"]["tanstack"]
+}
+
+/** What a person does in the composer, as plain functions. Each finishes before it returns. */
+export interface CommandsActions {
+  /** The composer's text changed. */
+  readonly type: (text: string) => void
+  /** The arrows or the pointer moved the highlight. */
+  readonly highlight: (index: number) => void
+  /** Enter or a click (`accept`) or Tab (`complete`) on a row. */
+  readonly choose: (index: number, how: "accept" | "complete") => void
+  /** Escape closed the menu. */
+  readonly dismiss: () => void
+  /** Enter or Send with no row to choose: run the command, or ask Smithers. */
+  readonly submit: (text: string) => void
+}
+
+export class Commands extends Context.Service<
+  Commands,
+  { readonly queries: CommandsQueries; readonly actions: CommandsActions }
+>()("@smthrs/mvp/commands/Commands") {
+  /**
+   * Binds the store's query and the actions for frontends. Each action runs its Effect with the services this layer was
+   * built with (`Effect.runSyncWith`); a command's flow runs on in the store's scope.
+   */
+  static readonly layer = Layer.effect(
+    Commands,
+    Effect.gen(function* () {
+      const store = yield* CommandsStore
+      const run = Effect.runSyncWith(yield* Effect.context<CommandsStore | ChatStore | AuthStore | FlowDispatch>())
+      return Commands.of({
+        queries: { menu: store.menuState.tanstack },
+        actions: {
+          type: (text) => run(type(text)),
+          highlight: (index) => run(highlight(index)),
+          choose: (index, how) => run(choose(index, how)),
+          dismiss: () => run(dismiss),
+          submit: (text) => run(submit(text)),
+        },
+      })
+    }),
+  )
+}
+
+/** The commands layer's value: what frontends get. */
+export type CommandsView = Commands["Service"]

@@ -9,6 +9,10 @@ import * as Pause from "./flows/Pause.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
 import * as RepoClone from "./flows/RepoClone.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
+import * as TerminalOpen from "./flows/TerminalOpen.ts"
+import type { Sandboxes } from "./branch/Sandboxes.ts"
+import type * as GitHubApply from "./github/Apply.ts"
+import * as GitHubHost from "./github/Host.ts"
 
 // What a remote flow execution runs on Cloudflare (docs/features/remote-flows.md): `@smthrs/platform-cloudflare`'s
 // per-execution Durable Object functions over the engine's Postgres schema. worker/Executions.ts hands it the Durable
@@ -63,6 +67,32 @@ export const withRepoClone = <ROut, E, R, CE, CR>(flows: Flows<ROut, E, R>, serv
 })
 
 /**
+ * `flows`, plus the git loop's `github/Apply`, `github/Reconcile` and `github/Write` when this deployment has the
+ * GitHub App (docs/features/issues.md#remote-flows). `services` is built when each execution's registration is: the
+ * host may read what it needs to start a session's role check from the execution's own context then.
+ */
+export const withGitHub = <ROut, E, R, GE, GR, SE, SR>(
+  flows: Flows<ROut, E, R>,
+  services: Effect.Effect<GitHubApply.Services<GE, GR>, SE, SR>,
+) => ({
+  flows: [...flows.flows, ...GitHubHost.flows],
+  registration: Layer.merge(flows.registration, Layer.unwrap(Effect.map(services, GitHubHost.registration))),
+})
+
+/**
+ * `flows`, plus `terminal/Open` over the app's tables and the branches' machines (`sandboxes`: on Cloudflare, the
+ * `SandboxObject` namespace, worker/BranchSandboxes.ts), docs/features/branch-workspace.md#opening-a-terminal.
+ */
+export const withTerminals = <ROut, E, R, DE, DR, SE, SR>(
+  flows: Flows<ROut, E, R>,
+  database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
+  sandboxes: Layer.Layer<Sandboxes, SE, SR>,
+) => ({
+  flows: [...flows.flows, TerminalOpen.TerminalOpen],
+  registration: Layer.merge(flows.registration, TerminalOpen.registration(database).pipe(Layer.provide(sandboxes))),
+})
+
+/**
  * The slice of a Durable Object's storage the handlers use; `R` is what its methods require (Alchemy's
  * `RuntimeContext`, or nothing for a plain object's).
  */
@@ -73,6 +103,9 @@ export type Storage<R = never> = ExecutionObject.Storage<R>
  * payload, encoded with the flow's own codec (`ExecutionObject.intent`).
  */
 export const intent = ExecutionObject.intent
+
+/** How long a settled execution's object keeps its state before its alarm forgets it (`ExecutionObject`'s). */
+export const settledRetentionMs = ExecutionObject.settledRetentionMs
 
 /**
  * Records `intent` on one execution's Durable Object `storage` and wakes it at once (`ExecutionObject.start`): the

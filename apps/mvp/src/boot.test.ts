@@ -1,4 +1,4 @@
-import { Effect, Fiber, Layer, ManagedRuntime } from "effect"
+import { Effect, Fiber, Layer, ManagedRuntime, Metric } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, expect, test, vi } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
@@ -6,11 +6,21 @@ import { boot, logPageErrors, realServices, start } from "./boot"
 import { Auth } from "./features/auth/auth"
 import { AuthStore, SESSION } from "./features/auth/store"
 import { Chat, type ChatView } from "./features/chat/chat"
+import { storagePersisted } from "./features/chat/metrics"
 import { ChatStore } from "./features/chat/store"
 import { repoId, SIGN_IN_TO_CLONE } from "./features/repo/contract"
 import { Repo } from "./features/repo/repo"
 import { headerOf } from "./features/repo/view"
 import { Theme } from "./features/theme/theme"
+import { Commands } from "./features/commands/commands"
+import { Views } from "./features/views/views"
+import { Status } from "./features/status/status"
+import { Branch } from "./features/branch/branch"
+import { Terminal } from "./features/terminal/terminal"
+import { Issues } from "./features/issues/issues"
+import { Runs } from "./features/runs/runs"
+import { FlowsUi } from "./features/flows-ui/flowsUi"
+import { Web } from "./features/web/web"
 import { StoragePersistence } from "@smthrs/platform-browser"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "./test/chatApi"
 import { faultyServices } from "./test/faults"
@@ -25,6 +35,10 @@ afterEach(async () => {
 })
 
 const until = (assertion: () => void) => vi.waitFor(assertion, { timeout: 10_000, interval: 20 })
+
+/** How many times the boot program counted the browser's answer to keeping storage, `granted` as given. */
+const persisted = (runtime: ManagedRuntime.ManagedRuntime<never, unknown>, granted: string) =>
+  runtime.runSync(Metric.value(Metric.withAttributes(storagePersisted, { granted }))).count
 
 const cmdK = () => Object.assign(new Event("keydown", { cancelable: true }), { key: "k", metaKey: true })
 
@@ -42,7 +56,7 @@ const app = async () => {
 
 const granted = StoragePersistence.make({ persist: () => Promise.resolve(true) })
 
-test("renders the chat, sign-in, theme and repository layers, binds the keys, asks to keep the device's storage, records boot time once the device's conversation is restored, and unbinds when stopped", async () => {
+test("renders the chat, sign-in, theme, repository, slash-command, views and web-page layers, binds the keys, asks to keep the device's storage, records boot time once the device's conversation is restored, and unbinds when stopped", async () => {
   const { runtime, exported } = await app()
   const target = new EventTarget()
   const views: Array<ReadonlyArray<unknown>> = []
@@ -61,17 +75,29 @@ test("renders the chat, sign-in, theme and repository layers, binds the keys, as
   const store = await runtime.runPromise(Effect.service(ChatStore))
   await until(() => expect(store.history.tanstack.get("history")?.opened).toBe(true))
   expect(rendered).toHaveLength(1)
-  const [chat, auth, theme, repo] = await runtime.runPromise(
-    Effect.all([Effect.service(Chat), Effect.service(Auth), Effect.service(Theme), Effect.service(Repo)]),
+  const layers = await runtime.runPromise(
+    Effect.all([
+      Effect.service(Chat),
+      Effect.service(Auth),
+      Effect.service(Theme),
+      Effect.service(Repo),
+      Effect.service(Commands),
+      Effect.service(Views),
+      Effect.service(Web),
+      Effect.service(Status),
+      Effect.service(Branch),
+      Effect.service(Terminal),
+      Effect.service(Issues),
+      Effect.service(Runs),
+      Effect.service(FlowsUi),
+    ]),
   )
-  expect(views[0]).toHaveLength(4)
-  expect(views[0]![0]).toBe(chat)
-  expect(views[0]![1]).toBe(auth)
-  expect(views[0]![2]).toBe(theme)
-  expect(views[0]![3]).toBe(repo)
+  expect(views[0]).toHaveLength(layers.length)
+  layers.forEach((layer, index) => expect(views[0]![index]).toBe(layer))
   await runtime.runPromise(store.composerState.preload)
   target.dispatchEvent(cmdK())
   expect(rendered[0]!.queries.composer.toArray[0]?.open).toBe(true)
+  await until(() => expect(persisted(runtime, "true")).toBe(1))
   await runtime.runPromise(Fiber.interrupt(fiber))
   target.dispatchEvent(cmdK())
   expect(rendered[0]!.queries.composer.toArray[0]?.open).toBe(true)
@@ -89,11 +115,14 @@ test("renders the chat, sign-in, theme and repository layers, binds the keys, as
   })
 })
 
-test("the repository layer: its routes open over the app's RepoApi and Electric, sign-in's row decides Clone, and Copy permalink writes to the host's clipboard", async () => {
-  const host = nodeDevice()
-  const runtime = openTestApp({ host })
+test("the repository layer: its routes open over the app's RepoApi and Electric, sign-in's row decides Clone, and Copy permalink runs repo/copy, which writes the host's clipboard", async () => {
+  const server = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(TestDatabase.layer("test_boot"))))
+  runtimes.push(server)
+  const api = await server.runPromise(Effect.service(TestChatApi))
+  // A device whose engine leads, as a browser's does: `repo/copy` runs there and asks this tab to write its clipboard.
+  const host = nodeDevice({ agent: api })
+  const runtime = openTab(api, { host })
   runtimes.push(runtime)
-  const api = await runtime.runPromise(Effect.service(TestChatApi))
   const [repo, signIn] = await runtime.runPromise(Effect.all([Effect.service(Repo), Effect.service(AuthStore)]))
   // What React's live query starts on first render.
   await repo.queries.view.preload()
@@ -109,14 +138,14 @@ test("the repository layer: its routes open over the app's RepoApi and Electric,
 
   // A ready repository reaches the tab through the app's `repositories` shape: RepoApi's proxy over Electric.
   const sha = "a".repeat(40)
-  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+  await server.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql`INSERT INTO repositories (id, owner, name, status, default_branch, head_sha)
       VALUES (${repoId("octocat", "Spoon-Knife")}, 'octocat', 'Spoon-Knife', 'ready', 'main', ${sha})`))
   repo.actions.openRoute("blob", { owner: "octocat", repo: "Spoon-Knife", ref: "main", _splat: "README.md" }, { L: 3 })
   await until(() => expect(header()).toEqual({ kind: "ready" }))
   await until(() => expect(view().view.sha).toBe(sha))
-  repo.actions.copyPermalink()
-  await until(() => expect(host.copied).toEqual([`${api.origin}/octocat/Spoon-Knife/blob/${sha}/README.md?L=3`]))
+  await repo.actions.copy("permalink")
+  expect(host.copied).toEqual([`${api.origin}/octocat/Spoon-Knife/blob/${sha}/README.md?L=3`])
 })
 
 /** A ChatApi of its own, with no browser on it. */
@@ -160,6 +189,7 @@ test("a browser that won't keep the storage is counted as not granted", async ()
   const fiber = runtime.runFork(boot({ target: new EventTarget(), startedAt: Date.now(), render: () => {}, storage: refused }))
   const store = await runtime.runPromise(Effect.service(ChatStore))
   await until(() => expect(store.history.tanstack.get("history")?.opened).toBe(true))
+  await until(() => expect(persisted(runtime, "false")).toBe(1))
   await runtime.runPromise(Fiber.interrupt(fiber))
   const records = await exported()
   expect(records.points.find(({ metric }) => metric === "smithers_web_storage_persisted")?.attributes).toEqual({
@@ -229,7 +259,18 @@ test("start is the boundary: it builds the one runtime, renders the chat layer o
   target.dispatchEvent(cmdK())
   expect(chat!.queries.composer.toArray[0]?.open).toBe(true)
   await stop()
-  expect(unbound.sort()).toEqual(["error", "keydown", "offline", "online", "pageshow", "unhandledrejection"])
+  // Two keydown listeners: ⌘K as the event goes down, Esc as it comes back up (src/features/chat/shortcuts.ts).
+  expect(unbound.sort()).toEqual([
+    "error",
+    "focus",
+    "focusin",
+    "keydown",
+    "keydown",
+    "offline",
+    "online",
+    "pageshow",
+    "unhandledrejection",
+  ])
   expect(chat!.queries.conversation.status).toBe("cleaned-up")
 })
 

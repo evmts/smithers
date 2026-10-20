@@ -19,17 +19,18 @@ browser                         ChatApi (worker/SignIn.ts)                     G
   ◀── 303 to /app + session cookie
 every request ── cookie ──▶ Sessions.resolve: signature, then the live session row ─▶ Actor or nobody
   role over an hour old ──▶ RoleChecks.start(session, role_checked_at) ──▶ auth/RecheckRole on its Durable Object (no wait)
-POST /api/auth/sign-out ──▶ revoke the row (sealed tokens kept), expire the cookie
-  ──▶ TokenRevocations.start(session) ──▶ auth/RevokeGitHubToken on its Durable Object (no wait)
-        DELETE /applications/<client id>/token (as the App) ───────────────────▶ token revoked
-        forget the session's GitHub tokens
+POST /api/auth/sign-out ──▶ FlowStarter.start(auth/RevokeGitHubToken { session }) on its Durable Object
+                              ─ not recorded ──▶ 503, the session and cookie as they were
+                            ──▶ end the row (sealed tokens kept), expire the cookie
+        the flow: end the row (again: a no-op) ──▶ DELETE /applications/<client id>/token (as the App) ──▶ revoked
+                  forget the session's GitHub tokens
   ◀── 204 ──▶ the tab wipes this device's synced data and outbox, and reloads as a visitor
 ```
 
 - **A button the person presses.** Sign-in is a link; the app never redirects anyone to GitHub on its own, and agents can't press it (decision 0008 §3).
 - **The state is bound to the browser that started it.** A callback finished in another browser, or with a state this browser didn't get, signs nobody in and never reaches GitHub (login CSRF).
 - **Single use.** The callback deletes its sign-in as it reads it, so a replayed callback signs nobody in, and GitHub redeems a code once and only with the verifier its challenge came from.
-- **The callback's writes happen in its handler.** A code is single-use and bound to its request, so a durable retry could not redeem it again; this is the one exception decision 0008 names to every action being a durable flow. Checking a role again, which refreshes GitHub's token, is a flow, and so is revoking the token at sign-out.
+- **The callback's writes happen in its handler.** A code is single-use and bound to its request, so a durable retry could not redeem it again; this is the one exception decision 0008 names to every action being a durable flow. Checking a role again, which refreshes GitHub's token, is a flow, and so is signing a session out.
 
 ## Routes
 
@@ -37,7 +38,7 @@ POST /api/auth/sign-out ──▶ revoke the row (sealed tokens kept), expire th
 |---|---|
 | `GET /api/auth/sign-in?return=<path>` | `302` to GitHub with the state cookie; `503 { code: "not_configured" }` without the GitHub App; `503` when Postgres fails. Under `alchemy dev` without the App: `303` to the return path, the local developer signed in again ([Local development](#local-development)) |
 | `GET /api/auth/callback?code&state` | `303` to the return path with the session cookie; on any failure `303` to the return path (or `/`) with `?sign_in=failed` |
-| `POST /api/auth/sign-out` | `204`, the session revoked, `auth/RevokeGitHubToken` started and the cookie expired; `403` when the request doesn't say it came from this site (`Origin`, or `Sec-Fetch-Site: same-origin`); `503` when Postgres fails. Under `alchemy dev` without the App: `204` with the dev signed-out cookie |
+| `POST /api/auth/sign-out` | `204`, `auth/RevokeGitHubToken` started, the session ended and the cookie expired; `403` when the request doesn't say it came from this site (`Origin`, or `Sec-Fetch-Site: same-origin`); `503` when Postgres fails or the flow's start isn't recorded, with the session and cookie as they were. Under `alchemy dev` without the App: `204` with the dev signed-out cookie |
 | `GET /api/auth/session` | `200 { signedIn: false, available }` or `{ signedIn: true, login, role }`; `503` when Postgres fails. `available` is true where the GitHub App is configured, and under `alchemy dev` |
 
 The return path is a path on this site; anything else, including `//host` and `/\host`, returns to `/`. `?sign_in=failed` is dropped from it, so trying again doesn't come back saying it failed. Every answer is `Cache-Control: no-store`.
@@ -70,30 +71,40 @@ The role is read at sign-in, and again once it is an hour old (`ROLE_RECHECK_MIN
 
 **One check of a session at a time.** The execution is named after the session and the check it replaces, the session's `role_checked_at` (`auth-recheck-<session>-<epoch ms>`). Every request that finds the same stale role, in this hour or a later one, starts the same execution, and the flow engine runs it once. Only a finished check moves `role_checked_at`, so the next check can't start until this one is over, and only one check ever redeems a session's refresh token.
 
-The flow's step, `auth/CheckRole`:
+The flow's steps:
 
-1. refreshes the 8-hour `ghu_` token when it expires within 5 minutes, trading the single-use `ghr_` refresh token once (`Core.OAuthToken.exchangeRefreshToken`) and storing the new pair only over the token it presented, while the session is live;
-2. reads the permission and records the role.
+1. `auth/RedeemRefresh`: when the 8-hour `ghu_` token expires within 5 minutes, trades the single-use `ghr_` refresh token once (`Core.OAuthToken.exchangeRefreshToken`) and seals the new pair for the session. Its result, sealed into the run's journal, holds only the encrypted pair and the presented token's digest, never a token in plaintext. It writes nothing.
+2. `auth/StoreTokens`: stores the sealed pair over the token it presented, while the session is live. It retries from the journaled result until Postgres answers, so a Postgres failure, or the host dying, after GitHub issued the pair never redeems the spent token again (the regression from Codex review 4).
+3. `auth/CheckRole`: reads the permission with the session's current token and records the role.
 
-GitHub refusing the refresh token (expired after 6 months, or used), or the access token (the App revoked), ends the session. GitHub or Postgres failing fails the step, which retries 5 times from 1 second, doubling. When every attempt fails, the flow's second step, `auth/KeepRole`, keeps the role and records the check, so a request an hour later starts a new one; it retries until Postgres answers. A step runs at least once: if GitHub rotated the token and the step died before storing it, the next check is refused and the session ends; the person signs in again.
+GitHub refusing the refresh token (expired after 6 months, or used) while the session still holds it, or the access token (the App revoked), ends the session. GitHub or Postgres failing fails `auth/RedeemRefresh` or `auth/CheckRole`, which retry 5 times from 1 second, doubling. When every attempt fails, `auth/KeepRole` keeps the role and records the check, so a request an hour later starts a new one; it retries until Postgres answers.
+
+**The one window no journal closes.** GitHub redeems the refresh token and its answer never arrives (the connection drops, or the host dies before the step seals). Nothing holds the new pair, so the retry, or the next check, presents the spent token; GitHub refuses it, the session ends, and the person signs in again. Each redemption is one step, so this window is the length of one HTTP exchange.
 
 ## Signing out
 
-`POST /api/auth/sign-out`, and signing in again in the same browser, end the browser's session (`revoked_reason` `sign_out`) and keep its sealed GitHub tokens. The handler then starts `auth/RevokeGitHubToken { sessionId }` through `TokenRevocations`, on the remote flow host ([remote-flows.md](remote-flows.md)), one execution per session (`auth-revoke-<sessionId>`), and doesn't wait for it. If the start fails, `auth.revoke_token` logs `not_started` and the sealed tokens stay; the access token lapses within 8 hours.
+`POST /api/auth/sign-out`, and signing in again in the same browser, sign the browser's session out through the durable flow `auth/RevokeGitHubToken { sessionId }`, on the remote flow host ([remote-flows.md](remote-flows.md)), one execution per session (`auth-revoke-<sessionId>`). The flow owns the whole sign-out: it ends the session (`revoked_reason` `sign_out`), revokes its GitHub token and forgets its tokens.
 
-The flow's step, `auth/RevokeToken`:
+- **Admitted first.** The handler starts the flow through `Flows.FlowStarter` and waits only for the start to be recorded, never for the flow. A start the host refuses is a `503` (`auth.sign_out` `failed`, reason `not_started`, with the host's code): nothing changed, the session is still live and the cookie still set, so signing out again can finish. Before this, a refused start was logged and swallowed, the sign-out answered `204`, and nothing would ever revoke the token (Codex review 4).
+- **Refused at once.** Once the start is recorded, the handler ends the session itself, so its next request is refused without waiting for the flow; the flow's own end changes nothing then. A handler that dies in between leaves the flow to end it.
+- **Recoverable.** Sign-out looks for a live session, or one that ended and still holds GitHub tokens nothing revoked yet, such as one signed out before sign-out waited for its flow. Signing out again with that cookie starts its flow; once the flow forgot the tokens, there is nothing to do (`no_session`).
+- **Signing in again** admits the sign-out of the session the browser held before it redeems GitHub's code: a start the host refuses fails the sign-in (`?sign_in=failed`, reason `sign_out_not_started`) with nothing redeemed and the session kept. Once the new session is written, the old one ends.
 
-1. opens the ended session's sealed access token, and revokes it with GitHub as the App: `DELETE /applications/<client id>/token` with the client id and secret as HTTP Basic and `{ access_token }`. `204` is revoked; `404` and `422`, a token GitHub no longer has, count as revoked;
-2. forgets the session's GitHub tokens.
+The flow's steps:
 
-A token that no longer opens (`SESSION_SECRET` changed) is forgotten without reaching GitHub (`unreadable`). A live session, or one with no tokens, is left alone. GitHub or Postgres failing fails the step, which retries 5 times from 1 second, doubling; after the last attempt `auth/ForgetTokens` forgets the tokens anyway (`forgotten`), and its own retry never gives up. A session GitHub refused needs no revocation: its tokens are already dead and forgotten.
+1. `auth/EndSession` ends the session, keeping its sealed GitHub tokens; one that ended already is left as it is (`over`). Only Postgres can fail it, and its retry never gives up;
+2. `auth/RevokeToken` opens the ended session's sealed access token, and revokes it with GitHub as the App: `DELETE /applications/<client id>/token` with the client id and secret as HTTP Basic and `{ access_token }`. `204` is revoked; `404` and `422`, a token GitHub no longer has, count as revoked. Then it forgets the session's GitHub tokens.
 
-**The device.** Once ChatApi answers the sign-out `204`, never after a failed one, the tab forgets the session it last confirmed and wipes this device's synced data and outbox (decision 0008 §4.6) through `DeviceWipe`, the host's `wipe`. In the browser (`src/main.tsx`):
+A token that no longer opens (`SESSION_SECRET` changed) is forgotten without reaching GitHub (`unreadable`). A session with no tokens is left alone (`none`), and so is a live one (`live`), which the flow never meets since it ends the session first. GitHub or Postgres failing fails the revocation, which retries 5 times from 1 second, doubling; after the last attempt `auth/ForgetTokens` forgets the tokens anyway (`forgotten`), and its own retry never gives up. A session GitHub refused needs no revocation: its tokens are already dead and forgotten.
 
-1. `wipe` sets the `smithers-wipe` mark in localStorage, tells the other tabs on the `smithers-wipe` BroadcastChannel, which reload too, and reloads.
-2. At boot, before `start` opens anything, a marked device takes the exclusive Web Lock `smithers-wipe` and deletes the engine's OPFS directory `smithers/<engine name>` (the engine's store and the app's shared database, the device store) and the outbox's IndexedDB database `smithers-outbox`, then clears the mark. A worker's open handle blocks deleting an OPFS file, which is why this waits for the boot. When deleting fails, as when another tab still holds a database open, the mark stays and the next boot tries again. The theme's mirror stays.
+**The device.** Once ChatApi answers the sign-out `204`, never after a failed one, the tab forgets the session it last confirmed and wipes this device's synced data and outbox (decision 0008 §4.6) through `DeviceWipe`, the host's `wipe`. In the browser, every page takes part (`src/wipe.ts`, wired in `src/main.tsx`):
 
-The page continues as a visitor. Signed-out visitors can still read the shared conversation shape (decision 0008 decision 8, per-request shape authorization, isn't built), so a visitor's page syncs it again.
+1. **Every page holds the data.** From before its program starts until it ends, a page holds the Web Lock `smithers-data`, shared.
+2. **Every page leaves.** `wipe` sets the `smithers-wipe` mark in localStorage and tells every page on the `smithers-wipe` BroadcastChannel, its own included. Each page then drops its view, stops its program, which closes the device store and the outbox and ends its engine worker, and loads again.
+3. **The next boot deletes once nothing has the data open.** Before `start` opens anything, a marked page takes the exclusive Web Lock `smithers-wipe`, then `smithers-data` exclusively, so it waits until every page that had the data open has ended, and none can write a row back; then the engine's own Web Lock, so no engine worker holds its OPFS files. Only then does it delete the engine's OPFS directory `smithers/<engine name>` (the engine's store and the app's shared database, the device store) and the outbox's IndexedDB database `smithers-outbox`, and clear the mark. Other pages loading at the same time wait for the wipe's lock and find it done. The theme's mirror stays.
+4. **A page whose delete still fails never opens the stores.** The mark stays, and the page starts on stores that aren't the device's (`unwiped`): the device store in memory, the outbox in memory, so no ask of the ended session is sent, and no engine, so none of its runs resumes. The pill says Smithers can't run in this browser, with Reload, whose boot deletes again.
+
+The page continues as a visitor. Signed-out visitors can still read the shared conversation shape, throttled per network ([throttling](chat.md#throttling)); decision 0008 decision 8, per-request shape authorization, isn't built, so a visitor's page syncs it again.
 
 ## Keys
 
@@ -153,9 +164,8 @@ The local developer can sign out, so the end-to-end suite tests a signed-out pag
 
 ## Not built yet
 
-- `POST /api/questions` still answers a signed-out ask on the server. It should refuse it with `401` like the model endpoint once the chat change replacing it lands.
 - Signing out wipes the outbox without draining it or saying how many asks it discards (decision 0008 §4.6); signing in doesn't upload a signed-out person's local asks.
-- The boot-time half of the wipe runs before the program starts, so its outcome isn't logged or counted; a failed delete shows only as the `smithers-wipe` mark staying in localStorage.
+- The boot-time half of the wipe runs before the program starts, so a finished wipe isn't logged or counted. A failed one shows as the program's `persistence unavailable` and `browser.engine.unavailable` (`error.type` `WipeUnfinished`) records and the `smithers-wipe` mark staying in localStorage.
 - The `github_app_authorization` revocation webhook isn't handled; a role check ends the session within the hour instead.
 - One repository's role per session; per-repository roles and `Authorize` are 0007 phase 2. The device flow for the TUI and CLI, grants and the visitor cookie are later phases of 0008.
 
@@ -165,12 +175,14 @@ Run with the compose Postgres up (`pnpm db:up`). GitHub is the second scripted s
 
 | Test | Proves |
 |---|---|
-| `worker/SignIn.test.ts` | the redirect, state and S256 challenge; cookie flags on http and https; return paths; the full sign-in; state mismatch four ways; a replayed callback reaching GitHub once; a code GitHub already redeemed; expiry, denial and a missing code; GitHub failing at each step; a verifier that no longer opens; signing in again; Postgres failing at each route; role mapping for all four roles and none; a stale role starting a check named after the one it replaces, the same one an hour later, and a new one once a check recorded; sign-out revocation, its sealed tokens kept and one revocation started, and the old cookie refused; cross-site sign-out refused; local development's developer signing out with the dev cookie (an ask refused `401`) and back in without GitHub; forged, unknown and expired cookies; sign-in off without the App or with a short secret; a signed-out ask refused (`401`) and a signed-in one answered; no token in any record |
-| `worker/flows/RecheckRole.test.ts` | the flow on the Node host; a retried GitHub failure; refreshing an expiring token and using the new one; an expired refresh token ending the session; a refresh rotated, or stored, while the step waited on GitHub; requests an hour apart while a check is paused after GitHub redeemed its refresh token start that one check, one engine per execution as on Cloudflare, and the session keeps its replacement; a check that fails every attempt keeping the role; tokens GitHub no longer accepts; unopenable tokens; no token or login in its records |
-| `worker/flows/RevokeGitHubToken.test.ts` | sign-out, and signing in again, starting the flow once with the sealed tokens kept; the flow on the Node host revoking the token on GitHub and forgetting it; a token GitHub no longer has; GitHub down once and retried; every attempt failing and the tokens forgotten anyway; GitHub or Postgres failing each step by reason; an unopenable token forgotten without GitHub; a live session, no session and a session GitHub refused left alone; no token or login in its records |
+| `worker/SignIn.test.ts` | a sign-out whose flow's start the host refuses (a fault-injected `FlowStarter`) is `503` and keeps the session, and signing out again starts it; a session signed out whose tokens nothing revoked is revoked by signing out again; signing in again whose sign-out can't start fails before GitHub and keeps the old session; the redirect, state and S256 challenge; cookie flags on http and https; return paths; the full sign-in; state mismatch four ways; a replayed callback reaching GitHub once; a code GitHub already redeemed; expiry, denial and a missing code; GitHub failing at each step; a verifier that no longer opens; signing in again; Postgres failing at each route; role mapping for all four roles and none; a stale role starting a check named after the one it replaces, the same one an hour later, and a new one once a check recorded; sign-out revocation, its sealed tokens kept and one revocation started, and the old cookie refused; cross-site sign-out refused; local development's developer signing out with the dev cookie (an ask refused `401`) and back in without GitHub; forged, unknown and expired cookies; sign-in off without the App or with a short secret; a signed-out ask refused (`401`) and a signed-in one answered; no token in any record |
+| `worker/flows/RecheckRole.test.ts` | the flow on the Node host; a retried GitHub failure; refreshing an expiring token and using the new one; an expired refresh token ending the session; a refresh rotated, or stored, while the step waited on GitHub; requests an hour apart while a check is paused after GitHub redeemed its refresh token start that one check, one engine per execution as on Cloudflare, and the session keeps its replacement; a replacement Postgres refused to store, then the engine dying and a new one resuming the run, redeems once and leaves the session live with the replacement; a redemption whose answer was lost ends the session; a check that fails every attempt keeping the role; tokens GitHub no longer accepts; unopenable tokens; no token or login in its records |
+| `worker/flows/RevokeGitHubToken.test.ts` | sign-out, and signing in again, starting the flow with the sealed tokens kept, and again only while the tokens wait; the flow ending a session still live before it revokes; the flow on the Node host revoking the token on GitHub and forgetting it; a token GitHub no longer has; GitHub down once and retried; every attempt failing and the tokens forgotten anyway; GitHub or Postgres failing each step by reason; an unopenable token forgotten without GitHub; a live session, no session and a session GitHub refused left alone; no token or login in its records |
 | `worker/ExecutionHost.test.ts` | the deployed remote host runs `auth/RecheckRole` and `auth/RevokeGitHubToken` over the app's tables |
 | `worker/GitHubAuth.test.ts` | the real adapter against a scripted GitHub on loopback HTTP, GitHub's `200 OK` OAuth errors included; revoking a token as the App (`204`, `404` and `422` revoked; `401` and `403` misconfigured; `429` and `502` unavailable) |
 | `worker/GitHubAuth.live.test.ts` | the real GitHub: the App's credentials, a callback URL, and a real user token's person and role; each case skips naming the variables it needs |
+| `src/wipe.test.ts` | the browser's wipe on Node's Web Locks and BroadcastChannel, with stand-ins for OPFS and IndexedDB: a page still holding the data holds the wipe off, and the wipe then deletes both stores and clears the mark; it waits for the leading engine worker's lock; two pages booting at once delete once; a delete another connection holds off finishes when it closes; a failed delete keeps the mark and opens unwiped; every page, the signing-out one included, stops its program and loads again once; an unwiped page's stores are memory and its engine is unavailable with `WipeUnfinished` |
+| `e2e/sign-in.spec.ts` | in a real browser: signing out wipes the device (the unsent question gone, the outbox empty, the shape from offset -1); with two tabs, a tab slow to unload holds the other's wipe off, then both open as visitors with nothing of the session, the mark cleared |
 | `src/features/auth/auth.test.ts` | the tab on a Node device: signed out, signed in through GitHub, signing out, sign-in off, ChatApi unreachable, refused or silent; `composerAccess` for every status and role; a Member reloading offline or before ChatApi answers still asking; a Guest or no role seeing the line; ChatApi saying signed out forgetting the confirmed session; a sign-out ChatApi takes leaving no stored rows and an empty outbox, a failed one leaving both; a wipe the host couldn't do counted; no login in its log lines |
 
 The browser half of signing in, pressing Approve on GitHub, belongs to the end-to-end suite with the `codeplanesmithers` test account (decision 0008, E2).

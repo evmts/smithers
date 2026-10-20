@@ -1,10 +1,12 @@
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import type { Outbox } from "@smthrs/effect-tanstack-db"
-import { Effect, Exit, Fiber, ManagedRuntime, Metric, Scope, Stream } from "effect"
+import { Effect, Exit, Fiber, ManagedRuntime, Metric, Option, Scope, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { dispatches } from "../../flows/dispatch"
 import {
   type ChatApiOptions,
+  failingWorker,
+  idleWorker,
   member,
   nodeDevice,
   openFaultyApp,
@@ -14,7 +16,7 @@ import {
   type TabOptions,
   TestChatApi,
 } from "../../test/chatApi"
-import { type QuestionFault, QuestionFaults } from "../../test/faults"
+import { EngineFaults, type QuestionFault, QuestionFaults } from "../../test/faults"
 import { Chat } from "./chat"
 import { bindConnectivity } from "./connectivity"
 import { COULDNT_ANSWER, MAX_QUESTION_LENGTH } from "./contract"
@@ -34,9 +36,9 @@ import { ChatStore } from "./store"
 // Chat's state machine, driven as React drives it: through the chat layer's plain actions, reading its live queries,
 // with no React. It runs on the browser's own layer (`appLayer`) over a Node device (src/test/chatApi.ts
 // `nodeDevice`: SQLite and the outbox as TanStack DB's browser packages run them), against ChatApi's real handler over
-// the compose Postgres and Electric, signed in as a Member. Only the model is scripted. A tab opened with `answers`
-// runs its device's agent on a real engine leader, as a browser's engine worker does; any other tab's engine never
-// leads, so its answers stay streaming. Happy paths use the real ChatApi client and Electric shape source; an unhappy
+// the compose Postgres and Electric, signed in as a Member. Only the model is scripted. A tab's device runs its agent
+// on a real engine leader, as a browser's engine worker does, so an answer stays streaming until the test scripts the
+// model's reply; a device made with plain `nodeDevice()` has an engine that never leads. Happy paths use the real ChatApi client and Electric shape source; an unhappy
 // path gives the tab their faulty implementations (src/test/faults.ts) and throws their switches.
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -79,10 +81,15 @@ const openChat = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) 
 }
 
 /** The faulty ChatApi client and shape source's switches on a tab's runtime. */
-const switches = async <R, E>(runtime: ManagedRuntime.ManagedRuntime<R | QuestionFaults | ShapeSource.Faults, E>) => {
+const switches = async <R, E>(
+  runtime: ManagedRuntime.ManagedRuntime<R | QuestionFaults | ShapeSource.Faults | EngineFaults, E>,
+) => {
   const questions = await runtime.runPromise(Effect.service(QuestionFaults))
   const shapes = await runtime.runPromise(Effect.service(ShapeSource.Faults))
+  const engine = await runtime.runPromise(Effect.service(EngineFaults))
   return {
+    /** Throws a switch of this tab's engine. */
+    engine: (fault: (switches: EngineFaults["Service"]) => Effect.Effect<void>) => runtime.runSync(fault(engine)),
     failNext: (fault: QuestionFault) => runtime.runSync(questions.failNext(fault)),
     /** Every question the client was given, in order, sent or not. */
     sentQuestions: () => runtime.runSync(questions.asked),
@@ -136,7 +143,7 @@ describe("asking", () => {
   })
 
   test("an answer that fails reads Couldn't answer, and Retry asks its question again under new ids", async () => {
-    const tab = await openChat({ answers: true })
+    const tab = await openChat()
     const first = asked(tab.actions.ask("hello"))
     const reply = await tab.onApi(tab.api.answerTo("hello"))
     reply.say("partial")
@@ -189,7 +196,7 @@ describe("asking", () => {
 
 describe("the agent", () => {
   test("the asking tab's own agent answers once ChatApi takes the question: the answer streams, then settles", async () => {
-    const tab = await openChat({ answers: true })
+    const tab = await openChat()
     const { answerId } = asked(tab.actions.ask("hello"))
     const reply = await tab.onApi(tab.api.answerTo("hello"))
     reply.say("Hel")
@@ -200,7 +207,6 @@ describe("the agent", () => {
     expect(tab.store.messages.tanstack.get(answerId)).toMatchObject({ outputTokens: 20, failure: null })
     const answered = Metric.withAttributes(dispatches, {
       flow: "chat/Answer",
-      placement: "client",
       door: "composer",
       outcome: "done",
     })
@@ -208,7 +214,7 @@ describe("the agent", () => {
   })
 
   test("a question and its answer never leave the conversation as the question syncs and the answer settles", async () => {
-    const tab = await openChat({ answers: true })
+    const tab = await openChat()
     // Every change the window the page renders goes through, batch by batch, from before the ask.
     const batches: Array<ReadonlyArray<{ readonly type: string; readonly key: unknown }>> = []
     const watching = tab.runtime.runFork(
@@ -235,7 +241,7 @@ describe("the agent", () => {
   })
 
   test("a resend ChatApi answers 200 dispatches the answer again, and the engine runs it once", async () => {
-    const tab = await openFaulty({ ...quick, confirmWithin: "200 millis", answers: true })
+    const tab = await openFaulty({ ...quick, confirmWithin: "200 millis" })
     await until(() => expect(tab.connection()?.status).toBe("up"))
     // Electric holds the question back, so ChatApi takes it, the send fails, and the resend is answered 200.
     tab.shapes((shapes) => shapes.stall())
@@ -251,13 +257,72 @@ describe("the agent", () => {
     await until(() => expect(tab.shown()).toEqual(["user done hello", "assistant done Once."]), agentWithin)
     const done = Metric.withAttributes(dispatches, {
       flow: "chat/Answer",
-      placement: "client",
       door: "composer",
       outcome: "done",
     })
     await until(() => expect(tab.count(done)).toBe(tab.sentQuestions().length), agentWithin)
     expect(tab.sentQuestions().length).toBeGreaterThanOrEqual(2)
     expect(tab.api.modelRequests("hello")).toBe(1)
+  })
+
+  test("a tab closed after ChatApi took its question, before its engine recorded the run: the next tab sends it again, and its agent answers", async () => {
+    const { api, onApi } = await openChat()
+    const device = nodeDevice({ agent: api })
+    // The first page's engine never leads, as a worker still loading: the answer's start waits for a leader.
+    const first = await tabOn(openTab(api, { ...quick, host: { ...device, engineWorker: idleWorker } }))
+    const { questionId, answerId } = asked(first.actions.ask("hello"))
+    // ChatApi took the question and Electric delivered it, but no run exists to answer it yet. The page closes.
+    await until(() => expect(first.synced(answerId)).toBe(true))
+    expect(first.shown()).toEqual(["user done hello", "assistant streaming "])
+    await first.close()
+
+    // The page opens again, and its engine leads: the outbox still holds the question, sends it again (ChatApi answers
+    // 200), and the run starts.
+    const second = await tabOn(openTab(api, { ...quick, host: device }))
+    const reply = await onApi(api.answerTo("hello"))
+    reply.say("Hi")
+    reply.done()
+    await until(() => expect(second.shown()).toEqual(["user done hello", "assistant done Hi"]), agentWithin)
+    expect((await onApi(api.rows)).filter(({ id }) => id === questionId)).toHaveLength(1)
+    expect(api.questionStatuses()).toEqual([202, 200])
+  })
+
+  test("a tab whose engine failed keeps its question in the outbox: the next page's agent answers it", async () => {
+    const { api, onApi } = await openChat()
+    const device = nodeDevice({ agent: api })
+    const first = await tabOn(openTab(api, { ...quick, host: { ...device, engineWorker: failingWorker } }))
+    await until(() => expect(first.connection()).toMatchObject({ status: "stopped" }))
+    const { answerId } = asked(first.actions.ask("hello"))
+    await until(() => expect(first.synced(answerId)).toBe(true))
+    await first.close()
+
+    const second = await tabOn(openTab(api, { ...quick, host: device }))
+    const reply = await onApi(api.answerTo("hello"))
+    reply.say("Hi")
+    reply.done()
+    await until(() => expect(second.shown()).toEqual(["user done hello", "assistant done Hi"]), agentWithin)
+  })
+
+  test.each(["plan_changed", "payload_changed"] as const)("a run the engine refused because the app changed under it (%s) has its answer closed, failed", async (code) => {
+    const tab = await openFaulty(quick)
+    // The run's end reads as refused, as a run parked under one build and resumed under the next does: its plan changed,
+    // or its recorded payload no longer decodes.
+    tab.engine((engine) => engine.refuseResults("chat/Answer", code))
+    const { answerId } = asked(tab.actions.ask("hello"))
+    await until(() => expect(tab.shown()).toEqual(["user done hello", `assistant failed ${COULDNT_ANSWER}`]), agentWithin)
+    expect(tab.store.messages.tanstack.get(answerId)).toMatchObject({ failure: "unfinished" })
+    const closed = Metric.withAttributes(dispatches, { flow: "chat/Close", door: "composer", outcome: "done" })
+    await until(() => expect(tab.count(closed)).toBe(1), agentWithin)
+  })
+
+  test("a run that ends in any other defect leaves its answer to chat/Expire: nothing closes it", async () => {
+    const tab = await openFaulty(quick)
+    tab.engine((engine) => engine.refuseResults("chat/Answer", "join_mismatch"))
+    asked(tab.actions.ask("hello"))
+    const refused = Metric.withAttributes(dispatches, { flow: "chat/Answer", door: "composer", outcome: "error" })
+    await until(() => expect(tab.count(refused)).toBe(1), agentWithin)
+    expect(tab.shown()).toEqual(["user done hello", "assistant streaming "])
+    expect(tab.count(Metric.withAttributes(dispatches, { flow: "chat/Close", door: "composer", outcome: "done" }))).toBe(0)
   })
 
   test.each([
@@ -411,8 +476,8 @@ describe("admission", () => {
     expect(tab.count(Metric.withAttributes(unsentActions, { action: "retry" }))).toBe(1)
   })
 
-  test("a tab that doesn't lead the outbox keeps its question unsent, and Retry keeps it while it still doesn't", async () => {
-    // Another tab holds the outbox's lock and never lets it go.
+  test("a tab that can't take the outbox's lead keeps its question unsent, and Retry keeps it while it still can't", async () => {
+    // Another tab holds the outbox's lock and never lets it go, even to a steal.
     const heldElsewhere: Outbox.Lock = { hold: () => Effect.never }
     const tab = await openChat({ host: nodeDevice({ lock: heldElsewhere }) })
     const { questionId } = asked(tab.actions.ask("hello"))
@@ -444,29 +509,57 @@ describe("the device store", () => {
     const runtime = openFaultyTab(api, options)
     return { ...(await tabOn(runtime)), ...(await switches(runtime)) }
   }
+  // Whether a tab leads the outbox now.
+  const leads = async (tab: { readonly store: ChatStore["Service"]; readonly runtime: ManagedRuntime.ManagedRuntime<never, unknown> }) =>
+    Option.getOrThrow(await tab.runtime.runPromise(Stream.runHead(tab.store.outbox.status))).leader
 
-  test("a second tab on the device follows; when the leading tab closes it leads and sends what was queued", async () => {
+  test("a question asked in a tab that doesn't lead is sent from it at once: it takes the lead, with the other tab open", async () => {
     const { api, onApi } = await openChat()
-    const device = nodeDevice()
+    const device = nodeDevice({ agent: api })
     const first = await faultyTabOn(api, { ...quick, host: device })
     const second = await tabOn(openTab(api, { ...quick, host: device }))
+    await until(async () => expect(await leads(first)).toBe(true))
     first.failNext("unreachable")
-    const { questionId } = asked(first.actions.ask("handed over"))
+    asked(first.actions.ask("handed over"))
     await until(() => expect(first.sentQuestions()).toHaveLength(1))
-    // The follower admits nothing: its question stays unsent until it leads, then it sends it.
-    asked(second.actions.ask("from the follower"))
+    // The second tab asks while the first leads: it takes the lead, then sends what the first stored and its own, in
+    // the order asked.
+    asked(second.actions.ask("from the second tab"))
     asked(second.actions.ask("and again"))
-    await until(() => expect(second.shown().filter((line) => line.startsWith("user unsent"))).toHaveLength(2))
-    await first.close()
-    await until(async () => expect((await onApi(api.rows)).filter(({ id }) => id === questionId)).toHaveLength(1), 10_000)
-    // Sent in the order asked, after the question the first tab queued.
     await until(async () =>
       expect((await onApi(api.rows)).filter(({ text }) => text !== "").map(({ text }) => text)).toEqual([
         "handed over",
-        "from the follower",
+        "from the second tab",
         "and again",
       ]), 10_000)
-    expect(second.count(Metric.withAttributes(unsentActions, { action: "retry" }))).toBe(2)
+    expect([await leads(first), await leads(second)]).toEqual([false, true])
+    await until(() => expect(second.shown().filter((line) => line.startsWith("user unsent"))).toEqual([]))
+  })
+
+  test("the tab that gets focus leads the outbox at once, and the one that led leads again once that tab closes", async () => {
+    const { api, onApi } = await openChat()
+    const device = nodeDevice({ agent: api })
+    const first = await tabOn(openTab(api, { ...quick, host: device }))
+    const second = await tabOn(openTab(api, { ...quick, host: device }))
+    await until(async () => expect(await leads(first)).toBe(true))
+    expect(await leads(second)).toBe(false)
+    const focus = new EventTarget()
+    await second.runtime.runPromise(Scope.provide(bindConnectivity(focus), await second.runtime.runPromise(Scope.make())))
+
+    // Something in the second tab takes focus, such as its composer: it leads, and what it asks is admitted at once.
+    focus.dispatchEvent(new Event("focusin"))
+    await until(async () => expect([await leads(first), await leads(second)]).toEqual([false, true]))
+    const { questionId } = asked(second.actions.ask("hello"))
+    await until(() => expect(second.shown()[0]).toMatch(/^user (queued|done) hello$/))
+    expect(second.store.unsent.tanstack.has(questionId)).toBe(false)
+    await until(async () => expect((await onApi(api.rows)).map(({ id }) => id)).toContain(questionId))
+    // Focus again changes nothing; the window's own focus counts too.
+    focus.dispatchEvent(new Event("focus"))
+    expect(await leads(second)).toBe(true)
+
+    // The second tab closes: the first, waiting for the lock again, leads.
+    await second.close()
+    await until(async () => expect(await leads(first)).toBe(true))
   })
 
   test("a reload restores the conversation from the device before Electric answers", async () => {
@@ -538,16 +631,7 @@ describe("the connection pill", () => {
   })
 
   test("an engine worker that fails shows that Smithers can't run here, for good, and counts it", async () => {
-    // A worker whose module fails to load reports an error it didn't catch, once its tab listens.
-    const failing = {
-      postMessage: () => {},
-      addEventListener: (type: string, listener: (event: ErrorEvent) => void) =>
-        void (type === "error" && queueMicrotask(() => listener({} as ErrorEvent))),
-      removeEventListener: () => {},
-      terminate: () => {},
-    }
-    // The shape the tab's engine expects: a Worker's.
-    const tab = await openChat({ host: nodeDevice({ engineWorker: () => failing as never }) })
+    const tab = await openChat({ host: nodeDevice({ engineWorker: failingWorker }) })
     await until(() => expect(tab.connection()).toMatchObject({ status: "stopped", retry: false }))
     expect(tab.count(Metric.withAttributes(connectionDrops, { reason: "engine" }))).toBe(1)
     // Going offline and back changes nothing: only a reload can help.
@@ -649,7 +733,7 @@ describe("the composer", () => {
 
 describe("time to the first answer text", () => {
   test("is recorded once, when the answer first shows text", async () => {
-    const tab = await openChat({ answers: true })
+    const tab = await openChat()
     asked(tab.actions.ask("hello"))
     const reply = await tab.onApi(tab.api.answerTo("hello"))
     reply.say("H")
@@ -661,7 +745,7 @@ describe("time to the first answer text", () => {
   })
 
   test("is not recorded for an answer that failed before any text", async () => {
-    const tab = await openChat({ answers: true })
+    const tab = await openChat()
     asked(tab.actions.ask("hello"))
     ;(await tab.onApi(tab.api.answerTo("hello"))).fail()
     await until(() => expect(tab.shown().at(-1)).toBe(`assistant failed ${COULDNT_ANSWER}`), agentWithin)
@@ -701,8 +785,10 @@ describe("shortcuts", () => {
     const target = new EventTarget()
     const scope = await tab.runtime.runPromise(Scope.make())
     await tab.runtime.runPromise(Scope.provide(chatShortcuts(target), scope))
-    const press = (init: Parameters<typeof keydown>[0]) => {
+    // `handled`: the element the key was pressed in already handled it, as the command menu does with Esc.
+    const press = (init: Parameters<typeof keydown>[0], handled = false) => {
       const event = keydown(init)
+      if (handled) event.preventDefault()
       target.dispatchEvent(event)
       return event.defaultPrevented
     }
@@ -725,6 +811,13 @@ describe("shortcuts", () => {
     tab.actions.setDraft("kept")
     expect(tab.press({ key: "Escape" })).toBe(false)
     expect(tab.composer()).toMatchObject({ open: false, draft: "kept" })
+  })
+
+  test("an Esc something inside already handled, such as the command menu closing, keeps the composer open", async () => {
+    const tab = await bound()
+    tab.actions.openComposer("button")
+    tab.press({ key: "Escape" }, true)
+    expect(tab.composer()?.open).toBe(true)
   })
 
   test("other keys, and keydowns with no key, change nothing", async () => {

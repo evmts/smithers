@@ -2,12 +2,14 @@
 // (worker/test/flowHost.ts) and as its step alone, over this file's schema of the compose Postgres, with sessions made
 // by real sign-in against the scripted GitHub (worker/test/github.ts).
 import { FlowRuntime } from "@smthrs/flow"
+import { RunStore } from "@smthrs/flows"
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Cause, Context, Deferred, Effect, Exit, Logger, Redacted, Scope } from "effect"
+import { Cause, Context, Deferred, Effect, Exit, Fiber, Logger, Redacted, Scope } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
+import { GitHubRefused } from "../GitHubAuth.ts"
 import * as SessionKeys from "../SessionKeys.ts"
 import * as SessionStore from "../SessionStore.ts"
 import * as SignIn from "../SignIn.ts"
@@ -59,9 +61,15 @@ const expiring = (id: string) =>
 const reasonOf = (exit: Exit.Exit<unknown, RecheckRole.RoleCheckFailed>) =>
   Exit.isFailure(exit) ? (Cause.squash(exit.cause) as RecheckRole.RoleCheckFailed).reason : "succeeded"
 
-/** One check, as the step runs it, with its records. */
-const checkOnce = (s: Awaited<ReturnType<typeof signedIn>>) =>
-  Effect.runPromiseExit(RecheckRole.observed(s.id, s.services, s.database))
+/** One check's steps in order, as the flow runs them once each, with their records. */
+const checking = (s: Awaited<ReturnType<typeof signedIn>>, sessionId = s.id, database = s.database) => {
+  const steps = RecheckRole.steps(database, s.services)
+  return Effect.flatMap(steps.redeem(sessionId), (redemption) =>
+    Effect.andThen(steps.store(sessionId, redemption), steps.check(sessionId, redemption)))
+}
+
+/** One check, as the flow's steps run it, with its records. */
+const checkOnce = (s: Awaited<ReturnType<typeof signedIn>>) => Effect.runPromiseExit(checking(s))
 
 describe("auth/RecheckRole", () => {
   test("runs on the Node host: reads the role again and records when", async () => {
@@ -211,7 +219,7 @@ describe("auth/RecheckRole", () => {
 
   test("a session that is gone, signed out or past its end is left alone", async () => {
     const s = await signedIn()
-    expect(await Effect.runPromiseExit(RecheckRole.observed(crypto.randomUUID(), s.services, s.database))).toEqual(
+    expect(await Effect.runPromiseExit(checking(s, crypto.randomUUID()))).toEqual(
       Exit.succeed({ outcome: "ended", role: null }),
     )
     await sql(`UPDATE sessions SET expires_at = now() - interval '1 second'`)
@@ -229,7 +237,7 @@ describe("auth/RecheckRole", () => {
     s.github.failOnce.refresh = "unavailable"
     expect(reasonOf(await checkOnce(s))).toBe("github_unavailable")
     const down = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
-    expect(reasonOf(await Effect.runPromiseExit(RecheckRole.observed(s.id, s.services, down)))).toBe("database")
+    expect(reasonOf(await Effect.runPromiseExit(checking(s, s.id, down)))).toBe("database")
   })
 
   test("its records carry the outcome and the session id, never a token or a login", async () => {
@@ -239,7 +247,7 @@ describe("auth/RecheckRole", () => {
     const logger = Logger.make((options) => void logs.push(StructuredLogger.formatStructured.log(options)))
     const run = (sessionId: string) =>
       Effect.runPromise(
-        Effect.exit(RecheckRole.observed(sessionId, s.services, s.database)).pipe(
+        Effect.exit(checking(s, sessionId)).pipe(
           Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
         ),
       )
@@ -247,8 +255,17 @@ describe("auth/RecheckRole", () => {
     s.github.failOnce.permission = "unavailable"
     await run(s.id)
     expect(logs.map((log) => log.annotations)).toEqual([
-      expect.objectContaining({ sessionId: s.id, outcome: "checked", role: "member" }),
-      expect.objectContaining({ sessionId: s.id, outcome: "failed", errorCode: "@smthrs/mvp/auth/GitHubRefused" }),
+      expect.objectContaining({ sessionId: s.id, step: "redeem", outcome: "redeemed" }),
+      expect.objectContaining({ sessionId: s.id, step: "store", outcome: "stored" }),
+      expect.objectContaining({ sessionId: s.id, step: "check", outcome: "checked", role: "member" }),
+      expect.objectContaining({ sessionId: s.id, step: "redeem", outcome: "none" }),
+      expect.objectContaining({ sessionId: s.id, step: "store", outcome: "none" }),
+      expect.objectContaining({
+        sessionId: s.id,
+        step: "check",
+        outcome: "failed",
+        errorCode: "@smthrs/mvp/auth/GitHubRefused",
+      }),
     ])
     const text = JSON.stringify(logs)
     for (const issued of s.github.issued) {
@@ -343,6 +360,104 @@ describe("one check of a session at a time", () => {
     }
   })
 
+  test("tokens GitHub issued but Postgres refused to store are stored by the resumed run, never redeemed again", async () => {
+    // Codex review 4, P2: one retried step redeemed the single-use refresh token and stored its replacement, so a failed
+    // store made the retry present the spent token, and GitHub's refusal ended a valid session.
+    const s = await signedIn()
+    await expiring(s.id)
+    const executionId = RecheckRole.recheckExecutionId(s.id, 1)
+    // Postgres refuses to store a new refresh token. Each refusal draws from a sequence, which a rollback doesn't undo.
+    await sql(`CREATE SEQUENCE refused_stores`)
+    await sql(`CREATE FUNCTION refuse_store() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN PERFORM nextval('refused_stores'); RAISE EXCEPTION 'refused'; END $$`)
+    await sql(`CREATE TRIGGER refuse_store BEFORE UPDATE ON sessions FOR EACH ROW
+      WHEN (OLD.github_refresh_digest IS DISTINCT FROM NEW.github_refresh_digest) EXECUTE FUNCTION refuse_store()`)
+    const removeFault = async () => {
+      await sql(`DROP TRIGGER IF EXISTS refuse_store ON sessions`)
+      await sql(`DROP FUNCTION IF EXISTS refuse_store()`)
+      await sql(`DROP SEQUENCE IF EXISTS refused_stores`)
+    }
+    // One Durable Object's engine, as on Cloudflare: it dies, and the next one resumes the run from its journal.
+    const engine = async (schema?: string) => {
+      const scope = Effect.runSync(Scope.make())
+      const built = await Effect.runPromise(
+        Scope.provide(scope)(
+          build(RecheckRole.registration(s.database, s.services), {
+            hostId: "durable-object",
+            isAlive: RunStore.Ownership.singleIncarnationLiveness,
+            maxConnections: 3,
+            ...(schema === undefined ? {} : { schema }),
+          }),
+        ),
+      )
+      const flows = Context.get(built.context, FlowRuntime.FlowRuntime)
+      return {
+        schema: built.engine.schema,
+        execute: () => flows.execute(RecheckRole.RecheckRole, { executionId, payload: { sessionId: s.id } }),
+        close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
+      }
+    }
+    try {
+      const first = await engine()
+      const running = Effect.runFork(Effect.exit(first.execute()))
+      const refusals = async () =>
+        ((await sql(`SELECT CASE WHEN is_called THEN last_value ELSE 0 END::int AS n FROM refused_stores`)) as unknown as [
+          { n: number },
+        ])[0].n
+      await expect.poll(refusals, { interval: 10, timeout: 20_000 }).toBeGreaterThan(0)
+      // The object dies after the failed store: Postgres ends its engine's connections, so it records nothing more.
+      await sql(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+        WHERE pid <> pg_backend_pid() AND query LIKE '%${first.schema}%'`)
+      await Effect.runPromise(Fiber.interrupt(running))
+      await removeFault()
+
+      const second = await engine(first.schema)
+      const resumed = await Effect.runPromise(Effect.exit(second.execute()))
+      await second.close()
+      await first.close()
+
+      expect(resumed).toEqual(Exit.succeed({ outcome: "checked", role: "member" }))
+      expect(s.github.calls.filter((step) => step === "refresh")).toHaveLength(1)
+      const after = await session(s.id)
+      expect(after.revokedReason).toBeNull()
+      expect(after.refreshDigest).toBe(SessionKeys.digest(Redacted.value(s.github.issued[1]!.refreshToken!)))
+      expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, login: "octocat", role: "member" })
+    } finally {
+      await removeFault()
+    }
+  }, 60_000)
+
+  test("a refresh whose answer was lost after GitHub redeemed it ends the session: the person signs in again", async () => {
+    // The one window no journal closes: GitHub spent the refresh token, but its answer never arrived, so nothing holds
+    // the replacement. The retry presents the spent token, GitHub refuses it, and the session ends
+    // (docs/features/sign-in.md#roles-and-role-checks).
+    const s = await signedIn()
+    await expiring(s.id)
+    // GitHub redeems the first refresh, and its answer is lost on the way back.
+    let answers = 0
+    const github = {
+      ...s.github.service,
+      refresh: (token: Redacted.Redacted<string>) =>
+        s.github.service.refresh(token).pipe(
+          Effect.flatMap((tokens) =>
+            answers++ === 0
+              ? Effect.fail(new GitHubRefused({ step: "refresh", reason: "unavailable" }))
+              : Effect.succeed(tokens)
+          ),
+        ),
+    }
+
+    const ran = await runFlow(
+      RecheckRole.RecheckRole,
+      { sessionId: s.id },
+      RecheckRole.registration(s.database, { ...s.services, github }),
+    )
+
+    expect(ran.exit).toEqual(Exit.succeed({ outcome: "revoked", role: null }))
+    expect(s.github.calls.filter((step) => step === "refresh")).toHaveLength(2)
+    expect(await session(s.id)).toMatchObject({ revokedReason: "github_refused", forgotten: true })
+  })
+
   test("a check that fails every attempt keeps the role and records the check, so the next one is new", async () => {
     const s = await signedIn()
     await sql(`UPDATE sessions SET role_checked_at = now() - interval '2 hours'`)
@@ -367,13 +482,15 @@ describe("one check of a session at a time", () => {
     const logger = Logger.make((options) => void logs.push(StructuredLogger.formatStructured.log(options)))
     const keep = (database: typeof s.database) =>
       Effect.runPromiseExit(
-        RecheckRole.keep(s.id, database).pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger]))),
+        RecheckRole.steps(database, s.services).keep(s.id).pipe(
+          Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
+        ),
       )
 
     expect(await keep(s.database)).toEqual(Exit.succeed({ outcome: "kept", role: null }))
     expect((await session(s.id)).age).toBeLessThan(60)
     expect(logs.map((log) => log.annotations)).toEqual([
-      expect.objectContaining({ sessionId: s.id, outcome: "kept", role: "none" }),
+      expect.objectContaining({ sessionId: s.id, step: "keep", outcome: "kept", role: "none" }),
     ])
     await SessionStore.revoke({ id: s.id }, "sign_out").pipe(Effect.provide(s.database), Effect.runPromise)
     await sql(`UPDATE sessions SET role_checked_at = now() - interval '2 hours'`)

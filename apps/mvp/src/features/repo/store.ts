@@ -3,8 +3,8 @@ import { Collection } from "@smthrs/effect-tanstack-db"
 import { Context, Duration, Effect, FiberHandle, Layer, Option, type Schedule, Stream } from "effect"
 import { AuthStore } from "../auth/store"
 import { REPOSITORIES_SHAPE_ROUTE } from "./contract"
-import { fileQuery, readmeQuery, treeQuery, viewQuery } from "./queries"
-import { BlobRow, CloneRow, emptyView, TreeRow, VIEW, ViewRow } from "./rows"
+import { fileQuery, readmeQuery, refsQuery, treeQuery, viewQuery } from "./queries"
+import { BlobRow, CloneRow, emptyView, RefsRow, TreeRow, VIEW, ViewRow } from "./rows"
 import { Repository } from "./schema"
 
 // The repository feature's state on this tab (docs/features/repo.md#the-browser): the repositories Postgres has, synced
@@ -43,6 +43,7 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
   const clones = yield* Collection.local<CloneRow, string>({ id: "repo-clones", schema: CloneRow, getKey: (row) => row.id })
   const trees = yield* Collection.local<TreeRow, string>({ id: "repo-trees", schema: TreeRow, getKey: (row) => row.key })
   const blobs = yield* Collection.local<BlobRow, string>({ id: "repo-blobs", schema: BlobRow, getKey: (row) => row.key })
+  const refs = yield* Collection.local<RefsRow, string>({ id: "repo-refs", schema: RefsRow, getKey: (row) => row.key })
   const view = yield* Collection.local<ViewRow, string>({
     id: "repo-view",
     schema: ViewRow,
@@ -67,8 +68,10 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
     clones,
     trees,
     blobs,
+    refs,
     view,
     viewState: yield* viewQuery(view, repositories, clones),
+    refsState: yield* refsQuery(view, refs),
     treeState: yield* treeQuery(view, trees),
     fileState: yield* fileQuery(view, blobs),
     readmeState: yield* readmeQuery(view, blobs),
@@ -86,6 +89,7 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
  * - `repositories`: every cloned repository, synced by Electric and kept on the device; read-only.
  * - `clones`: clones this tab asked for that Postgres doesn't show yet, or that RepoApi refused.
  * - `trees`, `blobs`: the file lists and files this tab loaded, by commit.
+ * - `refs`: the branches and tags this tab loaded, by repository and sync.
  * - `view`: where the routed view is, one row.
  * - the live queries frontends read (queries.ts), `loader`, `scope`, and the settings.
  */

@@ -1,11 +1,21 @@
 import type { Collection } from "@smthrs/effect-tanstack-db"
 import { Clock, Effect, FiberHandle, Metric, Option, Stream } from "effect"
+import { FlowDispatch } from "../../flows/dispatch"
 import { RepoClient, type RepoRefused } from "./api"
-import { Clipboard } from "./clipboard"
-import { BUSY, COULDNT_LOAD, isRepository, NOT_FOUND, READING_PAUSED, repoId, textOf } from "./contract"
-import { blobLoadMs, cloneClicks, clones, opens, permalinkCopies, treeLoadMs } from "./metrics"
-import { blobKey, hrefFor, readmeOf, resolveRef, type Target, treeKey } from "./paths"
-import type { BlobRow, CloneRow, TreeRow, ViewRow } from "./rows"
+import {
+  BUSY,
+  COULDNT_LOAD,
+  type CopyKind,
+  isRepository,
+  NOT_FOUND,
+  rawRoute,
+  READING_PAUSED,
+  repoId,
+  textOf,
+} from "./contract"
+import { blobLoadMs, cloneClicks, opens, refsLoadMs, treeLoadMs } from "./metrics"
+import { blobKey, copyPayloadOf, readmeOf, refsKey, resolveRef, type Target, treeKey } from "./paths"
+import type { BlobRow, CloneRow, RefsRow, TreeRow, ViewRow } from "./rows"
 import { VIEW } from "./rows"
 import type { Repository } from "./schema"
 import { RepoStore } from "./store"
@@ -13,9 +23,10 @@ import { RepoStore } from "./store"
 // What a person does in the repository view, and what the tab does for them. Each action returns once the tab's rows
 // say so; a request it starts runs in the store's scope and settles the rows when RepoApi answers.
 //
-// A clone is a plain request, not a write through chat's outbox (decision 0002 §3): it needs the network and sign-in
-// anyway, and RepoApi takes it idempotently, so a request that didn't get through is safe to send again with Try
-// again. The outbox would add a stored write and a lock for nothing a refresh can't redo.
+// A clone is the flow `repo/clone`, whose step asks RepoApi, not a write through chat's outbox (decision 0002 §3): it
+// needs the network and sign-in anyway, and RepoApi takes it idempotently, so a request that didn't get through is
+// safe to send again with Try again. The outbox would add a stored write and a lock for nothing a refresh can't redo.
+// Copying and choosing another ref are flows too (`repo/copy`, `app/navigate`), which the agent runs as well.
 
 /** Inserts `row`, or replaces the row with its key. */
 const put = <A extends object>(collection: Collection.Collection<A, string>, key: string, row: A) =>
@@ -36,31 +47,28 @@ const startSync = Effect.flatMap(
 
 // --- Cloning ---
 
-/** What became of a request RepoApi didn't take, and how the header shows it. */
-const refusalOf = (refused: RepoRefused): { readonly outcome: string; readonly status: CloneRow["status"] } =>
-  refused.status === 401
-    ? { outcome: "sign_in", status: "sign_in" }
-    : refused.status === 429
-    ? { outcome: "limit", status: "limit" }
-    : { outcome: refused.status === undefined ? "unreachable" : "refused", status: "failed" }
+/** How the header shows a clone `repo/clone` didn't start: sign in, imports paused at the cap, or couldn't clone. */
+const refusedStatus = (reason: string | undefined): CloneRow["status"] =>
+  reason === "sign_in" ? "sign_in" : reason === "limit" ? "limit" : "failed"
 
-/** Sends the clone request, then waits for Electric to deliver what RepoApi did. */
+/**
+ * Dispatches `repo/clone`, door `button`, then waits for Electric to deliver what RepoApi did. The flow's step records
+ * the request; a row Electric doesn't deliver within `confirmWithin` is logged `repo.clone.unconfirmed`.
+ */
 const send = (row: CloneRow) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
-    const client = yield* RepoClient
-    const answer = yield* Effect.result(client.clone(row.owner, row.name))
-    if (answer._tag === "Failure") {
-      const { outcome, status } = refusalOf(answer.failure)
-      yield* put<CloneRow>(store.clones, row.id, { ...row, status })
-      yield* Metric.update(Metric.withAttributes(clones, { outcome }), 1)
-      return yield* Effect.logWarning("repo.clone").pipe(
-        Effect.annotateLogs(
-          answer.failure.status === undefined ? { outcome } : { outcome, status: answer.failure.status },
-        ),
-      )
+    const dispatched = yield* Effect.result(
+      (yield* FlowDispatch).dispatch("repo/clone", { repo: `${row.owner}/${row.name}` }, { door: "button" }),
+    )
+    if (dispatched._tag === "Failure" || dispatched.success._tag === "Failed") {
+      const error = dispatched._tag === "Success" && dispatched.success._tag === "Failed"
+        ? dispatched.success.error
+        : undefined
+      const reason = error?._tag === "@smthrs/mvp/repo/RepoCloneRefused" ? error.reason : undefined
+      return yield* put<CloneRow>(store.clones, row.id, { ...row, status: refusedStatus(reason) })
     }
-    const accepted = answer.success
+    const accepted = dispatched.success.value
     yield* startSync
     const delivered = accepted.txid !== null
       ? store.repositories.awaitTxId(accepted.txid, store.confirmWithin)
@@ -70,17 +78,14 @@ const send = (row: CloneRow) =>
           : store.repositories.awaitMatch((change) => change.value.id === accepted.id, store.confirmWithin))
     if ((yield* Effect.result(delivered))._tag === "Failure") {
       yield* put<CloneRow>(store.clones, row.id, { ...row, status: "failed" })
-      yield* Metric.update(Metric.withAttributes(clones, { outcome: "unconfirmed" }), 1)
-      return yield* Effect.logWarning("repo.clone").pipe(Effect.annotateLogs({ outcome: "unconfirmed" }))
+      return yield* Effect.logWarning("repo.clone.unconfirmed")
     }
     yield* Effect.orDie(store.clones.delete(row.id))
-    yield* Metric.update(Metric.withAttributes(clones, { outcome: "accepted" }), 1)
-    yield* Effect.logInfo("repo.clone").pipe(Effect.annotateLogs({ outcome: "accepted" }))
   }).pipe(Effect.annotateLogs({ feature: "repo" }))
 
 /**
- * Clone pressed (`kind` `clone`), or Try again (`retry`): shows `cloning` at once and asks RepoApi, once at a time per
- * repository. RepoApi starts a new attempt for a failed or refused clone and nothing for one running or done. Answers
+ * Clone pressed (`kind` `clone`), or Try again (`retry`): shows `cloning` at once and runs `repo/clone`, once at a time
+ * per repository. RepoApi starts a new attempt for a failed or refused clone and nothing for one running or done. Answers
  * whether it asked: `false` for a name that isn't a GitHub repository.
  */
 export const clone = (owner: string, name: string, kind: "clone" | "retry" = "clone") =>
@@ -130,6 +135,32 @@ const ensureTree = (repository: Repository, sha: string) =>
         : { key, state: "failed", paths: [], truncated: false, message: readFailure(result.failure) }
       yield* put(store.trees, key, row)
       yield* observeLoad("repo.tree.load", treeLoadMs, row.state, startedAt, result)
+    })
+    yield* Effect.forkIn(load, store.scope, { startImmediately: true })
+  })
+
+/** Loads `owner/name`'s branches and tags as of its sync unless this tab has them or is loading them. */
+const ensureRefs = (repository: Repository, key: string) =>
+  Effect.gen(function* () {
+    const store = yield* RepoStore
+    const found = yield* store.refs.get(key)
+    if (Option.isSome(found) && found.value.state !== "failed") return
+    yield* put<RefsRow>(store.refs, key, { key, state: "loading", branches: [], tags: [], truncated: false, message: null })
+    const load = Effect.gen(function* () {
+      const startedAt = yield* Clock.currentTimeMillis
+      const result = yield* Effect.result((yield* RepoClient).refs(repository.owner, repository.name))
+      const row: RefsRow = result._tag === "Success"
+        ? {
+          key,
+          state: "ready",
+          branches: result.success.branches,
+          tags: result.success.tags,
+          truncated: result.success.truncated,
+          message: null,
+        }
+        : { key, state: "failed", branches: [], tags: [], truncated: false, message: readFailure(result.failure) }
+      yield* put(store.refs, key, row)
+      yield* observeLoad("repo.refs.load", refsLoadMs, row.state, startedAt, result)
     })
     yield* Effect.forkIn(load, store.scope, { startImmediately: true })
   })
@@ -192,13 +223,14 @@ const observeLoad = (
     )
   })
 
-/** Waits until the repository is ready on this device: Electric delivers it, or the device already has it. */
+/** Waits until the repository is ready on this device, with its head: Electric delivers it, or the device has it. */
 const ready = (id: string) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     yield* startSync
-    const isReady = (row: Option.Option<Repository>): row is Option.Some<Repository> =>
-      Option.isSome(row) && row.value.status === "ready"
+    // Settle writes a ready row's head with its status.
+    const isReady = (row: Option.Option<Repository>): row is Option.Some<Repository & { readonly headSha: string }> =>
+      Option.isSome(row) && row.value.status === "ready" && row.value.headSha !== null
     const now = yield* store.repositories.get(id)
     if (isReady(now)) return now.value
     // With the rows the device has as the first batch, so a row that arrived since the read above isn't missed.
@@ -211,37 +243,49 @@ const ready = (id: string) =>
     return Option.getOrThrow(next).value
   })
 
-/** Waits until the file list at `key` has loaded or failed. */
-const settled = (key: string) =>
+/** Waits until the row at `key` matches `done`: one that has, or once one does. */
+const until = <A extends object>(collection: Collection.Collection<A, string>, key: string, done: (row: A) => boolean) =>
   Effect.gen(function* () {
-    const store = yield* RepoStore
-    const isSettled = (row: Option.Option<TreeRow>): row is Option.Some<TreeRow> =>
-      Option.isSome(row) && row.value.state !== "loading"
-    const now = yield* store.trees.get(key)
-    if (isSettled(now)) return now.value
-    const next = yield* store.trees.changes({ initial: true }).pipe(
-      Stream.mapEffect(() => store.trees.get(key)),
-      Stream.filter(isSettled),
+    const matches = (row: Option.Option<A>): row is Option.Some<A> => Option.isSome(row) && done(row.value)
+    const now = yield* collection.get(key)
+    if (matches(now)) return now.value
+    const next = yield* collection.changes({ initial: true }).pipe(
+      Stream.mapEffect(() => collection.get(key)),
+      Stream.filter(matches),
       Stream.runHead,
     )
+    // The changes stream never ends, so a head is always found.
     return Option.getOrThrow(next).value
   })
 
+/** Whether a load has ended: loaded or failed. */
+const loaded = (row: { readonly state: string }) => row.state !== "loading"
+
 /**
- * The routed view's load: once the repository is ready, resolves the URL's ref, then loads the file list and the file,
- * or for a directory its README.
+ * The routed view's load: once the repository is ready, loads its branches and tags, resolves the URL's ref (waiting
+ * for the branches and tags only when the ref is neither the default branch nor a SHA), then loads the file list and
+ * the file, or for a directory its README.
  */
 const load = (target: Target, id: string) =>
   Effect.gen(function* () {
+    const store = yield* RepoStore
     const repository = yield* ready(id)
-    const resolved = resolveRef(repository, target.ref, target.path)
+    const refs = refsKey(id, repository.headSha)
+    yield* changeView({ refsKey: refs })
+    yield* ensureRefs(repository, refs)
+    let resolved = resolveRef(repository, target.ref, target.path)
+    if (resolved === undefined) {
+      const known = yield* until(store.refs, refs, loaded)
+      if (known.state === "failed") return yield* changeView({ failure: known.message })
+      resolved = resolveRef(repository, target.ref, target.path, known)
+    }
     if (resolved === undefined) return yield* changeView({ missing: true })
     const { revision, sha, path } = resolved
     const fileKey = target.kind === "blob" ? blobKey(id, sha, path) : null
     yield* changeView({ revision, sha, path, treeKey: treeKey(id, sha), fileKey })
     yield* ensureTree(repository, sha)
     if (target.kind === "blob") return yield* ensureBlob(repository, sha, path)
-    const tree = yield* settled(treeKey(id, sha))
+    const tree = yield* until(store.trees, treeKey(id, sha), loaded)
     const readme = tree.state === "ready" ? readmeOf(tree.paths, path) : undefined
     if (readme === undefined) return
     yield* changeView({ readmeKey: blobKey(id, sha, readme), readmePath: readme })
@@ -268,9 +312,11 @@ export const open = (target: Target) =>
       line: target.line,
       lineEnd: target.lineEnd,
       missing: !valid,
+      failure: null,
       revision: null,
       sha: null,
       path: target.path,
+      refsKey: null,
       treeKey: null,
       fileKey: null,
       readmeKey: null,
@@ -286,24 +332,41 @@ export const open = (target: Target) =>
   )
 
 /**
- * Copy permalink: the view's location at its commit, on the clipboard. Nothing until the view has resolved a commit.
- * Counted and logged by outcome.
+ * A Copy button: dispatches `repo/copy` for what the view shows (`copyPayloadOf`), door `button`, which puts it on
+ * this tab's clipboard. Answers whether it is there: `false` when the view has nothing of that kind yet, or the flow
+ * didn't copy. `repo/copy`'s step records every copy.
  */
-export const copyPermalink = Effect.gen(function* () {
-  const store = yield* RepoStore
-  const view = Option.getOrThrow(yield* store.view.get(VIEW))
-  if (view.sha === null) return
-  const location = {
-    kind: view.kind,
-    path: view.path,
-    ...(view.line === null ? {} : { line: view.line }),
-    ...(view.lineEnd === null ? {} : { lineEnd: view.lineEnd }),
-  }
-  const href = hrefFor({ owner: view.owner, name: view.name, defaultBranch: null }, view.sha, location)
-  const written = yield* Effect.result((yield* Clipboard).write(`${store.origin}${href}`))
-  const outcome = written._tag === "Success" ? "copied" : "failed"
-  yield* Metric.update(Metric.withAttributes(permalinkCopies, { outcome }), 1)
-  yield* Effect.logWithLevel(outcome === "copied" ? "Info" : "Warn")("repo.permalink").pipe(
-    Effect.annotateLogs({ outcome, feature: "repo" }),
-  )
-})
+export const copy = (what: CopyKind) =>
+  Effect.gen(function* () {
+    const store = yield* RepoStore
+    const payload = copyPayloadOf(Option.getOrThrow(yield* store.view.get(VIEW)), what)
+    if (payload === undefined) return false
+    const dispatched = yield* Effect.result((yield* FlowDispatch).dispatch("repo/copy", payload, { door: "button" }))
+    return dispatched._tag === "Success" && dispatched.success._tag === "Done" && dispatched.success.value.copied
+  })
+
+/**
+ * Another branch, tag or commit chosen in the picker: `app/navigate` to `to`, the same location at that ref, door
+ * `button`, which moves this tab. Dispatch records it.
+ */
+export const navigate = (to: string) =>
+  Effect.flatMap(FlowDispatch, (dispatch) => Effect.ignore(dispatch.dispatch("app/navigate", { to }, { door: "button" })))
+
+/**
+ * `/$owner/$repo/raw/$ref/$`, GitHub's raw path (`target` is its file): opens the file in the routed view, and once the repository is ready
+ * on this device (Electric gets `confirmWithin` to deliver it) and the ref resolves, answers RepoApi's raw route at
+ * its commit, which the route's loader loads in place of the app. `undefined` when there is nothing to load: the view
+ * shows why.
+ */
+export const rawHref = (target: Target) =>
+  Effect.gen(function* () {
+    const store = yield* RepoStore
+    yield* open(target)
+    const opened = Option.getOrThrow(yield* store.view.get(VIEW))
+    if (opened.repoId === null || target.path === "") return undefined
+    yield* Effect.ignore(Effect.timeoutOption(store.repositories.preload, store.confirmWithin))
+    const row = yield* store.repositories.get(opened.repoId)
+    if (Option.isNone(row) || row.value.status !== "ready") return undefined
+    const view = yield* until(store.view, VIEW, (view) => view.missing || view.failure !== null || view.sha !== null)
+    return view.sha === null ? undefined : rawRoute(view.owner, view.name, view.sha, view.path)
+  })

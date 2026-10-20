@@ -77,9 +77,11 @@ describe("auth/RevokeGitHubToken", () => {
     // Signed out, the session holds its sealed tokens until the flow forgets them.
     expect(await tokens(s.id)).toMatchObject({ accessGone: false, refreshGone: false, revokedReason: "sign_out" })
     expect(s.h.revocations).toEqual([s.id])
-    // Signing out again finds no session and starts nothing more.
-    await s.h.fetch("/api/auth/sign-out", { method: "POST", headers: { origin: "http://smithers.test", cookie: cookie(s.cookies) } })
-    expect(s.h.revocations).toEqual([s.id])
+    // Signing out again before the flow ran starts the same execution again, a no-op on the host.
+    const signOut = () =>
+      s.h.fetch("/api/auth/sign-out", { method: "POST", headers: { origin: "http://smithers.test", cookie: cookie(s.cookies) } })
+    await signOut()
+    expect(s.h.revocations).toEqual([s.id, s.id])
 
     const ran = await run(s)
     expect(ran.exit).toEqual(Exit.succeed({ outcome: "revoked" }))
@@ -87,9 +89,28 @@ describe("auth/RevokeGitHubToken", () => {
     expect(s.github.calls.filter((step) => step === "revoke")).toHaveLength(1)
     expect(s.github.accepts(s.access)).toBe(false)
     expect(await tokens(s.id)).toMatchObject(forgotten)
-    // Run again, it finds nothing to revoke.
+    // Run again, it finds nothing to revoke, and signing out again finds nothing to start.
     expect((await run(s)).exit).toEqual(Exit.succeed({ outcome: "none" }))
     expect(s.github.calls.filter((step) => step === "revoke")).toHaveLength(1)
+    await signOut()
+    expect(s.h.revocations).toEqual([s.id, s.id])
+  })
+
+  test("the flow ends a session still live, so the revocation never waits on the request that started it", async () => {
+    // Sign-out admits the flow, then ends the session; a Worker that died in between leaves the session live.
+    const github = scriptedGitHub()
+    const h = await signInHarness(runtime, { github })
+    const { cookies } = await h.signInAs()
+    const [{ id }] = (await sql(`SELECT id FROM sessions`)) as unknown as [{ id: string }]
+    const services = { keys: await Effect.runPromise(SessionKeys.make(Redacted.make(SECRET))), github: github.service }
+    const database = await runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.database))
+
+    const ran = await runFlow(RevokeGitHubToken.RevokeGitHubToken, { sessionId: id }, RevokeGitHubToken.registration(database, services))
+
+    expect(ran.exit).toEqual(Exit.succeed({ outcome: "revoked" }))
+    expect(await tokens(id)).toMatchObject({ ...forgotten, revokedReason: "sign_out" })
+    expect(github.accepts(github.issued[0]!.accessToken)).toBe(false)
+    expect(await h.session(cookies)).toEqual({ signedIn: false, available: true })
   })
 
   test("signing in again in the same browser starts the revocation of the session it ended", async () => {
@@ -140,6 +161,7 @@ describe("auth/RevokeGitHubToken", () => {
     const down = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
     expect(reasonOf(await Effect.runPromiseExit(RevokeGitHubToken.observed(s.id, s.services, down)))).toBe("database")
     expect(reasonOf(await Effect.runPromiseExit(RevokeGitHubToken.forget(s.id, down)))).toBe("database")
+    expect(reasonOf(await Effect.runPromiseExit(RevokeGitHubToken.end(s.id, down)))).toBe("database")
     expect(await tokens(s.id)).toMatchObject({ accessGone: false, refreshGone: false })
   })
 
@@ -188,11 +210,18 @@ describe("auth/RevokeGitHubToken", () => {
     const record = (effect: Effect.Effect<unknown, unknown>) =>
       Effect.runPromise(Effect.exit(effect).pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger]))))
     s.github.failOnce.revoke = "unavailable"
+    await record(RevokeGitHubToken.end(s.id, s.database))
     await record(RevokeGitHubToken.observed(s.id, s.services, s.database))
     await record(RevokeGitHubToken.observed(s.id, s.services, s.database))
     expect(logs.map((log) => log.annotations)).toEqual([
-      expect.objectContaining({ sessionId: s.id, outcome: "failed", errorCode: "@smthrs/mvp/auth/GitHubRefused" }),
-      expect.objectContaining({ sessionId: s.id, outcome: "revoked" }),
+      expect.objectContaining({ sessionId: s.id, step: "end", outcome: "over" }),
+      expect.objectContaining({
+        sessionId: s.id,
+        step: "revoke",
+        outcome: "failed",
+        errorCode: "@smthrs/mvp/auth/GitHubRefused",
+      }),
+      expect.objectContaining({ sessionId: s.id, step: "revoke", outcome: "revoked" }),
     ])
     const text = JSON.stringify(logs)
     for (const issued of s.github.issued) {

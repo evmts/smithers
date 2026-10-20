@@ -15,8 +15,10 @@ export const MAX_ANSWER_BODY_BYTES = 256 * 1024
 export const MAX_FRAMES = 8
 
 /**
- * How long one answer's run may wait for its turn, from its first start, before it settles the answer `unfinished`.
- * The host may set its own (src/features/agent/host.ts).
+ * How long one answer's run may wait for its turn while the queue before it doesn't move, counted from when an earlier
+ * answer last settled (or from the ask, if later), before it settles the answer `unfinished`. A burst is answered in
+ * turn however long it is, as long as each answer ahead settles within this. The host may set its own
+ * (src/features/agent/host.ts).
  */
 export const ANSWER_TURN_WAIT = "10 minutes"
 

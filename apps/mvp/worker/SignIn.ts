@@ -12,6 +12,8 @@ import {
 } from "../src/features/auth/contract.ts"
 import * as Actor from "./Actor.ts"
 import { codeOf } from "./ErrorCode.ts"
+import * as Flows from "./Flows.ts"
+import { RevokeGitHubToken, revokeExecutionId } from "./flows/RevokeGitHubToken.ts"
 import { GitHubAuth, type GitHubRefused, roleOf } from "./GitHubAuth.ts"
 import * as SessionKeys from "./SessionKeys.ts"
 import * as SessionStore from "./SessionStore.ts"
@@ -21,8 +23,9 @@ import * as SessionStore from "./SessionStore.ts"
 // HttpOnly cookie. Its routes run in ChatApi, and `sessions` is the `Sessions` layer every route reads who is asking
 // from. The callback's writes (the person, the session) happen in its handler: a code is single-use and bound to its
 // request, so a durable retry could not redeem it again (decision 0008, Consequences). Role checks after sign-in run
-// as the durable flow `auth/RecheckRole`, which the host starts through `RoleChecks`; revoking an ended session's
-// GitHub token runs as `auth/RevokeGitHubToken`, which it starts through `TokenRevocations`.
+// as the durable flow `auth/RecheckRole`, which the host starts through `RoleChecks`. Signing a session out runs as the
+// durable flow `auth/RevokeGitHubToken`, which ends the session and revokes its GitHub token: a route starts it through
+// `Flows.FlowStarter` and answers only once the start is recorded.
 
 /** The repository roles are read on when `GITHUB_REPOSITORY` is unset. */
 export const DEFAULT_REPOSITORY = "smithersai/smithers"
@@ -52,15 +55,6 @@ export class RoleChecks extends Context.Service<
   RoleChecks,
   { readonly start: (sessionId: string, generation: number) => Effect.Effect<void> }
 >()("@smthrs/mvp/auth/RoleChecks") {}
-
-/**
- * Starts `auth/RevokeGitHubToken` for a session that ended at sign-out, without waiting for it: one execution per
- * session (docs/features/sign-in.md#signing-out).
- */
-export class TokenRevocations extends Context.Service<
-  TokenRevocations,
-  { readonly start: (sessionId: string) => Effect.Effect<void> }
->()("@smthrs/mvp/auth/TokenRevocations") {}
 
 /** A signed-in person as sign-in knows them: who is acting, and their GitHub login. */
 export interface Signed {
@@ -169,6 +163,27 @@ const encoder = new TextEncoder()
 const sameString = (left: string, right: string) =>
   Core.Signature.constantTimeEqual(encoder.encode(left), encoder.encode(right))
 
+/** The host couldn't record the start of a session's sign-out flow; `errorCode` is the host's code, or `conflict`. */
+class SignOutNotStarted extends Schema.TaggedError<SignOutNotStarted>()("SignOutNotStarted", {
+  errorCode: Schema.String,
+}) {}
+
+/**
+ * Starts signing session `sessionId` out (docs/features/sign-in.md#signing-out): `auth/RevokeGitHubToken`, one
+ * execution per session, so starting it again is a no-op. Waits only for the start to be recorded, never for the flow.
+ */
+const startSignOut = (sessionId: string) =>
+  Effect.flatMap(
+    Flows.FlowStarter,
+    (starter) => starter.start(RevokeGitHubToken, { executionId: revokeExecutionId(sessionId), payload: { sessionId } }),
+  ).pipe(
+    Effect.mapError((error) =>
+      new SignOutNotStarted({
+        errorCode: error._tag === "@smthrs/mvp/flows/StartUnavailable" ? error.errorCode : "conflict",
+      })
+    ),
+  )
+
 /** Why a callback didn't sign anyone in; logged and counted, never shown beyond "Couldn't sign in." */
 class CallbackFailed extends Schema.TaggedError<CallbackFailed>()("CallbackFailed", {
   reason: Schema.String,
@@ -178,7 +193,7 @@ class CallbackFailed extends Schema.TaggedError<CallbackFailed>()("CallbackFaile
 
 /**
  * Builds sign-in over `database`: `fetch` answers its four routes (`/api/auth/*`), and `sessions` provides
- * `Actor.Sessions` from the session cookie. Both need `RoleChecks` from the host, and `fetch` `TokenRevocations`.
+ * `Actor.Sessions` from the session cookie. Both need `RoleChecks` from the host, and `fetch` `Flows.FlowStarter`.
  * `options.github` replaces the real GitHub App (tests inject a faulty one); `options.fallback` is who is signed in
  * when sign-in isn't configured (local development's developer), else nobody. The fallback signs out and back in with
  * the dev signed-out cookie, never reaching GitHub.
@@ -229,7 +244,7 @@ export const make = <E, R>(
         yield* (yield* RoleChecks).start(live.value.id, live.value.roleCheckedAt)
       }
       return Option.some<Signed>({
-        actor: { subject: { kind: "person", id: live.value.personId }, role: live.value.role },
+        actor: { subject: { kind: "person", id: live.value.personId }, role: live.value.role, session: live.value.id },
         login: live.value.login,
       })
     }).pipe(Effect.withSpan("auth.resolve"))
@@ -321,6 +336,24 @@ export const make = <E, R>(
         const codeVerifier = yield* keys.open(verifier, { id: stateDigest, name: "pkce_verifier", version: 1 }).pipe(
           Effect.mapError(() => failing("unreadable")),
         )
+        // Signing in again in this browser ends the session it held. Its sign-out flow is admitted first, before the
+        // code is redeemed, so a start the host refuses fails the sign-in with nothing redeemed and the session kept.
+        const previous = yield* keys.verify("session", request.cookies[names.session])
+        const ending = Option.isNone(previous)
+          ? Option.none<string>()
+          : yield* SessionStore.signingOut(SessionKeys.digest(previous.value)).pipe(
+            Effect.provide(database),
+            Effect.mapError((error) => new CallbackFailed({ reason: "database", returnTo, errorCode: codeOf(error) })),
+          )
+        yield* Option.match(ending, {
+          onNone: () => Effect.void,
+          onSome: (sessionId) =>
+            startSignOut(sessionId).pipe(
+              Effect.mapError((error) =>
+                new CallbackFailed({ reason: "sign_out_not_started", returnTo, errorCode: error.errorCode })
+              ),
+            ),
+        })
         const fromGitHub = <A>(effect: Effect.Effect<A, GitHubRefused>) =>
           Effect.mapError(effect, (error) => failing(`${error.step}_${error.reason}`))
         const tokens = yield* fromGitHub(github.exchange({ code: Redacted.make(code), codeVerifier, redirectUri }))
@@ -349,22 +382,12 @@ export const make = <E, R>(
               : SessionKeys.digest(Redacted.value(tokens.refreshToken)),
             maxAgeSeconds,
           })
-          // Signing in again in this browser ends the session it held.
-          const previous = yield* keys.verify("session", request.cookies[names.session])
-          const ended = Option.isSome(previous)
-            ? yield* SessionStore.revoke({ tokenDigest: SessionKeys.digest(previous.value) }, "sign_out")
-            : Option.none<string>()
-          return { personId, ended }
+          // The session this browser held ends now, so it is refused at once; its admitted flow revokes its tokens.
+          if (Option.isSome(ending)) yield* SessionStore.revoke({ id: ending.value }, "sign_out")
+          return personId
         }).pipe(
           Effect.provide(database),
           Effect.mapError((error) => new CallbackFailed({ reason: "database", returnTo, errorCode: codeOf(error) })),
-          // The session it ended keeps its GitHub tokens until `auth/RevokeGitHubToken` revokes them.
-          Effect.tap(({ ended }) =>
-            Option.isSome(ended)
-              ? Effect.flatMap(TokenRevocations, (revocations) => revocations.start(ended.value))
-              : Effect.void
-          ),
-          Effect.map(({ personId }) => personId),
         )
         return { personId, role, returnTo, cookie: yield* keys.sign("session", token), maxAgeSeconds }
       }).pipe(
@@ -430,16 +453,25 @@ export const make = <E, R>(
       const token = Option.isNone(setup)
         ? Option.none<string>()
         : yield* setup.value.keys.verify("session", request.cookies[names.session])
-      const ended = Option.isNone(token)
+      // A live session, or one that ended with GitHub tokens nothing revoked yet (its earlier sign-out never started its
+      // flow), is signed out by the durable flow, admitted before anything changes: a start the host refuses is a 503
+      // that leaves the session as it was, so signing out again can finish. Once admitted, the session ends here too,
+      // so it is refused at once; the flow ends it again, which changes nothing, and revokes its GitHub token.
+      const pending = Option.isNone(token)
         ? Option.none<string>()
-        : yield* SessionStore.revoke({ tokenDigest: SessionKeys.digest(token.value) }, "sign_out").pipe(
-          Effect.provide(database),
-        )
-      // GitHub's token is revoked by a durable flow; the response doesn't wait for it.
-      if (Option.isSome(ended)) yield* (yield* TokenRevocations).start(ended.value)
-      yield* record("sign_out", { outcome: Option.isSome(ended) ? "signed_out" : "no_session" })
+        : yield* SessionStore.signingOut(SessionKeys.digest(token.value)).pipe(Effect.provide(database))
+      if (Option.isSome(pending)) {
+        yield* startSignOut(pending.value)
+        yield* SessionStore.revoke({ id: pending.value }, "sign_out").pipe(Effect.provide(database))
+      }
+      yield* record("sign_out", { outcome: Option.isSome(pending) ? "signed_out" : "no_session" })
       return signedOut
     }).pipe(
+      Effect.catchIf((error): error is SignOutNotStarted => error instanceof SignOutNotStarted, (error) =>
+        Effect.as(
+          record("sign_out", { outcome: "failed", reason: "not_started", errorCode: error.errorCode }),
+          HttpServerResponse.empty({ status: 503, headers: noStore }),
+        )),
       Effect.catchCause((cause) =>
         Effect.as(
           record("sign_out", { outcome: "failed", reason: "error", errorCode: codeOf(Cause.squash(cause)) }),
@@ -485,7 +517,10 @@ export const make = <E, R>(
       Actor.Sessions,
       Effect.map(Effect.context<RoleChecks | R>(), (context) =>
         Actor.Sessions.of({
-          resolve: current.pipe(Effect.map(Option.map((signed) => signed.actor)), Effect.provide(context)),
+          resolve: current.pipe(
+            Effect.map(Option.map((signed) => ({ ...signed.actor, login: signed.login }))),
+            Effect.provide(context),
+          ),
         })),
     )
 

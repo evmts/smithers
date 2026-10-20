@@ -5,6 +5,7 @@
 // browser's engine worker registers them (src/flows/registrations.ts). This device's theme is a `ThemeStore` in memory.
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { FlowRuntime } from "@smthrs/flow"
+import { TabChannel } from "@smthrs/platform-browser"
 import { EngineStore, RunStore } from "@smthrs/flows"
 import { Context, type Duration, Effect, Exit, Fiber, Layer, Scope } from "effect"
 import { FetchHttpClient } from "effect/http"
@@ -13,10 +14,14 @@ import type { Actor } from "../../worker/Actor.ts"
 import { build } from "../../worker/test/flowHost.ts"
 import { harness } from "../../worker/test/harness.ts"
 import { Answer } from "../features/agent/flows"
+import { Tabs } from "../features/navigation/flows"
 import type { Part } from "../features/agent/schema"
 import type { ThemeMode } from "../features/theme/contract"
 import { tabPreferences, ThemeStore } from "../features/theme/store"
 import { registrations } from "../flows/registrations"
+import { TabClipboard } from "../features/repo/copy"
+import { TabChat } from "../features/chat/steps"
+import { TabIssues } from "../features/issues/steps"
 
 /** ChatApi's origin as the agent reaches it: the harness's in-process handler. */
 export const ORIGIN = "http://chat.test"
@@ -68,7 +73,8 @@ export const openAgent = async (
 
   /**
    * Builds this device's engine: every client flow on the Node host, as the browser's engine worker registers them.
-   * `turnWait` is how long an answer's run waits for its turn from its first start (`ANSWER_TURN_WAIT` unless set).
+   * `turnWait` is how long an answer's run waits for its turn while the queue before it doesn't move
+   * (`ANSWER_TURN_WAIT` unless set).
    */
   const engine = async (
     schema?: string,
@@ -81,6 +87,15 @@ export const openAgent = async (
       ...(engineOptions.turnWait === undefined ? {} : { turnWait: engineOptions.turnWait }),
     }).pipe(
       Layer.provide(tabPreferences),
+      // No tab listens on this engine's navigation, clipboard, issues or chat channels: a navigation, a copy, an issue
+      // write or a message's Copy or Edit here finds its tab gone.
+      Layer.provide(Tabs.layerChannel({ name: `agent-${crypto.randomUUID()}`, origin: ORIGIN })),
+      Layer.provide(TabClipboard.layerChannel({ name: `agent-${crypto.randomUUID()}`, origin: ORIGIN })),
+      Layer.provide(TabIssues.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
+      Layer.provide(TabChat.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
+      Layer.provide(TabChannel.layer),
+      // The run reads the acts on runs need, which the browser's engine provides (decision 0014 §3).
+      Layer.provide(EngineStore.RunInspection.layer),
       Layer.provideMerge(device),
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),

@@ -1,0 +1,269 @@
+// `POST /api/branches` (worker/branch/Branches.ts, decision 0013 §2) through the branch workspace's real routes
+// (worker/test/branch.ts) on this file's schema of the compose Postgres (`pnpm db:up`), with GitHub scripted at the
+// network: a branch is recorded only once its forge, `Forge.layerConfig` as production builds it, says GitHub has it.
+import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { Effect, Layer, Redacted } from "effect"
+import { SqlClient } from "effect/sql"
+import { beforeEach, describe, expect, test } from "vitest"
+import * as Database from "../../db/Database.ts"
+import { CONVERSATION_NAMESPACE, MAX_TRACK_BODY_BYTES } from "../../src/features/branch/contract.ts"
+import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
+import { branchHarness, type BranchHarness, gitHost, resetBranches, shaOf, tracked } from "../test/branch.ts"
+import { recorded, testFile } from "../test/harness.ts"
+import * as Branches from "./Branches.ts"
+
+const runtime = testFile("branches")
+beforeEach(() => resetBranches(runtime))
+
+const member: Actor = { subject: { kind: "person", id: "person-member" }, role: "member" }
+
+/** A branch name no record may carry. */
+const SENTINEL = "feature/sentinel-7f3a"
+
+/** GitHub with `octocat/Spoon-Knife`: `main` (its default), `feature/sentinel-7f3a` and `feature`. */
+const github = () => {
+  const host = gitHost()
+  host.publish("octocat", "Spoon-Knife", {
+    defaultBranch: "main",
+    branches: { main: shaOf("main"), [SENTINEL]: shaOf(SENTINEL), feature: shaOf("feature") },
+  })
+  host.publish("octocat", "secret", { defaultBranch: "main", branches: { main: shaOf("secret") }, private: true })
+  return host
+}
+
+const open = (options: Parameters<typeof branchHarness>[1] = {}) =>
+  branchHarness(runtime, { actor: member, github: github(), ...options })
+
+const track = (h: BranchHarness, body: unknown, init: RequestInit = {}) =>
+  h.fetch("/api/branches", {
+    method: "POST",
+    body: (typeof body === "string" || body instanceof Uint8Array ? body : JSON.stringify(body)) as BodyInit,
+    ...init,
+  })
+
+const json = async (response: Response) => [response.status, await response.json()]
+
+const rows = () =>
+  runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql<{ readonly id: string; readonly name: string; readonly mode: string; readonly baseSha: string | null; readonly conversationId: string }>`
+      SELECT b.id, b.name, b.mode, b.base_sha AS "baseSha", c.id AS "conversationId"
+      FROM branches b JOIN conversations c ON c.branch_id = b.id
+      WHERE b.repo_id = 'github/octocat/spoon-knife' ORDER BY b.name`))
+
+const conversationOf = (branchId: string) =>
+  Effect.runPromise(Uuid.v5(CONVERSATION_NAMESPACE, branchId).pipe(Effect.provide(WebCrypto.layer)))
+
+describe("POST /api/branches", () => {
+  test("records a branch GitHub has, with its conversation, 201; tracking it again answers it at once, 200", async () => {
+    const h = await open()
+
+    const first = await track(h, { owner: "OctoCat", name: "Spoon-Knife", ref: SENTINEL })
+
+    expect(first.status).toBe(201)
+    expect(first.headers.get("cache-control")).toBe("no-store")
+    const branch = await first.json() as { readonly branchId: string; readonly conversationId: string }
+    expect(branch).toEqual({
+      branchId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      conversationId: await conversationOf(branch.branchId),
+      repoId: "github/octocat/spoon-knife",
+      name: SENTINEL,
+      mode: "open",
+    })
+    expect(await rows()).toEqual([
+      { id: branch.branchId, name: SENTINEL, mode: "open", baseSha: shaOf(SENTINEL), conversationId: branch.conversationId },
+    ])
+    // One ls-refs for the one branch, then HEAD for the default branch; never a credential.
+    expect(h.github.seen).toEqual([
+      {
+        method: "POST",
+        path: "/OctoCat/Spoon-Knife.git/git-upload-pack",
+        authorization: null,
+        gitProtocol: "version=2",
+        prefixes: [`refs/heads/${SENTINEL}`],
+      },
+      {
+        method: "GET",
+        path: "/OctoCat/Spoon-Knife.git/info/refs?service=git-upload-pack",
+        authorization: null,
+        gitProtocol: null,
+        prefixes: [],
+      },
+    ])
+
+    const again = await track(h, { owner: "octocat", name: "spoon-knife", ref: SENTINEL })
+    expect(await json(again)).toEqual([200, branch])
+    expect(h.github.seen).toHaveLength(2)
+
+    expect(h.line("branch.track").map((line) => [line.level, line.annotations])).toEqual([
+      ["INFO", expect.objectContaining({ repoId: "github/octocat/spoon-knife", outcome: "tracked", mode: "open", status: 201 })],
+      ["INFO", expect.objectContaining({ repoId: "github/octocat/spoon-knife", outcome: "existing", status: 200 })],
+    ])
+    expect(h.count(Branches.tracks, { outcome: "tracked" })).toBe(1)
+    expect(h.count(Branches.tracks, { outcome: "existing" })).toBe(1)
+    expect(h.span("branch.track")).toHaveLength(2)
+    // The branch's name is someone's writing: no log line, span or metric carries it.
+    expect(recorded(h)).not.toContain("sentinel-7f3a")
+  })
+
+  test("the repository's default branch is recorded locked; a name that only starts another branch's is not GitHub's", async () => {
+    const h = await open()
+    expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "main" }))).toEqual([
+      201,
+      expect.objectContaining({ name: "main", mode: "locked" }),
+    ])
+    expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "feat" }))).toEqual([
+      404,
+      { code: "not_found" },
+    ])
+    expect((await rows()).map((row) => [row.name, row.mode])).toEqual([["main", "locked"]])
+    expect(h.line("branch.track").at(-1)).toMatchObject({
+      level: "WARN",
+      annotations: { forge: "ref_not_found", outcome: "not_found", status: 404 },
+    })
+  })
+
+  test("a default branch GitHub won't say is recorded open", async () => {
+    const h = await open()
+    h.github.fail("GET", new Response("", { status: 502 }))
+    expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "main" }))).toEqual([
+      201,
+      expect.objectContaining({ name: "main", mode: "open" }),
+    ])
+  })
+
+  test("a repository GitHub doesn't have, or keeps private, is 404 and records nothing; GITHUB_TOKEN is never sent", async () => {
+    const h = await open({ config: { GITHUB_TOKEN: "ghp_sentinel-token" } })
+    expect(await json(await track(h, { owner: "octocat", name: "gone", ref: "main" }))).toEqual([404, { code: "not_found" }])
+    expect(await json(await track(h, { owner: "octocat", name: "secret", ref: "main" }))).toEqual([
+      404,
+      { code: "not_found" },
+    ])
+    expect(h.github.seen.map((seen) => [seen.path, seen.authorization])).toEqual([
+      ["/octocat/gone.git/git-upload-pack", null],
+      ["/octocat/secret.git/git-upload-pack", null],
+    ])
+    expect(h.line("branch.track").map((line) => line.annotations.forge)).toEqual(["not_found", "not_found"])
+    expect(recorded(h)).not.toContain("ghp_sentinel-token")
+    const all = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly n: number }>`SELECT count(*)::int AS n FROM branches WHERE repo_id LIKE 'github/octocat/%'`))
+    expect(all).toEqual([{ n: 0 }])
+  })
+
+  test("GitHub failing or out of reach is 503 unavailable, by the forge's code, and records nothing", async () => {
+    const h = await open()
+    h.github.fail("POST", new Response("", { status: 500 }), "throw", new Response("<html>", { status: 200 }))
+    for (let attempt = 0; attempt < 3; attempt++) {
+      expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "feature" }))).toEqual([
+        503,
+        { code: "unavailable" },
+      ])
+    }
+    expect(h.line("branch.track").map((line) => [line.level, line.annotations.forge, line.annotations.outcome])).toEqual([
+      ["ERROR", "unavailable", "unavailable"],
+      ["ERROR", "transport", "unavailable"],
+      ["ERROR", "invalid_response", "unavailable"],
+    ])
+    expect(h.count(Branches.tracks, { outcome: "unavailable" })).toBe(3)
+    expect(await rows()).toEqual([])
+  })
+
+  test("two people tracking the same new branch at once record it once, and both get it", async () => {
+    const h = await open()
+    const release = h.github.hold()
+    const both = [
+      track(h, { owner: "octocat", name: "Spoon-Knife", ref: "feature" }),
+      track(h, { owner: "octocat", name: "Spoon-Knife", ref: "feature" }),
+    ]
+    // Both have looked for the branch and found nothing before either reads GitHub's answer.
+    await expect.poll(() => h.github.seen.length, { interval: 10, timeout: 5_000 }).toBe(2)
+    release()
+    const answered = await Promise.all(both.map(async (response) => json(await response)))
+
+    expect(answered.map(([status]) => status).sort()).toEqual([200, 201])
+    expect(answered[0]![1]).toEqual(answered[1]![1])
+    expect(await rows()).toHaveLength(1)
+    expect(h.line("branch.track").map((line) => line.annotations.outcome).sort()).toEqual(["existing", "tracked"])
+  })
+
+  test("refuses anything but a valid POST: 405, 400 invalid, 413", async () => {
+    const h = await open()
+    for (
+      const body of [
+        "not json",
+        { owner: "octocat", name: "Spoon-Knife" },
+        { owner: "-octocat", name: "Spoon-Knife", ref: "main" },
+        { owner: "octocat", name: "Spoon Knife", ref: "main" },
+        { owner: "octocat", name: "Spoon-Knife", ref: "a..b" },
+        { owner: "octocat", name: "Spoon-Knife", ref: "-x" },
+        { owner: "octocat", name: "Spoon-Knife", ref: "x.lock" },
+        { owner: "octocat", name: "Spoon-Knife", ref: "" },
+      ]
+    ) {
+      expect(await json(await track(h, body))).toEqual([400, { code: "invalid" }])
+    }
+    const large = await track(h, JSON.stringify({ owner: "octocat", name: "x", ref: "y".repeat(MAX_TRACK_BODY_BYTES) }))
+    expect(await json(large)).toEqual([413, { code: "invalid" }])
+    const broken = await track(h, new Uint8Array([0x7b, 0xff, 0xfe]))
+    expect(await json(broken)).toEqual([400, { code: "invalid" }])
+    const get = await h.fetch("/api/branches")
+    expect([get.status, get.headers.get("allow")]).toEqual([405, "POST"])
+
+    expect(h.line("branch.track").map((line) => line.annotations.outcome)).toEqual([
+      ...Array(8).fill("invalid"),
+      "invalid",
+      "invalid",
+      "method",
+    ])
+    expect(h.line("branch.track")[9]!.annotations).toMatchObject({ bytes: 3, status: 400 })
+    expect(h.count(Branches.tracks, { outcome: "invalid" })).toBe(10)
+    expect(h.count(Branches.tracks, { outcome: "method" })).toBe(1)
+    expect(h.github.seen).toEqual([])
+  })
+
+  test("only a Member or above tracks: 401 signed out, 403 for a Guest or a person with no role", async () => {
+    const body = { owner: "octocat", name: "Spoon-Knife", ref: "feature" }
+    const signedOut = await branchHarness(runtime, { github: github() })
+    expect(await json(await track(signedOut, body))).toEqual([401, { code: "authentication" }])
+    expect(signedOut.only("branch.track").annotations).toMatchObject({ outcome: "authentication", status: 401 })
+    for (const role of ["guest", null] as const) {
+      const h = await open({ actor: { ...member, role } })
+      expect(await json(await track(h, body))).toEqual([403, { code: "forbidden" }])
+      expect(h.only("branch.track").annotations).toMatchObject({ outcome: "forbidden", status: 403 })
+      expect(h.github.seen).toEqual([])
+    }
+    expect(await rows()).toEqual([])
+  })
+
+  test("sessions or Postgres that can't be read are 503 unavailable, logged by the failure's code", async () => {
+    const sessions = await open({
+      sessions: Layer.succeed(Sessions, Sessions.of({ resolve: Effect.fail(new SessionsUnavailable()) })),
+    })
+    expect(await json(await track(sessions, { owner: "octocat", name: "Spoon-Knife", ref: "feature" }))).toEqual([
+      503,
+      { code: "unavailable" },
+    ])
+    expect(sessions.only("branch.track")).toMatchObject({
+      level: "ERROR",
+      annotations: { errorCode: "@smthrs/mvp/auth/SessionsUnavailable", outcome: "unavailable", status: 503 },
+    })
+
+    const down = await open({
+      database: Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers"))),
+    })
+    expect(await json(await track(down, { owner: "octocat", name: "Spoon-Knife", ref: "feature" }))).toEqual([
+      503,
+      { code: "unavailable" },
+    ])
+    expect(down.only("branch.track").annotations).toMatchObject({
+      errorCode: expect.stringMatching(/^sql:/),
+      repoId: "github/octocat/spoon-knife",
+    })
+  })
+
+  test("a branch the app already tracks answers without asking GitHub", async () => {
+    const known = await tracked(runtime, "github/octocat/spoon-knife", "feature")
+    const h = await open()
+    expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "feature" }))).toEqual([200, known])
+    expect(h.github.seen).toEqual([])
+  })
+})

@@ -1,5 +1,5 @@
-// A device in Node, as the browser builds it (decision 0011 §4): a tab with its own `ThemeStore`, `BrowserEngine` and
-// dispatch (src/flows/engine.ts `tabEngine` and `tabAnswers`), and the leader its engine worker runs (`BrowserRuntime.serve` over every
+// A device in Node, as the browser builds it (decision 0011 §4): a tab with its own `ThemeStore`, `BrowserEngine`,
+// dispatch and navigation answers (src/flows/engine.ts `tabEngine` and `tabAnswers`, src/features/navigation/tab.ts), and the leader its engine worker runs (`BrowserRuntime.serve` over every
 // client flow, src/flows/registrations.ts), over Node's own Web Locks and `BroadcastChannel`. The worker is a
 // `MessageChannel`: the leader reaches its tab through one port (`TabPort`), and the tab answers on the other. Only
 // the engine's store differs from a browser's: the compose Postgres in place of SQLite on OPFS. ChatApi is the agent
@@ -15,10 +15,12 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import type { ThemeMode } from "../features/theme/contract"
 import { ThemeStore } from "../features/theme/store"
 import { Theme } from "../features/theme/theme"
-import { FlowDispatch, RemoteFlows } from "../flows/dispatch"
+import { FlowDispatch } from "../flows/dispatch"
 import { clientFlows } from "../flows/declarations"
 import { tabAnswers, tabEngine } from "../flows/engine"
+import { tabNavigation } from "../features/navigation/tab"
 import { workerRegistrations } from "../flows/registrations"
+import type { Endpoint } from "../flows/tabPort"
 import { ORIGIN } from "./agent"
 
 /**
@@ -29,6 +31,20 @@ export interface DeviceTelemetry {
   readonly tab?: Layer.Layer<never>
   readonly engine?: Layer.Layer<never>
 }
+
+/** A tab's navigation answers on engine `name`, recording where it went in `navigated`, as src/boot.ts composes them. */
+const navigation = (name: string, navigated: Array<string>) =>
+  tabNavigation({ name, origin: ORIGIN, navigate: (path) => void navigated.push(path) }).pipe(
+    Layer.provide(TabChannel.layer),
+  )
+
+/** An engine worker that never leads: a second tab's, waiting its turn. */
+const idleWorker = (): BrowserEngine.WorkerLike & Endpoint => ({
+  terminate: () => {},
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  postMessage: () => {},
+})
 
 /** A tab and its engine's leader, closed with `close`. */
 export const openDevice = async (fetch: typeof globalThis.fetch, telemetry: DeviceTelemetry = {}) => {
@@ -43,8 +59,9 @@ export const openDevice = async (fetch: typeof globalThis.fetch, telemetry: Devi
 
   // The engine worker: the leader over every client flow, reaching its tab through port1.
   const engine = BrowserRuntime.layer(
-    { name },
-    workerRegistrations(channel.port1, { origin: ORIGIN, partsEvery: "20 millis" }).pipe(Layer.provide(http)),
+    // The flows' own schemas render their runs' values for the run page (decision 0014 §3), as the worker's do.
+    { name, flows: clientFlows },
+    workerRegistrations(channel.port1, { origin: ORIGIN, name, partsEvery: "20 millis" }).pipe(Layer.provide(http)),
   ).pipe(Layer.provide(PostgresDatabase.layer({ url: url.toString(), driver: Pg, schema })))
   const leader = Effect.runFork(
     BrowserRuntime.serve({ name, flows: clientFlows }, engine).pipe(
@@ -72,20 +89,38 @@ export const openDevice = async (fetch: typeof globalThis.fetch, telemetry: Devi
     .pipe(
       Layer.provide(Persistence.memory),
     )
-  // As src/boot.ts composes it: the engine first, then the store, then the tab's answers to its worker.
+  // Where this tab's navigations went.
+  const navigated: Array<string> = []
+  // As src/boot.ts composes it: the engine first, then the store, then the tab's answers to its worker, then dispatch
+  // and the tab's navigation answers.
   const tab = Theme.layer.pipe(
+    Layer.provideMerge(navigation(name, navigated)),
     Layer.provideMerge(FlowDispatch.layer),
     Layer.provideMerge(tabAnswers),
     Layer.provideMerge(store),
     Layer.provideMerge(tabEngine(() => worker, name)),
-    Layer.provideMerge(RemoteFlows.layerHttp(ORIGIN)),
-    Layer.provide(http),
     Layer.provideMerge(telemetry.tab ?? Layer.empty),
   )
   const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(tab)))
 
+  /**
+   * Another tab of this device: dispatch and its navigation answers over the same engine, whose own worker never leads,
+   * as a second tab's waits its turn. Closed with the device.
+   */
+  const openTab = async () => {
+    const moved: Array<string> = []
+    const other = navigation(name, moved).pipe(
+      Layer.provideMerge(FlowDispatch.layer),
+      Layer.provideMerge(tabEngine(idleWorker, name)),
+    )
+    const built = await Effect.runPromise(Scope.provide(scope)(Layer.build(other)))
+    return { navigated: moved, dispatch: Context.get(built, FlowDispatch) }
+  }
+
   return {
     painted,
+    navigated,
+    openTab,
     terminated,
     theme: Context.get(context, Theme),
     dispatch: Context.get(context, FlowDispatch),

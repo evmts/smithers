@@ -45,6 +45,18 @@ const quiet = (answerId: string, seconds: number) =>
     ),
   )
 
+/** Dates when an answer was asked `seconds` ago, as for a question that waited in a long queue. */
+const askedAgo = (answerId: string, seconds: number) =>
+  runtime.runPromise(
+    Effect.flatMap(
+      SqlClient.SqlClient,
+      (sql) => sql`UPDATE messages SET created_at = now() - make_interval(secs => ${seconds}) WHERE id = ${answerId}`,
+    ),
+  )
+
+/** A `not_your_turn` refusal, with how long the turn has waited. */
+const notYourTurn = { code: "not_your_turn", waitedMs: expect.any(Number) }
+
 /** When an answer was last written, in epoch milliseconds. */
 const writtenAt = (answerId: string) =>
   runtime.runPromise(
@@ -91,7 +103,7 @@ describe("GET /api/answers/<id>: the turn", () => {
     const after = await turn(h, second)
     const settled = await turn(h, first)
 
-    expect([waiting.status, await waiting.json()]).toEqual([409, { code: "not_your_turn" }])
+    expect([waiting.status, await waiting.json()]).toEqual([409, notYourTurn])
     expect(after.status).toBe(200)
     expect([settled.status, await settled.json()]).toEqual([409, { code: "settled" }])
   })
@@ -109,7 +121,7 @@ describe("GET /api/answers/<id>: the turn", () => {
     const free = await turn(h, next)
 
     // Two's last write was within the bound, so it still held Three; then it was past it, and nothing held Three.
-    expect([held.status, await held.json()]).toEqual([409, { code: "not_your_turn" }])
+    expect([held.status, await held.json()]).toEqual([409, notYourTurn])
     expect(free.status).toBe(200)
     // The routes settle nothing and re-run nothing: the quiet answers stream until their devices return, or until
     // chat/Expire settles them (worker/flows/Expire.test.ts).
@@ -132,8 +144,61 @@ describe("GET /api/answers/<id>: the turn", () => {
 
     expect(waiting.status).toBe(409)
     expect(await writtenAt(second)).toBeGreaterThan(before)
-    expect([behind.status, await behind.json()]).toEqual([409, { code: "not_your_turn" }])
+    expect([behind.status, await behind.json()]).toEqual([409, notYourTurn])
     expect(now.status).toBe(200)
+  })
+
+  test("a waiting answer's turn requests mark it live at most once a third of the bound, so its row isn't rewritten on every poll", async () => {
+    const h = await open()
+    await ask(h, "One")
+    const second = await ask(h, "Two")
+    // Written within the last third of the bound: live enough, so a turn request writes nothing.
+    await quiet(second, AGENT_LIVE_SECONDS / 3 - 2)
+    const fresh = await writtenAt(second)
+
+    expect((await turn(h, second)).status).toBe(409)
+    expect((await turn(h, second)).status).toBe(409)
+    expect(await writtenAt(second)).toBe(fresh)
+
+    // Older than that: the next request marks it live, once.
+    await quiet(second, AGENT_LIVE_SECONDS / 3 + 1)
+    const stale = await writtenAt(second)
+    expect((await turn(h, second)).status).toBe(409)
+    const touched = await writtenAt(second)
+    expect((await turn(h, second)).status).toBe(409)
+
+    expect(touched).toBeGreaterThan(stale)
+    expect(await writtenAt(second)).toBe(touched)
+  })
+
+  test("a waiting answer's refusal says how long its turn has waited: since an earlier answer last settled, or since it was asked", async () => {
+    const h = await open()
+    const zero = await ask(h, "Zero")
+    await write(h, zero, { status: "done", text: "Yes.", parts: [] })
+    await ask(h, "One")
+    const two = await ask(h, "Two")
+    // Two was asked twenty minutes ago, behind a queue; Zero, the latest earlier answer to settle, settled 5 s ago.
+    await askedAgo(two, 20 * 60)
+    await quiet(zero, 5)
+    const sinceSettled = await turn(h, two)
+    // Zero settled thirty minutes ago, before Two was asked: Two has waited since it was asked.
+    await quiet(zero, 30 * 60)
+    const sinceAsked = await turn(h, two)
+
+    const waited = async (response: Response) => {
+      const body = (await response.json()) as { readonly code: string; readonly waitedMs: number }
+      expect([response.status, body.code]).toEqual([409, "not_your_turn"])
+      return body.waitedMs
+    }
+    const settledWait = await waited(sinceSettled)
+    const askedWait = await waited(sinceAsked)
+    expect(settledWait).toBeGreaterThanOrEqual(5_000)
+    expect(settledWait).toBeLessThan(60_000)
+    expect(askedWait).toBeGreaterThanOrEqual(20 * 60_000)
+    expect(askedWait).toBeLessThan(21 * 60_000)
+    expect(Number.isInteger(askedWait)).toBe(true)
+    // Each refusal's log line carries the waited time, so a tail that ran out can be told from a queue that stopped.
+    expect(h.line("chat.answer.turn").map((line) => line.annotations.waitedMs)).toEqual([settledWait, askedWait])
   })
 
   test("ANSWER_TURN_LIVE_SECONDS sets the bound: 30 seconds unless set, and a positive integer", async () => {
@@ -266,6 +331,68 @@ describe("who may write", () => {
     expect([written.status, await written.json()]).toEqual([403, { code: "forbidden" }])
     expect(await answerRow(runtime, answerId)).toMatchObject({ status: "streaming", text: "" })
     expect(refused.count(Answers.requests, { route: "write", status: "403" })).toBe(1)
+  })
+
+  test.each([
+    ["another Member", { subject: { kind: "person", id: "person-other-member" }, role: "member" } as Actor],
+    ["an Admin who didn't ask", { subject: { kind: "person", id: "person-admin" }, role: "admin" } as Actor],
+  ])("%s is refused 403 forbidden on both routes, and the asker's own settle still lands", async (_, other) => {
+    const asker = await open()
+    const answerId = await ask(asker, "Hello")
+    const forger = await open({ actor: other })
+
+    const read = await turn(forger, answerId)
+    const streamed = await write(forger, answerId, { status: "streaming", parts: [], text: "forged" })
+    const forged = await write(forger, answerId, { status: "done", text: "forged by B" })
+    const untouched = await answerRow(runtime, answerId)
+    const settled = await write(asker, answerId, { status: "done", text: "Hi." })
+    const afterSettle = await write(forger, answerId, { status: "done", text: "Hi." })
+
+    expect([read.status, await read.json()]).toEqual([403, { code: "forbidden" }])
+    expect([streamed.status, await streamed.json()]).toEqual([403, { code: "forbidden" }])
+    expect([forged.status, await forged.json()]).toEqual([403, { code: "forbidden" }])
+    expect(untouched).toMatchObject({ status: "streaming", text: "" })
+    expect(settled.status).toBe(200)
+    // Even a write that matches what landed is refused: whether the answer landed is the asker's to learn.
+    expect([afterSettle.status, await afterSettle.json()]).toEqual([403, { code: "forbidden" }])
+    expect(await answerRow(runtime, answerId)).toMatchObject({ status: "done", text: "Hi." })
+    expect(forger.only("chat.answer.turn").annotations).toMatchObject({ status: 403, errorCode: "not_asker" })
+  })
+
+  test("another Member's turn requests never mark a waiting answer live", async () => {
+    const asker = await open()
+    await ask(asker, "One")
+    const second = await ask(asker, "Two")
+    await quiet(second, AGENT_LIVE_SECONDS * 2)
+    const before = await writtenAt(second)
+    const forger = await open({ actor: { subject: { kind: "person", id: "person-other-member" }, role: "member" } })
+
+    expect((await turn(forger, second)).status).toBe(403)
+    expect(await writtenAt(second)).toBe(before)
+  })
+
+  test("an agent acting for the asker writes as the asker", async () => {
+    const asker = await open()
+    const answerId = await ask(asker, "Hello")
+    const agent = await open({ actor: { ...member, act: { kind: "agent", id: "agent-run-1" } } })
+
+    expect((await turn(agent, answerId)).status).toBe(200)
+    expect((await write(agent, answerId, { status: "done", text: "Hi." })).status).toBe(200)
+  })
+
+  test("an answer whose question records no asker is refused to everyone", async () => {
+    const h = await open()
+    const answerId = await ask(h, "Hello")
+    await runtime.runPromise(
+      Effect.flatMap(
+        SqlClient.SqlClient,
+        (sql) =>
+          sql`UPDATE messages SET asked_by = NULL WHERE id = (SELECT question_id FROM messages WHERE id = ${answerId})`,
+      ),
+    )
+
+    expect((await turn(h, answerId)).status).toBe(403)
+    expect((await write(h, answerId, { status: "done", text: "Hi." })).status).toBe(403)
   })
 })
 

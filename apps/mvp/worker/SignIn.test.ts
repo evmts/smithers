@@ -8,6 +8,8 @@ import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
 import type { SessionState } from "../src/features/auth/contract.ts"
+import * as Flows from "./Flows.ts"
+import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
 import * as SessionKeys from "./SessionKeys.ts"
 import * as SignIn from "./SignIn.ts"
 import { localDeveloper } from "./DevChatApi.ts"
@@ -426,14 +428,125 @@ describe("signing out", () => {
     // The old cookie, replayed, is nobody.
     expect(await h.session(cookies)).toEqual({ signedIn: false, available: true })
     expect(h.count({ route: "sign_out", outcome: "signed_out" })).toBe(1)
-    // Signing out again finds no session.
+    // Signing out again while its tokens wait for the flow starts the same execution again, a no-op on the host.
+    const signOut = () =>
+      h.fetch("/api/auth/sign-out", {
+        method: "POST",
+        headers: { "sec-fetch-site": "same-origin", cookie: cookie(cookies) },
+      })
+    expect((await signOut()).status).toBe(204)
+    expect(h.revocations).toEqual([session!.id, session!.id])
+    // Once the flow forgot its tokens, signing out again finds nothing to do.
+    await query((sql) => sql`UPDATE sessions SET github_access = NULL, github_refresh = NULL`)
+    expect((await signOut()).status).toBe(204)
+    expect(h.count({ route: "sign_out", outcome: "no_session" })).toBe(1)
+    expect(h.revocations).toHaveLength(2)
+  })
+
+  // Sign-out is acknowledged only once its durable flow is admitted: the flow ends the session and revokes its GitHub
+  // token, so a start the host refused can't leave tokens nothing will revoke (Codex review 4, P2).
+  test.each([
+    ["unavailable", new Flows.StartUnavailable({ errorCode: "rpc" }), "rpc"],
+    ["a conflict", new Flows.StartConflict(), "conflict"],
+  ])("a sign-out whose flow can't start (%s) is 503 and keeps the session; signing out again starts it", async (_, error, code) => {
+    let refuse = true
+    const started: Array<{ readonly flow: string; readonly executionId: string; readonly payload: unknown }> = []
+    const h = await signInHarness(runtime, {
+      starter: Flows.FlowStarter.of({
+        start: (flow, { executionId, payload }) =>
+          refuse ? Effect.fail(error) : Effect.sync(() => void started.push({ flow: flow._tag, executionId, payload })),
+      }),
+    })
+    const { cookies } = await h.signInAs()
+    const signOut = () =>
+      h.fetch("/api/auth/sign-out", { method: "POST", headers: { origin: "http://smithers.test", cookie: cookie(cookies) } })
+
+    const refused = await signOut()
+
+    expect(refused.status).toBe(503)
+    expect(setCookies(refused)["smithers_session"]).toBeUndefined()
+    expect((await sessionRows())[0]!.revokedAt).toBeNull()
+    expect(await h.session(cookies)).toMatchObject({ signedIn: true })
+    expect(h.count({ route: "sign_out", outcome: "failed", reason: "not_started" })).toBe(1)
+    expect(h.line("auth.sign_out").at(-1)!.annotations).toMatchObject({ errorCode: code })
+
+    refuse = false
+    const signedOut = await signOut()
+
+    expect(signedOut.status).toBe(204)
+    const [session] = await sessionRows()
+    expect(session!.revokedReason).toBe("sign_out")
+    expect(started).toEqual([
+      {
+        flow: "auth/RevokeGitHubToken",
+        executionId: RevokeGitHubToken.revokeExecutionId(session!.id),
+        payload: { sessionId: session!.id },
+      },
+    ])
+  })
+
+  test("a session signed out whose GitHub token nothing revoked is revoked by signing out again", async () => {
+    const h = await signInHarness(runtime)
+    const { cookies } = await h.signInAs()
+    // Signed out before sign-out waited for its flow: the session ended, its tokens kept, and no flow started.
+    await query((sql) => sql`UPDATE sessions SET revoked_at = now(), revoked_reason = 'sign_out'`)
+    const [session] = await sessionRows()
+
     const again = await h.fetch("/api/auth/sign-out", {
       method: "POST",
-      headers: { "sec-fetch-site": "same-origin", cookie: cookie(cookies) },
+      headers: { origin: "http://smithers.test", cookie: cookie(cookies) },
     })
+
     expect(again.status).toBe(204)
-    expect(h.count({ route: "sign_out", outcome: "no_session" })).toBe(1)
-    expect(h.revocations).toHaveLength(1)
+    expect(h.revocations).toEqual([session!.id])
+    expect(h.count({ route: "sign_out", outcome: "signed_out" })).toBe(1)
+  })
+
+  test("signing in again whose sign-out can't start fails before GitHub, keeping the session it held", async () => {
+    let refuse = true
+    const h = await signInHarness(runtime, {
+      starter: Flows.FlowStarter.of({
+        start: () => refuse ? Effect.fail(new Flows.StartUnavailable({ errorCode: "rpc" })) : Effect.void,
+      }),
+    })
+    const first = await h.signInAs()
+    const again = async () => {
+      const started = await h.start()
+      const { code, state } = h.github.approve(started.location)
+      return h.callback({ code, state }, { smithers_sign_in: started.cookies["smithers_sign_in"]!.value, ...first.cookies })
+    }
+
+    const failed = await again()
+
+    expect(failed.headers.get("location")).toBe("/app?sign_in=failed")
+    expect(h.github.calls.filter((step) => step === "exchange")).toHaveLength(1)
+    expect((await sessionRows()).map((row) => row.revokedAt)).toEqual([null])
+    expect(h.count({ route: "callback", outcome: "failed", reason: "sign_out_not_started" })).toBe(1)
+
+    refuse = false
+    expect((await again()).headers.get("location")).toBe("/app")
+    expect((await sessionRows()).map((row) => row.revokedReason)).toEqual(["sign_out", null])
+  })
+
+  test("signing in again while Postgres can't read the session it held fails before GitHub", async () => {
+    const h = await signInHarness(runtime)
+    const first = await h.signInAs()
+    const started = await h.start()
+    const { code, state } = h.github.approve(started.location)
+    await query((sql) => sql`ALTER TABLE sessions RENAME TO sessions_away`)
+    try {
+      const failed = await h.callback({ code, state }, {
+        smithers_sign_in: started.cookies["smithers_sign_in"]!.value,
+        ...first.cookies,
+      })
+
+      expect(failed.headers.get("location")).toBe("/app?sign_in=failed")
+      expect(h.github.calls.filter((step) => step === "exchange")).toHaveLength(1)
+      expect(h.count({ route: "callback", outcome: "failed", reason: "database" })).toBe(1)
+      expect(h.revocations).toEqual([])
+    } finally {
+      await query((sql) => sql`ALTER TABLE sessions_away RENAME TO sessions`)
+    }
   })
 
   test("refuses a sign-out another site sent", async () => {

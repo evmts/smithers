@@ -4,6 +4,10 @@ import { describe, expect, test } from "vitest"
 import {
   blobRoute,
   cloneExecutionId,
+  cloneUrl,
+  githubRawUrl,
+  rawRoute,
+  refsRoute,
   isFilePath,
   isRepository,
   MAX_PATH_LENGTH,
@@ -34,6 +38,15 @@ describe("the repository contract", () => {
   test("routes encode each part, keeping a path's slashes", () => {
     expect(treeRoute("o", "n", "a".repeat(40))).toBe(`/api/repos/o/n/tree/${"a".repeat(40)}`)
     expect(blobRoute("o", "n.x", "b".repeat(40), "docs/a b#.md")).toBe(`/api/repos/o/n.x/blob/${"b".repeat(40)}/docs/a%20b%23.md`)
+    expect(rawRoute("o", "n.x", "b".repeat(40), "docs/a b#.md")).toBe(`/api/repos/o/n.x/raw/${"b".repeat(40)}/docs/a%20b%23.md`)
+    expect(refsRoute("o", "n.x")).toBe("/api/repos/o/n.x/refs")
+  })
+
+  test("a clone's URL and a large file's raw bytes are GitHub's", () => {
+    expect(cloneUrl("octocat", "Spoon-Knife")).toBe("https://github.com/octocat/Spoon-Knife.git")
+    expect(githubRawUrl("octocat", "Spoon-Knife", "c".repeat(40), "big file.txt")).toBe(
+      `https://github.com/octocat/Spoon-Knife/raw/${"c".repeat(40)}/big%20file.txt`,
+    )
   })
 
   test("text is UTF-8 with no NUL in its first 8 KiB; anything else is binary", () => {

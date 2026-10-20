@@ -1,0 +1,71 @@
+import { formFieldsFor, type SlashCommand } from "@smthrs/ui"
+import { type Entry, entryOf, type FlowName, type Minimum, names } from "../../flows/registry"
+import type { Role } from "../auth/contract"
+
+// The slash commands (docs/features/slash-commands.md): every registered flow with a slash door, in the registry's
+// order, and the ones a person may run. A command is its flow's own declaration seen from the composer: its row shows
+// the flow's description and its arguments are the flow's payload, so `/theme dark` runs the very `app/theme/set` the
+// theme button and the agent run. Roles only hint here (decision 0007 §3); a flow that writes shared state checks
+// again on the server.
+
+/** A slash command: its name, row and arguments, the registered flow it runs, and the least a person must be. */
+export interface Command extends SlashCommand {
+  readonly flow: FlowName
+  readonly minimum: Minimum
+}
+
+/** A description's first sentence: what a menu row shows. The rest is for the agent. */
+export const summary = (description: string): string => {
+  const trimmed = description.trim()
+  return /^[\s\S]*?[.!?](?=\s|$)/.exec(trimmed)?.[0] ?? trimmed
+}
+
+/**
+ * The commands of `registered`, registry entries by name, in its order. A flow with no description shows none. A slash
+ * door that names its `fields` takes those, in its order; the rest of the payload keeps its defaults.
+ */
+export const commandsOf = (registered: ReadonlyArray<readonly [FlowName, Entry]>): ReadonlyArray<Command> =>
+  registered.flatMap(([name, { flow, slash }]) => {
+    if (slash === undefined) return []
+    const fields = formFieldsFor(flow.payloadSchema, slash.hints)
+    return [{
+      name: slash.command,
+      flow: name,
+      minimum: slash.minimum,
+      description: summary(flow.description ?? ""),
+      fields: slash.fields === undefined
+        ? fields
+        : slash.fields.flatMap((field) => fields.filter((candidate) => candidate.name === field)),
+    }]
+  })
+
+/** Every slash command the registry declares. */
+export const COMMANDS: ReadonlyArray<Command> = commandsOf(names.map((name) => [name, entryOf(name)]))
+
+/** Who is at the composer: signed in or not, and their role on the repository, `null` for none. */
+export interface Viewer {
+  readonly signedIn: boolean
+  readonly role: Role | null
+}
+
+const RANKS = { anyone: 0, guest: 1, member: 2, maintainer: 3, admin: 4 } as const satisfies Record<Minimum, number>
+
+/** What a viewer counts as: anyone when signed out, a Guest when signed in with no role (decision 0007 §1), else the role. */
+export const rankOf = (viewer: Viewer): number => (viewer.signedIn ? RANKS[viewer.role ?? "guest"] : RANKS.anyone)
+
+/** The commands `viewer` may run, of `commands`. */
+export const commandsFor = (viewer: Viewer, commands: ReadonlyArray<Command> = COMMANDS): ReadonlyArray<Command> =>
+  commands.filter((command) => rankOf(viewer) >= RANKS[command.minimum])
+
+/**
+ * Who is at the composer, as sign-in knows it: what ChatApi said, and while it hasn't said or can't be reached, the
+ * session it last confirmed on this device, as `composerAccess` reads them (src/features/auth/contract.ts).
+ */
+export const viewerOf = (
+  session: { readonly status: "loading" | "signed_in" | "signed_out" | "unreachable"; readonly role: Role | null },
+  confirmed: { readonly role: Role | null } | undefined,
+): Viewer => {
+  if (session.status === "signed_in") return { signedIn: true, role: session.role }
+  if (session.status === "signed_out" || confirmed === undefined) return { signedIn: false, role: null }
+  return { signedIn: true, role: confirmed.role }
+}

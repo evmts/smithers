@@ -1,3 +1,4 @@
+import { FLOW_DRAFTS_TABLE, FLOWS_TABLE } from "../features/flows-ui/contract"
 import { ImmutableCache } from "@smthrs/artifacts"
 import { Model, ModelError, type ModelEvent, type ModelRequest } from "@smthrs/model"
 import { ShapeSource } from "@smthrs/effect-electric"
@@ -16,17 +17,24 @@ import {
   Metric,
   Option,
   Queue,
+  Redacted,
   Schedule,
   Stream,
   Tracer,
 } from "effect"
-import { FetchHttpClient, HttpEffect, HttpServerRequest } from "effect/http"
+import { FetchHttpClient, type HttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../../worker/Actor.ts"
 import * as Chat from "../../worker/Chat.ts"
 import * as Flows from "../../worker/Flows.ts"
 import * as RepoApi from "../../worker/RepoApi.ts"
+import * as BranchApi from "../../worker/branch/BranchApi.ts"
+import { Forge } from "../../worker/branch/Forge.ts"
+import { TerminalSockets } from "../../worker/branch/Sandboxes.ts"
+import * as GitHubApi from "../../worker/github/Api.ts"
+import { repositoryOf } from "../../worker/github/Config.ts"
+import { type GitHost, gitHost, type Sockets, terminalSockets } from "../../worker/test/branch.ts"
 import { Outbox } from "@smthrs/effect-tanstack-db"
 import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
 import { BrowserEngine, BrowserRuntime, StoragePersistence, TabChannel, WebLock } from "@smthrs/platform-browser"
@@ -39,6 +47,11 @@ import { type AppOptions, appLayer, type Host, realServices } from "../boot"
 import { faultyServices } from "./faults"
 import { LOCAL_ELECTRIC_URL, MESSAGES_TABLE, QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "../features/chat/contract"
 import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE, REPOSITORIES_TABLE } from "../features/repo/contract"
+import { RUNS_TABLE } from "../features/status/contract"
+import { COMMENTS_TABLE, ITEMS_TABLE, SYNC_TABLE, WRITES_TABLE } from "../features/issues/contract"
+import type { IssuesClient } from "../features/issues/api"
+import { VIEWS_TABLE } from "../features/views/contract"
+import { TERMINALS_TABLE } from "../features/terminal/contract"
 import type { ThemeMode } from "../features/theme/contract"
 import { clientFlows } from "../flows/declarations"
 import { workerRegistrations } from "../flows/registrations"
@@ -68,15 +81,50 @@ export interface Reply {
   readonly done: () => void
   /** Ends the stream with a model error the agent doesn't retry: the answer settles failed, `model_error`. */
   readonly fail: () => void
+  /** Answers with one whole cell of `source`, such as a flow call, then reports usage and stops. */
+  readonly cell: (source: string) => void
 }
+
+/** Where a test ChatApi answers: the browser's origin in these tests. */
+export const CHATAPI_ORIGIN = "http://chatapi.test"
 
 /** A signed-in person with the Member role: who every request to a test ChatApi is, unless it is opened signed out. */
 export const member: Actor.Actor = { subject: { kind: "person", id: "person-member" }, role: "member" }
 
-/** How a test ChatApi is opened: who every request is signed in as, `member` unless set, or nobody (`null`). */
+/** The repository a test ChatApi's git loop syncs and writes to (`GITHUB_REPOSITORY`). */
+export const TEST_REPOSITORY = "octo/hello"
+
+/**
+ * How a test ChatApi is opened: who every request is signed in as, `member` unless set, or nobody (`null`); and the
+ * origin it answers on, `CHATAPI_ORIGIN` unless set. A test whose tab must reach a real local server at the app's
+ * origin, such as a terminal's socket, sets that server's.
+ */
 export interface ChatApiOptions {
   readonly actor?: Actor.Actor | null
+  readonly origin?: string
 }
+
+/** A remote flow a route started: the git loop's routes start them, and no remote host runs here. */
+export interface Started {
+  readonly flow: string
+  readonly executionId: string
+  readonly payload: unknown
+}
+
+/** The tables whose shapes the test's Electric reads from the ChatApi's own schema. */
+const SCHEMA_TABLES: ReadonlySet<string> = new Set([
+  MESSAGES_TABLE,
+  REPOSITORIES_TABLE,
+  VIEWS_TABLE,
+  RUNS_TABLE,
+  ITEMS_TABLE,
+  COMMENTS_TABLE,
+  WRITES_TABLE,
+  SYNC_TABLE,
+  FLOWS_TABLE,
+  FLOW_DRAFTS_TABLE,
+  TERMINALS_TABLE,
+])
 
 /** A Postgres schema for one device's engine store, and where the device keeps the engine's leaders. */
 export interface EngineStore {
@@ -93,10 +141,11 @@ export class TestChatApi extends Context.Service<
     /** The browser's way to ChatApi: each request handed to the handler in this process. */
     readonly fetch: typeof globalThis.fetch
     /**
-     * The scripted answer to the first model request whose prompt includes `question`, once the agent asks the model
-     * through ChatApi's model endpoint. The agent's prompt wraps the question with the conversation before it.
+     * The scripted answer to the first model request whose prompt includes `question` (the `nth`, from 0, when set),
+     * once the agent asks the model through ChatApi's model endpoint. The agent's prompt wraps the question with the
+     * conversation before it.
      */
-    readonly answerTo: (question: string) => Effect.Effect<Reply>
+    readonly answerTo: (question: string, nth?: number) => Effect.Effect<Reply>
     /** How many model requests the agent made whose prompt includes `question`. */
     readonly modelRequests: (question: string) => number
     /** The status of every answer to `POST /api/questions` the browser got, in order. */
@@ -117,6 +166,29 @@ export class TestChatApi extends Context.Service<
      * every leader kept on it, goes when this ChatApi closes.
      */
     readonly engineStore: () => EngineStore
+    /**
+     * The git loop (worker/github/Api.ts) for `TEST_REPOSITORY`, with a GitHub App configured: every remote flow its
+     * routes started (`starts`), and its Postgres, where a test writes what a remote flow would (`run`).
+     */
+    readonly github: {
+      readonly starts: ReadonlyArray<Started>
+      readonly run: <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => Effect.Effect<A>
+    }
+    /**
+     * The branch workspace's routes (worker/branch/BranchApi.ts), as ChatApi routes them: the forge is GitHub, read with
+     * no credential (`Forge.gitHub`), and GitHub is the scripted git host `github` (worker/test/branch.ts). No remote host
+     * runs here, so each `terminal/Open` a route starts is recorded in `starts`, never run, and a test settles the
+     * terminal's row itself, as the remote flow does, through `run`. The branches' machines are a test
+     * `TerminalSockets` (`sockets`), standing in for the Cloudflare Durable Object binding. `refuseStarts(n)` makes the
+     * next `n` starts fail as unavailable, as a Durable Object ChatApi can't reach does.
+     */
+    readonly branches: {
+      readonly github: GitHost
+      readonly starts: ReadonlyArray<Started>
+      readonly sockets: Sockets
+      readonly refuseStarts: (count: number) => void
+      readonly run: <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => Effect.Effect<A>
+    }
   }
 >()("@smthrs/mvp/test/TestChatApi") {
   /** ChatApi on a scratch schema, every request signed in as `options.actor`: `member` unless set. */
@@ -200,26 +272,75 @@ export class TestChatApi extends Context.Service<
         )
         const repoCache = yield* Layer.build(ImmutableCache.layerMemory())
 
-        // Electric, as ChatApi calls it: the table in this schema.
+        // The git loop, as ChatApi routes it (worker/ChatApi.ts), with a GitHub App configured: no remote host runs
+        // here, so a write's `github/Write` and a stale read's `github/Reconcile` are recorded in `starts`, never run. A
+        // test writes their rows itself, through `github.run`.
+        const repository = repositoryOf(TEST_REPOSITORY)
+        const github = yield* GitHubApi.make(database, {
+          repository,
+          app: Option.some({
+            appId: "1",
+            privateKey: Redacted.make("no key"),
+            webhookSecret: Option.none(),
+            repository,
+            apiBaseUrl: "http://github.test",
+          }),
+        }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
+        const starts: Array<Started> = []
+        const recording = Flows.FlowStarter.of({
+          start: (flow, { executionId, payload }) => Effect.sync(() => void starts.push({ flow: flow._tag, executionId, payload })),
+        })
+
+        // The branch workspace, as ChatApi routes it (worker/ChatApi.ts): branches read from the scripted GitHub, each
+        // `terminal/Open` recorded and never run, and a test `TerminalSockets` for the branches' machines.
+        const branchApi = yield* BranchApi.make(database).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
+        const branchGitHub = gitHost()
+        const sockets = terminalSockets()
+        const branchStarts: Array<Started> = []
+        let refusing = 0
+        const branchStarter = Flows.FlowStarter.of({
+          start: (flow, { executionId, payload }) =>
+            Effect.suspend(() => {
+              if (refusing > 0) {
+                refusing -= 1
+                return Effect.fail(new Flows.StartUnavailable({ errorCode: "no_remote_host" }))
+              }
+              branchStarts.push({ flow: flow._tag, executionId, payload })
+              return Effect.void
+            }),
+        })
+
+        // Electric, as ChatApi calls it: the table in this schema. The forge's reads go to the scripted GitHub.
         const electric: typeof globalThis.fetch = (input, init) => {
           const upstream = new URL(input instanceof Request ? input.url : String(input))
+          if (upstream.hostname === "github.com") return branchGitHub.fetch(input, init)
           const table = upstream.searchParams.get("table")
-          if (table === MESSAGES_TABLE || table === REPOSITORIES_TABLE) {
-            upstream.searchParams.set("table", `${schema}.${table}`)
-          }
+          if (table !== null && SCHEMA_TABLES.has(table)) upstream.searchParams.set("table", `${schema}.${table}`)
           return globalThis.fetch(upstream, init)
         }
 
+        // ChatApi acknowledges an ask only once its answer's expiry started, so the chat routes' host takes every start,
+        // as a Durable Object would, and runs none: no answer here lives 25 minutes.
+        const expiries = Flows.FlowStarter.of({ start: () => Effect.void })
+
         const routed = Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
           const path = request.url.split("?")[0]!
+          if (BranchApi.handles(path)) {
+            return branchApi.fetch.pipe(
+              Effect.provideService(Flows.FlowStarter, branchStarter),
+              Effect.provideService(TerminalSockets, sockets.service),
+              Effect.provide(Forge.gitHub),
+            )
+          }
+          if (GitHubApi.handles(path)) return github.fetch.pipe(Effect.provideService(Flows.FlowStarter, recording))
           return path === REPOS_ROUTE || path.startsWith(`${REPOS_ROUTE}/`) || path === REPOSITORIES_SHAPE_ROUTE
             ? Effect.provideContext(repos.fetch, repoCache)
-            : chat.fetch
+            : chat.fetch.pipe(Effect.provideService(Flows.FlowStarter, expiries))
         })
 
         const handler = HttpEffect.toWebHandler(
           routed.pipe(
-            // No remote host runs here: the door refuses every start as unavailable.
+            // No remote host runs here: every other remote start (a clone) is refused as unavailable.
             Effect.provideService(Flows.FlowStarter, Flows.FlowStarter.of({
               start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "no_remote_host" })),
             })),
@@ -233,7 +354,7 @@ export class TestChatApi extends Context.Service<
 
         let reloads = 0
         const telemetry: Array<{ path: string; body: string }> = []
-        const origin = "http://chatapi.test"
+        const origin = options.origin ?? CHATAPI_ORIGIN
         const postQuestion = (body: unknown) =>
           handler(
             new Request(`${origin}${QUESTIONS_ROUTE}`, {
@@ -257,8 +378,10 @@ export class TestChatApi extends Context.Service<
           return response
         }
 
-        const answerTo = (question: string) =>
-          Effect.sync(() => Option.fromUndefinedOr(requests.find((request) => request.question.includes(question)))).pipe(
+        const answerTo = (question: string, nth = 0) =>
+          Effect.sync(() =>
+            Option.fromUndefinedOr(requests.filter((request) => request.question.includes(question))[nth])
+          ).pipe(
             Effect.flatMap(Option.match({ onNone: () => Effect.fail("not asked yet"), onSome: Effect.succeed })),
             // Up to 20 s: the agent asks once its engine leads and its turn comes, later on a loaded machine.
             Effect.retry({ schedule: Schedule.spaced("10 millis"), times: 2_000 }),
@@ -286,6 +409,12 @@ export class TestChatApi extends Context.Service<
                 done: () => {
                   open()
                   delta("\")\n```")
+                  Queue.offerUnsafe(events, { type: "usage", inputTokens: 10, outputTokens: 20 })
+                  Queue.offerUnsafe(events, { type: "settle", stopReason: "stop" })
+                  Queue.endUnsafe(events)
+                },
+                cell: (source) => {
+                  delta("```cell\n" + source + "\n```")
                   Queue.offerUnsafe(events, { type: "usage", inputTokens: 10, outputTokens: 20 })
                   Queue.offerUnsafe(events, { type: "settle", stopReason: "stop" })
                   Queue.endUnsafe(events)
@@ -329,6 +458,19 @@ export class TestChatApi extends Context.Service<
             stores.push(store)
             return { url: server, schema: store, keep: (leader) => void leaders.push(leader) }
           },
+          github: {
+            starts,
+            run: (effect) => effect.pipe(Effect.provide(database), Effect.orDie),
+          },
+          branches: {
+            github: branchGitHub,
+            starts: branchStarts,
+            sockets,
+            refuseStarts: (count) => {
+              refusing = count
+            },
+            run: (effect) => effect.pipe(Effect.provide(database), Effect.orDie),
+          },
         })
       }),
     )
@@ -340,7 +482,10 @@ export class TestChatApi extends Context.Service<
 // Each tab counts into its own registry, so one test's metrics never leak into another's.
 const ownMetrics = () => Layer.succeed(Metric.MetricRegistry, new Map())
 
-/** What `nodeDevice` adds to a `Host`: what its device stored, what its theme painted, and what it copied. */
+/**
+ * What `nodeDevice` adds to a `Host`: what its device stored, what its theme painted, what it copied, and where its tabs
+ * went.
+ */
 export interface NodeDevice extends Host {
   /** How many rows the device's SQLite file holds for `collection`. */
   readonly stored: (collection: string) => number
@@ -348,6 +493,8 @@ export interface NodeDevice extends Host {
   readonly painted: ReadonlyArray<ThemeMode>
   /** Every text written to this device's clipboard, in order. */
   readonly copied: ReadonlyArray<string>
+  /** Every path this device's tabs navigated to, in order. */
+  readonly navigated: ReadonlyArray<string>
 }
 
 /** A device's own overrides of the host, and `agent`: the ChatApi whose questions its engine answers. */
@@ -360,8 +507,21 @@ export type DeviceOptions = Partial<Host> & {
   readonly agent?: TestChatApi["Service"]
 }
 
+/**
+ * An engine worker whose module fails to load: it reports an error it didn't catch, once its tab listens, so the tab
+ * has no engine, for good. The shape the tab's engine expects: a Worker's.
+ */
+export const failingWorker = (): BrowserEngine.WorkerLike & Endpoint =>
+  ({
+    postMessage: () => {},
+    addEventListener: (type: string, listener: (event: ErrorEvent) => void) =>
+      void (type === "error" && queueMicrotask(() => listener({} as ErrorEvent))),
+    removeEventListener: () => {},
+    terminate: () => {},
+  }) as never
+
 /** An engine worker that never leads: what a tab dispatches waits until its scope closes. */
-const idleWorker = (): BrowserEngine.WorkerLike & Endpoint => ({
+export const idleWorker = (): BrowserEngine.WorkerLike & Endpoint => ({
   terminate: () => {},
   addEventListener: () => {},
   removeEventListener: () => {},
@@ -380,8 +540,9 @@ const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineSt
   channel.port2.start()
   const http = Layer.provide(FetchHttpClient.layer, Layer.succeed(FetchHttpClient.Fetch, api.fetch))
   const engine = BrowserRuntime.layer(
-    { name },
-    workerRegistrations(channel.port1, { origin: api.origin, partsEvery: "20 millis" }).pipe(Layer.provide(http)),
+    // The flows' own schemas render their runs' values for the run page (decision 0014 §3), as the worker's do.
+    { name, flows: clientFlows },
+    workerRegistrations(channel.port1, { origin: api.origin, name, partsEvery: "20 millis" }).pipe(Layer.provide(http)),
   ).pipe(
     Layer.provide(
       PostgresDatabase.layer({
@@ -420,7 +581,7 @@ const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineSt
  * A device in Node, as main.tsx's host is a browser's: its store is a SQLite file through TanStack DB's own browser
  * persistence (node:sqlite in place of OPFS), its outbox's storage a map in memory (in place of IndexedDB), led
  * through @smthrs/platform-browser's Web Lock service over Node's own Web Locks, and always online. Its theme paints
- * into `painted`, and the system is light; its clipboard keeps what is copied in `copied`. Its engine has a name of its own; its tabs' workers never lead unless the
+ * into `painted`, and the system is light; its clipboard keeps what is copied in `copied`, and its tabs' navigations go to `navigated`. Its engine has a name of its own; its tabs' workers never lead unless the
  * device runs its `agent`. A tab opened again on the same device is a reload: it restores what the last one stored.
  * Each device has its own locks, as each browser has its own Web Locks.
  */
@@ -438,12 +599,14 @@ export const nodeDevice = ({ agent, ...overrides }: DeviceOptions = {}): NodeDev
   const locks = navigator.locks
   const painted: Array<ThemeMode> = []
   const copied: Array<string> = []
+  const navigated: Array<string> = []
   const engineName = `${device}-engine`
+  const turn = deviceTurn()
   return {
     // As main.tsx's: one database per device, shared by its tabs through TanStack DB's coordinator, which Node runs on
     // its own Web Locks and BroadcastChannel.
     persistence: {
-      open: () => sqliteFile(path),
+      open: () => sqliteFile(path, turn),
       make: (database, coordinator) => createBrowserWASQLitePersistence({ database, ...(coordinator ? { coordinator } : {}) }),
       coordinator: () => new BrowserCollectionCoordinator({ dbName: device }),
     },
@@ -460,6 +623,9 @@ export const nodeDevice = ({ agent, ...overrides }: DeviceOptions = {}): NodeDev
     storage: StoragePersistence.make({ persist: () => Promise.resolve(true) }),
     theme: { paint: (mode) => void painted.push(mode), mirror: () => {}, system: () => "light", painted: () => painted.at(-1) },
     clipboard: async (text) => void copied.push(text),
+    navigate: (path) => void navigated.push(path),
+    // No person's click or key reaches a test device, so no tab opens from one; a test of the gesture gives its own.
+    web: { policy: { localHttp: false, appOrigin: CHATAPI_ORIGIN }, openTab: () => false },
     engineWorker: agent === undefined ? idleWorker : leaderWorker(agent, engineName, agent.engineStore()),
     engineName,
     // Sign-out's wipe: the device's SQLite file goes, and its outbox empties. The browser's reloads and deletes its
@@ -472,6 +638,7 @@ export const nodeDevice = ({ agent, ...overrides }: DeviceOptions = {}): NodeDev
     stored: (collection) => storedRows(path, collection),
     painted,
     copied,
+    navigated,
   }
 }
 
@@ -496,41 +663,81 @@ const storedRows = (path: string, collection: string): number => {
   }
 }
 
-/** A SQLite file in Node, as TanStack DB's browser persistence reads a database; each tab opens its own connection. */
-const sqliteFile = (path: string) => {
+/**
+ * One device's turn at its SQLite file, as a browser's tabs take turns at `SharedSqlite`'s leader: one statement at a
+ * time, and a transaction a tab opens is the tab's alone until a statement ends it; another tab's statement waits. Without
+ * it, two tabs' transactions on one file can deadlock, and SQLite answers one `database is locked` at once.
+ */
+const deviceTurn = () => {
+  let holder: object | undefined
+  let waiting: Array<() => void> = []
+  return {
+    take: async (tab: object) => {
+      while (holder !== undefined && holder !== tab) await new Promise<void>((resume) => waiting.push(resume))
+      holder = tab
+    },
+    give: (tab: object) => {
+      if (holder !== tab) return
+      holder = undefined
+      const resumed = waiting
+      waiting = []
+      for (const resume of resumed) resume()
+    },
+  }
+}
+
+/**
+ * A SQLite file in Node, as TanStack DB's browser persistence reads a database: each tab opens its own connection, and
+ * takes the device's `turn` for each statement, holding it while its transaction is open.
+ */
+const sqliteFile = (path: string, turn: ReturnType<typeof deviceTurn>) => {
   const database = new DatabaseSync(path, { timeout: 5_000 })
+  const tab = {}
   return {
     execute: async <T>(sql: string, params: ReadonlyArray<unknown> = []): Promise<ReadonlyArray<T>> => {
-      const statement = database.prepare(sql)
-      if (statement.columns().length > 0) return statement.all(...(params as Array<SQLInputValue>)) as Array<T>
-      statement.run(...(params as Array<SQLInputValue>))
-      return []
+      await turn.take(tab)
+      try {
+        const statement = database.prepare(sql)
+        if (statement.columns().length > 0) return statement.all(...(params as Array<SQLInputValue>)) as Array<T>
+        statement.run(...(params as Array<SQLInputValue>))
+        return []
+      } finally {
+        if (!database.isTransaction) turn.give(tab)
+      }
     },
-    close: () => database.close(),
+    close: () => {
+      database.close()
+      turn.give(tab)
+    },
   }
 }
 
 /**
  * A tab's deadlines, sync policy, page size and device (`AppOptions`). Without `host`, a device of its own, which runs
- * its agent (`nodeDevice`'s `agent`) when `answers` is set.
+ * its agent (`nodeDevice`'s `agent`), as a browser's leading engine worker does, unless `answers` is `false`: then its
+ * engine never leads, so a question it sends waits for a run to be recorded and nothing after it is sent.
  */
-export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">> & { readonly answers?: boolean }
+export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">> & {
+  readonly answers?: boolean
+  /** A client in place of the real one, for an unhappy path: a faulty `IssuesClient` (test.faults-by-injection). */
+  readonly replace?: Layer.Layer<IssuesClient, never, HttpClient.HttpClient>
+}
 
 /** Switches a faulty tab throws on its shape source before it syncs. */
 export type StartFaults = (switches: ShapeSource.Switches) => Effect.Effect<void>
 
-const app = (api: TestChatApi["Service"], { answers, host, ...options }: TabOptions): AppOptions => ({
+const app = (api: TestChatApi["Service"], { answers, host, replace: _replace, ...options }: TabOptions): AppOptions => ({
   ...options,
   origin: api.origin,
   fetch: api.fetch,
   reload: api.reload,
-  host: host ?? nodeDevice(answers === true ? { agent: api } : {}),
+  host: host ?? nodeDevice(answers === false ? {} : { agent: api }),
 })
 
 /** The browser app on `api` (`appLayer`, as main.tsx's `start` builds it), with the real services. */
 export const tabLayer = (api: TestChatApi["Service"], options: TabOptions = {}) => {
   const tab = app(api, options)
-  return appLayer(tab, realServices(tab))
+  return appLayer(tab, Layer.merge(realServices(tab), options.replace ?? Layer.empty))
 }
 
 /** The browser app on `api` with the faulty services and their switches (src/test/faults.ts). */

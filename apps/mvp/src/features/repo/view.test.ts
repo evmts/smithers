@@ -1,8 +1,19 @@
 import { describe, expect, test } from "vitest"
 import { CAPACITY_COPY, FAILURE_COPY, SIGN_IN_TO_CLONE } from "./contract"
-import type { CloneRow } from "./rows"
+import type { BlobRow, CloneRow } from "./rows"
 import type { Repository } from "./schema"
-import { capacityText, commitOf, fileProps, formatBytes, headerOf, parseTimestamp, treeProps } from "./view"
+import {
+  capacityText,
+  commitOf,
+  fileLinksOf,
+  fileProps,
+  formatBytes,
+  headerOf,
+  parseTimestamp,
+  refsProps,
+  revisionLabel,
+  treeProps,
+} from "./view"
 
 // What the view shows, from the rows the queries read.
 
@@ -169,5 +180,68 @@ describe("commitOf", () => {
     expect(commitOf(undefined)).toBeUndefined()
     expect(commitOf(repository({ headSha: null }))).toBeUndefined()
     expect(commitOf(repository({ headAt: null }))).toBeUndefined()
+  })
+
+  test("only at the head: another commit's details aren't on the device", () => {
+    expect(commitOf(repository(), SHA)?.shortSha).toBe("ccccccc")
+    expect(commitOf(repository(), null)).toBeUndefined()
+    expect(commitOf(repository(), "d".repeat(40))).toBeUndefined()
+  })
+})
+
+describe("the picker", () => {
+  test("refs as the picker takes them: loading, ready or failed", () => {
+    const row = { key: "k", branches: [{ name: "main", sha: SHA }], tags: [], truncated: true, message: null }
+    expect(refsProps(undefined)).toEqual({ state: "loading" })
+    expect(refsProps({ ...row, state: "loading" })).toEqual({ state: "loading" })
+    expect(refsProps({ ...row, state: "ready" })).toEqual({
+      state: "ready",
+      branches: [{ name: "main", sha: SHA }],
+      tags: [],
+      truncated: true,
+    })
+    expect(refsProps({ ...row, state: "failed", message: "Code Storage is busy" })).toEqual({
+      state: "failed",
+      message: "Code Storage is busy",
+    })
+    expect(refsProps({ ...row, state: "failed" })).toEqual({ state: "failed", message: "" })
+  })
+
+  test("a branch or tag shows its name, a commit its short SHA", () => {
+    expect(revisionLabel("feature/x")).toBe("feature/x")
+    expect(revisionLabel(SHA)).toBe("ccccccc")
+  })
+})
+
+describe("fileLinksOf", () => {
+  const view = { owner: "octocat", name: "Spoon-Knife", sha: SHA, path: "docs/a b.md" }
+  const blob = (fields: Partial<BlobRow>): BlobRow => ({
+    key: "k",
+    state: "text",
+    contents: "x",
+    size: 1,
+    message: null,
+    ...fields,
+  })
+
+  test("a text file: Raw and Download at its commit, and its text to copy", () => {
+    const raw = `/api/repos/octocat/Spoon-Knife/raw/${SHA}/docs/a%20b.md`
+    expect(fileLinksOf(view, blob({}))).toEqual({ raw, download: { href: raw, name: "a b.md" }, copyContents: true })
+    expect(fileLinksOf(view, blob({ state: "binary", contents: null }))).toEqual({
+      raw,
+      download: { href: raw, name: "a b.md" },
+      copyContents: false,
+    })
+  })
+
+  test("a file over the limit opens GitHub's raw bytes; one not loaded yet, failed, or at no commit has nothing", () => {
+    expect(fileLinksOf(view, blob({ state: "too-large", contents: null, size: 600_000 }))).toEqual({
+      raw: `https://github.com/octocat/Spoon-Knife/raw/${SHA}/docs/a%20b.md`,
+      copyContents: false,
+    })
+    for (const file of [undefined, blob({ state: "loading" }), blob({ state: "failed", message: "Not found" })]) {
+      expect(fileLinksOf(view, file)).toEqual({ copyContents: false })
+    }
+    expect(fileLinksOf({ ...view, sha: null }, blob({}))).toEqual({ copyContents: false })
   })
 })

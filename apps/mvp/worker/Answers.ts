@@ -11,11 +11,12 @@ import * as Messages from "./Messages.ts"
 
 // The answer routes (docs/features/agent.md#the-answer-routes): the server's write path for the answers the browser's
 // agent gives (decision 0011). The agent reads its turn here, then writes its parts while it streams and its text or
-// failure when it settles. Only the browser of a person who may ask (Member or above, decision 0007) may, like the
-// model endpoint. An answer changes only while it is `streaming`; a settle sent again after it landed is answered as
-// landed, so a replayed step is harmless. How long an earlier answer holds up later turns is the `agent` role's
+// failure when it settles. Only the person who asked the question may (`asked_by`, recorded from their session when
+// they asked), and only while they may still ask (Member or above, decision 0007), like the model endpoint: another
+// Member can't read the turn, write, settle or learn whether a settle landed. An answer changes only while it is
+// `streaming`; a settle sent again after it landed is answered as landed, so a replayed step is harmless. How long an earlier answer holds up later turns is the `agent` role's
 // liveness bound (`agentLiveSeconds`, src/features/model/contract.ts): a live run writes within it, and an answer
-// waiting its turn is touched by each turn request.
+// waiting its turn is touched by its turn requests, at most once a third of the bound.
 
 /** Answer route requests, by `route` (`turn`, `write`) and `status`. */
 export const requests = Metric.counter("smithers_answer_requests", {
@@ -33,11 +34,19 @@ const refusal = (status: number, code: string) =>
 
 const ok = (body: unknown) => HttpServerResponse.jsonUnsafe(body, { headers: { "cache-control": "no-store" } })
 
+/** A person who didn't ask the question: `403 forbidden`, as for a role that may not ask, logged as `not_asker`. */
+const notAsker = (fields: Fields) => {
+  fields.errorCode = "not_asker"
+  return refusal(403, "forbidden")
+}
+
 /**
- * The answer's row and whether it must wait: an earlier answer still streams and was written in the last
- * `liveSeconds`. An earlier answer whose device went away keeps streaming but stops holding up later turns once it
+ * The answer's row, who asked its question (`null` for a question asked before askers were recorded), and whether it
+ * must wait: an earlier answer in its own conversation still streams and was written in the last `liveSeconds`. Two
+ * conversations' turns never wait for each other (decision 0013 §1). An earlier answer whose device went away keeps streaming but stops holding up later turns once it
  * is that old. This only reads liveness: nothing here runs, retries or settles that answer; `chat/Expire` settles it
- * (worker/flows/Expire.ts).
+ * (worker/flows/Expire.ts). `waitedMs` is how long its turn has waited since the queue before it last moved: since the
+ * latest earlier answer settled, or since it was asked if that is later, on Postgres' clock.
  */
 const target = (answerId: string, liveSeconds: number) =>
   Effect.gen(function* () {
@@ -47,46 +56,69 @@ const target = (answerId: string, liveSeconds: number) =>
       readonly question: string
       readonly text: string
       readonly failure: string | null
+      readonly askedBy: string | null
       readonly waiting: boolean
+      readonly waitedMs: number
     }>`
-      SELECT a.status, q.text AS question, a.text, a.failure,
+      SELECT a.status, q.text AS question, a.text, a.failure, q.asked_by AS "askedBy",
         EXISTS (
           SELECT 1 FROM messages e
-          WHERE e.role = 'assistant' AND e.status = 'streaming' AND e.position < a.position
-            AND e.updated_at > now() - make_interval(secs => ${liveSeconds})
-        ) AS waiting
+          WHERE e.conversation_id = a.conversation_id AND e.role = 'assistant' AND e.status = 'streaming'
+            AND e.position < a.position AND e.updated_at > now() - make_interval(secs => ${liveSeconds})
+        ) AS waiting,
+        GREATEST(0, floor(extract(epoch FROM now() - GREATEST(a.created_at, (
+          SELECT e.updated_at FROM messages e
+          WHERE e.conversation_id = a.conversation_id AND e.role = 'assistant' AND e.status <> 'streaming'
+            AND e.position < a.position
+          ORDER BY e.position DESC LIMIT 1
+        ))) * 1000))::float8 AS "waitedMs"
       FROM messages a JOIN messages q ON q.id = a.question_id
       WHERE a.id = ${answerId}`
     return row
   })
 
-/** Marks a streaming answer that is waiting its turn as live, so it keeps the answers after it in order. */
-const touch = (answerId: string) =>
+/**
+ * Marks a streaming answer that is waiting its turn as live, so it keeps the answers after it in order: only once a
+ * third of `liveSeconds` has passed since its last write. Every write reaches every device through Electric, and an
+ * answer asked again at most every 4 s (`TURN_RETRY`) stays live with these alone.
+ */
+const touch = (answerId: string, liveSeconds: number) =>
   Effect.flatMap(
     SqlClient.SqlClient,
-    (sql) => sql`UPDATE messages SET updated_at = now() WHERE id = ${answerId} AND status = 'streaming'`,
+    (sql) =>
+      sql`UPDATE messages SET updated_at = now()
+        WHERE id = ${answerId} AND status = 'streaming' AND updated_at < now() - make_interval(secs => ${liveSeconds / 3})`,
   )
 
-/** Writes `write` to a streaming answer: whether it landed, and its transaction. */
-const apply = (answerId: string, write: AnswerWrite) =>
+/**
+ * Writes `write` to a streaming answer whose question `askedBy` asked: whether it landed, and its transaction. The
+ * asker is checked in the same statement as the write, so no other person's write lands.
+ */
+const apply = (answerId: string, askedBy: string, write: AnswerWrite) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const parts = write.parts === undefined ? null : JSON.stringify(write.parts)
     const rows = write.status === "streaming"
       ? yield* sql<{ readonly txid: string }>`
-        UPDATE messages SET parts = ${parts}::jsonb, text = COALESCE(${write.text ?? null}, text), updated_at = now()
-        WHERE id = ${answerId} AND role = 'assistant' AND status = 'streaming'
+        UPDATE messages a SET parts = ${parts}::jsonb, text = COALESCE(${write.text ?? null}, a.text), updated_at = now()
+        FROM messages q
+        WHERE a.id = ${answerId} AND a.role = 'assistant' AND a.status = 'streaming'
+          AND q.id = a.question_id AND q.asked_by = ${askedBy}
         RETURNING pg_current_xact_id()::xid::text AS txid`
       : write.status === "done"
       ? yield* sql<{ readonly txid: string }>`
-        UPDATE messages SET status = 'done', text = ${write.text}, parts = COALESCE(${parts}::jsonb, parts),
+        UPDATE messages a SET status = 'done', text = ${write.text}, parts = COALESCE(${parts}::jsonb, a.parts),
           input_tokens = ${write.inputTokens ?? null}, output_tokens = ${write.outputTokens ?? null}, updated_at = now()
-        WHERE id = ${answerId} AND role = 'assistant' AND status = 'streaming'
+        FROM messages q
+        WHERE a.id = ${answerId} AND a.role = 'assistant' AND a.status = 'streaming'
+          AND q.id = a.question_id AND q.asked_by = ${askedBy}
         RETURNING pg_current_xact_id()::xid::text AS txid`
       : yield* sql<{ readonly txid: string }>`
-        UPDATE messages SET status = 'failed', failure = ${write.failure}, parts = COALESCE(${parts}::jsonb, parts),
+        UPDATE messages a SET status = 'failed', failure = ${write.failure}, parts = COALESCE(${parts}::jsonb, a.parts),
           updated_at = now()
-        WHERE id = ${answerId} AND role = 'assistant' AND status = 'streaming'
+        FROM messages q
+        WHERE a.id = ${answerId} AND a.role = 'assistant' AND a.status = 'streaming'
+          AND q.id = a.question_id AND q.asked_by = ${askedBy}
         RETURNING pg_current_xact_id()::xid::text AS txid`
     return rows[0] === undefined ? undefined : Number(rows[0].txid)
   })
@@ -111,16 +143,21 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
 
     /**
      * `GET /api/answers/<id>`: the question and its history, once every earlier live answer has settled. While it
-     * waits, each request marks this answer live.
+     * waits, a request from the asker marks this answer live (`touch`) and says how long its turn has waited.
      */
-    const turn = (answerId: string, fields: Fields) =>
+    const turn = (answerId: string, actorId: string, fields: Fields) =>
       Effect.gen(function* () {
         const row = yield* target(answerId, liveSeconds)
         if (row === undefined) return refusal(404, "not_found")
+        if (row.askedBy !== actorId) return notAsker(fields)
         if (row.status !== "streaming") return refusal(409, "settled")
         if (row.waiting) {
-          yield* touch(answerId)
-          return refusal(409, "not_your_turn")
+          yield* touch(answerId, liveSeconds)
+          fields.waitedMs = row.waitedMs
+          return HttpServerResponse.jsonUnsafe(
+            { code: "not_your_turn", waitedMs: row.waitedMs },
+            { status: 409, headers: { "cache-control": "no-store" } },
+          )
         }
         const history = yield* Messages.history(answerId)
         fields.historyExchanges = history.length
@@ -128,7 +165,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       })
 
     /** `POST /api/answers/<id>`: the answer's parts while it streams, then how it settled. */
-    const write = (request: HttpServerRequest.HttpServerRequest, answerId: string, fields: Fields) =>
+    const write = (request: HttpServerRequest.HttpServerRequest, answerId: string, actorId: string, fields: Fields) =>
       Effect.gen(function* () {
         const body = yield* readBounded(request, MAX_ANSWER_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
           Effect.result,
@@ -140,10 +177,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         if (Option.isNone(decoded)) return refusal(400, "invalid")
         fields.write = decoded.value.status
         fields.parts = decoded.value.parts?.length ?? -1
-        const txid = yield* apply(answerId, decoded.value)
+        const txid = yield* apply(answerId, actorId, decoded.value)
         if (txid !== undefined) return ok({ txid })
         const row = yield* target(answerId, liveSeconds)
         if (row === undefined) return refusal(404, "not_found")
+        if (row.askedBy !== actorId) return notAsker(fields)
         if (landed(row, decoded.value)) {
           fields.existing = true
           return ok({ txid: null })
@@ -166,9 +204,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           if (Option.isNone(actor)) return refusal(401, "authentication")
           // A Guest, or a person with no role, may not ask, so may not write an answer either.
           if (!canAsk(actor.value)) return refusal(403, "forbidden")
-          return yield* (route === "turn" ? turn(answerId, fields) : write(request, answerId, fields)).pipe(
-            Effect.provide(database),
-          )
+          // Only the asker, or an agent acting for them, writes their answer.
+          const actorId = actor.value.subject.id
+          const handled = route === "turn" ? turn(answerId, actorId, fields) : write(request, answerId, actorId, fields)
+          return yield* handled.pipe(Effect.provide(database))
         }).pipe(
           Effect.catchCause((cause) =>
             Effect.sync(() => {

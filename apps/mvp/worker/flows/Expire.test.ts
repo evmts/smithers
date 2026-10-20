@@ -45,6 +45,31 @@ const settledAfter = (answerId: string) =>
         FROM messages WHERE id = ${answerId}`),
   ).then(([row]) => row!.ms)
 
+const sql = (statement: string) =>
+  runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => Effect.orDie(client.unsafe(statement))))
+
+/** How long ago, on Postgres' clock, an answer last changed, in milliseconds. */
+const msSinceChanged = (answerId: string) =>
+  sql(`SELECT (extract(epoch FROM now() - updated_at) * 1000)::float8 AS ms FROM messages WHERE id = '${answerId}'`)
+    .then((rows) => (rows as unknown as ReadonlyArray<{ readonly ms: number }>)[0]!.ms)
+
+/** How long after `earlier` last changed `later` did, in milliseconds. */
+const msBetween = (earlier: string, later: string) =>
+  sql(`SELECT (extract(epoch FROM l.updated_at - e.updated_at) * 1000)::float8 AS ms
+    FROM messages e, messages l WHERE e.id = '${earlier}' AND l.id = '${later}'`)
+    .then((rows) => (rows as unknown as ReadonlyArray<{ readonly ms: number }>)[0]!.ms)
+
+/** Settles an answer `done`, as its device's run does. */
+const settle = (answerId: string) =>
+  sql(`UPDATE messages SET status = 'done', text = 'Answered.', updated_at = now() WHERE id = '${answerId}'`)
+
+/** The answers' statuses, in order. */
+const statuses = async (answerIds: ReadonlyArray<string>) => {
+  const rows = (await sql(`SELECT id, status FROM messages WHERE id IN (${answerIds.map((id) => `'${id}'`).join(", ")})`)) as
+    unknown as ReadonlyArray<{ readonly id: string; readonly status: string }>
+  return answerIds.map((id) => rows.find((row) => row.id === id)!.status)
+}
+
 const SENTINEL = "SENTINEL-answer-text"
 
 describe("chat/Expire", () => {
@@ -71,6 +96,61 @@ describe("chat/Expire", () => {
 
     expect(ran.exit).toEqual(Exit.succeed({ outcome: "abandoned" }))
     expect(await settledAfter(answerId)).toBeGreaterThanOrEqual(1_000)
+  })
+
+  // Answers come in turn, so the tail of a burst can wait longer than the expiry while every answer before it settles
+  // in time. Its expiry counts from when the queue before it last moved, never from the ask (client-fix review).
+  test("a burst's last answer expires only once the queue before it stopped moving, not after it was asked", async () => {
+    const agent = await openAgent(runtime, answering("Never sent."))
+    const answers: Array<string> = []
+    for (let i = 1; i <= 25; i++) answers.push(await agent.ask(`Question ${i}`))
+    const last = answers.at(-1)!
+    // Its device is gone. Every answer before it settles 250 ms after the one before it, 6 s in all, while the
+    // expiry is 1.5 s.
+    const expiring = run(last, "1500 millis")
+    let previous = last
+    for (const answerId of answers.slice(0, -1)) {
+      await expect.poll(() => msSinceChanged(previous), { interval: 20, timeout: 10_000 }).toBeGreaterThanOrEqual(250)
+      await settle(answerId)
+      previous = answerId
+    }
+    const ran = await expiring
+
+    expect(ran.exit).toEqual(Exit.succeed({ outcome: "abandoned" }))
+    expect(ran.status).toBe("completed")
+    expect(await answerRow(runtime, last)).toMatchObject({ status: "failed", failure: "abandoned" })
+    // It waited the whole expiry after the answer before it settled, and every answer before it settled as it did.
+    expect(await msBetween(answers.at(-2)!, last)).toBeGreaterThanOrEqual(1_500)
+    expect(await statuses(answers.slice(0, -1))).toEqual(answers.slice(0, -1).map(() => "done"))
+  }, 60_000)
+
+  test("counts from the queue's last movement: an earlier answer's settle or write, or the answer's own write", async () => {
+    const agent = await openAgent(runtime, answering("Never sent."))
+    const [first, second, third] = [await agent.ask("One"), await agent.ask("Two"), await agent.ask("Three")]
+    const live = await services("25 minutes")
+    const expiresIn = (answerId: string) => Effect.runPromise(Expire.observedExpiresIn(answerId, live))
+    const abandon = (answerId: string) => Effect.runPromise(Expire.observedAbandon(answerId, live))
+    // All three were asked an hour ago and nothing has moved since: the third is due at once.
+    await sql(`UPDATE messages SET created_at = now() - interval '1 hour', updated_at = now() - interval '1 hour'`)
+    expect(await expiresIn(third)).toBe(0)
+    // The first settled a minute ago: the third's turn began then, so it has 24 minutes left and isn't abandoned.
+    await sql(`UPDATE messages SET status = 'done', text = 'x', updated_at = now() - interval '1 minute'
+      WHERE id = '${first}'`)
+    expect(await expiresIn(third)).toBeGreaterThan(23.9 * 60_000)
+    expect(await expiresIn(third)).toBeLessThanOrEqual(24 * 60_000)
+    expect(await abandon(third)).toEqual({ outcome: "waiting" })
+    // The second, still streaming, was written 2 minutes ago, before that settle: the settle still counts.
+    await sql(`UPDATE messages SET updated_at = now() - interval '2 minutes' WHERE id = '${second}'`)
+    expect(await expiresIn(third)).toBeGreaterThan(23.9 * 60_000)
+    // Then it writes again, now: the queue moved now.
+    await sql(`UPDATE messages SET updated_at = now() WHERE id = '${second}'`)
+    expect(await expiresIn(third)).toBeGreaterThan(24.9 * 60_000)
+    // The third's own write moves it too, as its device does while it waits its turn.
+    await sql(`UPDATE messages SET updated_at = now() - interval '1 hour' WHERE id IN ('${first}', '${second}')`)
+    await sql(`UPDATE messages SET updated_at = now() WHERE id = '${third}'`)
+    expect(await expiresIn(third)).toBeGreaterThan(24.9 * 60_000)
+    expect(await abandon(third)).toEqual({ outcome: "waiting" })
+    expect(await answerRow(runtime, third)).toMatchObject({ status: "streaming" })
   })
 
   test("leaves an answer that settled as it is", async () => {
@@ -140,13 +220,13 @@ describe("chat/Expire", () => {
       expiry: Duration.zero,
     }
 
-    const due = await observed(Expire.observedExpiresAt(answerId, live))
+    const due = await observed(Expire.observedExpiresIn(answerId, live))
     const abandoned = await observed(Expire.observedAbandon(answerId, live))
     const again = await observed(Expire.observedAbandon(answerId, live))
     const failed = await observed(Expire.observedAbandon(answerId, down))
-    const failedDue = await observed(Expire.observedExpiresAt(answerId, down))
+    const failedDue = await observed(Expire.observedExpiresIn(answerId, down))
 
-    expect(Exit.isSuccess(due) && due.value).toBeGreaterThan(0)
+    expect(due).toEqual(Exit.succeed(0))
     expect(abandoned).toEqual(Exit.succeed({ outcome: "abandoned" }))
     expect(again).toEqual(Exit.succeed({ outcome: "settled" }))
     for (const exit of [failed, failedDue] as ReadonlyArray<Exit.Exit<unknown, Expire.ExpiryFailed>>) {

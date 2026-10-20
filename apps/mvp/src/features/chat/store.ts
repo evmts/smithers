@@ -1,9 +1,10 @@
 import { ElectricCollection, type ShapeSource } from "@smthrs/effect-electric"
-import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
+import { Collection, Outbox, Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import {
   Clock,
   Context,
+  Deferred,
   Duration,
   Effect,
   FiberHandle,
@@ -12,10 +13,13 @@ import {
   Option,
   Ref,
   type Schedule,
-  type Scope,
+  Scope,
+  Semaphore,
   Stream,
 } from "effect"
-import { FlowDispatch } from "../../flows/dispatch"
+import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
+import { OutboxWrites } from "../../outbox"
+import { ViewsStore } from "../views/store"
 import { ChatClient, type Taken } from "./api"
 import { PAGE_SIZE, SHAPE_ROUTE } from "./contract"
 import { askFailures, connectionDrops, firstAnswerText } from "./metrics"
@@ -25,6 +29,7 @@ import {
   conversationQuery,
   historyQuery,
   latestQuery,
+  placeQuery,
   queuedQuery,
   shownQuery,
 } from "./queries"
@@ -34,9 +39,12 @@ import {
   Composer,
   CONNECTION,
   Connection,
+  Draft,
   HISTORY,
   History,
   Message,
+  PLACE,
+  Place,
   Unsent,
   type UnsentReason,
 } from "./schema"
@@ -84,10 +92,27 @@ export const chatConfig = (origin: string, options: Omit<ChatConfig, "shapeUrl">
 type Query<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>>
 
 /**
+ * One branch's conversation on this tab (decision 0013 §1): its messages and views in Postgres, synced by Electric and
+ * kept on the device, with the live queries a frontend reads and this tab's window of it. The home conversation `/app`
+ * shows is the store's own `messages`, `conversation`, `latest`, `shown`, `queued` and `history`.
+ */
+export interface ConversationState {
+  readonly conversationId: string
+  readonly messages: ElectricCollection.ElectricCollection<Message>
+  readonly conversation: Query<typeof conversationQuery>
+  readonly latest: Query<typeof latestQuery>
+  readonly shown: Query<typeof shownQuery>
+  readonly queued: Query<typeof queuedQuery>
+  readonly history: Collection.Collection<History, string>
+  readonly historyState: Query<typeof historyQuery>
+}
+
+/**
  * Chat's state for one tab:
  * - `messages`: the conversation in Postgres, synced by Electric and kept on the device; read-only.
  * - `asking`: questions the outbox holds, as the optimistic rows of their writes; in memory, restored by the outbox.
  * - `unsent`: questions the server refused or the outbox couldn't take; kept on the device.
+ * - `drafts`: the composer's draft in each conversation; kept on the device, so a reload finds it.
  * - `composer`, `connection`, `history`: this tab's own state, in memory.
  * - `outbox`: the durable outbox every ask goes through.
  * - the live queries frontends read (queries.ts), and `scope`, where background work an action starts runs.
@@ -98,6 +123,7 @@ export class ChatStore extends Context.Service<
     readonly messages: ElectricCollection.ElectricCollection<Message>
     readonly asking: Collection.Collection<Asking, string>
     readonly unsent: Collection.Collection<Unsent, string>
+    readonly drafts: Collection.Collection<Draft, string>
     readonly composer: Collection.Collection<Composer, string>
     readonly connection: Collection.Collection<Connection, string>
     readonly history: Collection.Collection<History, string>
@@ -109,6 +135,13 @@ export class ChatStore extends Context.Service<
     readonly composerState: Query<typeof composerQuery>
     readonly connectionState: Query<typeof connectionQuery>
     readonly historyState: Query<typeof historyQuery>
+    /** Which conversation this tab shows and asks in: a branch's, or `null` for the home conversation. One row. */
+    readonly place: Collection.Collection<Place, string>
+    readonly placeState: Query<typeof placeQuery>
+    /** A branch conversation, opened on first use and kept for as long as the store lives. */
+    readonly open: (conversationId: string) => Effect.Effect<ConversationState>
+    /** A branch conversation opened before, if any: what a frontend reads without waiting. */
+    readonly opened: (conversationId: string) => ConversationState | undefined
     readonly scope: Scope.Scope
     readonly pageSize: number
     /** When this tab last queued a question: each takes a later `queuedAt`, so questions asked in one millisecond keep their order. */
@@ -117,11 +150,17 @@ export class ChatStore extends Context.Service<
     readonly browserOffline: (offline: boolean) => Effect.Effect<void>
     /** Retry: syncs and sends now, and gives failing requests `unreachableAfter` again. */
     readonly retryNow: Effect.Effect<void>
+    /**
+     * Makes this tab lead the outbox at once, as the tab a person is using does (decision 0002 §1), and completes once
+     * it leads. The tab that led sends nothing more until it leads again.
+     */
+    readonly lead: Effect.Effect<void>
   }
 >()("@smthrs/mvp/chat/ChatStore") {
   /**
    * The store; its collections cleaned up, its outbox stopped and its Electric shape closed when the scope closes. It
-   * dispatches each question ChatApi takes to this device's agent through `FlowDispatch`.
+   * dispatches each question ChatApi takes to this device's agent through `FlowDispatch`, and its outbox sends the
+   * other features' writes too (`OutboxWrites`).
    */
   static readonly layer = (config: ChatConfig, host: ChatHost) => Layer.effect(ChatStore, make(config, host))
 }
@@ -146,7 +185,14 @@ const refusal = (status: number | undefined): UnsentReason | undefined =>
 export const keepUnsent = (unsent: Collection.Collection<Unsent, string>, row: Asking, reason: UnsentReason) =>
   Effect.gen(function* () {
     if (Option.isSome(yield* unsent.get(row.id))) return Effect.void
-    const kept = yield* unsent.insert({ id: row.id, answerId: row.answerId, text: row.text, queuedAt: row.queuedAt, reason })
+    const kept = yield* unsent.insert({
+      id: row.id,
+      answerId: row.answerId,
+      text: row.text,
+      queuedAt: row.queuedAt,
+      reason,
+      ...(row.conversationId === undefined ? {} : { conversationId: row.conversationId }),
+    })
     return Effect.orDie(kept.persisted)
   }).pipe(Effect.orDie)
 
@@ -176,7 +222,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     id: "chat-composer",
     schema: Composer,
     getKey: (row) => row.id,
-    initialData: [{ id: COMPOSER, open: false, draft: "" }],
+    initialData: [{ id: COMPOSER, open: false, draft: "", saved: true }],
   })
   const connection = yield* Collection.local<Connection, string>({
     id: "chat-connection",
@@ -191,9 +237,21 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     initialData: [{ id: HISTORY, opened: false, limit: pageSize, earlier: false }],
   })
   const asking = yield* Collection.local<Asking, string>({ id: "chat-asking", schema: Asking, getKey: (row) => row.id })
+  const place = yield* Collection.local<Place, string>({
+    id: "chat-place",
+    schema: Place,
+    getKey: (row) => row.id,
+    initialData: [{ id: PLACE, conversationId: null }],
+  })
   const unsent = yield* Collection.persisted<Unsent, string>({
     id: "chat-unsent",
     schema: Unsent,
+    getKey: (row) => row.id,
+    schemaVersion: 1,
+  })
+  const drafts = yield* Collection.persisted<Draft, string>({
+    id: "chat-drafts",
+    schema: Draft,
     getKey: (row) => row.id,
     schemaVersion: 1,
   })
@@ -216,29 +274,63 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
 
   // Waits until Electric delivers the question: by the transaction id ChatApi inserted it in, or, for a question that
   // was already there (a resend, 200), by its id, unless the device already has it.
-  const delivered = (taken: Taken, id: string) =>
+  // The question's own conversation: the home one, or the branch's it was asked in.
+  const delivered = (taken: Taken, row: Asking) =>
     Effect.gen(function* () {
-      if (taken._tag === "inserted") return yield* messages.awaitTxId(taken.txid, confirmWithin)
-      if (Option.isSome(yield* messages.get(id))) return
-      yield* messages.awaitMatch((change) => change.value.id === id, confirmWithin)
+      const synced = row.conversationId === undefined ? messages : (yield* open(row.conversationId)).messages
+      if (taken._tag === "inserted") return yield* synced.awaitTxId(taken.txid, confirmWithin)
+      if (Option.isSome(yield* synced.get(row.id))) return
+      yield* synced.awaitMatch((change) => change.value.id === row.id, confirmWithin)
     })
 
-  // This device's agent answers the question ChatApi took: `chat/Answer`, with the answer's id as its execution id, in
-  // the background. The engine starts an execution once, so a resend that dispatches it again starts no second run. A
-  // dispatch that fails is already logged and counted.
+  // This device's agent answers the question ChatApi took: `chat/Answer`, with the answer's id as its execution id. It
+  // waits until the engine has recorded the run, so the outbox keeps the question until a run exists to answer it; the
+  // run goes on in the background. The engine starts an execution once, so a resend that dispatches it again starts no
+  // second run. A start that fails (no engine in this tab, refused, the tab closing) is sent again; the dispatch has
+  // logged and counted it. A run refused because the app changed under it (parked under one build, resumed under the
+  // next: `plan_changed`, or `payload_changed` when its recorded payload no longer decodes) can't finish, so
+  // `chat/Close` settles its answer failed, under its own execution id; a resend finds a run refused before, so it
+  // closes answers left streaming by an earlier build too.
   const answer = (row: Asking) =>
-    flows.dispatch("chat/Answer", { answerId: row.answerId }, { door: "composer", executionId: row.answerId }).pipe(
-      Effect.ignore,
-      Effect.forkIn(scope),
-    )
+    Effect.gen(function* () {
+      const admitted = yield* Deferred.make<void, DispatchFailed>()
+      yield* flows.dispatch("chat/Answer", { answerId: row.answerId }, {
+        door: "composer",
+        executionId: row.answerId,
+        admitted,
+      }).pipe(
+        Effect.catchIf(
+          (error) => error.refusal === "plan_changed" || error.refusal === "payload_changed",
+          () =>
+            flows.dispatch("chat/Close", { answerId: row.answerId }, {
+              door: "composer",
+              executionId: `${row.answerId}/close`,
+            }),
+        ),
+        Effect.ignore,
+        Effect.forkIn(scope),
+      )
+      yield* Deferred.await(admitted).pipe(
+        Effect.tapError(({ reason }) =>
+          Effect.logWarning("answer not started").pipe(Effect.annotateLogs({ reason }))
+        ),
+        Effect.mapError(() => new Outbox.Retry({})),
+      )
+    })
 
   // Sends one queued question. A refusal (400, 401, 403, 409, 413) keeps it as unsent and stops; anything else is sent
-  // again. Once ChatApi takes it, this device's agent answers it.
+  // again. It is done once ChatApi took it, this device's engine recorded the run that answers it, and Electric
+  // delivered it.
   const send = ({ rows }: { readonly rows: ReadonlyArray<unknown> }) => {
     const row = rows[0] as Asking
     return Effect.gen(function* () {
       const client = yield* ChatClient
-      const taken = yield* client.ask({ id: row.id, answerId: row.answerId, text: row.text }).pipe(
+      const taken = yield* client.ask({
+        id: row.id,
+        answerId: row.answerId,
+        text: row.text,
+        ...(row.conversationId === undefined ? {} : { conversationId: row.conversationId }),
+      }).pipe(
         Effect.catchTag("QuestionNotTaken", (error): Effect.Effect<never, Outbox.Retry | Outbox.Refused> => {
           const reason = refusal(error.status)
           return reason === undefined
@@ -255,7 +347,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
       )
       yield* Effect.annotateCurrentSpan({ taken: taken._tag })
       yield* answer(row)
-      yield* delivered(taken, row.id).pipe(Effect.mapError(() => new Outbox.Retry({})))
+      yield* delivered(taken, row).pipe(Effect.mapError(() => new Outbox.Retry({})))
       yield* Effect.logInfo("question stored").pipe(Effect.annotateLogs({ taken: taken._tag }))
     }).pipe(
       Effect.annotateLogs({ feature: "chat", questionId: row.id, answerId: row.answerId }),
@@ -264,16 +356,93 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   }
 
   const leader = yield* Outbox.lockLeader({ lock: host.lock, name: OUTBOX_LOCK })
+  // The device's one outbox: chat's questions, and the writes other features hand over (src/outbox.ts).
+  const others = yield* OutboxWrites
   const outbox = Context.get(
-    yield* Layer.build(Outbox.layer({ ...host.outbox, leader, collections: { asking }, mutations: { ask: send } })),
+    yield* Layer.build(
+      Outbox.layer({
+        ...host.outbox,
+        leader,
+        collections: { ...others.collections, asking },
+        mutations: { ...others.mutations, ask: send },
+      }),
+    ),
     Outbox.Outbox,
   )
 
   // --- The conversation, as frontends read it ---
 
-  const conversation = yield* conversationQuery(messages, unsent, asking)
+  // The conversation's views, synced beside its messages (src/features/views/store.ts).
+  const viewsStore = yield* ViewsStore
+  const { views } = viewsStore
+  const conversation = yield* conversationQuery(messages, unsent, asking, views)
   const latest = yield* latestQuery(conversation, pageSize)
   const queued = yield* queuedQuery(conversation)
+
+  // --- Branch conversations (decision 0013 §1): one shape and one collection each, opened when a page needs one ---
+
+  const branches = new Map<string, ConversationState>()
+  const persistence = yield* Persistence.Persistence
+  const openBranch = (conversationId: string) =>
+    Effect.gen(function* () {
+      const branchMessages = yield* ElectricCollection.make<Message>({
+        id: `chat-messages:${conversationId}`,
+        schema: Message,
+        getKey: (row) => row.id,
+        syncMode: "eager",
+        persist: { schemaVersion: 2 },
+        shape: {
+          url: `${config.shapeUrl}?conversation=${encodeURIComponent(conversationId)}`,
+          columnMapper: ElectricCollection.snakeCamelMapper(),
+          parser: { int8: (value: string) => Number(value) },
+        },
+        ...(config.retry === undefined ? {} : { retry: config.retry }),
+      })
+      const branchViews = yield* viewsStore.forConversation(conversationId)
+      const branchHistory = yield* Collection.local<History, string>({
+        id: `chat-history:${conversationId}`,
+        schema: History,
+        getKey: (row) => row.id,
+        initialData: [{ id: HISTORY, opened: false, limit: pageSize, earlier: false }],
+      })
+      const branchConversation = yield* conversationQuery(branchMessages, unsent, asking, branchViews, conversationId)
+      const branchLatest = yield* latestQuery(branchConversation, pageSize)
+      const opened: ConversationState = {
+        conversationId,
+        messages: branchMessages,
+        conversation: branchConversation,
+        latest: branchLatest,
+        shown: yield* shownQuery(branchLatest),
+        queued: yield* queuedQuery(branchConversation),
+        history: branchHistory,
+        historyState: yield* historyQuery(branchHistory),
+      }
+      yield* branchConversation.rows.pipe(
+        Stream.runForEach((rows) => markEarlier(branchHistory, rows.length)),
+        Effect.forkIn(scope, { startImmediately: true }),
+      )
+      yield* branchMessages.restored.pipe(
+        Effect.catch(() => branchMessages.preload),
+        Effect.andThen(branchHistory.update(HISTORY, (row) => void (row.opened = true))),
+        Effect.ignore,
+        Effect.forkIn(scope, { startImmediately: true }),
+      )
+      branches.set(conversationId, opened)
+      yield* Effect.logInfo("chat conversation opened").pipe(Effect.annotateLogs({ conversationId }))
+      return opened
+    }).pipe(Scope.provide(scope), Effect.provideService(Persistence.Persistence, persistence), Effect.orDie)
+  // One at a time, so two callers opening one conversation open it once.
+  const opening = yield* Semaphore.make(1)
+  const open = (conversationId: string): Effect.Effect<ConversationState> =>
+    Effect.suspend(() => {
+      const known = branches.get(conversationId)
+      return known !== undefined
+        ? Effect.succeed(known)
+        : Semaphore.withPermits(opening, 1)(Effect.suspend(() => {
+          const raced = branches.get(conversationId)
+          return raced !== undefined ? Effect.succeed(raced) : openBranch(conversationId)
+        }))
+    })
 
   // --- The connection pill (schema.ts `Connection`), from the browser, the shape and the outbox ---
 
@@ -384,6 +553,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     messages,
     asking,
     unsent,
+    drafts,
     composer,
     connection,
     history,
@@ -395,11 +565,27 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     composerState: yield* composerQuery(composer),
     connectionState: yield* connectionQuery(connection),
     historyState: yield* historyQuery(history),
+    place,
+    placeState: yield* placeQuery(place),
+    open,
+    opened: (conversationId) => branches.get(conversationId),
     scope,
     pageSize,
     lastQueuedAt: yield* Ref.make(0),
+    lead: leader.take,
     browserOffline: (offline) => update(() => ({ offline })),
-    retryNow: Effect.all([messages.reconnect, outbox.retryNow], { discard: true }).pipe(
+    // Suspended, so it reconnects the branch conversations open when Retry is pressed, not those open at boot (none).
+    retryNow: Effect.suspend(() =>
+      Effect.all(
+        [
+          messages.reconnect,
+          views.reconnect,
+          outbox.retryNow,
+          ...[...branches.values()].map((branch) => branch.messages.reconnect),
+        ],
+        { discard: true },
+      )
+    ).pipe(
       Effect.andThen(FiberHandle.clear(deadline)),
       Effect.andThen(
         update((now) => ({ overdue: false, shape: now.shape === "stopped" ? "pending" : now.shape })),
