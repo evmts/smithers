@@ -14,8 +14,8 @@
  *   `let` and `const`, function and class names, and `catch` parameters, in
  *   function, block, `catch`, `for` and class-name scopes.
  * - A name the source reads but never declares is `$f` and its number in
- *   order of first use, a label `$l` and its number, a private name `#` and
- *   its number.
+ *   order of first use (except standard built-in globals, kept by name),
+ *   a label `$l` and its number, a private name `#` and its number.
  * - Literals, keywords and operators are kept verbatim, and so are a property
  *   name after `.` or `?.` and an object or class key. A shorthand member
  *   `{ value }` is written `value : $0`, the form a minifier gives it once it
@@ -88,6 +88,117 @@ const reserved = new Set([
   "while",
   "with",
   "yield"
+])
+
+/**
+ * Standard global names are semantic identities, never minifier bindings.
+ * Keep this explicit and host-independent: inspecting globalThis would make
+ * the same callback's identity depend on the runtime building its plan.
+ * Scope resolution runs first, so a local with any of these names still renames.
+ * @private
+ */
+const builtinGlobals = new Set([
+  "globalThis",
+  "undefined",
+  "NaN",
+  "Infinity",
+  "eval",
+  "isFinite",
+  "isNaN",
+  "parseFloat",
+  "parseInt",
+  "decodeURI",
+  "decodeURIComponent",
+  "encodeURI",
+  "encodeURIComponent",
+  "Object",
+  "Function",
+  "Boolean",
+  "Symbol",
+  "Number",
+  "BigInt",
+  "Math",
+  "Date",
+  "String",
+  "RegExp",
+  "Array",
+  "Int8Array",
+  "Uint8Array",
+  "Uint8ClampedArray",
+  "Int16Array",
+  "Uint16Array",
+  "Int32Array",
+  "Uint32Array",
+  "Float16Array",
+  "Float32Array",
+  "Float64Array",
+  "BigInt64Array",
+  "BigUint64Array",
+  "Map",
+  "Set",
+  "WeakMap",
+  "WeakSet",
+  "ArrayBuffer",
+  "SharedArrayBuffer",
+  "DataView",
+  "Atomics",
+  "JSON",
+  "WeakRef",
+  "FinalizationRegistry",
+  "Iterator",
+  "AsyncIterator",
+  "Promise",
+  "Reflect",
+  "Proxy",
+  "Intl",
+  "Error",
+  "AggregateError",
+  "EvalError",
+  "RangeError",
+  "ReferenceError",
+  "SyntaxError",
+  "TypeError",
+  "URIError",
+  "WebAssembly",
+  "fetch",
+  "Request",
+  "Response",
+  "Headers",
+  "URL",
+  "URLSearchParams",
+  "TextEncoder",
+  "TextDecoder",
+  "TextEncoderStream",
+  "TextDecoderStream",
+  "crypto",
+  "Crypto",
+  "CryptoKey",
+  "SubtleCrypto",
+  "ReadableStream",
+  "WritableStream",
+  "TransformStream",
+  "ByteLengthQueuingStrategy",
+  "CountQueuingStrategy",
+  "AbortController",
+  "AbortSignal",
+  "Event",
+  "EventTarget",
+  "CustomEvent",
+  "DOMException",
+  "Blob",
+  "File",
+  "FormData",
+  "WebSocket",
+  "console",
+  "performance",
+  "structuredClone",
+  "setTimeout",
+  "clearTimeout",
+  "setInterval",
+  "clearInterval",
+  "queueMicrotask",
+  "atob",
+  "btoa"
 ])
 
 /** Reserved words that are operands, after which `/` divides. @private */
@@ -460,7 +571,8 @@ const opensGroup = (token: Token): boolean =>
  * function and class names, and `catch` parameters, numbered as they are
  * declared. Every use is resolved through the scopes it is read in, so
  * shadowing reads the same whichever names a minifier chose. A name the
- * source never declares is `$f` and its number, in order of first use; a
+ * source never declares is `$f` and its number, in order of first use, except
+ * standard built-in globals, which retain their names; a
  * label is `$l` and its number; a private name `#` and its number.
  *
  * @since 1.0.0
@@ -879,6 +991,7 @@ export const sourceShape = (source: string): string => {
       const id = current.names?.get(piece.name)
       if (id !== undefined) return `$${id}`
     }
+    if (builtinGlobals.has(piece.name)) return piece.name
     return numbered(free, piece.name, "$f")
   }).join(" ")
 }

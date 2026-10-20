@@ -144,3 +144,20 @@ the `key1_` prefix and its derivation, belong to [`@smthrs/keys`](/api/keys).
 Content addressing over a digest belongs to
 [`@smthrs/artifacts`](/api/artifacts). This package hashes bytes and validates
 digests, and does nothing else.
+
+## Callback resume identity compatibility
+
+Callback resume shapes preserve standard ECMAScript and web global names
+(for example `fetch`, `eval`, `JSON` and `globalThis`) after resolving local
+bindings. Local shadowing and minifier binding renames remain equivalent;
+unrecognized outer bindings still use first-use numbering. This uses an
+explicit list, independent of which globals the current host installs.
+
+This correction changes `resumeDigest` for callbacks reading these globals.
+The exact-source `digest` is unchanged. Persisted identities are not rewritten:
+an unchanged exact-source identity can still match, but a resume relying on
+an old normalized identity can be refused as `plan_changed`. Keep the old
+build available to finish such runs, or start a new run with the corrected
+plan. Accepting the old conflated shape as a fallback would reintroduce the
+`fetch` versus `eval` collision. Captured dependencies still need explicit
+capture identities; source normalization cannot identify arbitrary closures.

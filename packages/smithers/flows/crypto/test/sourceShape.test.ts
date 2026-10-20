@@ -28,6 +28,38 @@ describe("sourceShape: what an edit moves", () => {
     )
   })
 
+  it("distinguishes undeclared built-in globals without executing them", () => {
+    const names = [
+      "fetch",
+      "eval",
+      "JSON",
+      "Math",
+      "Object",
+      "Array",
+      "Promise",
+      "globalThis",
+      "undefined",
+      "NaN",
+      "Infinity",
+      "URL",
+      "crypto",
+      "setTimeout"
+    ]
+    const shapes = names.map((name) => sourceShape(`() => ${name}(1)`))
+    expect(new Set(shapes).size).toBe(names.length)
+    const identities = names.map((name) => functionIdentity(Function(`return () => ${name}(1)`)()).resumeDigest)
+    expect(new Set(identities).size).toBe(names.length)
+  })
+
+  it("resolves shadowed built-in names before preserving global names", () => {
+    expect(sourceShape("fetch => fetch(1)")).toBe(sourceShape("e => e(1)"))
+    expect(sourceShape("() => { return fetch(1); function fetch(x) { return x } }")).toBe(
+      sourceShape("() => { return f(1); function f(e) { return e } }")
+    )
+    expect(sourceShape("() => { { let fetch = f; fetch(1) } return fetch(1) }")).toContain("return fetch ( 1 )")
+    expect(sourceShape("() => [fetch(1), outer(2)]")).toBe(sourceShape("() => [fetch(1), renamed(2)]"))
+  })
+
   it("sees swapped arguments", () => {
     expect(sourceShape("(a, b) => a - b")).toBe("( $0 , $1 ) => $0 - $1")
     expect(sourceShape("(a, b) => b - a")).toBe("( $0 , $1 ) => $1 - $0")
