@@ -105,7 +105,7 @@ jj git remote add origin /path/to/your/origin.git
 jj describe -m 'Add slugify'
 jj bookmark set main -r @
 jj new
-jj git push --remote origin --bookmark main --allow-new
+jj git push --remote origin --bookmark main
 ```
 
 Follow your repository's branch and pull request policy when it requires review before `main`.
