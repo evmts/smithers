@@ -5,6 +5,7 @@
  */
 
 import type { Commands } from "../ProviderConformance/Commands.vibe"
+import { randomValues } from "./platformRandom.js"
 
 /**
  * The provider-conformance command fixture every POSIX-shell session can run.
@@ -53,7 +54,7 @@ let uniqueRun = 0
  * value two concurrent runs on one host are unlikely to share.
  */
 const seed = (() => {
-  const random = globalThis.crypto?.getRandomValues?.bind(globalThis.crypto)
+  const random = randomValues()
   /* v8 ignore next -- every runtime this package supports has Web Crypto; the fallback is for a host that does not */
   if (random === undefined) return Math.floor(Math.random() * 0xffffffff)
   return random(new Uint32Array(1))[0]!

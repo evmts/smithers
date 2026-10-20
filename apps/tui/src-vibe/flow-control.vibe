@@ -17,7 +17,7 @@ import * as Approvals from "./approvals.vibe"
 import * as Extension from "./extension.vibe"
 import * as Native from "./flow-control.native.ts"
 import { type Card, FlowError, type Port, type Settled, terminal } from "./flows.vibe"
-import type { Host } from "./host.ts"
+import type { Host } from "./host.vibe"
 
 type ControlEvent = ControlSchema.ControlEvent
 const NativeControl = !Native.bun() ? NodeControl : BunControl

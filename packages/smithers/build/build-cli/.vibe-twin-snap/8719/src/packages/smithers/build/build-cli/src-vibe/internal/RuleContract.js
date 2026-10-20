@@ -1,9 +1,0 @@
-/**
- * Internal contracts between package planning and rule execution.
- *
- * This module owns planned payloads and shared node fields. Public target
- * schemas still own declarations; Planner owns graph and key vocabulary.
- *
- * @since 1.0.0
- */
-export {};

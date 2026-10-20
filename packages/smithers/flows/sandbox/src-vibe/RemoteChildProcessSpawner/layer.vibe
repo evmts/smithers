@@ -35,6 +35,7 @@ import { elapsed } from "../internal/deadline.vibe"
 import { platformFailure } from "../internal/platformReason.vibe"
 import type { Provider, RemoteProcess } from "./Provider.vibe"
 import type { ProviderError } from "./ProviderError.vibe"
+import { processEnv } from "./platformEnv.js"
 
 const MODULE = "ChildProcess"
 
@@ -74,7 +75,7 @@ const guestEnvironment = (
   env: Readonly<Record<string, string | undefined>> | undefined
 ): Record<string, string | undefined> | undefined => {
   if (env === undefined) return undefined
-  const host = globalThis.process?.env
+  const host = processEnv()
   const guest: Record<string, string | undefined> = {}
   for (const [name, value] of Object.entries(env)) {
     const upper = name.toUpperCase()
