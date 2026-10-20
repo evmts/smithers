@@ -28,7 +28,7 @@ export const landingCopy: {
     npx: "npx smthrs@next generate flow coding",
     bunx: "bunx smthrs@next generate flow coding"
   },
-  runNote: "Needs Node.js 26.4 or later. Adds a coding flow to `.smithers/flows/`.",
+  runNote: "Needs Node.js 22.19 or later. Adds a coding flow to `.smithers/flows/`.",
   startApp: "Start app",
   docs: { label: "Docs", href: "/docs/installation/" },
   source: { label: "Source", href: "https://github.com/smithersai/smithers" }
