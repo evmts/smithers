@@ -130,7 +130,8 @@ type WorkflowOwners struct {
 	Orgs  []int64
 }
 
-func (o WorkflowOwners) admits(repository db.Repository) bool {
+// Admits reports whether the repository's owner is listed.
+func (o WorkflowOwners) Admits(repository db.Repository) bool {
 	if repository.OrgID.Valid {
 		return slices.Contains(o.Orgs, repository.OrgID.Int64)
 	}
@@ -488,7 +489,7 @@ func (w *WorkflowSandboxSchedulerWorker) executeRun(ctx context.Context, claim w
 	if err != nil {
 		return w.failRun(runCtx, claim, 0, "failed to resolve workflow repository owner")
 	}
-	if w.owners != nil && !w.owners.admits(repository) {
+	if w.owners != nil && !w.owners.Admits(repository) {
 		return w.refuseRun(runCtx, claim, "owner_not_listed")
 	}
 

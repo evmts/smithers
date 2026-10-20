@@ -383,6 +383,12 @@ func (s *RepositoryJobService) dispatch(ctx context.Context, claim db.Repository
 		_, err := s.settle(ctx, claim, "skipped", "", nil, "Registration was paused or replaced")
 		return err
 	}
+	if refused, err := s.refusesRepository(ctx, reg.RepositoryID); err != nil {
+		return err
+	} else if refused {
+		_, err := s.settle(ctx, claim, "skipped", "", nil, errRepositoryJobsUnavailable.Error())
+		return err
+	}
 	if claim.Source == "schedule" {
 		paused, err := s.ownerAutonomyPaused(ctx, reg.UserID)
 		if err != nil {

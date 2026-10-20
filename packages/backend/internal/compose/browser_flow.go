@@ -41,6 +41,9 @@ var browserFlowProcedures = map[string]bool{
 }
 
 type browserFlowAPI struct {
+	// workflowOwners, when set, are whose repositories may start a repository
+	// job flow through the relay (gate 2b).
+	workflowOwners *services.WorkflowOwners
 	// Set by the install composition; Plue retains its repository ACL gates.
 	installQueries      *db.Queries
 	install             bool
@@ -113,6 +116,19 @@ func browserFlowRelayRefused(w http.ResponseWriter, err error) {
 	default:
 		browserFlowRefusal(w, http.StatusBadRequest, "Invalid workflow request.")
 	}
+}
+
+// browserFlowPlansRepositoryJob reports a relay call that plans a repository
+// job flow. Every relay run starts from a plan it saved, so refusing the plan
+// refuses the run.
+func browserFlowPlansRepositoryJob(request browserFlowRequest) bool {
+	if request.Procedure != "Plan" {
+		return false
+	}
+	var plan struct {
+		FlowID string `json:"flowId"`
+	}
+	return json.Unmarshal(request.Payload, &plan) == nil && flowdispatch.IsRepositoryJobFlow(plan.FlowID)
 }
 
 func browserFlowTodoRefused(w http.ResponseWriter) {
@@ -196,6 +212,10 @@ func (api *browserFlowAPI) prepare(w http.ResponseWriter, r *http.Request, provi
 	view, err := api.repos.GetRepoView(r.Context(), user, owner, name)
 	if err != nil || !view.CanWrite {
 		browserFlowRefusal(w, http.StatusNotFound, "Repository unavailable.")
+		return request, flowruntime.Target{}, db.Workspace{}, false
+	}
+	if api.workflowOwners != nil && !api.workflowOwners.Admits(view.Repository) && browserFlowPlansRepositoryJob(request) {
+		browserFlowTyped(w, http.StatusForbidden, "repository_jobs_unavailable", "Repository jobs don't run on smithers.sh yet.")
 		return request, flowruntime.Target{}, db.Workspace{}, false
 	}
 	workspace, err := api.queries.GetFlowWorkspaceForUserRepo(r.Context(), db.GetFlowWorkspaceForUserRepoParams{

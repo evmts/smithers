@@ -121,6 +121,11 @@ func (s *RepositoryJobService) admitRepositoryJobLaunch(ctx context.Context, reg
 	if s == nil || s.flowDispatcher == nil {
 		return jobs.RequestReceipt{}, errors.New("repository job Flow dispatcher is unavailable")
 	}
+	if refused, err := s.refusesRepository(ctx, registration.RepositoryID); err != nil {
+		return jobs.RequestReceipt{}, err
+	} else if refused {
+		return jobs.RequestReceipt{}, errRepositoryJobsUnavailable
+	}
 	var config RegisterRepositoryJobInput
 	if json.Unmarshal(registration.Configuration, &config) != nil {
 		return jobs.RequestReceipt{}, fmt.Errorf("invalid repository job registration %s", registration.ID)
@@ -221,6 +226,11 @@ func (resolver *RepositoryJobFlowHostTargetResolver) ResolveFlowHostTarget(ctx c
 	registration, err := resolver.jobs.q.GetRepositoryJobRegistration(ctx, dispatch.RegistrationID)
 	if err != nil {
 		return flowhost.Authority{}, repositoryJobFlowFailure{code: "runtime_binding_unavailable", retryable: !errors.Is(err, pgx.ErrNoRows)}
+	}
+	if refused, err := resolver.jobs.refusesRepository(ctx, registration.RepositoryID); err != nil {
+		return flowhost.Authority{}, repositoryJobFlowFailure{code: "runtime_binding_unavailable", retryable: true}
+	} else if refused {
+		return flowhost.Authority{}, repositoryJobFlowFailure{code: repositoryJobsUnavailable}
 	}
 	original, claim, err := resolver.jobs.originalRepositoryJobRegistration(ctx, dispatch, registration)
 	if err != nil {

@@ -1759,8 +1759,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	repositoryJobService.SetRepositoryPolicyReader(repoHostClient)
 	// A multitenant deployment starts no repository job from an event a
 	// stranger can raise with their own code (ITEM 11).
-	if hostedWorkflowOwners(cfg) != nil {
+	if owners := hostedWorkflowOwners(cfg); owners != nil {
 		repositoryJobService.AdmitMemberEventsOnly()
+		repositoryJobService.RunOnlyForWorkflowOwners(owners)
 	}
 	mythicalService.SetPolicyReader(repoHostClient)
 	// InvokeWorkflow runs a file flow through the same Flow dispatcher.
@@ -2511,6 +2512,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		browser := &browserFlowAPI{installTransactions: pool, repos: repoService, queries: queries, dispatcher: flow.dispatcher, boxes: workspaceService,
 			resumes: background.Jobs[string]{Timeout: 6 * time.Minute, FailureTTL: time.Minute},
 			limit:   middleware.GlobalAPIRateLimit(queries)}
+		// A multitenant deployment plans no repository job flow through the
+		// relay for an unlisted owner's repository (gate 2b).
+		browser.workflowOwners = hostedWorkflowOwners(cfg)
 		mountBrowserFlow(router, cfg, queries, browser)
 		monitors := &runMonitors{pool: pool, reader: flow.dispatcher, summaries: conversationSummaries}
 		mountRunMonitors(router, cfg, queries, monitors)

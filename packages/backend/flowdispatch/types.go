@@ -78,6 +78,13 @@ func flowName(flowID string) string {
 	return name
 }
 
+// IsRepositoryJobFlow recognizes the flows that register or run repository
+// jobs: repository/setup, repository/trigger and repository-jobs/*.
+func IsRepositoryJobFlow(flowID string) bool {
+	name := flowName(flowID)
+	return name == "repository/setup" || name == "repository/trigger" || strings.HasPrefix(name, "repository-jobs/")
+}
+
 func engineOnlyFlow(flowID string) bool {
 	switch flowName(flowID) {
 	case "coding/request", "coding/vibe", "coding/verify", "review/change", "learning":

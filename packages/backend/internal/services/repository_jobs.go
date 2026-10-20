@@ -88,6 +88,37 @@ type RepositoryJobService struct {
 	policy         repositoryPolicyHost
 	// memberEventsOnly drops GitHub events outside hostedMemberCodeTriggers.
 	memberEventsOnly bool
+	// owners, when set, are whose repositories run repository jobs at all.
+	owners *WorkflowOwners
+}
+
+// RunOnlyForWorkflowOwners runs repository jobs only for the listed owners'
+// repositories, the staff and service-payer lists of item 11. A repository
+// job runs its registration's checks as shell on a box, so a multitenant
+// deployment refuses every other repository's dispatch, launch and host
+// (gate 2b).
+func (s *RepositoryJobService) RunOnlyForWorkflowOwners(owners *WorkflowOwners) {
+	s.owners = owners
+}
+
+// repositoryJobsUnavailable is why a refused repository job never ran. A
+// retry cannot change it.
+const (
+	repositoryJobsUnavailable        = "repository_jobs_unavailable"
+	repositoryJobsUnavailableMessage = "Repository jobs don't run on smithers.sh yet."
+)
+
+var errRepositoryJobsUnavailable = errors.New(repositoryJobsUnavailable + ": " + repositoryJobsUnavailableMessage)
+
+func (s *RepositoryJobService) refusesRepository(ctx context.Context, repositoryID int64) (bool, error) {
+	if s.owners == nil {
+		return false, nil
+	}
+	repository, err := s.q.GetRepoByID(ctx, repositoryID)
+	if err != nil {
+		return false, err
+	}
+	return !s.owners.Admits(repository), nil
 }
 
 // AdmitMemberEventsOnly makes the service take only GitHub events whose code

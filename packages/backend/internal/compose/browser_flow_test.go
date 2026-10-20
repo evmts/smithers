@@ -8,8 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
+	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
@@ -26,10 +28,12 @@ type browserReadDependencies struct {
 	workspace db.Workspace
 	lookups   []db.GetFlowWorkspaceForUserRepoParams
 	canWrite  bool
+	// owner, when set, is the repository's owning user.
+	owner int64
 }
 
 func (d *browserReadDependencies) GetRepoView(context.Context, *db.User, string, string) (services.RepoView, error) {
-	return services.RepoView{Repository: db.Repository{ID: 23}, CanWrite: d.canWrite}, nil
+	return services.RepoView{Repository: db.Repository{ID: 23, UserID: pgtype.Int8{Int64: d.owner, Valid: d.owner > 0}}, CanWrite: d.canWrite}, nil
 }
 
 func (d *browserReadDependencies) GetFlowWorkspaceForUserRepo(_ context.Context, params db.GetFlowWorkspaceForUserRepoParams) (db.Workspace, error) {
@@ -159,4 +163,43 @@ func TestBrowserFlowScratchPlansTodoOnDraftHost(t *testing.T) {
 	require.Len(t, dispatcher.calls, 1)
 	require.Equal(t, flowdispatch.DraftBindingKind, dispatcher.calls[0].target.BindingKind)
 	require.Equal(t, "Plan", dispatcher.calls[0].procedure)
+}
+
+// A multitenant deployment plans no repository job flow through the relay
+// for an unlisted owner's repository: such a job runs its registration's
+// checks as shell on a box (gate 2b). A listed owner's plan relays as before,
+// and other flows are unaffected.
+func TestBrowserFlowRelayRefusesRepositoryJobsForUnlistedOwners(t *testing.T) {
+	owners := &services.WorkflowOwners{Users: config.HostedWorkspaceUsers{UserIDs: []int64{17}}}
+	for name, tc := range map[string]struct {
+		owner   int64
+		flow    string
+		refused bool
+	}{
+		"setup, unlisted owner":    {owner: 99, flow: "repository/setup", refused: true},
+		"trigger, unlisted owner":  {owner: 99, flow: "repository/trigger", refused: true},
+		"job file, unlisted owner": {owner: 99, flow: "./.smithers/flows/repository-jobs/review/flow.ts", refused: true},
+		"setup, listed owner":      {owner: 17, flow: "repository/setup"},
+		"other flow, unlisted":     {owner: 99, flow: "coding/dispatch"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			deps := &browserReadDependencies{canWrite: true, owner: tc.owner, workspace: db.Workspace{ID: browserBoxID, Status: "running", RepositoryID: 23, UserID: 17}}
+			dispatcher := &browserFlowRecordingDispatcher{}
+			api := &browserFlowAPI{repos: deps, queries: deps, dispatcher: dispatcher, workflowOwners: owners}
+			body := `{"repo":"owner/repo","workspaceId":"` + browserBoxID + `","procedure":"Plan","payload":{"flowId":"` + tc.flow + `","input":{}}}`
+			request := httptest.NewRequest(http.MethodPost, "/api/workflow/rpc", strings.NewReader(body))
+			request = request.WithContext(middleware.ContextWithAuthInfo(request.Context(), &middleware.AuthInfo{User: &db.User{ID: 17, UserType: "user"}}))
+			writer := httptest.NewRecorder()
+			api.rpc(writer, request)
+			if tc.refused {
+				require.Equal(t, http.StatusForbidden, writer.Code, writer.Body.String())
+				require.Contains(t, writer.Body.String(), `"code":"repository_jobs_unavailable"`)
+				require.Contains(t, writer.Body.String(), "Repository jobs don't run on smithers.sh yet.")
+				require.Empty(t, dispatcher.calls, "the host was never reached")
+				return
+			}
+			require.Equal(t, http.StatusOK, writer.Code, writer.Body.String())
+			require.Len(t, dispatcher.calls, 1)
+		})
+	}
 }
