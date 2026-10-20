@@ -86,6 +86,39 @@ const provider = (configured: Route.Route<any, any, any, any>) =>
 configured route: a `route` that disagrees with `model` keys the step on bytes
 the provider never receives.
 
+## Judge with sealed calls
+
+Code that takes a `Model` and calls it itself, such as
+`Evaluator.layerFromSeat`, gets sealed calls from `ModelStep.model`. Build it
+inside a step: each request it streams is one `ModelStep.run` under the name
+you give, so a resumed run reads each reading back instead of paying for it
+again.
+
+```ts
+import { type FlowEngineLike, ModelStep } from "@smthrs/agent"
+import { Classifier, Evaluator, type Model } from "@smthrs/model"
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
+
+const Bugs = Classifier.make("example/bugs", {
+  description: "Whether an issue reports a bug.",
+  state: Schema.Struct({ issue: Schema.String }),
+  questions: { bug: Classifier.boolean({ instructions: "Does the issue report a bug?" }) }
+})
+
+const isBug = (seat: { readonly model: Model.Model; readonly route: FlowEngineLike.RouteResolver }, issue: string) =>
+  Effect.gen(function*() {
+    const model = yield* ModelStep.model({ name: "example/bugs/model", ...seat })
+    return yield* Bugs.evaluate({ issue }).pipe(
+      Effect.provide(Evaluator.layerFromSeat({ modelId: "judge", model }))
+    )
+  })
+```
+
+The stream emits the recorded events once the step settles, so the judge reads
+the whole answer at once. Use `ModelStep.run` with `onEvent` to watch a call
+live.
+
 ## What the key covers
 
 | In the key                                                         | Not in the key                                     |

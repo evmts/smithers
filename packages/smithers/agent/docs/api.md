@@ -2613,6 +2613,23 @@ It fails with the last refusal once `retryPolicy` gives up, with a permission
 failure, with the route's `prepare` error, or with an `engine_failed`
 `HarnessError` when the key cannot be derived.
 
+### ModelStep.model
+
+```ts
+const model: (
+  options: Omit<Options, "request" | "onEvent">
+) => Effect.Effect<Model.Model, never, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+```
+
+A `Model` whose every call is one `run` of the running flow, keyed, sealed and
+replayed under `options.name`, for code that takes a `Model` and calls it
+itself, such as `Evaluator.layerFromSeat`. Build it inside a step. Its stream
+emits the recorded events once the step settles, not while the provider
+answers; use `run` with `onEvent` to watch a call live. A refusal the step
+sealed fails the stream after those events. A step failure fails it with the
+same error, and a key that cannot be derived fails it as a `ModelError` whose
+code is `unknown`. See [Judge with sealed calls](./guides/durable-model-call.md#judge-with-sealed-calls).
+
 ### ModelStep.Options
 
 | Field                | Type                                                    | What it decides                                                                                                                                                                  |

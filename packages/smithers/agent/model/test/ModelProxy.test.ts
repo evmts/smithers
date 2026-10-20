@@ -665,6 +665,31 @@ describe("ModelProxy prepare", () => {
     expect(server.annotations).toMatchObject({ side: "server", outcome: "success" })
   })
 
+  it("hands prepare the call's admission: the caller's request id, the invocation id onEnd gets, the body's bytes", async () => {
+    const admissions: Array<ModelProxy.Admission> = []
+    const ends: Array<ModelProxy.End> = []
+    const h = harness({
+      prepare: (model) => (received, admission) =>
+        Effect.sync(() => {
+          admissions.push(admission)
+          return { request: received, model }
+        }),
+      onEnd: (end) => Effect.sync(() => ends.push(end))
+    })
+    const body = encodedRequest(request("héllo"))
+
+    await (await h.handler(new Request(url, post(body, { [ModelProxy.requestIdHeader]: "caller-1" })))).text()
+
+    // One admission per call, keyed as onEnd will be: a host reserves under the invocation id and settles under it.
+    expect(admissions).toEqual([{
+      requestId: "caller-1",
+      invocationId: ends[0]!.invocationId,
+      requestBytes: body.length
+    }])
+    expect(admissions[0]!.invocationId).toMatch(/^[0-9a-f]{32}$/)
+    expect((await h.logLine("server")).annotations.requestBytes).toBe(admissions[0]!.requestBytes)
+  })
+
   it("hands onEnd the outcome, model id and merged usage once the stream ends", async () => {
     const ends: Array<ModelProxy.End> = []
     const h = harness({

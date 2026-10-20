@@ -33,9 +33,10 @@
  */
 
 import { type FlowRuntime, RetryPolicy } from "@smthrs/flow"
-import type { Model, ModelError, ModelEvent, ModelRequest } from "@smthrs/model"
+import { type Model, ModelError, type ModelEvent, type ModelRequest } from "@smthrs/model"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
+import * as Stream from "effect/Stream"
 import type { RouteResolver } from "./FlowEngineLike.ts"
 import * as Internal from "./internal/ModelStep.ts"
 
@@ -174,3 +175,65 @@ export const run = (
     }
     return { events: recorded.events, ...(recorded.error === undefined ? {} : { error: recorded.error }), replayed }
   })
+
+/**
+ * The services a model step runs on: the engine, the running execution and
+ * the host's `Crypto`, which derives the key.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Requirements = Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+
+/**
+ * A `Model` whose every call is one sealed {@link run} of the running flow,
+ * for code that takes a `Model` and calls it itself, such as
+ * `Evaluator.layerFromSeat`. Build it inside a step, where the execution is
+ * running; each request it streams is keyed, sealed and replayed as
+ * {@link run} keys, seals and replays it, under `options.name`.
+ *
+ * Its stream emits the recorded events once the step settles, not while the
+ * provider answers: use {@link run} with `onEvent` to watch a call live. A
+ * refusal the step sealed fails the stream after those events, as the
+ * provider's own stream would. A step failure fails it with the same error,
+ * and an engine failure deriving the key fails it as a `ModelError` whose
+ * code is `unknown`.
+ *
+ * @example
+ * ```ts
+ * import { type FlowEngineLike, ModelStep } from "@smthrs/agent"
+ * import { Evaluator, type Model } from "@smthrs/model"
+ * import * as Effect from "effect/Effect"
+ *
+ * // Each reading the judge takes is a sealed step named "judge/model".
+ * const judge = (seat: { readonly model: Model.Model; readonly route: FlowEngineLike.RouteResolver }) =>
+ *   Effect.map(
+ *     ModelStep.model({ name: "judge/model", ...seat }),
+ *     (model) => Evaluator.layerFromSeat({ modelId: "judge", model })
+ *   )
+ * ```
+ *
+ * @category execution
+ * @since 1.0.0
+ */
+export const model = (
+  options: Omit<Options, "request" | "onEvent">
+): Effect.Effect<Model.Model, never, Requirements> =>
+  Effect.map(Effect.context<Requirements>(), (context) => ({
+    ...(options.model.providerName === undefined ? {} : { providerName: options.model.providerName }),
+    stream: (request) =>
+      Stream.unwrap(
+        run({ ...options, request }).pipe(
+          Effect.map((result) => {
+            const events = Stream.fromIterable(result.events)
+            return result.error === undefined ? events : Stream.concat(events, Stream.fail(result.error))
+          }),
+          Effect.mapError((failure) =>
+            failure._tag === "/harness/HarnessError"
+              ? new ModelError.ModelError({ code: "unknown", message: failure.message })
+              : failure
+          ),
+          Effect.provideContext(context)
+        )
+      )
+  }))

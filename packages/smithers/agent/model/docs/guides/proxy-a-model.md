@@ -106,18 +106,27 @@ const prepare = (signedIn: boolean, model: Model.Model) => (request: ModelReques
 
 ## Meter what each request spends
 
-Two options record usage where the host knows what it means:
+Three options record usage where the host knows what it means:
 
 - `attributes` labels every server-side metric and the log line of the
   request, such as `{ role: "agent" }`. Keep them low-cardinality: never ids,
   prompt text or credentials.
+- `prepare` receives an `Admission` beside the request: the caller's
+  `requestId`, the server's `invocationId` for this call and the body's
+  `requestBytes`. To bound spend, reserve the call's worst case here, before
+  the model runs, and check the budget and reserve in one atomic step: a
+  budget read before the call and written after it lets concurrent calls all
+  pass the read. `requestBytes` bounds the prompt, because a byte-level
+  tokenizer never yields more tokens than bytes; add the output cap you set.
+  Lower `maxBodyBytes` to bound it further.
 - `onEnd` runs once after an admitted request's model stream ends, with its
   `invocationId`, `requestId`, outcome (`success`, `failed` or
-  `interrupted`), model id and the usage the model reported. Use it to record
-  spend against a budget. The terminal line waits for it, so the spend is
-  recorded before the client reads the end, and before a Worker's invocation
-  ends with the response. It never runs for a refused request, and it must
-  handle its own errors.
+  `interrupted`), model id and the usage the model reported. Settle the
+  reservation there, under the same `invocationId`. The terminal line waits
+  for it, so the spend is recorded before the client reads the end, and
+  before a Worker's invocation ends with the response. It never runs for a
+  refused request, and it must handle its own errors. A response body that is
+  never read never reaches `onEnd`, so a reservation it holds stays counted.
 - Key spend on `invocationId`, which the server mints for every call it
   admits. `requestId` is the caller's: it may send one id on any number of
   calls, and each call still runs the model, so spend keyed on it counts only
@@ -127,12 +136,28 @@ Two options record usage where the host knows what it means:
 import { ModelProxy } from "@smthrs/model"
 import { Effect } from "effect"
 
+// Tokens reserved for calls in flight, by invocation id. A real host keeps them in its database.
+const reserved = new Map<string, number>()
+
 const served = ModelProxy.serve({
-  prepare: (request) => Effect.succeed({ model, request }),
+  prepare: (request, { invocationId, requestBytes }) =>
+    Effect.sync(() => {
+      // The worst case: every byte a prompt token, plus the most output the call may ask for.
+      reserved.set(invocationId, requestBytes + (request.params.maxTokens ?? 1_000))
+      return { model, request }
+    }),
+  maxBodyBytes: 64 * 1024,
   attributes: { role: "agent" },
   onEnd: ({ invocationId, requestId, outcome, usage }) =>
     Effect.logInfo("usage").pipe(
-      Effect.annotateLogs({ invocationId, requestId, outcome, tokens: usage.outputTokens ?? 0 })
+      Effect.annotateLogs({
+        invocationId,
+        requestId,
+        outcome,
+        reserved: reserved.get(invocationId) ?? 0,
+        tokens: usage.outputTokens ?? 0
+      }),
+      Effect.ensuring(Effect.sync(() => reserved.delete(invocationId)))
     )
 })
 ```

@@ -377,6 +377,56 @@ withPostgres("ModelStep on the durable engine", () => {
     expect(model.calls).toHaveLength(1)
   })
 
+  it("serves a Model whose calls are sealed steps, replayed on resume, with a sealed refusal failing the stream", async () => {
+    const model = scripted((_, request) =>
+      request.messages.length > 1
+        ? Stream.fail(new ModelError.ModelError({ code: "invalid_request", httpStatus: 400, message: "Bad request" }))
+        : Stream.fromIterable(reply("Paris"))
+    )
+    const codeOf = (error: { readonly _tag: string; readonly code?: string }) => error.code ?? error._tag
+    const park = parkOnce()
+    const handler: Handler = ({ prompt }) =>
+      Effect.gen(function*() {
+        const sealed = yield* ModelStep.model({ name: step, ...through({ ...model.model, providerName: "test" }) })
+        const answered = yield* Stream.runCollect(sealed.stream(ask([prompt])))
+        const refused = yield* Stream.runCollect(sealed.stream(ask([prompt, "and Spain?"]))).pipe(
+          Effect.match({ onFailure: codeOf, onSuccess: () => "answered" })
+        )
+        yield* park
+        return { text: textOf(answered), refused, providerName: sealed.providerName ?? null }
+      })
+    const value = await Effect.runPromise(host(scratch(), handler, parkThenResume("as-model", "capital of France")))
+    expect(value).toEqual({ text: "Paris", refused: "invalid_request", providerName: "test" })
+    // The resumed body streamed both requests again, and the record answered each.
+    expect(model.calls).toHaveLength(2)
+  })
+
+  it("fails a Model's stream with the step's failure, and a key it cannot derive as an unknown ModelError", async () => {
+    const model = scripted(() => Stream.fail(rateLimited()))
+    const once = RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
+    const codeOf = (error: { readonly _tag: string; readonly code?: string }) => error.code ?? error._tag
+    const route = through(model.model).route
+    const handler: Handler = ({ prompt }) =>
+      Effect.gen(function*() {
+        const limited = yield* ModelStep.model({ name: step, model: model.model, route, retryPolicy: once })
+        const unsealable = yield* ModelStep.model({
+          name: step,
+          model: model.model,
+          route: {
+            prepare: (request) =>
+              Effect.map(route.prepare(request), (prepared) => ({ ...prepared, publicHeaders: { x: 1n as never } }))
+          }
+        })
+        const run = (sealed: typeof limited) =>
+          Stream.runCollect(sealed.stream(ask([prompt]))).pipe(
+            Effect.match({ onFailure: codeOf, onSuccess: () => "answered" })
+          )
+        return [yield* run(limited), yield* run(unsealable)]
+      })
+    expect(await Effect.runPromise(host(scratch(), handler, execute("as-model-failed", "capital of France"))))
+      .toEqual(["rate_limited", "unknown"])
+  })
+
   it("retries a rate limit through the retry policy without sealing it", async () => {
     const model = scripted((call) => call === 1 ? Stream.fail(rateLimited()) : Stream.fromIterable(reply("Paris")))
     const deliveries: Array<Array<ModelEvent.ModelEvent>> = []

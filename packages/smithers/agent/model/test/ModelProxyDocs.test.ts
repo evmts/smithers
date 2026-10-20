@@ -71,8 +71,9 @@ describe("Proxy a model guide", () => {
       >["prepare"]
     }>("Decide what the caller may choose", ["prepare"])
 
-    const refusal = await Effect.runPromise(Effect.flip(prepare(false, echo)(request)))
-    const prepared = await Effect.runPromise(prepare(true, echo)(request))
+    const admission = { requestId: "r", invocationId: "i", requestBytes: 64 }
+    const refusal = await Effect.runPromise(Effect.flip(prepare(false, echo)(request, admission)))
+    const prepared = await Effect.runPromise(prepare(true, echo)(request, admission))
 
     expect(refusal).toMatchObject({ _tag: "flows/model/ModelProxyRefusal", status: 401, message: "Sign in to chat." })
     expect(prepared.model).toBe(echo)
@@ -80,7 +81,7 @@ describe("Proxy a model guide", () => {
     expect(prepared.request.messages).toEqual(request.messages)
   })
 
-  it("labels and meters a request with attributes and onEnd", async () => {
+  it("labels a request, reserves its worst case in prepare and settles it in onEnd", async () => {
     const { served } = example<{ served: ReturnType<typeof ModelPackage.ModelProxy.serve<never>> }>(
       "Meter what each request spends",
       ["served"],
@@ -103,7 +104,9 @@ describe("Proxy a model guide", () => {
       outcome: "success",
       tokens: 6,
       requestId: serve?.annotations.requestId,
-      invocationId: serve?.annotations.invocationId
+      invocationId: serve?.annotations.invocationId,
+      // The body's bytes, plus the output cap the request left unset.
+      reserved: Number(serve?.annotations.requestBytes) + 1_000
     })
     expect(serve?.annotations.invocationId).toMatch(/^[0-9a-f]{32}$/)
     expect(serve?.annotations).toMatchObject({ role: "agent" })

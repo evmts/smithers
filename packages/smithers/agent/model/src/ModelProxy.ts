@@ -249,6 +249,26 @@ export interface Prepared {
 }
 
 /**
+ * What {@link serve} knows about a request when it hands it to the host's
+ * `prepare`: the caller's `requestId`, the server's own `invocationId` for
+ * this call (the same one {@link End} carries), and the body's size in bytes,
+ * at most `maxBodyBytes`.
+ *
+ * A host that bounds spend reserves it here, keyed by `invocationId`, and
+ * settles the reservation in `onEnd` under the same key. `requestBytes` bounds
+ * the prompt: a byte-level tokenizer never yields more tokens than bytes of
+ * text.
+ *
+ * @category models
+ * @since 1.0.0-rc.16
+ */
+export interface Admission {
+  readonly requestId: string
+  readonly invocationId: string
+  readonly requestBytes: number
+}
+
+/**
  * How a served request ended, as {@link ServeOptions.onEnd} receives it: its
  * ids, its outcome, the model id it ran on, and the usage the model reported
  * (merged field by field; a `retry` event starts it over). An `interrupted`
@@ -289,9 +309,10 @@ export interface ServeOptions<R> {
    * `Model` that answers it, or refuses it with a {@link Refusal}. This is
    * where the host chooses the model, system prompt, parameters and tools,
    * and checks who is asking; a browser must not choose them on the host's
-   * key.
+   * key. Its {@link Admission} names the call, so a host can reserve spend
+   * under the `invocationId` that `onEnd` later reports.
    */
-  readonly prepare: (request: ModelRequest) => Effect.Effect<Prepared, Refusal, R>
+  readonly prepare: (request: ModelRequest, admission: Admission) => Effect.Effect<Prepared, Refusal, R>
   /** The largest request body accepted, in bytes; {@link defaultMaxBodyBytes} when omitted. */
   readonly maxBodyBytes?: number | undefined
   /**
@@ -354,7 +375,7 @@ export const serve = <R = never>(
     const call = new Call("server", requestId, startedAt, span, options.attributes ?? {})
     call.invocationId = invocationId
 
-    const admitted = yield* Effect.result(admit(request, options, call)).pipe(
+    const admitted = yield* Effect.result(admit(request, options, call, invocationId)).pipe(
       Effect.onInterrupt(() => call.finish(Exit.interrupt()))
     )
     if (admitted._tag === "Failure") {
@@ -561,7 +582,8 @@ const decodeRequest = Schema.decodeUnknownEffect(Schema.fromJsonString(requestJs
 const admit = <R>(
   request: HttpServerRequest.HttpServerRequest,
   options: ServeOptions<R>,
-  call: Call
+  call: Call,
+  invocationId: string
 ): Effect.Effect<Prepared, Rejection, R> =>
   Effect.gen(function*() {
     if (request.method !== "POST") {
@@ -574,8 +596,9 @@ const admit = <R>(
       catch: () => notModelRequest
     })
     const decoded = yield* Effect.mapError(decodeRequest(text), () => notModelRequest)
+    const admission: Admission = { requestId: call.requestId, invocationId, requestBytes: bytes.length }
     return yield* Effect.mapError(
-      options.prepare(decoded),
+      options.prepare(decoded, admission),
       (refusal) => rejection(refusal.status, "refused", refusal.message, refusal.modelErrorCode)
     )
   }).pipe(
