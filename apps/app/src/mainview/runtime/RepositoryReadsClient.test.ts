@@ -10,8 +10,8 @@ test("history encodes repository, ref, path and cursor and validates the answer"
 })
 test("one commit decodes files and forwards cancellation", async () => {
  const signal = new AbortController().signal
- const client = { request: async (path: string, init: RequestInit) => { expect(path).toBe(`/api/repos/alice/demo/commits/${commit.sha}`); expect(init.signal).toBe(signal); return { ...commit, files: [] } } } as unknown as ApplicationClient
- expect((await getRepositoryCommit(client, "alice", "demo", commit.sha, signal)).files).toEqual([])
+ const client = { request: async (path: string, init: RequestInit) => { expect(path).toBe(`/api/repos/alice/demo/commits/${commit.sha}`); expect(init.signal).toBe(signal); return { ...commit, files: [{ path: "a", status: "added", additions: 1, deletions: 0, patch: "+hello", binary: false, too_large: false }] } } } as unknown as ApplicationClient
+ expect((await getRepositoryCommit(client, "alice", "demo", commit.sha, signal)).files[0]?.patch).toBe("+hello")
 })
 
 test("repository code search keeps the repository scope and cursor in the request", async () => {

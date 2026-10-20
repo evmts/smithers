@@ -26,7 +26,7 @@ export const listRepositoryCommits = async (
   return RepositoryCommitPageSchema.parse(await client.request(`${repositoryPath(owner, repo)}/commits?${query}`, { signal: options.signal }))
 }
 
-/** Read an immutable commit with its first-parent changed-file summary.
+/** Read an immutable commit with bounded first-parent patches and binary or size markers.
  * @category services
  * @since 0.1.0
  */

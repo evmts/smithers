@@ -23,6 +23,9 @@ type RepositoryCommit struct {
 
 // RepositoryCommitFile summarizes the first-parent change (the empty tree for a root commit).
 type RepositoryCommitFile struct {
+	Patch     string `json:"patch,omitempty"`
+	Binary    bool   `json:"binary,omitempty"`
+	TooLarge  bool   `json:"too_large,omitempty"`
 	From      string `json:"from,omitempty"`
 	Path      string `json:"path"`
 	Status    string `json:"status"`

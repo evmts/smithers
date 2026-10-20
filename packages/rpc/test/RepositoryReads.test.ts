@@ -89,3 +89,10 @@ describe("repository branches", () => {
     expect(RepositoryBranchPageSchema.safeParse({ items: [{ ...branch, head: "unknown" }] }).success).toBe(false)
   })
 })
+
+it("retains commit patches and omission markers", () => {
+  for (const extra of [{ patch: "@@ -1 +1 @@\n-old\n+new\n" }, { binary: true }, { too_large: true }]) {
+    const file = { path: "a", status: "modified", additions: 1, deletions: 1, ...extra }
+    expect(RepositoryCommitDetailSchema.parse({ ...commit, files: [file] }).files[0]).toEqual(file)
+  }
+})

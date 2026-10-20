@@ -39,7 +39,10 @@ export const RepositoryCommitDetailSchema = RepositoryCommitSchema.extend({
     from: z.string().min(1).optional(),
     status: z.enum(["added", "modified", "deleted", "renamed"]),
     additions: z.number().int().nonnegative(),
-    deletions: z.number().int().nonnegative()
+    deletions: z.number().int().nonnegative(),
+    patch: z.string().optional(),
+    binary: z.boolean().optional(),
+    too_large: z.boolean().optional()
   }))
 })
 

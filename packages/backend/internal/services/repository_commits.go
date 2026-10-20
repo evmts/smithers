@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/diffview"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"strings"
@@ -66,5 +67,47 @@ func (s *RepoService) GetRepositoryCommit(ctx context.Context, viewer *db.User, 
 		return repohost.RepositoryCommitDetail{}, errors.Internal("repository history unavailable")
 	}
 	detail, err := reader.GetRepositoryCommit(ctx, strings.TrimSpace(owner), repository.Name, sha)
-	return detail, repositoryCommitError(err)
+	if err != nil {
+		return detail, repositoryCommitError(err)
+	}
+	patches, err := diffview.BuildChangeDiff(ctx, repositoryCommitDiffReader{s: s, detail: detail}, strings.TrimSpace(owner), repository.Name, sha, diffview.BuildOptions{})
+	if err != nil {
+		return repohost.RepositoryCommitDetail{}, repositoryCommitError(err)
+	}
+	for i, patch := range patches.FileDiffs {
+		detail.Files[i].Patch = patch.Patch
+		detail.Files[i].Binary = patch.IsBinary
+		detail.Files[i].TooLarge = patch.TooLarge
+	}
+	return detail, nil
+}
+
+// repositoryCommitDiffReader adapts immutable history to the PR diff builder.
+// File bytes keep the existing contents reader and its immutable cache.
+type repositoryCommitDiffReader struct {
+	s      *RepoService
+	detail repohost.RepositoryCommitDetail
+}
+
+func (r repositoryCommitDiffReader) GetChange(context.Context, string, string, string) (repohost.Change, error) {
+	change := repohost.Change{}
+	if len(r.detail.Parents) > 0 {
+		change.ParentCommitID = r.detail.Parents[0]
+	}
+	return change, nil
+}
+func (r repositoryCommitDiffReader) GetChangeDiff(context.Context, string, string, string) (repohost.ChangeDiff, error) {
+	out := repohost.ChangeDiff{FileDiffs: make([]repohost.FileDiff, 0, len(r.detail.Files))}
+	for _, file := range r.detail.Files {
+		out.FileDiffs = append(out.FileDiffs, repohost.FileDiff{Path: file.Path, OldPath: file.From, ChangeType: file.Status})
+	}
+	return out, nil
+}
+func (r repositoryCommitDiffReader) GetFileAtChange(ctx context.Context, owner, repo, sha, path string) (repohost.FileContent, error) {
+	if cached, ok := r.s.repoHost.(interface {
+		GetFileAtCommit(context.Context, string, string, string, string) (repohost.FileContent, error)
+	}); ok {
+		return cached.GetFileAtCommit(ctx, owner, repo, sha, path)
+	}
+	return r.s.repoHost.GetFileAtChange(ctx, owner, repo, sha, path)
 }
