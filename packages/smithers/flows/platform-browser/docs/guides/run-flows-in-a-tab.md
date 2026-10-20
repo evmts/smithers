@@ -145,3 +145,12 @@ flow only in the engine worker.
 - [Testing](../testing.md#test-the-durable-engine): run the engine under Node
   with injected services.
 - [API reference](../api.md#the-durable-engine): every export.
+
+A failed SQL statement still updates transaction ownership. If it leaves a
+transaction open, closing the tab rolls it back; if SQLite rolls it back, the
+next statement starts outside it. A transaction containing failed SQL is refused
+rather than replayed after its leader ends.
+
+OPFS handles held by a previous worker are acquired with Effect's host resource
+retry schedule until released or cancelled. Other open failures remain errors.
+After a worker failure, a new leader announcement lets its tab send requests again.

@@ -67,6 +67,8 @@ export const Executed = Schema.TaggedStruct("Executed", {
 export const Failed = Schema.TaggedStruct("Failed", {
   ...addressed,
   error: Schema.String,
+  leader: Schema.optional(Schema.String),
+  open: Schema.optional(Schema.Boolean),
   code: Schema.optional(Schema.Number),
   message: Schema.optional(Schema.String)
 })

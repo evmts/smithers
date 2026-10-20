@@ -140,12 +140,30 @@ describe("BrowserSqlite over OPFS", () => {
       expect(yield* Fiber.join(next)).toEqual([{ one: 1 }])
     }))
 
-  it.live("gives up on files another worker keeps holding", () =>
+  it.live("recovers when another worker holds OPFS beyond the former retry deadline", () =>
     Effect.gen(function*() {
-      yield* Layer.build(sqlite())
-      const refused = yield* Layer.build(sqlite()).pipe(Effect.flip)
-      expect(refused.message).toContain("Failed to open the OPFS directory")
-    }).pipe(Effect.scoped), 15_000)
+      const holder = yield* Scope.make()
+      yield* Layer.buildWithScope(sqlite(), holder)
+      const next = yield* Effect.flatMap(sql, (client) => client`SELECT 1 AS one`).pipe(
+        Effect.provide(database()),
+        Effect.forkChild
+      )
+      yield* Effect.sleep("6 seconds")
+      yield* Scope.close(holder, Exit.void)
+      expect(yield* Fiber.join(next)).toEqual([{ one: 1 }])
+    }), 15_000)
+
+  it.live("cancels an OPFS acquisition waiting for another worker without retaining handles", () =>
+    Effect.gen(function*() {
+      const holder = yield* Scope.make()
+      yield* Layer.buildWithScope(sqlite(), holder)
+      const waiting = yield* Layer.build(sqlite()).pipe(Effect.scoped, Effect.forkChild)
+      yield* Effect.sleep("100 millis")
+      yield* Fiber.interrupt(waiting)
+      yield* Scope.close(holder, Exit.void)
+      expect(yield* Effect.flatMap(sql, (client) => client`SELECT 1 AS one`).pipe(Effect.provide(database())))
+        .toEqual([{ one: 1 }])
+    }).pipe(Effect.scoped))
 
   it.effect("fails an OPFS that cannot be opened at all without retrying", () =>
     Effect.gen(function*() {

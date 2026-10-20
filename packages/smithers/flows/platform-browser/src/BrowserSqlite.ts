@@ -174,12 +174,11 @@ const isHeldElsewhere = (error: SqlError): boolean =>
 
 /**
  * A worker that takes over from one that just stopped can find its access
- * handles not yet released. The pool is opened again, from scratch, for up to
- * about five seconds.
+ * handles not yet released. The pool is opened again, from scratch, for
+ * as long as the previous worker holds them, until this acquisition is cancelled.
  */
 const heldSchedule = Schedule.exponential(Duration.millis(20)).pipe(
-  Schedule.modifyDelay(({ duration }) => Effect.succeed(Duration.millis(Math.min(500, Duration.toMillis(duration))))),
-  Schedule.upTo({ times: 12 })
+  Schedule.modifyDelay(({ duration }) => Effect.succeed(Duration.millis(Math.min(500, Duration.toMillis(duration)))))
 )
 
 /** The access-handle pool VFS's constructor. */
@@ -199,9 +198,9 @@ const openPool = (directory: string, module: unknown, Vfs: Pool) =>
         Effect.tapError(() => Effect.promise(() => vfs.close())),
         Effect.as(vfs)
       )
-    }).pipe(Effect.retry({ schedule: heldSchedule, while: isHeldElsewhere })),
+    }),
     (vfs) => Effect.promise(() => vfs.close())
-  )
+  ).pipe(Effect.retry({ schedule: heldSchedule, while: isHeldElsewhere }))
 
 /** Imports wa-sqlite's API, the pool VFS and the build, and instantiates the build. */
 const load = async (build: Build) => {

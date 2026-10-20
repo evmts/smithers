@@ -387,8 +387,8 @@ logs in the worker.
 
 **Fix.** For `worker-failed`, open the worker's console: the load error is
 there. For `engine-failed`, follow the `browser.runtime.stopped` entry for its
-tag. Either way, show the app's engine-failure state from
-`BrowserEngine.unavailable` with a Reload button.
+tag. `BrowserEngine.unavailable` reports the failure. A new leader
+announcement restores requests; reload if no other tab can lead.
 
 ## SharedSqlite.open: No engine leader answered
 

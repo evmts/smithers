@@ -106,6 +106,7 @@ interface Ran {
 interface Transaction {
   readonly leader: string
   readonly opened: number
+  replayable: boolean
   readonly ran: Array<Ran>
 }
 
@@ -200,15 +201,22 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
         const { answer, id } = yield* send(sql, params)
         if (answer._tag === "Executed") {
           if (!answer.open) transaction = null
-          else if (transaction === null) transaction = { leader: answer.leader, opened: id, ran: [] }
+          else if (transaction === null) transaction = { leader: answer.leader, opened: id, ran: [], replayable: true }
           transaction?.ran.push({ sql, params, rows: answer.rows })
           return answer.rows
         }
-        if (answer.error !== lost) return yield* refused(answer)
+        if (answer.error !== lost) {
+          if (answer.open === false) transaction = null
+          else if (answer.open && transaction === null && answer.leader !== undefined) {
+            transaction = { leader: answer.leader, opened: id, ran: [], replayable: true }
+          }
+          if (transaction !== null) transaction.replayable = false
+          return yield* refused(answer)
+        }
         // Only a statement sent in a transaction is lost.
-        const { ran } = transaction!
+        const { ran, replayable } = transaction!
         transaction = null
-        return (yield* replay(ran)) ? yield* run(sql, params) : yield* refused(answer)
+        return replayable && (yield* replay(ran)) ? yield* run(sql, params) : yield* refused(answer)
       })
 
     // Runs a lost transaction's statements again, in order. The transaction stands only if each returns the rows it

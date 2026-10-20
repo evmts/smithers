@@ -63,10 +63,12 @@ A tab whose own worker fails cannot lead, so it does not wait for a leader
 that may never come. The worker fails when it throws, as when its module fails
 to load, which the tab sees as the worker's `error` event, or when it cannot
 build the engine, as without OPFS, which the worker tells its tab in a message
-before it stops. Every request the tab is waiting on, and every later one,
-then fails with `EngineUnavailable`, whose `reason` is `worker-failed` or
+before it stops. Every request the tab is waiting on then fails with `EngineUnavailable`, whose `reason` is `worker-failed` or
 `engine-failed`, and `BrowserEngine.unavailable` completes with it, so the app
-can show that it cannot run here instead of hanging.
+can show the failure instead of hanging. A new leader announcement restores
+requests from this tab, even though its own worker stopped. OPFS handles still
+held by a previous worker are retried through Effect resource acquisition until
+released or cancelled, rather than permanently stopping the worker.
 
 ## The app's shared database
 

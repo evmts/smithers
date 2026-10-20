@@ -65,6 +65,8 @@ export interface Service {
     params: ReadonlyArray<unknown>,
     continuing: boolean
   ) => Effect.Effect<Result, SqlError | TransactionLost>
+  /** Whether this owner still holds an open transaction, including after a failed statement. */
+  readonly isOpen: (owner: string) => boolean
   /** Rolls back `owner`'s open transaction, if it has one, and lends the connection again. */
   readonly abandon: (owner: string) => Effect.Effect<void>
 }
@@ -142,7 +144,7 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
           : Effect.void
       ))
 
-    return SqlConnection.of({ run, abandon })
+    return SqlConnection.of({ run, abandon, isOpen: (owner) => holder?.owner === owner })
   })
 
 /**

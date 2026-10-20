@@ -15,14 +15,14 @@
  *
  * When the tab's own worker fails, because it threw while loading or its
  * engine could not be built, the tab cannot lead, and no request of its waits
- * for a leader that may never come: every pending and later request fails
- * with {@link EngineUnavailable}, and {@link Service.unavailable} says why.
+ * for a leader that may never come: pending requests fail with
+ * {@link EngineUnavailable}, and {@link Service.unavailable} says why. A new
+ * leader announcement restores later requests.
  *
  * @since 1.0.0
  */
 
 import type { Flow as FlowTypes } from "@smthrs/flow"
-import { Flow } from "@smthrs/flow"
 import * as Context from "effect/Context"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
@@ -57,7 +57,7 @@ export class RequestRefused extends Schema.TaggedError<RequestRefused>()(
 ) {}
 
 /**
- * This tab's engine worker failed, so the tab has no engine: `reason` is
+ * This tab's engine worker failed; requests fail until another leader announces itself: `reason` is
  * `worker-failed` when the worker threw, as when its module fails to load, and
  * `engine-failed` when the worker could not build the engine, as without
  * OPFS. `error` is the failure's tag or name, never its message.
@@ -219,13 +219,6 @@ type Reply = Extract<Protocol.Message, { readonly _tag: "Replied" | "Refused" }>
 type Notice = Extract<Protocol.Message, { readonly _tag: "Leader" | "RunChanged" }>
 type Body = Protocol.Request extends infer R ? R extends Protocol.Request ? Omit<R, "client" | "id"> : never : never
 
-/** The JSON codec of a flow's results. */
-const resultCodec = (flow: FlowReference) =>
-  Schema.toCodecJson(Flow.Result({ success: flow.successSchema, error: flow.errorSchema })) as unknown as Schema.Codec<
-    FlowTypes.Result<unknown, unknown>,
-    Schema.Json
-  >
-
 /**
  * Builds the service: starts the tab's worker, asks for persistent storage,
  * and opens the engine's channel, all closed with the scope.
@@ -244,8 +237,8 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
       { readonly message: Protocol.Request; readonly reply: Deferred.Deferred<Reply, EngineUnavailable> }
     >()
     let next = 0
-    const failed = yield* Deferred.make<EngineUnavailable>()
-    // Fails every waiting request and every later one, once, and records why.
+    let failed = yield* Deferred.make<EngineUnavailable>()
+    // Fails requests until a live leader announces itself, and records why.
     const fail = (reason: EngineUnavailable["reason"], error: string) =>
       Effect.gen(function*() {
         const failure = new EngineUnavailable({ reason, error })
@@ -254,7 +247,7 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
         yield* Effect.logError("browser.engine.unavailable").pipe(Effect.annotateLogs({ reason, "error.type": error }))
         for (const { reply } of pending.values()) yield* Deferred.fail(reply, failure)
       })
-    const unavailableFailure = Effect.flatMap(Deferred.await(failed), Effect.fail)
+    const unavailableFailure = Effect.suspend(() => Effect.flatMap(Deferred.await(failed), Effect.fail))
 
     yield* Stream.fromSubscription(inbox).pipe(
       Stream.runForEach((input) =>
@@ -270,6 +263,7 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
               return
             }
             case "Leader": {
+              if (yield* Deferred.isDone(failed)) failed = yield* Deferred.make<EngineUnavailable>()
               for (const { message: request } of pending.values()) yield* port.post(Protocol.encode(request))
               yield* PubSub.publish(notices, message)
               return
@@ -349,7 +343,7 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
         Effect.flatMap((reply) =>
           reply.result === null
             ? Effect.succeed(undefined)
-            : Schema.decodeUnknownEffect(resultCodec(flow))(reply.result)
+            : Schema.decodeUnknownEffect(Protocol.resultCodec(flow))(reply.result)
         )
       )
 
@@ -388,7 +382,7 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
             : Result.failVoid
         )
       ),
-      unavailable: Deferred.await(failed)
+      unavailable: Effect.suspend(() => Deferred.await(failed))
     })
   })
 

@@ -8,6 +8,7 @@ import { Node } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
+import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { BrowserEngine, TabChannel } from "../src/index.ts"
@@ -266,6 +267,24 @@ describe("BrowserEngine", () => {
 })
 
 describe("BrowserEngine.layer", () => {
+  it.live("uses a new leader after its own worker failed to build", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const worker = Engines.worker()
+      const engine = yield* Engines.tab(name, { worker: worker.handle })
+      worker.post({ _tag: "@smthrs/platform-browser/EngineStopped", error: "SqlError" })
+      yield* engine.unavailable
+      yield* Engines.leader(name, Engines.engine(name, yield* MemorySqlite.open, Engines.steps()))
+      yield* Effect.sleep("30 millis")
+      yield* engine.start(Steps, { executionId: "recovered", payload: { prefix: "r" } }).pipe(
+        Effect.retry({
+          schedule: Schedule.spaced("10 millis").pipe(Schedule.upTo({ times: 200 })),
+          while: (error) => error._tag === "@smthrs/platform-browser/EngineUnavailable"
+        })
+      )
+      expect(yield* engine.result(Steps, "recovered")).toEqual(Exit.succeed("r:three"))
+    }).pipe(Effect.scoped))
+
   it.live("composes the browser's own channel and storage", () => {
     const worker = Engines.worker()
     return Effect.gen(function*() {

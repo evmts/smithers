@@ -16,6 +16,7 @@
  * @since 1.0.0
  */
 
+import { Flow } from "@smthrs/flow"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 
@@ -167,3 +168,14 @@ const decodeStoppedMessage = Schema.decodeUnknownOption(Stopped)
  */
 export const decodeStopped = (input: unknown): typeof Stopped.Type | undefined =>
   Option.getOrUndefined(decodeStoppedMessage(input))
+
+/**
+ * The shared wire codec of a flow's terminal result.
+ * @category codecs
+ * @since 1.0.0
+ */
+export const resultCodec = (flow: Pick<Flow.Any, "successSchema" | "errorSchema">) =>
+  Schema.toCodecJson(Flow.Result({ success: flow.successSchema, error: flow.errorSchema })) as unknown as Schema.Codec<
+    Flow.Result<unknown, unknown>,
+    Schema.Json
+  >

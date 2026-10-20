@@ -77,6 +77,39 @@ const rawTab = (name: string) =>
   }).pipe(Effect.provide(Engines.platform))
 
 describe("SharedSqlite", () => {
+  it.live("continues a failed opener on its leader and refuses replay after that leader ends", () =>
+    Effect.gen(function*() {
+      const { name, pool, leader, tab } = yield* setup
+      yield* tab.execute("BEGIN; SELECT * FROM missing").pipe(Effect.flip)
+      yield* tab.execute("INSERT INTO t (id) VALUES (1)")
+      yield* Engines.close(leader)
+      yield* leaderOver(name, pool)
+      const failure = yield* tab.execute("COMMIT").pipe(Effect.flip)
+      expect(failure.reason._tag).toBe("ConnectionError")
+      expect(yield* tab.execute("SELECT count(*) AS n FROM t")).toEqual([{ n: 0 }])
+    }).pipe(Effect.scoped))
+
+  it.live("clears transaction state when failed SQL rolls back SQLite's transaction", () =>
+    Effect.gen(function*() {
+      const { tab } = yield* setup
+      yield* tab.execute("BEGIN; INSERT INTO t (id) VALUES (1)")
+      yield* tab.execute("INSERT INTO t (id) VALUES (1)").pipe(Effect.flip)
+      yield* tab.execute("INSERT OR ROLLBACK INTO t (id) VALUES (1)").pipe(Effect.flip)
+      expect(yield* tab.execute("SELECT count(*) AS n FROM t")).toEqual([{ n: 0 }])
+    }).pipe(Effect.scoped))
+
+  it.live("tracks and abandons a transaction opened by a failed statement", () =>
+    Effect.gen(function*() {
+      const { name, tab } = yield* setup
+      const doomed = yield* ownTab(name)
+      yield* doomed.tab.execute("BEGIN; SELECT * FROM missing").pipe(Effect.flip)
+      const read = yield* Effect.forkChild(tab.execute("SELECT count(*) AS n FROM t"))
+      yield* Effect.sleep("30 millis")
+      expect(read.pollUnsafe()).toBeUndefined()
+      yield* doomed.close
+      expect(yield* Fiber.join(read)).toEqual([{ n: 0 }])
+    }).pipe(Effect.scoped, Effect.timeout("2 seconds")))
+
   it.live("runs a tab's statements on the leader and returns rows as objects", () =>
     Effect.gen(function*() {
       const { tab } = yield* setup

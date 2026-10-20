@@ -80,13 +80,6 @@ class UnknownFlow extends Schema.TaggedError<UnknownFlow>()("@smthrs/platform-br
 /** A flow as the runtime's typed operations take it. */
 type AnyFlow = Flow.Flow<string, Flow.AnyStructSchema, Schema.Top, Schema.Top, any>
 
-/** The JSON codec of a flow's results. */
-const resultCodec = (flow: Flow.Any) =>
-  Schema.toCodecJson(Flow.Result({ success: flow.successSchema, error: flow.errorSchema })) as unknown as Schema.Codec<
-    Flow.Result<unknown, unknown>,
-    Schema.Json
-  >
-
 /** Every unfinished run, collected before any is driven. */
 const unfinishedRuns = Effect.gen(function*() {
   const catalog = yield* RunCatalogRead.RunCatalogRead
@@ -171,7 +164,7 @@ const handle = (flows: ReadonlyMap<string, Flow.Any>, request: Protocol.Request)
         const result = row.status === "cancelled"
           ? Option.some(new Flow.Complete({ exit: Exit.failCause(Cause.interrupt()) }))
           : yield* runtime.poll(flow, request.executionId)
-        return Option.isNone(result) ? null : yield* Schema.encodeEffect(resultCodec(flow))(result.value)
+        return Option.isNone(result) ? null : yield* Schema.encodeEffect(Protocol.resultCodec(flow))(result.value)
       }
       case "Cancel": {
         yield* runtime.interrupt(flow, request.executionId)
@@ -348,43 +341,49 @@ const serveStatements = (name: string, database: Option.Option<Connection>) =>
         return { ...result, committed: false }
       }).pipe(
         Effect.exit,
-        Effect.flatMap((exit) => {
-          const failure = Exit.isFailure(exit) ? failureType(exit.cause) : undefined
-          const outcome = failure === undefined ?
-            Exit.isSuccess(exit) && exit.value.committed ? "committed" : "executed"
-            : failure === "@smthrs/platform-browser/TransactionLost" ?
-            "lost"
-            : "failed"
-          const reply: SqlProtocol.Message = Exit.isSuccess(exit)
-            ? {
-              _tag: "Executed",
-              client: request.client,
-              id: request.id,
-              leader,
-              rows: exit.value.rows,
-              open: exit.value.open
-            }
-            : {
-              _tag: "Failed",
-              client: request.client,
-              id: request.id,
-              error: failure!,
-              ...sqliteDetail(Cause.squash(exit.cause))
-            }
-          return Metric.update(Metric.withAttributes(statements, { outcome }), 1).pipe(
-            Effect.andThen(
-              // A statement SQLite refused is its tab's to handle, and TanStack DB's
-              // persistence expects some (a column it already added), so only a
-              // lost transaction or a missing database is a warning.
-              failure === undefined ?
-                Effect.void
-                : (outcome === "failed" ? Effect.logDebug : Effect.logWarning)("browser.runtime.statement").pipe(
-                  Effect.annotateLogs({ outcome, "error.type": failure })
-                )
-            ),
-            Effect.as(reply)
-          )
-        })
+        Effect.flatMap((exit) =>
+          Effect.gen(function*() {
+            const open = Option.isSome(database) && database.value.isOpen(request.client)
+            if (Option.isSome(database)) yield* watch(request.client, open, database.value)
+            const failure = Exit.isFailure(exit) ? failureType(exit.cause) : undefined
+            const outcome = failure === undefined ?
+              Exit.isSuccess(exit) && exit.value.committed ? "committed" : "executed"
+              : failure === "@smthrs/platform-browser/TransactionLost" ?
+              "lost"
+              : "failed"
+            const reply: SqlProtocol.Message = Exit.isSuccess(exit)
+              ? {
+                _tag: "Executed",
+                client: request.client,
+                id: request.id,
+                leader,
+                rows: exit.value.rows,
+                open: exit.value.open
+              }
+              : {
+                _tag: "Failed",
+                client: request.client,
+                id: request.id,
+                error: failure!,
+                leader,
+                open,
+                ...sqliteDetail(Cause.squash(exit.cause))
+              }
+            return yield* Metric.update(Metric.withAttributes(statements, { outcome }), 1).pipe(
+              Effect.andThen(
+                // A statement SQLite refused is its tab's to handle, and TanStack DB's
+                // persistence expects some (a column it already added), so only a
+                // lost transaction or a missing database is a warning.
+                failure === undefined ?
+                  Effect.void
+                  : (outcome === "failed" ? Effect.logDebug : Effect.logWarning)("browser.runtime.statement").pipe(
+                    Effect.annotateLogs({ outcome, "error.type": failure })
+                  )
+              ),
+              Effect.as(reply)
+            )
+          })
+        )
       )
 
     yield* Stream.fromSubscription(inbox).pipe(
