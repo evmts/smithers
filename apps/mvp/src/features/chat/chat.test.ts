@@ -1,185 +1,655 @@
-import { afterEach, describe, expect, test } from "vitest"
-import { openMemoryStore } from "../../test/memoryStore"
-import { ask, closeComposer, openComposer, setDraft, toggleComposer } from "./actions"
-import { turnsBefore } from "./answerer"
-import { awaiting$, composer$, conversation$ } from "./queries"
-import { CHAT_FAILED, events, QUESTION_MAX_LENGTH } from "./schema"
+import { Effect, Exit, type ManagedRuntime, Metric, Schema, Scope } from "effect"
+import { afterEach, describe, expect, test, vi } from "vitest"
+import * as Collections from "../../lib/collections"
+import { openTab, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
+import {
+  type AskResult,
+  ask,
+  closeComposer,
+  loadEarlier,
+  openComposer,
+  retrySync,
+  setDraft,
+  toggleComposer,
+} from "./actions"
+import {
+  askFailures,
+  composerOpens,
+  firstAnswerText,
+  historyLoads,
+  questionsAsked,
+  syncFailures,
+  syncRetries,
+} from "./metrics"
+import { reconnectOnline } from "./reconnect"
+import { CHAT_FAILED, Message, QUESTION_MAX_LENGTH } from "./schema"
+import { chatShortcuts } from "./shortcuts"
+import { ChatStore } from "./store"
 
-type Store = Awaited<ReturnType<typeof openMemoryStore>>
-const open: Array<Store> = []
-const storeFor = async (sessionId?: string) => {
-  const store = await openMemoryStore(sessionId)
-  open.push(store)
-  return store
-}
+// Chat's state machine, run as the browser runs it (`appLayer` on its own runtime), against ChatApi's real handler
+// over the compose Postgres and Electric (src/test/chatApi.ts). Only the model is scripted. Actions run with
+// `runSync`, as React runs them.
+
+const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
-  await Promise.all(open.splice(0).map((store) => store.shutdownPromise()))
+  // Tabs first: they reach Postgres through the ChatApi that closes with the first runtime.
+  for (const runtime of runtimes.splice(0).reverse()) await runtime.dispose()
 })
 
-const answerOf = (store: Store, question: string) => {
-  const conversation = store.query(conversation$)
-  return conversation[conversation.findIndex((message) => message.text === question) + 1]!
+const tabOn = async <R, E>(runtime: ManagedRuntime.ManagedRuntime<R | ChatStore, E>) => {
+  runtimes.push(runtime)
+  const chat = await runtime.runPromise(Effect.service(ChatStore))
+  // What React's live queries start on first render.
+  await runtime.runPromise(
+    Effect.all([chat.conversation, chat.composerState, chat.waiting, chat.syncState, chat.historyState].map(Collections.preload), {
+      concurrency: "unbounded",
+    }),
+  )
+  return {
+    chat,
+    runtime,
+    run: <A>(action: Effect.Effect<A, never, ChatStore>) => runtime.runSync(action),
+    /** The conversation as a person reads it: role, status and text. */
+    shown: () => chat.conversation.toArray.map(({ role, status, text }) => `${role} ${status} ${text}`),
+    composer: () => chat.composerState.toArray[0],
+    waiting: () => chat.waiting.toArray.length > 0,
+    sync: () => chat.syncState.toArray[0],
+    history: () => chat.historyState.toArray[0],
+    synced: (id: string) => chat.messages.get(id)?.$synced === true,
+    count: (metric: Metric.Metric<number, Metric.CounterState<number>>) => runtime.runSync(Metric.value(metric)).count,
+  }
 }
 
+const openChat = async (options: Parameters<typeof openTestApp>[0] = {}) => {
+  const runtime = openTestApp(options)
+  const tab = await tabOn(runtime)
+  const api = await runtime.runPromise(Effect.service(TestChatApi))
+  return { ...tab, api, onApi: <A>(effect: Effect.Effect<A>) => runtime.runPromise(effect) }
+}
+
+const asked = (result: AskResult) => {
+  if (!result.asked) throw new Error(`the question was refused: ${result.reason}`)
+  return result
+}
+
+const until = (assertion: () => void | Promise<void>) => vi.waitFor(assertion, { timeout: 4_000, interval: 20 })
+
 describe("asking", () => {
-  test("adds the question and an empty answer this session awaits, and clears the draft", async () => {
-    const store = await storeFor("tab-a")
-    setDraft(store, "hello")
-    ask(store, "hello")
-    const [question, answer] = store.query(conversation$)
-    expect(question).toMatchObject({ role: "user", text: "hello", status: "done" })
-    expect(answer).toMatchObject({ role: "assistant", text: "", status: "streaming", askedBy: "tab-a" })
-    expect(store.query(composer$).draft).toBe("")
-    expect(store.query(awaiting$("tab-a")).map(({ id }) => id)).toEqual([answer!.id])
-    expect(store.query(awaiting$("tab-b"))).toEqual([])
+  test("shows the question and an empty streaming answer at once, clears the draft, and this tab waits", async () => {
+    const tab = await openChat()
+    tab.run(setDraft("  hello  "))
+    const result = tab.run(ask("  hello  "))
+    expect(result).toMatchObject({ asked: true })
+    expect(tab.shown()).toEqual(["user done hello", "assistant streaming "])
+    expect(tab.composer()?.draft).toBe("")
+    expect(tab.waiting()).toBe(true)
+    expect(tab.count(questionsAsked)).toBe(1)
   })
 
-  test("keeps every question before its own answer, in the order asked", async () => {
-    const store = await storeFor()
-    for (const text of ["one", "two", "three"]) ask(store, text)
-    expect(store.query(conversation$).map(({ role, text }) => `${role}:${text}`)).toEqual([
-      "user:one", "assistant:", "user:two", "assistant:", "user:three", "assistant:",
+  test("swaps in Postgres' rows once Electric delivers them, then merges the answer's changes until it settles", async () => {
+    const tab = await openChat()
+    const { questionId, answerId } = asked(tab.run(ask("  hello ")))
+    await until(() => expect(tab.synced(answerId)).toBe(true))
+    expect(tab.chat.conversation.toArray.map(({ id }) => id)).toEqual([questionId, answerId])
+    const decoded = () => [questionId, answerId].map((id) => Schema.decodeUnknownSync(Message)(tab.chat.messages.get(id)))
+    expect(decoded()).toMatchObject([
+      { id: questionId, text: "hello", questionId: null, position: 1 },
+      { id: answerId, text: "", status: "streaming", questionId, failure: null, position: 2 },
     ])
+    expect(await tab.onApi(tab.api.rows)).toMatchObject([
+      { id: questionId, text: "hello", position: 1 },
+      { id: answerId, text: "", position: 2 },
+    ])
+
+    const reply = await tab.onApi(tab.api.answerTo("hello"))
+    reply.say("Hel")
+    await until(() => expect(tab.shown()).toEqual(["user done hello", "assistant streaming Hel"]))
+    expect(tab.waiting()).toBe(true)
+    reply.say("lo there")
+    reply.done()
+    await until(() => expect(tab.shown()).toEqual(["user done hello", "assistant done Hello there"]))
+    expect(tab.waiting()).toBe(false)
+    // Electric sends only the columns that changed; the rest of the row stays.
+    expect(decoded()[1]).toMatchObject({ questionId, position: 2, modelId: "test-model", outputTokens: 20 })
+  })
+
+  test("an answer that fails on the server reads the failure copy, whatever it had streamed", async () => {
+    const tab = await openChat()
+    const { answerId } = asked(tab.run(ask("hello")))
+    const reply = await tab.onApi(tab.api.answerTo("hello"))
+    reply.say("partial")
+    await until(() => expect(tab.shown()).toEqual(["user done hello", "assistant streaming partial"]))
+    reply.fail()
+    await until(() => expect(tab.shown()).toEqual(["user done hello", `assistant failed ${CHAT_FAILED}`]))
+    expect(tab.chat.messages.get(answerId)?.failure).toBe("model_error")
+    expect(tab.waiting()).toBe(false)
+  })
+
+  test("orders the conversation by Postgres position, across tabs, with every question before its answer", async () => {
+    const a = await openChat()
+    const first = asked(a.run(ask("one")))
+    await until(() => expect(a.synced(first.answerId)).toBe(true))
+    await a.onApi(a.api.askElsewhere("two"))
+    const third = asked(a.run(ask("three")))
+    await until(() => expect(a.synced(third.answerId)).toBe(true))
+    const b = await tabOn(openTab(a.api))
+    const expected = [
+      "user done one",
+      "assistant streaming ",
+      "user done two",
+      "assistant streaming ",
+      "user done three",
+      "assistant streaming ",
+    ]
+    await until(() => expect(a.shown()).toEqual(expected))
+    expect(b.shown()).toEqual(expected)
+    expect((await a.onApi(a.api.rows)).map(({ position }) => position)).toEqual([1, 2, 3, 4, 5, 6])
+  })
+
+  test("another tab sees the question once Electric delivers it, and the answer as it grows", async () => {
+    const a = await openChat()
+    const b = await tabOn(openTab(a.api))
+    asked(a.run(ask("hello")))
+    await until(() => expect(b.shown()).toEqual(["user done hello", "assistant streaming "]))
+    expect(b.waiting()).toBe(false)
+    const reply = await a.onApi(a.api.answerTo("hello"))
+    reply.say("Hi")
+    reply.done()
+    await until(() => expect(b.shown()).toEqual(["user done hello", "assistant done Hi"]))
   })
 })
 
 describe("asking refuses", () => {
-  test.each([["a blank question", "   \n "], ["a question over the limit", "x".repeat(QUESTION_MAX_LENGTH + 1)]])(
-    "%s, commits nothing and keeps the draft",
-    async (_, text) => {
-      const store = await storeFor()
-      setDraft(store, text)
-      expect(ask(store, text)).toBe(false)
-      expect(store.query(conversation$)).toEqual([])
-      expect(store.query(composer$).draft).toBe(text)
+  test.each([
+    ["a blank question", "   \n ", "empty"],
+    ["a question over the limit", "x".repeat(QUESTION_MAX_LENGTH + 1), "too_long"],
+  ])("%s: nothing is asked and the draft stays", async (_, text, reason) => {
+    const tab = await openChat()
+    tab.run(setDraft(text))
+    expect(tab.run(ask(text))).toEqual({ asked: false, reason })
+    expect(tab.shown()).toEqual([])
+    expect(tab.composer()?.draft === text).toBe(true)
+    expect(tab.count(questionsAsked)).toBe(0)
+    expect(await tab.onApi(tab.api.rows)).toEqual([])
+  })
+
+  test("nothing at the limit, and asks the trimmed text, as ChatApi stores it", async () => {
+    const tab = await openChat()
+    const question = "x".repeat(QUESTION_MAX_LENGTH)
+    const { questionId, answerId } = asked(tab.run(ask(`  ${question}\n`)))
+    expect(tab.chat.messages.get(questionId)?.text === question).toBe(true)
+    await until(() => expect(tab.synced(answerId)).toBe(true))
+    const [stored] = await tab.onApi(tab.api.rows)
+    expect(stored?.id).toBe(questionId)
+    expect(stored?.text === question).toBe(true)
+  })
+})
+
+describe("when ChatApi doesn't take a question", () => {
+  test.each(["refused", "unreachable"] as const)(
+    "%s: the rows roll back, and the question and the failure copy stay where they were shown",
+    async (failure) => {
+      const tab = await openChat()
+      const earlier = asked(tab.run(ask("earlier")))
+      const reply = await tab.onApi(tab.api.answerTo("earlier"))
+      reply.say("Sure")
+      reply.done()
+      await until(() => expect(tab.waiting()).toBe(false))
+
+      tab.api.failNext(failure)
+      const { questionId, answerId } = asked(tab.run(ask("lost")))
+      expect(tab.waiting()).toBe(true)
+      await until(() => expect(tab.chat.messages.has(questionId)).toBe(false))
+      expect(tab.shown()).toEqual([
+        "user done earlier",
+        "assistant done Sure",
+        "user done lost",
+        `assistant failed ${CHAT_FAILED}`,
+      ])
+      expect(tab.chat.conversation.toArray.map(({ id }) => id).slice(2)).toEqual([questionId, answerId])
+      expect(tab.waiting()).toBe(false)
+      expect(tab.count(Metric.withAttributes(askFailures, { reason: failure }))).toBe(1)
+      expect((await tab.onApi(tab.api.rows)).map(({ id }) => id)).toEqual([earlier.questionId, earlier.answerId])
+
+      // Later questions, from anywhere, come after it.
+      await tab.onApi(tab.api.askElsewhere("later"))
+      await until(() => expect(tab.shown().at(-2)).toBe("user done later"))
+      expect(tab.shown().slice(2, 4)).toEqual(["user done lost", `assistant failed ${CHAT_FAILED}`])
     },
   )
 
-  test("nothing at the limit, and trims what it asks", async () => {
-    const store = await storeFor()
-    expect(ask(store, ` ${"x".repeat(QUESTION_MAX_LENGTH)} `)).toBe(true)
-    expect(store.query(conversation$)[0]?.text).toBe("x".repeat(QUESTION_MAX_LENGTH))
+  test("failed questions keep the order they were asked in", async () => {
+    const tab = await openChat()
+    for (const text of ["first", "second"]) {
+      tab.api.failNext("refused")
+      const { questionId } = asked(tab.run(ask(text)))
+      await until(() => expect(tab.chat.messages.has(questionId)).toBe(false))
+    }
+    expect(tab.shown()).toEqual([
+      "user done first",
+      `assistant failed ${CHAT_FAILED}`,
+      "user done second",
+      `assistant failed ${CHAT_FAILED}`,
+    ])
+  })
+
+  test("a question ChatApi took but Electric didn't deliver in time shows failed, then once, as Postgres has it", async () => {
+    const tab = await openChat({ confirmWithin: "500 millis" })
+    tab.api.pauseElectric()
+    const { questionId, answerId } = asked(tab.run(ask("slow")))
+    await until(() => expect(tab.count(Metric.withAttributes(askFailures, { reason: "unconfirmed" }))).toBe(1))
+    expect(tab.shown()).toEqual(["user done slow", `assistant failed ${CHAT_FAILED}`])
+    tab.api.resumeElectric()
+    await until(() => expect(tab.synced(answerId)).toBe(true))
+    expect(tab.shown()).toEqual(["user done slow", "assistant streaming "])
+    expect(tab.chat.conversation.toArray.map(({ id }) => id)).toEqual([questionId, answerId])
   })
 })
 
-describe("answers", () => {
-  test("grow by deltas in order, then complete with the text kept", async () => {
-    const store = await storeFor()
-    ask(store, "q")
-    const { id } = answerOf(store, "q")
-    for (const text of ["Hel", "lo ", "wörld 👋"]) store.commit(events.answerDelta({ id, text }))
-    expect(answerOf(store, "q")).toMatchObject({ text: "Hello wörld 👋", status: "streaming" })
-    store.commit(events.answerCompleted({ id }))
-    expect(answerOf(store, "q")).toMatchObject({ text: "Hello wörld 👋", status: "done" })
-    expect(store.query(awaiting$("test-session"))).toEqual([])
+describe("when a question was already there", () => {
+  test("a retry ChatApi answers 200 keeps the rows shown until Electric delivers them, however slow", async () => {
+    const tab = await openChat()
+    tab.api.pauseElectric()
+    tab.api.duplicateNext()
+    const { questionId, answerId } = asked(tab.run(ask("twice")))
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect(tab.shown()).toEqual(["user done twice", "assistant streaming "])
+    expect(tab.waiting()).toBe(true)
+    expect(tab.synced(answerId)).toBe(false)
+    tab.api.resumeElectric()
+    await until(() => expect(tab.synced(answerId)).toBe(true))
+    expect(tab.shown()).toEqual(["user done twice", "assistant streaming "])
+    expect(tab.chat.conversation.toArray.map(({ id }) => id)).toEqual([questionId, answerId])
+    expect(tab.count(askFailures)).toBe(0)
+    expect((await tab.onApi(tab.api.rows)).map(({ id }) => id)).toEqual([questionId, answerId])
   })
 
-  test("a failed answer shows the failure copy and is no longer awaited", async () => {
-    const store = await storeFor()
-    ask(store, "q")
-    const { id } = answerOf(store, "q")
-    store.commit(events.answerDelta({ id, text: "partial" }))
-    store.commit(events.answerFailed({ id }))
-    expect(answerOf(store, "q")).toMatchObject({ text: CHAT_FAILED, status: "failed" })
-    expect(store.query(awaiting$("test-session"))).toEqual([])
+  test("a retry whose rows Electric doesn't deliver in time shows failed, then as Postgres has it", async () => {
+    const tab = await openChat({ confirmWithin: "300 millis" })
+    tab.api.pauseElectric()
+    tab.api.duplicateNext()
+    const { answerId } = asked(tab.run(ask("twice")))
+    await until(() => expect(tab.count(Metric.withAttributes(askFailures, { reason: "unconfirmed" }))).toBe(1))
+    expect(tab.shown()).toEqual(["user done twice", `assistant failed ${CHAT_FAILED}`])
+    tab.api.resumeElectric()
+    await until(() => expect(tab.synced(answerId)).toBe(true))
+    expect(tab.shown()).toEqual(["user done twice", "assistant streaming "])
+  })
+
+  test("a question whose id another question has is refused (409), and its answer shows the failure copy", async () => {
+    const tab = await openChat()
+    tab.api.conflictNext()
+    const { questionId, answerId } = asked(tab.run(ask("mine")))
+    await until(() => expect(tab.count(Metric.withAttributes(askFailures, { reason: "refused" }))).toBe(1))
+    expect(
+      tab.api.spans.some(
+        (span) => span.name === "chat.question" && span.attributes.get("http.response.status_code") === 409,
+      ),
+    ).toBe(true)
+    await until(() =>
+      expect(tab.chat.conversation.toArray.find(({ id }) => id === answerId)).toMatchObject({
+        status: "failed",
+        text: CHAT_FAILED,
+      }),
+    )
+    const stored = await tab.onApi(tab.api.rows)
+    expect(stored.filter(({ id }) => id === questionId).map(({ text }) => text)).toEqual(["another question"])
+    expect(stored.some(({ id }) => id === answerId)).toBe(false)
   })
 })
 
-describe("a settled answer", () => {
-  const settled = async (end: "completed" | "failed") => {
-    const store = await storeFor()
-    ask(store, "q")
-    const { id } = answerOf(store, "q")
-    store.commit(events.answerDelta({ id, text: "kept" }))
-    store.commit(end === "completed" ? events.answerCompleted({ id }) : events.answerFailed({ id }))
-    return { store, id }
+describe("ChatApi's answer has one deadline", () => {
+  test("a body that stalls after 202 is aborted at the deadline, rolls back, and shows failed until Electric delivers it", async () => {
+    const tab = await openChat({ answerWithin: "300 millis" })
+    tab.api.pauseElectric()
+    const stalled = tab.api.stallNext()
+    const { answerId } = asked(tab.run(ask("stalled")))
+    await until(() => expect(tab.count(Metric.withAttributes(askFailures, { reason: "unreachable" }))).toBe(1))
+    expect(stalled.aborted()).toBe(true)
+    expect(tab.shown()).toEqual(["user done stalled", `assistant failed ${CHAT_FAILED}`])
+    expect(tab.waiting()).toBe(false)
+    // ChatApi had stored it, so Electric's rows replace the failure.
+    tab.api.resumeElectric()
+    await until(() => expect(tab.synced(answerId)).toBe(true))
+    expect(tab.shown()).toEqual(["user done stalled", "assistant streaming "])
+  })
+})
+
+describe("sync health", () => {
+  // A quick deadline and backoff, so an outage shows in a test's time.
+  const quick: TabOptions = { openWithin: "300 millis", backoff: { initial: "20 millis", max: "50 millis" } }
+  // A backoff far longer than a test, so only a retry or `online` brings sync back in time.
+  const slow: TabOptions = { openWithin: "300 millis", backoff: { initial: "60 seconds", max: "60 seconds" } }
+
+  // Makes the live request in flight return, so the next shape request meets the outage.
+  const outage = async (tab: Awaited<ReturnType<typeof openChat>>) => {
+    tab.api.cutElectric()
+    await tab.onApi(tab.api.askElsewhere("during the outage"))
+    await until(() => expect(tab.sync()?.status).toBe("failed"))
   }
 
-  test("ignores later deltas, failure and completion once done", async () => {
-    const { store, id } = await settled("completed")
-    store.commit(events.answerDelta({ id, text: " late" }), events.answerFailed({ id }), events.answerCompleted({ id }))
-    expect(answerOf(store, "q")).toMatchObject({ text: "kept", status: "done" })
+  test("is syncing until a shape request succeeds, then ready", async () => {
+    const tab = await openChat()
+    expect(tab.sync()).toEqual(expect.objectContaining({ status: "ready", reason: null, httpStatus: null }))
   })
 
-  test("ignores later deltas and completion once failed", async () => {
-    const { store, id } = await settled("failed")
-    store.commit(events.answerDelta({ id, text: " late" }), events.answerCompleted({ id }))
-    expect(answerOf(store, "q")).toMatchObject({ text: CHAT_FAILED, status: "failed" })
+  test("fails as unreachable once Electric can't be reached for openWithin, keeps the conversation, and recovers by itself", async () => {
+    const tab = await openChat(quick)
+    asked(tab.run(ask("before")))
+    await until(() => expect(tab.waiting()).toBe(true))
+    await until(() => expect(tab.shown()).toEqual(["user done before", "assistant streaming "]))
+    await until(() => expect(tab.chat.recent.toArray.length).toBe(2))
+    await outage(tab)
+    expect(tab.sync()).toEqual(expect.objectContaining({ status: "failed", reason: "unreachable", httpStatus: 502 }))
+    expect(tab.count(Metric.withAttributes(syncFailures, { reason: "unreachable" }))).toBe(1)
+    expect(tab.shown()).toEqual(["user done before", "assistant streaming "])
+    tab.api.healElectric()
+    await until(() => expect(tab.sync()?.status).toBe("ready"))
+    await until(() => expect(tab.shown().slice(2)).toEqual(["user done during the outage", "assistant streaming "]))
+    expect(tab.count(syncRetries)).toBe(0)
+  })
+
+  test("Try again syncs at once instead of waiting out the backoff", async () => {
+    const tab = await openChat(slow)
+    await outage(tab)
+    tab.api.healElectric()
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(tab.sync()?.status).toBe("failed")
+    tab.run(retrySync("button"))
+    expect(tab.sync()?.status).toBe("syncing")
+    await until(() => expect(tab.sync()?.status).toBe("ready"))
+    await until(() => expect(tab.shown()).toEqual(["user done during the outage", "assistant streaming "]))
+    expect(tab.count(Metric.withAttributes(syncRetries, { via: "button" }))).toBe(1)
+  })
+
+  test("Try again while Electric is still down fails again after openWithin", async () => {
+    const tab = await openChat(quick)
+    await outage(tab)
+    tab.run(retrySync("button"))
+    expect(tab.sync()?.status).toBe("syncing")
+    await until(() => expect(tab.sync()?.status).toBe("failed"))
+    expect(tab.count(Metric.withAttributes(syncFailures, { reason: "unreachable" }))).toBe(2)
+  })
+
+  test("the browser coming back online syncs at once, and stops when its scope closes", async () => {
+    const tab = await openChat(slow)
+    const target = new EventTarget()
+    const scope = await tab.runtime.runPromise(Scope.make())
+    await tab.runtime.runPromise(Scope.provide(reconnectOnline(target), scope))
+    await outage(tab)
+    tab.api.healElectric()
+    target.dispatchEvent(new Event("online"))
+    await until(() => expect(tab.sync()?.status).toBe("ready"))
+    await until(() => expect(tab.shown()).toEqual(["user done during the outage", "assistant streaming "]))
+    expect(tab.count(Metric.withAttributes(syncRetries, { via: "online" }))).toBe(1)
+
+    await tab.runtime.runPromise(Scope.close(scope, Exit.void))
+    await outage(tab)
+    target.dispatchEvent(new Event("online"))
+    expect(tab.sync()?.status).toBe("failed")
+    expect(tab.count(Metric.withAttributes(syncRetries, { via: "online" }))).toBe(1)
+  })
+
+  test("at open, Electric unreachable fails within openWithin, and Try again opens the conversation once it's back", async () => {
+    const first = await openChat()
+    await first.onApi(first.api.askElsewhere("already there"))
+    first.api.cutElectric()
+    const runtime = openTab(first.api, slow)
+    runtimes.push(runtime)
+    const chat = await runtime.runPromise(Effect.service(ChatStore))
+    void runtime.runPromise(Collections.preload(chat.conversation))
+    await runtime.runPromise(Effect.all([chat.syncState, chat.historyState].map(Collections.preload)))
+    await until(() => expect(chat.syncState.toArray[0]?.status).toBe("failed"))
+    expect(chat.syncState.toArray[0]).toEqual(expect.objectContaining({ reason: "unreachable", httpStatus: 502 }))
+    expect(chat.historyState.toArray[0]?.opened).toBe(false)
+    first.api.healElectric()
+    runtime.runSync(retrySync("button"))
+    await until(() => expect(chat.historyState.toArray[0]?.opened).toBe(true))
+    expect(chat.syncState.toArray[0]?.status).toBe("ready")
+    expect(chat.conversation.toArray.map(({ text }) => text)).toEqual(["already there", ""])
+  })
+
+  test("a shape request refused (4xx) fails as refused and waits for Try again, even once the network is fine", async () => {
+    const tab = await openChat(quick)
+    tab.api.failShapes("refused")
+    await tab.onApi(tab.api.askElsewhere("while refused"))
+    await until(() => expect(tab.sync()).toEqual(expect.objectContaining({ status: "failed", reason: "refused", httpStatus: 400 })))
+    tab.api.failShapes(undefined)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(tab.sync()?.status).toBe("failed")
+    tab.run(retrySync("button"))
+    await until(() => expect(tab.sync()?.status).toBe("ready"))
+    await until(() => expect(tab.shown()).toEqual(["user done while refused", "assistant streaming "]))
+    expect(tab.count(Metric.withAttributes(syncFailures, { reason: "refused" }))).toBe(1)
+  })
+})
+
+describe("history", () => {
+  // Five exchanges, ten rows, stored before the tab opens with a page of four.
+  const withHistory = async () => {
+    const first = await openChat()
+    for (const n of [1, 2, 3, 4, 5]) await first.onApi(first.api.askElsewhere(`q${n}`))
+    const tab = await tabOn(openTab(first.api, { pageSize: 4 }))
+    return { ...tab, api: first.api }
+  }
+  const questions = (tab: { shown: () => Array<string> }) =>
+    tab.shown().filter((row) => row.startsWith("user")).map((row) => row.slice("user done ".length))
+
+  test("opens on the most recent page only, and Load earlier loads the page before it until there's nothing earlier", async () => {
+    const tab = await withHistory()
+    await until(() => expect(tab.history()).toEqual(expect.objectContaining({ opened: true, limit: 4, earlier: true })))
+    expect(questions(tab)).toEqual(["q4", "q5"])
+    // The tab downloaded only the page it shows.
+    expect(tab.chat.messages.size).toBe(4)
+
+    tab.run(loadEarlier)
+    expect(tab.history()).toEqual(expect.objectContaining({ limit: 8, loading: true }))
+    await until(() => expect(tab.history()).toEqual(expect.objectContaining({ loading: false, earlier: true })))
+    expect(questions(tab)).toEqual(["q2", "q3", "q4", "q5"])
+
+    tab.run(loadEarlier)
+    await until(() => expect(tab.history()).toEqual(expect.objectContaining({ limit: 12, loading: false, earlier: false })))
+    expect(questions(tab)).toEqual(["q1", "q2", "q3", "q4", "q5"])
+    tab.run(loadEarlier)
+    expect(tab.history()?.limit).toBe(12)
+    expect(tab.count(Metric.withAttributes(historyLoads, { outcome: "loaded" }))).toBe(2)
+  })
+
+  test("asking keeps the window on the most recent page, and the answer this tab waits on is in it", async () => {
+    const tab = await withHistory()
+    await until(() => expect(tab.history()?.opened).toBe(true))
+    asked(tab.run(ask("newest")))
+    expect(tab.waiting()).toBe(true)
+    expect(questions(tab)).toEqual(["q4", "q5", "newest"])
+    await until(() => expect(questions(tab)).toEqual(["q5", "newest"]))
+    expect(tab.waiting()).toBe(true)
+  })
+
+  test("a Load earlier that can't load keeps the window, and can be tried again", async () => {
+    const tab = await withHistory()
+    await until(() => expect(tab.history()?.earlier).toBe(true))
+    tab.api.failShapes("refused")
+    tab.run(loadEarlier)
+    await until(() => expect(tab.history()).toEqual(expect.objectContaining({ limit: 4, loading: false, earlier: true })))
+    expect(questions(tab)).toEqual(["q4", "q5"])
+    expect(tab.count(Metric.withAttributes(historyLoads, { outcome: "failed" }))).toBe(1)
   })
 })
 
 describe("the composer", () => {
-  test("opens, hides, toggles and keeps a draft", async () => {
-    const store = await storeFor()
-    expect(store.query(composer$)).toEqual({ open: false, draft: "" })
-    openComposer(store)
-    setDraft(store, "half a thought")
-    expect(store.query(composer$)).toEqual({ open: true, draft: "half a thought" })
-    closeComposer(store)
-    expect(store.query(composer$).open).toBe(false)
-    toggleComposer(store, false)
-    expect(store.query(composer$).open).toBe(true)
-    toggleComposer(store, true)
-    expect(store.query(composer$)).toEqual({ open: false, draft: "half a thought" })
+  test("opens, hides, toggles and keeps its draft", async () => {
+    const tab = await openChat()
+    expect(tab.composer()).toMatchObject({ open: false, draft: "" })
+    tab.run(openComposer("button"))
+    tab.run(setDraft("half a thought"))
+    expect(tab.composer()).toMatchObject({ open: true, draft: "half a thought" })
+    tab.run(closeComposer)
+    expect(tab.composer()?.open).toBe(false)
+    tab.run(toggleComposer("shortcut"))
+    expect(tab.composer()?.open).toBe(true)
+    tab.run(toggleComposer("shortcut"))
+    expect(tab.composer()).toMatchObject({ open: false, draft: "half a thought" })
+  })
+
+  test("counts opens by how, and not an open composer opened again", async () => {
+    const tab = await openChat()
+    tab.run(openComposer("button"))
+    tab.run(openComposer("button"))
+    tab.run(toggleComposer("shortcut"))
+    tab.run(toggleComposer("shortcut"))
+    expect(tab.count(Metric.withAttributes(composerOpens, { via: "button" }))).toBe(1)
+    expect(tab.count(Metric.withAttributes(composerOpens, { via: "shortcut" }))).toBe(1)
+  })
+
+  test("belongs to one tab", async () => {
+    const a = await openChat()
+    const b = await tabOn(openTab(a.api))
+    a.run(openComposer("button"))
+    a.run(setDraft("mine"))
+    expect(b.composer()).toMatchObject({ open: false, draft: "" })
   })
 })
 
-describe("what the model sees (turnsBefore)", () => {
-  const message = (id: string, role: "user" | "assistant", text: string, status = "done") => ({ id, role, text, status })
-
-  test("finished exchanges, then the question being answered", () => {
-    const conversation = [
-      message("q1", "user", "first"), message("a1", "assistant", "one"),
-      message("q2", "user", "second"), message("a2", "assistant", "", "streaming"),
-    ]
-    expect(turnsBefore(conversation, "a2")).toEqual([
-      { role: "user", content: "first" }, { role: "assistant", content: "one" }, { role: "user", content: "second" },
-    ])
+describe("time to the first answer text", () => {
+  test("is recorded once, when the answer first shows text", async () => {
+    const tab = await openChat()
+    asked(tab.run(ask("hello")))
+    const reply = await tab.onApi(tab.api.answerTo("hello"))
+    reply.say("H")
+    await until(() => expect(tab.runtime.runSync(Metric.value(firstAnswerText)).count).toBe(1))
+    reply.say("ello")
+    reply.done()
+    await until(() => expect(tab.waiting()).toBe(false))
+    expect(tab.runtime.runSync(Metric.value(firstAnswerText)).count).toBe(1)
   })
 
-  test("leaves out a question whose answer failed or is still streaming elsewhere", () => {
-    const conversation = [
-      message("q1", "user", "count to 3000"), message("a1", "assistant", "Smithers couldn't answer.", "failed"),
-      message("q2", "user", "on another device"), message("a2", "assistant", "partial", "streaming"),
-      message("q3", "user", "say hi"), message("a3", "assistant", "", "streaming"),
-    ]
-    expect(turnsBefore(conversation, "a3")).toEqual([{ role: "user", content: "say hi" }])
+  test("is not recorded for a question that wasn't taken, or an answer that failed before any text", async () => {
+    const tab = await openChat()
+    tab.api.failNext("refused")
+    const lost = asked(tab.run(ask("lost")))
+    await until(() => expect(tab.chat.messages.has(lost.questionId)).toBe(false))
+    asked(tab.run(ask("hello")))
+    ;(await tab.onApi(tab.api.answerTo("hello"))).fail()
+    await until(() => expect(tab.shown().at(-1)).toBe(`assistant failed ${CHAT_FAILED}`))
+    expect(tab.runtime.runSync(Metric.value(firstAnswerText)).count).toBe(0)
+  })
+})
+
+describe("telemetry", () => {
+  test("exports the ask's span in ChatApi's trace, its logs and metrics, and never what anyone wrote", async () => {
+    const tab = await openChat()
+    const sentinel = `sentinel-${crypto.randomUUID()}`
+    const { answerId } = asked(tab.run(ask(`What is ${sentinel}?`)))
+    const reply = await tab.onApi(tab.api.answerTo(`What is ${sentinel}?`))
+    reply.say(`It is ${sentinel}.`)
+    reply.done()
+    await until(() => expect(tab.waiting()).toBe(false))
+    tab.api.failNext("refused")
+    asked(tab.run(ask(`And ${sentinel} again?`)))
+    await until(() => expect(tab.count(Metric.withAttributes(askFailures, { reason: "refused" }))).toBe(1))
+    const { telemetry, spans } = tab.api
+    for (const runtime of runtimes.splice(0).reverse()) await runtime.dispose()
+
+    const exported = (signal: string) =>
+      telemetry.filter(({ path }) => path === `/api/telemetry/v1/${signal}`).map(({ body }) => body)
+    const browserSpans = exported("traces")
+      .flatMap((body) => JSON.parse(body).resourceSpans)
+      .flatMap((resource: { scopeSpans: Array<{ spans: Array<{ name: string; traceId: string }> }> }) => resource.scopeSpans)
+      .flatMap((scope: { spans: Array<{ name: string; traceId: string }> }) => scope.spans)
+    const ask_ = browserSpans.find(({ name }) => name === "chat.ask")
+    expect(exported("traces").join("\n")).toContain(answerId)
+    // traceparent on POST /api/questions joins the browser's ask and ChatApi's question into one trace.
+    expect(spans.find(({ name }) => name === "chat.question")?.traceId).toBe(ask_?.traceId)
+    expect(exported("logs").join("\n")).toContain("question asked")
+    expect(exported("logs").join("\n")).toContain("question not taken")
+    for (const name of ["smithers_web_questions", "smithers_web_ask_failures", "smithers_web_answer_first_text_ms"]) {
+      expect(exported("metrics").join("\n")).toContain(name)
+    }
+    expect(telemetry.map(({ body }) => body).join("\n")).not.toContain(sentinel)
   })
 
-  test("ignores everything after the answer", () => {
-    const conversation = [
-      message("q1", "user", "first"), message("a1", "assistant", "", "streaming"),
-      message("q2", "user", "later"), message("a2", "assistant", "later answer"),
-    ]
-    expect(turnsBefore(conversation, "a1")).toEqual([{ role: "user", content: "first" }])
+  test("exports sync and history records, and never what anyone wrote", async () => {
+    const tab = await openChat({ pageSize: 2, openWithin: "300 millis", backoff: { initial: "20 millis", max: "50 millis" } })
+    const sentinel = `sentinel-${crypto.randomUUID()}`
+    asked(tab.run(ask(`What is ${sentinel}?`)))
+    await tab.onApi(tab.api.askElsewhere(`Elsewhere ${sentinel}`))
+    await until(() => expect(tab.history()?.earlier).toBe(true))
+    tab.run(loadEarlier)
+    await until(() => expect(tab.count(Metric.withAttributes(historyLoads, { outcome: "loaded" }))).toBe(1))
+    tab.api.cutElectric()
+    await tab.onApi(tab.api.askElsewhere(`During ${sentinel}`))
+    await until(() => expect(tab.sync()?.status).toBe("failed"))
+    tab.api.healElectric()
+    tab.run(retrySync("button"))
+    await until(() => expect(tab.sync()?.status).toBe("ready"))
+    const { telemetry } = tab.api
+    for (const runtime of runtimes.splice(0).reverse()) await runtime.dispose()
+
+    const exported = (signal: string) =>
+      telemetry
+        .filter(({ path }) => path === `/api/telemetry/v1/${signal}`)
+        .map(({ body }) => body)
+        .join("\n")
+    for (const message of ["chat sync failed", "chat sync retried", "chat sync up to date", "earlier messages loaded"]) {
+      expect(exported("logs")).toContain(message)
+    }
+    expect(exported("logs")).toContain("unreachable")
+    expect(exported("traces")).toContain("chat.history.load")
+    for (const name of ["smithers_web_sync_failures", "smithers_web_sync_retries", "smithers_web_history_loads"]) {
+      expect(exported("metrics")).toContain(name)
+    }
+    expect(telemetry.map(({ body }) => body).join("\n")).not.toContain(sentinel)
+  })
+})
+
+describe("shortcuts", () => {
+  // A keydown as a browser dispatches it. `key` is absent on some, such as Chrome's autofill.
+  const keydown = (init: { key?: string; metaKey?: boolean; ctrlKey?: boolean }) =>
+    Object.assign(new Event("keydown", { cancelable: true }), { metaKey: false, ctrlKey: false, ...init })
+
+  const bound = async () => {
+    const tab = await openChat()
+    const target = new EventTarget()
+    const scope = await tab.runtime.runPromise(Scope.make())
+    await tab.runtime.runPromise(Scope.provide(chatShortcuts(target), scope))
+    const press = (init: Parameters<typeof keydown>[0]) => {
+      const event = keydown(init)
+      target.dispatchEvent(event)
+      return event.defaultPrevented
+    }
+    return { ...tab, press, unbind: () => tab.runtime.runPromise(Scope.close(scope, Exit.void)) }
+  }
+
+  test("⌘K and Ctrl+K toggle the composer, stopping the browser's own shortcut, and count as the shortcut", async () => {
+    const tab = await bound()
+    expect(tab.press({ key: "k", metaKey: true })).toBe(true)
+    expect(tab.composer()?.open).toBe(true)
+    expect(tab.press({ key: "K", ctrlKey: true })).toBe(true)
+    expect(tab.composer()?.open).toBe(false)
+    tab.press({ key: "k", ctrlKey: true })
+    expect(tab.count(Metric.withAttributes(composerOpens, { via: "shortcut" }))).toBe(2)
   })
 
-  const exchange = (n: number, question: string, answer: string) => [
-    message(`q${n}`, "user", question),
-    message(`a${n}`, "assistant", answer),
-  ]
-  const lastQuestion = [message("qz", "user", "now"), message("az", "assistant", "", "streaming")]
-
-  test("keeps at most 19 exchanges, the most recent ones", () => {
-    const conversation = [...Array.from({ length: 25 }, (_, n) => exchange(n, `q${n}`, `a${n}`)).flat(), ...lastQuestion]
-    const turns = turnsBefore(conversation, "az")
-    expect(turns).toHaveLength(39)
-    expect(turns[0]).toEqual({ role: "user", content: "q6" })
-    expect(turns.at(-1)).toEqual({ role: "user", content: "now" })
+  test("Esc hides the composer and keeps the draft, without stopping the browser", async () => {
+    const tab = await bound()
+    tab.run(openComposer("button"))
+    tab.run(setDraft("kept"))
+    expect(tab.press({ key: "Escape" })).toBe(false)
+    expect(tab.composer()).toMatchObject({ open: false, draft: "kept" })
   })
 
-  test("leaves out a whole exchange whose answer is too long to send", () => {
-    const conversation = [...exchange(1, "short", "ok"), ...exchange(2, "long", "x".repeat(32_001)), ...lastQuestion]
-    expect(turnsBefore(conversation, "az").map(({ content }) => content)).toEqual(["short", "ok", "now"])
+  test("other keys, and keydowns with no key, change nothing", async () => {
+    const tab = await bound()
+    for (const init of [{ key: "k" }, { key: "Enter", metaKey: true }, {}, { metaKey: true }]) {
+      expect(tab.press(init)).toBe(false)
+    }
+    expect(tab.composer()?.open).toBe(false)
   })
 
-  test("stops at the oldest exchange that would pass the total length", () => {
-    const big = "x".repeat(30_000)
-    const conversation = [...exchange(1, "oldest", "ok"), ...[2, 3, 4, 5].flatMap((n) => exchange(n, `q${n}`, big)), ...lastQuestion]
-    const contents = turnsBefore(conversation, "az").map(({ content }) => content)
-    expect(contents).not.toContain("oldest")
-    expect(contents).not.toContain("q2")
-    expect(contents.filter((content) => content === big)).toHaveLength(3)
-    expect(contents.at(-1)).toBe("now")
+  test("are unbound when their scope closes", async () => {
+    const tab = await bound()
+    await tab.unbind()
+    expect(tab.press({ key: "k", metaKey: true })).toBe(false)
+    expect(tab.composer()?.open).toBe(false)
   })
 })

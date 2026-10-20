@@ -1,22 +1,59 @@
-import { Effect, Stream } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/http"
+import { Data, type Duration, Effect, Schema } from "effect"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
-export type ChatTurn = { role: "user" | "assistant"; content: string }
+/** A question for `POST /api/questions` (docs/features/chat.md#post-apiquestions). */
+export type Question = { readonly id: string; readonly answerId: string; readonly text: string }
 
-// The header that ties one answer's browser logs, Worker logs and model span together.
-export const ANSWER_ID_HEADER = "x-smithers-answer-id"
+/**
+ * What ChatApi did with a question:
+ * - `inserted`: 202, both rows inserted in Postgres transaction `txid`;
+ * - `existing`: 200, the question was already there, so this was a retry that changed nothing.
+ */
+export type Taken = { readonly _tag: "inserted"; readonly txid: number } | { readonly _tag: "existing" }
 
-// Smithers' answer to the conversation, as text chunks streamed from the Worker's POST /api/chat.
-export const streamAnswer = (chatUrl: string, answerId: string, history: ReadonlyArray<ChatTurn>) =>
-  Stream.unwrap(
-    Effect.gen(function* () {
-      const client = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk)
-      const response = yield* client.execute(
-        HttpClientRequest.post(chatUrl).pipe(
-          HttpClientRequest.setHeader(ANSWER_ID_HEADER, answerId),
-          HttpClientRequest.bodyJsonUnsafe({ messages: history }),
-        ),
-      )
-      return response.stream.pipe(Stream.decodeText)
+// 202's body. 200's is `{ txid: null, existing: true }`; its status alone says the question was already there.
+const Inserted = Schema.Struct({ txid: Schema.Number })
+
+/**
+ * ChatApi didn't take the question:
+ * - `unreachable`: no whole answer within the deadline, its body included, for example offline;
+ * - `refused`: an answer other than 200 or 202, such as 409 for a retry that doesn't match the stored question;
+ * - `invalid_response`: 202 with a body outside the contract, or one that broke off;
+ * - `unconfirmed`: ChatApi took it, but Electric didn't deliver it in time.
+ */
+export class QuestionNotTaken extends Data.TaggedError("QuestionNotTaken")<{
+  readonly reason: "unreachable" | "refused" | "invalid_response" | "unconfirmed"
+  readonly status?: number
+}> {}
+
+/**
+ * Asks ChatApi to store a question and its empty answer. One deadline, `within`, covers the whole request: sending it,
+ * the status and reading the body. Past it, the request is aborted and the question counts as `unreachable`.
+ */
+export const postQuestion = Effect.fn("chat.question.post")(function* (
+  url: string,
+  question: Question,
+  within: Duration.Input,
+) {
+  const client = yield* HttpClient.HttpClient
+  return yield* Effect.gen(function* () {
+    const response = yield* client
+      .execute(HttpClientRequest.post(url).pipe(HttpClientRequest.bodyJsonUnsafe(question)))
+      .pipe(Effect.mapError(() => new QuestionNotTaken({ reason: "unreachable" })))
+    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+    if (response.status === 200) return { _tag: "existing" } satisfies Taken
+    if (response.status !== 202) {
+      return yield* new QuestionNotTaken({ reason: "refused", status: response.status })
+    }
+    const { txid } = yield* HttpClientResponse.schemaBodyJson(Inserted)(response).pipe(
+      Effect.mapError(() => new QuestionNotTaken({ reason: "invalid_response", status: 202 })),
+    )
+    return { _tag: "inserted", txid } satisfies Taken
+  }).pipe(
+    // Interrupting the request, at any step, aborts its fetch (Effect HttpClient), so a stalled body stops too.
+    Effect.timeoutOrElse({
+      duration: within,
+      orElse: () => Effect.fail(new QuestionNotTaken({ reason: "unreachable" })),
     }),
   )
+})

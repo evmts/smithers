@@ -1,6 +1,7 @@
 import { defineConfig } from "vitest/config"
 
-// Unit tests of the framework-free state machine, in Node with LiveStore's in-memory adapter.
+// Unit tests in Node: the browser's framework-free state machine (src/), and ChatApi's handlers (worker/) against
+// the compose Postgres and Electric.
 export default defineConfig({
-  test: { include: ["src/**/*.test.ts"], environment: "node" },
+  test: { include: ["src/**/*.test.ts", "worker/**/*.test.ts"], environment: "node" },
 })

@@ -9,10 +9,14 @@ The Smithers app, rebuilt from scratch one reviewed feature at a time (Will, 202
 - Read [docs/libraries.md](../../docs/libraries.md) before writing app code.
 - Import packages from their root only.
 
+## Durable flows
+
+Every action, every model call included, is a durable Smithers flow step; see the root [AGENTS.md](../../AGENTS.md#everything-is-a-durable-flow-will-2026-10-19-permanent). The app writes no retry loops, background jobs or sweeps of its own.
+
 ## Effect
 
 - Run an Effect only at the program's boundary. In the browser that is `main.tsx`, once. On the backend, Alchemy's Effect-native Workers run the handlers, so the app never calls `runPromise`, `runFork` or `runSync` there.
-- Use a library's Effect API when it has one: LiveStore's `@livestore/livestore/effect`, Effect `HttpClient`, `Config`.
+- Use every library through Effect: a library's own Effect API when it has one (Effect `HttpClient`, `Config`, `@effect/sql-pg`), else a thin Effect wrapper written first (TanStack DB and Electric in `src/lib/`). App code calls the wrappers, never the raw library.
 - Choices such as the model are services provided by layers, never constants in a handler.
 
 ## State (flux)
@@ -20,12 +24,8 @@ The Smithers app, rebuilt from scratch one reviewed feature at a time (Will, 202
 Read [docs/state.md](docs/state.md) first: the state machine is framework-free TypeScript that the web app, and later the TUI, adapt to.
 
 - Route state lives in the URL, through TanStack Router (`src/router.tsx`). Never hand-roll routing.
-- All other state lives in LiveStore:
-  - synced events for shared data;
-  - client documents for one tab's UI state.
-
-  Components read through queries and write through actions.
-- No `useState`: even UI state, such as whether the composer is open or its draft, is a LiveStore client document.
+- Shared state lives in Postgres. Electric syncs it into TanStack DB collections, and writes go through ChatApi. One tab's UI state lives in local-only TanStack DB collections. Components read through live queries and write through actions. See [docs/decisions/0001-electric-postgres-tanstack-db.md](docs/decisions/0001-electric-postgres-tanstack-db.md).
+- No `useState`: even UI state, such as whether the composer is open or its draft, is a local-only collection.
 - No `useEffect` for data or state syncing.
 
 ## Structure
@@ -33,15 +33,16 @@ Read [docs/state.md](docs/state.md) first: the state machine is framework-free T
 - `src/screens/<screen>/`: one folder per route screen. It composes feature components; its stylesheet holds page layout only.
 - `src/features/<feature>/`: one folder per feature, laid out as in [docs/state.md](docs/state.md).
 - `worker/`: Cloudflare Workers, deployed and run locally by Alchemy (`alchemy.run.ts`). No Wrangler config.
-  - `ChatApi.ts` is Effect-native.
-  - `index.ts` only wires LiveStore's sync Durable Object and forwards `/api/*`.
+  - `ChatApi.ts` is Effect-native: it writes to Postgres, answers in the background and proxies Electric shapes.
+  - `index.ts` forwards `/api/*` and serves the app.
+- `db/`: the Postgres schema as Effect SQL migrations (`db/migrations`, `pnpm db:migrate`) and the client layer ChatApi, the migrations and the tests share. `docker-compose.yml` runs Postgres and Electric locally (`pnpm db:up`). Infrastructure: [docs/infrastructure.md](docs/infrastructure.md).
 - Configurable values (model, API URL, keys) come from the environment through Effect `Config`, named for what they are, not for one vendor.
 - Components, colors and the theme come from `@smthrs/ui` (`packages/smithers/ui`). A reusable piece the app needs goes into that library, with its test and docs, not into this app.
 - `src/styles/fonts.css`: loads the Inter files the theme names.
 
 ## Tests, observability, performance
 
-- **Unit (`pnpm test`):** every action, query, materializer and background program, in Node with real LiveStore in memory.
+- **Unit (`pnpm test`):** every action, query, wrapper and handler, in Node. ChatApi's handlers run against the real compose Postgres; the model is the only scripted seam.
 - **End to end (`pnpm e2e`):**
   - A feature works only if a real test passes against it: no route mocks or fake backends.
   - Cover multiple devices, offline use and reloads, because the app is local-first.

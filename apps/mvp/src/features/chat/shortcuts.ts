@@ -1,18 +1,24 @@
 import { Effect } from "effect"
-import { AppStore } from "../../livestore/AppStore"
+import { Boundary } from "../../lib/runtime"
 import { closeComposer, toggleComposer } from "./actions"
-import { composer$ } from "./queries"
+import { ChatStore } from "./store"
 
-// ⌘K (Ctrl+K) toggles the composer and Esc hides it from anywhere in the window, whatever has focus,
-// as in the old app (apps/app/src/mainview/state/controller/controlFocus.ts). The listener commits
-// synchronously, because ⌘K's browser default must be prevented inside the event.
-export const chatShortcuts = Effect.fnUntraced(function* (target: Window) {
-  const { store } = yield* AppStore
-  const onKeyDown = (event: KeyboardEvent) => {
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+// ⌘K (Ctrl+K) toggles the composer and Esc hides it from anywhere on `target`, whatever has focus, as in the old app
+// (apps/app/src/mainview/state/controller/controlFocus.ts). The listener is bound while the scope is open.
+// `preventDefault` runs in the listener, because ⌘K's browser default can only be stopped inside the event.
+export const chatShortcuts = Effect.fnUntraced(function* (target: EventTarget) {
+  const boundary = yield* Boundary
+  const store = yield* ChatStore
+  const run = (action: Effect.Effect<void, never, ChatStore>) =>
+    boundary.runSync(Effect.provideService(action, ChatStore, store))
+  const onKeyDown = (event: Event) => {
+    // Some keydown events carry no key, such as Chrome's autofill.
+    const { key, metaKey, ctrlKey } = event as Partial<KeyboardEvent>
+    if (typeof key !== "string") return
+    if ((metaKey || ctrlKey) && key.toLowerCase() === "k") {
       event.preventDefault()
-      toggleComposer(store, store.query(composer$).open)
-    } else if (event.key === "Escape") closeComposer(store)
+      run(toggleComposer("shortcut"))
+    } else if (key === "Escape") run(closeComposer)
   }
   yield* Effect.acquireRelease(
     Effect.sync(() => target.addEventListener("keydown", onKeyDown, true)),

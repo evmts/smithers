@@ -1,24 +1,30 @@
-import { StoreRegistryProvider } from "@livestore/react"
 import { SmithersUiStyles } from "@smthrs/ui"
 import { RouterProvider } from "@tanstack/react-router"
-import { Effect } from "effect"
-import { StrictMode, Suspense } from "react"
+import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
-import { boot } from "./boot"
-import { storeRegistry } from "./livestore/store"
+import { AppProvider } from "./AppContext"
+import { appLayer, boot } from "./boot"
+import { makeRuntime } from "./lib/runtime"
 import { router } from "./router"
 import "./styles/fonts.css"
 
-// The program's boundary: the one place the app runs an Effect.
-Effect.runFork(boot)
+// The program's boundary. The app's one runtime is built here, and the boot program is the one Effect started here;
+// actions and library callbacks run on this same runtime.
+const runtime = makeRuntime(appLayer({ origin: window.location.origin }))
+const root = createRoot(document.getElementById("root")!)
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <SmithersUiStyles withTheme />
-    <StoreRegistryProvider storeRegistry={storeRegistry}>
-      <Suspense>
-        <RouterProvider router={router} />
-      </Suspense>
-    </StoreRegistryProvider>
-  </StrictMode>,
+runtime.runFork(
+  boot({
+    target: window,
+    startedAt: performance.timeOrigin,
+    render: (chat) =>
+      root.render(
+        <StrictMode>
+          <SmithersUiStyles withTheme />
+          <AppProvider value={{ chat, run: runtime.runSync }}>
+            <RouterProvider router={router} />
+          </AppProvider>
+        </StrictMode>,
+      ),
+  }),
 )

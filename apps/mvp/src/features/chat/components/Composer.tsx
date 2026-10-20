@@ -1,19 +1,19 @@
 import { Button, ChatComposer } from "@smthrs/ui"
-import { useAppStore } from "../../../livestore/store"
+import { useLiveQuery } from "@tanstack/react-db"
+import { useApp } from "../../../AppContext"
 import { ask, closeComposer, openComposer, setDraft } from "../actions"
-import { awaiting$, composer$ } from "../queries"
 import { QUESTION_MAX_LENGTH } from "../schema"
 
 const SHORTCUT = "Meta+K Control+K"
 
 // The docked composer when open; the Chat ⌘K button when hidden.
 export function Composer() {
-  const store = useAppStore()
-  const { open, draft } = store.useQuery(composer$)
-  const answering = store.useQuery(awaiting$(store.sessionId)).length > 0
-  if (!open) {
+  const { chat, run } = useApp()
+  const { data: composer } = useLiveQuery(chat.composerState)
+  const { data: waiting } = useLiveQuery(chat.waiting)
+  if (composer?.open !== true) {
     return (
-      <Button variant="outline" aria-keyshortcuts={SHORTCUT} onClick={() => openComposer(store)}>
+      <Button variant="outline" aria-keyshortcuts={SHORTCUT} onClick={() => run(openComposer("button"))}>
         Chat <kbd>⌘K</kbd>
       </Button>
     )
@@ -21,15 +21,15 @@ export function Composer() {
   return (
     <ChatComposer
       docked
-      value={draft}
-      onValueChange={(text) => setDraft(store, text)}
-      onSubmit={(text) => void ask(store, text)}
-      lifecycleStatus={answering ? "streaming" : "ready"}
+      value={composer.draft}
+      onValueChange={(text) => run(setDraft(text))}
+      onSubmit={(text) => void run(ask(text))}
+      lifecycleStatus={waiting === undefined ? "ready" : "streaming"}
       placeholder="Message Smithers"
       inputAriaLabel="Message Smithers"
       textareaProps={{ autoFocus: true, maxLength: QUESTION_MAX_LENGTH }}
       actions={
-        <Button variant="ghost" size="sm" aria-keyshortcuts={SHORTCUT} onClick={() => closeComposer(store)}>
+        <Button variant="ghost" size="sm" aria-keyshortcuts={SHORTCUT} onClick={() => run(closeComposer)}>
           Hide <kbd>⌘K</kbd>
         </Button>
       }

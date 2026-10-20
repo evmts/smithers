@@ -1,0 +1,30 @@
+# Local Postgres and Electric for `pnpm dev`. Production runs both as managed services; see docs/infrastructure.md.
+name: smithers-mvp
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_USER: smithers
+      POSTGRES_PASSWORD: smithers
+      POSTGRES_DB: smithers
+    # Electric reads Postgres' logical replication stream.
+    command: ["postgres", "-c", "wal_level=logical"]
+    ports: ["54321:5432"]
+    volumes: ["postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smithers -d smithers"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+  electric:
+    image: electricsql/electric:1.8.1
+    environment:
+      DATABASE_URL: postgresql://smithers:smithers@postgres:5432/smithers?sslmode=disable
+      # Local only: production sets ELECTRIC_SECRET, and only ChatApi holds it.
+      ELECTRIC_INSECURE: "true"
+    ports: ["30001:3000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+volumes:
+  postgres: {}

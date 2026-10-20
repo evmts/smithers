@@ -1,73 +1,97 @@
-import { Events, makeSchema, Schema, SessionIdSymbol, State } from "@livestore/livestore"
+import { Schema } from "effect"
 
 export const CHAT_FAILED = "Smithers couldn't answer. Try again."
 
-// The longest question a person can ask, in characters.
+/** What a frontend shows while chat's sync has stopped (`SyncHealth` `failed`), beside a Retry action. */
+export const SYNC_LOST = "Smithers lost its connection."
+
+/** How many messages a tab loads at first, and how many more each "Load earlier" adds. */
+export const PAGE_SIZE = 50
+
+// The longest question a person can ask, in characters after trimming (docs/features/chat.md#post-apiquestions).
 export const QUESTION_MAX_LENGTH = 8_000
 
-export const tables = {
-  // The conversation, synced to every device on the store.
-  messages: State.SQLite.table({
-    name: "messages",
-    columns: {
-      id: State.SQLite.text({ primaryKey: true }),
-      role: State.SQLite.text({ schema: Schema.Literals(["user", "assistant"]) }),
-      text: State.SQLite.text({ default: "" }),
-      status: State.SQLite.text({ schema: Schema.Literals(["done", "streaming", "failed"]) }),
-      // The browser tab (LiveStore session) that asked; only it fetches the answer.
-      askedBy: State.SQLite.text({ default: "" }),
-      // The conversation's order: the event log's, which every device shares, never a device's clock.
-      position: State.SQLite.integer({ default: 0 }),
-      createdAt: State.SQLite.integer(),
-    },
-  }),
-  // The composer belongs to one browser tab: open or hidden, and the unsent draft.
-  composer: State.SQLite.clientDocument({
-    name: "composer",
-    schema: Schema.Struct({ open: Schema.Boolean, draft: Schema.String }),
-    default: { id: SessionIdSymbol, value: { open: false, draft: "" } },
-  }),
-}
-
-export const events = {
-  // A question and the empty answer it awaits, in one event so every device sees both or neither.
-  questionAsked: Events.synced({
-    name: "v1.QuestionAsked",
-    schema: Schema.Struct({
-      id: Schema.String,
-      text: Schema.String,
-      answerId: Schema.String,
-      askedBy: Schema.String,
-      createdAt: Schema.Number,
-    }),
-  }),
-  // The next piece of the answer, committed a few times a second while Smithers streams.
-  answerDelta: Events.synced({ name: "v1.AnswerDelta", schema: Schema.Struct({ id: Schema.String, text: Schema.String }) }),
-  answerCompleted: Events.synced({ name: "v1.AnswerCompleted", schema: Schema.Struct({ id: Schema.String }) }),
-  answerFailed: Events.synced({ name: "v1.AnswerFailed", schema: Schema.Struct({ id: Schema.String }) }),
-  composerSet: tables.composer.set,
-}
-
-const materializers = State.SQLite.materializers(events, {
-  "v1.QuestionAsked": ({ id, text, answerId, askedBy, createdAt }) =>
-    [
-      { id, role: "user", text, status: "done", askedBy: "" },
-      { id: answerId, role: "assistant", text: "", status: "streaming", askedBy },
-    ].map((row) => ({
-      sql: `INSERT INTO messages (id, role, text, status, askedBy, position, createdAt)
-            VALUES ($id, $role, $text, $status, $askedBy, (SELECT COALESCE(MAX(position), 0) + 1 FROM messages), $createdAt)`,
-      bindValues: { ...row, createdAt },
-      writeTables: new Set(["messages"]),
-    })),
-  // An answer only changes while it streams: once done or failed, later events for it change nothing.
-  "v1.AnswerDelta": ({ id, text }) => ({
-    sql: "UPDATE messages SET text = text || $text WHERE id = $id AND status = 'streaming'",
-    bindValues: { text, id },
-    writeTables: new Set(["messages"]),
-  }),
-  "v1.AnswerCompleted": ({ id }) => tables.messages.update({ status: "done" }).where({ id, status: "streaming" }),
-  "v1.AnswerFailed": ({ id }) =>
-    tables.messages.update({ text: CHAT_FAILED, status: "failed" }).where({ id, status: "streaming" }),
+/**
+ * One row of Postgres `messages`, as Electric delivers it (docs/features/chat.md#messages-postgres): column names in
+ * camelCase, `position` (int8) parsed to a number, timestamps as Postgres prints them.
+ */
+export const Message = Schema.Struct({
+  id: Schema.String,
+  role: Schema.Literals(["user", "assistant"]),
+  text: Schema.String,
+  status: Schema.Literals(["done", "streaming", "failed"]),
+  questionId: Schema.NullOr(Schema.String),
+  failure: Schema.NullOr(Schema.Literals(["rate_limited", "model_error", "empty", "abandoned"])),
+  modelId: Schema.NullOr(Schema.String),
+  stopReason: Schema.NullOr(Schema.String),
+  inputTokens: Schema.NullOr(Schema.Number),
+  outputTokens: Schema.NullOr(Schema.Number),
+  attempts: Schema.Number,
+  position: Schema.Number,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
 })
+export type Message = typeof Message.Type
 
-export const schema = makeSchema({ events, state: State.SQLite.makeState({ tables, materializers }) })
+/**
+ * Where a row this tab inserted sorts until Electric delivers its real `position`: after every synced row, in the
+ * order this tab asked. Postgres identity positions never reach 2^52.
+ */
+export const PENDING_POSITION = 2 ** 52
+
+// This tab's composer: open or hidden, and the unsent draft. One row.
+export const COMPOSER = "composer"
+export type Composer = { id: typeof COMPOSER; open: boolean; draft: string }
+
+// An answer this tab asked for, keyed by the answer's id: what "this tab is waiting" joins on.
+export type Ask = { id: string }
+
+/**
+ * This tab's sync with Postgres, through Electric. One row:
+ * - `syncing`: until a shape request first succeeds, and after one fails until another succeeds;
+ * - `ready`: the last request succeeded, so the conversation follows every change;
+ * - `failed`: the conversation shown may be stale. `reason` is `unreachable` (requests kept failing on the network, or
+ *   with 5xx, for `openWithin`; they keep retrying, and the first to succeed makes it `ready`), `refused` (a 4xx) or
+ *   `invalid_response` (a response Electric couldn't read); those two wait for a retry. `httpStatus` is the last status
+ *   when there was one. Both are null unless `failed`.
+ */
+export const SYNC = "sync"
+export type SyncFailure = "unreachable" | "refused" | "invalid_response"
+export type SyncHealth = {
+  id: typeof SYNC
+  status: "syncing" | "ready" | "failed"
+  reason: SyncFailure | null
+  httpStatus: number | null
+}
+
+/**
+ * This tab's view of the conversation's history. One row:
+ * - `opened`: the first window has loaded;
+ * - `limit`: how many of the most recent messages the conversation shows;
+ * - `earlier`: whether there may be messages before them (the window is full);
+ * - `loading`: a "Load earlier" is loading.
+ */
+export const HISTORY = "history"
+export type History = { id: typeof HISTORY; opened: boolean; limit: number; earlier: boolean; loading: boolean }
+
+/**
+ * A question this tab couldn't ask, kept so it and the failure copy stay where they were shown after TanStack DB
+ * rolls the optimistic rows back. Two rows per question, shaped like messages: they sort after the synced row at
+ * `position`, then by `seq`, the order they were asked in.
+ */
+export type FailedMessage = {
+  id: string
+  role: "user" | "assistant"
+  text: string
+  status: "done" | "failed"
+  position: number
+  seq: number
+}
+
+// A row of the conversation as every frontend shows it.
+export type ConversationMessage = {
+  id: string
+  role: "user" | "assistant"
+  text: string
+  status: Message["status"]
+}
