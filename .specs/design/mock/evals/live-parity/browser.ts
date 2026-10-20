@@ -15,7 +15,9 @@ export const readOnlyRequest = (method: string, url: string) => {
   const parsed = new URL(url)
   if (!/^(https?:|file:|data:|blob:)$/.test(parsed.protocol)) return false
   const danger = /(?:^|[\/_-])(?:logout|signout|sign-out|delete|approve|merge|land|dispatch|trigger|revoke)(?:[\/_-]|$)|\/auth\/callback/i
-  return !danger.test(decodeURIComponent(parsed.pathname)) && ![...parsed.searchParams.keys()].some(key => /^(action|mutation|logout|delete|approve|merge|land)$/i.test(key))
+  // A contents read names files: .smithers/flows/land is a path, not a land action (port-p0 blocked it, 2026-10-19).
+  const path = decodeURIComponent(parsed.pathname)
+  return (/\/contents\//.test(path) || !danger.test(path)) && ![...parsed.searchParams.keys()].some(key => /^(action|mutation|logout|delete|approve|merge|land)$/i.test(key))
 }
 /** Semantic regions supplement collectPage's mock CSS selectors on both sides. */
 export const collectStructure = (): Structure => {
@@ -94,7 +96,13 @@ export const inspectParity = async (view: ViewSpec, options: Options): Promise<P
       const response = await page.goto(request.url, { timeout: 30_000, waitUntil: "domcontentloaded" })
       // The live app boots for ~2-3 s after domcontentloaded (bootstrap reads, then the frame). Capturing at 600 ms
       // photographed the boot splash and scored every live view as "only a Smithers heading" (port-inc1, 2026-10-18).
-      if (request.side === "live") await page.waitForFunction(() => Boolean(document.querySelector(".repo-frame")) || /\b(?:not found|404)\b/i.test(document.body.innerText), undefined, { timeout: 15_000 }).catch(() => {})
+      // Live renders the frame first and its view data a beat later: wait for a not-found page, or a frame
+      // whose visible text no longer says Loading (innerText skips closed menus such as the branch picker).
+      if (request.side === "live") await page.waitForFunction(() => {
+        if (/\b(?:not found|404)\b/i.test(document.body.innerText)) return true
+        const frame = document.querySelector<HTMLElement>(".repo-frame")
+        return frame !== null && !/Loading(?:…|\.\.\.)/.test(frame.innerText)
+      }, undefined, { timeout: 20_000 }).catch(() => {})
       await page.waitForTimeout(request.wait ?? 600)
       if (request.side === "live") await page.evaluate(() => {
         // auditPage's hash-route lookup is a mock-only contract. Live links are
