@@ -3,8 +3,9 @@ smthrs runs — Inspect and control durable execution records
 Usage: smthrs runs <command>
 
 Commands:
-  list  Active and attention-needing runs
-  show  Open a run's card
+  list    Active and attention-needing runs
+  resume  Resume a parked durable run
+  show    Open a run's card
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)

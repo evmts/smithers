@@ -16,6 +16,7 @@
 
 ## On your own Mac
 
+- [Run agents on your Mac](https://smithers.sh/docs/local-quickstart.md): Install smthrs, have a coding agent change a small project on your Codex subscription, check the change and push it yourself.
 - [Self-host Smithers](https://smithers.sh/docs/self-host.md): Run your own install on a Mac, merge your first TODO and invite your team.
 
 ## Flows

@@ -62,7 +62,6 @@ describe("unified CLI", { timeout: 240_000 }, () => {
         "watch",
         "cache",
         "approvals",
-        "generate",
         "eval",
         "triggers",
         "integrations",
@@ -74,6 +73,24 @@ describe("unified CLI", { timeout: 240_000 }, () => {
       expect(result.output).not.toMatch(new RegExp(`^\\s+${name}\\s{2,}`, "m"))
     }
     for (const name of ["hijack", "timetravel", "retry-task", "claude"]) expect(result.output).not.toContain(name)
+  })
+
+  it("discovers the five local coding commands in help and the full manifest", async () => {
+    const commands = ["generate flow", "flow start", "runs resume", "change diff", "doctor"]
+    const help = await serve(["--help"])
+    expect(help.code, help.output).toBe(0)
+    for (const name of commands) expect(help.output).toMatch(new RegExp(`^\\s+${name.split(" ")[0]}\\s{2,}`, "m"))
+    for (const group of ["generate", "flow", "runs", "change"]) {
+      const nested = await serve([group, "--help"])
+      expect(nested.code, nested.output).toBe(0)
+      for (const name of commands.filter((name) => name.startsWith(group + " "))) {
+        expect(nested.output).toMatch(new RegExp(`^\\s+${name.split(" ")[1]}\\s{2,}`, "m"))
+      }
+    }
+    const manifest = await serve(["--llms-full", "--format", "json"])
+    expect(manifest.code, manifest.output).toBe(0)
+    const names = JSON.parse(manifest.output).commands.map((command: { name: string }) => command.name)
+    for (const name of commands) expect(names).toContain(name)
   })
 
   it("keeps help, schema and invalid invocations file-free through the executable", async () => {

@@ -21,9 +21,12 @@ const snippets = (text) => [...text.matchAll(/```(?:bash|sh|shell)\s*\n([\s\S]*?
   return (match[1] ?? match[2]).split("\n").filter((line) => /^smthrs\s/.test(line.trim())).map((line) => ({ command: line.trim(), section }))
 })
 
+// Shell words: a quoted argument such as --data '{"args":"... --test ..."}' is one word, never options.
+const shellWords = (command) => [...command.matchAll(/'[^']*'|"(?:[^"\\]|\\.)*"|\S+/g)].map((match) => match[0])
+
 function validateCommands(text, commands) {
   for (const { command } of snippets(text)) {
-    const words = command.split(/\s+/).slice(1)
+    const words = shellWords(command).slice(1)
     const shipped = commands.filter(entry => words.slice(0, entry.name.split(" ").length).join(" ") === entry.name)
       .sort((a, b) => b.name.length - a.name.length)[0]
     assert.ok(shipped, `${command} does not ship`)
@@ -68,9 +71,11 @@ test("all documented CLI commands and arguments exist in the source CLI", async 
   })
   assert.equal(status, 0, output)
   assert.ok(output.includes(JSON.parse(read("packages/smithers/package.json")).version), output)
-  validateCommands(installation, [...commands, { name: "--version" }])
+  // --version ran above, so pages may document it like any shipped command.
+  const shipped = [...commands, { name: "--version" }]
+  validateCommands(installation, shipped)
   assert.ok(appPages.length > 0, "the app docs must have pages")
-  for (const name of appPages) validateCommands(read(`apps/app/src/docs/pages/${name}`), commands)
+  for (const name of appPages) validateCommands(read(`apps/app/src/docs/pages/${name}`), shipped)
 })
 
 test("command guard rejects invented commands, flags and invalid positional arguments", () => {
@@ -80,6 +85,9 @@ test("command guard rejects invented commands, flags and invalid positional argu
   assert.throws(() => validateCommands("`smthrs host restore`", commands), /missing argument/)
   assert.throws(() => validateCommands("`smthrs host restore one two`", commands), /unexpected argument/)
   validateCommands("`smthrs host restore /Users/will/Backups/smithers`", commands)
+  const start = [{ name: "flow start", schema: { args: { properties: { flow: {} }, required: ["flow"] }, options: { properties: { data: { type: "string" } } } } }]
+  validateCommands(`\`smthrs flow start coding --data '{"args":"run node --test. Do not commit."}'\``, start)
+  assert.throws(() => validateCommands("`smthrs flow start coding --test`", start), /has no --test/)
 })
 
 test("the public sidebar is the app's toc, then Install beside self-hosting, then the reference with the CLI", () => {
@@ -211,5 +219,15 @@ test("MCP doctor help describes the smoke test instead of registration", async (
     })
     assert.equal(status, 0, output)
     assert.match(output, usage)
+  }
+})
+
+
+test("every coding guide command is in the captured CLI manifest", () => {
+  const { commands } = JSON.parse(read("apps/site/src/data/cli-commands.json"))
+  for (const { command } of snippets(read("packages/smithers/docs/guides/change-code.md"))) {
+    if (command === "smthrs --version") continue // Root flag, checked against the executable above.
+    const words = command.split(/\s+/).slice(1)
+    assert.ok(commands.some(({ name }) => words.slice(0, name.split(" ").length).join(" ") === name), `${command} missing from manifest`)
   }
 })

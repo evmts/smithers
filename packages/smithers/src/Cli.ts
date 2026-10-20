@@ -437,6 +437,12 @@ export const makeCli = (
   // Appendix B.6 is an explicit discovery allowlist. Other public library
   // commands remain callable, but do not enter install help, skills or MCP.
   const doors = [
+    // CEO a-4mfsx0: the documented local coding path.
+    "generate flow",
+    "flow start",
+    "runs resume",
+    "change diff",
+    "doctor",
     ...catalogCommands.filter((row) =>
       row.actors.includes("external_agent") && row.agent !== "never" &&
       (row.visibility === "core" || row.visibility === "advanced")
