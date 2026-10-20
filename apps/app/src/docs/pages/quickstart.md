@@ -1,9 +1,9 @@
 ---
 title: "Quickstart"
-summary: "Open a repository on smithers.sh, read its files and sign in with GitHub."
+summary: "Open a repository on smithers.sh, read its files and issues, and sign in with GitHub."
 ---
 
-This page takes you from the smithers.sh home page to a repository's files, then to signing in with GitHub. It takes about five minutes.
+This page takes you from the smithers.sh home page to a repository's files and issues, then to signing in with GitHub. It takes about five minutes.
 
 **Before you start:** you need a GitHub account to sign in. To open a private repository, you also need read access to it on GitHub.
 
@@ -29,7 +29,13 @@ Choose a folder (2) to open it, or a file to read it. The file's path (1) is at 
 
 ![package.json in smithersai/vibelang on smithers.sh, with the file's path at the top (1)](images/quickstart-file.webp)
 
-## 4. Sign in with GitHub
+## 4. Read issues and pull requests
+
+Choose **Issues** (1) to list the repository's open and closed issues, or **Pull requests** (2) to list its pull requests. Choose an issue to read it.
+
+![The Issues tab of smithersai/vibelang on smithers.sh: Issues (1) and Pull requests (2), with each issue's author hidden](images/quickstart-issues.webp)
+
+## 5. Sign in with GitHub
 
 Choose **Sign in**. GitHub asks you to sign in, then to authorize Smithers to read your account and email address and to access your repositories.
 
@@ -37,7 +43,7 @@ Choose **Sign in**. GitHub asks you to sign in, then to authorize Smithers to re
 
 ## Result
 
-You opened a repository on smithers.sh, read a file, and started signing in with GitHub.
+You opened a repository on smithers.sh, read a file, listed its issues, and started signing in with GitHub.
 
 ## Next steps
 

@@ -6,7 +6,7 @@
     "path": "/smithersai/vibelang/blob/main/package.json",
     "auth": "signed-out",
     "origin": "https://smithers.sh",
-    "build": "8b0fc466c1b92e76e5f8162ac72ed329a6a5ac9b",
+    "build": "ae86664e712498c2e97311934a01b7f6526ca448",
     "themes": {
       "light": {
         "file": "quickstart-file.light.webp",
@@ -21,13 +21,34 @@
     }
   },
   {
+    "id": "quickstart-issues",
+    "page": "quickstart",
+    "alt": "The Issues tab of smithersai/vibelang on smithers.sh: Issues (1) and Pull requests (2), with each issue's author hidden",
+    "path": "/smithersai/vibelang/issues",
+    "auth": "signed-out",
+    "origin": "https://smithers.sh",
+    "build": "ae86664e712498c2e97311934a01b7f6526ca448",
+    "themes": {
+      "light": {
+        "file": "quickstart-issues.light.webp",
+        "bytes": 46590,
+        "pixelSha256": "452b20a1b118be9bc17e3f7b9fabcb77cc16fc388804386e5c569db43c7890be"
+      },
+      "dark": {
+        "file": "quickstart-issues.dark.webp",
+        "bytes": 47856,
+        "pixelSha256": "3bc0e89f46194d46995be4d11bc41537989ae723ad5924fcce25e26840c111a3"
+      }
+    }
+  },
+  {
     "id": "quickstart-repo-home",
     "page": "quickstart",
     "alt": "The smithersai/vibelang repository on smithers.sh, open on its file tree: the branch (1) and a folder (2)",
     "path": "/smithersai/vibelang",
     "auth": "signed-out",
     "origin": "https://smithers.sh",
-    "build": "8b0fc466c1b92e76e5f8162ac72ed329a6a5ac9b",
+    "build": "ae86664e712498c2e97311934a01b7f6526ca448",
     "themes": {
       "light": {
         "file": "quickstart-repo-home.light.webp",
@@ -48,7 +69,7 @@
     "path": "/",
     "auth": "signed-out",
     "origin": "https://smithers.sh",
-    "build": "8b0fc466c1b92e76e5f8162ac72ed329a6a5ac9b",
+    "build": "ae86664e712498c2e97311934a01b7f6526ca448",
     "themes": {
       "light": {
         "file": "quickstart-sign-in.light.webp",
@@ -69,7 +90,7 @@
     "path": "/",
     "auth": "signed-out",
     "origin": "https://smithers.sh",
-    "build": "8b0fc466c1b92e76e5f8162ac72ed329a6a5ac9b",
+    "build": "ae86664e712498c2e97311934a01b7f6526ca448",
     "themes": {
       "light": {
         "file": "welcome-home.light.webp",
