@@ -6,7 +6,7 @@
     "path": "/smithersai/vibelang/blob/main/package.json",
     "auth": "signed-out",
     "origin": "https://smithers.sh",
-    "build": "ae86664e712498c2e97311934a01b7f6526ca448",
+    "build": "7ad93f31b6fa10268ab0c600110cc12df76e8be9",
     "themes": {
       "light": {
         "file": "quickstart-file.light.webp",
@@ -27,7 +27,7 @@
     "path": "/smithersai/vibelang/issues",
     "auth": "signed-out",
     "origin": "https://smithers.sh",
-    "build": "ae86664e712498c2e97311934a01b7f6526ca448",
+    "build": "7ad93f31b6fa10268ab0c600110cc12df76e8be9",
     "themes": {
       "light": {
         "file": "quickstart-issues.light.webp",
@@ -44,21 +44,21 @@
   {
     "id": "quickstart-repo-home",
     "page": "quickstart",
-    "alt": "The smithersai/vibelang repository on smithers.sh, open on its file tree: the branch (1) and a folder (2)",
+    "alt": "The smithersai/vibelang repository on smithers.sh, open on its file tree: the branch (1) and a folder (2), with the latest commit's author hidden",
     "path": "/smithersai/vibelang",
     "auth": "signed-out",
     "origin": "https://smithers.sh",
-    "build": "ae86664e712498c2e97311934a01b7f6526ca448",
+    "build": "7ad93f31b6fa10268ab0c600110cc12df76e8be9",
     "themes": {
       "light": {
         "file": "quickstart-repo-home.light.webp",
-        "bytes": 47404,
-        "pixelSha256": "78190a3ed2e87007dccd883afd8de5216f5fbc000795b0ae8b99317f90dcf249"
+        "bytes": 49322,
+        "pixelSha256": "449a99da0cf53902d5eb191ab78208160e64980455dcc01178470c6056a04cad"
       },
       "dark": {
         "file": "quickstart-repo-home.dark.webp",
-        "bytes": 49746,
-        "pixelSha256": "95b4dbffef4a49b7d5f58a4e5f6b493693510ae18233178a98e84df96469d89e"
+        "bytes": 51910,
+        "pixelSha256": "2ccdeeb61022bd7b41f26ed0475228998cd02e62a78e55c0da51cead43f94569"
       }
     }
   },
@@ -69,7 +69,7 @@
     "path": "/",
     "auth": "signed-out",
     "origin": "https://smithers.sh",
-    "build": "ae86664e712498c2e97311934a01b7f6526ca448",
+    "build": "7ad93f31b6fa10268ab0c600110cc12df76e8be9",
     "themes": {
       "light": {
         "file": "quickstart-sign-in.light.webp",
@@ -90,17 +90,17 @@
     "path": "/",
     "auth": "signed-out",
     "origin": "https://smithers.sh",
-    "build": "ae86664e712498c2e97311934a01b7f6526ca448",
+    "build": "7ad93f31b6fa10268ab0c600110cc12df76e8be9",
     "themes": {
       "light": {
         "file": "welcome-home.light.webp",
-        "bytes": 65154,
-        "pixelSha256": "a97b9cc42bcf52883eebe2918fb57a3f4f1bbed8d8e00c633ba60ee2cb01d6e8"
+        "bytes": 64496,
+        "pixelSha256": "1bd06288d4378c37ee2884771cff273a2036eb67b096202e005dbd3e1d4a0ff9"
       },
       "dark": {
         "file": "welcome-home.dark.webp",
-        "bytes": 68362,
-        "pixelSha256": "81ac14925821e0a936496f02bc6301351755200d7f47133901355740196f78cc"
+        "bytes": 67860,
+        "pixelSha256": "46bb5cf98cfe477cd4d05a47160c7520c563a98b3d2cc4a57054ee256f15416d"
       }
     }
   }

@@ -31,8 +31,8 @@ A repository on smithers.sh has the path it has on GitHub: replace `github.com` 
 The repository opens on its files, on the branch shown at the top left (1).
 
 <figure class="docs-shot">
-<img src="/images/docs/quickstart-repo-home.light.webp" alt="The smithersai/vibelang repository on smithers.sh, open on its file tree: the branch (1) and a folder (2)" width="1440" height="900" loading="lazy" decoding="async" class="dark:sl-hidden" />
-<img src="/images/docs/quickstart-repo-home.dark.webp" alt="The smithersai/vibelang repository on smithers.sh, open on its file tree: the branch (1) and a folder (2)" width="1440" height="900" loading="lazy" decoding="async" class="light:sl-hidden" />
+<img src="/images/docs/quickstart-repo-home.light.webp" alt="The smithersai/vibelang repository on smithers.sh, open on its file tree: the branch (1) and a folder (2), with the latest commit's author hidden" width="1440" height="900" loading="lazy" decoding="async" class="dark:sl-hidden" />
+<img src="/images/docs/quickstart-repo-home.dark.webp" alt="The smithersai/vibelang repository on smithers.sh, open on its file tree: the branch (1) and a folder (2), with the latest commit's author hidden" width="1440" height="900" loading="lazy" decoding="async" class="light:sl-hidden" />
 </figure>
 
 If smithers.sh doesn't have the repository yet, the page says so and asks you to sign in with GitHub.
