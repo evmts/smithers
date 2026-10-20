@@ -2520,7 +2520,10 @@ export const readExecution = (
     const state = yield* DurableEngineState.DurableEngineState
     // The current round, its waiting reason and parent edge must come from
     // one snapshot. Completion/handoff can otherwise split these three reads.
-    return yield* state.transaction(Effect.gen(function*() {
+    // A read snapshot, not a write transaction: health beats read every open
+    // run from every process, and holding the write permit and lock for them
+    // starved this host's lease heartbeat until the lease lapsed.
+    return yield* state.readTransaction(Effect.gen(function*() {
       const row = yield* runs.latestRound(runId).pipe(
         Effect.map(Option.some),
         Effect.catch((error) =>

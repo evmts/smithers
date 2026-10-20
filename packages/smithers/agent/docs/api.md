@@ -2597,14 +2597,21 @@ Calls the model once, as one step of the running flow.
   is part of it; the credential is not. Without a declared cache environment
   the engine scopes it to the execution, so another execution with an
   identical request calls the provider itself.
-- **Retries.** Transport faults are retried inside the step with
-  byte-identical bodies. A capacity refusal (`rate_limited`, `quota_exceeded`,
-  `provider_internal`, or HTTP 429, 503, 504 or 529) fails the step without
-  sealing it, and `retryPolicy` decides whether the engine tries again. Every
-  other provider error is sealed as `Result.error`.
-- **Liveness.** Each attempt and each streamed event is a heartbeat. An attempt
-  silent for `heartbeatTimeoutMs` fails with `Action.AttemptTimedOut`, which
-  `retryPolicy` retries.
+- **Retries.** `retryPolicy` is the only thing that retries: each attempt
+  makes one provider call, with a byte-identical body, and the route's
+  `RequestExecutor` repeats nothing inside it (`RequestExecutor.Retries` is 0). A failure another
+  attempt may clear fails the attempt without sealing it: a dropped connection,
+  a body that ends without a settlement, `transport`, `provider_internal`,
+  `rate_limited`, `quota_exceeded`, or HTTP 429, 503, 504 or 529. The policy
+  waits the provider's `Retry-After` (`retryAfterMillis`) when it named one.
+  Every other provider error is sealed as `Result.error`.
+- **Liveness.** Each attempt, each streamed event and each chunk of bytes the
+  provider sends, a keep-alive comment or ping included (`Model.Liveness`), is
+  a heartbeat. An attempt silent for `heartbeatTimeoutMs` fails with
+  `Action.AttemptTimedOut`, which `retryPolicy` retries.
+- **Call timeout.** An attempt that runs past `callTimeoutMs` is cut off and
+  sealed as a `call_timeout` error. Waiting doesn't shorten an answer, so it
+  isn't retried.
 - **At least once.** A call cut off mid-flight, by a dying process or an
   interrupted fiber, is made again when the execution resumes. The
   `agent_model_step_redispatches` counter counts each repeat.
@@ -2639,7 +2646,8 @@ code is `unknown`. See [Judge with sealed calls](./guides/durable-model-call.md#
 | `model`              | `Model.Model`                                           | The model that streams the call, with its credential applied. Required.                                                                                                          |
 | `route`              | `FlowEngineLike.RouteResolver`                          | The same route's credential-free preparation, which the key digests. `FlowEngineLike.routeResolver` builds one. Required.                                                        |
 | `retryPolicy`        | `RetryPolicy.RetryPolicy`                               | Retries every failure the step does not seal. Defaults to `defaultRetryPolicy`.                                                                                                  |
-| `heartbeatTimeoutMs` | `number`                                                | Milliseconds an attempt may stream nothing. Defaults to `defaultHeartbeatTimeoutMs`.                                                                                             |
+| `heartbeatTimeoutMs` | `number`                                                | Milliseconds an attempt may go without an event or a byte. Zero disarms it. Defaults to `heartbeatTimeoutMsFor(request.params.reasoningEffort)`.                                 |
+| `callTimeoutMs`      | `number`                                                | Milliseconds one provider call may take before it is sealed as `call_timeout`. Zero disarms it. Defaults to `callTimeoutMsFor(request.params.reasoningEffort)`.                  |
 | `onEvent`            | `(event: ModelEvent.ModelEvent) => Effect.Effect<void>` | Receives each event while the call runs, and the recorded events on a replay. An attempt that follows a failed or cut-off one starts with a `retry` event. Runs inside the step. |
 
 `model` and `route` must describe one configured route: a `route` that
@@ -2673,12 +2681,36 @@ const Failure: Schema.Union<[
 Everything `run` fails with, as one encodable schema. A flow whose body calls
 `run` can declare it as its error schema.
 
-### ModelStep.defaultRetryPolicy, ModelStep.defaultHeartbeatTimeoutMs
+### ModelStep.defaultRetryPolicy
 
-| Constant                    | Value                                                                                                                             |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `defaultRetryPolicy`        | 1 s doubling to 30 s, up to a fifth of each delay shaved off at random, for at most 2 min. Permission failures are never retried. |
-| `defaultHeartbeatTimeoutMs` | 60,000                                                                                                                            |
+At most six attempts. The first retry waits 1 s and each next one twice the
+last, with up to a fifth of each delay shaved off at random. A provider's
+`Retry-After` replaces the delay, up to 30 s. Permission failures are never
+retried. The bound counts attempts rather than wall-clock time, because a model
+call's attempts run from milliseconds to its call timeout.
+
+### ModelStep.heartbeatTimeoutMsFor, ModelStep.callTimeoutMsFor
+
+```ts
+const heartbeatTimeoutMsFor: (effort: ModelRequest.ReasoningEffort | undefined) => number
+const callTimeoutMsFor: (effort: ModelRequest.ReasoningEffort | undefined) => number
+```
+
+The defaults for `heartbeatTimeoutMs` and `callTimeoutMs` at a reasoning
+effort. A host that calls models in several roles passes its own values per
+call, starting from these.
+
+| Effort                   | `heartbeatTimeoutMsFor` | `callTimeoutMsFor` |
+| ------------------------ | ----------------------- | ------------------ |
+| `none`, `minimal`, `low` | 60 s                    | 300 s              |
+| unset, `medium`          | 300 s                   | 300 s              |
+| `high`                   | 300 s                   | 900 s              |
+| `xhigh`, `max`           | 0 (no bound)            | 1,800 s            |
+
+A model that reasons can stream nothing while it thinks. An unset effort takes
+the provider's default, which reasons. At `xhigh` and `max` silence isn't
+evidence of a stall, so the call timeout is the only bound. The call timeouts
+are the agent loop's own (`CellTurn.modelCallMsFor`).
 
 ## Checkpointed
 

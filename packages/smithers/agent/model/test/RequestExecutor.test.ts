@@ -2685,7 +2685,8 @@ describe("RequestExecutor", () => {
     answer: (
       attempted: HttpClientRequest.HttpClientRequest
     ) => Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError>,
-    options?: RequestExecutor.MakeOptions
+    options?: RequestExecutor.MakeOptions,
+    retries?: number | undefined
   ): Promise<{ readonly attempts: number; readonly error: ModelError }> => {
     let attempts = 0
     const client = HttpClient.make((attempted) =>
@@ -2704,7 +2705,8 @@ describe("RequestExecutor", () => {
           return yield* Fiber.join(fiber)
         }).pipe(
           Effect.provide(TestClock.layer()),
-          Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
+          Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
+          Effect.provideService(RequestExecutor.Retries, retries)
         )
       )
     )
@@ -2748,6 +2750,19 @@ describe("RequestExecutor", () => {
 
     expect(result.attempts).toBe(1)
     expect(result.error).toMatchObject({ code: "transport", retryable: true })
+  })
+
+  it("makes one request when its caller allows no retries, whatever the executor was built with", async () => {
+    // A durable step whose engine decides retries provides 0, so one step
+    // attempt is one request.
+    const result = await singleAttempt(answers({ status: 503, body: "unavailable" }), undefined, 0)
+    expect(result.attempts).toBe(1)
+    expect(result.error).toMatchObject({ code: "provider_internal", httpStatus: 503, retryable: true })
+    expect((await singleAttempt(answers({ status: 503, body: "unavailable" }), { maxRetries: 0 }, 1)).attempts)
+      .toBe(2)
+    expect((await singleAttempt(answers({ status: 503, body: "unavailable" }), undefined, -1)).attempts).toBe(1)
+    expect((await singleAttempt(answers({ status: 503, body: "unavailable" }), undefined, Number.NaN)).attempts)
+      .toBe(3)
   })
 
   it("bounds the ladder at the retries it was asked for", async () => {

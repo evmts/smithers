@@ -11,7 +11,10 @@
  * The wire is NDJSON: one Schema-encoded {@link Line} per event, then exactly
  * one terminal line, `{"type":"end"}` on a clean finish or an {@link ErrorLine}
  * carrying a `ModelError` code and a safe message. A body that stops before its
- * terminal line was cut, and the client fails it as `transport`.
+ * terminal line was cut, and the client fails it as `transport`. A blank line
+ * is a keep-alive: the server writes one when the model shows it is alive
+ * without an event (a provider thinking in silence), and every client skips it,
+ * so the format stays readable by a client that predates it.
  *
  * Both halves observe themselves: one span (`model.proxy.serve`,
  * `model.proxy.stream`), the request metrics below, and one structured log line
@@ -37,6 +40,7 @@ import * as HttpTraceContext from "effect/http/HttpTraceContext"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
+import * as Queue from "effect/Queue"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
@@ -327,7 +331,8 @@ export interface ServeOptions<R> {
    * {@link End}: the place to meter usage. The terminal line waits for it, so
    * what it records is recorded before the client reads the end; a client
    * that went away gets no terminal line, and `onEnd` runs as the body
-   * closes. It does not run for a request `prepare` refused or that never
+   * closes. Once it starts it runs to its end, even when the client goes away
+   * meanwhile. It does not run for a request `prepare` refused or that never
    * reached the model. It must not fail; handle its own errors.
    */
   readonly onEnd?: ((end: End) => Effect.Effect<void, never, R>) | undefined
@@ -345,6 +350,12 @@ export interface ServeOptions<R> {
  * {@link ErrorBody}. Otherwise it answers `200` at once and streams the model's
  * events, ending with an {@link EndLine}, or an {@link ErrorLine} when the model
  * fails. A client that goes away interrupts the model call.
+ *
+ * Each time the model runs `Model.Liveness` (a route does for every chunk of
+ * provider bytes, a keep-alive included) it writes a blank line, at most one a
+ * second and none within a second of an event, so a client that bounds silence
+ * hears a provider that thinks for minutes without an event. A model that
+ * shows nothing gets no blank line: silence on the wire is silence upstream.
  *
  * Run it under any `effect/http` server: `HttpEffect.toWebHandler`, an
  * `HttpRouter` route, Node, Bun, or a Cloudflare Worker's `fetch`.
@@ -409,20 +420,37 @@ export const serve = <R = never>(
     const context = Context.omit(Scope.Scope)(yield* Effect.context<R>()) as Context.Context<R>
     const onEnd = options.onEnd
     let ended = false
-    /** Runs the host's `onEnd` once, with the outcome and the usage so far. */
+    /**
+     * Runs the host's `onEnd` once, with the outcome and the usage so far. Once started it runs to its end, even when
+     * the client goes away meanwhile: it is where a host meters the call, and the call already ran.
+     */
     const end = (outcome: End["outcome"]): Effect.Effect<void, never, R> =>
-      Effect.suspend(() => {
+      Effect.uninterruptible(Effect.suspend(() => {
         if (ended || onEnd === undefined) return Effect.void
         ended = true
         return onEnd({ requestId, invocationId, outcome, modelId: prepared.modelId, usage: call.usage })
-      })
+      }))
     // The terminal line follows the host's `onEnd`, so a host that meters there has recorded the call before the
     // client reads the end of it, and before a Worker's response, and with it the invocation, ends.
     const terminal = (outcome: End["outcome"], line: Line) =>
       Stream.unwrap(Effect.as(end(outcome), Stream.succeed(line)))
-    const body = model.stream(prepared).pipe(
+    // The model's liveness becomes a blank line on the wire, unless a line went out within the last second: a
+    // keep-alive stands in for an event, never beside one. The sliding queue drops a beat the body has not
+    // written yet, so a keep-alive never holds the model back.
+    const beats = yield* Queue.sliding<void>(1)
+    let wroteAt = Number.NEGATIVE_INFINITY
+    const wrote = Effect.map(Clock.currentTimeMillis, (now) => {
+      wroteAt = now
+    })
+    const alive = Effect.flatMap(Clock.currentTimeMillis, (now) => {
+      if (now - wroteAt < keepAliveMs) return Effect.void
+      wroteAt = now
+      return Effect.asVoid(Queue.offer(beats, undefined))
+    })
+    const lines = model.stream(prepared).pipe(
+      Stream.provideService(Model.Liveness, alive),
       Model.withGenAiSpan(prepared, model.providerName),
-      Stream.tap((event) => call.observe(event)),
+      Stream.tap((event) => Effect.andThen(call.observe(event), wrote)),
       Stream.map((event): Line => event),
       Stream.concat(Stream.suspend(() => {
         call.outcome = "success"
@@ -433,7 +461,12 @@ export const serve = <R = never>(
         if (Cause.hasInterruptsOnly(cause)) return Stream.failCause(cause)
         call.outcome = "failed"
         return encodeLines(terminal("failed", call.failure(cause)))
-      }),
+      })
+    )
+    // Every encoded chunk ends at a line break, so a keep-alive merged between two chunks never splits a line.
+    // The body ends with its lines; the keep-alives stop with them.
+    const body = lines.pipe(
+      Stream.merge(Stream.map(Stream.fromQueue(beats), keepAlive), { haltStrategy: "left" }),
       // A client that went away gets no terminal line; `onEnd` still hears of it, as `interrupted`.
       Stream.onExit((exit) => Effect.andThen(call.finish(exit), end("interrupted"))),
       Stream.provideService(Tracer.ParentSpan, span),
@@ -462,7 +495,10 @@ export interface ClientOptions {
  * Builds a `Model` that streams from a {@link serve} endpoint.
  *
  * `stream` posts the Schema-encoded request with a fresh request id and the
- * current trace context, and decodes the event lines. An {@link ErrorLine}
+ * current trace context, and decodes the event lines. It runs `Model.Liveness`
+ * for every chunk of the body it reads, so a blank keep-alive line, which
+ * decodes to no event, still tells a durable step the call is alive. An
+ * {@link ErrorLine}
  * fails the stream with its `ModelError`. Every other failure is typed too: a
  * transport error, a broken body or a body that ends before its terminal line
  * is `transport`, an undecodable line is `invalid_provider_output`, an encode
@@ -541,6 +577,12 @@ type Side = "server" | "client"
 type Outcome = "success" | "invalid" | "refused" | "failed" | "interrupted"
 
 const endLine: Line = { type: "end" }
+
+/** The shortest gap between two lines {@link serve} writes for the model's liveness alone. */
+const keepAliveMs = 1_000
+
+/** A keep-alive: one blank line, a fresh buffer each time, since a byte stream may take ownership of it. */
+const keepAlive = (): Uint8Array => Uint8Array.of(0x0a)
 
 const encodeLines = <E, R>(lines: Stream.Stream<Line, E, R>) =>
   lines.pipe(Stream.pipeThroughChannel(Ndjson.encodeSchema(Line)<E>()))
@@ -692,7 +734,11 @@ const open = (
     )
     call.status = response.status
     // fetch never surfaces a 1xx, so below 300 is a 2xx.
-    if (response.status < 300) return decodeLines(response.stream, call)
+    if (response.status < 300) {
+      // Every chunk is the host showing it is alive, a keep-alive line that decodes to no event included.
+      const alive = yield* Model.Liveness
+      return decodeLines(Stream.tap(response.stream, () => alive), call)
+    }
     call.outcome = response.status < 500 ? "refused" : "failed"
     const body = yield* Effect.option(
       readCapped(response.stream, maxErrorBodyBytes).pipe(Effect.flatMap(decodeErrorBody))

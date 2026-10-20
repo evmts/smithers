@@ -352,8 +352,12 @@ const stream = <Body, Frame, Event, State>(
             )
           const decodeEvent = Schema.decodeUnknownEffect(route.protocol.stream.event)
           const terminal = route.protocol.stream.terminal
+          const alive = yield* Model.Liveness
           const events = route.framing.frame(
             response.stream.pipe(
+              // Every chunk is progress, a keep-alive that frames to no event
+              // included: a provider thinking in silence still sends those.
+              Stream.tap(() => alive),
               // The code is the contract and the transport's own text is not:
               // `HttpClientError`'s message ends in the method and URL, which a
               // provider authorizing by query parameter would make a credential.

@@ -15,7 +15,7 @@ import { Permission } from "@smthrs/capability"
 import { Digest, type KeyMaterial } from "@smthrs/core"
 import { Action, type FlowRuntime, type RetryPolicy, SpanFailure } from "@smthrs/flow"
 import { EngineLike, HarnessError } from "@smthrs/harness"
-import { Model, ModelError, ModelEvent, ModelRequest, type Route } from "@smthrs/model"
+import { Model, ModelError, ModelEvent, ModelRequest, RequestExecutor, type Route } from "@smthrs/model"
 import { StepKey } from "@smthrs/plan"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
@@ -23,6 +23,7 @@ import * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import { identity } from "effect/Function"
 import * as Metric from "effect/Metric"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
@@ -417,13 +418,24 @@ export const withOverrunTeaching = (
  * (capacity refusal, permission failure, or interruption); partial text is
  * never exposed. The callback must be synchronous and cannot perform I/O.
  *
+ * `policy` may instead be `"engine"`, which leaves every transient failure to
+ * the action's own `retryPolicy`, the one place `ModelStep.run` decides
+ * retries. The step then makes one provider call, with no retries in the
+ * route's `RequestExecutor` either, and retries nothing: a
+ * `transport` failure fails it unsealed, as a capacity refusal does, so the
+ * engine retries it and waits any `retryAfterMillis` the provider named. The
+ * silence bound below is off too: the action's heartbeat bounds silence, and
+ * it hears the keep-alives a provider sends while it thinks, which a bound on
+ * events cannot. An overrun is still sealed as `call_timeout`, never
+ * re-issued.
+ *
  * @category execution
  * @since 0.1.0
  */
 export const recordModelStep = (
   model: Model.Model,
   request: ModelRequest.ModelRequest,
-  policy: Schedule.Schedule<unknown, Model.ModelFailure>,
+  policy: Schedule.Schedule<unknown, Model.ModelFailure> | "engine",
   budgetMillis?: number | undefined,
   correction?: number | undefined,
   onUsage?: ((usage: ModelEvent.Usage) => void) | undefined,
@@ -444,7 +456,8 @@ export const recordModelStep = (
      * not the transport ladder's five.
      */
     const stalls = new Set<ModelError.ModelError>()
-    const schedule = policy.pipe(
+    const engine = policy === "engine"
+    const schedule = (engine ? Schedule.recurs(0) : policy).pipe(
       Schedule.while(({ input }) =>
         input instanceof ModelError.ModelError && retryableModelCodes.has(input.code) &&
         // The overrun's own bound. `overruns` was incremented by the attempt
@@ -478,7 +491,7 @@ export const recordModelStep = (
       )
     )
     const budget = budgetMillis === undefined || budgetMillis <= 0 ? undefined : budgetMillis
-    const idleFor = modelIdleMsFor(request.params.reasoningEffort)
+    const idleFor = engine ? undefined : modelIdleMsFor(request.params.reasoningEffort)
     const idle = budget !== undefined && idleFor !== undefined && idleFor < budget ? idleFor : undefined
     const silent = <A>(stream: Stream.Stream<A, Model.ModelFailure>): Stream.Stream<A, Model.ModelFailure> =>
       idle === undefined ? stream : stream.pipe(Stream.timeoutOrElse({
@@ -493,15 +506,23 @@ export const recordModelStep = (
             return Effect.fail(error)
           }))
       }))
-    // Every attempt and every event it streams is a heartbeat, so an action
-    // declared with `heartbeatTimeoutMs` fails only a call that goes silent.
-    // Outside such an action a heartbeat does nothing.
+    // Every attempt, every event it streams and every chunk of bytes the
+    // provider sends (a keep-alive included, through `Model.Liveness`) is a
+    // heartbeat, so an action declared with `heartbeatTimeoutMs` fails only a
+    // call that goes silent. Outside such an action a heartbeat does nothing.
     const collect = (input: ModelRequest.ModelRequest) =>
       Effect.flatMap(Clock.currentTimeMillis, (issuedAt) => {
         attemptStartedAt = issuedAt
         attemptUsage = {}
+        const streamed = model.stream(input).pipe(
+          Model.withGenAiSpan(input, model.providerName),
+          Stream.provideService(Model.Liveness, Action.heartbeat),
+          // When the engine decides retries, a route's executor repeats
+          // nothing either: one attempt is one request.
+          engine ? Stream.provideService(RequestExecutor.Retries, 0) : identity
+        )
         return Action.heartbeat.pipe(Effect.andThen(Stream.runCollect(
-          silent(model.stream(input).pipe(Model.withGenAiSpan(input, model.providerName))).pipe(Stream.tap((event) =>
+          silent(streamed).pipe(Stream.tap((event) =>
             Effect.sync(() => {
               if (event.type !== "usage") return
               const { type: _type, ...usage } = event
@@ -603,7 +624,7 @@ export const recordModelStep = (
       Effect.catchIf(
         (error): error is ModelError.ModelError => error instanceof ModelError.ModelError,
         (error) =>
-          isCapacityRefusal(error)
+          isCapacityRefusal(error) || (engine && error.code === "transport")
             ? Effect.fail(error)
             : Effect.succeed({ ...ladder, events: [...retries, ...accountFailedAttempts([])], error })
       )
@@ -808,10 +829,14 @@ export interface Dispatch {
   readonly model: Model.Model
   /** What the engine retries: every failure the step does not seal. */
   readonly retryPolicy: RetryPolicy.RetryPolicy
-  /** Milliseconds the call may go without a streamed event; absent, unwatched. */
+  /** Milliseconds the call may go without an event or a chunk of bytes; absent, unwatched. */
   readonly heartbeatTimeoutMs?: number | undefined
-  /** The in-step transport ladder; {@link defaultModelRetryPolicy} when absent. */
-  readonly transport?: Schedule.Schedule<unknown, Model.ModelFailure> | undefined
+  /**
+   * The in-step transport ladder; {@link defaultModelRetryPolicy} when absent.
+   * `"engine"` retries nothing in the step and leaves every transient failure
+   * to `retryPolicy` (see {@link recordModelStep}).
+   */
+  readonly transport?: Schedule.Schedule<unknown, Model.ModelFailure> | "engine" | undefined
   /** The overrun budget of one provider attempt; absent or zero disarms it. */
   readonly callTimeoutMs?: number | undefined
   /** The correction ordinal stamped onto the record. */
@@ -848,10 +873,11 @@ export interface Dispatched {
  * Runs one model call as a sealed action under its key.
  *
  * The action calls the provider through {@link recordModelStep}, so transport
- * faults are retried inside it and every provider answer, an error included,
- * is sealed as its value. A capacity refusal fails the action instead, and
- * `retryPolicy` decides whether the engine tries again. A replayed step
- * returns its record without calling the provider.
+ * faults are retried inside it, unless `transport` is `"engine"`, and every
+ * other provider answer, an error included, is sealed as its value. A capacity
+ * refusal fails the action instead, and `retryPolicy` decides whether the
+ * engine tries again. A replayed step returns its record without calling the
+ * provider.
  *
  * Each attempt that starts after an earlier one of this dispatch failed, or
  * after an earlier execution of the same attempt was cut off mid-call, first

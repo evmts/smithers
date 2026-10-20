@@ -57,6 +57,34 @@ export interface Model {
 export const Model: Context.Service<Model, Model> = Context.Service("/model/Model")
 
 /**
+ * What a model stream runs each time the provider shows it is still there.
+ *
+ * A route runs it for every chunk of response bytes it receives, including a
+ * keep-alive comment or a ping frame that decodes to no event. A provider can
+ * think for minutes without streaming an event while it keeps the connection
+ * alive, so a caller that bounds silence, such as a durable step's heartbeat,
+ * provides its beat here and counts those chunks as progress. The default does
+ * nothing.
+ *
+ * @example
+ * ```ts
+ * import { Model } from "@smthrs/model"
+ * import * as Effect from "effect/Effect"
+ * import * as Stream from "effect/Stream"
+ *
+ * const watched = (model: Model.Model, request: Parameters<Model.Model["stream"]>[0], beat: Effect.Effect<void>) =>
+ *   model.stream(request).pipe(Stream.provideService(Model.Liveness, beat))
+ * ```
+ *
+ * @category references
+ * @since 1.0.0
+ */
+export const Liveness: Context.Reference<Effect.Effect<void>> = Context.Reference<Effect.Effect<void>>(
+  "/model/Model/Liveness",
+  { defaultValue: () => Effect.void }
+)
+
+/**
  * Builds a {@link Model} from an implementation of its one method.
  *
  * @category constructors

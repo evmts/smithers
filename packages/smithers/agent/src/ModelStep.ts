@@ -12,14 +12,21 @@
  *   preparation and never enter it. Without a declared cache environment the
  *   engine scopes the key to the execution, so another execution with the same
  *   request calls the provider itself.
- * - **Retries.** Transport faults (a dropped connection, a 5xx, a body that
- *   ends without a settlement) are retried inside the step. A capacity refusal
- *   such as a 429 fails the step without sealing it, and `retryPolicy` retries
- *   it. Every other provider error is sealed as a typed value in
+ * - **Retries.** `retryPolicy` is the one place that decides them: the step
+ *   makes one HTTP request per attempt, and neither it nor the route's
+ *   `RequestExecutor` retries inside one. A failure
+ *   another attempt may clear (a dropped connection, a body that ends without
+ *   a settlement, `transport`, `provider_internal`, `rate_limited`,
+ *   `quota_exceeded`, or HTTP 429, 503, 504 or 529) fails the attempt without
+ *   sealing it, and the policy waits the provider's `Retry-After` when it named
+ *   one. Every other provider error is sealed as a typed value in
  *   {@link Result.error}.
- * - **Liveness.** Each attempt and each streamed event is a heartbeat. An
- *   attempt that streams nothing for `heartbeatTimeoutMs` fails, and
- *   `retryPolicy` decides whether another runs.
+ * - **Liveness.** Each attempt, each streamed event and each chunk of bytes
+ *   the provider sends, a keep-alive included, is a heartbeat. An attempt
+ *   silent for `heartbeatTimeoutMs` fails, and `retryPolicy` decides whether
+ *   another runs. An attempt that runs past `callTimeoutMs` is cut off and
+ *   sealed as a `call_timeout` error. Both default by the request's reasoning
+ *   effort, so a model that thinks longer gets longer.
  * - **Streaming.** `onEvent` receives each provider event while the call runs.
  *   A replay hands it the recorded events, without calling the provider.
  *
@@ -33,6 +40,7 @@
  */
 
 import { type FlowRuntime, RetryPolicy } from "@smthrs/flow"
+import { CellTurn } from "@smthrs/harness"
 import { type Model, ModelError, type ModelEvent, type ModelRequest } from "@smthrs/model"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
@@ -61,8 +69,18 @@ export interface Options {
   readonly route: RouteResolver
   /** Retries every failure the step does not seal. Defaults to {@link defaultRetryPolicy}. */
   readonly retryPolicy?: RetryPolicy.RetryPolicy | undefined
-  /** Milliseconds an attempt may stream nothing. Defaults to {@link defaultHeartbeatTimeoutMs}. */
+  /**
+   * Milliseconds an attempt may go without a sign of life: an event, or bytes
+   * such as a keep-alive. Zero disarms it. Defaults to
+   * {@link heartbeatTimeoutMsFor} the request's reasoning effort.
+   */
   readonly heartbeatTimeoutMs?: number | undefined
+  /**
+   * Milliseconds one provider call may take before it is cut off and sealed
+   * as a `call_timeout` error. Zero disarms it. Defaults to
+   * {@link callTimeoutMsFor} the request's reasoning effort.
+   */
+  readonly callTimeoutMs?: number | undefined
   /**
    * Receives each event while the call runs, and the recorded events on a
    * replay. An attempt that follows a failed or cut-off one starts with a
@@ -89,9 +107,9 @@ export interface Result {
 }
 
 /**
- * Everything a model step fails with: a capacity refusal that `retryPolicy`
- * gave up on, a permission failure from the route, or an engine failure
- * deriving the key.
+ * Everything a model step fails with: a transient provider failure, such as a
+ * capacity refusal or a dropped connection, that `retryPolicy` gave up on, a
+ * permission failure from the route, or an engine failure deriving the key.
  *
  * @category schemas
  * @since 1.0.0-rc.16
@@ -107,10 +125,16 @@ export const Failure = Internal.Failure
 export type Failure = typeof Internal.Failure.Type
 
 /**
- * The default retry policy for failures a step does not seal: one second,
- * doubling to thirty, with up to a fifth of each delay shaved off at random so
- * concurrent steps refused together do not return together, for at most two
- * minutes. A permission failure is never retried.
+ * The default retry policy for failures a step does not seal: at most six
+ * attempts, the first retry after one second and each next one after twice the
+ * last, with up to a fifth of each delay shaved off at random so concurrent
+ * steps refused together do not return together. A provider's `Retry-After`
+ * replaces the delay, up to thirty seconds. A permission failure is never
+ * retried.
+ *
+ * The bound counts attempts, not wall-clock time: a model call's attempts run
+ * from milliseconds to its call timeout, and a window long enough for a
+ * reasoning call would let a provider refusing fast be asked for minutes.
  *
  * @category policies
  * @since 1.0.0-rc.16
@@ -119,18 +143,59 @@ export const defaultRetryPolicy: RetryPolicy.RetryPolicy = RetryPolicy.make({
   initialMs: 1_000,
   factor: 2,
   maxMs: 30_000,
-  expirationMs: 120_000,
+  maxAttempts: 6,
   jitterRatio: 0.2,
   nonRetryable: ["@smthrs/capability/PermissionRequired", "@smthrs/capability/PermissionDenied"]
 })
 
 /**
- * The default for {@link Options.heartbeatTimeoutMs}: sixty seconds.
+ * The default for {@link Options.heartbeatTimeoutMs} at a reasoning effort.
+ *
+ * | effort                            | silence allowed |
+ * | --------------------------------- | --------------- |
+ * | `none`, `minimal`, `low`          | 60 s            |
+ * | unset, `medium`, `high`           | 300 s           |
+ * | `xhigh`, `max`                    | no bound (0)    |
+ *
+ * A model that reasons can say nothing while it thinks, and a route that
+ * emits an event only when an item completes says nothing through a whole
+ * think. 300 s is stock Codex's stream idle timeout and the agent loop's
+ * silence bound below `xhigh`; an unset effort takes the provider's default,
+ * which reasons. At `xhigh` and `max` silence is not evidence of a stall, so
+ * {@link callTimeoutMsFor} is the only bound, as it is in the agent loop.
  *
  * @category policies
- * @since 1.0.0-rc.16
+ * @since 1.0.0
  */
-export const defaultHeartbeatTimeoutMs = 60_000
+export const heartbeatTimeoutMsFor = (effort: ModelRequest.ReasoningEffort | undefined): number => {
+  switch (effort) {
+    case "none":
+    case "minimal":
+    case "low":
+      return 60_000
+    case "xhigh":
+    case "max":
+      return 0
+    default:
+      return 300_000
+  }
+}
+
+/**
+ * The default for {@link Options.callTimeoutMs} at a reasoning effort: the
+ * ceiling the agent loop gives one model call (`CellTurn.modelCallMsFor` in
+ * `@smthrs/harness`).
+ *
+ * | effort                                    | ceiling |
+ * | ----------------------------------------- | ------- |
+ * | unset, `none`, `minimal`, `low`, `medium` | 300 s   |
+ * | `high`                                    | 900 s   |
+ * | `xhigh`, `max`                            | 1,800 s |
+ *
+ * @category policies
+ * @since 1.0.0
+ */
+export const callTimeoutMsFor: (effort: ModelRequest.ReasoningEffort | undefined) => number = CellTurn.modelCallMsFor
 
 /**
  * Calls a model as one durable, sealed step of the running flow.
@@ -161,13 +226,18 @@ export const run = (
   Effect.gen(function*() {
     const prepared = yield* options.route.prepare(options.request)
     const key = yield* Internal.key(Internal.material(options.request), prepared)
+    const effort = options.request.params.reasoningEffort
+    const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? heartbeatTimeoutMsFor(effort)
     const { recorded, replayed } = yield* Internal.dispatch({
       name: options.name,
       key,
       request: options.request,
       model: options.model,
       retryPolicy: options.retryPolicy ?? defaultRetryPolicy,
-      heartbeatTimeoutMs: options.heartbeatTimeoutMs ?? defaultHeartbeatTimeoutMs,
+      heartbeatTimeoutMs: heartbeatTimeoutMs === 0 ? undefined : heartbeatTimeoutMs,
+      // The engine's policy is the one place a run's retries are decided.
+      transport: "engine",
+      callTimeoutMs: options.callTimeoutMs ?? callTimeoutMsFor(effort),
       onEvent: options.onEvent
     })
     if (replayed && options.onEvent !== undefined) {

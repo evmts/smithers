@@ -1,6 +1,7 @@
 import { GrantStoreError } from "@smthrs/capability/Permission"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -12,6 +13,7 @@ import * as Logger from "effect/Logger"
 import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
+import { TestClock } from "effect/testing"
 import * as Tracer from "effect/Tracer"
 import { describe, expect, it } from "vitest"
 import * as FailureCopy from "../src/FailureCopy.ts"
@@ -361,6 +363,110 @@ describe("ModelProxy wire", () => {
     expect(new Set(ids.map((line) => line.annotations.requestId)).size).toBe(prompts.length)
     expect(h.metric(ModelProxy.requests, { side: "server", outcome: "success", status: "200" }).count).toBe(8)
     expect(h.metric(ModelProxy.requests, { side: "client", outcome: "success", status: "200" }).count).toBe(8)
+  })
+})
+
+describe("ModelProxy liveness", () => {
+  const textStart = ModelEvent.TextStart({ type: "text-start", id: "t" })
+  const rest = [
+    ModelEvent.TextDelta({ type: "text-delta", id: "t", text: "Paris" }),
+    ModelEvent.TextEnd({ type: "text-end", id: "t" }),
+    ModelEvent.Settle({ type: "settle", stopReason: "stop" })
+  ]
+  /** Runs `effect` on the model's stream for what it does, emitting no event. */
+  const quietly = (effect: Effect.Effect<void>) => Stream.drain(Stream.fromEffect(effect))
+
+  it("writes a blank line for the model's liveness, at most one a second and none within a second of an event", () =>
+    Effect.gen(function*() {
+      // Times are on the test clock. A beat the second rule suppresses sits well inside its second, and a beat
+      // that writes sits well outside it, so a step of the clock never decides the case.
+      const model = Model.make({
+        stream: () =>
+          Stream.unwrap(Effect.map(Effect.service(Model.Liveness), (beat) =>
+            quietly(Effect.gen(function*() {
+              yield* beat // 0 ms: written, the first
+              yield* beat // 0 ms: within a second of the last blank line
+              yield* Effect.sleep(400)
+              yield* beat // 400 ms: within a second of the last blank line
+              yield* Effect.sleep(1_600)
+              yield* beat // 2,000 ms: written
+              yield* Effect.sleep(500)
+            })).pipe(
+              Stream.concat(Stream.make(textStart)), // 2,500 ms
+              Stream.concat(quietly(Effect.gen(function*() {
+                yield* Effect.sleep(500)
+                yield* beat // 3,000 ms: within a second of the event
+                yield* Effect.sleep(1_000)
+                yield* beat // 4,000 ms: written
+                yield* Effect.sleep(500)
+              }))),
+              Stream.concat(Stream.fromIterable(rest)) // 4,500 ms
+            )))
+      })
+      const handler = HttpEffect.toWebHandlerWith<never, HttpServerRequest.HttpServerRequest>(
+        yield* Effect.context<never>()
+      )(ModelProxy.serve({ prepare: hostPrepare(model) }))
+      const response = yield* Effect.promise(() => handler(new Request(url, post(encodedRequest(request())))))
+      const body = response.text()
+      for (let elapsed = 0; elapsed < 5_000; elapsed += 100) {
+        yield* TestClock.adjust(100)
+        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 5)))
+      }
+      expect(yield* Effect.promise(() => body)).toBe(
+        "\n\n" + ndjson(textStart) + "\n" + ndjson(...rest, { type: "end" })
+      )
+    }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise))
+
+  it("writes no blank line for a model that shows nothing between its events", async () => {
+    const h = harness({
+      model: Model.make({
+        stream: () => Stream.fromEffect(Effect.sleep(50)).pipe(Stream.flatMap(() => Stream.fromIterable(rest)))
+      })
+    })
+
+    const response = await h.handler(new Request(url, post(encodedRequest(request()))))
+
+    expect(await response.text()).toBe(ndjson(...rest, { type: "end" }))
+  })
+
+  it("runs the client's liveness for every chunk it reads, a blank line included, and decodes no event from one", async () => {
+    const h = harness({
+      fetch: () => () => Promise.resolve(new Response(chunks("\n", ndjson(textStart), "\n", ndjson({ type: "end" }))))
+    })
+    let beats = 0
+
+    const events = await h.run(
+      Stream.runCollect(
+        h.stream(request()).pipe(Stream.provideService(Model.Liveness, Effect.sync(() => void beats++)))
+      )
+    )
+
+    expect(events).toEqual([textStart])
+    expect(beats).toBe(4)
+  })
+
+  it("hands a served model's keep-alive to the client as liveness before any event", async () => {
+    // The model sends nothing until the client has heard its keep-alive, so without one this call never ends.
+    const heard = Deferred.makeUnsafe<void>()
+    const h = harness({
+      model: Model.make({
+        stream: () =>
+          Stream.unwrap(
+            Effect.map(Effect.service(Model.Liveness), (beat) =>
+              quietly(Effect.andThen(beat, Deferred.await(heard))).pipe(Stream.concat(Stream.fromIterable(rest))))
+          )
+      })
+    })
+
+    const events = await h.run(
+      Stream.runCollect(
+        h.stream(request()).pipe(
+          Stream.provideService(Model.Liveness, Effect.asVoid(Deferred.succeed(heard, undefined)))
+        )
+      )
+    )
+
+    expect(events).toEqual(rest)
   })
 })
 
@@ -779,6 +885,37 @@ describe("ModelProxy prepare", () => {
     await h.run(Stream.runCollect(Stream.take(h.stream(request()), 1)))
 
     expect(await end).toMatchObject({ outcome: "interrupted", usage: { inputTokens: 4 } })
+  })
+
+  it("finishes onEnd when the client goes away while it runs, with the outcome the stream had", async () => {
+    // A host meters in onEnd. A client that cancels once the model's events arrived, while onEnd runs, must not cut
+    // the meter off: the call ran, and an unfinished settle leaves the host's reservation at its worst case.
+    const started = Effect.runSync(Deferred.make<void>())
+    const release = Effect.runSync(Deferred.make<void>())
+    const ends: Array<ModelProxy.End> = []
+    const h = harness({
+      onEnd: (end) =>
+        Deferred.succeed(started, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+          Effect.andThen(Effect.sync(() => ends.push(end)))
+        )
+    })
+
+    const response = await h.handler(new Request(url, post(encodedRequest(request()))))
+    const reader = response.body!.getReader()
+    const reading = (async () => {
+      while (!(await reader.read()).done) continue
+    })()
+    await Effect.runPromise(Deferred.await(started))
+    // The cancel finishes once the body's stream has ended, which waits for onEnd.
+    const cancelled = reader.cancel()
+    await Effect.runPromise(Deferred.succeed(release, undefined))
+    await cancelled
+    await reading
+
+    await expect.poll(() => ends.length).toBe(1)
+    expect(ends[0]).toMatchObject({ outcome: "success" })
+    expect((await h.logLine("server")).annotations.outcome).toBe("success")
   })
 
   it("never runs onEnd for a refused request", async () => {

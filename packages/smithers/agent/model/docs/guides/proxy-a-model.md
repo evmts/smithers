@@ -124,9 +124,14 @@ Three options record usage where the host knows what it means:
   `interrupted`), model id and the usage the model reported. Settle the
   reservation there, under the same `invocationId`. The terminal line waits
   for it, so the spend is recorded before the client reads the end, and
-  before a Worker's invocation ends with the response. It never runs for a
-  refused request, and it must handle its own errors. A response body that is
-  never read never reaches `onEnd`, so a reservation it holds stays counted.
+  before a Worker's invocation ends with the response. Once it starts it runs
+  to its end, even when the client goes away meanwhile, so a settle is never
+  cut off halfway. It never runs for a refused request, and it must handle its
+  own errors. A response body that is never read never reaches `onEnd`, so a
+  reservation it holds stays counted. Usage the model never reported is
+  unknown, not zero: a call that failed or was interrupted may have spent
+  tokens nobody reported, so keep its reservation rather than settle it to
+  the usage you have.
 - Key spend on `invocationId`, which the server mints for every call it
   admits. `requestId` is the caller's: it may send one id on any number of
   calls, and each call still runs the model, so spend keyed on it counts only
@@ -335,3 +340,22 @@ A model that fails after the headers were sent ends the stream with
 instead. A body that stops before either line was cut. Any other status
 carries `{"code","message","requestId"}`. `ModelProxy.Line` and
 `ModelProxy.ErrorBody` are the schemas.
+
+A blank line is a keep-alive. A provider can reason for minutes without an
+event while it keeps its connection open with keep-alive comments or pings.
+The route runs `Model.Liveness` for each of those chunks, and `serve` writes a
+blank line for it: at most one a second, and none within a second of an event.
+The client runs `Model.Liveness` for every chunk of the body it reads, a blank
+line included, and decodes no event from a blank line. A browser's
+`ModelStep` therefore counts the provider's keep-alives as heartbeats, and a
+`high` call that thinks for 400 seconds outlasts its 300-second silence bound.
+
+```text
+{"type":"text-start","id":"t"}
+
+{"type":"text-delta","id":"t","text":"Hello"}
+```
+
+`serve` invents nothing: a provider that sends no bytes yields no blank line,
+so a stalled call still reaches the step's heartbeat bound. Every client skips
+blank lines, so a client that predates keep-alives reads the same events.

@@ -4,9 +4,11 @@
  * contract the module states, the process boundaries a run crosses, and the
  * telemetry a step may emit.
  */
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Capability, Permission } from "@smthrs/capability"
+import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
-import { ModelError, ModelEvent, ModelRequest, RequestExecutor, Route } from "@smthrs/model"
+import { Model, ModelError, ModelEvent, ModelProxy, ModelRequest, RequestExecutor, Route } from "@smthrs/model"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
@@ -16,6 +18,8 @@ import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpClient from "effect/http/HttpClient"
+import * as HttpEffect from "effect/http/HttpEffect"
+import type * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import * as Metric from "effect/Metric"
@@ -23,6 +27,7 @@ import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import * as References from "effect/References"
 import * as Result from "effect/Result"
+import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { TestClock } from "effect/testing"
@@ -163,6 +168,18 @@ const host = <A, E>(
     Effect.scoped
   )
 
+/** One in-memory engine, with no run lease, running `program` against it. */
+const memory = <A, E>(handler: Handler, program: Effect.Effect<A, E, FlowRuntime.FlowRuntime>) =>
+  program.pipe(
+    Effect.provide(
+      Layer.effectDiscard(Effect.flatMap(FlowRuntime.FlowRuntime, (engine) => engine.register(Probe, handler))).pipe(
+        Layer.provideMerge(FlowEngine.layerMemory),
+        Layer.provideMerge(NodeCrypto.layer)
+      )
+    ),
+    Effect.scoped
+  )
+
 /** A request whose only tool's JSON schema, and the request itself, list their keys in `order`. */
 const withTool = (order: "forward" | "reverse"): ModelRequest.ModelRequest => {
   const parameters = order === "forward"
@@ -245,25 +262,103 @@ describe("ModelStep keys", () => {
 
 describe("ModelStep.defaultRetryPolicy", () => {
   const policy = ModelStep.defaultRetryPolicy
-  it("waits one second, doubling to thirty, with up to a fifth shaved off", () => {
-    const delays = [1, 2, 3, 4, 5, 6, 7].map((attempt) =>
+  it("waits one second, doubling, with up to a fifth shaved off, and a provider's Retry-After up to thirty", () => {
+    const delays = [1, 2, 3, 4, 5].map((attempt) =>
       Option.getOrThrow(RetryPolicy.nextDelay(policy, attempt, { random: 1, elapsedMs: 0 }))
     )
-    expect(delays).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000])
+    expect(delays).toEqual([1_000, 2_000, 4_000, 8_000, 16_000])
     expect(Option.getOrThrow(RetryPolicy.nextDelay(policy, 1, { random: 0, elapsedMs: 0 }))).toBe(800)
+    const overloaded = new ModelError.ModelError({
+      code: "provider_internal",
+      httpStatus: 529,
+      message: "Overloaded",
+      retryAfterMillis: 45_000
+    })
+    expect(RetryPolicy.decide(policy, { attempt: 1, error: overloaded, random: 1, elapsedMs: 0 }))
+      .toEqual({ _tag: "RetryAfter", delayMs: 30_000 })
   })
 
-  it("gives a rate limit up after two minutes and never retries a permission failure", () => {
-    expect(RetryPolicy.decide(policy, { attempt: 6, error: rateLimited(), random: 1, elapsedMs: 119_500 }))
-      .toEqual({ _tag: "GiveUp", reason: "expired" })
-    expect(RetryPolicy.decide(policy, { attempt: 6, error: rateLimited(), random: 1, elapsedMs: 60_000 }))
-      .toEqual({ _tag: "RetryAfter", delayMs: 30_000 })
+  it("makes at most six attempts however long each ran, and never retries a permission failure", () => {
+    // A model call's attempts run from milliseconds to its call timeout, so the
+    // bound counts attempts: a wall-clock window would forbid any retry of a
+    // long reasoning call that dropped its connection late.
+    expect(RetryPolicy.decide(policy, { attempt: 5, error: rateLimited(), random: 1, elapsedMs: 600_000 }))
+      .toEqual({ _tag: "RetryAfter", delayMs: 16_000 })
+    expect(RetryPolicy.decide(policy, { attempt: 6, error: rateLimited(), random: 1, elapsedMs: 31_000 }))
+      .toEqual({ _tag: "GiveUp", reason: "exhausted" })
     const denied = new Permission.PermissionDenied({
       capability: Capability.make("net:post", "https://provider.invalid/v1/chat/completions"),
       reason: "denied"
     })
     expect(RetryPolicy.decide(policy, { attempt: 1, error: denied, elapsedMs: 0 }))
       .toEqual({ _tag: "GiveUp", reason: "nonRetryable" })
+  })
+})
+
+describe("ModelStep's in-step transport ladder", () => {
+  // The agent loop keeps its own ladder; `ModelStep.run` passes `"engine"`.
+  it("retries a provider fault inside the step for the agent loop, telling onEvent its status", async () => {
+    const model = scripted((call) =>
+      call === 1
+        ? Stream.fail(new ModelError.ModelError({ code: "transport", httpStatus: 502, message: "Bad gateway" }))
+        : Stream.fromIterable(reply("Paris"))
+    )
+    const seen: Array<ModelEvent.ModelEvent> = []
+    const recorded = await Effect.runPromise(
+      InternalModelStep.recordModelStep(
+        model.model,
+        ask(["capital of France"]),
+        Schedule.recurs(1),
+        undefined,
+        undefined,
+        undefined,
+        (event) => Effect.sync(() => void seen.push(event))
+      )
+    )
+    expect(model.calls).toHaveLength(2)
+    expect(recorded.events[0]).toMatchObject({ type: "retry", attempt: 1, code: "transport", httpStatus: 502 })
+    expect(seen[0]).toMatchObject({ type: "retry", attempt: 1, code: "transport", httpStatus: 502 })
+  })
+
+  it("fails a dropped connection unsealed when the engine decides retries", async () => {
+    const model = scripted(() =>
+      Stream.fail(new ModelError.ModelError({ code: "transport", message: "Model response stream failed" }))
+    )
+    const exit = await Effect.runPromiseExit(
+      InternalModelStep.recordModelStep(model.model, ask(["capital of France"]), "engine")
+    )
+    expect(exit).toMatchObject({ _tag: "Failure" })
+    expect(Cause.squash((exit as Exit.Failure<unknown, unknown>).cause)).toMatchObject({ code: "transport" })
+    expect(model.calls).toHaveLength(1)
+  })
+})
+
+describe("ModelStep bounds by reasoning effort", () => {
+  const efforts = [undefined, "none", "minimal", "low", "medium", "high", "xhigh", "max"] as const
+  it("gives a model that thinks longer a longer silence, and none at xhigh and max", () => {
+    expect(efforts.map(ModelStep.heartbeatTimeoutMsFor)).toEqual([
+      300_000,
+      60_000,
+      60_000,
+      60_000,
+      300_000,
+      300_000,
+      0,
+      0
+    ])
+  })
+
+  it("gives one call the agent loop's ceiling for its effort", () => {
+    expect(efforts.map(ModelStep.callTimeoutMsFor)).toEqual([
+      300_000,
+      300_000,
+      300_000,
+      300_000,
+      300_000,
+      900_000,
+      1_800_000,
+      1_800_000
+    ])
   })
 })
 
@@ -550,35 +645,57 @@ withPostgres("ModelStep on the durable engine", () => {
     expect(model.calls).toHaveLength(1)
   })
 
-  it("retries a provider fault inside the step and seals the attempt that answered", async () => {
-    const program = Effect.gen(function*() {
-      const model = scripted((call) =>
-        call === 1
-          ? Stream.fail(new ModelError.ModelError({ code: "transport", httpStatus: 502, message: "Bad gateway" }))
-          : Stream.fromIterable(reply("Paris"))
+  it("leaves a provider fault to the retry policy and seals only the attempt that answered", async () => {
+    const model = scripted((call) =>
+      call === 1
+        ? Stream.fail(new ModelError.ModelError({ code: "transport", httpStatus: 502, message: "Bad gateway" }))
+        : Stream.fromIterable(reply("Paris"))
+    )
+    const seen: Array<ModelEvent.ModelEvent> = []
+    const handler: Handler = ({ prompt }) =>
+      Effect.map(
+        ModelStep.run({
+          name: step,
+          request: ask([prompt]),
+          ...through(model.model),
+          retryPolicy: quickly,
+          onEvent: (event) => Effect.sync(() => void seen.push(event))
+        }),
+        (result) => JSON.parse(JSON.stringify(result.events)) as Schema.Json
       )
-      const handler: Handler = ({ prompt }) =>
-        Effect.map(
-          ModelStep.run({ name: step, request: ask([prompt]), ...through(model.model) }),
-          (result) => JSON.parse(JSON.stringify(result.events)) as Schema.Json
+    const events = await Effect.runPromise(host(scratch(), handler, execute("faulted", "capital of France")))
+    expect(model.calls).toHaveLength(2)
+    expect(events).toMatchObject(reply("Paris").map((event) => ({ type: event.type })))
+    expect(seen[0]).toMatchObject({ type: "retry", attempt: 2, code: "transport", httpStatus: 502 })
+  })
+
+  it("seals a call that runs past callTimeoutMs as call_timeout, without asking again", async () => {
+    const model = scripted(() =>
+      Stream.concat(
+        Stream.fromIterable(reply("Paris").slice(0, 1)),
+        Stream.fromEffectRepeat(
+          Effect.as(
+            Effect.sleep(100),
+            ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "0", text: "." })
+          )
         )
-      const events = yield* host(
-        scratch(),
-        handler,
-        Effect.gen(function*() {
-          const running = yield* Effect.forkChild(execute("faulted", "capital of France"), { startImmediately: true })
-          yield* advanceUntil(() => running.pollUnsafe() !== undefined, 100, "the in-step retry")
-          return yield* Fiber.join(running)
-        })
       )
-      return { events, calls: model.calls.length }
-    })
-    const { calls, events } = await Effect.runPromise(program.pipe(Effect.provide(TestClock.layer())))
-    expect(calls).toBe(2)
-    expect(events).toMatchObject([
-      { type: "retry", attempt: 1, code: "transport", httpStatus: 502 },
-      ...reply("Paris").map((event) => ({ type: event.type }))
-    ])
+    )
+    const handler: Handler = ({ prompt }) =>
+      Effect.map(
+        ModelStep.run({
+          name: step,
+          request: ask([prompt]),
+          ...through(model.model),
+          retryPolicy: quickly,
+          callTimeoutMs: 1_000,
+          heartbeatTimeoutMs: 5_000
+        }),
+        (result) => result.error?.code ?? null
+      )
+    const code = await Effect.runPromise(host(scratch(), handler, execute("overrun", "capital of France")))
+    expect(code).toBe("call_timeout")
+    expect(model.calls).toHaveLength(1)
   })
 
   // The engine's run lease reads the same clock as the heartbeat, so these two
@@ -688,6 +805,229 @@ withPostgres("ModelStep on the durable engine", () => {
   })
 })
 
+// The in-memory engine holds no run lease, so its test clock can skip minutes
+// that the Postgres engine's lease renewals could not keep up with.
+describe("ModelStep on the in-memory engine", () => {
+  /** A model that thinks for `seconds` without an event, sending a keep-alive every ten when `alive`. */
+  const thinking = (seconds: number, alive: boolean) =>
+    scripted(() =>
+      Stream.concat(
+        Stream.fromEffect(Effect.gen(function*() {
+          const beat = yield* Model.Liveness
+          for (let waited = 0; waited < seconds; waited += 10) {
+            yield* Effect.sleep(10_000)
+            if (alive) yield* beat
+          }
+        })).pipe(Stream.drain),
+        Stream.fromIterable(reply("Paris"))
+      )
+    )
+
+  /**
+   * `model` behind the metered model endpoint: `ModelProxy.serve` as a Web
+   * handler on this test's clock, and the browser's `ModelProxy` client whose
+   * `fetch` calls it, with no socket between them.
+   */
+  const endpoint = (model: Model.Model) =>
+    Effect.gen(function*() {
+      const url = "http://model.test/api/model/agent"
+      const handler = HttpEffect.toWebHandlerWith<never, HttpServerRequest.HttpServerRequest>(
+        yield* Effect.context<never>()
+      )(ModelProxy.serve({ prepare: (request) => Effect.succeed({ model, request }) }))
+      const fetch: typeof globalThis.fetch = (input, init) => handler(new Request(input, init))
+      const client = yield* ModelProxy.makeClient({ url }).pipe(
+        Effect.provideService(
+          HttpClient.HttpClient,
+          (yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer))).pipe(
+            HttpClient.transformResponse(Effect.provideService(FetchHttpClient.Fetch, fetch))
+          )
+        )
+      )
+      return { model: client, route: { prepare: ModelProxy.prepare({ url }) } }
+    })
+
+  const think = (
+    model: ReturnType<typeof thinking>,
+    reasoningEffort: ModelRequest.ReasoningEffort,
+    served = false
+  ) =>
+    Effect.gen(function*() {
+      const seat = served ? yield* endpoint(model.model) : through(model.model)
+      const handler: Handler = ({ prompt }) =>
+        Effect.map(
+          ModelStep.run({
+            name: step,
+            request: ModelRequest.ModelRequest.make({
+              ...ask([prompt]),
+              params: ModelRequest.GenerationParams.make({ reasoningEffort })
+            }),
+            ...seat,
+            retryPolicy: quickly
+          }),
+          (result) => textOf(result.events)
+        )
+      const exit = yield* memory(
+        handler,
+        Effect.gen(function*() {
+          const running = yield* Effect.forkChild(execute("thinking", "capital of France"), {
+            startImmediately: true
+          })
+          yield* advanceUntil(() => running.pollUnsafe() !== undefined, 1_000, "the long think")
+          return yield* Fiber.await(running)
+        })
+      )
+      return { exit, calls: model.calls.length }
+    }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise)
+
+  it("lets a reasoning call think in silence past the minute an ordinary call gets", async () => {
+    const { calls, exit } = await think(thinking(120, false), "high")
+    expect(exit).toEqual(Exit.succeed("Paris"))
+    expect(calls).toBe(1)
+  })
+
+  it("puts no silence bound on a call at max effort, which its call timeout bounds instead", async () => {
+    const { calls, exit } = await think(thinking(600, false), "max")
+    expect(exit).toEqual(Exit.succeed("Paris"))
+    expect(calls).toBe(1)
+  })
+
+  it("cuts off an ordinary call silent for a minute, and asks again", async () => {
+    const { calls } = await think(thinking(120, false), "low")
+    expect(calls).toBe(3)
+  })
+
+  it("keeps a call alive through minutes of silence while the provider sends keep-alives", async () => {
+    // Past `high`'s five minutes, and past the agent loop's own silence bound:
+    // only keep-alives keep this call going.
+    const { calls, exit } = await think(thinking(400, true), "high")
+    expect(exit).toEqual(Exit.succeed("Paris"))
+    expect(calls).toBe(1)
+  })
+
+  it("keeps a call through the model endpoint alive while the provider behind it sends keep-alives", async () => {
+    // The browser's step reads the provider through `ModelProxy`: the endpoint
+    // forwards each keep-alive as a blank line and the client counts it, so
+    // 400 s without an event outlasts `high`'s 300 s silence bound.
+    const { calls, exit } = await think(thinking(400, true), "high", true)
+    expect(exit).toEqual(Exit.succeed("Paris"))
+    expect(calls).toBe(1)
+  })
+
+  it("still cuts off a call through the model endpoint whose provider goes silent, and asks again", async () => {
+    const { calls, exit } = await think(thinking(400, false), "high", true)
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(Cause.squash((exit as Exit.Failure<unknown, unknown>).cause)).toMatchObject({
+      code: "attempt_timed_out",
+      bound: "heartbeat",
+      timeoutMs: 300_000
+    })
+    expect(calls).toBe(3)
+  })
+
+  it("makes one HTTP request per policy attempt, however many retries the route's executor allows", async () => {
+    // The executor is built with its default ladder, which repeats a 503
+    // twice more inside every attempt unless the step allows no retries.
+    let requests = 0
+    const server = http.createServer((request, response) => {
+      request.resume()
+      request.on("end", () => {
+        requests++
+        response.writeHead(503, { "content-type": "application/json" })
+        response.end(JSON.stringify({ error: { message: "overloaded" } }))
+      })
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    try {
+      const configured = Result.getOrThrow(Route.openaiChatCompatible({
+        id: "model-step-executor",
+        providerName: "test",
+        baseUrl: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
+        apiKey: Redacted.make("wire-key")
+      }))
+      const program = Effect.gen(function*() {
+        const model = yield* Route.toModel(configured).pipe(
+          Effect.provide(
+            Layer.effect(RequestExecutor.RequestExecutor)(
+              Effect.flatMap(HttpClient.HttpClient, (client) => RequestExecutor.makeWith(RequestExecutor.fixed(client)))
+            )
+          ),
+          Effect.provide(FetchHttpClient.layer)
+        )
+        const handler: Handler = ({ prompt }) =>
+          Effect.as(
+            ModelStep.run({
+              name: step,
+              request: ask([prompt]),
+              model,
+              route: { prepare: (input) => Route.prepare(configured, input) },
+              retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 2 })
+            }),
+            null
+          )
+        return yield* memory(handler, execute("executor", "capital of France")).pipe(Effect.exit)
+      })
+      const exit = await Effect.runPromise(program)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(Cause.squash((exit as Exit.Failure<unknown, unknown>).cause)).toMatchObject({
+        code: "provider_internal",
+        httpStatus: 503
+      })
+      expect(requests).toBe(2)
+    } finally {
+      server.closeAllConnections()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  it("makes one request per policy attempt against an overloaded provider, each after its Retry-After", async () => {
+    // Before, the step retried `provider_internal` six times in itself,
+    // ignoring Retry-After, and the policy then repeated the whole ladder.
+    const program = Effect.gen(function*() {
+      const calledAt: Array<number> = []
+      const model = scripted(() =>
+        Stream.unwrap(Effect.map(Clock.currentTimeMillis, (now) => {
+          calledAt.push(now)
+          return Stream.fail(
+            new ModelError.ModelError({
+              code: "provider_internal",
+              httpStatus: 529,
+              message: "Overloaded",
+              retryAfterMillis: 20_000
+            })
+          )
+        }))
+      )
+      const handler: Handler = ({ prompt }) =>
+        Effect.as(
+          ModelStep.run({
+            name: step,
+            request: ask([prompt]),
+            ...through(model.model),
+            retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 60_000, maxAttempts: 3 })
+          }),
+          null
+        )
+      const exit = yield* memory(
+        handler,
+        Effect.gen(function*() {
+          const running = yield* Effect.forkChild(execute("overloaded", "capital of France"), {
+            startImmediately: true
+          })
+          yield* advanceUntil(() => running.pollUnsafe() !== undefined, 250, "the policy giving up")
+          return yield* Fiber.await(running)
+        })
+      )
+      return { calledAt, exit }
+    })
+    const { calledAt, exit } = await Effect.runPromise(program.pipe(Effect.provide(TestClock.layer())))
+    expect(calledAt).toHaveLength(3)
+    expect(calledAt[1]! - calledAt[0]!).toBeGreaterThanOrEqual(20_000)
+    expect(calledAt[2]! - calledAt[1]!).toBeGreaterThanOrEqual(20_000)
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(Cause.squash((exit as Exit.Failure<unknown, unknown>).cause)).toMatchObject({ code: "provider_internal" })
+  })
+})
+
 /** Starts a fixture host, resolving when it prints `marker`. */
 const startChild = (args: ReadonlyArray<string>, marker: string) => {
   const child = spawn(process.execPath, [fixture, ...args], { env: childEnv, stdio: ["ignore", "pipe", "pipe"] })
@@ -764,7 +1104,7 @@ withPostgres("ModelStep across a killed process", () => {
 const frame = (fields: object): string => `data: ${JSON.stringify({ id: "chatcmpl_1", ...fields })}\n\n`
 
 withPostgres("ModelStep over a provider's wire", () => {
-  it("resends byte-identical bodies on an in-step retry, the bytes its key digests", async () => {
+  it("resends byte-identical bodies on the engine's retry, the bytes its key digests", async () => {
     const bodies: Array<Buffer> = []
     const server = http.createServer((request, response) => {
       const chunks: Array<Buffer> = []
@@ -809,29 +1149,84 @@ withPostgres("ModelStep over a provider's wire", () => {
               request,
               model,
               route: { prepare: (input) => Route.prepare(configured, input) },
+              retryPolicy: quickly,
               onEvent: (event) => Effect.sync(() => void seen.push(event))
             }),
             (result) => textOf(result.events)
           )
-        const value = yield* host(
-          scratch(),
-          handler,
-          Effect.gen(function*() {
-            const running = yield* Effect.forkChild(execute("wire", "capital of France"), { startImmediately: true })
-            yield* until(() => seen.some((event) => event.type === "retry"), "the in-step retry")
-            yield* advanceUntil(() => running.pollUnsafe() !== undefined, 100, "the retried request")
-            return yield* Fiber.join(running)
-          })
-        )
+        const value = yield* host(scratch(), handler, execute("wire", "capital of France"))
         return { value, seen }
       })
-      const { seen, value } = await Effect.runPromise(program.pipe(Effect.provide(TestClock.layer())))
+      const { seen, value } = await Effect.runPromise(program)
       expect(value).toBe("Paris")
       expect(bodies).toHaveLength(2)
       expect(bodies[1]!.equals(bodies[0]!)).toBe(true)
       const prepared = await Effect.runPromise(Route.prepare(configured, request))
       expect(Buffer.from(prepared.body).equals(bodies[0]!)).toBe(true)
       expect(seen.find((event) => event.type === "retry")).toMatchObject({ code: "transport" })
+    } finally {
+      server.closeAllConnections()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  it("counts a silent provider's keep-alive comments as heartbeats", async () => {
+    // The provider says nothing a protocol decodes for longer than the
+    // heartbeat, but keeps the connection alive with SSE comments, as a
+    // reasoning model's gateway does while it thinks.
+    let requests = 0
+    const server = http.createServer((request, response) => {
+      request.resume()
+      request.on("end", () => {
+        requests++
+        response.writeHead(200, { "content-type": "text/event-stream" })
+        let pings = 0
+        const timer = setInterval(() => {
+          if (pings++ < 12) return void response.write(": keep-alive\n\n")
+          clearInterval(timer)
+          response.write(frame({ choices: [{ index: 0, delta: { role: "assistant", content: "Paris" } }] }))
+          response.end(frame({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }))
+        }, 200)
+        response.on("close", () => clearInterval(timer))
+      })
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const baseUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+    try {
+      const configured = Result.getOrThrow(Route.openaiChatCompatible({
+        id: "model-step-keep-alive",
+        providerName: "test",
+        baseUrl,
+        apiKey: Redacted.make("wire-key")
+      }))
+      const program = Effect.gen(function*() {
+        const model = yield* Route.toModel(configured).pipe(
+          Effect.provide(
+            Layer.effect(RequestExecutor.RequestExecutor)(
+              Effect.gen(function*() {
+                const client = yield* HttpClient.HttpClient
+                return yield* RequestExecutor.makeWith(RequestExecutor.fixed(client), { maxRetries: 0 })
+              })
+            )
+          ),
+          Effect.provide(FetchHttpClient.layer)
+        )
+        const handler: Handler = ({ prompt }) =>
+          Effect.map(
+            ModelStep.run({
+              name: step,
+              request: ask([prompt]),
+              model,
+              route: { prepare: (input) => Route.prepare(configured, input) },
+              retryPolicy: quickly,
+              heartbeatTimeoutMs: 1_000
+            }),
+            (result) => textOf(result.events)
+          )
+        return yield* host(scratch(), handler, execute("keep-alive", "capital of France"))
+      })
+      expect(await Effect.runPromise(program)).toBe("Paris")
+      expect(requests).toBe(1)
     } finally {
       server.closeAllConnections()
       await new Promise<void>((resolve) => server.close(() => resolve()))

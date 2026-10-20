@@ -770,6 +770,10 @@ const mapHttpError = (
   return Option.isSome(permission) ? permission.value : transportError(error, redactedNames)
 }
 
+/** A usable retry count: a finite count floored at 0, else `fallback`. */
+const retriesOr = (count: number | undefined, fallback: number): number =>
+  count !== undefined && Number.isFinite(count) ? Math.max(0, Math.floor(count)) : fallback
+
 const retryFailures = <A, R>(
   effect: Effect.Effect<A, RequestError, R>,
   times: number
@@ -934,6 +938,24 @@ export const fixed = (client: KernelHttpClient.HttpClient): Transport => ({
 })
 
 /**
+ * The retries a caller allows each request it makes, overriding the
+ * `maxRetries` its executor was built with. `undefined`, the default, keeps the
+ * executor's own; a negative count is 0, and a count that is not a finite
+ * number keeps the executor's.
+ *
+ * A caller that already decides retries itself provides 0, so one of its
+ * attempts is one request: `ModelStep.run` in `@smthrs/agent` does, because
+ * its flow engine's retry policy is the one place its retries are decided.
+ *
+ * @category references
+ * @since 1.0.0
+ */
+export const Retries: Context.Reference<number | undefined> = Context.Reference<number | undefined>(
+  "/model/RequestExecutor/Retries",
+  { defaultValue: () => undefined }
+)
+
+/**
  * What an executor is built with, fixed for every request it makes.
  *
  * @category models
@@ -1025,9 +1047,7 @@ export const RequestExecutor: Context.Service<RequestExecutor, RequestExecutor> 
  */
 export const makeWith = (transport: Transport, options: MakeOptions = {}): Effect.Effect<RequestExecutor> =>
   Effect.gen(function*() {
-    const maxRetries = options.maxRetries !== undefined && Number.isFinite(options.maxRetries)
-      ? Math.max(0, Math.floor(options.maxRetries))
-      : MAX_RETRIES
+    const maxRetries = retriesOr(options.maxRetries, MAX_RETRIES)
     const responseStartMs = options.responseStartMs !== undefined && Number.isFinite(options.responseStartMs)
       ? Math.max(0, Math.floor(options.responseStartMs))
       : defaultResponseStartMs
@@ -1130,9 +1150,13 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
 
     return RequestExecutor.of({
       execute: SpanFailure.fn(
-        Effect.fn("RequestExecutor.execute")((request: HttpClientRequest.HttpClientRequest, options: ExecuteOptions) =>
-          retryFailures(executeOnce(request, options), maxRetries)
-        )
+        Effect.fn("RequestExecutor.execute")(function*(
+          request: HttpClientRequest.HttpClientRequest,
+          options: ExecuteOptions
+        ) {
+          const allowed = yield* Retries
+          return yield* retryFailures(executeOnce(request, options), retriesOr(allowed, maxRetries))
+        })
       )
     })
   })

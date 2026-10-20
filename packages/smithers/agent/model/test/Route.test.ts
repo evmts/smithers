@@ -1114,6 +1114,36 @@ describe("Route.stream", () => {
     const events = await collect(routeOf({ protocol, framing: Framing.sse }), executorOf(() => sseResponse(["[DONE]"])))
     expect(events).toEqual([])
   })
+
+  it("reports every chunk of response bytes to Model.Liveness, keep-alive comments included", async () => {
+    // A provider that thinks in silence keeps its connection open with SSE
+    // comments or ping frames that decode to no event. Each chunk is still
+    // proof the provider is there.
+    const chunks = [": keep-alive\n\n", ": keep-alive\n\n", "data: {}\n\n"]
+    const executor = executorOf(() =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk))
+            controller.close()
+          }
+        }),
+        { status: 200, headers: { "content-type": "text/event-stream" } }
+      )
+    )
+    let beats = 0
+    const events = await Effect.runPromise(
+      Effect.scoped(
+        Route.toModel(routeOf({ protocol, framing: Framing.sse })).pipe(
+          Effect.flatMap((model) => model.stream(request).pipe(Stream.runCollect)),
+          Effect.provideService(RequestExecutor.RequestExecutor, executor),
+          Effect.provideService(Model.Liveness, Effect.sync(() => void beats++))
+        )
+      )
+    )
+    expect(Array.from(events)).toEqual([])
+    expect(beats).toBe(chunks.length)
+  })
 })
 
 describe("Route.stream terminal events", () => {

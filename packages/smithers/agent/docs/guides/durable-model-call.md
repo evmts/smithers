@@ -125,7 +125,7 @@ live.
 | ------------------------------------------------------------------ | -------------------------------------------------- |
 | The step `name`                                                    | The credential, which is applied after preparation |
 | The route id, protocol, method, URL and public headers             | The literal key order of the request               |
-| The canonical body bytes the provider is sent                      | `retryPolicy`, `heartbeatTimeoutMs` and `onEvent`  |
+| The canonical body bytes the provider is sent                      | `retryPolicy`, the timeouts and `onEvent`          |
 | The encoded request: model id, history, system text, tools, params |                                                    |
 
 The engine scopes the key to the execution unless the host declares a
@@ -135,26 +135,61 @@ with an identical request makes a call of its own.
 
 ## What is retried
 
-| What the provider does                                                                                                              | What the step does                                                                                                               |
-| ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Drops the connection, ends the body without a settlement, or answers `transport` or `provider_internal`                             | Retries inside the step, up to five times over about thirty seconds, resending byte-identical bodies so the prompt prefix holds. |
-| Refuses for capacity: `rate_limited`, `quota_exceeded`, `provider_internal` after the in-step retries, or HTTP 429, 503, 504 or 529 | Fails without sealing anything. `retryPolicy` decides whether the engine runs another attempt.                                   |
-| Refuses the request: any other `ModelError`                                                                                         | Seals the refusal as `result.error`. A resumed run reads it back without asking again.                                           |
-| Fails with a permission error                                                                                                       | Fails the step. The default policy never retries it.                                                                             |
+`retryPolicy` is the one place a step's retries are decided. Each attempt
+makes one HTTP request, resending byte-identical bodies so the prompt prefix
+holds. Neither the step nor the route's `RequestExecutor` retries anything
+inside an attempt.
 
-`ModelStep.defaultRetryPolicy` waits one second, doubling to thirty, shaves up
-to a fifth off each delay so steps refused together do not return together,
-and gives up two minutes after the first attempt. When the policy gives up,
-`ModelStep.run` fails with the last refusal, such as a `ModelError` whose
+| What the provider does                                                                                                                                          | What the step does                                                                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Drops the connection, ends the body without a settlement, refuses for capacity, or answers `transport`, `provider_internal`, `rate_limited` or `quota_exceeded` | Fails the attempt without sealing anything. `retryPolicy` decides whether the engine runs another, after `Retry-After`. |
+| Refuses the request: any other `ModelError`                                                                                                                     | Seals the refusal as `result.error`. A resumed run reads it back without asking again.                                  |
+| Answers past `callTimeoutMs`                                                                                                                                    | Seals a `call_timeout` error. Waiting doesn't shorten an answer, so it isn't retried.                                   |
+| Fails with a permission error                                                                                                                                   | Fails the step. The default policy never retries it.                                                                    |
+
+`ModelStep.defaultRetryPolicy` makes at most six attempts. It waits one second
+before the first retry and doubles each wait after it, shaving up to a fifth
+off each so steps refused together don't return together. A provider's
+`Retry-After` replaces the wait, up to thirty seconds. When the policy gives
+up, `ModelStep.run` fails with the last refusal, such as a `ModelError` whose
 `code` is `rate_limited`.
 
 ## Liveness
 
-Each attempt and each streamed event is a heartbeat. An attempt that streams
-nothing for `heartbeatTimeoutMs`, sixty seconds by default, fails with
-`Action.AttemptTimedOut`, and `retryPolicy` decides whether another runs. A
-provider that thinks for a long time before its first token needs a larger
-value.
+Each attempt, each streamed event and each chunk of bytes the provider sends is
+a heartbeat. A provider that thinks without streaming an event often keeps its
+connection alive with SSE comments or ping frames, and the route reports each
+one through `Model.Liveness`. A step in a browser that reads its model through
+`ModelProxy` hears the same keep-alives: `ModelProxy.serve` forwards each as a
+blank line, and the client reports every chunk it reads. An attempt silent for
+`heartbeatTimeoutMs` fails with `Action.AttemptTimedOut`, and `retryPolicy`
+decides whether another runs. An attempt that runs past `callTimeoutMs` is cut
+off and sealed as a `call_timeout` error.
+
+Both default by the request's `params.reasoningEffort`, so a model asked to
+think longer gets longer:
+
+| Effort                   | Silence allowed | Call timeout |
+| ------------------------ | --------------- | ------------ |
+| `none`, `minimal`, `low` | 60 s            | 300 s        |
+| unset, `medium`          | 300 s           | 300 s        |
+| `high`                   | 300 s           | 900 s        |
+| `xhigh`, `max`           | no bound        | 1,800 s      |
+
+A host that calls models in several roles, such as a fast renderer and a
+reasoning agent, passes its own values per call, starting from
+`ModelStep.heartbeatTimeoutMsFor` and `ModelStep.callTimeoutMsFor`:
+
+```ts
+const planned = ModelStep.run({
+  name: "agent/plan/model",
+  request,
+  model,
+  route,
+  heartbeatTimeoutMs: ModelStep.heartbeatTimeoutMsFor("high"),
+  callTimeoutMs: 20 * 60_000
+})
+```
 
 ## Stream the answer
 
