@@ -1,0 +1,255 @@
+// `pnpm bench`: performance benchmarks of the app in real Chromium, locally or against any deployment.
+// See docs/benchmarks.md for the method, options and how to read the results.
+import { chromium } from "@playwright/test"
+import { execFileSync } from "node:child_process"
+import { existsSync } from "node:fs"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { createRequire } from "node:module"
+import os from "node:os"
+import { relative } from "node:path"
+import { fileURLToPath } from "node:url"
+import { parseArgs } from "node:util"
+import { Follower } from "./chatapi.ts"
+import { regressions, summarize, table, type Baseline, type Summary } from "./stats.ts"
+import { seed, SUITES, type Bench, type Check, type SuiteName } from "./suites.ts"
+
+const HERE = fileURLToPath(new URL(".", import.meta.url))
+const APP_DIR = fileURLToPath(new URL("..", import.meta.url))
+const RESULTS_DIR = `${HERE}results`
+const BASELINE_PATH = `${HERE}baseline.json`
+const SERVER_WAIT_MS = 120_000
+
+const fail = (message: string): never => {
+  console.error(`bench: ${message}`)
+  process.exit(2)
+}
+
+const { values: args } = parseArgs({
+  options: {
+    n: { type: "string", default: process.env.BENCH_N ?? "10" },
+    "n-answer": { type: "string", default: process.env.BENCH_N_ANSWER ?? "5" },
+    concurrency: { type: "string", default: process.env.BENCH_CONCURRENCY ?? "4" },
+    bursts: { type: "string", default: process.env.BENCH_BURSTS ?? "2" },
+    only: { type: "string", default: Object.keys(SUITES).join(",") },
+    threshold: { type: "string", default: process.env.BENCH_THRESHOLD ?? "0.25" },
+    "floor-ms": { type: "string", default: process.env.BENCH_FLOOR_MS ?? "5" },
+    "update-baseline": { type: "boolean", default: false },
+  },
+})
+const n = Number(args.n)
+const nAnswer = Number(args["n-answer"])
+const concurrency = Number(args.concurrency)
+const bursts = Number(args.bursts)
+const threshold = Number(args.threshold)
+const floorMs = Number(args["floor-ms"])
+for (const [name, value] of [["n", n], ["n-answer", nAnswer], ["concurrency", concurrency], ["bursts", bursts]] as const) {
+  if (!Number.isInteger(value) || value < 1) fail(`--${name} must be a positive integer, got ${args[name]}`)
+}
+if (!(threshold >= 0)) fail(`--threshold must be a fraction such as 0.25, got ${args.threshold}`)
+if (!(floorMs >= 0)) fail(`--floor-ms must be a number of milliseconds, got ${args["floor-ms"]}`)
+const suites = args.only.split(",").map((name) => name.trim()) as Array<SuiteName>
+for (const name of suites) if (!(name in SUITES)) fail(`unknown suite "${name}"; choose from ${Object.keys(SUITES).join(", ")}`)
+
+const baseUrl = (process.env.BASE_URL ?? "http://localhost:1337").replace(/\/+$/, "")
+
+// The server is someone else's (alchemy dev, or a deployment): wait for it, never start it.
+const waitForServer = async () => {
+  const deadline = Date.now() + SERVER_WAIT_MS
+  for (;;) {
+    try {
+      const response = await fetch(`${baseUrl}/app`, { signal: AbortSignal.timeout(10_000) })
+      if (response.ok) return await response.text()
+      throw new Error(`HTTP ${response.status}`)
+    } catch (error) {
+      if (Date.now() > deadline) return fail(`${baseUrl}/app is not answering after ${SERVER_WAIT_MS / 1000} s (${String(error)})`)
+      console.error(`bench: waiting for ${baseUrl}/app (${String(error)})`)
+      await new Promise((resolve) => setTimeout(resolve, 5_000))
+    }
+  }
+}
+
+const run = (command: string, commandArgs: Array<string>) => {
+  try {
+    return execFileSync(command, commandArgs, { cwd: APP_DIR, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim()
+  } catch {
+    return null
+  }
+}
+
+const environment = (html: string, browserVersion: string, startedAt: Date) => {
+  const darwin = process.platform === "darwin"
+  return {
+    commit: run("jj", ["log", "-r", "@", "-T", "commit_id", "--no-graph"]),
+    baseUrl,
+    // Vite's dev client in the HTML means unbundled dev modules, not the production build.
+    server: html.includes("/@vite/client") ? "vite-dev" : "built",
+    machine: {
+      model: darwin ? run("sysctl", ["-n", "hw.model"]) : null,
+      cpu: (darwin ? run("sysctl", ["-n", "machdep.cpu.brand_string"]) : null) ?? os.cpus()[0]?.model ?? null,
+      cores: os.cpus().length,
+      memoryGiB: Math.round(os.totalmem() / 2 ** 30),
+    },
+    os: darwin
+      ? `macOS ${run("sw_vers", ["-productVersion"])} (${run("sw_vers", ["-buildVersion"])}), ${os.arch()}`
+      : `${os.type()} ${os.release()}, ${os.arch()}`,
+    browser: `Chromium ${browserVersion} (headless)`,
+    playwright: createRequire(import.meta.url)("@playwright/test/package.json").version as string,
+    node: process.version,
+    date: startedAt.toISOString(),
+    n,
+    nAnswer,
+    concurrency,
+    bursts,
+    suites,
+  }
+}
+
+type BaselineFile = {
+  targets: Record<string, { source: string; commit: string | null; machine: unknown; server: string; n: number; metrics: Record<string, Baseline> }>
+}
+
+const readBaselines = async (): Promise<BaselineFile> =>
+  existsSync(BASELINE_PATH) ? (JSON.parse(await readFile(BASELINE_PATH, "utf8")) as BaselineFile) : { targets: {} }
+
+const main = async () => {
+  const html = await waitForServer()
+  const startedAt = new Date()
+  const runId = startedAt.getTime().toString(36)
+  const samples: Record<string, Array<number>> = {}
+  const checks: Array<Check> = []
+  const details: Record<string, Array<Record<string, unknown>>> = {}
+  const missing: Record<string, number> = {}
+  const counts: Record<string, number> = {}
+  // One more device for the whole run: it hears every row the run writes, and when Electric delivered it.
+  const follower = new Follower(baseUrl)
+  await follower.start().catch((error: unknown) => fail(`can't follow ${baseUrl}/api/shapes/messages: ${String(error)}`))
+  const browser = await chromium.launch()
+  const bench: Bench = {
+    browser,
+    baseUrl,
+    n,
+    nAnswer,
+    concurrency,
+    bursts,
+    runId,
+    newestWord: `bench-${runId}-seed`,
+    follower,
+    record: {
+      sample: (metric, ms) => void (samples[metric] ??= []).push(ms),
+      check: (suite, iteration, name, ok, detail) => void checks.push({ suite, iteration, name, ok, ...(ok ? {} : { detail }) }),
+      detail: (suite, record) => void (details[suite] ??= []).push(record),
+      missing: (metric) => void (missing[metric] = (missing[metric] ?? 0) + 1),
+      count: (name) => void (counts[name] = (counts[name] ?? 0) + 1),
+    },
+  }
+  const env = environment(html, browser.version(), startedAt)
+  console.error(
+    `bench: ${baseUrl} (${env.server}), N=${n}, N (answering)=${nAnswer}, ${concurrency} at once × ${bursts}, suites ${suites.join(", ")}`,
+  )
+
+  const step = async (name: string, body: () => Promise<unknown>) => {
+    console.error(`bench: ${name}`)
+    try {
+      await body()
+    } catch (error) {
+      bench.record.check(name, -1, "ran to completion", false, error instanceof Error ? error.message.split("\n")[0] : String(error))
+    }
+  }
+  await step("seed", () => seed(bench))
+  if (checks.every((check) => check.ok)) for (const name of suites) await step(name, () => SUITES[name](bench))
+  await browser.close()
+  await follower.stop()
+
+  const metrics: Record<string, Summary> = Object.fromEntries(Object.entries(samples).map(([metric, values]) => [metric, summarize(values)]))
+  const failed = checks.filter((check) => !check.ok)
+  const baselines = await readBaselines()
+  const baseline = baselines.targets[baseUrl]
+  const flagged = baseline && failed.length === 0 ? regressions(metrics, baseline.metrics, { threshold, floorMs }) : []
+
+  await mkdir(RESULTS_DIR, { recursive: true })
+  const resultPath = `${RESULTS_DIR}/${startedAt.toISOString().replace(/\.\d+Z$/, "Z").replaceAll(":", "-")}.json`
+  // How big the shared conversation was, since every load syncs all of it: messages on the page, and the shape's rows,
+  // the operations Electric replayed for them, and its bytes.
+  const conversationMessages = (details.load?.[0]?.cold as { messages?: number } | undefined)?.messages ?? null
+  const firstShape = details.shape?.[0] as { rows: number; operations: number; requests: number; bytes: number } | undefined
+  const shapeSize = firstShape === undefined ? null : { rows: firstShape.rows, operations: firstShape.operations, requests: firstShape.requests, bytes: firstShape.bytes }
+  const result = {
+    ok: failed.length === 0,
+    env: { ...env, conversationMessages, shape: shapeSize, follower: { refetches: follower.refetches, errors: follower.errors } },
+    metrics,
+    notReported: missing,
+    counts,
+    checks: { passed: checks.length - failed.length, failed },
+    comparison: baseline
+      ? { baseline: baseline.source, threshold, floorMs, regressions: flagged }
+      : { baseline: null, threshold, floorMs, regressions: [] },
+    samples,
+    details,
+  }
+  await writeFile(resultPath, `${JSON.stringify(result, null, 2)}\n`)
+  const shown = relative(APP_DIR, resultPath)
+
+  const lines = [
+    `## Smithers app benchmark: ${baseUrl} (${env.server})`,
+    "",
+    `${env.commit?.slice(0, 12) ?? "no jj commit"}, ${env.machine.cpu} (${env.machine.model ?? os.platform()}), ${env.os}, ${env.browser}, N=${n}, ${env.date}` +
+      (conversationMessages === null ? "" : `, conversation of ${conversationMessages} messages`) +
+      (shapeSize === null ? "" : ` (shape: ${shapeSize.rows} rows, ${shapeSize.operations} operations, ${shapeSize.requests} requests, ${Math.round(shapeSize.bytes / 1024)} KiB)`),
+    "",
+    table(metrics, baseline?.metrics, flagged),
+    "",
+    ...Object.entries(missing).map(([metric, count]) => `Not reported by Chromium: ${metric} in ${count} of ${n} loads.`),
+    ...(counts["concurrent.asks"] === undefined
+      ? []
+      : [
+          `Concurrent asks: ${counts["concurrent.asks"]} (${concurrency} at once × ${bursts}). HTTP: ${Object.entries(counts)
+            .filter(([name]) => name.startsWith("concurrent.http."))
+            .map(([name, count]) => `${count} × ${name.slice("concurrent.http.".length)}`)
+            .join(", ")}. 429s: ${counts["concurrent.rate_limited"] ?? 0}. Failed: ${counts["concurrent.failed"] ?? 0}.`,
+        ]),
+    ...Object.entries(counts)
+      .filter(([name]) => name.endsWith(".rate_limited") && !name.startsWith("concurrent."))
+      .map(([name, count]) => `The model answered 429 ${count} time(s) in ${name.split(".")[0]}; each was retried after a back-off.`),
+    ...(follower.refetches + follower.errors > 0 ? [`Follower: ${follower.refetches} refetches, ${follower.errors} request errors.`] : []),
+    `Checks: ${result.checks.passed} passed, ${failed.length} failed.`,
+    ...failed.slice(0, 10).map((check) => `- ${check.suite} #${check.iteration}: ${check.name}${check.detail ? ` (${check.detail.slice(0, 160)})` : ""}`),
+  ]
+  if (failed.length > 0) lines.push("Not compared with the baseline: the run failed a check.")
+  else if (!baseline) lines.push(args["update-baseline"] ? `No earlier baseline for ${baseUrl}.` : `No baseline for ${baseUrl}; run with --update-baseline to set this run as it.`)
+  else {
+    if (JSON.stringify(baseline.machine) !== JSON.stringify(env.machine) || baseline.server !== env.server) {
+      lines.push(`Warning: the baseline ran on another machine or server build (${relative(APP_DIR, `${HERE}${baseline.source}`)}).`)
+    }
+    lines.push(
+      flagged.length === 0
+        ? `Baseline ${baseline.source}: no p50 or p95 regression over ${threshold * 100}% and ${floorMs} ms.`
+        : `Baseline ${baseline.source}: ${flagged.length} regression(s) over ${threshold * 100}% and ${floorMs} ms:\n${flagged
+            .map((r) => `- ${r.metric} ${r.stat}: ${r.baseline} -> ${r.current} ms`)
+            .join("\n")}`,
+    )
+  }
+  lines.push(`Results: ${shown}`)
+
+  if (args["update-baseline"] && failed.length === 0) {
+    const source = relative(HERE, resultPath)
+    baselines.targets[baseUrl] = {
+      source,
+      commit: env.commit,
+      machine: env.machine,
+      server: env.server,
+      n,
+      metrics: Object.fromEntries(Object.entries(metrics).map(([metric, { p50, p95 }]) => [metric, { p50, p95 }])),
+    }
+    await writeFile(BASELINE_PATH, `${JSON.stringify(baselines, null, 2)}\n`)
+    // Runs are ignored by version control; the baseline's source run is kept.
+    const ignore = `${RESULTS_DIR}/.gitignore`
+    const kept = await readFile(ignore, "utf8").catch(() => "*.json\n")
+    if (!kept.includes(`!${source.replace("results/", "")}`)) await writeFile(ignore, `${kept.trimEnd()}\n!${source.replace("results/", "")}\n`)
+    lines.push(`Baseline for ${baseUrl} is now ${source}.`)
+  }
+
+  console.log(lines.join("\n"))
+  process.exit(failed.length > 0 || (flagged.length > 0 && !args["update-baseline"]) ? 1 : 0)
+}
+
+await main()

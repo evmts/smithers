@@ -1,0 +1,1060 @@
+{
+  "ok": true,
+  "env": {
+    "commit": "19df4e50dc6c3676064df20f7272b18b70d1c9ba",
+    "baseUrl": "http://localhost:1337",
+    "server": "vite-dev",
+    "machine": {
+      "model": "Mac15,8",
+      "cpu": "Apple M3 Max",
+      "cores": 16,
+      "memoryGiB": 64
+    },
+    "os": "macOS 26.2 (25C56), arm64",
+    "browser": "Chromium 151.0.7922.34 (headless)",
+    "playwright": "1.62.1",
+    "node": "v26.10.0",
+    "date": "2026-10-20T00:40:21.906Z",
+    "n": 10,
+    "nAnswer": 5,
+    "concurrency": 4,
+    "bursts": 2,
+    "suites": [
+      "load",
+      "cmdk",
+      "shape",
+      "question",
+      "answer",
+      "sync",
+      "concurrent"
+    ],
+    "conversationMessages": 50,
+    "shape": {
+      "rows": 152,
+      "operations": 170,
+      "requests": 2,
+      "bytes": 134846
+    },
+    "follower": {
+      "refetches": 0,
+      "errors": 0
+    }
+  },
+  "metrics": {
+    "load.cold.ttfb": {
+      "n": 10,
+      "p50": 8.7,
+      "p95": 10,
+      "min": 8.1,
+      "max": 10.3
+    },
+    "load.cold.fcp": {
+      "n": 10,
+      "p50": 288,
+      "p95": 296,
+      "min": 280,
+      "max": 296
+    },
+    "load.cold.usable": {
+      "n": 10,
+      "p50": 594,
+      "p95": 604.4,
+      "min": 585.2,
+      "max": 605.1
+    },
+    "load.cold.newest": {
+      "n": 10,
+      "p50": 594,
+      "p95": 604.4,
+      "min": 585.2,
+      "max": 605.1
+    },
+    "load.warm.ttfb": {
+      "n": 10,
+      "p50": 10.3,
+      "p95": 11,
+      "min": 8.7,
+      "max": 11.2
+    },
+    "load.warm.fcp": {
+      "n": 10,
+      "p50": 144,
+      "p95": 148,
+      "min": 140,
+      "max": 148
+    },
+    "load.warm.usable": {
+      "n": 10,
+      "p50": 445.3,
+      "p95": 451,
+      "min": 439.6,
+      "max": 451.3
+    },
+    "load.warm.newest": {
+      "n": 10,
+      "p50": 445.3,
+      "p95": 451,
+      "min": 439.6,
+      "max": 451.3
+    },
+    "cmdk.focus": {
+      "n": 10,
+      "p50": 1.3,
+      "p95": 3.5,
+      "min": 0.8,
+      "max": 5.2
+    },
+    "shape.initial_sync": {
+      "n": 10,
+      "p50": 15.8,
+      "p95": 22.7,
+      "min": 14.1,
+      "max": 24.8
+    },
+    "question.accepted": {
+      "n": 5,
+      "p50": 24.4,
+      "p95": 36.9,
+      "min": 21,
+      "max": 39.8
+    },
+    "question.confirmed": {
+      "n": 5,
+      "p50": 25.7,
+      "p95": 48,
+      "min": 22.5,
+      "max": 53.2
+    },
+    "question.first_text": {
+      "n": 5,
+      "p50": 500.2,
+      "p95": 637.3,
+      "min": 413.1,
+      "max": 663.5
+    },
+    "question.done": {
+      "n": 5,
+      "p50": 515.5,
+      "p95": 661.4,
+      "min": 437.3,
+      "max": 690.1
+    },
+    "answer.question": {
+      "n": 5,
+      "p50": 9.3,
+      "p95": 16.4,
+      "min": 8.1,
+      "max": 16.7
+    },
+    "answer.first_text": {
+      "n": 5,
+      "p50": 500.2,
+      "p95": 764.6,
+      "min": 458.8,
+      "max": 821.7
+    },
+    "answer.done": {
+      "n": 5,
+      "p50": 518.5,
+      "p95": 797.9,
+      "min": 475.6,
+      "max": 860.2
+    },
+    "sync.question": {
+      "n": 5,
+      "p50": 46.1,
+      "p95": 49.3,
+      "min": 38.8,
+      "max": 49.5
+    },
+    "sync.answer_done": {
+      "n": 5,
+      "p50": 533.6,
+      "p95": 588.6,
+      "min": 453.2,
+      "max": 594.1
+    },
+    "concurrent.accepted": {
+      "n": 8,
+      "p50": 46.8,
+      "p95": 73,
+      "min": 23.6,
+      "max": 76
+    },
+    "concurrent.confirmed": {
+      "n": 8,
+      "p50": 48.3,
+      "p95": 77.6,
+      "min": 24.9,
+      "max": 79.1
+    },
+    "concurrent.done": {
+      "n": 8,
+      "p50": 479.4,
+      "p95": 549.2,
+      "min": 427.6,
+      "max": 552.3
+    }
+  },
+  "notReported": {
+    "load.cold.lcp": 10,
+    "load.warm.lcp": 10
+  },
+  "counts": {
+    "concurrent.asks": 8,
+    "concurrent.http.202": 8
+  },
+  "checks": {
+    "passed": 84,
+    "failed": []
+  },
+  "comparison": {
+    "baseline": "results/2026-10-20T00-25-19Z.json",
+    "threshold": 0.25,
+    "floorMs": 5,
+    "regressions": []
+  },
+  "samples": {
+    "load.cold.ttfb": [
+      8.199999988079071,
+      10.299999982118607,
+      9.400000005960464,
+      8.100000023841858,
+      9.699999988079071,
+      8.099999994039536,
+      8.900000005960464,
+      8.400000005960464,
+      8.300000011920929,
+      9.400000005960464
+    ],
+    "load.cold.fcp": [
+      292,
+      296,
+      288,
+      284,
+      288,
+      280,
+      280,
+      288,
+      288,
+      296
+    ],
+    "load.cold.usable": [
+      605.0999999940395,
+      602.6999999880791,
+      593.8000000119209,
+      590.9000000059605,
+      599.6999999880791,
+      585.5999999940395,
+      585.2000000178814,
+      588.9000000059605,
+      594.1000000238419,
+      603.5
+    ],
+    "load.cold.newest": [
+      605.0999999940395,
+      602.6999999880791,
+      593.8000000119209,
+      590.9000000059605,
+      599.6999999880791,
+      585.5999999940395,
+      585.2000000178814,
+      588.9000000059605,
+      594.1000000238419,
+      603.5
+    ],
+    "load.warm.ttfb": [
+      10.699999988079071,
+      10.599999994039536,
+      9,
+      10.299999982118607,
+      10.299999982118607,
+      10.200000017881393,
+      11.199999988079071,
+      8.700000017881393,
+      10.5,
+      10.199999988079071
+    ],
+    "load.warm.fcp": [
+      148,
+      144,
+      144,
+      140,
+      148,
+      140,
+      148,
+      140,
+      144,
+      148
+    ],
+    "load.warm.usable": [
+      450.69999998807907,
+      446.39999997615814,
+      441.69999998807907,
+      443.2999999821186,
+      447.19999998807907,
+      441.5,
+      451.30000001192093,
+      439.60000002384186,
+      444.2000000178814,
+      449.80000001192093
+    ],
+    "load.warm.newest": [
+      450.69999998807907,
+      446.39999997615814,
+      441.69999998807907,
+      443.2999999821186,
+      447.19999998807907,
+      441.5,
+      451.30000001192093,
+      439.60000002384186,
+      444.2000000178814,
+      449.80000001192093
+    ],
+    "cmdk.focus": [
+      5.199999988079071,
+      1.4000000059604645,
+      1.5,
+      1.2999999821186066,
+      1.2999999821186066,
+      1.2999999821186066,
+      1.0999999940395355,
+      1.100000023841858,
+      1.2000000178813934,
+      0.800000011920929
+    ],
+    "shape.initial_sync": [
+      20.23095703125,
+      15.147216796875,
+      15.70458984375,
+      15.322509765625,
+      16.643310546875,
+      18.063232421875,
+      24.755859375,
+      15.73583984375,
+      15.857666015625,
+      14.12744140625
+    ],
+    "question.accepted": [
+      39.817626953125,
+      20.9814453125,
+      23.53173828125,
+      24.448486328125,
+      25.320068359375
+    ],
+    "question.confirmed": [
+      53.228515625,
+      22.453369140625,
+      24.98486328125,
+      25.743408203125,
+      26.857421875
+    ],
+    "question.first_text": [
+      532.448974609375,
+      413.13818359375,
+      500.17041015625,
+      663.501953125,
+      414.109619140625
+    ],
+    "question.done": [
+      546.789306640625,
+      439.063232421875,
+      515.507568359375,
+      690.0546875,
+      437.27392578125
+    ],
+    "answer.question": [
+      16.7001953125,
+      15.300048828125,
+      9,
+      8.10009765625,
+      9.300048828125
+    ],
+    "answer.first_text": [
+      821.7001953125,
+      481.400146484375,
+      500.199951171875,
+      536.400146484375,
+      458.800048828125
+    ],
+    "answer.done": [
+      860.2001953125,
+      498.800048828125,
+      518.5,
+      548.800048828125,
+      475.599853515625
+    ],
+    "sync.question": [
+      48.699951171875,
+      49.5,
+      40.699951171875,
+      38.7998046875,
+      46.10009765625
+    ],
+    "sync.answer_done": [
+      594.10009765625,
+      453.2001953125,
+      533.599853515625,
+      492.2998046875,
+      566.39990234375
+    ],
+    "concurrent.accepted": [
+      28.62841796875,
+      76.02001953125,
+      58.210205078125,
+      43.3212890625,
+      23.564453125,
+      50.354248046875,
+      67.49365234375,
+      34.429931640625
+    ],
+    "concurrent.confirmed": [
+      30.75634765625,
+      79.05615234375,
+      59.822509765625,
+      44.607421875,
+      24.900146484375,
+      51.930908203125,
+      74.982421875,
+      35.779052734375
+    ],
+    "concurrent.done": [
+      512.737548828125,
+      427.61865234375,
+      543.48828125,
+      552.34375,
+      457.9306640625,
+      451.47265625,
+      500.850341796875,
+      444.519775390625
+    ]
+  },
+  "details": {
+    "load": [
+      {
+        "iteration": 0,
+        "cold": {
+          "ttfb": 8.199999988079071,
+          "fcp": 292,
+          "lcp": null,
+          "usable": 605.0999999940395,
+          "newest": 605.0999999940395,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 10.699999988079071,
+          "fcp": 148,
+          "lcp": null,
+          "usable": 450.69999998807907,
+          "newest": 450.69999998807907,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 1
+        }
+      },
+      {
+        "iteration": 1,
+        "cold": {
+          "ttfb": 10.299999982118607,
+          "fcp": 296,
+          "lcp": null,
+          "usable": 602.6999999880791,
+          "newest": 602.6999999880791,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 10.599999994039536,
+          "fcp": 144,
+          "lcp": null,
+          "usable": 446.39999997615814,
+          "newest": 446.39999997615814,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 1
+        }
+      },
+      {
+        "iteration": 2,
+        "cold": {
+          "ttfb": 9.400000005960464,
+          "fcp": 288,
+          "lcp": null,
+          "usable": 593.8000000119209,
+          "newest": 593.8000000119209,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 9,
+          "fcp": 144,
+          "lcp": null,
+          "usable": 441.69999998807907,
+          "newest": 441.69999998807907,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 1
+        }
+      },
+      {
+        "iteration": 3,
+        "cold": {
+          "ttfb": 8.100000023841858,
+          "fcp": 284,
+          "lcp": null,
+          "usable": 590.9000000059605,
+          "newest": 590.9000000059605,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 10.299999982118607,
+          "fcp": 140,
+          "lcp": null,
+          "usable": 443.2999999821186,
+          "newest": 443.2999999821186,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 1
+        }
+      },
+      {
+        "iteration": 4,
+        "cold": {
+          "ttfb": 9.699999988079071,
+          "fcp": 288,
+          "lcp": null,
+          "usable": 599.6999999880791,
+          "newest": 599.6999999880791,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 10.299999982118607,
+          "fcp": 148,
+          "lcp": null,
+          "usable": 447.19999998807907,
+          "newest": 447.19999998807907,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 1
+        }
+      },
+      {
+        "iteration": 5,
+        "cold": {
+          "ttfb": 8.099999994039536,
+          "fcp": 280,
+          "lcp": null,
+          "usable": 585.5999999940395,
+          "newest": 585.5999999940395,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 10.200000017881393,
+          "fcp": 140,
+          "lcp": null,
+          "usable": 441.5,
+          "newest": 441.5,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 1
+        }
+      },
+      {
+        "iteration": 6,
+        "cold": {
+          "ttfb": 8.900000005960464,
+          "fcp": 280,
+          "lcp": null,
+          "usable": 585.2000000178814,
+          "newest": 585.2000000178814,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 11.199999988079071,
+          "fcp": 148,
+          "lcp": null,
+          "usable": 451.30000001192093,
+          "newest": 451.30000001192093,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 1
+        }
+      },
+      {
+        "iteration": 7,
+        "cold": {
+          "ttfb": 8.400000005960464,
+          "fcp": 288,
+          "lcp": null,
+          "usable": 588.9000000059605,
+          "newest": 588.9000000059605,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 8.700000017881393,
+          "fcp": 140,
+          "lcp": null,
+          "usable": 439.60000002384186,
+          "newest": 439.60000002384186,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 1
+        }
+      },
+      {
+        "iteration": 8,
+        "cold": {
+          "ttfb": 8.300000011920929,
+          "fcp": 288,
+          "lcp": null,
+          "usable": 594.1000000238419,
+          "newest": 594.1000000238419,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 10.5,
+          "fcp": 144,
+          "lcp": null,
+          "usable": 444.2000000178814,
+          "newest": 444.2000000178814,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 1
+        }
+      },
+      {
+        "iteration": 9,
+        "cold": {
+          "ttfb": 9.400000005960464,
+          "fcp": 296,
+          "lcp": null,
+          "usable": 603.5,
+          "newest": 603.5,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 10.199999988079071,
+          "fcp": 148,
+          "lcp": null,
+          "usable": 449.80000001192093,
+          "newest": 449.80000001192093,
+          "messages": 50,
+          "shapeRequests": 4,
+          "shapeRequestsFromCache": 1
+        }
+      }
+    ],
+    "cmdk": [
+      {
+        "iteration": 0,
+        "focus": 5.199999988079071
+      },
+      {
+        "iteration": 1,
+        "focus": 1.4000000059604645
+      },
+      {
+        "iteration": 2,
+        "focus": 1.5
+      },
+      {
+        "iteration": 3,
+        "focus": 1.2999999821186066
+      },
+      {
+        "iteration": 4,
+        "focus": 1.2999999821186066
+      },
+      {
+        "iteration": 5,
+        "focus": 1.2999999821186066
+      },
+      {
+        "iteration": 6,
+        "focus": 1.0999999940395355
+      },
+      {
+        "iteration": 7,
+        "focus": 1.100000023841858
+      },
+      {
+        "iteration": 8,
+        "focus": 1.2000000178813934
+      },
+      {
+        "iteration": 9,
+        "focus": 0.800000011920929
+      }
+    ],
+    "shape": [
+      {
+        "iteration": 0,
+        "ms": 20.23095703125,
+        "rows": 152,
+        "operations": 170,
+        "requests": 2,
+        "bytes": 134846
+      },
+      {
+        "iteration": 1,
+        "ms": 15.147216796875,
+        "rows": 152,
+        "operations": 170,
+        "requests": 2,
+        "bytes": 134846
+      },
+      {
+        "iteration": 2,
+        "ms": 15.70458984375,
+        "rows": 152,
+        "operations": 170,
+        "requests": 2,
+        "bytes": 134846
+      },
+      {
+        "iteration": 3,
+        "ms": 15.322509765625,
+        "rows": 152,
+        "operations": 170,
+        "requests": 2,
+        "bytes": 134846
+      },
+      {
+        "iteration": 4,
+        "ms": 16.643310546875,
+        "rows": 152,
+        "operations": 170,
+        "requests": 2,
+        "bytes": 134846
+      },
+      {
+        "iteration": 5,
+        "ms": 18.063232421875,
+        "rows": 152,
+        "operations": 170,
+        "requests": 2,
+        "bytes": 134846
+      },
+      {
+        "iteration": 6,
+        "ms": 24.755859375,
+        "rows": 152,
+        "operations": 170,
+        "requests": 2,
+        "bytes": 134846
+      },
+      {
+        "iteration": 7,
+        "ms": 15.73583984375,
+        "rows": 152,
+        "operations": 170,
+        "requests": 2,
+        "bytes": 134846
+      },
+      {
+        "iteration": 8,
+        "ms": 15.857666015625,
+        "rows": 152,
+        "operations": 170,
+        "requests": 2,
+        "bytes": 134846
+      },
+      {
+        "iteration": 9,
+        "ms": 14.12744140625,
+        "rows": 152,
+        "operations": 170,
+        "requests": 2,
+        "bytes": 134846
+      }
+    ],
+    "question": [
+      {
+        "iteration": 0,
+        "word": "bench-mvfyiff6-q0",
+        "status": 202,
+        "txid": 14145,
+        "accepted": 39.817626953125,
+        "confirmed": 53.228515625,
+        "firstText": 532.448974609375,
+        "settled": 546.789306640625,
+        "answer": "\n\nbench-mvfyiff6-q0",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 1,
+        "word": "bench-mvfyiff6-q1",
+        "status": 202,
+        "txid": 14149,
+        "accepted": 20.9814453125,
+        "confirmed": 22.453369140625,
+        "firstText": 413.13818359375,
+        "settled": 439.063232421875,
+        "answer": "\n\nbench-mvfyiff6-q1",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 2,
+        "word": "bench-mvfyiff6-q2",
+        "status": 202,
+        "txid": 14154,
+        "accepted": 23.53173828125,
+        "confirmed": 24.98486328125,
+        "firstText": 500.17041015625,
+        "settled": 515.507568359375,
+        "answer": "\n\nbench-mvfyiff6-q2",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 3,
+        "word": "bench-mvfyiff6-q3",
+        "status": 202,
+        "txid": 14159,
+        "accepted": 24.448486328125,
+        "confirmed": 25.743408203125,
+        "firstText": 663.501953125,
+        "settled": 690.0546875,
+        "answer": "\n\nbench-mvfyiff6-q3",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 4,
+        "word": "bench-mvfyiff6-q4",
+        "status": 202,
+        "txid": 14164,
+        "accepted": 25.320068359375,
+        "confirmed": 26.857421875,
+        "firstText": 414.109619140625,
+        "settled": 437.27392578125,
+        "answer": "\n\nbench-mvfyiff6-q4",
+        "answerStatus": "done",
+        "failure": null
+      }
+    ],
+    "answer": [
+      {
+        "iteration": 0,
+        "word": "bench-mvfyiff6-a0",
+        "answer": "bench-mvfyiff6-a0",
+        "states": 2,
+        "question": 16.7001953125,
+        "firstText": 821.7001953125,
+        "done": 860.2001953125
+      },
+      {
+        "iteration": 1,
+        "word": "bench-mvfyiff6-a1",
+        "answer": "bench-mvfyiff6-a1",
+        "states": 1,
+        "question": 15.300048828125,
+        "firstText": 481.400146484375,
+        "done": 498.800048828125
+      },
+      {
+        "iteration": 2,
+        "word": "bench-mvfyiff6-a2",
+        "answer": "bench-mvfyiff6-a2",
+        "states": 1,
+        "question": 9,
+        "firstText": 500.199951171875,
+        "done": 518.5
+      },
+      {
+        "iteration": 3,
+        "word": "bench-mvfyiff6-a3",
+        "answer": "bench-mvfyiff6-a3",
+        "states": 1,
+        "question": 8.10009765625,
+        "firstText": 536.400146484375,
+        "done": 548.800048828125
+      },
+      {
+        "iteration": 4,
+        "word": "bench-mvfyiff6-a4",
+        "answer": "bench-mvfyiff6-a4",
+        "states": 1,
+        "question": 9.300048828125,
+        "firstText": 458.800048828125,
+        "done": 475.599853515625
+      }
+    ],
+    "sync": [
+      {
+        "iteration": 0,
+        "word": "bench-mvfyiff6-s0",
+        "answer": "bench-mvfyiff6-s0",
+        "question": 48.699951171875,
+        "doneOnA": 599.10009765625,
+        "doneOnB": 594.10009765625
+      },
+      {
+        "iteration": 1,
+        "word": "bench-mvfyiff6-s1",
+        "answer": "bench-mvfyiff6-s1",
+        "question": 49.5,
+        "doneOnA": 454,
+        "doneOnB": 453.2001953125
+      },
+      {
+        "iteration": 2,
+        "word": "bench-mvfyiff6-s2",
+        "answer": "bench-mvfyiff6-s2",
+        "question": 40.699951171875,
+        "doneOnA": 536.800048828125,
+        "doneOnB": 533.599853515625
+      },
+      {
+        "iteration": 3,
+        "word": "bench-mvfyiff6-s3",
+        "answer": "bench-mvfyiff6-s3",
+        "question": 38.7998046875,
+        "doneOnA": 493,
+        "doneOnB": 492.2998046875
+      },
+      {
+        "iteration": 4,
+        "word": "bench-mvfyiff6-s4",
+        "answer": "bench-mvfyiff6-s4",
+        "question": 46.10009765625,
+        "doneOnA": 567.199951171875,
+        "doneOnB": 566.39990234375
+      }
+    ],
+    "concurrent": [
+      {
+        "iteration": 0,
+        "burst": 0,
+        "word": "bench-mvfyiff6-c0x0",
+        "status": 202,
+        "txid": 14217,
+        "accepted": 28.62841796875,
+        "confirmed": 30.75634765625,
+        "firstText": 489.643310546875,
+        "settled": 512.737548828125,
+        "answer": "\n\nbench-mvfyiff6-c0x0",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 1,
+        "burst": 0,
+        "word": "bench-mvfyiff6-c0x1",
+        "status": 202,
+        "txid": 14220,
+        "accepted": 76.02001953125,
+        "confirmed": 79.05615234375,
+        "firstText": 411.37939453125,
+        "settled": 427.61865234375,
+        "answer": "\n\nbench-mvfyiff6-c0x1",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 2,
+        "burst": 0,
+        "word": "bench-mvfyiff6-c0x2",
+        "status": 202,
+        "txid": 14219,
+        "accepted": 58.210205078125,
+        "confirmed": 59.822509765625,
+        "firstText": 521.65771484375,
+        "settled": 543.48828125,
+        "answer": "\n\nbench-mvfyiff6-c0x2",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 3,
+        "burst": 0,
+        "word": "bench-mvfyiff6-c0x3",
+        "status": 202,
+        "txid": 14218,
+        "accepted": 43.3212890625,
+        "confirmed": 44.607421875,
+        "firstText": 538.4560546875,
+        "settled": 552.34375,
+        "answer": "\n\nbench-mvfyiff6-c0x3",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 4,
+        "burst": 1,
+        "word": "bench-mvfyiff6-c1x0",
+        "status": 202,
+        "txid": 14235,
+        "accepted": 23.564453125,
+        "confirmed": 24.900146484375,
+        "firstText": 430.7548828125,
+        "settled": 457.9306640625,
+        "answer": "\n\nbench-mvfyiff6-c1x0",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 5,
+        "burst": 1,
+        "word": "bench-mvfyiff6-c1x1",
+        "status": 202,
+        "txid": 14237,
+        "accepted": 50.354248046875,
+        "confirmed": 51.930908203125,
+        "firstText": 415.685791015625,
+        "settled": 451.47265625,
+        "answer": "\n\nbench-mvfyiff6-c1x1",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 6,
+        "burst": 1,
+        "word": "bench-mvfyiff6-c1x2",
+        "status": 202,
+        "txid": 14238,
+        "accepted": 67.49365234375,
+        "confirmed": 74.982421875,
+        "firstText": 451.369873046875,
+        "settled": 500.850341796875,
+        "answer": "\n\nbench-mvfyiff6-c1x2",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 7,
+        "burst": 1,
+        "word": "bench-mvfyiff6-c1x3",
+        "status": 202,
+        "txid": 14236,
+        "accepted": 34.429931640625,
+        "confirmed": 35.779052734375,
+        "firstText": 383.534423828125,
+        "settled": 444.519775390625,
+        "answer": "\n\nbench-mvfyiff6-c1x3",
+        "answerStatus": "done",
+        "failure": null
+      }
+    ]
+  }
+}

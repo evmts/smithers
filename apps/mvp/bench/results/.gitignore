@@ -1,0 +1,9 @@
+# Each `pnpm bench` run writes <timestamp>.json here. Runs stay out of version control,
+# except the ones listed below: `--update-baseline` keeps the run it makes the baseline.
+*.json
+# LiveStore era: its last baseline and a back-to-back rerun, kept as history (docs/benchmarks.md#first-local-results).
+!2026-10-19T23-04-36Z.json
+!2026-10-19T23-05-21Z.json
+# Postgres, Electric and TanStack DB: the baseline, and a rerun 15 minutes later (docs/benchmarks.md#baseline-and-regressions).
+!2026-10-20T00-25-19Z.json
+!2026-10-20T00-40-21Z.json

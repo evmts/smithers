@@ -1,0 +1,1079 @@
+{
+  "ok": true,
+  "env": {
+    "commit": "7f41caf1ab2f59d76a496e00390f576690b1bc42",
+    "baseUrl": "http://localhost:1337",
+    "server": "vite-dev",
+    "machine": {
+      "model": "Mac15,8",
+      "cpu": "Apple M3 Max",
+      "cores": 16,
+      "memoryGiB": 64
+    },
+    "os": "macOS 26.2 (25C56), arm64",
+    "browser": "Chromium 151.0.7922.34 (headless)",
+    "playwright": "1.62.1",
+    "node": "v26.10.0",
+    "date": "2026-10-20T00:25:19.941Z",
+    "n": 10,
+    "nAnswer": 5,
+    "concurrency": 4,
+    "bursts": 2,
+    "suites": [
+      "load",
+      "cmdk",
+      "shape",
+      "question",
+      "answer",
+      "sync",
+      "concurrent"
+    ],
+    "conversationMessages": 42,
+    "shape": {
+      "rows": 42,
+      "operations": 106,
+      "requests": 2,
+      "bytes": 210923
+    },
+    "follower": {
+      "refetches": 0,
+      "errors": 0
+    }
+  },
+  "metrics": {
+    "load.cold.ttfb": {
+      "n": 10,
+      "p50": 9,
+      "p95": 11.8,
+      "min": 8.5,
+      "max": 11.8
+    },
+    "load.cold.fcp": {
+      "n": 10,
+      "p50": 284,
+      "p95": 290.2,
+      "min": 280,
+      "max": 292
+    },
+    "load.cold.usable": {
+      "n": 10,
+      "p50": 598.3,
+      "p95": 604.2,
+      "min": 595.1,
+      "max": 605
+    },
+    "load.cold.newest": {
+      "n": 10,
+      "p50": 598.3,
+      "p95": 604.2,
+      "min": 595.1,
+      "max": 605
+    },
+    "load.warm.ttfb": {
+      "n": 10,
+      "p50": 9.1,
+      "p95": 11.7,
+      "min": 8.6,
+      "max": 11.9
+    },
+    "load.warm.fcp": {
+      "n": 10,
+      "p50": 136,
+      "p95": 142.2,
+      "min": 132,
+      "max": 144
+    },
+    "load.warm.usable": {
+      "n": 10,
+      "p50": 447.8,
+      "p95": 451.9,
+      "min": 441.9,
+      "max": 453.3
+    },
+    "load.warm.newest": {
+      "n": 10,
+      "p50": 447.8,
+      "p95": 451.9,
+      "min": 441.9,
+      "max": 453.3
+    },
+    "cmdk.focus": {
+      "n": 10,
+      "p50": 1.2,
+      "p95": 5.5,
+      "min": 1,
+      "max": 6
+    },
+    "shape.initial_sync": {
+      "n": 10,
+      "p50": 15.5,
+      "p95": 18.4,
+      "min": 13.3,
+      "max": 19.6
+    },
+    "question.accepted": {
+      "n": 5,
+      "p50": 26.3,
+      "p95": 39.8,
+      "min": 17.4,
+      "max": 42.6
+    },
+    "question.confirmed": {
+      "n": 5,
+      "p50": 30.1,
+      "p95": 51,
+      "min": 19.8,
+      "max": 51.9
+    },
+    "question.first_text": {
+      "n": 5,
+      "p50": 2533.5,
+      "p95": 8891.6,
+      "min": 980.1,
+      "max": 9963.3
+    },
+    "question.done": {
+      "n": 5,
+      "p50": 2540.6,
+      "p95": 8914.2,
+      "min": 989.5,
+      "max": 9987.4
+    },
+    "answer.question": {
+      "n": 5,
+      "p50": 10.2,
+      "p95": 15.6,
+      "min": 9.8,
+      "max": 16.9
+    },
+    "answer.first_text": {
+      "n": 5,
+      "p50": 1912.4,
+      "p95": 2685.8,
+      "min": 708.6,
+      "max": 2756.6
+    },
+    "answer.done": {
+      "n": 5,
+      "p50": 1931,
+      "p95": 2707,
+      "min": 729.5,
+      "max": 2777.2
+    },
+    "sync.question": {
+      "n": 5,
+      "p50": 40.2,
+      "p95": 57.3,
+      "min": 38.4,
+      "max": 60.1
+    },
+    "sync.answer_done": {
+      "n": 5,
+      "p50": 687.2,
+      "p95": 1325.5,
+      "min": 473,
+      "max": 1411.7
+    },
+    "concurrent.accepted": {
+      "n": 8,
+      "p50": 39.5,
+      "p95": 72.8,
+      "min": 22.9,
+      "max": 79.7
+    },
+    "concurrent.confirmed": {
+      "n": 8,
+      "p50": 40.4,
+      "p95": 74.3,
+      "min": 26,
+      "max": 81.1
+    },
+    "concurrent.done": {
+      "n": 8,
+      "p50": 2106.5,
+      "p95": 4530.9,
+      "min": 626,
+      "max": 4722.3
+    }
+  },
+  "notReported": {
+    "load.cold.lcp": 10,
+    "load.warm.lcp": 10
+  },
+  "counts": {
+    "concurrent.asks": 8,
+    "concurrent.http.202": 8
+  },
+  "checks": {
+    "passed": 84,
+    "failed": []
+  },
+  "comparison": {
+    "baseline": "results/2026-10-19T23-04-36Z.json",
+    "threshold": 0.25,
+    "floorMs": 5,
+    "regressions": [
+      {
+        "metric": "load.warm.fcp",
+        "stat": "p50",
+        "baseline": 108,
+        "current": 136
+      },
+      {
+        "metric": "answer.first_text",
+        "stat": "p50",
+        "baseline": 618.4,
+        "current": 1912.4
+      },
+      {
+        "metric": "answer.first_text",
+        "stat": "p95",
+        "baseline": 1487.5,
+        "current": 2685.8
+      }
+    ]
+  },
+  "samples": {
+    "load.cold.ttfb": [
+      8.5,
+      8.900000005960464,
+      8.699999988079071,
+      8.699999988079071,
+      9.800000011920929,
+      9,
+      11.699999988079071,
+      8.699999988079071,
+      9.700000017881393,
+      11.800000011920929
+    ],
+    "load.cold.fcp": [
+      284,
+      280,
+      280,
+      280,
+      284,
+      288,
+      292,
+      284,
+      284,
+      284
+    ],
+    "load.cold.usable": [
+      597.6000000238419,
+      595.6999999880791,
+      595.0999999940395,
+      595.1999999880791,
+      599,
+      603.3000000119209,
+      605,
+      596,
+      600.6000000238419,
+      601.0999999940395
+    ],
+    "load.cold.newest": [
+      597.6000000238419,
+      595.6999999880791,
+      595.0999999940395,
+      595.1999999880791,
+      599,
+      603.3000000119209,
+      605,
+      596,
+      600.6000000238419,
+      601.0999999940395
+    ],
+    "load.warm.ttfb": [
+      8.599999994039536,
+      8.899999976158142,
+      9.200000017881393,
+      9.200000017881393,
+      8.800000011920929,
+      8.699999988079071,
+      11.400000005960464,
+      8.900000005960464,
+      9.700000017881393,
+      11.899999976158142
+    ],
+    "load.warm.fcp": [
+      132,
+      132,
+      140,
+      144,
+      140,
+      136,
+      136,
+      132,
+      140,
+      136
+    ],
+    "load.warm.usable": [
+      445.40000000596046,
+      441.89999997615814,
+      446.90000000596046,
+      453.30000001192093,
+      449.19999998807907,
+      444.2999999821186,
+      448.60000002384186,
+      445.10000002384186,
+      450.09999999403954,
+      449.19999998807907
+    ],
+    "load.warm.newest": [
+      445.40000000596046,
+      441.89999997615814,
+      446.90000000596046,
+      453.30000001192093,
+      449.19999998807907,
+      444.2999999821186,
+      448.60000002384186,
+      445.10000002384186,
+      450.09999999403954,
+      449.19999998807907
+    ],
+    "cmdk.focus": [
+      6,
+      4.899999976158142,
+      1.2000000178813934,
+      1.2000000178813934,
+      1.0999999940395355,
+      1.199999988079071,
+      1,
+      1,
+      1.2999999821186066,
+      1.2999999821186066
+    ],
+    "shape.initial_sync": [
+      19.5615234375,
+      15.245361328125,
+      16.67041015625,
+      13.25732421875,
+      15.32568359375,
+      13.889892578125,
+      14.863037109375,
+      15.73974609375,
+      15.664794921875,
+      16.910888671875
+    ],
+    "question.accepted": [
+      28.85595703125,
+      24.5693359375,
+      17.3642578125,
+      42.56201171875,
+      26.257568359375
+    ],
+    "question.confirmed": [
+      51.885498046875,
+      25.301513671875,
+      19.79541015625,
+      47.5537109375,
+      30.105712890625
+    ],
+    "question.first_text": [
+      980.106689453125,
+      9963.31884765625,
+      4604.587158203125,
+      2533.548583984375,
+      1569.609375
+    ],
+    "question.done": [
+      989.48681640625,
+      9987.396240234375,
+      4621.6474609375,
+      2540.587890625,
+      1585.54248046875
+    ],
+    "answer.question": [
+      16.900146484375,
+      10.10009765625,
+      9.800048828125,
+      10.300048828125,
+      10.2001953125
+    ],
+    "answer.first_text": [
+      1912.400146484375,
+      2756.60009765625,
+      2402.699951171875,
+      1516.300048828125,
+      708.60009765625
+    ],
+    "answer.done": [
+      1931,
+      2777.199951171875,
+      2426.400146484375,
+      1535.900146484375,
+      729.5
+    ],
+    "sync.question": [
+      60.10009765625,
+      46.10009765625,
+      39.2001953125,
+      40.2001953125,
+      38.400390625
+    ],
+    "sync.answer_done": [
+      687.2001953125,
+      1411.7001953125,
+      980.500244140625,
+      473.000244140625,
+      520.80029296875
+    ],
+    "concurrent.accepted": [
+      24.207275390625,
+      50.24365234375,
+      59.9853515625,
+      37.97216796875,
+      31.662353515625,
+      22.87255859375,
+      41.033203125,
+      79.69970703125
+    ],
+    "concurrent.confirmed": [
+      26.7822265625,
+      52.214599609375,
+      61.513427734375,
+      38.220458984375,
+      33.710205078125,
+      25.95068359375,
+      42.61328125,
+      81.1279296875
+    ],
+    "concurrent.done": [
+      1039.684326171875,
+      1039.362060546875,
+      1047.86279296875,
+      626.01953125,
+      3695.19775390625,
+      3165.203369140625,
+      4175.2109375,
+      4722.348876953125
+    ]
+  },
+  "details": {
+    "load": [
+      {
+        "iteration": 0,
+        "cold": {
+          "ttfb": 8.5,
+          "fcp": 284,
+          "lcp": null,
+          "usable": 597.6000000238419,
+          "newest": 597.6000000238419,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 8.599999994039536,
+          "fcp": 132,
+          "lcp": null,
+          "usable": 445.40000000596046,
+          "newest": 445.40000000596046,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        }
+      },
+      {
+        "iteration": 1,
+        "cold": {
+          "ttfb": 8.900000005960464,
+          "fcp": 280,
+          "lcp": null,
+          "usable": 595.6999999880791,
+          "newest": 595.6999999880791,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 8.899999976158142,
+          "fcp": 132,
+          "lcp": null,
+          "usable": 441.89999997615814,
+          "newest": 441.89999997615814,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        }
+      },
+      {
+        "iteration": 2,
+        "cold": {
+          "ttfb": 8.699999988079071,
+          "fcp": 280,
+          "lcp": null,
+          "usable": 595.0999999940395,
+          "newest": 595.0999999940395,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 9.200000017881393,
+          "fcp": 140,
+          "lcp": null,
+          "usable": 446.90000000596046,
+          "newest": 446.90000000596046,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        }
+      },
+      {
+        "iteration": 3,
+        "cold": {
+          "ttfb": 8.699999988079071,
+          "fcp": 280,
+          "lcp": null,
+          "usable": 595.1999999880791,
+          "newest": 595.1999999880791,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 9.200000017881393,
+          "fcp": 144,
+          "lcp": null,
+          "usable": 453.30000001192093,
+          "newest": 453.30000001192093,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        }
+      },
+      {
+        "iteration": 4,
+        "cold": {
+          "ttfb": 9.800000011920929,
+          "fcp": 284,
+          "lcp": null,
+          "usable": 599,
+          "newest": 599,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 8.800000011920929,
+          "fcp": 140,
+          "lcp": null,
+          "usable": 449.19999998807907,
+          "newest": 449.19999998807907,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        }
+      },
+      {
+        "iteration": 5,
+        "cold": {
+          "ttfb": 9,
+          "fcp": 288,
+          "lcp": null,
+          "usable": 603.3000000119209,
+          "newest": 603.3000000119209,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 8.699999988079071,
+          "fcp": 136,
+          "lcp": null,
+          "usable": 444.2999999821186,
+          "newest": 444.2999999821186,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        }
+      },
+      {
+        "iteration": 6,
+        "cold": {
+          "ttfb": 11.699999988079071,
+          "fcp": 292,
+          "lcp": null,
+          "usable": 605,
+          "newest": 605,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 11.400000005960464,
+          "fcp": 136,
+          "lcp": null,
+          "usable": 448.60000002384186,
+          "newest": 448.60000002384186,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        }
+      },
+      {
+        "iteration": 7,
+        "cold": {
+          "ttfb": 8.699999988079071,
+          "fcp": 284,
+          "lcp": null,
+          "usable": 596,
+          "newest": 596,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 8.900000005960464,
+          "fcp": 132,
+          "lcp": null,
+          "usable": 445.10000002384186,
+          "newest": 445.10000002384186,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        }
+      },
+      {
+        "iteration": 8,
+        "cold": {
+          "ttfb": 9.700000017881393,
+          "fcp": 284,
+          "lcp": null,
+          "usable": 600.6000000238419,
+          "newest": 600.6000000238419,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 9.700000017881393,
+          "fcp": 140,
+          "lcp": null,
+          "usable": 450.09999999403954,
+          "newest": 450.09999999403954,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        }
+      },
+      {
+        "iteration": 9,
+        "cold": {
+          "ttfb": 11.800000011920929,
+          "fcp": 284,
+          "lcp": null,
+          "usable": 601.0999999940395,
+          "newest": 601.0999999940395,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        },
+        "warm": {
+          "ttfb": 11.899999976158142,
+          "fcp": 136,
+          "lcp": null,
+          "usable": 449.19999998807907,
+          "newest": 449.19999998807907,
+          "messages": 42,
+          "shapeRequests": 0,
+          "shapeRequestsFromCache": 0
+        }
+      }
+    ],
+    "cmdk": [
+      {
+        "iteration": 0,
+        "focus": 6
+      },
+      {
+        "iteration": 1,
+        "focus": 4.899999976158142
+      },
+      {
+        "iteration": 2,
+        "focus": 1.2000000178813934
+      },
+      {
+        "iteration": 3,
+        "focus": 1.2000000178813934
+      },
+      {
+        "iteration": 4,
+        "focus": 1.0999999940395355
+      },
+      {
+        "iteration": 5,
+        "focus": 1.199999988079071
+      },
+      {
+        "iteration": 6,
+        "focus": 1
+      },
+      {
+        "iteration": 7,
+        "focus": 1
+      },
+      {
+        "iteration": 8,
+        "focus": 1.2999999821186066
+      },
+      {
+        "iteration": 9,
+        "focus": 1.2999999821186066
+      }
+    ],
+    "shape": [
+      {
+        "iteration": 0,
+        "ms": 19.5615234375,
+        "rows": 42,
+        "operations": 106,
+        "requests": 2,
+        "bytes": 210923
+      },
+      {
+        "iteration": 1,
+        "ms": 15.245361328125,
+        "rows": 42,
+        "operations": 106,
+        "requests": 2,
+        "bytes": 210923
+      },
+      {
+        "iteration": 2,
+        "ms": 16.67041015625,
+        "rows": 42,
+        "operations": 106,
+        "requests": 2,
+        "bytes": 210923
+      },
+      {
+        "iteration": 3,
+        "ms": 13.25732421875,
+        "rows": 42,
+        "operations": 106,
+        "requests": 2,
+        "bytes": 210923
+      },
+      {
+        "iteration": 4,
+        "ms": 15.32568359375,
+        "rows": 42,
+        "operations": 106,
+        "requests": 2,
+        "bytes": 210923
+      },
+      {
+        "iteration": 5,
+        "ms": 13.889892578125,
+        "rows": 42,
+        "operations": 106,
+        "requests": 2,
+        "bytes": 210923
+      },
+      {
+        "iteration": 6,
+        "ms": 14.863037109375,
+        "rows": 42,
+        "operations": 106,
+        "requests": 2,
+        "bytes": 210923
+      },
+      {
+        "iteration": 7,
+        "ms": 15.73974609375,
+        "rows": 42,
+        "operations": 106,
+        "requests": 2,
+        "bytes": 210923
+      },
+      {
+        "iteration": 8,
+        "ms": 15.664794921875,
+        "rows": 42,
+        "operations": 106,
+        "requests": 2,
+        "bytes": 210923
+      },
+      {
+        "iteration": 9,
+        "ms": 16.910888671875,
+        "rows": 42,
+        "operations": 106,
+        "requests": 2,
+        "bytes": 210923
+      }
+    ],
+    "question": [
+      {
+        "iteration": 0,
+        "word": "bench-mvfxz3gl-q0",
+        "status": 202,
+        "txid": 12295,
+        "accepted": 28.85595703125,
+        "confirmed": 51.885498046875,
+        "firstText": 980.106689453125,
+        "settled": 989.48681640625,
+        "answer": "\n\nbench-mvfxz3gl-q0",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 1,
+        "word": "bench-mvfxz3gl-q1",
+        "status": 202,
+        "txid": 12298,
+        "accepted": 24.5693359375,
+        "confirmed": 25.301513671875,
+        "firstText": 9963.31884765625,
+        "settled": 9987.396240234375,
+        "answer": "\n\nbench-mvfxz3gl-q1",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 2,
+        "word": "bench-mvfxz3gl-q2",
+        "status": 202,
+        "txid": 12301,
+        "accepted": 17.3642578125,
+        "confirmed": 19.79541015625,
+        "firstText": 4604.587158203125,
+        "settled": 4621.6474609375,
+        "answer": "\n\nbench-mvfxz3gl-q2",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 3,
+        "word": "bench-mvfxz3gl-q3",
+        "status": 202,
+        "txid": 12306,
+        "accepted": 42.56201171875,
+        "confirmed": 47.5537109375,
+        "firstText": 2533.548583984375,
+        "settled": 2540.587890625,
+        "answer": "\n\nbench-mvfxz3gl-q3",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 4,
+        "word": "bench-mvfxz3gl-q4",
+        "status": 202,
+        "txid": 12313,
+        "accepted": 26.257568359375,
+        "confirmed": 30.105712890625,
+        "firstText": 1569.609375,
+        "settled": 1585.54248046875,
+        "answer": "\n\nbench-mvfxz3gl-q4",
+        "answerStatus": "done",
+        "failure": null
+      }
+    ],
+    "answer": [
+      {
+        "iteration": 0,
+        "word": "bench-mvfxz3gl-a0",
+        "answer": "bench-mvfxz3gl-a0",
+        "states": 2,
+        "question": 16.900146484375,
+        "firstText": 1912.400146484375,
+        "done": 1931
+      },
+      {
+        "iteration": 1,
+        "word": "bench-mvfxz3gl-a1",
+        "answer": "bench-mvfxz3gl-a1",
+        "states": 1,
+        "question": 10.10009765625,
+        "firstText": 2756.60009765625,
+        "done": 2777.199951171875
+      },
+      {
+        "iteration": 2,
+        "word": "bench-mvfxz3gl-a2",
+        "answer": "bench-mvfxz3gl-a2",
+        "states": 1,
+        "question": 9.800048828125,
+        "firstText": 2402.699951171875,
+        "done": 2426.400146484375
+      },
+      {
+        "iteration": 3,
+        "word": "bench-mvfxz3gl-a3",
+        "answer": "bench-mvfxz3gl-a3",
+        "states": 2,
+        "question": 10.300048828125,
+        "firstText": 1516.300048828125,
+        "done": 1535.900146484375
+      },
+      {
+        "iteration": 4,
+        "word": "bench-mvfxz3gl-a4",
+        "answer": "bench-mvfxz3gl-a4",
+        "states": 2,
+        "question": 10.2001953125,
+        "firstText": 708.60009765625,
+        "done": 729.5
+      }
+    ],
+    "sync": [
+      {
+        "iteration": 0,
+        "word": "bench-mvfxz3gl-s0",
+        "answer": "bench-mvfxz3gl-s0",
+        "question": 60.10009765625,
+        "doneOnA": 687.5,
+        "doneOnB": 687.2001953125
+      },
+      {
+        "iteration": 1,
+        "word": "bench-mvfxz3gl-s1",
+        "answer": "bench-mvfxz3gl-s1",
+        "question": 46.10009765625,
+        "doneOnA": 1415,
+        "doneOnB": 1411.7001953125
+      },
+      {
+        "iteration": 2,
+        "word": "bench-mvfxz3gl-s2",
+        "answer": "bench-mvfxz3gl-s2",
+        "question": 39.2001953125,
+        "doneOnA": 980.900146484375,
+        "doneOnB": 980.500244140625
+      },
+      {
+        "iteration": 3,
+        "word": "bench-mvfxz3gl-s3",
+        "answer": "bench-mvfxz3gl-s3",
+        "question": 40.2001953125,
+        "doneOnA": 472.099853515625,
+        "doneOnB": 473.000244140625
+      },
+      {
+        "iteration": 4,
+        "word": "bench-mvfxz3gl-s4",
+        "answer": "bench-mvfxz3gl-s4",
+        "question": 38.400390625,
+        "doneOnA": 520.2001953125,
+        "doneOnB": 520.80029296875
+      }
+    ],
+    "concurrent": [
+      {
+        "iteration": 0,
+        "burst": 0,
+        "word": "bench-mvfxz3gl-c0x0",
+        "status": 202,
+        "txid": 12372,
+        "accepted": 24.207275390625,
+        "confirmed": 26.7822265625,
+        "firstText": 1028.5966796875,
+        "settled": 1039.684326171875,
+        "answer": "\n\nbench-mvfxz3gl-c0x0",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 1,
+        "burst": 0,
+        "word": "bench-mvfxz3gl-c0x1",
+        "status": 202,
+        "txid": 12374,
+        "accepted": 50.24365234375,
+        "confirmed": 52.214599609375,
+        "firstText": 1039.362060546875,
+        "settled": 1039.362060546875,
+        "answer": "\n\nbench-mvfxz3gl-c0x1",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 2,
+        "burst": 0,
+        "word": "bench-mvfxz3gl-c0x2",
+        "status": 202,
+        "txid": 12375,
+        "accepted": 59.9853515625,
+        "confirmed": 61.513427734375,
+        "firstText": 1039.252685546875,
+        "settled": 1047.86279296875,
+        "answer": "\n\nbench-mvfxz3gl-c0x2",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 3,
+        "burst": 0,
+        "word": "bench-mvfxz3gl-c0x3",
+        "status": 202,
+        "txid": 12373,
+        "accepted": 37.97216796875,
+        "confirmed": 38.220458984375,
+        "firstText": 608.459228515625,
+        "settled": 626.01953125,
+        "answer": "\n\nbench-mvfxz3gl-c0x3",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 4,
+        "burst": 1,
+        "word": "bench-mvfxz3gl-c1x0",
+        "status": 202,
+        "txid": 12387,
+        "accepted": 31.662353515625,
+        "confirmed": 33.710205078125,
+        "firstText": 3685.89208984375,
+        "settled": 3695.19775390625,
+        "answer": "\n\nbench-mvfxz3gl-c1x0",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 5,
+        "burst": 1,
+        "word": "bench-mvfxz3gl-c1x1",
+        "status": 202,
+        "txid": 12386,
+        "accepted": 22.87255859375,
+        "confirmed": 25.95068359375,
+        "firstText": 3156.690673828125,
+        "settled": 3165.203369140625,
+        "answer": "\n\nbench-mvfxz3gl-c1x1",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 6,
+        "burst": 1,
+        "word": "bench-mvfxz3gl-c1x2",
+        "status": 202,
+        "txid": 12388,
+        "accepted": 41.033203125,
+        "confirmed": 42.61328125,
+        "firstText": 4165.215087890625,
+        "settled": 4175.2109375,
+        "answer": "\n\nbench-mvfxz3gl-c1x2",
+        "answerStatus": "done",
+        "failure": null
+      },
+      {
+        "iteration": 7,
+        "burst": 1,
+        "word": "bench-mvfxz3gl-c1x3",
+        "status": 202,
+        "txid": 12389,
+        "accepted": 79.69970703125,
+        "confirmed": 81.1279296875,
+        "firstText": 4712.25732421875,
+        "settled": 4722.348876953125,
+        "answer": "\n\nbench-mvfxz3gl-c1x3",
+        "answerStatus": "done",
+        "failure": null
+      }
+    ]
+  }
+}
