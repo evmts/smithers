@@ -4,7 +4,7 @@ import { owner, say } from "./j1-fixtures"
 // UI projection of .specs/engineering/checks/C-REL-01.md; not a qualification receipt.
 // 2026-10-20: the docs card opens on Welcome; Quickstart is the hosted smithers.sh walk and the Mac host steps live in Self-host (docs chain 4327e).
 // mvp.md §12.4, M-35: bundled Markdown through the person-facing /docs flow.
-test("C-REL-01: Docs expose only Quickstart and Flows reference", async ({ page }) => {
+test("C-REL-01: Docs expose the hosted Quickstart, Self-host and the Flows reference", async ({ page }) => {
   test.setTimeout(60_000)
   await owner(page)
   await page.goto("/")

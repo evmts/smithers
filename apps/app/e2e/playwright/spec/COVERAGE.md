@@ -221,7 +221,7 @@ into their implementing tickets; terminal projections require isolated live
 fixtures and do not qualify gate correctness or publication refusal.
 
 | C-PRC-03 | [C-PRC-03.spec.ts](C-PRC-03.spec.ts) | implemented (engineering CLI; host qualification pending) | T-PRC-03 |
-| C-REL-01 | [C-REL-01.spec.ts](C-REL-01.spec.ts) | passing UI projection including LAN startup, positional laptop login and recovery commands with provider refusal; reference-host qualification pending | T-DOC-01 |
+| C-REL-01 | [C-REL-01.spec.ts](C-REL-01.spec.ts) | passing UI projection: the hosted Quickstart's steps, Self-host's HTTPS and backup sections, and the Flows reference; reference-host qualification pending | T-DOC-01 |
 | C-REL-02 | [C-REL-02.spec.ts](C-REL-02.spec.ts) | fixme-before-implementation | T-INS-05, T-INS-08 |
 | C-REL-03 | [C-REL-03.spec.ts](C-REL-03.spec.ts) | fixme-before-implementation | T-INS-07 |
 | C-REL-04 | [C-REL-04.spec.ts](C-REL-04.spec.ts) | passing: composed owner-only PostgreSQL route; alpha-owner annotations pending | T-REL-03 |
