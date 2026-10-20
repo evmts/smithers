@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test from "node:test"
@@ -291,6 +291,17 @@ test("Bun measures real Node on PATH and omits an absent Node from the refusal",
     assert.equal(absentNode.status, 0, absentNode.stderr)
     assert.equal(absentNode.stdout, "ran\n")
     assert.equal(absentNode.stderr, "")
+    // Bun's spawn on Linux CI can answer `node --version` with a clean exit
+    // and no output (#3763): that Node is unmeasured, not a preload crash,
+    // and the one line it prints carries what the spawn returned.
+    const silent = join(root, "silent-node")
+    mkdirSync(silent)
+    writeFileSync(join(silent, "node"), "#!/bin/sh\nexit 0\n")
+    chmodSync(join(silent, "node"), 0o755)
+    const silentNode = run({ bun: ">=1.0.0", node: ">=999.0.0" }, silent)
+    assert.equal(silentNode.status, 0, silentNode.stderr)
+    assert.equal(silentNode.stdout, "ran\n")
+    assert.equal(silentNode.stderr, "require-toolchain: Node unmeasured: node --version gave status 0, signal null, error none, stdout \"\", stderr 0 bytes (#3763)\n")
     const refusedBun = run({ bun: ">=999.0.0", node: ">=999.0.0" }, "")
     assert.equal(refusedBun.status, 1, refusedBun.stderr)
     assert.equal(refusedBun.stdout, "")
