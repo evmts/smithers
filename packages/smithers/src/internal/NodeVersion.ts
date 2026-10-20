@@ -12,7 +12,7 @@
  * @category constants
  * @since 1.0.0
  */
-export const minimum = "22.19.0"
+export const minimum = "26.4.0"
 
 const parts = (version: string): ReadonlyArray<number> =>
   version.replace(/^v/, "").split(".").map((part) => Number.parseInt(part, 10) || 0)

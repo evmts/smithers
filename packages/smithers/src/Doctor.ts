@@ -63,7 +63,7 @@ export interface Report {
  * @category constants
  * @since 1.0.0
  */
-export const minimumNode = "22.19.0"
+export const minimumNode = "26.4.0"
 
 /**
  * Node versions supported by the CLI and its runtime dependencies.
@@ -71,7 +71,7 @@ export const minimumNode = "22.19.0"
  * @category constants
  * @since 1.0.0
  */
-export const supportedNodeRange = ">=22.19.0"
+export const supportedNodeRange = ">=26.4.0"
 
 const order = (version: string): ReadonlyArray<number> | undefined => {
   const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(version)
@@ -297,7 +297,7 @@ export const inspect = (options: Options): Report => {
     level: satisfiesNode(nodeVersion) ? "ok" : "fail",
     detail: satisfiesNode(nodeVersion)
       ? `v${nodeVersion.replace(/^v/, "")}`
-      : `v${nodeVersion.replace(/^v/, "")} is unsupported; use Node 22.19+`
+      : `v${nodeVersion.replace(/^v/, "")} is unsupported; use Node 26.4+`
   })
 
   if (options.jj !== undefined) {

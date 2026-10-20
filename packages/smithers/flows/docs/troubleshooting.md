@@ -363,5 +363,5 @@ type parameters. See
 `@smthrs/flows/SandboxedFlow`. The root entry point is browser-safe; those two
 subpaths are not, which is exactly why they are subpaths.
 
-**Fix.** Keep both out of shared code. Durable execution is tested on Node.js 22.19+ and Bun 1.4+; `engines` requires Node `>=22.19.0`. A browser can
+**Fix.** Keep both out of shared code. Durable execution is tested on Node.js 26.4+ and Bun 1.4+; `engines` requires Node `>=26.4.0`. A browser can
 author and inspect declarations through the root entry point.

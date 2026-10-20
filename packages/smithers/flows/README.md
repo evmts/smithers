@@ -29,7 +29,7 @@ With pnpm 11, run `pnpm add @smthrs/flows@1.0.0-rc.16 effect` instead, then
 `pnpm approve-builds esbuild`. pnpm 11 installs only versions at least 24 hours
 old, so `@next` can resolve to a candidate more than one release behind.
 
-A Node program needs Node.js 22.19.0 or later.
+A Node program needs Node.js 26.4.0 or later.
 
 A compensable step, a time-travel fork, a rewind that crosses a compensable
 step or sets `wholeRepo`, and a step that calls `Jj` also need

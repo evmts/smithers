@@ -178,7 +178,7 @@ The refusal names the exact capability the step asked for. Grant that and nothin
 ## Limits
 
 - **The body has to be pure, and Smithers cannot check that for you.** If a step depends on something you did not declare, its behavior can change without its key changing, and you get an old result. Declare what a step reads.
-- **It needs Node.js 22.19 or later.**
+- **It needs Node.js 26.4 or later.**
 - **It is an Effect 4 library** (effect 4.0.5 or later). A step's schema is an Effect schema and its code is an Effect.
 - **Reuse across runs is opt-in.** A step without the three declarations above runs again in every new run.
 
@@ -188,4 +188,4 @@ The refusal names the exact capability the step asked for. Grant that and nothin
 npm i @smthrs/flows@next effect
 ```
 
-You need Node.js 22.19 or later, and jj on your `PATH` for compensable steps. Start with the [quickstart](../quickstart.md). [Change a flow and keep the work](../guides/change-a-flow-and-keep-the-work.md) builds a flow like this one and runs the add-a-step, edit-a-step and change-the-input cases.
+You need Node.js 26.4 or later, and jj on your `PATH` for compensable steps. Start with the [quickstart](../quickstart.md). [Change a flow and keep the work](../guides/change-a-flow-and-keep-the-work.md) builds a flow like this one and runs the add-a-step, edit-a-step and change-the-input cases.

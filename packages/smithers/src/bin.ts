@@ -5,6 +5,7 @@
  */
 
 import * as Audience from "@smthrs/build-cli/Audience"
+import { installEffectResolution } from "@smthrs/build-cli/effect-resolution"
 import * as Redaction from "@smthrs/journal/Redaction"
 import * as Argv from "./cli/Argv.ts"
 import { agentArguments, formattedLogArguments, legacyArguments } from "./cli/Compatibility.ts"
@@ -20,9 +21,6 @@ const start = async (): Promise<void> => {
     process.exitCode = 1
     return
   }
-  // The hook module itself imports registerHooks. Load it only after the
-  // version check, so older Node releases get the actionable refusal too.
-  const { installEffectResolution } = await import("@smthrs/build-cli/effect-resolution")
   installEffectResolution({
     "@smthrs/agent": import.meta.url,
     "@smthrs/registry/Prompt/jsx-runtime": import.meta.url
