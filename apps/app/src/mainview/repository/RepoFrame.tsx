@@ -100,6 +100,14 @@ export function RepoFrame({ repo, login, guest, publicRepo, member = false, sync
   const docked = useSyncExternalStore(subscribeWidth, () => (frame.current?.clientWidth ?? 0) >= 1440, () => false)
   // Transient chrome (the Ask's disclosure); its first value is the entry's one Ask request.
   const [open, setOpen] = useState<boolean | undefined>(askRequested === true ? true : undefined)
+  // `?ask=1` is explicit intent (PM d-sll0uk): an Ask request that reaches a frame already on the page
+  // (a reopened or re-admitted entry) opens Ask too, over any earlier closed state. Adjusted during
+  // render from the previous request, not in an effect (components acquire no effects: Architecture.test).
+  const [askSeen, setAskSeen] = useState(askRequested === true)
+  if ((askRequested === true) !== askSeen) {
+    setAskSeen(askRequested === true)
+    if (askRequested === true) setOpen(true)
+  }
   const canAsk = Boolean(login) || guest === true
   const expanded = canAsk && (open ?? docked)
   // Transient chrome: the mounted notice region's node, for the Ask's notices while it is collapsed.
