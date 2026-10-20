@@ -79,50 +79,49 @@ import * as Graph from "./Graph.ts"
 import * as HumanTask from "./HumanTask.ts"
 import * as BoundedJson from "./internal/BoundedJson.ts"
 import { ExecutionMiddleware } from "./internal/ExecutionMiddleware.ts"
+import { InterpreterError } from "./internal/InterpreterError.ts"
 import { OutcomeValueTypeId } from "./internal/OutcomeMarker.ts"
 import { recordedPlanDrafts } from "./internal/RecordedPlan.ts"
 import * as Sleep from "./Sleep.ts"
 import * as WaitFor from "./WaitFor.ts"
 
+export { InterpreterError } from "./internal/InterpreterError.ts"
+
 /**
- * A graph the interpreter will not drive.
+ * The message a durable resume refused a changed plan with, before a stored
+ * failure kept its code. @private
+ */
+const legacyPlanChanged = "The rebuilt plan differs from the recorded plan; start a new execution"
+
+/**
+ * The code of the interpreter refusal a run ended with, if it ended with one.
  *
- * Every code names something the run cannot recover from on its own: a graph
- * whose topology is incomplete, an action with no implementation wired up, a
- * call the interpreter does not execute, and a deferred function that did not
- * survive serialization beside its AST. `missing_implementation_version`
- * names a content-reusable action that lacks the canonical version contract;
- * `implementation_version_mismatch` names a declaration and registry that
- * disagree. Both are preflight failures, before action dispatch.
- * `join_mismatch` names a race, any, or quorum whose journaled decision this
- * plan's members can no longer reproduce. `plan_changed` refuses a durable
- * resume whose rebuilt graph differs from its first recorded plan. Moved
- * declaration sites are not a difference: only the plan's digest is compared.
+ * A refused run settles failed with its `InterpreterError` as a defect. In
+ * the process that drove it the defect is the error itself, and from `poll`,
+ * from `result` or from another process it is the same error decoded from
+ * the stored result. So `plan_changed` here means the run was parked under
+ * one build and refused under the next, and an application closes what the
+ * run was feeding, such as an answer still streaming.
+ *
+ * A failure stored before results kept the code carries only the error's
+ * name and message. It answers `plan_changed` when its message is the one
+ * that refusal was stored with, and nothing for any other refusal.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
-export class InterpreterError extends Schema.TaggedError<InterpreterError>()(
-  "@smthrs/flow/InterpreterError",
-  {
-    code: Schema.Literals([
-      "incomplete_graph",
-      "duplicate_node_id",
-      "unresolved_action",
-      "implementation_version_mismatch",
-      "missing_implementation_version",
-      "unresolved_reference",
-      "unsupported_call",
-      "missing_operation",
-      "node_record_too_large",
-      "plan_changed",
-      "join_mismatch"
-    ]),
-    flow: Schema.String,
-    node: Schema.String,
-    message: Schema.String
+export const refusalCode = (cause: Cause.Cause<unknown>): Option.Option<InterpreterError["code"]> => {
+  for (const reason of cause.reasons) {
+    const error = Cause.isDieReason(reason) ? reason.defect : Cause.isFailReason(reason) ? reason.error : undefined
+    if (Schema.is(InterpreterError)(error)) return Option.some(error.code)
+    if (
+      error instanceof Error && error.name === "@smthrs/flow/InterpreterError" && error.message === legacyPlanChanged
+    ) {
+      return Option.some("plan_changed")
+    }
   }
-) {}
+  return Option.none()
+}
 
 /**
  * What one interpretation produced: the root's value, every node that settled

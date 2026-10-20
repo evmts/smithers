@@ -382,7 +382,7 @@ describe("Node", () => {
     const ast = tagged(Node.catch(Node.succeed(1), { error, onFailure: () => Node.succeed(0) }).ast, "Catch")
     expect(reads).toBe(0)
     expect(ast.filterIdentity?.algorithm).toBe("sha256-source-ephemeral/v4")
-    expect(ast.filterIdentity?.sourceDigest).toMatch(/^[0-9a-f]{64}$/)
+    expect(ast.filterIdentity?.resumeDigest).toMatch(/^[0-9a-f]{64}$/)
     expect(internal.isNodeAst(ast)).toBe(true)
     expect(internal.isNodeAst({ ...ast, filterIdentity: { _tag: "FunctionIdentity" } })).toBe(false)
 
@@ -395,6 +395,8 @@ describe("Node", () => {
       "Catch"
     )
     expect(stable.filterIdentity?.algorithm).toBe("sha256-source-captures/v5")
+    // A filter of captured functions is resumable too, by their resume digests.
+    expect(stable.filterIdentity?.resumeDigest).toMatch(/^[0-9a-f]{64}$/)
     const opaque = tagged(
       Node.catch(Node.succeed(1), {
         error: Schema.String.check(new SchemaAST.Filter((() => undefined).bind(null))),
@@ -403,7 +405,7 @@ describe("Node", () => {
       "Catch"
     )
     expect(opaque.filterIdentity?.algorithm).toBe("sha256-source-ephemeral/v4")
-    expect(opaque.filterIdentity?.sourceDigest).toBeUndefined()
+    expect(opaque.filterIdentity?.resumeDigest).toBeUndefined()
   })
 
   it("refuses a catch failure arm that does not return a node", () => {

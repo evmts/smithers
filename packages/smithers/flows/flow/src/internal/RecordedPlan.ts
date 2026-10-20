@@ -1,8 +1,10 @@
 /**
- * Resume compatibility is weaker than result reuse: unchanged callback source
- * may rebuild a recorded plan, but an opaque closure still cannot earn a cache
- * hit. Only the interpreter's PlanRecorded guard uses this projection. Approval
- * digests and dispatch keys keep the original entropy-bearing material.
+ * Resume compatibility is weaker than result reuse. A callback is the same
+ * callback to a resume when its source differs only in its binding names,
+ * which is all a minifier changes when unrelated code in its bundle moves, and
+ * its captures are equal. It still cannot earn a cache hit that way. Only the
+ * interpreter's PlanRecorded guard uses this projection. Approval digests and
+ * dispatch keys keep the original entropy-bearing material.
  *
  * @since 1.0.0
  * @internal
@@ -12,11 +14,14 @@ import { isRecord } from "@smthrs/canonical/Record"
 import type * as Plan from "@smthrs/plan/Plan"
 import * as Graph from "../Graph.ts"
 
-/** Missing source metadata retains the old identity and fails closed. */
+/**
+ * An identity a resume can compare is projected to its resume digest. One
+ * without, such as a bound function's, keeps its whole identity, entropy
+ * included, and fails closed.
+ */
 const callback = (value: unknown): unknown =>
-  isRecord(value) && value._tag === "FunctionIdentity" && value.algorithm === "sha256-source-ephemeral/v4" &&
-    typeof value.sourceDigest === "string"
-    ? { _tag: value._tag, algorithm: value.algorithm, digest: value.sourceDigest }
+  isRecord(value) && value._tag === "FunctionIdentity" && typeof value.resumeDigest === "string"
+    ? { _tag: value._tag, algorithm: value.algorithm, digest: value.resumeDigest }
     : value
 
 /**

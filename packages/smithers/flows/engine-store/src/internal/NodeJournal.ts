@@ -344,7 +344,7 @@ const withoutSites = (graph: unknown): unknown => {
  * revision they were read at are never compared.
  *
  * `digest` is the whole graph's structural identity: node ids, kinds, action
- * tags, schemas, tiers, effects, dependencies, edges and callback source, over
+ * tags, schemas, tiers, effects, dependencies, edges and callback shapes, over
  * every page. A record that carries one is identified by it and its other
  * scalar fields. Its graph page and page count are not compared, because the
  * page layout follows the encoded size of the sites on it. A record without a

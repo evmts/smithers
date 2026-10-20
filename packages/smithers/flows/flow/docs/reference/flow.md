@@ -889,7 +889,7 @@ The encoded form of a completed result.
 - **Type:** `Data.TaggedClass("Complete")<{ readonly exit: Exit.Exit<A, E> }>`
 - **Since:** `0.1.0`
 
-A completed flow execution, carrying its success or failure `Exit`.
+A completed flow execution, carrying its success or failure `Exit`. Its schema keeps an `Interpreter.InterpreterError` defect whole, `code` included; every other defect encodes as `Schema.Defect` encodes it.
 
 ### `Flow.Suspended`
 
@@ -1366,7 +1366,25 @@ Gives an answer the caller's own type. The schema here and the question's own sc
 - **Type:** `Schema.TaggedError` with fields `code`, `flow: string`, `node: string`, and `message: string`
 - **Since:** `0.1.0`
 
-A graph the interpreter refuses to drive. The `code` is one of `incomplete_graph`, `duplicate_node_id`, `unresolved_action`, `implementation_version_mismatch`, `missing_implementation_version`, `unresolved_reference`, `unsupported_call`, `missing_operation`, `node_record_too_large`, or `join_mismatch` (a race, any, or quorum journaled members, or a losing child boundary, its plan can no longer reproduce).
+A graph the interpreter refuses to drive. The `code` is one of `incomplete_graph`, `duplicate_node_id`, `unresolved_action`, `implementation_version_mismatch`, `missing_implementation_version`, `unresolved_reference`, `unsupported_call`, `missing_operation`, `node_record_too_large`, `plan_changed` (a durable resume rebuilt a different plan than the run recorded), or `join_mismatch` (a race, any, or quorum journaled members, or a losing child boundary, its plan can no longer reproduce).
+
+A refused run settles failed with the error as its defect. `Flow.Result` stores the error's fields and decodes them back into this class, so `poll`, a browser engine's `result`, and every other reader of the stored run see the same `code`.
+
+### `Interpreter.refusalCode`
+
+- **Signature:** `refusalCode(cause: Cause.Cause<unknown>): Option.Option<InterpreterError["code"]>`
+- **Since:** `1.0.0`
+
+The code of the interpreter refusal a run ended with, if it ended with one. It reads a live `InterpreterError` defect or failure, and one decoded from a stored result. A result stored before results kept the code answers `plan_changed` when it carries that refusal's message, and nothing for any other refusal.
+
+```ts
+const settle = Effect.gen(function*() {
+  const exit = yield* engine.result(Answer, answerId)
+  if (Exit.isFailure(exit) && Option.contains(Interpreter.refusalCode(exit.cause), "plan_changed")) {
+    // Parked under one build and refused under the next: close what the run was feeding.
+  }
+})
+```
 
 ### `Interpreter.Interpretation`
 

@@ -38,8 +38,8 @@ describe("native source", () => {
     const two = (() => 2).bind(null)
     expect(functionIdentity(one).algorithm).toBe("sha256-source-ephemeral/v4")
     expect(functionIdentity(one)).not.toEqual(functionIdentity(two))
-    expect(functionIdentity(one).sourceDigest).toBeUndefined()
-    expect(functionIdentity(two).sourceDigest).toBeUndefined()
+    expect(functionIdentity(one).resumeDigest).toBeUndefined()
+    expect(functionIdentity(two).resumeDigest).toBeUndefined()
   })
 
   it("still admits ordinary source that mentions native code", () => {

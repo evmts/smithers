@@ -301,8 +301,11 @@ export interface FunctionIdentity {
   readonly _tag: "FunctionIdentity"
   readonly algorithm: IdentityAlgorithm
   readonly digest: string
-  /** Nonce-free resume comparison material. Step keys still use `digest`. */
-  readonly sourceDigest?: string | undefined
+  /**
+   * What a durable resume compares: the source with its binding names erased,
+   * and the captures. Step keys still use `digest`.
+   */
+  readonly resumeDigest?: string | undefined
 }
 
 /**
@@ -732,22 +735,19 @@ const filterIdentity = (filter: Schema.Top): FunctionIdentity => {
     }
   }
   const ephemeral = identities.some(([, identity]) => identity.algorithm === "sha256-source-ephemeral/v4")
-  const sourceComparable = identities.every(([, identity]) =>
-    identity.algorithm !== "sha256-source-ephemeral/v4" || identity.sourceDigest !== undefined
-  )
+  // A resume can compare the filter only when it can compare every function in it.
+  const resumable = identities.every(([, identity]) => identity.resumeDigest !== undefined)
   return {
     _tag: "FunctionIdentity",
     algorithm: ephemeral
       ? "sha256-source-ephemeral/v4"
       : "sha256-source-captures/v5",
     digest: digestSync(JSON.stringify(identities)),
-    ...(ephemeral && sourceComparable
+    ...(resumable
       ? {
-        sourceDigest: digestSync(JSON.stringify(identities.map(([path, identity]) => [path, {
-          _tag: identity._tag,
-          algorithm: identity.algorithm,
-          digest: identity.sourceDigest ?? identity.digest
-        }])))
+        resumeDigest: digestSync(
+          JSON.stringify(identities.map(([path, identity]) => [path, identity.algorithm, identity.resumeDigest]))
+        )
       }
       : {})
   }

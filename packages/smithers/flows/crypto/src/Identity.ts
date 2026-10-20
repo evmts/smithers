@@ -9,6 +9,11 @@
  * possible. Without a declaration the digest folds in process-local entropy, so
  * an unannotated function fails closed — never a cache hit it did not earn.
  *
+ * A durable resume asks a weaker question than a cache: is this the callback
+ * the run recorded, in a rebuilt bundle whose minifier may have renamed it?
+ * `resumeDigest` answers that one, from the source with its bindings renamed
+ * by the order they are declared in, and is never a cache identity.
+ *
  * It lives here, in the digest package, because its product is a digest and its
  * only dependency is {@link digestSync}. The node ASTs that embed it
  * (`@smthrs/plan`, `@smthrs/core`) are both above this package, so neither owns
@@ -21,6 +26,7 @@
  * @since 1.0.0
  */
 
+import { sourceShape } from "./internal/sourceShape.ts"
 import { digestSync } from "./Sha256.ts"
 
 /**
@@ -48,8 +54,15 @@ export interface FunctionIdentity {
   readonly _tag: "FunctionIdentity"
   readonly algorithm: Algorithm
   readonly digest: string
-  /** Exact ordinary source without entropy, for resume comparison only; never a cache identity. */
-  readonly sourceDigest?: string | undefined
+  /**
+   * What a durable resume compares, and never a cache identity: the source
+   * with every binding renamed by the order it is declared in, then the
+   * declared captures. A minifier renames bindings whenever unrelated code in
+   * its bundle changes; this digest survives that, and any other change to
+   * the source moves it, a swap of two bindings' uses included. Absent for
+   * native or bound source, which names no behavior.
+   */
+  readonly resumeDigest?: string | undefined
 }
 
 /** @private */
@@ -465,6 +478,30 @@ export const capture = <C extends Readonly<Record<string, unknown>>, Args extend
 }
 
 /**
+ * Shapes already computed, by source. A graph build identifies every callback
+ * again, and the same few sources recur for as long as the process runs, so
+ * reading a shape twice costs a lookup. A source is its own key, so the cache
+ * cannot answer for the wrong one; past its bound it starts over.
+ *
+ * @private
+ */
+const shapes = new Map<string, string>()
+
+/** @private */
+const maximumShapes = 1024
+
+/** The shape of `source`, from the cache when it holds it. @private */
+const shapeOf = (source: string): string => {
+  let shape = shapes.get(source)
+  if (shape === undefined) {
+    if (shapes.size >= maximumShapes) shapes.clear()
+    shape = sourceShape(source)
+    shapes.set(source, shape)
+  }
+  return shape
+}
+
+/**
  * Digests a function's exact source as UTF-8 with SHA-256.
  *
  * Exact source matters: whitespace inside a string literal is behavior, and
@@ -472,6 +509,11 @@ export const capture = <C extends Readonly<Record<string, unknown>>, Args extend
  * Unless its inert captures were declared with {@link capture}, the digest also
  * includes process-local, per-function entropy, because source-only identity
  * would permit incorrect cache hits.
+ *
+ * `resumeDigest` is the one normalized digest, for a durable resume only: the
+ * source with every binding renamed by declaration order, then the declared
+ * captures, and no entropy. Native and bound functions have none, so a resume
+ * refuses them.
  *
  * @param operation - Function to identify, optionally declared with capture.
  * @returns A versioned SHA-256 identity, stable for this function in this realm;
@@ -497,6 +539,12 @@ export const functionIdentity = (operation: unknown): FunctionIdentity => {
     _tag: "FunctionIdentity",
     algorithm: metadata === undefined ? "sha256-source-ephemeral/v4" : "sha256-source-captures/v5",
     digest: digestSync(metadata === undefined ? `${source}\0${ephemeral}` : `${source}\0${metadata.captures}`),
-    ...(metadata === undefined && !nativeSource.test(source) ? { sourceDigest: digestSync(source) } : {})
+    ...(metadata === undefined && nativeSource.test(source)
+      ? {}
+      : {
+        resumeDigest: digestSync(
+          metadata === undefined ? shapeOf(source) : `${shapeOf(source)}\0${metadata.captures}`
+        )
+      })
   }
 }

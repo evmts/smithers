@@ -7,6 +7,11 @@
  * identity, so a resume compares the structural plan and lets the rebuilt
  * sites go. A real structural change is still refused with `plan_changed`.
  *
+ * A production bundle is minified, and a minifier renames a callback's
+ * bindings whenever unrelated code in the bundle changes. A callback is
+ * identified by its source with those names erased, so a rebuilt minified
+ * bundle resumes too, while a real edit to a callback is refused.
+ *
  * Every case parks a run on a durable deferred, reopens the store with a new
  * engine, and resumes it. The storage matrix runs the file once on SQLite and
  * once on PostgreSQL.
@@ -17,14 +22,15 @@ import { Journal, JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { Node, type Planned } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
-import { Effect, Exit, Layer, Schema } from "effect"
+import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { expect, it } from "vitest"
+import { beforeAll, expect, it } from "vitest"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import * as Minified from "./fixtures/MinifiedBuild.ts"
 import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 import * as Rebuilt from "./fixtures/RebuiltAnswerFlow.ts"
 import { runPromise } from "./Sha256.ts"
@@ -100,25 +106,72 @@ const bundleSites = (event: JournalEvent.Input): JournalEvent.Input => {
   return { ...event, payload }
 }
 
-type Scenario = "relocated" | "unrooted" | "earlier-bundle" | "restructured"
+/** A build of the answer flow: the flow and the actions it calls. */
+interface Build {
+  readonly Answer: typeof Answer
+  readonly Ask: typeof Ask
+  readonly Double: typeof Double
+}
 
-it.each<Scenario>(["relocated", "unrooted", "earlier-bundle", "restructured"])(
+/** A minified build, typed as the test file's: the same declarations under other tags. */
+const minify = async (options?: Parameters<typeof Minified.build>[0]): Promise<Build> =>
+  (await Minified.build(options)) as unknown as Build
+
+const testFile: Build = { Answer, Ask, Double }
+
+/**
+ * The minified builds: the fixture alone, the fixture beside unrelated code,
+ * and that second build with a real edit to the mapper.
+ */
+let minified: { readonly alone: Build; readonly beside: Build; readonly edited: Build }
+
+beforeAll(async () => {
+  minified = {
+    alone: await minify(),
+    beside: await minify({ beside: Minified.unrelated }),
+    edited: await minify({
+      beside: Minified.unrelated,
+      edit: (source) => source.replace("value + this.step", "value - this.step")
+    })
+  }
+})
+
+interface Scenario {
+  readonly first: () => Build
+  readonly resumed: () => Build
+  /** The first build's plan record carries a bundle's sites. */
+  readonly bundled?: boolean
+  /** The resuming host cannot place its sources under a root. */
+  readonly unrooted?: boolean
+  /** How the resume ends: it completes, or the rebuilt plan is refused. */
+  readonly outcome: "completed" | "plan_changed"
+}
+
+const scenarios: Record<string, Scenario> = {
+  relocated: { first: () => testFile, resumed: () => Rebuilt, outcome: "completed" },
+  unrooted: { first: () => testFile, resumed: () => Rebuilt, unrooted: true, outcome: "completed" },
+  "earlier-bundle": { first: () => testFile, resumed: () => testFile, bundled: true, outcome: "completed" },
+  restructured: {
+    first: () => testFile,
+    resumed: () => ({ ...testFile, Answer: Restructured }),
+    outcome: "plan_changed"
+  },
+  minified: { first: () => minified.alone, resumed: () => minified.beside, outcome: "completed" },
+  "minified-edited": { first: () => minified.alone, resumed: () => minified.edited, outcome: "plan_changed" }
+}
+
+it.each(Object.keys(scenarios))(
   "resumes a parked run whose plan was rebuilt: %s",
-  async (scenario) => {
+  async (name) => {
+    const scenario = scenarios[name]!
     const root = await mkdtemp(join(tmpdir(), "smithers-plan-sites-"))
     const filename = PersistentDatabase.filename(join(root, "state.sqlite"))
     const dispatched = { ask: 0, double: 0 }
-    const resumedFlow = scenario === "relocated" || scenario === "unrooted"
-      ? Rebuilt.Answer
-      : scenario === "restructured"
-      ? Restructured
-      : Answer
-    const resumedActions = resumedFlow === Rebuilt.Answer ? Rebuilt : { Ask, Double }
 
     const drive = (first: boolean) =>
       Effect.scoped(Effect.gen(function*() {
         const journal = yield* Journal.Journal
-        const recording: Journal.Service = first && scenario === "earlier-bundle"
+        const recording: Journal.Service = first && scenario.bundled === true
           ? {
             ...journal,
             emitDurable: (event, owner) =>
@@ -130,17 +183,17 @@ it.each<Scenario>(["relocated", "unrooted", "earlier-bundle", "restructured"])(
           journalSource: "plan-sites",
           isAlive: () => Effect.succeed(false),
           // A host that cannot place its sources under a root records no sites.
-          ...(!first && scenario === "unrooted" ? { declarationRoot: "/no/such/root" } : {})
+          ...(!first && scenario.unrooted === true ? { declarationRoot: "/no/such/root" } : {})
         }).pipe(Effect.provideService(Journal.Journal, recording))
-        const flow = first ? Answer : resumedFlow
-        const actions = first ? { Ask, Double } : resumedActions
+        const build = first ? scenario.first() : scenario.resumed()
+        const flow = build.Answer
         const layer = Layer.mergeAll(
-          actions.Ask.toLayer(() =>
+          build.Ask.toLayer(() =>
             Effect.sync(() => {
               dispatched.ask++
             }).pipe(Effect.andThen(DurableDeferred.await(gate)))
           ),
-          actions.Double.toLayer(({ value }) =>
+          build.Double.toLayer(({ value }) =>
             Effect.sync(() => {
               dispatched.double++
               return value * 2
@@ -183,10 +236,12 @@ it.each<Scenario>(["relocated", "unrooted", "earlier-bundle", "restructured"])(
       const parked = await runPromise(drive(true))
       expect(parked.status).toBe("suspended")
       expect(parked.plan).toHaveLength(1)
-      // The parked record carries its sites inside the content a resume compares.
-      const recorded = parked.plan[0]!.payload as { graph: { nodes: Array<{ declaredAt?: unknown }> } }
-      expect(recorded.graph.nodes.some((node) => node.declaredAt !== undefined)).toBe(true)
-      if (scenario === "relocated") {
+      if (scenario.first() === testFile) {
+        // The parked record carries its sites inside the content a resume compares.
+        const recorded = parked.plan[0]!.payload as { graph: { nodes: Array<{ declaredAt?: unknown }> } }
+        expect(recorded.graph.nodes.some((node) => node.declaredAt !== undefined)).toBe(true)
+      }
+      if (name === "relocated") {
         // The rebuilt sites really are elsewhere: another file and other lines.
         const before = sites(Answer).filter((site) => site !== undefined)
         const after = sites(Rebuilt.Answer).filter((site) => site !== undefined)
@@ -196,24 +251,27 @@ it.each<Scenario>(["relocated", "unrooted", "earlier-bundle", "restructured"])(
           expect(site!.line).not.toBe(before[index]!.line)
         })
       }
+      if (name === "minified") {
+        // The rebuilt callbacks really read differently: the minifier renamed them.
+        expect(String(minified.beside.Answer.body)).not.toBe(String(minified.alone.Answer.body))
+      }
       const asked = dispatched.ask
 
       const resumed = await runPromise(drive(false))
       // The first build's record stands, unrewritten, whatever happened next.
       expect(resumed.plan).toEqual(parked.plan)
-      if (scenario === "restructured") {
+      if (scenario.outcome === "plan_changed") {
         expect(resumed.status).toBe("failed")
         expect(dispatched).toEqual({ ask: asked, double: 0 })
-        // What a caller polling the run sees: a settled failure naming the refusal.
-        expect(JSON.parse(JSON.stringify(resumed.result))).toMatchObject({
-          _tag: "Some",
-          value: {
-            _tag: "Complete",
-            exit: {
-              _tag: "Failure",
-              cause: { failures: [{ _tag: "Die", defect: { name: "@smthrs/flow/InterpreterError" } }] }
-            }
-          }
+        // What a caller polling the run sees: a settled failure that says why,
+        // decoded from the stored row as the interpreter's own typed refusal.
+        const polled = Option.getOrThrow(resumed.result!)
+        if (polled._tag !== "Complete" || Exit.isSuccess(polled.exit)) throw new Error("the run did not fail")
+        expect(Interpreter.refusalCode(polled.exit.cause)).toEqual(Option.some("plan_changed"))
+        expect(Cause.squash(polled.exit.cause)).toBeInstanceOf(Interpreter.InterpreterError)
+        expect(Cause.squash(polled.exit.cause)).toMatchObject({
+          code: "plan_changed",
+          flow: scenario.resumed().Answer._tag
         })
         return
       }

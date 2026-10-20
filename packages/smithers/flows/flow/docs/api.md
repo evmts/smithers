@@ -208,8 +208,9 @@ remains a separate release requirement.
 | `Interpretation`   | the root value, every node that settled, the typed failures a catch recovered, and the nodes a branch skipped |
 | `childExecutionId` | the deterministic id a `.child()` boundary opens its child execution under                                    |
 | `InterpreterError` | the graph refusals, each with a stable `code`                                                                 |
+| `refusalCode`      | the refusal code a failed run ended with, read from a live or stored cause                                    |
 
-`InterpreterError` codes name what the run cannot recover from on its own: `incomplete_graph` for topology the build reported, `duplicate_node_id` for two nodes answering to one dispatch address, `unresolved_action` for an action with no implementation wired up, `unresolved_reference` for a payload reading a node this graph does not hold, `unsupported_call` for a call whose declaration did not survive serialization, and `missing_operation` for a deferred function that did not either.
+`InterpreterError` codes name what the run cannot recover from on its own: `incomplete_graph` for topology the build reported, `duplicate_node_id` for two nodes answering to one dispatch address, `unresolved_action` for an action with no implementation wired up, `unresolved_reference` for a payload reading a node this graph does not hold, `unsupported_call` for a call whose declaration did not survive serialization, `missing_operation` for a deferred function that did not either, and `plan_changed` for a durable resume that rebuilt a different plan than the run recorded. A refused run keeps its code in its stored result, so `refusalCode` reads it from `poll` or `result` in any process.
 
 The walk is demand-driven from the root rather than a sweep over the node list, because dependency order puts both branch arms before the branch that chooses between them, and executing an arm to discover it was not taken is exactly what static topology exists to avoid.
 

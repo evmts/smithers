@@ -24,10 +24,17 @@ behavior.
 
 The durable interpreter records the whole graph's digest before dispatch. A
 resume that rebuilds a different digest fails with `plan_changed`; it does not
-run the edited steps. Declaration sites are not part of the digest, so a
-rebuild that only moves declarations, such as a new bundle, resumes. Use `Node.capture` for every callback in a resumable flow:
-process-local callback identities can change even without a source edit. Runs
-recorded before graph digests were introduced also require a new execution.
+run the edited steps. Declaration sites are not part of the digest, and a
+callback enters it by its shape: its source with every binding renamed by the
+order it is declared in, and its captures. So a rebuild that only moves
+declarations resumes, and so does a minified bundle whose minifier renamed a
+callback's bindings because unrelated code changed. Any other edit to a
+callback, a swap of two parameters' uses included, fails with `plan_changed`.
+The shape cannot tell which outer binding a name reads, beyond the pattern of
+its reads, so declare every value a callback depends on with `Node.capture`.
+A bound or native function has no shape and fails every resume. Runs recorded
+before graph digests were introduced, and runs with callbacks recorded before
+callback shapes, require a new execution.
 Action implementation changes must advance their declared implementation
 version; a digest cannot inspect imported code behind an unchanged version.
 `Flow.execute` does not approve a plan or accept an approved digest. Approval

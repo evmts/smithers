@@ -15,8 +15,20 @@ import * as Schema from "effect/Schema"
 import * as SchemaIssue from "effect/SchemaIssue"
 import * as SchemaParser from "effect/SchemaParser"
 import * as Transformation from "effect/SchemaTransformation"
+import { InterpreterError } from "../internal/InterpreterError.ts"
 
 const ResultTypeId = "@smthrs/flow/Flow/Result"
+
+/**
+ * What a completed result's defects are stored and read as.
+ *
+ * `Schema.Defect` keeps only an error's name and message, so a run the
+ * interpreter refused reached every reader of its stored result without the
+ * refusal's `code`. An `InterpreterError` is kept whole and decoded back into
+ * its class; every other defect is what `Schema.Defect` makes it, and one
+ * stored before this decodes as it always did.
+ */
+const completionDefect = Schema.Union([InterpreterError, Schema.Defect()])
 
 /**
  * Returns `true` when a value is a flow `Result`.
@@ -81,7 +93,7 @@ export interface CompleteSchema<
   Schema.declareConstructor<
     Complete<Success["Type"], Error["Type"]>,
     Complete<Success["Encoded"], Error["Encoded"]>,
-    readonly [Schema.Exit<Success, Error, Schema.Defect>]
+    readonly [Schema.Exit<Success, Error, Schema.Union<readonly [typeof InterpreterError, Schema.Defect]>>]
   >
 {
   readonly success: Success
@@ -90,6 +102,9 @@ export interface CompleteSchema<
 
 /**
  * Represents a completed flow execution with its success or failure `Exit`.
+ *
+ * Its schema keeps an `InterpreterError` defect whole, `code` included, so a
+ * refused run reads the same from a stored result as from a live one.
  *
  * @category results
  * @since 0.1.0
@@ -118,7 +133,7 @@ export class Complete<A, E> extends Data.TaggedClass("Complete")<{
       Complete<Success["Type"], Error["Type"]>,
       Complete<Success["Encoded"], Error["Encoded"]>
     >()(
-      [Schema.Exit(options.success, options.error, Schema.Defect())],
+      [Schema.Exit(options.success, options.error, completionDefect)],
       ([exit]) => (input, ast, options) => {
         if (!(isResult(input) && input._tag === "Complete")) {
           return Effect.fail(new SchemaIssue.InvalidType(ast, input, options))

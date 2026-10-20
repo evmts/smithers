@@ -273,23 +273,40 @@ installed only part of the ladder is missing exactly that table.
 **What happened.** A run parked under one build resumed under another, and the
 rebuilt plan differs from the plan the run recorded. The engine compares the
 plan's digest: node ids, kinds, action tags, schemas, tiers, effects,
-dependencies, edges, and callback source. It never compares where a node was
-declared or how the plan was paged, so a rebuild that only moves declarations
-resumes. The run keeps the plan record its first build wrote, with that build's
-declaration sites and source revision.
+dependencies, edges, and each callback's shape. A callback's shape is its
+source with every binding renamed by the order it is declared in, plus its
+captures. The digest never includes where a node was declared or how the plan
+was paged. So a rebuild that only moves declarations resumes, and so does a
+minified bundle whose minifier renamed a callback's bindings because unrelated
+code changed. The run keeps the plan record its first build wrote, with that
+build's declaration sites and source revision.
 
-A real change refuses the resume before any step dispatches. The run settles
-`failed`, and the engine logs
-`A flow body failed with an error outside its declared error schema` with
-`InterpreterError` code `plan_changed`. `poll` returns a completed failure
-whose defect names `@smthrs/flow/InterpreterError`. The engine does not retry
-or re-plan the run. Anything an application shows for the run, such as an
-answer still streaming, stays until the application reacts to the failed run.
+A real change refuses the resume before any step dispatches: a structural
+edit, or any edit to a callback beyond its binding names, such as a changed
+literal or two parameters swapped. The run settles `failed` with
+`Interpreter.InterpreterError` code `plan_changed` as its defect, and the
+engine logs `A flow body failed with an error outside its declared error
+schema`. The stored result keeps the error whole, so `poll`, a browser
+engine's `result`, and any other process read the same typed error. The engine
+does not retry or re-plan the run. Anything an application shows for the run,
+such as an answer still streaming, stays until the application reacts.
 
-**What to change.** Treat `failed` as terminal wherever the application waits
-on a run, and close what the run was feeding. Run the changed flow under a new
-execution id. To keep work in flight across a deploy that changes a flow, let
-those runs settle before the deploy.
+Three cases still refuse a resume that did not change behavior:
+
+- A bound or native function has no source to compare.
+- A minifier that inlines differently around a callback changes its code, not
+  only its names. Terser did this to 3 of 932 `effect` functions in our
+  measurement; esbuild and Oxc, the minifiers Wrangler and Vite use, changed
+  none.
+- A run parked by a release before callback shapes compared its callbacks by
+  exact source, so its first resume under this release refuses once.
+
+**What to change.** Read the code with `Interpreter.refusalCode(exit.cause)`
+wherever the application waits on a run. On `plan_changed`, close what the run
+was feeding, then run the changed flow under a new execution id. A failure
+stored before results kept the code still reads `plan_changed`. To keep work
+in flight across a deploy that really changes a flow, let those runs settle
+before the deploy.
 
 ## RetentionError
 

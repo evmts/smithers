@@ -23,7 +23,7 @@ const key = (body: unknown) =>
     }).pipe(Effect.provide(NodeCrypto.layer))
   )
 
-it("compares callback source while retaining entropy in step key material", async () => {
+it("compares callback shape while retaining entropy in step key material", async () => {
   const build = () =>
     Graph.build(
       Flow.make("recorded-plan/flow", {
@@ -70,7 +70,7 @@ it("keeps input changes and identity-shaped literal payloads in the guard", asyn
             _tag: "FunctionIdentity",
             algorithm: "sha256-source-ephemeral/v4",
             digest,
-            sourceDigest: "same"
+            resumeDigest: "same"
           })
       }),
       {}
@@ -78,21 +78,28 @@ it("keeps input changes and identity-shaped literal payloads in the guard", asyn
   expect(await key(recordedPlanDrafts(build("first")))).not.toBe(await key(recordedPlanDrafts(build("second"))))
 })
 
-it("leaves captured plans byte-identical and keeps capture changes in the guard", async () => {
-  const build = (value: number) =>
+it("compares a captured callback by its shape and captures, as a minifier renames it", async () => {
+  const build = (value: number, body: () => unknown) =>
     Graph.build(
       Flow.make("captured", {
         payload: {},
         success: Schema.Number,
-        body: Node.capture({ value }, function() {
-          return step.call({ value: this.value })
-        })
+        body: Node.capture({ value }, body as (this: { readonly value: number }) => Node.Node<number>)
       }),
       {}
     )
-  const graph = build(1)
-  expect(recordedPlanDrafts(graph)).toEqual(Graph.drafts(graph))
-  expect(await key(recordedPlanDrafts(graph))).not.toBe(await key(recordedPlanDrafts(build(2))))
+  // One callback as two minified bundles name it, and as an edit changes it.
+  const bundled = (name: string, value: string) =>
+    new Function(name, `return function(){return ${name}.call({value:${value}})}`)(step) as () => unknown
+  const first = build(1, bundled("s", "this.value"))
+  const rebuilt = build(1, bundled("t", "this.value"))
+  expect(await key(recordedPlanDrafts(first))).toBe(await key(recordedPlanDrafts(rebuilt)))
+  // A cache still tells them apart: its identity is the exact source.
+  expect(await key(Graph.drafts(first))).not.toBe(await key(Graph.drafts(rebuilt)))
+  const edited = build(1, bundled("t", "this.value+1"))
+  expect(await key(recordedPlanDrafts(first))).not.toBe(await key(recordedPlanDrafts(edited)))
+  const recaptured = build(2, bundled("s", "this.value"))
+  expect(await key(recordedPlanDrafts(first))).not.toBe(await key(recordedPlanDrafts(recaptured)))
 })
 
 it("keeps opaque bound callback source fail-closed", async () => {
