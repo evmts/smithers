@@ -260,3 +260,43 @@ func TestRelayOnlyRetainsSuccessfulGatewayPlans(t *testing.T) {
 		require.False(t, ok)
 	}
 }
+
+// Where the target's repository runs no repository jobs (gate 2b), the relay
+// refuses to run, resume or fork an existing repository job run
+// before the host is asked to mutate it; other runs relay as before, and so
+// do repository job runs where the repository runs them.
+func TestCallRPCRefusesRepositoryJobRunsWhereTheRepositoryRunsNone(t *testing.T) {
+	for _, refused := range []bool{true, false} {
+		runtime := &observedRuntime{flows: map[string]string{"job-run": "repository-jobs/review", "setup-run": ".smithers/flows/repository/setup/flow.ts", "other-run": "coding/dispatch"}}
+		service := &Service{resolver: flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) {
+			return runtime, nil
+		}), runtimeCallTimeout: time.Second, relayPlans: memoryRelayPlans{}}
+		var asked []flowruntime.Target
+		service.RefuseRepositoryJobsFor(func(_ context.Context, target flowruntime.Target) (bool, error) {
+			asked = append(asked, target)
+			return refused, nil
+		})
+		box := flowruntime.Target{TenantID: "repository:1", PrincipalID: "user:1", WorkspaceID: "box"}
+		for _, run := range []string{"job-run", "setup-run"} {
+			for _, call := range []struct{ procedure, payload string }{
+				{"Run", `{"_tag":"Resume","runId":"` + run + `","idempotencyKey":"k"}`},
+				{"Resume", `{"runId":"` + run + `"}`},
+				{"Run.Fork", `{"runId":"` + run + `","at":1}`},
+			} {
+				_, err := service.CallRPC(context.Background(), box, call.procedure, json.RawMessage(call.payload))
+				if refused {
+					require.ErrorIs(t, err, ErrRepositoryJobsUnavailable, "%s %s", call.procedure, run)
+				} else {
+					require.NoError(t, err, "%s %s", call.procedure, run)
+				}
+			}
+		}
+		_, err := service.CallRPC(context.Background(), box, "Resume", json.RawMessage(`{"runId":"other-run"}`))
+		require.NoError(t, err, "a run of another flow relays")
+		require.Len(t, asked, 6, "only repository job runs consult the refusal")
+		require.Equal(t, box, asked[0])
+		if refused {
+			require.Equal(t, []string{"Resume"}, runtime.calls, "no refused call reached the host's RPC")
+		}
+	}
+}

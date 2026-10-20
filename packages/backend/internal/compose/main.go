@@ -1812,6 +1812,11 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		return err
 	}
 	flow.observeCorePoolDuties(smithersMetrics)
+	// The relay resumes or forks no repository job run of an unlisted
+	// owner's repository on a multitenant deployment (gate 2b).
+	if owners := hostedWorkflowOwners(cfg); owners != nil && flow != nil && flow.dispatcher != nil {
+		flow.dispatcher.RefuseRepositoryJobsFor(repositoryJobsRefusedFor(queries, owners))
+	}
 	homeBackground := &services.HomeBackground{Pool: pool, Invoker: invokedFlowService, Billing: billingPolicy, Machine: options.Workspace}
 	mythicalService.SetHomeBackground(homeBackground)
 	var workspaceCommandWorker *criticalWorker

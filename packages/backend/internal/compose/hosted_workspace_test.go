@@ -9,9 +9,12 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -304,4 +307,37 @@ func TestHostedWorkflowOwnersFollowTheStaffAndPayerLists(t *testing.T) {
 	}
 	empty := &config.Config{Auth: config.AuthConfig{Mode: config.AuthModeMultitenant}}
 	assert.Equal(t, &services.WorkflowOwners{}, hostedWorkflowOwners(empty), "unset lists admit nobody")
+}
+
+type repositoriesByID map[int64]db.Repository
+
+func (r repositoriesByID) GetRepoByID(_ context.Context, id int64) (db.Repository, error) {
+	repository, ok := r[id]
+	if !ok {
+		return db.Repository{}, pgx.ErrNoRows
+	}
+	return repository, nil
+}
+
+// The relay's repository job refusal reads the target's repository and asks
+// the hosted workflow owners; a target that names no repository is refused.
+func TestRepositoryJobsRefusedForFollowsTheWorkflowOwners(t *testing.T) {
+	owners := &services.WorkflowOwners{Users: config.HostedWorkspaceUsers{UserIDs: []int64{1}}, Orgs: []int64{2}}
+	repos := repositoriesByID{
+		10: {ID: 10, UserID: pgtype.Int8{Int64: 1, Valid: true}},
+		11: {ID: 11, UserID: pgtype.Int8{Int64: 9, Valid: true}},
+		12: {ID: 12, OrgID: pgtype.Int8{Int64: 2, Valid: true}},
+		13: {ID: 13, OrgID: pgtype.Int8{Int64: 7, Valid: true}},
+	}
+	refused := repositoryJobsRefusedFor(repos, owners)
+	for tenant, want := range map[string]bool{
+		"repository:10": false, "repository:11": true, "repository:12": false, "repository:13": true,
+		"repository:0": true, "repository:x": true, "user:10": true, "": true,
+	} {
+		got, err := refused(context.Background(), flowruntime.Target{TenantID: tenant})
+		require.NoError(t, err, tenant)
+		assert.Equal(t, want, got, tenant)
+	}
+	_, err := refused(context.Background(), flowruntime.Target{TenantID: "repository:99"})
+	require.ErrorIs(t, err, pgx.ErrNoRows, "a repository that cannot be read is an error, never an admit")
 }

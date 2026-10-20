@@ -32,6 +32,9 @@ type Service struct {
 	hostStarts background.Jobs[flowruntime.Target]
 	// relayPlans are the plans the browser relay saved, by caller and box.
 	relayPlans RelayPlans
+	// repositoryJobsRefused, when set, answers whether a relay target's
+	// repository runs repository jobs at all (gate 2b).
+	repositoryJobsRefused func(context.Context, flowruntime.Target) (bool, error)
 }
 
 func New(config Config) (*Service, error) {
@@ -358,7 +361,7 @@ func (service *Service) CallRPC(ctx context.Context, target flowruntime.Target, 
 	if !ok {
 		return nil, errors.New("flow dispatch: runtime has no gateway RPC")
 	}
-	if err := service.refuseTodoRun(ctx, runtime, call); err != nil {
+	if err := service.refuseTodoRun(ctx, runtime, call, target); err != nil {
 		return nil, err
 	}
 	answer, err := caller.CallRPC(ctx, procedure, payload)

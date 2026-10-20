@@ -129,11 +129,20 @@ func (service *Service) savePlan(ctx context.Context, target flowruntime.Target,
 	return service.relayPlans.SaveRelayPlan(ctx, target, result.Payload.PlanID, result.Payload.FlowID)
 }
 
+// RefuseRepositoryJobsFor makes the relay refuse to resume or fork a
+// repository job run where refused reports that the target's repository runs
+// no repository jobs: such a run executes its registration's checks as shell
+// on the box (gate 2b).
+func (service *Service) RefuseRepositoryJobsFor(refused func(context.Context, flowruntime.Target) (bool, error)) {
+	service.repositoryJobsRefused = refused
+}
+
 // refuseTodoRun refuses a relayed run, resume or fork of a run of the todo
 // composition: those runs belong to the stack's pinned launch alone. The run
 // is read from the same host before anything is mutated; a run the host
-// cannot answer for is refused.
-func (service *Service) refuseTodoRun(ctx context.Context, runtime flowruntime.Runtime, call relayCall) error {
+// cannot answer for is refused. A repository job run is refused too where the
+// target's repository runs none.
+func (service *Service) refuseTodoRun(ctx context.Context, runtime flowruntime.Runtime, call relayCall, target flowruntime.Target) error {
 	if call.runID == "" {
 		return nil
 	}
@@ -148,6 +157,15 @@ func (service *Service) refuseTodoRun(ctx context.Context, runtime flowruntime.R
 	}
 	if engineOnlyFlow(observation.Run.FlowID) {
 		return ErrEngineFlowOutsideStack
+	}
+	if IsRepositoryJobFlow(observation.Run.FlowID) && service.repositoryJobsRefused != nil {
+		refused, err := service.repositoryJobsRefused(ctx, target)
+		if err != nil {
+			return err
+		}
+		if refused {
+			return ErrRepositoryJobsUnavailable
+		}
 	}
 	return nil
 }

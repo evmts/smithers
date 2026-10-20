@@ -3,8 +3,12 @@ package compose
 import (
 	"context"
 	"net/http"
+	"strconv"
+	"strings"
 
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
@@ -76,4 +80,24 @@ func hostedWorkflowOwners(cfg *config.Config) *services.WorkflowOwners {
 		return nil
 	}
 	return &services.WorkflowOwners{Users: cfg.Sandbox.HostedWorkspaceUsers, Orgs: cfg.Billing.ServicePayerOrgIDs}
+}
+
+// repositoryJobsRefusedFor answers whether a relay target's repository runs
+// no repository jobs: its owner is not a hosted workflow owner (gate 2b). A
+// target that names no repository is refused.
+func repositoryJobsRefusedFor(repos interface {
+	GetRepoByID(context.Context, int64) (db.Repository, error)
+}, owners *services.WorkflowOwners) func(context.Context, flowruntime.Target) (bool, error) {
+	return func(ctx context.Context, target flowruntime.Target) (bool, error) {
+		raw, ok := strings.CutPrefix(target.TenantID, "repository:")
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if !ok || err != nil || id <= 0 {
+			return true, nil
+		}
+		repository, err := repos.GetRepoByID(ctx, id)
+		if err != nil {
+			return false, err
+		}
+		return !owners.Admits(repository), nil
+	}
 }

@@ -475,6 +475,10 @@ func browserFlowUnavailable(w http.ResponseWriter, err error, procedure string) 
 		browserFlowTyped(w, http.StatusForbidden, "engine_only_flow", "File a TODO.")
 		return
 	}
+	if errors.Is(err, flowdispatch.ErrRepositoryJobsUnavailable) {
+		browserFlowTyped(w, http.StatusForbidden, "repository_jobs_unavailable", "Repository jobs don't run on smithers.sh yet.")
+		return
+	}
 	slog.Error("browser Flow RPC unavailable", "error", err, "procedure", procedure)
 	var failure flowruntime.Failure
 	if errors.As(err, &failure) {
