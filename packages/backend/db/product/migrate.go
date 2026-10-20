@@ -211,6 +211,7 @@ var migrationRegistry = []migrationSpec{
 	{173, "migrations/0173_github_visibility_generation.sql"},
 	{174, "migrations/0174_agent_run_visibility.sql"},
 	{175, "migrations/0175_chat_guest_slots.sql"},
+	{176, "migrations/0176_github_webhook_jobs_processing_idx.sql"},
 }
 
 type migration struct {

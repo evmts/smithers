@@ -451,3 +451,20 @@ func TestGitHubPushCredentialIsAPersonOnlyOnTheDefaultBranch(t *testing.T) {
 		assert.Equal(t, tc.reviewed, gitHubPushCredential(payload).Reviewed(), tc.name)
 	}
 }
+
+// The stalled-job reclaim reads every 'processing' row and a claim stalls
+// only after five minutes, so it runs on the first poll and then at most once
+// a minute, not on every 2 s poll (#4296).
+func TestGitHubWebhookEventWorkerReclaimsStalledJobsAtMostOnceAMinute(t *testing.T) {
+	queries := &mockGitHubWebhookEventWorkerQuerier{}
+	worker := NewGitHubWebhookEventWorker(queries, &mockGitHubWebhookEventRunDispatcher{})
+	start := time.Date(2026, 10, 19, 22, 0, 0, 0, time.UTC)
+	for _, poll := range []struct {
+		at     time.Duration
+		sweeps int
+	}{{0, 1}, {2 * time.Second, 1}, {59 * time.Second, 1}, {time.Minute, 2}, {62 * time.Second, 2}, {3 * time.Minute, 3}} {
+		worker.now = func() time.Time { return start.Add(poll.at) }
+		require.NoError(t, worker.PollOnce(context.Background()))
+		assert.Len(t, queries.stalledResets, poll.sweeps, "poll at +%s", poll.at)
+	}
+}

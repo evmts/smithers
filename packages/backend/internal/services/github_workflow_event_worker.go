@@ -35,6 +35,10 @@ const (
 	// Jobs claimed by a worker that crashed before marking them done/failed
 	// stay 'processing'; after this lease they are re-pended for re-dispatch.
 	gitHubWebhookJobStalledAfter = 5 * time.Minute
+	// The reclaim reads every 'processing' row, and a claim stalls only after
+	// the lease above, so it runs at most once a minute, not on every poll
+	// (#4296).
+	gitHubWebhookJobStallSweepEvery = time.Minute
 )
 
 // GitHubWebhookEventWorkerQuerier contains DB methods needed by the webhook → workflow bridge worker.
@@ -75,6 +79,9 @@ type GitHubWebhookEventWorker struct {
 	}
 	mainPull  gitHubMainPuller
 	issueText *GitHubTextStamper
+
+	now            func() time.Time
+	lastStallSweep time.Time
 }
 
 // gitHubMainPuller is the GitHub main pull as the webhook worker uses it.
@@ -121,6 +128,7 @@ func NewGitHubWebhookEventWorker(
 		logger:     slog.Default(),
 		interval:   defaultGitHubWebhookEventWorkerInterval,
 		claimLimit: defaultGitHubWebhookEventWorkerClaimLimit,
+		now:        time.Now,
 	}
 }
 
@@ -151,10 +159,13 @@ func (w *GitHubWebhookEventWorker) PollOnce(ctx context.Context) error {
 		return nil
 	}
 
-	if reclaimed, err := w.queries.ResetStalledGitHubWebhookJobs(ctx, gitHubWebhookJobStalledAfter.Seconds()); err != nil {
-		w.logger.Error("failed to reset stalled github webhook jobs", "error", err)
-	} else if reclaimed > 0 {
-		w.logger.Warn("reclaimed stalled github webhook jobs", "count", reclaimed)
+	if now := w.clock(); w.lastStallSweep.IsZero() || now.Sub(w.lastStallSweep) >= gitHubWebhookJobStallSweepEvery {
+		w.lastStallSweep = now
+		if reclaimed, err := w.queries.ResetStalledGitHubWebhookJobs(ctx, gitHubWebhookJobStalledAfter.Seconds()); err != nil {
+			w.logger.Error("failed to reset stalled github webhook jobs", "error", err)
+		} else if reclaimed > 0 {
+			w.logger.Warn("reclaimed stalled github webhook jobs", "count", reclaimed)
+		}
 	}
 
 	jobs, err := w.queries.ClaimPendingGitHubWebhookJobs(ctx, w.claimLimit)
@@ -213,6 +224,13 @@ func (w *GitHubWebhookEventWorker) PollOnce(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (w *GitHubWebhookEventWorker) clock() time.Time {
+	if w.now != nil {
+		return w.now()
+	}
+	return time.Now()
 }
 
 // gitHubWebhookJobRetryBackoff doubles the delay per claim attempt (the claim
