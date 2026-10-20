@@ -11,13 +11,13 @@
  */
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
-import { durableEngine } from "../src/test/TestNodeRuntime.ts"
 
 export const Assess = Action.make("examples/Assess", {
   payload: { document: Schema.String },
@@ -67,7 +67,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
     const engine = (hostId: string) =>
       Layer.mergeAll(Assess.toLayer(assess), Interpreter.layer(Review)).pipe(
         Layer.provideMerge(Action.layerImplementations),
-        Layer.provideMerge(durableEngine(filename, hostId))
+        Layer.provideMerge(TestNodeRuntime.durableEngine(filename, hostId))
       )
 
     // Phase one: the run suspends at the deferred and releases its claim.

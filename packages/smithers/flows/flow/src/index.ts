@@ -111,6 +111,14 @@ export * as RetryPolicy from "./RetryPolicy.ts"
 export * as Sleep from "./Sleep.ts"
 
 /**
+ * Span failures with their text withheld: a failed span exports its failure's
+ * tag and token code, never its message or stack.
+ *
+ * @since 1.0.0
+ */
+export * as SpanFailure from "./internal/SpanFailure.ts"
+
+/**
  * Stable step identity construction.
  *
  * @since 0.1.0

@@ -12,12 +12,12 @@
 import { FlowEngine } from "@smthrs/engine"
 import { Action, DurableDeferred, Flow, Interpreter } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import { SqlTimeTravelStore, TimeTravel } from "@smthrs/time-travel"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
-import { durableEngine, requirements } from "../src/test/TestNodeRuntime.ts"
 import { parkRun } from "./park-run.ts"
 
 /** The declared step the flow's body names; the wait lives in its implementation. */
@@ -55,7 +55,7 @@ const lineageId = FlowEngine.Lineage.root("ledger-1")
 const layer = (filename: string) =>
   TimeTravel.layer.pipe(
     Layer.provideMerge(SqlTimeTravelStore.layer),
-    Layer.provideMerge(requirements(filename))
+    Layer.provideMerge(TestNodeRuntime.requirements(filename))
   )
 
 export interface Summary {
@@ -100,7 +100,7 @@ const rewindAtMidpoint = (filename: string) =>
       Ledger.execute({}, { executionId: "ledger-1" }),
       Layer.mergeAll(Post.toLayer(post), Interpreter.layer(Ledger)).pipe(
         Layer.provideMerge(Action.layerImplementations),
-        Layer.provideMerge(durableEngine(filename, "ledger"))
+        Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "ledger"))
       )
     )
 
@@ -157,7 +157,7 @@ const reopen = (filename: string) =>
     const entries = yield* journal.entries({ runId, limit: 200 })
     return entries.entries.map((committed) => committed.seq)
   }).pipe(
-    Effect.provide(requirements(filename)),
+    Effect.provide(TestNodeRuntime.requirements(filename)),
     Effect.scoped
   )
 

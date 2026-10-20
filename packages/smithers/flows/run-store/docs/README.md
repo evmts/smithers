@@ -121,7 +121,7 @@ work between processes and needs ownership arbitration it can trust. Most hosts
 do not wire it by hand even then.
 [`@smthrs/engine-store`](/api/engine-store) already composes these stores with
 the journal, the step cache, and the engine's own state into one storage ladder,
-and `@smthrs/flows/NodeRuntime` builds that ladder over a single SQLite file.
+and `NodeRuntime` from `@smthrs/platform-node` builds that ladder over a single SQLite file.
 
 Above all of it sits [`smithers`](/api/cli), the command line that plans, runs,
 and inspects durable flows without your writing a host at all. Start there if

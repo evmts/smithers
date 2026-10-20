@@ -6,7 +6,8 @@ import { Effect, Layer } from "effect"
 import type { SqlClient } from "effect/sql/SqlClient"
 import { createHash } from "node:crypto"
 import { basename, resolve } from "node:path"
-import { UnsupportedDatabase } from "./SqliteOpen.ts"
+import * as PostgresDatabase from "../postgres/PostgresDatabase.ts"
+import { UnsupportedDatabase } from "./UnsupportedDatabase.ts"
 
 /** Recognizes PostgreSQL connection strings.
  * @since 1.0.0
@@ -66,6 +67,8 @@ export const location = (filename: string): { readonly url: string; readonly sch
 }
 
 /** The PostgreSQL client for a filename {@link location} places on PostgreSQL.
+ * The driver loads only then: `@effect/sql-pg` is an optional peer, absent
+ * where every store stays on SQLite.
  * @since 1.0.0
  * @private
  */
@@ -73,8 +76,8 @@ export const layer = (filename: string, readOnly = false): Layer.Layer<SqlClient
   const selected = location(filename)
   if (selected === undefined) return undefined
   return Layer.unwrap(
-    Effect.promise(() => import("../postgres/PostgresDatabase.ts")).pipe(
-      Effect.map((database) => database.layer({ url: selected.url, schema: selected.schema, readOnly }))
+    Effect.promise(() => import("@effect/sql-pg")).pipe(
+      Effect.map((driver) => PostgresDatabase.layer({ url: selected.url, schema: selected.schema, readOnly, driver }))
     )
   )
 }

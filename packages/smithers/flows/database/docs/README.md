@@ -10,8 +10,8 @@ whatever comes back into five stable failure codes. Beside the writer,
 `Migrations` composes the migration sets of several independent packages into
 one ordered pass over one database.
 
-The package adds policy to writes only. Reads stay on Effect's own `SqlClient`
-service, unwrapped, so nothing here sits between a query and the driver.
+The writer adds policy to writes only. Reads stay on Effect's own `SqlClient`
+service, and the writer never wraps them.
 
 ## Why you would reach for it
 

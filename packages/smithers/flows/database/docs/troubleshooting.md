@@ -216,6 +216,17 @@ statement inside it. Every later statement asks for the rollback first.
 first rollback that succeeds discards the rejected rows and returns the
 connection, with no restart. A write fails with `unknown` until then.
 
+### `PostgresDatabase: COMMIT rolled back an aborted transaction`
+
+**Cause:** a statement inside the transaction failed and the body caught the
+failure. PostgreSQL then aborts the transaction and answers `COMMIT` with
+`ROLLBACK`, so nothing the transaction wrote was kept. The write fails with
+`unknown` and is not replayed.
+
+**Fix:** run a statement that may fail inside a nested `DurableWriter.write`,
+whose savepoint rolls back only that statement, or let its failure end the
+write.
+
 ## Composition mistakes
 
 ### A store cannot find `SqlClient` or `DurableWriter`
@@ -265,6 +276,21 @@ against the sets you compose. A gap where a block should be is the answer.
 `SMITHERS_BACKEND=sqlite` is set. `DATABASE_URL` counts only with
 `SMITHERS_BACKEND=postgres`. An explicit PostgreSQL URL selects it directly.
 Install the optional `@effect/sql-pg` peer at the same version as your `effect`.
+`PostgresDatabase.layer` takes that module as its `driver`; the native drivers
+load it themselves.
+
+### Wrong schema or lost settings behind Hyperdrive or PgBouncer
+
+**Symptom:** behind a transaction-pooling proxy, a client reads or writes
+tables in `public` or another store's schema, or a `SET` it ran has no effect.
+
+**Cause:** the proxy runs each transaction on any free server connection, so
+session state does not follow the client. `PostgresDatabase` sets the schema
+inside every transaction; a hand-built client that runs `SET search_path` once
+per connection does not.
+
+**Fix:** use `PostgresDatabase.layer`, and set anything else a transaction
+needs with `SET LOCAL` inside it.
 
 Migrate the full composed set before starting stores. Independently racing
 package ladders can install a higher block before a lower package exists; the

@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/platform-browser: the entry points, the two structural backend slices, what the filesystem serves and refuses, and where the spawner diverges from a process table."
+description: "Every public export of @smthrs/platform-browser: the entry points, the two structural backend slices, what the filesystem serves and refuses, where the spawner diverges from a process table, and the durable engine."
 ---
 
 ```ts
@@ -19,8 +19,10 @@ is a dependency here. The page owns which ZenFS backend is mounted (IndexedDB,
 OPFS, memory) and which just-bash instance is wired to it, and the signature
 says so. The package's own dependencies are `effect`, `@smthrs/kernel`, whose
 `CommandLine.render` produces the line the interpreter runs and whose
-`withIsolatedFileSystem` marks the mounted volume as confined, and `@smthrs/jj`,
-whose wasm-backed `Jj` service the `BrowserHost` bundle composes.
+`withIsolatedFileSystem` marks the mounted volume as confined, `@smthrs/jj`,
+whose wasm-backed `Jj` service the `BrowserHost` bundle composes, and, for the
+durable engine, `@smthrs/flows` with the engine packages it composes and
+`@journeyapps/wa-sqlite`.
 
 :::danger
 The filesystem behind `fs` and the one behind `bash` must be the _same_
@@ -186,6 +188,104 @@ through the `FileSystem` service, which refuses a path that is not a directory,
 and resolved through `Path` before anything runs, which is why the layer
 requires both.
 
+## The durable engine
+
+Six modules host the durable flow engine in a browser.
+[Run durable flows in a browser tab](./guides/run-flows-in-a-tab.md) walks
+through them, and [The durable browser engine](./concepts/durable-browser-engine.md)
+explains the design. The three platform services are injected, so a test
+provides faulty ones and an app can share one instance.
+
+| Export                                                                                    | Side   | What it is                                                                                                                                                                                      |
+| ----------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BrowserEngine.layer({ name, worker })`                                                   | tab    | Starts the tab's engine worker, asks for persistent storage, and provides `BrowserEngine` over the browser's own channel and storage.                                                           |
+| `BrowserEngine.make(options)`                                                             | tab    | The same service, requiring `TabChannel` and `StoragePersistence` and a `Scope`.                                                                                                                |
+| `BrowserEngine.BrowserEngine`                                                             | tab    | The service: `start`, `result`, `cancel`, `signal`, `events`, and `unavailable`, which completes with an `EngineUnavailable` once the tab's worker failed.                                      |
+| `BrowserEngine.RequestRefused`                                                            | tab    | The leader refused a request; `request` names it and `error` is the failure's tag.                                                                                                              |
+| `BrowserEngine.EngineUnavailable`                                                         | tab    | The tab's own worker failed: `reason` is `worker-failed` (it threw, as at load) or `engine-failed` (no engine could be built); `error` is a tag. Every pending and later request fails with it. |
+| `BrowserEngine.RunEvent`, `WorkerLike`, `Options`                                         | tab    | An engine event's execution id and type; the slice of `Worker` the tab uses; the layer's options.                                                                                               |
+| `BrowserEngine.FlowReference`                                                             | tab    | What the service's calls take of a flow: its `_tag` and its payload, success and error schemas. A whole flow is one.                                                                            |
+| `BrowserEngine.requests`, `persistence`, `unavailable`                                    | tab    | Counters: requests by `request` and `outcome`; storage answers by `outcome`; failed workers by `reason`.                                                                                        |
+| `BrowserRuntime.run(options)`                                                             | worker | The worker entry: `serve` over `layerHost` with the browser's own lock and channel, and `options.telemetry`, if given, as where its records go. Returns the fiber.                              |
+| `BrowserRuntime.serve(options, engine)`                                                   | worker | Waits for the lock, builds `engine`, wakes unfinished runs, announces itself, answers requests and runs tabs' statements. Stops leading if its lock is stolen.                                  |
+| `BrowserRuntime.layerHost({ name, sqlite }, registerFlows)`                               | worker | `layer` over `BrowserSqlite.layer`: `engine.db` on a pool in the OPFS directory `smithers/<name>`, and the shared `app.db` beside it on a connection of its own.                                |
+| `BrowserRuntime.layer(options, registerFlows)`                                            | worker | `@smthrs/flows`' `Runtime.layer` over an injected `SqlClient`, with the run catalog and the engine host: WebCrypto, the owner identity, `Path`, fetch, a refusing `Jj`.                         |
+| `BrowserRuntime.Services`, `Host`, `Options`, `HostOptions`, `ServeOptions`, `RunOptions` | worker | The types the functions above take and provide.                                                                                                                                                 |
+| `BrowserRuntime.leaderships`, `wakes`, `requests`, `statements`                           | worker | Counters: leaders; unfinished runs by `outcome`; requests by `request` and `outcome`; shared-database statements by `outcome`.                                                                  |
+| `BrowserSqlite.layerSqlite({ build, directory })`                                         | worker | The `Sqlite` service: the wa-sqlite `build`, loaded lazily, with the OPFS pool `directory` registered as its VFS, held until the scope closes.                                                  |
+| `BrowserSqlite.Build`, `Factory`                                                          | worker | The build as lazy imports: `module` imports `wa-sqlite.mjs`, `wasm` loads `wa-sqlite.wasm`. The package itself never imports the build.                                                         |
+| `BrowserSqlite.layer({ filename })`                                                       | worker | A `SqlClient` over `filename`, opened on the `Sqlite` service's VFS until the scope closes.                                                                                                     |
+| `BrowserSqlite.Sqlite`, `open(filename)`, `make(database)`                                | worker | The build-and-VFS service an app can provide itself; open a database on it; build a `SqlClient` over any open wa-sqlite database.                                                               |
+| `SharedSqlite.layer({ name })`, `make(options)`, `SharedSqlite`                           | tab    | `execute(sql, params)`: run statements on the app's shared database, on the leader's connection, one at a time per tab.                                                                         |
+| `SharedSqlite.open({ name, within? })`, `Database`, `filename`                            | tab    | The database as `{ execute, close }` Promises, for TanStack DB's browser persistence; resolves once a leader answers, rejects after `within` (30 s) otherwise.                                  |
+| `SharedSqlite.SqliteError`                                                                | tab    | What `Database.execute` rejects with: SQLite's own `message` and `code`, as wa-sqlite's `SQLiteError`, which TanStack DB reads; the `SqlError` is its `cause`.                                  |
+| `WebLock.WebLock`, `make(locks)`, `layer`                                                 | both   | `hold(name, { steal? })`: wait for the exclusive lock, or take it at once with `steal`; hold it until the scope closes. `lost` completes if another context steals it.                          |
+| `TabChannel.TabChannel`, `make(construct)`, `layer`                                       | both   | `open(name)`: a port that posts to every other port of the channel and subscribes to what they post.                                                                                            |
+| `StoragePersistence.StoragePersistence`, `make(storage)`, `layer`                         | tab    | `persist`: ask for persistent storage and answer whether the origin has it.                                                                                                                     |
+
+`BrowserSqlite` uses `@journeyapps/wa-sqlite`, the build TanStack DB's browser
+persistence uses, so an app ships one SQLite. The leader's `layerHost` opens
+the app's own database, `SharedSqlite.filename`, beside the engine's, and
+`SharedSqlite.open` hands it to TanStack DB from any tab. To share one build and one VFS,
+build `layerSqlite` once in the worker and provide it to `BrowserSqlite.layer`
+for each store: every store opens its own file with its own connection, and
+none runs statements inside another's transaction. `BrowserRuntime.layer`
+then takes the engine's `SqlClient` from that composition instead of
+`layerHost`.
+
+`BrowserSqlite.make` needs the synchronous build. Its client reports
+a write's `{ changes }` from `.raw`, which `@smthrs/database`'s
+`DurableWriter.affectedRows` reads for compare-and-set; binds integers wider
+than 32 bits as SQLite integers; runs one statement at a time; begins
+transactions with `BEGIN IMMEDIATE`; and rolls back a failed COMMIT before
+lending the connection again. It does not stream rows.
+
+## The immutable cache
+
+`BrowserCache.layer` provides `@smthrs/artifacts`' `ImmutableCache` over the
+origin's Cache Storage, for content that never changes at its key, such as a
+repository's file at a commit SHA. Cache Storage outlives the tab and the
+browser, and a window, a dedicated worker and a service worker of the origin
+reach the same named cache, so what one read fetched opens again offline.
+
+```ts
+const layer: (options?: Options) => Layer.Layer<ImmutableCache, ImmutableCacheError>
+
+interface Options {
+  readonly name?: string
+  readonly maxEntryBytes?: number
+  readonly caches?: CacheStorage
+}
+
+interface CacheStorage {
+  readonly open: (name: string) => Promise<ImmutableCache.WebCache>
+}
+```
+
+| Option          | Default                                                | Meaning                                                           |
+| --------------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
+| `name`          | `BrowserCache.defaultName`, `smithers-immutable-cache` | The cache `caches.open` opens.                                    |
+| `maxEntryBytes` | 8 MiB                                                  | The largest entry stored; a larger `put` answers `too_large`.     |
+| `caches`        | the global `caches`                                    | The `CacheStorage` to use instead. Tests inject one that refuses. |
+
+The layer's telemetry and errors are labelled `browser`. Without a `caches`
+global, as in Node or an insecure context, or when `caches.open` rejects, the
+layer fails with `ImmutableCacheError` and reason `unavailable`. A `put` over
+the origin's quota fails with reason `failed` and `errorName`
+`QuotaExceededError`; `ImmutableCache.readThrough` still answers the read. The
+browser may clear the cache under storage pressure unless the origin has
+persistent storage (`StoragePersistence`).
+
+```ts
+import { ImmutableCache } from "@smthrs/artifacts"
+import { BrowserCache } from "@smthrs/platform-browser"
+
+const tree = ImmutableCache.readThrough(
+  ImmutableCache.key("repo.tree", repo, sha),
+  fetchTree(repo, sha)
+).pipe(Effect.provide(BrowserCache.layer()))
+```
+
 ## Browser support
 
 Every entry point bundles for a browser. No published module resolves a `node:`
@@ -197,8 +297,20 @@ page that hashes artifacts adds `BrowserCrypto.layer` from
 `@effect/platform-browser`. [The closed Host surface](./concepts/host-bundle.md)
 covers what each tag is backed by and how the fetch client answers a redirect.
 
-See [platform support](/docs/reference/api/#platform-support), which limits
-browser coverage to bundling rather than durable execution, the
+The fetch client cannot pin a connection to checked addresses, and a tab has no
+name resolver, so the web tools in `@smthrs/std` (`Fetch`, `HttpPost`,
+`WebFetch`) refuse here with `unsupported`. The browser mediates the tab's
+network, and Smithers does not weaken its own destination check to fit:
+`@smthrs/kernel`'s `HttpClient.ResolveHost` keeps its default, which refuses
+every name.
+
+Every entry point also loads in a dedicated web worker, where the engine and the
+agent run: no module touches `document` or `window` while it loads. The
+repository's browser contract imports each entry in a DOM-less worker, bundled
+with and without the `worker` export condition.
+
+Durable execution runs in a dedicated worker through `BrowserRuntime`; see
+[The durable browser engine](./concepts/durable-browser-engine.md). See also the
 [`@smthrs/kernel` reference](/api/kernel), whose closed service list this
 package's `BrowserHost` bundle fills, and
 [Capabilities and the host kernel](/docs/concepts/kernel/).

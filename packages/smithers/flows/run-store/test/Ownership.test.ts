@@ -29,7 +29,8 @@ import {
   type LivenessEvidence,
   type OwnerId,
   sameHostIncarnation,
-  sameHostPidProbe
+  sameHostPidProbe,
+  singleIncarnationLiveness
 } from "../src/Ownership.ts"
 import { type RunRow, type RunSnapshot, RunStore } from "../src/RunStore.ts"
 import * as RunStoreLive from "../src/RunStore.ts"
@@ -100,6 +101,34 @@ describe("sameHostIncarnation", () => {
     expect(sameHostIncarnation(ownerA, sameHost)).toBe(true)
     expect(sameHostIncarnation(ownerA, otherHost)).toBe(false)
   })
+})
+
+/**
+ * The check a Durable Object and a browser engine share: one incarnation runs
+ * per host id, so any other incarnation recorded under it is dead.
+ */
+describe("singleIncarnationLiveness", () => {
+  const claimant: OwnerId = { hostId: "object-1", pid: 7, nonce: "b" }
+  const nowMs = staleAfterMs * 2
+  const check = (owner: OwnerId, heartbeatAtMs: number | null) =>
+    singleIncarnationLiveness(owner, { claimant, heartbeatAtMs, nowMs })
+
+  it.effect("declares an earlier incarnation of the same host dead while its lease is fresh", () =>
+    Effect.gen(function*() {
+      expect(yield* check({ hostId: "object-1", pid: 3, nonce: "a" }, nowMs)).toBe(false)
+      expect(yield* check({ hostId: "object-1", pid: 7, nonce: "a" }, nowMs)).toBe(false)
+      expect(yield* check({ hostId: "object-1", pid: 3, nonce: "b" }, nowMs)).toBe(false)
+    }))
+
+  it.effect("judges the claimant and another host's owner by the lease alone", () =>
+    Effect.gen(function*() {
+      expect(yield* check(claimant, nowMs)).toBe(true)
+      expect(yield* check(claimant, nowMs - staleAfterMs - 1)).toBe(false)
+      const elsewhere: OwnerId = { hostId: "object-2", pid: 3, nonce: "a" }
+      expect(yield* check(elsewhere, nowMs - staleAfterMs)).toBe(true)
+      expect(yield* check(elsewhere, nowMs - staleAfterMs - 1)).toBe(false)
+      expect(yield* check(elsewhere, null)).toBe(false)
+    }))
 })
 
 describe("lease-expired evidence", () => {

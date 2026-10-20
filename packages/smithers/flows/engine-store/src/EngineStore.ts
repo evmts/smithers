@@ -14,21 +14,27 @@ import type { DurableWriter } from "@smthrs/database/DurableWriter"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { FileBoundary } from "@smthrs/flow/FileBoundary"
-import { Journal, type JournalEvent } from "@smthrs/journal"
+import { Consensus, Journal, type JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
-import { AttemptStore, RunStore } from "@smthrs/run-store"
-import type { Ownership } from "@smthrs/run-store"
+import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
+import * as Cause from "effect/Cause"
+import * as Clock from "effect/Clock"
+import * as Context from "effect/Context"
 import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
 import type * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as DurableEngineState from "./DurableEngineState.ts"
+import * as EngineStoreMetrics from "./EngineStoreMetrics.ts"
 import * as ActionPersistence from "./internal/ActionPersistence.ts"
 import * as AttemptAdmission from "./internal/AttemptAdmission.ts"
 import * as AttemptProbe from "./internal/AttemptProbe.ts"
@@ -53,6 +59,83 @@ import * as WorkspaceSandbox from "./WorkspaceSandbox.ts"
  * @category models
  */
 export type RequestedResumeReason = RunDriver.RequestedResumeReason
+
+/**
+ * Who wakes the runs of an engine's store: a long-lived process, or a host
+ * that drives one execution from outside. See {@link Options.sweep}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type Sweep = RunDriver.Sweep
+
+/**
+ * What one {@link drive} left an execution as.
+ *
+ * - `Settled`: the run reached `status` and nothing will drive it again.
+ * - `Parked`: it waits. `wakeAtMs` is when its host must drive it next, the
+ *   earliest pending `DurableClock` or the instant another owner's claim or
+ *   lease lapses; `undefined` when only an external completion, reported
+ *   through `requestResume`, wakes it.
+ * - `Unfinished`: it has work due now that this drive did not do, such as a
+ *   run released when the store became unavailable mid-drive. Drive it again
+ *   after a backoff.
+ *
+ * @since 1.0.0
+ * @category hosting
+ */
+export type Driven =
+  | { readonly _tag: "Settled"; readonly status: RunStore.TerminalRunStatus }
+  | { readonly _tag: "Parked"; readonly wakeAtMs: number | undefined }
+  | { readonly _tag: "Unfinished" }
+
+/**
+ * Drives one execution as far as it can go now, for a host that wakes it
+ * from outside. See {@link drive}.
+ *
+ * @since 1.0.0
+ * @category hosting
+ */
+export class Driver extends Context.Service<Driver, {
+  readonly drive: (
+    flow: Flow.Any,
+    options: { readonly executionId: string; readonly payload: object }
+  ) => Effect.Effect<Driven, FlowRuntime.FlowCycleDetected | RunStore.RunStoreError>
+}>()("@smthrs/engine-store/EngineStore/Driver") {}
+
+/**
+ * Drives `executionId` once and reports what that left it as, without
+ * waiting for it to settle.
+ *
+ * An execution the store does not hold yet is admitted with `payload` and
+ * driven. One it holds is driven only if it has work due: a parked run whose
+ * clock has not come due is left parked, without a replay. The drive claims
+ * the run, or takes it from an earlier incarnation the host's `isAlive`
+ * declares gone, replays what is recorded, and runs until the run settles or
+ * parks. A drive that stopped without either, such as one released by an
+ * unavailable store, reports `Unfinished`.
+ *
+ * A drive that finds the run `Settled`, and is the last round of its lineage,
+ * records the wake of every parent still waiting on it again, without
+ * scheduling a wake already recorded. So an invocation that died between the
+ * settlement and those records loses no parent's wake: the next drive of the
+ * settled run writes them.
+ *
+ * `flow` must be registered with the engine. Every engine the store composes
+ * provides the {@link Driver}; it is meant for a `sweep: { host }` engine,
+ * whose host arms its next invocation from the result.
+ *
+ * @since 1.0.0
+ * @category hosting
+ */
+export const drive = (
+  flow: Flow.Any,
+  options: { readonly executionId: string; readonly payload: object }
+): Effect.Effect<Driven, FlowRuntime.FlowCycleDetected | RunStore.RunStoreError, Driver> =>
+  Effect.gen(function*() {
+    const driver = yield* Driver
+    return yield* driver.drive(flow, options)
+  })
 
 /**
  * Engine-store construction options.
@@ -156,6 +239,30 @@ export interface Options {
    * patching the store.
    */
   readonly clockFireRetryPolicy?: Schedule.Schedule<unknown, unknown> | undefined
+  /**
+   * Who wakes this store's runs. Defaults to `"process"`.
+   *
+   * `"process"` suits a long-lived process. A fiber sweeps the store every
+   * `Ownership.heartbeatInterval` for runs to wake or reclaim: parked runs
+   * with a cancellation or a release, due timers, admitted runs nobody
+   * drove, and running rows whose owner stopped renewing its lease. Every
+   * owned round renews that lease on the same cadence, and registering a flow
+   * re-arms the clocks and completions of every one of its runs.
+   *
+   * `{ host: executionId }` suits a host that drives one execution per
+   * invocation and wakes it from outside, such as a Cloudflare Durable Object
+   * alarm. No sweep runs and no lease is renewed, so the engine starts no
+   * background work that outlives the invocation's own drive. Registering a
+   * flow re-arms only that execution's clocks and completions. The host reads
+   * {@link nextWake} to arm its next invocation, and its `isAlive` check, not
+   * a lease, tells a crashed incarnation from a live one. Because the lease is
+   * not renewed, every other engine sharing the store must route this
+   * execution away with `canExecute`, or it reclaims the run once
+   * `Ownership.heartbeatStaleAfter` passes.
+   *
+   * @since 1.0.0
+   */
+  readonly sweep?: Sweep | undefined
 }
 
 type PublicRequirements =
@@ -218,6 +325,31 @@ const EngineError = Schema.Union([
   WorkspaceSandbox.MaterializationConflict,
   WorkspaceSandbox.WorkspaceError
 ])
+/** The stores an attempt's persistence writes through. */
+const StorageErrors = [
+  Journal.JournalError,
+  AttemptStore.AttemptStoreError,
+  RunStore.RunStoreError,
+  CacheStore.CacheStoreError,
+  Consensus.ConsensusError
+] as const
+
+/** The codes those stores fail with when the database did not answer. */
+const unavailableCodes: ReadonlySet<string> = new Set(["sink_failed", "read_failed", "persistence_failed"])
+
+/**
+ * Whether a failure out of the attempt's persistence is the store being
+ * unavailable: a lost connection, an I/O error, a database that is restarting.
+ * Those are failures of the engine's own writes, never the action's outcome,
+ * and they are transient. Only live store failures qualify: they are class
+ * instances, while an action's own failure reaches this point encoded by its
+ * error schema, so a body that happens to fail with one of these types is
+ * never mistaken for one.
+ */
+const storageUnavailable = (error: unknown): error is InstanceType<typeof StorageErrors[number]> =>
+  StorageErrors.some((type) => error instanceof type) &&
+  unavailableCodes.has((error as InstanceType<typeof StorageErrors[number]>).code)
+
 const encodeEngineError = (error: unknown): Option.Option<unknown> =>
   Option.orElse(
     Schema.encodeUnknownOption(EngineError)(error),
@@ -240,7 +372,11 @@ const encodeEngineError = (error: unknown): Option.Option<unknown> =>
  */
 const makeWithEngineJj = (
   options: Options
-): Effect.Effect<FlowRuntime.FlowRuntime["Service"], never, Requirements> =>
+): Effect.Effect<
+  { readonly runtime: FlowRuntime.FlowRuntime["Service"]; readonly driver: Driver["Service"] },
+  never,
+  Requirements
+> =>
   Effect.gen(function*() {
     const host = yield* CapabilitySet.current
     const ownerIdentity = yield* OwnerIdentity.OwnerIdentity
@@ -283,25 +419,30 @@ const makeWithEngineJj = (
     })
     // Run instances bound cache lifetime; each producer has independent provenance.
     type PlanProvenance = { readonly lineageId: string; readonly sourceRevision: string | undefined }
-    const planProvenances = new WeakMap<
+    /** A plan row this run already holds: its provenance and what it says. */
+    type RecordedPlan = { readonly provenance: PlanProvenance; readonly payload: Readonly<Record<string, unknown>> }
+    const recordedPlans = new WeakMap<
       FlowRuntime.FlowInstance["Service"],
-      Map<string, Effect.Effect<PlanProvenance | undefined>>
+      Map<string, Effect.Effect<RecordedPlan | undefined>>
     >()
-    // A resumed or copied plan keeps its original source revision, even when
-    // coding changes the workspace. The journal still compares all plan content.
-    const planProvenance = Effect.fnUntraced(function*(
+    /*
+     * Plans a resume found recorded by an earlier build: the same plan, read
+     * from other declaration sites. The first build's pages stand whole, so
+     * the rebuilt pages, whose sites and layout may differ, are not appended.
+     */
+    const recordedByEarlierBuild = new WeakMap<FlowRuntime.FlowInstance["Service"], Set<string>>()
+    /** Every page of one plan shares the source id before its page index. */
+    const planOf = (sourceId: string) => sourceId.slice(0, sourceId.lastIndexOf("/"))
+    const recordedPlan = Effect.fnUntraced(function*(
       instance: FlowRuntime.FlowInstance["Service"],
-      record: FlowRuntime.NodeRecord
+      sourceId: string
     ) {
       const root = FlowEngine.Lineage.root(instance.executionId)
-      const current = { lineageId: root, sourceRevision: sourceRevision() }
-      if (record._tag !== "PlanRecorded") return current
-      let producers = planProvenances.get(instance)
+      let producers = recordedPlans.get(instance)
       if (producers === undefined) {
         producers = new Map()
-        planProvenances.set(instance, producers)
+        recordedPlans.set(instance, producers)
       }
-      const sourceId = `${options.journalSource}/${record.sourceId}`
       let lookup = producers.get(sourceId)
       if (lookup === undefined) {
         lookup = yield* Effect.cached(Effect.gen(function*() {
@@ -327,7 +468,11 @@ const makeWithEngineJj = (
               if (
                 lineageId !== root && !origins.some((origin) => FlowEngine.Lineage.root(origin) === lineageId)
               ) return undefined
-              return { lineageId, sourceRevision: payload.value.graph.sourceRevision }
+              return {
+                provenance: { lineageId, sourceRevision: payload.value.graph.sourceRevision },
+                // The decode above proved it an object; the raw row keeps every member.
+                payload: inherited.payload as Readonly<Record<string, unknown>>
+              }
             }
             if (!page.hasMore) return undefined
             after = page.entries[page.entries.length - 1]!.seq
@@ -335,10 +480,56 @@ const makeWithEngineJj = (
         }))
         producers.set(sourceId, lookup)
       }
+      return yield* lookup
+    })
+    // A resumed or copied plan keeps its original source revision, even when
+    // coding changes the workspace.
+    const planProvenance = Effect.fnUntraced(function*(
+      instance: FlowRuntime.FlowInstance["Service"],
+      record: FlowRuntime.NodeRecord
+    ) {
+      const current = { lineageId: FlowEngine.Lineage.root(instance.executionId), sourceRevision: sourceRevision() }
+      if (record._tag !== "PlanRecorded") return current
       // A missing row does not pin the revision of a size measurement. The
       // successful first write below replaces this cached absence.
-      return (yield* lookup) ?? current
+      return (yield* recordedPlan(instance, `${options.journalSource}/${record.sourceId}`))?.provenance ?? current
     })
+    /*
+     * The journal refused a plan record because its slot holds other bytes.
+     * Only the plan's identity decides what that means (NodeJournal.planIdentity):
+     * the same plan from a build whose declarations moved resumes under the
+     * row already written, and anything else is a changed plan.
+     */
+    const rebuiltPlan = (
+      instance: FlowRuntime.FlowInstance["Service"],
+      record: FlowRuntime.PlanRecorded,
+      rebuilt: Readonly<Record<string, unknown>>
+    ) => {
+      const sourceId = `${options.journalSource}/${record.sourceId}`
+      return Effect.flatMap(recordedPlan(instance, sourceId), (recorded) => {
+        if (recorded === undefined || !NodeJournal.samePlan(recorded.payload, rebuilt)) {
+          return Effect.fail(
+            new Interpreter.InterpreterError({
+              code: "plan_changed",
+              flow: record.flow,
+              node: "root",
+              message: "The rebuilt plan differs from the recorded plan; start a new execution"
+            })
+          )
+        }
+        let plans = recordedByEarlierBuild.get(instance)
+        if (plans === undefined) {
+          plans = new Set()
+          recordedByEarlierBuild.set(instance, plans)
+        }
+        plans.add(planOf(sourceId))
+        return Effect.logDebug("engine-store: resuming under a plan an earlier build recorded", {
+          runId: instance.executionId,
+          flow: record.flow,
+          sourceId
+        })
+      })
+    }
     const stepBoundary = yield* StepBoundary.StepBoundary
     /**
      * Both halves of the isolated-execution lane are OPTIONAL and resolved
@@ -382,8 +573,11 @@ const makeWithEngineJj = (
       canActivate: options.canActivate,
       requestResume: options.requestResume,
       engine: Deferred.await(engine),
-      wakeBus
+      wakeBus,
+      sweep: options.sweep
     })
+    // The one execution a hosted store's registration recovers, if any.
+    const hostedExecution = typeof options.sweep === "object" ? options.sweep.host : undefined
     const deferred = yield* DeferredPersistence.make({
       owner,
       journalSource: options.journalSource,
@@ -484,6 +678,18 @@ const makeWithEngineJj = (
         // the action's error schema it became "SchemaError: Expected never"
         // and lost the refused paths.
         Effect.catchFilter(boundaryRefusal, Effect.die),
+        // The store went away while this attempt was admitted, run or
+        // recorded. Its outcome is not the action's: whatever did not commit
+        // left the attempt row running, so the dispatch interrupts itself, as
+        // it does on a lost fence, and the run is released for a later drive
+        // that adopts the attempt and records its result.
+        Effect.catchIf(storageUnavailable, (error) =>
+          Effect.annotateCurrentSpan({ outcome: "storage_unavailable" }).pipe(
+            Effect.andThen(Effect.logWarning("action attempt interrupted: the engine store is unavailable")),
+            Effect.annotateLogs({ ...logContext, error: error._tag, code: error.code }),
+            Effect.andThen(Metric.update(EngineStoreMetrics.storageUnavailable, 1)),
+            Effect.andThen(Effect.interrupt)
+          )),
         Flow.intoResult,
         Effect.provideService(FlowRuntime.FlowInstance, instance),
         Effect.provideService(
@@ -528,7 +734,7 @@ const makeWithEngineJj = (
       // two same-name spans around one operation.
       register: (flow, execute) =>
         driver.register(flow, execute).pipe(
-          Effect.tap(() => deferred.sweepDue(flow._tag))
+          Effect.tap(() => deferred.sweepDue(flow._tag, hostedExecution))
         ),
       execute: driver.execute,
       poll: driver.poll,
@@ -548,6 +754,10 @@ const makeWithEngineJj = (
        * instead of one per observation. A `Duplicate` receipt is that
        * collapse happening, and it is the expected answer on a resume.
        *
+       * A plan record is the exception to byte equality: a resume compares it
+       * by identity, without declaration sites or page layout, so a rebuilt
+       * bundle resumes and a changed plan fails with `plan_changed`.
+       *
        * On the durable, owner-fenced channel, like every other engine record:
        * a writer that lost the run self-interrupts rather than narrating a
        * walk it no longer owns.
@@ -565,23 +775,29 @@ const makeWithEngineJj = (
       },
       recordNode: (input) => {
         const record = observation(input)
-        return Effect.flatMap(FlowRuntime.FlowInstance, (parent) =>
-          Effect.flatMap(planProvenance(parent, record), (provenance) =>
-            journal.emitDurable(
-              NodeJournal.entry({
-                runId: parent.executionId,
-                sourceId: options.journalSource,
-                ...provenance,
-                root: declarationRoot
-              }, record),
-              owner
-            ).pipe(
+        return Effect.flatMap(FlowRuntime.FlowInstance, (parent) => {
+          if (
+            record._tag === "SubgraphAppended" &&
+            recordedByEarlierBuild.get(parent)?.has(planOf(`${options.journalSource}/${record.sourceId}`))
+          ) {
+            return Effect.void
+          }
+          return Effect.flatMap(planProvenance(parent, record), (provenance) => {
+            const entry = NodeJournal.entry({
+              runId: parent.executionId,
+              sourceId: options.journalSource,
+              ...provenance,
+              root: declarationRoot
+            }, record)
+            // Every node record is built as an object, so its payload is one.
+            const payload = entry.payload as Readonly<Record<string, unknown>>
+            return journal.emitDurable(entry, owner).pipe(
               Effect.tap(() =>
                 Effect.sync(() => {
                   if (record._tag === "PlanRecorded") {
-                    planProvenances.get(parent)?.set(
+                    recordedPlans.get(parent)?.set(
                       `${options.journalSource}/${record.sourceId}`,
-                      Effect.succeed(provenance)
+                      Effect.succeed({ provenance, payload })
                     )
                   }
                 })
@@ -590,18 +806,13 @@ const makeWithEngineJj = (
                 error.code === "fence_lost" ?
                   Effect.interrupt :
                   error.code === "idempotency_conflict" && record._tag === "PlanRecorded"
-                  ? Effect.fail(
-                    new Interpreter.InterpreterError({
-                      code: "plan_changed",
-                      flow: record.flow,
-                      node: "root",
-                      message: "The rebuilt plan differs from the recorded plan; start a new execution"
-                    })
-                  )
+                  ? rebuiltPlan(parent, record, payload)
                   : Effect.die(error)
               ),
               Effect.asVoid
-            )))
+            )
+          })
+        })
       },
       actionReplayKey: Effect.fnUntraced(function*(derive) {
         const instance = yield* FlowRuntime.FlowInstance
@@ -705,15 +916,54 @@ const makeWithEngineJj = (
       // re-subscribes only costs one poll interval. Cross-process wakes ride
       // the polling schedule and the heartbeat sweeps: the bus is in-process,
       // and the journal offers no committed cross-process subscription.
-      resumeSignal: (_flow, executionId) =>
-        wakeBus.awaitWake(executionId)
+      resumeSignal: (_flow, executionId) => wakeBus.awaitWake(executionId)
     }
     const service = {
       ...FlowEngine.bindHostCeiling(host, FlowEngine.makeUnsafe(encoded)),
       durability: "durable" as const
     }
     yield* Deferred.succeed(engine, service)
-    return service
+
+    /** What the store says the execution is now, for its host. */
+    const driven = (executionId: string) =>
+      Effect.gen(function*() {
+        const row = yield* runStore.get(executionId)
+        if (RunStore.isTerminalRunStatus(row.status)) {
+          return { _tag: "Settled", status: row.status } as const
+        }
+        const wake = yield* nextWake(executionId).pipe(
+          Effect.provideService(RunStore.RunStore, runStore),
+          Effect.provideService(DurableEngineState.DurableEngineState, engineState)
+        )
+        const nowMs = Math.floor(yield* Clock.currentTimeMillis)
+        return Option.isSome(wake) && wake.value <= nowMs
+          ? { _tag: "Unfinished" } as const
+          : { _tag: "Parked", wakeAtMs: Option.getOrUndefined(wake) } as const
+      })
+    const hostDriver = Driver.of({
+      // Compared under the host ceiling, as every call of the typed service is.
+      drive: Effect.fn("EngineStore.drive")(function*(flow, input) {
+        yield* Effect.annotateCurrentSpan({ executionId: input.executionId, flow: flow._tag })
+        const admitted = yield* runStore.get(input.executionId).pipe(
+          Effect.as(true),
+          Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeed(false))
+        )
+        // A drive that ends on a lost fence or an unavailable store interrupts
+        // itself and releases the run; the store, read below, says what is
+        // left. Any other failure is the caller's.
+        const exit = yield* Effect.exit(
+          admitted
+            ? driver.resume(flow, input.executionId, { poll: true })
+            : driver.execute(flow, { executionId: input.executionId, payload: input.payload, discard: false })
+        )
+        if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) return yield* Effect.failCause(exit.cause)
+        const outcome = yield* driven(input.executionId)
+        if (outcome._tag === "Settled") yield* driver.reannounce(input.executionId)
+        yield* Effect.annotateCurrentSpan({ outcome: outcome._tag })
+        return outcome
+      }, CapabilitySet.attenuateGroups(host.groups))
+    })
+    return { runtime: service, driver: hostDriver }
   })
 
 /**
@@ -728,9 +978,9 @@ export const make = (
 ): Effect.Effect<FlowRuntime.FlowRuntime["Service"], never, PublicRequirements> =>
   Effect.gen(function*() {
     const jj = yield* Jj.Jj
-    return yield* makeWithEngineJj(options).pipe(
+    return (yield* makeWithEngineJj(options).pipe(
       Effect.provideService(EngineJj.EngineJj, jj)
-    )
+    )).runtime
   })
 
 /**
@@ -742,7 +992,7 @@ export const make = (
 const layerBase = (
   options: Options
 ): Layer.Layer<
-  FlowEngine.SnapshotBoundary | FlowRuntime.FlowRuntime,
+  FlowEngine.SnapshotBoundary | FlowRuntime.FlowRuntime | Driver,
   never,
   Requirements
 > => {
@@ -776,7 +1026,10 @@ const layerBase = (
       }))
   )
   return Layer.merge(
-    Layer.effect(FlowRuntime.FlowRuntime, makeWithEngineJj(options)),
+    Layer.effectContext(Effect.map(
+      makeWithEngineJj(options),
+      ({ driver, runtime }) => Context.make(FlowRuntime.FlowRuntime, runtime).pipe(Context.add(Driver, driver))
+    )),
     snapshotBoundary
   )
 }
@@ -791,7 +1044,7 @@ const layerBase = (
  */
 export const layer = (
   options: Options
-): Layer.Layer<FlowEngine.SnapshotBoundary | FlowRuntime.FlowRuntime, never, PublicRequirements> =>
+): Layer.Layer<FlowEngine.SnapshotBoundary | FlowRuntime.FlowRuntime | Driver, never, PublicRequirements> =>
   layerBase(options).pipe(Layer.provide(EngineJj.layerFromJj))
 
 /**
@@ -805,10 +1058,55 @@ export const layerWithPrivilegedJj = <E, R>(
   options: Options,
   privilegedJj: Layer.Layer<Jj.Jj, E, R>
 ): Layer.Layer<
-  FlowEngine.SnapshotBoundary | FlowRuntime.FlowRuntime,
+  FlowEngine.SnapshotBoundary | FlowRuntime.FlowRuntime | Driver,
   E,
   PublicRequirements | R
 > =>
   layerBase(options).pipe(
     Layer.provide(EngineJj.layerFromJj.pipe(Layer.provide(privilegedJj)))
   )
+
+/**
+ * When the host of a `sweep: { host }` store must next drive `executionId`, in
+ * epoch milliseconds.
+ *
+ * A hosted store runs no sweep, so nothing wakes a parked execution unless its
+ * host arms the next invocation for this instant:
+ *
+ * - `Option.none()`: nothing will wake the execution by itself. It settled, it
+ *   does not exist, it is quarantined until an operator resumes it, or it is
+ *   parked on an external event whose completion has not arrived. The writer
+ *   of that completion reports it through `requestResume`.
+ * - `Option.some(at)` with `at` at or before now: there is work now. A
+ *   completion or a clock is due and not yet consumed, a cancellation was
+ *   requested, the run was released by an interrupted drive, or it was
+ *   admitted and never driven.
+ * - `Option.some(at)` later than now: the earliest pending `DurableClock` of a
+ *   parked execution, or the instant another owner's claim or lease lapses,
+ *   when another owner holds the run.
+ *
+ * @since 1.0.0
+ * @category hosting
+ */
+export const nextWake = Effect.fn("EngineStore.nextWake")(function*(executionId: string) {
+  const runs = yield* RunStore.RunStore
+  const state = yield* DurableEngineState.DurableEngineState
+  const nowMs = Math.floor(yield* Clock.currentTimeMillis)
+  const staleAfterMs = Duration.toMillis(Ownership.heartbeatStaleAfter)
+  const row = yield* runs.get(executionId).pipe(
+    Effect.map(Option.some),
+    Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeedNone)
+  )
+  if (Option.isNone(row) || RunStore.isTerminalRunStatus(row.value.status)) return Option.none<number>()
+  const run = row.value
+  // A claim another owner holds is taken only once it is stale.
+  if (run.claimedAtMs !== null) return Option.some(Math.max(nowMs, run.claimedAtMs + staleAfterMs))
+  if (run.status === "running") return Option.some(Math.max(nowMs, run.heartbeatAtMs! + staleAfterMs))
+  if (run.status === "pending" || run.cancelRequestedAtMs !== null) return Option.some(nowMs)
+  const waiting = yield* state.waiting(executionId)
+  if (Option.isSome(waiting) && waiting.value.reason === "quarantine") return Option.none<number>()
+  if (Option.isSome(waiting) && waiting.value.reason === "released") return Option.some(nowMs)
+  if (yield* state.hasDueWake(executionId, nowMs)) return Option.some(nowMs)
+  const clocks = yield* state.pendingClocks({ executionId })
+  return clocks.length === 0 ? Option.none<number>() : Option.some(clocks[0]!.dueAtMs)
+})

@@ -238,6 +238,8 @@ describe("Retention.collect", () => {
       // The driver's BEGIN IMMEDIATE reserves a write lock even for reads, so
       // PRAGMA query_only would reject the transaction before the pass runs.
       // Check persisted changes and both schemas, not the lock mode it uses.
+      // Ordered, because PostgreSQL's catalogs are shared by every schema the
+      // matrix runs beside this one, and their scan order moves with its DDL.
       const changes = yield* sql.onDialectOrElse({
         pg: () => sql`SELECT * FROM flows_runs ORDER BY run_id`,
         orElse: () => sql`SELECT total_changes() AS total`
@@ -247,7 +249,7 @@ describe("Retention.collect", () => {
           pg: () => "",
           orElse: () => "UNION ALL SELECT name, sql FROM sqlite_temp_master"
         }))
-      }`
+      } ORDER BY name, sql`
       const report = yield* Retention.collect({ olderThanMs: 500, dryRun: true })
       expect(report.runs).toEqual(["old-result"])
       expect(report.deleted).toEqual({})
@@ -264,7 +266,7 @@ describe("Retention.collect", () => {
             pg: () => "",
             orElse: () => "UNION ALL SELECT name, sql FROM sqlite_temp_master"
           }))
-        }`
+        } ORDER BY name, sql`
       )
         .toEqual(schema)
     })))

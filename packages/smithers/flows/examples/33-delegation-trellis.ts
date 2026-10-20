@@ -13,10 +13,10 @@
 import { Action, Flow, Graph, Interpreter } from "@smthrs/flow"
 import { Trellis } from "@smthrs/patterns"
 import { Node } from "@smthrs/plan"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { durableEngine } from "../src/test/TestNodeRuntime.ts"
 
 /** The bounds this delegation admits a plan under. */
 export const envelope: Trellis.Envelope = { fuel: 4, depth: 3, fanout: 3 }
@@ -163,7 +163,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
             Interpreter.layer(RunPlan)
           ).pipe(
             Layer.provideMerge(Action.layerImplementations),
-            Layer.provideMerge(durableEngine(filename, "delegation-worker"))
+            Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "delegation-worker"))
           )
         )
       )

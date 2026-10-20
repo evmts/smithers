@@ -655,6 +655,26 @@ const fakeSdk = (controls: Controls = {}) => {
 const refusalOf = (exit: Exit.Exit<unknown, unknown>): unknown =>
   Exit.isFailure(exit) ? (Cause.squash(exit.cause) as ProviderError).cause : undefined
 
+/** The collector a provider here collects through, unless its test counts collections itself. */
+const collector: MicrosandboxSandbox.GarbageCollector = { collect: Effect.void }
+
+/** A Microsandbox provider over these options and {@link collector}. */
+const microsandbox = (
+  options: Omit<MicrosandboxSandbox.MicrosandboxSandboxOptions, "collector">,
+  through: MicrosandboxSandbox.GarbageCollector = collector
+): Provider => MicrosandboxSandbox.make({ ...options, collector: through })
+
+/** A collector that records how many connections the fake had served at each collection. */
+const recordingCollector = (connects: () => number) => {
+  const collections: Array<number> = []
+  const recorder: MicrosandboxSandbox.GarbageCollector = {
+    collect: Effect.sync(() => {
+      collections.push(connects())
+    })
+  }
+  return { collections, recorder }
+}
+
 const inSession = <A, E>(
   provider: Provider,
   key: string,
@@ -697,7 +717,7 @@ describe("MicrosandboxSandbox", () => {
       const keep = (line: string) => {
         lines.push(line)
       }
-      yield* inSession(MicrosandboxSandbox.make({ sdk: fake.sdk }), "safe-health", (session) =>
+      yield* inSession(microsandbox({ sdk: fake.sdk }), "safe-health", (session) =>
         Effect.gen(function*() {
           const error = yield* Effect.flip(session.ping!)
           expect(error.cause).toBe(cause)
@@ -721,7 +741,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       const fake = fakeSdk()
       const workdir = join(root, "files-ws")
-      yield* inSession(MicrosandboxSandbox.make({ sdk: fake.sdk, workdir }), "files", (session) =>
+      yield* inSession(microsandbox({ sdk: fake.sdk, workdir }), "files", (session) =>
         Effect.gen(function*() {
           const files = session.files!
           // A plain overwrite keeps the SDK's byte-typed write.
@@ -747,7 +767,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       const cause = { code: "sandboxFsOps", toString: () => "No such file or directory" }
       const fake = fakeSdk({ readFailure: () => cause })
-      yield* inSession(MicrosandboxSandbox.make({ sdk: fake.sdk }), "read-failure", (session) =>
+      yield* inSession(microsandbox({ sdk: fake.sdk }), "read-failure", (session) =>
         Effect.gen(function*() {
           const error = yield* Effect.flip(session.readFile("/missing"))
           expect(error.code).toBe("not_found")
@@ -759,7 +779,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       const fake = fakeSdk()
       yield* inSession(
-        MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: root, shell: "sh" }),
+        microsandbox({ sdk: fake.sdk, workdir: root, shell: "sh" }),
         "relative-plain",
         (session) =>
           Effect.gen(function*() {
@@ -772,7 +792,7 @@ describe("MicrosandboxSandbox", () => {
   it.effect("refuses deletion with a relative shell before guest execution", () =>
     Effect.gen(function*() {
       const fake = fakeSdk()
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: root, shell: "sh" })
+      const provider = microsandbox({ sdk: fake.sdk, workdir: root, shell: "sh" })
       yield* inSession(provider, "relative-shell", (session) =>
         Effect.gen(function*() {
           const calls = fake.recorded.execs.length
@@ -791,7 +811,7 @@ describe("MicrosandboxSandbox", () => {
       () =>
         Effect.gen(function*() {
           const fake = fakeSdk()
-          const provider = MicrosandboxSandbox.make({
+          const provider = microsandbox({
             sdk: fake.sdk,
             workdir: root,
             shell: "/bin/bash",
@@ -823,7 +843,7 @@ describe("MicrosandboxSandbox", () => {
       Effect.gen(function*() {
         const fake = fakeSdk()
         const workdir = join(root, "conformance-ws")
-        const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir })
+        const provider = microsandbox({ sdk: fake.sdk, workdir })
 
         const violations = yield* SandboxConformance.check(provider, {
           provides: { ping: true, kill: true, interrupt: true, ephemeral: true },
@@ -854,7 +874,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       const fake = fakeSdk()
       const workdir = join(root, "options-ws")
-      const provider = MicrosandboxSandbox.make({
+      const provider = microsandbox({
         sdk: fake.sdk,
         image: "alpine:3.22",
         workdir,
@@ -951,7 +971,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       const fake = fakeSdk()
       yield* Effect.scoped(
-        MicrosandboxSandbox.make({
+        microsandbox({
           sdk: fake.sdk,
           workdir: join(root, "limits-ws"),
           limits: { cpus: 2, memoryMib: 768, timeoutSecs: 300 }
@@ -969,10 +989,10 @@ describe("MicrosandboxSandbox", () => {
         ["maxDurationSecs", "timeoutSecs", { maxDurationSecs: 60, limits: { timeoutSecs: 60 } }]
       ] as const
     ) {
-      expect(() => MicrosandboxSandbox.make({ sdk: deps.value, ...options }))
+      expect(() => microsandbox({ sdk: deps.value, ...options }))
         .toThrow(`microsandbox: ${vendor} and limits.${neutral} are exclusive`)
     }
-    expect(() => MicrosandboxSandbox.make({ sdk: deps.value, limits: { memoryMib: 0.5 } })).toThrow(/positive integer/)
+    expect(() => microsandbox({ sdk: deps.value, limits: { memoryMib: 0.5 } })).toThrow(/positive integer/)
     expect(deps.touched).toEqual([])
   })
 
@@ -992,12 +1012,12 @@ describe("MicrosandboxSandbox", () => {
       }
       const workdir = join(root, "policy-ws")
       yield* inSession(
-        MicrosandboxSandbox.make({ sdk: fake.sdk, workdir, networkPolicy: policy, rootDiskMib: 32_768 }),
+        microsandbox({ sdk: fake.sdk, workdir, networkPolicy: policy, rootDiskMib: 32_768 }),
         "policy-image",
         () => Effect.void
       )
       yield* inSession(
-        MicrosandboxSandbox.make({ sdk: fake.sdk, workdir, snapshot: "base", rootDiskMib: 32_768 }),
+        microsandbox({ sdk: fake.sdk, workdir, snapshot: "base", rootDiskMib: 32_768 }),
         "policy-snapshot",
         () => Effect.void
       )
@@ -1007,7 +1027,7 @@ describe("MicrosandboxSandbox", () => {
       expect(snapshot!["rootDisk"]).toBeUndefined()
       expect(image!["disableNetwork"]).toBeUndefined()
       // The neutral option and the vendor policy are exclusive at construction.
-      expect(() => MicrosandboxSandbox.make({ sdk: fake.sdk, workdir, network: "none", networkPolicy: policy }))
+      expect(() => microsandbox({ sdk: fake.sdk, workdir, network: "none", networkPolicy: policy }))
         .toThrow("microsandbox: network and networkPolicy are exclusive; name one")
       expect(fake.recorded.builds).toHaveLength(2)
     }))
@@ -1017,7 +1037,7 @@ describe("MicrosandboxSandbox", () => {
       const fake = fakeSdk()
       const boot = (key: string, network?: "none" | "open") =>
         inSession(
-          MicrosandboxSandbox.make({
+          microsandbox({
             sdk: fake.sdk,
             workdir: join(root, `${key}-ws`),
             ...network === undefined ? {} : { network }
@@ -1046,7 +1066,7 @@ describe("MicrosandboxSandbox", () => {
       fake.plant(name, ownership("smithers", "dead"))
       const refused = yield* Effect.exit(
         inSession(
-          MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "legacy-ws"), persistence: "sticky" }),
+          microsandbox({ sdk: fake.sdk, workdir: join(root, "legacy-ws"), persistence: "sticky" }),
           "legacy",
           () => Effect.void
         )
@@ -1063,7 +1083,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       const fake = fakeSdk()
       yield* inSession(
-        MicrosandboxSandbox.make({
+        microsandbox({
           sdk: fake.sdk,
           workdir: join(root, "allow-ws"),
           network: { allow: ["registry.npmjs.org", "*.github.com"] }
@@ -1116,7 +1136,7 @@ describe("MicrosandboxSandbox", () => {
       const policyFor = (allow: ReadonlyArray<string>) =>
         Effect.gen(function*() {
           yield* inSession(
-            MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "dns-ws"), network: { allow } }),
+            microsandbox({ sdk: fake.sdk, workdir: join(root, "dns-ws"), network: { allow } }),
             "dns",
             () => Effect.void
           )
@@ -1163,7 +1183,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       const fake = fakeSdk()
       yield* inSession(
-        MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "empty-allow-ws"), network: { allow: [] } }),
+        microsandbox({ sdk: fake.sdk, workdir: join(root, "empty-allow-ws"), network: { allow: [] } }),
         "empty-allow",
         () => Effect.void
       )
@@ -1183,7 +1203,7 @@ describe("MicrosandboxSandbox", () => {
       const policyFor = (allow: ReadonlyArray<string>) =>
         Effect.gen(function*() {
           yield* inSession(
-            MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "apex-ws"), network: { allow } }),
+            microsandbox({ sdk: fake.sdk, workdir: join(root, "apex-ws"), network: { allow } }),
             "apex",
             () => Effect.void
           )
@@ -1219,10 +1239,10 @@ describe("MicrosandboxSandbox", () => {
   it("refuses a malformed allowlist at construction", () => {
     const fake = fakeSdk()
     for (const allow of [["https://example.com"], ["exa mple.com"], [""], ["*"]]) {
-      expect(() => MicrosandboxSandbox.make({ sdk: fake.sdk, network: { allow } }))
+      expect(() => microsandbox({ sdk: fake.sdk, network: { allow } }))
         .toThrow("microsandbox: network allowlist entry is not a host name")
     }
-    expect(() => MicrosandboxSandbox.make({ sdk: fake.sdk, network: "all" as never }))
+    expect(() => microsandbox({ sdk: fake.sdk, network: "all" as never }))
       .toThrow(`microsandbox: network must be "none", "open" or { allow: string[] }`)
     expect(fake.recorded.builds).toEqual([])
   })
@@ -1232,7 +1252,7 @@ describe("MicrosandboxSandbox", () => {
       const fake = fakeSdk()
       const workdir = join(root, "network-reattach-ws")
       const sticky = (network?: "none" | "open" | { readonly allow: ReadonlyArray<string> }) =>
-        MicrosandboxSandbox.make({
+        microsandbox({
           sdk: fake.sdk,
           workdir,
           persistence: "sticky",
@@ -1271,7 +1291,7 @@ describe("MicrosandboxSandbox", () => {
       const sticky = (
         limits?: { readonly cpus?: number; readonly memoryMib?: number; readonly timeoutSecs?: number }
       ) =>
-        MicrosandboxSandbox.make({
+        microsandbox({
           sdk: fake.sdk,
           workdir,
           persistence: "sticky",
@@ -1304,8 +1324,8 @@ describe("MicrosandboxSandbox", () => {
   it.effect("labels every machine with a default owner and a holder minted per provider", () =>
     Effect.gen(function*() {
       const fake = fakeSdk()
-      const first = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "labels-ws") })
-      const second = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "labels-ws") })
+      const first = microsandbox({ sdk: fake.sdk, workdir: join(root, "labels-ws") })
+      const second = microsandbox({ sdk: fake.sdk, workdir: join(root, "labels-ws") })
       yield* inSession(first, "labels-a", () => Effect.void)
       yield* inSession(first, "labels-b", () => Effect.void)
       yield* inSession(second, "labels-c", () => Effect.void)
@@ -1320,7 +1340,7 @@ describe("MicrosandboxSandbox", () => {
   it.live("streams output as the guest writes it, before the command exits", () =>
     Effect.gen(function*() {
       const fake = fakeSdk()
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "stream-ws") })
+      const provider = microsandbox({ sdk: fake.sdk, workdir: join(root, "stream-ws") })
       yield* inSession(provider, "streaming", (session) =>
         Effect.scoped(Effect.gen(function*() {
           const gate = join(root, `stream-gate-${process.pid}`)
@@ -1346,7 +1366,7 @@ describe("MicrosandboxSandbox", () => {
   it.live("delivers the first chunk while the command is still running", () =>
     Effect.gen(function*() {
       const fake = fakeSdk()
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "first-chunk-ws") })
+      const provider = microsandbox({ sdk: fake.sdk, workdir: join(root, "first-chunk-ws") })
       yield* inSession(provider, "first-chunk", (session) =>
         Effect.scoped(Effect.gen(function*() {
           const gate = join(root, `first-chunk-gate-${process.pid}`)
@@ -1364,7 +1384,7 @@ describe("MicrosandboxSandbox", () => {
       Effect.gen(function*() {
         const fake = fakeSdk()
         const workdir = join(root, "tree-ws")
-        const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir })
+        const provider = microsandbox({ sdk: fake.sdk, workdir })
         yield* inSession(provider, "tree", (session) =>
           Effect.scoped(Effect.gen(function*() {
             // `set -m` gives the background job a process group of its own, so
@@ -1394,7 +1414,7 @@ describe("MicrosandboxSandbox", () => {
   it.live("signals the process group when the pid is not known yet", () =>
     Effect.gen(function*() {
       const fake = fakeSdk({ startedDelayMs: (line) => line.includes("slow-start") ? 1_000 : undefined })
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "early-kill-ws") })
+      const provider = microsandbox({ sdk: fake.sdk, workdir: join(root, "early-kill-ws") })
       yield* inSession(provider, "early-kill", (session) =>
         Effect.scoped(Effect.gen(function*() {
           const running = yield* session.spawn("sleep 30 # slow-start", {})
@@ -1409,7 +1429,7 @@ describe("MicrosandboxSandbox", () => {
       // The walk's own exit is reported late, so the command it killed has
       // always ended by the time the walk returns.
       const fake = fakeSdk({ exitedDelayMs: (line) => line.includes("sleep 30") ? undefined : 300 })
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "walked-kill-ws") })
+      const provider = microsandbox({ sdk: fake.sdk, workdir: join(root, "walked-kill-ws") })
       yield* inSession(provider, "walked-kill", (session) =>
         Effect.scoped(Effect.gen(function*() {
           const running = yield* session.spawn("sleep 30", {})
@@ -1423,7 +1443,7 @@ describe("MicrosandboxSandbox", () => {
   it.live("fails a signal neither the walk nor the group can deliver", () =>
     Effect.gen(function*() {
       const fake = fakeSdk()
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "lost-signal-ws") })
+      const provider = microsandbox({ sdk: fake.sdk, workdir: join(root, "lost-signal-ws") })
       yield* inSession(provider, "lost-signal", (session) =>
         Effect.scoped(Effect.gen(function*() {
           const running = yield* session.spawn("sleep 30", {})
@@ -1441,7 +1461,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       const fake = fakeSdk()
       const workdir = join(root, "stubborn-ws")
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir })
+      const provider = microsandbox({ sdk: fake.sdk, workdir })
       yield* inSession(provider, "stubborn", (session) =>
         Effect.gen(function*() {
           const fiber = yield* Effect.forkChild(Effect.scoped(Effect.flatMap(
@@ -1463,7 +1483,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       const fake = fakeSdk()
       const workdir = join(root, "interrupt-ws")
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir })
+      const provider = microsandbox({ sdk: fake.sdk, workdir })
       yield* inSession(provider, "interrupt", (session) =>
         Effect.gen(function*() {
           const fiber = yield* Effect.forkChild(Effect.scoped(Effect.flatMap(
@@ -1486,7 +1506,7 @@ describe("MicrosandboxSandbox", () => {
           signalFailure: () => new Error("group refused")
         })
         const workdir = join(root, "undeliverable-ws")
-        const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir })
+        const provider = microsandbox({ sdk: fake.sdk, workdir })
         yield* inSession(provider, "undeliverable", (session) =>
           Effect.gen(function*() {
             const fiber = yield* Effect.forkChild(Effect.scoped(Effect.flatMap(
@@ -1511,7 +1531,7 @@ describe("MicrosandboxSandbox", () => {
       })
       const fake = fakeSdk({ startGate: (line) => line.includes("late-start") ? gate : undefined })
       const workdir = join(root, "late-start-ws")
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir })
+      const provider = microsandbox({ sdk: fake.sdk, workdir })
       yield* inSession(provider, "late-start", (session) =>
         Effect.gen(function*() {
           const fiber = yield* Effect.forkChild(Effect.scoped(Effect.flatMap(
@@ -1537,7 +1557,7 @@ describe("MicrosandboxSandbox", () => {
         startGate: (line) => line.includes("refused-kill") ? gate : undefined,
         killFailure: (line) => line.includes("refused-kill") ? new Error("kill refused") : undefined
       })
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "refused-kill-ws") })
+      const provider = microsandbox({ sdk: fake.sdk, workdir: join(root, "refused-kill-ws") })
       yield* inSession(provider, "refused-kill", (session) =>
         Effect.gen(function*() {
           const fiber = yield* Effect.forkChild(Effect.scoped(Effect.flatMap(
@@ -1556,7 +1576,7 @@ describe("MicrosandboxSandbox", () => {
   it.live("fails a pending command promptly with unavailable when its machine is lost", () =>
     Effect.gen(function*() {
       const fake = fakeSdk()
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "lost-ws") })
+      const provider = microsandbox({ sdk: fake.sdk, workdir: join(root, "lost-ws") })
       const began = Date.now()
       const failure = yield* inSession(provider, "lost", (session) =>
         Effect.scoped(Effect.gen(function*() {
@@ -1582,7 +1602,7 @@ describe("MicrosandboxSandbox", () => {
     () =>
       Effect.gen(function*() {
         const fake = fakeSdk()
-        const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "unstarted-ws") })
+        const provider = microsandbox({ sdk: fake.sdk, workdir: join(root, "unstarted-ws") })
         const failure = yield* inSession(provider, "unstarted", (session) =>
           Effect.scoped(Effect.gen(function*() {
             const running = yield* session.spawn("pwd", { cwd: "./no-such-directory" })
@@ -1602,7 +1622,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       const broken = new Error("agent protocol broke")
       const fake = fakeSdk({ recvFailure: (line) => line.includes("broken-stream") ? broken : undefined })
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "broken-ws") })
+      const provider = microsandbox({ sdk: fake.sdk, workdir: join(root, "broken-ws") })
       yield* inSession(provider, "broken", (session) =>
         Effect.scoped(Effect.gen(function*() {
           const running = yield* session.spawn("sleep 1 # broken-stream", {})
@@ -1616,7 +1636,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       const refused = new Error("exec refused")
       const fake = fakeSdk({ execFailure: (line) => line.includes("refused") ? refused : undefined })
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "refused-ws") })
+      const provider = microsandbox({ sdk: fake.sdk, workdir: join(root, "refused-ws") })
       yield* inSession(provider, "refused", (session) =>
         Effect.gen(function*() {
           const failure = yield* Effect.flip(Effect.scoped(session.spawn("true # refused", {})))
@@ -1629,7 +1649,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       const cloud = fakeSdk({ defaultBackend: () => "cloud" })
       const refused = yield* Effect.flip(
-        inSession(MicrosandboxSandbox.make({ sdk: cloud.sdk }), "cloud", () => Effect.void)
+        inSession(microsandbox({ sdk: cloud.sdk }), "cloud", () => Effect.void)
       )
       expect(refused.code).toBe("unavailable")
       expect(refused.message).toContain("default backend is cloud")
@@ -1637,7 +1657,7 @@ describe("MicrosandboxSandbox", () => {
       expect(cloud.recorded.builds).toEqual([])
 
       yield* inSession(
-        MicrosandboxSandbox.make({ sdk: cloud.sdk, backend: "any", workdir: join(root, "any-ws") }),
+        microsandbox({ sdk: cloud.sdk, backend: "any", workdir: join(root, "any-ws") }),
         "any",
         () => Effect.void
       )
@@ -1650,7 +1670,7 @@ describe("MicrosandboxSandbox", () => {
         }
       })
       const unnamed = yield* Effect.flip(
-        inSession(MicrosandboxSandbox.make({ sdk: broken.sdk }), "unnamed", () => Effect.void)
+        inSession(microsandbox({ sdk: broken.sdk }), "unnamed", () => Effect.void)
       )
       expect(unnamed.code).toBe("unavailable")
       expect(unnamed.cause).toBe(unreadable)
@@ -1661,7 +1681,7 @@ describe("MicrosandboxSandbox", () => {
       const raced = fakeSdk({ machineBackend: "cloud" })
       const moved = yield* Effect.flip(
         inSession(
-          MicrosandboxSandbox.make({ sdk: raced.sdk, workdir: join(root, "raced-ws") }),
+          microsandbox({ sdk: raced.sdk, workdir: join(root, "raced-ws") }),
           "raced",
           () => Effect.void
         )
@@ -1702,7 +1722,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       const { log, nix } = fakeNix()
       const fake = fakeSdk()
-      const provider = MicrosandboxSandbox.make({
+      const provider = microsandbox({
         sdk: fake.sdk,
         env: { BASE: "kept" },
         environment: { flake: "{ outputs = _: { }; }\n", lock: "{ \"version\": 7 }\n", attr: "ci", nix }
@@ -1741,7 +1761,7 @@ describe("MicrosandboxSandbox", () => {
   it.effect("looks for `nix` on the guest PATH when no executable is named", () =>
     Effect.gen(function*() {
       const fake = fakeSdk()
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, environment: { flake: "{ }" } })
+      const provider = microsandbox({ sdk: fake.sdk, environment: { flake: "{ }" } })
 
       // This host has no `nix` on PATH, so the warm fails at the spawn: the
       // point is the program the guest was asked for.
@@ -1758,7 +1778,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       const { nix } = fakeNix()
       const fake = fakeSdk()
-      const provider = MicrosandboxSandbox.make({
+      const provider = microsandbox({
         sdk: fake.sdk,
         image: "nixos/nix:2.29.0",
         env: { NIX_FAKE_FAIL: "1" },
@@ -1785,7 +1805,7 @@ describe("MicrosandboxSandbox", () => {
         const { nix } = fakeNix()
         const lost = fakeSdk({ loseOn: (line) => line.endsWith("--command true") })
         const gone = yield* Effect.flip(inSession(
-          MicrosandboxSandbox.make({ sdk: lost.sdk, environment: { flake: "{ }", nix } }),
+          microsandbox({ sdk: lost.sdk, environment: { flake: "{ }", nix } }),
           "warm-lost",
           () => Effect.void
         ))
@@ -1795,7 +1815,7 @@ describe("MicrosandboxSandbox", () => {
         const broken = new Error("agent protocol broke")
         const failing = fakeSdk({ recvFailure: (line) => line.endsWith("--command true") ? broken : undefined })
         const severed = yield* Effect.flip(inSession(
-          MicrosandboxSandbox.make({ sdk: failing.sdk, environment: { flake: "{ }", nix } }),
+          microsandbox({ sdk: failing.sdk, environment: { flake: "{ }", nix } }),
           "warm-broken",
           () => Effect.void
         ))
@@ -1813,7 +1833,7 @@ describe("MicrosandboxSandbox", () => {
           const { nix } = fakeNix()
           // A kill that fails is logged and left: the machine's removal ends it.
           const fake = fakeSdk({ killFailure: () => killFails ? new Error("kill refused") : undefined })
-          const provider = MicrosandboxSandbox.make({
+          const provider = microsandbox({
             sdk: fake.sdk,
             env: { NIX_FAKE_SLEEP: "30" },
             environment: { flake: "{ }", nix }
@@ -1834,7 +1854,7 @@ describe("MicrosandboxSandbox", () => {
       const fake = fakeSdk()
       // No workdir named: the default guest workspace lives under the
       // machine's directory and survives exactly as long as the machine.
-      const provider = MicrosandboxSandbox.make({
+      const provider = microsandbox({
         sdk: fake.sdk,
         snapshot: "snapshot-7",
         persistence: "sticky",
@@ -1860,7 +1880,7 @@ describe("MicrosandboxSandbox", () => {
       })
 
       fake.markStopped(name)
-      const second = MicrosandboxSandbox.make({
+      const second = microsandbox({
         sdk: fake.sdk,
         snapshot: "snapshot-7",
         persistence: "sticky",
@@ -1885,7 +1905,7 @@ describe("MicrosandboxSandbox", () => {
       expect(fake.recorded.destroys).toEqual([])
 
       const detachedFake = fakeSdk()
-      const detached = MicrosandboxSandbox.make({
+      const detached = microsandbox({
         sdk: detachedFake.sdk,
         persistence: "sticky"
       })
@@ -1903,7 +1923,7 @@ describe("MicrosandboxSandbox", () => {
           refusals-- > 0 ? coded("runtime", "the microVM did not respond within 10000 ms") : undefined
       })
       const name = yield* inSession(
-        MicrosandboxSandbox.make({ sdk: flaky.sdk }),
+        microsandbox({ sdk: flaky.sdk }),
         "flaky-open",
         (session) => Effect.as(session.ping!, session.remoteId)
       )
@@ -1911,7 +1931,7 @@ describe("MicrosandboxSandbox", () => {
       expect(flaky.machines.has(name)).toBe(false)
 
       const down = fakeSdk({ createFailure: () => agentGone("down") })
-      const refused = yield* Effect.flip(inSession(MicrosandboxSandbox.make({ sdk: down.sdk }), "down", Effect.succeed))
+      const refused = yield* Effect.flip(inSession(microsandbox({ sdk: down.sdk }), "down", Effect.succeed))
       expect(refused.message).toContain("could not be opened")
       expect(down.recorded.builds).toHaveLength(3)
     }), 30_000)
@@ -1919,7 +1939,7 @@ describe("MicrosandboxSandbox", () => {
   it.live("restarts a sticky machine whose guest stopped answering, on its own disk", () =>
     Effect.gen(function*() {
       const fake = fakeSdk()
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, persistence: "sticky" })
+      const provider = microsandbox({ sdk: fake.sdk, persistence: "sticky" })
       const bytes = new Uint8Array([1, 2, 3])
       const name = yield* inSession(provider, "wedged", (session) =>
         Effect.as(session.writeFile("/workspace/kept.bin", bytes), session.remoteId))
@@ -1971,7 +1991,7 @@ describe("MicrosandboxSandbox", () => {
     () =>
       Effect.gen(function*() {
         const fake = fakeSdk()
-        const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, persistence: "sticky" })
+        const provider = microsandbox({ sdk: fake.sdk, persistence: "sticky" })
         const refused = yield* inSession(provider, "swapped", (session) =>
           Effect.gen(function*() {
             const machine = fake.machines.get(session.remoteId)!
@@ -1993,7 +2013,7 @@ describe("MicrosandboxSandbox", () => {
       const fake = fakeSdk({
         execFailure: (line) => line.includes("blip") && blips-- > 0 ? agentGone("blip") : undefined
       })
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, persistence: "sticky" })
+      const provider = microsandbox({ sdk: fake.sdk, persistence: "sticky" })
       const [stdout] = yield* inSession(provider, "blip", (session) =>
         Effect.flatMap(session.spawn("printf blip", {}), output).pipe(Effect.scoped))
       expect(stdout).toBe("blip")
@@ -2002,12 +2022,50 @@ describe("MicrosandboxSandbox", () => {
     }), 30_000)
 
   it.live(
+    "gives finished command handles back through the host's collector before it reconnects",
+    () =>
+      Effect.gen(function*() {
+        let blips = 1
+        const fake = fakeSdk({
+          execFailure: (line) => line.includes("blip") && blips-- > 0 ? agentGone("blip") : undefined
+        })
+        const { collections, recorder } = recordingCollector(() => fake.recorded.connects.length)
+        const provider = microsandbox({ sdk: fake.sdk, persistence: "sticky" }, recorder)
+        yield* inSession(
+          provider,
+          "collected",
+          (session) => Effect.flatMap(session.spawn("printf blip", {}), output).pipe(Effect.scoped)
+        )
+        // One collection, ahead of the one reconnection the revival made.
+        expect(collections).toEqual([0])
+        expect(fake.recorded.connects).toHaveLength(1)
+      }),
+    30_000
+  )
+
+  it.live("collects through the host's collector on every 64th command start", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const { collections, recorder } = recordingCollector(() => fake.recorded.connects.length)
+      const provider = microsandbox({ sdk: fake.sdk }, recorder)
+      yield* inSession(provider, "counted", (session) =>
+        Effect.gen(function*() {
+          for (let start = 1; start < 64; start++) {
+            yield* Effect.flatMap(session.spawn("true", {}), output).pipe(Effect.scoped)
+          }
+          expect(collections).toEqual([])
+          yield* Effect.flatMap(session.spawn("true", {}), output).pipe(Effect.scoped)
+          expect(collections).toHaveLength(1)
+        }))
+    }), 60_000)
+
+  it.live(
     "does not restart an ephemeral machine, and names a machine it could not bring back",
     () =>
       Effect.gen(function*() {
         const fake = fakeSdk()
         const lost = yield* Effect.flip(
-          inSession(MicrosandboxSandbox.make({ sdk: fake.sdk }), "ephemeral-gone", (session) =>
+          inSession(microsandbox({ sdk: fake.sdk }), "ephemeral-gone", (session) =>
             Effect.gen(function*() {
               fake.wedge(session.remoteId)
               return yield* session.spawn("true", {})
@@ -2020,7 +2078,7 @@ describe("MicrosandboxSandbox", () => {
           startFailure: () => new Error("no hypervisor"),
           stopFailure: () => new Error("not running")
         })
-        const provider = MicrosandboxSandbox.make({ sdk: dead.sdk, persistence: "sticky" })
+        const provider = microsandbox({ sdk: dead.sdk, persistence: "sticky" })
         const name = yield* inSession(provider, "dead", (session) => Effect.succeed(session.remoteId))
         dead.wedge(name)
         const refused = yield* Effect.flip(inSession(provider, "dead", Effect.succeed))
@@ -2029,7 +2087,7 @@ describe("MicrosandboxSandbox", () => {
 
         // A crashed machine starts again attached when the session is not detached.
         const attached = fakeSdk()
-        const inline = MicrosandboxSandbox.make({ sdk: attached.sdk, persistence: "sticky", detached: false })
+        const inline = microsandbox({ sdk: attached.sdk, persistence: "sticky", detached: false })
         const [stdout] = yield* inSession(inline, "crashed", (session) =>
           Effect.gen(function*() {
             attached.loseGuest(session.remoteId)
@@ -2041,7 +2099,7 @@ describe("MicrosandboxSandbox", () => {
         // A guest that answers a fresh connection with a refusal is not restarted over it.
         let denials = 0
         const denied = fakeSdk({ connectFailure: () => denials++ === 0 ? undefined : new Error("permission denied") })
-        const guarded = MicrosandboxSandbox.make({ sdk: denied.sdk, persistence: "sticky" })
+        const guarded = microsandbox({ sdk: denied.sdk, persistence: "sticky" })
         const machine = yield* inSession(guarded, "denied", (session) => Effect.succeed(session.remoteId))
         denied.wedge(machine)
         const kept = yield* Effect.flip(inSession(guarded, "denied", Effect.succeed))
@@ -2055,7 +2113,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       for (const controls of [{ modifyApplied: false }, { modifyFailure: () => new Error("modify refused") }]) {
         const fake = fakeSdk(controls)
-        const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, persistence: "sticky" })
+        const provider = microsandbox({ sdk: fake.sdk, persistence: "sticky" })
         yield* inSession(provider, "unclaimable", () => Effect.void)
         const refused = yield* Effect.flip(inSession(provider, "unclaimable", () => Effect.void))
         expect(refused.code).toBe("unavailable")
@@ -2075,7 +2133,7 @@ describe("MicrosandboxSandbox", () => {
       const invalidFake = fakeSdk()
       const invalid = yield* Effect.flip(
         inSession(
-          MicrosandboxSandbox.make({
+          microsandbox({
             sdk: invalidFake.sdk,
             image: "alpine",
             snapshot: "snapshot-7"
@@ -2091,7 +2149,7 @@ describe("MicrosandboxSandbox", () => {
       const unavailableFake = fakeSdk({ createFailure: () => "no hypervisor" })
       const unavailable = yield* Effect.flip(
         inSession(
-          MicrosandboxSandbox.make({ sdk: unavailableFake.sdk }),
+          microsandbox({ sdk: unavailableFake.sdk }),
           "unavailable",
           Effect.succeed
         )
@@ -2106,7 +2164,7 @@ describe("MicrosandboxSandbox", () => {
       const partialFake = fakeSdk()
       const partial = yield* Effect.flip(
         inSession(
-          MicrosandboxSandbox.make({
+          microsandbox({
             sdk: partialFake.sdk,
             workdir: join(root, "not-a-directory", "ws"),
             persistence: "sticky"
@@ -2120,7 +2178,7 @@ describe("MicrosandboxSandbox", () => {
 
       const destroyFailureFake = fakeSdk({ destroyFailure: () => new Error("could not remove") })
       yield* inSession(
-        MicrosandboxSandbox.make({ sdk: destroyFailureFake.sdk, workdir: join(root, "stop-failure-ws") }),
+        microsandbox({ sdk: destroyFailureFake.sdk, workdir: join(root, "stop-failure-ws") }),
         "stop-failure",
         (session) => Effect.succeed(session.id)
       )
@@ -2130,7 +2188,7 @@ describe("MicrosandboxSandbox", () => {
 
       const forcedFake = fakeSdk({ destroyFailure: (_, force) => force ? undefined : new Error("stop timed out") })
       const forced = yield* inSession(
-        MicrosandboxSandbox.make({ sdk: forcedFake.sdk, workdir: join(root, "forced-removal-ws") }),
+        microsandbox({ sdk: forcedFake.sdk, workdir: join(root, "forced-removal-ws") }),
         "forced-removal",
         (session) => Effect.succeed(session.remoteId)
       )
@@ -2145,7 +2203,7 @@ describe("MicrosandboxSandbox", () => {
     Effect.gen(function*() {
       const workdir = join(root, "failures-ws")
       const fake = fakeSdk()
-      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir })
+      const provider = microsandbox({ sdk: fake.sdk, workdir })
 
       const failures = yield* Effect.scoped(
         Effect.gen(function*() {
@@ -2351,7 +2409,7 @@ describe("MicrosandboxSandbox snapshots", () => {
   /** Prepares a sticky machine with `token` in its environment, runs `setup` in it, and names the machine. */
   const prepared = (fake: ReturnType<typeof fakeSdk>, setup: string): Effect.Effect<string, ProviderError> =>
     inSession(
-      MicrosandboxSandbox.make({ sdk: fake.sdk, persistence: "sticky", env: { GITHUB_TOKEN: token } }),
+      microsandbox({ sdk: fake.sdk, persistence: "sticky", env: { GITHUB_TOKEN: token } }),
       "prepare",
       (session) =>
         Effect.scoped(Effect.map(Effect.flatMap(session.spawn(setup, {}), output), ([, stderr, code]) => {
@@ -2386,7 +2444,7 @@ describe("MicrosandboxSandbox snapshots", () => {
       expect(fake.recorded.execs.some((exec) => exec.args.join(" ").includes(token))).toBe(false)
 
       const restored = yield* inSession(
-        MicrosandboxSandbox.make({ sdk: fake.sdk, snapshot: name }),
+        microsandbox({ sdk: fake.sdk, snapshot: name }),
         "restored",
         (session) =>
           Effect.gen(function*() {
@@ -2902,7 +2960,7 @@ describe("Microsandbox retained attach", () => {
   it.effect("labels execution identity, attaches without provisioning, and explicitly destroys", () =>
     Effect.gen(function*() {
       const fake = fakeSdk()
-      const provider = MicrosandboxSandbox.make({
+      const provider = microsandbox({
         sdk: fake.sdk,
         persistence: "sticky",
         network: "none",
@@ -2923,7 +2981,7 @@ describe("Microsandbox retained attach", () => {
   it.effect("does not revive a stopped machine or mutate a foreign identity", () =>
     Effect.gen(function*() {
       const fake = fakeSdk()
-      const provider = MicrosandboxSandbox.make({
+      const provider = microsandbox({
         sdk: fake.sdk,
         persistence: "sticky",
         network: "none",
@@ -2961,7 +3019,7 @@ describe("Microsandbox retained attach", () => {
 describe("Microsandbox job lifetime declaration", () => {
   it("does not advertise host-death retention when detached was explicitly disabled", () => {
     const fake = fakeSdk()
-    const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, persistence: "sticky", detached: false })
+    const provider = microsandbox({ sdk: fake.sdk, persistence: "sticky", detached: false })
     expect(provider.retained).toBeUndefined()
     expect(fake.recorded.builds).toHaveLength(0)
   })
@@ -2973,7 +3031,7 @@ describe("retained microVM refusal boundaries", () => {
     (label) =>
       Effect.gen(function*() {
         const fake = fakeSdk()
-        const provider = MicrosandboxSandbox.make({
+        const provider = microsandbox({
           sdk: fake.sdk,
           persistence: "sticky",
           network: "none",
@@ -2999,7 +3057,7 @@ describe("retained microVM refusal boundaries", () => {
           get: async (name) => ({ ...await fake.sdk.Sandbox.get(name), status: "paused" })
         }
       }
-      const provider = MicrosandboxSandbox.make({
+      const provider = microsandbox({
         sdk,
         persistence: "sticky",
         network: "none",
@@ -3018,7 +3076,7 @@ describe("retained microVM refusal boundaries", () => {
           }
         }
       }
-      const remote = MicrosandboxSandbox.make({ sdk: failing, persistence: "sticky", network: "none" })
+      const remote = microsandbox({ sdk: failing, persistence: "sticky", network: "none" })
       expect(retainedFailure(yield* Effect.exit(Effect.scoped(remote.attach!(session))))).toMatchObject({
         code: "unavailable"
       })
@@ -3036,7 +3094,7 @@ describe("retained microVM security profile", () => {
       fake = fakeSdk({
         configJson: (name) => JSON.stringify({ name, security, labels: fake.machines.get(name)?.labels })
       })
-      const provider = MicrosandboxSandbox.make({
+      const provider = microsandbox({
         sdk: fake.sdk,
         persistence: "sticky",
         network: "none",

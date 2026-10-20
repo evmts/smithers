@@ -9,27 +9,35 @@
  * a shared namespace: `Kernel.ChildProcessSpawner.layerNoop`,
  * `RunStore.RunStore.layer`.
  *
+ * `Runtime` is the barrel's own composition: the durable engine and its stores
+ * over an injected SQL client and injected host services. It names no driver
+ * and no platform, so every host composes it from this root: `NodeRuntime` in
+ * `@smthrs/platform-node`, `BunRuntime` in `@smthrs/platform-bun`, and the
+ * Cloudflare and browser hosts.
+ *
  * The `@smthrs/platform-*` packages are deliberately NOT re-exported, for the
  * same reason `effect`'s index does not re-export `@effect/platform-node`: a
  * platform bundle is chosen by the program that runs, not by the library it
  * depends on, and pulling all three in here would make one import resolve
  * `node:child_process`, ZenFS, and Bun at once. Import
- * `@smthrs/platform-node`, `@smthrs/platform-bun`, or
- * `@smthrs/platform-browser` directly.
+ * `@smthrs/platform-node`, `@smthrs/platform-bun`, `@smthrs/platform-browser`
+ * or `@smthrs/platform-cloudflare` directly.
  *
  * Depend on the individual `@smthrs/*` packages instead when you want a
- * narrower dependency footprint — this barrel is a convenience, not a new
- * seam. The only API of its own is {@link namespaces}, the runtime list of
- * the re-exported namespace names.
+ * narrower dependency footprint. Apart from `Runtime`, this barrel is a
+ * convenience, not a new seam; its other API of its own is {@link namespaces},
+ * the runtime list of the exported namespace names.
  *
  * The one exception is `@smthrs/flow`: the authoring model is re-exported
- * *flat*, so all sixteen of `Action`, `DurableClock`, `DurableDeferred`,
- * `DurableQueue`, `Fault`, `Flow`, `FlowRuntime`, `Graph`, `HumanTask`,
- * `Interpreter`, `Poll`, `RetryPolicy`, `Sleep`, `Stall`, `StepIdentity`, and
- * `WaitFor` sit at the top level beside the infrastructure namespaces. Writing a flow is the point of
+ * *flat*, so all of its namespaces, `Action`, `Deadline`, `DurableClock`,
+ * `DurableDeferred`, `DurableQueue`, `ExternalJob`, `Fault`, `Flow`,
+ * `FlowRuntime`, `Graph`, `HumanTask`, `Interpreter`, `Poll`, `RetryPolicy`,
+ * `Sleep`, `SpanFailure`, `Stall`, `StepIdentity`, and `WaitFor`, sit at the
+ * top level beside the infrastructure namespaces. Writing a flow is the point of
  * the library; `Flows.Flow.Flow.make` would be noise. `Interpreter` is part of
  * that set because a host composition needs it: the registration layer
- * `NodeRuntime.layerHost` takes is built from `Interpreter.layer(flow)`.
+ * `Runtime.layer` and every host's `layerHost` take is built from
+ * `Interpreter.layer(flow)`.
  *
  * ```ts
  * import { Action, Engine, Flow, Journal } from "@smthrs/flows"
@@ -70,6 +78,7 @@ export * as Sandbox from "@smthrs/sandbox"
 export * as StepCache from "@smthrs/step-cache"
 export * as Sync from "@smthrs/sync"
 export { TimeTravel } from "@smthrs/time-travel"
+export * as Runtime from "./Runtime.ts"
 
 /**
  * The namespace names this barrel re-exports, sorted.
@@ -119,8 +128,10 @@ export const namespaces = [
   "Poll",
   "RetryPolicy",
   "RunStore",
+  "Runtime",
   "Sandbox",
   "Sleep",
+  "SpanFailure",
   "Stall",
   "StepCache",
   "StepIdentity",

@@ -24,11 +24,10 @@ const identity = OwnerIdentity.layer
 ```
 
 The default reads a process id off `globalThis` where the platform has one, and
-draws an incarnation number from `Random` where it does not, so a browser tab
-can mint a token even though it cannot execute durable flows. The nonce is a
-UUIDv4 from the injected `Crypto` service. `layerConstant(owner)` pins the whole
-token, which is what a test wants, and what a host that already holds a lease
-from somewhere else wants.
+draws an incarnation number from `Random` where it does not, as in a browser
+worker. The nonce is a UUIDv4 from the injected `Crypto` service.
+`layerConstant(owner)` pins the whole token, which is what a test wants, and
+what a host that already holds a lease from somewhere else wants.
 
 The nonce is what makes the token an incarnation rather than a machine. A
 process that restarts on the same host with the same pid mints a different
@@ -51,6 +50,12 @@ carries the owner:
 - Terminal transitions additionally assert `{ cancelRequested: "absent" }`
   inside the same compare-and-swap, so a cancellation that arrives after the
   last poll turns finalize into a cancellation rather than a `completed` write.
+- An action body's own writes carry the fence too. The engine supplies the
+  running attempt's fence as `Action.CurrentFence`, and the body adds
+  `RunStore.owned` for it to its own `UPDATE`. After a takeover, or once the
+  attempt settled, the statement changes no row. On PostgreSQL the condition
+  reads the run and attempt rows `FOR SHARE`, so a concurrent takeover waits
+  for the body's write to commit instead of overtaking it.
 
 The consequence is that a zombie process is harmless. It can hold a live fiber
 and a live database handle, and every write it attempts against a reclaimed run
@@ -104,6 +109,22 @@ record. The evidence is part of the address because one lease can be refused
 twice for different reasons: a wake arriving while the owner is still pulsing
 is refused by the lease, and the same owner, alive but stalled past the window,
 is refused by the probe. Both records stand.
+
+## A host that wakes one execution
+
+An engine composed with `sweep: { host: executionId }`, such as one built inside
+a Cloudflare Durable Object alarm, renews no lease: the alarm's host runs one
+incarnation at a time, and that, not a heartbeat, is the liveness evidence.
+Each incarnation draws its incarnation number with
+`OwnerIdentity.layerWithoutPid`, and the host's `isAlive` answers `false` for
+an earlier incarnation of the same host. The next incarnation therefore steals
+a crashed one's run at once with `same-host-pid-dead` evidence, adopts the
+attempt it left running, and runs it again under a new fence. Writes the
+crashed incarnation still makes are refused by the rows they target.
+
+Because nothing renews the lease, a process engine sharing the store would
+reclaim the run once the lease went stale. Route hosted executions away from
+every other engine with `canExecute`.
 
 ## Backoff, so arbitration keeps moving
 

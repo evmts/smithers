@@ -6,7 +6,8 @@
  * (`JournalMetrics`, `RunStoreMetrics`, `CacheStoreMetrics`,
  * `ArtifactStoreMetrics`, `DatabaseMetrics`) and open spans through Effect's
  * tracer; this package is the exporter they deliberately leave out. `Otlp`
- * only composes what `effect` already ships, so it is browser-bundleable. The
+ * composes what `effect` already ships with the journal's redaction rules, so
+ * it is browser-bundleable. The
  * remaining modules are the fuller stack folded in from the agent workspace:
  * a structured `Logger`, a `JournalLogger` that mirrors log events into the
  * run journal, `Metric` helpers, the `Resource` descriptor, and the `Otel`

@@ -13,7 +13,9 @@
  * This module is the one place that decision is made. {@link layer} is the
  * client every Node host composition installs; it honours the proxy the
  * environment names. Requests without a web destination use a shared pool;
- * web requests receive a fresh pinned dispatcher.
+ * web requests receive a fresh pinned dispatcher. The same layer provides
+ * {@link resolveHost} as the kernel's `HttpClient.ResolveHost`, so the
+ * addresses a web tool checks are the addresses this client pins to.
  *
  * The rule for loopback is fixed here, not by the environment: `localhost`,
  * `127.0.0.1` and `[::1]` are always reached directly, even when the
@@ -31,7 +33,7 @@ import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import type * as Undici from "@effect/platform-node/Undici"
 import { GrantStore } from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
-import { Destination, withDestinationPinning } from "@smthrs/kernel/HttpClient"
+import { Destination, ResolveHost, withDestinationPinning } from "@smthrs/kernel/HttpClient"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import { HttpClient } from "effect/http/HttpClient"
@@ -42,6 +44,7 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
+import { lookup } from "node:dns/promises"
 import { isIP } from "node:net"
 
 /**
@@ -136,6 +139,30 @@ export const dispatcher = (
   })
 
 /**
+ * Every address the system resolver answers for `hostname`: `getaddrinfo`
+ * through `node:dns`, the lookup Node itself makes for a connection. {@link layer}
+ * provides it as the kernel's `HttpClient.ResolveHost`, so the web tools in
+ * `@smthrs/std` check each of these addresses before the pinned client
+ * connects to one of them. A name the resolver does not know fails.
+ *
+ * @example
+ * ```ts
+ * import { EgressHttpClient } from "@smthrs/platform-node"
+ * import { Effect } from "effect"
+ *
+ * const addresses = Effect.runPromise(EgressHttpClient.resolveHost("localhost"))
+ * ```
+ *
+ * @category resolvers
+ * @since 1.0.0-rc.16
+ */
+export const resolveHost = (hostname: string): Effect.Effect<ReadonlyArray<string>, unknown> =>
+  Effect.map(
+    Effect.tryPromise(() => lookup(hostname, { all: true })),
+    (answers) => answers.map((answer) => answer.address)
+  )
+
+/**
  * The Undici `HttpClient` to install, given the environment the process runs in.
  *
  * Use this wherever `NodeHttpClient.layerUndici` would otherwise be provided
@@ -145,11 +172,19 @@ export const dispatcher = (
  * between a request that reaches the gateway from inside a default-deny
  * sandbox and one the firewall drops.
  *
+ * The client pins each web request to its checked addresses, and the layer
+ * also provides {@link resolveHost} as the kernel's `HttpClient.ResolveHost`
+ * that those addresses come from.
+ *
  * @param environment the environment record whose proxy variables decide the route
  * @category layers
  * @since 1.0.0-rc.0
  */
 export const layer = (
+  environment: Readonly<Record<string, string | undefined>>
+): Layer.Layer<HttpClient> => Layer.merge(pinnedClient(environment), Layer.succeed(ResolveHost)(resolveHost))
+
+const pinnedClient = (
   environment: Readonly<Record<string, string | undefined>>
 ): Layer.Layer<HttpClient> =>
   Layer.effect(

@@ -13,8 +13,8 @@
  * caller's decision.
  */
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import * as SandboxedFlow from "@smthrs/flows/SandboxedFlow"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
+import { SandboxedFlow, TestNodeRuntime } from "@smthrs/platform-node"
 import * as NodeHost from "@smthrs/platform-node/NodeHost"
 import { DirectorySandbox, type Sandbox } from "@smthrs/sandbox"
 import * as Effect from "effect/Effect"
@@ -23,7 +23,6 @@ import * as Layer from "effect/Layer"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import { durableEngine } from "../src/test/TestNodeRuntime.ts"
 import { Greet, Greeting } from "./sandboxed-child.ts"
 
 /** The parent's action: one sandboxed execution of the child flow. */
@@ -91,7 +90,7 @@ export const main = (options: MainOptions): Promise<MainResult> =>
         Interpreter.layer(SandboxedGreeting)
       ).pipe(
         Layer.provideMerge(Action.layerImplementations),
-        Layer.provideMerge(durableEngine(options.filename, "examples-sandboxed-flow"))
+        Layer.provideMerge(TestNodeRuntime.durableEngine(options.filename, "examples-sandboxed-flow"))
       )
 
       const result = yield* SandboxedGreeting.execute(

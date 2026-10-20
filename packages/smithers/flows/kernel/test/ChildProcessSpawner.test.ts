@@ -922,3 +922,18 @@ it.effect("missing confinement refuses approved commands without spawning", () =
     expect(error.reason.module).toBe("ProcessConfinement")
     expect(spawns).toBe(0)
   })))
+
+describe("ChildProcessSpawner.ambientEnvironment", () => {
+  it("reads this process's environment, and an empty one on a host without a process global", () => {
+    expect(ChildProcessSpawner.ambientEnvironment()).toBe(process.env)
+    const host = Object.getOwnPropertyDescriptor(globalThis, "process")!
+    Object.defineProperty(globalThis, "process", { configurable: true, value: undefined })
+    let browser: Readonly<Record<string, string | undefined>>
+    try {
+      browser = ChildProcessSpawner.ambientEnvironment()
+    } finally {
+      Object.defineProperty(globalThis, "process", host)
+    }
+    expect(browser).toEqual({})
+  })
+})

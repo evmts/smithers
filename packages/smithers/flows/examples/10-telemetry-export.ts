@@ -33,12 +33,12 @@ import { EngineStoreMetrics } from "@smthrs/engine-store"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import * as Otlp from "@smthrs/observability/Otlp"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
-import { durableEngine } from "../src/test/TestNodeRuntime.ts"
 
 export const Pack = Action.make("examples/Pack", {
   payload: { target: Schema.String },
@@ -167,7 +167,7 @@ export const main = (
           Interpreter.layer(Ship)
         ).pipe(
           Layer.provideMerge(Action.layerImplementations),
-          Layer.provideMerge(durableEngine(filename, "examples-telemetry"))
+          Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-telemetry"))
         )
       ),
       Effect.provide(telemetry),

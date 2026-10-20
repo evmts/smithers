@@ -18,29 +18,31 @@ run of it that answers without reading the file again.
 The quickstart does not need jj. A compensable step or a time-travel fork
 does; [Installation](./installation.md#requirements) covers it.
 
-Create an empty project, install the two packages the program imports, and give
-it something to read:
+Create an empty project, install the three packages the program imports, and
+give it something to read:
 
 ```bash
 mkdir flows-quickstart && cd flows-quickstart
 npm init -y && npm pkg set type=module
-npm install @smthrs/flows@next effect
+npm install @smthrs/platform-node@next @smthrs/flows@next effect
 mkdir -p workspace && echo "the note" > workspace/note.txt
 ```
 
 The project is `"type": "module"` because the program ends in a top-level
-`await`. `@smthrs/flows` installs the Node host and its SQLite driver. `effect`
-is on the line because the program imports it directly. `@smthrs/flows` accepts
-any `effect` in `4.0.5`, so the line names no version and a project that
-already has one at that version keeps it.
+`await`. `@smthrs/flows` is the engine and its authoring names, and imports no
+platform code. `@smthrs/platform-node` is the Node host: it installs the SQLite
+driver and runs the engine with `NodeRuntime`. `effect` is on the line because
+the program imports it directly. Both packages accept any `effect` in `4.0.5`,
+so the line names no version and a project that already has one at that version
+keeps it.
 
 With pnpm 11, replace the `npm install` line with
-`pnpm add @smthrs/flows@1.0.0-rc.16 effect`, then run
+`pnpm add @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect`, then run
 `pnpm approve-builds esbuild`. pnpm 11 installs only versions at least 24 hours
 old, so `@next` can resolve to a candidate more than one release behind; an
 exact version is installed the day it is published. pnpm 11 also ends the install with
 `ERR_PNPM_IGNORED_BUILDS` until the project allows or denies the install script
-of `esbuild`, which `@smthrs/flows` uses to bundle sandboxed flows.
+of `esbuild`, which `@smthrs/platform-node` uses to bundle sandboxed flows.
 [Installation](./installation.md) has the requirements in full.
 
 ## Declare the action and the flow
@@ -139,7 +141,7 @@ that goes around those services. An action that imports `node:fs` or calls the
 global `fetch` reads and fetches whatever the process can, with no rule at all.
 The grant store guards the services a body is handed; it is not a process
 sandbox. To isolate a body's own code, run it as a child flow with
-`SandboxedFlow` on a container provider, as
+`SandboxedFlow` from `@smthrs/platform-node` on a container provider, as
 [Run a child flow in a sandbox](./guides/run-a-child-flow-in-a-sandbox.md)
 shows.
 
@@ -151,7 +153,7 @@ the step boundary and the workspace sandbox, installs `SIGINT` and `SIGTERM`
 handlers, and only then runs your registration phase.
 
 ```ts
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 
 const host = NodeRuntime.layerHost(
   {

@@ -2,12 +2,13 @@
  * @since 1.0.0
  */
 
-import { Context, Duration, Effect, Layer, Schedule, Schema, Scope } from "effect"
+import { Context, Duration, Effect, Layer, Schedule, Scope } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { closeSync, lstatSync, openSync, readlinkSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import * as ReadOnly from "./ReadOnly.ts"
 import * as ReleasePolicy from "./ReleasePolicy.ts"
+import { isUnsupportedDatabase, UnsupportedDatabase } from "./UnsupportedDatabase.ts"
 
 /**
  * The driver's own reader for the tables of a file, without joining the WAL
@@ -62,67 +63,6 @@ export const createDatabaseFile = (filename: string, create: boolean, mode = 0o6
     return
   }
 }
-
-/**
- * The stable codes covering the rc.0 exclusions the drivers enforce.
- *
- * `unsupported_runtime` reports selection of an incompatible driver.
- * `unsupported_database_file` refuses a 0.x `smithers.db`, and
- * `database_locked` refuses a file the guard could not read because a peer
- * held it for longer than the open ladder waits. `postgres_url_missing`,
- * `postgres_url_invalid` and `postgres_schema_invalid` refuse a PostgreSQL
- * selection whose connection URL or schema cannot be used.
- *
- * @category models
- * @since 1.0.0
- */
-export const UnsupportedDatabaseCode = Schema.Literals([
-  "unsupported_runtime",
-  "unsupported_database_file",
-  "database_locked",
-  "postgres_url_missing",
-  "postgres_url_invalid",
-  "postgres_schema_invalid"
-])
-
-/**
- * Stable code for an rc.0 refusal to open a durable database.
- *
- * @category models
- * @since 1.0.0
- */
-export type UnsupportedDatabaseCode = typeof UnsupportedDatabaseCode.Type
-
-/**
- * Refusal to open a durable database in rc.0.
- *
- * Raised as a *defect* by `layer`, not as a typed failure, for the same
- * reason a non-lock open failure is a defect: `layer` is a leaf client layer
- * whose error channel every durable package composes against as `never`, and
- * neither refusal is recoverable at run time. Both are operator mistakes
- * fixed by pointing the runtime somewhere else or selecting the matching host driver. The
- * value carried by the defect is still typed and matchable with
- * `isUnsupportedDatabase`.
- *
- * @category errors
- * @since 1.0.0
- */
-export class UnsupportedDatabase extends Schema.TaggedError<UnsupportedDatabase>()(
-  "@smthrs/database/UnsupportedDatabase",
-  {
-    code: UnsupportedDatabaseCode,
-    message: Schema.String
-  }
-) {}
-
-/**
- * Narrows an unknown defect to this driver's refusal.
- *
- * @category refinements
- * @since 1.0.0
- */
-export const isUnsupportedDatabase = (input: unknown): input is UnsupportedDatabase =>
-  input instanceof UnsupportedDatabase
 
 /**
  * The ledger table every flows migration set records its progress in

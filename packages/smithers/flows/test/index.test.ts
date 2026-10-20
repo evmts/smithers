@@ -82,14 +82,25 @@ const namespacedEnginePackageNames = enginePackageNames
 // contribution is therefore derived from the package's own exports, not from
 // its directory name — a new authoring namespace there fails this test until
 // the barrel re-exports it, exactly as a new package does.
+// `Runtime` is the barrel's own module rather than a package: the injected
+// composition the native runtimes and a Worker host build on.
+const ownNamespaces = ["Runtime"]
 const expected = [
   ...new Set([
     ...namespacedEnginePackageNames.map(namespaceName),
-    ...Object.keys(FlowPackage)
+    ...Object.keys(FlowPackage),
+    ...ownNamespaces
   ])
 ].sort()
 
 describe("barrel", () => {
+  it("keeps the barrel's own namespaces disjoint from the packages it re-exports", () => {
+    // An own namespace with a package's name would shadow that package's
+    // re-export, exactly as the flat authoring names could.
+    const reexported = [...namespacedEnginePackageNames.map(namespaceName), ...Object.keys(FlowPackage)]
+    expect(ownNamespaces.filter((name) => reexported.includes(name))).toEqual([])
+  })
+
   it("keeps the flat authoring names disjoint from the engine namespaces", () => {
     // `src/index.ts` pairs `export * from "@smthrs/flow"` with the `export * as
     // X` namespaces, and an explicit named export SHADOWS a star export. So if
@@ -144,10 +155,12 @@ describe("barrel", () => {
     // `build/infra` is the hosted cache Worker that ships inside
     // `smithers-build`; it is a member nested under `packages/smithers/build`, and the
     // universe descends now, so it is named here like every other tooling
-    // package. The private repo-targets package owns repository policy macros.
+    // package. The private repo-targets package owns repository policy macros,
+    // and the private agent regression suite is an evaluation tool.
     expect(packageNamesForGroup("tooling").sort()).toEqual([
       "repo-targets",
       "rpc",
+      "smithers/agent/regression",
       "smithers/build",
       "smithers/build/build-cli",
       "smithers/build/infra",

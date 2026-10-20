@@ -104,11 +104,16 @@ and cannot satisfy consumers that require the complete five-tag host.
 
 ## Import forms
 
-The root entry point re-exports three modules as namespaces:
+The root entry point re-exports every module as a namespace, including the
+durable flow runtime:
 
 ```ts
-import { HostLiveness, NodeHost, ProcessReaper, ScopedProcess } from "@smthrs/platform-node"
+import { HostLiveness, NodeHost, NodeRuntime, ProcessReaper, SandboxedFlow, ScopedProcess } from "@smthrs/platform-node"
 ```
+
+`FetchTransport`, `NodeGarbageCollector`, `NodeLanguageServer`, `NodeRuntime`,
+`NativeRuntime`, `SandboxedFlow`, and `TestNodeRuntime` have no subpath of
+their own; import them from the root.
 
 Each module is also importable from its own subpath, which is the form the
 [API reference](./api.md) uses:
@@ -182,6 +187,6 @@ rule-based store before running untrusted work; see
 Turning on process containment adds a `ProcessLedger`, which the journal backs.
 See [Contain child processes](./guides/contain-child-processes.md).
 
-Most programs never compose this by hand. `@smthrs/flows`' `NodeRuntime` builds
+Most programs never compose this by hand. This package's `NodeRuntime` builds
 the whole durable runtime, including `NodeHost.layerContainedAt` and
 `HostLiveness.isAlive`, from one options object.

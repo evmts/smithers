@@ -13,7 +13,7 @@ usual source of confusion.
 engine host; only its file operations and child processes are routed to a held
 session.
 
-`@smthrs/flows/SandboxedFlow` is the tier above it. The child flow's **own
+`SandboxedFlow`, from `@smthrs/platform-node`, is the tier above it. The child flow's **own
 code** executes inside the guest. Its TypeScript never runs in the parent's
 process. A provider is a `Sandbox.Provider` value you pass in, never a string
 looked up in a registry, and the authoring is `Flow.make` and `Action.make`, so

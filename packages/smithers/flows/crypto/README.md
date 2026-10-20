@@ -19,9 +19,10 @@ npm install @smthrs/crypto@next effect
 ```
 
 `effect` is the only runtime dependency.
-`digest` additionally needs an Effect `Crypto` service, which
+`digest` additionally needs an Effect `Crypto` service. `WebCrypto.layer` from
+this package provides one on any host with the global WebCrypto, and
 `@effect/platform-node`, `@effect/platform-bun`, and `@effect/platform-browser`
-each provide as a layer. The package requires Node.js 22.19.0 or later, and it
+each provide one as a layer. The package requires Node.js 22.19.0 or later, and it
 imports no `node:` built-in, so it also runs under Bun and in a browser.
 
 ## Example
@@ -51,6 +52,9 @@ const synchronous = digestSync("hello")
   `Sha256.digestSync` remain attached for compatibility.
 - `syncCrypto` adapts the synchronous implementation to Effect `Crypto`. It
   accepts only `SHA-256` and deliberately refuses randomness.
+- `WebCrypto.layer` and `WebCrypto.make()` provide Effect `Crypto` over the
+  global WebCrypto in Node, Bun, a browser, or a Cloudflare Worker. Randomness
+  is filled in chunks of at most 65,536 bytes and read only on demand.
 
 ## What SHA-256 gives you here, and what it does not
 

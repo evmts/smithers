@@ -783,6 +783,39 @@ describe("Otlp", () => {
       expect(spans[1]!.attributes).toEqual([{ key: "effect.fiber.interrupted", value: { boolValue: true } }])
     }))
 
+  it.effect("exports only the spans `spans` names; a dropped span's children keep its trace and parent id", () =>
+    Effect.gen(function*() {
+      const collector = recordingFetch()
+      const ids: Record<string, { traceId: string; spanId: string }> = {}
+      const record = (name: string) =>
+        Effect.flatMap(Effect.currentSpan, (span) =>
+          Effect.sync(() => {
+            ids[name] = { traceId: span.traceId, spanId: span.spanId }
+          })).pipe(Effect.orDie)
+      yield* runExporting(
+        record("kept_child").pipe(
+          Effect.withSpan("kept_child"),
+          Effect.andThen(record("dropped")),
+          Effect.withSpan("dropped"),
+          Effect.andThen(Effect.log("a log line is exported all the same")),
+          Effect.andThen(record("kept_root")),
+          Effect.withSpan("kept_root")
+        ),
+        Otlp.layerFetch({ baseUrl: "http://127.0.0.1:4318", spans: ["kept_root", "kept_child"] }),
+        collector.fetch
+      )
+      const spans = exportedSpans(collector.requests) as ReadonlyArray<
+        ExportedSpan & { readonly traceId: string; readonly spanId: string; readonly parentSpanId?: string }
+      >
+      expect(spans.map((span) => span.name).sort()).toEqual(["kept_child", "kept_root"])
+      const child = spans.find((span) => span.name === "kept_child")!
+      // One trace from the root, through the dropped span, to its child, which names the dropped span as its parent.
+      expect(child.traceId).toBe(ids.kept_root!.traceId)
+      expect(ids.dropped!.traceId).toBe(ids.kept_root!.traceId)
+      expect(child.parentSpanId).toBe(ids.dropped!.spanId)
+      expect(JSON.stringify(collector.requests)).toContain("a log line is exported all the same")
+    }))
+
   // Effect's HTTP client ends the span of a 4xx or 5xx answer itself, before
   // the request's effect completes. The collector still receives it once.
   it.effect("exports one failed span, with no header, for an HTTP request the server answered 503", () =>

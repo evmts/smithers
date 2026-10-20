@@ -1,6 +1,6 @@
 ---
 title: "Testing"
-description: "Test code that runs on @smthrs/platform-browser without a browser: satisfy the filesystem slice with node:fs/promises, stub the interpreter with an object literal, and pin error tags with a throwing backend."
+description: "Test code that runs on @smthrs/platform-browser without a browser: satisfy the filesystem slice with node:fs/promises, stub the interpreter with an object literal, pin error tags with a throwing backend, and run the durable engine under Node."
 ---
 
 Both backends are structural slices, so a test satisfies them with ordinary
@@ -152,6 +152,68 @@ convenience for a process that is itself the sandbox, and never a production
 composition. When a test wants Effect's `FileSystem` with no kernel claim
 attached, use `make`. See
 [The isolation attestation](./concepts/isolation-attestation.md).
+
+## Test the durable engine
+
+The engine needs no browser to test. Node 26 has `navigator.locks` and
+`BroadcastChannel`, so `WebLock.layer` and `TabChannel.layer` are the real
+services under Node too, and wa-sqlite runs there on its in-memory VFS. Open a
+database with it, build a `SqlClient` with `BrowserSqlite.make`, and provide
+that to `BrowserRuntime.layer`:
+
+```ts
+import * as WaSqlite from "@journeyapps/wa-sqlite"
+import SQLiteESMFactory from "@journeyapps/wa-sqlite/dist/wa-sqlite.mjs"
+import { MemoryVFS } from "@journeyapps/wa-sqlite/src/examples/MemoryVFS.js"
+import { BrowserRuntime, BrowserSqlite } from "@smthrs/platform-browser"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Reactivity from "effect/reactivity/Reactivity"
+import * as SqlClient from "effect/sql/SqlClient"
+import { readFileSync } from "node:fs"
+import { registration } from "./flows.ts"
+
+const wasmBinary = readFileSync("node_modules/@journeyapps/wa-sqlite/dist/wa-sqlite.wasm")
+
+const memory = Layer.effect(
+  SqlClient.SqlClient,
+  Effect.gen(function*() {
+    const module = yield* Effect.promise(() => SQLiteESMFactory({ wasmBinary }))
+    const sqlite3 = WaSqlite.Factory(module)
+    sqlite3.vfs_register(new MemoryVFS("memory", module), false)
+    const db = yield* Effect.acquireRelease(
+      Effect.promise(() => sqlite3.open_v2("engine.db", undefined, "memory")),
+      (db) => Effect.promise(() => sqlite3.close(db))
+    )
+    return yield* BrowserSqlite.make({ sqlite3, db })
+  })
+).pipe(Layer.provide(Reactivity.layer))
+
+const engine = BrowserRuntime.layer({ name: "test" }, registration).pipe(Layer.provide(memory))
+```
+
+`BrowserRuntime.serve` over that engine is a leader, and `BrowserEngine.make`
+is a tab that reaches it. Interrupting the leader's fiber is its tab closing:
+its runs are released, and the next leader you start over the same database
+resumes them.
+
+Every failure is a service you provide. `WebLock.make` takes a lock manager,
+`TabChannel.make` a channel constructor, `StoragePersistence.make` a storage
+manager, and `serve` takes the engine as a layer, so a test merges a failing
+`EngineStore.Driver` or `RunCatalogRead` into it.
+
+This package's own suite also runs the engine in Playwright's Chromium, over
+real OPFS: `vitest run --config vitest.browser.config.ts`, the `browserTest`
+target. It kills the browser after a step is recorded and checks the run
+resumes at the next one. The same target runs `BrowserCache.layer` over real
+Cache Storage and checks an entry survives the browser being killed.
+
+## Test the immutable cache
+
+Node has no `caches` global. Give `BrowserCache.layer` a `CacheStorage` whose
+`open` answers `ImmutableCache.makeMemoryWebCache()`, or one that rejects to
+test `unavailable`. Code that only needs some cache can take
+`ImmutableCache.layerMemory()` from `@smthrs/artifacts` instead.
 
 ## Where to stop
 

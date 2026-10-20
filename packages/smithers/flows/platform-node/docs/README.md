@@ -95,9 +95,12 @@ index does not re-export `@effect/platform-node`: the program that runs picks
 its platform, not the library it depends on. So a Node program installs
 `@smthrs/flows` for the engine and this package for the machine underneath it.
 
-Once both are installed, `@smthrs/flows`' `NodeRuntime` module builds the whole
-durable composition from one options object, and what it composes from here is
-`NodeHost.layerContainedAt` plus `HostLiveness.isAlive`. Read this site when
+This package's `NodeRuntime` builds the whole durable composition from one
+options object: `@smthrs/flows`' `Runtime` over `NodeHost.layerContainedAt` and
+`HostLiveness.isAlive`. Installing this package installs `@smthrs/flows` with
+it. `SandboxedFlow` runs a child flow's own code on a provisioned machine, and
+`TestNodeRuntime` is the durable engine tests and examples use; the
+[API reference](./api.md#noderuntime) covers all three. Read this site when
 you want to know what those layers guarantee, configure the filesystem helper,
 or diagnose a refusal. Reach for this package on its own when you want the host
 services without the engine.
@@ -123,6 +126,9 @@ enforceable.
   how the confinement works and what each call costs.
 - [Process containment](./concepts/process-containment.md): incarnations, the
   ledger, and every guard checked before a reap.
+- [Run a language server](./guides/run-a-language-server.md): bind
+  `@smthrs/std`'s `LanguageServer` to host server processes with
+  `NodeLanguageServer`.
 - [API reference](./api.md): every export, layer, and option.
 - [Troubleshooting](./troubleshooting.md): the refusals this bundle reports and
   which of them are the safe answer.

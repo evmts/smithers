@@ -72,6 +72,7 @@ spawner instance.
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `BunHost`       | The closed Host bundle: `layer`, `layerAt`, `layerContained`, `layerContainedAt`, and the `BunHostError` those two root-bound factories throw; `layerHttpClient`, the network slot with redirects stopped; re-exports `AtomicFileSystem`, `BunChildProcessSpawner`, and `BunFileSystem` |
 | `BunFileSystem` | `@smthrs/platform-node`'s atomic `FileSystem`, plus `layerWith` for a host whose helper lives elsewhere                                                                                                                                                                                 |
+| `BunRuntime`    | The durable flow runtime on Bun: `layerHost`, `layer`, `make`, `storage`, and `signalExitCode`, the same API as `@smthrs/platform-node`'s `NodeRuntime`. Import it from the root; it has no subpath. Its SQLite driver loads when a database opens.                                     |
 
 Three variants change one slot each. `BunHost.layerAt(root)` binds version
 control to one absolute repository root instead of the process working

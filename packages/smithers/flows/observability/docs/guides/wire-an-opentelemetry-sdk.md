@@ -97,7 +97,7 @@ all signals with the configured service identity:
 import { LoggerProvider } from "@opentelemetry/sdk-logs"
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base"
-import * as Otel from "@smthrs/observability/Otel"
+import { Otel } from "@smthrs/observability"
 import * as Effect from "effect/Effect"
 
 let tracerProvider: BasicTracerProvider | undefined
@@ -165,7 +165,7 @@ option without the wiring.
 composition that assembles the rest of the SDK on its own:
 
 ```ts
-import * as Resource from "@smthrs/observability/Resource"
+import { Resource } from "@smthrs/observability"
 
 const resource = Resource.layer({
   serviceName: "deploy-status",

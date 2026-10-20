@@ -15,21 +15,22 @@ backend is the host's job, and belongs to
 Every counter is dimensioned by an `outcome` attribute, and every hot path has a
 matching duration timer.
 
-| Metric                                          | What it counts or times                                                                                                                    |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `flows_engine_dispatches`                       | Durable action dispatches. A cache-served replay and a fresh execution both count: the dispatch is the unit the engine retries and fences. |
-| `flows_engine_dispatch_duration`                | One dispatch, from admission through settlement, including cache verification, execution, copy-back, and the terminal row.                 |
-| `flows_engine_scheduler_admissions`             | Plan-scheduler admissions.                                                                                                                 |
-| `flows_engine_scheduler_dispatch_duration`      | One scheduler node dispatch.                                                                                                               |
-| `flows_engine_scheduler_nodes`                  | Node settlements, dimensioned by outcome.                                                                                                  |
-| `flows_engine_sandbox_executions`               | Workspace transaction executions.                                                                                                          |
-| `flows_engine_sandbox_execution_duration`       | One workspace transaction.                                                                                                                 |
-| `flows_engine_sandbox_materializations`         | Copy-back attempts.                                                                                                                        |
-| `flows_engine_sandbox_materialization_duration` | One copy-back.                                                                                                                             |
-| `flows_engine_sandbox_conflicts`                | Materialization conflicts, the refusals a rebase answers.                                                                                  |
-| `flows_engine_boundary_settlements`             | Step boundary settlements.                                                                                                                 |
-| `flows_engine_step_cache_decisions`             | What a dispatch actually did with a cache row, after read-set verification and output materialization.                                     |
-| `flows_engine_claims`                           | The run driver's claim-and-activate decisions.                                                                                             |
+| Metric                                          | What it counts or times                                                                                                                                                                |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flows_engine_dispatches`                       | Durable action dispatches. A cache-served replay and a fresh execution both count: the dispatch is the unit the engine retries and fences.                                             |
+| `flows_engine_dispatch_duration`                | One dispatch, from admission through settlement, including cache verification, execution, copy-back, and the terminal row.                                                             |
+| `flows_engine_scheduler_admissions`             | Plan-scheduler admissions.                                                                                                                                                             |
+| `flows_engine_scheduler_dispatch_duration`      | One scheduler node dispatch.                                                                                                                                                           |
+| `flows_engine_scheduler_nodes`                  | Node settlements, dimensioned by outcome.                                                                                                                                              |
+| `flows_engine_sandbox_executions`               | Workspace transaction executions.                                                                                                                                                      |
+| `flows_engine_sandbox_execution_duration`       | One workspace transaction.                                                                                                                                                             |
+| `flows_engine_sandbox_materializations`         | Copy-back attempts.                                                                                                                                                                    |
+| `flows_engine_sandbox_materialization_duration` | One copy-back.                                                                                                                                                                         |
+| `flows_engine_sandbox_conflicts`                | Materialization conflicts, the refusals a rebase answers.                                                                                                                              |
+| `flows_engine_storage_unavailable`              | Action attempts interrupted because the engine store was unavailable while the attempt was admitted, run or recorded. Each releases its run for a later drive that adopts the attempt. |
+| `flows_engine_boundary_settlements`             | Step boundary settlements.                                                                                                                                                             |
+| `flows_engine_step_cache_decisions`             | What a dispatch actually did with a cache row, after read-set verification and output materialization.                                                                                 |
+| `flows_engine_claims`                           | The run driver's claim-and-activate decisions.                                                                                                                                         |
 
 Each counter also has a tag-keyed record of attributed views, so a caller
 updates the right dimension by name rather than by re-attributing:

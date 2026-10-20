@@ -4,6 +4,52 @@
 
 ### Added
 
+- `EngineStore.Options.sweep`: `"process"` (the default, unchanged) or
+  `{ host: executionId }` for a host that drives one execution per invocation,
+  such as a Cloudflare Durable Object alarm. A hosted store runs no sweep fiber
+  and renews no lease, and registration re-arms only that execution's clocks
+  and completions. `EngineStore.Sweep` names the type.
+- `EngineStore.nextWake(executionId)` answers when a host must next drive an
+  execution: `Option.none()` when nothing wakes it by itself, now when it has
+  due work, or the earliest pending `DurableClock` of a parked run.
+- Every action body runs under its attempt's ownership fence,
+  `@smthrs/flow`'s `Action.CurrentFence`, for `RunStore.owned` to fence the
+  body's own writes. Adopting a crashed attempt changes the fence's owner.
+- `EngineStore.drive(flow, { executionId, payload })` drives one execution
+  once for its host and reports `Settled`, `Parked` with the next wake time,
+  or `Unfinished`, without waiting for the run to settle. `EngineStore.layer`
+  provides the `EngineStore.Driver` service it reads. A drive that finds the
+  last round of a lineage settled records the wake of each parent still
+  waiting on it again, so a host that died between a child's settlement and
+  its parent's wake record loses no wake; a wake already recorded is not
+  scheduled twice.
+- `EngineStoreMetrics.storageUnavailable` (`flows_engine_storage_unavailable`)
+  counts attempts interrupted because the store was unavailable.
+- `StepBoundary.layerUnsupported` and `WorkspaceSandbox.layerUnsupported`
+  refuse every call and require nothing, for a host with no filesystem.
+- `OwnerIdentity.layerWithoutPid` draws the incarnation number instead of
+  reading a process id, for an isolate whose pid names no incarnation.
+
+### Fixed
+
+- `ExecutionSnapshot`, `RunChangeFeed` and the run listing read through
+  `@smthrs/database`'s `Dialect.readTransaction`, and
+  `ExecutionSnapshot.withReadTransaction` is that function. Their read
+  transaction, opened on a reserved connection, failed on `PostgresDatabase`
+  with `SET TRANSACTION ISOLATION LEVEL must be called before any query`,
+  because every statement on its reserved connections runs as its own
+  transaction.
+- A store that became unavailable while an attempt's outcome was recorded (a
+  dropped connection, an I/O failure) no longer fails the run with "A recorded
+  action outcome does not match the action's declared schemas". The dispatch
+  interrupts itself and releases the run, the attempt stays adoptable, and the
+  next drive records the result.
+
+### Changed
+
+- `test/TestStores.databaseAt` passes the `@effect/sql-pg` driver that
+  `PostgresDatabase.layer` now requires, loading it only for a PostgreSQL URL.
+
 - `EngineStateFault`: a durable engine-state invariant that breaks (a JSON
   column that cannot be written or read back, or a row a lost first-writer
   transaction expected) dies with this tagged defect, carrying `reason` and

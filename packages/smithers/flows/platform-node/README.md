@@ -26,11 +26,28 @@ general-purpose adapter makes, so this package implements them itself:
   a run some other process recorded itself as owning. Ambiguity resolves toward
   alive, because stranding a run is cheaper than running it twice.
 
+It is also where durable flows run on Node. `NodeRuntime.layerHost` stands the
+`@smthrs/flows` engine up over SQLite or PostgreSQL on this host, guards flow
+bodies behind the capability kernel, and shuts down cleanly on a signal.
+`SandboxedFlow` runs a child flow's own code on a machine you provision.
+
+It also hosts the Node pieces of [`@smthrs/std`](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/std/docs),
+whose root entry is platform-neutral. `NodeLanguageServer` binds std's
+`LanguageServer` to language-server processes on the host, and
+`EgressHttpClient.layer` provides the system name resolver std's web tools
+check every destination with, beside the client that pins each request to the
+checked addresses.
+
 ## Install
 
 ```bash
 npm install @smthrs/platform-node@next effect
 ```
+
+The package installs `@smthrs/flows`, the Node SQLite driver
+`@effect/sql-sqlite-node`, and `esbuild`, which `SandboxedFlow` uses to bundle a
+guest entry module. A program that imports `@smthrs/flows` directly names it on
+the install line too, because pnpm links only declared packages.
 
 The [installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/installation.md)
 covers the `effect` peer range and the host requirements.
@@ -99,20 +116,30 @@ Complete host bundles build without jj. The first `Jj` operation probes the bina
 
 ## Modules
 
-The barrel exports eight namespaces: `NodeHost`, `EgressHttpClient`,
-`FetchTransport`, `HostLiveness`, `ProcessReaper`, `ScopedProcess`,
-`ProcessConfinement`, and `ProcessSandbox`. `AtomicFileSystem` is deliberately not among them; it is reached
+The barrel exports fourteen namespaces: `NodeHost`, `EgressHttpClient`,
+`FetchTransport`, `NodeLanguageServer`, `HostLiveness`, `NodeGarbageCollector`,
+`ProcessReaper`, `ScopedProcess`, `ProcessConfinement`, `ProcessSandbox`, and
+the flow runtime: `NodeRuntime`, `NativeRuntime`, `SandboxedFlow`, and
+`TestNodeRuntime`. `FetchTransport`, `NodeLanguageServer`,
+`NodeGarbageCollector`, and the runtime modules have no subpath; import them
+from the root. `AtomicFileSystem` is deliberately not among them; it is reached
 as `NodeHost.AtomicFileSystem` or through the
 `@smthrs/platform-node/AtomicFileSystem` subpath.
 
-| Module             | What it provides                                                                                                                                                                     |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `NodeHost`         | the complete closed Host bundle, plus re-exports of `AtomicFileSystem`, `ProcessReaper`, `NodeCrypto`, and Effect's raw `NodeFileSystem`, spawner, and `HttpClient`                  |
-| `AtomicFileSystem` | the descriptor-relative, no-follow filesystem layer and its options, ceilings, and glob grammar                                                                                      |
-| `HostLiveness`     | whether a recorded run owner is still alive: `isAlive`, `Owner`, `Options`                                                                                                           |
-| `ProcessReaper`    | live containment and restart reconciliation: `layerSpawner`, `SpawnerOptions`, `processLifecycle`, `reap`, `layer`, `System`, `Refusal`, `posixSystem`, `windowsSystem`, `systemFor` |
-| `ScopedProcess`    | transient scoped commands with the same lifecycle: `Options`, `Handle`, `spawn`, `Status`, `status`                                                                                  |
-| `FetchTransport`   | how far each `fetch` to one origin got on the wire, read from Node's `undici` channels: `observe`, `Observer`, `Attempt`, `Phase`, `Fields`                                          |
+| Module               | What it provides                                                                                                                                                                                                                                                                              |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NodeHost`           | the complete closed Host bundle, plus re-exports of `AtomicFileSystem`, `ProcessReaper`, `NodeCrypto`, and Effect's raw `NodeFileSystem`, spawner, and `HttpClient`                                                                                                                           |
+| `AtomicFileSystem`   | the descriptor-relative, no-follow filesystem layer and its options, ceilings, and glob grammar                                                                                                                                                                                               |
+| `HostLiveness`       | whether a recorded run owner is still alive: `isAlive`, `Owner`, `Options`                                                                                                                                                                                                                    |
+| `ProcessReaper`      | live containment and restart reconciliation: `layerSpawner`, `SpawnerOptions`, `processLifecycle`, `reap`, `layer`, `System`, `Refusal`, `posixSystem`, `windowsSystem`, `systemFor`                                                                                                          |
+| `ScopedProcess`      | transient scoped commands with the same lifecycle: `Options`, `Handle`, `spawn`, `Status`, `status`                                                                                                                                                                                           |
+| `FetchTransport`     | how far each `fetch` to one origin got on the wire, read from Node's `undici` channels: `observe`, `Observer`, `Attempt`, `Phase`, `Fields`                                                                                                                                                   |
+| `EgressHttpClient`   | the outbound HTTP client read off the environment's proxy variables, which pins web requests, and the system name resolver it provides as `@smthrs/kernel`'s `HttpClient.ResolveHost`: `layer`, `resolveHost`, `dispatcher`, `rebuildableTransport`, `guardedTransport`, `EgressAddressError` |
+| `NodeLanguageServer` | `@smthrs/std`'s `LanguageServer` over host language-server processes, routed by extension: `Config`, `MAX_QUEUED_FRAMES`, `MAX_PENDING_REQUESTS`, `make`, `makeLazy`, `layer`, `layerLazy`                                                                                                    |
+| `NodeRuntime`        | the durable flow runtime on Node: `layerHost`, `layer`, `make`, `storage`, `signalExitCode`, `Options`, `HostOptions`                                                                                                                                                                         |
+| `NativeRuntime`      | the native lifecycle `NodeRuntime` and `@smthrs/platform-bun`'s `BunRuntime` bind: `make`, `Platform`, `Options`, `HostOptions`, `Api`                                                                                                                                                        |
+| `SandboxedFlow`      | a child flow's own code run on a provisioned machine: `execute`, `action`, `toLayer`, `SandboxedFlowError`, `Limits`                                                                                                                                                                          |
+| `TestNodeRuntime`    | test support, a durable engine over one SQLite file: `durableEngine`, `requirements`, `stubJj`                                                                                                                                                                                                |
 
 `NodeCrypto` is re-exported for a different reason than the rest: `Crypto` is not
 a Host service, so it is not in the closed list, but every durable composition
@@ -142,9 +169,9 @@ actions, the journal, and the runtime that replays a crashed run from where it
 stopped. It deliberately re-exports no `@smthrs/platform-*` package, for the
 same reason `effect`'s own index does not re-export `@effect/platform-node`:
 the program that runs picks its platform. So a Node program installs
-`@smthrs/flows` for the engine and this package for the machine underneath it,
-and its `NodeRuntime` composes `NodeHost.layerContainedAt` plus
-`HostLiveness.isAlive` from one options object.
+`@smthrs/flows` for the engine and this package for the machine underneath it.
+This package's `NodeRuntime` composes the engine's `Runtime` over
+`NodeHost.layerContainedAt` and `HostLiveness.isAlive` from one options object.
 
 ## Read next
 

@@ -98,32 +98,50 @@ describe("StepBoundary", () => {
       expect(replayed).toHaveLength(1)
     }))
 
-  it.effect("fails closed when the host does not support boundaries", () =>
-    Effect.gen(function*() {
-      const program = Effect.gen(function*() {
-        const boundary = yield* StepBoundary.StepBoundary
-        return yield* Effect.flip(boundary.prepare(descriptor))
-      }).pipe(Effect.provide(StepBoundary.layerTest({ supported: false })))
-      expect(yield* withCrypto(program)).toMatchObject({
-        _tag: "@smthrs/engine-store/UnsupportedBoundary",
-        code: "unsupported_boundary"
-      })
-    }))
+  // `layerUnsupported` is the production boundary of a host with no
+  // filesystem; the test double's unsupported mode stands in for the same
+  // refusal.
+  const unsupportedBoundaries = [
+    { name: "layerTest({ supported: false })", layer: StepBoundary.layerTest({ supported: false }) },
+    { name: "layerUnsupported", layer: StepBoundary.layerUnsupported }
+  ]
 
-  it.effect("fails closed during settlement and output replay", () =>
-    Effect.gen(function*() {
-      const program = Effect.gen(function*() {
-        const boundary = yield* StepBoundary.StepBoundary
-        const prepared: StepBoundary.PreparedBoundary = {
-          descriptor,
-          readSnapshot: StepBoundary.exactReads(descriptor)
-        }
-        const settle = yield* Effect.flip(boundary.settle(prepared))
-        const replay = yield* Effect.flip(boundary.replayOutputs({ declaredOutputs: {}, diffIdentity: "d3" }))
-        return [settle, replay]
-      }).pipe(Effect.provide(StepBoundary.layerTest({ supported: false })))
-      expect(yield* withCrypto(program)).toHaveLength(2)
-    }))
+  it.effect.each(unsupportedBoundaries)(
+    "fails closed on preparation under $name",
+    ({ layer }) =>
+      Effect.gen(function*() {
+        const program = Effect.gen(function*() {
+          const boundary = yield* StepBoundary.StepBoundary
+          return yield* Effect.flip(boundary.prepare(descriptor))
+        }).pipe(Effect.provide(layer))
+        expect(yield* withCrypto(program)).toMatchObject({
+          _tag: "@smthrs/engine-store/UnsupportedBoundary",
+          code: "unsupported_boundary"
+        })
+      })
+  )
+
+  it.effect.each(unsupportedBoundaries)(
+    "fails closed during settlement and output replay under $name",
+    ({ layer }) =>
+      Effect.gen(function*() {
+        const program = Effect.gen(function*() {
+          const boundary = yield* StepBoundary.StepBoundary
+          const prepared: StepBoundary.PreparedBoundary = {
+            descriptor,
+            readSnapshot: StepBoundary.exactReads(descriptor)
+          }
+          const settle = yield* Effect.flip(boundary.settle(prepared))
+          const replay = yield* Effect.flip(boundary.replayOutputs({ declaredOutputs: {}, diffIdentity: "d3" }))
+          return [settle, replay]
+        }).pipe(Effect.provide(layer))
+        const refusals = yield* withCrypto(program)
+        expect(refusals.map((refusal) => refusal._tag)).toEqual([
+          "@smthrs/engine-store/UnsupportedBoundary",
+          "@smthrs/engine-store/UnsupportedBoundary"
+        ])
+      })
+  )
 })
 
 /**

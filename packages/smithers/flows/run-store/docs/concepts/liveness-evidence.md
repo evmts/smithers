@@ -72,21 +72,20 @@ already expired.
 claimant, and the instant, it produces `LivenessEvidence` or `undefined` for
 `steal`, `claimAndOwn`, and `recoverClaim` to verify.
 
-The package ships two checks.
+The package ships three checks.
 
 `Ownership.leaseLiveness(staleAfter?)` is the default and the honest floor: an
 owner is alive for as long as its persisted heartbeat is younger than the
 cutoff, and gone once it is not. It is the weakest answer, and the one every
 host can give. A fresh process with no application code at all can reclaim a
-hard-killed owner's runs once the lease it stopped renewing expires. Browser
-compositions keep it, because a tab has no process table to ask.
+hard-killed owner's runs once the lease it stopped renewing expires.
 
 `Ownership.sameHostPidProbe` asks the operating system instead. It is what a
 Node host hands the engine, so this snippet also installs
-[`@smthrs/flows`](/api/flows):
+[`@smthrs/platform-node`](/api/platform-node), whose `NodeRuntime` is that host:
 
 ```ts
-import type * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import type { NodeRuntime } from "@smthrs/platform-node"
 import { Ownership } from "@smthrs/run-store"
 
 const options: NodeRuntime.Options = {
@@ -137,6 +136,22 @@ A recorded owner on another host is never probed. The answer is `false`, which
 adds no evidence and lets the expired lease decide, so a host that dies for
 good does not strand its runs where no other machine could ever produce
 evidence about its pids.
+
+## One incarnation per host
+
+`Ownership.singleIncarnationLiveness` is for a host that runs one incarnation
+per host id, so it needs no process table. A Cloudflare Durable Object builds
+its engine only inside its alarm, and a browser engine only in the worker that
+holds its origin's Web Lock. An owner recorded under the claimant's host id
+with another `pid` or `nonce` is an earlier incarnation whose claim has ended,
+so the check answers `false` while its lease is still fresh, and the new
+incarnation takes the run at once. Every other owner, the claimant included,
+is judged by `leaseLiveness()`.
+
+`@smthrs/platform-cloudflare`'s `CloudflareRuntime` and
+`@smthrs/platform-browser`'s `BrowserRuntime` pass it to the engine. A Node
+host must not: two Node engines over one database can share a host id while
+both are alive, and this check would let each steal the other's runs.
 
 For the sequence a takeover actually runs, see
 [Take over a stalled run](../guides/recover-a-stalled-run.md).

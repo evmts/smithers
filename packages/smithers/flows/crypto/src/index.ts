@@ -7,7 +7,8 @@
  * `digestSync` for synchronous identity construction, `Digest` to validate an
  * existing digest, and `Sha256` where schema composition is the natural
  * boundary. Use `Identity` where the thing being digested is a function rather
- * than bytes.
+ * than bytes, and `WebCrypto` for Effect's `Crypto` service over the global
+ * WebCrypto object.
  *
  * @since 0.1.0
  */
@@ -22,3 +23,12 @@ export * from "./Sha256.ts"
  * @since 1.0.0
  */
 export * as Identity from "./Identity.ts"
+
+/**
+ * Effect's `Crypto` service over the global WebCrypto object, for every host
+ * that has one: Node, Bun, browsers and Cloudflare Workers.
+ *
+ * @category services
+ * @since 1.0.0
+ */
+export * as WebCrypto from "./WebCrypto.ts"

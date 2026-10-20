@@ -1,3 +1,4 @@
+import * as Pg from "@effect/sql-pg"
 import { describe, expect, it } from "@effect/vitest"
 import { Context, Duration, Effect, Exit, Layer } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
@@ -146,11 +147,14 @@ describe.skipIf(!url)("read-only PostgreSQL", () => {
   it("creates no schema, takes no writer lock, and refuses writes", async () => {
     const schema = `readonly_${randomUUID().replaceAll("-", "")}`
     const exit = await Effect.runPromiseExit(Effect.scoped(Effect.gen(function*() {
-      const writer = Context.get(yield* Layer.build(PostgresDatabase.layer({ url: url!, schema })), SqlClient)
+      const writer = Context.get(
+        yield* Layer.build(PostgresDatabase.layer({ url: url!, driver: Pg, schema })),
+        SqlClient
+      )
       yield* Effect.addFinalizer(() => TestDatabase.dropSchema(writer, schema).pipe(Effect.orDie))
       const absent = `${schema}_absent`
       const reader = Context.get(
-        yield* Layer.build(PostgresDatabase.layer({ url: url!, schema: absent, readOnly: true })),
+        yield* Layer.build(PostgresDatabase.layer({ url: url!, driver: Pg, schema: absent, readOnly: true })),
         SqlClient
       )
       const created = yield* writer<
@@ -159,7 +163,7 @@ describe.skipIf(!url)("read-only PostgreSQL", () => {
       yield* writer`CREATE TABLE counter (value INTEGER NOT NULL)`
       yield* writer`INSERT INTO counter VALUES (1)`
       const observer = Context.get(
-        yield* Layer.build(PostgresDatabase.layer({ url: url!, schema, readOnly: true })),
+        yield* Layer.build(PostgresDatabase.layer({ url: url!, driver: Pg, schema, readOnly: true })),
         SqlClient
       )
       // A peer mid-write holds the schema's writer lock for as long as it likes.

@@ -254,7 +254,7 @@ const outcome = yield* SandboxMerge.apply(work, {
 })
 ```
 
-`apply(work, options)` lands a session's `Work` in a host jj repository as one jj change on `onto`. The patch is applied to its own base, then the change is rebased onto `onto`, so jj merges whatever `onto` gained since the base. It requires `ChildProcessSpawner` and `FileSystem`, and `jj` and `git` on the host's `PATH`.
+`apply(work, options)` lands a session's `Work` in a host jj repository as one jj change on `onto`. The patch is applied to its own base, then the change is rebased onto `onto`, so jj merges whatever `onto` gained since the base. It requires `ChildProcessSpawner`, `FileSystem` and `@smthrs/jj`'s `RepositoryMutation` fence (`NodeJj.layerRepositoryMutation` on Node and Bun), and `jj` and `git` on the host's `PATH`.
 
 | `ApplyOptions` | Default                  | Meaning                                                                     |
 | -------------- | ------------------------ | --------------------------------------------------------------------------- |
@@ -475,21 +475,29 @@ Cancelling or timing out `spawn` stops waiting. An executing command retains the
 ### MicrosandboxSandbox
 
 ```ts
+import { NodeGarbageCollector } from "@smthrs/platform-node"
 import { MicrosandboxSandbox } from "@smthrs/sandbox"
+import { Effect } from "effect"
 import * as Microsandbox from "microsandbox"
 
-const provider = MicrosandboxSandbox.make({
-  sdk: Microsandbox,
-  image: "oven/bun:1",
-  persistence: "sticky",
-  cpus: 2,
-  memoryMib: 2048,
-  idleTimeoutSecs: 600,
-  network: "none"
-})
+const program = Effect.gen(function*() {
+  const provider = MicrosandboxSandbox.make({
+    sdk: Microsandbox,
+    collector: yield* MicrosandboxSandbox.GarbageCollector,
+    image: "oven/bun:1",
+    persistence: "sticky",
+    cpus: 2,
+    memoryMib: 2048,
+    idleTimeoutSecs: 600,
+    network: "none"
+  })
+  // ...acquire sessions from `provider`
+}).pipe(Effect.provide(NodeGarbageCollector.layer))
 ```
 
 `Sdk` is the structural slice of the `microsandbox` module the provider drives, and the real module is assignable to it: `Sandbox.builder(name)` with its fluent options and `create()`, `Sandbox.get(name)` returning a lifecycle handle (`status`, `configJson`, `connect`, `start`, `startDetached`, `refresh`, `modify`, `destroy`), `Sandbox.listWith(configure)` with `label` and `cursor` paging, `defaultBackendKind()`, and `setDefaultBackend("local")`. A booted machine exposes `name`, `backendKind`, `fs()`, `execStreamWith(program, configure)`, and `destroy({ timeoutMs, force? })`; a command handle exposes `recv()`, `signal(number)`, and `kill()`.
+
+`collector` is the host's `GarbageCollector` service. The SDK's command handle holds its guest agent session until the JavaScript object is garbage collected, and a machine refuses new sessions once about 140 finished handles are still uncollected. The provider therefore collects through the collector on every 64th command start (the count is kept per collector, so a host's one collector counts every provider in its process) and before it reconnects to a guest that stopped answering. Provide `NodeGarbageCollector.layer` from `@smthrs/platform-node` on Node and `BunGarbageCollector.layer` from `@smthrs/platform-bun` on Bun; `MicrosandboxSandbox.layerGarbageCollectorNoop` collects nothing, for a host that has no collector to call. A `captureSnapshot` command counts toward no collection, because the captured machine is removed right after it.
 
 The machine name is `smthrs-msb-<slug>`. `acquire` configures the builder and calls `create`; when the SDK answers `sandboxAlreadyExists` it fetches the handle, records the current ownership labels as a next-start modification, and connects when the machine is running or starts it (detached, for sticky sessions) when it is stopped. Machine creation is registered as a scoped resource before guest setup, so a microVM that boots but cannot prepare its workspace is removed. `ephemeral` persistence, the default, removes the machine when the scope closes; `sticky` deliberately leaves it running so the next acquire of the same session key can reconnect, and only removes a sticky machine it created but could not prepare. Removal is `destroy({ timeoutMs: 3000 })`, a graceful stop; when that fails for any reason but the machine being gone, a second `destroy({ timeoutMs: 3000, force: true })` follows, and the whole teardown is bounded at five seconds. Writes use the SDK's byte-safe `fs().write` and reads its byte-typed `fs().read`; standard input rides the exec builder's own `stdinBytes` channel. `ping` reads `/etc/hostname`.
 
@@ -520,6 +528,7 @@ The real-backend suite runs where the `microsandbox` binary answers `--version` 
 ```ts
 const provider = MicrosandboxSandbox.make({
   sdk: Microsandbox,
+  collector,
   persistence: "sticky",
   environment: { flake: flakeText, lock: lockText, attr: "ci" }
 })

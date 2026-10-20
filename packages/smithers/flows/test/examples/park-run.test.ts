@@ -2,6 +2,7 @@ import { afterAll, expect, it } from "@effect/vitest"
 import { EventTypes } from "@smthrs/engine-store"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import { RunStore } from "@smthrs/run-store"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
@@ -13,7 +14,6 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { parkRun } from "../../examples/park-run.ts"
-import { durableEngine, requirements } from "../../src/test/TestNodeRuntime.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-park-run-"))
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
@@ -44,7 +44,7 @@ it.effect("waits for the durable park, joins the caller, and preserves resumabil
       Interpreter.layer(Waiting)
     ).pipe(
       Layer.provideMerge(Action.layerImplementations),
-      Layer.provideMerge(durableEngine(join(directory, "park.sqlite"), "park-test"))
+      Layer.provideMerge(TestNodeRuntime.durableEngine(join(directory, "park.sqlite"), "park-test"))
     )
     yield* Effect.gen(function*() {
       const store = yield* RunStore.RunStore
@@ -74,7 +74,7 @@ it.effect("waits for the durable park, joins the caller, and preserves resumabil
       }).pipe(Effect.provide(stack))
       expect(resumed).toBe("resumed")
       expect((yield* store.get("park-test")).status).toBe("completed")
-    }).pipe(Effect.provide(requirements(join(directory, "park.sqlite"))), Effect.scoped)
+    }).pipe(Effect.provide(TestNodeRuntime.requirements(join(directory, "park.sqlite"))), Effect.scoped)
   }))
 
 it.live("quiesces a retry admitted before suspension observation", () =>
@@ -106,7 +106,7 @@ it.live("quiesces a retry admitted before suspension observation", () =>
       Interpreter.layer(Waiting)
     ).pipe(
       Layer.provideMerge(Action.layerImplementations),
-      Layer.provideMerge(durableEngine(join(directory, "delayed.sqlite"), "delayed-test"))
+      Layer.provideMerge(TestNodeRuntime.durableEngine(join(directory, "delayed.sqlite"), "delayed-test"))
     )
     // Only the observer sees delayed delivery. Admit the racing retry
     // explicitly so the test does not depend on the follower polling policy.
@@ -195,7 +195,7 @@ it.live("quiesces a retry admitted before suspension observation", () =>
       expect((yield* store.get("delayed-test")).status).toBe("completed")
     }).pipe(
       Effect.ensuring(Deferred.succeed(releaseCleanup, undefined)),
-      Effect.provide(requirements(join(directory, "delayed.sqlite"))),
+      Effect.provide(TestNodeRuntime.requirements(join(directory, "delayed.sqlite"))),
       Effect.scoped
     )
   }))

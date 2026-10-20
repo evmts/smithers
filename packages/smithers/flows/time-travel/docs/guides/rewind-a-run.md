@@ -32,13 +32,14 @@ on `PATH`, because the fork adds its workspace through jj. Every output block is
 ```bash
 mkdir rewind && cd rewind
 npm init -y && npm pkg set type=module
-npm install @smthrs/flows@next effect
+npm install @smthrs/platform-node@next @smthrs/flows@next effect
 npm install @smthrs/time-travel@1.0.0-rc.16 @smthrs/jj@1.0.0-rc.16
 jj git init workspace
 ```
 
-`@smthrs/time-travel` supplies `SqlTimeTravelStore`, which `@smthrs/flows` does
-not re-export. `@smthrs/jj` supplies `NodeJj`, the `Jj` service backed by the jj
+`@smthrs/platform-node` supplies `NodeRuntime`, the Node host the program runs
+the engine on. `@smthrs/time-travel` supplies `SqlTimeTravelStore`, which
+`@smthrs/flows` does not re-export. `@smthrs/jj` supplies `NodeJj`, the `Jj` service backed by the jj
 CLI: a fork adds the child's workspace through it, and a rewind restores the
 workspace through it when it crosses a `compensable` step. Install both at the
 version of `@smthrs/flows` you have. The workspace must be a jj repository.
@@ -47,8 +48,8 @@ Create `rewind.ts`:
 
 ```ts
 import { Action, DurableDeferred, Engine, Flow, Interpreter, Journal, Plan, RunStore, TimeTravel } from "@smthrs/flows"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { SqlTimeTravelStore } from "@smthrs/time-travel"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

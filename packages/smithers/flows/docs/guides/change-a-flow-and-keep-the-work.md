@@ -36,7 +36,7 @@ which steps ran and which were reused.
 
 ```ts
 import { Action, Flow, Graph, Interpreter, Plan } from "@smthrs/flows"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"

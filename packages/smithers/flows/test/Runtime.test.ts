@@ -1,31 +1,38 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { expect, it } from "@effect/vitest"
+import { ArtifactStore } from "@smthrs/artifacts"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { FlowEngine } from "@smthrs/engine"
-import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
+import { EngineStore, OwnerIdentity, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as Jj from "@smthrs/jj/Jj"
+import { Workspace } from "@smthrs/kernel"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { Migrations as RunMigrations, RunStore } from "@smthrs/run-store"
-import { Context, Effect, Exit, Layer } from "effect"
+import { Context, Effect, Exit, Layer, Option, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import { existsSync, mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Runtime from "../src/Runtime.ts"
 
 const options: Runtime.Options = {
-  filename: "runtime.sqlite",
-  workspaceRoot: ".",
   owner: { hostId: "injected-runtime" },
   isAlive: () => Effect.succeed(false)
 }
 
+/** What a native host injects beside the database: its identity, a workspace, and artifacts on disk. */
+const nativeStorage = (root: string) =>
+  Layer.mergeAll(
+    OwnerIdentity.layer,
+    Workspace.layer(root),
+    ArtifactStore.layerFileSystem({ directory: join(root, "objects") })
+  )
+
 it("reports invalid JavaScript configuration before constructing injected services", () => {
   const invalid = [
-    [{ filename: "" }, "filename"],
     [{ owner: undefined }, "owner.hostId"],
     [{ isAlive: undefined }, "isAlive"],
     [{ canExecute: "yes" }, "canExecute"],
@@ -37,7 +44,10 @@ it("reports invalid JavaScript configuration before constructing injected servic
     [{ cacheEnvironment: { layers: [] } }, "cacheEnvironment"],
     // A ref a reader could not resolve is not a revision (D-068).
     [{ sourceRevision: "" }, "sourceRevision"],
-    [{ privilegedJj: "jj" }, "privilegedJj"]
+    [{ privilegedJj: "jj" }, "privilegedJj"],
+    // A host-driven sweep names the one execution it drives.
+    [{ sweep: "sometimes" }, "sweep"],
+    [{ sweep: { host: "" } }, "sweep"]
   ] as const
   for (const [patch, field] of invalid) {
     const parameters = [
@@ -54,19 +64,13 @@ it("reports invalid JavaScript configuration before constructing injected servic
 
 it("uses the caller's SQL instance for every migrated store without opening a second database", async () => {
   const root = mkdtempSync(join(tmpdir(), "flows-injected-runtime-"))
-  const filename = join(root, "must-not-open.sqlite")
   try {
     await Effect.runPromise(
       Effect.gen(function*() {
         const sql = yield* SqlClient.SqlClient
         for (const registry of [undefined, Layer.empty]) {
           yield* Effect.scoped(Effect.gen(function*() {
-            const parameters = [
-              { ...options, filename, workspaceRoot: root },
-              StepBoundary.layer,
-              WorkspaceSandbox.layerFileSystem(),
-              Layer.empty
-            ] as const
+            const parameters = [options, StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), Layer.empty] as const
             const context = yield* registry === undefined
               ? Runtime.make(...parameters)
               : Runtime.make(...parameters, registry)
@@ -82,50 +86,41 @@ it("uses the caller's SQL instance for every migrated store without opening a se
           }))
         }
       }).pipe(
-        Effect.provide(Layer.mergeAll(
-          NodeDatabase.layer({ filename: ":memory:" }),
-          AtomicFileSystem.layer,
-          NodeCrypto.layer,
-          NodePath.layer,
-          Jj.layerNoop({})
-        )),
+        Effect.provide(
+          nativeStorage(root).pipe(Layer.provideMerge(Layer.mergeAll(
+            NodeDatabase.layer({ filename: ":memory:" }),
+            AtomicFileSystem.layer,
+            NodeCrypto.layer,
+            NodePath.layer,
+            Jj.layerNoop({})
+          )))
+        ),
         Effect.scoped
       )
     )
-    expect(existsSync(filename)).toBe(false)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
 it("isolates store instances from an enclosing control database in the same layer memo map", async () => {
-  const root = mkdtempSync(join(tmpdir(), "flows-runtime-store-isolation-"))
   const control = RunStore.layer.pipe(Layer.provideMerge(
     RunMigrations.layer.pipe(Layer.provideMerge(
       DurableWriter.layer().pipe(Layer.provideMerge(NodeDatabase.layer({ filename: ":memory:" })))
     ))
   ))
-  const engine = Runtime.storage(join(root, "engine.sqlite"), root).pipe(
-    Layer.provide(NodeDatabase.layer({ filename: ":memory:" }))
+  const engine = Runtime.storage.pipe(Layer.provide(NodeDatabase.layer({ filename: ":memory:" })))
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const controlStore = yield* RunStore.RunStore
+      yield* controlStore.create("control-only", "{}")
+      const engineContext = yield* Layer.build(engine)
+      const engineStore = Context.get(engineContext, RunStore.RunStore)
+      expect((yield* Effect.flip(engineStore.get("control-only"))).code).toBe("not_found_row")
+      yield* engineStore.create("engine-only", "{}")
+      expect((yield* Effect.flip(controlStore.get("engine-only"))).code).toBe("not_found_row")
+    }).pipe(Effect.provide(control), Effect.scoped)
   )
-  try {
-    await Effect.runPromise(
-      Effect.gen(function*() {
-        const controlStore = yield* RunStore.RunStore
-        yield* controlStore.create("control-only", "{}")
-        const engineContext = yield* Layer.build(engine)
-        const engineStore = Context.get(engineContext, RunStore.RunStore)
-        expect((yield* Effect.flip(engineStore.get("control-only"))).code).toBe("not_found_row")
-        yield* engineStore.create("engine-only", "{}")
-        expect((yield* Effect.flip(controlStore.get("engine-only"))).code).toBe("not_found_row")
-      }).pipe(
-        Effect.provide(Layer.mergeAll(control, NodeFileSystem.layer, NodeCrypto.layer, NodePath.layer)),
-        Effect.scoped
-      )
-    )
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
 })
 
 it("takes the engine's step snapshots on the privileged Jj and leaves the ambient Jj to actions", async () => {
@@ -143,8 +138,6 @@ it("takes the engine's step snapshots on the privileged Jj and leaves the ambien
         const context = yield* Runtime.make(
           {
             ...options,
-            filename: join(root, `${privileged === undefined ? "ambient" : "privileged"}.sqlite`),
-            workspaceRoot: root,
             ...(privileged === undefined ? {} : { privilegedJj: Layer.succeed(Jj.Jj, recording(privileged)) })
           },
           StepBoundary.layer,
@@ -161,13 +154,15 @@ it("takes the engine's step snapshots on the privileged Jj and leaves the ambien
           metadata: undefined
         })
       }).pipe(
-        Effect.provide(Layer.mergeAll(
-          NodeDatabase.layer({ filename: ":memory:" }),
-          AtomicFileSystem.layer,
-          NodeCrypto.layer,
-          NodePath.layer,
-          Layer.succeed(Jj.Jj, recording(ambient))
-        )),
+        Effect.provide(
+          nativeStorage(root).pipe(Layer.provideMerge(Layer.mergeAll(
+            NodeDatabase.layer({ filename: ":memory:" }),
+            AtomicFileSystem.layer,
+            NodeCrypto.layer,
+            NodePath.layer,
+            Layer.succeed(Jj.Jj, recording(ambient))
+          )))
+        ),
         Effect.scoped
       )
     )
@@ -184,4 +179,89 @@ it("takes the engine's step snapshots on the privileged Jj and leaves the ambien
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+const Greet = Action.make("Runtime/Greet", { payload: { name: Schema.String }, success: Schema.String })
+const Hello = Flow.make("Runtime/Hello", {
+  payload: { name: Schema.String },
+  success: Schema.String,
+  body: ({ name }) => Greet.call({ name })
+})
+
+it("runs a flow on a host with no filesystem, from injected services alone", async () => {
+  const fenced: Array<number> = []
+  // Everything a Worker host can give: a SQL client, crypto, a refusing Jj,
+  // an identity without a process id, and boundaries that refuse files. No
+  // FileSystem, Path, Workspace or ArtifactStore exists anywhere below.
+  const host = OwnerIdentity.layerWithoutPid.pipe(Layer.provideMerge(Layer.mergeAll(
+    NodeDatabase.layer({ filename: ":memory:" }),
+    NodeCrypto.layer,
+    Jj.layerNoop({})
+  )))
+  const runtime = Runtime.layer(
+    { ...options, sweep: { host: "hello-1" } },
+    StepBoundary.layerUnsupported,
+    WorkspaceSandbox.layerUnsupported,
+    Interpreter.layer(Hello).pipe(
+      Layer.provideMerge(Greet.toLayer(({ name }) =>
+        Effect.map(Action.CurrentFence, (fence) => {
+          fenced.push(fence?.attempt ?? 0)
+          return `hello ${name}`
+        })
+      )),
+      Layer.provideMerge(Action.layerImplementations)
+    )
+  ).pipe(Layer.provide(host))
+  const outcome = await Effect.runPromise(
+    Effect.gen(function*() {
+      const flows = yield* FlowRuntime.FlowRuntime
+      // The host's own drive, once, as a Durable Object alarm runs it.
+      const driven = yield* EngineStore.drive(Hello, { executionId: "hello-1", payload: { name: "worker" } })
+      const greeting = yield* flows.execute(Hello, { executionId: "hello-1", payload: { name: "worker" } })
+      return { driven, greeting, wake: yield* EngineStore.nextWake("hello-1") }
+    }).pipe(Effect.provide(runtime), Effect.scoped)
+  )
+  expect(outcome.driven).toEqual({ _tag: "Settled", status: "completed" })
+  expect(outcome.greeting).toBe("hello worker")
+  // Settled, so its host has nothing left to wake.
+  expect(outcome.wake).toEqual(Option.none())
+  // The step ran under the engine's fence, as its first attempt.
+  expect(fenced).toEqual([1])
+})
+
+it("provides a declared cache environment under the engine, where an action reads it", async () => {
+  const environment: Action.CacheEnvironment = { layers: ["flows/runtime-test/v1"], capabilities: {} }
+  const seen: Array<Action.CacheEnvironment | undefined> = []
+  const run = (cacheEnvironment: Action.CacheEnvironment | undefined, executionId: string) =>
+    Effect.runPromise(
+      Effect.gen(function*() {
+        const flows = yield* FlowRuntime.FlowRuntime
+        return yield* flows.execute(Hello, { executionId, payload: { name: "cache" } })
+      }).pipe(
+        Effect.provide(
+          Runtime.layer(
+            { ...options, ...(cacheEnvironment === undefined ? {} : { cacheEnvironment }) },
+            StepBoundary.layerUnsupported,
+            WorkspaceSandbox.layerUnsupported,
+            Interpreter.layer(Hello).pipe(
+              Layer.provideMerge(Greet.toLayer(({ name }) =>
+                Effect.map(Action.CurrentCacheEnvironment, (current) => {
+                  seen.push(current)
+                  return `hello ${name}`
+                })
+              )),
+              Layer.provideMerge(Action.layerImplementations)
+            )
+          ).pipe(Layer.provide(OwnerIdentity.layerWithoutPid.pipe(Layer.provideMerge(Layer.mergeAll(
+            NodeDatabase.layer({ filename: ":memory:" }),
+            NodeCrypto.layer,
+            Jj.layerNoop({})
+          )))))
+        ),
+        Effect.scoped
+      )
+    )
+  expect(await run(environment, "cache-declared")).toBe("hello cache")
+  expect(await run(undefined, "cache-absent")).toBe("hello cache")
+  expect(seen).toEqual([environment, undefined])
 })

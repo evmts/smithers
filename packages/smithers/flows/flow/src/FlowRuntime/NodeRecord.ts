@@ -89,7 +89,13 @@ export type NodeOutcome = "built" | "clean" | "failed" | "skipped"
  */
 export interface PlanRecorded {
   readonly _tag: "PlanRecorded"
-  /** Whole-graph identity; absent only on records from older producers. */
+  /**
+   * Whole-graph identity; absent only on records from older producers.
+   *
+   * It is what a durable runtime compares when a resume finds this plan
+   * already recorded. Declaration sites and the page layout are outside it,
+   * so a rebuild that only moves declarations resumes.
+   */
   readonly digest?: string | undefined
   readonly sourceId: string
   readonly flow: string

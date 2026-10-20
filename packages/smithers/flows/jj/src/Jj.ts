@@ -434,3 +434,66 @@ export const makeNoop = (overrides: Partial<Jj>): Jj => {
  * @since 0.1.0
  */
 export const layerNoop = (overrides: Partial<Jj>): Layer.Layer<Jj> => Layer.succeed(Jj)(makeNoop(overrides))
+
+/**
+ * The host's fence for changing a jj repository from outside a `Jj` call,
+ * such as landing captured sandbox work with `jj` and `git` commands.
+ *
+ * `run` holds the same workspace and store fences the host's own `Jj`
+ * operations take while `effect` runs, so the two never interleave on one
+ * repository. A host with a filesystem provides it: `NodeJj.layerRepositoryMutation`
+ * for Node and Bun. A browser or a Worker provides none, and code that
+ * requires it says so in its requirements rather than failing at run time.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface RepositoryMutation {
+  /** Runs `effect` holding the fences of the repository `from` names, for the operation `method`. */
+  readonly run: <A, E, R>(
+    method: string,
+    from: string,
+    effect: Effect.Effect<A, E, R>
+  ) => Effect.Effect<A, E | JjError, R>
+}
+
+/**
+ * The service key for {@link RepositoryMutation}.
+ *
+ * @category services
+ * @since 1.0.0
+ */
+export const RepositoryMutation: Context.Service<RepositoryMutation, RepositoryMutation> = Context.Service(
+  "@smthrs/jj/RepositoryMutation"
+)
+
+/**
+ * Retry Git's shared index or ref-lock contention, for at most 1,200 retries.
+ * Source conflicts, private index errors and other VCS failures retain their
+ * original error. Never reclaim Git's active lock.
+ *
+ * @category utils
+ * @since 1.0.0
+ */
+export const retryGitIndexLock = <A, E extends { readonly message: string }, R>(
+  effect: Effect.Effect<A, E, R>
+): Effect.Effect<A, E, R> =>
+  Effect.suspend(() => {
+    let attempts = 0
+    const attempt: Effect.Effect<A, E, R> = Effect.suspend(() =>
+      effect.pipe(
+        Effect.catch((error) =>
+          attempts++ < 1_200 && (
+              /Could not acquire lock for index file/i.test(error.message)
+                && /could not be obtained immediately after \d+ attempt\(s\)/i.test(error.message)
+                && /(?:[/\\])index\.lock['" ]/.test(error.message)
+              || /cannot lock ref '[^']+':/i.test(error.message)
+                && /(?:file exists|another git process|reference already locked)/i.test(error.message)
+            )
+            ? Effect.sleep("100 millis").pipe(Effect.andThen(attempt))
+            : Effect.fail(error)
+        )
+      )
+    )
+    return attempt
+  })

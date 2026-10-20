@@ -12,14 +12,14 @@ command ledger or lease system to repeat the engine's responsibilities.
 
 ## Runtime parity: evidence and regression contract
 
-`test/NativeRuntimeParity.test.ts` launches separate real Node and Bun processes.
+`platform-bun/test/NativeRuntimeParity.test.ts` launches separate real Node and Bun processes.
 A flow executes a recorded action and parks on a durable deferred; the other
 runtime opens the same database, completes the deferred and resumes the flow.
 Reopening it in the first runtime must not repeat that action. Both directions
 are exercised on SQLite and, with `SMITHERS_TEST_PG_URL`, PostgreSQL. This is native Bun execution, not running Node through a Bun
 package-manager shim.
 
-The Node suite contains named regression cases for registration ordering,
+The Node suite, `platform-node/test/NodeRuntime*.test.ts`, contains named regression cases for registration ordering,
 ownership, process containment and signal cleanup. These sources describe test
 coverage; they do not certify that a particular test run passed. Bun-specific host and database contract
 coverage must be expanded alongside behavior changes. A Node sidecar is not a

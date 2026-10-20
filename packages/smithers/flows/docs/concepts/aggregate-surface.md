@@ -39,8 +39,8 @@ infrastructure namespaces.
 
 Writing a flow is the point of the library, and `Flows.Flow.Flow.make` would be
 noise. `Interpreter` belongs to that set because a host composition needs it:
-the registration layer `NodeRuntime.layerHost` takes is built from
-`Interpreter.layer(flow)`.
+the registration layer `Runtime.layer` and every host's `layerHost` take is
+built from `Interpreter.layer(flow)`.
 
 [`@smthrs/time-travel`](../../time-travel/docs/api.md) contributes the second flat name for a
 different reason. `TimeTravel` is a service key rather than a namespace, so
@@ -71,11 +71,14 @@ the build tooling.
 
 ## The platform bundles are deliberately absent
 
-`@smthrs/platform-node`, `@smthrs/platform-bun`, and
-`@smthrs/platform-browser` are not re-exported, for the same reason `effect`'s
-index does not re-export `@effect/platform-node`: a platform bundle is chosen by
-the program that runs, not by the library it depends on. Pulling all three in
-would make one import resolve `node:child_process`, ZenFS, and Bun at once.
+`@smthrs/platform-node`, `@smthrs/platform-bun`, `@smthrs/platform-browser`,
+and `@smthrs/platform-cloudflare` are not re-exported, for the same reason
+`effect`'s index does not re-export `@effect/platform-node`: a platform bundle is
+chosen by the program that runs, not by the library it depends on. Pulling them
+in would make one import resolve `node:child_process`, ZenFS, and Bun at once.
+The native compositions live there too: `NodeRuntime`, `SandboxedFlow` and
+`TestNodeRuntime` in `@smthrs/platform-node`, and `BunRuntime` in
+`@smthrs/platform-bun`.
 
 The same rule holds one level down. Platform implementations never appear
 through the namespaces either: reach `@smthrs/testing/TestHost`,
@@ -84,14 +87,17 @@ through their own packages.
 
 ## Bundling for a browser is not durable execution
 
-The root entry point bundles for a browser, and so does every package root it
-re-exports. What that buys is authoring and inspection: declaring flows, reading
-a plan, decoding a journal event.
+The root entry point bundles for a browser and a Cloudflare Worker, and so does
+every package root it re-exports. What that buys is the engine with no host:
+declaring flows, reading a plan, decoding a journal event, and the `Runtime` a
+host composes.
 
-Durable execution uses local SQLite through NodeRuntime or BunRuntime. The
-shared Runtime consumes injected Effect services; selecting another SQL client
-does not by itself establish browser or edge support. Native compositions live
-at separate subpaths, so importing `@smthrs/flows` never opens a native driver.
+Durable execution on Node or Bun uses local SQLite or PostgreSQL through
+`NodeRuntime` from `@smthrs/platform-node` or `BunRuntime` from
+`@smthrs/platform-bun`. The shared `Runtime` consumes injected Effect services;
+selecting another SQL client does not by itself establish browser or edge
+support. Native compositions live in the platform packages, so importing
+`@smthrs/flows` never opens a native driver.
 See [runtime portability](./runtime-portability.md) for the composition and
 cross-runtime restart contract.
 
@@ -100,6 +106,7 @@ cross-runtime restart contract.
 There is no plugin namespace here and no hook registry. You extend the engine by
 providing a `Layer`, and you replace a behavior by providing a different
 implementation of the service, or a different constructor option, at the seam
-that owns it. `NodeRuntime` is itself an instance of that: it is a composition
-of the packages above, with the decisions a host actually has to make left as
-options.
+that owns it. `Runtime` is itself an instance of that: it is a composition of
+the packages above, with the decisions a host actually has to make left as
+options, and `NodeRuntime` in `@smthrs/platform-node` is `Runtime` with Node's
+answers to them.

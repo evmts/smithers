@@ -28,6 +28,7 @@ import { FlowInstance } from "../FlowRuntime/FlowInstance.ts"
 import { FlowRuntime } from "../FlowRuntime/FlowRuntime.ts"
 import { lowerDeclarations } from "../internal/Declarations.ts"
 import * as DeclarationSite from "../internal/DeclarationSite.ts"
+import * as SpanFailure from "../internal/SpanFailure.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
 import type { Action, Declared, IdempotencyKey, Requirement, Tier } from "./Action.ts"
 import { AttemptTimedOut } from "./AttemptTimedOut.ts"
@@ -666,6 +667,9 @@ const makeExecute = Effect.fnUntraced(function*<
   yield* Effect.annotateCurrentSpan({ outcome: result.exit._tag === "Success" ? "success" : "failure" })
   return yield* result.exit
 }, (effect) =>
-  Effect.withSpan(effect, "Action.execute", {
+  // The action's failure is often someone else's text, such as a model
+  // provider's error quoting a prompt, so this span exports only its tag and
+  // code. The body's own spans are traced as they are.
+  SpanFailure.withSpan("Action.execute", {
     captureStackTrace: false
-  }))
+  })(effect))

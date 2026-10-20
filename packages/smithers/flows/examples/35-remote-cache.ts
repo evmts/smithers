@@ -13,9 +13,9 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { CacheSync, EngineStore, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
+import { NodeRuntime, TestNodeRuntime } from "@smthrs/platform-node"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import * as CombinedCacheStore from "@smthrs/step-cache/CombinedCacheStore"
@@ -25,7 +25,6 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { createServer, type Server } from "node:http"
-import { stubJj } from "../src/test/TestNodeRuntime.ts"
 
 /** What one run of the example observed. */
 export interface Summary {
@@ -207,7 +206,7 @@ const engineLayer = (filename: string, hostId: string, endpoint: string) => {
     Layer.provideMerge(execution),
     Layer.provideMerge(
       Layer.mergeAll(
-        stubJj,
+        TestNodeRuntime.stubJj,
         FetchHttpClient.layer,
         // The third declaration a shareable step needs, and the one that lives
         // on the COMPOSITION rather than the action: a complete cache

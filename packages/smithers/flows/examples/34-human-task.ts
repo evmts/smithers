@@ -13,6 +13,7 @@ import { Action, DurableDeferred, HumanTask, Interpreter } from "@smthrs/flow"
 import * as Flow from "@smthrs/flow/Flow"
 import * as Journal from "@smthrs/journal/Journal"
 import type * as JournalEvent from "@smthrs/journal/JournalEvent"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as AttemptStore from "@smthrs/run-store/AttemptStore"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -20,7 +21,6 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
-import { durableEngine } from "../src/test/TestNodeRuntime.ts"
 
 /** The question, and the run that is blocked on it. */
 export const Release = Flow.make("examples/Release", {
@@ -131,7 +131,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
     const engine = (hostId: string) =>
       Interpreter.layer(Release).pipe(
         Layer.provideMerge(Action.layerImplementations),
-        Layer.provideMerge(durableEngine(filename, hostId))
+        Layer.provideMerge(TestNodeRuntime.durableEngine(filename, hostId))
       )
     const parkedOn: Array<number> = []
 

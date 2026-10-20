@@ -43,7 +43,7 @@ import {
   type PermissionError,
   type PermissionErrorPayload
 } from "@smthrs/capability/Permission"
-import { Context, Effect, Layer, Option } from "effect"
+import { Context, Effect, Layer, Option, Schema } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Headers from "effect/http/Headers"
 import * as HttpBody from "effect/http/HttpBody"
@@ -407,3 +407,56 @@ export const withDestinationPinning = <A extends EffectHttpClient.HttpClient>(cl
  * @since 1.0.0
  */
 export const supportsDestinationPinning = (client: EffectHttpClient.HttpClient): boolean => pinnedClients.has(client)
+
+/**
+ * A host resolved no addresses for a web request's hostname because it has no
+ * resolver a pinning transport can honor. `reason` says why, in the host's
+ * words.
+ *
+ * @category errors
+ * @since 1.0.0-rc.16
+ */
+export class ResolveHostUnavailable extends Schema.TaggedError<ResolveHostUnavailable>()(
+  "@smthrs/kernel/ResolveHostUnavailable",
+  { hostname: Schema.String, reason: Schema.String }
+) {}
+
+/**
+ * Resolves a web request's hostname to every address the request may reach.
+ *
+ * A web tool's destination policy checks each address this returns, and a
+ * pinning transport ({@link withDestinationPinning}) connects only to the
+ * {@link Destination} built from them, so the resolver and the transport must
+ * come from the same host. `@smthrs/platform-node`'s `EgressHttpClient.layer`
+ * provides the system resolver beside its pinning client, on Node and on Bun.
+ *
+ * The default resolves nothing: it fails with {@link ResolveHostUnavailable}.
+ * That is the answer where the platform mediates the network, in a browser
+ * tab or a Cloudflare Worker. Such a host can neither look a name up nor hold
+ * a connection to the addresses a lookup returned, so a web request that
+ * needs a name is refused, never sent unchecked.
+ *
+ * @example
+ * ```ts
+ * import { HttpClient } from "@smthrs/kernel"
+ * import { Effect } from "effect"
+ *
+ * // A test pins every name to one documentation address.
+ * const pinned = Effect.provideService(HttpClient.ResolveHost, () => Effect.succeed(["192.0.2.10"]))
+ * ```
+ *
+ * @category references
+ * @since 1.0.0-rc.16
+ */
+export const ResolveHost = Context.Reference<(hostname: string) => Effect.Effect<ReadonlyArray<string>, unknown>>(
+  "@smthrs/kernel/HttpClient/ResolveHost",
+  {
+    defaultValue: () => (hostname) =>
+      Effect.fail(
+        new ResolveHostUnavailable({
+          hostname,
+          reason: "this host has no name resolver for web requests; its platform mediates the network"
+        })
+      )
+  }
+)

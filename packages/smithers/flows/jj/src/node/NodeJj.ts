@@ -48,7 +48,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path"
 import { stripVTControlCharacters } from "node:util"
 import { quoteGitPatchPaths } from "../internal/gitPatchPaths.ts"
 import { JjInternalFault } from "../internal/JjInternalFault.ts"
-import { isJjError, Jj, JjError, jjErrorCause } from "../Jj.ts"
+import { isJjError, Jj, JjError, jjErrorCause, RepositoryMutation } from "../Jj.ts"
 import { resolveJjBinary } from "./resolveJjBinary.ts"
 
 /** The `module` every failure this adapter produces names. */
@@ -521,35 +521,15 @@ export const withRepositoryMutation = <A, E, R>(
   )
 
 /**
- * Retry Git's shared index or ref-lock contention, for at most 1,200 retries.
- * Source conflicts, private index errors and other VCS failures retain their
- * original error. Never reclaim Git's active lock.
+ * Provides {@link withRepositoryMutation} as the `RepositoryMutation` service,
+ * which `@smthrs/sandbox`'s `SandboxMerge.apply` requires to land work.
  *
- * @category utils
+ * @category layers
  * @since 1.0.0
  */
-export const retryGitIndexLock = <A, E extends { readonly message: string }, R>(
-  effect: Effect.Effect<A, E, R>
-): Effect.Effect<A, E, R> =>
-  Effect.suspend(() => {
-    let attempts = 0
-    const attempt: Effect.Effect<A, E, R> = Effect.suspend(() =>
-      effect.pipe(
-        Effect.catch((error) =>
-          attempts++ < 1_200 && (
-              /Could not acquire lock for index file/i.test(error.message)
-                && /could not be obtained immediately after \d+ attempt\(s\)/i.test(error.message)
-                && /(?:[/\\])index\.lock['" ]/.test(error.message)
-              || /cannot lock ref '[^']+':/i.test(error.message)
-                && /(?:file exists|another git process|reference already locked)/i.test(error.message)
-            )
-            ? Effect.sleep("100 millis").pipe(Effect.andThen(attempt))
-            : Effect.fail(error)
-        )
-      )
-    )
-    return attempt
-  })
+export const layerRepositoryMutation: Layer.Layer<RepositoryMutation> = Layer.succeed(RepositoryMutation)({
+  run: withRepositoryMutation
+})
 
 /**
  * Overrides every Node and Bun jj command carries so repository config cannot

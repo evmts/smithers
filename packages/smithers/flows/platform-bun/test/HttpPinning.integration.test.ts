@@ -11,7 +11,7 @@ import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { expect, it } from "vitest"
 import * as Fetch from "../../../agent/std/src/Fetch.ts"
-import { ResolveHost } from "../../../agent/std/src/internal/HttpNetwork.ts"
+import { ResolveHost } from "@smthrs/kernel/HttpClient"
 import * as BunHost from "../src/BunHost.ts"
 
 it("BunHost pins a granted hostname through the public web tool", async () => {

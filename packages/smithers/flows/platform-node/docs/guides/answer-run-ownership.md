@@ -24,7 +24,7 @@ is structural: `{ hostId: string, pid: number }`, which is exactly the shape of
 [`@smthrs/journal`](/api/journal)'s `OwnerId` minus its nonce, so an `OwnerId`
 is accepted without this package depending on the journal to name a type.
 
-`@smthrs/flows`' `NodeRuntime` defaults to this function, so a program that
+This package's `NodeRuntime` defaults to this function, so a program that
 composes the runtime gets it without asking.
 
 ## The rule
@@ -78,7 +78,7 @@ lease before allowing a steal. `HostLiveness.isAlive` returns `true` for a
 foreign host, so runs on a permanently dead host wait for an operator.
 
 Which answer a deployment gets depends on the entry point it used:
-`@smthrs/flows`' `NodeRuntime` defaults to this function, while
+This package's `NodeRuntime` defaults to this function, while
 [`@smthrs/cli`](/api/cli)'s `NodeControl` passes `sameHostPidProbe`.
 
 `HostLiveness.isAlive` compares with its configured `hostId` and ignores the

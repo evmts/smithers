@@ -25,6 +25,8 @@ only runtime dependency is [`effect`](https://effect.website).
   generally do too.
 - An Effect `Crypto` service, for `digest` only. The next section lists the
   implementations you can provide.
+- A global WebCrypto `crypto` object, for `WebCrypto` only. Node, Bun,
+  browsers, and Cloudflare Workers provide it.
 
 The package imports no `node:` built-in, so it bundles for a browser
 unchanged.
@@ -68,6 +70,7 @@ implementation that matches where the code runs:
 | `@effect/platform-node/NodeCrypto`       | `NodeCrypto.layer`                                 | A Node process. [`@smthrs/platform-node`](/api/platform-node) re-exports it as `NodeHost.NodeCrypto`.                                               |
 | `@effect/platform-bun/BunCrypto`         | `BunCrypto.layer`                                  | A Bun process.                                                                                                                                      |
 | `@effect/platform-browser/BrowserCrypto` | The layer that module exports                      | A browser tab. Add `@effect/platform-browser` yourself: [`@smthrs/platform-browser`](/api/platform-browser) leaves `Crypto` out of its host bundle. |
+| `WebCrypto` from this package            | `WebCrypto.layer`                                  | Any host with the global WebCrypto: Node, Bun, a browser, or a Cloudflare Worker. It reads randomness only on demand.                               |
 | `syncCrypto` from this package           | `Effect.provideService(Crypto.Crypto, syncCrypto)` | Synchronous code and tests. It answers SHA-256 only and refuses randomness.                                                                         |
 | Your own                                 | `Crypto.make({ randomBytes, digest })`             | A custom host, a hardware module, or a fault-injecting test.                                                                                        |
 

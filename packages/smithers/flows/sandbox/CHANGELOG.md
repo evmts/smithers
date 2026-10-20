@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `SandboxMerge.apply` requires `@smthrs/jj`'s `RepositoryMutation` service
+  instead of loading `@smthrs/jj/node/NodeJj` through a dynamic import, so the
+  root imports no Node code even at run time. Node and Bun hosts provide
+  `NodeJj.layerRepositoryMutation`. The microsandbox garbage collector reads
+  Node's built-ins as feature detection and collects nothing on a host without
+  them.
+
 ### Security
 
 - `MicrosandboxSandbox` drops the `scripts` option: the pinned runtime rewrites registered scripts in the

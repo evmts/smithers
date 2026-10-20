@@ -11,7 +11,7 @@ import { attemptIn } from "../internal/attempt.ts"
 import { elapsed } from "../internal/deadline.ts"
 import { environmentCommand } from "../internal/environmentCommand.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
-import { execHandles } from "../internal/execHandles.ts"
+import { started } from "../internal/execHandles.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { parentOf } from "../internal/guestPath.ts"
 import { linuxFileSystem } from "../internal/linuxFileSystem.ts"
@@ -29,6 +29,7 @@ import { type NetworkPolicy as GuestNetworkPolicy, validateNetworkPolicy } from 
 import type { Provider } from "../Sandbox/Provider.ts"
 import { type ResourceLimits, validateResourceLimits } from "../Sandbox/ResourceLimits.ts"
 import type { Session } from "../Sandbox/Session.ts"
+import type { GarbageCollector } from "./GarbageCollector.ts"
 import { holderLabel, ownerLabel, providerLabel, providerName } from "./labels.ts"
 import type { NetworkPolicy, Sdk } from "./Sdk.ts"
 
@@ -98,6 +99,14 @@ const installable = (directory: string, environment: NixEnvironment): string =>
 export interface MicrosandboxSandboxOptions {
   /** The injected Microsandbox SDK module. */
   readonly sdk: Sdk
+  /**
+   * The host's garbage collector, which gives finished command handles back
+   * to the guest: `yield* MicrosandboxSandbox.GarbageCollector` under
+   * `NodeGarbageCollector.layer` from `@smthrs/platform-node` or
+   * `BunGarbageCollector.layer` from `@smthrs/platform-bun`. See
+   * {@link GarbageCollector}.
+   */
+  readonly collector: GarbageCollector
   /** Boot from this image. Default `oven/bun:1`. */
   readonly image?: string | undefined
   /** Boot from a snapshot instead of an image. The two options are exclusive. */
@@ -405,39 +414,41 @@ const revive = (
   detached: boolean,
   network: string
 ): Effect.Effect<VendorSandbox, ProviderError> =>
-  retrying(attempt(
-    async () => {
-      let handle = await options.sdk.Sandbox.get(name)
-      // The machine under this name may have been replaced since acquire; a
-      // replacement with another network is never connected or started.
-      if (recordedNetwork(handle.configJson) !== network) {
-        throw new Error(`${name} was replaced by a machine with another network; acquire another session`)
-      }
-      if (handle.status === "running") {
-        // Finished commands the guest still holds sessions for are given back
-        // first; a guest that then answers a command needs no restart.
-        execHandles.release()
-        try {
-          const connected = await handle.connect()
-          await connected.fs().mkdir(workdir)
-          const probe = await connected.execStreamWith("/bin/sh", (builder) => builder.args(["-c", "true"]))
-          while ((await probe.recv()) !== null) {
-            // Drained: the guest ran a command.
-          }
-          return connected
-        } catch (cause) {
-          if (!isTransient(cause)) throw cause
+  // Finished commands the guest still holds sessions for are given back
+  // first; a guest that then answers a command needs no restart.
+  retrying(Effect.andThen(
+    options.collector.collect,
+    attempt(
+      async () => {
+        let handle = await options.sdk.Sandbox.get(name)
+        // The machine under this name may have been replaced since acquire; a
+        // replacement with another network is never connected or started.
+        if (recordedNetwork(handle.configJson) !== network) {
+          throw new Error(`${name} was replaced by a machine with another network; acquire another session`)
         }
-        // The guest is gone but the machine is still recorded as running.
-        await handle.stop().catch(() => undefined)
-        handle = await handle.refresh()
-      }
-      const started = detached ? await handle.startDetached() : await handle.start()
-      await started.fs().mkdir(workdir)
-      return started
-    },
-    "unavailable",
-    `the microVM ${name} stopped answering and could not be restarted`
+        if (handle.status === "running") {
+          try {
+            const connected = await handle.connect()
+            await connected.fs().mkdir(workdir)
+            const probe = await connected.execStreamWith("/bin/sh", (builder) => builder.args(["-c", "true"]))
+            while ((await probe.recv()) !== null) {
+              // Drained: the guest ran a command.
+            }
+            return connected
+          } catch (cause) {
+            if (!isTransient(cause)) throw cause
+          }
+          // The guest is gone but the machine is still recorded as running.
+          await handle.stop().catch(() => undefined)
+          handle = await handle.refresh()
+        }
+        const started = detached ? await handle.startDetached() : await handle.start()
+        await started.fs().mkdir(workdir)
+        return started
+      },
+      "unavailable",
+      `the microVM ${name} stopped answering and could not be restarted`
+    )
   ))
 
 const environment = (
@@ -556,6 +567,8 @@ export const make = (input: MicrosandboxSandboxOptions): Provider => {
     ...recordedLimits === "{}" ? {} : { [limitsLabel]: recordedLimits }
   }
   const local = options.backend !== "any"
+  /** Every guest command start counts toward the collector's next collection. */
+  const counted = started(options.collector)
   const verifyRetained = (handle: Awaited<ReturnType<Sdk["Sandbox"]["get"]>>): void => {
     const config = Object(JSON.parse(handle.configJson))
     const labels = Object(Reflect.get(config, "labels"))
@@ -723,7 +736,8 @@ export const make = (input: MicrosandboxSandboxOptions): Provider => {
             env: environment(options.env, undefined),
             stdin: undefined
           },
-          `the Nix environment at ${nix.directory} could not be realised in ${name}`
+          `the Nix environment at ${nix.directory} could not be realised in ${name}`,
+          counted
         )
         if (warmed.code !== 0) {
           return yield* Effect.fail(
@@ -768,7 +782,8 @@ export const make = (input: MicrosandboxSandboxOptions): Provider => {
                   env: guest.env,
                   stdin: spawnOptions.stdin
                 },
-                { machine: name, command }
+                { machine: name, command },
+                counted
               )
             )
             commands.set(spawned.process, spawned.command)

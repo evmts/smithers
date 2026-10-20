@@ -1,6 +1,6 @@
 ---
 title: "Troubleshooting"
-description: "The failures @smthrs/platform-browser reports: a split mount, writes lost on reload, the spawner's refused options, the operations a mounted volume cannot serve, a stalled interpreter, and an opaque redirect returned with status 0."
+description: "The failures @smthrs/platform-browser reports: a split mount, writes lost on reload, the spawner's refused options, the operations a mounted volume cannot serve, a stalled interpreter, an opaque redirect returned with status 0, and the durable engine's refusals."
 ---
 
 Find the symptom, read the cause, apply the fix. Every failure on this page is
@@ -342,3 +342,137 @@ const spawner = Layer.provide(
 
 The `fs` behind that `BrowserFileSystem.layer` must be the mount the interpreter
 runs on, or you are back at the first symptom on this page.
+
+## A request to the durable engine never returns
+
+**Symptom.** `BrowserEngine.start` or `result` waits forever, and no tab logs
+`browser.runtime.leader`.
+
+**Cause.** No worker leads. Either no tab built `BrowserEngine.layer`, so no
+worker exists, or every worker's engine failed to build. A request waits for a
+leader; it does not time out on its own.
+
+**Fix.** Build `BrowserEngine.layer` when the tab opens. Read the worker's
+`browser.runtime.stopped` line: its `error.type` names what failed, such as
+`SqlError` for a store that would not open. A worker script that does not load
+at all logs `browser.engine.worker` in the tab. Add `Effect.timeout` to a
+request whose caller cannot wait.
+
+## SqlError: Failed to open the OPFS directory
+
+**Symptom.** The engine stops with this message right after a worker becomes
+leader.
+
+**Cause.** Something else holds the store's OPFS files. The pool waits about
+five seconds for the previous leader's worker to release them; a context that
+holds them longer is not that worker: a second engine with the same `name`
+outside the app's lock, or a tab of another build of the app. The same message
+appears when the store is opened outside a dedicated worker, which has no
+`createSyncAccessHandle`.
+
+**Fix.** Give every engine of one origin the same `name`, open the store only
+through `BrowserRuntime.run` or `serve`, and close the tab of the other build.
+
+## EngineUnavailable: worker-failed or engine-failed
+
+**Symptom.** `start`, `result`, `cancel` or `signal` fails with
+`EngineUnavailable`, and `browser.engine.unavailable` is logged.
+
+**Cause.** This tab's engine worker failed. `worker-failed`: it threw, most
+often while loading, as when a module it imports touches the DOM, which a
+worker has none of; `error` names the error, or `ErrorEvent` when the browser
+hides it. `engine-failed`: the worker loaded but could not build the engine,
+as without OPFS; `error` is the failure's tag, the same `browser.runtime.stopped`
+logs in the worker.
+
+**Fix.** For `worker-failed`, open the worker's console: the load error is
+there. For `engine-failed`, follow the `browser.runtime.stopped` entry for its
+tag. Either way, show the app's engine-failure state from
+`BrowserEngine.unavailable` with a Reload button.
+
+## SharedSqlite.open: No engine leader answered
+
+**Symptom.** `SharedSqlite.open` rejects with a `SqlError` whose reason is a
+`ConnectionError`, after `within` (30 seconds by default).
+
+**Cause.** No worker leads the engine `name`: no tab started its engine worker,
+the worker passed `BrowserRuntime.run` another `name`, or the leader could not
+open OPFS and stopped (`browser.runtime.stopped`).
+
+**Fix.** Start the tab's engine worker before opening the database, with the
+same `name` on both sides. Without OPFS, fall back to memory, as
+`@smthrs/effect-tanstack-db`'s `Persistence.layer` does when `open` rejects.
+
+## SqlError: The transaction ended with the leader that held it
+
+**Symptom.** A statement inside a transaction fails with a `ConnectionError`
+right after another tab closed.
+
+**Cause.** The closed tab's worker led, and the transaction lived on its
+connection, which closed with it. The tab ran the transaction's statements
+again on the new leader, and one of them returned other rows than it did the
+first time, because another tab wrote in between. Carrying on would act on
+reads that no longer hold, so the tab rolled the transaction back. A handover
+in which every statement reads the same is invisible to the caller.
+
+**Fix.** Treat it as any failed transaction: roll back, then run the whole
+transaction again. TanStack DB's persistence doesn't: it stops the collection
+with an error, so keep transactions short.
+
+## RequestRefused: @smthrs/platform-browser/UnknownFlow
+
+**Symptom.** `start` fails with `RequestRefused` whose `error` is
+`@smthrs/platform-browser/UnknownFlow`.
+
+**Cause.** The worker's `flows` does not list a flow with that tag.
+
+**Fix.** Add the flow to `flows` and register its implementation in
+`registerFlows`. A run of a flow the leader was not given is left as it is and
+counted as `unknown-flow` in `smithers_browser_runtime_wakes`.
+
+## RequestRefused with error SchemaError
+
+**Symptom.** `start` fails with `RequestRefused` whose `error` is `SchemaError`,
+though the payload matches the tab's flow.
+
+**Cause.** The tab and the leader's worker declare the flow differently, so the
+leader cannot decode what the tab encoded. A tab left open across a deploy runs
+the old declaration while a newer tab's worker leads.
+
+**Fix.** Reload the old tab. Change a flow's payload compatibly, or give the
+changed flow a new tag.
+
+## A step runs twice
+
+**Symptom.** A step's side effect happens twice after a tab closed or the
+browser crashed.
+
+**Cause.** The worker died while the step ran, before its result was recorded,
+so the next leader runs it again. A step whose result was recorded never runs
+again.
+
+**Fix.** Make a step's external effect idempotent, for example with a request
+key the server deduplicates.
+
+## Persistent storage is denied
+
+**Symptom.** Tabs log `browser.engine.storage` with `outcome: denied`.
+
+**Cause.** The browser decides. Chrome grants persistent storage to an
+installed app or a site the person uses often, and denies it in a headless
+browser; Firefox asks the person.
+
+**Fix.** Install the app as a PWA. Without persistent storage the engine still
+runs, but the browser may clear its store.
+
+## `BrowserCache.layer` fails with `unavailable`
+
+**Symptom.** Building the layer fails with `ImmutableCacheError`, operation
+`open`, reason `unavailable`.
+
+**Cause.** The context has no `caches` global, or the browser refused to open
+the cache. Cache Storage exists only in a secure context, `https:` or
+`localhost`, and `errorName` says why it was refused, such as `SecurityError`.
+
+**Fix.** Serve the app over `https:`. Where no cache can exist, as in Node,
+provide `ImmutableCache.layerMemory()` instead.

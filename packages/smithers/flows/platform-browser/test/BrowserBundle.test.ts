@@ -27,4 +27,43 @@ describe("browser bundle", () => {
     const source = result.outputFiles[0]?.text ?? ""
     expect(source).not.toMatch(/node:(?:child_process|fs|http|https|net|path|process)/)
   })
+
+  /**
+   * A tab imports the package's root for `BrowserEngine` and `SharedSqlite`;
+   * only the engine worker builds an engine. Split the way an app's bundler
+   * splits at `import()`, what the tab loads eagerly is the entry chunk and
+   * every chunk it imports statically.
+   */
+  it("loads no engine and no SQLite from the root: both arrive only through lazy imports", async () => {
+    const result = await build({
+      bundle: true,
+      splitting: true,
+      metafile: true,
+      entryPoints: { tab: fileURLToPath(new URL("../src/index.ts", import.meta.url)) },
+      external: ["effect", "effect/*"],
+      format: "esm",
+      logLevel: "silent",
+      outdir: "/out",
+      platform: "browser",
+      write: false
+    })
+    const outputs = result.metafile.outputs
+    const entry = Object.keys(outputs).find((file) => outputs[file]!.entryPoint !== undefined)!
+    const eager = new Set([entry])
+    for (const file of eager) {
+      // `effect` is external: no output of this build.
+      for (const { kind, path } of outputs[file]!.imports) {
+        if (kind === "import-statement" && path in outputs) eager.add(path)
+      }
+    }
+    const loaded = [...eager].flatMap((file) => Object.keys(outputs[file]!.inputs))
+    const lazy = Object.values(outputs).flatMap((output) => Object.keys(output.inputs))
+    const engine =
+      /(?:^|\/)(?:engine-store|run-store|journal|database)\/src\/|flows\/src\/Runtime|wa-sqlite|internal\/(?:Engine|Leader|SqlConnection)\.ts$/
+    expect(loaded.filter((input) => engine.test(input))).toEqual([])
+    // The engine is there, behind the lazy imports.
+    expect(lazy.some((input) => input.endsWith("internal/Engine.ts"))).toBe(true)
+    // The package never imports the build itself: the worker hands it over.
+    expect(lazy.filter((input) => /wa-sqlite\/dist\//.test(input))).toEqual([])
+  })
 })

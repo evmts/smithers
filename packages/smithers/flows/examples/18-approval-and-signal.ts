@@ -16,12 +16,12 @@ import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, WaitFor } from
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import { Registry } from "@smthrs/registry"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
-import { durableEngine } from "../src/test/TestNodeRuntime.ts"
 
 /** The empty capability envelope this flow is planned under. */
 const envelope: ControlSchema.Envelope = { capabilities: [], flows: [], budget: {} }
@@ -258,7 +258,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
     )
 
     // One database beneath both, so the plane steers the runs the engine owns.
-    const plane = controlPlane.pipe(Layer.provideMerge(durableEngine(filename, "examples-approval")))
+    const plane = controlPlane.pipe(Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-approval")))
 
     // The clearance step reads the control plane, so the registrations are
     // built OVER the plane rather than beside it. That is the dependency the

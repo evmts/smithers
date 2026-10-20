@@ -97,7 +97,11 @@ export interface Service {
       readonly clock: DurableClock.DurableClock
     }
   ) => Effect.Effect<void>
-  readonly sweepDue: (flowName?: string) => Effect.Effect<void>
+  /**
+   * Re-arms pending clocks and re-schedules unconsumed completions, scoped to
+   * one flow and, when `executionId` is given, to that execution alone.
+   */
+  readonly sweepDue: (flowName?: string, executionId?: string) => Effect.Effect<void>
 }
 
 const clockKey = (row: DurableEngineState.ClockAddress): string =>
@@ -383,16 +387,19 @@ export const make = (
       })
     )
 
-    const sweepDue: Service["sweepDue"] = Effect.fn("DeferredPersistence.sweepDue")((flowName) =>
+    const sweepDue: Service["sweepDue"] = Effect.fn("DeferredPersistence.sweepDue")((flowName, executionId) =>
       Effect.gen(function*() {
-        const rows = yield* state.pendingClocks(flowName === undefined ? {} : { flowName })
+        const rows = yield* state.pendingClocks({
+          ...(flowName === undefined ? {} : { flowName }),
+          ...(executionId === undefined ? {} : { executionId })
+        })
         yield* Effect.forEach(
           rows,
           (row) => recordClockScheduled(row).pipe(Effect.andThen(armClock(row))),
           { discard: true }
         )
         if (flowName !== undefined) {
-          const completions = yield* state.completedDeferreds(flowName)
+          const completions = yield* state.completedDeferreds(flowName, executionId)
           yield* Effect.forEach(
             completions,
             (address) =>

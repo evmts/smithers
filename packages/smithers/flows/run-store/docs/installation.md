@@ -65,7 +65,7 @@ satisfies them is in [Compose the stores into a host](./guides/compose-the-store
 
 Most hosts do not wire this by hand. [`@smthrs/engine-store`](/api/engine-store)
 composes these stores with the journal, the step cache, and the durable engine
-state into one storage ladder, and `@smthrs/flows/NodeRuntime` builds that
+state into one storage ladder, and `NodeRuntime` from `@smthrs/platform-node` builds that
 ladder over a single SQLite file.
 
 ## Import forms

@@ -98,10 +98,11 @@ Effect's `fetch` client, and jj compiled to WebAssembly. See
 [The closed Host surface](./concepts/host-bundle.md), and
 [Compose the browser host bundle](./guides/compose-the-host.md) for the wiring.
 
-Those five tags carry the memory engine and the capability kernel into a tab,
-but not the durable engine: its shipped `SqlClient` uses `node:sqlite` and
-`NodeRuntime` is Node-only, so providing the Host supplies no browser database
-and does not make durable execution portable.
+Those five tags carry the memory engine and the capability kernel into a tab.
+The durable engine runs beside them in a dedicated worker: `BrowserRuntime`
+keeps its store in SQLite on OPFS and elects one worker per origin to run it,
+and `BrowserEngine` sends each tab's requests there. See
+[Run durable flows in a browser tab](./guides/run-flows-in-a-tab.md).
 
 You need none of that to use the two adapters on their own.
 `BrowserServices.layer` is an ordinary Effect platform layer, and a page that
@@ -125,4 +126,8 @@ this package is what the same engine uses when the page is the machine.
   rather than fakes.
 - [Read and write files on a mounted volume](./guides/work-with-files.md): the
   operations a mounted volume serves, and what the rest answer with.
+- [Run durable flows in a browser tab](./guides/run-flows-in-a-tab.md): the
+  engine worker, the tab's requests, and what survives a closed tab.
+- [The durable browser engine](./concepts/durable-browser-engine.md): leader
+  election, the wake on load, and the channel between tabs.
 - [API reference](./api.md): every public export.

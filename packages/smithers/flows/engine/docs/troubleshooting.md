@@ -199,7 +199,9 @@ error.
 
 **Cause.** The body failed with a value the flow's `error` schema does not
 describe. The most common source is the interpreter refusing an action that has
-no implementation, in a flow that declares no error type at all.
+no implementation, in a flow that declares no error type at all. A run resumed
+after a deploy that changed its flow fails here with `plan_changed`; see
+[`@smthrs/engine-store` troubleshooting](../../engine-store/docs/troubleshooting.md#a-run-resumed-after-a-deploy-fails-with-plan_changed).
 
 **Fix.** Read the annotated error rather than the schema mismatch: it names the
 real failure, which is usually a missing `Action.toLayer`. Add the
@@ -227,7 +229,7 @@ fallback:
 
 | Warning                                                                    | Meaning                                                                                                                                                                                                                                                                                                                 |
 | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `no durable retry origin for "<action>"`                                   | No attempt row survives for the step key, usually from retention pruning. The `expirationMs` budget restarts from the current clock. Only a declared `retryPolicy` warns; the implicit transient policy of a repeat-safe action logs this at Debug.                                                                     |
+| `no durable retry origin for "<action>"` (Debug)                           | No attempt row exists for the step key: the action's first dispatch, or history retention pruned. The `expirationMs` budget restarts from the current clock. The store cannot tell the two apart, so it is a Debug record, never a warning.                                                                             |
 | `unusable durable retry origin for "<action>"`                             | The store reported a non-finite time or one in the future. The budget starts now.                                                                                                                                                                                                                                       |
 | `rejected unusable durable latest attempt for "<action>"`                  | The store reported an attempt number that is not a safe integer. The caller's attempt number is used.                                                                                                                                                                                                                   |
 | `engine: could not record the linked cancellation of child execution <id>` | A parent's cancellation could not be recorded against a child. Linked delivery is bounded to five seconds; a timeout logs `engine: linked cancellation timed out for child execution <id>`. A durable store cascades cancellation over its own parent edges, so this path is the prompt delivery and not the guarantee. |

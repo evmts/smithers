@@ -143,13 +143,13 @@ reporting a later time.
 ## Let the engine do it
 
 If you are running the Smithers engine, this sweep already exists. Its
-`NodeRuntime`, from [`@smthrs/flows`](/api/flows) rather than this package,
+`NodeRuntime`, from [`@smthrs/platform-node`](/api/platform-node) rather than this package,
 requires an `isAlive` check precisely so it can run the sweep, and it takes no
 default: a check that answers "gone" without asking steals runs out of live
 processes.
 
 ```ts
-import type * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import type { NodeRuntime } from "@smthrs/platform-node"
 import { Ownership } from "@smthrs/run-store"
 
 const options: NodeRuntime.Options = {

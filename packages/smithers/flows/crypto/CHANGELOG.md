@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- `WebCrypto.make()` and `WebCrypto.layer`: Effect's `Crypto` over the global
+  WebCrypto, for Node, Bun, browsers and Cloudflare Workers. `randomBytes`
+  fills in chunks of at most 65,536 bytes and reads randomness only on demand.
+  It replaces the copies in `@smthrs/platform-cloudflare` and
+  `@smthrs/platform-node`.
+
 ### Fixed
 
 - Share live function identity metadata across compatible bundles without reading entropy at module initialization. ([#1991](https://github.com/smithersai/smithers/issues/1991)).

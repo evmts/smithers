@@ -2,10 +2,12 @@
  * @since 1.0.0
  */
 
-import { Effect } from "effect"
+import { Effect, Exit, Option } from "effect"
 import type { SqlClient } from "effect/sql/SqlClient"
+import type { SqlError } from "effect/sql/SqlError"
 import type { Fragment } from "effect/sql/Statement"
 import * as ReadOnly from "./internal/ReadOnly.ts"
+import * as ReadTransaction from "./internal/ReadTransaction.ts"
 
 /**
  * Whether `sql` is a PostgreSQL client. Every other dialect, including SQLite
@@ -209,3 +211,44 @@ export const query = <A extends object = Record<string, unknown>>(
   let index = 0
   return sql.unsafe<A>(isPostgres(sql) ? template.replaceAll("?", () => `$${++index}`) : template, values)
 }
+/**
+ * Runs `effect` as one read transaction: every statement in it reads one
+ * snapshot, and it takes no writer lock, so a writer may commit while it
+ * reads. Use it for a read that must agree with itself, such as rows checked
+ * against a position read first.
+ *
+ * - Inside a transaction already, `effect` joins it.
+ * - On `PostgresDatabase`, the client opens it: `REPEATABLE READ READ ONLY`
+ *   in the client's schema.
+ * - Otherwise it reserves a connection: SQLite's deferred `BEGIN` takes its
+ *   snapshot at the first read, and another PostgreSQL client reads at
+ *   `REPEATABLE READ READ ONLY`.
+ *
+ * `effect` may still run a write statement. The transaction rejects it on
+ * PostgreSQL; on SQLite it takes the write lock, so keep writes out.
+ *
+ * @category transactions
+ * @since 1.0.0
+ */
+export const readTransaction = <A, E, R>(
+  sql: SqlClient,
+  effect: Effect.Effect<A, E, R>
+): Effect.Effect<A, E | SqlError, R> =>
+  Effect.flatMap(Effect.serviceOption(sql.transactionService), (existing) => {
+    if (Option.isSome(existing)) return effect
+    const open = ReadTransaction.get(sql)
+    if (open !== undefined) return open(effect)
+    return Effect.scoped(Effect.gen(function*() {
+      const connection = yield* sql.reserve
+      return yield* Effect.acquireUseRelease(
+        connection.executeUnprepared(
+          isPostgres(sql) ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY" : "BEGIN",
+          [],
+          undefined
+        ),
+        () => effect.pipe(Effect.provideService(sql.transactionService, [connection, 0])),
+        (_, exit) =>
+          connection.executeUnprepared(Exit.isSuccess(exit) ? "COMMIT" : "ROLLBACK", [], undefined).pipe(Effect.orDie)
+      )
+    }))
+  })

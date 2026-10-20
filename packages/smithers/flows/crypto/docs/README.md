@@ -57,8 +57,9 @@ npm install @smthrs/crypto@next effect
 ```
 
 `effect` is the only runtime dependency. `digest` also needs a `Crypto`
-service, which `@effect/platform-node`, `@effect/platform-bun`, and
-`@effect/platform-browser` each provide as a layer. For the runtime
+service: `WebCrypto.layer` from this package works on any host with the global
+WebCrypto, and `@effect/platform-node`, `@effect/platform-bun`, and
+`@effect/platform-browser` each provide one as a layer. For the runtime
 requirements, the import forms, and the full list of services you can supply,
 see [Installation](./installation.md).
 
@@ -101,17 +102,18 @@ validation on the way back.
 
 ## The package at a glance
 
-The root entry point exports every name below. Each is also importable from
-`@smthrs/crypto/Sha256`.
+The root entry point exports every name below. Each except `WebCrypto` is also
+importable from `@smthrs/crypto/Sha256`.
 
-| Export                           | What it is                                                                                             |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `digest`                         | Hashes text or bytes through the injected `Crypto` service. Fails with `Sha256Error`.                  |
-| `digestSync`                     | Hashes text or bytes with the package's own implementation. Throws `Sha256Error`.                      |
-| `Digest`                         | The schema and brand for a digest: 64 lowercase hexadecimal characters. It validates and never hashes. |
-| `Sha256`                         | The one-way schema transformation from text or bytes to `Digest`.                                      |
-| `Sha256Error`, `Sha256ErrorCode` | The typed boundary failure and its five stable codes.                                                  |
-| `syncCrypto`                     | A SHA-256-only `Crypto` service backed by the synchronous implementation. It refuses randomness.       |
+| Export                           | What it is                                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `digest`                         | Hashes text or bytes through the injected `Crypto` service. Fails with `Sha256Error`.                   |
+| `digestSync`                     | Hashes text or bytes with the package's own implementation. Throws `Sha256Error`.                       |
+| `Digest`                         | The schema and brand for a digest: 64 lowercase hexadecimal characters. It validates and never hashes.  |
+| `Sha256`                         | The one-way schema transformation from text or bytes to `Digest`.                                       |
+| `Sha256Error`, `Sha256ErrorCode` | The typed boundary failure and its five stable codes.                                                   |
+| `syncCrypto`                     | A SHA-256-only `Crypto` service backed by the synchronous implementation. It refuses randomness.        |
+| `WebCrypto`                      | `make()` and `layer`: Effect's `Crypto` over the global WebCrypto, for Node, Bun, browsers and Workers. |
 
 Every export, with its signature and its failure modes, is on the
 [API reference](./api.md).

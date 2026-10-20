@@ -10,7 +10,7 @@
  * failures print their cause to stderr and exit with status 1.
  */
 import { Action, Capability, Flow, Interpreter } from "@smthrs/flows"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

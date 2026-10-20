@@ -16,10 +16,10 @@ With nothing installed to deliver them, all three are collected and discarded.
 
 The usual way to deliver them is an OpenTelemetry SDK: several packages, a
 provider for each signal, and a bundle a browser build cannot carry. This
-package is the smaller answer for the common case. `Otlp` composes only what
-`effect` itself ships, so it pulls in no OpenTelemetry SDK, runs unchanged in
-Node, Bun, and a browser, and posts all three signals to a collector over the
-host's global `fetch`.
+package is the smaller answer for the common case. `Otlp` composes what
+`effect` itself ships with the journal's redaction rules, so it pulls in no
+OpenTelemetry SDK, runs unchanged in Node, Bun, and a browser, and posts all
+three signals to a collector over the host's global `fetch`.
 
 Two behaviors matter beyond the delivery itself:
 
@@ -48,7 +48,7 @@ Node.js 22.19.0 or later. For the import forms and the browser rule, see
 ## Export all three signals
 
 ```ts
-import * as Otlp from "@smthrs/observability/Otlp"
+import { Otlp } from "@smthrs/observability"
 import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
 

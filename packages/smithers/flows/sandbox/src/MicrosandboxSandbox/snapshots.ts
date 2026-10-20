@@ -170,6 +170,12 @@ const secretPatterns = (
 }
 
 /**
+ * A capture's two commands count toward no collection: the captured machine
+ * is removed right after them, and the sessions their handles hold go with it.
+ */
+const uncounted = Effect.void
+
+/**
  * Scrubs the machine's credential files, then refuses when any secret's
  * pattern is still anywhere on its disk, naming the files that hold one.
  */
@@ -181,13 +187,18 @@ const scrubbed = (
 ): Effect.Effect<void, ProviderError> => {
   const searched = `the disk of ${machine} could not be scrubbed of credentials`
   return Effect.flatMap(
-    runGuest(sandbox, {
-      program: "/bin/sh",
-      args: ["-c", scrubScript(patterns.length > 0)],
-      cwd: "/",
-      env: {},
-      stdin: patterns.length > 0 ? encoder.encode(`${patterns.join("\n")}\n`) : undefined
-    }, searched),
+    runGuest(
+      sandbox,
+      {
+        program: "/bin/sh",
+        args: ["-c", scrubScript(patterns.length > 0)],
+        cwd: "/",
+        env: {},
+        stdin: patterns.length > 0 ? encoder.encode(`${patterns.join("\n")}\n`) : undefined
+      },
+      searched,
+      uncounted
+    ),
     ({ code, stderr, stdout }) => {
       // grep lists what it found even when it could not read every file.
       const found = new TextDecoder().decode(stdout).split("\n").filter((line) => line.length > 0)
@@ -216,7 +227,12 @@ const flushed = (
 ): Effect.Effect<void, ProviderError> => {
   const flushing = `the disk of ${machine} could not be flushed`
   return Effect.flatMap(
-    runGuest(sandbox, { program: "/bin/sh", args: ["-c", "sync"], cwd: "/", env: {}, stdin: undefined }, flushing),
+    runGuest(
+      sandbox,
+      { program: "/bin/sh", args: ["-c", "sync"], cwd: "/", env: {}, stdin: undefined },
+      flushing,
+      uncounted
+    ),
     ({ code, stderr }) =>
       code === 0
         ? Effect.void

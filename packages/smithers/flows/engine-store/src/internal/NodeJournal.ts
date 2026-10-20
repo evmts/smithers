@@ -21,6 +21,7 @@
  * @since 0.1.0
  */
 
+import { canonicalize, isRecord } from "@smthrs/canonical"
 import type { FlowRuntime } from "@smthrs/flow"
 import { EngineEvent, JournalEvent, Redaction } from "@smthrs/journal"
 import type * as Schema from "effect/Schema"
@@ -316,6 +317,68 @@ export const entry = (scope: Scope, record: FlowRuntime.NodeRecord): JournalEven
     }
   }
 }
+
+/** A graph page without its sites and the revision they were read at. @private */
+const withoutSites = (graph: unknown): unknown => {
+  if (!isRecord(graph)) return graph
+  const { nodes, sourceRevision: _sourceRevision, ...rest } = graph
+  return {
+    ...rest,
+    nodes: Array.isArray(nodes)
+      ? nodes.map((node: unknown) => {
+        if (!isRecord(node)) return node
+        const { declaredAt: _declaredAt, ...structure } = node
+        return structure
+      })
+      : nodes
+  }
+}
+
+/**
+ * What a plan record is identified by when a resume finds one already written.
+ *
+ * A record names where each node was declared, and that site is provenance,
+ * never identity. A rebuild moves sites without changing the flow: a bundler
+ * that adds a line above a declaration, a renamed bundle file, or a host that
+ * cannot name a root and records no site at all. So sites and the source
+ * revision they were read at are never compared.
+ *
+ * `digest` is the whole graph's structural identity: node ids, kinds, action
+ * tags, schemas, tiers, effects, dependencies, edges and callback source, over
+ * every page. A record that carries one is identified by it and its other
+ * scalar fields. Its graph page and page count are not compared, because the
+ * page layout follows the encoded size of the sites on it. A record without a
+ * digest, from a producer that writes none, is identified by its whole
+ * content without sites.
+ *
+ * Journals already hold records written with their sites inside the compared
+ * content. They are read through the same projection and never rewritten.
+ *
+ * @since 1.0.0
+ * @category accessors
+ */
+export const planIdentity = (payload: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> => {
+  const { graph, pages, ...header } = payload
+  if (typeof header["digest"] === "string") return header
+  return { ...header, ...(pages === undefined ? {} : { pages }), graph: withoutSites(graph) }
+}
+
+/**
+ * Whether a rebuilt plan record names the plan a journal already recorded.
+ *
+ * Both are compared through {@link planIdentity}. `recorded` is the stored
+ * row, which the journal may have redacted; a difference redaction introduced
+ * fails closed as a changed plan.
+ *
+ * @since 1.0.0
+ * @category accessors
+ */
+export const samePlan = (
+  recorded: Readonly<Record<string, unknown>>,
+  rebuilt: Readonly<Record<string, unknown>>
+): boolean =>
+  canonicalize(planIdentity(recorded), { loneSurrogates: "escape" }) ===
+    canonicalize(planIdentity(rebuilt), { loneSurrogates: "escape" })
 
 /**
  * UTF-8 upper bound for the durable entry, including allocated envelope fields.

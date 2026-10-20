@@ -12,11 +12,11 @@
 import { Control, ControlLive, Monitor, SqlControlRuntime } from "@smthrs/control"
 import { Action, DurableDeferred, Flow, Interpreter, WaitFor } from "@smthrs/flow"
 import { Alerts, NotificationQueue } from "@smthrs/notifications"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import { Registry } from "@smthrs/registry"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { durableEngine, requirements } from "../src/test/TestNodeRuntime.ts"
 import { parkRun } from "./park-run.ts"
 
 /** What the supervision loop concluded. */
@@ -116,7 +116,7 @@ const controlPlane = ControlLive.layer.pipe(
  */
 const stack = (filename: string) =>
   registrations.pipe(
-    Layer.provideMerge(durableEngine(filename, "examples-monitor"))
+    Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-monitor"))
   )
 
 /** The token that names one execution's wait point. */
@@ -195,7 +195,7 @@ export const main = (
       )
     }
   }).pipe(
-    Effect.provide(controlPlane.pipe(Layer.provideMerge(requirements(filename)))),
+    Effect.provide(controlPlane.pipe(Layer.provideMerge(TestNodeRuntime.requirements(filename)))),
     Effect.scoped,
     Effect.orDie
   )

@@ -51,13 +51,33 @@ export const charges = Charge.toLayer(({ cents, customer }) =>
 )
 ```
 
-Inside the implementation you can read three references the runtime supplies:
+Inside the implementation you can read five references the runtime supplies:
 
 | Reference                     | What it carries                                                                |
 | ----------------------------- | ------------------------------------------------------------------------------ |
 | `Action.CurrentAttempt`       | The one-based durable attempt. Defaults to `1`.                                |
 | `Action.CurrentInvocationKey` | The persisted key of the dispatch, when the runtime supplies one.              |
 | `Action.CurrentOrdinal`       | The `OrdinalSlot` of the enclosing `Action.retry` sequence, when there is one. |
+| `Action.CurrentFence`         | The running attempt's ownership fence, when a durable engine supplies one.     |
+| `Action.CurrentRedispatch`    | `true` when this attempt re-runs one an earlier execution never settled.       |
+
+An implementation that writes its own tables fences each write with
+`Action.CurrentFence`, so a write from an owner that lost the run, or from an
+attempt that already settled, changes nothing:
+
+```ts
+import { RunStore } from "@smthrs/run-store"
+import * as SqlClient from "effect/sql/SqlClient"
+
+export const replies = Reply.toLayer(({ id, text }) =>
+  Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    const fence = yield* Action.CurrentFence
+    if (fence === undefined) return yield* Effect.die("Reply needs a durable engine")
+    yield* sql`UPDATE replies SET text = ${text} WHERE id = ${id} AND ${RunStore.owned(sql, fence)}`
+  })
+)
+```
 
 The implementation may also require services of its own. Those requirements
 appear on the returned layer, so a composition that forgot a database client

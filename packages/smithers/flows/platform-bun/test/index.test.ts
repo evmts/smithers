@@ -21,12 +21,16 @@ import * as NativePath from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as BunFileSystem from "../src/BunFileSystem.ts"
+import * as BunGarbageCollector from "../src/BunGarbageCollector.ts"
 import * as BunHost from "../src/BunHost.ts"
+import * as BunRuntime from "../src/BunRuntime.ts"
 import * as Index from "../src/index.ts"
 
 describe("@smthrs/platform-bun barrel", () => {
   it("re-exports every module as a namespace", () => {
-    expect(Object.keys(Index).sort()).toEqual(["BunFileSystem", "BunHost"])
+    expect(Object.keys(Index).sort()).toEqual(["BunFileSystem", "BunGarbageCollector", "BunHost", "BunRuntime"])
+    expect(Index.BunGarbageCollector.layer).toBe(BunGarbageCollector.layer)
+    expect(Index.BunRuntime.layerHost).toBe(BunRuntime.layerHost)
     expect(Index.BunFileSystem.layer).toBe(BunFileSystem.layer)
     expect(Index.BunHost.layer).toBe(BunHost.layer)
     expect(Index.BunHost.layerAt(process.cwd()).pipe).toBeTypeOf("function")
@@ -139,7 +143,8 @@ describe("@smthrs/platform-bun module graph", () => {
     const result = await build({
       bundle: true,
       entryPoints: [fileURLToPath(new URL("../src/index.ts", import.meta.url))],
-      external: ["effect", "effect/*", "@effect/*", "node:*"],
+      // Bun's own built-ins (the SQLite driver BunRuntime opens) resolve only on Bun.
+      external: ["effect", "effect/*", "@effect/*", "node:*", "bun:*"],
       format: "esm",
       logLevel: "silent",
       metafile: true,

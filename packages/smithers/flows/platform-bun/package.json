@@ -120,11 +120,13 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@smthrs/database": "1.0.0-rc.16",
     "@smthrs/jj": "1.0.0-rc.16",
     "@smthrs/kernel": "1.0.0-rc.16",
-    "undici": "8.11.2",
-    "redis": "6.2.1",
+    "@smthrs/sandbox": "1.0.0-rc.16",
     "@types/ws": "8.18.2",
+    "redis": "6.2.1",
+    "undici": "8.11.2",
     "ws": "8.22.0"
   },
   "peerDependencies": {
@@ -136,8 +138,11 @@
     "@effect/platform-bun": "4.0.5",
     "@effect/platform-node": "4.0.5",
     "@effect/platform-node-shared": "4.0.5",
+    "@effect/sql-pg": "4.0.5",
     "@effect/vitest": "4.0.5",
     "@eslint/js": "9.39.5",
+    "@smthrs/artifacts": "1.0.0-rc.16",
+    "@smthrs/flows": "1.0.0-rc.16",
     "@smthrs/platform-node": "1.0.0-rc.16",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
@@ -152,7 +157,6 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "5.0.0",
-    "@smthrs/artifacts": "1.0.0-rc.16"
+    "vitest": "5.0.0"
   }
 }

@@ -11,6 +11,7 @@ import type { Fragment } from "effect/sql/Statement"
 import { randomUUID } from "node:crypto"
 import * as DurableWriter from "../DurableWriter.ts"
 import * as NodeDatabase from "../node/NodeDatabase.ts"
+import * as PostgresDatabase from "../postgres/PostgresDatabase.ts"
 
 /**
  * Provides the production Node SQLite client and durable writer over a fresh
@@ -31,7 +32,7 @@ export const sqliteLayer = Layer.provideMerge(DurableWriter.layer(), NodeDatabas
  * inside `withTransaction` takes the writer lock first, so the drop waits for
  * that transaction to commit and later ones wait for the drop.
  *
- * `sql` must be a client whose `search_path` is `schema`, which the writer
+ * `sql` must be a `PostgresDatabase` client for `schema`, which the writer
  * lock is keyed by. Dropping an already dropped schema is a no-op.
  *
  * @category testing
@@ -48,7 +49,7 @@ export const layer: Layer.Layer<DurableWriter.DurableWriter | SqlClient.SqlClien
   Effect.gen(function*() {
     const url = process.env.SMITHERS_TEST_PG_URL
     if (!url) return sqliteLayer
-    const PostgresDatabase = yield* Effect.promise(() => import("../postgres/PostgresDatabase.ts"))
+    const driver = yield* Effect.promise(() => import("@effect/sql-pg"))
     const schema = `test_${randomUUID().replaceAll("-", "")}`
     const cleanup = Layer.effectDiscard(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
@@ -60,6 +61,7 @@ export const layer: Layer.Layer<DurableWriter.DurableWriter | SqlClient.SqlClien
         cleanup,
         PostgresDatabase.layer({
           url,
+          driver,
           schema,
           postgres: { connectTimeout: Infinity, idleTimeout: Infinity, connectionTTL: Infinity }
         })

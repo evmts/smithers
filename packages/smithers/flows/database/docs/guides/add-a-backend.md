@@ -100,5 +100,6 @@ serialization can only come from SQLite's cross-connection lock.
 SQLite and PostgreSQL ship adapters and one composed migration ladder with
 small dialect-specific fragments. The PostgreSQL adapter serializes writes
 across pools with schema-scoped advisory locks. Its independent-pool contract
-tests live in `test/PostgresDatabase.test.ts`. See
+tests live in `test/PostgresDatabase.test.ts`, and its transaction-pooling
+tests, run through PgBouncer and directly, in `test/PostgresPooling.test.ts`. See
 [SQLite and PostgreSQL](../concepts/sqlite-only.md).

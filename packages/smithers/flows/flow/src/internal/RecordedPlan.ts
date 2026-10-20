@@ -19,9 +19,11 @@ const callback = (value: unknown): unknown =>
     ? { _tag: value._tag, algorithm: value.algorithm, digest: value.sourceDigest }
     : value
 
-/** Project only callback slots, never identity-shaped application data. */
-const body = (value: unknown): unknown => {
-  if (!isRecord(value)) return value
+/**
+ * Project only callback slots, never identity-shaped application data. `Graph`
+ * records every node's body as an object tagged with its node kind.
+ */
+const body = (value: Readonly<Record<string, unknown>>): unknown => {
   switch (value._tag) {
     case "FlowCall":
       return isRecord(value.declaration)
@@ -47,4 +49,7 @@ const body = (value: unknown): unknown => {
  * @private
  */
 export const recordedPlanDrafts = (graph: Graph.Graph): ReadonlyArray<Plan.NodeDraft> =>
-  Graph.drafts(graph).map((draft) => ({ ...draft, material: { ...draft.material, body: body(draft.material.body) } }))
+  Graph.drafts(graph).map((draft) => ({
+    ...draft,
+    material: { ...draft.material, body: body(draft.material.body as Readonly<Record<string, unknown>>) }
+  }))

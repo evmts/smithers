@@ -5,8 +5,10 @@ sidebar:
   order: 1
 ---
 
-`@smthrs/flows/NodeRuntime` has four entry points. They differ in one thing:
-how much of the composition they decide for you.
+`NodeRuntime`, from `@smthrs/platform-node`, has four entry points. They differ
+in one thing: how much of the composition they decide for you. Each is
+`@smthrs/flows`' platform-neutral `Runtime` bound to Node's SQLite driver and
+host.
 
 | Entry point | Returns                                           | You still supply                                                                   |
 | ----------- | ------------------------------------------------- | ---------------------------------------------------------------------------------- |
@@ -25,7 +27,7 @@ durable engine. `filename`, `workspaceRoot`, and `owner` are required;
 everything else has a default a single-process program can live with.
 
 ```ts
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 
 const host = NodeRuntime.layerHost(
   {
@@ -39,8 +41,9 @@ const host = NodeRuntime.layerHost(
 
 What it adds over `layer`:
 
-- The complete Node host from [`@smthrs/platform-node`](../../platform-node/docs/api.md),
-  with process containment on. A spawned process gets its own process group, is
+- The complete Node host, `NodeHost.layerContainedAt` from
+  [`@smthrs/platform-node`](../../platform-node/docs/api.md), with process
+  containment on. A spawned process gets its own process group, is
   signalled and then killed when its action's scope closes, and is recorded in
   the `ProcessLedger` so the next incarnation of this host reaps whatever a
   crash left running.
@@ -103,7 +106,7 @@ over a plain `NodeFileSystem.layer` it fails to build with `host_unavailable`.
 
 ```ts
 import { EngineStore, RunStore } from "@smthrs/flows"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 
 const { StepBoundary, WorkspaceSandbox } = EngineStore
 const { Ownership } = RunStore
@@ -138,7 +141,7 @@ constructs no engine. It is the seam for building another engine-backed service
 over the same storage context.
 
 ```ts
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 
 const stores = NodeRuntime.storage(".flows/engine.db", ".")
 ```

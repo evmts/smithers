@@ -47,3 +47,61 @@ export * as BrowserHost from "./BrowserHost.ts"
  * @slop
  */
 export * as BrowserServices from "./BrowserServices.ts"
+
+/**
+ * `@smthrs/artifacts`' immutable cache over the browser's Cache Storage.
+ *
+ * @since 1.0.0
+ */
+export * as BrowserCache from "./BrowserCache.ts"
+
+/**
+ * The durable flow engine as a tab sees it: requests to the leader, events back.
+ *
+ * @since 1.0.0
+ */
+export * as BrowserEngine from "./BrowserEngine.ts"
+
+/**
+ * The durable flow engine in a dedicated Web Worker, its leader election
+ * across tabs, and the requests it serves.
+ *
+ * @since 1.0.0
+ */
+export * as BrowserRuntime from "./BrowserRuntime.ts"
+
+/**
+ * SQLite on the origin private file system, through Effect SQL.
+ *
+ * @since 1.0.0
+ */
+export * as BrowserSqlite from "./BrowserSqlite.ts"
+
+/**
+ * The app's own SQLite database, shared by every tab through the engine's
+ * leader.
+ *
+ * @since 1.0.0
+ */
+export * as SharedSqlite from "./SharedSqlite.ts"
+
+/**
+ * Persistent storage for the origin, as a service.
+ *
+ * @since 1.0.0
+ */
+export * as StoragePersistence from "./StoragePersistence.ts"
+
+/**
+ * A `BroadcastChannel` as a service.
+ *
+ * @since 1.0.0
+ */
+export * as TabChannel from "./TabChannel.ts"
+
+/**
+ * Exclusive Web Locks as a service.
+ *
+ * @since 1.0.0
+ */
+export * as WebLock from "./WebLock.ts"

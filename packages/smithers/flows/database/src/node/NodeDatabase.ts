@@ -10,8 +10,9 @@ import { DatabaseSync } from "node:sqlite"
 import * as PostgresSelection from "../internal/PostgresSelection.ts"
 import * as ReleasePolicy from "../internal/ReleasePolicy.ts"
 import * as SqliteOpen from "../internal/SqliteOpen.ts"
+import { UnsupportedDatabase } from "../internal/UnsupportedDatabase.ts"
 
-export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/SqliteOpen.ts"
+export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.ts"
 
 /**
  * Where the store at `filename` lives on PostgreSQL, as this module would open
@@ -90,7 +91,7 @@ const client = (options: NodeDatabaseOptions): Layer.Layer<SqlClient.SqlClient> 
 export const layer = (options: NodeDatabaseOptions): Layer.Layer<SqlClient.SqlClient> =>
   Layer.unwrap(Effect.sync(() => {
     if (process.versions.bun !== undefined) {
-      throw new SqliteOpen.UnsupportedDatabase({
+      throw new UnsupportedDatabase({
         code: "unsupported_runtime",
         message:
           `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js ${ReleasePolicy.nodeFloor}`

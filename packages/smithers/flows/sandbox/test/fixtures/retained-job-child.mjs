@@ -2,8 +2,9 @@ import { Effect } from 'effect'
 import * as Microsandbox from 'microsandbox'
 import * as MicrosandboxSandbox from '../../src/MicrosandboxSandbox/index.ts'
 import * as Sandbox from '../../src/Sandbox/index.ts'
+import { hostCollector } from '../helpers/hostCollector.ts'
 const config=JSON.parse(process.argv[2])
-const provider=MicrosandboxSandbox.make({sdk:Microsandbox,image:'node:26-trixie',pullPolicy:'never',persistence:'sticky',network:'none',owner:config.owner,maxDurationSecs:300,idleTimeoutSecs:240})
+const provider=MicrosandboxSandbox.make({sdk:Microsandbox,collector:hostCollector,image:'node:26-trixie',pullPolicy:'never',persistence:'sticky',network:'none',owner:config.owner,maxDurationSecs:300,idleTimeoutSecs:240})
 const handle=await Effect.runPromise(Effect.gen(function*(){
   yield* Effect.scoped(Effect.gen(function*(){
     const session=yield* provider.acquire(config.key)

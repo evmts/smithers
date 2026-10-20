@@ -39,7 +39,7 @@ runs on.
 The default is `SIGINT` and `SIGTERM`.
 
 ```ts
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 
 const host = NodeRuntime.layerHost(
   {
@@ -118,7 +118,7 @@ is exported so a program that installs its own handlers can owe its supervisor
 the same answer:
 
 ```ts
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 
 NodeRuntime.signalExitCode("SIGINT") // 130
 NodeRuntime.signalExitCode("SIGTERM") // 143

@@ -23,6 +23,7 @@ import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Action, Flow, FlowRuntime, Interpreter, WaitFor } from "@smthrs/flow"
 import { NotificationQueue } from "@smthrs/notifications"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import { Executable, Registry } from "@smthrs/registry"
 import { Migrations as RunStoreMigrations, RunStore } from "@smthrs/run-store"
@@ -44,7 +45,6 @@ import { mkdirSync } from "node:fs"
 import { createServer } from "node:http"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { durableEngine } from "../src/test/TestNodeRuntime.ts"
 
 /**
  * The flow every descriptor in this project delegates to.
@@ -321,7 +321,7 @@ export const main = (root: string): Effect.Effect<Summary> =>
     // run table above; it shares this journal, so one `watch` stream carries the
     // plane's decisions and the engine's execution in the order they happened.
     const stack = Layer.merge(controlPlane, registrations).pipe(
-      Layer.provideMerge(durableEngine(join(root, "engine.sqlite"), "examples-gateway")),
+      Layer.provideMerge(TestNodeRuntime.durableEngine(join(root, "engine.sqlite"), "examples-gateway")),
       Layer.provideMerge(Layer.merge(registry, platform))
     )
 

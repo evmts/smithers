@@ -83,14 +83,15 @@ export const relayedRecords = Metric.counter(`${prefix}observability_otlp_relaye
 })
 
 /**
- * Counts OTLP records `OtlpRelay.serve` dropped over its per-request cap, by
- * `signal`.
+ * Counts OTLP records `OtlpRelay.serve` dropped, by `signal` and `reason`:
+ * `not_allowed` for a record its allowlist does not name, `over_limit` for one
+ * over its per-request cap.
  *
  * @category metrics
  * @since 1.0.0-rc.16
  */
 export const relayDroppedRecords = Metric.counter(`${prefix}observability_otlp_relay_dropped`, {
-  description: "OTLP records dropped over the relay's per-request cap"
+  description: "OTLP records the relay dropped: off its allowlist or over its per-request cap"
 })
 
 /**

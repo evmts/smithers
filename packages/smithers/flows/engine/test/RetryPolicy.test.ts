@@ -77,6 +77,53 @@ describe("expiration (issue #36)", () => {
     }))
 })
 
+describe("a failure's own Retry-After", () => {
+  it.effect("the engine waits retryAfterMillis, not the policy's backoff, before the next attempt", () =>
+    Effect.gen(function*() {
+      // A provider error class with the field `@smthrs/model`'s `ModelError`
+      // and `@smthrs/effect-code-storage`'s `CodeStorageError` carry.
+      class RateLimited extends Schema.TaggedError<RateLimited>()("RetryPolicy/RateLimited", {
+        retryAfterMillis: Schema.Number
+      }) {}
+      const startedAt: Array<number> = []
+      const action = Action.make({
+        name: "RetryPolicy/rate-limited",
+        success: Schema.Number,
+        error: RateLimited,
+        retryPolicy: RetryPolicy.make({ initialMs: 10, factor: 1, maxMs: 60_000, maxAttempts: 2 }),
+        execute: Effect.gen(function*() {
+          startedAt.push(yield* Clock.currentTimeMillis)
+          return startedAt.length === 1 ? yield* new RateLimited({ retryAfterMillis: 7_000 }) : 1
+        })
+      })
+      const flow = Flow.make("RetryPolicy/rate-limited-flow", {
+        payload: {},
+        success: Schema.Number,
+        body: () => Node.succeed(0)
+      })
+      const exit = yield* withCrypto(
+        Effect.gen(function*() {
+          const engine = yield* FlowRuntime.FlowRuntime
+          const fiber = yield* engine.actionExecute(action, 1).pipe(Effect.forkChild)
+          yield* Effect.yieldNow
+          // The policy alone would retry after 10 ms.
+          yield* TestClock.adjust(6_999)
+          expect(startedAt).toEqual([0])
+          yield* TestClock.adjust(1)
+          const result = yield* Fiber.join(fiber)
+          return result._tag === "Complete" ? result.exit : Exit.succeed("suspended" as never)
+        }).pipe(
+          Effect.provide(FlowEngine.layerMemory),
+          Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(flow, "retry-after")),
+          Effect.provide(TestClock.layer()),
+          Effect.scoped
+        )
+      )
+      expect(exit).toEqual(Exit.succeed(1))
+      expect(startedAt).toEqual([0, 7_000])
+    }))
+})
+
 describe("flow suspension policy", () => {
   it.effect("preserves the policy through annotations and forwards it to execution", () => {
     const policy = RetryPolicy.make({ initialMs: 17, factor: 1, maxMs: 17 })

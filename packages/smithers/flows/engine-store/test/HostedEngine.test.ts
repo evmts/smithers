@@ -1,0 +1,656 @@
+/**
+ * An engine whose host wakes it from outside, `sweep: { host: executionId }`,
+ * such as a Cloudflare Durable Object alarm that drives one execution per
+ * invocation.
+ *
+ * Every case runs over a real store: SQLite, or PostgreSQL in the storage
+ * matrix. Each hosted case has a `"process"` control beside it, so the
+ * behavior it pins is the host mode's and not the fixture's.
+ */
+import { Action, DurableClock, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Jj } from "@smthrs/kernel"
+import { Ownership, RunStore } from "@smthrs/run-store"
+import * as Cause from "effect/Cause"
+import * as Clock from "effect/Clock"
+import * as Context from "effect/Context"
+import type * as Crypto from "effect/Crypto"
+import * as Deferred from "effect/Deferred"
+import * as Duration from "effect/Duration"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
+import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
+import * as Schema from "effect/Schema"
+import type * as Scope from "effect/Scope"
+import * as SqlClient from "effect/sql/SqlClient"
+import { TestClock } from "effect/testing"
+import * as Tracer from "effect/Tracer"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as EngineStore from "../src/EngineStore.ts"
+import * as RunDriver from "../src/internal/RunDriver.ts"
+import * as OwnerIdentity from "../src/OwnerIdentity.ts"
+import * as StepBoundary from "../src/StepBoundary.ts"
+import * as TestStores from "../src/test/TestStores.ts"
+import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
+import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
+import { withCrypto } from "./Sha256.ts"
+
+// No step here touches a workspace; Jj is only the host port the engine requires.
+const jj = Layer.succeed(
+  Jj.Jj,
+  Jj.make({
+    snapshot: () => Effect.succeed({ commitId: "hosted" as never, changeId: "hosted" as never }),
+    restore: () => Effect.void,
+    diff: () => Effect.succeed(""),
+    workspaceAdd: () => Effect.void,
+    workspaceForget: () => Effect.void,
+    status: () => Effect.succeed("")
+  })
+)
+
+/**
+ * The liveness a single-instance host gives: an earlier incarnation on this
+ * host is gone, because the host runs one at a time; anything else keeps its
+ * lease.
+ */
+const singleInstance: Ownership.LivenessCheck = (owner, context) =>
+  owner.hostId === context.claimant.hostId
+    ? Effect.succeed(false)
+    : Ownership.leaseLiveness()(owner, context)
+
+const engine = (filename: string, owner: Ownership.OwnerId, sweep: EngineStore.Sweep) =>
+  EngineStore.layer({
+    owner: { hostId: owner.hostId },
+    journalSource: `${owner.hostId}-engine`,
+    isAlive: singleInstance,
+    sweep
+  }).pipe(
+    Layer.provide(OwnerIdentity.layerConstant(owner)),
+    Layer.provideMerge(Layer.mergeAll(TestStores.layerAt(filename), StepBoundary.layerUnsupported, jj))
+  )
+
+const first: Ownership.OwnerId = { hostId: "durable-object", pid: 1, nonce: "first" }
+const second: Ownership.OwnerId = { hostId: "durable-object", pid: 2, nonce: "second" }
+
+const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | TestClock.TestClock | Crypto.Crypto>) =>
+  Effect.runPromise(withCrypto(Effect.scoped(effect).pipe(Effect.provide(TestClock.layer()))))
+
+let directory: string
+let filename: string
+beforeEach(async () => {
+  directory = await mkdtemp(join(tmpdir(), "hosted-engine-"))
+  filename = PersistentDatabase.filename(join(directory, "engine.sqlite"))
+})
+afterEach(async () => {
+  await PersistentDatabase.remove(filename)
+  await rm(directory, { recursive: true, force: true })
+})
+
+const statusOf = (executionId: string) =>
+  Effect.flatMap(RunStore.RunStore, (runs) => Effect.map(runs.get(executionId), (row) => row.status))
+
+const Sleeper = Flow.make("HostedEngine/Sleeper", {
+  payload: {},
+  success: Schema.String,
+  body: opaqueHandlerBody
+})
+
+/** An engine with `Sleeper` registered: it naps on a ten-minute durable clock. */
+const sleeper = (owner: Ownership.OwnerId, sweep: EngineStore.Sweep) =>
+  Layer.effectDiscard(Effect.gen(function*() {
+    const runtime = yield* FlowRuntime.FlowRuntime
+    yield* runtime.register(Sleeper, () =>
+      Effect.gen(function*() {
+        yield* DurableClock.sleep({ name: "nap", duration: "10 minutes" })
+        return "woke"
+      }))
+  })).pipe(Layer.provideMerge(engine(filename, owner, sweep)))
+
+describe("registration under a hosted sweep", () => {
+  it("re-arms only the hosted execution's clocks", () =>
+    run(Effect.gen(function*() {
+      // Two executions park on their ten-minute clocks under a process engine
+      // that then goes away.
+      yield* Effect.scoped(
+        Effect.gen(function*() {
+          const runtime = yield* FlowRuntime.FlowRuntime
+          const runs = yield* RunStore.RunStore
+          for (const executionId of ["mine", "theirs"]) {
+            yield* runtime.execute(Sleeper, { executionId, payload: {}, discard: true })
+            yield* runtime.resume(Sleeper, executionId, { poll: true })
+            expect((yield* runs.get(executionId)).status).toBe("suspended")
+          }
+        }).pipe(Effect.provide(sleeper(first, "process")))
+      )
+
+      const hosted = yield* Effect.scoped(
+        Effect.gen(function*() {
+          yield* TestClock.adjust(Duration.minutes(10))
+          // The hosted execution's own clock fired and its drive is done.
+          yield* (yield* FlowRuntime.FlowRuntime).resume(Sleeper, "mine", { poll: true })
+          return {
+            mine: yield* statusOf("mine"),
+            theirs: yield* statusOf("theirs"),
+            theirsWake: yield* EngineStore.nextWake("theirs")
+          }
+        }).pipe(Effect.provide(sleeper(second, { host: "mine" })))
+      )
+      expect(hosted.mine).toBe("completed")
+      // Nothing armed the other execution's clock, though it is due: its own
+      // host drives it when `nextWake` says so.
+      expect(hosted.theirs).toBe("suspended")
+      expect(hosted.theirsWake).toEqual(Option.some(Duration.toMillis(Duration.minutes(10))))
+
+      // The control: registering under a process sweep re-arms it.
+      const theirs = yield* Effect.scoped(
+        Effect.gen(function*() {
+          yield* TestClock.adjust(Duration.minutes(10))
+          yield* (yield* FlowRuntime.FlowRuntime).resume(Sleeper, "theirs", { poll: true })
+          return yield* statusOf("theirs")
+        }).pipe(Effect.provide(sleeper(second, "process")))
+      )
+      expect(theirs).toBe("completed")
+    })))
+})
+
+const Blocker = Flow.make("HostedEngine/Blocker", {
+  payload: {},
+  success: Schema.String,
+  body: opaqueHandlerBody
+})
+
+const fakeEngine = {} as unknown as FlowRuntime.FlowRuntime["Service"]
+
+describe("a hosted driver", () => {
+  it.each([
+    { sweep: { host: "blocked" } as RunDriver.Sweep, background: false },
+    { sweep: "process" as RunDriver.Sweep, background: true }
+  ])(
+    "sweeps the store and renews a lease only under a process sweep ($sweep)",
+    ({ background, sweep }) =>
+      run(
+        Effect.gen(function*() {
+          const counted = { sweeps: 0, heartbeats: 0 }
+          const runs = yield* RunStore.RunStore
+          const engineState = yield* DurableEngineState.DurableEngineState
+          const started = yield* Deferred.make<void>()
+          const release = yield* Deferred.make<void>()
+          const driver = yield* RunDriver.make({
+            owner: first,
+            journalSource: "hosted-driver",
+            engine: Effect.succeed(fakeEngine),
+            sweep
+          }).pipe(
+            // Every sweep tick starts with this read, and every lease renewal
+            // with this write; both are counted where they are asked for.
+            Effect.provideService(DurableEngineState.DurableEngineState, {
+              ...engineState,
+              waitingRuns: (filter) =>
+                Effect.suspend(() => {
+                  counted.sweeps++
+                  return engineState.waitingRuns(filter)
+                })
+            }),
+            Effect.provideService(RunStore.RunStore, {
+              ...runs,
+              heartbeat: (runId, owner, nowMs) =>
+                Effect.suspend(() => {
+                  counted.heartbeats++
+                  return runs.heartbeat(runId, owner, nowMs)
+                })
+            })
+          )
+          yield* driver.register(
+            Blocker,
+            (): Effect.Effect<string> =>
+              Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.as("done"))
+          )
+          const execution = yield* Effect.forkChild(
+            driver.execute(Blocker, { executionId: "blocked", payload: {}, discard: false })
+          )
+          yield* Deferred.await(started)
+          for (let pulse = 0; pulse < 3; pulse++) {
+            yield* TestClock.adjust(Ownership.heartbeatInterval)
+            for (let turn = 0; turn < 10; turn++) yield* Effect.yieldNow
+          }
+          yield* Deferred.succeed(release, undefined)
+          const settled = yield* Fiber.join(execution)
+          expect(settled._tag).toBe("Complete")
+          expect(counted.sweeps > 0).toBe(background)
+          expect(counted.heartbeats > 0).toBe(background)
+        }).pipe(Effect.provide(TestStores.layerAt(":memory:")))
+      )
+  )
+})
+
+const Speak = Action.make("HostedEngine/Speak", { payload: {}, success: Schema.Number })
+const Answer = Flow.make("HostedEngine/Answer", {
+  payload: {},
+  success: Schema.Number,
+  body: () => Speak.call({})
+})
+
+describe("an adopted attempt's fence", () => {
+  it("refuses the earlier incarnation's write once a new incarnation takes the run", () =>
+    run(Effect.gen(function*() {
+      const firstStarted = yield* Deferred.make<void>()
+      const releaseFirst = yield* Deferred.make<void>()
+      const writes: Array<{ readonly by: string; readonly attempt: number; readonly text: string; rows: number }> = []
+      const redispatched: Array<{ readonly by: string; readonly redispatch: boolean }> = []
+      // The step streams into an application table and fences every write.
+      const speak = Speak.toLayer(() =>
+        Effect.gen(function*() {
+          const sql = yield* SqlClient.SqlClient
+          const fence = yield* Action.CurrentFence
+          if (fence === undefined) return yield* Effect.die("the durable engine supplies a fence")
+          redispatched.push({ by: fence.owner.nonce, redispatch: yield* Action.CurrentRedispatch })
+          const write = (text: string) =>
+            Effect.map(
+              sql<{ readonly id: string }>`
+                UPDATE hosted_answers SET text = ${text}
+                WHERE id = 'answer' AND ${RunStore.owned(sql, fence)}
+                RETURNING id
+              `.pipe(Effect.orDie),
+              (rows) => {
+                writes.push({ by: fence.owner.nonce, attempt: fence.attempt, text, rows: rows.length })
+                return rows.length
+              }
+            )
+          if (fence.owner.nonce === first.nonce) {
+            yield* write("first")
+            yield* Deferred.succeed(firstStarted, undefined)
+            yield* Deferred.await(releaseFirst)
+            return yield* write("late")
+          }
+          return yield* write("second")
+        })
+      )
+      const incarnation = (owner: Ownership.OwnerId) =>
+        Layer.build(
+          Interpreter.layer(Answer).pipe(
+            Layer.provideMerge(speak),
+            Layer.provideMerge(Action.layerImplementations),
+            Layer.provideMerge(engine(filename, owner, { host: "answer" }))
+          )
+        )
+
+      const firstContext = yield* incarnation(first)
+      const firstRuntime = yield* Effect.provide(FlowRuntime.FlowRuntime, firstContext)
+      yield* Effect.provide(
+        Effect.gen(function*() {
+          const sql = yield* SqlClient.SqlClient
+          yield* sql`CREATE TABLE hosted_answers (id TEXT PRIMARY KEY, text TEXT NOT NULL)`
+          yield* sql`INSERT INTO hosted_answers (id, text) VALUES ('answer', '')`
+        }),
+        firstContext
+      )
+      yield* firstRuntime.execute(Answer, { executionId: "answer", payload: {}, discard: true })
+      yield* Deferred.await(firstStarted)
+
+      // The first incarnation stopped answering. A new one on the same host
+      // takes the run at once, adopts the attempt still running, and finishes it.
+      const secondContext = yield* incarnation(second)
+      const secondRuntime = yield* Effect.provide(FlowRuntime.FlowRuntime, secondContext)
+      const answer = { executionId: "answer", payload: {} }
+      expect(yield* Effect.provide(EngineStore.drive(Answer, answer), secondContext))
+        .toEqual({ _tag: "Settled", status: "completed" })
+      const settled = yield* secondRuntime.poll(Answer, "answer")
+
+      // The first incarnation wakes up and writes under the fence it captured.
+      // Its drive then ends on the lost fence, and a drive joined to it
+      // reports what the store holds: the run the second incarnation settled.
+      yield* Deferred.succeed(releaseFirst, undefined)
+      expect(yield* Effect.provide(EngineStore.drive(Answer, answer), firstContext))
+        .toEqual({ _tag: "Settled", status: "completed" })
+
+      const text = yield* Effect.provide(
+        Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql<{ readonly text: string }>`SELECT text FROM hosted_answers WHERE id = 'answer'`),
+        secondContext
+      )
+      expect(writes).toEqual([
+        { by: "first", attempt: 1, text: "first", rows: 1 },
+        { by: "second", attempt: 1, text: "second", rows: 1 },
+        { by: "first", attempt: 1, text: "late", rows: 0 }
+      ])
+      expect(text).toEqual([{ text: "second" }])
+      // The second incarnation re-ran an attempt the first started and never
+      // settled, and the body was told so.
+      expect(redispatched).toEqual([{ by: "first", redispatch: false }, { by: "second", redispatch: true }])
+      const succeeded = (result: Option.Option<{ readonly _tag: string; readonly exit?: Exit.Exit<number> }>) =>
+        Option.map(result, (value) =>
+          value._tag === "Complete" && value.exit !== undefined && Exit.isSuccess(value.exit))
+      expect(succeeded(settled)).toEqual(Option.some(true))
+      // The superseded drive changed nothing the new incarnation settled.
+      expect(yield* secondRuntime.poll(Answer, "answer")).toEqual(settled)
+    })))
+})
+
+describe("EngineStore.drive", () => {
+  const Waiter = Flow.make("HostedEngine/Waiter", { payload: {}, success: Schema.String, body: opaqueHandlerBody })
+  /** A hosted engine running `Sleeper` and `Waiter`, counting how often each body starts. */
+  const hosted = (executionId: string, starts: { sleeper: number; waiter: number }) =>
+    Layer.effectDiscard(Effect.gen(function*() {
+      const runtime = yield* FlowRuntime.FlowRuntime
+      yield* runtime.register(Sleeper, () =>
+        Effect.gen(function*() {
+          starts.sleeper++
+          yield* DurableClock.sleep({ name: "nap", duration: "10 minutes" })
+          return "woke"
+        }))
+      yield* runtime.register(Waiter, () =>
+        Effect.gen(function*() {
+          starts.waiter++
+          return yield* DurableDeferred.await(DurableDeferred.make("answer", { success: Schema.String }))
+        }))
+    })).pipe(Layer.provideMerge(engine(filename, first, { host: executionId })))
+
+  it("admits, parks until the clock is due, and settles once it is", () =>
+    run(Effect.gen(function*() {
+      const starts = { sleeper: 0, waiter: 0 }
+      const nap = { executionId: "nap", payload: {} }
+      const outcome = yield* Effect.gen(function*() {
+        const admitted = yield* EngineStore.drive(Sleeper, nap)
+        // Not yet due: the parked run is left alone, without a replay.
+        yield* TestClock.adjust(Duration.minutes(5))
+        const early = yield* EngineStore.drive(Sleeper, nap)
+        const replaysBeforeDue = starts.sleeper
+        yield* TestClock.adjust(Duration.minutes(5))
+        const due = yield* EngineStore.drive(Sleeper, nap)
+        return { admitted, early, replaysBeforeDue, due }
+      }).pipe(Effect.provide(hosted("nap", starts)))
+      const dueAtMs = Duration.toMillis(Duration.minutes(10))
+      expect(outcome.admitted).toEqual({ _tag: "Parked", wakeAtMs: dueAtMs })
+      expect(outcome.early).toEqual({ _tag: "Parked", wakeAtMs: dueAtMs })
+      expect(outcome.replaysBeforeDue).toBe(1)
+      expect(outcome.due).toEqual({ _tag: "Settled", status: "completed" })
+    })))
+
+  it("parks an execution waiting on an event with no wake of its own", () =>
+    run(Effect.gen(function*() {
+      const starts = { sleeper: 0, waiter: 0 }
+      const outcome = yield* EngineStore.drive(Waiter, { executionId: "wait", payload: {} }).pipe(
+        Effect.provide(hosted("wait", starts))
+      )
+      expect(outcome).toEqual({ _tag: "Parked", wakeAtMs: undefined })
+      expect(starts.waiter).toBe(1)
+    })))
+
+  it("reports work it did not do, and fails for a flow it cannot run or an id it refuses", () =>
+    run(Effect.gen(function*() {
+      const starts = { sleeper: 0, waiter: 0 }
+      const outcome = yield* Effect.gen(function*() {
+        // Admitted by another writer for an engine routed elsewhere: still due.
+        const runs = yield* RunStore.RunStore
+        yield* runs.create(
+          "elsewhere",
+          JSON.stringify({ version: 1, flowName: Sleeper._tag, payload: {}, capabilityCeilings: [[]] })
+        )
+        const unfinished = yield* EngineStore.drive(Sleeper, { executionId: "elsewhere", payload: {} })
+        const unregistered = yield* Effect.exit(EngineStore.drive(Blocker, { executionId: "nobody", payload: {} }))
+        const refused = yield* Effect.flip(EngineStore.drive(Sleeper, { executionId: "", payload: {} }))
+        return { unfinished, unregistered, refused }
+      }).pipe(Effect.provide(
+        EngineStore.layer({
+          owner: { hostId: first.hostId },
+          journalSource: "routed-elsewhere",
+          isAlive: singleInstance,
+          canExecute: () => Effect.succeed(false),
+          sweep: { host: "elsewhere" }
+        }).pipe(
+          Layer.provide(OwnerIdentity.layerConstant(first)),
+          Layer.provideMerge(Layer.mergeAll(TestStores.layerAt(filename), StepBoundary.layerUnsupported, jj)),
+          Layer.tap((context) =>
+            Effect.flatMap(
+              Effect.succeed(Context.get(context, FlowRuntime.FlowRuntime)),
+              (runtime) => runtime.register(Sleeper, () => Effect.succeed("never"))
+            )
+          )
+        )
+      ))
+      expect(outcome.unfinished).toEqual({ _tag: "Unfinished" })
+      expect(starts.sleeper).toBe(0)
+      expect(Exit.isFailure(outcome.unregistered) && Cause.hasDies(outcome.unregistered.cause)).toBe(true)
+      expect((outcome.refused as RunStore.RunStoreError).code).toBe("invalid_run")
+    })))
+})
+
+describe("EngineStore.nextWake", () => {
+  const owner: Ownership.OwnerId = { hostId: "next-wake", pid: 7, nonce: "owner" }
+  const intruder: Ownership.OwnerId = { hostId: "other-host", pid: 8, nonce: "intruder" }
+  const staleAfterMs = Duration.toMillis(Ownership.heartbeatStaleAfter)
+  const state = JSON.stringify({ version: 1, flowName: Sleeper._tag, payload: {}, capabilityCeilings: [[]] })
+
+  /** A run `owner` holds, parked as `waiting` unless that is `undefined`. */
+  const owned = (runId: string, waiting?: DurableEngineState.Waiting) =>
+    Effect.gen(function*() {
+      const runs = yield* RunStore.RunStore
+      const engineState = yield* DurableEngineState.DurableEngineState
+      yield* runs.create(runId, state)
+      const nowMs = yield* Clock.currentTimeMillis
+      expect(yield* runs.claimAndOwn(runId, { status: "pending", owner: null, heartbeatAtMs: null }, owner, nowMs))
+        .toEqual({ _tag: "Activated" })
+      if (waiting === undefined) return
+      expect((yield* engineState.park(runId, waiting, owner))._tag).toBe("Parked")
+      expect(yield* runs.transitionOwned(runId, owner, "suspended")).toEqual({ _tag: "Transitioned" })
+    })
+
+  it("answers when each kind of run next needs its host", () =>
+    run(
+      Effect.gen(function*() {
+        const runs = yield* RunStore.RunStore
+        const engineState = yield* DurableEngineState.DurableEngineState
+        yield* TestClock.adjust(Duration.seconds(100))
+        const nowMs = 100_000
+
+        expect(yield* EngineStore.nextWake("nothing")).toEqual(Option.none())
+
+        yield* runs.create("pending", state)
+        expect(yield* EngineStore.nextWake("pending")).toEqual(Option.some(nowMs))
+
+        yield* runs.create("claimed", state)
+        expect(
+          (yield* runs.claim("claimed", { status: "pending", owner: null, heartbeatAtMs: null }, intruder, nowMs))
+            ._tag
+        ).toBe("Claimed")
+        expect(yield* EngineStore.nextWake("claimed")).toEqual(Option.some(nowMs + staleAfterMs))
+
+        yield* owned("running")
+        expect(yield* EngineStore.nextWake("running")).toEqual(Option.some(nowMs + staleAfterMs))
+
+        yield* owned("finished")
+        expect(yield* runs.transitionOwned("finished", owner, "completed")).toEqual({ _tag: "Transitioned" })
+        expect(yield* EngineStore.nextWake("finished")).toEqual(Option.none())
+
+        yield* owned("waiting", { reason: "event" })
+        expect(yield* EngineStore.nextWake("waiting")).toEqual(Option.none())
+
+        yield* owned("cancelled", { reason: "event" })
+        expect((yield* runs.requestCancel("cancelled", nowMs))._tag).toBe("CancelRequested")
+        expect(yield* EngineStore.nextWake("cancelled")).toEqual(Option.some(nowMs))
+
+        yield* owned("quarantined", { reason: "quarantine", token: "digest" })
+        expect(yield* EngineStore.nextWake("quarantined")).toEqual(Option.none())
+
+        yield* owned("released", { reason: "released" })
+        expect(yield* EngineStore.nextWake("released")).toEqual(Option.some(nowMs))
+
+        yield* owned("signalled", { reason: "event" })
+        yield* engineState.completeDeferred({
+          flowName: Sleeper._tag,
+          executionId: "signalled",
+          deferredName: "answer",
+          exit: Exit.void,
+          completedAtMs: nowMs
+        })
+        expect(yield* EngineStore.nextWake("signalled")).toEqual(Option.some(nowMs))
+
+        yield* owned("sleeping")
+        yield* engineState.scheduleClock({
+          flowName: Sleeper._tag,
+          executionId: "sleeping",
+          clockName: "nap",
+          deferredName: "nap",
+          dueAtMs: nowMs + 60_000,
+          completedAtMs: null
+        }, owner)
+        expect((yield* engineState.park("sleeping", { reason: "timer", wakeAt: nowMs + 60_000 }, owner))._tag)
+          .toBe("Parked")
+        expect(yield* runs.transitionOwned("sleeping", owner, "suspended")).toEqual({ _tag: "Transitioned" })
+        expect(yield* EngineStore.nextWake("sleeping")).toEqual(Option.some(nowMs + 60_000))
+        // A clock that came due is work now.
+        yield* TestClock.adjust(Duration.minutes(2))
+        expect(yield* EngineStore.nextWake("sleeping")).toEqual(Option.some(nowMs + 120_000))
+      }).pipe(Effect.provide(TestStores.layerAt(filename)))
+    ))
+
+  it("fails with the store's error for an execution id the store refuses", () =>
+    run(
+      Effect.gen(function*() {
+        const failure = yield* Effect.flip(EngineStore.nextWake(""))
+        expect(failure.code).toBe("invalid_run")
+      }).pipe(Effect.provide(TestStores.layerAt(filename)))
+    ))
+})
+
+describe("an action's failure on the engine's spans", () => {
+  const sentinel = "sentinel-5d2e-quoted-prompt"
+  class Refused extends Schema.TaggedError<Refused>()("Refused", { code: Schema.String, message: Schema.String }) {}
+  const Refuse = Action.make("HostedEngine/Refuse", { payload: {}, success: Schema.String, error: Refused })
+  const Refusing = Flow.make("HostedEngine/Refusing", {
+    payload: {},
+    success: Schema.String,
+    error: Refused,
+    body: () => Refuse.call({})
+  })
+
+  it("exports only the failure's tag and code, while the flow fails with the original", () =>
+    run(Effect.gen(function*() {
+      const spans: Array<Tracer.NativeSpan> = []
+      const tracer = Tracer.make({
+        span(options) {
+          const span = new Tracer.NativeSpan(options)
+          spans.push(span)
+          return span
+        }
+      })
+      const exit = yield* Effect.exit(Refusing.execute({}, { executionId: "refused" })).pipe(
+        Effect.provide(
+          Interpreter.layer(Refusing).pipe(
+            Layer.provideMerge(
+              Refuse.toLayer(() => Effect.fail(new Refused({ code: "rate_limited", message: sentinel })))
+            ),
+            Layer.provideMerge(Action.layerImplementations),
+            Layer.provideMerge(engine(filename, first, { host: "refused" }))
+          )
+        ),
+        Effect.provideService(Tracer.Tracer, tracer)
+      )
+      const failures = (name: string) =>
+        spans.filter((span) => span.name === name).flatMap((span) =>
+          span.status._tag === "Ended" && Exit.isFailure(span.status.exit)
+            ? Cause.prettyErrors(span.status.exit.cause).map((error) => `${error.name}: ${error.message}`)
+            : []
+        )
+      expect(failures("Action.execute")).toEqual(["Refused: rate_limited"])
+      expect(failures("ActionPersistence.execute")).toEqual(["Refused: rate_limited"])
+      // No span the engine opened carries the failure's text.
+      const exported = spans.flatMap((span) =>
+        span.status._tag === "Ended" && Exit.isFailure(span.status.exit)
+          ? Cause.prettyErrors(span.status.exit.cause).map((error) => `${error.message}\n${error.stack}`)
+          : []
+      )
+      expect(exported.join("\n")).not.toContain(sentinel)
+      expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ message: sentinel })
+    })))
+})
+
+describe("a settled child's drive", () => {
+  const LegTwo = Flow.make("HostedEngine/LegTwo", { payload: {}, success: Schema.Number, body: () => Speak.call({}) })
+  const LegOne = Flow.make("HostedEngine/LegOne", { payload: {}, success: Schema.Number, body: () => LegTwo.to({}) })
+  const Waits = Flow.make("HostedEngine/Waits", { payload: {}, success: Schema.Number, body: () => LegOne.child({}) })
+
+  /**
+   * The engine one execution's host builds: every flow registered, every
+   * other execution routed away, and each wake the engine asks of a host
+   * recorded in `resumes`.
+   */
+  const hosted = (executionId: string, resumes: Array<string>) =>
+    Layer.mergeAll(Interpreter.layer(Waits), Interpreter.layer(LegOne), Interpreter.layer(LegTwo)).pipe(
+      Layer.provideMerge(Speak.toLayer(() => Effect.succeed(7))),
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(
+        EngineStore.layer({
+          owner: { hostId: executionId },
+          journalSource: `${executionId}-engine`,
+          isAlive: singleInstance,
+          canExecute: (row) => Effect.succeed(row.runId === executionId),
+          requestResume: (parent, reason) => Effect.sync(() => resumes.push(`${parent}:${reason}`)),
+          sweep: { host: executionId }
+        }).pipe(
+          Layer.provide(OwnerIdentity.layerConstant({ hostId: executionId, pid: 1, nonce: executionId })),
+          Layer.provideMerge(Layer.mergeAll(TestStores.layerAt(filename), StepBoundary.layerUnsupported, jj))
+        )
+      )
+    )
+
+  it("records its parent's wake again when the invocation that settled it died first, and only once", () =>
+    run(Effect.gen(function*() {
+      const resumes: Array<string> = []
+      const drive = <F extends Flow.Any>(flow: F, executionId: string) =>
+        EngineStore.drive(flow, { executionId, payload: {} }).pipe(Effect.provide(hosted(executionId, resumes)))
+      const inStore = <A, E>(
+        effect: Effect.Effect<A, E, RunStore.RunStore | DurableEngineState.DurableEngineState | SqlClient.SqlClient>
+      ) => Effect.provide(effect, TestStores.layerAt(filename))
+      const parentWake = inStore(EngineStore.nextWake("waits"))
+
+      expect(yield* drive(Waits, "waits")).toEqual({ _tag: "Parked", wakeAtMs: undefined })
+      const [edge] = yield* inStore(
+        Effect.flatMap(DurableEngineState.DurableEngineState, (state) => state.runChildren("waits"))
+      )
+      const roundOne = edge!.childId
+
+      // The child's first round hands off. It settled, but its lineage did
+      // not: the parent is not woken.
+      expect(yield* drive(LegOne, roundOne)).toEqual({ _tag: "Settled", status: "completed" })
+      expect(resumes).toEqual([])
+      expect(yield* parentWake).toEqual(Option.none())
+
+      const rounds = yield* inStore(Effect.flatMap(RunStore.RunStore, (runs) => runs.lineage(roundOne)))
+      const roundTwo = rounds[1]!.runId
+      expect(yield* drive(LegTwo, roundTwo)).toEqual({ _tag: "Settled", status: "completed" })
+      expect(resumes).toEqual(["waits:parent"])
+      const nowMs = yield* Clock.currentTimeMillis
+      expect(yield* parentWake).toEqual(Option.some(nowMs))
+
+      // The invocation that settled the last round died before recording the
+      // parent's wake: the store holds what that leaves behind.
+      yield* inStore(
+        Effect.flatMap(
+          SqlClient.SqlClient,
+          (sql) => sql`DELETE FROM flows_deferred_completions WHERE execution_id = 'waits'`
+        )
+      )
+      expect(yield* parentWake).toEqual(Option.none())
+
+      // The host drives the settled round again, and the wake is back.
+      expect(yield* drive(LegTwo, roundTwo)).toEqual({ _tag: "Settled", status: "completed" })
+      expect(resumes).toEqual(["waits:parent", "waits:parent"])
+      expect(yield* parentWake).toEqual(Option.some(nowMs))
+      // Another drive finds it recorded and schedules nothing more.
+      expect(yield* drive(LegTwo, roundTwo)).toEqual({ _tag: "Settled", status: "completed" })
+      expect(resumes).toEqual(["waits:parent", "waits:parent"])
+
+      expect(yield* drive(Waits, "waits")).toEqual({ _tag: "Settled", status: "completed" })
+      // The parent consumed the wake; driving the child again records none.
+      const settledResumes = [...resumes]
+      expect(yield* drive(LegTwo, roundTwo)).toEqual({ _tag: "Settled", status: "completed" })
+      expect(resumes).toEqual(settledResumes)
+      expect(yield* parentWake).toEqual(Option.none())
+    })))
+})

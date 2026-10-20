@@ -10,12 +10,13 @@
  * host's log store holds browser and server telemetry side by side, joined by
  * trace id and by whatever attributes the browser annotated.
  *
- * The module uses only `effect`: no `node:` built-in, no OpenTelemetry SDK.
+ * The module imports `effect` and the journal's redaction rules
+ * (`@smthrs/journal`), and no `node:` built-in or OpenTelemetry SDK.
  *
  * @since 1.0.0-rc.16
  */
 
-import * as Redaction from "@smthrs/journal/Redaction"
+import { Redaction } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
@@ -44,16 +45,28 @@ export const defaultMaxBodyBytes = 256 * 1024
 export const defaultMaxRecords = 1000
 
 /**
- * The attribute filter used when {@link Options.allowAttribute} is omitted:
- * it drops every key `Redaction.isSensitiveKey` names a credential.
+ * The records and fields a host relays, each named exactly.
  *
- * @category filters
+ * @category models
  * @since 1.0.0-rc.16
  */
-export const defaultAllowAttribute = (key: string): boolean => !Redaction.isSensitiveKey(key)
+export interface Allowlist {
+  /**
+   * The record names relayed: a log record's body when it is a string, a
+   * span's name, a metric's name. Every other record is dropped and counted.
+   */
+  readonly records: ReadonlyArray<string>
+  /**
+   * The field keys a relayed line keeps, the relay's own included
+   * (`otlp.signal`, `service.name`, `trace_id`, `otlp.status_message` and the
+   * rest). Nested attribute keys are dotted, as in `user.id`. Every other field
+   * is removed.
+   */
+  readonly fields: ReadonlyArray<string>
+}
 
 /**
- * Limits and filters for {@link serve}.
+ * Limits and the allowlist for {@link serve}.
  *
  * @category models
  * @since 1.0.0-rc.16
@@ -63,8 +76,12 @@ export interface Options {
   readonly maxBodyBytes?: number | undefined
   /** Records relayed per request; the rest are dropped and counted. Defaults to {@link defaultMaxRecords}. */
   readonly maxRecords?: number | undefined
-  /** Keeps an attribute when it returns `true`; nested keys arrive dotted. Defaults to {@link defaultAllowAttribute}. */
-  readonly allowAttribute?: ((key: string) => boolean) | undefined
+  /**
+   * Relays only the records and fields it names. Omitted, every record is
+   * relayed with every field. Either way, a key `Redaction.isSensitiveKey`
+   * names a credential is removed with its value and any keys nested under it.
+   */
+  readonly allow?: Allowlist | undefined
 }
 
 /**
@@ -183,7 +200,13 @@ const MetricsRequest = Schema.Struct({
   }))
 })
 
-type Allow = (key: string) => boolean
+/** A record as decoded: its level, its name and every field, before the allowlist and redaction. */
+interface Draft {
+  readonly level: LogLevel.Severity
+  /** A log record's body, a span's name or a metric's name. */
+  readonly name: unknown
+  readonly fields: Record<string, unknown>
+}
 
 interface Line {
   readonly level: LogLevel.Severity
@@ -198,31 +221,33 @@ const plain = (value: AnyValue): unknown =>
     ? Object.fromEntries(value.kvlistValue.values.map((entry) => [entry.key, plain(entry.value)]))
     : value.stringValue ?? value.boolValue ?? value.intValue ?? value.doubleValue ?? value.bytesValue
 
+/** Attributes with nested keys dotted. A credential-named key goes with everything nested under it. */
 const flatten = (
   attributes: ReadonlyArray<KeyValue>,
-  allow: (key: string) => boolean,
   out: Record<string, unknown> = {},
   prefix = ""
 ): Record<string, unknown> => {
   for (const { key, value } of attributes) {
     const name = prefix + key
-    if (!allow(name)) continue
+    if (Redaction.isSensitiveKey(name)) continue
     if (value.kvlistValue === undefined) out[name] = plain(value)
-    else flatten(value.kvlistValue.values, allow, out, `${name}.`)
+    else flatten(value.kvlistValue.values, out, `${name}.`)
   }
   return out
 }
 
-/** A record's own fields, redacted, under the relay's fields; absent values are omitted. */
-const annotate = (
-  attributes: Record<string, unknown>,
-  fields: Record<string, unknown>
-): Record<string, unknown> => {
-  const out = Redaction.redact(attributes, { onTooDeep: "name" }) as Record<string, unknown>
-  for (const [key, value] of Object.entries(fields)) {
-    if (value !== undefined && value !== "") out[key] = value
+/** A record's attributes under the relay's own fields; an absent or empty relay field is omitted. */
+const draft = (
+  level: LogLevel.Severity,
+  name: unknown,
+  attributes: ReadonlyArray<KeyValue>,
+  own: Record<string, unknown>
+): Draft => {
+  const fields = flatten(attributes)
+  for (const [key, value] of Object.entries(own)) {
+    if (value !== undefined && value !== "") fields[key] = value
   }
-  return out
+  return { level, name, fields }
 }
 
 const serviceName = (resource: { readonly attributes: ReadonlyArray<KeyValue> }): unknown =>
@@ -249,32 +274,31 @@ export const severityLevel = (
   return levels.find((level) => level.toLowerCase() === word) ?? "Info"
 }
 
-const message = (value: unknown): unknown => Redaction.redact(value, { onTooDeep: "name" })
-
-const logLines = (request: typeof LogsRequest.Type, allow: Allow): Array<Line> =>
+const logDrafts = (request: typeof LogsRequest.Type): Array<Draft> =>
   request.resourceLogs.flatMap(({ resource, scopeLogs }) =>
     scopeLogs.flatMap((scope) =>
-      scope.logRecords.map((record) => ({
-        level: severityLevel(record.severityNumber, record.severityText),
-        message: message(record.body === undefined ? "" : plain(record.body)),
-        annotations: annotate(flatten(record.attributes, allow), {
-          "otlp.signal": "logs",
-          "service.name": serviceName(resource),
-          "otlp.severity": record.severityText ?? record.severityNumber,
-          trace_id: record.traceId,
-          span_id: record.spanId
-        })
-      }))
+      scope.logRecords.map((record) =>
+        draft(
+          severityLevel(record.severityNumber, record.severityText),
+          record.body === undefined ? "" : plain(record.body),
+          record.attributes,
+          {
+            "otlp.signal": "logs",
+            "service.name": serviceName(resource),
+            "otlp.severity": record.severityText ?? record.severityNumber,
+            trace_id: record.traceId,
+            span_id: record.spanId
+          }
+        )
+      )
     )
   )
 
-const spanLines = (request: typeof TracesRequest.Type, allow: Allow): Array<Line> =>
+const spanDrafts = (request: typeof TracesRequest.Type): Array<Draft> =>
   request.resourceSpans.flatMap(({ resource, scopeSpans }) =>
     scopeSpans.flatMap((scope) =>
-      scope.spans.map((span) => ({
-        level: span.status?.code === 2 ? "Error" : "Info",
-        message: message(span.name),
-        annotations: annotate(flatten(span.attributes, allow), {
+      scope.spans.map((span) =>
+        draft(span.status?.code === 2 ? "Error" : "Info", span.name, span.attributes, {
           "otlp.signal": "traces",
           "service.name": serviceName(resource),
           trace_id: span.traceId,
@@ -283,19 +307,17 @@ const spanLines = (request: typeof TracesRequest.Type, allow: Allow): Array<Line
           "otlp.duration_ms": (span.endTimeUnixNano - span.startTimeUnixNano) / 1e6,
           "otlp.status_message": span.status?.message
         })
-      }))
+      )
     )
   )
 
-const metricLines = (request: typeof MetricsRequest.Type, allow: Allow): Array<Line> =>
+const metricDrafts = (request: typeof MetricsRequest.Type): Array<Draft> =>
   request.resourceMetrics.flatMap(({ resource, scopeMetrics }) =>
     scopeMetrics.flatMap((scope) =>
       scope.metrics.flatMap((metric) =>
         metricTypes.flatMap((type) =>
-          metric[type].dataPoints.map((point) => ({
-            level: "Info" as const,
-            message: message(metric.name),
-            annotations: annotate(flatten(point.attributes, allow), {
+          metric[type].dataPoints.map((point) =>
+            draft("Info", metric.name, point.attributes, {
               "otlp.signal": "metrics",
               "service.name": serviceName(resource),
               "otlp.metric_type": type,
@@ -304,26 +326,51 @@ const metricLines = (request: typeof MetricsRequest.Type, allow: Allow): Array<L
               "otlp.count": point.count,
               "otlp.sum": point.sum
             })
-          }))
+          )
         )
       )
     )
   )
 
+/** An {@link Allowlist} as sets. */
+interface Allowed {
+  readonly records: ReadonlySet<string>
+  readonly fields: ReadonlySet<string>
+}
+
+const listed = (allowed: Allowed | undefined, record: Draft): boolean =>
+  allowed === undefined || (typeof record.name === "string" && allowed.records.has(record.name))
+
+/** The line a kept record logs: the allowed fields, then the whole record through `Redaction.redact`. */
+const finish = (allowed: Allowed | undefined, record: Draft): Line => ({
+  level: record.level,
+  message: Redaction.redact(record.name, { onTooDeep: "name" }),
+  annotations: Redaction.redact(
+    allowed === undefined
+      ? record.fields
+      : Object.fromEntries(Object.entries(record.fields).filter(([key]) => allowed.fields.has(key))),
+    { onTooDeep: "name" }
+  ) as Record<string, unknown>
+})
+
 const relayOf = <A>(
   decode: (input: unknown) => Effect.Effect<A, Schema.SchemaError>,
-  toLines: (request: A, allow: Allow) => Array<Line>,
+  toDrafts: (request: A) => Array<Draft>,
   rejected: string
 ) => ({
-  lines: (text: string, allow: Allow): Effect.Effect<Array<Line>, number> =>
-    decode(text).pipe(Effect.mapError(() => 400), Effect.map((request) => toLines(request, allow))),
+  drafts: (text: string): Effect.Effect<Array<Draft>, number> =>
+    decode(text).pipe(Effect.mapError(() => 400), Effect.map(toDrafts)),
   rejected
 })
 
 const relays = {
-  logs: relayOf(Schema.decodeUnknownEffect(Schema.fromJsonString(LogsRequest)), logLines, "rejectedLogRecords"),
-  traces: relayOf(Schema.decodeUnknownEffect(Schema.fromJsonString(TracesRequest)), spanLines, "rejectedSpans"),
-  metrics: relayOf(Schema.decodeUnknownEffect(Schema.fromJsonString(MetricsRequest)), metricLines, "rejectedDataPoints")
+  logs: relayOf(Schema.decodeUnknownEffect(Schema.fromJsonString(LogsRequest)), logDrafts, "rejectedLogRecords"),
+  traces: relayOf(Schema.decodeUnknownEffect(Schema.fromJsonString(TracesRequest)), spanDrafts, "rejectedSpans"),
+  metrics: relayOf(
+    Schema.decodeUnknownEffect(Schema.fromJsonString(MetricsRequest)),
+    metricDrafts,
+    "rejectedDataPoints"
+  )
 }
 
 /**
@@ -390,24 +437,32 @@ const answer = (status: number): HttpServerResponse.HttpServerResponse =>
  * record's attributes flattened with dotted keys, and as they apply
  * `otlp.severity`, `trace_id`, `span_id`, `otlp.parent_span_id`,
  * `otlp.duration_ms`, `otlp.status_message`, `otlp.metric_type`, `otlp.unit`,
- * `otlp.value`, `otlp.count` and `otlp.sum`. Attribute keys pass
- * {@link Options.allowAttribute}; messages and attribute values pass
- * `Redaction.redact`.
+ * `otlp.value`, `otlp.count` and `otlp.sum`. A key `Redaction.isSensitiveKey`
+ * names a credential is removed. With {@link Options.allow}, a record whose
+ * name is not listed is dropped and a field whose key is not listed is
+ * removed. The finished line, its message and every field the relay added
+ * included, then passes `Redaction.redact`.
  *
- * It answers 200 with `{}`, or with an OTLP `partialSuccess` naming the
- * records over {@link Options.maxRecords}; 413 past
+ * It answers 200 with `{}`, or with an OTLP `partialSuccess` counting the
+ * records off the allowlist or over {@link Options.maxRecords}; 413 past
  * {@link Options.maxBodyBytes}; 400 for a body that is not OTLP JSON or nests
  * deeper than {@link maxNesting}; 405 for
  * another method; 404 for another path. It never fails and never echoes a
- * parse error. `flows_observability_otlp_relayed` and
- * `flows_observability_otlp_relay_dropped` count records by `signal`.
+ * parse error. `flows_observability_otlp_relayed` counts records by `signal`,
+ * and `flows_observability_otlp_relay_dropped` by `signal` and `reason`
+ * (`not_allowed` or `over_limit`).
  *
  * **Example**
  *
  * ```ts
- * import * as OtlpRelay from "@smthrs/observability/OtlpRelay"
+ * import { OtlpRelay } from "@smthrs/observability"
  *
- * const telemetry = OtlpRelay.serve({ maxRecords: 500 })
+ * const telemetry = OtlpRelay.serve({
+ *   allow: {
+ *     records: ["chat ready", "chat.ask"],
+ *     fields: ["otlp.signal", "service.name", "trace_id", "span_id", "answerId"]
+ *   }
+ * })
  * // In a fetch handler: if the path starts with /api/telemetry/, return telemetry.
  * ```
  *
@@ -419,7 +474,10 @@ export const serve = (
 ): Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpServerRequest.HttpServerRequest> => {
   const maxBodyBytes = options.maxBodyBytes ?? defaultMaxBodyBytes
   const maxRecords = options.maxRecords ?? defaultMaxRecords
-  const allow = options.allowAttribute ?? defaultAllowAttribute
+  const allowed: Allowed | undefined = options.allow === undefined ? undefined : {
+    records: new Set(options.allow.records),
+    fields: new Set(options.allow.fields)
+  }
   return Effect.gen(function*() {
     const request = yield* HttpServerRequest.HttpServerRequest
     const signal = route.exec(request.url.split("?")[0]!)?.[1] as Signal | undefined
@@ -428,19 +486,35 @@ export const serve = (
     const text = yield* readText(request.stream, maxBodyBytes)
     if (nestedTooDeep(text)) return yield* Effect.fail(400)
     const relay = relays[signal]
-    const lines = yield* relay.lines(text, allow)
-    const kept = lines.slice(0, maxRecords)
-    const dropped = lines.length - kept.length
+    const drafts = yield* relay.drafts(text)
+    const listedDrafts = drafts.filter((record) => listed(allowed, record))
+    const kept = listedDrafts.slice(0, maxRecords)
+    const notAllowed = drafts.length - listedDrafts.length
+    const overLimit = listedDrafts.length - kept.length
     yield* Effect.forEach(
       kept,
-      (line) => Effect.logWithLevel(line.level)(line.message).pipe(Effect.annotateLogs(line.annotations)),
+      (record) => {
+        const line = finish(allowed, record)
+        return Effect.logWithLevel(line.level)(line.message).pipe(Effect.annotateLogs(line.annotations))
+      },
       { discard: true }
     )
     yield* Metric.update(Metric.withAttributes(FlowsMetric.relayedRecords, { signal }), kept.length)
-    yield* Metric.update(Metric.withAttributes(FlowsMetric.relayDroppedRecords, { signal }), dropped)
+    yield* Metric.update(
+      Metric.withAttributes(FlowsMetric.relayDroppedRecords, { signal, reason: "not_allowed" }),
+      notAllowed
+    )
+    yield* Metric.update(
+      Metric.withAttributes(FlowsMetric.relayDroppedRecords, { signal, reason: "over_limit" }),
+      overLimit
+    )
+    const reasons = [
+      ...(notAllowed === 0 ? [] : [`dropped ${notAllowed} records off the allowlist`]),
+      ...(overLimit === 0 ? [] : [`relayed the first ${maxRecords} records`])
+    ]
     return HttpServerResponse.jsonUnsafe(
-      dropped === 0 ? {} : {
-        partialSuccess: { [relay.rejected]: dropped, errorMessage: `relayed the first ${maxRecords} records` }
+      reasons.length === 0 ? {} : {
+        partialSuccess: { [relay.rejected]: notAllowed + overLimit, errorMessage: reasons.join("; ") }
       }
     )
   }).pipe(Effect.catch((status) => Effect.succeed(answer(status))))

@@ -361,7 +361,7 @@ describe("decide", () => {
       jitterRatio: 0.5,
       nonRetryable: ["Fatal"]
     })
-    const error = { retryAfterMs: 3_000 }
+    const error = { retryAfterMillis: 3_000 }
     expect(RetryPolicy.decide(
       RetryPolicy.make({ initialMs: 100, factor: 2, maxMs: 4_000 }),
       { attempt: 1, error }
@@ -372,24 +372,34 @@ describe("decide", () => {
     expect(RetryPolicy.decide(policy, { attempt: 1, error, elapsedMs: 3_500 })).toEqual(
       RetryPolicy.retryAfter(1_500)
     )
-    expect(RetryPolicy.decide(policy, { attempt: 1, error: { retryAfterMs: 300 }, elapsedMs: 0 }))
+    expect(RetryPolicy.decide(policy, { attempt: 1, error: { retryAfterMillis: 300 }, elapsedMs: 0 }))
       .toEqual(RetryPolicy.retryAfter(300))
     expect(RetryPolicy.decide(policy, { attempt: 1, error, elapsedMs: 4_950 })).toEqual(
       RetryPolicy.giveUp("expired")
     )
     expect(RetryPolicy.decide(policy, { attempt: 3, error })).toEqual(RetryPolicy.giveUp("exhausted"))
-    expect(RetryPolicy.decide(policy, { attempt: 1, error: { _tag: "Fatal", retryAfterMs: 3000 } }))
+    expect(RetryPolicy.decide(policy, { attempt: 1, error: { _tag: "Fatal", retryAfterMillis: 3000 } }))
       .toEqual(RetryPolicy.giveUp("nonRetryable"))
-    for (const retryAfterMs of [-1, Number.NaN, Number.POSITIVE_INFINITY, "3000"]) {
-      expect(RetryPolicy.decide(policy, { attempt: 1, error: { retryAfterMs } }))
+    for (const retryAfterMillis of [-1, Number.NaN, Number.POSITIVE_INFINITY, "3000"]) {
+      expect(RetryPolicy.decide(policy, { attempt: 1, error: { retryAfterMillis } }))
         .toEqual(RetryPolicy.retryAfter(100))
     }
-    const accessor = Object.defineProperty({}, "retryAfterMs", {
+    const accessor = Object.defineProperty({}, "retryAfterMillis", {
       get: () => {
         throw new Error("read")
       }
     })
     expect(RetryPolicy.decide(policy, { attempt: 1, error: accessor }))
+      .toEqual(RetryPolicy.retryAfter(100))
+    // A tagged failure carries the hint as an own field, the way a provider's
+    // Retry-After reaches the engine on a `ModelError`; the old `retryAfterMs`
+    // name is not read.
+    class RateLimited extends Schema.TaggedError<RateLimited>()("RateLimited", {
+      retryAfterMillis: Schema.optional(Schema.Number)
+    }) {}
+    expect(RetryPolicy.decide(policy, { attempt: 1, error: new RateLimited({ retryAfterMillis: 1_250 }) }))
+      .toEqual(RetryPolicy.retryAfter(1_250))
+    expect(RetryPolicy.decide(policy, { attempt: 1, error: { retryAfterMs: 1_250 } }))
       .toEqual(RetryPolicy.retryAfter(100))
   })
 

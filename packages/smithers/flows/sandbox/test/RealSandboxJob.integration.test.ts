@@ -9,6 +9,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as MicrosandboxSandbox from "../src/MicrosandboxSandbox/index.ts"
 import * as Sandbox from "../src/Sandbox/index.ts"
+import { hostCollector } from "./helpers/hostCollector.ts"
 import { makeWorkSeed } from "./helpers/workSeed.ts"
 
 const guard = process.env.SMITHERS_REAL_SANDBOX_JOB === "1"
@@ -35,6 +36,7 @@ describe.skipIf(!available)("retained Sandbox.job real microVM", () => {
     const store = mkdtempSync(join(tmpdir(), "job-real-receipts-"))
     const provider = MicrosandboxSandbox.make({
       sdk: Microsandbox,
+      collector: hostCollector,
       image: "node:26-trixie",
       pullPolicy: "never",
       persistence: "sticky",

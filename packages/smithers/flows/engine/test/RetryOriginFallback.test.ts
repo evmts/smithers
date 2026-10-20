@@ -2,7 +2,7 @@
  * Issue #69: pins the ternary's `Option.none()` arm when the durable retry
  * origin hook is present and the policy declares `expirationMs`. A missing
  * durable origin falls back to the current clock — the schedule-to-close
- * budget restarts (with a logged warning) instead of failing the run — so
+ * budget restarts (with a Debug record) instead of failing the run, so
  * the #45 fix cannot silently regress into an untested branch.
  */
 import { describe, expect, it } from "@effect/vitest"
@@ -66,15 +66,16 @@ describe("retry origin fallback when the durable hook yields none", () => {
       // a single dispatch), and the sequence expired only once the restarted
       // 1ms window elapsed across the backoff sleep.
       expect(attempts).toEqual([1, 2])
-      // The restarted budget must be observable (issue #82): the fallback's
-      // only operator signal is the warning naming the action, emitted
-      // exactly once for the retry sequence — not once per attempt.
-      const warnings = logs.filter((entry) =>
-        entry.logLevel === "Warn" &&
+      // The restarted budget stays observable (issue #82) as one Debug record
+      // naming the action, once for the retry sequence and not once per
+      // attempt. It never warns: the first dispatch of every action whose
+      // policy declares an expiry finds no attempt row either.
+      const restarted = logs.filter((entry) =>
         String(entry.message).includes("no durable retry origin") &&
         String(entry.message).includes("RetryOriginFallback/pruned")
       )
-      expect(warnings.length).toBe(1)
+      expect(restarted.map((entry) => entry.logLevel)).toEqual(["Debug"])
+      expect(logs.filter((entry) => entry.logLevel === "Warn")).toEqual([])
       expect(result._tag).toBe("Complete")
       if (result._tag === "Complete") {
         expect(Exit.isFailure(result.exit)).toBe(true)
@@ -89,6 +90,7 @@ describe("retry origin fallback when the durable hook yields none", () => {
       ),
       Effect.provide(Layer.succeed(FlowRuntime.FlowRuntime)(engine)),
       Effect.provide(Logger.layer([capture])),
+      Effect.provideService(References.MinimumLogLevel, "Debug"),
       Effect.provide(TestClock.layer())
     )
   })

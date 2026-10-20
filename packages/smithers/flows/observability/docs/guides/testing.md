@@ -16,7 +16,7 @@ providing your own function captures every export request and touches no
 network:
 
 ```ts
-import * as Otlp from "@smthrs/observability/Otlp"
+import { Otlp } from "@smthrs/observability"
 import * as Effect from "effect/Effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Metric from "effect/Metric"
@@ -62,9 +62,9 @@ production SQLite journal over an in-memory database, so a forwarding test
 exercises the real write path:
 
 ```ts
-import * as Journal from "@smthrs/journal/Journal"
+import { Journal } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
-import * as JournalLogger from "@smthrs/observability/JournalLogger"
+import { JournalLogger } from "@smthrs/observability"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 

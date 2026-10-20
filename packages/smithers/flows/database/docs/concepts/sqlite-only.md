@@ -27,17 +27,21 @@ Install the optional adapter alongside the database package:
 pnpm add @effect/sql-pg
 ```
 
-Direct injection makes the schema explicit:
+Direct injection makes the schema explicit. The adapter is on the root entry
+point and takes the `@effect/sql-pg` module as its `driver`, so the root
+imports no socket code: a Worker passes its Hyperdrive `connectionString`, a
+Node or Bun program its server's URL.
 
 ```ts
-import * as DurableWriter from "@smthrs/database/DurableWriter"
-import * as PostgresDatabase from "@smthrs/database/postgres/PostgresDatabase"
+import * as Pg from "@effect/sql-pg"
+import { DurableWriter, PostgresDatabase } from "@smthrs/database"
 import { Layer } from "effect"
 
 const database = Layer.provideMerge(
   DurableWriter.layer(),
   PostgresDatabase.layer({
     url: process.env.SMITHERS_POSTGRES_URL!,
+    driver: Pg,
     schema: "my_workspace_engine"
   })
 )
@@ -48,8 +52,9 @@ composed migration ladder before constructing services; do not launch separate
 package migrations concurrently. No PostgreSQL-specific store is needed.
 
 The adapter creates the schema if absent. Its database role needs permission
-to create the schema, tables, indexes, and trigger functions. The tested server
-is PostgreSQL 18 with UTF-8 encoding. Connection credentials stay in host
+to create the schema, tables, indexes, and trigger functions. The tested servers
+are PostgreSQL 18 (the storage matrix) and PostgreSQL 17 (the compose service
+behind PgBouncer), with UTF-8 encoding. Connection credentials stay in host
 configuration; do not put them into flow payloads or journals.
 
 ## Store identity
@@ -118,10 +123,70 @@ compare-and-swap, owner fencing, and retry classification remain in the shared
 stores. A custom injected SQL client must provide this serialization contract;
 a bare PostgreSQL READ COMMITTED client is insufficient.
 
-This deliberately permits one durable writer per schema, matching the current
-SQLite contract. Different schemas can write concurrently. A larger connection
-pool does not increase writer throughput within one schema. No throughput claim
-is made by the conformance suite.
+### Behind a connection pooler
+
+The PostgreSQL adapter changes no session state, so it runs unchanged behind a
+transaction-pooling proxy: Cloudflare Hyperdrive, or PgBouncer with
+`pool_mode=transaction`. Such a proxy runs each transaction on whichever server
+connection is free, so a `SET` made outside a transaction is lost for the
+client that made it, and a proxy that does not reset its connections hands it
+to the next client. Every statement therefore runs inside a transaction that
+sets `search_path` to the store's schema with `SET LOCAL`, and states its own
+isolation level and `READ WRITE` or `READ ONLY` mode:
+
+- `withTransaction` and `DurableWriter.write` begin `READ COMMITTED READ WRITE`
+  and take the writer lock; nested writes are savepoints.
+- A statement outside a transaction runs as the only statement of its own
+  transaction, without the writer lock. That adds `BEGIN`, the schema and
+  `COMMIT` round trips around it; group reads that run together into one
+  transaction.
+- A `readOnly` client's transactions are `REPEATABLE READ READ ONLY`.
+
+The schema is set per transaction rather than written into every statement
+because the stores and their migrations name tables without a schema, and
+`Dialect.tables` and `Dialect.columns` read `current_schema()`. Named prepared
+statements stay on: Hyperdrive supports them, and PgBouncer does with
+`max_prepared_statements` above zero.
+
+The `pgbouncer` service in `apps/mvp/docker-compose.yml` (127.0.0.1:54322) is
+PgBouncer 1.25 in transaction mode with four server connections, resetting each
+one when its transaction ends, as Hyperdrive does. `test/PostgresPooling.test.ts`
+runs one suite through it and directly against `SMITHERS_TEST_PG_URL`.
+
+### The writer lock
+
+Durable writes to one schema commit one at a time, matching the SQLite
+contract; different schemas write concurrently. The server holds the lock from
+granting it until it commits the write, so one schema's ceiling is
+
+```text
+writes per second ≤ 1 / ((statements in the write + 1) × round trip + commit flush)
+```
+
+The `+ 1` is the lock's answer travelling to the client and the `COMMIT`
+travelling back. Adding writers, connections or processes does not
+raise it; only a shorter round trip, fewer statements per write, or more
+schemas do. A Worker far from its database pays its full round trip several
+times per write. `DatabaseMetrics.writerLockWait` times every wait for the
+lock in production, so a schema at its ceiling shows as a rising wait.
+
+`test/WriterLock.bench.ts` (`pnpm --filter @smthrs/database bench`) measures
+one-row writes through the compose PgBouncer and the compose PostgreSQL behind
+it. Each writer is its own one-connection client, as separate Workers are.
+Measured on 2026-10-19 on an Apple Silicon laptop under a load average near 30,
+with Docker Desktop and Electric reading the same server:
+
+| Writers and schemas    | Through PgBouncer | PostgreSQL directly |
+| ---------------------- | ----------------- | ------------------- |
+| 1 writer, 1 schema     | 213 to 226/s      | 130 to 145/s        |
+| 16 writers, 1 schema   | 228 to 295/s      | 136 to 162/s        |
+| 16 writers, 16 schemas | 300 to 474/s      | 690 to 2176/s       |
+
+Sixteen writers on one schema barely outpace one: a queued writer has already
+sent `BEGIN` when the lock frees, and the lock caps the rest. Sixteen schemas
+scale until PgBouncer's four server connections are all busy. Read the ratios, not the absolute rates: the run shared a loaded
+machine, its round trips cross the Docker Desktop VM, and every commit waits
+for a flush to the Docker volume.
 
 Integer-valued columns use PostgreSQL `NUMERIC` with integer/range checks where
 the SQLite schema has those checks; this rejects fractional writes rather than

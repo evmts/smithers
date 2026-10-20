@@ -96,7 +96,8 @@ import * as WaitFor from "./WaitFor.ts"
  * disagree. Both are preflight failures, before action dispatch.
  * `join_mismatch` names a race, any, or quorum whose journaled decision this
  * plan's members can no longer reproduce. `plan_changed` refuses a durable
- * resume whose rebuilt graph differs from its first recorded plan.
+ * resume whose rebuilt graph differs from its first recorded plan. Moved
+ * declaration sites are not a difference: only the plan's digest is compared.
  *
  * @category errors
  * @since 0.1.0

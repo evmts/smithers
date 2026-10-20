@@ -84,10 +84,11 @@ without the other four.
 
 ## Import forms
 
-The root entry point re-exports both modules as namespaces:
+The root entry point re-exports both modules as namespaces, plus `BunRuntime`,
+the durable flow runtime on Bun, which has no subpath of its own:
 
 ```ts
-import { BunFileSystem, BunHost } from "@smthrs/platform-bun"
+import { BunFileSystem, BunHost, BunRuntime } from "@smthrs/platform-bun"
 ```
 
 Each module is also importable from its own subpath, which is the form the

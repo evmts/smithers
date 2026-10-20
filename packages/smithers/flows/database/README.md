@@ -15,8 +15,8 @@ comes back into five stable failure codes. Beside the writer, `Migrations`
 composes the migration sets of several independent packages into one ordered
 pass over one database.
 
-The package adds policy to writes only. Reads stay on Effect's own `SqlClient`
-service, unwrapped, so nothing here sits between a query and the driver.
+The writer adds policy to writes only. Reads stay on Effect's own `SqlClient`
+service, and the writer never wraps them.
 
 ## Install
 
@@ -33,8 +33,10 @@ version as your `effect`:
 npm install @effect/sql-sqlite-node
 ```
 
-PostgreSQL configuration requires the optional `@effect/sql-pg`
-peer, at the same version as your `effect`. The driver-neutral root installs no SQL adapter. Two
+PostgreSQL requires the optional `@effect/sql-pg` peer, at the same version as
+your `effect`. The root installs no SQL adapter: `PostgresDatabase.layer` takes
+the `@effect/sql-pg` module as its `driver`, so the root imports no socket code
+and still bundles for browsers. Two
 copies of `effect` in one tree split the `SqlClient` service identity and a
 writer built against one copy cannot see a client provided from the other. The
 Node driver needs Node.js 22.19.0 or later for its built-in `node:sqlite`
@@ -70,25 +72,27 @@ than `Layer.provide`, so both services stay in the output. Add
 
 ## Entry points
 
-The root is driver neutral and bundles for browsers. Each driver is platform
-specific and lives at its own subpath.
+The root bundles for browsers. It carries the PostgreSQL adapter, whose
+`@effect/sql-pg` driver the caller injects. The SQLite drivers are platform
+specific and live at their own subpaths.
 
-| Import                                       | Exports                                                                              |
-| -------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `@smthrs/database`                           | `DurableWriter`, `Migrations`, `DatabaseMetrics`, `UnsupportedBackend` as namespaces |
-| `@smthrs/database/DurableWriter`             | the write boundary, its errors, and its layers                                       |
-| `@smthrs/database/Migrations`                | the migration composer                                                               |
-| `@smthrs/database/DatabaseMetrics`           | the write-retry counter                                                              |
-| `@smthrs/database/UnsupportedBackend`        | the connection-string names this release ignores                                     |
-| `@smthrs/database/Dialect`                   | SQL fragments that read the same on SQLite and PostgreSQL                            |
-| `@smthrs/database/node/NodeDatabase`         | Node only. The `node:sqlite` client layer                                            |
-| `@smthrs/database/bun/BunDatabase`           | Bun only. The `bun:sqlite` client layer                                              |
-| `@smthrs/database/postgres/PostgresDatabase` | PostgreSQL client with schema-scoped write serialization                             |
-| `@smthrs/database/test/TestDatabase`         | Node only. The isolated test client and writer, and fixture helpers                  |
+| Import                                       | Exports                                                                                                  |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `@smthrs/database`                           | `DurableWriter`, `Migrations`, `DatabaseMetrics`, `UnsupportedBackend`, `PostgresDatabase` as namespaces |
+| `@smthrs/database/DurableWriter`             | the write boundary, its errors, and its layers                                                           |
+| `@smthrs/database/Migrations`                | the migration composer                                                                                   |
+| `@smthrs/database/DatabaseMetrics`           | the write-retry counter and the writer-lock wait timer                                                   |
+| `@smthrs/database/UnsupportedBackend`        | the connection-string names this release ignores                                                         |
+| `@smthrs/database/Dialect`                   | SQL fragments that read the same on SQLite and PostgreSQL                                                |
+| `@smthrs/database/node/NodeDatabase`         | Node only. The `node:sqlite` client layer                                                                |
+| `@smthrs/database/bun/BunDatabase`           | Bun only. The `bun:sqlite` client layer                                                                  |
+| `@smthrs/database/postgres/PostgresDatabase` | The same module as the root's `PostgresDatabase`; import it from the root                                |
+| `@smthrs/database/test/TestDatabase`         | Node only. The isolated test client and writer, and fixture helpers                                      |
 
 `DurableWriter.make` accepts any Effect `SqlClient`, so the retry
-classification and the error vocabulary are dialect blind. SQLite and PostgreSQL adapters share the stores and migration ladder. See
-[configuration and isolation](docs/concepts/sqlite-only.md).
+classification and the error vocabulary are dialect blind. SQLite and PostgreSQL adapters share the stores and migration ladder. `PostgresDatabase`
+works behind transaction-pooling proxies such as Cloudflare Hyperdrive and
+PgBouncer. See [configuration and isolation](docs/concepts/sqlite-only.md).
 
 ## What the boundary buys you
 
@@ -133,9 +137,9 @@ stores, cache, and recovery logic. A Node subprocess is not a Bun compatibility
 mechanism. Keep filesystem, process, crypto, HTTP and SQL access behind their
 existing Effect services, selected at the executable's composition root.
 
-`@smthrs/flows/Runtime` consumes an injected Effect `SqlClient` and host services.
-`@smthrs/flows/NodeRuntime` and `@smthrs/flows/BunRuntime` select matching native
-services. Database adapters are `@smthrs/database/node/NodeDatabase` and
+`@smthrs/flows`' `Runtime` consumes an injected Effect `SqlClient` and host services.
+`NodeRuntime` from `@smthrs/platform-node` and `BunRuntime` from
+`@smthrs/platform-bun` select matching native services. Database adapters are `@smthrs/database/node/NodeDatabase` and
 `@smthrs/database/bun/BunDatabase`; both share the schema guard, startup retry
 policy and `DurableWriter`. Domain code must not open an extra database or create
 its own command, job, event, or locking ledger around the durable engine.

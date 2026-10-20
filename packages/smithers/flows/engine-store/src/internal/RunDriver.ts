@@ -106,6 +106,21 @@ export type RequestedResumeReason = "deferred" | "clock" | "parent"
 export type ScheduledResumeReason = RequestedResumeReason | "operator" | "delegated"
 
 /**
+ * Who wakes the runs of this driver's store.
+ *
+ * `"process"` is a long-lived process: a fiber sweeps the store every
+ * heartbeat interval for runs to wake or reclaim, and every owned round renews
+ * its lease on the same cadence. `{ host }` is one execution driven by a host
+ * that wakes it from outside, such as a Cloudflare Durable Object alarm: no
+ * sweep runs, no lease is renewed, and registration recovers only that
+ * execution's own clocks and completions.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type Sweep = "process" | { readonly host: string }
+
+/**
  * Dependencies for the run driver.
  *
  * @since 0.1.0
@@ -174,6 +189,10 @@ export interface Dependencies {
    * undefined, which costs one `undefined` check per suspension.
    */
   readonly unsafeOnScopeRetained?: ((runId: string) => Effect.Effect<void>) | undefined
+  /**
+   * Who wakes this store's runs. Absent is `"process"`. See {@link Sweep}.
+   */
+  readonly sweep?: Sweep | undefined
 }
 
 /**
@@ -221,6 +240,18 @@ export interface Service {
    * point.
    */
   readonly retainedRuns: Effect.Effect<ReadonlySet<string>>
+  /**
+   * Announces a settled run's settlement again to every parent still waiting
+   * on it, as its settling drive did, when the run is the last round of its
+   * lineage; a round that handed off announces nothing.
+   *
+   * For a host that drives one execution per invocation: an invocation that
+   * died between the terminal transition and the parents' wake records left
+   * those parents parked with nothing due, and the next drive of the settled
+   * run records them. A wake already recorded, consumed or not, is not
+   * scheduled again. Call it only for a run the store holds as settled.
+   */
+  readonly reannounce: (executionId: string) => Effect.Effect<void>
 }
 
 interface Registration {
@@ -369,6 +400,13 @@ export const make = (
     const engineState = yield* DurableEngineState.DurableEngineState
     const lifecycle = RunLifecycle.make(store, engineState)
     const wakeBus = dependencies.wakeBus ?? WakeBus.makeNoop()
+    /**
+     * Whether a host wakes this store's runs from outside (`sweep: { host }`).
+     * Such a host lives for one invocation: it neither sweeps the store nor
+     * renews leases, and its own liveness check, not a lease, tells a crashed
+     * incarnation from a live one.
+     */
+    const hosted = typeof dependencies.sweep === "object"
     /**
      * The deployment's own liveness answer, if it gave one.
      *
@@ -663,17 +701,22 @@ export const make = (
         if (Option.isSome(waiting) && waiting.value.reason === "quarantine") return
         // Persist before publishing: a remote parent's poll must see this wake,
         // including when its current round has not finished parking yet.
-        yield* transactState(Effect.gen(function*() {
-          yield* engineState.completeDeferred({
+        const recorded = yield* transactState(Effect.gen(function*() {
+          const completed = yield* engineState.completeDeferred({
             flowName: state.flowName,
             executionId: parentExecutionId,
             deferredName: parentWakePrefix + childExecutionId,
             exit: { _tag: "Success", value: null },
             completedAtMs: yield* Clock.currentTimeMillis
           })
+          // A settlement announced again (`reannounce`) finds its wake
+          // already recorded, and perhaps already consumed: it is not
+          // scheduled twice.
+          if (completed._tag === "Existing") return false
           yield* emitDecision(parentExecutionId, { decision: "wake-scheduled", reason: "parent" })
+          return true
         })).pipe(Effect.orDie)
-        yield* recordResume(parentExecutionId, Option.isSome(waiting), "parent")
+        if (recorded) yield* recordResume(parentExecutionId, Option.isSome(waiting), "parent")
       })
 
     /**
@@ -1959,6 +2002,19 @@ export const make = (
       })
 
     /**
+     * {@link announceSettled} again, for a settled run that is the last round
+     * of its lineage. See {@link Service.reannounce}.
+     */
+    const reannounce = (executionId: string): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const latest = yield* store.latestRound(executionId).pipe(Effect.orDie)
+        // A round that handed off is not the lineage's settlement: its
+        // successor's is.
+        if (latest.runId !== executionId) return
+        yield* announceSettled(executionId, yield* decodeState(latest.stateJson))
+      })
+
+    /**
      * Ends a lineage that asked for one round past its declared budget.
      *
      * The round itself ran to completion; what is refused is the handoff, so
@@ -2214,7 +2270,10 @@ export const make = (
                     Effect.provideService(FlowRuntime.FlowInstance, instance),
                     Effect.provideService(FlowRuntime.FlowRuntime, flowEngine)
                   ),
-                  Ownership.heartbeatLoop(executionId, dependencies.owner, {
+                  // A hosted round renews no lease: the host's liveness check
+                  // reclaims a crashed incarnation, and every fenced write of a
+                  // superseded one changes nothing.
+                  hosted ? Effect.never : Ownership.heartbeatLoop(executionId, dependencies.owner, {
                     onReconfirm: (unconfirmedMs) => {
                       const record = decisionRecord(executionId, {
                         decision: "lease-reconfirmed",
@@ -2678,26 +2737,29 @@ export const make = (
         Effect.sandbox,
         Effect.catchCause((cause) => Effect.logWarning(`engine-store: ${name} sweep failed; retrying next tick`, cause))
       )
-    yield* Effect.forkScoped(
-      Effect.forever(
-        Effect.sleep(Ownership.heartbeatInterval).pipe(
-          Effect.andThen(
-            // One transient defect (a `SQLITE_BUSY` escaping `waitingRuns()`'s
-            // `orDie`, a wake failure) must not kill the sweeper for the rest
-            // of the process lifetime (issue #44) — that would silently revert
-            // to pre-#27 behavior where cancel of parked runs is never
-            // delivered. Mirror `armClock`'s hardening: expose the full cause,
-            // log it, and keep ticking.
-            resilientSweep(sweepCancelRequested, "parked-run cancel").pipe(
-              Effect.andThen(resilientSweep(sweepStaleRunning, "stale-running")),
-              Effect.andThen(resilientSweep(sweepReadyTimers, "ready timer")),
-              Effect.andThen(resilientSweep(sweepPendingCancellation(), "pending cancellation")),
-              Effect.andThen(resilientSweep(sweepPending(), "pending admission"))
+    // A hosted store is woken by its host, so it runs no sweep of its own.
+    if (!hosted) {
+      yield* Effect.forkScoped(
+        Effect.forever(
+          Effect.sleep(Ownership.heartbeatInterval).pipe(
+            Effect.andThen(
+              // One transient defect (a `SQLITE_BUSY` escaping `waitingRuns()`'s
+              // `orDie`, a wake failure) must not kill the sweeper for the rest
+              // of the process lifetime (issue #44) — that would silently revert
+              // to pre-#27 behavior where cancel of parked runs is never
+              // delivered. Mirror `armClock`'s hardening: expose the full cause,
+              // log it, and keep ticking.
+              resilientSweep(sweepCancelRequested, "parked-run cancel").pipe(
+                Effect.andThen(resilientSweep(sweepStaleRunning, "stale-running")),
+                Effect.andThen(resilientSweep(sweepReadyTimers, "ready timer")),
+                Effect.andThen(resilientSweep(sweepPendingCancellation(), "pending cancellation")),
+                Effect.andThen(resilientSweep(sweepPending(), "pending admission"))
+              )
             )
           )
         )
       )
-    )
+    }
 
     const ensureRun = (
       flow: Flow.Any,
@@ -3267,6 +3329,7 @@ export const make = (
       ),
       scheduleResume,
       active: Effect.fn("FlowEngine.active")(() => coordinator.active)(),
-      retainedRuns
+      retainedRuns,
+      reannounce
     }
   })

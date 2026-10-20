@@ -1,23 +1,24 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/database: the DurableWriter service and its layers, the DatabaseError vocabulary, the Migrations composer, the Node SQLite driver, the in-memory test layer, and the metric handle."
+description: "Every public export of @smthrs/database: the DurableWriter service and its layers, the DatabaseError vocabulary, the Migrations composer, the PostgreSQL adapter, the Node SQLite driver, the in-memory test layer, and the metric handles."
 ---
 
-The root entry point is driver neutral and bundles for browsers. Each driver is
-platform specific and lives at an explicit subpath.
+The root entry point bundles for browsers. It carries the PostgreSQL adapter,
+whose `@effect/sql-pg` driver the caller injects. The SQLite drivers are
+platform specific and live at explicit subpaths.
 
-| Import                                       | Exports                                                                              |
-| -------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `@smthrs/database`                           | `DurableWriter`, `Migrations`, `DatabaseMetrics`, `UnsupportedBackend` as namespaces |
-| `@smthrs/database/DurableWriter`             | the write boundary, its errors, and its layers                                       |
-| `@smthrs/database/Migrations`                | the migration composer                                                               |
-| `@smthrs/database/DatabaseMetrics`           | the write-retry counter                                                              |
-| `@smthrs/database/UnsupportedBackend`        | the ignored connection-string names                                                  |
-| `@smthrs/database/Dialect`                   | SQL fragments that read the same on SQLite and PostgreSQL                            |
-| `@smthrs/database/node/NodeDatabase`         | Node only. The `node:sqlite` client layer                                            |
-| `@smthrs/database/bun/BunDatabase`           | Bun only. The `bun:sqlite` client layer                                              |
-| `@smthrs/database/postgres/PostgresDatabase` | The PostgreSQL client layer                                                          |
-| `@smthrs/database/test/TestDatabase`         | Node only. The isolated test client and writer, and fixture helpers                  |
+| Import                                       | Exports                                                                                                  |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `@smthrs/database`                           | `DurableWriter`, `Migrations`, `DatabaseMetrics`, `UnsupportedBackend`, `PostgresDatabase` as namespaces |
+| `@smthrs/database/DurableWriter`             | the write boundary, its errors, and its layers                                                           |
+| `@smthrs/database/Migrations`                | the migration composer                                                                                   |
+| `@smthrs/database/DatabaseMetrics`           | the write-retry counter and the writer-lock wait timer                                                   |
+| `@smthrs/database/UnsupportedBackend`        | the ignored connection-string names                                                                      |
+| `@smthrs/database/Dialect`                   | SQL fragments that read the same on SQLite and PostgreSQL                                                |
+| `@smthrs/database/node/NodeDatabase`         | Node only. The `node:sqlite` client layer                                                                |
+| `@smthrs/database/bun/BunDatabase`           | Bun only. The `bun:sqlite` client layer                                                                  |
+| `@smthrs/database/postgres/PostgresDatabase` | The same module as the root's `PostgresDatabase`; import it from the root                                |
+| `@smthrs/database/test/TestDatabase`         | Node only. The isolated test client and writer, and fixture helpers                                      |
 
 `@smthrs/database/internal/*` is blocked by the export map.
 
@@ -365,7 +366,7 @@ See [the migration ladder](./concepts/migration-ladder.md) and
 
 Metric definitions for the durable write boundary. This module defines handles
 only. No exporter ships here: provide one, for example from
-[`@smthrs/observability`](/api/observability), and the counter appears in it.
+[`@smthrs/observability`](/api/observability), and the metrics appear in it.
 
 ### writeRetries
 
@@ -378,6 +379,21 @@ replays after transient conflicts". Incremented once per scheduled retry of a
 recognized transient conflict, across every store that writes through the
 boundary. The attempt that finally fails past the retry budget is not counted:
 it surfaces on the error channel instead.
+
+### writerLockWait
+
+```ts
+const writerLockWait: Metric.Histogram<Duration.Duration>
+```
+
+Timer `flows_db_writer_lock_wait`, in milliseconds, described as "Time a
+PostgreSQL durable write waited for its schema's writer lock". It measures from
+sending the lock statement to holding the lock. A writable `PostgresDatabase`
+client records one observation per transaction it begins: each outermost
+`DurableWriter.write` and each `withTransaction`. Read-only clients, statements
+outside a transaction, and SQLite record nothing. Writes to one schema commit
+one at a time, so a rising wait means that schema's write rate is at the lock's
+ceiling; see [the writer lock](./concepts/sqlite-only.md#the-writer-lock).
 
 ## UnsupportedBackend
 
@@ -490,6 +506,8 @@ class UnsupportedDatabase extends Schema.TaggedError<UnsupportedDatabase>()(
 
 A refusal to open a durable database in 1.0.0-rc.16, raised as a defect rather
 than a typed failure because neither refusal is recoverable at run time.
+`NodeDatabase`, `BunDatabase` and `PostgresDatabase` re-export the same
+constructor, code schema and refinement.
 
 | Code                        | Refused when                                                       | Message                                                                                                        |
 | --------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
@@ -524,8 +542,8 @@ NodeDatabase. A new plain-path database is created
 with mode `0o600`, masked by the process umask, and its WAL and SHM sidecars
 inherit that mode. Existing files, `file:` URIs, temporary databases and opens
 whose settings disable creation are left to SQLite. Install its matching optional peer;
-consumers using only Node do not need it. Both subpaths re-export the same
-`UnsupportedDatabase` constructor and refinement.
+consumers using only Node do not need it. It re-exports the same
+`UnsupportedDatabase` constructor and refinement as `NodeDatabase`.
 
 ## TestDatabase
 
@@ -567,15 +585,85 @@ See [Test against a database](./guides/test-against-a-database.md).
 
 ## PostgresDatabase
 
-Import `@smthrs/database/postgres/PostgresDatabase` and provide
-`layer({ url, schema?, postgres?, readOnly? })`. `schema` defaults to
-`smithers_flows` and must be 1 to 63 UTF-8 bytes without NUL; anything else
-raises `postgres_schema_invalid`. `readOnly` reads an existing schema without
-creating it or taking the writer lock. The optional `postgres` field passes
-Effect PostgreSQL pool/connection options; Smithers owns the type registry.
-The resulting layer provides `SqlClient`; compose `DurableWriter.layer()`
-and the owning migration set as with SQLite. See
-[configuration and isolation](./concepts/sqlite-only.md).
+`import { PostgresDatabase } from "@smthrs/database"`. The module bundles for
+browsers and imports no socket code: the caller passes the `@effect/sql-pg`
+module as `driver`. That driver connects through `node:net` and `node:tls`,
+which Node, Bun and Cloudflare Workers with `nodejs_compat` provide.
+
+### layer
+
+```ts
+const layer: (options: PostgresDatabaseOptions) => Layer.Layer<SqlClient.SqlClient>
+```
+
+Provides `SqlClient` over a connection pool. Compose `DurableWriter.layer()`
+and the owning migration set on top, as with SQLite. A writable client creates
+`schema` when it is absent. An invalid schema throws `UnsupportedDatabase`
+with `postgres_schema_invalid` when `layer` is called; a connection failure
+while the layer builds is a defect.
+
+The client never changes session state, so it is correct behind a
+transaction-pooling proxy such as Cloudflare Hyperdrive or PgBouncer with
+`pool_mode=transaction`. Every statement runs inside a transaction that sets
+`search_path` to `schema` for that transaction only (`SET LOCAL`):
+
+| Statement                        | Transaction                                                                                                   |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| inside `withTransaction`         | `READ COMMITTED READ WRITE`, then the schema's writer lock, taken before any statement of the body            |
+| inside `withTransaction`, nested | a savepoint in the enclosing transaction                                                                      |
+| outside a transaction            | its own `READ COMMITTED READ WRITE` transaction, without the writer lock; a stream commits after its last row |
+| any, on a `readOnly` client      | `REPEATABLE READ READ ONLY`, never the writer lock                                                            |
+
+A statement outside a transaction therefore costs `BEGIN`, the schema and
+`COMMIT` around it. PostgreSQL answers `COMMIT` in a transaction a caught
+statement failure aborted with `ROLLBACK`; the client fails that transaction
+with `SqlError` instead of reporting it committed.
+
+### PostgresDatabaseOptions
+
+```ts
+interface PostgresDatabaseOptions {
+  readonly url: string
+  readonly driver: Driver
+  readonly schema?: string | undefined
+  readonly postgres?: Omit<Pg.PgClient.PgPoolConfig, "url" | "types"> | undefined
+  readonly readOnly?: boolean | undefined
+}
+```
+
+| Field      | Meaning                                                                                                                                |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`      | The connection URL. It reaches the driver as a `Redacted` value. For Hyperdrive, pass the binding's `connectionString`.                |
+| `driver`   | The `@effect/sql-pg` module: `import * as Pg from "@effect/sql-pg"`, then `driver: Pg`.                                                |
+| `schema`   | Defaults to `smithers_flows`. It must be 1 to 63 UTF-8 bytes without NUL.                                                              |
+| `postgres` | Effect PostgreSQL pool and connection options. Smithers owns the type registry, which reads integers back as exact JavaScript numbers. |
+| `readOnly` | Reads an existing schema without creating it or taking the writer lock; every transaction is `READ ONLY`.                              |
+
+### Driver
+
+```ts
+type Driver = Pick<typeof Pg, "PgClient" | "PgTypes">
+```
+
+The two `@effect/sql-pg` modules the adapter drives: `PgClient` for the pool
+and statement compiler, and `PgTypes` for the numeric codecs.
+
+`UnsupportedDatabase`, `UnsupportedDatabaseCode` and `isUnsupportedDatabase`
+are re-exported here, so a Worker matches a refusal without a SQLite driver.
+
+```ts
+import * as Pg from "@effect/sql-pg"
+import { DurableWriter, PostgresDatabase } from "@smthrs/database"
+import { Layer } from "effect"
+
+const database = (connectionString: string) =>
+  Layer.provideMerge(
+    DurableWriter.layer(),
+    PostgresDatabase.layer({ url: connectionString, driver: Pg, schema: "smithers_flows" })
+  )
+```
+
+See [configuration and isolation](./concepts/sqlite-only.md).
 
 ## Dialect
 
@@ -586,28 +674,37 @@ PostgreSQL. Each takes the store's `SqlClient` and emits the form for its
 backend. Fragments that accept names, paths or trigger text splice them into
 SQL unescaped: pass only constants the store owns.
 
-| Export                          | SQLite                                | PostgreSQL                                            |
-| ------------------------------- | ------------------------------------- | ----------------------------------------------------- |
-| `isPostgres(sql)`               | `false`                               | `true`                                                |
-| `isReadOnly(sql)`               | `true` for a `readOnly` open          | `true` for a `readOnly` open                          |
-| `integer(sql)`                  | `INTEGER`                             | `NUMERIC`, so a fractional write is kept and rejected |
-| `isInteger(sql, value)`         | `typeof(value) = 'integer'`           | `trunc(value) = value`                                |
-| `jsonValid(sql, value)`         | `json_valid(value)`                   | `value IS JSON`                                       |
-| `jsonText(sql, value, path)`    | `json_extract(value, path)`           | `value::jsonb #>> '{…}'`                              |
-| `identity(sql)`                 | `INTEGER PRIMARY KEY AUTOINCREMENT`   | `BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY` |
-| `rowId(sql)`                    | empty: every table has a `rowid`      | `rowid BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,`   |
-| `greatest(sql)`                 | `MAX`                                 | `GREATEST`                                            |
-| `indexHint(sql, name)`          | `INDEXED BY name`                     | empty                                                 |
-| `tables(sql)`                   | tables in `sqlite_master`             | tables in the current schema                          |
-| `columns(sql, table)`           | `PRAGMA table_info`                   | `information_schema.columns` in the current schema    |
-| `trigger(sql, options)`         | `CREATE TRIGGER … BEGIN … END`        | a `<name>_fn` function and a row trigger              |
-| `dropTrigger(sql, name, table)` | `DROP TRIGGER name`                   | `DROP TRIGGER name ON table`                          |
-| `query(sql, template, values)`  | runs `template` with `?` placeholders | rewrites each `?` to `$1`, `$2`, …                    |
+| Export                          | SQLite                                      | PostgreSQL                                                |
+| ------------------------------- | ------------------------------------------- | --------------------------------------------------------- |
+| `isPostgres(sql)`               | `false`                                     | `true`                                                    |
+| `isReadOnly(sql)`               | `true` for a `readOnly` open                | `true` for a `readOnly` open                              |
+| `integer(sql)`                  | `INTEGER`                                   | `NUMERIC`, so a fractional write is kept and rejected     |
+| `isInteger(sql, value)`         | `typeof(value) = 'integer'`                 | `trunc(value) = value`                                    |
+| `jsonValid(sql, value)`         | `json_valid(value)`                         | `value IS JSON`                                           |
+| `jsonText(sql, value, path)`    | `json_extract(value, path)`                 | `value::jsonb #>> '{…}'`                                  |
+| `identity(sql)`                 | `INTEGER PRIMARY KEY AUTOINCREMENT`         | `BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY`     |
+| `rowId(sql)`                    | empty: every table has a `rowid`            | `rowid BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,`       |
+| `greatest(sql)`                 | `MAX`                                       | `GREATEST`                                                |
+| `indexHint(sql, name)`          | `INDEXED BY name`                           | empty                                                     |
+| `tables(sql)`                   | tables in `sqlite_master`                   | tables in the current schema                              |
+| `columns(sql, table)`           | `PRAGMA table_info`                         | `information_schema.columns` in the current schema        |
+| `trigger(sql, options)`         | `CREATE TRIGGER … BEGIN … END`              | a `<name>_fn` function and a row trigger                  |
+| `dropTrigger(sql, name, table)` | `DROP TRIGGER name`                         | `DROP TRIGGER name ON table`                              |
+| `query(sql, template, values)`  | runs `template` with `?` placeholders       | rewrites each `?` to `$1`, `$2`, …                        |
+| `readTransaction(sql, effect)`  | a deferred `BEGIN` on a reserved connection | `REPEATABLE READ READ ONLY`, opened by `PostgresDatabase` |
 
 `jsonText` reads a string member as the same text on both backends. Other
 scalars differ: SQLite returns JSON `true` as the integer `1` and numbers as
 numbers, PostgreSQL returns the text `'true'` and `'7'`. Compare a boolean
 member against both forms.
+
+`readTransaction` runs `effect` as one read transaction: every statement in it
+reads one snapshot, and it takes no writer lock, so a writer may commit while
+it reads. Inside a transaction already, `effect` joins it. Every statement on a
+`PostgresDatabase` reserved connection runs as its own transaction, so that
+client opens the read transaction itself; any other PostgreSQL client reads at
+`REPEATABLE READ READ ONLY` on a reserved connection. Keep writes out of
+`effect`: PostgreSQL refuses them, and on SQLite one takes the write lock.
 
 `trigger` rejects a row with `reject` as its message (a constraint failure on
 both backends), skips it with `ignore: true`, or runs `body`; `when` limits it

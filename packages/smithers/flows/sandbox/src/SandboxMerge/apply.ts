@@ -4,12 +4,12 @@
  * @since 1.0.0
  */
 
+import { RepositoryMutation } from "@smthrs/jj"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type { Work } from "../Sandbox/Work.ts"
-import { loadHostAdapter } from "./HostAdapter.ts"
 import { Conflicted, Merged, MergeError, type Outcome } from "./Outcome.ts"
 import { make as repositoryAt, output, type Repository } from "./Repository.ts"
 import { recordConflicts, type Strategy } from "./Strategy.ts"
@@ -122,7 +122,10 @@ const outcomeOf = (repository: Repository, change: string) =>
  * No working copy is read or written. The change is built from git objects
  * in the repository's git store, imported through a short-lived
  * `smithers-sandbox/<change>` bookmark that is deleted once the change is
- * rebased. The host needs `jj` and `git` on its `PATH`.
+ * rebased. The host needs `jj` and `git` on its `PATH`, and provides the
+ * `@smthrs/jj` `RepositoryMutation` fence (`NodeJj.layerRepositoryMutation`
+ * on Node and Bun) so the change never interleaves with the host's own jj
+ * operations on the repository.
  *
  * @category constructors
  * @since 1.0.0
@@ -130,7 +133,7 @@ const outcomeOf = (repository: Repository, change: string) =>
 export const apply = <E = never, R = never>(
   work: Work,
   options: ApplyOptions<E, R>
-): Effect.Effect<Outcome, MergeError | E, R | ChildProcessSpawner | FileSystem.FileSystem> => {
+): Effect.Effect<Outcome, MergeError | E, R | ChildProcessSpawner | FileSystem.FileSystem | RepositoryMutation> => {
   if (work._tag === "Unchanged") return Effect.succeed(work)
   if (!fullCommitId.test(work.base)) {
     return Effect.fail(
@@ -141,8 +144,8 @@ export const apply = <E = never, R = never>(
     )
   }
   return Effect.flatMap(
-    loadHostAdapter,
-    ({ withRepositoryMutation }) =>
+    RepositoryMutation,
+    (mutation) =>
       Effect.gen(function*() {
         const repository = yield* repositoryAt(options.repository)
         const change = yield* changeIdOf(options.key ?? `${work.session}\0${work.base}\0${work.patch}`)
@@ -155,7 +158,7 @@ export const apply = <E = never, R = never>(
         ) {
           yield* repository.jj(["git", "fetch", ...(options.fetch ?? [])])
         }
-        return yield* withRepositoryMutation(
+        return yield* mutation.run(
           "sandbox apply",
           options.repository,
           Effect.gen(function*() {

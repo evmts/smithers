@@ -1,7 +1,12 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Jj } from "@smthrs/jj/Jj"
-import { layerAt, RepositoryMutationTimeoutMs, withRepositoryMutation } from "@smthrs/jj/node/NodeJj"
-import { Deferred, Effect, Fiber, FileSystem } from "effect"
+import {
+  layerAt,
+  layerRepositoryMutation,
+  RepositoryMutationTimeoutMs,
+  withRepositoryMutation
+} from "@smthrs/jj/node/NodeJj"
+import { Deferred, Effect, Fiber, FileSystem, Layer } from "effect"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
@@ -55,7 +60,10 @@ const apply = <E = never, R = never>(
   options: Partial<SandboxMerge.ApplyOptions<E, R>> & {
     readonly repository: string
   }
-) => SandboxMerge.apply(work, { onto: "main", message: "sandbox work", ...options }).pipe(Effect.provide(rawPlatform))
+) =>
+  SandboxMerge.apply(work, { onto: "main", message: "sandbox work", ...options }).pipe(
+    Effect.provide(Layer.merge(rawPlatform, layerRepositoryMutation))
+  )
 
 const jj = (repository: string, args: string): string => host(repository, `jj --ignore-working-copy ${args}`)
 

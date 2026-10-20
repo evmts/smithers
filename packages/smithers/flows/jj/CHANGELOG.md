@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- `RepositoryMutation`, the host's repository fence as a root service, and
+  `NodeJj.layerRepositoryMutation`, which provides it over
+  `NodeJj.withRepositoryMutation`. `retryGitIndexLock` moved from `NodeJj` to
+  the root.
+
 ### Changed
 
 - **CONTRACT:** `Jj.snapshot` returns `{ commitId, changeId }`. Restore, diff,

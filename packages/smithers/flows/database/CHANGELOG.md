@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `PostgresDatabase.layer` requires `driver`, the `@effect/sql-pg` module
+  (`import * as Pg from "@effect/sql-pg"`, then `driver: Pg`). The adapter
+  imports only its types, so it bundles for browsers and Workers supply the
+  sockets. `NodeDatabase`, `BunDatabase` and `TestDatabase` load the driver
+  themselves, as before.
+
+### Added
+
+- `PostgresDatabase` is exported from the root entry point, with
+  `UnsupportedDatabase`, `UnsupportedDatabaseCode` and `isUnsupportedDatabase`
+  re-exported on it. The `postgres/PostgresDatabase` subpath is the same module.
+- `DatabaseMetrics.writerLockWait`, the timer `flows_db_writer_lock_wait`: how
+  long each PostgreSQL write transaction waited for its schema's writer lock.
+- `test/WriterLock.bench.ts` and `pnpm bench`: durable writes per second
+  through the writer lock, through PgBouncer and directly.
+- `Dialect.readTransaction(sql, effect)` runs `effect` as one read transaction
+  that reads one snapshot and takes no writer lock: a deferred `BEGIN` on
+  SQLite and `REPEATABLE READ READ ONLY` on PostgreSQL, which
+  `PostgresDatabase` opens itself because every statement on its reserved
+  connections runs as its own transaction. It replaces the read transaction
+  `@smthrs/engine-store` opened on a reserved connection, which failed on
+  `PostgresDatabase` with `SET TRANSACTION ISOLATION LEVEL must be called
+  before any query`.
+
+### Fixed
+
+- `PostgresDatabase` is correct behind transaction-pooling proxies such as
+  Cloudflare Hyperdrive and PgBouncer with `pool_mode=transaction`. It no longer
+  runs `SET search_path` or `SET default_transaction_read_only` on a session:
+  every statement runs in a transaction that sets the schema with `SET LOCAL`
+  and states `READ WRITE` or `READ ONLY`, and a statement outside
+  `withTransaction` gets a transaction of its own. Before, a proxy could run a
+  statement on a connection set to another schema, or none.
+- The writer lock is keyed by the configured schema name rather than
+  `current_schema()`. The key is unchanged while the schema exists; once it is
+  dropped, `current_schema()` is `NULL` and the old statement took no lock.
+- A transaction whose body caught a failed statement now fails with
+  `PostgresDatabase: COMMIT rolled back an aborted transaction` instead of
+  reporting the write committed when PostgreSQL rolled it back.
+
 - The defect channel now demands the same `SqlError` provenance the typed
   channel does, so an application `Effect.die` whose message quotes lock text
   is no longer replayed. A driver rollback failure still qualifies: Effect's

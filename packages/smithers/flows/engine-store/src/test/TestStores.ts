@@ -12,7 +12,7 @@
  * @since 0.1.0
  */
 
-import * as DurableWriter from "@smthrs/database/DurableWriter"
+import { DurableWriter, PostgresDatabase } from "@smthrs/database"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import type * as Consensus from "@smthrs/journal/Consensus"
@@ -107,11 +107,13 @@ export const databaseAt = (filename: string) => {
   url?.searchParams.delete("schema")
   const database = url === undefined ?
     NodeDatabase.layer({ filename }) :
+    // The driver loads only for a PostgreSQL store, so a SQLite case needs none.
     Layer.unwrap(
-      Effect.promise(() => import("@smthrs/database/postgres/PostgresDatabase")).pipe(
-        Effect.map((PostgresDatabase) =>
+      Effect.promise(() => import("@effect/sql-pg")).pipe(
+        Effect.map((driver) =>
           PostgresDatabase.layer({
             url: url.toString(),
+            driver,
             schema,
             postgres: { connectTimeout: Infinity, idleTimeout: Infinity, connectionTTL: Infinity }
           })

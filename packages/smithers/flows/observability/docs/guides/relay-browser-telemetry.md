@@ -14,7 +14,7 @@ holds browser and server telemetry together.
 ## Export from the browser to your own origin
 
 ```ts
-import * as Otlp from "@smthrs/observability/Otlp"
+import { Otlp } from "@smthrs/observability"
 
 const Telemetry = Otlp.layerFetch({
   baseUrl: `${location.origin}/api/telemetry`,
@@ -32,7 +32,7 @@ answers any path that ends in `/v1/logs`, `/v1/traces` or `/v1/metrics`, so
 mount it under whatever prefix the browser posts to:
 
 ```ts
-import * as OtlpRelay from "@smthrs/observability/OtlpRelay"
+import { OtlpRelay } from "@smthrs/observability"
 import * as Effect from "effect/Effect"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
@@ -46,8 +46,9 @@ export const fetch = Effect.gen(function*() {
 })
 ```
 
-The module imports only `effect`, so it runs in a Cloudflare Worker, Node, Bun
-or Deno. On Cloudflare, Workers Logs stores each relayed line with its
+The module imports `effect` and the journal's redaction rules
+(`@smthrs/journal`), and no `node:` built-in, so it runs in a Cloudflare
+Worker, Node, Bun or Deno. On Cloudflare, Workers Logs stores each relayed line with its
 annotations as fields.
 
 ## What each line carries
@@ -72,13 +73,45 @@ errored span logs at `Error`, other spans and metric points at `Info`.
 Join browser and server lines on `trace_id`, or on any attribute both sides
 annotate, such as a request or answer id.
 
+## Relay only what you name
+
+The browser chooses every record name, attribute and resource field it sends.
+To keep content out of the server's logs, name the records and fields the
+relay may pass:
+
+```ts
+OtlpRelay.serve({
+  allow: {
+    records: ["chat ready", "question asked", "chat.ask"],
+    fields: ["otlp.signal", "service.name", "trace_id", "span_id", "answerId"]
+  }
+})
+```
+
+- `records` names log bodies, span names and metric names. A record it does
+  not name is dropped and counted. A log record whose body is not a string
+  never matches.
+- `fields` names the keys a relayed line keeps, the relay's own included. List
+  `otlp.signal`, `trace_id` and the rest of the table above that you want.
+  Every other field is removed.
+
+A program that records many spans the relay drops, such as a durable engine's
+storage spans, can send them only to have them dropped, and its exports can
+pass `maxBodyBytes`. Give its exporter the same names with `spans`, so it sends
+only the spans the relay keeps:
+
+```ts
+const allow = { records: ["chat.ask", "question asked"], fields: ["otlp.signal", "trace_id"] }
+
+Otlp.layerFetch({ baseUrl: "https://app.example/api/telemetry", spans: allow.records })
+```
+
 ## Limits and refusals
 
 ```ts
 OtlpRelay.serve({
   maxBodyBytes: 256 * 1024, // default; counted while the body streams
-  maxRecords: 1000, // default; the rest are dropped and counted
-  allowAttribute: (key) => !key.startsWith("debug.")
+  maxRecords: 1000 // default; the rest are dropped and counted
 })
 ```
 
@@ -86,16 +119,19 @@ OtlpRelay.serve({
 - A body that is not OTLP JSON, or nests deeper than `OtlpRelay.maxNesting`,
   gets 400 with no echo of the parse error.
 - Another method gets 405 with `Allow: POST`; another path gets 404.
-- Records past `maxRecords` are dropped; the 200 answer carries an OTLP
-  `partialSuccess` with the count.
+- Records off the allowlist or past `maxRecords` are dropped; the 200 answer
+  carries an OTLP `partialSuccess` with the count.
 
-The default `allowAttribute` drops every key `Redaction.isSensitiveKey` names a
-credential, such as `password` or `user.api_key`. Messages and attribute
-values also pass `Redaction.redact`, so a bearer token quoted in a browser log
-reaches the server's logs as `[REDACTED_TOKEN]`.
+With or without an allowlist, a key `Redaction.isSensitiveKey` names a
+credential, such as `password` or `user.api_key`, is removed with any keys
+nested under it. The finished line then passes `Redaction.redact`: its message
+and every field, the ones the relay adds such as `service.name` and
+`otlp.status_message` included, so a bearer token quoted in a browser log or a
+span's status reaches the server's logs as `[REDACTED_TOKEN]`.
 
-`flows_observability_otlp_relayed` and `flows_observability_otlp_relay_dropped`
-count records per `signal`.
+`flows_observability_otlp_relayed` counts records per `signal`, and
+`flows_observability_otlp_relay_dropped` per `signal` and `reason`
+(`not_allowed` or `over_limit`).
 
 ## Next steps
 

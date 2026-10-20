@@ -1,11 +1,12 @@
 ---
 title: "Troubleshooting"
-description: "The failures this Node bundle reports: filesystem refusals from the atomic helper, liveness verdicts that look wrong, reaper outcomes that will not retire a record, and Windows behaviour."
+description: "The failures this Node bundle reports: filesystem refusals from the atomic helper, liveness verdicts that look wrong, reaper outcomes that will not retire a record, Windows behaviour, and language-server refusals and timeouts."
 ---
 
-The failures here come from three places: the atomic filesystem helper, the
-host liveness probe, and the process reaper. Each answers deliberately, and
-several answers that look like bugs are the safe choice.
+The failures here come from four places: the atomic filesystem helper, the
+host liveness probe, the process reaper, and the language-server client. Each
+answers deliberately, and several answers that look like bugs are the safe
+choice.
 
 ## A filesystem call fails with `ENOTSUP`
 
@@ -128,3 +129,28 @@ never runs.
 
 **Fix.** Nothing, and do not rely on it. Windows is unsupported; this path is
 best-effort so that a win32 record is not silently retired as if reaped.
+
+## permission_denied: Language server program is inside the workspace
+
+**Cause.** `NodeLanguageServer.make` resolved `command` to a file under `cwd`
+(a `./` path, a `PATH` entry such as `node_modules/.bin`, or a symlink there),
+an argument named a file or directory under `cwd`, or `command` was a launcher
+(`sh -c`, `env`, `npx`, `pnpm exec`, `yarn`, `bunx`, or `node` or `bun` with
+`-e`, `-p`, `-r`, `--require`, `--import` or `--loader`) whose arguments choose
+what runs. The server would have run workspace-written code on the host. The
+message names the program, the argument, or the launcher.
+
+**Fix.** Install the server outside the workspace and pass its absolute path,
+not a launcher. For typescript-language-server, also pin
+`initializationOptions: { tsserver: { path } }` to a host copy. See
+[Run a language server](./guides/run-a-language-server.md#keep-the-servers-code-out-of-the-workspace).
+
+## timeout: Language server published no diagnostics
+
+**Cause.** The server has no pull diagnostics, and it published nothing for
+the latest synced text within `settleMs`. typescript-language-server publishes
+nothing for a change that leaves a file with no problems, so such a change
+always ends here.
+
+**Fix.** Set `settleMs` and `quietMs` from a measurement on your host; see
+[Diagnostics](./guides/run-a-language-server.md#diagnostics).

@@ -12,7 +12,7 @@ the rest of the application.
 ## Pick a layer
 
 ```ts
-import * as Logger from "@smthrs/observability/Logger"
+import { Logger } from "@smthrs/observability"
 
 // A development shell: colored, human-readable lines.
 const development = Logger.layerPrettyDev()

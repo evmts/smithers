@@ -29,9 +29,9 @@ const relay = (options?: OtlpRelay.Options) => {
   const handle = (request: Request) => handler(request, context as Context.Context<never>)
   const post = (path: string, body: BodyInit) =>
     handle(new Request(`http://relay.test/api/telemetry${path}`, { method: "POST", body }))
-  const count = (metric: Metric.Counter<number>, signal: OtlpRelay.Signal) =>
+  const count = (metric: Metric.Counter<number>, attributes: Record<string, string>) =>
     Effect.runSync(
-      Metric.value(Metric.withAttributes(metric, { signal })).pipe(
+      Metric.value(Metric.withAttributes(metric, attributes)).pipe(
         Effect.provideService(Metric.MetricRegistry, registry)
       )
     ).count
@@ -90,8 +90,9 @@ describe("OtlpRelay", () => {
       const [span] = bySignal(lines, "traces")
       expect(span!.annotations["trace_id"]).toBe(line!.annotations["trace_id"])
       expect(span!.annotations["span_id"]).toBe(line!.annotations["span_id"])
-      expect(count(FlowsMetric.relayedRecords, "logs")).toBe(1)
-      expect(count(FlowsMetric.relayDroppedRecords, "logs")).toBe(0)
+      expect(count(FlowsMetric.relayedRecords, { signal: "logs" })).toBe(1)
+      expect(count(FlowsMetric.relayDroppedRecords, { signal: "logs", reason: "not_allowed" })).toBe(0)
+      expect(count(FlowsMetric.relayDroppedRecords, { signal: "logs", reason: "over_limit" })).toBe(0)
     }))
 
   it.effect("relays exporter spans with duration, parent, attributes and error status", () =>
@@ -149,7 +150,7 @@ describe("OtlpRelay", () => {
         "otlp.count": 1,
         "otlp.sum": 40
       })
-      expect(count(FlowsMetric.relayedRecords, "metrics")).toBe(metrics.length)
+      expect(count(FlowsMetric.relayedRecords, { signal: "metrics" })).toBe(metrics.length)
     }))
 
   it("answers 200 with an empty JSON object", async () => {
@@ -185,6 +186,10 @@ describe("OtlpRelay", () => {
                       }]
                     }
                   })
+                },
+                {
+                  key: "secret",
+                  value: value({ kvlistValue: { values: [{ key: "id", value: { stringValue: "s-1" } }] } })
                 },
                 { key: "absent" }
               ],
@@ -273,33 +278,153 @@ describe("OtlpRelay", () => {
       partialSuccess: { rejectedLogRecords: 1, errorMessage: "relayed the first 2 records" }
     })
     expect(lines).toHaveLength(2)
-    expect(count(FlowsMetric.relayedRecords, "logs")).toBe(2)
-    expect(count(FlowsMetric.relayDroppedRecords, "logs")).toBe(1)
+    expect(count(FlowsMetric.relayedRecords, { signal: "logs" })).toBe(2)
+    expect(count(FlowsMetric.relayDroppedRecords, { signal: "logs", reason: "over_limit" })).toBe(1)
+    expect(count(FlowsMetric.relayDroppedRecords, { signal: "logs", reason: "not_allowed" })).toBe(0)
   })
 
-  it("applies a custom attribute filter", async () => {
-    const { lines, post } = relay({ allowAttribute: (key) => key.startsWith("keep") })
+  it("redacts the finished line: the message, the attributes and the fields the relay adds", async () => {
+    const secret = "SENTINEL0relay0secret0value"
+    const token = `Bearer ${secret}`
+    const resource = { attributes: [{ key: "service.name", value: { stringValue: `web ${token}` } }] }
+    const { lines, post } = relay()
     await post(
       "/v1/logs",
       JSON.stringify({
         resourceLogs: [{
+          resource,
           scopeLogs: [{
             logRecords: [{
-              attributes: [
-                { key: "keep", value: { stringValue: "yes" } },
-                { key: "drop", value: { stringValue: "no" } },
-                { key: "keep.authorization", value: { stringValue: "Bearer abcdefghijklmnopqrstuvwxyz123456" } }
-              ]
+              body: { stringValue: `sign-in failed: ${token}` },
+              attributes: [{ key: "note", value: { stringValue: token } }]
             }]
           }]
         }]
       })
     )
-    expect(lines[0]!.annotations).toEqual({
-      keep: "yes",
-      "keep.authorization": "[REDACTED]",
-      "otlp.signal": "logs"
+    await post(
+      "/v1/traces",
+      JSON.stringify({
+        resourceSpans: [{
+          resource,
+          scopeSpans: [{ spans: [{ name: `fetch ${token}`, status: { code: 2, message: `provider said ${token}` } }] }]
+        }]
+      })
+    )
+    expect(lines).toHaveLength(2)
+    expect(JSON.stringify(lines)).not.toContain(secret)
+    const [log, span] = lines
+    expect(log).toMatchObject({
+      message: "sign-in failed: Bearer [REDACTED_TOKEN]",
+      annotations: { note: "Bearer [REDACTED_TOKEN]", "service.name": "web Bearer [REDACTED_TOKEN]" }
     })
+    expect(span).toMatchObject({
+      level: "Error",
+      message: "fetch Bearer [REDACTED_TOKEN]",
+      annotations: {
+        "service.name": "web Bearer [REDACTED_TOKEN]",
+        "otlp.status_message": "provider said Bearer [REDACTED_TOKEN]"
+      }
+    })
+  })
+
+  it("relays only the records and fields an allowlist names, and counts what it drops", async () => {
+    const { lines, post, count } = relay({
+      allow: {
+        records: ["chat ready", "chat.ask", "clicks"],
+        fields: ["otlp.signal", "trace_id", "answerId", "user.id", "password", "otlp.value"]
+      }
+    })
+    const attributes = [
+      { key: "answerId", value: { stringValue: "a-1" } },
+      { key: "question", value: { stringValue: "what is the content?" } },
+      { key: "password", value: { stringValue: "hunter2" } },
+      { key: "user", value: { kvlistValue: { values: [{ key: "id", value: { stringValue: "u-1" } }] } } }
+    ]
+    const resource = { attributes: [{ key: "service.name", value: { stringValue: "web" } }] }
+    const logs = await post(
+      "/v1/logs",
+      JSON.stringify({
+        resourceLogs: [{
+          resource,
+          scopeLogs: [{
+            logRecords: [
+              { body: { stringValue: "chat ready" }, attributes, traceId: "t".repeat(32), severityText: "Info" },
+              { body: { stringValue: "question asked" }, attributes },
+              { body: { kvlistValue: { values: [{ key: "event", value: { stringValue: "chat ready" } }] } } },
+              {}
+            ]
+          }]
+        }]
+      })
+    )
+    expect(await logs.json()).toEqual({
+      partialSuccess: { rejectedLogRecords: 3, errorMessage: "dropped 3 records off the allowlist" }
+    })
+    await post(
+      "/v1/traces",
+      JSON.stringify({
+        resourceSpans: [{ resource, scopeSpans: [{ spans: [{ name: "chat.ask", attributes }, { name: "secret" }] }] }]
+      })
+    )
+    await post(
+      "/v1/metrics",
+      JSON.stringify({
+        resourceMetrics: [{
+          resource,
+          scopeMetrics: [{
+            metrics: [
+              { name: "clicks", sum: { dataPoints: [{ asInt: "3", attributes }] } },
+              { name: "latency", gauge: { dataPoints: [{ asDouble: 0.5 }] } }
+            ]
+          }]
+        }]
+      })
+    )
+    expect(lines).toEqual([
+      {
+        level: "Info",
+        message: "chat ready",
+        annotations: { answerId: "a-1", "user.id": "u-1", "otlp.signal": "logs", trace_id: "t".repeat(32) }
+      },
+      {
+        level: "Info",
+        message: "chat.ask",
+        annotations: { answerId: "a-1", "user.id": "u-1", "otlp.signal": "traces" }
+      },
+      {
+        level: "Info",
+        message: "clicks",
+        annotations: { answerId: "a-1", "user.id": "u-1", "otlp.signal": "metrics", "otlp.value": 3 }
+      }
+    ])
+    expect(count(FlowsMetric.relayedRecords, { signal: "logs" })).toBe(1)
+    expect(count(FlowsMetric.relayDroppedRecords, { signal: "logs", reason: "not_allowed" })).toBe(3)
+    expect(count(FlowsMetric.relayDroppedRecords, { signal: "traces", reason: "not_allowed" })).toBe(1)
+    expect(count(FlowsMetric.relayDroppedRecords, { signal: "metrics", reason: "not_allowed" })).toBe(1)
+    expect(count(FlowsMetric.relayDroppedRecords, { signal: "logs", reason: "over_limit" })).toBe(0)
+  })
+
+  it("caps the allowed records at maxRecords and reports both reasons", async () => {
+    const { lines, post, count } = relay({ maxRecords: 2, allow: { records: ["kept"], fields: [] } })
+    const kept = { body: { stringValue: "kept" } }
+    const other = { body: { stringValue: "other" } }
+    const response = await post(
+      "/v1/logs",
+      JSON.stringify({ resourceLogs: [{ scopeLogs: [{ logRecords: [other, kept, kept, other, kept] }] }] })
+    )
+    expect(await response.json()).toEqual({
+      partialSuccess: {
+        rejectedLogRecords: 3,
+        errorMessage: "dropped 2 records off the allowlist; relayed the first 2 records"
+      }
+    })
+    expect(lines).toEqual([
+      { level: "Info", message: "kept", annotations: {} },
+      { level: "Info", message: "kept", annotations: {} }
+    ])
+    expect(count(FlowsMetric.relayDroppedRecords, { signal: "logs", reason: "not_allowed" })).toBe(2)
+    expect(count(FlowsMetric.relayDroppedRecords, { signal: "logs", reason: "over_limit" })).toBe(1)
   })
 
   it("answers 413 past maxBodyBytes, for a sized body and for a chunked body that never ends", async () => {

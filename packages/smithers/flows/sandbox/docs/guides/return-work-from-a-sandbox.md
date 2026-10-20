@@ -72,7 +72,9 @@ const land = Land.toLayer(({ issue, work }) =>
 
 `provider` is any `Sandbox.Provider`, and `agent(issue)` is an effect that
 edits files through the host services it is given. A flow calls `Implement`,
-then passes its `work` to `Land`.
+then passes its `work` to `Land`. The host that runs `Land` provides `@smthrs/jj`'s
+`RepositoryMutation` fence, `NodeJj.layerRepositoryMutation` on Node and Bun, so
+landing never interleaves with the host's own jj operations on the repository.
 
 The capture covers committed and uncommitted edits, new files, deletions,
 renames, mode changes, and binary files. Files the checkout's `.gitignore`

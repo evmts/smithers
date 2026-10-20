@@ -1,12 +1,15 @@
 ---
 title: "Troubleshooting"
-description: "A missing package at startup, every typed refusal NodeRuntime and SandboxedFlow raise, and the capability denials and replay surprises a host meets first: the symptom, what caused it, and what to change."
+description: "A missing package at startup, every typed refusal Runtime, NodeRuntime and SandboxedFlow raise, and the capability denials and replay surprises a host meets first: the symptom, what caused it, and what to change."
 ---
 
-Every failure these two modules report is typed, and most of them are a decision
-the host made, stated back plainly. Find the tag or the code and read the
-matching section. A program that stops before any of them, on a missing
-package, is the first section. The full schemas are in the [API reference](./api.md).
+Every failure `Runtime` and the native compositions in `@smthrs/platform-node`,
+`NodeRuntime` and `SandboxedFlow`, report is typed, and most of them are a
+decision the host made, stated back plainly. Find the tag or the code and read
+the matching section. A program that stops before any of them, on a missing
+package, is the first section. The full schemas are in the
+[API reference](./api.md) and the
+[`@smthrs/platform-node` API reference](../platform-node/docs/api.md#noderuntime).
 
 ## ERR_MODULE_NOT_FOUND: Cannot find package
 
@@ -15,11 +18,12 @@ package, is the first section. The full schemas are in the [API reference](./api
 
 **Cause and fix.** The package named decides it:
 
-| Package named                                      | Cause                                                                                                     | Fix                                                                      |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `effect`                                           | Your program imports `effect/...` and the project does not declare it. pnpm links only declared packages. | `npm install effect`. [Installation](./installation.md) names the range. |
-| `@smthrs/platform-node`, `@effect/sql-sqlite-node` | `@smthrs/flows` 1.0.0-rc.4 or earlier, which left the Node host to the program.                           | `npm install @smthrs/flows@next`                                         |
-| `@smthrs/platform-bun`                             | `@smthrs/flows/BunRuntime` without its platform package.                                                  | Install the [Bun](./installation.md#bun-durable-execution) line.         |
+| Package named                                                                          | Cause                                                                                                                       | Fix                                                                                                                  |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `effect`                                                                               | Your program imports `effect/...` and the project does not declare it. pnpm links only declared packages.                   | `npm install effect`. [Installation](./installation.md) names the range.                                             |
+| `@smthrs/platform-node`, `@effect/sql-sqlite-node`                                     | A program imports `NodeRuntime` and the project does not declare `@smthrs/platform-node`, which installs the SQLite driver. | `npm install @smthrs/platform-node@next`                                                                             |
+| `@smthrs/platform-bun`                                                                 | A program imports `BunRuntime` and the project does not declare its platform package.                                       | Install the [Bun](./installation.md#bun-durable-execution) line.                                                     |
+| `@smthrs/flows/NodeRuntime`, `@smthrs/flows/BunRuntime`, `@smthrs/flows/SandboxedFlow` | Code written for an earlier candidate. These subpaths moved to the platform packages.                                       | Import `NodeRuntime` and `SandboxedFlow` from `@smthrs/platform-node`, and `BunRuntime` from `@smthrs/platform-bun`. |
 
 ## ERR_MODULE_NOT_FOUND: Cannot find module effect/dist/unstable/http/FetchHttpClient.js
 
@@ -286,7 +290,7 @@ write fails loudly instead.
 
 **Fix.** Reduce the write rate, or compose the journal yourself through
 [`@smthrs/journal`](../journal/docs/api.md) with different capacity and overflow settings,
-using `NodeRuntime.storage` or `layer` as the seam.
+using `Runtime.storage`, or `NodeRuntime.storage` or `layer` from `@smthrs/platform-node`, as the seam.
 
 ## SandboxedFlowError
 
@@ -359,9 +363,12 @@ type parameters. See
 **Symptom.** A browser or edge build pulls in `node:sqlite` or
 `node:child_process`.
 
-**Cause.** Something imported `@smthrs/flows/NodeRuntime` or
-`@smthrs/flows/SandboxedFlow`. The root entry point is browser-safe; those two
-subpaths are not, which is exactly why they are subpaths.
-
 **Fix.** Keep both out of shared code. Durable execution is tested on Node.js 22.19+ and Bun 1.4+; `engines` requires Node `>=22.19.0`. A browser can
-author and inspect declarations through the root entry point.
+`NodeRuntime` and `SandboxedFlow`, or `@smthrs/platform-bun`. The
+`@smthrs/flows` root is browser- and Worker-safe; the native host packages are
+not, which is exactly why the native compositions live there.
+
+**Fix.** Keep both out of shared code, and compose `Runtime` from the
+`@smthrs/flows` root over the browser or Cloudflare host instead. Durable
+execution is tested on Node.js 22.19+ and Bun 1.4+; `engines` requires Node
+`>=22.19.0`.

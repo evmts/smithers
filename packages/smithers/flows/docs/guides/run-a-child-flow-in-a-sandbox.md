@@ -5,8 +5,8 @@ sidebar:
   order: 4
 ---
 
-`@smthrs/flows/SandboxedFlow` runs a child flow's own code inside a machine a
-`Sandbox.Provider` provisions. The child's TypeScript never runs in the parent's
+`SandboxedFlow`, from `@smthrs/platform-node`, runs a child flow's own code
+inside a machine a `Sandbox.Provider` provisions. The child's TypeScript never runs in the parent's
 process. Read
 [the sandboxed runner protocol](../concepts/runner-protocol.md) for what happens
 on the wire; this guide is the wiring.
@@ -78,7 +78,7 @@ when it returns. A normal completion tears the machine down. Create `greet.ts`:
 
 ```ts
 import { Kernel, Sandbox } from "@smthrs/flows"
-import * as SandboxedFlow from "@smthrs/flows/SandboxedFlow"
+import { SandboxedFlow } from "@smthrs/platform-node"
 import * as NodeHost from "@smthrs/platform-node/NodeHost"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
@@ -146,8 +146,7 @@ parent's body calls it like any other action. Create `parent.ts`:
 
 ```ts
 import { Action, Flow, Interpreter, Kernel, Sandbox } from "@smthrs/flows"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
-import * as SandboxedFlow from "@smthrs/flows/SandboxedFlow"
+import { NodeRuntime, SandboxedFlow } from "@smthrs/platform-node"
 import * as NodeHost from "@smthrs/platform-node/NodeHost"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
@@ -291,7 +290,7 @@ runs there under the `runtime` you name. Create `remote.ts`:
 
 ```ts
 import { Kernel, Sandbox } from "@smthrs/flows"
-import * as SandboxedFlow from "@smthrs/flows/SandboxedFlow"
+import { SandboxedFlow } from "@smthrs/platform-node"
 import * as NodeHost from "@smthrs/platform-node/NodeHost"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"

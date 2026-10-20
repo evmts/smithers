@@ -46,7 +46,7 @@ const securityReview = Smithers.SecurityReview({
       "The operator supplies a trusted Microsandbox SDK and isolated microVM service; hosted credentials and service transport need private composition review"
     ],
     path: {
-      caller: ["//packages/smithers/flows/src/SandboxedFlow.ts"],
+      caller: ["//packages/smithers/flows/platform-node/src/SandboxedFlow.ts"],
       authorization: [
         "src/Sandbox/NetworkPolicy.ts",
         "src/Sandbox/ResourceLimits.ts",
@@ -57,7 +57,7 @@ const securityReview = Smithers.SecurityReview({
       storageOrEgress: [
         "src/internal/microsandboxProcess.ts",
         "src/MicrosandboxSandbox/Sdk.ts",
-        "//packages/smithers/flows/src/internal/SandboxedFlowGuest.ts"
+        "//packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts"
       ]
     }
   }],

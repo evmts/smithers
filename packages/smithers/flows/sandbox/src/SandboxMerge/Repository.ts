@@ -4,11 +4,11 @@
  * @since 1.0.0
  */
 
+import { retryGitIndexLock } from "@smthrs/jj"
 import * as Effect from "effect/Effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Stream from "effect/Stream"
-import { loadHostAdapter } from "./HostAdapter.ts"
 import { MergeError } from "./Outcome.ts"
 
 /**
@@ -87,7 +87,6 @@ export const output = (
 export const make = (path: string): Effect.Effect<Repository, MergeError, ChildProcessSpawner> =>
   Effect.gen(function*() {
     const spawner = yield* ChildProcessSpawner
-    const { retryGitIndexLock } = yield* loadHostAdapter
     return {
       path,
       jj: (args) =>

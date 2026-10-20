@@ -782,6 +782,11 @@ describe("action executor failure paths", () => {
       refusal: "@smthrs/engine-store/UnsupportedBoundary"
     },
     {
+      phase: "host-without-filesystem",
+      boundary: () => StepBoundary.layerUnsupported,
+      refusal: "@smthrs/engine-store/UnsupportedBoundary"
+    },
+    {
       phase: "sandbox-open",
       boundary: () => Layer.mergeAll(StepBoundary.layerTest(), StepSandbox.layerNoop),
       refusal: "@smthrs/engine-store/UnsupportedBoundary"

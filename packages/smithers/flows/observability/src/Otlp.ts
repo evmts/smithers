@@ -18,7 +18,7 @@
  * @since 0.1.0
  */
 
-import * as Redaction from "@smthrs/journal/Redaction"
+import { Redaction } from "@smthrs/journal"
 import * as Cause from "effect/Cause"
 import { Clock } from "effect/Clock"
 import * as ConfigProvider from "effect/ConfigProvider"
@@ -296,22 +296,26 @@ const redactedExit = (exit: Exit.Exit<unknown, unknown>): Exit.Exit<unknown, unk
 
 /**
  * Wraps the installed tracer so every exported span's failure and string
- * attributes pass through the journal redaction rules first.
+ * attributes pass through the journal redaction rules first. With `spans`,
+ * a span whose name is not in it is an Effect native span instead, which no
+ * exporter sends: its children keep its trace id and name it as their parent.
  */
-const redactedSpans = Layer.effect(Tracer.Tracer)(
-  Effect.map(Effect.tracer, (tracer) =>
-    Tracer.make({
-      ...tracer,
-      span(options) {
-        const span = tracer.span(options)
-        const end = span.end.bind(span)
-        const attribute = span.attribute.bind(span)
-        span.end = (endTime, exit) => end(endTime, redactedExit(exit))
-        span.attribute = (key, value) => attribute(key, typeof value === "string" ? redactText(value) : value)
-        return span
-      }
-    }))
-)
+const redactedSpans = (spans: ReadonlySet<string> | undefined) =>
+  Layer.effect(Tracer.Tracer)(
+    Effect.map(Effect.tracer, (tracer) =>
+      Tracer.make({
+        ...tracer,
+        span(options) {
+          if (spans !== undefined && !spans.has(options.name)) return new Tracer.NativeSpan(options)
+          const span = tracer.span(options)
+          const end = span.end.bind(span)
+          const attribute = span.attribute.bind(span)
+          span.end = (endTime, exit) => end(endTime, redactedExit(exit))
+          span.attribute = (key, value) => attribute(key, typeof value === "string" ? redactText(value) : value)
+          return span
+        }
+      }))
+  )
 
 /**
  * Configuration for the default OTLP wiring.
@@ -354,6 +358,16 @@ export interface Options {
   readonly exportInterval?: Duration.Input | undefined
   /** Upper bound on the shutdown flush when the layer's scope closes. */
   readonly shutdownTimeout?: Duration.Input | undefined
+  /**
+   * Exports only the spans with these names. Omitted, every span is exported.
+   * A span off the list still runs and still parents: its children keep its
+   * trace id and name it as their parent, so a collector sees them with a
+   * parent it never received. Logs and metrics are exported as before. A host
+   * whose collector relays only some records (`OtlpRelay.serve` with an
+   * allowlist) passes the same names, so it never sends a span the relay
+   * would drop.
+   */
+  readonly spans?: ReadonlyArray<string> | undefined
 }
 
 /**
@@ -366,6 +380,7 @@ export interface Options {
  * were installed when the layer was acquired, never through this exporter.
  * A collector's response body is never read: the exporter acts on the status
  * and the `retry-after` header, and the exchange ends when they arrive.
+ * With {@link Options.spans}, only the spans it names are exported.
  *
  * **Details**
  *
@@ -423,7 +438,11 @@ export const layer = (
             // Upstream merges OTEL_RESOURCE_ATTRIBUTES even with explicit
             // options. Keep unvalidated ambient metadata out of every request.
             Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
-            (exporter) => Layer.provideMerge(redactedSpans, exporter)
+            (exporter) =>
+              Layer.provideMerge(
+                redactedSpans(options.spans === undefined ? undefined : new Set(options.spans)),
+                exporter
+              )
           )
         )
       }
@@ -438,7 +457,7 @@ export const layer = (
  * **Example**
  *
  * ```ts
- * import * as Otlp from "@smthrs/observability/Otlp"
+ * import { Otlp } from "@smthrs/observability"
  *
  * const Telemetry = Otlp.layerFetch({ baseUrl: "http://localhost:4318" })
  * ```

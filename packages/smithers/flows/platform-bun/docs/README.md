@@ -95,10 +95,10 @@ one of the three bundles that let them.
 
 `@smthrs/flows` re-exports no platform bundle on purpose, for the same reason
 `effect`'s own index does not re-export `@effect/platform-node`: a platform is
-chosen by the program that runs, not by the library it depends on. Its
-`NodeRuntime` helper builds a Node host for you, so a program that calls
-`NodeRuntime.layerHost` never imports a platform package. A program that runs on
-Bun composes this package instead and provides `BunHost.layer` itself.
+chosen by the program that runs, not by the library it depends on. This
+package's `BunRuntime` builds the durable runtime on Bun from one options
+object, the way `NodeRuntime` from `@smthrs/platform-node` does on Node: a
+program calls `BunRuntime.layerHost` and composes nothing else.
 [`@smthrs/platform-node`](/api/platform-node) and
 [`@smthrs/platform-browser`](/api/platform-browser) are the sibling bundles that
 fill the same five slots on their own runtimes.

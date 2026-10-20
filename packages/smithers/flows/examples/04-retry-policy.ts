@@ -7,11 +7,11 @@
  * executed retry loop are separate parts of this example.
  */
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import { durableEngine } from "../src/test/TestNodeRuntime.ts"
 
 class Flaky extends Schema.TaggedError<Flaky>()("examples/Flaky", {
   message: Schema.String
@@ -90,7 +90,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
         Effect.provide(
           Layer.mergeAll(Release.toLayer(publish), Interpreter.layer(Publish)).pipe(
             Layer.provideMerge(Action.layerImplementations),
-            Layer.provideMerge(durableEngine(filename, "retry-worker"))
+            Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "retry-worker"))
           )
         )
       )

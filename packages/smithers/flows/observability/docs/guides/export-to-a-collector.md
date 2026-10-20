@@ -12,7 +12,7 @@ expect from them afterwards.
 ## Provide the layer
 
 ```ts
-import * as Otlp from "@smthrs/observability/Otlp"
+import { Otlp } from "@smthrs/observability"
 import * as Effect from "effect/Effect"
 
 const telemetry = Otlp.layerFetch({
@@ -34,7 +34,7 @@ is honored: `http://collector:4318/tenant/9` posts to
 host must supply its own HTTP client:
 
 ```ts
-import * as NodeHost from "@smthrs/platform-node/NodeHost"
+import { NodeHost } from "@smthrs/platform-node"
 import * as Layer from "effect/Layer"
 
 const telemetry = Otlp.layer({ baseUrl: "http://localhost:4318" }).pipe(

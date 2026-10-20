@@ -1,6 +1,6 @@
 ---
 title: "Installation"
-description: "Install @smthrs/flows from npm, its Node and effect requirements, its three import forms, the platform packages each runtime needs, and when to depend on individual engine packages instead."
+description: "Install @smthrs/flows and a platform package from npm, the Node and effect requirements, the import forms, the platform package each runtime needs, and when to depend on individual engine packages instead."
 sidebar:
   order: 1
 ---
@@ -8,8 +8,11 @@ sidebar:
 ## Install the package
 
 ```bash
-npm install @smthrs/flows@next effect
+npm install @smthrs/platform-node@next @smthrs/flows@next effect
 ```
+
+`@smthrs/flows` is the engine and imports no platform code. A program that runs
+flows also installs the host for its runtime, `@smthrs/platform-node` on Node.
 
 npm 11 ends the install with an `install-scripts` warning naming `esbuild`.
 Leaving it unapproved is safe: npm installs esbuild's platform binary as an
@@ -19,7 +22,7 @@ The `next` tag carries the 1.0 release candidates. With pnpm 11, name the
 version instead of the tag, then approve `esbuild`'s install script:
 
 ```bash
-pnpm add @smthrs/flows@1.0.0-rc.16 effect
+pnpm add @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect
 pnpm approve-builds esbuild
 ```
 
@@ -33,11 +36,12 @@ the install script of `esbuild`; the packages are already installed, and
 `approve-builds` records the choice in `pnpm-workspace.yaml` so later installs
 succeed.
 
-`@smthrs/flows` installs the twenty engine packages it re-exports, the Node host
-[`@smthrs/platform-node`](../platform-node/docs/api.md), the Node SQLite driver
-`@effect/sql-sqlite-node`, and `esbuild`, which `SandboxedFlow` uses to bundle a
-guest entry module. `effect` is a peer dependency. Install it yourself, because
-your program imports it directly and pnpm links only the packages a project
+`@smthrs/flows` installs the twenty engine packages it re-exports.
+[`@smthrs/platform-node`](../platform-node/docs/api.md) installs `@smthrs/flows`,
+the Node SQLite driver `@effect/sql-sqlite-node`, and `esbuild`, which
+`SandboxedFlow` uses to bundle a guest entry module. `effect` is a peer
+dependency. Install it yourself, and name `@smthrs/flows` too, because your
+program imports both directly and pnpm links only the packages a project
 declares.
 
 ## Requirements
@@ -74,11 +78,12 @@ packages are namespaces:
 import { Action, Engine, Flow, Interpreter, Journal, Kernel } from "@smthrs/flows"
 ```
 
-Native compositions are explicit subpaths. The runtime core consumes injected services:
+The runtime core, `Runtime`, consumes injected services. The native
+compositions are in the platform packages, imported from their roots:
 
 ```ts
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
-import * as SandboxedFlow from "@smthrs/flows/SandboxedFlow"
+import { BunRuntime } from "@smthrs/platform-bun"
+import { NodeRuntime, SandboxedFlow } from "@smthrs/platform-node"
 ```
 
 Two subpath forms are blocked in the export map and are not public:
@@ -89,19 +94,21 @@ Two subpath forms are blocked in the export map and are not public:
 
 The root entry point imports no platform, for the same reason `effect`'s own
 index does not re-export `@effect/platform-node`: one import must not resolve
-`node:child_process`, ZenFS, and Bun at once. A platform is reached through an
-explicit subpath or its own package:
+`node:child_process`, ZenFS, and Bun at once. A platform is reached through its
+own package:
 
-| Runtime | Import                      | Platform package                                              | Installed by                            |
-| ------- | --------------------------- | ------------------------------------------------------------- | --------------------------------------- |
-| Node.js | `@smthrs/flows/NodeRuntime` | [`@smthrs/platform-node`](../platform-node/docs/api.md)       | `@smthrs/flows`                         |
-| Bun     | `@smthrs/flows/BunRuntime`  | [`@smthrs/platform-bun`](../platform-bun/docs/api.md)         | You. See [Bun](#bun-durable-execution). |
-| Browser | `@smthrs/platform-browser`  | [`@smthrs/platform-browser`](../platform-browser/docs/api.md) | You. It hosts authoring and inspection. |
+| Runtime           | Runtime export                         | Platform package                                                    |
+| ----------------- | -------------------------------------- | ------------------------------------------------------------------- |
+| Node.js           | `NodeRuntime`                          | [`@smthrs/platform-node`](../platform-node/docs/api.md)             |
+| Bun               | `BunRuntime`                           | [`@smthrs/platform-bun`](../platform-bun/docs/api.md)               |
+| Browser tab       | `BrowserRuntime`, `BrowserEngine`      | [`@smthrs/platform-browser`](../platform-browser/docs/api.md)       |
+| Cloudflare Worker | `CloudflareRuntime`, `ExecutionObject` | [`@smthrs/platform-cloudflare`](../platform-cloudflare/docs/api.md) |
 
 `@smthrs/platform-node` supplies the Node host, containment, process reaping,
-and the liveness probe. It carries its own copy of `@effect/platform-node`, and
-`@smthrs/flows` installs the SQLite driver `@effect/sql-sqlite-node` beside it,
-so a Node program adds no `@effect/*` package of its own.
+the liveness probe, and `NodeRuntime`. It carries its own copy of
+`@effect/platform-node` and installs the SQLite driver `@effect/sql-sqlite-node`,
+so a Node program adds no `@effect/*` package of its own. The
+[Bun](#bun-durable-execution) section has the Bun line.
 
 Test doubles are reached through their own packages:
 `@smthrs/testing/TestHost`, `@smthrs/database/node/NodeDatabase`,
@@ -109,14 +116,16 @@ Test doubles are reached through their own packages:
 
 ## Bundling for a browser is not durable execution
 
-The root entry point bundles for a browser, and so does every package root it
-re-exports. What bundles is the authoring and inspection surface: you can
-declare flows, read a plan, and decode a journal event in a browser.
+The root entry point bundles for a browser and for a Cloudflare Worker, and so
+does every package root it re-exports. What bundles is the engine with no host:
+you can declare flows, read a plan, and decode a journal event anywhere.
 
-Durable execution is a different claim: it needs a native Node.js or Bun host and
-SQLite or PostgreSQL. Durable execution is tested on Node.js 22.19+ and Bun 1.4+; `engines` requires Node `>=22.19.0`. A browser or edge runtime is not a supported durable host even
-when you supply another SQL client. Native modules are subpaths
-precisely so importing the root never opens `node:sqlite`.
+Durable execution is a different claim: it needs a host, a SQL store, and the
+platform package that binds them. Durable execution is tested on Node.js 22.19+
+and Bun 1.4+; `engines` requires Node `>=22.19.0`. The browser and Cloudflare
+hosts carry their own evidence in their packages. The native compositions live
+in the platform packages precisely so importing the root never opens
+`node:sqlite`.
 
 ## When to depend on individual packages instead
 
@@ -142,7 +151,7 @@ npm install @effect/sql-pg
 ```
 
 Then set `SMITHERS_POSTGRES_URL` to a `postgres://` connection string, or pass
-one as the `filename` of `NodeRuntime.layerHost`. `SMITHERS_BACKEND=sqlite`
+one as the `filename` of `NodeRuntime.layerHost` from `@smthrs/platform-node`. `SMITHERS_BACKEND=sqlite`
 keeps a filename on SQLite even when `SMITHERS_POSTGRES_URL` is set.
 [SQLite and PostgreSQL](../database/docs/concepts/sqlite-only.md) covers the
 schema each store gets and the role permissions the adapter needs.
@@ -162,6 +171,6 @@ bun add @smthrs/flows@next effect @smthrs/platform-bun@next
 adapters, and the Bun database opens `bun:sqlite` itself, so a Bun program adds
 no `@effect/*` package of its own.
 
-Then import `@smthrs/flows/BunRuntime`. Its `layerHost`, `layer`, `make` and
-`storage` compositions share the engine with Node. See
+Then import `BunRuntime` from `@smthrs/platform-bun`. Its `layerHost`, `layer`,
+`make` and `storage` compositions share the engine with Node's `NodeRuntime`. See
 [runtime portability](./concepts/runtime-portability.md).

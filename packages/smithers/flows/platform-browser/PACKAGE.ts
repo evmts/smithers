@@ -48,6 +48,26 @@ const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/
 const bunTest = Smithers.BunSuite({ cwd: "packages/smithers/flows/platform-browser" })
 
 /**
+ * The durable browser engine in Playwright's Chromium, over real OPFS, Web
+ * Locks and BroadcastChannel: a run resumes after the browser is killed with
+ * SIGKILL, moves to a follower when the leader tab closes, and a durable sleep
+ * that came due while every tab was closed is woken on load. It runs bundles
+ * in the browser, so the Node `test` target measures coverage.
+ */
+const browserTest = Smithers.Shell.Test({
+  shell: "cd packages/smithers/flows/platform-browser && npx vitest run --config vitest.browser.config.ts",
+  data: [
+    lib,
+    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("test/**/*.ts"),
+    Smithers.file("package.json"),
+    Smithers.file("vitest.browser.config.ts")
+  ],
+  timeout: "10m",
+  sandbox: { network: "loopback" }
+})
+
+/**
  * Security review: `security` reviews the diff against origin/main and
  * `securityAudit` audits every source file.
  */
@@ -98,10 +118,45 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A flow allowed to fetch one origin is redirected by that server to an origin its grant forbids, and the tab sends the request with credentials past the kernel's per-hop check.",
       lookFor: [
-        "The FetchHttpClient RequestInit in BrowserHost.ts set to anything other than redirect: \"manual\", or dropped from the layer.",
-        "A second HttpClient layer merged into BrowserHost that uses default fetch redirect handling."
+        "The FetchHttpClient RequestInit in internal/HttpClient.ts set to anything other than redirect: \"manual\", or dropped from the layer.",
+        "A second HttpClient layer merged into BrowserHost or the BrowserRuntime engine host that uses default fetch redirect handling."
       ],
-      paths: ["src/BrowserHost.ts"]
+      paths: ["src/internal/HttpClient.ts", "src/BrowserHost.ts", "src/BrowserRuntime.ts"]
+    },
+    {
+      id: "one-engine-per-origin",
+      title: "Only the worker holding the engine's Web Lock opens the store or answers a request",
+      threat:
+        "Two workers drive the same run at once, or a new leader steals a run from a live one, and a step that already ran (a model call, a write) runs twice.",
+      lookFor: [
+        "Leader.serve building the engine, opening OPFS, or answering the channel before WebLock.hold has returned, or after its scope closed.",
+        "A WebLock.hold whose interrupted wait can still take the lock, or whose grant is not released with the scope.",
+        "BrowserRuntime.layer passing a liveness check other than Ownership.singleIncarnationLiveness, the one that judges the claimant and every other host's owner by its lease."
+      ],
+      paths: ["src/internal/Leader.ts", "src/WebLock.ts", "src/BrowserRuntime.ts"]
+    },
+    {
+      id: "channel-requests-typed",
+      title: "A request on the engine channel runs only a flow the worker was given, with a payload its schema decodes",
+      threat:
+        "Any script of the origin posts on the channel; a request that names an unlisted flow, or a payload the flow's schema never checked, runs code or data the app did not choose.",
+      lookFor: [
+        "A request handled without Protocol.decode, or a flow looked up anywhere but the worker's own flows by tag.",
+        "A Start payload or Signal value used without decoding it with the flow's own schema.",
+        "A Refused reply or a log line carrying an error's message instead of its tag."
+      ],
+      paths: ["src/internal/Leader.ts", "src/internal/Protocol.ts", "src/BrowserEngine.ts"]
+    },
+    {
+      id: "content-free-telemetry",
+      title: "Engine telemetry carries ids, counts and error tags, never content",
+      threat:
+        "A payload, a model answer or a provider error quoted in a log line, span attribute or metric attribute leaves the browser through the app's telemetry exporter.",
+      lookFor: [
+        "A log annotation, span attribute or metric attribute holding a payload, a value, a result, a channel message, or an error or ErrorEvent message.",
+        "An error.type taken from anything but RetryPolicy.errorTag or an error's name."
+      ],
+      paths: ["src/internal/Leader.ts", "src/BrowserEngine.ts", "src/BrowserRuntime.ts", "src/StoragePersistence.ts"]
     },
     {
       id: "fs-error-fail-closed",
@@ -155,6 +210,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    browserTest,
     bunTest,
     check,
     circular,

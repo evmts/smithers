@@ -27,7 +27,9 @@ describe("@smthrs/jj barrel", () => {
         "jjErrorCause",
         "layerNoop",
         "make",
-        "makeNoop"
+        "makeNoop",
+        "RepositoryMutation",
+        "retryGitIndexLock"
       ].sort()
     )
   })
@@ -38,6 +40,7 @@ describe("@smthrs/jj barrel", () => {
    */
   it("pins the identity strings the step-key digest depends on", () => {
     expect(Jj.key).toBe("@smthrs/jj/Jj")
+    expect(Index.RepositoryMutation.key).toBe("@smthrs/jj/RepositoryMutation")
     expect(new Index.JjError({ code: "unknown", message: "x" })._tag).toBe("@smthrs/jj/JjError")
   })
 })

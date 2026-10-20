@@ -69,15 +69,16 @@ export interface Batch extends Position {
  */
 export const maximumBatchSize = 200
 /**
- * Reserves a deferred SQLite / repeatable-read PostgreSQL read transaction
- * without the durable writer's admission lock. An existing transaction is
- * reused with its caller-selected isolation.
+ * Runs an observation in one read transaction without the durable writer's
+ * admission lock: `@smthrs/database`'s `Dialect.readTransaction`, deferred on
+ * SQLite and `REPEATABLE READ READ ONLY` on PostgreSQL. An existing
+ * transaction is reused with its caller-selected isolation.
  * The supplied effect must contain observations only.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const withReadTransaction = Read.transaction
+export const withReadTransaction = Dialect.readTransaction
 /**
  * Engine observation operations.
  *
@@ -124,7 +125,7 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient> =>
             Schema.Array(Read.Identifier).check(Schema.isMaxLength(maximumBatchSize)),
             runIds
           )
-          const batch = yield* Read.transaction(
+          const batch = yield* Dialect.readTransaction(
             sql,
             Effect.gen(function*() {
               const at = yield* Read.position(sql)

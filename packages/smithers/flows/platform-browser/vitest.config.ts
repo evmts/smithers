@@ -5,6 +5,8 @@ import { defineConfig } from "vitest/config"
 export default defineConfig({
   test: {
     environment: "node",
+    // The real-browser suites run under vitest.browser.config.ts.
+    exclude: ["**/node_modules/**", "test/browser/**"],
     // The BrowserHost contract runs jj over the real flows_jj.wasm; the first
     // operation pays WebAssembly compilation, which can exceed the 5s default.
     testTimeout: 60_000,

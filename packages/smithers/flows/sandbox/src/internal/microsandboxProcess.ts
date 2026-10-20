@@ -17,7 +17,6 @@ import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import { concat } from "./concat.ts"
 import { elapsed } from "./deadline.ts"
-import { execHandles } from "./execHandles.ts"
 import { finalizeWithin } from "./finalizeWithin.ts"
 import { hostKillScript } from "./killScript.ts"
 import { linuxSignalNumber } from "./linuxSignals.ts"
@@ -58,6 +57,8 @@ export interface GuestRequest {
  */
 export interface GuestCommand {
   readonly sandbox: VendorSandbox
+  /** What runs before each further command this one needs, such as a signal walk. */
+  readonly beforeStart: Effect.Effect<void>
   readonly handle: ExecHandle
   readonly exit: Deferred.Deferred<number, ProviderError>
   pid: number | undefined
@@ -70,6 +71,9 @@ const microsandboxFailure = (code: ProviderError["code"], message: string) => (c
 /**
  * Starts one command and hands back its streaming handle.
  *
+ * `beforeStart` runs first: the provider's count toward the collection that
+ * gives finished handles back to the guest.
+ *
  * Starting is interruptible. An interrupt that lands while the SDK is still
  * starting the command cannot take the start back, so the handle that arrives
  * afterwards is killed on arrival instead of being left to run unobserved.
@@ -77,28 +81,31 @@ const microsandboxFailure = (code: ProviderError["code"], message: string) => (c
 const start = (
   sandbox: VendorSandbox,
   request: GuestRequest,
-  failed: (cause: unknown) => ProviderError
+  failed: (cause: unknown) => ProviderError,
+  beforeStart: Effect.Effect<void>
 ): Effect.Effect<ExecHandle, ProviderError> =>
-  Effect.callback<ExecHandle, ProviderError>((resume) => {
-    let abandoned = false
-    execHandles.started()
-    sandbox.execStreamWith(request.program, (builder) => {
-      const configured = builder.args([...request.args]).cwd(request.cwd).envs(request.env)
-      return request.stdin === undefined ? configured : configured.stdinBytes(request.stdin)
-    }).then(
-      (handle) => {
-        if (!abandoned) return resume(Effect.succeed(handle))
-        // Nobody is left to observe this command: its only owner was the
-        // interrupted start. Killing it is the whole of the cleanup, and a
-        // kill that fails leaves nothing further this side could do.
-        handle.kill().catch(() => undefined)
-      },
-      (cause: unknown) => resume(Effect.fail(failed(cause)))
-    )
-    return Effect.sync(() => {
-      abandoned = true
+  Effect.andThen(
+    beforeStart,
+    Effect.callback<ExecHandle, ProviderError>((resume) => {
+      let abandoned = false
+      sandbox.execStreamWith(request.program, (builder) => {
+        const configured = builder.args([...request.args]).cwd(request.cwd).envs(request.env)
+        return request.stdin === undefined ? configured : configured.stdinBytes(request.stdin)
+      }).then(
+        (handle) => {
+          if (!abandoned) return resume(Effect.succeed(handle))
+          // Nobody is left to observe this command: its only owner was the
+          // interrupted start. Killing it is the whole of the cleanup, and a
+          // kill that fails leaves nothing further this side could do.
+          handle.kill().catch(() => undefined)
+        },
+        (cause: unknown) => resume(Effect.fail(failed(cause)))
+      )
+      return Effect.sync(() => {
+        abandoned = true
+      })
     })
-  })
+  )
 
 /**
  * Runs one command to completion, gathering its output. Used for the
@@ -111,10 +118,11 @@ const start = (
 export const runGuest = (
   sandbox: VendorSandbox,
   request: GuestRequest,
-  message: string
+  message: string,
+  beforeStart: Effect.Effect<void>
 ): Effect.Effect<{ readonly code: number; readonly stdout: Uint8Array; readonly stderr: string }, ProviderError> =>
   Effect.flatMap(
-    start(sandbox, request, microsandboxFailure("unavailable", message)),
+    start(sandbox, request, microsandboxFailure("unavailable", message), beforeStart),
     (handle) =>
       Effect.gen(function*() {
         const stdout: Array<Uint8Array> = []
@@ -192,7 +200,8 @@ export const signalGuest = (
             env: {},
             stdin: undefined
           },
-          `the signal ${signal} could not be delivered in ${machine}`
+          `the signal ${signal} could not be delivered in ${machine}`,
+          command.beforeStart
         ),
         (result) =>
           result.code === 0 ? Effect.void : Effect.fail(
@@ -260,7 +269,8 @@ const terminate = (command: GuestCommand, machine: string): Effect.Effect<void> 
 export const spawnGuest = (
   sandbox: VendorSandbox,
   request: GuestRequest,
-  names: { readonly machine: string; readonly command: string }
+  names: { readonly machine: string; readonly command: string },
+  beforeStart: Effect.Effect<void>
 ): Effect.Effect<
   { readonly process: RemoteProcess; readonly command: GuestCommand },
   ProviderError,
@@ -272,13 +282,15 @@ export const spawnGuest = (
         start(
           sandbox,
           request,
-          microsandboxFailure("spawn_error", `\`${names.command}\` could not run in ${names.machine}`)
+          microsandboxFailure("spawn_error", `\`${names.command}\` could not run in ${names.machine}`),
+          beforeStart
         )
       )
       const stdout = yield* Queue.unbounded<Uint8Array, ProviderError | Cause.Done>()
       const stderr = yield* Queue.unbounded<Uint8Array, ProviderError | Cause.Done>()
       const command: GuestCommand = {
         sandbox,
+        beforeStart,
         handle,
         exit: yield* Deferred.make<number, ProviderError>(),
         pid: undefined,

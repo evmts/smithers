@@ -114,6 +114,25 @@ export const layer: Layer.Layer<OwnerIdentity, never, Crypto.Crypto> = Layer.eff
 )
 
 /**
+ * Provides {@link makeIncarnation} with a drawn incarnation number, never the
+ * platform's process id.
+ *
+ * Use it on a host whose process id does not name one incarnation, such as a
+ * Worker or a Durable Object: an isolate may report one fixed `process.pid` to
+ * every incarnation it hosts, and two incarnations with one pid cannot tell
+ * each other apart. The drawn number separates them, so a liveness check the
+ * host supplies can declare an earlier incarnation on the same `hostId` gone
+ * and the engine takes its runs at once.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layerWithoutPid: Layer.Layer<OwnerIdentity, never, Crypto.Crypto> = Layer.effect(
+  OwnerIdentity,
+  Effect.map(Crypto.Crypto, (crypto) => makeIncarnation(undefined, crypto))
+)
+
+/**
  * Provides a fixed identity. A test — or a host that derives ownership from
  * something outside this process, such as a lease it already holds — pins the
  * whole token instead of letting the default draw one.

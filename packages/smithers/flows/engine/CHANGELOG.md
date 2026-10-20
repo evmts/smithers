@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- The first dispatch of an action whose retry policy declares `expirationMs`
+  no longer logs the warning `no durable retry origin`. A durable store finds
+  no attempt row for an action's first dispatch, as it does after retention
+  pruned its history, and cannot tell the two apart, so the record is now
+  Debug for both.
+
 - A sealed action's step key no longer moves with the installed `effect` release: its declaration digest hashes `Node.representationIdentity` instead of `SchemaRepresentation.toJson`. A declaration whose success or error schema carries `Schema.brand` re-keys once. ([#3839](https://github.com/smithersai/smithers/issues/3839)).
 
 - Action retry exhaustion and expiration preserve the final declared failure

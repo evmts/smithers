@@ -1,0 +1,121 @@
+{
+  "name": "@smthrs/platform-cloudflare",
+  "type": "module",
+  "version": "1.0.0-rc.16",
+  "license": "MIT",
+  "smthrs": {
+    "group": "engine"
+  },
+  "description": "Cloudflare host for durable flows: the closed Host surface for Workers, the engine over an injected Postgres, and a per-execution Durable Object driven by alarms",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows/platform-cloudflare"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "cloudflare",
+    "durable-objects",
+    "platform"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "cloudflare",
+    "durable-objects",
+    "platform"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/artifacts": "1.0.0-rc.16",
+    "@smthrs/canonical": "1.0.0-rc.16",
+    "@smthrs/crypto": "1.0.0-rc.16",
+    "@smthrs/engine-store": "1.0.0-rc.16",
+    "@smthrs/flow": "1.0.0-rc.16",
+    "@smthrs/flows": "1.0.0-rc.16",
+    "@smthrs/jj": "1.0.0-rc.16",
+    "@smthrs/run-store": "1.0.0-rc.16"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/sql-pg": "4.0.5",
+    "@effect/vitest": "4.0.5",
+    "@eslint/js": "9.39.5",
+    "@smthrs/database": "1.0.0-rc.16",
+    "@smthrs/observability": "1.0.0-rc.16",
+    "@smthrs/plan": "1.0.0-rc.16",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.5",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "miniflare": "5.20261019.0-beta",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  },
+  "peerDependencies": {
+    "effect": "4.0.5"
+  }
+}

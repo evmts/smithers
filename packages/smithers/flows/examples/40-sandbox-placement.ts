@@ -11,6 +11,7 @@
  */
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as NodeHost from "@smthrs/platform-node/NodeHost"
 import { DirectorySandbox, Sandbox } from "@smthrs/sandbox"
 import * as Effect from "effect/Effect"
@@ -19,7 +20,6 @@ import * as Layer from "effect/Layer"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
-import { durableEngine } from "../src/test/TestNodeRuntime.ts"
 
 /** The bytes the placed action writes and asks the sandboxed process to count. */
 export const contents = "the action body ran in its sandbox\n"
@@ -79,7 +79,7 @@ export const main = (options: MainOptions): Promise<number> =>
         Interpreter.layer(SandboxPlacement)
       ).pipe(
         Layer.provideMerge(Action.layerImplementations),
-        Layer.provideMerge(durableEngine(options.filename, "examples-sandbox-placement"))
+        Layer.provideMerge(TestNodeRuntime.durableEngine(options.filename, "examples-sandbox-placement"))
       )
 
       return yield* SandboxPlacement.execute(

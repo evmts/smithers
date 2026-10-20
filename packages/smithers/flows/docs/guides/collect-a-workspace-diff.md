@@ -20,7 +20,7 @@ and `result.work` is a `Sandbox.Work`, the same value `Sandbox.run` returns:
 - `Unchanged { session, base }`: the guest left the tree at `base`.
 
 ```ts
-import * as SandboxedFlow from "@smthrs/flows/SandboxedFlow"
+import { SandboxedFlow } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 
 const report = Effect.gen(function*() {

@@ -24,8 +24,8 @@ switches layers instead of branching around a missing one.
 
 ## Why `Otlp` is the default
 
-`Otlp` composes only `effect/observability/Otlp`, so it adds no
-OpenTelemetry SDK to the process, and it delivers over Effect's `HttpClient`
+`Otlp` composes `effect/observability/Otlp` with the journal's redaction
+rules, so it adds no OpenTelemetry SDK to the process, and it delivers over Effect's `HttpClient`
 rather than a platform transport. That makes it the cheapest wiring and the
 only one that runs unchanged in Node, in Bun, and in a browser.
 

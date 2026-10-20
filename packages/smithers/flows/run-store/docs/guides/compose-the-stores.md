@@ -14,7 +14,7 @@ If you are running the Smithers engine, the composition already exists and
 building a second one over the same database is a way to get two engines
 fighting over one set of rows. [`@smthrs/engine-store`](/api/engine-store)
 composes these stores with the journal, the step cache, and the durable engine
-state, and `@smthrs/flows/NodeRuntime` builds that ladder over one SQLite file.
+state, and `NodeRuntime` from `@smthrs/platform-node` builds that ladder over one SQLite file.
 Reach for the layers here when you are writing a host, an adapter, or a sweeper
 that has to agree with the engine about ownership.
 

@@ -46,18 +46,11 @@ packages are not prerequisites for constructing its layer.
 
 ## Import forms
 
-The root entry point re-exports eight modules as namespaces:
+The root entry point re-exports eight modules as namespaces. Import them from
+the root, as the [API reference](./api.md) does:
 
 ```ts
 import { Endpoint, JournalLogger, Logger, Metric, Otel, Otlp, OtlpRelay, Resource } from "@smthrs/observability"
-```
-
-Each is also importable from its own subpath, which is the form the
-[API reference](./api.md) uses:
-
-```ts
-import * as JournalLogger from "@smthrs/observability/JournalLogger"
-import * as Otlp from "@smthrs/observability/Otlp"
 ```
 
 `@smthrs/observability/package.json` is exported.

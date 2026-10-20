@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Data, Effect, FileSystem, Path, Schema, Stream } from "effect"
+import { layerRepositoryMutation } from "@smthrs/jj/node/NodeJj"
+import { Data, Effect, FileSystem, Layer, Path, Schema, Stream } from "effect"
 import { ChildProcess } from "effect/process"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { existsSync } from "node:fs"
@@ -60,7 +61,9 @@ const fileAt = (repository: string, revision: string, path: string): string =>
   host(repository, `jj --ignore-working-copy file show -r ${quote(revision)} ${quote(path)}`)
 
 const apply = (work: Sandbox.Work, repository: string) =>
-  SandboxMerge.apply(work, { repository, onto: "main", message: "sandbox work" }).pipe(Effect.provide(rawPlatform))
+  SandboxMerge.apply(work, { repository, onto: "main", message: "sandbox work" }).pipe(
+    Effect.provide(Layer.merge(rawPlatform, layerRepositoryMutation))
+  )
 
 /** The jj operation the host repository is at: unchanged when nothing was written. */
 const operation = (repository: string): string =>

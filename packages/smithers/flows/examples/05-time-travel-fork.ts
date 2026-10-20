@@ -14,11 +14,11 @@ import { FlowEngine } from "@smthrs/engine"
 import { EngineStore } from "@smthrs/engine-store"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import { SqlTimeTravelStore, TimeTravel } from "@smthrs/time-travel"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { requirements } from "../src/test/TestNodeRuntime.ts"
 
 /**
  * The sealed atom the fork replays instead of dispatching again.
@@ -56,7 +56,7 @@ const engineLayer = (filename: string, hostId: string) =>
   }).pipe(
     Layer.provideMerge(
       Layer.mergeAll(
-        requirements(filename),
+        TestNodeRuntime.requirements(filename),
         // Declaring the environment is what lets a sealed identity cross the
         // fork boundary.
         Action.layerCacheEnvironment({ layers: [], capabilities: {} })

@@ -48,6 +48,14 @@ unchanged. A bundle spans a whole host, and a host may be a sandbox whose only
 way out is that proxy; a bare Undici `Agent` reads none of those variables and
 dials every origin directly, which such a host drops.
 
+The same layer provides `EgressHttpClient.resolveHost`, the system resolver, as
+[`@smthrs/kernel`](/api/kernel)'s `HttpClient.ResolveHost`. That is a context
+reference with a default, not a sixth tag: the default refuses every name, which
+is the right answer where the platform mediates the network. The web tools in
+[`@smthrs/std`](/api/std) check every address it returns, and the client pins
+the connection to those addresses, so the resolver and the client have to come
+from one layer.
+
 `NodeHost` re-exports the pieces it composes, so a program that wants one slot
 rather than the whole bundle needs no second dependency:
 `NodeHost.AtomicFileSystem`, `NodeHost.ProcessReaper`, `NodeHost.NodeCrypto`,
@@ -73,7 +81,7 @@ and whether spawned processes are contained.
 | `NodeHost.layerContainedAt(root, options?)` | one absolute repository root  | yes         |
 
 The rooted pair exists because a durable host outlives any one working
-directory. `@smthrs/flows`' `NodeRuntime` composes `layerContainedAt`, so both
+directory. This package's `NodeRuntime` composes `layerContainedAt`, so both
 the repository and the process containment are pinned by the runtime rather
 than inherited from whatever shell started it.
 

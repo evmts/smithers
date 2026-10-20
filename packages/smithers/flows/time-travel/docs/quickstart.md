@@ -23,17 +23,19 @@ This page only replays, so it does not need jj. Forking does, and so does a
 rewind that restores a compensable step's files; see
 [Rewind a run to a frame](./guides/rewind-a-run.md).
 
-Create a project and install the engine, `effect`, and this package:
+Create a project and install the engine, its Node host, `effect`, and this
+package:
 
 ```bash
 mkdir time-travel-quickstart && cd time-travel-quickstart
 npm init -y && npm pkg set type=module
-npm install @smthrs/flows@next effect
+npm install @smthrs/platform-node@next @smthrs/flows@next effect
 npm install @smthrs/time-travel@1.0.0-rc.16
 ```
 
 `@smthrs/flows` carries the durable engine and re-exports the `TimeTravel`
-service key, but not a store. `@smthrs/time-travel` supplies
+service key, but not a store. `@smthrs/platform-node` supplies `NodeRuntime`,
+the Node host the program runs the engine on. `@smthrs/time-travel` supplies
 `SqlTimeTravelStore`; install it at the version of `@smthrs/flows` you have, so
 both resolve to one copy of the service key.
 
@@ -72,7 +74,7 @@ which is why recovery never appears as a call:
 
 ```ts
 import { Interpreter, Jj, TimeTravel } from "@smthrs/flows"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { SqlTimeTravelStore } from "@smthrs/time-travel"
 import * as Layer from "effect/Layer"
 import { resolve } from "node:path"

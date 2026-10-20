@@ -188,7 +188,8 @@
     "circular": "node ../../../repo-targets/scripts/circular.mjs",
     "test": "vitest",
     "coverage": "node scripts/test-matrix.mjs",
-    "test:matrix": "node scripts/test-matrix.mjs"
+    "test:matrix": "node scripts/test-matrix.mjs",
+    "bench": "vitest bench --run --coverage.enabled=false --reporter=verbose"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

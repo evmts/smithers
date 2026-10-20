@@ -4,13 +4,9 @@
   "version": "1.0.0-rc.16",
   "license": "MIT",
   "smthrs": {
-    "group": "engine",
-    "privateEffectAdapters": [
-      "@effect/platform-node",
-      "@effect/platform-node-shared"
-    ]
+    "group": "engine"
   },
-  "description": "Barrel package re-exporting the whole @smthrs durable flow engine",
+  "description": "Barrel package re-exporting the whole @smthrs durable flow engine and its platform-neutral Runtime",
   "homepage": "https://github.com/smithersai/smithers",
   "repository": {
     "type": "git",
@@ -41,12 +37,10 @@
     ".": "./src/index.ts",
     "./internal/*": null,
     "./*/index": null,
-    "./NodeRuntime": "./src/NodeRuntime.ts",
-    "./SandboxedFlow": "./src/SandboxedFlow.ts",
     "./index": "./src/index.ts",
     "./Runtime": "./src/Runtime.ts",
-    "./BunRuntime": "./src/BunRuntime.ts",
-    "./test/TestNodeRuntime": "./src/test/TestNodeRuntime.ts"
+    "./NodeRuntime": null,
+    "./SandboxedFlow": null
   },
   "files": [
     "src/**/*.ts",
@@ -79,26 +73,6 @@
       },
       "./internal/*": null,
       "./*/index": null,
-      "./NodeRuntime": {
-        "import": {
-          "types": "./dist/esm/NodeRuntime.d.ts",
-          "default": "./dist/esm/NodeRuntime.js"
-        },
-        "require": {
-          "types": "./dist/cjs/NodeRuntime.d.ts",
-          "default": "./dist/cjs/NodeRuntime.js"
-        }
-      },
-      "./SandboxedFlow": {
-        "import": {
-          "types": "./dist/esm/SandboxedFlow.d.ts",
-          "default": "./dist/esm/SandboxedFlow.js"
-        },
-        "require": {
-          "types": "./dist/cjs/SandboxedFlow.d.ts",
-          "default": "./dist/cjs/SandboxedFlow.js"
-        }
-      },
       "./index": {
         "import": {
           "types": "./dist/esm/index.d.ts",
@@ -119,26 +93,8 @@
           "default": "./dist/cjs/Runtime.js"
         }
       },
-      "./BunRuntime": {
-        "import": {
-          "types": "./dist/esm/BunRuntime.d.ts",
-          "default": "./dist/esm/BunRuntime.js"
-        },
-        "require": {
-          "types": "./dist/cjs/BunRuntime.d.ts",
-          "default": "./dist/cjs/BunRuntime.js"
-        }
-      },
-      "./test/TestNodeRuntime": {
-        "import": {
-          "types": "./dist/esm/test/TestNodeRuntime.d.ts",
-          "default": "./dist/esm/test/TestNodeRuntime.js"
-        },
-        "require": {
-          "types": "./dist/cjs/test/TestNodeRuntime.d.ts",
-          "default": "./dist/cjs/test/TestNodeRuntime.js"
-        }
-      }
+      "./NodeRuntime": null,
+      "./SandboxedFlow": null
     }
   },
   "scripts": {
@@ -166,23 +122,17 @@
     "@smthrs/observability": "1.0.0-rc.16",
     "@smthrs/plan": "1.0.0-rc.16",
     "@smthrs/plan-store": "1.0.0-rc.16",
-    "@smthrs/platform-node": "1.0.0-rc.16",
     "@smthrs/run-store": "1.0.0-rc.16",
     "@smthrs/sandbox": "1.0.0-rc.16",
     "@smthrs/step-cache": "1.0.0-rc.16",
     "@smthrs/sync": "1.0.0-rc.16",
-    "@smthrs/time-travel": "1.0.0-rc.16",
-    "esbuild": "0.28.2",
-    "undici": "8.11.2",
-    "redis": "6.2.1",
-    "@types/ws": "8.18.2",
-    "ws": "8.22.0",
-    "@effect/sql-sqlite-node": "4.0.5"
+    "@smthrs/time-travel": "1.0.0-rc.16"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
     "@effect/platform-node": "4.0.5",
     "@effect/platform-node-shared": "4.0.5",
+    "@effect/sql-pg": "4.0.5",
     "@effect/vitest": "4.0.5",
     "@eslint/js": "9.39.5",
     "@smthrs/control": "1.0.0-rc.16",
@@ -206,15 +156,9 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
     "vitest": "5.0.0",
-    "@smthrs/platform-bun": "1.0.0-rc.16"
+    "@smthrs/platform-node": "1.0.0-rc.16"
   },
   "peerDependencies": {
-    "effect": "4.0.5",
-    "@smthrs/platform-bun": "1.0.0-rc.16"
-  },
-  "peerDependenciesMeta": {
-    "@smthrs/platform-bun": {
-      "optional": true
-    }
+    "effect": "4.0.5"
   }
 }

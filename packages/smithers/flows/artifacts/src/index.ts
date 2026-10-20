@@ -1,5 +1,7 @@
 /**
- * The content-addressed artifact store: bytes addressed by their own digest.
+ * The content-addressed artifact store: bytes addressed by their own digest,
+ * and the immutable cache: bytes stored under a content address that never
+ * changes, such as a file at a commit SHA.
  *
  * `ArtifactStore` is the byte half of the cache. `@smthrs/step-cache` maps a
  * step key to a recorded result, while large result bytes live here under their
@@ -62,6 +64,14 @@ export * as CombinedArtifacts from "./CombinedArtifacts.ts"
  * @since 1.0.0-rc.1
  */
 export * as FileLease from "./FileLease.ts"
+
+/**
+ * Bytes under an immutable content address, over any Web Cache API backend.
+ *
+ * @category services
+ * @since 1.0.0
+ */
+export * as ImmutableCache from "./ImmutableCache.ts"
 
 /**
  * @category services

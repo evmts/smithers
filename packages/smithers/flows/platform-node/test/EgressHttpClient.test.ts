@@ -15,7 +15,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import { Rule } from "@smthrs/capability/Permission"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
-import { Destination } from "@smthrs/kernel/HttpClient"
+import { Destination, ResolveHost } from "@smthrs/kernel/HttpClient"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import { Effect } from "effect"
 import * as Exit from "effect/Exit"
@@ -280,6 +280,26 @@ const closesPromptly = async (closed: Promise<void>) => {
     clearTimeout(timer)
   }
 }
+
+describe("the name resolver beside the pinned client", () => {
+  it("answers every address the system resolver has for a name, and fails for an unknown one", async () => {
+    const local = await Effect.runPromise(EgressHttpClient.resolveHost("localhost"))
+    expect(local.length).toBeGreaterThan(0)
+    expect(local.every((address) => address === "127.0.0.1" || address === "::1")).toBe(true)
+    const unknown = await Effect.runPromise(Effect.exit(EgressHttpClient.resolveHost("no-such-host.invalid")))
+    expect(Exit.isFailure(unknown)).toBe(true)
+  })
+
+  it("is the kernel's ResolveHost wherever the client is installed", async () => {
+    const resolve = await Effect.runPromise(
+      Effect.gen(function*() {
+        yield* HttpClient.HttpClient
+        return yield* ResolveHost
+      }).pipe(Effect.provide(EgressHttpClient.layer({})))
+    )
+    expect(resolve).toBe(EgressHttpClient.resolveHost)
+  })
+})
 
 describe("authorized destination connections", () => {
   it("refuses mismatched origins, empty snapshots, and non-IP addresses before connecting", async () => {

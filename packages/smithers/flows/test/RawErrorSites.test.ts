@@ -24,6 +24,7 @@ const testSupport = "published test support: its failure fails the caller's test
 
 /** Reviewed files, with the number of raw sites each keeps and why. */
 const reviewed: ReadonlyArray<readonly [file: string, count: number, why: string]> = [
+  ["database/src/postgres/PostgresDatabase.ts", 1, wrappedCause],
   ["database/src/test/TestDatabase.ts", 1, testSupport],
   ["engine-store/src/PlanScheduler.ts", 1, invariantDefect],
   ["engine-store/src/StepBoundary.ts", 3, wrappedCause],
@@ -54,14 +55,14 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number, why: string
   ],
   ["platform-node/src/ScopedProcess.ts", 1, wrappedCause],
   [
+    "platform-node/src/internal/SandboxedFlowGuest.ts",
+    1,
+    "guest bundle started without its paths; a host programming error reported by the guest's exit"
+  ],
+  [
     "sandbox/src/MicrosandboxSandbox/make.ts",
     1,
     "replacement-network refusal immediately wrapped by attempt into a typed ProviderError"
-  ],
-  [
-    "src/internal/SandboxedFlowGuest.ts",
-    1,
-    "guest bundle started without its paths; a host programming error reported by the guest's exit"
   ],
   ["step-cache/src/RemoteCacheStore.ts", 1, "unreachable namespace escape (KeyDigest excludes separators); a defect"],
   ["sync/src/test/TestSocket.ts", 1, testSupport]
@@ -109,7 +110,11 @@ describe("raw failure sites in the flow engine's packages", () => {
   it("scans every package's src", () => {
     expect(packages).toEqual(expect.arrayContaining(["database", "engine-store", "flow", "platform-node", "sync"]))
     expect(scanned.map((path) => relative(root, path).split(sep).join("/"))).toEqual(
-      expect.arrayContaining(["database/src/internal/PostgresSelection.ts", "src/SandboxedFlow.ts"])
+      expect.arrayContaining([
+        "database/src/internal/PostgresSelection.ts",
+        "src/Runtime.ts",
+        "platform-node/src/SandboxedFlow.ts"
+      ])
     )
   })
 

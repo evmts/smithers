@@ -4,6 +4,20 @@
 
 ### Added
 
+- `Ownership.singleIncarnationLiveness`: the liveness check for a host that runs
+  one incarnation per host id. An owner with the claimant's host id and another
+  `pid` or `nonce` is dead however fresh its lease; every other owner is judged
+  by its lease. `@smthrs/platform-cloudflare` and `@smthrs/platform-browser`
+  use it in place of their own copies.
+
+- `RunStore.owned(sql, fence, options?)` returns a SQL condition an action adds
+  to its own `UPDATE`: it holds only while the fenced owner holds the run and
+  the fenced attempt is still `running`, so a write from a superseded owner or
+  a settled attempt changes no row. On PostgreSQL it reads both rows
+  `FOR SHARE`, ordering the write before a concurrent takeover. `schema`
+  qualifies the engine tables for a client on another search path.
+  `RunStore.Fence` and `RunStore.OwnedOptions` name its inputs.
+
 - Required `RunStore.Service` operations `lineage`, `latestRound`, and
   `requestCancelLineage` resolve logical runs across trampoline rounds. Logical
   cancellation is atomic and preserves terminal-round history and existing

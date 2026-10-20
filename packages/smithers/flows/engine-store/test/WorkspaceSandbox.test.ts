@@ -542,6 +542,33 @@ describe("WorkspaceSandbox conformance", () => {
       })
     }))
 
+  it.effect("refuses every transaction on a host with no filesystem, without running the body", () =>
+    Effect.gen(function*() {
+      let ran = false
+      const program = Effect.gen(function*() {
+        const sandbox = yield* WorkspaceSandbox.WorkspaceSandbox
+        const executed = yield* Effect.flip(sandbox.execute({
+          descriptor: descriptor({ writeSet: ["out.txt"] }),
+          workflow: Effect.sync(() => {
+            ran = true
+          })
+        }))
+        const materialized = yield* Effect.flip(sandbox.materialize({
+          _tag: "Accepted",
+          result: { output: undefined, files: [], queuedEffects: [], provenance: {} as never },
+          cache: { status: "disabled" },
+          violations: []
+        } as never))
+        return [executed, materialized]
+      }).pipe(Effect.provide(WorkspaceSandbox.layerUnsupported))
+      const refusals = yield* withCrypto(program)
+      expect(refusals.map((refusal) => [refusal._tag, (refusal as WorkspaceSandbox.WorkspaceError).code])).toEqual([
+        ["@smthrs/engine-store/WorkspaceError", "host_unavailable"],
+        ["@smthrs/engine-store/WorkspaceError", "host_unavailable"]
+      ])
+      expect(ran).toBe(false)
+    }))
+
   it.effect("provides the implementation as an Effect layer", () =>
     Effect.gen(function*() {
       const program = Effect.gen(function*() {

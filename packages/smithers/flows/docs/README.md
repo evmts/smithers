@@ -5,10 +5,12 @@ description: "The whole Smithers durable flow engine in one dependency: declare 
 
 `@smthrs/flows` is one package that carries the whole durable flow engine
 behind [Smithers](https://github.com/smithersai/smithers). It re-exports every engine
-package under a single import, and it adds the two modules a Node program needs
-to run flows for real: `NodeRuntime`, which stands a durable engine up over
-local SQLite, and `SandboxedFlow`, which runs a child flow's own code on a
-machine you provision.
+package under a single import, and it adds `Runtime`, the engine composed over
+an injected SQL client and host. It imports no platform code, so it runs in a
+browser and a Cloudflare Worker as well as on Node and Bun. A Node program runs
+flows for real with [`@smthrs/platform-node`](../platform-node/docs/api.md):
+`NodeRuntime` stands a durable engine up over local SQLite, and `SandboxedFlow`
+runs a child flow's own code on a machine you provision.
 
 ## What it solves
 
@@ -29,10 +31,10 @@ whole composition.
 
 ```bash
 npm init -y && npm pkg set type=module
-npm install @smthrs/flows@next effect
+npm install @smthrs/platform-node@next @smthrs/flows@next effect
 ```
 
-With pnpm 11, run `pnpm add @smthrs/flows@1.0.0-rc.16 effect` instead, then
+With pnpm 11, run `pnpm add @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect` instead, then
 `pnpm approve-builds esbuild`. pnpm 11 installs only versions at least 24 hours
 old, so `@next` can resolve to a candidate more than one release behind.
 
@@ -57,7 +59,7 @@ the result:
 
 ```ts
 import { Action, Flow, Interpreter } from "@smthrs/flows"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -132,7 +134,8 @@ reachable only through it.
   add or edit a step and rerun only what changed, and print the plan before
   anything runs.
 - [Stand up a durable Node runtime](./guides/stand-up-a-node-runtime.md): the
-  four `NodeRuntime` entry points, and which one a given program should call.
+  four `NodeRuntime` entry points in `@smthrs/platform-node`, and which one a
+  given program should call.
 - [Inspect the plan a body builds](../flow/docs/guides/inspect-the-plan.md):
   every step and edge a flow will run, read before any of it runs.
 - [Diff two plans](../plan/docs/guides/diff-two-plans.md): compare the plans of

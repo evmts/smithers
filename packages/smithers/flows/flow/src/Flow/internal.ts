@@ -16,6 +16,7 @@ import * as Schema from "effect/Schema"
 import { ExecutionIdentityConflict } from "../FlowRuntime/ExecutionIdentityConflict.ts"
 import { FlowRuntime } from "../FlowRuntime/FlowRuntime.ts"
 import * as DeclarationSite from "../internal/DeclarationSite.ts"
+import * as SpanFailure from "../internal/SpanFailure.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
 import { CurrentExecutionIds } from "./ExecutionIds.ts"
 import type { Any, AnyStructSchema, AnyWithProps, BodySuccess, DeclarationMetadata, Flow } from "./Flow.ts"
@@ -153,11 +154,9 @@ const Proto = {
         )
       )
     ).pipe(
-      Effect.withSpan(
-        `${this._tag}.execute`,
-        {},
-        { captureStackTrace: false }
-      )
+      // A flow fails with its actions' failures, often someone else's text,
+      // so this span exports only the failure's tag and code.
+      SpanFailure.withSpan(`${this._tag}.execute`, { captureStackTrace: false })
     ) as any
   },
   start(this: AnyWithProps, payload: unknown) {

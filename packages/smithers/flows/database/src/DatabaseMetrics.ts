@@ -26,3 +26,19 @@ import * as Metric from "effect/Metric"
 export const writeRetries = Metric.counter("flows_db_write_retries", {
   description: "Durable write transaction replays after transient conflicts"
 })
+
+/**
+ * Timer over how long a PostgreSQL write waited for its schema's writer
+ * lock, from sending the lock statement to holding the lock. A writable
+ * `PostgresDatabase` client records one observation per transaction it
+ * begins: each outermost `DurableWriter.write` and each `withTransaction`.
+ * Writes to one schema commit one at a time, so a rising wait reads as that
+ * schema's write throughput binding. Read-only clients, statements outside
+ * a transaction, and SQLite record nothing here.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const writerLockWait = Metric.timer("flows_db_writer_lock_wait", {
+  description: "Time a PostgreSQL durable write waited for its schema's writer lock"
+})

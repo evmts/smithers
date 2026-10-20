@@ -118,11 +118,16 @@ injectable `OwnerIdentity` service, and the SQL contracts it imports are
 driver-neutral.
 
 Bundling is not running. The durable backing is SQLite or PostgreSQL, composed by the
-aggregate [`@smthrs/flows` runtime](../README.md) with native Node.js or Bun
-host adapters and the selected SQL client over these driver-neutral stores. A browser or edge deployment
-can import the types and browser-safe in-memory helpers, but cannot execute
-durable flows; supplying an alternative browser SQL client is not a supported
-runtime.
+aggregate [`@smthrs/flows` runtime](../README.md) over these driver-neutral
+stores by a host package:
+
+- Node.js or Bun: `@smthrs/platform-node` or `@smthrs/platform-bun`.
+- A browser: `@smthrs/platform-browser`'s `BrowserRuntime`, in a dedicated
+  worker over wa-sqlite in OPFS.
+- A Cloudflare Durable Object: `@smthrs/platform-cloudflare`'s
+  `CloudflareRuntime`, over PostgreSQL.
+
+Any other SQL client is not a supported runtime.
 
 ## Documentation
 

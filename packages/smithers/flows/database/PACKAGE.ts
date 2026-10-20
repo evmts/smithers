@@ -124,7 +124,7 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A sql.unsafe or sql.literal call in Dialect.ts or TestDatabase.ts whose interpolated name, table, when, body, reject, or path is exported without a check that it is a constant or a safe identifier.",
         "Dialect.query rewriting every '?' into $n, so a template containing a '?' in a string literal or a jsonb ?-operator binds values into the wrong position.",
-        "A SET search_path, CREATE SCHEMA, or DROP SCHEMA that quotes the schema by hand instead of through sql(identifier), or omits doubling embedded quotes."
+        "A search_path setting, CREATE SCHEMA, or DROP SCHEMA that puts the schema into SQL text by hand instead of through sql(identifier), quote_ident or a bound parameter, or omits doubling embedded quotes."
       ],
       paths: ["src/Dialect.ts", "src/postgres/**", "src/test/TestDatabase.ts", "src/Migrations.ts"]
     },

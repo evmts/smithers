@@ -23,10 +23,18 @@ describe("@smthrs/platform-browser barrel", () => {
   it("re-exports every module as a namespace", () => {
     expect(Object.keys(Index).sort()).toEqual(
       [
+        "BrowserCache",
         "BrowserChildProcessSpawner",
+        "BrowserEngine",
         "BrowserFileSystem",
         "BrowserHost",
-        "BrowserServices"
+        "BrowserRuntime",
+        "BrowserServices",
+        "BrowserSqlite",
+        "SharedSqlite",
+        "StoragePersistence",
+        "TabChannel",
+        "WebLock"
       ].sort()
     )
     expect(Index.BrowserChildProcessSpawner.layer).toBe(BrowserChildProcessSpawner.layer)

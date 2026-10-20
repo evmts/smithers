@@ -12,7 +12,7 @@ runtime.
 
 Send an Effect program's logs, metrics, and traces to an OpenTelemetry collector with one layer.
 
-`Otlp` composes only what `effect` itself ships, so it allocates no OpenTelemetry SDK, never resolves a `node:` built-in, and runs unchanged in Node, Bun, and a browser. Around it the package ships the pieces a host installs beside an exporter: Effect logger layers, a validated `Resource` describing the service, a `JournalLogger` that mirrors a run's log records into a durable journal, the runtime `Metric` handles that cross package boundaries, `OtlpRelay`, which receives OTLP/HTTP JSON exports on your own server route (a Cloudflare Worker, for one) and re-emits each record as a structured Effect log line, and `Otel`, which bridges OpenTelemetry providers an application already built.
+`Otlp` composes what `effect` itself ships with the journal's redaction rules, so it allocates no OpenTelemetry SDK, never resolves a `node:` built-in, and runs unchanged in Node, Bun, and a browser. Around it the package ships the pieces a host installs beside an exporter: Effect logger layers, a validated `Resource` describing the service, a `JournalLogger` that mirrors a run's log records into a durable journal, the runtime `Metric` handles that cross package boundaries, `OtlpRelay`, which receives OTLP/HTTP JSON exports on your own server route (a Cloudflare Worker, for one) and re-emits each record as a structured Effect log line, and `Otel`, which bridges OpenTelemetry providers an application already built.
 
 `NodeOtel` and `BrowserOtel` are deliberately not re-exported from the root. Each binds a host-specific OpenTelemetry SDK: `NodeOtel` reaches `@effect/opentelemetry/NodeSdk` and `@opentelemetry/sdk-trace-node`, which pulls the bare `async_hooks` specifier through `@opentelemetry/context-async-hooks`. Re-exporting it would put a module a browser bundler cannot resolve in the root entry point. Import them by subpath instead: `@smthrs/observability/NodeOtel`.
 
@@ -39,7 +39,7 @@ pnpm add @opentelemetry/sdk-trace-base@2.11.0 @opentelemetry/sdk-trace-web@2.11.
 ## Use
 
 ```ts
-import * as Otlp from "@smthrs/observability/Otlp"
+import { Otlp } from "@smthrs/observability"
 
 const Telemetry = Otlp.layerFetch({
   baseUrl: "http://localhost:4318",

@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Every export of @smthrs/platform-bun: the BunHost layers and their refusal, the containment options, the implementation identities, and the BunFileSystem escape hatch."
+description: "Every export of @smthrs/platform-bun: the BunHost layers and their refusal, the containment options, the implementation identities, the BunFileSystem escape hatch, BunRuntime, the durable flow runtime on Bun, and BunGarbageCollector for Microsandbox."
 ---
 
 ```ts
@@ -43,8 +43,9 @@ same spawner instance.
 | `@smthrs/platform-bun/BunHost`       | [src/BunHost.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/src/BunHost.ts)             | Bun, Node |
 | `@smthrs/platform-bun/BunFileSystem` | [src/BunFileSystem.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/src/BunFileSystem.ts) | Bun, Node |
 
-The root entry point exports exactly two names, `BunHost` and `BunFileSystem`,
-each the namespace of the module above. `@smthrs/platform-bun/internal/*` and
+The root entry point exports exactly four names: `BunHost` and `BunFileSystem`,
+each the namespace of the module above, and [`BunRuntime`](#bunruntime) and
+[`BunGarbageCollector`](#bungarbagecollector), which have no subpath of their own. `@smthrs/platform-bun/internal/*` and
 `@smthrs/platform-bun/*/index` are blocked in the export map;
 `@smthrs/platform-bun/package.json` is exported.
 
@@ -239,6 +240,56 @@ same escape hatch as `AtomicFileSystem`, for parity with `NodeHost`.
 `executable` is re-validated per request, because the file it names can be
 replaced while the host runs; everything else is snapshotted when the layer is
 built.
+
+## BunRuntime
+
+```ts
+import { BunRuntime } from "@smthrs/platform-bun"
+```
+
+The durable flow runtime on Bun: `@smthrs/platform-node`'s
+[`NativeRuntime`](../../platform-node/docs/api.md#nativeruntime) bound to Bun's
+SQLite driver and `BunHost`. Its API is `NodeRuntime`'s: `storage`, `make`,
+`layer`, `layerHost`, `signalExitCode`, `defaultShutdownTimeoutMs`,
+`maximumShutdownTimeoutMs`, and the `Options` and `HostOptions` types. The
+[`NodeRuntime` reference](../../platform-node/docs/api.md#noderuntime) describes
+each one; invalid options throw `@smthrs/flows`' `Runtime.RuntimeConfigurationError`
+with `BunRuntime` leading the message.
+
+```ts
+import { Interpreter } from "@smthrs/flows"
+import { BunRuntime } from "@smthrs/platform-bun"
+
+const host = BunRuntime.layerHost(
+  { filename: ".flows/engine.db", workspaceRoot: ".", owner: { hostId: "bun-host" } },
+  Interpreter.layer(Hello)
+)
+```
+
+The Bun database driver loads when a database opens, not when the module loads,
+because it imports `bun:sqlite`, which only Bun resolves. It opens `bun:sqlite`
+itself, so a Bun program adds no `@effect/*` package for SQLite. A PostgreSQL
+URL opens through the optional `@effect/sql-pg` instead.
+
+## BunGarbageCollector
+
+```ts
+import { BunGarbageCollector } from "@smthrs/platform-bun"
+```
+
+Bun's full garbage collection, as the `MicrosandboxSandbox.GarbageCollector`
+service `@smthrs/sandbox`'s Microsandbox provider gives finished command
+handles back to the guest with.
+[`MicrosandboxSandbox`](../../sandbox/docs/api.md#microsandboxsandbox) says
+why a machine needs it.
+
+| Export      | What it is                                                                                                  |
+| ----------- | ----------------------------------------------------------------------------------------------------------- |
+| `collector` | The process's one collector: `Bun.gc(true)`, a synchronous full collection. Off Bun it fails with a defect. |
+| `layer`     | Provides `collector` as `MicrosandboxSandbox.GarbageCollector`.                                             |
+
+Every provider in the process shares `collector`, so all their command starts
+count toward the same collections.
 
 ## Two services the bundle does not wrap
 

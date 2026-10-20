@@ -285,6 +285,71 @@ const recordAgainst = (failure: Journal.JournalError) =>
     )
   )
 
+describe("what identifies a recorded plan", () => {
+  const plan = (
+    extra: Partial<FlowRuntimeTypes.PlanRecorded> = {},
+    site: { readonly path: string; readonly line: number } | undefined = { path: "/repo/src/Answer.ts", line: 12 }
+  ): FlowRuntimeTypes.PlanRecorded => ({
+    _tag: "PlanRecorded",
+    sourceId: "plan/0/0",
+    flow: "answer",
+    digest: "structure",
+    generation: 0,
+    page: 0,
+    pages: 1,
+    nodeCount: 2,
+    nodes: [node("ask", { action: "ask", ...(site === undefined ? {} : { declaredAt: site }) }), node("map")],
+    edges: [{ from: "ask", to: "map", reason: "value" }],
+    ...extra
+  })
+  const payload = (record: FlowRuntimeTypes.PlanRecorded, at: NodeJournal.Scope = scope) =>
+    NodeJournal.entry(at, record).payload as Readonly<Record<string, unknown>>
+  const same = (left: FlowRuntimeTypes.PlanRecorded, right: FlowRuntimeTypes.PlanRecorded) =>
+    NodeJournal.samePlan(payload(left), payload(right))
+
+  it("is the digest and the header, never a site, a revision or the page layout", () => {
+    const rebuilt = plan({ pages: 3, nodes: [node("ask", { action: "ask" })] }, { path: "/repo/dist/App.js", line: 49 })
+    expect(payload(plan())["graph"]).not.toEqual(payload(rebuilt)["graph"])
+    expect(same(plan(), rebuilt)).toBe(true)
+    expect(NodeJournal.samePlan(payload(plan()), payload(plan(), { ...scope, sourceRevision: "a".repeat(40) })))
+      .toBe(true)
+    expect(NodeJournal.planIdentity(payload(plan()))).toEqual({
+      flow: "answer",
+      digest: "structure",
+      generation: 0,
+      nodes: 2,
+      page: 0
+    })
+  })
+
+  it("tells a changed structure apart", () => {
+    expect(same(plan(), plan({ digest: "restructured" }))).toBe(false)
+    expect(same(plan(), plan({ nodeCount: 3 }))).toBe(false)
+    expect(same(plan(), plan({ flow: "other" }))).toBe(false)
+    expect(same(plan(), plan({ digest: undefined }))).toBe(false)
+  })
+
+  it("compares a plan with no digest by its whole content, without sites", () => {
+    const undigested = (extra: Partial<FlowRuntimeTypes.PlanRecorded> = {}, site?: { path: string; line: number }) =>
+      plan({ digest: undefined, ...extra }, site)
+    expect(same(undigested(), undigested({}, { path: "/repo/dist/App.js", line: 49 }))).toBe(true)
+    expect(NodeJournal.samePlan(payload(undigested()), payload(undigested(), { ...scope, root: undefined })))
+      .toBe(true)
+    expect(same(undigested(), undigested({ nodes: [node("ask", { action: "other" }), node("map")] }))).toBe(false)
+    expect(same(undigested(), undigested({ edges: [] }))).toBe(false)
+    expect(same(undigested(), undigested({ pages: 2 }))).toBe(false)
+  })
+
+  it("compares a malformed row as it stands", () => {
+    const header = { flow: "answer", generation: 0, nodes: 1 }
+    for (const graph of [undefined, "graph", { nodes: "nodes" }, { nodes: ["node", { id: "a" }] }]) {
+      expect(NodeJournal.planIdentity({ ...header, graph })).toEqual({ ...header, graph })
+    }
+    expect(NodeJournal.samePlan({ ...header, graph: { nodes: ["node"] } }, { ...header, graph: { nodes: [7] } }))
+      .toBe(false)
+  })
+})
+
 describe("a node record the journal refuses", () => {
   it("self-interrupts when the owner fence is lost, rather than narrating a run it no longer owns", async () => {
     const exit = await recordAgainst(new Journal.JournalError({ code: "fence_lost", message: "fence lost" }))
@@ -641,6 +706,72 @@ describe("plan provenance lookup", () => {
           yield* engine.nodeRecordBytes!(record)
         }).pipe(Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(Empty, runId)))
         expect(reads).toHaveBeenCalledTimes(3)
+      })
+    )
+  })
+
+  it("keeps the pages an earlier build recorded, and appends none of the rebuilt plan's", async () => {
+    await check((engine, real) =>
+      Effect.gen(function*() {
+        const runId = "rebuilt-plan"
+        yield* (yield* RunStore.RunStore).create(
+          runId,
+          JSON.stringify({ version: 1, flowName: Empty._tag, payload: {} })
+        )
+        const cwd = process.cwd()
+        const page = (site: string, count: number, index: number, generation = 0) => ({
+          sourceId: `plan/${generation}/${index}`,
+          flow: Empty._tag,
+          generation,
+          page: index,
+          pages: count,
+          nodes: [node(`node-${index}`, { declaredAt: { path: `${cwd}/${site}`, line: 10 + index } })],
+          edges: []
+        })
+        const pages = (site: string, count: number, generation = 0): ReadonlyArray<FlowRuntimeTypes.NodeRecord> => [
+          {
+            _tag: "PlanRecorded",
+            digest: `structure-${generation}`,
+            nodeCount: 3,
+            ...page(site, count, 0, generation)
+          },
+          ...Array.from({ length: count - 1 }, (_, index) => ({
+            _tag: "SubgraphAppended" as const,
+            ...page(site, count, index + 1, generation)
+          }))
+        ]
+        const walk = (
+          records: ReadonlyArray<FlowRuntimeTypes.NodeRecord>,
+          instance = FlowEngine.makeInstance(Empty, runId)
+        ) =>
+          Effect.forEach(records, (record) => engine.recordNode!(record), { discard: true }).pipe(
+            Effect.provideService(FlowRuntime.FlowInstance, instance)
+          )
+        const rows = Effect.map(
+          real.entries({ runId: JournalEvent.RunId.make(runId), limit: 100 }),
+          (entries) => entries.entries.map((entry) => ({ sourceId: entry.sourceId, payload: entry.payload }))
+        )
+        yield* walk([...pages("src/Answer.ts", 2), ...pages("src/Answer.ts", 1, 1)])
+        const recorded = yield* rows
+        // The rebuilt plans page differently because their sites encode differently.
+        const rebuilt = FlowEngine.makeInstance(Empty, runId)
+        yield* walk([...pages("dist/App-3f2a1c.js", 3), ...pages("dist/App-3f2a1c.js", 1, 1)], rebuilt)
+        expect(yield* rows).toEqual(recorded)
+        // A plan no earlier build recorded still writes its pages.
+        yield* walk([{ _tag: "SubgraphAppended", ...page("dist/App-3f2a1c.js", 2, 1, 2) }], rebuilt)
+        expect((yield* rows).map((row) => row.sourceId)).toEqual([
+          "provenance/plan/0/0",
+          "provenance/plan/0/1",
+          "provenance/plan/1/0",
+          "provenance/plan/2/1"
+        ])
+        const changed = yield* walk([{
+          _tag: "PlanRecorded",
+          digest: "restructured",
+          nodeCount: 3,
+          ...page("src/Answer.ts", 2, 0)
+        }]).pipe(Effect.flip)
+        expect(changed).toMatchObject({ code: "plan_changed", flow: Empty._tag })
       })
     )
   })

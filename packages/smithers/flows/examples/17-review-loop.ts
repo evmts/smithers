@@ -11,10 +11,10 @@
 import { Action, Flow, Graph, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { durableEngine } from "../src/test/TestNodeRuntime.ts"
 
 /** How many reviews one run may spend. The plan holds exactly this many. */
 export const maxRounds = 3
@@ -156,7 +156,7 @@ export const main = (
         Effect.provide(
           Layer.mergeAll(draft, review, revise, publish, Interpreter.layer(Article)).pipe(
             Layer.provideMerge(Action.layerImplementations),
-            Layer.provideMerge(durableEngine(filename, "examples-review"))
+            Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-review"))
           )
         )
       )

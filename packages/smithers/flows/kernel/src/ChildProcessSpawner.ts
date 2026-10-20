@@ -192,10 +192,25 @@ const maximumEnvironmentNames = 64
 /**
  * The environment this process holds, which a child built with
  * `ChildProcessEnvironment.make` inherits its bootstrap names from. Empty on a
- * host with no process environment, so every declared bootstrap name counts
- * as an override there.
+ * host with no process environment, such as a browser or a Cloudflare Worker,
+ * so every declared bootstrap name counts as an override there.
+ *
+ * This module is the one place a library reads the ambient environment for a
+ * child. Code that builds a child's environment itself, or names a host path
+ * a child uses (a temporary or cache directory), reads it here rather than
+ * from the `process` global, so it imports and runs on every host.
+ *
+ * @example
+ * ```ts
+ * import { ChildProcessEnvironment, ChildProcessSpawner } from "@smthrs/kernel"
+ *
+ * const env = ChildProcessEnvironment.make(ChildProcessSpawner.ambientEnvironment(), { CI: "1" })
+ * ```
+ *
+ * @category accessors
+ * @since 1.0.0-rc.16
  */
-const ambientEnvironment = (): Readonly<Record<string, string | undefined>> =>
+export const ambientEnvironment = (): Readonly<Record<string, string | undefined>> =>
   (globalThis as { readonly process?: { readonly env?: Record<string, string | undefined> } }).process?.env ?? {}
 
 const environmentNames = (command: ChildProcess.StandardCommand): ReadonlyArray<string> | undefined => {

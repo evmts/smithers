@@ -1091,6 +1091,34 @@ export const layer: Layer.Layer<
   })
 )
 
+const hostWithoutFileSystem = (): UnsupportedBoundary =>
+  new UnsupportedBoundary({
+    code: "unsupported_boundary",
+    message: "this host has no filesystem to enforce a step boundary on"
+  })
+
+/**
+ * The boundary of a host with no filesystem: every call refuses with
+ * {@link UnsupportedBoundary}, and the layer requires nothing.
+ *
+ * Use it where there is no workspace to measure, such as a Worker or a
+ * Durable Object. A sealed step that declares a file boundary fails its
+ * attempt with the refusal before its body runs, so no result is recorded on
+ * a claim the host could not check. A step without a file boundary never
+ * reaches the boundary and runs normally.
+ *
+ * @since 1.0.0
+ * @category layers
+ */
+export const layerUnsupported: Layer.Layer<Service> = Layer.succeed(
+  StepBoundary,
+  make({
+    prepare: Effect.fn("StepBoundary.prepare")(() => Effect.fail(hostWithoutFileSystem())),
+    settle: Effect.fn("StepBoundary.settle")(() => Effect.fail(hostWithoutFileSystem())),
+    replayOutputs: Effect.fn("StepBoundary.replayOutputs")(() => Effect.fail(hostWithoutFileSystem()))
+  })
+)
+
 /**
  * What the deterministic test boundary should pretend the host observed.
  *

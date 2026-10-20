@@ -10,12 +10,12 @@
  */
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, Interpreter, Poll, Sleep } from "@smthrs/flow"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
-import { durableEngine } from "../src/test/TestNodeRuntime.ts"
 
 /** The check the poll runs: a deployment that goes live on the third look. */
 export const Status = Action.make("examples/Status", {
@@ -58,7 +58,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
       // node no implementation answers.
       Layer.mergeAll(status, Poll.layer, Sleep.layer, Interpreter.layer(Deployment)).pipe(
         Layer.provideMerge(Action.layerImplementations),
-        Layer.provideMerge(durableEngine(filename, hostId))
+        Layer.provideMerge(TestNodeRuntime.durableEngine(filename, hostId))
       )
 
     // Phase one: the first attempt runs and the round parks on its timer.

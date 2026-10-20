@@ -1,3 +1,4 @@
+import * as Pg from "@effect/sql-pg"
 import { describe, expect, it } from "@effect/vitest"
 import { Context, Effect, Exit, Fiber, Layer, Scope } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
@@ -14,8 +15,8 @@ const fixture = <A, E>(body: (first: SqlClient, second: SqlClient) => Effect.Eff
   Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const schema = `adapter_${randomUUID().replaceAll("-", "")}`
     // Build the layers in the enclosing scope so two independent pools stay open.
-    const first = yield* Layer.build(PostgresDatabase.layer({ url: url!, schema }))
-    const second = yield* Layer.build(PostgresDatabase.layer({ url: url!, schema }))
+    const first = yield* Layer.build(PostgresDatabase.layer({ url: url!, driver: Pg, schema }))
+    const second = yield* Layer.build(PostgresDatabase.layer({ url: url!, driver: Pg, schema }))
     const a = Context.get(first, SqlClient)
     const b = Context.get(second, SqlClient)
     yield* Effect.addFinalizer(() => TestDatabase.dropSchema(a, schema).pipe(Effect.orDie))
@@ -143,7 +144,7 @@ describe.skipIf(!url)("PostgreSQL adapter (independent pools)", () => {
       Effect.gen(function*() {
         const [row] = yield* sql<{ schema: string }>`SELECT current_schema() AS schema`
         const scope = yield* Scope.make()
-        const context = yield* Layer.build(PostgresDatabase.layer({ url: url!, schema: row!.schema })).pipe(
+        const context = yield* Layer.build(PostgresDatabase.layer({ url: url!, driver: Pg, schema: row!.schema })).pipe(
           Scope.provide(scope)
         )
         const closed = Context.get(context, SqlClient)
@@ -191,10 +192,10 @@ describe.skipIf(!url)("PostgreSQL adapter (independent pools)", () => {
 })
 
 it("rejects schema identities PostgreSQL would truncate or treat as absent", () => {
-  expect(PostgresDatabase.layer({ url: "postgres://localhost/test" })).toBeDefined()
+  expect(PostgresDatabase.layer({ url: "postgres://localhost/test", driver: Pg })).toBeDefined()
   for (const schema of ["", "a".repeat(64), "🐘".repeat(16), "bad\0name"]) {
-    expect(() => PostgresDatabase.layer({ url: "postgres://localhost/test", schema })).toThrow(
-      new NodeDatabase.UnsupportedDatabase({
+    expect(() => PostgresDatabase.layer({ url: "postgres://localhost/test", driver: Pg, schema })).toThrow(
+      new PostgresDatabase.UnsupportedDatabase({
         code: "postgres_schema_invalid",
         message: "PostgreSQL schema must contain 1 to 63 UTF-8 bytes and no NUL"
       })

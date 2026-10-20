@@ -184,10 +184,10 @@ export const leaseLiveness = (
  * for a run whose lease has ALREADY expired, so answering `false` here does
  * not weaken anything; it declines to add evidence.
  *
- * Node hosts only. It is not part of the browser promise: this entry point
- * bundles for the browser because it never imports a `node:` built-in, and a
- * browser composition has no process table to ask, so it keeps
- * {@link leaseLiveness}.
+ * Node hosts only. This module bundles for a browser because it imports no
+ * `node:` built-in, but a browser has no process table to ask. Its engine runs
+ * one incarnation per origin, so `@smthrs/platform-browser`'s `BrowserRuntime`
+ * uses {@link singleIncarnationLiveness}, as a Cloudflare Durable Object does.
  *
  * `@smthrs/platform-node`'s `HostLiveness.isAlive` asks the same question of
  * the same process table and differs in one deliberate place: it answers
@@ -228,6 +228,31 @@ export const sameHostPidProbe: LivenessCheck = (expectedOwner, context) =>
       return (error as { readonly code?: string | undefined } | null)?.code !== "ESRCH"
     }
   })
+
+const lease = leaseLiveness()
+
+/**
+ * The liveness check for a host that runs one incarnation at a time.
+ *
+ * Such a host builds its engine only while it holds an exclusive claim: a
+ * Cloudflare Durable Object inside its alarm, a browser engine inside the
+ * worker that holds its origin's Web Lock. An owner recorded under the
+ * claimant's own host id with another `pid` or `nonce` is an earlier
+ * incarnation whose claim has ended, so it is dead, and the engine takes its
+ * runs at once instead of waiting out the lease. Every other owner, the
+ * claimant included, is judged by {@link leaseLiveness} alone.
+ *
+ * Two Node engines over one database can share a host id and both be alive,
+ * so a Node host uses {@link sameHostPidProbe} instead.
+ *
+ * @since 1.0.0-rc.16
+ * @category ownership
+ */
+export const singleIncarnationLiveness: LivenessCheck = (expectedOwner, context) =>
+  sameHostIncarnation(expectedOwner, context.claimant) &&
+    (expectedOwner.pid !== context.claimant.pid || expectedOwner.nonce !== context.claimant.nonce)
+    ? Effect.succeed(false)
+    : lease(expectedOwner, context)
 
 export {
   /**

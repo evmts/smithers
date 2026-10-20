@@ -268,6 +268,29 @@ and the host filesystem. For `store_failed`, check that the plan store's
 migrations ran: the plan set is last in `Migrations.sets`, so a composition that
 installed only part of the ladder is missing exactly that table.
 
+## A run resumed after a deploy fails with `plan_changed`
+
+**What happened.** A run parked under one build resumed under another, and the
+rebuilt plan differs from the plan the run recorded. The engine compares the
+plan's digest: node ids, kinds, action tags, schemas, tiers, effects,
+dependencies, edges, and callback source. It never compares where a node was
+declared or how the plan was paged, so a rebuild that only moves declarations
+resumes. The run keeps the plan record its first build wrote, with that build's
+declaration sites and source revision.
+
+A real change refuses the resume before any step dispatches. The run settles
+`failed`, and the engine logs
+`A flow body failed with an error outside its declared error schema` with
+`InterpreterError` code `plan_changed`. `poll` returns a completed failure
+whose defect names `@smthrs/flow/InterpreterError`. The engine does not retry
+or re-plan the run. Anything an application shows for the run, such as an
+answer still streaming, stays until the application reacts to the failed run.
+
+**What to change.** Treat `failed` as terminal wherever the application waits
+on a run, and close what the run was feeding. Run the changed flow under a new
+execution id. To keep work in flight across a deploy that changes a flow, let
+those runs settle before the deploy.
+
 ## RetentionError
 
 **What happened.** A retention pass could not complete.

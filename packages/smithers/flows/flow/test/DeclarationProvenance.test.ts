@@ -11,12 +11,13 @@
  * that captures it never throws, whatever a runtime hands it.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Action, Flow, Graph } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import { Node, Plan } from "@smthrs/plan"
 import { Effect, Schema } from "effect"
 import * as DeclarationSite from "../src/internal/DeclarationSite.ts"
 import * as Sleep from "../src/Sleep.ts"
 import { withCrypto } from "./Crypto.ts"
+import { layerWired, makeInstance, makeMemoryState } from "./MemoryFlowRuntime.ts"
 
 const Declared = Action.make("provenance/declared", {
   payload: { value: Schema.Number },
@@ -68,7 +69,7 @@ describe("declaration provenance", () => {
       .find((node) => node.ast._tag === "ActionCall")?.declaredAt
 
     expect(site?.path.endsWith("test/DeclarationProvenance.test.ts")).toBe(true)
-    expect(site?.line).toBe(21)
+    expect(site?.line).toBe(22)
   })
 
   it("carries a flow's own declaration site", () => {
@@ -77,10 +78,10 @@ describe("declaration provenance", () => {
     expect(entry?.declaredAt?.path.endsWith("test/DeclarationProvenance.test.ts")).toBe(true)
     // The line `Entry` is declared on, above: a flow's site is its own, and an
     // action called from its body has a different one.
-    expect(entry?.declaredAt?.line).toBe(50)
+    expect(entry?.declaredAt?.line).toBe(51)
     expect(
       Graph.nodes(Graph.build(Entry, {})).find((node) => node.ast._tag === "ActionCall")?.declaredAt?.line
-    ).toBe(21)
+    ).toBe(22)
   })
 
   it.effect("keys the same declaration identically wherever it was written", () =>
@@ -97,6 +98,30 @@ describe("declaration provenance", () => {
       expect(there.digest).toBe(here.digest)
       expect(JSON.stringify(there.nodes.map((node) => node.material)))
         .toBe(JSON.stringify(here.nodes.map((node) => node.material)))
+    }))
+
+  it.effect("records one plan digest for the same flow wherever its declarations were written", () =>
+    Effect.gen(function*() {
+      // The digest is what a durable store compares when a run resumes, so a
+      // rebuild that only moved declarations must not be able to change it.
+      const recorded = (action: typeof Same) => {
+        const memory = makeMemoryState()
+        const flow = flowOf(action)
+        return withCrypto(
+          Interpreter.interpret(flow, {}).pipe(
+            Effect.provideService(FlowRuntime.FlowInstance, makeInstance(flow, "provenance-run")),
+            Effect.provide(layerWired(Same.toLayer(({ value }) => Effect.succeed(value)), memory)),
+            Effect.map(() =>
+              memory.nodeRecords.flatMap(({ record }) => record._tag === "PlanRecorded" ? [record] : [])[0]!
+            )
+          )
+        )
+      }
+      const here = yield* recorded(Same)
+      const there = yield* recorded(Moved)
+
+      expect(there.nodes.map((node) => node.declaredAt)).not.toEqual(here.nodes.map((node) => node.declaredAt))
+      expect(there.digest).toBe(here.digest)
     }))
 
   it.effect("keeps the source position out of everything a digest can see", () =>

@@ -170,17 +170,18 @@ export const makeActionExecute = (options: Encoded) => {
       options.actionRetryOrigin !== undefined &&
       Option.isNone(durableOrigin)
     ) {
-      // A durable driver that finds no surviving attempt row cannot bound
-      // the schedule-to-close budget to the true first attempt. The engine
-      // keeps the in-process fallback — failing the run outright would
-      // turn benign attempt-row retention pruning into spurious failures —
-      // but the restarted budget is worth a trace (issue #69). Only a budget
-      // the author declared warns: the implicit transient default (#3369)
-      // covers every repeat-safe action, whose first dispatch has no
-      // attempt row yet, so a warning there would fire on every run.
-      const restarted =
+      // A durable driver that finds no surviving attempt row starts the
+      // schedule-to-close budget from the current clock. The engine keeps
+      // that in-process fallback — failing the run outright would turn
+      // benign attempt-row retention pruning into spurious failures — and
+      // records it for a trace (issue #69). It is a Debug record, not a
+      // warning: an action's first dispatch has no attempt row yet either,
+      // and the store cannot tell that ordinary start from pruned history,
+      // so a warning here fired on every first dispatch of every action
+      // whose policy declares `expirationMs`.
+      yield* Effect.logDebug(
         `FlowEngine.actionExecute: no durable retry origin for "${action.name}"; the expirationMs budget restarts from the current clock`
-      yield* action.retryPolicy === undefined ? Effect.logDebug(restarted) : Effect.logWarning(restarted)
+      )
     }
     const now = yield* Clock.currentTimeMillis
     const origin = Option.getOrUndefined(durableOrigin)

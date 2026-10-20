@@ -7,7 +7,7 @@
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import { OwnerId } from "@smthrs/journal/OwnerId"
 import { RunStatus, RunStoreError } from "@smthrs/run-store/RunStore"
-import { Cause, Effect, Exit, Option, Schema } from "effect"
+import { Cause, Effect, Schema } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import type { Batch } from "../ExecutionSnapshot.ts"
 import { RunState } from "../RunState.ts"
@@ -52,38 +52,6 @@ export const Position = Schema.Struct({ source: Source, revision: Natural })
  * @since 1.0.0
  */
 export type Position = typeof Position.Type
-
-/**
- * A deferred read transaction on the reserved engine connection. The normal
- * writable client's transaction starts IMMEDIATE; a read needs only SQLite's
- * snapshot and must allow a WAL writer to commit while it reads. PostgreSQL
- * reads at REPEATABLE READ so every statement shares the snapshot the position
- * was read from; READ COMMITTED would let a concurrent commit make a row look
- * newer than its position. Reuse the SQL
- * client's transaction service to join an existing transaction. No read body
- * exposes a mutation callback. Connection reservation and interruption release
- * remain scoped, including when BEGIN or the read fails.
- * @since 1.0.0
- * @private
- */
-export const transaction = <A, E, R>(sql: SqlClient.SqlClient, effect: Effect.Effect<A, E, R>) =>
-  Effect.flatMap(
-    Effect.serviceOption(sql.transactionService),
-    (existing) =>
-      Option.isSome(existing) ? effect : Effect.scoped(Effect.gen(function*() {
-        const connection = yield* sql.reserve
-        return yield* Effect.acquireUseRelease(
-          connection.executeUnprepared(
-            sql.onDialectOrElse({ pg: () => "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY", orElse: () => "BEGIN" }),
-            [],
-            undefined
-          ),
-          () => effect.pipe(Effect.provideService(sql.transactionService, [connection, 0])),
-          (_, exit) =>
-            connection.executeUnprepared(Exit.isSuccess(exit) ? "COMMIT" : "ROLLBACK", [], undefined).pipe(Effect.orDie)
-        )
-      }))
-  )
 
 /**
  * Preserves failure causes and interruption at the read boundary.

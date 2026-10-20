@@ -52,6 +52,7 @@ import * as ObservabilityMetric from "@smthrs/observability/Metric"
 import { Clock, Context, Duration, Effect, Layer, Metric, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as SqlError from "effect/sql/SqlError"
+import type { Fragment } from "effect/sql/Statement"
 import { heartbeatSkewAllowance, heartbeatStaleAfter } from "./Heartbeat.ts"
 import * as Boundary from "./internal/Boundary.ts"
 import * as Companion from "./internal/Companion.ts"
@@ -1189,6 +1190,84 @@ const evidenceMatches = (
   expected.status === "running" &&
   expected.owner !== null &&
   matchesEvidence(expected.owner, claimant, checkedAtMs, evidence)
+
+/**
+ * The ownership fence of one running attempt: the attempt row and the engine
+ * incarnation that holds its run.
+ *
+ * `@smthrs/flow`'s `Action.CurrentFence` has this shape, so the fence a
+ * durable engine supplies to an action implementation passes to {@link owned}
+ * unchanged.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface Fence {
+  readonly runId: string
+  readonly stepKeyDigest: string
+  readonly attempt: number
+  readonly owner: OwnerId
+}
+
+/**
+ * Options for {@link owned}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface OwnedOptions {
+  /**
+   * The schema holding the engine's `flows_runs` and `flows_attempts` tables.
+   * Name it when the statement runs on a client whose search path is not the
+   * engine's, such as an application database client over the same server.
+   * Absent, the table names are unqualified.
+   */
+  readonly schema?: string | undefined
+}
+
+/**
+ * A boolean SQL condition that holds only while `fence` is current: its run is
+ * `running` under exactly the fenced owner, and its attempt row is still
+ * `running`.
+ *
+ * An action implementation adds it to its own `UPDATE` or `DELETE`, so a write
+ * from an owner that lost the run to a takeover, or from an attempt that has
+ * since settled, changes nothing. Read the affected row count to tell the two
+ * apart from success:
+ *
+ * ```ts
+ * const fence = yield* Action.CurrentFence
+ * yield* sql`UPDATE messages SET text = ${text}
+ *   WHERE id = ${id} AND ${RunStore.owned(sql, fence, { schema: "smithers_flows" })}`
+ * ```
+ *
+ * On PostgreSQL the condition reads both rows `FOR SHARE`, so a concurrent
+ * takeover or attempt settlement waits for the statement's transaction to end
+ * and the statement waits for theirs; a write therefore lands before the
+ * takeover or not at all. SQLite serializes every write transaction, which
+ * gives the same order without a row lock.
+ *
+ * @since 1.0.0
+ * @category fencing
+ */
+export const owned = (sql: SqlClient.SqlClient, fence: Fence, options: OwnedOptions = {}): Fragment => {
+  const table = (name: string): Fragment =>
+    options.schema === undefined ? sql.literal(name) : sql`${sql(options.schema)}.${sql.literal(name)}`
+  return sql`EXISTS (
+    SELECT 1
+    FROM ${table("flows_runs")} AS fence_run
+    JOIN ${table("flows_attempts")} AS fence_attempt ON fence_attempt.run_id = fence_run.run_id
+    WHERE fence_run.run_id = ${fence.runId}
+      AND fence_run.status = 'running'
+      AND fence_run.owner_host_id = ${fence.owner.hostId}
+      AND fence_run.owner_pid = ${fence.owner.pid}
+      AND fence_run.owner_nonce = ${fence.owner.nonce}
+      AND fence_attempt.step_key_digest = ${fence.stepKeyDigest}
+      AND fence_attempt.attempt = ${fence.attempt}
+      AND fence_attempt.state = 'running'
+    ${Dialect.isPostgres(sql) ? sql.literal("FOR SHARE") : sql.literal("")}
+  )`
+}
 
 /**
  * Constructs the production `RunStore` implementation.

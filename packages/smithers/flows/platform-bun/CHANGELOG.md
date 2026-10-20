@@ -4,6 +4,12 @@
 
 ### Added
 
+- `BunRuntime`, the durable flow runtime on Bun, moved from
+  `@smthrs/flows/BunRuntime` to this package's root. Its SQLite driver loads
+  when a database opens, so the root still loads under Node.
+
+### Added
+
 - `BunHost.BunHostError`, the refusal `BunHost.layerAt` and
   `BunHost.layerContainedAt` throw for a root that is not absolute, the empty
   string included. It carries the stable code `invalid_repository_root`

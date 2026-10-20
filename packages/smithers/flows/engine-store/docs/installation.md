@@ -94,11 +94,14 @@ browser-bundleable. A release that broke the bundle would fail the build before
 it shipped.
 
 Bundling is not running. The only durable backing shipped here is local SQLite
-through Node.js `node:sqlite` and `@effect/sql-sqlite-node`. A browser or edge
-deployment can import the types and the browser-safe in-memory helpers
-(`DurableEngineState.layerMemory`, `WorkspaceSandbox.makeMemory`,
-`StepSandbox.layerNoop`), but cannot execute durable flows. Supplying an
-alternative browser SQL client is not a supported runtime.
+through Node.js `node:sqlite` and `@effect/sql-sqlite-node`. A browser runs
+durable flows through `@smthrs/platform-browser`'s `BrowserRuntime`, in a
+dedicated worker over wa-sqlite in OPFS, and a Cloudflare Durable Object runs
+them through `@smthrs/platform-cloudflare`'s `CloudflareRuntime` over
+PostgreSQL. Without one of those hosts, a browser or edge bundle can import the
+types and the in-memory helpers (`DurableEngineState.layerMemory`,
+`WorkspaceSandbox.makeMemory`, `StepSandbox.layerNoop`) only. Any other SQL
+client is not a supported runtime.
 
 ## Next step
 

@@ -20,8 +20,17 @@
  */
 export * as BunFileSystem from "./BunFileSystem.ts"
 
+/** Bun's full garbage collection, for `@smthrs/sandbox`'s Microsandbox provider. */
+export * as BunGarbageCollector from "./BunGarbageCollector.ts"
+
 /**
  * The complete closed Host bundle for Bun.
  * @slop
  */
 export * as BunHost from "./BunHost.ts"
+
+/**
+ * The durable flow runtime on Bun: the shared native lifecycle bound to Bun's
+ * SQLite driver and this package's Host bundle.
+ */
+export * as BunRuntime from "./BunRuntime.ts"

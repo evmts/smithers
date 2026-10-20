@@ -13,6 +13,11 @@ over a virtual filesystem the page mounts, and `ChildProcessSpawner`, over a
 bash interpreter that runs inside the page. Code written against Effect's
 service tags runs in a tab without changing a line.
 
+It also hosts the durable flow engine in the browser. The engine runs in one
+dedicated worker per origin, chosen with a Web Lock, and keeps its step record
+in SQLite on the origin private file system, so a run that a closed tab or a
+killed browser interrupts resumes at the step it was in.
+
 Effect's own browser platform package covers HTTP, sockets, workers, key-value
 storage, and crypto. It ships neither of these, because a tab has no `node:fs`
 and cannot fork. A tab can serve both, given a virtual filesystem such as ZenFS
@@ -76,6 +81,76 @@ The program names nothing from this package. It asks for `FileSystem` and
 `ChildProcessSpawner`, so the same code runs under `@smthrs/platform-node` or
 `@smthrs/platform-bun` unchanged.
 
+## Run durable flows in a tab
+
+The worker every tab starts runs the engine when its tab leads:
+
+```ts
+// engine.worker.ts
+import wasmUrl from "@journeyapps/wa-sqlite/dist/wa-sqlite.wasm?url"
+import { BrowserRuntime } from "@smthrs/platform-browser"
+import { Answer, registration } from "./flows.ts"
+
+BrowserRuntime.run({
+  name: "smithers",
+  // Loaded only once this worker leads, and only into this worker's bundle.
+  sqlite: {
+    module: () => import("@journeyapps/wa-sqlite/dist/wa-sqlite.mjs"),
+    wasm: () => fetch(wasmUrl).then((response) => response.arrayBuffer())
+  },
+  flows: [Answer],
+  registerFlows: registration
+})
+```
+
+The package never imports the SQLite build or the engine eagerly: the worker
+hands over the build as lazy imports, and `BrowserRuntime` imports the engine
+when a worker first builds one. A tab that imports the package's root loads
+neither, and an app's tab bundle carries no wasm.
+
+Every tab starts its worker and sends its requests to the leader:
+
+```ts
+import { BrowserEngine } from "@smthrs/platform-browser"
+import * as Effect from "effect/Effect"
+import { Answer } from "./flows.ts"
+
+const layer = BrowserEngine.layer({
+  name: "smithers",
+  worker: () => new Worker(new URL("./engine.worker.ts", import.meta.url), { type: "module" })
+})
+
+const program = Effect.gen(function*() {
+  const engine = yield* BrowserEngine.BrowserEngine
+  yield* engine.start(Answer, { executionId: "answer-1", payload: { question: "why" } })
+  return yield* engine.result(Answer, "answer-1")
+}).pipe(Effect.provide(layer))
+```
+
+## Share one SQLite database between tabs
+
+The leader's worker also opens the app's own database, `app.db`, beside the
+engine's in the same OPFS pool, and runs every tab's statements on it. A tab
+reaches it through `SharedSqlite`, whichever tab's worker leads. TanStack DB's
+browser persistence takes it as its injected `{ execute, close }`, so the app
+loads one SQLite build instead of a second store with its own worker:
+
+```ts
+import { SharedSqlite } from "@smthrs/platform-browser"
+import { createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
+
+const persistence = createBrowserWASQLitePersistence({
+  database: await SharedSqlite.open({ name: "smithers" })
+})
+```
+
+A transaction a tab opens is that tab's alone until it ends; another tab's
+statement waits. The leader rolls back the open transaction of a tab that
+closes, and a transaction open when the leader's tab closes ends with it.
+
+[Run durable flows in a browser tab](docs/guides/run-flows-in-a-tab.md) is the
+full walkthrough.
+
 ## Modules
 
 | Module                       | What it provides                                                                                                 |
@@ -84,6 +159,13 @@ The program names nothing from this package. It asks for `FileSystem` and
 | `BrowserChildProcessSpawner` | `make` and `layer` over a just-bash interpreter, plus the `JustBashLike` slice, whose one member is `exec`.      |
 | `BrowserServices`            | `layer({ bash, fs })`: the spawner, the filesystem, and `Path`, mirroring `NodeServices.layer`.                  |
 | `BrowserHost`                | `layer({ bash, fs, jj })`: the closed Host bundle, adding the wasm-backed `Jj` and Effect's fetch `HttpClient`.  |
+| `BrowserRuntime`             | The durable engine in a dedicated worker: `run`, the worker entry, over `serve`, `layerHost` and `layer`.        |
+| `BrowserEngine`              | `layer({ name, worker })`: a tab's `start`, `result`, `cancel`, `signal` and `events`, sent to the leader.       |
+| `BrowserSqlite`              | `layerSqlite`: one wa-sqlite build and OPFS VFS per worker; `layer`: a `SqlClient` over one database file on it. |
+| `SharedSqlite`               | `layer({ name })` and `open({ name })`: a tab's `execute` on the app's own database, run by the leader.          |
+| `WebLock`, `TabChannel`      | The Web Lock that elects the leader, taken with `steal` by a focused tab, and the `BroadcastChannel` tabs use.   |
+| `StoragePersistence`         | `persist`: asks the browser for persistent storage, so it does not clear the engine's store.                     |
+| `BrowserCache`               | `layer({ name?, maxEntryBytes? })`: `@smthrs/artifacts`' `ImmutableCache` over the origin's Cache Storage.       |
 
 Three properties are worth knowing before you compose them.
 
@@ -153,8 +235,8 @@ its `engines` field asks for Node.js 26.4.0 or later, which is the toolchain
 that installs and builds it rather than a runtime the code needs.
 
 A tab runs the memory engine and the capability kernel over these adapters. The
-durable engine does not run there: its `SqlClient` uses `node:sqlite`, and
-`NodeRuntime` is Node-only.
+durable engine runs in a dedicated worker, where OPFS offers the synchronous
+access handles SQLite needs; a service worker does not offer them.
 
 Because both backend slices are structural, a test satisfies them without either
 vendor package: Node's own `node:fs/promises` satisfies `ZenFsPromisesLike`, and

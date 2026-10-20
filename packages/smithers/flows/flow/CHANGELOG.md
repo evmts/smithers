@@ -4,11 +4,30 @@
 
 ### Added
 
+- `Action.CurrentRedispatch` is `true` while an action body re-runs an
+  attempt an earlier execution started and never settled, so a body that
+  cannot repeat its effect silently can count or reconcile the repeat.
+- `SpanFailure`, moved here from `@smthrs/model`: spans whose failures export
+  only a tag and a lowercase token code. `Action.execute` and each flow's
+  `<tag>.execute` span now end this way, so an action's failure text, such as
+  a provider error quoting a prompt, never reaches a trace.
+- `Action.CurrentFence` carries the running attempt's ownership fence
+  (`Action.Fence`: run, step key digest, attempt, owner) to an action body. A
+  durable engine supplies it, and it changes when another incarnation adopts
+  a crashed attempt or a failed attempt is retried. An engine without durable
+  ownership leaves it `undefined`. `@smthrs/run-store`'s `RunStore.owned`
+  turns it into a condition for the body's own SQL writes.
+
 - Canonical `Flow.make(tag, options)` accepts typed prompt declarations lowered
   to ordinary actions with explicit host implementations (#2271). Empty tags
   and declarations without exactly one callable body or prompt are refused.
 
 ### Fixed
+
+- Breaking: `RetryPolicy.decide` reads a failure's Retry-After hint from
+  `retryAfterMillis`, the field `@smthrs/model`'s `ModelError` carries a
+  provider's `Retry-After` in, instead of `retryAfterMs`, which no failure
+  carried. A rate-limited model step now waits as long as its provider asked.
 
 - A call's step key no longer moves with the installed `effect` release: the graph takes each callee's schema identity from `@smthrs/plan`'s `Node.schemaIdentity`, which prints what `effect@4.0.0-rc.115` printed. ([#3839](https://github.com/smithersai/smithers/issues/3839)).
 - Preserve dynamic flow expansion and declaration source mappings when a bundled host loads project flows. ([#1991](https://github.com/smithersai/smithers/issues/1991)).

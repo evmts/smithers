@@ -14,6 +14,7 @@ import { fileSystem } from "../src/Sandbox/fileSystem.ts"
 import type { Session } from "../src/Sandbox/Session.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 import { discover } from "./helpers/discover.ts"
+import { hostCollector } from "./helpers/hostCollector.ts"
 import { makeWorkSeed } from "./helpers/workSeed.ts"
 
 const session = `real-microsandbox-${process.pid}-${Date.now()}`
@@ -27,6 +28,7 @@ const labels = { "smithers.test": session }
 const machine = (options: Partial<MicrosandboxSandbox.MicrosandboxSandboxOptions> = {}) =>
   MicrosandboxSandbox.make({
     sdk: Microsandbox,
+    collector: hostCollector,
     image: "oven/bun:1",
     pullPolicy: "if-missing",
     maxDurationSecs: 600,

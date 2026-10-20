@@ -10,7 +10,7 @@ import { chmod, mkdir, mkdtemp, open, readdir, readFile, rename, rm, rmdir, unli
 import { hostname, tmpdir } from "node:os"
 import { join } from "node:path"
 import { vi } from "vitest"
-import { Jj } from "../src/Jj.ts"
+import { Jj, RepositoryMutation, retryGitIndexLock } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
 
 // Fault injection stays at the filesystem boundary; all unaffected calls use
@@ -110,6 +110,20 @@ describe("NodeJj repository locks", () => {
         yield* Fiber.interrupt(holder)
         yield* NodeJj.withRepositoryMutation("apply", root, Effect.void)
       })
+    ))
+
+  it.effect("serves the same fences as the RepositoryMutation service", () =>
+    fixture((root) =>
+      Effect.gen(function*() {
+        const mutation = yield* RepositoryMutation
+        const held = yield* mutation.run(
+          "apply",
+          root,
+          Effect.sync(() => existsSync(join(root, ".jj", "repo", "smithers.lock")))
+        )
+        expect(held).toBe(true)
+        expect(existsSync(join(root, ".jj", "repo", "smithers.lock"))).toBe(false)
+      }).pipe(Effect.provide(NodeJj.layerRepositoryMutation))
     ))
 
   it.effect("allows an acquired operation to outlive the acquisition timeout", () =>
@@ -265,7 +279,7 @@ fi
       ) {
         let calls = 0
         const failure = { message }
-        const answer = yield* Effect.flip(NodeJj.retryGitIndexLock(Effect.suspend(() => {
+        const answer = yield* Effect.flip(retryGitIndexLock(Effect.suspend(() => {
           calls++
           return Effect.fail(failure)
         })))
@@ -278,7 +292,7 @@ fi
     Effect.gen(function*() {
       for (const detail of ["File exists", "another Git process", "reference already locked"]) {
         let calls = 0
-        const pending = yield* Effect.forkChild(NodeJj.retryGitIndexLock(Effect.suspend(() => {
+        const pending = yield* Effect.forkChild(retryGitIndexLock(Effect.suspend(() => {
           calls++
           return calls === 1
             ? Effect.fail({ message: `cannot lock ref 'refs/heads/main': ${detail}` })
@@ -294,7 +308,7 @@ fi
     Effect.gen(function*() {
       let calls = 0
       const failure = { message: "cannot lock ref 'refs/heads/main': File exists" }
-      const retrying = NodeJj.retryGitIndexLock(Effect.suspend(() => {
+      const retrying = retryGitIndexLock(Effect.suspend(() => {
         calls++
         return Effect.fail(failure)
       }))
@@ -406,7 +420,7 @@ fi
         message:
           "Could not acquire lock for index file: could not be obtained immediately after 1 attempt(s). '/git/index.lock'"
       }
-      const retrying = NodeJj.retryGitIndexLock(Effect.suspend(() => {
+      const retrying = retryGitIndexLock(Effect.suspend(() => {
         calls++
         return Effect.fail(failure)
       }))

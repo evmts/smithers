@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, it } from "@effect/vitest"
 import { Journal } from "@smthrs/flows"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -20,9 +20,9 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...actual, spawn: vi.fn(actual.spawn) }
 })
 
-vi.mock("@smthrs/flows/NodeRuntime", async (importOriginal) => {
-  const actual = await importOriginal<typeof NodeRuntime>()
-  return { ...actual, layerHost: vi.fn(actual.layerHost) }
+vi.mock("@smthrs/platform-node", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@smthrs/platform-node")>()
+  return { ...actual, NodeRuntime: { ...actual.NodeRuntime, layerHost: vi.fn(actual.NodeRuntime.layerHost) } }
 })
 
 const directory = mkdtempSync(join(tmpdir(), "flows-examples-containment-"))

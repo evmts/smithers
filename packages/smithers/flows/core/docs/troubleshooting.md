@@ -200,8 +200,9 @@ with `Node.capture` and the algorithm becomes `sha256-source-captures/v5`. See
 
 The rebuilt plan differs from the first recorded plan. This check includes
 callback source and declared captures, even when the edit leaves the same
-topology. Resume with the original declarations, or start a new execution id
-for the changed plan.
+topology. It excludes declaration sites, so moving a declaration or rebuilding
+a bundle does not refuse a resume. Resume with the original declarations, or
+start a new execution id for the changed plan.
 
 ### planned_value_computed
 

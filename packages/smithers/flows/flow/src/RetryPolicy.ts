@@ -472,6 +472,11 @@ export const isNonRetryable = (policy: RetryPolicy, error: unknown): boolean => 
  * the default a pluggable `resolveRetry` resolution falls back to when no
  * plugin claims the decision.
  *
+ * A failure that carries its own `retryAfterMillis`, a finite non-negative
+ * number of milliseconds such as a provider's `Retry-After` on a
+ * `ModelError`, retries after that delay instead of the policy's backoff,
+ * capped by `maxMs` and by what remains of `expirationMs`.
+ *
  * @category attempts
  * @since 0.1.0
  */
@@ -501,12 +506,14 @@ export const decide = (
           ? giveUp("expired")
           : giveUp("exhausted"),
       onSome: (delay) => {
-        // Tool failures may supply a delay instead of using policy backoff.
-        // Inspect only an own data property: failure payloads can be untrusted.
+        // A failure may supply a delay instead of the policy backoff, under
+        // the name `@smthrs/model`'s `ModelError` carries a provider's
+        // Retry-After in. Inspect only an own data property: failure payloads
+        // can be untrusted.
         let hint: unknown
         if (typeof options.error === "object" && options.error !== null) {
           try {
-            const descriptor = Object.getOwnPropertyDescriptor(options.error, "retryAfterMs")
+            const descriptor = Object.getOwnPropertyDescriptor(options.error, "retryAfterMillis")
             if (descriptor !== undefined && "value" in descriptor) hint = descriptor.value
           } catch {
             // An uninspectable failure falls back to the policy delay.

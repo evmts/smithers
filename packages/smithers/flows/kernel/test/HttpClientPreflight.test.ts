@@ -224,4 +224,25 @@ describe("HTTP destination pinning", () => {
     expect(await isGuardedPinned(trusted)).toBe(true)
     expect(await isGuardedPinned(other)).toBe(false)
   })
+
+  it("resolves no name unless the host provides a resolver", async () => {
+    const resolve = (hostname: string) =>
+      Effect.gen(function*() {
+        const resolver = yield* HttpClient.ResolveHost
+        return yield* resolver(hostname)
+      })
+    const refused = await Effect.runPromise(Effect.flip(resolve("example.test")))
+    expect(refused).toBeInstanceOf(HttpClient.ResolveHostUnavailable)
+    expect(refused).toMatchObject({
+      _tag: "@smthrs/kernel/ResolveHostUnavailable",
+      hostname: "example.test",
+      reason: "this host has no name resolver for web requests; its platform mediates the network"
+    })
+    const resolved = await Effect.runPromise(
+      resolve("example.test").pipe(
+        Effect.provideService(HttpClient.ResolveHost, (hostname) => Effect.succeed([`${hostname.length}.0.2.1`]))
+      )
+    )
+    expect(resolved).toEqual(["12.0.2.1"])
+  })
 })

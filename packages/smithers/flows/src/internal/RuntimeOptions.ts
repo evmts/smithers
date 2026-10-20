@@ -2,7 +2,7 @@
  * @since 1.0.0
  */
 
-import type * as EngineStore from "@smthrs/engine-store/EngineStore"
+import type { EngineStore } from "@smthrs/engine-store"
 import { Action } from "@smthrs/flow"
 import type { Jj } from "@smthrs/jj"
 import type { Ownership, RunStore } from "@smthrs/run-store"
@@ -20,15 +20,16 @@ import * as Schema from "effect/Schema"
  * which asks this machine's process table; a multi-process deployment answers
  * from its supervisor or lease system instead.
  *
+ * Nothing here names a file: the SQL client, the owner identity, the workspace
+ * and the artifact store are injected by the host. The native hosts in
+ * `@smthrs/platform-node` and `@smthrs/platform-bun` take their own options,
+ * which add the database file and the workspace root.
+ *
  * @since 0.1.0
  * @category models
  * @slop
  */
 export interface Options {
-  /** SQLite database filename. Its parent directory is created recursively. */
-  readonly filename: string
-  /** Workspace whose file actions may read or mutate. */
-  readonly workspaceRoot: string
   /** Stable identity of this engine host. */
   readonly owner: {
     readonly hostId: string
@@ -119,6 +120,15 @@ export interface Options {
    * @since 1.0.0
    */
   readonly privilegedJj?: Layer.Layer<Jj> | undefined
+  /**
+   * Who wakes this runtime's runs: `"process"`, the default, sweeps the store
+   * from a long-lived process; `{ host: executionId }` leaves waking one
+   * execution to a host that drives it per invocation. See
+   * `@smthrs/engine-store` `EngineStore.Options.sweep`.
+   *
+   * @since 1.0.0
+   */
+  readonly sweep?: EngineStore.Sweep | undefined
 }
 
 /**
@@ -146,9 +156,12 @@ const invalidConfiguration = (field: string, message: string): RuntimeConfigurat
  * whole point of {@link RuntimeConfigurationError.field} is that an embedder
  * can tell an empty `filename` from an empty `owner.hostId` without reading
  * prose. Decoding field by field makes the name come from the call site rather
- * than from walking a schema issue tree.
+ * than from walking a schema issue tree. A host package decodes the options it
+ * adds, such as a database filename, through this so its refusals carry the
+ * same error and the host's own `label`.
+ *
  * @since 1.0.0
- * @private
+ * @category validation
  */
 export const decodeField = <A>(
   field: string,
@@ -166,13 +179,25 @@ export const decodeField = <A>(
 
 const nonEmpty = "must be a non-empty string"
 
-/** Captures immutable options; paths resolve through the injected Path service.
+/**
+ * The sweep a runtime accepts: absent, `"process"`, or one host-driven
+ * execution named by a non-empty id.
+ */
+const Sweep = Schema.UndefinedOr(
+  Schema.Union([Schema.Literal("process"), Schema.Struct({ host: Schema.NonEmptyString })])
+)
+
+/**
+ * Captures the injected runtime's options as one immutable record.
+ *
+ * Throws `RuntimeConfigurationError` naming the first option that is wrong,
+ * with `label` leading its message. `layer` calls it; a host package that
+ * composes the engine itself calls it before reading the options.
+ *
  * @since 1.0.0
- * @private
+ * @category validation
  */
 export const validate = (options: Options, label = "Runtime"): Options => {
-  const filename = decodeField("filename", Schema.NonEmptyString, options.filename, nonEmpty, label)
-  const workspaceRoot = decodeField("workspaceRoot", Schema.NonEmptyString, options.workspaceRoot, nonEmpty, label)
   // A JavaScript caller can omit `owner` entirely, so the field is read off a
   // possibly-absent record rather than dereferenced.
   const owner = options.owner as { readonly hostId?: unknown } | undefined
@@ -213,9 +238,8 @@ export const validate = (options: Options, label = "Runtime"): Options => {
   if (privilegedJj !== undefined && !Layer.isLayer(privilegedJj)) {
     throw invalidConfiguration("privilegedJj", `${label} privilegedJj must be a Layer when supplied`)
   }
+  const sweep = decodeField("sweep", Sweep, options.sweep, "must be \"process\" or { host: <execution id> }", label)
   return Object.freeze({
-    filename,
-    workspaceRoot,
     owner: Object.freeze({ hostId }),
     isAlive,
     canExecute,
@@ -223,6 +247,7 @@ export const validate = (options: Options, label = "Runtime"): Options => {
     requestResume,
     cacheEnvironment,
     sourceRevision,
-    privilegedJj
+    privilegedJj,
+    sweep
   })
 }

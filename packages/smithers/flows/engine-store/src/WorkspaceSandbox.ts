@@ -480,6 +480,28 @@ export const make = (service: Service): Service => WorkspaceSandbox.of(service)
  */
 export const layer = (service: Service): Layer.Layer<Service> => Layer.succeed(WorkspaceSandbox, make(service))
 
+const hostWithoutFileSystem = (): WorkspaceError =>
+  new WorkspaceError({
+    code: "host_unavailable",
+    message: "this host has no filesystem to run an isolated workspace on"
+  })
+
+/**
+ * The sandbox of a host with no filesystem: `execute` and `materialize` refuse
+ * with a `host_unavailable` {@link WorkspaceError}, and the layer requires
+ * nothing.
+ *
+ * Pair it with `StepBoundary.layerUnsupported`, which refuses a declared file
+ * boundary before a sandbox is ever opened.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layerUnsupported: Layer.Layer<Service> = layer({
+  execute: () => Effect.fail(hostWithoutFileSystem()),
+  materialize: () => Effect.fail(hostWithoutFileSystem())
+})
+
 /**
  * Delivery for the effects a transaction queued but refused to send.
  *

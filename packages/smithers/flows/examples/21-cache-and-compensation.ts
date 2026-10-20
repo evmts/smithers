@@ -15,9 +15,9 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
+import { NodeRuntime, TestNodeRuntime } from "@smthrs/platform-node"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -35,7 +35,6 @@ import {
   writeFileSync
 } from "node:fs"
 import { dirname, join, resolve } from "node:path"
-import { stubJj } from "../src/test/TestNodeRuntime.ts"
 
 /** The failure the first attempt of the compensable step raises. */
 export class Interrupted extends Schema.TaggedError<Interrupted>()("examples/Interrupted", {
@@ -60,7 +59,7 @@ const describe = (message: string | undefined): string => {
 /**
  * A version-control service that snapshots a directory by copying it.
  *
- * `stubJj` in `TestNodeRuntime` records nothing, which is honest for examples
+ * `TestNodeRuntime.stubJj` in `TestNodeRuntime` records nothing, which is honest for examples
  * whose actions are sealed. A compensable action needs a real one: the engine
  * calls `snapshot` before each attempt and `restore` before a retry, and if
  * neither does anything then nothing is compensated. This one is the smallest
@@ -284,7 +283,7 @@ export const cached = (
       // A sealed step never asks for a pre-image, so the cache half runs on
       // `TestNodeRuntime`'s recording-nothing stub. Only the compensable half
       // below needs a version-control service that really moves files.
-      Layer.provideMerge(engine(filename, "examples-cache", stubJj))
+      Layer.provideMerge(engine(filename, "examples-cache", TestNodeRuntime.stubJj))
     )
 
     return yield* Effect.scoped(

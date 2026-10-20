@@ -24,7 +24,7 @@ npm install @smthrs/registry@1.0.0-rc.16
 
 ```ts
 import { Action } from "@smthrs/flows"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import * as Layer from "effect/Layer"

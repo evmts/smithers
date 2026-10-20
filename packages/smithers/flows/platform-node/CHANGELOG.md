@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- The durable flow runtime on Node, moved from `@smthrs/flows`: `NodeRuntime`,
+  `NativeRuntime` (the lifecycle `@smthrs/platform-bun`'s `BunRuntime` shares),
+  `SandboxedFlow` and `TestNodeRuntime`, each exported from the root with no
+  subpath. The package now depends on `@smthrs/flows`, `@effect/sql-sqlite-node`
+  and `esbuild`.
+
 ### Fixed
 
 - Atomic glob preserves dot-class text inside an outer character class and

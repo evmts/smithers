@@ -3,13 +3,11 @@ title: "API reference"
 description: "Every public export of @smthrs/observability: the Otlp exporter layers, endpoint and resource validation, the logger layers, the journal forwarder and its durable schema, the runtime metric handles, and the three OpenTelemetry SDK bridges."
 ---
 
-`@smthrs/observability` exports eight modules from its root entry point, and
-each is also importable from `@smthrs/observability/<Module>`:
+`@smthrs/observability` exports eight modules from its root entry point.
+Import them from the root:
 
 ```ts
 import { Endpoint, JournalLogger, Logger, Metric, Otel, Otlp, OtlpRelay, Resource } from "@smthrs/observability"
-// or
-import * as Otlp from "@smthrs/observability/Otlp"
 ```
 
 Two more modules are subpath-only, because each binds a host-specific
@@ -28,7 +26,7 @@ scope close, and a schema decodes to an `Effect`.
 ## Example
 
 ```ts
-import * as Otlp from "@smthrs/observability/Otlp"
+import { Otlp } from "@smthrs/observability"
 
 const telemetry = Otlp.layerFetch({ baseUrl: "http://localhost:4318", serviceName: "deploy-status" })
 const program = Effect.logInfo("deploying the API").pipe(Effect.withSpan("deploy"))
@@ -54,6 +52,7 @@ interface Options {
   readonly headers?: Headers.Input | undefined
   readonly exportInterval?: Duration.Input | undefined
   readonly shutdownTimeout?: Duration.Input | undefined
+  readonly spans?: ReadonlyArray<string> | undefined
 }
 ```
 
@@ -78,6 +77,12 @@ interface Options {
   each signal keeps Effect's own default.
 - `shutdownTimeout`: upper bound on the flush performed when the layer's scope
   closes.
+- `spans`: the span names exported. Omitted, every span is. A span off the
+  list still runs and still parents: its children keep its trace id and name
+  it as their parent, so a collector sees them with a parent it never
+  received. Logs and metrics are unaffected. Pass the span names of an
+  `OtlpRelay.serve` allowlist so the exporter never sends what the relay
+  drops.
 
 ### Otlp.layer
 
@@ -210,7 +215,8 @@ The shape of what a collector receives is in
 
 The receiving half of `Otlp`: an `effect/http` handler that takes OTLP/HTTP
 JSON exports, such as a browser's, and re-emits each record as an Effect log
-line. Imports only `effect`; runs in a Cloudflare Worker. Guide:
+line. Imports `effect` and the journal's redaction rules, and no `node:`
+built-in; runs in a Cloudflare Worker. Guide:
 [Relay browser telemetry through your own Worker](./guides/relay-browser-telemetry.md).
 
 ### OtlpRelay.serve
@@ -223,7 +229,12 @@ const serve: (
 interface Options {
   readonly maxBodyBytes?: number // default 256 KiB, counted while reading
   readonly maxRecords?: number // default 1000 per request
-  readonly allowAttribute?: (key: string) => boolean // default: drop Redaction.isSensitiveKey keys
+  readonly allow?: Allowlist // default: every record and field
+}
+
+interface Allowlist {
+  readonly records: ReadonlyArray<string> // log bodies, span names and metric names relayed
+  readonly fields: ReadonlyArray<string> // keys a relayed line keeps, the relay's own included
 }
 ```
 
@@ -234,19 +245,24 @@ message is the body, span name or metric name; the level follows
 `service.name`, the record's attributes flattened with dotted keys, and as they
 apply `otlp.severity`, `trace_id`, `span_id`, `otlp.parent_span_id`,
 `otlp.duration_ms`, `otlp.status_message`, `otlp.metric_type`, `otlp.unit`,
-`otlp.value`, `otlp.count` and `otlp.sum`. Attribute keys pass `allowAttribute`;
-messages and attribute values pass `Redaction.redact`.
+`otlp.value`, `otlp.count` and `otlp.sum`. A key `Redaction.isSensitiveKey`
+names a credential is removed with any keys nested under it. With `allow`, a
+record whose name `records` does not list is dropped, and a field whose key
+`fields` does not list is removed; a log record's name is its body, so a
+structured body never matches. The finished line, its message and every field
+the relay added included, then passes `Redaction.redact`.
 
-| Status | When                                                                          |
-| ------ | ----------------------------------------------------------------------------- |
-| 200    | `{}`, or an OTLP `partialSuccess` counting records past `maxRecords`          |
-| 400    | the body is not OTLP JSON, nests deeper than `maxNesting`, or fails to stream |
-| 404    | the path does not end in a signal                                             |
-| 405    | the method is not POST; `Allow: POST`                                         |
-| 413    | the body passes `maxBodyBytes`                                                |
+| Status | When                                                                                |
+| ------ | ----------------------------------------------------------------------------------- |
+| 200    | `{}`, or an OTLP `partialSuccess` counting records off `allow` or past `maxRecords` |
+| 400    | the body is not OTLP JSON, nests deeper than `maxNesting`, or fails to stream       |
+| 404    | the path does not end in a signal                                                   |
+| 405    | the method is not POST; `Allow: POST`                                               |
+| 413    | the body passes `maxBodyBytes`                                                      |
 
-It never fails and never echoes a parse error. `Metric.relayedRecords` and
-`Metric.relayDroppedRecords` count records by `signal`.
+It never fails and never echoes a parse error. `Metric.relayedRecords` counts
+records by `signal`, and `Metric.relayDroppedRecords` by `signal` and `reason`
+(`not_allowed` or `over_limit`).
 
 ### OtlpRelay.severityLevel
 
@@ -264,7 +280,6 @@ decides; with neither, `Info`.
 const defaultMaxBodyBytes: number // 262144
 const defaultMaxRecords: number // 1000
 const maxNesting: number // 64
-const defaultAllowAttribute: (key: string) => boolean
 type Signal = "logs" | "traces" | "metrics"
 ```
 
@@ -710,9 +725,10 @@ const relayDroppedRecords: Metric.Counter // "flows_observability_otlp_relay_dro
 - `structuredOutputExhausted` advances once per agent step that fails after
   spending every output correction and its repair.
 - `droppedLogRecords` advances once per record lost by `JournalLogger`.
-- `relayedRecords` and `relayDroppedRecords` advance per record
-  `OtlpRelay.serve` relays or drops past `maxRecords`, with a `signal`
-  attribute.
+- `relayedRecords` advances per record `OtlpRelay.serve` relays, with a
+  `signal` attribute. `relayDroppedRecords` advances per record it drops, with
+  `signal` and `reason`: `not_allowed` off its allowlist, `over_limit` past
+  `maxRecords`.
 
 Step-cache lookup and write counters remain owned by
 [`@smthrs/step-cache`](/api/step-cache); this package does not duplicate those

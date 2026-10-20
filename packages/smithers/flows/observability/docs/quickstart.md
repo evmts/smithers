@@ -52,7 +52,7 @@ ordinary Effect, and they are exactly what the Smithers packages already do on
 their own hot paths.
 
 ```ts
-import * as Otlp from "@smthrs/observability/Otlp"
+import { Otlp } from "@smthrs/observability"
 import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
 

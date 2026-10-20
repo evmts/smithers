@@ -9,6 +9,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
 import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
+import * as Random from "effect/Random"
 import * as OwnerIdentity from "../src/OwnerIdentity.ts"
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -56,6 +57,27 @@ describe("OwnerIdentity", () => {
       // The suite runs on node, so the default reports this process.
       expect(owner).toEqual({ hostId: "layer-host", pid: process.pid, nonce: owner.nonce })
       expect(owner.nonce).toMatch(uuid)
+    }))
+
+  it.effect("draws the incarnation number on a host whose process id names no incarnation", () =>
+    Effect.gen(function*() {
+      const ownerUnder = (layer: typeof OwnerIdentity.layer) =>
+        Effect.flatMap(OwnerIdentity.OwnerIdentity, (identity) => identity.ownerId("isolate-host")).pipe(
+          Effect.provide(layer),
+          Effect.provide(NodeCrypto.layer),
+          Random.withSeed("incarnation")
+        )
+      const drawn = yield* Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER, { halfOpen: true }).pipe(
+        Random.withSeed("incarnation")
+      )
+      const withoutPid = yield* ownerUnder(OwnerIdentity.layerWithoutPid)
+      const withPid = yield* ownerUnder(OwnerIdentity.layer)
+
+      // Node reports a process id, and only the default layer reads it.
+      expect(withPid.pid).toBe(process.pid)
+      expect(withoutPid.pid).toBe(drawn)
+      expect(withoutPid.pid).not.toBe(process.pid)
+      expect(withoutPid.nonce).toMatch(uuid)
     }))
 
   it.effect("lets a composition pin the whole token", () =>

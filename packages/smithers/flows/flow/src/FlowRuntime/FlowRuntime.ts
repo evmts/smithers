@@ -311,6 +311,11 @@ export class FlowRuntime extends Context.Service<
      * MUST use it as the record's producer identity rather than minting one,
      * because that is what makes a resumed walk collapse onto the rows the
      * first walk wrote instead of doubling every node.
+     *
+     * A `PlanRecorded` whose slot already holds a plan is compared by its
+     * `digest`, never by its declaration sites or page layout: a plan with the
+     * same digest keeps the recorded pages, and a different digest fails with
+     * `plan_changed`.
      */
     readonly recordNode?:
       | ((record: NodeRecord.NodeRecord) => Effect.Effect<void, InterpreterError, FlowInstance>)

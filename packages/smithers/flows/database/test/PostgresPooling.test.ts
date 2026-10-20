@@ -1,0 +1,248 @@
+/**
+ * `PostgresDatabase` behind a transaction-pooling proxy, and on a direct
+ * connection, through one suite.
+ *
+ * PgBouncer with `pool_mode=transaction` (the `pgbouncer` service in
+ * `apps/mvp/docker-compose.yml`, on 127.0.0.1:54322 over the compose Postgres)
+ * stands in for Cloudflare Hyperdrive: it runs each transaction on whichever of
+ * its four server connections is free and resets that connection when the
+ * transaction ends, so a session setting made outside a transaction is lost. The
+ * same cases run directly against `SMITHERS_TEST_PG_URL`, the server the
+ * storage matrix provides. Each endpoint skips, and says why, only when nothing
+ * listens there.
+ */
+import * as Pg from "@effect/sql-pg"
+import { describe, expect, it } from "@effect/vitest"
+import { Clock, Context, Effect, Exit, Fiber, Layer, Metric, Stream } from "effect"
+import { SqlClient } from "effect/sql/SqlClient"
+import { randomUUID } from "node:crypto"
+import { DatabaseMetrics, DurableWriter, PostgresDatabase } from "../src/index.ts"
+import * as TestDatabase from "../src/test/TestDatabase.ts"
+import { listening, pgbouncerUrl } from "./harness/listening.ts"
+
+const endpoints = [
+  { name: "PostgreSQL", url: process.env.SMITHERS_TEST_PG_URL, start: "`pnpm coverage` provides a server" },
+  {
+    name: "PgBouncer with pool_mode=transaction",
+    url: pgbouncerUrl,
+    start: "run `docker compose up -d pgbouncer` in apps/mvp"
+  }
+]
+
+for (const endpoint of endpoints) {
+  const url = endpoint.url
+  const absent = url === undefined
+    ? `SMITHERS_TEST_PG_URL is unset; ${endpoint.start}`
+    : await listening(url)
+    ? undefined
+    : `nothing listens on ${new URL(url).host}; ${endpoint.start}`
+
+  describe(endpoint.name, () => {
+    if (url === undefined || absent !== undefined) {
+      it.skip(`skipped: ${absent}`, () => {})
+      return
+    }
+
+    const schema = () => `pooling_${randomUUID().replaceAll("-", "")}`
+    /** A client for `name`, with its own pool, whose schema is dropped when the test's scope closes. */
+    const client = (name: string, options?: { readonly readOnly?: boolean; readonly applicationName?: string }) =>
+      Effect.gen(function*() {
+        const sql = Context.get(
+          yield* Layer.build(PostgresDatabase.layer({
+            url,
+            driver: Pg,
+            schema: name,
+            readOnly: options?.readOnly,
+            postgres: { applicationName: options?.applicationName }
+          })),
+          SqlClient
+        )
+        if (options?.readOnly !== true) {
+          yield* Effect.addFinalizer(() => TestDatabase.dropSchema(sql, name).pipe(Effect.orDie))
+        }
+        return sql
+      })
+    const schemaOf = (sql: SqlClient) =>
+      Effect.map(sql<{ readonly schema: string }>`SELECT current_schema() AS schema`, ([row]) => row!.schema)
+
+    it.live("gives concurrent fibers on two schemas only their own schema", () =>
+      Effect.gen(function*() {
+        const [first, second] = [schema(), schema()]
+        const clients = [[yield* client(first), first], [yield* client(second), second]] as const
+        // Lone statements, transactions, writes and savepoints, each checking
+        // the schema it runs in.
+        const observed = yield* Effect.all(
+          Array.from({ length: 400 }, (_, index) => {
+            const [sql, expected] = clients[index % 2]!
+            const writer = DurableWriter.make(sql)
+            const read = schemaOf(sql)
+            const forms: ReadonlyArray<Effect.Effect<string, unknown>> = [
+              read,
+              sql.withTransaction(read),
+              writer.write(read),
+              writer.write(writer.write(read))
+            ]
+            const via = forms[Math.floor(index / 2) % forms.length]!
+            return Effect.map(via, (actual) => actual === expected ? undefined : `${expected} read ${actual}`)
+          }),
+          { concurrency: 32 }
+        )
+        expect(observed.filter((entry) => entry !== undefined)).toEqual([])
+      }))
+
+    it.live("keeps a write whose nested write failed, and only the savepoint rolls back", () =>
+      Effect.gen(function*() {
+        const name = schema()
+        const sql = yield* client(name)
+        const other = yield* client(name)
+        const writer = DurableWriter.make(sql)
+        yield* sql`CREATE TABLE receipts (id INTEGER PRIMARY KEY)`
+        const nested = yield* writer.write(Effect.gen(function*() {
+          yield* sql`INSERT INTO receipts VALUES (1)`
+          const failed = yield* Effect.exit(writer.write(Effect.andThen(
+            sql`INSERT INTO receipts VALUES (2)`,
+            sql`INSERT INTO receipts VALUES (1)`
+          )))
+          yield* writer.write(sql`INSERT INTO receipts VALUES (3)`)
+          return failed
+        }))
+        expect(Exit.isFailure(nested)).toBe(true)
+        expect(yield* other`SELECT id FROM ${other(name)}.receipts ORDER BY id`).toEqual([{ id: 1 }, { id: 3 }])
+      }))
+
+    it.live("rolls back a failed write, a failed statement and a COMMIT the server refused", () =>
+      Effect.gen(function*() {
+        const name = schema()
+        const sql = yield* client(name)
+        const writer = DurableWriter.make(sql)
+        yield* sql`CREATE TABLE receipts (id INTEGER PRIMARY KEY)`
+        yield* sql`INSERT INTO receipts VALUES (1)`
+        const failedWrite = yield* Effect.exit(writer.write(Effect.andThen(
+          sql`INSERT INTO receipts VALUES (2)`,
+          Effect.fail("refused")
+        )))
+        const failedStatement = yield* Effect.exit(sql`INSERT INTO receipts VALUES (1)`)
+        // A caught failure aborts the transaction, and PostgreSQL then answers
+        // COMMIT with ROLLBACK instead of an error.
+        const aborted = yield* Effect.flip(sql.withTransaction(Effect.gen(function*() {
+          yield* sql`INSERT INTO receipts VALUES (3)`
+          yield* Effect.exit(sql`SELECT 1 / 0`)
+        })))
+        expect([Exit.isFailure(failedWrite), Exit.isFailure(failedStatement)]).toEqual([true, true])
+        expect(aborted.reason.message).toBe("PostgresDatabase: COMMIT rolled back an aborted transaction")
+        expect(yield* sql`SELECT id FROM ${sql(name)}.receipts ORDER BY id`).toEqual([{ id: 1 }])
+      }))
+
+    it.live("interleaves writers on two pools of one schema with a writer on another", () =>
+      Effect.gen(function*() {
+        const [shared, other] = [schema(), schema()]
+        const first = yield* client(shared)
+        const second = yield* client(shared)
+        const elsewhere = yield* client(other)
+        for (const sql of [first, elsewhere]) {
+          yield* sql`CREATE TABLE counter (value INTEGER NOT NULL)`
+          yield* sql`INSERT INTO counter VALUES (0)`
+        }
+        const increment = (sql: SqlClient) =>
+          DurableWriter.make(sql).write(Effect.gen(function*() {
+            const [row] = yield* sql<{ readonly value: number }>`SELECT value FROM counter`
+            yield* sql`UPDATE counter SET value = ${row!.value + 1}`
+          }))
+        yield* Effect.all(
+          Array.from({ length: 60 }, (_, index) => increment([first, second, elsewhere][index % 3]!)),
+          { concurrency: 60 }
+        )
+        expect(yield* second`SELECT value FROM ${second(shared)}.counter`).toEqual([{ value: 40 }])
+        expect(yield* elsewhere`SELECT value FROM ${elsewhere(other)}.counter`).toEqual([{ value: 20 }])
+      }))
+
+    it.live("times each write transaction's wait for the schema's writer lock", () =>
+      Effect.gen(function*() {
+        const name = schema()
+        const holder = yield* client(name)
+        const waiter = yield* client(name)
+        const reader = yield* client(name, { readOnly: true })
+        const waits = Metric.value(DatabaseMetrics.writerLockWait)
+        const before = yield* waits
+        const waiting = holder<{ readonly waiting: boolean }>`SELECT EXISTS (SELECT 1 FROM pg_locks
+          WHERE locktype = 'advisory' AND NOT granted
+            AND ((classid::bigint << 32) | objid::bigint) = hashtextextended(${name}, 2099)) AS waiting`
+        const { blocked, held } = yield* holder.withTransaction(Effect.gen(function*() {
+          const blocked = yield* DurableWriter.make(waiter).write(waiter`SELECT 1`).pipe(Effect.forkScoped)
+          yield* TestDatabase.until(Effect.map(waiting, ([row]) => row!.waiting))
+          const observed = yield* Clock.currentTimeMillis
+          expect(yield* waiting).toEqual([{ waiting: true }])
+          return { blocked, held: (yield* Clock.currentTimeMillis) - observed }
+        }))
+        yield* Fiber.join(blocked)
+        // Neither a read-only transaction nor a lone statement takes the lock.
+        yield* reader.withTransaction(reader`SELECT 1`)
+        yield* holder`SELECT 1`
+        const after = yield* waits
+        expect(after.count - before.count).toBe(2)
+        expect(after.max).toBeGreaterThanOrEqual(held)
+      }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())))
+
+    it.live("runs a read-only client's statements in READ ONLY transactions on its schema", () =>
+      Effect.gen(function*() {
+        const name = schema()
+        const writer = yield* client(name)
+        yield* writer`CREATE TABLE receipts (id INTEGER)`
+        const reader = yield* client(name, { readOnly: true })
+        const flag = reader<{ readonly flag: string }>`SELECT current_setting('transaction_read_only') AS flag`
+        expect(yield* Effect.all([flag, reader.withTransaction(flag)])).toEqual([[{ flag: "on" }], [{ flag: "on" }]])
+        expect(yield* Effect.all([schemaOf(reader), reader.withTransaction(schemaOf(reader))])).toEqual([name, name])
+        const refused = yield* Effect.all([
+          Effect.flip(reader`INSERT INTO receipts VALUES (1)`),
+          Effect.flip(reader.withTransaction(reader`INSERT INTO receipts VALUES (2)`))
+        ])
+        expect(refused.map((error) => String(error.reason.cause))).toEqual([
+          "Error: cannot execute INSERT in a read-only transaction",
+          "Error: cannot execute INSERT in a read-only transaction"
+        ])
+      }))
+
+    it.live("reads the schema through every statement form outside a transaction", () =>
+      Effect.gen(function*() {
+        const name = schema()
+        const sql = yield* client(name)
+        const statement = sql<{ readonly schema: string }>`SELECT current_schema() AS schema`
+        const raw = (yield* statement.raw) as { readonly rows: ReadonlyArray<{ readonly schema: string }> }
+        expect({
+          rows: yield* statement,
+          unprepared: yield* statement.unprepared,
+          withoutTransform: yield* statement.withoutTransform,
+          values: yield* statement.values,
+          valuesUnprepared: yield* statement.valuesUnprepared,
+          raw: raw.rows
+        }).toEqual({
+          rows: [{ schema: name }],
+          unprepared: [{ schema: name }],
+          withoutTransform: [{ schema: name }],
+          values: [[name]],
+          valuesUnprepared: [[name]],
+          raw: [{ schema: name }]
+        })
+      }))
+
+    it.live("commits a finished stream and rolls back an abandoned or failed one", () =>
+      Effect.gen(function*() {
+        const name = schema()
+        const applicationName = `pooling-stream-${randomUUID()}`
+        const sql = yield* client(name, { applicationName })
+        const rows = sql<{ readonly schema: string; readonly n: number }>`SELECT current_schema() AS schema, n::int
+          FROM generate_series(1, 3) AS n`
+        expect(yield* Stream.runCollect(rows.stream)).toEqual([1, 2, 3].map((n) => ({ schema: name, n })))
+        const abandoned = sql<{ readonly n: number }>`SELECT n::int FROM generate_series(1, 100000) AS n`
+        expect(yield* Stream.runCollect(Stream.take(abandoned.stream, 1))).toEqual([{ n: 1 }])
+        const failing = sql`SELECT 1 / (n - 2) FROM generate_series(1, 3) AS n`
+        expect(Exit.isFailure(yield* Effect.exit(Stream.runCollect(failing.stream)))).toBe(true)
+        // Every stream's transaction has ended, so nothing of this client's is
+        // left open on a server connection, and the next statement still works.
+        const open = yield* (yield* client(schema()))<{ readonly count: number }>`SELECT count(*)::int AS count
+          FROM pg_stat_activity WHERE application_name = ${applicationName} AND state LIKE 'idle in transaction%'`
+        expect(open).toEqual([{ count: 0 }])
+        expect(yield* schemaOf(sql)).toBe(name)
+      }))
+  })
+}

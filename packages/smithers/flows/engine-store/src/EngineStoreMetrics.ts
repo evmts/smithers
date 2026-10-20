@@ -242,6 +242,20 @@ export const materializationConflicts = Metric.counter("flows_engine_sandbox_con
 })
 
 /**
+ * Counter over action attempts interrupted because the engine's store was
+ * unavailable while the attempt was admitted, run or recorded: a lost
+ * connection, an I/O failure, a busy database. Each one releases its run for a
+ * later drive that adopts the attempt, so a rising rate is a storage outage,
+ * not failing actions.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const storageUnavailable = Metric.counter("flows_engine_storage_unavailable", {
+  description: "Action attempts interrupted because the engine store was unavailable"
+})
+
+/**
  * Counter over step-boundary settlements at the dispatch seam, dimensioned by
  * `outcome`: `clean` evidence, an `expected`-mode `deviation`, or a hard
  * `violation` (undeclared write, missing declared output, surviving declared

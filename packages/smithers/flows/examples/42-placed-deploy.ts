@@ -15,6 +15,7 @@
 import { FlowProxy, FlowProxyServer, Hosts, PlacedAction } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Placement from "@smthrs/plan/Placement"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Secret from "@smthrs/targets/Secret"
 import * as SecretProxy from "@smthrs/targets/SecretProxy"
 import * as Effect from "effect/Effect"
@@ -22,7 +23,6 @@ import { FetchHttpClient, HttpRouter, type HttpServer } from "effect/http"
 import * as Layer from "effect/Layer"
 import { RpcClient, RpcSerialization, RpcServer } from "effect/rpc"
 import * as Schema from "effect/Schema"
-import { durableEngine } from "../src/test/TestNodeRuntime.ts"
 
 /** Sends one release to the deploy endpoint with the deploy token. */
 export const PushRelease = Action.make("examples/PlacedDeploy/PushRelease", {
@@ -80,7 +80,7 @@ export const holder = <E, R>(
     Layer.provideMerge(
       Layer.mergeAll(PushRelease.toLayer(push(read, endpoint)), Interpreter.layer(served)).pipe(
         Layer.provideMerge(Action.layerImplementations),
-        Layer.provideMerge(durableEngine(filename, "examples-placed-deploy-holder"))
+        Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-placed-deploy-holder"))
       )
     ),
     Layer.provideMerge(server)
@@ -95,7 +95,7 @@ export const holder = <E, R>(
 export const caller = (filename: string, read: SecretProxy.Read, endpoint: string, holderUrl?: string) =>
   Layer.mergeAll(PlacedAction.layer(PushRelease, deploy, push(read, endpoint)), Interpreter.layer(Ship)).pipe(
     Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(durableEngine(filename, "examples-placed-deploy-caller")),
+    Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-placed-deploy-caller")),
     Layer.provideMerge(
       holderUrl === undefined ? Hosts.layer({}) : Hosts.layer({
         deploy: {

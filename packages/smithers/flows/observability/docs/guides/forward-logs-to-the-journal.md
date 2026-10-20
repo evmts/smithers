@@ -17,8 +17,8 @@ The layer names one run, and requires a `Journal.Journal` service from
 [`@smthrs/journal`](/api/journal):
 
 ```ts
-import * as JournalEvent from "@smthrs/journal/JournalEvent"
-import * as JournalLogger from "@smthrs/observability/JournalLogger"
+import { JournalEvent } from "@smthrs/journal"
+import { JournalLogger } from "@smthrs/observability"
 import * as Schema from "effect/Schema"
 
 const runId = Schema.decodeUnknownSync(JournalEvent.RunId)("deploy-status-1")
@@ -50,7 +50,7 @@ the journal's lossy channel by source `flows/observability/logger`. The payload
 decodes with the exported schema:
 
 ```ts
-import * as Journal from "@smthrs/journal/Journal"
+import { Journal } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
 
 const read = Effect.gen(function*() {

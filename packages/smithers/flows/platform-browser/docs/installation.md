@@ -24,10 +24,12 @@ The package ships as ESM and CommonJS with TypeScript declarations, and its
 installs and builds it rather than a runtime the code needs. Its other runtime
 dependencies install with it:
 
-| Dependency                      | Why it is here                                                                                                |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| [`@smthrs/kernel`](/api/kernel) | `CommandLine.render`, which produces the line the interpreter runs, and the filesystem isolation attestation. |
-| [`@smthrs/jj`](/api/jj)         | The wasm-backed `Jj` service the `BrowserHost` bundle composes.                                               |
+| Dependency                                                        | Why it is here                                                                                                |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| [`@smthrs/kernel`](/api/kernel)                                   | `CommandLine.render`, which produces the line the interpreter runs, and the filesystem isolation attestation. |
+| [`@smthrs/jj`](/api/jj)                                           | The wasm-backed `Jj` service the `BrowserHost` bundle composes.                                               |
+| [`@smthrs/flows`](/api/flows) and the engine packages it composes | The durable engine `BrowserRuntime` hosts.                                                                    |
+| `@journeyapps/wa-sqlite`                                          | SQLite compiled to WebAssembly, and the OPFS VFS `BrowserSqlite` opens the store with.                        |
 
 ## What you supply
 
@@ -40,6 +42,7 @@ list stays short. Install the ones your composition needs:
 | A `node:fs/promises`-shaped object | [`@zenfs/core`](https://www.npmjs.com/package/@zenfs/core)'s `fs.promises`, over a backend from `@zenfs/dom`. | `BrowserFileSystem`          |
 | A bash interpreter instance        | [`just-bash`](https://www.npmjs.com/package/just-bash)'s `Bash` class (`new Bash({ fs })`).                   | `BrowserChildProcessSpawner` |
 | The `flows_jj.wasm` reactor        | [`@smthrs/jj`](/api/jj)'s `wasm/flows_jj.wasm`, served by your bundler.                                       | `BrowserHost` only           |
+| The wa-sqlite build                | `@journeyapps/wa-sqlite/dist/wa-sqlite.mjs` and `wa-sqlite.wasm`, imported lazily by your engine worker.      | `BrowserRuntime.run`         |
 
 ```bash
 npm install @zenfs/core @zenfs/dom just-bash
@@ -70,6 +73,10 @@ reference uses:
 import * as BrowserFileSystem from "@smthrs/platform-browser/BrowserFileSystem"
 import * as BrowserHost from "@smthrs/platform-browser/BrowserHost"
 ```
+
+The durable engine's modules, `BrowserRuntime`, `BrowserEngine`,
+`BrowserSqlite`, `WebLock`, `TabChannel` and `StoragePersistence`, are exported
+from the root entry point only.
 
 Deeper paths are not public. `@smthrs/platform-browser/BrowserFileSystem/*`,
 `@smthrs/platform-browser/BrowserChildProcessSpawner/*`,

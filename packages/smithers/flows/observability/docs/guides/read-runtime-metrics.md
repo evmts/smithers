@@ -33,7 +33,7 @@ A metric handle is readable without an exporter, which makes it a fine
 assertion target in a test and a fine health check in a host:
 
 ```ts
-import * as ObservabilityMetric from "@smthrs/observability/Metric"
+import { Metric as ObservabilityMetric } from "@smthrs/observability"
 import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
 

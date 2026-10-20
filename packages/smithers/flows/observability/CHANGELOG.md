@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- `OtlpRelay.serve` is an `effect/http` handler that receives OTLP/HTTP JSON
+  exports, such as a browser's from `Otlp.layerFetch`, and re-emits each log
+  record, span and metric data point as one Effect log line. It removes
+  credential-named keys, then passes the finished line through
+  `Redaction.redact`: the message, the attributes and the fields it adds, such
+  as `service.name` and `otlp.status_message`. With `allow`, it relays only the
+  record names and field keys a host lists. `Metric.relayedRecords` counts
+  relayed records by `signal`; `Metric.relayDroppedRecords` counts dropped ones
+  by `signal` and `reason` (`not_allowed` or `over_limit`).
+
 ## [1.0.0-rc.0] - 2026-09-01
 
 ### Added

@@ -8,10 +8,10 @@
  */
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Journal, type JournalEvent } from "@smthrs/journal"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { durableEngine } from "../src/test/TestNodeRuntime.ts"
 
 /**
  * The declared atom the body names. Declaration and implementation are
@@ -72,7 +72,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
         Interpreter.layer(Build)
       ).pipe(
         Layer.provideMerge(Action.layerImplementations),
-        Layer.provideMerge(durableEngine(filename, "examples-worker"))
+        Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-worker"))
       )
     ),
     Effect.scoped,

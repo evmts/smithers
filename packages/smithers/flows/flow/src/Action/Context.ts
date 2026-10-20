@@ -128,6 +128,76 @@ export const CurrentInvocationKey = Context.Reference<string | undefined>(
 )
 
 /**
+ * The ownership fence of the attempt an implementation is running under.
+ *
+ * `runId`, `stepKeyDigest` and `attempt` name the durable attempt row, and
+ * `owner` is the engine incarnation that holds the run while the attempt
+ * runs. The owner changes when another incarnation takes over a crashed run
+ * and adopts its running attempt, and the attempt changes when a failed
+ * attempt is retried, so a fence captured by an earlier owner or an earlier
+ * attempt names a row state that no longer holds.
+ *
+ * @category attempts
+ * @since 1.0.0
+ */
+export interface Fence {
+  readonly runId: string
+  readonly stepKeyDigest: string
+  readonly attempt: number
+  readonly owner: {
+    readonly hostId: string
+    readonly pid: number
+    readonly nonce: string
+  }
+}
+
+/**
+ * Context reference carrying the ownership fence of the attempt currently
+ * running, when the runtime supplies one.
+ *
+ * **When to use**
+ *
+ * Use it in an implementation that writes its own durable state, such as an
+ * application table it updates while it streams, so a write from an owner or
+ * attempt that has been superseded changes nothing. A durable SQL engine
+ * supplies it, and `@smthrs/run-store`'s `RunStore.owned` turns it into a
+ * condition the implementation adds to its own statement.
+ *
+ * **Gotchas**
+ *
+ * A runtime without durable ownership, such as the in-memory engine, leaves it
+ * absent rather than inventing one. An implementation that needs fencing
+ * refuses instead of writing unfenced.
+ *
+ * @category attempts
+ * @since 1.0.0
+ */
+export const CurrentFence = Context.Reference<Fence | undefined>(
+  "@smthrs/flow/Action/CurrentFence",
+  { defaultValue: () => undefined }
+)
+
+/**
+ * Context reference that is `true` while an implementation runs an attempt
+ * an earlier execution started and never settled.
+ *
+ * A durable engine re-runs such an attempt under its original number: the
+ * process running it died or was cut off mid-body, or the body parked on a
+ * durable wait and the run resumed. Anything the earlier execution did
+ * outside the engine may have happened, so an implementation that cannot
+ * repeat it silently (a paid provider call, a message sent) reads this to
+ * count, log or reconcile the repeat. A fresh attempt, a retry under a new
+ * attempt number, and every runtime without durable attempts read `false`.
+ *
+ * @category attempts
+ * @since 1.0.0
+ */
+export const CurrentRedispatch = Context.Reference<boolean>(
+  "@smthrs/flow/Action/CurrentRedispatch",
+  { defaultValue: () => false }
+)
+
+/**
  * Context reference carrying the heartbeat of the attempt currently running,
  * which the runtime installs for an action declared with
  * `heartbeatTimeoutMs`. Outside such an attempt it does nothing.

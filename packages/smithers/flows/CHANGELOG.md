@@ -4,6 +4,39 @@
 
 ### Added
 
+- `Runtime` is exported from the root, so a host package composes the engine
+  from `@smthrs/flows` alone.
+- `Runtime.Options.sweep` passes `"process"` or `{ host: executionId }` to the
+  engine store, for a host such as a Cloudflare Durable Object alarm that
+  drives one execution per invocation.
+- `Runtime.validate`, `Runtime.decodeField`, `Runtime.RegistryArgs` and
+  `Runtime.registryLayer`, for a host package that composes the engine itself
+  and refuses its own options with the same `RuntimeConfigurationError`.
+
+### Changed
+
+- Breaking: `Runtime.layer` and `Runtime.make` name no file. The host injects
+  the owner identity (`OwnerIdentity`), the workspace root (`Workspace`) and
+  the artifact store (`ArtifactStore`) wherever its step boundary and
+  workspace sandbox need them, so a host without a filesystem composes the
+  runtime from its SQL client, `OwnerIdentity.layerWithoutPid`, and
+  `StepBoundary.layerUnsupported` with `WorkspaceSandbox.layerUnsupported`.
+  `Runtime.Options` drops `filename` and `workspaceRoot`; `NativeRuntime.Options`
+  in `@smthrs/platform-node` keeps them for the native hosts. `Runtime.storage`
+  is now the layer of migrated SQL stores alone. `NodeRuntime` and `BunRuntime`
+  keep their API and inject the process identity, the workspace and filesystem
+  artifacts themselves.
+
+- Breaking: the package imports no platform code, so it bundles for a browser
+  and a Cloudflare Worker. The `@smthrs/flows/NodeRuntime`, `/BunRuntime`,
+  `/SandboxedFlow` and `/test/TestNodeRuntime` subpaths are removed:
+  `NodeRuntime`, `SandboxedFlow` and `TestNodeRuntime` are exported from the
+  `@smthrs/platform-node` root, and `BunRuntime` from the `@smthrs/platform-bun`
+  root, with the same API. `NodeRuntime.RuntimeConfigurationError` is
+  `Runtime.RuntimeConfigurationError`. The package no longer depends on
+  `@smthrs/platform-node`, `@effect/sql-sqlite-node` or `esbuild`;
+  `@smthrs/platform-node` depends on it instead.
+
 - `Runtime.Options.requestResume`, passed through to the engine store, records
   that the engine has asked a parked execution to resume — a durable clock
   fired, a durable deferred completed, or a child settled under a parent that

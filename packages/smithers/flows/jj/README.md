@@ -152,9 +152,11 @@ execution can outlast it after acquisition.
 Cancellation releases both permits. A caller reclaims only a same-host lock
 whose owner process has exited.
 
-`NodeJj.withRepositoryMutation` lets host adoption share these permits;
+`NodeJj.withRepositoryMutation` lets host adoption share these permits, and
+`NodeJj.layerRepositoryMutation` provides them as the root's `RepositoryMutation`
+service for platform-neutral code such as `SandboxMerge.apply`;
 `RepositoryMutationTimeoutMs` overrides its deadline. The protected effect must
-not call another fenced operation on the same store. `retryGitIndexLock`
+not call another fenced operation on the same store. The root's `retryGitIndexLock`
 retries confirmed shared `index.lock` acquisition failures and Git ref-lock
 contention, at most 1,200 times with 100 ms waits, preserving the final error. It never removes Git's
 lock. Once acquired, both fences remain held throughout bounded retries (about

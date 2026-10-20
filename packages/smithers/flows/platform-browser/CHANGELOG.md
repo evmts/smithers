@@ -2,7 +2,67 @@
 
 ## [Unreleased]
 
+### Added
+
+- The durable flow engine in the browser. `BrowserRuntime.run` is the entry of
+  the dedicated worker each tab starts: the worker that holds the engine's Web
+  Lock builds the engine over SQLite in OPFS, drives every unfinished run, and
+  answers requests over a `BroadcastChannel`. When its tab closes, the next
+  worker takes the lock and resumes the runs; a durable sleep that came due
+  while no tab was open fires when the first tab opens. `BrowserRuntime.layer`
+  and `layerHost` compose the engine as `NodeRuntime.layerHost` does.
+- `BrowserEngine.layer`: a tab's `start`, `result`, `cancel`, `signal` and
+  `events`, sent to whichever worker leads and sent again to the next one.
+- `BrowserSqlite`: an Effect `SqlClient` over `@journeyapps/wa-sqlite`, opened on
+  OPFS with the access-handle pool VFS. The build and its VFS are the injectable
+  `Sqlite` service, so one worker opens one VFS for every store. A write's `.raw` reports `{ changes }`,
+  and integers wider than 32 bits bind as SQLite integers.
+- `WebLock`, `TabChannel` and `StoragePersistence`: the Web Locks API,
+  `BroadcastChannel` and `navigator.storage.persist()` as injectable services.
+- `SharedSqlite`: the app's own SQLite database, `app.db`, opened by the
+  engine's leader beside `engine.db` on a connection of its own, and reached
+  from every tab with `execute`. `SharedSqlite.open` is the `{ execute, close }`
+  TanStack DB's browser persistence takes, so an app loads one SQLite build. A
+  transaction is one tab's own until it ends, the leader rolls back the open
+  transaction of a tab that closes, and `BrowserRuntime.statements` counts the
+  statements by outcome. `Database.execute` rejects with `SqliteError`, whose
+  `message` and `code` are SQLite's own, as wa-sqlite's `SQLiteError`: TanStack
+  DB's persistence recognizes a column it already added by that message.
+- `WebLock.hold(name, { steal: true })` takes a lock from whichever context
+  holds it, so a focused tab can lead at once; the held lock's `lost` completes
+  in the context it was stolen from. A leader whose engine lock is stolen stops
+  leading and waits for the lock again.
+
+- `BrowserEngine.EngineUnavailable` and `BrowserEngine.unavailable`: when the
+  tab's own engine worker throws, as at load, or cannot build the engine, every
+  pending and later request fails with `EngineUnavailable` instead of waiting
+  forever, `unavailable` completes with why, and the tab logs
+  `browser.engine.unavailable` and counts `smithers_browser_engine_unavailable`.
+  `WorkerLike` now also takes `message` listeners, on which the worker reports
+  an engine it could not build.
+
+### Changed
+
+- `BrowserRuntime.run` and `layerHost` take the SQLite build as lazy imports,
+  `sqlite: { module, wasm }`, in place of the wasm bytes, and
+  `BrowserSqlite.layerSqlite` takes `build` in place of `wasm`. The package no
+  longer imports the build or the engine eagerly: a tab that imports its root
+  loads no engine module, and an app's tab bundle emits no wasm.
+- The engine host's WebCrypto `Crypto` is `@smthrs/crypto`'s `WebCrypto.layer`,
+  the one every host uses.
+
 ### Fixed
+
+- An app that compiles this package from source, such as one importing
+  `BrowserRuntime` through a workspace link, type-checks: the package's
+  `imports` field maps `#access-handle-pool-vfs` to `@journeyapps/wa-sqlite`'s
+  `AccessHandlePoolVFS` and its types to the package's own declaration, so no
+  consumer declares the module and no file needs a triple-slash reference.
+- Two databases opened at once on one wa-sqlite build each get their own
+  handle. wa-sqlite's `open_v2` returns the handle through one pointer shared
+  by the build, so concurrent opens could both read the second handle and
+  later fail closing it with `SQLITE_MISUSE`; opens on one build now run one at
+  a time.
 
 - `BrowserFileSystem` passes bytes and names across the backend boundary by
   value. `writeFile` copies `data` and reads `flag` and `mode` when it is

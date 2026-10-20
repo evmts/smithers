@@ -3,6 +3,8 @@
   "compilerOptions": {
     // Tests share the process-table probe in packages/testing; this config emits nothing.
     "rootDir": "../../..",
+    // The language-server edge tests grow a resizable ArrayBuffer (ES2024).
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,

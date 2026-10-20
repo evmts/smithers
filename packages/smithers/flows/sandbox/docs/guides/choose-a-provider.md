@@ -57,6 +57,7 @@ const contained = ContainerSandbox.make({
 
 const microVm = MicrosandboxSandbox.make({
   sdk: Microsandbox,
+  collector,
   image: "oven/bun:1",
   persistence: "sticky",
   cpus: 2,
@@ -65,8 +66,11 @@ const microVm = MicrosandboxSandbox.make({
 })
 ```
 
-`fs` and `spawner` are Effect's `FileSystem` and `ChildProcessSpawner`, taken
-from the host that composes the provider. For `DirectorySandbox`, the spawner
+`fs` and `spawner` are Effect's `FileSystem` and `ChildProcessSpawner`, and
+`collector` is `MicrosandboxSandbox.GarbageCollector`, all taken from the host
+that composes the provider: `NodeGarbageCollector.layer` from
+`@smthrs/platform-node` or `BunGarbageCollector.layer` from
+`@smthrs/platform-bun` provides the collector. For `DirectorySandbox`, the spawner
 must carry a platform lifecycle: use `NodeHost.layerContained()` or
 `BunHost.layerContained()` with a `ProcessLedger`, as in the
 [quickstart](../quickstart.md). Raw and deadline-only spawners are refused
@@ -108,6 +112,7 @@ checkout, a fixture, or a
 ```ts
 const provider = MicrosandboxSandbox.make({
   sdk: Microsandbox,
+  collector,
   persistence: "sticky",
   environment: { flake: flakeText, lock: lockText, attr: "ci" }
 })

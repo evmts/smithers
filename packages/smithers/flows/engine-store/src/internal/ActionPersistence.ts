@@ -8,7 +8,7 @@
 
 import { Sha256 } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
-import { Action, FlowRuntime } from "@smthrs/flow"
+import { Action, FlowRuntime, SpanFailure } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import { Journal, type JournalEvent, Redaction } from "@smthrs/journal"
@@ -791,10 +791,27 @@ export const make = (deps: Dependencies) => {
    * halves of a node's evidence: the attempt records this dispatch writes are
    * keyed by it, and the node record above has no other way to name them.
    */
-  const execute = (input: ActionInput, stepKeyDigest: string) =>
+  /*
+   * The body runs under its attempt's ownership fence: the attempt row this
+   * dispatch admitted or adopted, and the owner that holds the run. A body
+   * that writes its own durable state adds `RunStore.owned` for this fence to
+   * its statement, so a write this incarnation makes after a takeover, or this
+   * attempt makes after it settled, changes nothing.
+   */
+  const execute = (input: ActionInput, stepKeyDigest: string, adopted: boolean) =>
     Effect.andThen(
       Action.reportDispatch({ outcome: "executed", stepKeyDigest, attempt: input.attempt }),
       deps.execute(input)
+    ).pipe(
+      Effect.provideService(Action.CurrentFence, {
+        runId: deps.runId,
+        stepKeyDigest,
+        attempt: input.attempt,
+        owner: deps.owner
+      }),
+      // An adopted attempt is one an earlier execution started and never
+      // settled; the body is told so it can account for the repeat.
+      Effect.provideService(Action.CurrentRedispatch, adopted)
     )
   const admission = deps.admission ?? AttemptAdmission.makeUnsafe()
   const recordedAgeVerdict = deps.cacheAgeVerdict ?? CacheAgeVerdicts.make(deps.runId)
@@ -802,7 +819,7 @@ export const make = (deps: Dependencies) => {
   // An action is a node inside its run's root lineage, not a lineage of
   // its own: a lineage segment is minted only where a separate run is.
   const lineageId = FlowEngine.Lineage.root(deps.runId)
-  return Effect.fn("ActionPersistence.execute")((input: ActionInput) => {
+  return (input: ActionInput) => {
     // What a replay-only engine reports for this dispatch: the digest once it
     // exists, and whether the dispatch stopped at the execution gate.
     const replay: { stepKeyDigest?: string; gated: boolean } = { gated: false }
@@ -2379,7 +2396,7 @@ export const make = (deps: Dependencies) => {
                 : yield* restore(SandboxedExecution.execute({
                   sandbox,
                   descriptor: input.metadata,
-                  workflow: execute(input, stepKeyDigest)
+                  workflow: execute(input, stepKeyDigest, adopted)
                 })).pipe(Effect.exit)
               // The settlement is the isolated execution's whole story; the
               // attempt's outcome is only its `result`, so the ordinary failure
@@ -2494,11 +2511,11 @@ export const make = (deps: Dependencies) => {
                   (recorded) => recorded ? Effect.void : Effect.interrupt
                 )
               const dispatch = effect === undefined
-                ? execute(input, stepKeyDigest)
+                ? execute(input, stepKeyDigest, adopted)
                 : Effect.uninterruptibleMask((restore) =>
                   Effect.gen(function*() {
                     yield* recordCrossing("intended", {}, EffectRecords.boundary(effect, "intended"))
-                    const exit = yield* Effect.exit(restore(execute(input, stepKeyDigest)))
+                    const exit = yield* Effect.exit(restore(execute(input, stepKeyDigest, adopted)))
                     yield* Exit.isSuccess(exit)
                       ? recordCrossing(
                         "succeeded",
@@ -2778,7 +2795,11 @@ export const make = (deps: Dependencies) => {
           tier: input.tier,
           outcome: "replayed"
         })
-      })
+      }),
+      // The dispatch fails with the action's own failure, often someone
+      // else's text such as a model provider's error, so its span exports
+      // only that failure's tag and code.
+      SpanFailure.withSpan("ActionPersistence.execute")
     )
-  })
+  }
 }

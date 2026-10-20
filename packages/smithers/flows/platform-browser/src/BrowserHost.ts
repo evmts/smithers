@@ -36,7 +36,6 @@
 import type { Jj } from "@smthrs/jj"
 import * as BrowserJj from "@smthrs/jj/browser/BrowserJj"
 import type { FileSystem } from "effect/FileSystem"
-import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import type { HttpClient } from "effect/http/HttpClient"
 import * as Layer from "effect/Layer"
 import type { Path } from "effect/Path"
@@ -45,6 +44,7 @@ import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type * as BrowserChildProcessSpawner from "./BrowserChildProcessSpawner/index.ts"
 import type * as BrowserFileSystem from "./BrowserFileSystem/index.ts"
 import * as BrowserServices from "./BrowserServices.ts"
+import * as HttpClientLayer from "./internal/HttpClient.ts"
 
 /**
  * The complete closed Host service union provided by a browser tab.
@@ -59,12 +59,6 @@ export type BrowserHost =
   | ChildProcessSpawner
   | Jj
   | HttpClient
-
-/** Effect's fetch client, told never to follow a redirect on its own. */
-const layerHttpClient: Layer.Layer<HttpClient> = Layer.provide(
-  FetchHttpClient.layer,
-  Layer.succeed(FetchHttpClient.RequestInit)({ redirect: "manual" })
-)
 
 /**
  * The complete Host bundle for a browser tab.
@@ -95,6 +89,6 @@ export const layer = (options: {
 }): Layer.Layer<BrowserHost, PlatformError.PlatformError> =>
   Layer.mergeAll(
     BrowserServices.layer({ bash: options.bash, fs: options.fs, workspaceRoot: "/" }),
-    layerHttpClient,
+    HttpClientLayer.layer,
     BrowserJj.layer(options.jj)
   )

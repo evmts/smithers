@@ -1,6 +1,6 @@
 ---
 title: "Installation"
-description: "Install @smthrs/database, the runtime it requires, and the import subpaths for the driver-neutral root, the Node SQLite driver, and the in-memory test database."
+description: "Install @smthrs/database, the runtime it requires, and the import subpaths for the browser-safe root with its PostgreSQL adapter, the Node SQLite driver, and the in-memory test database."
 sidebar:
   order: 1
 ---
@@ -23,7 +23,9 @@ at the same version as your `effect`, when selecting either subpath:
 npm install @effect/sql-sqlite-node
 ```
 
-The driver-neutral root needs no SQLite adapter. Mixing two copies
+The root needs no SQLite adapter. `PostgresDatabase`, on the root, needs the
+optional `@effect/sql-pg` peer at the same version, passed in as its `driver`.
+Mixing two copies
 of `effect` splits the `SqlClient` service identity, and a writer built against
 one copy cannot see a client provided from the other.
 
@@ -37,13 +39,14 @@ one copy cannot see a client provided from the other.
 
 ## Import subpaths
 
-The root entry point is driver neutral and bundles for browsers. Every driver
-is platform specific and lives at its own subpath, the way `effect` keeps its
-platform packages out of its root.
+The root entry point bundles for browsers. It carries the PostgreSQL adapter,
+which imports no socket code because the caller injects `@effect/sql-pg`. The
+SQLite drivers are platform specific and live at their own subpaths, the way
+`effect` keeps its platform packages out of its root.
 
 ```ts
-// Driver neutral. Safe in a browser bundle.
-import { DatabaseMetrics, DurableWriter, Migrations, UnsupportedBackend } from "@smthrs/database"
+// Safe in a browser bundle; PostgresDatabase connects only with a driver passed in.
+import { DatabaseMetrics, DurableWriter, Migrations, PostgresDatabase, UnsupportedBackend } from "@smthrs/database"
 
 // Or one namespace at a time, which keeps the import graph narrow.
 import * as DurableWriter from "@smthrs/database/DurableWriter"

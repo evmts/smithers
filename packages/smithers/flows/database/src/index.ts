@@ -1,15 +1,17 @@
 /**
  * @smthrs/database public API.
  *
- * This entry point is the driver-neutral write boundary, so it stays
- * browser-bundleable. Each driver is platform-specific and lives under an
- * explicit subpath, the way `effect` keeps platform packages out of its own
- * root: the Node driver is `node:sqlite` through `@effect/sql-sqlite-node`.
+ * This entry point is the write boundary plus the PostgreSQL adapter, and it
+ * stays browser-bundleable: `PostgresDatabase` takes its `@effect/sql-pg`
+ * driver from the caller, so the root imports no socket code. The SQLite
+ * drivers are platform-specific and live under explicit subpaths, the way
+ * `effect` keeps platform packages out of its own root: the Node driver is
+ * `node:sqlite` through `@effect/sql-sqlite-node`.
  *
  * ```ts
- * import { DurableWriter } from "@smthrs/database"
+ * import * as Pg from "@effect/sql-pg"
+ * import { DurableWriter, PostgresDatabase } from "@smthrs/database"
  * import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
- * import * as TestDatabase from "@smthrs/database/test/TestDatabase"
  * ```
  *
  * @since 0.1.0
@@ -38,3 +40,9 @@ export * as Migrations from "./Migrations.ts"
  * @since 1.0.0
  */
 export * as UnsupportedBackend from "./UnsupportedBackend.ts"
+
+/**
+ * @category drivers
+ * @since 1.0.0
+ */
+export * as PostgresDatabase from "./postgres/PostgresDatabase.ts"

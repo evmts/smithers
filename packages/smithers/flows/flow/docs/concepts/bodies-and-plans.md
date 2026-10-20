@@ -24,7 +24,8 @@ behavior.
 
 The durable interpreter records the whole graph's digest before dispatch. A
 resume that rebuilds a different digest fails with `plan_changed`; it does not
-run the edited steps. Use `Node.capture` for every callback in a resumable flow:
+run the edited steps. Declaration sites are not part of the digest, so a
+rebuild that only moves declarations, such as a new bundle, resumes. Use `Node.capture` for every callback in a resumable flow:
 process-local callback identities can change even without a source edit. Runs
 recorded before graph digests were introduced also require a new execution.
 Action implementation changes must advance their declared implementation

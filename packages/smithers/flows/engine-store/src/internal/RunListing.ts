@@ -125,7 +125,7 @@ export const make = () =>
           )
         }
         const limit = admitted.limit ?? 100
-        return yield* Read.transaction(
+        return yield* Dialect.readTransaction(
           sql,
           Effect.gen(function*() {
             const at = yield* Read.position(sql)

@@ -10,7 +10,7 @@
       "@effect/platform-node-shared"
     ]
   },
-  "description": "Node.js Host bundle for flows: Effect's Node platform services composed into the closed Host surface",
+  "description": "Node.js Host bundle for flows: Effect's Node platform services composed into the closed Host surface, and the durable flow runtime on Node",
   "homepage": "https://github.com/smithersai/smithers",
   "repository": {
     "type": "git",
@@ -185,11 +185,25 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@effect/sql-sqlite-node": "4.0.5",
+    "@smthrs/artifacts": "1.0.0-rc.16",
+    "@smthrs/capability": "1.0.0-rc.16",
+    "@smthrs/crypto": "1.0.0-rc.16",
+    "@smthrs/database": "1.0.0-rc.16",
+    "@smthrs/engine": "1.0.0-rc.16",
+    "@smthrs/engine-store": "1.0.0-rc.16",
+    "@smthrs/flow": "1.0.0-rc.16",
+    "@smthrs/flows": "1.0.0-rc.16",
     "@smthrs/jj": "1.0.0-rc.16",
+    "@smthrs/journal": "1.0.0-rc.16",
     "@smthrs/kernel": "1.0.0-rc.16",
-    "undici": "8.11.2",
-    "redis": "6.2.1",
+    "@smthrs/run-store": "1.0.0-rc.16",
+    "@smthrs/sandbox": "1.0.0-rc.16",
+    "@smthrs/std": "1.0.0-rc.16",
     "@types/ws": "8.18.2",
+    "esbuild": "0.28.2",
+    "redis": "6.2.1",
+    "undici": "8.11.2",
     "ws": "8.22.0"
   },
   "peerDependencies": {
@@ -201,18 +215,18 @@
     "@effect/platform-node-shared": "4.0.5",
     "@effect/vitest": "4.0.5",
     "@eslint/js": "9.39.5",
-    "@smthrs/journal": "1.0.0-rc.16",
+    "@smthrs/plan": "1.0.0-rc.16",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
     "effect": "4.0.5",
-    "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
     "eslint-plugin-import": "2.32.0",
     "eslint-plugin-jsdoc": "64.3.4",
     "eslint-plugin-unicorn": "65.0.0",
     "madge": "8.0.0",
+    "microsandbox": "0.6.16",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
     "vitest": "5.0.0"

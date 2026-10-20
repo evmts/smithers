@@ -96,6 +96,31 @@ a blob a running backup is still copying.
 Every export, option, and error code is in the
 [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/docs/api.md).
 
+## Cache content that never changes
+
+`ImmutableCache` stores bytes under a key that names content which cannot
+change, such as a repository's file at a commit SHA. The key is not a digest
+of the bytes, so reads are not verified; nothing ever invalidates an entry,
+and a backend may evict one.
+
+```ts
+import { ImmutableCache } from "@smthrs/artifacts"
+
+const file = ImmutableCache.readThrough(
+  ImmutableCache.key("repo.blob", repo, sha, path),
+  readFromSource // an Effect of { bytes, metadata }; a failure is never stored
+)
+```
+
+| Layer                                                | What backs it                     |
+| ---------------------------------------------------- | --------------------------------- |
+| `ImmutableCache.layerMemory`                         | Memory, least recently used first |
+| `EdgeCache.layer` from `@smthrs/platform-cloudflare` | The Workers Cache API             |
+| `BrowserCache.layer` from `@smthrs/platform-browser` | The browser's Cache Storage       |
+
+An entry holds at most 8 MiB of bytes and 1,024 bytes of metadata. Telemetry
+names the key's namespace, never its parts.
+
 ## What it guarantees
 
 - **Every read is digest verified.** A truncated blob left by a crashing
