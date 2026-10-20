@@ -1,1 +1,10 @@
-{}
+{
+  "local-quickstart": {
+    "runs": [
+      { "result": "fail", "agent": "Codex gpt-6.1-sol, fresh context, given only https://smithers.sh/docs/", "date": "2026-10-20T07:35:57Z", "receipt": "local-A on build 6fb780aa: the coding run and tests passed; 'jj git push --allow-new' failed on jj 0.46.0 (docs fixed in 7bf51a8c, 9964ae34); 'runs show' refused because the harness leaked the seat's SMITHERS_TOKEN_FILE (harness fixed)" },
+      { "result": "fail", "agent": "Codex gpt-6.1-sol, fresh context, given only https://smithers.sh/docs/", "date": "2026-10-20T07:38:54Z", "receipt": "local-B on build 6fb780aa: same two causes as local-A" },
+      { "result": "pass", "agent": "Codex gpt-6.1-sol, fresh context, given only https://smithers.sh/docs/", "date": "2026-10-20T09:53:53Z", "receipt": "local-A2 on build a8a6024e: npm install -g smthrs@next (1.0.0-rc.16) into a private prefix, coding run completed, node --test passed, jj 0.46 push created remote main 20bc97153bed 'Add slugify'; host installers stubbed per CoS a-r8q9vl, only npm -g into the walk prefix ran" },
+      { "result": "pass", "agent": "Codex gpt-6.1-sol, fresh context, given only https://smithers.sh/docs/", "date": "2026-10-20T09:56:45Z", "receipt": "local-B2 on build a8a6024e: same steps, 9 tests passed, jj 0.46 push created remote main 8bf9d40ddb75 'Add slugify'; host installers stubbed per CoS a-r8q9vl" }
+    ]
+  }
+}

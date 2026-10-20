@@ -20,7 +20,7 @@ Use Node 26.4+ for the CLI and calibration. Baseline updates are deliberate revi
 
 `images-resolve`, `steps-have-shots`, `anatomy` and `fresh-captures` are binary, naming their first failure. Frontmatter and fenced examples are excluded from prose checks. Task pages are identified by numbered `## N. ...` headings. Pages without those headings do not require task anatomy or step screenshots; the judge still assesses their UI instructions. `DOCS_EVAL_BUILD` overrides the online `https://smithers.sh/__build.json` `gitSha`; an unavailable build scores 1 with `build unknown`. Missing image files or manifest entries still fail resolution.
 
-`journey` uses the trailing consecutive passing runs in the receipts array (chronological order). One valid pass scores 0.5; two or more score 1; the latest failure resets progress. Each counted run needs agent, date and receipt. The empty `receipts.json` intentionally scores zero; this suite does not execute reader journeys or validate receipt contents.
+`journey` uses the trailing consecutive passing runs in the receipts array (chronological order). One valid pass scores 0.5; two or more score 1; the latest failure resets progress. Each counted run needs agent, date and receipt. `receipts.json` records two trailing passes for Local quickstart; other pages have no journey receipts and score zero. This suite does not execute reader journeys or validate receipt contents.
 
 The Rubric uses four integer 1–5 criteria. Every criterion must reach 3 and the mean 3.8; `meta.pass` records that verdict. The reported scalar follows the standard Rubric normalization `(mean - 1) / 4`, rather than converting the verdict to a binary score. Per-criterion scores and verdicts remain in the run artifact.
 
@@ -47,16 +47,16 @@ These vectors are asserted exactly. The specified deterministic checks cannot di
 
 The committed baseline includes existing page failures and missing journey receipts. It is advisory, not a publication gate or proof that the docs match deployed pixels. The live calibration and reader journeys are separate evidence.
 
-Baseline refreshed against the five current pages (run `docs-pages-20261019-eval4`, 2026-10-19). Scores are image resolution / step shots / anatomy / freshness / journey / normalized judge:
+Baseline refreshed against the five current pages (run `docs-pages-20261020-journeys`, 2026-10-20). Scores are image resolution / step shots / anatomy / freshness / journey / normalized judge:
 
 | Page | Scores |
 | --- | --- |
-| welcome | 1 / 1 / 1 / 1 / 0 / .8125 |
-| quickstart | 1 / 1 / 1 / 1 / 0 / 1 |
-| local-quickstart | 1 / 1 / 1 / 1 / 0 / .75 |
-| self-host | 1 / 1 / 1 / 1 / 0 / .5 |
+| welcome | 1 / 1 / 1 / 0 / 0 / .8125 |
+| quickstart | 1 / 1 / 1 / 0 / 0 / 1 |
+| local-quickstart | 1 / 1 / 1 / 1 / 1 / .75 |
+| self-host | 1 / 1 / 1 / 1 / 0 / .25 |
 | flows | 1 / 1 / 1 / 1 / 0 / .4375 |
 
-Compared with the previous baseline, Welcome and Quickstart freshness improved from 0 to 1 after recapture at live build `ae86664e712498c2e97311934a01b7f6526ca448`. Self-host's judge improved from .25 to .5 (task completeness 1 to 5). Flows' judge dropped from .5 to .4375: plain words scored 4 instead of 5; build matching and screenshot coverage remain 1. The judge provides criterion scores rather than a prose diagnosis. No judge was skipped.
+Compared with the previous baseline, Local quickstart's journey improved from 0 to 1 with two consecutive passing reader runs after two failures. Welcome and Quickstart freshness fell from 1 to 0 against the live build. Self-host's judge dropped from .5 to .25 (task completeness 5 to 1); the other judge scores are unchanged. The text-only judge reports plain words 2 for Welcome; build matching 1 for Local quickstart; task completeness, build matching and screenshot coverage 1 for Self-host; and build matching and screenshot coverage 1, plain words 4 for Flows. These are criterion scores, not prose diagnoses. No judge was skipped.
 
 The offline targets depend on the app's `docsInputs` and `docsImages` filegroups for page and image globs, plus the TOC file explicitly. A temporary marketing-only Quickstart produced a rubric regression (compare exit 1); the page was restored without updating the baseline.
