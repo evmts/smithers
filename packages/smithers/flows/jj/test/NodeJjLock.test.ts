@@ -10,7 +10,7 @@ import { chmod, mkdir, mkdtemp, open, readdir, readFile, rename, rm, rmdir, unli
 import { hostname, tmpdir } from "node:os"
 import { join } from "node:path"
 import { vi } from "vitest"
-import { Jj, RepositoryMutation, retryGitIndexLock } from "../src/Jj.ts"
+import { Jj, RepositoryMutation } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
 
 // Fault injection stays at the filesystem boundary; all unaffected calls use
@@ -264,66 +264,6 @@ fi
       })
     ))
 
-  it.effect("retries only a shared Git index acquisition error, preserving permanent errors", () =>
-    Effect.gen(function*() {
-      for (
-        const message of [
-          "source conflict in index.lock",
-          "Could not acquire lock for index file: /git/private.index.lock",
-          "Could not acquire lock for index file: could not be obtained immediately after 1 attempt(s). '/git/private.index.lock'",
-          "Could not acquire lock for index file: '/git/index.lock': permission denied",
-          "cannot lock ref 'refs/heads/main': permission denied",
-          "cannot lock ref 'refs/heads/main': is at abc but expected def",
-          "invalid revision"
-        ]
-      ) {
-        let calls = 0
-        const failure = { message }
-        const answer = yield* Effect.flip(retryGitIndexLock(Effect.suspend(() => {
-          calls++
-          return Effect.fail(failure)
-        })))
-        expect(answer).toBe(failure)
-        expect(calls).toBe(1)
-      }
-    }))
-
-  it.effect("retries transient ref-lock failures and succeeds after contention clears", () =>
-    Effect.gen(function*() {
-      for (const detail of ["File exists", "another Git process", "reference already locked"]) {
-        let calls = 0
-        const pending = yield* Effect.forkChild(retryGitIndexLock(Effect.suspend(() => {
-          calls++
-          return calls === 1
-            ? Effect.fail({ message: `cannot lock ref 'refs/heads/main': ${detail}` })
-            : Effect.succeed("fetched")
-        })))
-        yield* TestClock.adjust(100)
-        expect(yield* Fiber.join(pending)).toBe("fetched")
-        expect(calls).toBe(2)
-      }
-    }))
-
-  it.effect("bounds persistent ref-lock contention and stops retries on cancellation", () =>
-    Effect.gen(function*() {
-      let calls = 0
-      const failure = { message: "cannot lock ref 'refs/heads/main': File exists" }
-      const retrying = retryGitIndexLock(Effect.suspend(() => {
-        calls++
-        return Effect.fail(failure)
-      }))
-      const exhausted = yield* Effect.forkChild(Effect.flip(retrying))
-      yield* TestClock.adjust(120_000)
-      expect(yield* Fiber.join(exhausted)).toBe(failure)
-      expect(calls).toBe(1_201)
-      const cancelled = yield* Effect.forkChild(retrying)
-      yield* TestClock.adjust(0)
-      expect(calls).toBe(1_202)
-      yield* Fiber.interrupt(cancelled)
-      yield* TestClock.adjust(120_000)
-      expect(calls).toBe(1_202)
-    }))
-
   for (const method of ["status", "root"] as const) {
     it.live(`bounds public ${method} before spawn and releases its waiting fence on cancellation`, () =>
       fixture((root) =>
@@ -412,25 +352,6 @@ fi
         })
       ))
   }
-
-  it.effect("exhausts a finite retry budget independently for each execution", () =>
-    Effect.gen(function*() {
-      let calls = 0
-      const failure = {
-        message:
-          "Could not acquire lock for index file: could not be obtained immediately after 1 attempt(s). '/git/index.lock'"
-      }
-      const retrying = retryGitIndexLock(Effect.suspend(() => {
-        calls++
-        return Effect.fail(failure)
-      }))
-      for (let run = 0; run < 2; run++) {
-        const pending = yield* Effect.forkChild(Effect.flip(retrying))
-        yield* TestClock.adjust(120_000)
-        expect(yield* Fiber.join(pending)).toBe(failure)
-        expect(calls).toBe(1_201 * (run + 1))
-      }
-    }))
 
   it.live("leaves the CLI to report operations outside a workspace", () =>
     fixture((root) =>

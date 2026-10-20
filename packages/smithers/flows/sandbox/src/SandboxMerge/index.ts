@@ -27,3 +27,5 @@ export * from "./Outcome.ts"
 export type { Repository } from "./Repository.ts"
 export * from "./Strategy.ts"
 export type { Work }
+
+export * from "./ApplyAction.ts"

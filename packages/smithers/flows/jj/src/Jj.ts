@@ -468,32 +468,17 @@ export const RepositoryMutation: Context.Service<RepositoryMutation, RepositoryM
 )
 
 /**
- * Retry Git's shared index or ref-lock contention, for at most 1,200 retries.
- * Source conflicts, private index errors and other VCS failures retain their
- * original error. Never reclaim Git's active lock.
+ * Whether a failure confirms contention on Git's shared index or a ref lock.
+ * Private index failures, permissions and source conflicts are not contention.
+ * This pure classifier never executes or retries an operation; a durable action
+ * owns its retry policy. Never reclaim Git's active lock.
  *
  * @category utils
  * @since 1.0.0
  */
-export const retryGitIndexLock = <A, E extends { readonly message: string }, R>(
-  effect: Effect.Effect<A, E, R>
-): Effect.Effect<A, E, R> =>
-  Effect.suspend(() => {
-    let attempts = 0
-    const attempt: Effect.Effect<A, E, R> = Effect.suspend(() =>
-      effect.pipe(
-        Effect.catch((error) =>
-          attempts++ < 1_200 && (
-              /Could not acquire lock for index file/i.test(error.message)
-                && /could not be obtained immediately after \d+ attempt\(s\)/i.test(error.message)
-                && /(?:[/\\])index\.lock['" ]/.test(error.message)
-              || /cannot lock ref '[^']+':/i.test(error.message)
-                && /(?:file exists|another git process|reference already locked)/i.test(error.message)
-            )
-            ? Effect.sleep("100 millis").pipe(Effect.andThen(attempt))
-            : Effect.fail(error)
-        )
-      )
-    )
-    return attempt
-  })
+export const isGitLockContention = (error: { readonly message: string }): boolean =>
+  /Could not acquire lock for index file/i.test(error.message)
+    && /could not be obtained immediately after \d+ attempt\(s\)/i.test(error.message)
+    && /(?:[/\\])index\.lock['" ]/.test(error.message)
+  || /cannot lock ref '[^']+':/i.test(error.message)
+    && /(?:file exists|another git process|reference already locked)/i.test(error.message)

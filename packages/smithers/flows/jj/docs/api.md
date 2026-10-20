@@ -237,14 +237,13 @@ default of `120000`, bounding acquisition only. The protected effect must not ca
 operation on the same store; internal compound operations use their raw
 command runner while holding the outer permits.
 
-`retryGitIndexLock(effect)`, exported from the root because it only inspects error messages, retries confirmed shared Git `index.lock`
-acquisition failures and ref-lock contention: at most 1,200 retries with 100 ms
-waits, independently for each execution. It preserves permanent errors, private-index errors and
-the final exhausted error, and never removes an active Git lock. Its retry
-waits are independent of the repository fence acquisition deadline. A stuck
-`index.lock` holds both acquired fences for the full bounded retry (about two
-minutes), because the deadline bounds acquisition only. Ref-lock retries let
-unfenced fetches recover from concurrent fetch or fenced export contention.
+`isGitLockContention({ message })` is a pure classifier exported from the root.
+It confirms shared Git `index.lock` acquisition failures and ref-lock contention,
+and excludes private-index, permission and conflict errors. It never executes,
+waits, retries, or removes an active lock. Use the classification at a durable
+action boundary with an engine `RetryPolicy`; `SandboxMerge.Apply` does this
+for recoverable sandbox application. The former `retryGitIndexLock` effect
+wrapper is removed; callers must move retries to the durable layer.
 
 Snapshot messages are opaque strings on both browser and CLI layers, including
 empty strings, leading `-`, quotes, and newlines. Node and Bun never pass them

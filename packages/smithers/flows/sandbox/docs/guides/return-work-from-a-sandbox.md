@@ -42,7 +42,8 @@ the checkout before the machine is released. Declare the action's success with
 `Sandbox.Sandboxed`, so the journal records the work beside the body's result:
 
 ```ts
-import { Action } from "@smthrs/flow"
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import { RemoteChildProcessSpawner, Sandbox, SandboxMerge } from "@smthrs/sandbox"
 import * as Schema from "effect/Schema"
 
@@ -52,27 +53,22 @@ const Implement = Action.make("examples/Implement", {
   error: Schema.Union([Sandbox.CaptureError, RemoteChildProcessSpawner.ProviderError])
 })
 
-const Land = Action.make("examples/Land", {
-  payload: { issue: Schema.Number, work: Sandbox.Work },
+const Land = Flow.make("examples/Land", {
+  payload: SandboxMerge.Apply.payloadSchema,
   success: SandboxMerge.Outcome,
-  error: SandboxMerge.MergeError
+  error: SandboxMerge.Apply.errorSchema,
+  body: Node.capture({ action: SandboxMerge.Apply.name }, (payload) => SandboxMerge.Apply.call(payload))
 })
 
 const implement = Implement.toLayer(({ issue }) => Sandbox.run(provider, { session: `issue:${issue}` }, agent(issue)))
-
-const land = Land.toLayer(({ issue, work }) =>
-  SandboxMerge.apply(work, {
-    repository: "/srv/repo",
-    onto: "main",
-    message: `Fix #${issue}`,
-    key: `issue:${issue}`
-  })
-)
+const land = Interpreter.layerWithImplementations(Land, SandboxMerge.layerApply)
 ```
 
 `provider` is any `Sandbox.Provider`, and `agent(issue)` is an effect that
 edits files through the host services it is given. A flow calls `Implement`,
-then passes its `work` to `Land`. The host that runs `Land` provides `@smthrs/jj`'s
+then passes its `work` to `Land` with a full commit ID in `onto`, a stable
+`key`, `repository` and `message`. Resolve the target in a preceding journaled
+action so retries cannot follow a moving bookmark. The host that runs `Land` provides `@smthrs/jj`'s
 `RepositoryMutation` fence, `NodeJj.layerRepositoryMutation` on Node and Bun, so
 landing never interleaves with the host's own jj operations on the repository.
 
@@ -130,6 +126,17 @@ Otherwise it fails with `resolution_rejected` and leaves the conflicted change
 as it was.
 
 ## Durability
+
+`SandboxMerge.Apply` uses the engine's `RetryPolicy`: 100 ms between attempts,
+up to 1,201 attempts. Only confirmed shared Git index/ref contention becomes
+`GitLockContention`; other failures stay `MergeError` and are non-retryable.
+The raw `apply` effect attempts each command once and preserves its errors for
+callers that already own a durable action boundary. It never sleeps through a
+held repository fence. Use `Apply.call` in flow bodies and provide `layerApply`.
+
+The action uses `recordConflicts` only. Run custom conflict strategies in
+subsequent actions with their own idempotency contracts; never retry an arbitrary
+resolver or an abandoned conflict as part of the application action.
 
 The work is part of the `Implement` action's journaled result. A crash after
 the machine is gone loses neither the result nor the patch, and a resumed run

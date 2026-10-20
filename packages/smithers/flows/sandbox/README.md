@@ -111,7 +111,7 @@ tools use these operations to replace files while preserving their metadata.
 
 `Sandbox.run` holds one machine for one unit of work and returns the body's
 result with the `Work` its checkout gained, a git diff from a base the host can
-fetch. `SandboxMerge.apply` lands that work in a host jj repository as one
+fetch. The durable `SandboxMerge.Apply` action (`layerApply`) lands that work in a host jj repository as one
 change, recording conflicts the way `jj rebase` does. See
 [Return work from a sandbox](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/guides/return-work-from-a-sandbox.md).
 
@@ -162,3 +162,8 @@ buffering, and provider-specific byte fidelity.
 
 See the [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/api.md) and the
 [kernel reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md).
+
+`SandboxMerge.Apply` pins a full commit target and stable application key. Its
+engine retries confirmed shared Git contention, releasing the repository fence
+between attempts. Custom conflict strategies run as separate actions. The raw
+`SandboxMerge.apply` effect makes one attempt without retries.

@@ -5192,6 +5192,9 @@ importers:
 
   packages/smithers/flows/sandbox:
     dependencies:
+      '@smthrs/flow':
+        specifier: 1.0.0-rc.16
+        version: link:../flow
       '@smthrs/jj':
         specifier: 1.0.0-rc.16
         version: link:../jj
@@ -5211,9 +5214,12 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
-      '@smthrs/flow':
+      '@smthrs/engine':
         specifier: 1.0.0-rc.16
-        version: link:../flow
+        version: link:../engine
+      '@smthrs/plan':
+        specifier: 1.0.0-rc.16
+        version: link:../plan
       '@smthrs/platform-bun':
         specifier: 1.0.0-rc.16
         version: link:../platform-bun

@@ -4,7 +4,6 @@
  * @since 1.0.0
  */
 
-import { retryGitIndexLock } from "@smthrs/jj"
 import * as Effect from "effect/Effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
@@ -91,10 +90,8 @@ export const make = (path: string): Effect.Effect<Repository, MergeError, ChildP
       path,
       jj: (args) =>
         // From the repository's root, so the paths jj prints are repository-relative.
-        retryGitIndexLock(
-          output(spawner, "jj", ["-R", path, "--ignore-working-copy", "--no-pager", "--color=never", ...args], {
-            cwd: path
-          })
-        )
+        output(spawner, "jj", ["-R", path, "--ignore-working-copy", "--no-pager", "--color=never", ...args], {
+          cwd: path
+        })
     }
   })

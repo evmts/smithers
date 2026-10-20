@@ -64,13 +64,16 @@ describe("@smthrs/sandbox barrel", () => {
    */
   it("exposes the host merge of a session's work beside its strategies", () => {
     expect(Object.keys(Sandbox.SandboxMerge).sort()).toEqual([
+      "Apply",
       "Conflicted",
+      "GitLockContention",
       "MergeError",
       "Merged",
       "Outcome",
       "apply",
       "changeIdOf",
       "failOnConflict",
+      "layerApply",
       "recordConflicts",
       "resolveWith"
     ])

@@ -8,7 +8,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/docs)
 
-> **Related APIs:** [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/)
+> **Related APIs:** [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/)
 
 `@smthrs/sandbox` adapts a provider a caller hands it onto Effect's host
 services. The smallest composition adapts a spawn-only provider onto
@@ -250,6 +250,16 @@ The base is resolved after the provider hands over the session, so a provider th
 `hostContext(session, { health? })` builds the `Host` context `layerHost` provides from a session the caller already holds; it requires a `Scope`. `layerHost` and `run` both use it.
 
 ## SandboxMerge
+
+`Apply.call({ work, repository, onto, message, key, fetch? })` is the durable
+action; provide `layerApply` with the engine and host services. Its `onto` must
+be a full commit ID resolved in a preceding journaled step. Only confirmed
+shared Git lock contention retries (100 ms, at most 1,201 attempts). Other
+`MergeError` failures stop immediately. Journaled errors retain the reason and
+message; raw `apply` also retains the original host cause. Retries release repository fences and
+resume the same deterministic change. Custom conflict strategies run separately.
+
+The lower-level `apply` effect makes one attempt, with no sleep or retry:
 
 ```ts
 import { SandboxMerge } from "@smthrs/sandbox"

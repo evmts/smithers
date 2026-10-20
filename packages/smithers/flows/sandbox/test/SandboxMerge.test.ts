@@ -1,4 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
+import { FlowEngine } from "@smthrs/engine"
+import { Flow, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/jj/Jj"
 import {
   layerAt,
@@ -6,9 +9,19 @@ import {
   RepositoryMutationTimeoutMs,
   withRepositoryMutation
 } from "@smthrs/jj/node/NodeJj"
+import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Fiber, FileSystem, Layer } from "effect"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync
+} from "node:fs"
 import { join } from "node:path"
 import { afterAll } from "vitest"
 import * as Sandbox from "../src/Sandbox/index.ts"
@@ -64,6 +77,29 @@ const apply = <E = never, R = never>(
   SandboxMerge.apply(work, { onto: "main", message: "sandbox work", ...options }).pipe(
     Effect.provide(Layer.merge(rawPlatform, layerRepositoryMutation))
   )
+
+const applyFlow = Flow.make("test/SandboxMerge/Apply", {
+  payload: SandboxMerge.Apply.payloadSchema,
+  success: SandboxMerge.Outcome,
+  error: SandboxMerge.Apply.errorSchema,
+  body: Node.capture({ action: SandboxMerge.Apply.name }, (payload) => SandboxMerge.Apply.call(payload))
+})
+
+const mergeRuntime = Interpreter.layerWithImplementations(applyFlow, SandboxMerge.layerApply).pipe(
+  Layer.provideMerge(FlowEngine.layerMemory),
+  Layer.provideMerge(Layer.mergeAll(rawPlatform, layerRepositoryMutation, NodeCrypto.layer))
+)
+
+const durableApply = (work: Sandbox.Work, repository: string, onto: string) =>
+  applyFlow.execute({
+    work,
+    repository,
+    onto,
+    message: "sandbox work",
+    key: work._tag === "Changed" ? `${work.session}\0${work.base}\0${work.patch}` : work.session
+  }, {
+    executionId: `merge:${repository}:${work.session}`
+  }).pipe(Effect.provide(mergeRuntime))
 
 const jj = (repository: string, args: string): string => host(repository, `jj --ignore-working-copy ${args}`)
 
@@ -171,8 +207,8 @@ exit "$code"
       process.env.PATH = `${bin}:${saved}`
       const [outcome, duplicate] = yield* Effect.acquireUseRelease(
         Effect.forkChild(Effect.all([
-          apply(work, { repository: repo.path }),
-          apply(work, { repository: repo.path })
+          durableApply(work, repo.path, main),
+          durableApply(work, repo.path, main)
         ], { concurrency: 2 })),
         (applying) =>
           Effect.gen(function*() {
@@ -208,6 +244,76 @@ exit "$code"
       expect(attempts).toBeGreaterThan(1)
       expect(attempts).toBeLessThan(5)
       expect(((yield* apply(work, { repository: repo.path })) as SandboxMerge.Merged).commit).toBe(merged.commit)
+    }))
+
+  it.live("replays a completed application from the engine journal without repository access", () =>
+    Effect.gen(function*() {
+      const repo = hostRepository(fresh(), { "a.txt": "a\n" })
+      const work = yield* workOn(repo.path, { "a.txt": "captured\n" })
+      const payload = { work, repository: repo.path, onto: work.base, message: "journaled", key: work.session }
+      const executionId = `replay:${repo.path}`
+      yield* Effect.gen(function*() {
+        const first = yield* applyFlow.execute(payload, { executionId })
+        renameSync(repo.path, `${repo.path}.moved`)
+        expect(yield* applyFlow.execute(payload, { executionId })).toEqual(first)
+      }).pipe(Effect.provide(mergeRuntime))
+    }))
+
+  it.live("does not retry permanent merge failures and accepts unchanged work", () =>
+    Effect.gen(function*() {
+      const onto = "a".repeat(40)
+      const invalid = new Sandbox.Changed({ session: "invalid-base", base: "main", patch: "patch" })
+      const invalidResult = yield* Effect.flip(durableApply(invalid, fresh(), onto))
+      expect(invalidResult).toBeInstanceOf(SandboxMerge.MergeError)
+      expect((invalidResult as SandboxMerge.MergeError).reason).toBe("base_not_found")
+      const absent = new Sandbox.Changed({ session: "absent-repository", base: onto, patch: "patch" })
+      const absentResult = yield* Effect.flip(durableApply(absent, fresh(), onto))
+      expect(absentResult).toBeInstanceOf(SandboxMerge.MergeError)
+      expect((absentResult as SandboxMerge.MergeError).reason).toBe("vcs_failed")
+      const unchanged = new Sandbox.Unchanged({ session: "unchanged", base: onto })
+      expect(yield* durableApply(unchanged, fresh(), onto)).toEqual(unchanged)
+    }))
+
+  it.live("recovers export contention after pending bookmark deletion without duplicating the merge", () =>
+    Effect.gen(function*() {
+      const repo = hostRepository(fresh(), { "a.txt": "a\n" })
+      const work = yield* workOn(repo.path, { "a.txt": "captured\n" })
+      const onto = commitOf(repo.path, "main")
+      const bin = join(fresh(), "bin")
+      mkdirSync(bin, { recursive: true })
+      const saved = process.env.PATH
+      const real = host(bin, "command -v jj").trim()
+      const attempted = join(bin, "export-attempted")
+      const completed = join(bin, "export-completed")
+      writeFileSync(
+        join(bin, "jj"),
+        `#!/bin/sh
+case " $* " in
+  *" git export "*)
+    if [ ! -f ${quote(attempted)} ]; then
+      touch ${quote(attempted)}
+      echo "cannot lock ref 'refs/heads/main': File exists" >&2
+      exit 1
+    fi
+    touch ${quote(completed)}
+    ;;
+esac
+PATH=${quote(saved ?? "/usr/bin:/bin")} exec ${quote(real)} "$@"
+`
+      )
+      chmodSync(join(bin, "jj"), 0o755)
+      process.env.PATH = `${bin}:${saved}`
+      const outcome = yield* durableApply(work, repo.path, onto).pipe(Effect.ensuring(Effect.sync(() => {
+        process.env.PATH = saved
+      })))
+      expect(outcome._tag).toBe("Merged")
+      const merged = outcome as SandboxMerge.Merged
+      expect(existsSync(attempted)).toBe(true)
+      expect(existsSync(completed)).toBe(true)
+      expect(commitsOf(repo.path, merged.change)).toEqual([merged.commit])
+      expect(parentOf(repo.path, merged.commit)).toBe(onto)
+      expect(fileAt(repo.path, merged.commit, "a.txt")).toBe("captured\n")
+      expect(bookmarks(repo.path)).not.toContain("smithers-sandbox/")
     }))
 
   it.live("bounds and cancels contention without discarding captured work or deleting an active lock", () =>
@@ -449,7 +555,7 @@ PATH=${quote(saved ?? "/usr/bin:/bin")} exec ${quote(real)} "$@"
       chmodSync(join(bin, "jj"), 0o755)
       process.env.PATH = `${bin}:${saved}`
       const outcome = yield* Effect.acquireUseRelease(
-        Effect.forkChild(apply(work, { repository: clone })),
+        Effect.forkChild(durableApply(work, clone, work.base)),
         (applying) =>
           Effect.gen(function*() {
             yield* Effect.promise(async (signal) => {

@@ -29,7 +29,7 @@ describe("@smthrs/jj barrel", () => {
         "make",
         "makeNoop",
         "RepositoryMutation",
-        "retryGitIndexLock"
+        "isGitLockContention"
       ].sort()
     )
   })

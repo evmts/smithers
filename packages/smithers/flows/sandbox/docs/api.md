@@ -244,6 +244,16 @@ The base is resolved after the provider hands over the session, so a provider th
 
 ## SandboxMerge
 
+`Apply.call({ work, repository, onto, message, key, fetch? })` is the durable
+action; provide `layerApply` with the engine and host services. Its `onto` must
+be a full commit ID resolved in a preceding journaled step. Only confirmed
+shared Git lock contention retries (100 ms, at most 1,201 attempts). Other
+`MergeError` failures stop immediately. Journaled errors retain the reason and
+message; raw `apply` also retains the original host cause. Retries release repository fences and
+resume the same deterministic change. Custom conflict strategies run separately.
+
+The lower-level `apply` effect makes one attempt, with no sleep or retry:
+
 ```ts
 import { SandboxMerge } from "@smthrs/sandbox"
 

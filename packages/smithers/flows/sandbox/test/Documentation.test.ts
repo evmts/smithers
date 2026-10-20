@@ -40,7 +40,7 @@ it("typechecks the guide's host-side lookup of a provider by name", () => {
 
 it("typechecks the return-work guide's actions and resolver strategy", () => {
   const blocks = fences(read("docs/guides/return-work-from-a-sandbox.md"))
-  const actions = blocks.find((block) => block.includes("SandboxMerge.apply"))
+  const actions = blocks.find((block) => block.includes("SandboxMerge.Apply"))
   const strategy = blocks.find((block) => block.includes("SandboxMerge.resolveWith"))
   expect(actions).toBeDefined()
   expect(strategy).toBeDefined()

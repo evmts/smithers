@@ -312,15 +312,17 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@smthrs/flow": "1.0.0-rc.16",
     "@smthrs/jj": "1.0.0-rc.16",
     "@smthrs/kernel": "1.0.0-rc.16"
   },
   "devDependencies": {
+    "@smthrs/plan": "1.0.0-rc.16",
+    "@smthrs/engine": "1.0.0-rc.16",
     "@effect/language-service": "0.87.2",
     "@effect/platform-node": "4.0.5",
     "@effect/vitest": "4.0.5",
     "@eslint/js": "9.39.5",
-    "@smthrs/flow": "1.0.0-rc.16",
     "@smthrs/std": "1.0.0-rc.16",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",

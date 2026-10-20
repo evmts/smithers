@@ -156,11 +156,12 @@ whose owner process has exited.
 `NodeJj.layerRepositoryMutation` provides them as the root's `RepositoryMutation`
 service for platform-neutral code such as `SandboxMerge.apply`;
 `RepositoryMutationTimeoutMs` overrides its deadline. The protected effect must
-not call another fenced operation on the same store. The root's `retryGitIndexLock`
-retries confirmed shared `index.lock` acquisition failures and Git ref-lock
-contention, at most 1,200 times with 100 ms waits, preserving the final error. It never removes Git's
-lock. Once acquired, both fences remain held throughout bounded retries (about
-two minutes for a stuck lock); the acquisition deadline does not bound execution.
+not call another fenced operation on the same store. The root's
+`isGitLockContention({ message })` identifies confirmed shared `index.lock`
+acquisition failures and ref-lock contention without executing work. It excludes
+private-index, permission and conflict errors. Durable actions own retry policy;
+`SandboxMerge.Apply` releases these fences before its engine-owned retry wait.
+No helper sleeps or removes Git's active lock.
 
 ## Failures are six codes
 

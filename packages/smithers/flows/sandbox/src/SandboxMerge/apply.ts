@@ -224,8 +224,10 @@ export const apply = <E = never, R = never>(
             if (!exists || interrupted) {
               yield* repository.jj(["rebase", "-r", `change_id(${change})`, "-d", onto[0]!])
               yield* repository.jj(["bookmark", "delete", pending])
-              yield* repository.jj(["git", "export"])
             }
+            // Export may have failed after the pending bookmark was deleted.
+            // Recover that phase even when the change already exists.
+            yield* repository.jj(["git", "export"])
             const landed = yield* outcomeOf(repository, change)
             return landed
           })
