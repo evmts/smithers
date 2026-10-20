@@ -90,6 +90,7 @@ or pull-request operations. Use an implemented publication tool or CI job.
 | `Go.Test`                | Go                | test               | no        | no               | package executor |
 | `ImportClosure`          | Compose           | build              | no        | no               | flow body        |
 | `Install`                | Install           | run                | no        | no               | flow body        |
+| `JevLint`                | JevLint           | lint               | no        | no               | flow body        |
 | `JsrPublish`             | JsrPublish        | run                | no        | no               | flow body        |
 | `Literal`                | NodeArtifact      | build              | yes       | no               | package executor |
 | `LlmLint`                | LlmLint           | review             | no        | no               | flow body        |

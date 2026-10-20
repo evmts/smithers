@@ -74,7 +74,6 @@ const telemetryAdapters = [
   "@opentelemetry/sdk-trace-web"
 ]
 const browserAdapters = ["@smthrs/platform-browser", "@smthrs/platform-bun", "@effect/platform-bun"]
-const flowsNodeHost = ["@smthrs/platform-node", "@effect/sql-sqlite-node"]
 const absentByDefault = [...runners, ...nodeAdapters, ...telemetryAdapters, ...browserAdapters, "react", "tsx", "vite"]
 
 // Explicit policy expectations; never derived from the manifest being tested.
@@ -90,12 +89,11 @@ export const minimalProfiles = (entries) => {
     {
       name: "flows-default",
       dependencies: { "@smthrs/flows": firstParty, effect },
-      // The barrel is the package a Node program installs, so it brings the
-      // Node host and SQLite driver its NodeRuntime subpath imports (#3838).
-      // The Effect platform adapters stay private to @smthrs/platform-node.
-      required: flowsNodeHost,
-      absent: absentByDefault.filter((name) => !flowsNodeHost.includes(name)),
-      imports: ["@smthrs/flows", "@smthrs/flows/NodeRuntime"]
+      // The barrel names no platform. A Node program installs
+      // @smthrs/platform-node, which brings the barrel and the SQLite driver
+      // its NodeRuntime opens (#3838), so neither installs with the barrel.
+      absent: absentByDefault,
+      imports: ["@smthrs/flows"]
     }
   ]
 }
@@ -136,7 +134,7 @@ export const adapterProfiles = (entries) => {
         "@opentelemetry/sdk-trace-node": "2.11.0"
       },
       absent: [...runners, ...browserAdapters, "@opentelemetry/sdk-trace-web"],
-      imports: ["@smthrs/flows/NodeRuntime", "@smthrs/gateway/node/NodeGateway", "@smthrs/observability/NodeOtel"]
+      imports: ["@smthrs/platform-node", "@smthrs/gateway/node/NodeGateway", "@smthrs/observability/NodeOtel"]
     },
     {
       name: "browser",

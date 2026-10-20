@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath } from "@effect/platform-node"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"

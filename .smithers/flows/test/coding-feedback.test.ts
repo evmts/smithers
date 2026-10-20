@@ -1,6 +1,6 @@
 import { DurableEngineState } from "@smthrs/engine-store"
 import { Action, Fault } from "@smthrs/flow"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Option } from "effect"
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
@@ -228,7 +228,7 @@ for (const mode of ["owner", "source", "digest"] as const) {
           }
           return yield* Effect.die(new Error(`Timed out waiting for ${deferredName}`))
         })
-      const HostRuntime = process.versions.bun ? await import("@smthrs/flows/BunRuntime") : NodeRuntime
+      const HostRuntime = process.versions.bun ? (await import("@smthrs/platform-bun")).BunRuntime : NodeRuntime
       const runtime = HostRuntime.layerHost(
         {
           filename: join(root, ".flows", "engine.db"),
@@ -379,7 +379,7 @@ for (
       pendingReady = resolve
     })
     const early = mode.startsWith("early") || mode === "later-check-pending"
-    const HostRuntime = process.versions.bun ? await import("@smthrs/flows/BunRuntime") : NodeRuntime
+    const HostRuntime = process.versions.bun ? (await import("@smthrs/platform-bun")).BunRuntime : NodeRuntime
     const runtime = HostRuntime.layerHost(
       {
         filename: join(root, ".flows", "engine.db"),

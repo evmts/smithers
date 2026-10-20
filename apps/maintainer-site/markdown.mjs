@@ -791,3 +791,70 @@ export function renderMarkdown(source, options = {}) {
     links: links.map((link) => ({ ...link, context: htmlToText(renderInline(link.block, { ...ctx, record: null })) })),
   }
 }
+
+// ---------------------------------------------------------------------------------------------------------
+// Front matter: a leading `---` block of `key: value` lines, the subset of YAML the docs use. A value is a
+// string, or a list written `[a, b]` or as indented `- item` lines. `body` keeps the rest of the file.
+
+const unquote = (value) => {
+  const text = value.trim()
+  if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
+    try {
+      return JSON.parse(text)
+    } catch {
+      return text.slice(1, -1)
+    }
+  }
+  if (text.length >= 2 && text.startsWith("'") && text.endsWith("'")) return text.slice(1, -1).replace(/''/g, "'")
+  return text.replace(/\s+#.*$/, "")
+}
+
+// Splits `a, "b, c", d` on the commas outside quotes.
+const splitFlowList = (inner) => {
+  const items = []
+  let current = ""
+  let quote = null
+  for (const char of inner) {
+    if (quote) {
+      if (char === quote) quote = null
+    } else if (char === '"' || char === "'") quote = char
+    else if (char === ",") {
+      items.push(current)
+      current = ""
+      continue
+    }
+    current += char
+  }
+  items.push(current)
+  return items.map(unquote).filter((item) => item !== "")
+}
+
+export function splitFrontmatter(source) {
+  const lines = source.replace(/\r\n?/g, "\n").replace(/^﻿/, "").split("\n")
+  const end = lines[0] === "---" ? lines.findIndex((line, index) => index > 0 && (line === "---" || line === "...")) : -1
+  if (end < 0) return { data: null, body: source, errors: [] }
+  const data = {}
+  const errors = []
+  let listKey = null
+  lines.slice(1, end).forEach((line, index) => {
+    if (/^\s*(#.*)?$/.test(line)) return
+    const item = line.match(/^\s*-\s+(.*)$/)
+    if (item && listKey !== null) {
+      if (!Array.isArray(data[listKey])) data[listKey] = []
+      data[listKey].push(unquote(item[1]))
+      return
+    }
+    const pair = line.match(/^([A-Za-z_][\w-]*):(?:\s+(.*))?$/)
+    if (!pair) {
+      errors.push(`line ${index + 2}: ${line.trim()}`)
+      listKey = null
+      return
+    }
+    const [, key, value = ""] = pair
+    const text = value.trim()
+    listKey = text === "" ? key : null
+    if (text.startsWith("[") && text.endsWith("]")) data[key] = splitFlowList(text.slice(1, -1))
+    else data[key] = unquote(text)
+  })
+  return { data, body: lines.slice(end + 1).join("\n"), errors }
+}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { renderMarkdown, slugify } from "./markdown.mjs"
+import { renderMarkdown, slugify, splitFrontmatter } from "./markdown.mjs"
 
 const html = (source, options) => renderMarkdown(source, options).html
 
@@ -91,4 +91,35 @@ test("reference links and sections for search", () => {
     { id: "doc", heading: "Doc", level: 1, text: "Intro ref." },
     { id: "part", heading: "Part", level: 2, text: "Body text." },
   ])
+})
+
+test("front matter: strings, quoted strings, flow and block lists; the body is what follows", () => {
+  const source = [
+    "---",
+    "title: Durable answering: the plan",
+    "status: in-progress # a comment",
+    'owner: "W1, W2"',
+    "links: [../a.md, 'b, c.md', ]",
+    "tags:",
+    "  - one",
+    "  - 'two'",
+    "empty:",
+    "---",
+    "",
+    "## What",
+  ].join("\n")
+  const { data, body, errors } = splitFrontmatter(source)
+  assert.deepEqual(data, { title: "Durable answering: the plan", status: "in-progress", owner: "W1, W2", links: ["../a.md", "b, c.md"], tags: ["one", "two"], empty: "" })
+  assert.equal(body, "\n## What")
+  assert.deepEqual(errors, [])
+  assert.equal(renderMarkdown(body).html, '<h2 id="what">What</h2>')
+})
+
+test("front matter: none without a leading fence or a closing one, and bad lines are reported", () => {
+  for (const source of ["# Title\n\n---\nkey: value\n---\n", "---\nkey: value\nno end\n", "text"]) {
+    assert.deepEqual(splitFrontmatter(source), { data: null, body: source, errors: [] })
+  }
+  const { data, errors } = splitFrontmatter("﻿---\r\nkey: value\r\njust words\r\n- stray item\r\n...\r\nbody")
+  assert.deepEqual(data, { key: "value" })
+  assert.deepEqual(errors, ["line 3: just words", "line 4: - stray item"])
 })

@@ -4,15 +4,10 @@
  * the redirect-refusing transport and the failure mapping live in
  * @smthrs/model-host.
  */
-import { ModelError } from "@smthrs/model/ModelError"
-import { Message, ModelRequest, SystemPart } from "@smthrs/model/ModelRequest"
-import * as RequestExecutor from "@smthrs/model/RequestExecutor"
-import { composeAgentInstructions } from "@smthrs/rpc/AgentContext"
-import { cutModelCredential } from "@smthrs/rpc/ConfiguredModel"
-import type { ModelTestFailure } from "@smthrs/rpc/ConfiguredModel"
-import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import { Effect, Layer, Redacted, Stream } from "effect"
-import { manualRedirects, modelFailureOf, toModel } from "@smthrs/model-host"
+import { ModelError, ModelRequest } from "@smthrs/model"
+import { AgentContext, ConfiguredModel, type NativeAgent } from "@smthrs/rpc"
+import { Effect, Redacted, Stream } from "effect"
+import { modelFailureOf, toModel } from "@smthrs/model-host"
 import type { LocalPlanned } from "@smthrs/model-host"
 
 /** The most a configured-model answer may run to. */
@@ -20,7 +15,7 @@ const SEALED_TURN_MAX_TOKENS = 1024
 const SEALED_TURN_MAX_CHARS = 64 * 1024
 
 /** A failure as the one line a card shows: the code and its number, no sentence. */
-export const modelFailureLine = (failure: ModelTestFailure): string => {
+export const modelFailureLine = (failure: ConfiguredModel.ModelTestFailure): string => {
   switch (failure.code) {
     case "refused":
       return `${failure.code} · ${failure.status}`
@@ -43,12 +38,12 @@ export const modelFailureLine = (failure: ModelTestFailure): string => {
 
 /** The plain transcript a sealed turn carries, or undefined when it continues a tool call. */
 export const sealedMessages = (
-  messages: StartAgentTurnRequest["messages"]
-): ReadonlyArray<Message> | undefined => {
-  const plain: Array<Message> = []
+  messages: NativeAgent.StartAgentTurnRequest["messages"]
+): ReadonlyArray<ModelRequest.Message> | undefined => {
+  const plain: Array<ModelRequest.Message> = []
   for (const message of messages) {
     if (!("role" in message)) return undefined
-    plain.push(message.role === "user" ? Message.user(message.content) : Message.assistant(message.content))
+    plain.push(message.role === "user" ? ModelRequest.Message.user(message.content) : ModelRequest.Message.assistant(message.content))
   }
   return plain
 }
@@ -56,8 +51,8 @@ export const sealedMessages = (
 export interface SealedTurn {
   readonly runId: string
   readonly instructions: string
-  readonly context?: StartAgentTurnRequest["context"]
-  readonly messages: ReadonlyArray<Message>
+  readonly context?: NativeAgent.StartAgentTurnRequest["context"]
+  readonly messages: ReadonlyArray<ModelRequest.Message>
 }
 
 /**
@@ -71,16 +66,20 @@ export interface SealedTurn {
 export const sealedTurn = (
   planned: Extract<LocalPlanned, { ok: true }>,
   turn: SealedTurn,
-  publish: (frame: AgentTurnFrame) => void,
+  publish: (frame: NativeAgent.AgentTurnFrame) => void,
   fetchImpl?: typeof globalThis.fetch
 ): Effect.Effect<void> => {
-  const http = manualRedirects(fetchImpl)
+  // A refused redirect fails the call as a transport error; the status it was answered is the turn's failure.
+  let redirected: number | undefined
+  const onRedirect = (status: number): void => {
+    redirected = status
+  }
   let buffered = ""
   const say = (text: string): void => {
     if (text !== "") publish({ runId: turn.runId, type: "delta", kind: "text", text })
   }
-  const done = (failure?: ModelTestFailure): void => {
-    const text = cutModelCredential(buffered, Redacted.value(planned.apiKey))
+  const done = (failure?: ConfiguredModel.ModelTestFailure): void => {
+    const text = ConfiguredModel.cutModelCredential(buffered, Redacted.value(planned.apiKey))
     buffered = ""
     say(text)
     publish({
@@ -91,10 +90,10 @@ export const sealedTurn = (
     })
   }
   return Effect.gen(function*() {
-    const model = yield* toModel(planned.plan, planned.apiKey)
-    const request = ModelRequest.make({
+    const { model } = yield* toModel(planned.plan, planned.apiKey, { fetch: fetchImpl, onRedirect })
+    const request = ModelRequest.ModelRequest.make({
       modelId: planned.plan.modelId,
-      system: [SystemPart.make({ text: composeAgentInstructions(turn.instructions, turn.context) })],
+      system: [ModelRequest.SystemPart.make({ text: AgentContext.composeAgentInstructions(turn.instructions, turn.context) })],
       messages: turn.messages,
       tools: [],
       params: { maxTokens: SEALED_TURN_MAX_TOKENS }
@@ -103,22 +102,15 @@ export const sealedTurn = (
       Effect.suspend(() => {
         if (event.type !== "text-delta") return Effect.void
         if (buffered.length + event.text.length > SEALED_TURN_MAX_CHARS) {
-          return Effect.fail(new ModelError({ code: "invalid_provider_output", message: "The configured answer exceeded its limit" }))
+          return Effect.fail(new ModelError.ModelError({ code: "invalid_provider_output", message: "The configured answer exceeded its limit" }))
         }
         buffered += event.text
         return Effect.void
       }))
   }).pipe(
-    Effect.provide(RequestExecutor.layer.pipe(Layer.provide(http.layer))),
     Effect.match({
-      onSuccess: () => {
-        const status = http.redirected()
-        done(status === undefined ? undefined : { code: "refused", status })
-      },
-      onFailure: (error) => {
-        const status = http.redirected()
-        done(status === undefined ? modelFailureOf(error) : { code: "refused", status })
-      }
+      onSuccess: () => done(),
+      onFailure: (error) => done(redirected === undefined ? modelFailureOf(error) : { code: "refused", status: redirected })
     }),
     // A defect's cause may hold a signed request, so it is dropped, never logged or published.
     Effect.catchDefect(() => Effect.sync(() => done({ code: "unreachable" })))

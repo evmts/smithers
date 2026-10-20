@@ -76,10 +76,10 @@ const seededSources = {
   ].join("\n"),
   // The Flows pages pin pnpm to the release, and the pages they link install
   // the packages the barrel does not re-export at the barrel's version.
-  "packages/smithers/flows/README.md": "pnpm add @smthrs/flows@0.1.0 effect\n",
-  "packages/smithers/flows/docs/README.md": "pnpm add @smthrs/flows@0.1.0 effect\n",
-  "packages/smithers/flows/docs/installation.md": "pnpm add @smthrs/flows@0.1.0 effect\n",
-  "packages/smithers/flows/docs/quickstart.md": "pnpm add @smthrs/flows@0.1.0 effect\n",
+  "packages/smithers/flows/README.md": "pnpm add @smthrs/platform-node@0.1.0 @smthrs/flows@0.1.0 effect\n",
+  "packages/smithers/flows/docs/README.md": "pnpm add @smthrs/platform-node@0.1.0 @smthrs/flows@0.1.0 effect\n",
+  "packages/smithers/flows/docs/installation.md": "pnpm add @smthrs/platform-node@0.1.0 @smthrs/flows@0.1.0 effect\n",
+  "packages/smithers/flows/docs/quickstart.md": "pnpm add @smthrs/platform-node@0.1.0 @smthrs/flows@0.1.0 effect\n",
   "packages/smithers/flows/platform-bun/README.md": "bun add @smthrs/platform-bun@0.1.0 effect\n",
   "packages/smithers/flows/platform-bun/docs/README.md": "bun add @smthrs/platform-bun@0.1.0 effect\n",
   "packages/smithers/flows/platform-bun/docs/installation.md": "bun add @smthrs/platform-bun@0.1.0 effect @smthrs/kernel@0.1.0\n",

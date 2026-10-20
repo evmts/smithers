@@ -1,7 +1,7 @@
 import * as EventSink from "@smthrs/agent/EventSink"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Action, HumanTask, Interpreter } from "@smthrs/flow"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Exit, Layer } from "effect"
 import assert from "node:assert/strict"

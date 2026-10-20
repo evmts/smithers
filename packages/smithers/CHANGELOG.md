@@ -201,6 +201,10 @@
 
 ### Changed
 
+- The Bun control host runs flows through `BunRuntime` from `@smthrs/platform-bun`,
+  an optional peer, and the Node host through `NodeRuntime` from
+  `@smthrs/platform-node`; both moved out of `@smthrs/flows`.
+
 - The private `internal/NativeControl.HostState.executor.prepareAdoption` now
   requires a third `executionDigest: string | undefined` argument. Internal
   callers must pass the digest or explicit `undefined`; this is not a public API

@@ -27,6 +27,8 @@
  */
 import { type DiskOptions, makeDiskGate } from "./disk.ts"
 export { statfsFree } from "./disk.ts"
+import { BunGarbageCollector } from "@smthrs/platform-bun"
+import { NodeGarbageCollector } from "@smthrs/platform-node"
 import { RunStore } from "@smthrs/run-store"
 import { MicrosandboxSandbox, RemoteChildProcessSpawner, type Sandbox } from "@smthrs/sandbox"
 import { type Duration, Effect, Option, Semaphore, Stream } from "effect"
@@ -241,6 +243,8 @@ export interface Options {
   readonly maxCpus?: number | undefined
   /** The Microsandbox SDK. Default: the `microsandbox` package. */
   readonly sdk?: MicrosandboxSandbox.Sdk | undefined
+  /** The host's garbage collector. Default: this runtime's, from `@smthrs/platform-node` or `@smthrs/platform-bun`. */
+  readonly collector?: MicrosandboxSandbox.GarbageCollector | undefined
   /** The prepared snapshot to boot. Default: the newest of `imageFamily`. */
   readonly snapshot?: string | undefined
   /** Virtual CPUs per microVM. Default 2. */
@@ -292,6 +296,11 @@ export const awaitDisk = (freeBytes: () => number, minimum: number, interval: Du
 
 const defaultHolder = () => `${hostname()}:${process.pid}`
 
+/** This runtime's garbage collector, which gives finished guest command handles back. */
+const hostCollector: MicrosandboxSandbox.GarbageCollector = process.versions.bun === undefined
+  ? NodeGarbageCollector.collector
+  : BunGarbageCollector.collector
+
 /** The newest snapshot of `imageFamily`, or a failure naming the build command. */
 export const latestImage = (
   sdk: MicrosandboxSandbox.Sdk
@@ -338,6 +347,7 @@ export const make = (options: Options = {}): Sandbox.Provider & { readonly slots
   const machines = (snapshot: string) =>
     inner ??= MicrosandboxSandbox.make({
       sdk,
+      collector: options.collector ?? hostCollector,
       snapshot,
       workdir: guestCheckout,
       env: {
@@ -478,6 +488,7 @@ export const makeJob = (options: Options = {}): Sandbox.Provider & { readonly sl
   const machines = (key: string, snapshot?: string): Sandbox.Provider =>
     MicrosandboxSandbox.make({
       sdk,
+      collector: options.collector ?? hostCollector,
       ...(snapshot === undefined ? {} : { snapshot }),
       workdir: guestCheckout,
       env: {
@@ -632,6 +643,7 @@ export const buildImage = (
     yield* prepareMachine(sdk)
     const builder = MicrosandboxSandbox.make({
       sdk,
+      collector: hostCollector,
       image: baseImage,
       pullPolicy: "if-missing",
       workdir: guestHome,

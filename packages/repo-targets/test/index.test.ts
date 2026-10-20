@@ -3,9 +3,15 @@ import { describe, expect, expectTypeOf, it } from "vitest"
 import * as RepoTargets from "../src/index.ts"
 import type {
   BuildAndCheckTypeScriptPackageOptions,
+  ImportRulesOptions,
+  ImportRulesTarget,
+  JevRulesOptions,
+  JevRulesTarget,
   PackageTargets,
   ReviewLint,
-  ReviewLintOptions
+  ReviewLintOptions,
+  SdkRulesOptions,
+  SdkRulesTargets
 } from "../src/index.ts"
 
 const sourceDir = new URL("../src/", import.meta.url)
@@ -14,9 +20,12 @@ describe("@smthrs/repo-targets package entry", () => {
   it("re-exports every macro and the shared review prompt", () => {
     expect(Object.keys(RepoTargets).sort()).toEqual([
       "BuildAndCheckTypeScriptPackage",
+      "ImportRules",
+      "JevRules",
       "ReviewDocsAgainstCode",
       "ReviewJsdocAgainstCode",
       "ReviewTagsMigrationsAndKeys",
+      "SdkRules",
       "smithersReviewPrompt"
     ])
     expect(RepoTargets.smithersReviewPrompt).toContain("You are reviewing a diff in `smithers`")
@@ -27,6 +36,12 @@ describe("@smthrs/repo-targets package entry", () => {
       BuildAndCheckTypeScriptPackageOptions
     >()
     expectTypeOf(RepoTargets.BuildAndCheckTypeScriptPackage).returns.toEqualTypeOf<PackageTargets>()
+    expectTypeOf(RepoTargets.ImportRules).parameter(0).toEqualTypeOf<ImportRulesOptions>()
+    expectTypeOf(RepoTargets.ImportRules).returns.toEqualTypeOf<ImportRulesTarget>()
+    expectTypeOf(RepoTargets.JevRules).parameter(0).toEqualTypeOf<JevRulesOptions>()
+    expectTypeOf(RepoTargets.JevRules).returns.toEqualTypeOf<JevRulesTarget>()
+    expectTypeOf(RepoTargets.SdkRules).parameter(0).toEqualTypeOf<SdkRulesOptions>()
+    expectTypeOf(RepoTargets.SdkRules).returns.toEqualTypeOf<SdkRulesTargets>()
     for (const macro of [RepoTargets.ReviewDocsAgainstCode, RepoTargets.ReviewJsdocAgainstCode, RepoTargets.ReviewTagsMigrationsAndKeys]) {
       expectTypeOf(macro).parameter(0).toEqualTypeOf<ReviewLintOptions>()
       expectTypeOf(macro).returns.toEqualTypeOf<ReviewLint>()

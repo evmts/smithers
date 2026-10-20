@@ -19,7 +19,7 @@
 import { Capability, Permission } from "@smthrs/capability"
 import { Action, DurableDeferred, Flow, Interpreter } from "@smthrs/flow"
 import { Engine } from "@smthrs/flows"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { RunStore } from "@smthrs/run-store"
 import { CompensationHandlers, SqlTimeTravelStore, TimeTravel } from "@smthrs/time-travel"
 import * as Effect from "effect/Effect"

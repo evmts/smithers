@@ -4,7 +4,7 @@
  * is all a benchmark trial keeps.
  */
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect } from "effect"
 import { spawn } from "node:child_process"
 import { copyFile, mkdir, mkdtemp, readdir, realpath, rm } from "node:fs/promises"

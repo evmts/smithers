@@ -243,6 +243,10 @@ export { TypedocDocs } from "./TypedocDocumentation.ts"
 export { LlmLint } from "./LlmLint.ts"
 /** @category actions @since 0.1.0 */
 export { FindingsError, LlmReview, LlmReviewError, ModelCliMissing } from "./LlmLint.ts"
+/** @category targets @since 1.0.0 */
+export { JevLint } from "./JevLint.ts"
+/** @category actions @since 1.0.0 */
+export { JevReview } from "./JevLint.ts"
 /** @category macros @since 1.0.0 */
 export { SecurityReview } from "./SecurityReview.ts"
 /** @category targets @since 0.1.0 */

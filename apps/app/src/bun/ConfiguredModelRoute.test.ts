@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { ModelRequest } from "@smthrs/model/ModelRequest"
-import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
 import { hostModelCredentials, planModelBinding } from "@smthrs/rpc/ConfiguredModel"
 import type { ModelBinding, ModelPlan } from "@smthrs/rpc/ConfiguredModel"
@@ -52,12 +51,10 @@ const prepared = (plan: ModelPlan): Promise<Route.PreparedRequest> => {
   )
 }
 
-const executor = RequestExecutor.layer.pipe(Layer.provide(FetchHttpClient.layer))
-
 const replyOf = (plan: ModelPlan): Promise<string> =>
   Effect.runPromise(
     Effect.gen(function*() {
-      const model = yield* toModel(plan, apiKey)
+      const { model } = yield* toModel(plan, apiKey)
       const events = yield* Stream.runCollect(model.stream(ModelRequest.make({
         modelId: plan.modelId,
         system: [],
@@ -66,7 +63,7 @@ const replyOf = (plan: ModelPlan): Promise<string> =>
         params: { maxTokens: 16 }
       })))
       return Array.from(events).flatMap((event) => event.type === "text-delta" ? [event.text] : []).join("")
-    }).pipe(Effect.provide(executor))
+    })
   )
 
 describe("a planned model becomes a Route", () => {

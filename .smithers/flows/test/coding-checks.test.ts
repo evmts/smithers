@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath } from "@effect/platform-node"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
@@ -35,7 +35,7 @@ test("native command checks read immutable source during edits and replay exact 
     : false,
   timeout: 900_000
 }, async (t) => {
-  const nativeRuntime = process.versions.bun ? await import("@smthrs/flows/BunRuntime") : NodeRuntime
+  const nativeRuntime = process.versions.bun ? (await import("@smthrs/platform-bun")).BunRuntime : NodeRuntime
   const temporary = await realpath(await mkdtemp(join(tmpdir(), "coding-check-acceptance-")))
   let disposeHost = async () => {}
   t.after(async () => {

@@ -4,7 +4,7 @@ import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import type { Root } from "react-dom/client"
 import { SessionShell } from "./SessionShell"
-import { WORDMARK } from "./Wordmark"
+import { WORDMARK } from "@smthrs/ui"
 
 GlobalRegistrator.register()
 const roots = new Set<Root>()

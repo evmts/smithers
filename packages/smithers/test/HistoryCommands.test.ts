@@ -1,5 +1,5 @@
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { forkWorkspaceName } from "@smthrs/time-travel/TimeTravel"
 import { Effect } from "effect"
 import { Cli } from "incur"

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { Message } from "@smthrs/model/ModelRequest"
-import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
+import { ModelRequest } from "@smthrs/model"
+import type { NativeAgent } from "@smthrs/rpc"
 import { Effect } from "effect"
 import { planOnLocal } from "@smthrs/model-host"
 import { sealedTurn } from "./ConfiguredModelHost"
@@ -14,7 +14,7 @@ import { sealedTurn } from "./ConfiguredModelHost"
 const KEY = "sk-host-REDACTME-0123456789abcdef"
 const ORIGIN = "http://127.0.0.1:9"
 
-const said = (frames: ReadonlyArray<AgentTurnFrame>): string =>
+const said = (frames: ReadonlyArray<NativeAgent.AgentTurnFrame>): string =>
   frames.flatMap((frame) => frame.type === "delta" ? [frame.text] : []).join("")
 
 const partitions = (text: string): ReadonlyArray<ReadonlyArray<string>> => {
@@ -40,10 +40,10 @@ describe("a sealed turn", () => {
         status: 200,
         headers: { "content-type": "text/event-stream" }
       })) as unknown as typeof fetch
-  const run = async (fetchImpl: typeof fetch, secret = KEY): Promise<ReadonlyArray<AgentTurnFrame>> => {
-    const frames: Array<AgentTurnFrame> = []
+  const run = async (fetchImpl: typeof fetch, secret = KEY): Promise<ReadonlyArray<NativeAgent.AgentTurnFrame>> => {
+    const frames: Array<NativeAgent.AgentTurnFrame> = []
     await Effect.runPromise(
-      sealedTurn(planned(secret), { runId: "r", instructions: "", messages: [Message.user("hi")] }, (frame) => frames.push(frame), fetchImpl)
+      sealedTurn(planned(secret), { runId: "r", instructions: "", messages: [ModelRequest.Message.user("hi")] }, (frame) => frames.push(frame), fetchImpl)
     )
     return frames
   }
@@ -67,7 +67,7 @@ describe("a sealed turn", () => {
     let began!: () => void
     const started = new Promise<void>((resolve) => { began = resolve })
     const held = new Promise<void>((resolve) => { release = resolve })
-    const frames: Array<AgentTurnFrame> = []
+    const frames: Array<NativeAgent.AgentTurnFrame> = []
     const fetchImpl = (async () => new Response(new ReadableStream({ async start(controller) {
       const at = Math.floor(KEY.length / 2)
       for (const delta of [KEY.slice(0, at).repeat(2), KEY.slice(at), KEY.slice(at)]) {
@@ -78,7 +78,7 @@ describe("a sealed turn", () => {
       controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"))
       controller.close()
     } }), { headers: { "content-type": "text/event-stream" } })) as unknown as typeof fetch
-    const pending = Effect.runPromise(sealedTurn(planned(), { runId: "r", instructions: "", messages: [Message.user("hi")] },
+    const pending = Effect.runPromise(sealedTurn(planned(), { runId: "r", instructions: "", messages: [ModelRequest.Message.user("hi")] },
       (frame) => frames.push(frame), fetchImpl))
     try {
       await started
@@ -110,6 +110,16 @@ describe("a sealed turn", () => {
     expect(JSON.stringify(frames)).not.toContain(KEY)
     expect(said(frames)).toBe("your key is Bearer , keep it safe")
     expect(frames.at(-1)).toEqual({ runId: "r", type: "done", reason: "stop" })
+  })
+
+  test("refuses a provider redirect: nothing reaches its target, and the turn ends with the 3xx it was answered", async () => {
+    const asked: Array<string> = []
+    const frames = await run((async (input: RequestInfo | URL, init?: RequestInit) => {
+      asked.push(`${String(input)} ${init?.redirect}`)
+      return new Response(null, { status: 307, headers: { location: "https://elsewhere.test/" } })
+    }) as unknown as typeof fetch)
+    expect(new Set(asked)).toEqual(new Set([`${ORIGIN}/v1/chat/completions manual`]))
+    expect(frames).toEqual([{ runId: "r", type: "done", reason: "stop", error: "refused · 307" }])
   })
 
   test("that fails mid-stream still publishes the tail it was holding, before the typed line", async () => {

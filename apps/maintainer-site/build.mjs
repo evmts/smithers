@@ -9,7 +9,7 @@ import { closeSync, constants, copyFileSync, existsSync, mkdirSync, openSync, re
 import { homedir } from "node:os"
 import { basename, dirname, join, posix, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { escapeHtml, renderMarkdown, safeUrl } from "./markdown.mjs"
+import { escapeHtml, renderMarkdown, safeUrl, slugify, splitFrontmatter } from "./markdown.mjs"
 
 const started = performance.now()
 const here = dirname(fileURLToPath(import.meta.url))
@@ -35,8 +35,14 @@ const warnings = []
 // Notes: render once to learn titles, then again with every link resolved.
 
 const raw = new Map(sources.map((path) => [path, readFileSync(join(repo, path), "utf8")]))
-const titleOf = (path, title) => title ?? basename(path, ".md")
-const titles = new Map(sources.map((path) => [path, titleOf(path, renderMarkdown(raw.get(path)).title)]))
+// Front matter (`---` key: value lines) becomes the note's properties; the Markdown after it is the body.
+const front = new Map(sources.map((path) => [path, splitFrontmatter(raw.get(path))]))
+for (const [path, { errors }] of front) for (const error of errors) warnings.push(`front matter in ${path}: ${error}`)
+const bodyOf = (path) => front.get(path).body
+const dataOf = (path) => front.get(path).data
+const text = (value) => (Array.isArray(value) ? value.join(", ") : typeof value === "string" && value !== "" ? value : null)
+const titleOf = (path, title) => title ?? text(dataOf(path)?.title) ?? basename(path, ".md")
+const titles = new Map(sources.map((path) => [path, titleOf(path, renderMarkdown(bodyOf(path)).title)]))
 
 // `[[name]]` matches a note's path, title or file name, in that order; the shortest path wins a tie.
 const wikiIndex = new Map()
@@ -102,10 +108,71 @@ const resolverFor = (from) => {
   }
 }
 
+// Work notes: apps/mvp/docs/work/*.md, one workstream each, placed on the board by their front matter.
+const WORK_DIR = "apps/mvp/docs/work/"
+const STATUSES = ["idea", "todo", "designing", "in-progress", "blocked", "done"]
+const AREAS = ["app", "sdk", "infra", "design", "process"]
+const statusLabel = (status) => ({ todo: "To do", "in-progress": "In progress" })[status] ?? status.charAt(0).toUpperCase() + status.slice(1)
+const isWork = (path) => path.startsWith(WORK_DIR) && !path.slice(WORK_DIR.length).includes("/")
+
+// The properties table a note's front matter renders as, and the notes its `links` point to.
+const PROPERTY_ORDER = ["status", "area", "owner", "updated", "links"]
+function properties(data, resolver) {
+  const links = []
+  const keys = [...PROPERTY_ORDER.filter((key) => key in data), ...Object.keys(data).filter((key) => key !== "title" && !PROPERTY_ORDER.includes(key))]
+  const linkHtml = (target) => {
+    const resolved = resolver.link(target)
+    if (resolved.note) {
+      const label = titles.get(resolved.note)
+      links.push({ note: resolved.note, anchor: resolved.anchor ?? "", label })
+      return `<a href="${escapeHtml(resolved.href)}">${escapeHtml(label)}</a>`
+    }
+    const attrs = `${resolved.cls ? ` class="${resolved.cls}"` : ""}${resolved.title ? ` title="${escapeHtml(resolved.title)}"` : ""}`
+    return resolved.href ? `<a href="${escapeHtml(resolved.href)}"${attrs}>${escapeHtml(target)}</a>` : `<a${attrs}>${escapeHtml(target)}</a>`
+  }
+  const rows = keys.map((key) => {
+    const value = data[key]
+    let html = ""
+    if (key === "status" && text(value)) html = `<span class="pill st-${escapeHtml(slugify(text(value)))}">${escapeHtml(statusLabel(text(value)))}</span>`
+    else if (key === "links") html = (Array.isArray(value) ? value : [value]).filter(Boolean).map(linkHtml).join("")
+    else html = escapeHtml(text(value) ?? "")
+    const name = key.charAt(0).toUpperCase() + key.slice(1).replace(/[-_]/g, " ")
+    return `<div class="prop prop-${escapeHtml(slugify(key))}"><dt>${escapeHtml(name)}</dt><dd>${html || '<span class="muted">None</span>'}</dd></div>`
+  })
+  const context = `Links: ${links.map((link) => link.label).join(", ")}`
+  return { html: `<dl class="props">${rows.join("")}</dl>`, links: links.map((link) => ({ ...link, context })) }
+}
+
 const notes = sources.map((path) => {
-  const rendered = renderMarkdown(raw.get(path), resolverFor(path))
+  const resolver = resolverFor(path)
+  const rendered = renderMarkdown(bodyOf(path), resolver)
+  const data = dataOf(path)
+  if (data) {
+    const props = properties(data, resolver)
+    // A note whose body has no H1 takes its title from the front matter.
+    rendered.html = rendered.title
+      ? rendered.html.replace("</h1>", `</h1>\n${props.html}`)
+      : `<h1 id="${escapeHtml(slugify(titles.get(path)) || "title")}">${escapeHtml(titles.get(path))}</h1>\n${props.html}\n${rendered.html}`
+    rendered.links.push(...props.links)
+  }
   return { path, title: titles.get(path), rendered }
 })
+
+const work = notes
+  .filter((note) => isWork(note.path))
+  .map((note) => {
+    const data = dataOf(note.path)
+    if (!data) warnings.push(`work note without front matter: ${note.path}`)
+    const status = text(data?.status)
+    const area = text(data?.area)
+    if (!STATUSES.includes(status)) warnings.push(`work note ${note.path}: status ${status ?? "(none)"} is not one of ${STATUSES.join(", ")}`)
+    if (!AREAS.includes(area)) warnings.push(`work note ${note.path}: area ${area ?? "(none)"} is not one of ${AREAS.join(", ")}`)
+    return { path: note.path, title: note.title, status: status ?? "unknown", area: area ?? "unknown", owner: text(data?.owner), updated: text(data?.updated) }
+  })
+  .sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? "") || a.title.localeCompare(b.title))
+const workStatuses = [...STATUSES, ...new Set(work.map((item) => item.status).filter((status) => !STATUSES.includes(status)))].map((id) => ({ id, label: statusLabel(id) }))
+const workAreas = [...AREAS, ...new Set(work.map((item) => item.area).filter((area) => !AREAS.includes(area)))].filter((area) => work.some((item) => item.area === area))
+const openWork = work.filter((item) => item.status !== "done").length
 
 // Backlinks and graph edges: one per (from, to) pair; a note's links to itself are anchors, not edges.
 const edges = new Map()
@@ -292,6 +359,9 @@ const site = {
   specs: specs.map((spec) => ({ name: spec.name, path: spec.path, file: pathToFileURL(join(repo, spec.path)).href })),
   missingGifs,
   decisions,
+  work,
+  workStatuses,
+  workAreas,
 }
 
 for (const owned of ["index.html", "assets", "gifs", "files"]) rmSync(join(out, owned), { recursive: true, force: true })
@@ -333,6 +403,7 @@ writeFileSync(
     <div class="sidebar-body" id="ms-sidebar-body">
       <nav class="nav" aria-label="Views">
         <a href="#/" data-view="home">Home</a>
+        <a href="#/work" data-view="work">Work <span class="count">${openWork}</span></a>
         <a href="#/flows" data-view="flows">Flows <span class="count">${flows.length}</span></a>
         <a href="#/graph" data-view="graph">Graph</a>
         <a href="#/apps/mvp/docs/todo.md" data-view="todo">TODO <span class="count">${openTodos}</span></a>
@@ -352,5 +423,5 @@ writeFileSync(
 
 for (const warning of warnings) console.warn(`warning: ${warning}`)
 const ms = Math.round(performance.now() - started)
-console.log(`${notes.length} notes, ${flows.length} flows, ${edges.size} links in ${ms} ms`)
+console.log(`${notes.length} notes, ${flows.length} flows, ${edges.size} links, ${work.length} work items (${openWork} open) in ${ms} ms`)
 console.log(join(out, "index.html"))

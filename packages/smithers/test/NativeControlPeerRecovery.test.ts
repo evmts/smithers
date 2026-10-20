@@ -1,5 +1,5 @@
 import { NodeServices } from "@effect/platform-node"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { Journal } from "@smthrs/journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import { Effect } from "effect"

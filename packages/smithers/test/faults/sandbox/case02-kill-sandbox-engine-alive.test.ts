@@ -9,7 +9,7 @@
  * the reason the operating system produced.
  */
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { SandboxHealth } from "@smthrs/sandbox"
 import { isAlive } from "@smthrs/testing/Faults"
 import * as Effect from "effect/Effect"

@@ -17,7 +17,7 @@ claiming equal production maturity across the catalog:
 | --- | --- |
 | Application authoring and operation | `@smthrs/cli`, `@smthrs/flows`, `@smthrs/flow`, `@smthrs/agent`, `@smthrs/std`, `@smthrs/build`, `@smthrs/build-cli`, implemented `@smthrs/targets` rules |
 | Advanced integration contracts | `@smthrs/artifacts`, `@smthrs/canonical`, `@smthrs/capability`, `@smthrs/control`, `@smthrs/core`, `@smthrs/crypto`, `@smthrs/database`, `@smthrs/engine`, `@smthrs/engine-store`, `@smthrs/errors`, `@smthrs/evals`, `@smthrs/gateway`, `@smthrs/harness`, `@smthrs/integrations`, `@smthrs/jj`, `@smthrs/journal`, `@smthrs/kernel`, `@smthrs/keys`, `@smthrs/mcp`, `@smthrs/memory`, `@smthrs/model`, `@smthrs/notifications`, `@smthrs/observability`, `@smthrs/patterns`, `@smthrs/plan`, `@smthrs/platform-node`, `@smthrs/plugin`, `@smthrs/registry`, `@smthrs/run-store`, `@smthrs/sandbox`, `@smthrs/scorers`, `@smthrs/step-cache`, `@smthrs/sync`, `@smthrs/testing`, `@smthrs/time-travel`, `@smthrs/triggers` |
-| Preview hosts | `@smthrs/platform-browser`, `@smthrs/platform-bun`, and `@smthrs/flows/BunRuntime`; each requires its own host acceptance evidence |
+| Preview hosts | `@smthrs/platform-browser`, `@smthrs/platform-bun` and its `BunRuntime`, and `@smthrs/platform-cloudflare`; each requires its own host acceptance evidence |
 | Migration only | `@smthrs/migrate` and the `smthrs` deprecation package |
 | Unsupported execution | `Npm.Publish`, `Changesets.Publish`, `Github.Release`, `Github.Pages`, `Git.Pr`, `Github.Pr`, `Npm.Downstream`; declarations exist, but the package executor always refuses these operations |
 
@@ -79,11 +79,12 @@ consumer gate checks `.mts` and `.cts` clients under TypeScript `Node16` and
 every transitive dependency.
 
 The CLI installs both Node and Bun transport adapters because its executable
-selects the current native host. `@smthrs/flows` installs the Node host and the
-SQLite driver its `NodeRuntime` subpath runs on, so the published quickstart
-needs only `@smthrs/flows` and `effect`. Other library installs keep host
+selects the current native host. `@smthrs/flows` imports no platform code.
+`@smthrs/platform-node` installs `@smthrs/flows` and the SQLite driver its
+`NodeRuntime` runs on, so the published quickstart installs `@smthrs/flows`,
+`@smthrs/platform-node` and `effect`. Other library installs keep host
 adapters optional; selecting `@smthrs/gateway/bun/BunGateway` or
-`@smthrs/flows/BunRuntime` requires the Bun peers.
+`@smthrs/platform-bun`'s `BunRuntime` requires the Bun peers.
 
 ## Changes from earlier development candidates
 

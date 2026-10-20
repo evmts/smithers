@@ -68,9 +68,10 @@ export const proxyIntegrationUrl = (name) => {
 
 /** Serves the proxy until the process is stopped. */
 export const serve = async (env = process.env) => {
-  const [{ Effect, Layer }, NodeHttpServer, NodeRuntime, { createServer }, { IntegrationError }, Proxy, RateLimit, { appAuth, appConfig, MintLimited }] =
+  const [{ Effect, Layer }, { FetchHttpClient }, NodeHttpServer, NodeRuntime, { createServer }, { IntegrationError }, Proxy, RateLimit, { appAuth, appConfig, MintLimited }] =
     await Promise.all([
       import("effect"),
+      import("effect/http"),
       import("@effect/platform-node/NodeHttpServer"),
       import("@effect/platform-node/NodeRuntime"),
       import("node:http"),
@@ -117,7 +118,8 @@ export const serve = async (env = process.env) => {
   })
   const server = NodeHttpServer.layer(createServer, { port: Number(url.port || 80), host: url.hostname.replace(/^\[|\]$/g, "") })
   console.error(`smithers github proxy: listening on ${url.origin}`)
-  NodeRuntime.runMain(Layer.launch(Layer.provide(proxy, server)))
+  // GitHub is called over the platform fetch; the proxy never follows its redirects.
+  NodeRuntime.runMain(Layer.launch(Layer.provide(proxy, Layer.merge(server, FetchHttpClient.layer))))
 }
 
 const isMain = () => {

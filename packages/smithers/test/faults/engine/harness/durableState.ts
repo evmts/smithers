@@ -8,7 +8,7 @@
  * @since 1.0.0
  */
 import { DurableEngineState } from "@smthrs/engine-store"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { contentDigest } from "@smthrs/journal/JournalEvent"
 import * as NodeHost from "@smthrs/platform-node/NodeHost"

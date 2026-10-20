@@ -5,7 +5,7 @@
  */
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { randomUUID } from "node:crypto"

@@ -20,7 +20,7 @@ for (const entry of JSON.parse(readFileSync("dependency-resolutions.json", "utf8
 }
 
 if (profile === "node") {
-  const NodeRuntime = await import("@smthrs/flows/NodeRuntime")
+  const { NodeRuntime } = await import("@smthrs/platform-node")
   const NodeGateway = await import("@smthrs/gateway/node/NodeGateway")
   const NodeOtel = await import("@smthrs/observability/NodeOtel")
   const NodeHost = await import("@smthrs/platform-node/NodeHost")

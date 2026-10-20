@@ -4,7 +4,7 @@
 
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import type * as Undici from "@effect/platform-node/Undici"
-import * as NodeFlowsRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime as NodeFlowsRuntime } from "@smthrs/platform-node"
 import * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"

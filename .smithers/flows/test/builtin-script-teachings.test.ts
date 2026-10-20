@@ -3,7 +3,7 @@
  * teaching. A flow here that rewords its teaching would leave the journey
  * rehearsals' turns unscripted, so each teaching must still be in its flow.
  */
-import * as BuiltinScript from "@smthrs/testing/BuiltinScript"
+import { BuiltinScript } from "@smthrs/testing"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { test } from "node:test"

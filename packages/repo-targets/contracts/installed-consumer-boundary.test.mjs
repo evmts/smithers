@@ -53,14 +53,21 @@ test("the boundary gate checks a standalone consumer manifest without exempting 
   try {
     write(join(root, "package.json"), JSON.stringify({ name: "fixture-root", private: true, devDependencies: { typescript: "7.0.2" } }))
     write(join(root, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n")
-    for (const file of ["packages/repo-targets/contracts/check-dependency-boundaries.mjs", "packages/repo-targets/scripts/workspace-packages.mjs"]) {
+    for (const file of [
+      "packages/repo-targets/contracts/check-dependency-boundaries.mjs",
+      "packages/repo-targets/src/ImportAnalysis.ts",
+      "packages/repo-targets/scripts/workspace-packages.mjs"
+    ]) {
       let source = readFileSync(join(repoRoot, file), "utf8")
       if (file === "packages/repo-targets/contracts/check-dependency-boundaries.mjs") {
         // This synthetic repository has none of the real repository's legacy
-        // reach-throughs. Retain the gate, with an empty fixture-specific list.
-        const entries = /const knownReachThroughs = new Set\(\[[\s\S]*?\]\)/
-        assert.match(source, entries)
-        source = source.replace(entries, "const knownReachThroughs = new Set([])")
+        // reach-throughs or migrator fixtures. Retain the gate, with empty
+        // fixture-specific lists.
+        for (const list of ["knownReachThroughs", "knownLegacyFixtureImports"]) {
+          const entries = new RegExp(`const ${list} = new Set\\(\\[[\\s\\S]*?\\]\\)`)
+          assert.match(source, entries)
+          source = source.replace(entries, `const ${list} = new Set([])`)
+        }
       }
       write(join(root, file), source)
     }

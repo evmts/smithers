@@ -77,8 +77,9 @@ check(await page.locator(".outline a").first().isVisible(), "the note shows its 
 await shot(page, "note")
 await page.locator(".backlinks").scrollIntoViewIfNeeded()
 await shot(page, "note-backlinks")
+const backlinkHref = await page.locator(".backlink-list a").first().getAttribute("href")
 await page.locator(".backlink-list a").first().click()
-await page.waitForFunction(() => !location.hash.includes("decisions") && document.querySelector(".md h1"))
+await page.waitForFunction((target) => location.hash === target && document.querySelector(".md h1"), backlinkHref)
 check(await page.locator(".md h1").isVisible(), `a backlink opens its note (${await page.evaluate(() => decodeURI(location.hash))})`)
 
 await go(page, "#/apps/mvp/docs/features/chat.md#answering")
@@ -148,6 +149,40 @@ await page.keyboard.press("Enter")
 await page.waitForTimeout(150)
 check(!(await page.evaluate(() => location.hash.startsWith("#/search"))) || (await page.evaluate(() => document.querySelector("#ms-lightbox").open)), "↓ and Enter open a result")
 
+// Work board: one column per status, one card per work note, filtered by area.
+await go(page, "#/work")
+const work = await page.evaluate(() => ({ items: window.SITE.work, statuses: window.SITE.workStatuses.map((status) => status.id) }))
+check(work.items.length > 0, `there are work notes (${work.items.length})`)
+check(
+  JSON.stringify(await page.locator(".board .col").evaluateAll((columns) => columns.map((column) => column.dataset.status))) === JSON.stringify(work.statuses),
+  `the board shows one column per status (${work.statuses.join(", ")})`,
+)
+check((await page.locator(".board .card").count()) === work.items.length, `the board shows every work note (${work.items.length})`)
+const misplaced = await page.evaluate(() => {
+  const byPath = new Map(window.SITE.work.map((item) => [item.path, item]))
+  return [...document.querySelectorAll(".board .col")].flatMap((column) =>
+    [...column.querySelectorAll(".card")].filter((card) => byPath.get(card.dataset.path)?.status !== column.dataset.status).map((card) => card.dataset.path),
+  )
+})
+check(misplaced.length === 0, `every card sits in its status's column${misplaced.length ? `: ${misplaced.join(", ")}` : ""}`)
+const openCount = work.items.filter((item) => item.status !== "done").length
+check(Number(await page.locator('.nav [data-view="work"] .count').textContent()) === openCount, `the nav counts open work (${openCount})`)
+check(await page.locator('.nav [data-view="work"]').evaluate((link) => link.hasAttribute("aria-current")), "the nav marks Work as current")
+check(await page.evaluate(() => document.querySelector(".board").scrollWidth <= document.querySelector(".board").clientWidth), "the board fits without scrolling sideways at 1440 px")
+await shot(page, "work")
+const area = work.items.map((item) => item.area).find((value) => work.items.some((item) => item.area !== value))
+await page.locator(`.board-areas a[href="#/work?area=${area}"]`).click()
+await page.waitForFunction((value) => document.querySelector(".board-areas a[aria-current]")?.getAttribute("href") === `#/work?area=${value}`, area)
+const shownAreas = await page.locator(".board .card").evaluateAll((cards) => cards.map((card) => card.dataset.area))
+check(shownAreas.length === work.items.filter((item) => item.area === area).length && shownAreas.every((value) => value === area), `the ${area} filter shows only ${area} cards (${shownAreas.length})`)
+check((await page.locator(".board-areas a[aria-current]").count()) === 1, "the area filter marks only its chip")
+await shot(page, "work-filtered")
+await page.locator(".board .card").first().click()
+await page.waitForFunction(() => location.hash.includes("docs/work/") && document.querySelector(".md .props"))
+check(await page.locator(".md .props .pill").isVisible(), "a card opens its note, which shows its status and properties")
+check((await page.locator(".md h1").count()) === 1, "a work note shows its front-matter title once")
+await shot(page, "work-note")
+
 await go(page, "#/README.md")
 check(!(await page.evaluate(() => document.querySelector("#ms-lightbox").open)), "changing route closes the large GIF")
 await shot(page, "note-readme")
@@ -161,12 +196,15 @@ await shot(dark, "note-dark")
 await go(dark, "#/graph")
 await dark.waitForTimeout(300)
 await shot(dark, "graph-dark")
+await go(dark, "#/work")
+await shot(dark, "work-dark")
 
 // Phone width.
 const phone = await open({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, colorScheme: "light" })
 for (const [hash, name] of [
   ["#/", "phone-home"],
   ["#/flows", "phone-flows"],
+  ["#/work", "phone-work"],
   ["#/docs/libraries.md", "phone-note"],
   ["#/graph", "phone-graph"],
 ]) {

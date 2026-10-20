@@ -334,17 +334,6 @@
       "reason": "Shared durable runtime with injected host and SQL services; NodeRuntime and BunRuntime preserve the same native API over it."
     },
     {
-      "name": "@smthrs/flows",
-      "subpath": "./BunRuntime",
-      "development": "./src/BunRuntime.ts",
-      "published": {
-        "types": "./dist/esm/BunRuntime.d.ts",
-        "import": "./dist/esm/BunRuntime.js",
-        "require": "./dist/cjs/BunRuntime.js"
-      },
-      "reason": "Bun lifecycle and database composition over the shared runtime; imported only through its explicit Bun entrypoint."
-    },
-    {
       "name": "@smthrs/database",
       "subpath": "./bun/BunDatabase",
       "development": "./src/bun/BunDatabase.ts",
@@ -1459,15 +1448,48 @@
       "reason": "Retained core API already exported at clean main 2ad6fe2afcd2e45d81587b62f79d51b4ab02ae0d; source and both maps verified identical during MVP cuts. No production implementation or declaration changed. #3389."
     },
     {
-      "name": "@smthrs/flows",
-      "subpath": "./test/TestNodeRuntime",
-      "development": "./src/test/TestNodeRuntime.ts",
+      "name": "@smthrs/build-cli",
+      "subpath": "./Mount",
+      "development": "./src/Mount.ts",
       "published": {
-        "types": "./dist/esm/test/TestNodeRuntime.d.ts",
-        "import": "./dist/esm/test/TestNodeRuntime.js",
-        "require": "./dist/cjs/test/TestNodeRuntime.js"
+        "types": "./dist/esm/Mount.d.ts",
+        "import": "./dist/esm/Mount.js",
+        "require": "./dist/cjs/Mount.js"
       },
-      "reason": "Test support: a durable Node engine over one SQLite file with a recording-nothing Jj. The runnable examples in @smthrs/flows, @smthrs/agent and @smthrs/mcp share it once they live beside the packages they demonstrate (#4089); like engine-store's ./test/TestStores it is not a host."
+      "reason": "Materializes an overlay repository's mount before a command plans. build-cli publishes every module as its own subpath and keeps the barrel to the modules a host drives directly (src/index.ts, docs/api.md \"Mount\")."
+    },
+    {
+      "name": "@smthrs/testing",
+      "subpath": "./ModelServer",
+      "development": "./src/ModelServer.ts",
+      "published": {
+        "types": "./dist/esm/ModelServer.d.ts",
+        "import": "./dist/esm/ModelServer.js",
+        "require": "./dist/cjs/ModelServer.js"
+      },
+      "reason": "Serves a recorded model over HTTP through node:http. Node-only, so it stays off the root barrel that browser test hosts load; packages/testing/README.md, docs/api.md and docs/installation.md name the subpath."
+    },
+    {
+      "name": "@smthrs/testing",
+      "subpath": "./ModelServerCli",
+      "development": "./src/ModelServerCli.ts",
+      "published": {
+        "types": "./dist/esm/ModelServerCli.d.ts",
+        "import": "./dist/esm/ModelServerCli.js",
+        "require": "./dist/cjs/ModelServerCli.js"
+      },
+      "reason": "The smthrs-model-server command's entry, which reads its fixture through node:fs. Node-only, so it stays off the root barrel that browser test hosts load; packages/testing/README.md, docs/api.md and docs/installation.md name the subpath."
+    },
+    {
+      "name": "@smthrs/testing",
+      "subpath": "./TurnLog",
+      "development": "./src/TurnLog.ts",
+      "published": {
+        "types": "./dist/esm/TurnLog.d.ts",
+        "import": "./dist/esm/TurnLog.js",
+        "require": "./dist/cjs/TurnLog.js"
+      },
+      "reason": "Appends a recorded model's turn trace through node:fs. Node-only, so it stays off the root barrel that browser test hosts load; packages/testing/README.md, docs/api.md and docs/installation.md name the subpath."
     }
   ],
   "removed": [
@@ -1605,6 +1627,21 @@
       "name": "@smthrs/integrations",
       "subpath": "./telegram/TelegramClient",
       "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
+    },
+    {
+      "name": "@smthrs/flows",
+      "subpath": "./NodeRuntime",
+      "reason": "Node-only host code moved to the @smthrs/platform-node root (NodeRuntime, SandboxedFlow) so the @smthrs/flows root and package name no platform; consumers import only root entries."
+    },
+    {
+      "name": "@smthrs/flows",
+      "subpath": "./SandboxedFlow",
+      "reason": "Node-only host code moved to the @smthrs/platform-node root (NodeRuntime, SandboxedFlow) so the @smthrs/flows root and package name no platform; consumers import only root entries."
+    },
+    {
+      "name": "@smthrs/std",
+      "subpath": "./NodeLanguageServer",
+      "reason": "The Node language-server client moved to the @smthrs/platform-node root so the @smthrs/std root imports and runs in a browser and a Worker (the browser agent, apps/mvp decision 0011); consumers import only root entries."
     }
   ],
   "packages": [
@@ -4428,6 +4465,28 @@
         "require": "./dist/cjs/telegram/IssueSync.js"
       },
       "reason": "Telegram transport for mirroring issue conversations through core/IssueSync, with the same host-scheduled drain() and ingest() shape as Slack (b662d687b)."
+    },
+    {
+      "name": "@smthrs/flows",
+      "subpath": "./BunRuntime",
+      "development": "./src/BunRuntime.ts",
+      "published": {
+        "types": "./dist/esm/BunRuntime.d.ts",
+        "import": "./dist/esm/BunRuntime.js",
+        "require": "./dist/cjs/BunRuntime.js"
+      },
+      "reason": "Bun lifecycle and database composition over the shared runtime; imported only through its explicit Bun entrypoint. Retired: BunRuntime is now the @smthrs/platform-bun root's BunRuntime."
+    },
+    {
+      "name": "@smthrs/flows",
+      "subpath": "./test/TestNodeRuntime",
+      "development": "./src/test/TestNodeRuntime.ts",
+      "published": {
+        "types": "./dist/esm/test/TestNodeRuntime.d.ts",
+        "import": "./dist/esm/test/TestNodeRuntime.js",
+        "require": "./dist/cjs/test/TestNodeRuntime.js"
+      },
+      "reason": "Test support: a durable Node engine over one SQLite file with a recording-nothing Jj. The runnable examples in @smthrs/flows, @smthrs/agent and @smthrs/mcp share it once they live beside the packages they demonstrate (#4089); like engine-store's ./test/TestStores it is not a host. Retired: TestNodeRuntime is now the @smthrs/platform-node root's TestNodeRuntime."
     }
   ]
 }

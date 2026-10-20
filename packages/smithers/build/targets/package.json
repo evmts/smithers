@@ -81,6 +81,7 @@
     "./Go": "./src/Go.ts",
     "./Input": "./src/Input.ts",
     "./Install": "./src/Install.ts",
+    "./JevLint": "./src/JevLint.ts",
     "./JsrPublish": "./src/JsrPublish.ts",
     "./LlmLint": "./src/LlmLint.ts",
     "./LocalRepository": "./src/LocalRepository.ts",
@@ -584,6 +585,16 @@
         "require": {
           "types": "./dist/cjs/Install.d.ts",
           "default": "./dist/cjs/Install.js"
+        }
+      },
+      "./JevLint": {
+        "import": {
+          "types": "./dist/esm/JevLint.d.ts",
+          "default": "./dist/esm/JevLint.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JevLint.d.ts",
+          "default": "./dist/cjs/JevLint.js"
         }
       },
       "./JsrPublish": {

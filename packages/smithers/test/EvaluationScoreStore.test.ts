@@ -1,7 +1,7 @@
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as ScoreStore from "@smthrs/scorers/ScoreStore"
 import * as SqlScoreStore from "@smthrs/scorers/SqlScoreStore"
 import { Effect, Layer } from "effect"

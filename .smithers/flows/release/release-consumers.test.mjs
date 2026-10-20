@@ -487,12 +487,13 @@ test("the Flows quickstart imports only the packages its one install line names"
   const quickstart = readQuickstart()
   // `effect` carries no version: the line installs the release the registry
   // calls latest, which the supported range has to admit (#3839).
-  assert.deepEqual(quickstart.packages, ["@smthrs/flows@next", "effect"])
+  assert.deepEqual(quickstart.packages, ["@smthrs/platform-node@next", "@smthrs/flows@next", "effect"])
   // pnpm 11 holds `@next` back for a day after a release, so pnpm gets the
-  // version the bump writes (.smithers/flows/release/set-release-version.mjs).
+  // versions the bump writes (.smithers/flows/release/set-release-version.mjs).
   const { version } = JSON.parse(readFileSync(join(repoRoot, "packages/smithers/flows/package.json"), "utf8"))
-  assert.deepEqual(quickstart.pnpmPackages, ["@smthrs/flows@" + version, "effect"])
-  assert.deepEqual(importedPackages(quickstart.program), ["@smthrs/flows", "effect"])
+  const node = JSON.parse(readFileSync(join(repoRoot, "packages/smithers/flows/platform-node/package.json"), "utf8"))
+  assert.deepEqual(quickstart.pnpmPackages, ["@smthrs/platform-node@" + node.version, "@smthrs/flows@" + version, "effect"])
+  assert.deepEqual(importedPackages(quickstart.program), ["@smthrs/flows", "@smthrs/platform-node", "effect"])
   assert.deepEqual(quickstart.run, ["node", "quickstart.ts"])
   assert.equal(quickstart.printed, "the note")
   // pnpm 11 ends `pnpm add` with ERR_PNPM_IGNORED_BUILDS for esbuild's install script.
@@ -516,13 +517,13 @@ test("pnpm's ignored build scripts reduce to package names, without versions", (
 test("program imports reduce to package names, without relative and node: specifiers", () => {
   const program = [
     'import { Action } from "@smthrs/flows"',
-    'import * as NodeRuntime from "@smthrs/flows/NodeRuntime"',
+    'import { NodeRuntime } from "@smthrs/platform-node"',
     'import * as Effect from "effect/Effect"',
     'import { resolve } from "node:path"',
     'import { local } from "./local.ts"',
     'import type * as Schema from "effect/Schema"'
   ].join("\n")
-  assert.deepEqual(importedPackages(program), ["@smthrs/flows", "effect"])
+  assert.deepEqual(importedPackages(program), ["@smthrs/flows", "@smthrs/platform-node", "effect"])
   assert.deepEqual(importedPackages("console.log(1)"), [])
 })
 

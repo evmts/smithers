@@ -14,6 +14,11 @@
  * `devDependencies`; everything else may use only runtime, peer, and optional
  * dependencies, or validated private adapters vendored into the distribution.
  *
+ * It also enforces "Everything is a durable flow" in the root `AGENTS.md`: no
+ * source file anywhere under `apps/` or `packages/` (tests, scripts and Worker
+ * entries included) imports another durable runtime or model SDK in place of
+ * `@smthrs/flow`. See {@link bannedImportsInSource} for the list.
+ *
  * Run it with `pnpm exec smithers-build test '//packages/repo-targets:dependencyBoundaries'`, or
  * directly with `node packages/repo-targets/contracts/check-dependency-boundaries.mjs`.
  */
@@ -21,7 +26,7 @@ import { builtinModules } from "node:module"
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path"
 
-import ts from "typescript"
+import { analyze, specifiers } from "../src/ImportAnalysis.ts"
 import { workspacePackages, isMain, repoRoot } from "../scripts/workspace-packages.mjs"
 import { privateEffectAdapters } from "../scripts/private-effect-adapters.mjs"
 
@@ -73,6 +78,91 @@ const knownReachThroughs = new Set([
   "apps/app/src/mainview/cards/fixtures/CodingJournal.ts -> ../../../../../../packages/smithers/flows/engine-store/src/internal/JournalRecords.ts",
   "packages/smithers/build/infra/worker/test/action-cache.test.ts -> ../../../../flows/step-cache/src/CacheStore.ts",
 ])
+
+// Banned imports that are the input of the 0.x migrator, as `file -> import`.
+// Each fixture is a user's legacy project that `smithers-migrate` reads and
+// rewrites; none of it runs as Smithers code. The gate fails on a stale entry
+// so the list only shrinks.
+const knownLegacyFixtureImports = new Set([
+  "packages/smithers/migrate/test/fixtures/jsx-single/simple-workflow.jsx -> @ai-sdk/anthropic",
+  "packages/smithers/migrate/test/fixtures/jsx-single/simple-workflow.jsx -> ai",
+  "packages/smithers/migrate/test/fixtures/jsx-single/tests/_setup.ts -> ai",
+  "packages/smithers/migrate/test/fixtures/persisted-db/simple-workflow.jsx -> @ai-sdk/anthropic",
+  "packages/smithers/migrate/test/fixtures/persisted-db/simple-workflow.jsx -> ai",
+])
+
+/**
+ * The end of every banned-import message: why, and where the rule lives.
+ */
+export const durableFlowRule =
+  "every action, model calls included, runs as an @smthrs/flow step. " +
+  "See \"Everything is a durable flow\" in AGENTS.md at the repository root."
+
+/**
+ * Packages that are another durable runtime or model SDK, by npm name. A
+ * trailing `/` names a scope or a package's subpaths.
+ */
+const bannedPackages = [
+  { names: ["ai", "@ai-sdk/"], runtime: "the Vercel AI SDK" },
+  { names: ["@temporalio/"], runtime: "Temporal" },
+  { names: ["inngest"], runtime: "Inngest" },
+  { names: ["@trigger.dev/"], runtime: "Trigger.dev" },
+  { names: ["langchain", "@langchain/"], runtime: "LangChain" },
+  { names: ["@mastra/"], runtime: "Mastra" },
+]
+
+/**
+ * Modules whose Workflow exports are Cloudflare Workflows. `whole` bans every
+ * import of the module; otherwise an imported or accessed name is banned when
+ * `names` matches it.
+ */
+const workflowModules = [
+  { matches: (specifier) => specifier === "cloudflare:workflows", whole: true, runtime: "Cloudflare Workflows" },
+  { matches: (specifier) => specifier === "cloudflare:workers", names: /^Workflow/, runtime: "Cloudflare Workflows" },
+  {
+    matches: (specifier) => /^alchemy\/Cloudflare\/Workflows(?:\/|$)/.test(specifier),
+    whole: true,
+    runtime: "Cloudflare Workflows through Alchemy",
+  },
+  {
+    matches: (specifier) => /^alchemy\/Cloudflare(?:\/|$)/.test(specifier),
+    // `task`, `sleep`, `sleepUntil` and `waitForEvent` are Alchemy's workflow
+    // step functions, which `alchemy/Cloudflare` re-exports at its root.
+    names: /Workflow|^(?:task|sleep|sleepUntil|waitForEvent)$/,
+    runtime: "Cloudflare Workflows through Alchemy",
+  },
+]
+
+/**
+ * The runtime a specifier imports when the durable-flow rule bans the whole
+ * module, or null.
+ *
+ * @param {string} specifier
+ * @returns {string | null}
+ */
+export function bannedRuntimeForSpecifier(specifier) {
+  const name = packageNameForSpecifier(specifier)
+  if (name !== null) {
+    for (const { names, runtime } of bannedPackages) {
+      if (names.some((banned) => banned.endsWith("/") ? name.startsWith(banned) : name === banned)) return runtime
+    }
+  }
+  return workflowModules.find((module) => module.whole && module.matches(specifier))?.runtime ?? null
+}
+
+/**
+ * The runtime a name imported from, or read off, `specifier` belongs to when
+ * the durable-flow rule bans it, or null.
+ *
+ * @param {string} specifier
+ * @param {string} name
+ * @returns {string | null}
+ */
+function bannedRuntimeForName(specifier, name) {
+  return workflowModules.find((module) => module.names?.test(name) && module.matches(specifier))?.runtime ?? null
+}
+
+/** @typedef {{ file: string; line: number; specifier: string; name?: string; usage: string; runtime: string }} BannedImport */
 
 /** @typedef {{ dir: string; name: string; manifestPath: string; manifest: Record<string, unknown> }} WorkspacePackage */
 
@@ -263,103 +353,91 @@ export function packageSourceReachedBy(file, specifier, packageDirs) {
   return owner === dirname(file) && basename(file) === "PACKAGE.ts" ? null : owner
 }
 
-/** @param {string} path */
-function scriptKindForPath(path) {
-  if (path.endsWith(".tsx") || path.endsWith(".jsx")) return ts.ScriptKind.TSX
-  if (path.endsWith(".ts")) return ts.ScriptKind.TS
-  return ts.ScriptKind.JS
+/**
+ * Reads one source file's imports, through the shared analysis
+ * (`src/ImportAnalysis.ts`): every module specifier it names, and every
+ * import the durable-flow rule bans.
+ *
+ * Banned are another durable runtime's or model SDK's package in any import
+ * form (static, type-only, re-export, `import()`, `require()`, an `import()`
+ * type); every import of `cloudflare:workflows` and
+ * `alchemy/Cloudflare/Workflows`; and a `Workflow*` name imported from
+ * `cloudflare:workers`, or one imported from or read off `alchemy/Cloudflare`
+ * (with Alchemy's workflow step functions `task`, `sleep`, `sleepUntil` and
+ * `waitForEvent`), whether named in the import, accessed on a namespace or
+ * default import, or used as a qualified type. A string or comment that
+ * merely mentions one is not an import.
+ *
+ * @param {string} file Repo-relative path, used for the script kind and in each result.
+ * @param {string} text The file's source.
+ * @returns {{ specifiers: readonly string[]; banned: BannedImport[] }}
+ */
+export function scanSource(file, text) {
+  const analysis = analyze(file, text)
+  /** @type {BannedImport[]} */
+  const banned = []
+  for (const reference of analysis.references) {
+    const { specifier } = reference
+    const runtime = bannedRuntimeForSpecifier(specifier)
+    if (runtime !== null) {
+      banned.push({ file, line: reference.line, specifier, usage: `imports "${specifier}"`, runtime })
+      continue
+    }
+    for (const { name, line } of reference.names) {
+      const named = bannedRuntimeForName(specifier, name)
+      if (named !== null) banned.push({ file, line, specifier, name, usage: `imports ${name} from "${specifier}"`, runtime: named })
+    }
+    for (const { name, binding, line } of reference.members) {
+      const named = bannedRuntimeForName(specifier, name)
+      if (named !== null) {
+        banned.push({ file, line, specifier, name, usage: `uses ${binding}.${name} from "${specifier}"`, runtime: named })
+      }
+    }
+  }
+  return { specifiers: specifiers(analysis), banned: banned.sort((a, b) => a.line - b.line) }
+}
+
+/** @type {Map<string, ReturnType<typeof scanSource>>} */
+const scans = new Map()
+
+/** Each file is parsed once, whichever check reads it first. @param {string} file */
+function scanFile(file) {
+  let scan = scans.get(file)
+  if (scan === undefined) {
+    scan = scanSource(file, readFileSync(join(repoRoot, file), "utf8"))
+    scans.set(file, scan)
+  }
+  return scan
 }
 
 /**
- * Replaces every character inside any of `ranges` with a space, in one pass.
+ * Splits banned imports into violations and the ones a known entry excuses,
+ * and names every known entry that excused nothing.
  *
- * Ranges may nest or overlap: a template expression's range contains the
- * ranges of the literals in its substitutions. Walking them by start and
- * clamping each to the cursor blanks their union once and keeps the length.
- * The cost stays at the file's size rather than literals times size, which a
- * reduce that rebuilt the whole string per literal paid (135 MB of copies for
- * one 109 KB source).
- *
- * @param {string} text
- * @param {readonly (readonly [number, number])[]} ranges
+ * @param {Iterable<BannedImport>} found
+ * @param {ReadonlySet<string>} known Entries spelled `file -> specifier`, the file repo-relative with `/`.
+ * @returns {{ violations: BannedImport[]; stale: string[] }}
  */
-export function blankLiteralRanges(text, ranges) {
-  /** @type {string[]} */
-  const parts = []
-  let cursor = 0
-  for (const [start, end] of [...ranges].sort((a, b) => a[0] - b[0])) {
-    if (end <= cursor) continue
-    const from = Math.max(start, cursor)
-    parts.push(text.slice(cursor, from), " ".repeat(end - from))
-    cursor = end
+export function partitionBannedImports(found, known) {
+  /** @type {BannedImport[]} */
+  const violations = []
+  /** @type {Set<string>} */
+  const seen = new Set()
+  for (const entry of found) {
+    const key = `${entry.file.split(sep).join("/")} -> ${entry.specifier}`
+    if (known.has(key)) seen.add(key)
+    else violations.push(entry)
   }
-  parts.push(text.slice(cursor))
-  return parts.join("")
+  return { violations, stale: [...known].filter((key) => !seen.has(key)) }
 }
 
-/** @param {string} file */
-function importSpecifiersForFile(file) {
-  const absFile = join(repoRoot, file)
-  const text = readFileSync(absFile, "utf8")
-  const sourceFile = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKindForPath(file))
-  /** @type {Set<string>} */
-  const specifiers = new Set()
-  /** Character ranges of string/template literals, so the regex sweep below skips their contents. @type {[number, number][]} */
-  const literalRanges = []
-
-  /** @param {ts.Node} node */
-  function visit(node) {
-    if (ts.isStringLiteralLike(node) || ts.isTemplateLiteral(node)) {
-      literalRanges.push([node.getStart(sourceFile), node.getEnd()])
-    }
-    if (
-      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
-      node.moduleSpecifier &&
-      ts.isStringLiteralLike(node.moduleSpecifier)
-    ) {
-      specifiers.add(node.moduleSpecifier.text)
-    } else if (
-      ts.isImportEqualsDeclaration(node) &&
-      ts.isExternalModuleReference(node.moduleReference) &&
-      ts.isStringLiteralLike(node.moduleReference.expression)
-    ) {
-      specifiers.add(node.moduleReference.expression.text)
-    } else if (ts.isCallExpression(node)) {
-      if (
-        node.expression.kind === ts.SyntaxKind.ImportKeyword &&
-        node.arguments.length === 1 &&
-        ts.isStringLiteralLike(node.arguments[0])
-      ) {
-        specifiers.add(node.arguments[0].text)
-      } else if (
-        ts.isIdentifier(node.expression) &&
-        node.expression.text === "require" &&
-        node.arguments.length === 1 &&
-        ts.isStringLiteralLike(node.arguments[0])
-      ) {
-        specifiers.add(node.arguments[0].text)
-      }
-    } else if (
-      ts.isImportTypeNode(node) &&
-      ts.isLiteralTypeNode(node.argument) &&
-      ts.isStringLiteralLike(node.argument.literal)
-    ) {
-      specifiers.add(node.argument.literal.text)
-    }
-    ts.forEachChild(node, visit)
-  }
-
-  visit(sourceFile)
-
-  // Belt-and-braces sweep for dynamic imports the AST walk can miss, run over a
-  // copy with string and template literals blanked out. Without that, a dynamic
-  // import quoted *inside* a string literal (a doc assertion needle, or the
-  // workflow sources embedded in the generated pack) reads as a real import.
-  const outsideLiterals = blankLiteralRanges(text, literalRanges)
-  for (const match of outsideLiterals.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)) {
-    specifiers.add(match[1])
-  }
-  return [...specifiers].sort()
+/**
+ * One line of the gate's report for a banned import.
+ *
+ * @param {BannedImport} entry
+ */
+export function bannedImportMessage(entry) {
+  return `- ${entry.file.split(sep).join("/")}:${entry.line} ${entry.usage} (${entry.runtime}), which is banned: ${durableFlowRule}`
 }
 
 /** @param {Record<string, unknown>} manifest @param {string} section */
@@ -432,6 +510,18 @@ function main() {
   const reachThroughs = []
   /** @type {Set<string>} */
   const seenReachThroughs = new Set()
+  // The durable-flow ban covers every source file of every scanned package,
+  // not only the `src/` tree the declaration rule reads: a Worker entry, a
+  // test or a script runs our code too. Nested members are deduplicated.
+  /** @type {Set<string>} */
+  const banScope = new Set()
+  for (const pkg of workspacePackages) {
+    /** @type {string[]} */
+    const files = []
+    if (pkg.dir === ".") files.push(...filesForPackage(pkg, memberDirs).files)
+    else collectSourceFiles(pkg.dir, files)
+    for (const file of files) banScope.add(file)
+  }
 
   const packageQueue = [...workspacePackages]
   let checkedPackageCount = 0
@@ -448,7 +538,7 @@ function main() {
       const devOnly = isDevOnlyFile(file)
       const allowed = devOnly ? deps.dev : deps.runtime
       const expectedSection = devOnly ? "devDependencies" : "dependencies"
-      for (const specifier of importSpecifiersForFile(file)) {
+      for (const specifier of scanFile(file).specifiers) {
         const reached = packageSourceReachedBy(file, specifier, memberDirs)
         if (reached !== null && reached !== pkg.dir) {
           const key = `${file.split(sep).join("/")} -> ${specifier}`
@@ -465,6 +555,19 @@ function main() {
   }
 
   const staleReachThroughs = [...knownReachThroughs].filter((key) => !seenReachThroughs.has(key))
+  const bans = partitionBannedImports(
+    [...banScope].sort().flatMap((file) => scanFile(file).banned),
+    knownLegacyFixtureImports,
+  )
+  if (bans.violations.length > 0 || bans.stale.length > 0) {
+    console.error("Dependency boundary check failed: banned durable runtimes imported.\n")
+    for (const entry of bans.violations) console.error(bannedImportMessage(entry))
+    for (const key of bans.stale) {
+      console.error(`- knownLegacyFixtureImports entry "${key}" no longer matches an import; remove it from the gate.`)
+    }
+    console.error("")
+    process.exitCode = 1
+  }
   if (violations.length > 0 || reachThroughs.length > 0 || staleReachThroughs.length > 0) {
     console.error("Dependency boundary check failed: undeclared imports found.\n")
     for (const violation of violations) {
@@ -485,8 +588,11 @@ function main() {
       console.error(`- knownReachThroughs entry "${key}" no longer matches an import; remove it from the gate.`)
     }
     process.exitCode = 1
-  } else {
-    console.log(`Dependency boundary check passed for ${checkedPackageCount} package(s).`)
+  } else if (process.exitCode !== 1) {
+    console.log(
+      `Dependency boundary check passed for ${checkedPackageCount} package(s); ` +
+        `${banScope.size} source files import no banned durable runtime.`,
+    )
   }
 }
 

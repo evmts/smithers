@@ -13,8 +13,8 @@
  */
 
 import type * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
-import * as LanguageServer from "@smthrs/std/LanguageServer"
-import * as NodeLanguageServer from "@smthrs/std/NodeLanguageServer"
+import { NodeLanguageServer } from "@smthrs/platform-node"
+import { LanguageServer } from "@smthrs/std"
 import { Context, Effect, type Scope } from "effect"
 import { accessSync, constants, realpathSync } from "node:fs"
 import { createRequire } from "node:module"

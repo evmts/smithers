@@ -900,15 +900,20 @@
     "effect": "4.0.5",
     "fast-check": "4.9.0",
     "@effect/sql-pg": "4.0.5",
-    "@effect/platform-bun": "4.0.5"
+    "@effect/platform-bun": "4.0.5",
+    "@smthrs/platform-bun": "1.0.0-rc.16"
   },
   "peerDependencies": {
     "effect": "4.0.5",
     "@effect/sql-pg": "4.0.5",
-    "@effect/sql-sqlite-node": "4.0.5"
+    "@effect/sql-sqlite-node": "4.0.5",
+    "@smthrs/platform-bun": "1.0.0-rc.16"
   },
   "peerDependenciesMeta": {
     "@effect/sql-pg": {
+      "optional": true
+    },
+    "@smthrs/platform-bun": {
       "optional": true
     }
   }

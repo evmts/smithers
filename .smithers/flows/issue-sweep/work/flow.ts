@@ -7,6 +7,7 @@ import { awaitHostDisk, workspaceBytes } from "../disk.ts"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as CloudSandbox from "@smthrs/cli/CloudSandbox"
 import { Action, ExternalJob, Fault, Flow, Interpreter } from "@smthrs/flow"
+import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import { classifyExit } from "@smthrs/kernel/Unreachable"
 import { Node } from "@smthrs/plan"
@@ -934,7 +935,7 @@ export const adoptWork = (input: typeof Adopt.payloadSchema.Type, place: Place) 
           )
       }
     }).pipe(
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.merge(NodeServices.layer, NodeJj.layerRepositoryMutation)),
       ridingOutages,
       Effect.mapError((cause) =>
         cause instanceof AdoptConflicted ? cause : new AgentFailed({ message: failed(cause.message) })

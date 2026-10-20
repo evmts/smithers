@@ -8,7 +8,7 @@
  */
 import { flowAction, flowProps } from "../flows/FlowAction"
 import { flowArgs } from "../flows/FlowArgs"
-import { WORDMARK } from "../Wordmark"
+import { WORDMARK } from "@smthrs/ui"
 import type { RunCommand } from "./CardFamily"
 import "./LoginScreen.css"
 

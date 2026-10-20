@@ -2,7 +2,7 @@ import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Capability } from "@smthrs/flows"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import { Node } from "@smthrs/plan"
@@ -221,7 +221,7 @@ test(
         effect: "allow",
         pattern: new Capability.Capability.CapabilityPattern({ action, resource })
       })
-    const runtime = process.versions.bun ? await import("@smthrs/flows/BunRuntime") : NodeRuntime
+    const runtime = process.versions.bun ? (await import("@smthrs/platform-bun")).BunRuntime : NodeRuntime
     const host = () =>
       runtime.layerHost(
         {

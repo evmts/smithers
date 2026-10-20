@@ -1,7 +1,7 @@
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, HumanTask, Interpreter } from "@smthrs/flow"
 import * as DurableDeferred from "@smthrs/flow/DurableDeferred"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect, Layer, Option, Schedule, Schema } from "effect"
 import { readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"

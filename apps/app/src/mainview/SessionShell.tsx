@@ -1,6 +1,6 @@
 import type { CSSProperties,ReactNode } from "react";
 import "./SessionShell.css";
-import { WORDMARK } from "./Wordmark";
+import { WORDMARK } from "@smthrs/ui";
 
 /** The entrance stays mounted while runtime-dependent content loads beneath it. */
 export function SessionShell({ children, navigation }: { children?: ReactNode; navigation?: ReactNode }) {

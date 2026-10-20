@@ -6,6 +6,7 @@
 import * as Environment from "@smthrs/integrations/Environment"
 import * as GitHub from "@smthrs/integrations/github"
 import { Effect, Redacted } from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { Cli, z } from "incur"
 import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
@@ -208,11 +209,11 @@ const secret = async (options: LocalOptions, entry: Integration): Promise<string
  */
 export const probe = async (entry: Integration, token: string, timeoutMs = 10_000) => {
   authorize(entry, Environment.ambientEnvironment())
-  const operation = GitHub.GitHubClient.make({ token, apiBaseUrl: entry.apiBaseUrl, maxRetries: 0 }, {}).request(
-    "GET",
-    "/rate_limit"
+  const operation = Effect.flatMap(
+    GitHub.GitHubClient.make({ token, apiBaseUrl: entry.apiBaseUrl }, {}),
+    (client) => client.request("GET", "/rate_limit")
   )
-  await Effect.runPromise(operation.pipe(Effect.timeout(timeoutMs)))
+  await Effect.runPromise(operation.pipe(Effect.timeout(timeoutMs), Effect.provide(FetchHttpClient.layer)))
   return { id: entry.id, provider: entry.provider, healthy: true }
 }
 

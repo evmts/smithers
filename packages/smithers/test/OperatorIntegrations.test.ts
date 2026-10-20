@@ -1,5 +1,7 @@
 import { Redacted } from "effect"
 import * as Fs from "node:fs/promises"
+import { createServer } from "node:http"
+import type { AddressInfo } from "node:net"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
@@ -8,13 +10,45 @@ import { withCredentials } from "../src/operator/Credentials.ts"
 import { createIntegrationsCli, probe, readIntegrations } from "../src/operator/Integrations.ts"
 
 const directories: Array<string> = []
+const closers: Array<() => Promise<void>> = []
 afterAll(async () => {
   await Promise.all(directories.map((directory) => Fs.rm(directory, { recursive: true, force: true })))
 })
-afterEach(() => {
-  vi.unstubAllGlobals()
+afterEach(async () => {
   vi.unstubAllEnvs()
+  await Promise.all(closers.splice(0).map((close) => close()))
 })
+
+/** One request a GitHub stand-in received. */
+interface Received {
+  readonly path: string
+  readonly authorization: string | undefined
+}
+
+/**
+ * A real HTTP server on loopback standing in for the GitHub API. The probe
+ * reaches it over the real fetch transport; nothing intercepts a request.
+ */
+const github = async (answer: { status: number; body: unknown } = {
+  status: 200,
+  body: { resources: { core: { remaining: 5000 } } }
+}) => {
+  const requests: Array<Received> = []
+  const state = { answer }
+  const server = createServer((request, response) => {
+    requests.push({ path: request.url ?? "/", authorization: request.headers.authorization })
+    response.writeHead(state.answer.status, { "content-type": "application/json" })
+    response.end(JSON.stringify(state.answer.body))
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  closers.push(() =>
+    new Promise<void>((resolve) => {
+      server.closeAllConnections()
+      server.close(() => resolve())
+    })
+  )
+  return { origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, requests, state }
+}
 const root = async () => {
   vi.stubEnv("SMITHERS_REMOTE", "")
   const directory = await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-integration-cli-"))
@@ -124,25 +158,22 @@ describe("integration CLI", () => {
 
   it("checks every provider's default credential offline without sending requests", async () => {
     const directory = await root()
-    const integrations = ["github"].map((provider) => ({ id: provider, provider }))
+    const upstream = await github()
+    vi.stubEnv("SMITHERS_GITHUB_API_BASE_URL", upstream.origin)
     await Fs.writeFile(
       Path.join(directory, ".smithers/integrations.json"),
-      JSON.stringify({ version: 1, integrations })
+      JSON.stringify({ version: 1, integrations: [{ id: "github", provider: "github", apiBaseUrl: upstream.origin }] })
     )
     for (const name of ["SMITHERS_GITHUB_TOKEN"]) {
       vi.stubEnv(name, "provider-fixture-secret")
     }
-    const fetch = vi.fn(() => {
-      throw new Error("offline diagnostics sent a request")
-    })
-    vi.stubGlobal("fetch", fetch)
     const result = await serve(directory, ["doctor", "--offline"])
     expect(result.code, result.output).toBe(0)
     expect(result.data).toEqual({
       healthy: true,
-      integrations: integrations.map((item) => ({ ...item, healthy: true, check: "credential-present" }))
+      integrations: [{ id: "github", provider: "github", healthy: true, check: "credential-present" }]
     })
-    expect(fetch).not.toHaveBeenCalled()
+    expect(upstream.requests).toEqual([])
     expect(result.output).not.toContain("provider-fixture-secret")
   })
 
@@ -172,22 +203,22 @@ describe("integration CLI", () => {
 
   it("reports online health without returning provider response bodies or request details", async () => {
     const directory = await root()
+    const upstream = await github({ status: 200, body: { private: "response-fixture-secret" } })
     vi.stubEnv("SMITHERS_GITHUB_TOKEN", "request-fixture-secret")
+    vi.stubEnv("SMITHERS_GITHUB_API_BASE_URL", upstream.origin)
     await Fs.writeFile(
       Path.join(directory, ".smithers/integrations.json"),
       JSON.stringify({
         version: 1,
-        integrations: [{ id: "gh", provider: "github" }]
+        integrations: [{ id: "gh", provider: "github", apiBaseUrl: upstream.origin }]
       })
     )
-    const fetch = vi.fn(async () => Response.json({ private: "response-fixture-secret" }))
-    vi.stubGlobal("fetch", fetch)
     const healthy = await serve(directory, ["doctor", "gh"])
     expect(healthy.code, healthy.output).toBe(0)
     expect(healthy.data.integrations).toEqual([
       { id: "gh", provider: "github", healthy: true, check: "provider-authentication" }
     ])
-    fetch.mockResolvedValue(Response.json({ message: "response-fixture-secret" }, { status: 401 }))
+    upstream.state.answer = { status: 401, body: { message: "response-fixture-secret" } }
     const unhealthy = await serve(directory, ["doctor", "gh"])
     expect(unhealthy.code).toBe(1)
     expect(unhealthy.output).toContain("Credential lookup or provider authentication failed")
@@ -199,14 +230,15 @@ describe("integration CLI", () => {
 
   it("refuses an unknown integration before requests", async () => {
     const directory = await root()
-    const fetch = vi.fn(() => {
-      throw new Error("an unknown integration sent a request")
-    })
-    vi.stubGlobal("fetch", fetch)
+    const upstream = await github()
+    vi.stubEnv("SMITHERS_GITHUB_API_BASE_URL", upstream.origin)
     const config = Path.join(directory, ".smithers/integrations.json")
-    await Fs.writeFile(config, JSON.stringify({ version: 1, integrations: [{ id: "github", provider: "github" }] }))
+    await Fs.writeFile(
+      config,
+      JSON.stringify({ version: 1, integrations: [{ id: "github", provider: "github", apiBaseUrl: upstream.origin }] })
+    )
     expect((await serve(directory, ["doctor", "unknown"])).output).toContain("Unknown integration")
-    expect(fetch).not.toHaveBeenCalled()
+    expect(upstream.requests).toEqual([])
   })
 
   it("prints the generic sentence for a non-Error failure at the operator boundary", async () => {
@@ -256,19 +288,13 @@ describe("integration CLI", () => {
   it("discovers GitHub and verifies it through the existing client", async () => {
     const directory = await root()
     expect(readIntegrations(directory, undefined, { SMITHERS_LINEAR_API_KEY: "secret" })).toEqual([])
-    const calls: Array<string> = []
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL | Request) => {
-        const url = String(input)
-        calls.push(url)
-        return Response.json({ resources: { core: { remaining: 5000 } } })
-      })
-    )
+    const upstream = await github()
+    vi.stubEnv("SMITHERS_GITHUB_API_BASE_URL", upstream.origin)
     for (const provider of ["github"] as const) {
-      expect(await probe({ id: provider, provider }, "test-token")).toMatchObject({ healthy: true })
+      expect(await probe({ id: provider, provider, apiBaseUrl: upstream.origin }, "test-token"))
+        .toMatchObject({ healthy: true })
     }
-    expect(calls).toContain("https://api.github.com/rate_limit")
+    expect(upstream.requests).toEqual([{ path: "/rate_limit", authorization: "Bearer test-token" }])
   })
 
   it("refuses credentials and destinations the host never authorized, and accepts the ones it did", async () => {
@@ -276,51 +302,51 @@ describe("integration CLI", () => {
     const config = Path.join(directory, ".smithers/integrations.json")
     const declare = (integration: Record<string, unknown>) =>
       Fs.writeFile(config, JSON.stringify({ version: 1, integrations: [integration] }))
-    const requests: Array<string> = []
-    const fetch = vi.fn(async (input: string | URL | Request) => {
-      requests.push(String(input))
-      return Response.json({ resources: { core: { remaining: 5000 } } })
-    })
-    vi.stubGlobal("fetch", fetch)
+    const attacker = await github()
+    const enterprise = await github()
     vi.stubEnv("SMITHERS_CREDENTIAL_KEY", "host-encryption-fixture-secret")
 
     await declare({
       id: "exfil",
       provider: "github",
       tokenEnv: "SMITHERS_CREDENTIAL_KEY",
-      apiBaseUrl: "https://attacker.invalid"
+      apiBaseUrl: attacker.origin
     })
     const borrowed = await serve(directory, ["doctor", "exfil"])
     expect(borrowed.code).toBe(1)
     expect(borrowed.output).toContain("unauthorized credential variable SMITHERS_CREDENTIAL_KEY")
     expect(borrowed.output).not.toContain("host-encryption-fixture-secret")
-    expect(fetch).not.toHaveBeenCalled()
+    expect(attacker.requests).toEqual([])
 
-    await declare({ id: "exfil", provider: "github", apiBaseUrl: "https://attacker.invalid" })
+    await declare({ id: "exfil", provider: "github", apiBaseUrl: attacker.origin })
     const redirected = await serve(directory, ["doctor", "exfil"])
     expect(redirected.code).toBe(1)
-    expect(redirected.output).toContain("unauthorized github endpoint https://attacker.invalid")
-    expect(fetch).not.toHaveBeenCalled()
+    expect(redirected.output).toContain(`unauthorized github endpoint ${attacker.origin}`)
+    expect(attacker.requests).toEqual([])
     await expect(
-      probe({ id: "exfil", provider: "github", apiBaseUrl: "https://attacker.invalid" }, "probe-fixture-secret")
+      probe({ id: "exfil", provider: "github", apiBaseUrl: attacker.origin }, "probe-fixture-secret")
     ).rejects.toThrow("unauthorized github endpoint")
-    expect(fetch).not.toHaveBeenCalled()
+    expect(attacker.requests).toEqual([])
 
     vi.stubEnv("SMITHERS_INTEGRATION_TOKEN_ENV", "TEAM_GITHUB_TOKEN")
-    vi.stubEnv("SMITHERS_GITHUB_API_BASE_URL", "https://github.example.com/api/v3")
+    vi.stubEnv("SMITHERS_GITHUB_API_BASE_URL", `${enterprise.origin}/api/v3`)
     vi.stubEnv("TEAM_GITHUB_TOKEN", "authorized-fixture-secret")
     await declare({
       id: "enterprise",
       provider: "github",
       tokenEnv: "TEAM_GITHUB_TOKEN",
-      apiBaseUrl: "https://github.example.com/api/v3"
+      apiBaseUrl: `${enterprise.origin}/api/v3`
     })
     const authorized = await serve(directory, ["doctor", "enterprise"])
     expect(authorized.code, authorized.output).toBe(0)
     expect(authorized.data.integrations).toEqual([
       { id: "enterprise", provider: "github", healthy: true, check: "provider-authentication" }
     ])
-    expect(requests).toEqual(["https://github.example.com/api/v3/rate_limit"])
+    expect(enterprise.requests).toEqual([{
+      path: "/api/v3/rate_limit",
+      authorization: "Bearer authorized-fixture-secret"
+    }])
+    expect(attacker.requests).toEqual([])
     expect(authorized.output).not.toContain("authorized-fixture-secret")
   })
 })
@@ -332,11 +358,8 @@ for (const provider of ["linear", "telegram", "slack", "gmail", "googlecalendar"
       Path.join(directory, ".smithers/integrations.json"),
       JSON.stringify({ version: 1, integrations: [{ id: "retired", provider }] })
     )
-    const fetch = vi.fn(() => {
-      throw new Error("retired adapter reached network")
-    })
-    vi.stubGlobal("fetch", fetch)
-    expect((await serve(directory, ["doctor"])).code).toBe(1)
-    expect(fetch).not.toHaveBeenCalled()
+    const result = await serve(directory, ["doctor"])
+    expect(result.code).toBe(1)
+    expect(result.output).toContain("integrations.0.provider is invalid")
   })
 }

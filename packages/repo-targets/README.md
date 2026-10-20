@@ -8,6 +8,9 @@ Private build defaults and AI review rules used by this repository’s `PACKAGE.
 | `ReviewTagsMigrationsAndKeys`    | Ask Codex to check module-path tags, reject compatibility aliases, require new migrations for stored schema changes, and require an explanation for changed step, cache, or run keys.                                              |
 | `ReviewDocsAgainstCode`          | Ask Codex to compare changed public APIs with the package README, `docs/*.md`, and its matching site API reference page.                                                                                                                                                      |
 | `ReviewJsdocAgainstCode`         | Ask Codex to compare changed exports with their documented behavior, errors, defaults, and `@since` version.                                                                                                                       |
+| `ImportRules`                    | Check the package's sources against declared import and call rules, each with a `because`, without a model. See [Import rules](#import-rules).                                                                                     |
+| `JevRules`                       | Ask Jev one yes-or-no question per judgment rule about each covered file. See [Jev rules](#jev-rules).                                                                                                                            |
+| `SdkRules`                       | Declare Will's SDK-wide rules for one SDK package: its `importRules` and `jevRules`, from one shared definition. See [SDK rules](#sdk-rules).                                                                                     |
 
 The review functions declare `LlmLint` targets. They run under `smthrs review`, compare against `origin/main` by default, and run on the `codex` engine with `gpt-6-luna`. Every macro requires `cwd`, the package directory its default globs resolve against; a workspace-wide review passes `"."` with `//`-rooted globs. Pass `engine` and `model` together to run another engine, for example `{ engine: "claude", model: "claude-opus-5" }`; `model` alone names another Codex tier. They do not modify files. The shared prompt and review helper live in `src/ReviewLint.ts` and each rubric lives in the module named after its macro; the build defaults live in `src/BuildAndCheckTypeScriptPackage.ts`.
 
@@ -23,6 +26,117 @@ Root development dependencies make this package available to repository declarat
 
 `pnpm --filter @smthrs/repo-targets test` enforces 100% V8 coverage across `src/**`. Both required CI package selections reach its declared Vitest target, `//packages/repo-targets:test`. The suite checks the actual CLI discovery result and the target's runner configuration, so a declared test script alone cannot satisfy that contract.
 
+## Import rules
+
+`ImportRules({ cwd, rules })` declares one `test`-kind `NodeTest` target that fails when a source in the package at `cwd` breaks a rule. A package declares it in its own `PACKAGE.ts`:
+
+```ts
+import type { ImportRule } from "@smthrs/repo-targets"
+import { ImportRules } from "@smthrs/repo-targets"
+import { Smithers } from "@smthrs/targets"
+
+const importRules: ReadonlyArray<ImportRule> = [
+  {
+    kind: "forbid",
+    files: ["src/**/*.tsx"],
+    modules: ["effect", "effect/**"],
+    because: "Components render; the state machine runs Effect. See \"State (flux)\" in apps/mvp/AGENTS.md."
+  }
+]
+
+export const Package = Smithers.Package({ targets: { importRules: ImportRules({ cwd: "apps/mvp", rules: importRules }) } })
+```
+
+Run it with `pnpm exec smithers-build test '//apps/mvp:importRules'`; `ci` plans it too. It is not cached.
+
+Every rule takes:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `kind` | `"forbid"`, `"forbidNames"`, `"rootImportsOnly"` or `"forbidCalls"` | What the rule checks. |
+| `because` | `string`, required | Why, naming the `AGENTS.md` rule that governs it. Every violation prints it. |
+| `files` | `ReadonlyArray<string>`, optional | Package-relative globs of the sources the rule reads, matched with `node:path` `matchesGlob`: `*` stops at `/`, `**` crosses it. Default: every source. |
+| `allowTypeOnly` | `boolean`, optional, not on `forbidCalls` | Let through a reference that loads nothing at runtime: `import type`, `export type`, a `type` modifier on a named element, or an `import()` type. Default `false`: type-only imports count. `import { type A } from "x"` still counts as importing `x`, because `verbatimModuleSyntax` keeps it. |
+
+| Kind | Field | Fails on |
+| --- | --- | --- |
+| `forbid` | `modules`: specifier globs (`effect` is the root, `effect/*` one level, `effect/**` every subpath) | A static import, a re-export, `import x = require()`, `import()`, `require()` or an `import()` type of a matching module. |
+| `forbidNames` | `modules`, and `names`: exported names matched exactly | A named import or re-export of a name, a default import (`default`), or a member read through a namespace or default binding, such as `React.useState`. |
+| `rootImportsOnly` | `packages`: package-name globs, such as `@smthrs/*` | A specifier naming a subpath of a matching package, such as `@smthrs/model/ModelError`. |
+| `forbidCalls` | `callees`: callee texts matched exactly, such as `Model.stream`, or `*.<member>`, such as `*.route` | A call whose callee reads as an exact entry, or ends in an entry's `<member>` whatever the receiver. See [Callees](#callees). |
+
+### Callees
+
+A `forbidCalls` rule reads each call's callee as text, with parentheses, `as`, `satisfies`, `!` and `?.` removed. A string key reads as a member, a receiver that is a call ends in `()`, and any other receiver, such as an `await` or a computed key, reads as `(…)`:
+
+| Source | Callee | `page.route` | `*.route` |
+| --- | --- | --- | --- |
+| `page.route(url, handler)` | `page.route` | fails | fails |
+| `page?.route(url, handler)`, `page["route"](url, handler)` | `page.route` | fails | fails |
+| `tab.page.route(url, handler)` | `tab.page.route` | passes | fails |
+| `page.context().route(url, handler)` | `page.context().route` | passes | fails |
+| `(await browser.newContext()).route(url, handler)` | `(…).route` | passes | fails |
+| `router.routes()`, `reroute()`, `route()` | `router.routes`, `reroute`, `route` | passes | passes |
+
+An exact entry matches only its own text, so `page.route` misses `tab.page.route`. Use `*.<member>` when a member name belongs to one API, as Playwright's `route` does; a `*` anywhere else is refused. Both forms are syntactic: neither sees a callee reached through destructuring, as in `const { route } = page; route(url, handler)`, and an exact entry does not see `const model = yield* Model.Model; model.stream(request)`, an alias or a parameter.
+
+A source is a `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs` or `.cjs` file under `cwd`, outside `node_modules`, `dist`, `coverage`, `target`, `tmp`, `test-results`, `playwright-report`, any dot-directory, and any nested directory with its own `package.json`. Each source is parsed once with the TypeScript compiler API, in `src/ImportAnalysis.ts`, which the repository's dependency-boundary gate shares. A string or comment that mentions an import is not one.
+
+The target runs `scripts/import-rules.mjs <cwd> '<rules JSON>'` in `cwd`. On a violation it prints one line per violation to stderr and exits 1:
+
+```text
+ImportRules failed in apps/mvp: 1 violation of 5 rules over 69 source files.
+
+- apps/mvp/src/AppContext.tsx:1 imports "effect" (forbid). A component renders state and dispatches actions; ...
+```
+
+With none it prints `ImportRules passed in <cwd>: <n> rules over <n> source files.` and exits 0. Invalid rules exit 2.
+
+Rules that hold for every package, such as the ban on substitute durable runtimes, belong to the repository-wide dependency-boundary gate (`contracts/check-dependency-boundaries.mjs`), not to an `ImportRules` default: that gate also covers packages with no `PACKAGE.ts`.
+
+## Jev rules
+
+`JevRules({ cwd, rules })` declares one `JevLint` target (from `@smthrs/targets`) for the rules no parser can check, such as "no hand-rolled retries". Each rule names its `id` from the package's rules catalog, the `files` it covers (package-relative globs, or `//`-rooted ones; `//:targetIndex` refuses a glob whose files all belong to another package), `lookFor` (a question about one file, phrased so that yes means the file breaks the rule), `violation` and `compliant` (what yes and no mean), and an optional `severity`, `error` by default:
+
+```ts
+import { JevRules } from "@smthrs/repo-targets"
+
+const jevRules = JevRules({
+  cwd: "apps/mvp",
+  threshold: 0.7,
+  rules: [{
+    id: "durable.no-hand-rolled-durability",
+    files: ["worker/!(*.test).ts"],
+    lookFor: "Does this file implement its own retry loop, sweep or background job?",
+    violation: "The file hand-rolls durability the flow engine owns.",
+    compliant: "The file has no retry loop, sweep or background job of its own."
+  }]
+})
+```
+
+The macro anchors each glob at `cwd` and passes `threshold` (JevLint's default is 0.8), `failOn`, `summary` and `featured` through. The target joins `lint` but is manual, so `//...` never plans it; name its label, with `AI_GATEWAY_API_KEY` set: `smithers-build lint '//apps/mvp:jevRules'`. The executor must provide `JevReviewLive` from `@smthrs/targets/JevLint`. `apps/mvp/PACKAGE.ts` declares the app's rules and each SDK package declares the SDK-wide ones through [`SdkRules`](#sdk-rules); `apps/mvp/docs/rules.md` is their catalog.
+
+## SDK rules
+
+`SdkRules({ cwd, role, tests?, knownDeepImports? })` declares Will's SDK-wide rules for the package at `cwd` and returns two targets: `importRules`, an `ImportRules` target, and `jevRules`, a `JevRules` target with a threshold of 0.7. The rule text lives once, in `src/SdkRules.ts`; every SDK package lists both targets in its own `PACKAGE.ts`, so every glob stays inside that package:
+
+```ts
+import { SdkRules } from "@smthrs/repo-targets"
+
+const { importRules, jevRules } = SdkRules({ cwd: "packages/effect-electric", role: "library" })
+```
+
+`role` decides which rules hold:
+
+| Role          | For                                                                                       | Rules it drops                                                                   |
+| ------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `library`     | A platform-neutral, Effect-first library meant for any app                                | none                                                                             |
+| `app-library` | A platform-neutral library that holds the Smithers app's contracts, such as `@smthrs/rpc` | `sdk.generic-libraries`                                                          |
+| `host`        | A `@smthrs/platform-*` package                                                            | `sdk.platform-neutral`                                                           |
+| `components`  | `@smthrs/ui`, which renders React                                                         | everything but `sdk.root-imports-only`, `sdk.no-dead-code` and `test.behavioral` |
+
+`importRules` forbids host modules in `src/` (`sdk.platform-neutral`), a deep import of a Smithers package in `src/` or `examples/` (`sdk.root-imports-only`), and running an Effect in `src/` (`effect.boundary-only`). `jevRules` asks the judgment half of those rules, plus `effect.wrap-every-library`, `sdk.generic-libraries`, `obs.content-free`, `sdk.no-dead-code` (advisory) and `test.behavioral`, about `src/` and the package's tests (`test/**/*.test.ts`, or `tests`). `knownDeepImports: { packages, because }` names the `@smthrs/*` packages whose subpaths a package still imports, and why; the `because` joins the rule's message. `@smthrs/model-host` (the CLI's command catalog) and `@smthrs/rpc` (its runtime-free canonical imports) declare one.
+
 ## Failure contracts
 
 Every macro returns its target declarations synchronously. Calling one never runs a review, a build, or a tool; the executor runs the emitted targets later, when a verb such as `smthrs review` or `ci` plans them.
@@ -30,6 +144,9 @@ Every macro returns its target declarations synchronously. Calling one never run
 Declaration-time rejections happen while `PACKAGE.ts` loads:
 
 - TypeScript rejects a call without `cwd`, and a review whose `engine` is not `codex` but names no `model`.
+- `ImportRules` throws a `TypeError` naming the rule for an empty rule list, an unknown `kind` or key, a missing or blank `because`, an empty list, a `files` glob that is absolute or leaves the package, or a non-boolean `allowTypeOnly`; and for a `cwd` that is empty, absolute or leaves the workspace.
+- `SdkRules` throws a `TypeError` for a `knownDeepImports` with no package, a name outside `@smthrs/`, or a blank `because`, and for any `cwd` `ImportRules` or `JevRules` refuses.
+- `JevRules` throws a `TypeError` for a `cwd` that is empty, absolute or leaves the workspace. `JevLint` then refuses an empty rule list, a repeated or malformed rule id, a blank question or criterion, and a threshold outside 0.5 to 0.99.
 - The emitted target's constructor validates its attributes and throws an `Error` reading `<target> declaration at <site> is invalid: <reason>`. Examples: an empty review `model`, an `engine` outside LlmLint's engine set, or a non-integer `testTimeoutMs`.
 
 Execution failures belong to the emitted targets. The [`@smthrs/targets` error table](../smithers/build/targets/docs/reference/targets.md#errors) documents each one:
@@ -38,6 +155,8 @@ Execution failures belong to the emitted targets. The [`@smthrs/targets` error t
 - Review targets fail with `smithers-build/LlmReviewError` when a round fails in the `diff`, `read`, `review`, or `parse` phase.
 - Review targets fail with `smithers-build/FindingsError` when a finding meets the threshold: `error` for `ReviewTagsMigrationsAndKeys`, `warning` for `ReviewDocsAgainstCode` and `ReviewJsdocAgainstCode`. The error carries every finding.
 - `BuildAndCheckTypeScriptPackage` targets fail with `smithers-build/ExecError` when a tool such as `tsc`, Vitest, ESLint, dprint, or the circular script fails, and its `docs` target fails with `smithers-build/DocsParityError`.
+- `ImportRules` targets fail with `smithers-build/ExecError` when a source breaks a rule (exit 1) or the program refuses its arguments (exit 2).
+- `JevRules` targets fail with `smithers-build/FindingsError` when a finding meets `failOn`, and with `smithers-build/LlmReviewError` when `AI_GATEWAY_API_KEY` is missing, a rule matches no file, a file cannot be read, or Jev fails or leaves a question unanswered.
 
 ## Bun tests in this repository
 

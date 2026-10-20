@@ -27,7 +27,7 @@
  * The `Flow.execute` fiber's own settlement after a cross-driver cancel is a
  * separate defect (triage N-09, `RunDriver.ts`, the cancel-durability lane), so
  * this case reads the row rather than joining the fiber and interrupts the
- * fiber at the end the way `packages/smithers/flows/test/NodeRuntime.test.ts` does.
+ * fiber at the end the way `packages/smithers/flows/platform-node/test/NodeRuntime.test.ts` does.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"

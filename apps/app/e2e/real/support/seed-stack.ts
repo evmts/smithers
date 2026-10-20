@@ -1,5 +1,5 @@
 import { expect, type Page } from "@playwright/test"
-import { tag } from "@smthrs/testing/BuiltinScript"
+import { BuiltinScript } from "@smthrs/testing"
 
 /**
  * Seeds a stack through the install's public API, as a member files TODOs
@@ -16,11 +16,11 @@ import { tag } from "@smthrs/testing/BuiltinScript"
  */
 export const marker = {
   pr: "[PR]",
-  ask: tag({ ask: true }),
-  fail: tag({ fail: true }),
-  fixed: tag({ fixed: true }),
-  hold: (key: string) => tag({ hold: key }),
-  file: (path: string) => tag({ file: path })
+  ask: BuiltinScript.tag({ ask: true }),
+  fail: BuiltinScript.tag({ fail: true }),
+  fixed: BuiltinScript.tag({ fixed: true }),
+  hold: (key: string) => BuiltinScript.tag({ hold: key }),
+  file: (path: string) => BuiltinScript.tag({ file: path })
 } as const
 
 export type TodoState = "queued" | "starting" | "working" | "needs_you" | "paused" | "failed" | "in_review" | "merged" | "dropped"

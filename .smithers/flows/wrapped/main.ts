@@ -12,7 +12,7 @@
  */
 import { NodeRuntime as PlatformRuntime, NodeServices } from "@effect/platform-node"
 import { Action, Interpreter } from "@smthrs/flow"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import * as Evaluator from "@smthrs/model/Evaluator"

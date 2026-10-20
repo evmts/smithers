@@ -17,7 +17,7 @@
  *     <linger|settle|resolve|notify|race-timer> <counterFile> <hostId> [millis]
  */
 import { DurableDeferred, FlowRuntime, HumanTask } from "@smthrs/flow"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

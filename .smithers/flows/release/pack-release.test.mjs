@@ -204,14 +204,14 @@ test("importing the release scripts reads no workspace tree", async () => {
   }
 })
 
-test("the packed set is exactly the 49 names the RC contract publishes", () => {
+test("the packed set is exactly the 50 names the RC contract publishes", () => {
   // `publishedPackages` is the release decision; group membership is
   // only how it is enforced. Restating the roster here means a package that
   // joins or leaves the release has to change both files in one diff.
   const manifests = readWorkspaceManifests()
   const packed = packedWorkspaces.map((directory) => manifests.get(directory).name)
 
-  assert.equal(publishedPackages.length, 49)
+  assert.equal(publishedPackages.length, 50)
   assert.deepEqual([...packed].sort(), [...publishedPackages].sort())
   assert.ok(publishedPackages.includes("smthrs"), "the unscoped deprecation notice publishes with the RC")
 })
@@ -524,7 +524,8 @@ test("published adapters remain optional while executable SQLite and Bun host pr
     },
     "@smthrs/kernel": { "@effect/vitest": EXPECTED_EFFECT_VERSION },
     "@smthrs/testing": { "@effect/vitest": EXPECTED_EFFECT_VERSION },
-    "@smthrs/flows": { "@smthrs/platform-bun": releaseVersion },
+    // The CLI loads its Bun control host only under Bun.
+    "@smthrs/cli": { "@smthrs/platform-bun": releaseVersion },
     "@smthrs/observability": {
       "@opentelemetry/exporter-logs-otlp-http": "0.222.0", "@opentelemetry/exporter-metrics-otlp-http": "0.222.0",
       "@opentelemetry/exporter-trace-otlp-http": "0.222.0", "@opentelemetry/sdk-trace-base": "2.11.0",
@@ -557,16 +558,22 @@ test("published adapters remain optional while executable SQLite and Bun host pr
       assert.equal(manifest.devDependencies[peer], version)
     }
   }
-  // The barrel's NodeRuntime is the published quickstart, so its Node host and
-  // SQLite driver install with it rather than waiting on an optional peer (#3838).
+  // NodeRuntime in @smthrs/platform-node is the published quickstart, so the
+  // engine barrel and the SQLite driver install with it rather than waiting on
+  // an optional peer (#3838). The barrel itself names no platform.
   // The driver is the tested release exactly: it peers `effect` from its own
   // version up, so it is valid with any Effect the application picks in range,
   // and a caret here would install a driver newer than that Effect (#2398).
-  for (const [peer, version] of [["@smthrs/platform-node", releaseVersion], ["@effect/sql-sqlite-node", EXPECTED_EFFECT_VERSION]]) {
+  for (const [dependency, version] of [["@smthrs/flows", releaseVersion], ["@effect/sql-sqlite-node", EXPECTED_EFFECT_VERSION]]) {
+    const node = byName.get("@smthrs/platform-node")
+    assert.equal(node.dependencies[dependency], version, "@smthrs/platform-node must install " + dependency)
+    assert.equal(node.peerDependencies[dependency], undefined)
+    assert.equal(node.peerDependenciesMeta?.[dependency], undefined)
+  }
+  for (const dependency of ["@smthrs/platform-node", "@smthrs/platform-bun", "@effect/sql-sqlite-node"]) {
     const flows = byName.get("@smthrs/flows")
-    assert.equal(flows.dependencies[peer], version, "@smthrs/flows must install " + peer)
-    assert.equal(flows.peerDependencies[peer], undefined)
-    assert.equal(flows.peerDependenciesMeta[peer], undefined)
+    assert.equal(flows.dependencies[dependency], undefined, "@smthrs/flows must not install " + dependency)
+    assert.equal(flows.peerDependencies[dependency], undefined)
   }
   for (const [name, peer, version] of [["@smthrs/platform-bun", "@smthrs/platform-node", releaseVersion]]) {
     assert.equal(byName.get(name).peerDependencies[peer], version)

@@ -298,42 +298,43 @@
         }
       },
       "declarations": {
-        "Agent.d.ts": "6a59aa1f02cf31b8dbc1424e96255c104033f28c5cbc384ec3cda005a59a43da",
-        "AgentAction.d.ts": "91fd411baea7dd8d469ad6541440affccace08eb075bf1c0a6c05e4b8af6d263",
+        "Agent.d.ts": "6e14bee88d67a0b1057d108e9b830808e932003f2f55f88b46d286fd2026f062",
+        "AgentAction.d.ts": "5b50489db1405404ecff96fb5eb4b43848f9b2863025e1971c2fcff070dc0c06",
         "AgentSession.d.ts": "c04ce178923128925e7b22f0551a13bd0176ab9619d81237cde99d20e768b413",
         "Budget.d.ts": "5545abc52571195b2cfaceb04e41b39d72640ecba1ea29052ef6fcf1765d24ba",
         "CellPlugin.d.ts": "318db00f2f1d0034818f1c3abe9544a2905f6bafa10d7afbd88c378c80c62ce6",
         "Checkpointed.d.ts": "dd5b48ea7c34ca25c275e1eabed14ce9c2bfb5dd4efbcfb8f37f96d09eda72f2",
         "ChildFlows.d.ts": "9e6d82121759eca42f4ed403414fbdf2e8acb7c8d020cb0366cd4d68e4790661",
         "EngineChildren.d.ts": "0fc0b9d3fcd1883ecf1d106f696e515bc66e3279ed200d8aaace86f213b7f23e",
-        "EventSink.d.ts": "f3259c66c4f2d2db533dc5ce681faca7eb4f4da3f30aa3a37a9fc1e3443413a1",
-        "FlowEngineLike.d.ts": "1e136afd60933cbe7c9f85e62869f46c9c6790ff243743353c0a5dd6e56e9794",
+        "EventSink.d.ts": "4e249aa1e55a86d8e281540c7e69d0d918403a0eb020596cb09815c6be6d3728",
+        "FlowEngineLike.d.ts": "6c87abe5ce80e5d6f96613065e416dc6030ad507d5dfc4d350746c5954901419",
         "FlowStore.d.ts": "62a36ac368d12dc976854eed20388dd267c8d93e8c493612c6b473d0d57beab2",
         "InMemoryWorkspaceSandbox.d.ts": "c2bfbb30d9569ad046dfce3e21bd437e1b6580d3d637af41effeaf37ce7f5494",
         "Memory.d.ts": "ad348b35d5f0408eab5d3cb453bad765b6d99b17d84386bc6a0c3d338ab32426",
         "MemoryCalibration.d.ts": "32014ed6ec3d462eadb983e265fc69c9001ba1ca3f30fba9f3f21b19a97daac4",
         "MemoryMine.d.ts": "ed015866cacaf293e04828d47615e0682e31c83631256da5d24f78455c715eb0",
         "MemorySnapshotRecorder.d.ts": "f444a314e11a7525183c3cf7fd984997948ac9e6e808da294fd6fec4e8b9d0b4",
+        "ModelStep.d.ts": "ac13d396157bc9f6f93ab77ce00f0cb8c36d7392821aff05dded630fa02cd6de",
         "OutsideChangePolicy.d.ts": "6323d6020c8d4191480a8ebe2e06b1e81fe124d66fa19035651e579a2ad65e37",
         "PromoteFlows.d.ts": "4987302fbb03b70e1b993cee125d19e88b5efeb1268e63f09cd7dd68ccb7211e",
         "QuotaPolicy.d.ts": "71ee02d3d9e6319b433bb3c8247a609cbaf48777e99dafa0d4f60194e13e65d3",
-        "RunawayGuard.d.ts": "6ca9a3475548f450de77a3c128527f1c3235d389e73fa0fcef17ada405128426",
+        "RunawayGuard.d.ts": "f30d697fee7facca954bbc3e23af31ccd24c9f6db6c3665e488d88d8ef208412",
         "ScriptedJudge.d.ts": "0cb04e63dd00a0b8a4ba6d11fceacaf75e6850dd87d7afe5a7eccd26996d8c2a",
         "Seat.d.ts": "df89f4ef74300be757ed72781c71a1de0ed845426ea0e83348fc8a2d77fdfcb2",
         "SeatResolver.d.ts": "3d75b3d34d7f1e39d98f488523fd37d1ef377d890b8bbbea0cf5cd63ace7fa19",
         "SeatRouter.d.ts": "e57d1b6c441f2d764fb1cb54ccd216448063e96fd49ec61ad7ffceea23bcf141",
         "SmithersPlugin.d.ts": "1161132f4fd43ead9d6f63792ca50a131943841c4593f94d58f953981c4f4c0e",
-        "StandardFlows.d.ts": "8c06b34f4315a5e7ce50a5acf6fb2dc259961cb978d3456983f744e28cc0fc43",
+        "StandardFlows.d.ts": "835c40b44a1d03ecbaf4400e1f4b1d7cbb88359ccd4aadf9a7da7702b824acea",
         "WorkspaceObservation.d.ts": "b3869cb4116ddb1387f307173b73ef8ffa73302bef852a13267b14f9a2e85293",
         "WorkspaceSandbox.d.ts": "b41f75f68889108f82660ef6ed2940c0470241ea87c8af2a1d5e34fa945614ad",
-        "index.d.ts": "4e4ea6870cb5fef57d8015209943828763eafa1d25ad7ee5d6a03527c034f26f",
+        "index.d.ts": "413866300663467a7cbfd1be06c06c3e64652a5c526ebc572f0c3b3ca1921384",
         "internal/AgentOutcome.d.ts": "b1dc9f7d0759a9402f8fba6cd58eeaa71a8cf15b9117c10425556c8c21e3a718",
         "internal/AgentTerminal.d.ts": "01c9cd9aae5c2e78f028fba869a68eb8e8bd1a4d6281b1e7556d1e594165b15e",
         "internal/AgentTerminalCommand.d.ts": "9e9c4d629d68e936091e2bc9393bbcdfc67153667423ddd94d70485adfc984f8",
         "internal/CallIdentity.d.ts": "b50173c906cf7e43b170127940e0bc951d8359f59c35164047a52fe4993a1288",
         "internal/FailureJson.d.ts": "62b5950656597d38d251c96bd5fbe4bd49ea165d43636c609c94d6f47b555ef3",
         "internal/FailureSummary.d.ts": "a84d1f32bddf4258b6e5c8f14004c34c849410bcf28e3309dd4f77b7a78753a0",
-        "internal/FlowEngineLike.d.ts": "16764afdce5d53bef49d62217089e598ceeb2e94fa1d4d1a1398f168a27c82f2",
+        "internal/ModelStep.d.ts": "701db4e296e3317412cec1a3222ce9c150f4170342a3189e3f30ca47a4d85c77",
         "internal/PendingApproval.d.ts": "455ba27c8af497bdc77807cdca1d1482f8dcb2dd79249f18e50ef8a593122b39",
         "internal/StepTrace.d.ts": "0724bcbb16a84c224369bd9b1efdda10e5abe1c33b88887872bf028146f1b3c5",
         "internal/TraceOrder.d.ts": "08f1ad263275343d41f439cb9f7d7832ec408c9b1d47135905473db8e6b9b3ff",
@@ -449,10 +450,11 @@
         "CombinedArtifacts.d.ts": "c89928da9a9abbb172e2083daaa8db6ddd4feb24b097fabfbb9900a8bc7a584d",
         "FileLease.d.ts": "a6e94821dce535e18f459be3c9f79936fc3fe58ac2fc9a42d630a0ea25708045",
         "FileSystemArtifactStore.d.ts": "c35d401544e60d1395e097c52c0b55fa97aca2daa63ff32db7da78d5fddff437",
+        "ImmutableCache.d.ts": "328eb6627335066fa3544a79e434cc5a66610cefa66826ed1e14182477e3cad4",
         "MemoryArtifactStore.d.ts": "1a3be8c0da479764c7841cdf746f9adae4138db6e793f9f295ae7dcbac28bc19",
         "NoopArtifactStore.d.ts": "e4df93e7c8c93a7942234c71b1efbaf9bac375a865058f1b06277bf119535674",
         "RemoteArtifacts.d.ts": "ebc2bd268912910d22fe7435e7c23ab608bf8bbc09e713e92b606dc98f1ec41c",
-        "index.d.ts": "77187087a6468751d55126f887fa49b15b0948adda6474c42f26cda8f46beb11",
+        "index.d.ts": "0d406c2186858d9d78e2e3a91b64cda2816416597116ad7cf28888302d3ee9ac",
         "internal/ArtifactLocks.d.ts": "ebffd6784b5493b22a272500709d710058ec6c9d3a6cf0fae371635e8ab01b92",
         "internal/ArtifactPath.d.ts": "1b94e630c0c87afebe5a8289b29e5705f465a6b3dfac1f9b407b61f135ad1468",
         "measureBytes.d.ts": "f606066ef94a0dbcdcd803de045f94f5d88875af3da6e0ff1c7711ce58d3e730",
@@ -2185,7 +2187,7 @@
         "Output.d.ts": "24dfb305a0c95909e8f6ad8d24e341c0124718401d699955fb05172bbd2d2bb6",
         "Project.d.ts": "487142404c993ae631e45bbdc98db8408b52fa116bc6f3bd1ca48790738697db",
         "Providers.d.ts": "63045f2082d7d7202f3808623733d2d4557e5717a3b0934e5632b31a6b368e9b",
-        "Serve.d.ts": "565f7f7ebbf0b2f3eb32acb7b3d456939d3f6f7debaf62012badf8f8e7517382",
+        "Serve.d.ts": "82cca7f0bbb120f6dc732ae9c23c1c14c944659e89838b933240a4c4cbd94ce1",
         "Suggest.d.ts": "d4290cf2adec427e8c95a41f67584fd63befd256344a97e1be712ed2106718e5",
         "Ui.d.ts": "f7fe4fc4055f74feda6f2d8fd2592594ac3a1f7b14813bc48c3776b25b7cf35c",
         "Unsupported.d.ts": "9315fda81e2335b0ee0cd3575fdc6199d3677a52bbf70d3bd89d843853a46211",
@@ -2203,6 +2205,7 @@
         "cli/Generate.d.ts": "a16988b5baf79889a627d8d008d4ad3cc7c67b5b2816e66fa99d92cf0a2c8380",
         "cli/HistoryCommands.d.ts": "a7c456fbd641fe2a7b148d154cf4b3a9f7c6f35153f0aa3d1eb367fe9e0a139a",
         "cli/LegacyBin.d.ts": "2fb76067d62dc48fa0cdebdd65ea9540a7465cf9c40f3057050250a0d67df89b",
+        "cli/OperatorTokenFile.d.ts": "6aee6628521d043a3cec0dc6d6ffa5aec1e7b6e5a50d50fd4fcf1ef738acb686",
         "cli/Presentation.d.ts": "fa945ee118f20b727d0d7627f75f01f0f69e4f03208d58b71918763a4d0e45e9",
         "cli/RunActivity.d.ts": "8c6801ea332f0e4f16da44914a4925cd58f1dea2d103d17bfc152df6ab7d386b",
         "cli/RunProgress.d.ts": "5d0bf0a491a018274b874c648b6f55e40765e82134dc0f00cad6a07c13d1c27c",
@@ -2269,9 +2272,9 @@
         "internal/ModuleAdmission.d.ts": "99dc29e8184386d4f4330b35e20fe90badb6c2d584c22aaf15ed37aabe67eb1b",
         "internal/ModuleAuthority.d.ts": "77a4163c6cb64e508ebde0574c025f6ea1bae24d6b967c9994aadaebf301567c",
         "internal/ModuleOwner.d.ts": "88caf6082dd158c1f4ae80963710262ea49e5f0bda0bd314f52888d37b31febb",
-        "internal/NativeControl.d.ts": "85cb2afab132455b82e2ae8552b8707b813340bcabb773d8e523eb6eabaabffb",
+        "internal/NativeControl.d.ts": "d5b9f9b6dcfdb32a91f08db4291ac404f288da19f5bbfd561fbe7762929880c6",
         "internal/NativeControlDatabase.d.ts": "6ef3df26e1fcba65ab3a9633d6b3d5fff405d3a0542be9c7194f64bf5929a9f5",
-        "internal/NativeEquipment.d.ts": "14891ffc0fc86bd86337e7be9b7234d2728e2a1f4c069bf3584d4db110f1cedf",
+        "internal/NativeEquipment.d.ts": "958a74655db17189815cc30dfcf09573477eb1737869b8e62817089efd4c91cb",
         "internal/NativeExecutionRead.d.ts": "6a87b3f0766bec46e03b6778331129760cf9a470c8b4c1e52ba108ec74be28e0",
         "internal/NodeControlHost.d.ts": "25da2b4a857904e56ee0042f2f6ad71ec896abfde8d605acd464060d108ec866",
         "internal/NodeVersion.d.ts": "4b3bc3bbbe077d3d1c98a592dfac340d1543367690a1189c047b928318d4ecd9",
@@ -2305,7 +2308,7 @@
         "internal/backend/Local.d.ts": "466a6c1ee01c23c5df8802c09c888e0f6bb73b40a0f413287b66da8f5e17368c",
         "internal/backend/Misc.d.ts": "72b954dcf7b5e17b1c405425f53b04bc77e4e861201b579750f52117656428f5",
         "internal/backend/Process.d.ts": "f9422d950352834537da0ca64b82d4149785ff168898376fa64f222d1f7e06f6",
-        "internal/backend/ProductApi.d.ts": "8029527a344ebbda4852f1337419ea3a6ab4e883f667a5c4b811310fe67ca7dd",
+        "internal/backend/ProductApi.d.ts": "f05f8ec1f6667592c3194920a8bdbec672d948399d1cf7cc72974ac70cd8a298",
         "internal/backend/Repositories.d.ts": "3efdf81bae853908ed7424800228ba96a168918344abc72d44a82a1ed6520030",
         "internal/backend/Resources.d.ts": "490fed5c9ac4033c76448737891fb261b1a70419e49a90348e76ca84b3e83981",
         "internal/backend/Runs.d.ts": "52fd8b97597a457939706ba7aeffa0093ec044835db9d7534eeb2607743eface",
@@ -3013,7 +3016,8 @@
       "declarations": {
         "Identity.d.ts": "9f4224b3e81830b04c6e8a7d12fb2730af0e379340619b83d2fc8adc854bab5d",
         "Sha256.d.ts": "d1e19ced02e5574d225992cfa2d7bfff89c515d06becc260d39bd8532ab2c87d",
-        "index.d.ts": "f6fa00dc9b4afbee107dfb8887884a7b7b121f477929a4d0ad83f7babacaa0b1",
+        "WebCrypto.d.ts": "6b1f42a0778c96859dea0a7c15dd0581fa8722e578918ee0499501eb6e1424da",
+        "index.d.ts": "94da2c5a11f9105b8d04ae280858e1354b3da7d9b2c20a4e8d3af847a176e11f",
         "internal/sha256.d.ts": "686f2008cfdcca411553fb3f4b8426539ab6c0fd3e8b7ebbeef36b2cb1f2675b"
       }
     },
@@ -3134,23 +3138,25 @@
         }
       },
       "declarations": {
-        "DatabaseMetrics.d.ts": "b8ede73950c9131a950010e501a899e4d39f419166337665b5d587edd7f87d25",
-        "Dialect.d.ts": "a991965111963de44538a42b2af8a03c90bbba9fdfb23b1d515ce67c840a3831",
+        "DatabaseMetrics.d.ts": "1f96d0ece07238749cf029a26c8a13d73344c7e14f5fef8d6b5c868624787fb2",
+        "Dialect.d.ts": "d39b27fc170a47681b5e40ef643fb73efa9fadc00c11816355f07160fc6593fc",
         "DurableWriter.d.ts": "e1cb20258691266fe5f25c10504740084355370a44eb5318c6aa48bfec9ab33b",
         "Migrations.d.ts": "7fe4ab2bb0eae97b338de541d586e402abb104c591a52534b5860784dfbdd557",
         "UnsupportedBackend.d.ts": "87eed04fee22172d2d8c5d5347ec22449334134f8d0dada15f00c7bf130e1501",
-        "bun/BunDatabase.d.ts": "bce8ac9ea228bd1e565e7809fff68d2f0c0dc1487e14f81073c9496cde169190",
-        "index.d.ts": "1cb61a9ad475f18f40a7e5c7b793cdd57e94f3373644d005014cb1c2574b2f6d",
+        "bun/BunDatabase.d.ts": "024c77b26350244f377641f50cbe2e64fbd1fed6a63ca41952e746b3bd43b3f0",
+        "index.d.ts": "3992423948cc168915ddfcc143da7df9aa06d570c0eea9ed4de133f6af11f121",
         "internal/BunSqliteClient.d.ts": "efde7a84ff0f2ef56e2b2fb0cdc21e4a30926905c6c9d81f6f83b4a7eced9315",
         "internal/CommitScope.d.ts": "83476dd7eff25e3fac8a55c5da40450a31faaf57de3c73d90b8457b76ba49052",
-        "internal/PostgresSelection.d.ts": "1980edb05a5b34162e42bf2bfd3892ce6df25fe91101be44f90ee88574d24bf2",
+        "internal/PostgresSelection.d.ts": "02552eb509474ece82f1097d2ef7890fbf1a40f7f33840a6ad873bd274223ea2",
         "internal/ReadOnly.d.ts": "8c0659230d5fca8df9f2f9756397c4aa8d2ad558688966e5ee502692861e09e9",
+        "internal/ReadTransaction.d.ts": "536969c7c6260ac332ac6c5d9d1a26b4883c8900f9de5ca518ec22417d2b854b",
         "internal/ReleasePolicy.d.ts": "44fcacb79125a8e4331465a9e65ac4363b4bc18d4371b9e607530afd12dc7a8b",
-        "internal/SqliteOpen.d.ts": "2893438a03c1b8bb80af2db0768fa5d7c23a8708a79bd6a92b3069ddaae1b7c5",
+        "internal/SqliteOpen.d.ts": "bac3d2c39e0cd395417638f74652ea91bfaecd8fc35652ec1c9b3f880c65a7b9",
+        "internal/UnsupportedDatabase.d.ts": "1f2f8205fc6e796619f60ec302e85af6b24ba095f888337e79834f36bf07eb56",
         "internal/WriteRetry.d.ts": "3811ac0f28704e810db6895eaf2e3b421311ad559f1252f4f06daa9be11ae5eb",
-        "node/NodeDatabase.d.ts": "de960bd2c3492d84d147f52d1630f31b51b51230b389f9cc28e7ac5341bc4304",
-        "postgres/PostgresDatabase.d.ts": "9879e3c99c0382074ac7554380251eaebaa4e70a17653d1f6071b19877f61e02",
-        "test/TestDatabase.d.ts": "1763e839ad65534ef27729e7205b4bd24ef216363393718fb568938edcdd0821"
+        "node/NodeDatabase.d.ts": "771fa8c5ea15a3c63afb8482dc195d8e0190e9f511e6f2aaaba339f1b84f0b69",
+        "postgres/PostgresDatabase.d.ts": "f3232ab1b0c9824c6078a745d428e22873e7dd7d0169b7d4623926a0223476f3",
+        "test/TestDatabase.d.ts": "f927b1d6cada3380eb6215ec523115a9c130fa770a365dfed0562d5a732bae0d"
       }
     },
     "@smthrs/engine": {
@@ -3598,15 +3604,15 @@
         "DeferredClockFold.d.ts": "60f7ee9d38d712e21e1b35f217786c58d3c94939fbd97965300fd5941a1bd904",
         "DisasterRecovery.d.ts": "bed744cf4cf459bfeb090f05d0fceb9fd90fbbe38798df0e816297c5a4c145da",
         "DurableEngineState.d.ts": "e7ac79f072267d44fbebc86926fdf6000d6c09ba33b91301d35edbf4ac1f14cb",
-        "EngineStore.d.ts": "789eb298043b957b065cb4faabb16ec5ded188e9a411c99ec39c0457603792ba",
-        "EngineStoreMetrics.d.ts": "25e4710636661098d1f7d10ccda4dd6c35237669be9472f2524d15c362526780",
+        "EngineStore.d.ts": "ae26d88844be37ddf50a25a687a3a6b213cf4a1df923e9b8191669a63b2f9e57",
+        "EngineStoreMetrics.d.ts": "1cc12287b041cdc95389e383feb878bb25772dd5891fe9b21ff45a7a917f2720",
         "Errors.d.ts": "9013130829b7f8df2e986e3b259c282797f3ce0b44c3bcf8f4de311815965d7b",
         "EventTypes.d.ts": "d6cc09404bc4e1afe2f014ee07eab7e83818bf7e5e7bb96bba5dd369604b8a23",
         "ExecutionFacts.d.ts": "5ad95f4903253ef399515d08021322b952b46c5436f914e7573fe2161aa488ab",
-        "ExecutionSnapshot.d.ts": "e01143d152065c61e8d3332a267c42b0086e630458a5f9c521b848627a61e024",
+        "ExecutionSnapshot.d.ts": "b9871ed11d4378f848e2b154444eedda19e818e1a30d5f19ecefe00d51ca15dc",
         "Inconsistency.d.ts": "a814c20feb73371c1478649e2fdfc27ab118a35155e0048ea58366fcd1b37274",
         "Migrations.d.ts": "36ca4c9e80cd6c2ccea1b0ab73e315a8d563ceabc6b879c96f106e45cf0a29a1",
-        "OwnerIdentity.d.ts": "ee9f0b56e9b7941a6222de05e1ef37b312d3b81490a1794b1fbe7884c1b7c4ec",
+        "OwnerIdentity.d.ts": "ddcabc87c9d8f9f14e738a6af9ee0eb68b73dd84ac14bc2c66108ee40b7aa083",
         "PlanInputStore.d.ts": "d55899b4cf879908128b11edafed4878a7bf6391aab219b2f0f1e67094d69d55",
         "PlanMergeStore.d.ts": "aaf972a755cb53c17c5dd9b1fa6769d43bfe480c3c16d6cc2e40c06aa47b0939",
         "PlanScheduler.d.ts": "4198db13b490bfae5094e8ee903c04fa9f18273ab2ed92ff9bef82f0a4b9fad2",
@@ -3618,11 +3624,11 @@
         "RunState.d.ts": "21a196cee07b0fe092a2e49b80f01d39c6752d9922dfcb5b6dbee92f5d4b20ca",
         "Selection.d.ts": "cf4b6a385a37f5b525e2d52a8dbf389beb28cf521a86b25b5724cbb908ea1b9b",
         "SelectionStore.d.ts": "8a7dc152dc5283674c5ab0e563e56d2962f2bab95fcf72b9200c90f0233f033e",
-        "StepBoundary.d.ts": "63538500019bc7f8bf13dd825813d56bcd3ac8a5bef5b6fcc0688080a350ae74",
+        "StepBoundary.d.ts": "29d2e39c9e60b970e638316599f8d083f0b99a283c215a92dc300d2d24eb8c16",
         "StepCacheFold.d.ts": "e749d2916d763c322d3b24dd07303777cb227cf5f43840505dc74833bd2d889b",
         "StepSandbox.d.ts": "c171694ce3f2df66b43db6e2ddb35cdda03e98cc0cfd15e7262c26aa44a82be1",
         "WakeBus.d.ts": "a18377e5b5381088a8e556813942d474dfa13cf60bda2847e8399653b1ec42f6",
-        "WorkspaceSandbox.d.ts": "f9c7685e19953ad13ddae7bae9b3442815897777019db1043355c48cc14bb886",
+        "WorkspaceSandbox.d.ts": "99a40ca9e612798ca33ef8809f6aea20b83f88a9812ccc8cb3f176532b6970fe",
         "index.d.ts": "dfa2e86336d51bcaf5dde5073f7290198d9a607a0f3057628cdbd65c00be1673",
         "internal/ActionPersistence.d.ts": "2c18538a13f5b4d8e275ccc813e2fd1a6058aa7543678090abbb3744590adec4",
         "internal/ArtifactRoots.d.ts": "cced4227ed6508feb13f451a2e3a7cc4361b8f3eec80030b81a9f64d43bc990e",
@@ -3636,11 +3642,11 @@
         "internal/CachePublication.d.ts": "87caed2d16a1b39a776049f74607f4a4bebbe5ec644603208c737e3025511b87",
         "internal/CallFacts.d.ts": "9de7220d0d30f910a2e13469200da71939418d1a023828db5407bb82c10e52db",
         "internal/CopiedRecord.d.ts": "657dc696b105038152dde07d28651a111ccb4c46708a6cd41d41c116419969a7",
-        "internal/DeferredPersistence.d.ts": "81adbf4d4893efe18788626832f6fb22a85f10fba50b01347cc56d84d80aa7cc",
+        "internal/DeferredPersistence.d.ts": "e8042f6470470a0216d65b3d45cce367332e388ce30f4ba0b9dbd15342587b0d",
         "internal/EffectRecords.d.ts": "0c3342af74ba1a09499ba662f8153e78211a0c9ef0676695979a4a07683d2861",
         "internal/EngineJj.d.ts": "a1282c325063c0612813b9674c29042e4b4711741275dd845f2791a2b98e39b4",
         "internal/EngineStateSchema.d.ts": "98208be6d57903ddc633dcf6a4077223dd16439ed02cd03305ac066b29d1a995",
-        "internal/ExecutionSnapshotRead.d.ts": "9ee437164f59b4f5b2a309ceed2e850ccf2514e2900cac21502601b432db5548",
+        "internal/ExecutionSnapshotRead.d.ts": "017ff11bf795cab2ef09626fd078c8a564833b02a5225b3341d0f2f1e0d33793",
         "internal/ExecutionSnapshotRelations.d.ts": "7ad9d70da13a0b78997e8b8530bb9b21713a59227babe189452b091bba1e3e2f",
         "internal/ExitEncoding.d.ts": "09509fbb87c4d305637f766356bb9817343afc12ea6933f430c6255b50890f01",
         "internal/FileBoundarySnapshot.d.ts": "33dd8df74e03c54d361abec5e259c0b4d2959e396c32ea30f187db4445c54e16",
@@ -3656,7 +3662,7 @@
         "internal/RetentionOps.d.ts": "898635a9deca11f44bee301d774770b7056fb11eef20dfe02ce65fca4fd7d574",
         "internal/RunCatalogOps.d.ts": "56bbb146d34481c36aac949735f9082db57feac1712acbda46e1eee2e66e8fa7",
         "internal/RunCoordinator.d.ts": "44ad2e54c4ccd2462227fd24eb530b3bc33664e951868aaf8f3da654139e666b",
-        "internal/RunDriver.d.ts": "09d8bdd0d5ded1e1196ecb2c837998ea05421807a2ebe75528c1bc761d455819",
+        "internal/RunDriver.d.ts": "61908f1664eb58e68c86fe8e3a46a645a905c52f06bee9fb0c4c87e13f9b0e29",
         "internal/RunLifecycle.d.ts": "90d432a715101a5ba7dd8e7862ccbbccf805e11cb7ff08811a656561c510d24e",
         "internal/RunListing.d.ts": "611d01b2684c9097b009dbeddac216856071ac2b8601b0820b4401f2e7dc622a",
         "internal/RunListingError.d.ts": "d305943204c937216478c4040cae8062b4bb3a1bbbc436a5807a4c473cc37a27",
@@ -3675,7 +3681,7 @@
         "migrations/0008_deferred_consumption.d.ts": "fbb3c65747395ba0f066d66bfc776d5a9d8aed05090eeef29ec758d6bcf78460",
         "migrations/0009_deferred_clock_facts.d.ts": "953ed1429dee4c2a3397bc0a5767837b936927a9e0a9cf67c4d0d0e8f5816943",
         "migrations/0010_pending_cancellation.d.ts": "c480bf88ef737046b6a1afd5343ccafc24a907d68cd94959fb0fae3dff961023",
-        "test/TestStores.d.ts": "484cc54eee9ab2bd203964c501f40d3ad792d0c0786ac3443c55ff3353fe07a5"
+        "test/TestStores.d.ts": "a589756ba4b028e08fc8716be28d5f24a9dfdfece06e46317647f496a546b3a9"
       }
     },
     "@smthrs/errors": {
@@ -4108,7 +4114,7 @@
         "Action/BoundaryMode.d.ts": "6210286ea0c2ee5118a149018733189cea3be6126794a2d24bb00ccea25fc389",
         "Action/CacheEnvironment.d.ts": "9b86af3dec373fffc52c283f0c1d8ac2141ddc93a88eda95aa5c528f66448d98",
         "Action/ConcurrentKeylessDispatch.d.ts": "8bfb042d6bbeab776f717acee6d73f00554055637ffe03d97adeed427041c212",
-        "Action/Context.d.ts": "267217c9d859a01de128311e55a362dffd78ccedad6bf263bd856c9705bb7cdf",
+        "Action/Context.d.ts": "3bac2df7d187f5c7548715801a709e2677cf78e52b1dc189d42ed209f1ba27b2",
         "Action/DuplicateImplementation.d.ts": "f0e7410f2efb9a43ef85bea99ec59e6e2d6a2b53270dc72ad711c890ed028ae8",
         "Action/FileBoundary.d.ts": "4bc9cd77922a6b4fd0d745d015bd12221870e97d07f7214f4575eb69d7be41c8",
         "Action/FileInput.d.ts": "dd42eb3aeb661fcefcb0a3f0bc099c7d743e991eb424745f84072729d88d0c38",
@@ -4161,18 +4167,19 @@
         "HumanTask.d.ts": "854f16f71aa4237109c75494466d961164b247c9fb31c637889b7bbafa436f89",
         "Interpreter.d.ts": "722f5133a6ec37df7bd70f289302c9fe82338a293a0e0c77ccdf0ea0a7da5c9f",
         "Poll.d.ts": "597f0397f800733a8d7c7227fa4474ba6af5a84cea2b0b572acbc6bc6a643ab3",
-        "RetryPolicy.d.ts": "2be6c0395fc2554a9f03d75389d2c11deb4373ee9225c78e0ac42c2d11276ac6",
+        "RetryPolicy.d.ts": "f67710b0d99eb75187676de15ea543ea266cf07e99ac34003a2ded76d6f9a22d",
         "Sleep.d.ts": "47945c4da7b8c712b20dca0a885ffebf9e47645a6a207bcdc4653c164730763c",
         "Stall.d.ts": "5580fb50f9c8931aa456b984f95adbbd8070c8731a7bdec1f0e75eca637cc282",
         "WaitFor.d.ts": "63b998f7f184e3ee0e8be226a171e05362f3c173bec0101902443549229430ed",
-        "index.d.ts": "ed19c0afdb35667cb84fd815e6260d3f6f1267d739cf4bd9fa0a387d5363e781",
+        "index.d.ts": "d69b3156e77716399417d81745a89e3a77134dd98037d4bd43a0baddf2359cde",
         "internal/BoundedJson.d.ts": "37e9d54eac85cd7f30bfb5d00f4ddfc4002d4fc805f6079784eefc22006da235",
         "internal/DeclarationSite.d.ts": "ad5c56325f04d86d6527c93d8d9009daf84e92926e99bcf4938f13e957621c24",
         "internal/Declarations.d.ts": "2e25308709e3346e141dafbf65fabaeecf861d992e14e08f9b3ceb96c4d5da48",
         "internal/ExecutionMiddleware.d.ts": "606e438ee888d0f1c07fe0985df53ec66ed5e767e0adc82a55f4765152479f1f",
         "internal/JsonSchemaSubset.d.ts": "9eada5e16cc7c1f87a7119477d53057e36c6f8f4bc913c36bb698a2f448c2d5e",
         "internal/OutcomeMarker.d.ts": "799655003780f0f378916ca3d6da4b2afe61b3b8848b4e6604067e2c7e13cc28",
-        "internal/RecordedPlan.d.ts": "97918be7a150e16874dc1e225bcfb43c4e74c5f29790917a5b522b2f1c3f9f70"
+        "internal/RecordedPlan.d.ts": "97918be7a150e16874dc1e225bcfb43c4e74c5f29790917a5b522b2f1c3f9f70",
+        "internal/SpanFailure.d.ts": "c321b723c6bcfaa6930b6a0aaca6d05acaf22eb64939f8f56c3c426220fdc77a"
       }
     },
     "@smthrs/flows": {
@@ -4190,26 +4197,6 @@
         },
         "./internal/*": null,
         "./*/index": null,
-        "./NodeRuntime": {
-          "import": {
-            "types": "./dist/esm/NodeRuntime.d.ts",
-            "default": "./dist/esm/NodeRuntime.js"
-          },
-          "require": {
-            "types": "./dist/cjs/NodeRuntime.d.ts",
-            "default": "./dist/cjs/NodeRuntime.js"
-          }
-        },
-        "./SandboxedFlow": {
-          "import": {
-            "types": "./dist/esm/SandboxedFlow.d.ts",
-            "default": "./dist/esm/SandboxedFlow.js"
-          },
-          "require": {
-            "types": "./dist/cjs/SandboxedFlow.d.ts",
-            "default": "./dist/cjs/SandboxedFlow.js"
-          }
-        },
         "./index": {
           "import": {
             "types": "./dist/esm/index.d.ts",
@@ -4230,139 +4217,14 @@
             "default": "./dist/cjs/Runtime.js"
           }
         },
-        "./BunRuntime": {
-          "import": {
-            "types": "./dist/esm/BunRuntime.d.ts",
-            "default": "./dist/esm/BunRuntime.js"
-          },
-          "require": {
-            "types": "./dist/cjs/BunRuntime.d.ts",
-            "default": "./dist/cjs/BunRuntime.js"
-          }
-        },
-        "./test/TestNodeRuntime": {
-          "import": {
-            "types": "./dist/esm/test/TestNodeRuntime.d.ts",
-            "default": "./dist/esm/test/TestNodeRuntime.js"
-          },
-          "require": {
-            "types": "./dist/cjs/test/TestNodeRuntime.d.ts",
-            "default": "./dist/cjs/test/TestNodeRuntime.js"
-          }
-        }
+        "./NodeRuntime": null,
+        "./SandboxedFlow": null
       },
       "declarations": {
-        "BunRuntime.d.ts": "92c7d74cc6316ff3ae2b5b1ef70955aeba6e2a8ae76d4d20aed6b88b7136439b",
-        "NodeRuntime.d.ts": "ec027b1495ccdc16f432e68e1944a1f9ef8e1c84f2eba9a68457a5ba32db8d5c",
-        "Runtime.d.ts": "c6b9537bcb025801f6e8f0826fa3e3b98aa9ce2ab5f44101e15dcc878e40983f",
-        "SandboxedFlow.d.ts": "80e395bd86060201feb59e3ab3416db39f56a7f436cdd8cf2d03026c4f6538e0",
-        "index.d.ts": "9a5eedb60b4b07a63b0995ad2e68dc5aad2a62c102ac4a5d37470277bbe0c1b4",
-        "internal/NativeRuntime.d.ts": "a3c276d73131a87ddbfee4f1f7e4c2444980425f23edc3688438761e3a835475",
-        "internal/NativeRuntimeApi.d.ts": "0b48116d2b7cafcf012fe76a78205fb74d4b55951d622c014f437a19cb3d0d73",
-        "internal/RegistryArgs.d.ts": "7bada62d3265802b385a52ca2b1939f9be851a16795e253850c5e129917f6a81",
-        "internal/RuntimeOptions.d.ts": "3d8ee88a37184cc13e95e0162c08d2508deec5708b9fb20b4591e4af52945719",
-        "internal/SandboxedFlowGuest.d.ts": "cdebef8651ac2a78c13e02d3c04edab43ba98a68cb90ce4562cd2b587ccfa92e",
-        "test/TestNodeRuntime.d.ts": "fc7ae5bf510af3eb7b1eb655e24eb1ff0d2aa6b106dfd31f5bc1b177accf5f65",
-        "../vendor/cjs/node-shared/NodeAddressResolver.d.ts": "51107011d7c3e68ed2635b16bb93174fdfd4c519825303855322bb18bdc61674",
-        "../vendor/cjs/node-shared/NodeChildProcessSpawner.d.ts": "2b1b1c5b8a38eb94a53c5945a6358be20cc10b724cd994085f60e244a020333f",
-        "../vendor/cjs/node-shared/NodeClusterSocket.d.ts": "a715e1bd05f92ebba252eef2ca02463fc3448098573db685f621fbf2a9cc8f8e",
-        "../vendor/cjs/node-shared/NodeCrypto.d.ts": "669864e1180ae76636e24dda060cde14440b6dafa7f30db2a5378b048b21f862",
-        "../vendor/cjs/node-shared/NodeDatagramSocket.d.ts": "a3a9d2c42b14ed2a84a1c11094c47cc4740131541918f7a3c17d9e2c956704a4",
-        "../vendor/cjs/node-shared/NodeDns.d.ts": "7808e01b979e2dea0e98f21f135e2ab35d5f860d3202964c80a3d867c5a50f5e",
-        "../vendor/cjs/node-shared/NodeFileSystem.d.ts": "937ebf5c0184197aab7a8eb00ea4bc3653630b1a60e2f8b0b7c371b7cb07110a",
-        "../vendor/cjs/node-shared/NodeHttpCompression.d.ts": "cc8a54096224c95ebb49b070177b8c1b946207b40b15b562d64022ffeeec2b28",
-        "../vendor/cjs/node-shared/NodePath.d.ts": "3729527b420d73f80fb0a6b269ed66d624a03ae69366826e772f4c9a5da87cb8",
-        "../vendor/cjs/node-shared/NodeRuntime.d.ts": "53c7ade9519934dc78799067b06ad341a1ba01f96efb61b70611ff357259cbd3",
-        "../vendor/cjs/node-shared/NodeSink.d.ts": "734a72a47b7bd438d18f4b2bd985659d3d61ec95271af0a08a96331fd7f38ded",
-        "../vendor/cjs/node-shared/NodeSocket.d.ts": "3c29dd11afa70c5794c4158918fb3418ff922125e69237d97840226f926e8391",
-        "../vendor/cjs/node-shared/NodeSocketServer.d.ts": "5276333c13b7cf54b9cb3cc9bcc70f290adfcd9d8a1d39a44348046fa6661f2a",
-        "../vendor/cjs/node-shared/NodeStdio.d.ts": "8cf2e0dfca15bad45bfb2119e62430ecbfb7b0b2a0793a19d0383863b70a4717",
-        "../vendor/cjs/node-shared/NodeStream.d.ts": "832fffaa20a38660aec54575500d71e9512209294105fd4b838db9e2b551f10b",
-        "../vendor/cjs/node-shared/NodeTerminal.d.ts": "c88f372d1f5b48a86b557f831784354b62d6b6966316eb570d1eedc1ec8fbc23",
-        "../vendor/cjs/node-shared/index.d.ts": "632ba4f9d933e995864ec9d8d9dc9647e369218c305bb24cee0dd13b6f592045",
-        "../vendor/cjs/node-shared/internal/nodeChildProcessSpawner.d.ts": "48831978c52f118dc9cab32845b0dbbb29780297db2f7def0f7e8a2f26a912c6",
-        "../vendor/cjs/node-shared/internal/utils.d.ts": "2e29cd9a98755c46896f7a2d56524db2d6d96b248e36db46de14c30bf47c8d05",
-        "../vendor/cjs/node/NodeAddressResolver.d.ts": "64385c8188f4c5b44445ec5b4dac44f51c17520da8c6fac5aac3c872269ccc31",
-        "../vendor/cjs/node/NodeChildProcessSpawner.d.ts": "eace872bbb7889fcf37b72e78f0da688a5df73d4d69f90062b1443be285f552f",
-        "../vendor/cjs/node/NodeClusterHttp.d.ts": "dbcf25123583ba2f6c0954255a97c6a21fc357ac59a7028f6c6a47c7b386c636",
-        "../vendor/cjs/node/NodeClusterSocket.d.ts": "835fd5c6a8f558049a43d78ec156b5e84814078d660349f4ad1ff86b40edf132",
-        "../vendor/cjs/node/NodeCrypto.d.ts": "2497460c65035e4bb770408879a293ccba362bcc621a93678bd9c097a9e03a78",
-        "../vendor/cjs/node/NodeDatagramSocket.d.ts": "3ce20ba50c74c6a700f2e938b625a40639b74724f491ab595b48ed43fa768d06",
-        "../vendor/cjs/node/NodeDns.d.ts": "581c5f7a6ef866c8556bafa5e584127f2ae7d2305fb05d3f4ecd0c41b5835977",
-        "../vendor/cjs/node/NodeFileSystem.d.ts": "1c0ea4d87c030a5cdc1d33b0b74623c44b3871dad0e0fdcf0cc4b0bd63fc9ba6",
-        "../vendor/cjs/node/NodeHttpClient.d.ts": "6a7c318e56ebf148e79e69b2c2eff35fea72ab78f70f8f9735bce4e01476d90e",
-        "../vendor/cjs/node/NodeHttpIncomingMessage.d.ts": "6b036c57e12c9702cd03d770a18cb412278146ea26452060eadd59d315b6cee6",
-        "../vendor/cjs/node/NodeHttpPlatform.d.ts": "7d65764034d3b590fee3b85db878f87dbebe9a9b1452d789202945c0c7244da1",
-        "../vendor/cjs/node/NodeHttpServer.d.ts": "9f8c90000711c14a9c0be76b0b7ff8cb62e0312986eac4ba78033deb5f2dbd49",
-        "../vendor/cjs/node/NodeHttpServerRequest.d.ts": "1be876caa05ea557608918ddbd519abbf2600b586fad87f48f134e4cb2ce6874",
-        "../vendor/cjs/node/NodeMultipart.d.ts": "e856b458bbfcaa01f53c56647dae62089e4ba6427d69e50d5bbf877672b32d3c",
-        "../vendor/cjs/node/NodeMultipartParser.d.ts": "cd5d643324709898d8c53d2aa3f00359e48a72267a2bdce2a45696cd32fd4d77",
-        "../vendor/cjs/node/NodePath.d.ts": "0ac08026058901da0014fd9f33f56d59e4a4987f8c660a1149515ed04475ce3c",
-        "../vendor/cjs/node/NodeRedis.d.ts": "2f271b88510e1f64bf833b4bf7de766acf61fcd3e747dec4f977df556cfa82f4",
-        "../vendor/cjs/node/NodeRuntime.d.ts": "c8f19ba8303dd31c11e042e331f472f1754adeeb11002eb9ebc9cc312d92cfa9",
-        "../vendor/cjs/node/NodeServices.d.ts": "8679c1f885ab3ed7563528752a04276a84c9216b57024f00c2fc487281021342",
-        "../vendor/cjs/node/NodeSink.d.ts": "98fa819399427010811f9b301e51856f97204428a997d3048899ea55f65a3a33",
-        "../vendor/cjs/node/NodeSocket.d.ts": "fc284a9c6e687d351ea0a8dfdb14d4a0edcd959f7cdfda53c6a7e817e92d6556",
-        "../vendor/cjs/node/NodeSocketServer.d.ts": "8ca5d0d312b92f542cb81cf1c3e7824d09ed124e147a7e7b499aa38fce37d048",
-        "../vendor/cjs/node/NodeStdio.d.ts": "ba85a6db70ad902fa351dec9fd0540337fe923c166164b24a4950bfea0902773",
-        "../vendor/cjs/node/NodeStream.d.ts": "d5e098bf5a9a5f0f29c6cf184521e607005602d08b84f2e7f8fd42a19cf964d6",
-        "../vendor/cjs/node/NodeTerminal.d.ts": "7ffba0d2c597da3c51bd0cdcc118bc198e31b7f76abf240793b440a6dae0875c",
-        "../vendor/cjs/node/NodeWorker.d.ts": "6083875a472089f4e12d2bd51f0b27fcb4f9bcab8eef8d736448dd10a422e3ee",
-        "../vendor/cjs/node/NodeWorkerRunner.d.ts": "7554468e38949da48f36739527128f87e1426cc9d9365b83e2a4bb670b4f4a47",
-        "../vendor/cjs/node/Undici.d.ts": "d724fd44bc2502165cfa78ac7f85fd04a95f0284928fb24cd95b3d9fc7fb3cef",
-        "../vendor/cjs/node/index.d.ts": "588547abe2a4be1529282897bfec513bfd0591037eb61a722802ba7b6605fb72",
-        "../vendor/cjs/platform-node-shared.d.ts": "89a3c7a635e5fd392b5478e4fb276f6fed25843a8b2d07e7c4e05d1972434061",
-        "../vendor/cjs/platform-node.d.ts": "b7f00c33b61f3b36284e5bbbb41faa90004057c33538aaffb9f688b81ddbfbc7",
-        "../vendor/node-shared/NodeAddressResolver.d.ts": "51107011d7c3e68ed2635b16bb93174fdfd4c519825303855322bb18bdc61674",
-        "../vendor/node-shared/NodeChildProcessSpawner.d.ts": "2b1b1c5b8a38eb94a53c5945a6358be20cc10b724cd994085f60e244a020333f",
-        "../vendor/node-shared/NodeClusterSocket.d.ts": "a715e1bd05f92ebba252eef2ca02463fc3448098573db685f621fbf2a9cc8f8e",
-        "../vendor/node-shared/NodeCrypto.d.ts": "669864e1180ae76636e24dda060cde14440b6dafa7f30db2a5378b048b21f862",
-        "../vendor/node-shared/NodeDatagramSocket.d.ts": "a3a9d2c42b14ed2a84a1c11094c47cc4740131541918f7a3c17d9e2c956704a4",
-        "../vendor/node-shared/NodeDns.d.ts": "7808e01b979e2dea0e98f21f135e2ab35d5f860d3202964c80a3d867c5a50f5e",
-        "../vendor/node-shared/NodeFileSystem.d.ts": "937ebf5c0184197aab7a8eb00ea4bc3653630b1a60e2f8b0b7c371b7cb07110a",
-        "../vendor/node-shared/NodeHttpCompression.d.ts": "cc8a54096224c95ebb49b070177b8c1b946207b40b15b562d64022ffeeec2b28",
-        "../vendor/node-shared/NodePath.d.ts": "3729527b420d73f80fb0a6b269ed66d624a03ae69366826e772f4c9a5da87cb8",
-        "../vendor/node-shared/NodeRuntime.d.ts": "53c7ade9519934dc78799067b06ad341a1ba01f96efb61b70611ff357259cbd3",
-        "../vendor/node-shared/NodeSink.d.ts": "734a72a47b7bd438d18f4b2bd985659d3d61ec95271af0a08a96331fd7f38ded",
-        "../vendor/node-shared/NodeSocket.d.ts": "556cb2ca496504beede979212eb7369f15ac6f799b9b113f00b225f5d41bc3c4",
-        "../vendor/node-shared/NodeSocketServer.d.ts": "5276333c13b7cf54b9cb3cc9bcc70f290adfcd9d8a1d39a44348046fa6661f2a",
-        "../vendor/node-shared/NodeStdio.d.ts": "8cf2e0dfca15bad45bfb2119e62430ecbfb7b0b2a0793a19d0383863b70a4717",
-        "../vendor/node-shared/NodeStream.d.ts": "832fffaa20a38660aec54575500d71e9512209294105fd4b838db9e2b551f10b",
-        "../vendor/node-shared/NodeTerminal.d.ts": "c88f372d1f5b48a86b557f831784354b62d6b6966316eb570d1eedc1ec8fbc23",
-        "../vendor/node-shared/index.d.ts": "632ba4f9d933e995864ec9d8d9dc9647e369218c305bb24cee0dd13b6f592045",
-        "../vendor/node-shared/internal/nodeChildProcessSpawner.d.ts": "48831978c52f118dc9cab32845b0dbbb29780297db2f7def0f7e8a2f26a912c6",
-        "../vendor/node-shared/internal/utils.d.ts": "2e29cd9a98755c46896f7a2d56524db2d6d96b248e36db46de14c30bf47c8d05",
-        "../vendor/node/NodeAddressResolver.d.ts": "64385c8188f4c5b44445ec5b4dac44f51c17520da8c6fac5aac3c872269ccc31",
-        "../vendor/node/NodeChildProcessSpawner.d.ts": "eace872bbb7889fcf37b72e78f0da688a5df73d4d69f90062b1443be285f552f",
-        "../vendor/node/NodeClusterHttp.d.ts": "dbcf25123583ba2f6c0954255a97c6a21fc357ac59a7028f6c6a47c7b386c636",
-        "../vendor/node/NodeClusterSocket.d.ts": "835fd5c6a8f558049a43d78ec156b5e84814078d660349f4ad1ff86b40edf132",
-        "../vendor/node/NodeCrypto.d.ts": "2497460c65035e4bb770408879a293ccba362bcc621a93678bd9c097a9e03a78",
-        "../vendor/node/NodeDatagramSocket.d.ts": "3ce20ba50c74c6a700f2e938b625a40639b74724f491ab595b48ed43fa768d06",
-        "../vendor/node/NodeDns.d.ts": "581c5f7a6ef866c8556bafa5e584127f2ae7d2305fb05d3f4ecd0c41b5835977",
-        "../vendor/node/NodeFileSystem.d.ts": "1c0ea4d87c030a5cdc1d33b0b74623c44b3871dad0e0fdcf0cc4b0bd63fc9ba6",
-        "../vendor/node/NodeHttpClient.d.ts": "6a7c318e56ebf148e79e69b2c2eff35fea72ab78f70f8f9735bce4e01476d90e",
-        "../vendor/node/NodeHttpIncomingMessage.d.ts": "6b036c57e12c9702cd03d770a18cb412278146ea26452060eadd59d315b6cee6",
-        "../vendor/node/NodeHttpPlatform.d.ts": "7d65764034d3b590fee3b85db878f87dbebe9a9b1452d789202945c0c7244da1",
-        "../vendor/node/NodeHttpServer.d.ts": "9f8c90000711c14a9c0be76b0b7ff8cb62e0312986eac4ba78033deb5f2dbd49",
-        "../vendor/node/NodeHttpServerRequest.d.ts": "1be876caa05ea557608918ddbd519abbf2600b586fad87f48f134e4cb2ce6874",
-        "../vendor/node/NodeMultipart.d.ts": "e856b458bbfcaa01f53c56647dae62089e4ba6427d69e50d5bbf877672b32d3c",
-        "../vendor/node/NodeMultipartParser.d.ts": "cd5d643324709898d8c53d2aa3f00359e48a72267a2bdce2a45696cd32fd4d77",
-        "../vendor/node/NodePath.d.ts": "0ac08026058901da0014fd9f33f56d59e4a4987f8c660a1149515ed04475ce3c",
-        "../vendor/node/NodeRedis.d.ts": "2f271b88510e1f64bf833b4bf7de766acf61fcd3e747dec4f977df556cfa82f4",
-        "../vendor/node/NodeRuntime.d.ts": "c8f19ba8303dd31c11e042e331f472f1754adeeb11002eb9ebc9cc312d92cfa9",
-        "../vendor/node/NodeServices.d.ts": "8679c1f885ab3ed7563528752a04276a84c9216b57024f00c2fc487281021342",
-        "../vendor/node/NodeSink.d.ts": "98fa819399427010811f9b301e51856f97204428a997d3048899ea55f65a3a33",
-        "../vendor/node/NodeSocket.d.ts": "fc284a9c6e687d351ea0a8dfdb14d4a0edcd959f7cdfda53c6a7e817e92d6556",
-        "../vendor/node/NodeSocketServer.d.ts": "8ca5d0d312b92f542cb81cf1c3e7824d09ed124e147a7e7b499aa38fce37d048",
-        "../vendor/node/NodeStdio.d.ts": "ba85a6db70ad902fa351dec9fd0540337fe923c166164b24a4950bfea0902773",
-        "../vendor/node/NodeStream.d.ts": "d5e098bf5a9a5f0f29c6cf184521e607005602d08b84f2e7f8fd42a19cf964d6",
-        "../vendor/node/NodeTerminal.d.ts": "7ffba0d2c597da3c51bd0cdcc118bc198e31b7f76abf240793b440a6dae0875c",
-        "../vendor/node/NodeWorker.d.ts": "6083875a472089f4e12d2bd51f0b27fcb4f9bcab8eef8d736448dd10a422e3ee",
-        "../vendor/node/NodeWorkerRunner.d.ts": "7554468e38949da48f36739527128f87e1426cc9d9365b83e2a4bb670b4f4a47",
-        "../vendor/node/Undici.d.ts": "d724fd44bc2502165cfa78ac7f85fd04a95f0284928fb24cd95b3d9fc7fb3cef",
-        "../vendor/node/index.d.ts": "588547abe2a4be1529282897bfec513bfd0591037eb61a722802ba7b6605fb72",
-        "../vendor/platform-node-shared.d.ts": "89a3c7a635e5fd392b5478e4fb276f6fed25843a8b2d07e7c4e05d1972434061",
-        "../vendor/platform-node.d.ts": "b7f00c33b61f3b36284e5bbbb41faa90004057c33538aaffb9f688b81ddbfbc7"
+        "Runtime.d.ts": "9fafcd9c15ac03173a1af050e4d2c7fff65462eef73bbe6fa9938466822a4024",
+        "index.d.ts": "f0bfbe4cb44dd04b603ad4297957005a0390ca9c62d9bd6b04833fa1c2a58074",
+        "internal/RegistryArgs.d.ts": "50a11574418857393368200faca06dfd3f6cf8f85a91faa3cfbe17f34ba1c31d",
+        "internal/RuntimeOptions.d.ts": "d0ecc2565a26a0aa96d7ad34509c64c3af9f1b60cda4af2b5a6940521b40ce5f"
       }
     },
     "@smthrs/gateway": {
@@ -5083,25 +4945,27 @@
       "declarations": {
         "AgentEvent.d.ts": "7d727b11e98b1d435dc9131ea8f2d8edbaccbf83f8af2a43667c61a25263ea67",
         "CallLedger.d.ts": "f30d3c944bc13658a0637aba81e37630741baf0e1ce24455c0a8243d274220eb",
-        "Cell.d.ts": "9516d6c67aa3e1f81b73b9a0e6b28869ce0d3d64781bb593da48c2dbe3ff941a",
+        "Cell.d.ts": "2ccf7598f4f42150298b301821d47a372050a773ecbf042fb364802d40c87912",
         "CellCalls.d.ts": "07f58160539baf6a0b6f87d716e2a54935f82bed0d3064c97ba17e19afe69468",
         "CellHistory.d.ts": "8735dbbe8ec73daa5cf3855c6d4393bec6fb901ab7f465f42ddd5e5293e197a0",
-        "CellTurn.d.ts": "f867bef920896f116cfa63c9604256c5e86ceed36304e86d597bedc6d0aaf20f",
+        "CellTurn.d.ts": "912ad9d73314333ec2a48e0f5db37a4ce64f447804f4dd52787970b9df74be0e",
         "CellValidation.d.ts": "b9f899b6a62c3dd032969c5c05e6f7c8167cca5836cc3750ba300863c22fe269",
         "Compaction.d.ts": "6497bbacc9f995b4fe5c4f165581c6e483469843484a1ede025b2a429811b96f",
         "CompletionClaim.d.ts": "a27c2249150d5ab3ad927cc485295ccc665e625debb565f8b23be3ddc264301f",
         "ContextWindow.d.ts": "93b2e854bec463c0a6c75e5f7563ac65f6b3c940d674ebf9bb1d1d128e411d6c",
+        "DoneText.d.ts": "983aa0949b7df4635d28865646de48942b89b6395940b45c9cc0c3eb8977ac80",
         "EngineLike.d.ts": "1525342940bbcb5c72423b2a4e5eb1f66d5d3281d0919192c31403a17bb6488e",
         "ExternalTranscript.d.ts": "cdc8a0cf817641e7ef9accc5bbabb4e51d6287605adab24a5bf8bc77e3191659",
         "FailedCall.d.ts": "706c4e6c7bf8e33afeb30e28392a8f46ef7278689c455bd5b303bdcfacb11b29",
-        "FlowBinding.d.ts": "d87be84066fe42b870e341f2415dff3d96201d69d457403d60452155f4ef4d31",
+        "FlowBinding.d.ts": "ce10449925f8d5bde3b53a9825aa503ef98b20940179697a55eae3983c7ba98c",
         "HarnessError.d.ts": "7b589521353d9b3e2f0685df187303c8f19e80a864cbcc2cfd412411801deacb",
         "Judgement.d.ts": "f084bc0feec5eb5f688fec6773a11868735ab300618c42fe92cb07e95daffee7",
         "Monitor.d.ts": "d794ec9a44627457217965b1fbfa956c40065edf16ee2c5fdc14be672cd39780",
         "NarrowedCheck.d.ts": "43ffed5154c0d501888430f2c0afcc2c5ca6b688d0f328ef022201a57ea487f5",
         "Notifications.d.ts": "f5802f08a4826e9471f2761472f31523135371ad757cd5f8db40905904790b85",
         "Plan.d.ts": "882a2175ab9c42157624aff3f997654921bcd49bb120635aeac41d993434bff5",
-        "QuickJSSandbox.d.ts": "868ad12e90bc0ec6a20578639da8f4c8de5d2900f28e2abe1f5a914b004d36b5",
+        "QuickJSSandbox.d.ts": "47b33589ef4a1185ba0ba00acd381888f8134ddf632f03f38246aecb3fdc56f7",
+        "QuickJSVariant.d.ts": "dddf0cea8a7189e6b873868c9894172b7982c622bbcb9a7146eabb0843c7d341",
         "Relevance.d.ts": "7b3484fc96bf34d93876549a41786836bc8fd541b3be6300aabb12be57ac3df7",
         "Sandbox.d.ts": "107806a03c17a68030ec2627036bef5895eb67bd41f7aa4f3b410078efe70faa",
         "Steering.d.ts": "5f7ee0599719c1782c2ef0ea119ca671bfbd67cbf2f813ccff0f999e32230b1a",
@@ -5115,14 +4979,15 @@
         "UnresolvedFailure.d.ts": "64538246e2ac2e6782a8fb506976ca35ff44be8ead0c12a6240b8028e63e7f23",
         "VacuousVerification.d.ts": "21caf72ca8546a20a013979aaff3eb19efb37cd7100475e754f769bfd8165b31",
         "VariablesPanel.d.ts": "2566cbfeeb5d8eb424a9a532efbc44841bbc66fbb7e67a6027b351b868d865ee",
-        "index.d.ts": "d479dcfd8062c2d4ea910e86f82a5c3687e674438e4c60a0dea1845d65aaaecd",
+        "index.d.ts": "f44d9aaefab3b06e6b3edbef5e5bd9505c3f3243a04b33deccf143cd907a06cd",
         "internal/bytes.d.ts": "c8bc2e02dcff1d5782f3260313dba216a733085b2d705db52efc5dfa327ecc0a",
-        "internal/cellPrompt.d.ts": "ee1e1e4f7e6cdaf6383e31dc3f43544a0312442eda9aa57a53e52343cd2571bc",
+        "internal/cellPrompt.d.ts": "9ba6c34a1d3f834a38deb6a9e43c61856b52da208d888f8d0a5f4912fc6bec6b",
         "internal/compactable.d.ts": "5cd6a239000459f6a6feff83d86323f019681ee462ac38fecf45fc8f9ef35ca6",
         "internal/compactionMarks.d.ts": "a1ab703c13036789a22944c15c57beaa4de50b8e1c35484e6e20c4e7b2003da5",
         "internal/decidedBy.d.ts": "3b054d42ef8da6dfd3ebcc1bce8fd9055f139946e2f5bdee722b8e06521f3de2",
         "internal/demandText.d.ts": "68d28a52e27c965585898a3d4ceb1b156a16a30fe5e53eac7d6c14279ab3c39c",
         "internal/elide.d.ts": "62d98d88e8fad9f39f2661648d9f0366d6f538b9b500d3d20669a9faa6d1a10d",
+        "internal/fence.d.ts": "e6b0a2b08994464ac390b3d558960bb4c77afa29323c19f8c4a48ad2edbfb287",
         "internal/frame.d.ts": "df14a9a77420115e03b49f4109f470cf98f470f05da2854c7f2afc32af1dc2e0",
         "internal/nonNegativeSafeInt.d.ts": "66ac0174befd8b59ea18c637754be6a435c0b284c35f7bce62d427911b99e211",
         "internal/paidUsage.d.ts": "1bbb9627e1b039ef01d37408bb2b717b6d521a44c54e03a28cf549a4ad526ff2",
@@ -5471,13 +5336,14 @@
         "./telegram/TelegramClient": null
       },
       "declarations": {
-        "Environment.d.ts": "d9b3d9b3405780ad99c172bea573bcb6b3dcd9182337bae68038955d8b36147f",
+        "Environment.d.ts": "e7b1524437fb079abd4c03a42fe072e7a4213da804b1e6079e7d692eaffa2095",
         "core.d.ts": "2dde1af076c5bd953e5497ea775f58f8e667f35b41ad22f433e1f0d50f3b372f",
         "core/AccessToken.d.ts": "cbc05ec08db89bcff6152975e2440dfbaed311ff53a118ecdd4c4fa0ab53ffe4",
-        "core/ActionFailure.d.ts": "b6636d17d81a0cb22f7781823aa00b7574c0147d059274dabdc031f0cfab907e",
+        "core/ActionFailure.d.ts": "7f17a8de294b997cbcc057bbf51f1d7511df3391e5cc0856da5e6629433cb192",
         "core/AuthorizationUrl.d.ts": "aacba72e2069a250d743ef99c05f1a99df9c5fbb0d35fa01d53787973aad1541",
-        "core/Channel.d.ts": "3b926603e390870ac9838ce07f6c66aba21397ce821e23ce1995f0f929c3b241",
+        "core/Channel.d.ts": "b1273b9fe9a6c89918ef4c68b075a500214aea90a348ce0252b4a4856816314b",
         "core/Connection.d.ts": "4975d7b531e6b9585533464abf2583e01af72beecb12bf66871da50de52dd9c3",
+        "core/CredentialHttp.d.ts": "20c937f7f6f105e718bbbbe677330f34e7bdf90cfa0fcf59a24e0689ae93f6df",
         "core/CursorStore.d.ts": "92d65e26af308a2d89c5ca2ad6b51fd872e2d6b66a20c1783288f1cb43d96876",
         "core/ExternalEvent.d.ts": "f2f5cb6e5f71b985ebc5ca62b1dcbf78b56cb5fe1f932a071329e268b76d442f",
         "core/IntegrationCursorMigration.d.ts": "c3b668232ab7184858059193ad810f8853968a427e9f7692ea38d2c74a152522",
@@ -5486,25 +5352,25 @@
         "core/IssueSync.d.ts": "7b85b4e88535a613e6329b1350d42bd2518bad628e82d4f2989d4e9f8f38959a",
         "core/JsonPath.d.ts": "92e932e23b688601d974c31adeca91ffef74d2ba5975bafcd61600b40ca8cb21",
         "core/Migrations.d.ts": "971baa70d314a26014bbebad5aa1c75a8ce66015b5d8a38e3a6a7c384bafdc29",
-        "core/OAuthToken.d.ts": "78ce9a23649485bf3d054edfad58577003b0c63ae1e7e6044aab8af242f86658",
-        "core/Pkce.d.ts": "8fa3e65c38b3c16948cb0b044273ca82384b884d0002f20b884ef58bb85b9106",
+        "core/OAuthToken.d.ts": "f01795011e1215ba56e5f7b4d252e469a5d0597e6c39334caf9cca5da38db385",
+        "core/Pkce.d.ts": "ec200d709bc3a8462fc696b8fd4a059390c390e2920f7127bd73ec573f6bdd38",
         "core/Redact.d.ts": "b8c113565c754333bb9860f06f4f3bfc1ca3e0ffa9e3655ce469bdbc33493929",
         "core/RedactedError.d.ts": "02a46161b3f0574f9e5636288e166bd4e957eb38397ce9835bee6b3ceeb286fd",
         "core/SignalName.d.ts": "2708a1ffc4d5c2934da8c455e9a5d35932184b428bca86fe14dedececa893611",
-        "core/Signature.d.ts": "a9eaddca48b14483bb8f0713e350cdc607d46a6a1b2bb4077ba4f0462cc02a8f",
+        "core/Signature.d.ts": "28c4c65ed5aa4494a75b57b47015bd66cb63827842f942440a6bcf31ba485477",
         "core/Source.d.ts": "81dae56457cfc73d68d22b7504352fa7ed9e835d13c178c84c7b9f67283948aa",
         "core/SourceRecord.d.ts": "d2301093f41d55f07d61d6f1aab7579f7542d979d0e5bd32c5f90de465ba11cf",
         "core/SourceStore.d.ts": "4bf85d28b8d6181db8a1b801e182609fbe68a61e118335b7ca9ccee8f2f418fc",
         "core/Sync.d.ts": "0cd6a856250d6478eabbcfbc8f91b5369c2f800071c1b945307130190bff6630",
         "github.d.ts": "b87d3463f5f53991888f91753f9d6a11dd2afadddb678cd1f75eaa77b34e1457",
-        "github/Actions.d.ts": "fea2af07e9512be49bcfeed29db0d50a8e1e4bd9955c2cdd851cfbf29638f76c",
-        "github/Config.d.ts": "9fc3a02e3934f76ee2d4a50115f687d3571bd55aa3113731937752d25061cc54",
-        "github/GitHubClient.d.ts": "590a85595d284b9db011a886ac925658897deef52e94ee539b9a5cb911f49b2f",
+        "github/Actions.d.ts": "1d7b7fc9712029d09438bdcf3f3ae1e149fededd7f2b1fa8ab7ba2c7eb22ac90",
+        "github/Config.d.ts": "9c6e1ee2125619d5f7053dd14df6a4f83664e47296acf4bd4709ef52bd659c07",
+        "github/GitHubClient.d.ts": "1bd2546f49bf1215bdbaa93fac4b0e191fbd60045685f8c5cf336da7e1ab3688",
         "github/Payload.d.ts": "602cf1be551738a46acc43500691f32fa761ce3cb1f7ef4ef69580aa4bc6e4ab",
-        "github/Proxy.d.ts": "3ca145b8f4b9aa01aecead5e38ce6ae33741d87344589098c805d866304f8c68",
+        "github/Proxy.d.ts": "cf58c2d7903d3b48ada46725e889e194e180f56024cac6464a0ca0737f09e02b",
         "github/RateLimit.d.ts": "eaefb20d5172e5d4936ac9f5afd4b1ca5e0eb026a6fd6c99b24def33f09e1141",
         "github/Repository.d.ts": "82856ead138dde7f8bfa08c830ba51628475b4923f37f2ccab14afbb88994f18",
-        "github/Sync.d.ts": "9fdbeeed797ba97b28ed49de8db97020867c7a6f6d3f8e86ea43386edd69d176",
+        "github/Sync.d.ts": "935f53faf6566ebe610f2549910b67f8c4a6b901bfee48e229905644176abf8b",
         "github/internal/rateBudget.d.ts": "3f6b65e23340ca14c7b82b052e4a16d344c8bec22e29e66130189a9fc908d0f3",
         "index.d.ts": "46b4b1a845909d12af8c14c320b9ece60243f412003a6573df2778c608d5d9b7"
       }
@@ -5607,7 +5473,7 @@
         }
       },
       "declarations": {
-        "Jj.d.ts": "bdec10b2ae798c616b778c6a84b4d961e846a6e7d4a76da3ea3507ed159a2e86",
+        "Jj.d.ts": "ae372187efaee22b0413a31983f4214410bd11d8b897dc2622eaa7cb4402e771",
         "browser/BrowserJj.d.ts": "0247ef3e7a2890b1a8aaf3799699dcc0af5294eac5994fd8c088a9f0e176c0d9",
         "browser/WasiFs.d.ts": "c5c302188dca18d9d88ef8161e162fed31e7ae8d272e23d177b338e3dbd2b65f",
         "browser/WasiPreview1.d.ts": "d9efb5f7ec2935a652d7e56099d278adf6bae3a77d817ca5905587f6f0b72d59",
@@ -5615,7 +5481,7 @@
         "index.d.ts": "707452f8487af3e43e73d307c94bbf91b7d73b1329bbfc1b283c72bf440fcee4",
         "internal/JjInternalFault.d.ts": "903459d8f6b1598a755301fa2b52666880b1068dd67189b24dba911c8c2c8820",
         "internal/gitPatchPaths.d.ts": "4857ce94a898a24b9f6128fc024b903f74c9d2007a48f34d0ef4f33baa096730",
-        "node/NodeJj.d.ts": "3717e5642e076dddcbeccbade74536853b61c9e247fcfd2f121e3cff17ccacbf",
+        "node/NodeJj.d.ts": "c943c89ef64f470f25f6df21b62e891152db3cdde751e86ae77b790fbff4182a",
         "node/resolveJjBinary.d.ts": "1fb2e0e618b73b0afffd331192124f76c8bb46fafc2f67587ccc7ec66f953dfa"
       }
     },
@@ -7171,25 +7037,26 @@
         "Classifier.d.ts": "d1ad4414a8fc67070a0e778549b8e44912a2f2e98cb0e402c789401de155d74b",
         "DeferredTools.d.ts": "894315a5e3236694de183caf68e639ff61fbd2832f305f7fc8dab4f103cab50d",
         "Endpoint.d.ts": "309fe5fca685f3976e82ec43097cf3e8395a36bb3ce2fba57123c61341e1b2b6",
-        "Evaluator.d.ts": "ada7f70e145ee2d76bdc6ecdd1e7a3c9c0bf288d6417a7f7a3b862587610689e",
+        "Evaluator.d.ts": "ebb6e33f573462e4cbd245670590083a08ad29208e028ecf8ad535290f30ab46",
         "EvaluatorBackup.d.ts": "d58b547ab95e9a656e99f5cba1ef274fb46df79019d3ea3c40e24258b60f7f90",
-        "FailureCopy.d.ts": "63741305eac556ba37b75bb2386cb2285db7bb60977beef558ab6e8275adf6b1",
+        "FailureCopy.d.ts": "dd5ffb7aaaf10a8d32b0ef92fb246177de78c5d3c4c489e3aec66583fbd13095",
         "Framing.d.ts": "9b64384658e1f8ffcee0552fb94ad9d7541f3a7cf345b429d076dff4128cba95",
         "HttpStatusClassifier.d.ts": "e705e4a573d9803c3f506c28b526c3a1cb01902b8fab5936121a9023ee573f48",
-        "Model.d.ts": "6f07b44678e496eacf75b111657d32afdf968c339b2b0236581464e04427d78d",
+        "Model.d.ts": "cf1fbd63e90efa8074b8928cfc016962c3bbde2213ceb2a9bd207e9782f644a1",
         "ModelCatalog.d.ts": "8e0196f95b39ec2c16b6100f82e2887d5ac342864554fc0329b08b9c9a8c7a27",
-        "ModelError.d.ts": "aa642a42578a9403a7164f645089f5d352ff25cf0174437411ddb83b857379c5",
+        "ModelError.d.ts": "dcc013f03b5b75d2ebee53a2fde60996c27aaeee3afebd830820c566f1c5644a",
         "ModelEvent.d.ts": "d9d90538550c5e84dd13c0be58b5e3188dc576a411ae9dc4a1331e2ed57dfcc2",
+        "ModelProxy.d.ts": "77279ff910259963e9de3159d5a512d81b088568dd1bf45dfa53bcdc1311496b",
         "ModelRequest.d.ts": "b4f7cd5c271ff0792acf4bd0af11861648a2ce00b5cfb5a9c730c65e7f94d907",
         "OpenAIChatCompletions.d.ts": "630a4f6a346d673868c36875c92d465789f8931bfaef094b7416a97b14522ae0",
         "OpenAIChatGPT.d.ts": "3e49f945f22c8aca1a85cab204804ad898ee3be1252152ba5ec5f7e55b57db26",
         "OpenAIResponses.d.ts": "5c887ba4b717dd554dc22cb10a31aa4184873e44a4b5477a1c6cee8a652d3d16",
         "Pricing.d.ts": "2017ce4a0bffcd9e8d846639d4e29173b54e3281efd91a9a60b1e76ca1784190",
         "Protocol.d.ts": "8027ff90f389a18b5b6dfa03035e30c83668c2aa361c690ddd7f6deefa7aa38a",
-        "RequestExecutor.d.ts": "cfa1c01fbaf1106678725dbe19ebd8738f7fea650c7401d28cad8072fa99c1d2",
+        "RequestExecutor.d.ts": "f84cdabc17cc093c1733caff6051df3c5ac469a94f7ee04e6a7ba59d9b33f544",
         "Route.d.ts": "c222af3c487e9a743af70fd8a4d15d76daaebc48efde0abc75e3616a1c4c6553",
         "ToolStream.d.ts": "d09619a0298dbcd00f21a74200aea89bf8f4dc3f24994e5b8233afe400c8de3b",
-        "index.d.ts": "7ccdecb26e0fec8a03511ab843da59c5b8bc85ff6a0fedc4f97b4edc6926da37",
+        "index.d.ts": "c4f9a261d4b42e4706ff72a88878f81c1be632f30a8d58971080e99f91384339",
         "internal/CallTiming.d.ts": "0b19805f556cf9ef6a8d3802670ab0609471226da8c90823cc69bb7154889c36",
         "internal/WireTrace.d.ts": "eb7e6f56aaaf7c3aedccac79f8bc89a626361ad8780ac8c9469ec59610866fde",
         "internal/prices.generated.d.ts": "0bfb9e303fc34de4b231b7335c458c7376784c0eff0d81ff6c4c70c9b57e02a4"
@@ -7425,14 +7292,15 @@
       "declarations": {
         "BrowserOtel.d.ts": "f1fd5e8a375ac9d6c130dfaf280c71849ba35c6025a44f6d2f555a5d02781b4b",
         "Endpoint.d.ts": "90ac9e1fa1c4cb2c966f8db204d9759eef754f11843eb6bd51bae1e3ce824745",
-        "JournalLogger.d.ts": "2b2616b71301e79c287e40e039c356dbae94084ab1ca8a21320e2ce333029c6d",
-        "Logger.d.ts": "e2ca8adcbeb7fbce8c0eedbbc76dd2c018654528fb5326b9429d01780fdd687a",
-        "Metric.d.ts": "20164a323365a9178927a5e0c6e8dd71476858e54c2dcee0060e09f5346621bb",
+        "JournalLogger.d.ts": "abb82a887df4ca733b1f34cbb635f71788a3abf26ace1016be391717ff119b99",
+        "Logger.d.ts": "f03876b795ad1977f375def9d65ff44d3f2c0291faaa1ef7106c2ee8c096346e",
+        "Metric.d.ts": "be427fdaea2a7d7162359fa376a8e6cd627570f7f3c186b279dfb19e46737e81",
         "NodeOtel.d.ts": "b14d9b1835966feae0ea26310768ceb766940e47d47be6097ac73d49bfb0777f",
         "Otel.d.ts": "20e1d127e3d88e95c89dcfc45484d605603c3cbb41ea26d02a98bc42e9ddf46f",
-        "Otlp.d.ts": "21d8e9424ca7573c1ed232642367379cc28e85bc008bfb619180f6d5e06ec00f",
+        "Otlp.d.ts": "ad65518404f0839bbdf30770f2ed55ac93fcb674b58564afe2414fdeb670f508",
+        "OtlpRelay.d.ts": "bff3adce4ad443307e103c12b87c09bff17bb75eeabdb82bf0603b7df47348bb",
         "Resource.d.ts": "0aac1e7a9bfb28b241b0030c51be8c9b5ab70c8a3851d3b70334960ba7453ae8",
-        "index.d.ts": "0a100ca480161d57e3f7f40fb3ea9d1f6913e57b6ddaa364fda8a099891a80e1",
+        "index.d.ts": "a5c8f45bb0db4075cec90a0c055eb1cc6f52482e9dddbede4e0e6f14e28843df",
         "internal/schemaIssuePath.d.ts": "d1121b36495f65d0503eceb0170cee739e9ebdfdab2f0aed169c7f0083f21f4d"
       }
     },
@@ -8106,11 +7974,13 @@
         }
       },
       "declarations": {
+        "BrowserCache.d.ts": "0cf6b82d26d95a70799cf85d634af08734a2e66793625c30abda995608f72500",
         "BrowserChildProcessSpawner/JustBashLike.d.ts": "3f719feaf43a3b77069ce8b551284bfab0440fc1574743bc76bc996f4bcd2bcf",
         "BrowserChildProcessSpawner/captured.d.ts": "dcd04eb010f2cbb6e7a27ec21390e2a63e1c27af9b7e76d2b15cdcfd5bdec445",
         "BrowserChildProcessSpawner/index.d.ts": "42473ba4f525fe6ce28e3285f8f80cfc36866c65e886fc156317c2037a0bfed0",
         "BrowserChildProcessSpawner/layer.d.ts": "7e3dc9fdc1e66304fdb2232f27fca0b3a5d51aa28d0677de3054521346f0349e",
         "BrowserChildProcessSpawner/make.d.ts": "c493b897de10b594ac46d588831ea54ed82c2552537848b54f9b9ec8dadd10c2",
+        "BrowserEngine.d.ts": "0c7b18f0810cd28e20470a6bed4ccd7504b6837640c4ab96f408c3b6326a8fcf",
         "BrowserFileSystem/ZenFsFileHandleLike.d.ts": "6db95a41e5ea05f4ccaa07844b3e9b7b4e3a8b276283016268df67ed2453361e",
         "BrowserFileSystem/ZenFsPromisesLike.d.ts": "f42a923b25549ca2eb88830bddfb8ecf34fe0f8c5ca39465e7e45da5e68f5c48",
         "BrowserFileSystem/ZenFsStatsLike.d.ts": "43d4609c719320ef69f306a7db2a373ca7be7db3ef6598137f77303a711509a5",
@@ -8124,8 +7994,23 @@
         "BrowserFileSystem/realPath.d.ts": "0b0332fd730fd30b5cb685d047ca669d56fa2444a9840abbd926153d5b763a69",
         "BrowserFileSystem/streamFile.d.ts": "51501085c84908dcfb8330d8ded545f4daf0c0604fd30b9846d06f88ccac97c6",
         "BrowserHost.d.ts": "42d8383de6cf2cfac76ab7c11fa4b345de7d29d1209fc7ce556e411df99cdd8e",
+        "BrowserRuntime.d.ts": "4d5315f1270287aabc686b62aa9d1486046554d4efcd2505d8f3ac7d1066524f",
         "BrowserServices.d.ts": "8f17b8fbf42f148dac6cd7cf6485fb910e53350fde3375d0bf023e713deabaab",
-        "index.d.ts": "c9fb6ae3fefe9d924c87dbae94a60d70dc993bb546281e4f0f7b9a0b5a346f21"
+        "BrowserSqlite.d.ts": "95e3f79e366a375b951eeaf31f74f3264507be688b455a944ec96dbad7c0cdce",
+        "SharedSqlite.d.ts": "b12ca1e4550c44c82f2b82da23d7f91633645bf5316856d14e05a60f56607028",
+        "StoragePersistence.d.ts": "bc2d3b934cfec7cc15ff29c8a3d49c756163c0afde2ac9961480ffd722576933",
+        "TabChannel.d.ts": "c977c2afcca40dbf8d735e823387a4f2d058f4422c9dd24011a61a76cb7dce79",
+        "WebLock.d.ts": "a14c60880503e3bade7ad59c4fb0729c2e3e16b902211089934b1c4e70bc1182",
+        "index.d.ts": "8e5e7dced76a9fb488a6e18676a546b13d2d6358554d0a261899cac0f34604b6",
+        "internal/AccessHandlePoolVFS.d.ts": "a6665ee66e2fc793452d9bcd374979d18fc9dac3357ee609d0215023d92e5a36",
+        "internal/Engine.d.ts": "0dd4be7a98adb92e4f69c2ddf796c9887063722c628d9f8739b5081f26000ec4",
+        "internal/HttpClient.d.ts": "4c264a6ecc2239c32f3bef177bacab15fbfe4184a58cbf93a0a7eb24202b303d",
+        "internal/Leader.d.ts": "c3258eb0f4ed6d1bc1cdde9bb3b00b7768177e488c6e719048c62546a9c699fc",
+        "internal/Metrics.d.ts": "e3e63b68de0709b1b239351da4d23b879bacb0d4d7543f0d38c86febc5ae677e",
+        "internal/Protocol.d.ts": "e750c080cbbf60637e123134528cf3ffb1f0deaaf0a7eb05e32afc428ab41212",
+        "internal/SqlConnection.d.ts": "8438190f1d049b279ecfb8524a5ff381421d8a3736ed1afae818c3c166788d9e",
+        "internal/SqlProtocol.d.ts": "4dfb03348be1a9fa0ea033bc95a3a6a89c37eda51dfbf0e750e103114e7c87ba",
+        "internal/Statements.d.ts": "63d4412c52683170ac65261fdc23e0a4c1b54184ad6990fa3511dcfaa87bbcb5"
       }
     },
     "@smthrs/platform-bun": {
@@ -8176,8 +8061,10 @@
       },
       "declarations": {
         "BunFileSystem.d.ts": "4cca38a0ea0572ab9ae64a70b43f9497c8d30e8616eaf97b554520fccd993883",
+        "BunGarbageCollector.d.ts": "302e06b51b16d7550b8966948abb0a4997669368844454ee49fcf78a70b8dc0f",
         "BunHost.d.ts": "1cb750249d85855dfcceafb64b2fea6c7336e19b0e81a27906ae6c7d0a09b8e1",
-        "index.d.ts": "214b9d7b05f8db248a3be63174a5fdd4fa4ab0b590e9fb386518e6f230d15eed",
+        "BunRuntime.d.ts": "d0845febd68c6612304d33e02bbd6f0339bc145bdb38f7e8d5c0e95c2d07cb91",
+        "index.d.ts": "16cd4cc017a102c9b83c246ef457557a0d5f779bec49bec1a699d1ef23739bb4",
         "../vendor/bun/BunAddressResolver.d.ts": "f34115be25b49f5a581afd30f25294436ad3a3d72115d373daef8b5a45aa0b53",
         "../vendor/bun/BunChildProcessSpawner.d.ts": "b5cee5734705eb75cb1dd65cbdf446a38b4df8134899d2bdd6ac88ee030be4b3",
         "../vendor/bun/BunClusterHttp.d.ts": "240be17371f095627cbd3ccaef2e051f90a83f704afd38e06ababdc07d820cf1",
@@ -8334,6 +8221,32 @@
         "../vendor/platform-node.d.ts": "b7f00c33b61f3b36284e5bbbb41faa90004057c33538aaffb9f688b81ddbfbc7"
       }
     },
+    "@smthrs/platform-cloudflare": {
+      "exports": {
+        "./package.json": "./package.json",
+        ".": {
+          "import": {
+            "types": "./dist/esm/index.d.ts",
+            "default": "./dist/esm/index.js"
+          },
+          "require": {
+            "types": "./dist/cjs/index.d.ts",
+            "default": "./dist/cjs/index.js"
+          }
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "declarations": {
+        "CloudflareHost.d.ts": "431b34f9821282281582f40bdc385b86825206535061644dd38ce0065a3a80cc",
+        "CloudflareRuntime.d.ts": "323e416eaa67dd73cdb1a953d0c75604c293907ff08ecefb2d536c4a398d150a",
+        "EdgeCache.d.ts": "bc463a0d333b9377c4366182d6b185faca297a27d999eb67315a83ca24d4639e",
+        "ExecutionObject.d.ts": "897217390ef235f8861f985c086ecfaaeadbc7219205939cbbb04cfcacf61a97",
+        "index.d.ts": "a975b8981f89078ace3ec25ea4e8f465ab9e0a1dc86a8d2222636d02c16f512d",
+        "internal/Refusals.d.ts": "57ac9e4d2d55798b343b707ce6024eb64e1f153a978a308175a2a09e0830ac80",
+        "internal/Routing.d.ts": "319bc978a96571e725b078cf37f84db518e4492a181b62205c157e623b71ac18"
+      }
+    },
     "@smthrs/platform-node": {
       "exports": {
         "./package.json": "./package.json",
@@ -8443,13 +8356,19 @@
       "declarations": {
         "AtomicFileSystem.d.ts": "ba88b1704bb4998d2b00724f992efaf51b25a51c4d08912d7c6c1632352c3571",
         "EgressHttpClient.d.ts": "3a8017f235f757db6a6ff50beae54abc915868aaf4606fcbdea7e409aa3cd8e2",
+        "FetchTransport.d.ts": "cc836e4cbd7e997475d5a37f486ddbc4d1c517dd3b473d2f08b094df1c21d753",
         "HostLiveness.d.ts": "fc8622dd5e4c57dcf717f211390d0599f547e13fa6d75a032f3e7544906a90ea",
+        "NativeRuntime.d.ts": "aa16932ec267d636aa888df9a6d21505ef8db05cfe6aa7db0a3cbe6a71595941",
+        "NodeGarbageCollector.d.ts": "eabc3bb1d5cc1fc3b215fddcff37acd9705c76d154aefdae7dfe14cf21d61066",
         "NodeHost.d.ts": "48a9e635f560091c4244a4853b91dbcf399a3861dc42d8fd03f9f4f0775c9248",
+        "NodeRuntime.d.ts": "5e840eeb6d839de9d68e27281be387ec7f033035db06324ef042a84f2d0e1538",
         "ProcessConfinement.d.ts": "1db4b10ad4f92d99a74787cc2ed4decd436d6570e7c1299afa903babbb83d068",
         "ProcessReaper.d.ts": "4a2f7c1b1733497f1c92ccce8b0b6f15378de6f97e68334797331db5e0500493",
         "ProcessSandbox.d.ts": "58bf38afdd03fbd8c32c17f686c607c4ef2d79947b4da6f5a49b41a3b1778a6c",
+        "SandboxedFlow.d.ts": "80e395bd86060201feb59e3ab3416db39f56a7f436cdd8cf2d03026c4f6538e0",
         "ScopedProcess.d.ts": "134675f6d6b3b62e7e144b0ec78bebeb463a685f4c322ef73069eed040107fa9",
-        "index.d.ts": "df54a0f806f286cce2e2308a56074a61501e5e9b53e23c87684c7ea59afbca56",
+        "TestNodeRuntime.d.ts": "f0477085ee071148dee630a2b3437d6443f7f124c12c8186fcd7eb9e28a1d7c3",
+        "index.d.ts": "a2476d0f8df9eeccc242a0172b08b45ccc32f73df658682747a02e1b6113b4aa",
         "internal/AtomicFileSystemExecutable.d.ts": "b4e4d148b9049f833828b1ad3bd961f4044a811c7c39f77cbd790e147002f335",
         "internal/AtomicFileSystemProtocol.d.ts": "9454b411a9e9079dad693817610310a8d655b82f03154a7aff9e664a6774cb1f",
         "internal/AtomicFileSystemTransport.d.ts": "73ef598c5a01d96a3e964028687cff495e71423a06bab09eb346f4bdeb4be30c",
@@ -8461,6 +8380,7 @@
         "internal/ProcessCleanupPolicyError.d.ts": "18133f2d67440e0fe07b61a9b233087ab7c2d09daf379f9a9a361cf93f9484bf",
         "internal/ProcessFault.d.ts": "4ccb9bde70b5aedf0b73158d89f16c047740576aae984710694361cac7d08553",
         "internal/ProcessSupervisor.d.ts": "b9df874faa00c645077144a70792e2a611d77bc60f9000d4ea39d73d875090e2",
+        "internal/SandboxedFlowGuest.d.ts": "40d6276bcb786694d3df6e2d0af1a97afddf9c435da38beed6b6237f7d585ebc",
         "internal/SupervisorProgram.d.ts": "a2f77e4d9c9cfc1275cbe094b2f259cf55645439a32a2c7e34423665ccfa59b8",
         "internal/WindowsProcessJob.d.ts": "1b64bd74b278a58813d1c161634c3f4b28d8da24233cc08711046f4057e6f087",
         "../vendor/cjs/node-shared/NodeAddressResolver.d.ts": "51107011d7c3e68ed2635b16bb93174fdfd4c519825303855322bb18bdc61674",
@@ -8936,8 +8856,8 @@
         "AttemptStore.d.ts": "93aef402c77c8a863c6ee00ad93a88a792d6ca2dc3575c1b98cfda3048b8addc",
         "Heartbeat.d.ts": "4b8f8ea8e59d7f57d808fda7647ebd4ee0db629945fded566f1ab2d835514b3a",
         "Migrations.d.ts": "29f88070740e2ffc6f0a9ecf9380f608c809a254dae1fed5aad77c0e76272579",
-        "Ownership.d.ts": "9890e39ab6fd1abb5d847536755d354cd48097046e54a66b73aaa066abbae89c",
-        "RunStore.d.ts": "6737df27be3e6ded8b3b5b6aa3d5ab737846a651b6d49720804fe5587a9587d6",
+        "Ownership.d.ts": "3bcead92bfa963675bec0d0deac35330f59b15b23d5d3868c6fb44877c8b522c",
+        "RunStore.d.ts": "6d6f5363f1eb491fbf725120b473203c9d8f5b2ffbc0f47503a9a84b30c33563",
         "RunStoreMetrics.d.ts": "206a21bc22174486c83c3cdc0c3ebc73c8094e825d0f5cd0e775f46574cb21a4",
         "index.d.ts": "304f01d271cd2acc3998d0ed6d9202e7da7cec97a423a6f82bcb285481bef6ff",
         "internal/Boundary.d.ts": "ebb2139c87d8076d28ade466fb3784fe56f07676209145b6dabb987c37bd9716",
@@ -9186,10 +9106,11 @@
         "JustBashSandbox/make.d.ts": "cee098297b02dff3457fb72bdbd4bf31055d322409cc1a407eb07e2d15beb67c",
         "KubernetesSandbox/index.d.ts": "5a63941f012c178ead548ffcb191684923e8b5d9aff1f8a968ad78f4418c62bd",
         "KubernetesSandbox/make.d.ts": "18f8e7bd9395d2c9b0e90b11e35a98b57d205763eeae06cfb0f528d4e037726c",
+        "MicrosandboxSandbox/GarbageCollector.d.ts": "2adfeebc368b62bfece324009ad793fb09a7b119c17054e34a3d07635b60ff34",
         "MicrosandboxSandbox/Sdk.d.ts": "5596eb04a11eb37838e9c4e64ce93b8a80e2c633986acab61c01915bc25b0d03",
-        "MicrosandboxSandbox/index.d.ts": "2c274a206572d4f827fc44a894ff745f8cf0c30935ac353d98e0dedfa105b55c",
+        "MicrosandboxSandbox/index.d.ts": "e2ff759ba2f1a51dc0800eebacb841aa5c1641d9ab1d698752a5d86b7fbed07e",
         "MicrosandboxSandbox/labels.d.ts": "d6c3ebed4c9ebb2a4b88d6e3cfaa51ec34240dcdc81c19f4ee292c80cf1290af",
-        "MicrosandboxSandbox/make.d.ts": "a8b1635e263637847fb407f6f7a08e25d26eed19e1bbc3429f189e8a2291d747",
+        "MicrosandboxSandbox/make.d.ts": "05a2313588180000cb3723f874ce03e61eb29002e1f36dafaea1c2a981122e62",
         "MicrosandboxSandbox/reap.d.ts": "db9aa014148789e81fcd4ac5afe529f128bbe78ea7c824865f95c9276ae94bdb",
         "MicrosandboxSandbox/snapshots.d.ts": "676234d70ac6e59b9058bb43f703d3ba5ab762d8504bf945685ced62c011eb8e",
         "ProviderConformance/Commands.d.ts": "d003538299304924e40722144c7e0afd23192e56dcd1b37fe894021f808797fd",
@@ -9237,11 +9158,10 @@
         "SandboxHealth/make.d.ts": "d10506c46110211101a206e15bc625b5c74da715cb8babd7e72fa3961a1f503c",
         "SandboxHealth/makeNoop.d.ts": "d60c0c97c410eea0e7a78e70ccd284f8a0d03816ef28a3fc7e07f4491c38197d",
         "SandboxHealth/probe.d.ts": "f5a640a6e59c4b7a2e53cda944e7b6dd3037a1e16452b810f8fcf02efe1a5b01",
-        "SandboxMerge/HostAdapter.d.ts": "08f98fd2a965223c9cabcb60b4b68a89d83afb294dd62123ff1498a35179fbc0",
         "SandboxMerge/Outcome.d.ts": "0ceb8624ae74e75c09e34eb9a4a02858f7c13e6a40f41c4d02d2c58eb77c7f46",
         "SandboxMerge/Repository.d.ts": "34321fec7fd9886fe087c6b675688caec4b80799aaaf8bb3fab5d2e7c3d45402",
         "SandboxMerge/Strategy.d.ts": "06b58aa7051406e7f6a630c3c27cb02d20990cdf730f264b420d92f3aecc2158",
-        "SandboxMerge/apply.d.ts": "8f00fbae6aac11d77bf5a67b8f858897646e191646f0a6b41b8f310473300c67",
+        "SandboxMerge/apply.d.ts": "dca426573882860b3d3d80d48d8de3ad19d2e1c2093b0530f19a095cb2fa5c90",
         "SandboxMerge/index.d.ts": "551694384ddcfc094005c79c16c709af69fcaf7bb61de7b56b8340670a47bc1d",
         "SandboxSupervision/Options.d.ts": "b26979d6bec3fc1c2d71ac426757e682e8448809970a7b6812db0ddd4b7b6c47",
         "SandboxSupervision/Reporter.d.ts": "1d3f3e4ad1a580ca0773216e5a27dd2f75dc7db4c208aa0e7c461be3ad5f7e03",
@@ -9268,7 +9188,7 @@
         "internal/environmentCommand.d.ts": "edfcc3a533d4d95b0780c4d2ed5bffc18738d918358d749fdb338196bb42c2b8",
         "internal/environmentInput.d.ts": "d118d6a51118f38f51894aba8f2926989c55902050580317728c900ff669f09e",
         "internal/environmentNames.d.ts": "2db078da11744b2c37f36e2b813f2cecef65e5366ae5cd55459959bd76a2f133",
-        "internal/execHandles.d.ts": "dd08eacc948b2283542449a13175bfb8ae638b3df4b4b240bfc08b9fd1be9209",
+        "internal/execHandles.d.ts": "3926d86a21057ad77194438d21130fe9f282a8bdb93587e8dfafc676f830d1ed",
         "internal/execSession.d.ts": "82f1aebcc8a97b062cd3508568f56ed7eb1e18d1d30d45a31f557652e66bb7be",
         "internal/finalizeWithin.d.ts": "4af8f62e32f5ed3245dcc496c7ddc09836732fa5762dd2082b830caa1f7012eb",
         "internal/guestPath.d.ts": "0c26a45227a2d694db3b4013384d4d8ee22bc232bee67d3c2f98c77b7a61cb08",
@@ -9278,7 +9198,7 @@
         "internal/localProcess.d.ts": "26295c84f19a2acf5db94913444f2bc59fbb6583105b2bb4f3416c9dd448ea8f",
         "internal/machineName.d.ts": "dfa9c9805ca0db73c6c5ebf9f53de383289246e38f2b9f158a08ecb7d42a4327",
         "internal/microsandboxNetwork.d.ts": "24b058d7fbc86fb697ba12a1b1dabf87bb453b9c09349dc4b793e1242032b00b",
-        "internal/microsandboxProcess.d.ts": "5e0e66540541230f520b6a447f955286f6274970fe9755a86f105f013dc648bc",
+        "internal/microsandboxProcess.d.ts": "b10f94b8686e8013189f614c33ca33dbe07abe15c38c440a205eedbc90e1d75f",
         "internal/microsandboxRemove.d.ts": "1afd27c2b3148978ec06c373f9aad0e9fe9b2179522c43e5605ab287d55ba0ed",
         "internal/pidDirectory.d.ts": "0c0fd05282890a6d020b6557868c0ec0a4623ba89f90ee4451513c2c565e2550",
         "internal/platformReason.d.ts": "a7c822f5db357abacfa1b5815c10a227600a0ab5aec4709a0a7476973d7a22a6",
@@ -9865,7 +9785,7 @@
         "internal/Declaration.d.ts": "613e14aacc2085097c8aa135c6f3413dbb84f295f825ce7cf76397041de2eb68",
         "internal/Diagnostics.d.ts": "91ace75d4a0137a0c0d079b5da4f0a6e572edb08b5174ae05f2445954c82188a",
         "internal/EnvelopePrecheck.d.ts": "216c47be79a18668df9091f7c8e2be8a067dc4ecfa0f8cf7e8f1c1d2def9f3a6",
-        "internal/Exec.d.ts": "ebec41dbb5b3293eb685a8c1b490b51575d21fdc8d4c8ade3e0047788701162c",
+        "internal/Exec.d.ts": "1b5bb6c9fd98d56de6ee94b49c955e95cbc1a99c2e4c90d77b1de20e19762806",
         "internal/FileMutation.d.ts": "2a09333621d9a052402a781e2a977240557a4c917f2c6953b1b250a1c531c509",
         "internal/FsFailure.d.ts": "7445409e507aca63d4a956ff555158314fa138661005d092a41d6800fe6d6c78",
         "internal/GitWorktree.d.ts": "8317d55c19ca4dd05757434cd3c2f8d60b174b58cecf8cc471d26851763a9577",
@@ -10675,6 +10595,16 @@
             "default": "./dist/cjs/Install.js"
           }
         },
+        "./JevLint": {
+          "import": {
+            "types": "./dist/esm/JevLint.d.ts",
+            "default": "./dist/esm/JevLint.js"
+          },
+          "require": {
+            "types": "./dist/cjs/JevLint.d.ts",
+            "default": "./dist/cjs/JevLint.js"
+          }
+        },
         "./JsrPublish": {
           "import": {
             "types": "./dist/esm/JsrPublish.d.ts",
@@ -11230,6 +11160,7 @@
         "Home.d.ts": "c3bbd98fefef20d31172780d39d2b2d35309e52e0f279c93c5502bf360acc131",
         "Input.d.ts": "aa82767d1075aa82c9229cd6d605e19814dd33654a72d07d1e4678a6af646a17",
         "Install.d.ts": "4db56620828546cecbadb9b7ffda0193ea829157b0eb79c0b10aee01ba00da90",
+        "JevLint.d.ts": "92c082ea3c3b7e85c30d0f253719cfee0979efce06d97be8e4a31c8e7dd5458f",
         "JsrPublish.d.ts": "e1dc8a6ca2c6de62f4c7f31c3b2c8faa786a85af2f00b311049c43bc146c9714",
         "LlmLint.d.ts": "d5d72bbb6cc8a347e037ca5cb22572982a5e6fcb5efa319f70451af4d0b8065d",
         "LocalRepository.d.ts": "c906401400aae2fef3f6d11eb7be932afbda157763c3bdd01e314a0300bfba42",
@@ -11265,7 +11196,7 @@
         "SecretProxy.d.ts": "4e5b8f175b534221d42dea12bc37b7a8e0d7af91363d3bdc4b727139233b4b6a",
         "SecurityReview.d.ts": "42e12f7b1791f4b0077d85ba3307398365962cc9aa9b6535d9d768c41b706a6b",
         "Shell.d.ts": "7be7765a8e6a3863552b10cc229cb6fa3f05d75971dcbe35bada77686c208fb8",
-        "Smithers.d.ts": "22da538173bc1faed5119e84913e729b1c4b0e075603005e81fca850d16cc7da",
+        "Smithers.d.ts": "b053384197aaddbf803e3916299166c65f60e06c1600e7b34e914214f2f7608e",
         "SortPackageJson.d.ts": "27324ed4af0eb9a01e81b7fbe849ab60372cf2dc6e2e3c2677b3a13fde0a3739",
         "Stamp.d.ts": "7def0b8ff615d2750837c5551c642446b74033320d8749009a2d5ff9c6220487",
         "Target.d.ts": "ebdbd4723f7f90617a28673496b1e0d93284b0fdf5bfaff78fb572648aae27ad",
@@ -11307,16 +11238,6 @@
         },
         "./internal/*": null,
         "./*/index": null,
-        "./CachedEvaluator": {
-          "import": {
-            "types": "./dist/esm/CachedEvaluator.d.ts",
-            "default": "./dist/esm/CachedEvaluator.js"
-          },
-          "require": {
-            "types": "./dist/cjs/CachedEvaluator.d.ts",
-            "default": "./dist/cjs/CachedEvaluator.js"
-          }
-        },
         "./CachedModel": {
           "import": {
             "types": "./dist/esm/CachedModel.d.ts",
@@ -11557,16 +11478,6 @@
             "default": "./dist/cjs/TestingError.js"
           }
         },
-        "./TurnGate": {
-          "import": {
-            "types": "./dist/esm/TurnGate.d.ts",
-            "default": "./dist/esm/TurnGate.js"
-          },
-          "require": {
-            "types": "./dist/cjs/TurnGate.d.ts",
-            "default": "./dist/cjs/TurnGate.js"
-          }
-        },
         "./index": {
           "import": {
             "types": "./dist/esm/index.d.ts",
@@ -11625,26 +11536,6 @@
           "require": {
             "types": "./dist/cjs/ProcessTable.d.ts",
             "default": "./dist/cjs/ProcessTable.js"
-          }
-        },
-        "./BuiltinScript": {
-          "import": {
-            "types": "./dist/esm/BuiltinScript.d.ts",
-            "default": "./dist/esm/BuiltinScript.js"
-          },
-          "require": {
-            "types": "./dist/cjs/BuiltinScript.d.ts",
-            "default": "./dist/cjs/BuiltinScript.js"
-          }
-        },
-        "./ScriptedModel": {
-          "import": {
-            "types": "./dist/esm/ScriptedModel.d.ts",
-            "default": "./dist/esm/ScriptedModel.js"
-          },
-          "require": {
-            "types": "./dist/cjs/ScriptedModel.d.ts",
-            "default": "./dist/cjs/ScriptedModel.js"
           }
         },
         "./TurnLog": {

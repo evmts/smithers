@@ -41,7 +41,6 @@
     },
     "./internal/*": null,
     "./*/index": null,
-    "./CachedEvaluator": "./src/CachedEvaluator.ts",
     "./CachedModel": "./src/CachedModel.ts",
     "./Conformance": "./src/Conformance.ts",
     "./Divergence": "./src/Divergence.ts",
@@ -66,15 +65,12 @@
     "./TestHost": "./src/TestHost.ts",
     "./TestLayers": "./src/TestLayers.ts",
     "./TestingError": "./src/TestingError.ts",
-    "./TurnGate": "./src/TurnGate.ts",
     "./index": "./src/index.ts",
     "./pins/Identity": "./src/pins/Identity.ts",
     "./pins/Interrupt": "./src/pins/Interrupt.ts",
     "./pins/Race": "./src/pins/Race.ts",
     "./pins/Replay": "./src/pins/Replay.ts",
     "./ProcessTable": "./src/ProcessTable.ts",
-    "./BuiltinScript": "./src/BuiltinScript.ts",
-    "./ScriptedModel": "./src/ScriptedModel.ts",
     "./TurnLog": "./src/TurnLog.ts"
   },
   "bin": {
@@ -115,16 +111,6 @@
       },
       "./internal/*": null,
       "./*/index": null,
-      "./CachedEvaluator": {
-        "import": {
-          "types": "./dist/esm/CachedEvaluator.d.ts",
-          "default": "./dist/esm/CachedEvaluator.js"
-        },
-        "require": {
-          "types": "./dist/cjs/CachedEvaluator.d.ts",
-          "default": "./dist/cjs/CachedEvaluator.js"
-        }
-      },
       "./CachedModel": {
         "import": {
           "types": "./dist/esm/CachedModel.d.ts",
@@ -365,16 +351,6 @@
           "default": "./dist/cjs/TestingError.js"
         }
       },
-      "./TurnGate": {
-        "import": {
-          "types": "./dist/esm/TurnGate.d.ts",
-          "default": "./dist/esm/TurnGate.js"
-        },
-        "require": {
-          "types": "./dist/cjs/TurnGate.d.ts",
-          "default": "./dist/cjs/TurnGate.js"
-        }
-      },
       "./index": {
         "import": {
           "types": "./dist/esm/index.d.ts",
@@ -433,26 +409,6 @@
         "require": {
           "types": "./dist/cjs/ProcessTable.d.ts",
           "default": "./dist/cjs/ProcessTable.js"
-        }
-      },
-      "./BuiltinScript": {
-        "import": {
-          "types": "./dist/esm/BuiltinScript.d.ts",
-          "default": "./dist/esm/BuiltinScript.js"
-        },
-        "require": {
-          "types": "./dist/cjs/BuiltinScript.d.ts",
-          "default": "./dist/cjs/BuiltinScript.js"
-        }
-      },
-      "./ScriptedModel": {
-        "import": {
-          "types": "./dist/esm/ScriptedModel.d.ts",
-          "default": "./dist/esm/ScriptedModel.js"
-        },
-        "require": {
-          "types": "./dist/cjs/ScriptedModel.d.ts",
-          "default": "./dist/cjs/ScriptedModel.js"
         }
       },
       "./TurnLog": {

@@ -1,8 +1,8 @@
+import { AppEntry } from "@smthrs/rpc"
 import { FrontDoor, chooseJourney, DEFAULT_CHOICE } from "@smthrs/rpc/FrontDoor"
 import type { Facts, JourneyChoice, Known } from "@smthrs/rpc/FrontDoor"
 import type { ApplicationTargetDocument } from "@smthrs/rpc/ApplicationTarget"
 import bundledRules from "../../../../../../.smithers/front-door.json"
-import { shouldResumeApp } from "../../../../../site/src/lib/appHistory.ts"
 
 /*
  * The launcher's two reads (mvp.md M-45, §6.16): the repositories a visitor
@@ -241,7 +241,7 @@ interface ArrivalInput {
 /** Read this visit once. Keep only allowlisted hosts; strip every UTM without touching other URL state. */
 export function captureArrival(input: ArrivalInput): Pick<Facts, "source" | "sourceHost" | "medium" | "campaign"> {
   const url = new URL(input.href)
-  const returned = shouldResumeApp(url.search) || url.searchParams.has("installation_id") || url.searchParams.has("setup_action")
+  const returned = AppEntry.shouldResumeApp(url.search) || url.searchParams.has("installation_id") || url.searchParams.has("setup_action")
   const source = url.searchParams.get("utm_source")
   const medium = url.searchParams.get("utm_medium")?.slice(0, 32)
   const campaign = url.searchParams.get("utm_campaign")?.slice(0, 64)

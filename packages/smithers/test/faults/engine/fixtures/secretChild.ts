@@ -8,7 +8,7 @@
  * Usage: `node secretChild.ts <filename> <executionId> <secret>`
  */
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"

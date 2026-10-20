@@ -1,6 +1,6 @@
 import { NodeServices } from "@effect/platform-node"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
@@ -64,7 +64,7 @@ test("native wiki check captures immutable pages, returns owner findings, reuses
     "---\ndescription: Semantic wiki check.\nflows: [coding/WikiCheck]\ncapabilities: ['*']\nsmithersCodingWikiPolicy: modeled-override\n---\nReview the configured wiki.\n"
   )
   const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
-  const runtime = process.versions.bun ? await import("@smthrs/flows/BunRuntime") : NodeRuntime
+  const runtime = process.versions.bun ? (await import("@smthrs/platform-bun")).BunRuntime : NodeRuntime
   const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(platform)))
   const scratch: Array<string> = []
   const trackedFs: FileSystem.FileSystem = {

@@ -1,7 +1,8 @@
 import { NodeServices } from "@effect/platform-node"
 import * as CloudSandbox from "@smthrs/cli/CloudSandbox"
+import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import { Sandbox, SandboxConformance, SandboxMerge } from "@smthrs/sandbox"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import { execFileSync } from "node:child_process"
@@ -170,7 +171,7 @@ describe("CloudSandbox work", () => {
 
     const outcome = await Effect.runPromise(
       SandboxMerge.apply(work, { repository: host, onto: base, message: "cloud work", fetch: false }).pipe(
-        Effect.provide(NodeServices.layer)
+        Effect.provide(Layer.merge(NodeServices.layer, NodeJj.layerRepositoryMutation))
       )
     )
     expect(outcome._tag).toBe("Merged")

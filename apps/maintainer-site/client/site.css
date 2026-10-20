@@ -1018,6 +1018,176 @@ mark {
   border-radius: 50%;
 }
 
+/* Work board */
+
+.page.board-page {
+  max-width: 1400px;
+}
+.board-areas a[aria-current] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.board {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 6), minmax(164px, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.col {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-side);
+}
+.col h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 4px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.col h2 .count {
+  margin-left: auto;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--faint);
+}
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.card:hover {
+  border-color: var(--border-strong);
+  text-decoration: none;
+}
+.card-title {
+  font-size: 14px;
+  font-weight: 550;
+  line-height: 1.35;
+}
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-size: 12px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.card-owner {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.tag {
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  line-height: 18px;
+  color: var(--tag, var(--muted));
+  background: color-mix(in srgb, var(--tag, var(--muted)) 13%, transparent);
+}
+.area-app {
+  --tag: var(--g1);
+}
+.area-sdk {
+  --tag: var(--g3);
+}
+.area-infra {
+  --tag: var(--g2);
+}
+.area-design {
+  --tag: var(--g6);
+}
+.area-process {
+  --tag: var(--g7);
+}
+.st-idea {
+  --st: var(--faint);
+}
+.st-todo {
+  --st: var(--g1);
+}
+.st-designing {
+  --st: var(--g3);
+}
+.st-in-progress {
+  --st: var(--g2);
+}
+.st-blocked {
+  --st: var(--danger);
+}
+.st-done {
+  --st: var(--g0);
+}
+.dot[class*="st-"] {
+  background: var(--st);
+}
+
+/* Note properties (front matter) */
+
+.md .props {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 18px;
+  margin: 0 0 28px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-side);
+  font-size: 14px;
+}
+.md .props > div {
+  display: contents;
+}
+.md .props dt {
+  color: var(--muted);
+}
+.md .props dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.md .prop-links dd {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pill {
+  display: inline-block;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 21px;
+  color: var(--st, var(--muted));
+  background: color-mix(in srgb, var(--st, var(--muted)) 14%, transparent);
+}
+
 /* Narrower screens */
 
 @media (max-width: 1180px) {
@@ -1033,6 +1203,10 @@ mark {
 }
 
 @media (max-width: 760px) {
+  .board {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-x: visible;
+  }
   .app {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto 1fr;

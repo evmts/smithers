@@ -4,7 +4,7 @@ The shared runtime composes the journal and durable stores over an injected data
 
 ## Share the injected database
 
-The shared `@smthrs/flows/Runtime.storage` composition builds journal and durable store layers over injected services; it does not select a SQL driver. The native Node and Bun compositions supply that driver, and stores use the existing `DurableWriter` transaction policy.
+The shared `Runtime.storage` composition from the `@smthrs/flows` root builds journal and durable store layers over injected services; it does not select a SQL driver. The native Node and Bun compositions, `NodeRuntime` in `@smthrs/platform-node` and `BunRuntime` in `@smthrs/platform-bun`, supply that driver, and stores use the existing `DurableWriter` transaction policy.
 
 Coding plans, checks, results, waits and recovery should use the current flow execution identity and the existing durable stores. A product-specific projection may have its own migration namespace in the injected database. It must not create a separate connection, job queue, command ledger or lease system.
 

@@ -1,7 +1,7 @@
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, Graph, HumanTask, Interpreter } from "@smthrs/flow"
 import * as DurableDeferred from "@smthrs/flow/DurableDeferred"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect, Exit, Layer, Option, Schedule, Schema } from "effect"
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"

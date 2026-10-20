@@ -211,7 +211,7 @@ test("SQLite incremental reuse re-reviews a prior uncertain citation", { timeout
   const { dirname } = await import("node:path")
   const { fileURLToPath } = await import("node:url")
   const { Capability } = await import("@smthrs/flows")
-  const NodeRuntime = await import("@smthrs/flows/NodeRuntime")
+  const NodeRuntime = (await import("@smthrs/platform-node")).NodeRuntime
   const { IncrementalWiki, policySources, reuseLayers } = await import("../wiki/reuse.ts")
   const f = await fixture(t)
   execFileSync("jj", ["git", "init", f.root], { stdio: "pipe" })

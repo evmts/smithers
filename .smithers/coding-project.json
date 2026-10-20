@@ -23,7 +23,7 @@
       "kind": "current",
       "document": ".smithers/wiki/pages/start-here.md",
       "inputs": [
-        "packages/smithers/flows/src/NodeRuntime.ts",
+        "packages/smithers/flows/platform-node/src/NodeRuntime.ts",
         "packages/smithers/agent/docs/concepts/agent-loop.md",
         "packages/smithers/build/targets/docs/README.md"
       ],
@@ -63,9 +63,9 @@
       "inputs": [
         "packages/smithers/flows/docs/concepts/runtime-portability.md",
         "packages/smithers/flows/src/Runtime.ts",
-        "packages/smithers/flows/src/NodeRuntime.ts",
-        "packages/smithers/flows/src/BunRuntime.ts",
-        "packages/smithers/flows/test/NativeRuntimeParity.test.ts"
+        "packages/smithers/flows/platform-node/src/NodeRuntime.ts",
+        "packages/smithers/flows/platform-bun/src/BunRuntime.ts",
+        "packages/smithers/flows/platform-bun/test/NativeRuntimeParity.test.ts"
       ],
       "related": [
         "flows",

@@ -4,7 +4,7 @@ Flow definitions and domain services are Effect programs. Runtime selection, con
 
 ## Two hosts, one factory
 
-`NodeRuntime` and `BunRuntime` both call the same `makeNative` factory. Each binds its own database layer, host module and crypto layer: `NodeDatabase`, `NodeHost` and `NodeCrypto` for Node; `BunDatabase`, `BunHost` and `BunCrypto` for Bun. Both expose the same `storage`, `make`, `layer` and `layerHost` entry points.
+`NodeRuntime` (in `@smthrs/platform-node`) and `BunRuntime` (in `@smthrs/platform-bun`) both call the same `NativeRuntime.make` factory from `@smthrs/platform-node`. Each binds its own database layer, host module and crypto layer: `NodeDatabase`, `NodeHost` and `NodeCrypto` for Node; `BunDatabase`, `BunHost` and `BunCrypto` for Bun. Both expose the same `storage`, `make`, `layer` and `layerHost` entry points.
 
 ## Shared composition
 

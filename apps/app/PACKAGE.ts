@@ -508,7 +508,6 @@ const webSources = Smithers.Filegroup({
     // mainview bundles the docs (src/docs/bundled.ts): their pages and screenshots.
     Smithers.glob("src/docs/**/*"),
     Smithers.file("//.smithers/front-door.json"),
-    Smithers.file("//apps/site/src/lib/appHistory.ts"),
     Smithers.glob("src/debugApi/**/*"),
     Smithers.file("scripts/openapi-chunk.ts"),
     Smithers.file("//docs/api/openapi.yaml"),

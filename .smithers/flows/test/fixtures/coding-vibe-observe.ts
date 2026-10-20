@@ -11,7 +11,7 @@ export const observeCompletedRequest = async (platform: NativeControl.Platform, 
   // serves, so the probe has to read them where the host wrote them.
   stateRoot: string = root) => {
   const native = NativeControl.make(platform)
-  const runtime = process.versions.bun ? await import("@smthrs/flows/BunRuntime") : await import("@smthrs/flows/NodeRuntime")
+  const runtime = process.versions.bun ? (await import("@smthrs/platform-bun")).BunRuntime : (await import("@smthrs/platform-node")).NodeRuntime
   const storage = runtime.storage(native.executionDatabasePath(stateRoot), root).pipe(Layer.provide([platform.host, platform.crypto]))
   const observations = Layer.mergeAll(native.engineDurable(root, undefined, { stateRoot }).runtime,
     RunCatalogRead.layer.pipe(Layer.provideMerge(storage)))

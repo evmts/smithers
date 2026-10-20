@@ -256,6 +256,45 @@ without references. Context is limited to 512 files, 1 MiB per file, and 2 MiB
 in total. Select specific reference pages or sections instead of an entire
 documentation site.
 
+Use `JevLint` for rules a parser cannot check but a yes-or-no question can:
+"does this file write its own retry loop?". `LlmLint` asks a chat model to write
+findings; `JevLint` asks Jev, the `@smthrs/model` judge, one boolean question
+per rule about one whole file, and reads the probability that the answer is
+yes. Each rule names an `id`, the `files` it covers (globs or `S.file` entries,
+with an optional `//` prefix), `lookFor` (the question, phrased so that yes
+means the file breaks the rule), `violation` and `compliant` (what yes and no
+mean), and an optional `severity`, `error` by default:
+
+```ts
+const rules = S.JevLint({
+  rules: [{
+    id: "durable.no-hand-rolled-retries",
+    files: [S.glob("//apps/mvp/worker/**/*.ts")],
+    lookFor: "Does this file write its own retry loop, sweep or background job?",
+    violation: "The file hand-rolls durability a flow engine owns.",
+    compliant: "The file has no retry loop, sweep or background job of its own."
+  }]
+})
+```
+
+One call asks every rule that covers a file. A yes at or above `threshold`
+(0.5 to 0.99, default 0.8) is a whole-file finding whose message starts with
+the rule id; `failOn` (default `error`) fails the target. Jev reads about
+32,000 tokens at once, so a file over 96 KiB is never sent: it gets one
+`warning` finding whose message starts `not-judged:` and names its size and
+rules, and the rest of the review runs. A rule whose globs match no file fails
+the review, and so does an unreadable file, a missing answer, or a judge
+failure, which reports Jev's public message and never the provider's text. Paths and contents are masked for credentials before Jev sees
+them. Globs expand across nested `PACKAGE.ts` boundaries under the workspace's
+ignore rules.
+
+`JevLint` joins `lint` and is `manual` by default, so `//...` never plans it
+and naming its label runs it. Model output is not a reproducible function of
+the inputs, so it is never cached. The default judge reads
+`AI_GATEWAY_API_KEY` when the review runs, so a missing key fails that review
+alone; a host passes `judge` to `JevReviewLive` to judge some other way. The
+executor must provide `JevReviewLive` for the target to run.
+
 The emitted Vitest target carries `exclusive: true`, so wildcard `ci` and
 `test` selections omit it regardless of its exported key. Select the matrix
 explicitly with `smithers-build test '//packages/...:faults' --jobs 1`, or opt

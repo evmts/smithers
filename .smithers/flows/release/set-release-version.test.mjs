@@ -218,17 +218,20 @@ test("every Flows page that gives the pnpm install line names the version the bu
   const pages = ["README.md", ...readdirSync(join(directory, "docs"), { recursive: true }).map((entry) => join("docs", String(entry)))]
     .filter((page) => page.endsWith(".md"))
     .map((page) => join("packages/smithers/flows", page))
-  const giving = pages.filter((page) => /pnpm add\s+@smthrs\/flows@/.test(readFileSync(join(repoRoot, page), "utf8")))
+  const line = /pnpm add\s+@smthrs\/platform-node@\S+\s+@smthrs\/flows@/g
+  const giving = pages.filter((page) => line.test(readFileSync(join(repoRoot, page), "utf8")))
   assert.deepEqual(rows.map(({ path }) => path).sort(), giving.sort())
+  const pins = versionedSources.filter(({ declaration }) => declaration === "the platform-node pin on the pnpm install line")
+  assert.deepEqual(pins.map(({ path }) => path).sort(), giving.sort())
   for (const page of giving) {
     // retargetSource rewrites the first match only, so a page gives the line once.
-    const lines = readFileSync(join(repoRoot, page), "utf8").match(/pnpm add\s+@smthrs\/flows@/g)
+    const lines = readFileSync(join(repoRoot, page), "utf8").match(line)
     assert.equal(lines.length, 1, page + " gives the pnpm install line more than once")
   }
-  const row = rows[0]
+  const given = "run `pnpm add @smthrs/platform-node@1.0.0-rc.6 @smthrs/flows@1.0.0-rc.6 effect` instead"
   assert.equal(
-    retargetSource("run `pnpm add @smthrs/flows@1.0.0-rc.6 effect` instead", "1.0.0-rc.7", row),
-    "run `pnpm add @smthrs/flows@1.0.0-rc.7 effect` instead"
+    retargetSource(retargetSource(given, "1.0.0-rc.7", pins[0]), "1.0.0-rc.7", rows[0]),
+    "run `pnpm add @smthrs/platform-node@1.0.0-rc.7 @smthrs/flows@1.0.0-rc.7 effect` instead"
   )
 })
 

@@ -18,7 +18,7 @@
  *   node engineChild.ts <filename> <executionId> <probe|execute> <markerDir> \
  *     <counterFile> <secondSleepMs> <nonce> <hostId>
  */
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"

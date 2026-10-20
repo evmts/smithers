@@ -8,7 +8,7 @@ The shebang in `bin/smithers.mjs` pins Node, because the durable engine is not s
 
 ## Durable runtime
 
-`NodeRuntime` and `BunRuntime` bind the same `makeNative` runtime factory to their matching database, host and cryptography layers. The shared `@smthrs/flows/Runtime.storage` composition builds journal and durable store layers over injected services; it does not select a SQL driver.
+`NodeRuntime` (in `@smthrs/platform-node`) and `BunRuntime` (in `@smthrs/platform-bun`) bind the same `NativeRuntime.make` lifecycle to their matching database, host and cryptography layers. The shared `Runtime.storage` composition from the `@smthrs/flows` root builds journal and durable store layers over injected services; it does not select a SQL driver.
 
 ## Agent composition
 

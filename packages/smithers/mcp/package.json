@@ -166,7 +166,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vitest": "5.0.0"
+    "vitest": "5.0.0",
+    "@smthrs/platform-node": "1.0.0-rc.16"
   },
   "peerDependencies": {
     "effect": "4.0.5"

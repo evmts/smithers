@@ -98,18 +98,27 @@ export const versionedSources = [
   ]),
   // pnpm 11 installs only versions at least 24 hours old, so `@smthrs/flows@next`
   // can resolve to a candidate more than one release back. The Flows pages give
-  // pnpm the exact version instead, and the bump keeps it current.
+  // pnpm the exact versions of the Node runtime and the engine instead, and the
+  // bump keeps both current.
   ...[
     "packages/smithers/flows/README.md",
     "packages/smithers/flows/docs/README.md",
     "packages/smithers/flows/docs/installation.md",
     "packages/smithers/flows/docs/quickstart.md"
-  ].map((path) => ({
-    path,
-    package: "packages/smithers/flows",
-    declaration: "the pnpm install line",
-    pattern: /(pnpm add\s+@smthrs\/flows@)(\S+)(\s+effect)/
-  })),
+  ].flatMap((path) => [
+    {
+      path,
+      package: "packages/smithers/flows/platform-node",
+      declaration: "the platform-node pin on the pnpm install line",
+      pattern: /(pnpm add\s+@smthrs\/platform-node@)(\S+)(\s+@smthrs\/flows@)/
+    },
+    {
+      path,
+      package: "packages/smithers/flows",
+      declaration: "the pnpm install line",
+      pattern: /(pnpm add\s+@smthrs\/platform-node@\S+\s+@smthrs\/flows@)(\S+)(\s+effect)/
+    }
+  ]),
   // The Bun host pages install the exact candidate their package is at.
   ...[
     "packages/smithers/flows/platform-bun/README.md",

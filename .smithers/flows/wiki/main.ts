@@ -76,8 +76,8 @@ if (values.help) {
       throw new Error("--reuse-run requires --verified and the existing database containing that terminal run")
     }
     const runtime = typeof (globalThis as { Bun?: unknown }).Bun === "undefined"
-      ? await import("@smthrs/flows/NodeRuntime")
-      : await import("@smthrs/flows/BunRuntime")
+      ? (await import("@smthrs/platform-node")).NodeRuntime
+      : (await import("@smthrs/platform-bun")).BunRuntime
     // Credentials stay in the existing seat resolver. The receipt distinguishes
     // its subscription route so a different provider route cannot reuse approval.
     const reviewer = values.model.startsWith("openai:") && process.env.SMITHERS_OPENAI_AUTH === "chatgpt"

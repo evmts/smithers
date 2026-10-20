@@ -8,7 +8,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter, Sleep, WaitFor } from "@smthrs/flow"
-import * as NativeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime as NativeRuntime } from "@smthrs/platform-node"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as EvaluatorBackup from "@smthrs/model/EvaluatorBackup"

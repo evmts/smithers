@@ -147,6 +147,8 @@ only.
 | ----------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | `smithers/flows/platform-bun` | `executes the declared Bun lane in a Bun worker`                                                   | `it.skipIf(process.env.SMITHERS_PLATFORM_BUN_LANE === "1")` |
 | `smithers/agent/harness`      | `workerd smoke`                                                                                    | `describe.skipIf(FLOWS_WORKERD_SMOKE !== "1")`              |
+| `smithers/flows/platform-cloudflare` | `workerd smoke (FLOWS_WORKERD_SMOKE=1, ${Postgres.direct.label})`                         | `describe.skipIf(FLOWS_WORKERD_SMOKE !== "1")`              |
+| `smithers/flows/database`     | `skipped: ${absent}`                                                                               | `it.skip` when nothing listens on the endpoint              |
 | `smithers/agent/integrations` | `GitHub live contract (GITHUB_TOKEN)`                                                              | `describe.skipIf(GITHUB_TOKEN === undefined)`               |
 | `smithers/build/targets`      | `SecretProxy brokered origins over the network`                                                    | `describe.runIf(SMITHERS_E2E_NETWORK === "1")`              |
 | `smithers/agent/model`        | `OpenAIChatCompletions over Gemini`                                                                | `describe.skipIf(SMITHERS_LIVE_MODEL_TESTS !== "1"          |
@@ -516,7 +518,7 @@ lives. The items an alpha operator hits first:
   until it re-registers the handlers for its stored runs, because registration
   is what re-arms durable clocks and deferred wakes.
 - **The production layer packages two levels, and only one of them is
-  complete.** `@smthrs/flows/NodeRuntime.layer` composes database, migrations,
+  complete.** `NodeRuntime.layer` from `@smthrs/platform-node` composes database, migrations,
   stores, and the engine, and leaves host services, the step boundary, and the
   workspace sandbox to the caller. `NodeRuntime.layerHost` adds the rest: the
   contained Node host, the guarded `HostServices` kernel over an unattended
@@ -524,9 +526,9 @@ lives. The items an alpha operator hits first:
   liveness probe, and `SIGINT`/`SIGTERM` shutdown bounded by
   `shutdownTimeoutMs`. A program that composes `layer` still owes `Crypto`,
   `FileSystem`, and `Jj`, and installs its own signal handlers.
-  `packages/smithers/flows/src/test/TestNodeRuntime.ts` is the worked composition, and
-  [the barrel's API page](../../../packages/smithers/flows/docs/api.md) lists both
-  entry points.
+  `packages/smithers/flows/platform-node/src/TestNodeRuntime.ts` is the worked composition, and
+  [the platform-node API page](../../../packages/smithers/flows/platform-node/docs/api.md#noderuntime)
+  lists both entry points.
 - **Detached child flows need a composed child port.** A host that composes
   `EngineChildren` runs `agent/spawn`, `agent/send` and `agent/await` as real
   linked runs; a composition that supplies no child port refuses all three with
@@ -556,6 +558,21 @@ Prefer fixing the defect. If a pin is genuinely the right call:
 
 `node --test packages/repo-targets/contracts/check-test-pins.test.mjs` enforces step 3. Steps 1 and 2
 are review conventions; nothing checks them.
+
+**`database` — transaction-pooling endpoints.** `test/PostgresPooling.test.ts`
+runs its suite against PgBouncer in transaction-pooling mode (`apps/mvp`'s
+compose service on port 54322), which stands in for Cloudflare Hyperdrive, and
+against direct Postgres. An endpoint with nothing listening registers one
+`it.skip` that names the missing service and how to start it, instead of
+failing the package. If this regresses, a store that sets session state outside
+a transaction breaks behind Hyperdrive in production. The workaround is to run
+`pnpm db:up` in `apps/mvp` first. Retire the pin by having the package's
+`testProgram` start PgBouncer beside its PostgreSQL.
+
+**`platform-cloudflare` — workerd smoke.** `FLOWS_WORKERD_SMOKE=1` runs a real
+Durable Object with a real alarm and `ctx.abort()` mid-step against local
+Hyperdrive, as `harness`'s smoke does. It needs workerd and Postgres, which the
+default gate does not start.
 
 **`platform-bun` — nested runner guard.** The ordinary Node suite starts the
 declared Bun test runner and asserts that its selected test runs inside Bun.

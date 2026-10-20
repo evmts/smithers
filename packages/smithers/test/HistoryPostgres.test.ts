@@ -1,6 +1,6 @@
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as TimeTravelMigrations from "@smthrs/time-travel/Migrations"
 import { forkWorkspaceName } from "@smthrs/time-travel/TimeTravel"
 import { Effect } from "effect"

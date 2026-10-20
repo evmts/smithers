@@ -7,7 +7,7 @@ Smithers is built from typed durable flows, a coding agent that calls flows, and
 | Concern | Start here |
 | --- | --- |
 | Write a file flow | `Flow.make` from `@smthrs/flow` |
-| Run flows on a durable Node host | `@smthrs/flows/NodeRuntime` |
+| Run flows on a durable Node host | `NodeRuntime` from `@smthrs/platform-node` |
 | Run a model inside a flow | `@smthrs/agent` (`AgentAction` or `AgentSession`) |
 | Declare build targets | `WORKSPACE.ts` and each `PACKAGE.ts`, using `@smthrs/targets` |
 
@@ -15,7 +15,7 @@ Smithers is built from typed durable flows, a coding agent that calls flows, and
 
 A file flow lives at `.smithers/flows/<name>/flow.ts` and default-exports `Flow.make` from `@smthrs/flow`; the tag matches its directory. `/flows` lists discovered flow descriptions without importing modules, and a flow invoked without required input opens a schema-driven form.
 
-`NodeRuntime` is the Node host composition over the shared, injected durable runtime. Its `layerHost` provides the native host, guarded services, database and registered flows.
+`NodeRuntime`, in `@smthrs/platform-node`, is the Node host composition over `@smthrs/flows`' shared, injected durable runtime. Its `layerHost` provides the native host, guarded services, database and registered flows.
 
 ## Follow the agent path
 

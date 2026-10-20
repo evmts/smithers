@@ -19,8 +19,8 @@ try {
     Layer.provide(ProcessLedger.layerMemory({ hostId: "release-sandbox-smoke", ownerPid: process.pid }))
   )
   const formats = [
-    ["esm", await import("@smthrs/flows/SandboxedFlow")],
-    ["cjs", createRequire(import.meta.url)("@smthrs/flows/SandboxedFlow")]
+    ["esm", (await import("@smthrs/platform-node")).SandboxedFlow],
+    ["cjs", createRequire(import.meta.url)("@smthrs/platform-node").SandboxedFlow]
   ]
   // Keep the contained host and its ledger alive until both guest executions
   // and their session cleanup have completed.

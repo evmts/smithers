@@ -6,7 +6,7 @@
  * and exact assessment, the citation check and the verified write all hold.
  */
 import { NodeServices } from "@effect/platform-node"
-import * as BuiltinScript from "@smthrs/testing/BuiltinScript"
+import { BuiltinScript } from "@smthrs/testing"
 import { Effect } from "effect"
 import assert from "node:assert/strict"
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"

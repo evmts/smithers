@@ -17,6 +17,7 @@ import * as Exec from "@smthrs/targets/Exec"
 import type * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import { ExpandFilegroupLive } from "@smthrs/targets/Filegroup"
 import { CheckFileLive, WriteFileLive } from "@smthrs/targets/GeneratedFile"
+import { JevReviewLive } from "@smthrs/targets/JevLint"
 import { LlmReviewLive } from "@smthrs/targets/LlmLint"
 import { ScaffoldPackageLive } from "@smthrs/targets/NewPackage"
 import { SyncPackageJsonLive } from "@smthrs/targets/PackageJson"
@@ -100,6 +101,7 @@ export const runTarget = (
         sensitiveEnv,
         store: { directory: NodePath.resolve(workspaceRoot, cacheDirectory, "review-findings") }
       }),
+      JevReviewLive({ workspaceRoot }),
       SyncPackageJsonLive({ workspaceRoot, cacheDirectory }),
       ScaffoldPackageLive({ workspaceRoot, packageName }),
       Target.layerNotImplemented,

@@ -15,7 +15,7 @@ import {
   supervisorStance
 } from "@smthrs/cli/NodeControl"
 import { Action, HumanTask, Interpreter } from "@smthrs/flow"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Registry from "@smthrs/registry/Registry"

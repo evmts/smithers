@@ -20,7 +20,7 @@ import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as Capability from "@smthrs/capability/Capability"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import { durableEngine } from "@smthrs/flows/test/TestNodeRuntime"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as McpClient from "@smthrs/mcp/McpClient"
 import * as McpFlows from "@smthrs/mcp/McpFlows"
@@ -258,7 +258,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
                 ScriptedJudge.layer
               ),
               Layer.provideMerge(Action.layerImplementations),
-              Layer.provideMerge(durableEngine(filename, "examples-mcp"))
+              Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-mcp"))
             )
           )
         )

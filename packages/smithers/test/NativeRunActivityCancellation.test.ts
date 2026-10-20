@@ -2,7 +2,7 @@
  * new lifecycle events into a released host's historical control journal. */
 import { Control, type ControlSchema } from "@smthrs/control"
 import { Action } from "@smthrs/flow"
-import * as NativeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime as NativeRuntime } from "@smthrs/platform-node"
 import { Ownership } from "@smthrs/run-store"
 import { Duration, Effect, Layer, Stream } from "effect"
 import { spawn } from "node:child_process"

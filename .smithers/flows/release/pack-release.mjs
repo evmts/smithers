@@ -78,6 +78,7 @@ export const publishedPackages = [
   "@smthrs/plan-store",
   "@smthrs/platform-browser",
   "@smthrs/platform-bun",
+  "@smthrs/platform-cloudflare",
   "@smthrs/platform-node",
   "@smthrs/plugin",
   "@smthrs/registry",

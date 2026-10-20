@@ -1,6 +1,6 @@
 import { flowProps } from "../flows/FlowAction"
 import type { RunDynamicCommand } from "../cards/CardFamily"
-import { WORDMARK } from "../Wordmark"
+import { WORDMARK } from "@smthrs/ui"
 import { createContext, useCallback, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 import { BookOpen, X } from "lucide-react"
 import { githubSyncChip, type GitHubSync } from "./githubSync"

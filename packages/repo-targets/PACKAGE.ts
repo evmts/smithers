@@ -164,6 +164,7 @@ const releaseContracts = Smithers.NodeTest({
     ...contracts,
     Smithers.file("//.smithers/flows/release/pack-release.mjs"),
     Smithers.file("//packages/repo-targets/contracts/check-dependency-boundaries.mjs"),
+    Smithers.file("//packages/repo-targets/src/ImportAnalysis.ts"),
     Smithers.file("//.smithers/flows/release/fixtures/installed-consumer/consumer-boundary.mjs"),
     Smithers.file("//.smithers/flows/release/fixtures/installed-consumer/dependency-adapters.mjs"),
     Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs"),
@@ -520,7 +521,11 @@ const lockfileParityUnit = Smithers.NodeTest({
 })
 
 /**
- * Every import a workspace source makes is declared by that workspace.
+ * Every import a workspace source makes is declared by that workspace, and no
+ * source under `apps/` or `packages/` imports a durable runtime or model SDK
+ * that "Everything is a durable flow" in the root `AGENTS.md` bans: Cloudflare
+ * Workflows (directly or through Alchemy), Temporal, Inngest, Trigger.dev, the
+ * Vercel AI SDK, LangChain or Mastra.
  *
  * pnpm links the whole workspace under one `node_modules`, so an undeclared
  * import of a sibling still resolves locally and then fails for a consumer who
@@ -532,25 +537,34 @@ const lockfileParityUnit = Smithers.NodeTest({
  * @category test
  */
 const dependencyBoundaries = Smithers.NodeTest({
-  summary: "No package imports cross declared workspace boundaries.",
+  summary: "No package imports cross declared workspace boundaries or a banned durable runtime.",
   featured: true,
   runner: Smithers.entrypoint(Smithers.file("//packages/repo-targets/contracts/check-dependency-boundaries.mjs")),
-  srcs: [...contracts, Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs")],
+  srcs: [
+    ...contracts,
+    Smithers.file("//packages/repo-targets/src/ImportAnalysis.ts"),
+    Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs")
+  ],
   deps: []
 })
 
 /**
- * The literal-blanking step of the dependency-boundaries gate: single-pass
- * blanking matches the reduce it replaced byte for byte, its cost stays linear
- * in the file size, and only a manifest's declared private Effect adapters
- * count as runtime imports.
+ * The dependency-boundaries gate's own cases: workspace reach-throughs, the
+ * runtime and development dependency split, private Effect adapters and
+ * optional peers count as runtime imports, and the durable-flow ban catches
+ * every import form of a banned runtime and no lookalike, and fails the gate
+ * on one outside `src/`.
  *
  * @since 0.1.0
  * @category test
  */
 const dependencyBoundariesUnit = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/check-dependency-boundaries.test.mjs")]),
-  srcs: [...contracts, Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs")],
+  srcs: [
+    ...contracts,
+    Smithers.file("//packages/repo-targets/src/ImportAnalysis.ts"),
+    Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs")
+  ],
   deps: []
 })
 

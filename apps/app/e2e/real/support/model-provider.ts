@@ -28,7 +28,7 @@ import { matrixFlowCell } from "./matrix-flow-fixture"
  *   [SMITHERS_MODEL_PROVIDER_SLOW_MS=8000] bun e2e/real/support/model-provider.ts
  */
 import { createHash, timingSafeEqual } from "node:crypto"
-import * as BuiltinScript from "@smthrs/testing/BuiltinScript"
+import { BuiltinScript } from "@smthrs/testing"
 import {
   INSTALL_MODEL, PROVIDER_CONFIDENCE, PROVIDER_ECHO_LEAD, PROVIDER_MODEL, PROVIDER_PATHS, PROVIDER_READ_LEAD, PROVIDER_REPLY, PROVIDER_RETRY_AFTER_SECONDS,
   type ProviderJournalEntry, type ProviderProtocol

@@ -10,7 +10,7 @@
  * @since 1.0.0
  */
 import { Action, DurableDeferred, Flow, HumanTask, Interpreter, RetryPolicy, Sleep } from "@smthrs/flow"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import { Node } from "@smthrs/plan"
 import * as Effect from "effect/Effect"

@@ -5,7 +5,7 @@
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import { Control } from "@smthrs/control"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { Context, Effect, Exit, Layer } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { spawn } from "node:child_process"

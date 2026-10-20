@@ -1,5 +1,6 @@
 // The maintainer site's client: a hash router over window.SITE (assets/data.js, written by build.mjs).
 //   #/                      home
+//   #/work[?area=<area>]    work board: one column per status, one card per apps/mvp/docs/work note
 //   #/flows[/<spec>]        GIF gallery
 //   #/graph                 note graph
 //   #/search?q=<query>      search
@@ -52,6 +53,7 @@
     const [name, query = ""] = path.split("?")
     if (name === "") return { view: "home" }
     if (name === "flows" || name.startsWith("flows/")) return { view: "flows", spec: name.slice(6) }
+    if (name === "work") return { view: "work", area: new URLSearchParams(query).get("area") ?? "" }
     if (name === "graph") return { view: "graph" }
     if (name === "search") return { view: "search", q: new URLSearchParams(query).get("q") ?? "" }
     if (notes.has(name)) return { view: "note", path: name, anchor }
@@ -60,7 +62,7 @@
 
   function render() {
     const r = route()
-    const key = r.view === "note" ? `note:${r.path}` : r.view
+    const key = r.view === "note" ? `note:${r.path}` : r.view === "work" ? `work:${r.area}` : r.view
     if (key === currentKey) {
       if (r.view === "note") return scrollToAnchor(r.anchor)
       if (r.view === "search") return renderResults(r.q)
@@ -75,6 +77,7 @@
     if (r.view !== "search" && document.activeElement !== input) input.value = ""
     if (r.view === "home") home()
     else if (r.view === "flows") flows(r.spec)
+    else if (r.view === "work") board(r.area)
     else if (r.view === "graph") graph()
     else if (r.view === "search") search(r.q)
     else if (r.view === "note") note(r.path, r.anchor)
@@ -128,6 +131,7 @@
           .map(([count, label, to]) => `<a class="stat" href="${to}"><span class="stat-n">${count}</span><span class="stat-l">${label}</span></a>`)
           .join("")}</div>
         <div class="go">
+          <a href="#/work">${icon("board")}Work</a>
           <a href="#/flows">${icon("play")}Flows</a>
           <a href="#/graph">${icon("graph")}Graph</a>
           <a href="#/search">${icon("search")}Search <kbd>/</kbd></a>
@@ -156,8 +160,52 @@
       play: '<rect x="3" y="4" width="14" height="12" rx="2"/><path d="M8.5 7.5v5l4-2.5z" fill="currentColor" stroke="none"/>',
       graph: '<circle cx="5" cy="6" r="2"/><circle cx="15" cy="5" r="2"/><circle cx="10" cy="15" r="2"/><path d="M6.8 6.9l2.4 6.2M13.6 6.6l-2.7 6.6M7 5.8l6-.6"/>',
       search: '<circle cx="9" cy="9" r="5"/><path d="M13 13l4 4"/>',
+      board: '<rect x="3" y="4" width="4" height="12" rx="1"/><rect x="8" y="4" width="4" height="8" rx="1"/><rect x="13" y="4" width="4" height="10" rx="1"/>',
     }
     return `<svg class="icon" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">${paths[name]}</svg>`
+  }
+
+  // ---------------------------------------------------------------------------------------------------
+  // Work: a kanban of apps/mvp/docs/work notes, one column per status, filtered by area.
+
+  function board(area) {
+    document.title = "Work · Smithers maintainer"
+    const items = area ? S.work.filter((item) => item.area === area) : S.work
+    const open = (list) => list.filter((item) => item.status !== "done").length
+    const chip = (value, label, count) =>
+      `<a href="#/work${value ? `?area=${encodeURIComponent(value)}` : ""}"${value === area ? ' aria-current="true"' : ""}>${esc(label)} <span class="count">${count}</span></a>`
+    const card = (item) => `
+      <li>
+        <a class="card" href="${href(item.path)}" data-path="${esc(item.path)}" data-status="${esc(item.status)}" data-area="${esc(item.area)}">
+          <span class="card-title">${esc(item.title)}</span>
+          <span class="card-meta">
+            <span class="tag area-${esc(item.area)}">${esc(item.area)}</span>
+            ${item.updated ? `<time datetime="${esc(item.updated)}">${esc(item.updated)}</time>` : ""}
+          </span>
+          ${item.owner ? `<span class="card-owner">${esc(item.owner)}</span>` : ""}
+        </a>
+      </li>`
+    main.innerHTML = `
+      <div class="page wide board-page">
+        <header class="page-head">
+          <h1>Work <span class="count">${open(items)} open</span></h1>
+          <nav class="chips board-areas" aria-label="Areas">${chip("", "All", S.work.length)}${S.workAreas
+            .map((value) => chip(value, value, S.work.filter((item) => item.area === value).length))
+            .join("")}</nav>
+        </header>
+        <div class="board" style="--cols:${S.workStatuses.length}">${S.workStatuses
+          .map((status) => {
+            const cards = items.filter((item) => item.status === status.id)
+            return `
+          <section class="col" data-status="${esc(status.id)}" aria-labelledby="col-${esc(status.id)}">
+            <h2 id="col-${esc(status.id)}"><span class="dot st-${esc(status.id)}"></span>${esc(status.label)} <span class="count">${cards.length}</span></h2>
+            <ol class="cards">${cards.map(card).join("")}</ol>
+          </section>`
+          })
+          .join("")}</div>
+        ${S.work.length === 0 ? `<p class="muted">No notes in apps/mvp/docs/work</p>` : ""}
+      </div>`
+    window.scrollTo(0, 0)
   }
 
   // ---------------------------------------------------------------------------------------------------
