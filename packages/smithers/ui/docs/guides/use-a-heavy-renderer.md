@@ -138,6 +138,40 @@ style seam the rest of the library uses. Never add
 `import "@xterm/xterm/css/xterm.css"` yourself: a bundler configured to drop CSS
 artifacts discards it silently.
 
+## Frame a shell
+
+A shell's output is untrusted: it can carry escape sequences and links. Show a
+live shell with `TerminalFrame`, which runs xterm.js in a sandboxed frame with
+no network while your page keeps the connection:
+
+```tsx
+import { TerminalFrame } from "@smthrs/ui/adapters/terminal-frame"
+
+export function ShellTerminal({ session, watching }: {
+  readonly session: TerminalSession
+  readonly watching: boolean
+}) {
+  return (
+    <TerminalFrame
+      title="Terminal"
+      theme="dark"
+      readOnly={watching}
+      style={{ height: 320 }}
+      onInput={(data) => session.input(data)}
+      onResize={(cols, rows) => session.resize(cols, rows)}
+      onKey={() => openCommandPalette()}
+      stream={(write) => session.attach({ onOutput: write.output })}
+    />
+  )
+}
+```
+
+Give the frame a height; it fills its container. `stream` runs again each time
+the frame scrolls back near the screen, so attach there and detach in its
+teardown. In a browser, `TerminalSocket` from `@smthrs/platform-browser` is the
+session: it reconnects, drops keystrokes typed while offline, and keeps only
+the latest size.
+
 ## Draw a chart
 
 `ChartContainer` is the shadcn chart contract over Recharts. Series colors come

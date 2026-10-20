@@ -246,6 +246,9 @@ export { RelativeTime, useRelativeTime, type RelativeTimeProps } from "./time/Re
 export { useDialogFocusTrap, type UseDialogFocusTrapOptions } from "./internal/useDialogFocusTrap";
 export { EmptyState, type EmptyStateProps } from "./empty-state";
 export { Breadcrumbs, type BreadcrumbItem, type BreadcrumbsProps } from "./breadcrumbs";
+export { Popover, PopoverTrigger, PopoverContent } from "./popover";
+export { RefPicker, type RefPickerProps, type RefPickerRef, type RefPickerRefs } from "./ref-picker";
+export { CopyButton, type CopyButtonProps } from "./copy-button";
 export {
   DirectoryListing,
   type DirectoryEntry,
@@ -738,6 +741,95 @@ export { frameRuntime } from "./generated-view/runtime.generated";
 export { loadPresentationBundle, presentationComponentNames, presentationComponents } from "./presentation";
 export { FlowFormView, flowFormViewCss, type FlowFormSubmission, type FlowFormViewProps } from "./flow-form-view";
 export { IssuesView, issuesViewCss, type IssuesViewIssue, type IssuesViewProps } from "./issues-view";
+export {
+  IssueForm,
+  ItemConversation,
+  itemConversationCss,
+  type IssueFormProps,
+  type ItemConversationComment,
+  type ItemConversationComposer,
+  type ItemConversationProps,
+} from "./item-conversation";
+// The agent's status (apps/mvp decision 0015): the pill, the needs-you card, the toast stack and the tab title.
+export {
+  AGENT_STATES,
+  AGENT_STATUS_GLYPHS,
+  AGENT_STATUS_WORDS,
+  agentStatusCss,
+  AgentStatusPill,
+  agentStatusTitle,
+  answerText,
+  isAgentState,
+  NeedsYouCard,
+  Toast,
+  ToastStack,
+  type AgentState,
+  type AgentStatusPillProps,
+  type NeedsYouAnswer,
+  type NeedsYouCardProps,
+  type NeedsYouKind,
+  type ToastProps,
+  type ToastStackProps,
+} from "./agent-status";
+// Runs and flows (apps/mvp decision 0014): a redacted, clipped value as text; the run page's list, header, steps,
+// timeline and journal; and the card a flow is drafted in.
+export { formatBytes, JsonValue, jsonValueCss, jsonValueText, type JsonValueData, type JsonValueProps } from "./json-value";
+export {
+  type AttemptRow,
+  attemptWords,
+  clockDuration,
+  isSettled,
+  type JournalRow,
+  offsetWords,
+  RUN_WORD_GLYPHS,
+  RUN_WORD_TONES,
+  RUN_WORDS,
+  RunHeader,
+  type RunHeaderProps,
+  RunJournal,
+  type RunJournalProps,
+  RunList,
+  type RunListProps,
+  runPageCss,
+  type RunRow,
+  type RunState,
+  RunStatusPill,
+  type RunStatusPillProps,
+  type RunTone,
+  RunWaterfall,
+  type RunWaterfallProps,
+  type RunWord,
+  runWord,
+  SpanDetail,
+  type SpanDetailProps,
+  SpanTree,
+  type SpanTreeProps,
+  STEP_GLYPHS,
+  STEP_WORDS,
+  stepDuration,
+  stepElapsed,
+  type StepRow,
+  type StepState,
+  untilWords,
+  type WaitData,
+  waitWords,
+  waterfallAxis,
+  type WaterfallBar,
+  waterfallBars,
+} from "./run-page";
+export {
+  changedAnswers,
+  type DraftCheck,
+  type DraftFile,
+  type DraftQuestion,
+  type DraftStatus,
+  draftStatusLine,
+  FlowDraftView,
+  type FlowDraftViewProps,
+  flowDraftViewCss,
+  isAssumed,
+  questionValue,
+} from "./flow-draft-view";
 // An outside web page: in a sandboxed frame, or as a card that opens a tab.
 export {
   framedPageTarget,

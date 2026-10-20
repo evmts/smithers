@@ -108,6 +108,18 @@ export const normalizeAttribute = (name: string): string => name.toLowerCase().r
 export const isRefusedElement = (name: string): boolean => refusedElements.has(name.toLowerCase())
 
 /**
+ * Whether a prop is an event handler: a view may not set one, and React's
+ * static renderer never emits one.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const isEventHandler = (name: string): boolean => {
+  const normalized = normalizeAttribute(name)
+  return normalized.length > 2 && normalized.startsWith("on")
+}
+
+/**
  * Why an attribute is refused on an element, or `undefined` when it is
  * allowed. `src` is allowed only on `img`, and only for a `data:image` URL.
  *
@@ -116,7 +128,7 @@ export const isRefusedElement = (name: string): boolean => refusedElements.has(n
  */
 export const attributeRefusal = (element: string, name: string, value: unknown): string | undefined => {
   const normalized = normalizeAttribute(name)
-  if (normalized.length > 2 && normalized.startsWith("on")) {
+  if (isEventHandler(name)) {
     return `\`${name}\` is an event handler; a view sends events with data-event instead`
   }
   if (normalized === "src" && element.toLowerCase() === "img" && typeof value === "string" && imageData.test(value)) {

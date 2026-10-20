@@ -115,7 +115,8 @@ and Paper light/dark, rather than restating them.
   [complete slash commands](./guides/complete-slash-commands.md),
   [use a heavy renderer](./guides/use-a-heavy-renderer.md),
   [show a generated view](./guides/show-a-generated-view.md),
-  [show a web page](./guides/show-a-web-page.md), and
+  [show a web page](./guides/show-a-web-page.md),
+  [show a run](./guides/show-a-run.md), and
   [test a component](./guides/test-a-component.md).
 - [API reference](./api.md): every export of the base barrel and the ten
   subpaths, with signatures.

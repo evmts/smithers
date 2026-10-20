@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+import { createRequire } from "node:module"
 import { runInNewContext } from "node:vm"
 import * as React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
@@ -5,6 +7,7 @@ import * as jsxRuntime from "react/jsx-runtime"
 import { describe, expect, it } from "vitest"
 import { Presentation } from "../src/index.ts"
 import { harden } from "../src/internal/harden.ts"
+import { legacyServer } from "./fixtures/bundle.ts"
 
 const Card = ({ children }: { readonly children?: React.ReactNode }) =>
   jsxRuntime.jsx("div", { className: "sui-card", children })
@@ -173,6 +176,88 @@ describe("Presentation.make", () => {
     installed.render(module, "{}", "null")
     installed.render(module, "{}", "null")
     expect(evaluations).toBe(2)
+  })
+})
+
+/** React's static renderer as `guardRenderer` patches it, evaluated here with `guardHost` as its guard. */
+const guardedRenderer = (): (element: unknown) => string => {
+  const module = { exports: {} as { renderToStaticMarkup: (element: unknown) => string } }
+  const evaluate = new Function(
+    "module",
+    "exports",
+    "require",
+    Presentation.hostGuardName,
+    Presentation.guardRenderer(
+      readFileSync(legacyServer, "utf8")
+    )
+  )
+  evaluate(module, module.exports, createRequire(legacyServer), Presentation.guardHost)
+  return module.exports.renderToStaticMarkup
+}
+
+describe("Presentation.guardRenderer", () => {
+  const render = guardedRenderer()
+  const elementType = (React.createElement("p") as unknown as { $$typeof: symbol }).$$typeof
+
+  it("refuses what the guard refuses, however the element was built", () => {
+    const forged = { $$typeof: elementType, type: "script", key: null, ref: null, props: { children: "alert(1)" } }
+    expect(() => render(forged)).toThrow("<script> is refused in a view")
+    expect(() =>
+      render(React.createElement("div", { dangerouslySetInnerHTML: { __html: "<img src=x onerror=alert(1)>" } }))
+    )
+      .toThrow("`dangerouslySetInnerHTML` is refused in a view")
+    expect(() => render(React.createElement("p", null, React.createElement("iframe")))).toThrow(
+      "<iframe> is refused in a view"
+    )
+  })
+
+  it("emits the props the guard read, so a getter cannot answer the two differently", () => {
+    let reads = 0
+    const props = {
+      alt: "",
+      get src() {
+        return reads++ === 0 ? "data:image/png;base64,AA" : "https://evil.example/p.png"
+      }
+    }
+    expect(render(jsxRuntime.jsx("img", props))).toBe("<img alt=\"\" src=\"data:image/png;base64,AA\"/>")
+    expect(reads).toBe(1)
+  })
+
+  it("renders what it admits exactly as React does", () => {
+    const tree = React.createElement(
+      "section",
+      { className: "k", style: { gridTemplateColumns: "1fr" }, "data-event": "go" },
+      "a < b",
+      React.createElement("svg", { viewBox: "0 0 1 1", strokeWidth: 2 }, React.createElement("circle", { r: 1 }))
+    )
+    expect(render(tree)).toBe(renderToStaticMarkup(tree))
+  })
+
+  it("refuses a renderer it cannot find the one place to guard in", () => {
+    const start = "function pushStartInstance(target, type, props, state) {}"
+    for (const source of ["function other() {}", `${start}\n${start}`]) {
+      expect(() => Presentation.guardRenderer(source)).toThrow(
+        "React's static renderer has no single pushStartInstance(target, type, props, ...) to guard"
+      )
+    }
+    expect(Presentation.guardRenderer(start)).toBe(
+      "function pushStartInstance(target, type, props, state) {\n  props = __smithersHostGuard(type, props);}"
+    )
+  })
+})
+
+describe("Presentation.guardHost", () => {
+  it("returns a frozen copy of an element's own enumerable props, and none for no props", () => {
+    const props = { title: "t" }
+    const copy = Presentation.guardHost("p", props)
+    expect(copy).toEqual(props)
+    expect(copy).not.toBe(props)
+    expect(Object.isFrozen(copy)).toBe(true)
+    expect(Presentation.guardHost("br", null)).toEqual({})
+    expect(Presentation.guardHost("label", { htmlFor: "u", onMouseDown: () => 1, onclick: "alert(1)" })).toEqual({
+      htmlFor: "u"
+    })
+    expect(() => Presentation.guardHost("p", { href: "/x" })).toThrow("`href` is refused in a view")
   })
 })
 

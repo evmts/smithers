@@ -61,6 +61,11 @@
       "import": "./src/adapters/terminal.tsx",
       "default": "./src/adapters/terminal.tsx"
     },
+    "./adapters/terminal-frame": {
+      "types": "./src/adapters/terminal-frame/index.ts",
+      "import": "./src/adapters/terminal-frame/index.ts",
+      "default": "./src/adapters/terminal-frame/index.ts"
+    },
     "./status": {
       "types": "./src/status.ts",
       "import": "./src/status.ts",

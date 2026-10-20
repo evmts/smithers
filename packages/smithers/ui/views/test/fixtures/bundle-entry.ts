@@ -15,16 +15,31 @@ const join = (...names: ReadonlyArray<unknown>) => names.filter((name) => typeof
 const Card = ({ children, className }: { readonly children?: React.ReactNode; readonly className?: string }) =>
   jsxRuntime.jsx("div", { "data-slot": "card", className: join("sui-card", className), children })
 
+/**
+ * Radix's `Slot`, as `@smthrs/ui`'s `Button` reaches it under `asChild`: a
+ * forwardRef component no view imports, whose `render` React reads on every
+ * render, and which a view reaches only by calling `Button` itself.
+ */
+const Slot = React.forwardRef<unknown, { readonly children?: React.ReactNode }>(({ children, ...rest }, _ref) =>
+  React.cloneElement(React.Children.only(children) as React.ReactElement, rest)
+)
+
 const Button = (
-  { children, className, ...rest }: { readonly children?: React.ReactNode; readonly className?: string }
+  { asChild, children, className, ...rest }: {
+    readonly asChild?: boolean
+    readonly children?: React.ReactNode
+    readonly className?: string
+  }
 ) =>
-  jsxRuntime.jsx("button", {
-    "data-slot": "button",
-    type: "button",
-    className: join("sui-button", className),
-    ...rest,
-    children
-  })
+  asChild
+    ? jsxRuntime.jsx(Slot, { "data-slot": "button", className: join("sui-button", className), ...rest, children })
+    : jsxRuntime.jsx("button", {
+      "data-slot": "button",
+      type: "button",
+      className: join("sui-button", className),
+      ...rest,
+      children
+    })
 
 const Badge = ({ children }: { readonly children?: React.ReactNode }) =>
   jsxRuntime.jsx("span", { "data-slot": "badge", className: "sui-badge", children })

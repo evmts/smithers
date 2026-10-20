@@ -109,7 +109,8 @@ form is disabled and shows `values`, never a write-only one.
 
 ## The issues template
 
-`IssuesView` lists issues the host passed in, with no navigation:
+`IssuesView` lists issues the host passed in, with no navigation unless the
+host passes `href` (see [the API reference](../api.md#templates-forms-and-issues)):
 
 ```tsx
 <IssuesView repo="maya/tinyhttp" issues={issues} size="inline" />

@@ -2,6 +2,7 @@
 import { Bridge, type Interactions, ViewCsp } from "@smthrs/views";
 import { type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../cn";
+import { newNonce, useNearScreen } from "../internal/frameMount";
 import { composeSmithersUiStyles, useInjectUiCss } from "../styles";
 import { frameBaseCss } from "./generatedViewCss";
 import { frameRuntime } from "./runtime.generated";
@@ -36,26 +37,6 @@ const mountedFrames = new WeakSet<object>();
 
 const defaultStyles = () => `${frameBaseCss}${composeSmithersUiStyles({ withTheme: true })}`;
 
-/** A fresh per-mount secret: 24 random bytes as base64url. */
-const newNonce = (): string => {
-  const bytes = crypto.getRandomValues(new Uint8Array(24));
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-};
-
-/** Whether the element is on screen, or `true` where nothing can tell. */
-const useVisible = (element: HTMLElement | null): boolean => {
-  const [visible, setVisible] = useState(typeof IntersectionObserver === "undefined");
-  useEffect(() => {
-    if (element === null || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver((entries) => setVisible(entries.some((entry) => entry.isIntersecting)), {
-      rootMargin: "200px",
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [element]);
-  return visible;
-};
-
 /**
  * Shows a generated view's HTML in a sandboxed frame, and turns what a person
  * does in it into declared interactions.
@@ -85,7 +66,7 @@ export function GeneratedView({
 }: GeneratedViewProps) {
   useInjectUiCss();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
-  const visible = useVisible(host);
+  const visible = useNearScreen(host);
   const frame = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number>(Bridge.inlineHeight.min);
   const latest = useRef({ html, theme, size, interactions, onInteraction, onRefused, now });

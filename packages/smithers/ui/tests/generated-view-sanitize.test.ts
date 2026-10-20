@@ -64,6 +64,13 @@ describe("sanitize drops", () => {
     );
   });
 
+  test("what a hand-built element would emit if the realm's render guard did not run", () => {
+    const forged =
+      '<div class="sui-card"><script>alert(1)</script><img src="x" onerror="alert(1)">' +
+      '<p><img src=x onerror=alert(1)></p></div>';
+    expect(clean(forged)).toBe('<div class="sui-card"><img><p><img></p></div>');
+  });
+
   test("handlers, links, remote sources and URL-bearing styles", () => {
     expect(clean('<p onclick="alert(1)" OnMouseOver="x" title="t">x</p>')).toBe('<p title="t">x</p>');
     expect(clean('<img src="https://evil.example/p.png" srcset="a.png 1x" alt="x">')).toBe('<img alt="x">');

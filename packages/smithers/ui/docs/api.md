@@ -26,6 +26,7 @@ it takes an explicit props bag instead.
 | `@smthrs/ui/vault`                     | [Vault](#vault)                                               | None             |
 | `@smthrs/ui/adapters/chart`            | [Chart](#chart)                                               | `recharts`       |
 | `@smthrs/ui/adapters/terminal`         | [Terminal](#terminal)                                         | `@xterm/*`       |
+| `@smthrs/ui/adapters/terminal-frame`   | [Terminal frame](#terminal-frame)                             | `@xterm/*`, as the frame's runtime |
 | `@smthrs/ui/adapters/code-view`        | [Code view](#code-view)                                       | `@pierre/diffs`  |
 | `@smthrs/ui/adapters/repo-view`        | [Repo view](#repo-view)                                       | `@pierre/diffs`, `@milkdown/*` |
 | `@smthrs/ui/adapters/pierre-diff-view` | [Pierre diff view](#pierre-diff-view)                         | `@pierre/diffs`  |
@@ -156,6 +157,9 @@ sourced from a host cannot resolve through `Object.prototype`.
 | `Markdown`                                                                                  | `MarkdownProps`, `MarkdownLinkClick`, `MarkdownVariant`, `MarkdownImageResolver` | Dependency-free renderer. Builds React children rather than `innerHTML`, and scheme-filters link hrefs. `variant="document"` reads a repository file as GitHub does: HTML comments dropped, `<pre>` kept preformatted, other tags reduced to their text, single newlines joined, `>` blockquotes nested, a quote whose first line is `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` drawn as a GitHub alert, and images reduced to their alt text (no `<img>`, no request). `resolveImage` draws a line that is exactly `![alt](https://example.com/image.png)` as the light and dark files it returns, one shown per `html[data-theme]`; on a miss the line renders as it would without it. |
 | `FileTree`                                                                                  | `FileTreeProps`, `FileTreeItem`, `FileTreeNode`, `FileTreeNodeProps`, `FileTreeDirectoryProps` | Flat `/`-delimited paths grouped into a nested tree, with controlled single selection. |
 | `Breadcrumbs`                                                                               | `BreadcrumbsProps`, `BreadcrumbItem` | A path trail. Every step but the last is an `<a href>`, and the last is `aria-current="page"`. `onNavigate` takes a plain click; a modified click stays the browser's. |
+| `Popover`, `PopoverTrigger`, `PopoverContent`                                               | Radix Popover props            | A panel anchored to its trigger, in a portal, on the overlay tokens. `PopoverContent` aligns to the trigger's start, 6px below it, unless `align` or `sideOffset` say otherwise. Escape, a click outside and the trigger close it. |
+| `RefPicker`                                                                                 | `RefPickerProps`, `RefPickerRef`, `RefPickerRefs` | A branch and tag picker for a repository view's revision: a button showing `current`, opening a filter over `refs` (`loading`, `ready` with `branches`, `tags` and `truncated`, or `failed` with a `message`) on two tabs counted by length. Each choice is an `<a href>` from `href(ref)` with its short SHA; `selected` is marked and `defaultBranch` badged `default`. A full 40-hex SHA typed in the filter is offered too. `onSelect(ref)` takes a plain click or Enter on the first match; a modified click stays the browser's. |
+| `CopyButton`                                                                                | `CopyButtonProps`              | A `Button` that copies through the host's `onCopy`, which resolves once the text is on the clipboard and rejects when it isn't. Shows `copiedLabel` ("Copied") for `copiedDurationMs` (2,000), sets `data-copy-failed` on a rejection, and ignores clicks while a copy is in flight (`data-copying`). It never touches the clipboard itself. |
 | `DirectoryListing`                                                                          | `DirectoryListingProps`, `DirectoryEntry`, `DirectoryTarget` | One directory's entries as links with folder and file icons, under a `..` row when `parent` is set. `href` builds each link, `onOpen` takes a plain click, and `empty` shows when there is nothing to list. |
 | `useDialogFocusTrap`                                                                        | `UseDialogFocusTrapOptions`    | `{ active, containerRef, initialFocusRef, onClose }`. Focus containment for a custom overlay. |
 
@@ -555,6 +559,73 @@ The xterm base stylesheet is vendored as a string and injected through the same
 seam as the rest of the library, so a host must not import
 `@xterm/xterm/css/xterm.css`.
 
+## Terminal frame
+
+`@smthrs/ui/adapters/terminal-frame`. xterm.js and its fit addon run in an
+opaque-origin frame; the page bundles them only as the frame runtime's text.
+
+```ts
+function TerminalFrame(props: TerminalFrameProps): JSX.Element
+
+type TerminalFrameProps = Omit<ComponentProps<"div">, "children" | "title" | "onInput" | "onResize" | "ref"> & {
+  title: string
+  theme: TerminalFrameTheme
+  readOnly?: boolean
+  stream: TerminalFrameStream
+  onInput: (data: string) => void
+  onResize: (cols: number, rows: number) => void
+  onKey?: (key: TerminalFrameKey) => void
+  onLink?: (url: string) => void
+  runtime?: string
+  ref?: Ref<TerminalFrameHandle>
+}
+type TerminalFrameStream = (write: TerminalFrameWriter) => () => void
+type TerminalFrameWriter = { readonly output: (bytes: Uint8Array | string) => void }
+type TerminalFrameHandle = { readonly focus: () => void }
+type TerminalFrameKey = { key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }
+type TerminalFrameTheme = "light" | "dark"
+
+const terminalFrameRuntime: string
+```
+
+`TerminalFrame` shows `<iframe sandbox="allow-scripts" srcdoc
+referrerPolicy="no-referrer">` with the document `ViewCsp.frameDocument`
+writes: the frame runtime is its only script, pinned by hash, and
+`connect-src 'none'` leaves the frame no network. `style-src 'unsafe-inline'`
+stays, because xterm.js injects `<style>` elements and writes 24-bit colors
+as `style` attributes. The frame mounts only while it is within 200 px of the
+screen, with a new nonce and document each time.
+
+The frame asks with `terminal/initialize` and its nonce. The page answers
+only its own frame's `contentWindow`, only with this mount's nonce and only
+once, and transfers a `MessagePort`; everything after uses the port.
+
+| Message | Direction | Params |
+| --- | --- | --- |
+| `terminal/initialize` | frame to page, window | `{ nonce }`; the answer's `result` is `{ theme, colors, readOnly }` |
+| `terminal/output` | page to frame | `{ bytes }`, a transferred `Uint8Array` |
+| `terminal/options` | page to frame | `{ theme, colors, readOnly }`, after any changes |
+| `terminal/focus` | page to frame | `{}` |
+| `terminal/input` | frame to page | `{ data }`, at most 1 MiB |
+| `terminal/resize` | frame to page | `{ cols, rows }`, first and after each fit that changes them |
+| `terminal/key` | frame to page | a `TerminalFrameKey`, for ⌘K and Ctrl+K only |
+| `terminal/link` | frame to page | `{ url }`, an `http:` or `https:` URL of at most 2048 characters |
+
+`stream` runs each time the frame connects; its teardown runs when the frame
+unmounts or leaves the screen. `output` transfers a `Uint8Array` that spans
+its whole buffer, so the caller must not reuse it; anything else is copied,
+and a string is sent as UTF-8. `colors` is the terminal palette for `theme`
+from the document's `data-palette`.
+
+`readOnly` sets xterm's `disableStdin` and removes the frame's input listener,
+and the page drops any `terminal/input` while it is set. ⌘K and Ctrl+K reach
+`onKey` and never the shell; Esc stays in the shell. A link is posted only for
+a person's click on an OSC 8 link or a URL in the text, and the page acts on
+it only while it has the person's activation: `onLink`, or by default
+`window.open(url, "_blank", "noopener,noreferrer")`. The frame loads no
+clipboard (OSC 52) addon and follows no link itself. `ref.focus()` focuses the
+terminal.
+
 ## Code view
 
 `@smthrs/ui/adapters/code-view`. Pulls in `@pierre/diffs` and Shiki.
@@ -822,13 +893,34 @@ type IssuesViewProps = Omit<ComponentProps<"section">, "children"> & {
   repo: string
   issues: ReadonlyArray<IssuesViewIssue>
   size?: "inline" | "full"
+  href?: (issue: IssuesViewIssue) => string | undefined    // the title becomes an <a href>
+  onNavigate?: (issue: IssuesViewIssue, href: string) => void
+  loading?: boolean                                        // first sync not complete
+  actions?: ReactNode                                      // in the header, such as New issue
 }
 
-type IssuesViewIssue = { number: number; title: string; state: "open" | "closed"; labels?: ReadonlyArray<string>; author?: string; comments?: number; updatedAt?: string }
+type IssuesViewIssue = {
+  id?: string                                              // the row key; default the number
+  number: number | null                                    // null: not numbered yet, shows #–
+  title: string
+  state: "open" | "closed"
+  labels?: ReadonlyArray<string>
+  author?: string
+  comments?: number
+  updatedAt?: string
+  pending?: "requested" | "not_sent"                       // a Requested or Not sent chip
+}
 ```
 
-The `issues` template: the issues the host passed in, with no navigation. An
-empty list shows `EmptyState`. `inline` scrolls inside 320 pixels.
+The `issues` template, and the issue list (`/issues`) of apps/mvp decision
+0012. Without `href` it shows the issues the host passed in, with no
+navigation. With `href`, each title is a link whose href passes `safeHref`; a
+plain click calls `onNavigate` after `preventDefault`, and a modified click
+(⌘, Ctrl, Shift, Alt, middle button) keeps the browser's behavior. `loading`
+sets `aria-busy`, replaces the counts with a `Loading issues` status and, with
+no rows, shows placeholders instead of `EmptyState`. A row carries
+`data-pending`. An empty list shows `EmptyState`. `inline` scrolls inside 320
+pixels.
 
 `declaredInput(document)` and `formFieldsFor(input, hints?, payload?)`, with
 their `FieldKind`, `FieldValue`, `FormDraft`, `FormField` and `FormHints`
@@ -839,6 +931,81 @@ types, are on the root as well as `@smthrs/ui/flow-form`.
 what a composer's draft completes to and read a submitted line as a command
 run, a refusal or a prompt
 ([complete slash commands](./guides/complete-slash-commands.md)).
+
+## Issues
+
+One issue's page and the new-issue form (apps/mvp decision 0012). Both are
+controlled: the host owns every value and draft, and the components fetch
+nothing.
+
+```ts
+function ItemConversation(props: ItemConversationProps): JSX.Element
+function IssueForm(props: IssueFormProps): JSX.Element
+
+type ItemConversationProps = Omit<ComponentProps<"article">, "children" | "title"> & {
+  title: string
+  number: number | null                         // null shows #–
+  state: "open" | "closed"
+  author?: string
+  createdAt?: string                            // ISO 8601
+  body: string                                  // Markdown
+  pending?: "requested" | "not_sent"
+  comments: ReadonlyArray<ItemConversationComment>
+  externalHref?: string                         // Open on GitHub ↗
+  loading?: boolean
+  composer?: ItemConversationComposer           // absent: no composer at all
+  headingLevel?: 1 | 2 | 3                      // default 1
+}
+
+type ItemConversationComment = {
+  id: string
+  author?: string
+  createdAt?: string
+  body: string
+  pending?: "requested" | "not_sent"
+  reason?: string                               // shown only when not_sent
+  actions?: ReactNode                           // such as Edit and Discard
+}
+
+type ItemConversationComposer = {
+  draft: string
+  onDraft: (text: string) => void
+  onSubmit: () => void
+  disabled?: boolean
+  label?: string                                // the textarea's name; default "Comment"
+}
+
+type IssueFormProps = Omit<ComponentProps<"form">, "children" | "onSubmit"> & {
+  title: string
+  body: string
+  onTitle: (text: string) => void
+  onBody: (text: string) => void
+  onSubmit: () => void                          // called with the event prevented
+  disabled?: boolean
+  error?: string                                // an alert under the fields
+  submitLabel?: string                          // default "Create issue"
+}
+```
+
+`ItemConversation` renders an `article` (`data-slot="item-conversation"`,
+`data-state`, `data-pending`) named by its title heading: the title with
+`#12` or `#–`, an `Open` or `Closed` badge, a `Requested` or `Not sent` chip,
+the author, a `RelativeTime`, and `Open on GitHub ↗` in a new tab when
+`externalHref` passes `safeHref`. The body and each comment render through
+`Markdown` with `variant="document"`, so an HTML comment is dropped and no tag
+in the text, a `<script>` included, becomes an element. Comments are an `ol`
+labelled `Comments`, each `li` with `data-pending`. The composer is a labelled
+`Textarea` and a `Comment` button; the button, ⌘Enter and Ctrl+Enter submit
+only while the trimmed draft is non-empty and `disabled` is unset. `loading`
+shows a `Loading` status and placeholders, with no header, comments or
+composer.
+
+`IssueForm` labels a `Title` input and a `Description` textarea. The submit
+button, Enter in the title, and ⌘Enter or Ctrl+Enter in either field submit
+only while the trimmed title is non-empty and `disabled` is unset. `error` is a
+`role="alert"` paragraph that describes both fields.
+
+`itemConversationCss` is part of `smithersUiCss`.
 
 ## Web pages
 
@@ -888,6 +1055,57 @@ over-refuses. An unknown host origin refuses framing, including during SSR;
 an explicitly opaque origin (`"null"`) shares no host site. Both components pass `window.location.origin` and, on `null`,
 render `EmptyState` titled `Can't show this page` with `data-refused="true"`
 and no frame or link. `webPageCss` is part of `smithersUiCss`.
+
+## Agent status
+
+What the agent is doing, and whether it needs the person (apps/mvp decision
+0015). Five states, one word and glyph each: `working` (`◌ Working`, brand,
+pulsing), `waiting` (`○ Waiting`, quiet), `needs_you` (`◆ Needs you`, gold:
+`--warning`), `failed` (`✕ Failed`, ember: `--danger`) and `done` (`✓ Done`).
+
+| Export | Props type | Notes |
+| --- | --- | --- |
+| `AgentStatusPill` | `AgentStatusPillProps` | `state`, `count` (shown above 1), `onClick` (renders a button), `label` (the button's name). `data-slot="agent-status"`, `data-state`. |
+| `NeedsYouCard` | `NeedsYouCardProps` | `kind` (`question` or `approval`), `prompt`, `options`, `value` and `onValueChange` (the app keeps the draft), `onAnswer` (the words or option, or `true` for Approve and `false` for Deny), `sending`, `answered` (collapses to the answer), `focusRequest` (each new value focuses the field and scrolls the card into view). |
+| `ToastStack`, `Toast` | `ToastStackProps`, `ToastProps` | The stack is a polite live region, `max` toasts (3) then `+N`. `placement` `fixed` (the default) floats at the bottom-left, full width on a phone; `inline` sits where it is rendered, such as above a composer. A toast has a `tone` (an agent state), a one-line `detail`, at most one `action`, Hide (`onHide`), and `delayed`, which fades it in after 300 ms. |
+| `AGENT_STATES`, `AGENT_STATUS_WORDS`, `AGENT_STATUS_GLYPHS`, `isAgentState` | `AgentState` | The vocabulary, most urgent first. |
+| `agentStatusTitle(base, count)` | | The tab title: `(2) Smithers` while 2 runs need the person. |
+| `answerText(answer)` | `NeedsYouAnswer` | An answer as it reads: the words, `Approved` or `Denied`. |
+
+`agentStatusCss` is part of `smithersUiCss`.
+
+## Runs and flows
+
+A run's page and the card a flow is drafted in (apps/mvp decision 0014). The
+host reads the run, redacts and clips each value; these components only show
+what they are given, as text. See [show a run](./guides/show-a-run.md).
+
+| Export | Props type | Notes |
+| --- | --- | --- |
+| `JsonValue` | `JsonValueProps` | `value` (`JsonValueData`: `text`, `bytes` before any clip, `clipped`), `label`, `defaultOpen`. A `<details>` (`data-slot="json-value"`, `data-clipped`) named by the label and size, with a `Clipped` marker; the text in a `<pre>`, pretty-printed when it is whole JSON. Never rendered as markup. |
+| `RunHeader` | `RunHeaderProps` | `title`, `state`, `cancelRequested`, `word` (an override such as `On another device`), `startedAtMs`, `finishedAtMs`, `now`, `host`, `actions`, `headingLevel` (1 to 3, default 1). One line: title, the status pill in a polite `role="status"` live region, the elapsed clock (`aria-label="Elapsed"`) and the host. |
+| `RunList` | `RunListProps` | `runs` (`RunRow`: `id`, `flow`, `state`, `cancelRequested`, `startedAtMs`, `finishedAtMs`, `href`), `now`, `renderLink(href, children)` (the router's link; a plain `<a>` takes only an href `safeHref` passes), `empty` (default `EmptyState` titled `No runs`). A table labelled `Runs`: flow, status, started, duration. |
+| `RunStatusPill` | `RunStatusPillProps` | `state`, `cancelRequested`, `word`. A `Badge` (`data-slot="run-status"`, `data-state`, `data-word`) with the word's glyph and tone. |
+| `SpanTree` | `SpanTreeProps` | `steps` (`StepRow`), `selected`, `onSelect`, `now`. A listbox labelled `Steps`, one option per step indented by `depth`: glyph, label, `N attempts` above one, duration. One row takes Tab; arrows, Home and End move; Enter, Space or a click selects. |
+| `SpanDetail` | `SpanDetailProps` | `label`, `state`, `attempts` (`AttemptRow`), `input` and `output` (`JsonValueData` or `null`; open), `wait` (`WaitData`: `kind`, `sinceMs`, `wakeAtMs`), `now`, `actions`. Attempts read `1 ✕ unavailable · 2 ✓`. |
+| `RunWaterfall` | `RunWaterfallProps` | `steps`, `now`, `selected`, `onSelect` (each bar becomes a button). A list labelled `Timeline`: one bar per step on one axis; an open step runs to `now`, an instant step is a marker. |
+| `RunJournal` | `RunJournalProps` | `events` (`JournalRow`: `seq`, `eventType`, `emittedAtMs`, `payload`), `originMs` (default the first record's time), `hasMore`, `onMore` (`More`). A table labelled `Journal`: seq, type, time from the origin, payload collapsed. |
+| `FlowDraftView` | `FlowDraftViewProps` | `where`, `name`, `request`, `status` (`DraftStatus` or `null` for the form), `round`, `questions` (`DraftQuestion`: `id`, `text`, `assumed`, `blocking`, `answer`), `answers` (the person's unsent answers; the app keeps them), `files`, `checks` (`DraftCheck`), `failure`, and `onNameChange`, `onRequestChange`, `onStart` (`Draft`), `onAnswerChange`, `onAnswer` (`Answer`, on once an answer changes what the draft holds), `onSave` and `saveDisabled` (`Save`), `onTry` (`Try`), `onPropose` (`Propose`). A button shows only with its handler. Inputs are labelled `Name`, `What it should do` and each question's text; the status line is a polite `role="status"`. |
+
+The pure helpers the components use, for a terminal or a test:
+
+| Export | What it does |
+| --- | --- |
+| `runWord(state, { cancelRequested })` | `pending` → `Queued`, `running` → `Working`, `suspended` → `Waiting`, each `Stopping` once a stop is requested; `completed` → `Done`, `failed` → `Failed`, `cancelled` → `Stopped`. |
+| `RUN_WORDS`, `RUN_WORD_GLYPHS`, `RUN_WORD_TONES`, `isSettled` | The closed vocabulary (`RunWord`), adding `On another device`, `Expired` and `No access`; a glyph and a badge tone per word. `Failed` and `No access` are ember; `Done` is success; `Working` is brand and pulses; the rest are quiet. |
+| `STEP_GLYPHS`, `STEP_WORDS` | A step's state (`StepState`: `running`, `completed`, `failed`, `waiting`, `skipped`) as a glyph and a word. |
+| `clockDuration(ms)`, `stepDuration(ms)`, `untilWords(atMs, now)`, `offsetWords(atMs, originMs)`, `stepElapsed(step, now)` | `0:42` and `1:02:03`; `12 ms`, `1.2 s`, `42 s`, then a clock; `in 8 s`; `+1.2 s`; a step's elapsed time, to `now` while open. |
+| `waterfallBars(steps, now)`, `waterfallAxis(steps, now)` | Each step's bar (`WaterfallBar`: `left` and `width` in percent, `instant`, `open`) on the shared axis. A zero-width axis makes every bar a marker at the start. |
+| `attemptWords`, `waitWords` | One attempt (`2 ✓`, `1 ✕ unavailable`); a wait (`timer · since 10s ago · wakes in 1 m`). |
+| `jsonValueText`, `formatBytes` | A value's text as shown; `512 B`, `1.5 KB`, `16 KB`. |
+| `draftStatusLine`, `questionValue`, `isAssumed`, `changedAnswers` | `◌ Drafting · round 2`, `◆ Needs you`, `✓ Ready`, `✕ Failed`, `✓ Saved`, `✓ Proposed`; what a question's field shows; whether it shows the assumed default; the answers that change the draft. |
+
+`jsonValueCss`, `runPageCss` and `flowDraftViewCss` are part of `smithersUiCss`.
 
 ## Related
 

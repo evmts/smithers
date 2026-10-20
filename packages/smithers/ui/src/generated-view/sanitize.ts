@@ -2,8 +2,10 @@
  * The frame's sanitizer: an inert parse, then an allowlist copy.
  *
  * A generated view's HTML comes from React's static renderer in a QuickJS
- * realm, so it is already escaped and holds only what `ViewCode` and the realm
- * admitted. The frame still trusts none of it. `sanitize` parses the HTML with
+ * realm, whose guard refuses what `ViewCode` refuses as it emits each
+ * element. The frame treats it as hostile anyway, as if no guard had run: a
+ * bundle built without the guard, or a gap in it, would hand over a
+ * `<script>` or an `<img onerror>`. `sanitize` parses the HTML with
  * `DOMParser`, where nothing runs and nothing loads, and builds new nodes in
  * the frame's own document from what the allowlist names: text, layout,
  * tables, form controls, `data:` images and basic SVG shapes, with their

@@ -29,6 +29,15 @@ async function render(element: ReactElement): Promise<void> {
   await act(async () => mounted.render(element));
 }
 
+/** Clicks `el` like a browser, returning whether the default action (following the link) still runs. */
+async function click(el: Element, init: MouseEventInit = {}): Promise<boolean> {
+  let followed = true;
+  await act(async () => {
+    followed = el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, ...init }));
+  });
+  return followed;
+}
+
 const ISSUES: ReadonlyArray<IssuesViewIssue> = [
   {
     number: 12,
@@ -95,3 +104,135 @@ describe("IssuesView", () => {
     expect(issuesViewCss.match(/\.[a-z][\w-]*/g)!.every((name) => name.startsWith(".sui-"))).toBe(true);
   });
 });
+
+describe("IssuesView: pending rows, links, loading and actions", () => {
+  const PENDING: ReadonlyArray<IssuesViewIssue> = [
+    { id: "w-1", number: null, title: "Crash on empty body", state: "open", pending: "requested" },
+    { id: "w-2", number: null, title: "Typo in README", state: "open", pending: "not_sent" },
+    { id: "i-12", number: 12, title: "Router drops trailing slash", state: "open" },
+  ];
+
+  test("an unnumbered issue shows #– and each pending write shows its chip", async () => {
+    await render(<IssuesView repo="maya/tinyhttp" issues={PENDING} />);
+    const [requested, notSent, synced] = rows();
+    expect(requested!.querySelector(".sui-issues-number")!.textContent).toBe("#–");
+    expect(notSent!.querySelector(".sui-issues-number")!.textContent).toBe("#–");
+    expect(synced!.querySelector(".sui-issues-number")!.textContent).toBe("#12");
+    expect(rows().map((row) => row.dataset.pending ?? null)).toEqual(["requested", "not_sent", null]);
+    const chip = (row: HTMLElement) => row.querySelector<HTMLElement>(".sui-issues-pending");
+    expect(chip(requested!)!.textContent).toBe("Requested");
+    expect(chip(requested!)!.className).toContain("sui-badge-muted");
+    expect(chip(notSent!)!.textContent).toBe("Not sent");
+    expect(chip(notSent!)!.className).toContain("sui-badge-destructive");
+    expect(chip(synced!)).toBeNull();
+  });
+
+  test("rows are keyed by id, so a pending row keeps its element when GitHub numbers it", async () => {
+    await render(<IssuesView repo="r" issues={PENDING} />);
+    const before = rows()[0]!;
+    const numbered: ReadonlyArray<IssuesViewIssue> = [
+      PENDING[2]!,
+      { id: "w-1", number: 31, title: "Crash on empty body", state: "open" },
+    ];
+    await act(async () => root!.render(<IssuesView repo="r" issues={numbered} />));
+    const after = rows()[1]!;
+    expect(after).toBe(before);
+    expect(after.querySelector(".sui-issues-number")!.textContent).toBe("#31");
+    expect(after.querySelector(".sui-issues-pending")).toBeNull();
+    expect(after.hasAttribute("data-pending")).toBe(false);
+  });
+
+  test("two unnumbered rows without ids both render", async () => {
+    const anonymous: ReadonlyArray<IssuesViewIssue> = [
+      { number: null, title: "First", state: "open", pending: "requested" },
+      { number: null, title: "Second", state: "open", pending: "requested" },
+    ];
+    await render(<IssuesView repo="r" issues={anonymous} />);
+    expect(rows().map((row) => row.querySelector(".sui-issues-title")!.textContent)).toEqual(["First", "Second"]);
+  });
+
+  test("href makes each title a link; undefined or an unsafe scheme leaves plain text", async () => {
+    const href = (issue: IssuesViewIssue) =>
+      issue.number === null ? undefined : issue.number === 7 ? "javascript:alert(1)" : `/maya/tinyhttp/issues/${issue.number}`;
+    await render(<IssuesView repo="maya/tinyhttp" issues={ISSUES} href={href} />);
+    const [first, second, third] = rows();
+    const link = first!.querySelector<HTMLAnchorElement>("a.sui-issues-title")!;
+    expect([link.getAttribute("href"), link.textContent]).toEqual(["/maya/tinyhttp/issues/12", "Router drops trailing slash"]);
+    expect(second!.querySelector("a, [href]")).toBeNull();
+    expect(second!.querySelector(".sui-issues-title")!.textContent).toBe("Docs: middleware order");
+    expect(third!.querySelector("a")!.getAttribute("href")).toBe("/maya/tinyhttp/issues/3");
+    await act(async () => root!.render(<IssuesView repo="maya/tinyhttp" issues={PENDING} href={href} />));
+    expect(rows()[0]!.querySelector("a")).toBeNull();
+  });
+
+  test("a plain click navigates in-app and prevents the default; a modified click is the browser's", async () => {
+    const seen: Array<[number | null, string]> = [];
+    await render(
+      <IssuesView
+        repo="maya/tinyhttp"
+        issues={ISSUES}
+        href={(issue) => `/maya/tinyhttp/issues/${issue.number}`}
+        onNavigate={(issue, href) => seen.push([issue.number, href])}
+      />,
+    );
+    const link = () => rows()[0]!.querySelector("a")!;
+    expect(await click(link())).toBe(false);
+    expect(seen).toEqual([[12, "/maya/tinyhttp/issues/12"]]);
+    for (const modifier of [{ metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
+      expect(await click(link(), modifier)).toBe(true);
+    }
+    expect(seen).toHaveLength(1);
+  });
+
+  test("without onNavigate a click follows the link", async () => {
+    await render(<IssuesView repo="r" issues={ISSUES} href={(issue) => `/i/${issue.number}`} />);
+    expect(await click(rows()[0]!.querySelector("a")!)).toBe(true);
+  });
+
+  test("loading with no rows shows a status and placeholders, never No issues or counts", async () => {
+    await render(<IssuesView repo="maya/tinyhttp" issues={[]} loading />);
+    const section = container!.querySelector<HTMLElement>("section")!;
+    expect(section.getAttribute("aria-busy")).toBe("true");
+    const status = container!.querySelector<HTMLElement>("[role=status]")!;
+    expect(status.getAttribute("aria-label")).toBe("Loading issues");
+    expect(container!.querySelector("[data-slot=empty-state]")).toBeNull();
+    expect(container!.textContent).not.toContain("No issues");
+    expect(container!.querySelector(".sui-issues-counts")).toBeNull();
+    expect(container!.querySelector(".sui-issues-loading")!.getAttribute("aria-hidden")).toBe("true");
+    expect(container!.querySelectorAll(".sui-issues-loading [data-slot=skeleton]")).toHaveLength(3);
+    // Once loaded, an empty list is the empty state and the busy flag is gone.
+    await act(async () => root!.render(<IssuesView repo="maya/tinyhttp" issues={[]} />));
+    expect(section.hasAttribute("aria-busy")).toBe(false);
+    expect(container!.querySelector("[role=status]")).toBeNull();
+    expect(container!.querySelector("[data-slot=empty-state]")!.textContent).toBe("No issues");
+  });
+
+  test("loading with rows already known (this device's pending writes) shows them beside the status", async () => {
+    await render(<IssuesView repo="r" issues={PENDING.slice(0, 1)} loading />);
+    expect(rows()).toHaveLength(1);
+    expect(container!.querySelector("[role=status]")!.getAttribute("aria-label")).toBe("Loading issues");
+    expect(container!.querySelector(".sui-issues-loading, [data-slot=empty-state]")).toBeNull();
+  });
+
+  test("actions render in the header and stay keyboard-reachable buttons", async () => {
+    let created = 0;
+    await render(
+      <IssuesView
+        repo="r"
+        issues={ISSUES}
+        actions={
+          <button type="button" onClick={() => (created += 1)}>
+            New issue
+          </button>
+        }
+      />,
+    );
+    const button = container!.querySelector<HTMLButtonElement>("header .sui-issues-actions button")!;
+    expect(button.textContent).toBe("New issue");
+    button.focus();
+    expect(document.activeElement).toBe(button);
+    await click(button);
+    expect(created).toBe(1);
+  });
+});
+

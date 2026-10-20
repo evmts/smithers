@@ -112,6 +112,7 @@ describe("the base barrel carries no heavy renderer", () => {
         "./adapters/markdown-editor",
         "./adapters/pierre-diff-view",
         "./adapters/terminal",
+        "./adapters/terminal-frame",
       ]),
     );
   });

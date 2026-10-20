@@ -268,6 +268,21 @@ const securityReview = Smithers.SecurityReview({
       paths: ["src/generated-view/**", "src/presentation/**"]
     },
     {
+      id: "terminal-frame",
+      title: "A shell's output reaches xterm.js only inside the sandboxed terminal frame, and the frame reaches the page only through its port",
+      threat:
+        "Escape sequences or links in a shell's output run script in, read from, or navigate the signed-in user's page, or a stale or foreign frame types into a shell.",
+      lookFor: [
+        "TerminalFrame rendering xterm in the page, or an iframe sandbox other than allow-scripts, or an `allow` delegation.",
+        "A srcdoc not built by ViewCsp.frameDocument with the hashed terminal runtime, or a policy that admits a network directive beyond 'none' or data:.",
+        "The handshake answering a message whose source is not this mount's contentWindow or whose nonce differs, or a second terminal/initialize.",
+        "terminal/input reaching onInput while readOnly, or the frame posting input while readOnly.",
+        "A link opened by the frame itself, or by the page without decodeFrameMessage's http(s) check and the person's activation, or without noopener and noreferrer.",
+        "A clipboard (OSC 52) addon or any other xterm addon loaded in the frame runtime."
+      ],
+      paths: ["src/adapters/terminal-frame/**", "src/internal/frameMount.ts"]
+    },
+    {
       id: "attachment-intake",
       title: "Prompt attachments enforce accept, size, and count limits and revoke their object URLs",
       threat: "A pasted or dropped file bypasses the configured type or size limit, or leaked object URLs keep file bytes readable after removal.",

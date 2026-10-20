@@ -59,11 +59,12 @@ const HAS_SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
  * angle brackets around a target, drops the `#fragment`, then discards every
  * target that does not address a file relative to the linking document: a
  * URL, a protocol-relative `//host`, a site-absolute `/route`, and a bare
- * `#anchor` into the same page.
+ * `#anchor` into the same page. A code span such as `` `![alt](src)` `` is
+ * text, not a link, so code spans are dropped first.
  */
 function linkTargets(line: string): string[] {
   const targets: string[] = [];
-  for (const match of line.matchAll(/\]\(([^)]*)\)/g)) {
+  for (const match of line.replace(/(`+)[\s\S]*?\1/g, "").matchAll(/\]\(([^)]*)\)/g)) {
     const withoutTitle = match[1]!.trim().replace(/\s+(?:"[^"]*"|'[^']*')$/, "").trim();
     const unbracketed = withoutTitle.startsWith("<") && withoutTitle.endsWith(">")
       ? withoutTitle.slice(1, -1).trim()
@@ -146,7 +147,9 @@ describe("the scans themselves", () => {
     ["a protocol-relative host", "see [cdn](//cdn.example.com/x.png)."],
     ["a site-absolute route", "see [api](/api/canonical)."],
     ["a bare anchor", "see [below](#css-contract)."],
-    ["an empty target", "see [nothing]()."]
+    ["an empty target", "see [nothing]()."],
+    ["a link inside a code span", "draws `![alt](src)` as a picture."],
+    ["a link inside a double-backtick span", "reads `` `![alt](src)` `` literally."]
   ];
   for (const [label, line] of ignored) {
     test(`ignores ${label}`, () => {

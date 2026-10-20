@@ -65,8 +65,9 @@ const checked = ViewCode.check(source, { components: realm.components }).pipe(
 
 ## A host renders it
 
-A host holds one realm and renders through it. The first render loads QuickJS
-and the bundle; later renders reuse them.
+A host holds one realm and renders through it. The realm compiles QuickJS
+once. Each render and interaction loads the bundle into a fresh runtime and
+closes it afterwards, so no view sees what another left behind.
 
 ```ts
 const show = (source: string, props: unknown, state: unknown) =>
@@ -98,10 +99,12 @@ const correction = (error: PresentationRealm.RealmError) => `Your view failed: $
 ### Measured once
 
 On an Apple Silicon MacBook under Bun 1.4.1, one cold run with the real
-`@smthrs/ui` bundle (128 KB): loading QuickJS and the bundle took 215 ms, the
-first check 34 ms, and a tic-tac-toe move (`reduce` and a render) 1.8 ms at
-the median and 8 ms at the 95th percentile of 50. This is one run on one
-machine, not a benchmark.
+`@smthrs/ui` bundle (128 KB): loading QuickJS and the bundle took 215 ms and
+the first check 34 ms. A tic-tac-toe move (`reduce` and a render, with the
+bundle loaded into a fresh runtime) took 47 ms at the median and 146 ms at the
+95th percentile of 50, on a machine at load average 40; reusing one runtime
+took under 2 ms, but let one view reach the next view's props. These are runs
+on one machine, not a benchmark.
 
 ## The page shows it
 

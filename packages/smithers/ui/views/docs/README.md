@@ -21,14 +21,20 @@ page: GeneratedView ─▶ iframe sandbox="allow-scripts" srcdoc (ViewCsp) ─�
 - **No model code in the browser's engine.** A module runs only in a QuickJS
   realm: no network, storage, page, clock or randomness, and every value
   crosses as a JSON string. The frame runs only the page's own runtime.
+- **Guarded, untrusted HTML.** The realm's renderer refuses a script, a
+  handler, raw HTML or a remote source in every element as it emits it,
+  however the view built the element. The HTML is untrusted all the same:
+  the frame's sanitizer and CSP treat it as hostile, and any other consumer
+  must too.
 - **Bounded renders.** Time, interpreter steps, memory, stack, HTML size,
   state size and props size bound every render. An infinite loop, a memory
-  bomb or unbounded recursion fails as a typed `RealmError`, and the realm
-  loads again for the next render. A host stack overflow quarantines the shared
+  bomb or unbounded recursion fails as a typed `RealmError`, and the next
+  render runs in a fresh runtime. A host stack overflow quarantines the shared
   WASM module instead; a fresh variant is required to recover.
-- **Views stay apart.** The realm freezes everything reachable from its
-  global after the bundle loads, so one module cannot change what the next
-  one renders.
+- **Views stay apart.** Every render and interaction runs in a fresh runtime
+  that closes after it, and the realm deeply freezes its global, `require`
+  and every module behind it, so one module can neither change what another
+  renders nor read another's props.
 - **A pinned frame.** `<iframe sandbox="allow-scripts" srcdoc>` is an opaque
   origin. Its CSP admits only the runtime's hash, forbids inline handlers,
   and loads nothing from the network.

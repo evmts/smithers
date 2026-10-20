@@ -10,6 +10,8 @@ export type SnippetProps = Omit<ComponentProps<"div">, "children"> & {
   language?: string;
   onCopyCode?: (code: string) => void | Promise<void>;
   onCopyError?: (error: { code: CopyFailureCode; cause: unknown; }) => void;
+  /** The copy button's accessible name, such as "Copy clone URL". Defaults to "Copy code". */
+  copyLabel?: string;
 };
 
 /**
@@ -17,7 +19,7 @@ export type SnippetProps = Omit<ComponentProps<"div">, "children"> & {
  * CodeBlock: onCopyCode wins, else navigator.clipboard when available, else
  * the button is hidden.
  */
-export function Snippet({ code, language, onCopyCode, onCopyError, className, ...props }: SnippetProps) {
+export function Snippet({ code, language, onCopyCode, onCopyError, copyLabel = "Copy code", className, ...props }: SnippetProps) {
   useInjectUiCss();
   const { copied, copyFailed, copy: copyCode } = useCopyFeedback({ value: code, onCopy: onCopyCode, onCopyError });
   const hasClipboard = canCopyText();
@@ -40,7 +42,7 @@ export function Snippet({ code, language, onCopyCode, onCopyError, className, ..
             type="button"
             data-slot="snippet-copy"
             className="sui-snippet-copy"
-            aria-label="Copy code"
+            aria-label={copyLabel}
             onClick={() => {
               void copyCode();
             }}

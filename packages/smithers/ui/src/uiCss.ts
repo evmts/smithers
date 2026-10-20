@@ -43,11 +43,16 @@ import { canvasCss } from "./canvas/canvasCss";
 import { calendarCss } from "./calendar/calendarCss";
 import { vaultCss } from "./vault/vaultCss";
 import { wordmarkCss } from "./wordmark/wordmarkCss";
-import { breadcrumbsCss, directoryListingCss, repoViewCss } from "./repositoryCss";
+import { breadcrumbsCss, directoryListingCss, popoverCss, refPickerCss, repoViewCss } from "./repositoryCss";
 import { flowFormViewCss } from "./flow-form-view/flowFormViewCss";
 import { generatedViewCss } from "./generated-view/generatedViewCss";
 import { issuesViewCss } from "./issues-view/issuesViewCss";
+import { itemConversationCss } from "./item-conversation/itemConversationCss";
 import { webPageCss } from "./web-page/webPageCss";
+import { agentStatusCss } from "./agent-status/agentStatusCss";
+import { jsonValueCss } from "./json-value/jsonValueCss";
+import { runPageCss } from "./run-page/runPageCss";
+import { flowDraftViewCss } from "./flow-draft-view/flowDraftViewCss";
 
 const shadowCard = t.shadow2;
 const shadowOverlay = t.shadow3;
@@ -735,6 +740,8 @@ export const smithersUiCss = [
   pierreDiffCss,
   codeViewCss,
   repoViewCss,
+  popoverCss,
+  refPickerCss,
   stageStripCss,
   agenticReasoningCss,
   conversationFoundationCss,
@@ -753,7 +760,12 @@ export const smithersUiCss = [
   generatedViewCss,
   flowFormViewCss,
   issuesViewCss,
+  itemConversationCss,
   webPageCss,
+  agentStatusCss,
+  jsonValueCss,
+  runPageCss,
+  flowDraftViewCss,
   reducedMotionCss,
 ]
   .map((block) => block.trim())

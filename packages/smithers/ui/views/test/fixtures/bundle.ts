@@ -1,8 +1,10 @@
-/** Builds the test presentation bundle once per process, with React's legacy static renderer. */
+/** Builds the test presentation bundle once per process, with React's legacy static renderer, guarded. */
 import { build } from "esbuild"
+import { readFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { Presentation } from "../../src/index.ts"
 
 const require = createRequire(import.meta.url)
 
@@ -12,11 +14,14 @@ export const legacyServer = join(
   "cjs/react-dom-server-legacy.browser.production.js"
 )
 
-let built: Promise<string> | undefined
+const built = new Map<boolean, Promise<string>>()
 
-/** The bundle's source, as one classic script. */
-export const bundle = (): Promise<string> => {
-  built ??= build({
+/** The bundle's source, as one classic script; `guarded: false` leaves React's renderer as published. */
+export const bundle = (options: { readonly guarded?: boolean } = {}): Promise<string> => {
+  const guarded = options.guarded ?? true
+  const cached = built.get(guarded)
+  if (cached !== undefined) return cached
+  const source = build({
     entryPoints: [fileURLToPath(new URL("./bundle-entry.ts", import.meta.url))],
     bundle: true,
     write: false,
@@ -30,9 +35,15 @@ export const bundle = (): Promise<string> => {
       name: "legacy-static-renderer",
       setup: (plugin) => {
         plugin.onResolve({ filter: /^react-dom\/server$/ }, () => ({ path: legacyServer }))
+        if (!guarded) return
+        plugin.onLoad({ filter: /react-dom-server-legacy\.browser\.production\.js$/ }, async (args) => ({
+          contents: Presentation.guardRenderer(await readFile(args.path, "utf8")),
+          loader: "js"
+        }))
       }
     }],
     logLevel: "silent"
   }).then((result) => result.outputFiles[0]!.text)
-  return built
+  built.set(guarded, source)
+  return source
 }

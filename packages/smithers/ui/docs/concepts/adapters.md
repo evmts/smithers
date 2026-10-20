@@ -29,6 +29,7 @@ budgets.
 | `@smthrs/ui/adapters/knowledge-graph`   |     about 155 KB | `d3-force`                                    |
 | `@smthrs/ui/adapters/chart`             |     about 270 KB | `recharts`                                    |
 | `@smthrs/ui/adapters/terminal`          |     about 390 KB | `@xterm/xterm` and `@xterm/addon-fit`         |
+| `@smthrs/ui/adapters/terminal-frame`    |     about 470 KB | The frame runtime's text, xterm.js included, and `ViewCsp` |
 | `@smthrs/ui/adapters/markdown-editor`   |     about 2.9 MB | `@milkdown/crepe` and `@milkdown/kit`         |
 | `@smthrs/ui/adapters/code-view`         |      about 10 MB | `@pierre/diffs`, and Shiki's grammars and themes |
 | `@smthrs/ui/adapters/pierre-diff-view`  |      about 10 MB | The same Shiki payload                        |

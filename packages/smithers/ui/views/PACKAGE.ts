@@ -57,7 +57,8 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A host function installed in the QuickJS context, or a host object or handle passed into the realm instead of a JSON string.",
         "A `require` name in Presentation.ts beyond react, react/jsx-runtime, @smthrs/ui and smithers:view, or a module object that is not frozen.",
-        "`Date`, `Math.random`, `Proxy`, `WeakRef` or `FinalizationRegistry` left in the realm, or `install` publishing before `harden` freezes the global."
+        "`Date`, `Math.random`, `Proxy`, `WeakRef` or `FinalizationRegistry` left in the realm, or `install` publishing before `harden` freezes the global.",
+        "`install` hardening less than `require` and every module behind it, or a runtime kept for a second render or interaction instead of closed after its call."
       ],
       paths: ["src/PresentationRealm.ts", "src/Presentation.ts", "src/internal/harden.ts"]
     },
@@ -68,7 +69,7 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A render or reduce path that evaluates code without `arm` resetting the deadline and step budget.",
         "A stack bound large enough for the host's own stack to overflow first, or a broken runtime disposed after a host overflow.",
-        "A realm reused after a time, step, memory or stack limit instead of reloaded."
+        "A runtime reused after a time, step, memory or stack limit instead of replaced."
       ],
       paths: ["src/PresentationRealm.ts"]
     },

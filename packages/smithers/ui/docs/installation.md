@@ -65,6 +65,7 @@ adapter's dependency lands in your bundle.
 | `@smthrs/ui/vault`                     | Wikilinks, the graph model, the outline and backlinks panels, autosave | None             |
 | `@smthrs/ui/adapters/chart`            | `ChartContainer` and the categorical series palette                    | `recharts`       |
 | `@smthrs/ui/adapters/terminal`         | `Terminal`, an xterm.js render surface                                 | `@xterm/*`       |
+| `@smthrs/ui/adapters/terminal-frame`   | `TerminalFrame`, xterm.js in a sandboxed frame                         | `@xterm/*`, as the frame's runtime |
 | `@smthrs/ui/adapters/code-view`        | `CodeFileView`, one syntax-highlighted file                            | `@pierre/diffs`  |
 | `@smthrs/ui/adapters/pierre-diff-view` | `PierreDiffView`, a syntax-highlighted patch                           | `@pierre/diffs`  |
 | `@smthrs/ui/adapters/repo-view`        | `RepoView`, a repository's tree, listings, code and Markdown           | `@pierre/diffs`, `@milkdown/*` |

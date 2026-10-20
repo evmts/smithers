@@ -1,18 +1,21 @@
 /**
  * Renders a checked view module to HTML inside a QuickJS realm.
  *
- * The realm loads a presentation bundle (React, `renderToStaticMarkup`, the
- * components a view may import, and the realm half in `Presentation`) once,
- * then renders any number of checked modules in it. A render runs the
- * module's `View` with `{ props, state }`; an interaction runs its `reduce`
- * and renders again. Nothing in the realm can reach the network, storage, a
- * clock, randomness or the host: it is a WebAssembly interpreter with no
- * module loader, and every value crosses as a JSON string.
+ * The realm compiles QuickJS once and loads a presentation bundle (React,
+ * `renderToStaticMarkup`, the components a view may import, and the realm
+ * half in `Presentation`) into a fresh QuickJS runtime for every render and
+ * interaction, then closes it. A render runs the module's `View` with
+ * `{ props, state }`; an interaction runs its `reduce` and renders again, in
+ * the same runtime. Nothing one view changes, however it reaches it, survives
+ * into another view's render, so no view can read another's props. Nothing in
+ * the realm can reach the network, storage, a clock, randomness or the host:
+ * it is a WebAssembly interpreter with no module loader, and every value
+ * crosses as a JSON string.
  *
  * Each render is bounded by time, interpreter steps, memory and stack, and
  * its HTML and state by size. An infinite loop or a memory bomb fails as a
- * `RealmError` with reason `limit_exceeded` and names the limit; the realm
- * then loads again on its next use, so one bad module never leaves a damaged
+ * `RealmError` with reason `limit_exceeded` and names the limit; the next
+ * call runs in a fresh runtime, so one bad module never leaves a damaged
  * realm behind. A host stack overflow quarantines its shared WASM module;
  * further calls fail closed until the host supplies a fresh variant.
  *
@@ -53,7 +56,8 @@ import type * as ViewCode from "./ViewCode.ts"
  * - `stackBytes`: the interpreter's stack. QuickJS must stop a deep
  *   recursion before the host's own stack does, and each byte here costs about
  *   three bytes of host stack, so keep it well under a third of the host's;
- * - `loadMs`: wall-clock time to load the bundle;
+ * - `loadMs`: wall-clock time to load the bundle, which happens for every
+ *   render and interaction;
  * - `renderMs`: wall-clock time for one render or reduce;
  * - `steps`: interrupt polls for one render or reduce, about ten thousand
  *   interpreter operations each;
@@ -376,30 +380,27 @@ export const make = (
       })
     )
 
-    /** Runs one call against a loaded realm, reloading it first after a crossed bound. */
+    /**
+     * Runs one call in a realm of its own: the one loaded when the realm was
+     * made, or a fresh one. The realm is closed after the call, so nothing a
+     * view changed in it, a component's internals included, reaches the next.
+     */
     const within = <A>(call: (realm: Loaded) => Outcome<A>): Effect.Effect<A, RealmError> =>
       Effect.suspend(() => {
         if (closed || QuickJSLifecycle.isQuarantined(module)) {
           return Effect.fail(failure("load_failed", "The realm is closed or its QuickJS module is quarantined"))
         }
-        if (loaded === undefined) {
-          const reloaded = load()
+        let realm = loaded
+        loaded = undefined
+        if (realm === undefined) {
+          const fresh = load()
           /* v8 ignore next -- the same bundle under the same bounds loaded when the realm was made, so only the host running out of memory fails here */
-          if (!reloaded.ok) return Effect.fail(reloaded.error)
-          loaded = reloaded.value
+          if (!fresh.ok) return Effect.fail(fresh.error)
+          realm = fresh.value
         }
-        const realm = loaded
         const outcome = call(realm)
-        if (outcome.ok) return Effect.succeed(outcome.value)
-        if (realm.broken) loaded = undefined
-        else if (
-          outcome.error.reason === "limit_exceeded" && outcome.error.limit !== "html" &&
-          outcome.error.limit !== "state" && outcome.error.limit !== "props"
-        ) {
-          close(realm)
-          loaded = undefined
-        }
-        return Effect.fail(outcome.error)
+        if (!realm.broken) close(realm)
+        return outcome.ok ? Effect.succeed(outcome.value) : Effect.fail(outcome.error)
       }).pipe(
         Effect.tapError((error) =>
           error.limit === undefined

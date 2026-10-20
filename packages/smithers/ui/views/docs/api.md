@@ -112,8 +112,10 @@ Loads a realm over the bundle for the life of the scope. It compiles the
 QuickJS build the host names (`QuickJSVariant` from `@smthrs/harness`), at most
 once per build, removes `Date`, `Math.random`, `Proxy`, `WeakRef` and
 `FinalizationRegistry`, evaluates the bundle, and fails with `load_failed` when
-the bundle throws or installs no renderer. Once its scope closes, every call
-fails with `load_failed`.
+the bundle throws or installs no renderer. That runtime serves the first call;
+every later render or interaction loads the bundle into a fresh runtime, and
+each runtime closes after its call, so nothing one view changes reaches
+another. Once its scope closes, every call fails with `load_failed`.
 
 ### `PresentationRealm.layer`
 
@@ -208,15 +210,47 @@ interface InstallOptions {
 ```
 
 Publishes the renderer at `globalThis.__smithersPresentation` (`globalName`)
-and freezes everything reachable from the realm's global. A bundle calls it
-once, as its last statement. A view's `require` resolves `react`,
+and deeply freezes everything a view reaches by name: the realm's global and
+its prototypes, and `require` with every module behind it, React's `Children`,
+each component and its statics, the element constructors and `event`
+included. A bundle calls it once, as its last statement. A view's `require` resolves `react`,
 `react/jsx-runtime`, `@smthrs/ui` (the components, frozen) and
 `smithers:view`; anything else throws. The `react` and `react/jsx-runtime`
-element constructors refuse refused elements and attributes at render time.
+element constructors refuse refused elements and attributes early.
+
+Before it publishes, it sets `globalThis.__smithersHostGuard`
+(`hostGuardName`) to `guardHost` and renders an element built by hand as
+`<script>`; if the renderer emits it, `install` throws, so a bundle whose
+renderer skips the guard never loads.
+
+### `Presentation.guardRenderer`
+
+```ts
+const guardRenderer: (source: string) => string
+```
+
+Patches the source of React's static renderer
+(`react-dom/cjs/react-dom-server-legacy.browser.production.js`) so every
+element it emits passes `guardHost` first, whether a constructor, a component
+or the view's own hand built it, and whatever changed it afterwards. A bundle
+builder applies it where it loads that file, for example in an esbuild
+`onLoad` hook. It throws when the source has no single
+`pushStartInstance(target, type, props, ...)`.
+
+### `Presentation.guardHost`
+
+```ts
+const guardHost: (type: string, props: unknown) => Readonly<Record<string, unknown>>
+```
+
+Reads an element's own enumerable props once, drops event handlers (React
+never emits one, and a component such as Radix's `Label` sets its own),
+refuses what `ViewCode` refuses, and returns the frozen copy the renderer
+emits.
 
 ### `Presentation.make`
 
-The same renderer without publishing it on the global, for tests. It shallow-freezes the React, JSX-runtime, component and `smithers:view` facades; deep hardening happens only during `install`.
+The same renderer without publishing it on the global, for tests. It shallow-freezes the React, JSX-runtime, component and `smithers:view` facades; deep hardening happens only during `install`. It renders with the `renderToStaticMarkup` it is given, guarded or not.
 
 ### `Presentation.Installed`
 

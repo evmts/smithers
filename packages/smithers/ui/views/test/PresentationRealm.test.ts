@@ -213,7 +213,7 @@ describe("PresentationRealm bounds every render", () => {
     const variant = QuickJSVariant.layerVariant(newVariant(singlefile as unknown as QuickJSSyncVariant, {}))
     const result = await Effect.gen(function*() {
       const module = yield* QuickJSVariant.compiledModule
-      const realm = yield* PresentationRealm.make({ bundle: yield* Effect.promise(bundle) })
+      const realm = yield* PresentationRealm.make({ bundle: yield* Effect.promise(() => bundle()) })
       // The shared lifecycle seam records the same event as a harness overflow.
       QuickJSLifecycle.abandon(module)
       const existing = yield* failure(realm.render({ module: checked(comparison), props: { rows: [] }, state: null }))
@@ -248,7 +248,7 @@ describe("PresentationRealm bounds every render", () => {
     })
     expect(after).toMatchObject({ reason: "load_failed" })
     const again = await Effect.gen(function*() {
-      return yield* Effect.flip(PresentationRealm.make({ bundle: yield* Effect.promise(bundle) }))
+      return yield* Effect.flip(PresentationRealm.make({ bundle: yield* Effect.promise(() => bundle()) }))
     }).pipe(Effect.scoped, Effect.provide(variant), Effect.runPromise)
     expect(again).toMatchObject({ reason: "load_failed" })
   })
@@ -388,6 +388,39 @@ describe("PresentationRealm reports what a module got wrong", () => {
     })
   })
 
+  it("a refused element or attribute in an element the constructors never checked, as React emits it", async () => {
+    const forged = (type: string, props: string) =>
+      `({ $$typeof: _j.jsx("p", {}).$$typeof, type: ${type}, key: null, ref: null, props: ${props} })`
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      [`return ${forged("'scr' + 'ipt'", "{ children: 'alert(1)' }")}`, "Error: <script> is refused in a view"],
+      [
+        `return { $$typeof: Symbol.for("react.transitional.element"), type: "img", key: null, ref: null, props: { src: "https://evil.example/p.png" } }`,
+        "Error: `src` is allowed only on <img>, as a data:image URL"
+      ],
+      [
+        `return _j.jsx("div", { children: [_j.jsx("p", {}), ${forged("'scr' + 'ipt'", "{}")}] })`,
+        "Error: <script> is refused in a view"
+      ],
+      [
+        `const props = {}; const element = _j.jsx("div", props);
+         props["dangerously" + "SetInnerHTML"] = { __html: "<img src=x onerror=alert(1)>" }; return element`,
+        "Error: `dangerouslySetInnerHTML` is refused in a view"
+      ],
+      [
+        `const element = _j.jsx("p", {}); element.type = "scr" + "ipt"; return element`,
+        "Error: <script> is refused in a view"
+      ],
+      [
+        `let reads = 0
+         return _j.jsx("img", { alt: "", get src() { return reads++ === 0 ? "data:image/png;base64,AA" : "https://evil.example/p.png" } })`,
+        "Error: `src` is allowed only on <img>, as a data:image URL"
+      ]
+    ]
+    for (const [body, detail] of cases) {
+      expect(await renderError(unchecked(compiled(body)))).toMatchObject({ reason: "render_failed", detail })
+    }
+  })
+
   it("an interaction on a module with no reduce, or a reduce that returns nothing", async () => {
     const errors = await withRealm((realm) =>
       Effect.all([
@@ -453,7 +486,15 @@ describe("PresentationRealm keeps views apart", () => {
       "require('@smthrs/ui').Card = function () { return 'pwned' }",
       "require('react/jsx-runtime').jsx = function () { return null }",
       "require('react').createElement = null",
-      "JSON.parse = function () { return {} }"
+      "JSON.parse = function () { return {} }",
+      "require('react').Children.toArray = function (children) { return children }",
+      "require('react').Children.captured = 'yes'",
+      "require('@smthrs/ui').Card.x = 'mailbox'",
+      "require('react').createElement.x = 1",
+      "require('react').isValidElement.x = 1",
+      "require('react/jsx-runtime').jsx.x = 1",
+      "require('smithers:view').event.x = 1",
+      "require.x = 1"
     ]
     const results = await withRealm((realm) =>
       Effect.gen(function*() {
@@ -484,6 +525,42 @@ describe("PresentationRealm keeps views apart", () => {
     expect(results.clean).toContain("<td>a</td><td>b</td>")
     expect(results.probe).toBe("<p>undefinedundefined</p>")
   })
+
+  it("keeps one view from reading another's props, through a facade or what calling a component reaches", async () => {
+    // Every channel a view could leave behind: a facade it changes, and the
+    // internal Slot that calling Button returns, which no freeze can reach.
+    const poisoner = unchecked(compiled(`
+      const ui = require("@smthrs/ui")
+      const react = require("react")
+      const slot = ui.Button({ asChild: true, children: null }).type
+      const render = slot.render
+      const attempts = [
+        () => { slot.render = function (props, ref) { slot.seen = JSON.stringify(props.children.props); return render(props, ref) } },
+        () => { const toArray = react.Children.toArray; react.Children.toArray = function (c) { react.Children.seen = JSON.stringify(c); return toArray(c) } },
+        () => { ui.Card.seen = "mailbox" }
+      ]
+      for (const attempt of attempts) { try { attempt() } catch (error) {} }
+      return null`))
+    const victim = checked(`import { Children } from "react"
+import { Button } from "@smthrs/ui"
+export default function View({ props }: { props: { secret: string } }) {
+  return <Button asChild><span>{Children.toArray([props.secret])}</span></Button>
+}`)
+    const reader = unchecked(compiled(`
+      const ui = require("@smthrs/ui")
+      const seen = [ui.Button({ asChild: true, children: null }).type.seen, require("react").Children.seen, ui.Card.seen]
+      return _j.jsx("p", { children: seen.map(String).join() })`))
+    const [shown, read] = await withRealm((realm) =>
+      Effect.gen(function*() {
+        yield* realm.render({ module: poisoner, props: {}, state: null })
+        const shown = yield* realm.render({ module: victim, props: { secret: "OTHER_PERSONS_SECRET" }, state: null })
+        const read = yield* realm.render({ module: reader, props: {}, state: null })
+        return [shown, read] as const
+      })
+    )
+    expect(shown).toBe("<span data-slot=\"button\" class=\"sui-button\">OTHER_PERSONS_SECRET</span>")
+    expect(read).toBe("<p>undefined,undefined,undefined</p>")
+  })
 })
 
 describe("PresentationRealm loads its bundle", () => {
@@ -506,6 +583,19 @@ describe("PresentationRealm loads its bundle", () => {
     expect(described(empty)).toMatchObject({
       reason: "load_failed",
       detail: "The bundle did not install __smithersPresentation"
+    })
+  })
+
+  it("fails a bundle whose renderer emits an element the guard never saw", async () => {
+    const error = await Effect.runPromise(
+      Effect.flip(PresentationRealm.make({ bundle: await bundle({ guarded: false }) })).pipe(
+        Effect.scoped,
+        Effect.provide(layerSingleFile)
+      )
+    )
+    expect(described(error)).toMatchObject({
+      reason: "load_failed",
+      detail: "Error: The bundle's renderer does not guard what it emits; build it with guardRenderer"
     })
   })
 

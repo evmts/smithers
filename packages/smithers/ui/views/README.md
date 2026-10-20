@@ -6,6 +6,12 @@ realm, writes the sandboxed frame the HTML shows in, and admits only the
 events the module declares. No model-written code ever runs in the browser's
 own JavaScript engine.
 
+The realm's HTML is untrusted. Its renderer refuses a script, a handler, raw
+HTML or a remote source in each element as it emits it, but only while the
+bundle builds that renderer through `Presentation.guardRenderer`. Show the
+HTML only through `GeneratedView`, whose sanitizer and CSP treat it as
+hostile, or sanitize it the same way.
+
 The package is framework-free. `@smthrs/ui` supplies the presentation bundle
 (React, its static renderer and the components a view may import) and
 `GeneratedView`, the React component that shows the frame. The design is
