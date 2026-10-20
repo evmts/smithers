@@ -66,7 +66,7 @@ Fail when:
 
 - [C-J1-04](../checks/C-J1-04.md): R part at its named layer.
 
-- [C-REL-01](../checks/C-REL-01.md): the in-app docs are one quickstart plus the flows reference, the site keeps one install page, every quoted command resolves, and docs gates pass.
+- [C-REL-01](../checks/C-REL-01.md): the in-app docs follow toc.ts and smithers.sh/docs renders the same pages (M-50), every quoted command resolves, and docs gates pass.
 
 ## Risks and notes
 - A CLI test against an installed `smthrs` would pass on stale builds (research/cli-api-cuts.md: the installed rc.1 still lists `create-app`). Tests resolve against source `makeCli()` only.
