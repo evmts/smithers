@@ -5,8 +5,9 @@ import { describe, expect, test, vi } from "vitest"
 import { inertCallbackTransport } from "../src/CallbackTransport.ts"
 import type { CallbackTransportObserver } from "../src/CallbackTransport.ts"
 import { DurableChatProducer, runDurableChatTurn } from "../src/DurableChatProducer.ts"
-import { createHostDiagnostics, HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
+import { HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
 import { runModelTurn } from "../src/ModelTurnHost.ts"
+import { createHostDiagnostics } from "./diagnostics.ts"
 
 /** Collects the record lines one recorder writes. */
 const collector = () => {
@@ -64,7 +65,7 @@ describe("createHostDiagnostics", () => {
     })
   })
 
-  test("reports an unfinished operation while it is still unfinished", () => {
+  test("reports an unfinished operation while it is still unfinished", async () => {
     const sink = collector()
     let now = 0
     const diagnostics = createHostDiagnostics({ write: sink.write, clock: () => now, pendingMillis: 1_000 })
@@ -72,13 +73,13 @@ describe("createHostDiagnostics", () => {
     try {
       const settle = diagnostics.begin("chat_callback", { step: "commit", batch: 1 })
       now = 1_000
-      vi.advanceTimersByTime(1_000)
+      await vi.advanceTimersByTimeAsync(1_000)
       now = 2_000
-      vi.advanceTimersByTime(1_000)
+      await vi.advanceTimersByTimeAsync(1_000)
       expect(sink.phase("chat_callback", "pending").map((line) => line.pendingMillis)).toEqual([1_000, 2_000])
       now = 2_500
       settle({ status: 200 })
-      vi.advanceTimersByTime(5_000)
+      await vi.advanceTimersByTimeAsync(5_000)
       expect(sink.phase("chat_callback", "pending")).toHaveLength(2)
       expect(sink.phase("chat_callback", "end")[0]).toMatchObject({
         step: "commit",

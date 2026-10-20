@@ -20,8 +20,9 @@ import { createHash } from "node:crypto"
 import { describe, expect, test } from "vitest"
 import { runDurableChatTurn } from "../src/DurableChatProducer.ts"
 import type { DurableChatGrant } from "../src/DurableChatProducer.ts"
-import { createHostDiagnostics, HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
+import { HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
 import { apiCaller, runHostTurn } from "../src/HostTools.ts"
+import { createHostDiagnostics } from "./diagnostics.ts"
 
 // Literal fixtures: the question, main's commit and JOURNEY.md's one line.
 const COMMIT = "0123456789abcdef0123456789abcdef01234567"

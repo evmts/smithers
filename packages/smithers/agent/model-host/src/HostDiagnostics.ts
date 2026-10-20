@@ -12,6 +12,8 @@
  * @since 1.0.0-rc.0
  */
 
+import { Clock, Duration, Effect, Scope } from "effect"
+
 /**
  * The marker every record carries, so an operator can select them out of a
  * guest's log without parsing the rest of it.
@@ -78,6 +80,8 @@ export interface HostDiagnosticOptions {
    * no timer and reads no clock.
    */
   readonly write?: ((line: string) => void) | undefined
+  /** Host Effect clock and lifetime. Required when a sink is supplied. */
+  readonly runtime?: { readonly clock: Clock.Clock; readonly scope: Scope.Scope }
   /** Monotonic milliseconds. */
   readonly clock?: () => number
   /** How often an unfinished operation repeats. */
@@ -116,16 +120,6 @@ const safeFields = (fields: HostDiagnosticFields): {
   return { kept, dropped }
 }
 
-/**
- * Lets the process exit with the timer pending. Node and Bun hand back a
- * handle that would otherwise hold the process open; a runtime whose timers
- * are plain numbers has no process to hold.
- */
-const unref = (timer: unknown): void => {
-  const handle = timer as { readonly unref?: () => unknown }
-  handle.unref?.()
-}
-
 /** The recorder a host that supplied no sink gets: nothing to write, so nothing to time. */
 const inert: HostDiagnostics = { record: () => {}, begin: () => () => {} }
 
@@ -141,7 +135,9 @@ const inert: HostDiagnostics = { record: () => {}, begin: () => () => {} }
 export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): HostDiagnostics => {
   const write = options.write
   if (write === undefined) return inert
-  const clock = options.clock ?? (() => performance.now())
+  const runtime = options.runtime
+  if (runtime === undefined) throw new Error("Host diagnostics require an Effect clock and scope")
+  const clock = options.clock ?? (() => Number(runtime.clock.monotonicTimeNanosUnsafe()) / 1_000_000)
   const pendingMillis = options.pendingMillis ?? 15_000
   const detailLimit = options.detailLimit ?? 8
   const slowMillis = options.slowMillis ?? 2_000
@@ -185,23 +181,38 @@ export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): Host
       // pending, slow or failed operation is reported.
       const detailed = count <= detailLimit
       if (detailed) emit(event, "begin", fields)
-      // The global timer, not node:timers': a test's clock control and this
-      // module must agree on which one runs.
-      const timer = setInterval(() => {
-        emit(event, "pending", { ...fields, pendingMillis: Math.round(clock() - openedAt) })
-      }, pendingMillis)
-      // A pending report never keeps the guest process alive past its turn.
-      unref(timer)
+      const fiber = Effect.runSync(Effect.forkIn(
+        Effect.forever(Effect.andThen(
+          runtime.clock.sleep(Duration.millis(pendingMillis)),
+          Effect.sync(() => emit(event, "pending", { ...fields, pendingMillis: Math.round(clock() - openedAt) }))
+        )),
+        runtime.scope
+      ))
       let settled = false
       return (outcome = {}) => {
         // A completion reached twice, say from a finalizer and a handler,
         // still ends the operation once.
         if (settled) return
         settled = true
-        clearInterval(timer)
+        fiber.interruptUnsafe()
         const elapsed = Math.round(clock() - openedAt)
         if (detailed || elapsed >= slowMillis) emit(event, "end", { ...fields, ...outcome, elapsedMillis: elapsed })
       }
     }
   }
 }
+
+/**
+ * Builds a recorder using the caller's injected Effect clock and scope.
+ * Closing that scope cancels unfinished diagnostic observations.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const makeHostDiagnostics = (
+  options: Omit<HostDiagnosticOptions, "runtime"> = {}
+): Effect.Effect<HostDiagnostics, never, Scope.Scope> =>
+  Effect.gen(function*() {
+    if (options.write === undefined) return inert
+    return createHostDiagnostics({ ...options, runtime: { clock: yield* Clock.Clock, scope: yield* Scope.Scope } })
+  })

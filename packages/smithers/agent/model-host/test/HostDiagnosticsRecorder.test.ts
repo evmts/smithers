@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
-import { createHostDiagnostics, HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
+import { HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
+import { createHostDiagnostics } from "./diagnostics.ts"
 
 const collector = () => {
   const lines: Array<Record<string, unknown>> = []

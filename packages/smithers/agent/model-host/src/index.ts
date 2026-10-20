@@ -33,7 +33,8 @@ export {
   type HostDiagnosticFields,
   type HostDiagnosticOptions,
   type HostDiagnostics,
-  type HostDiagnosticValue
+  type HostDiagnosticValue,
+  makeHostDiagnostics
 } from "./HostDiagnostics.ts"
 export { HostModel, type HostModelOptions, type HostModelRecord, HostModelUnusable } from "./HostModel.ts"
 export {

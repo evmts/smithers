@@ -14,7 +14,7 @@ import type { CallbackTransportObserver } from "./CallbackTransport.ts"
 import { runContextPreflight } from "./ContextPreflight.ts"
 import { runDurableChatTurn } from "./DurableChatProducer.ts"
 import type { DurableChatGrant } from "./DurableChatProducer.ts"
-import { createHostDiagnostics } from "./HostDiagnostics.ts"
+import { makeHostDiagnostics } from "./HostDiagnostics.ts"
 import type { HostDiagnosticFields, HostDiagnostics } from "./HostDiagnostics.ts"
 import { boundedJson } from "./internal/BoundedJson.ts"
 import type { ProducerError, ResolveFailed } from "./ModelHostError.ts"
@@ -404,7 +404,7 @@ export const createModelTurnHandler = (
   // handler is mounted: `HttpEffect.toWebHandler` alone would run them
   // uninterruptibly, so a caller who left would hold a provider call open.
   // Recording how a turn ended always runs to the end.
-  return Effect.uninterruptible(
+  return Effect.scoped(Effect.uninterruptible(
     Effect.gen(function*() {
       const request = yield* HttpServerRequest.HttpServerRequest
       const pathname = pathOf(request.url)
@@ -433,7 +433,7 @@ export const createModelTurnHandler = (
           request: body,
           producerBaseUrl: callbackBaseUrl
         }
-        const diagnostics = createHostDiagnostics({ turnId: grant.turnId, write: options.writeDiagnostic })
+        const diagnostics = yield* makeHostDiagnostics({ turnId: grant.turnId, write: options.writeDiagnostic })
         const resolveExit = yield* Effect.exit(Effect.interruptible(options.resolve(grant)))
         if (Exit.isFailure(resolveExit)) return streamRefused(diagnostics, "resolve", resolveExit.cause)
         const resolved = resolveExit.value
@@ -504,17 +504,19 @@ export const createModelTurnHandler = (
       const exit = yield* Effect.exit(Effect.interruptible(
         options.resolve(grant).pipe(
           Effect.flatMap(({ model, options: modelOptions, preflight }) =>
-            runDurableChatTurn(
-              model,
-              { ...grant, ...(options.installOrigin === undefined ? {} : { installOrigin: options.installOrigin }) },
-              modelOptions,
-              callbackBaseUrl,
-              options.fetchImpl,
-              preflight,
-              options.docs,
-              createHostDiagnostics({ turnId: grant.turnId, write: options.writeDiagnostic }),
-              options.observeTransport
-            )
+            Effect.gen(function*() {
+              return yield* runDurableChatTurn(
+                model,
+                { ...grant, ...(options.installOrigin === undefined ? {} : { installOrigin: options.installOrigin }) },
+                modelOptions,
+                callbackBaseUrl,
+                options.fetchImpl,
+                preflight,
+                options.docs,
+                yield* makeHostDiagnostics({ turnId: grant.turnId, write: options.writeDiagnostic }),
+                options.observeTransport
+              )
+            })
           )
         )
       ))
@@ -548,5 +550,5 @@ export const createModelTurnHandler = (
         ...(failed.transport === undefined ? {} : { transport: failed.transport })
       }, 502)
     })
-  )
+  ))
 }
