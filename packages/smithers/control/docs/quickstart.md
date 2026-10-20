@@ -17,7 +17,7 @@ stream that says it again from durable evidence.
 
 ## Prerequisites
 
-- Node.js 26.4.0 or later.
+- Node.js 22.19.0 or later.
 - A project with the packages installed: `npm install @smthrs/control@next effect`.
 
 ## Declare the flow the plane may plan

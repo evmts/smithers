@@ -32,7 +32,7 @@ that gets keyed, journaled, or logged. For the reasoning behind that split, see
 npm install @smthrs/model@next effect
 ```
 
-It requires Node.js 26.4.0 or later. [Installation](./installation.md) has the
+It requires Node.js 22.19.0 or later. [Installation](./installation.md) has the
 requirements and import forms.
 
 ## Call a provider

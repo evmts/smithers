@@ -35,7 +35,7 @@ their own.
 npm install -g smthrs@next
 ```
 
-Node 26.4.0 or later is required. The package installs one
+Node 22.19.0 or later is required. The package installs one
 executable under two names, `smthrs` and its `smithers` alias. For the runner
 matrix and the import forms of the library, see
 [Installation](./installation.md).

@@ -67,7 +67,7 @@ Run a coding agent on your subscription, inspect its changes, then commit and pu
 
 ## Install
 
-Use Node 26.4.0 or later and install jj as described in [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md).
+Use Node 22.19.0 or later and install jj as described in [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md).
 
 ```bash
 npm install -g smthrs@next
@@ -3046,7 +3046,7 @@ const smithersCloudCache = S.Cache({
 })
 
 // Runtimes and their executables
-const node = S.Runtime.Node({ version: ">=26.4.0" })
+const node = S.Runtime.Node({ version: ">=22.19.0" })
 const nodeFromManifest = S.Runtime.Node({ manifest: packageJson })
 const bun = S.Runtime.Bun({ version: ">=1.4.0" })
 const runtimeExecutable = S.Runtime.bin
@@ -4330,9 +4330,9 @@ The `exports` map publishes the index, every module under `src` through the `./*
 
 | Import                         | Source          | Platform        |
 | ------------------------------ | --------------- | --------------- |
-| `@smthrs/targets`              | `src/index.ts`  | Node.js 26.4.0+ |
-| `@smthrs/targets/Target`       | `src/Target.ts` | Node.js 26.4.0+ |
-| `@smthrs/targets/package.json` | `package.json`  | Node.js 26.4.0+ |
+| `@smthrs/targets`              | `src/index.ts`  | Node.js 22.19.0+ |
+| `@smthrs/targets/Target`       | `src/Target.ts` | Node.js 22.19.0+ |
+| `@smthrs/targets/package.json` | `package.json`  | Node.js 22.19.0+ |
 
 The second row stands for every public module. The subpaths `./internal/*` and
 `./index` map to `null`, so neither resolves. Registry installs use the built
@@ -4486,7 +4486,7 @@ const whoami = Smithers.Shell.Run({
 - **Type:** the `Runtime` module, and `type Runtime = Runtime.Runtime`
 - **Since:** `0.1.0`
 
-Declared JavaScript runtimes and the argv they run programs with. The name is both the namespace the constructors live under and the type they return. `Runtime.Node({ version: ">=26.4.0" })` and `Runtime.Bun({ version: ">=1.4.0" })` are the two constructors, `Runtime.Node({ manifest })` is the form that reads the pin from a declared manifest, and `Runtime.bin`, `Runtime.npx`, `Runtime.required`, `Runtime.run`, `Runtime.evaluate`, `Runtime.test`, and `Runtime.isRuntime` are the accessors a rule builds argv with. A runtime belongs to the workspace and is declared once in `WORKSPACE.ts`; a single target overrides the interpreter by naming its own `runtime`.
+Declared JavaScript runtimes and the argv they run programs with. The name is both the namespace the constructors live under and the type they return. `Runtime.Node({ version: ">=22.19.0" })` and `Runtime.Bun({ version: ">=1.4.0" })` are the two constructors, `Runtime.Node({ manifest })` is the form that reads the pin from a declared manifest, and `Runtime.bin`, `Runtime.npx`, `Runtime.required`, `Runtime.run`, `Runtime.evaluate`, `Runtime.test`, and `Runtime.isRuntime` are the accessors a rule builds argv with. A runtime belongs to the workspace and is declared once in `WORKSPACE.ts`; a single target overrides the interpreter by naming its own `runtime`.
 
 `Runtime.Node({ manifest })` reads `engines.node` during planning. Literal Node pins and exact Bun pins also retain their declared versions. Requirements support an exact version or one comparator (`=`, `>`, `>=`, `<`, or `<=`); compound ranges, caret/tilde ranges, and tags such as `latest` are refused. The planner measures each declared manifest's validated text and includes that digest in the target key. Missing, malformed, oversized, or outside-workspace manifests fail resolution.
 
@@ -8427,7 +8427,7 @@ to measure a changed interpreter.
 import * as Runtime from "@smthrs/build/Runtime"
 
 const layer = Runtime.layerNode({
-  requirement: ">=26.4.0",
+  requirement: ">=22.19.0",
   platform: { os: "linux", arch: "x64", libc: "glibc" },
   environment: process.env
 })
@@ -11724,8 +11724,8 @@ Readiness as one report.
 | -------------------- | --------------------------------------------- | ------------------------------------------------------------------------- |
 | `Level`              | `"ok" \| "warn" \| "fail"`                    | A `warn` stops nothing; a `fail` will stop the next command.              |
 | `Check`, `Report`    | `{ name, level, detail }`, `{ root, checks }` | The report is data. `--json` prints it verbatim.                          |
-| `minimumNode`        | `"26.4.0"`                                    | The floor the durable engine requires.                                    |
-| `supportedNodeRange` | `">=26.4.0"`                                  | The Node range supported by the CLI's runtime dependencies.               |
+| `minimumNode`        | `"22.19.0"`                                    | The floor the durable engine requires.                                    |
+| `supportedNodeRange` | `">=22.19.0"`                                  | The Node range supported by the CLI's runtime dependencies.               |
 | `satisfiesNode`      | `(version, minimum?) => boolean`              | Whether a Node version is supported and clears an optional higher floor.  |
 | `Options`            | interface                                     | Every host fact is a parameter, so the report is deterministic in a test. |
 | `inspect`            | `(options) => Report`                         | Runs every check.                                                         |
@@ -13828,7 +13828,7 @@ derived from one rather than colliding with it.
 
 ## Requirements and platform
 
-- Node.js 26.4.0 or later. The package also runs under Bun and in a browser:
+- Node.js 22.19.0 or later. The package also runs under Bun and in a browser:
   it imports no `node:` built-in.
 - One runtime dependency, `effect`.
 - `@smthrs/crypto/internal/*` and `@smthrs/crypto/*/index` are blocked in the
@@ -14342,7 +14342,7 @@ than a typed failure because neither refusal is recoverable at run time.
 
 | Code                        | Refused when                                                       | Message                                                                                                        |
 | --------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `unsupported_runtime`       | `process.versions.bun` is set                                      | `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=26.4.0`                       |
+| `unsupported_runtime`       | `process.versions.bun` is set                                      | `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=22.19.0`                       |
 | `unsupported_database_file` | the file has at least one table and no `flows_migrations` table    | `<path> is not a Smithers 1.0 database (1.0.0-rc.16 does not load a 0.x smithers.db)`                          |
 | `database_locked`           | a peer held the file for the whole open ladder                     | `<path> could not be inspected because another process holds it`                                               |
 | `postgres_url_missing`      | `SMITHERS_BACKEND=postgres` with no PostgreSQL URL set             | `PostgreSQL requires SMITHERS_POSTGRES_URL or DATABASE_URL`                                                    |
@@ -31464,7 +31464,7 @@ each the namespace of the module above. `@smthrs/platform-bun/internal/*` and
 `@smthrs/platform-bun/*/index` are blocked in the export map;
 `@smthrs/platform-bun/package.json` is exported.
 
-Supported runtimes are Bun >=1.4.0 and Node.js >=26.4.0.
+Supported runtimes are Bun >=1.4.0 and Node.js >=22.19.0.
 
 ## BunHost
 
@@ -31729,7 +31729,7 @@ commands use, and fails that operation with `JjError` `not_installed` or
 
 | Requirement                     | Why                                                                   |
 | ------------------------------- | --------------------------------------------------------------------- |
-| Node.js >=26.4.0                | the minimum this package's `engines` field declares                   |
+| Node.js >=22.19.0                | the minimum this package's `engines` field declares                   |
 | the `smithers-jj-export` helper | `AtomicFileSystem` runs every guarded filesystem operation through it |
 | a POSIX host                    | Windows has none of those primitives and is unsupported               |
 

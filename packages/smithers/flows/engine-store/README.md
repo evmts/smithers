@@ -21,7 +21,7 @@ a `Layer` you compose or an `Effect` you run.
 npm install @smthrs/engine-store@next effect
 ```
 
-Node.js 26.4.0 or later. The package ships as both ESM and CommonJS with
+Node.js 22.19.0 or later. The package ships as both ESM and CommonJS with
 TypeScript declarations.
 
 ## Testing

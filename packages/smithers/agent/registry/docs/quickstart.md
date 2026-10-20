@@ -11,7 +11,7 @@ renders the prompt an agent would run.
 
 ## Prerequisites
 
-- Node.js 26.4.0 or later.
+- Node.js 22.19.0 or later.
 - A project with the packages installed: `npm install @smthrs/registry@next @effect/platform-node effect`.
 
 ## Write two flows
