@@ -246,11 +246,68 @@ describe("admission", () => {
     expect(seen.status).toEqual(Option.some({ leader: false, failing: null }))
   })
 
-  test("storage that fails to store the write fails admitted, and the write rolls back", async () => {
+  test.each([false, true])(
+    "leadership lost before persistence reports follower (storage fault: %s)",
+    async (storageFault) => {
+      const world = await setup([])
+      let change = (_leader: boolean) => {}
+      const leader: Outbox.Leader = {
+        ...single,
+        onLeadershipChange: (listener) => {
+          change = listener
+          return () => undefined
+        }
+      }
+      let stores = 0
+      const storage = {
+        ...world.storage,
+        set: async (key: string, value: string) => {
+          stores++
+          if (storageFault) throw new Error("quota")
+          return await world.storage.set(key, value)
+        }
+      }
+      const seen = await scoped(Effect.gen(function*() {
+        const { notes, outbox } = yield* start({ ...world, storage, leader })
+        const write = yield* outbox.transact(
+          "save",
+          { idempotencyKey: "a" },
+          Effect.gen(function*() {
+            yield* notes.insert(note("a", 1))
+            change(false)
+          })
+        )
+        const admitted = yield* Effect.exit(write.admitted)
+        yield* Effect.exit(write.settled)
+        return { admitted, rows: yield* notes.toArray }
+      }))
+      expect(seen.admitted).toEqual(Exit.fail(new Outbox.NotAdmitted({ reason: "follower" })))
+      expect(seen.rows).toEqual([])
+      expect(stores).toBe(0)
+      expect(world.storage.entries.size).toBe(0)
+      expect(world.sent).toEqual([])
+    }
+  )
+
+  test.each([false, true])("storage failure stays storage when leadership is lost: %s", async (loseLeadership) => {
     const world = await setup([])
-    const storage = { ...world.storage, set: () => Promise.reject(new Error("quota")) }
+    let change = (_leader: boolean) => {}
+    const leader: Outbox.Leader = {
+      ...single,
+      onLeadershipChange: (listener) => {
+        change = listener
+        return () => undefined
+      }
+    }
+    const storage = {
+      ...world.storage,
+      set: () => {
+        if (loseLeadership) change(false)
+        return Promise.reject(new Error("quota"))
+      }
+    }
     const seen = await scoped(Effect.gen(function*() {
-      const { notes, outbox } = yield* start({ ...world, storage: storage as never })
+      const { notes, outbox } = yield* start({ ...world, storage: storage as never, leader })
       const write = yield* save(outbox, notes, note("a", 1))
       const admitted = yield* Effect.exit(write.admitted)
       yield* Effect.exit(write.settled)
@@ -259,6 +316,23 @@ describe("admission", () => {
     expect(seen.admitted).toEqual(Exit.fail(new Outbox.NotAdmitted({ reason: "storage" })))
     expect(seen.rows).toEqual([])
     expect(world.sent).toEqual([])
+  })
+
+  test("a restored write whose settlement cannot be stored retains its durable record", async () => {
+    const world = await setup([new Outbox.Retry({})])
+    const collection = id("notes")
+    await scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start({ ...world, notes: collection })
+      yield* (yield* save(outbox, notes, note("a", 1))).admitted
+      yield* Effect.promise(() => until(() => expect(world.sent).toHaveLength(1)))
+    }))
+    const storage = { ...world.storage, set: () => Promise.reject(new Error("quota")) }
+    await scoped(Effect.gen(function*() {
+      yield* Queue.offer(world.outcomes, "ok")
+      yield* start({ ...world, notes: collection, storage: storage as never })
+      yield* Effect.promise(() => until(() => expect(world.sent).toHaveLength(2)))
+    }))
+    expect(world.storage.entries.size).toBe(1)
   })
 
   test("a storage that can't be read at start is logged, and the outbox starts", async () => {

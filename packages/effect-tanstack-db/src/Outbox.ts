@@ -76,7 +76,7 @@ export class Retry extends Data.TaggedError("Retry")<{ readonly status?: number 
 /**
  * The outbox didn't take a write, so nothing was stored or sent and its rows
  * rolled back:
- * - `follower`: another tab leads the outbox;
+ * - `follower`: another tab leads, including leadership lost before persistence;
  * - `storage`: the outbox's storage failed to store it.
  *
  * @category errors
@@ -285,8 +285,14 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         delete: options.storage.delete.bind(options.storage),
         clear: options.storage.clear.bind(options.storage),
         set: async (key, value) => {
-          await options.storage.set(key, value)
           const admission = admissions.get(key.slice(KEY_PREFIX.length))
+          try {
+            await options.storage.set(key, value)
+          } catch (error) {
+            // A real storage failure stays storage even if leadership was lost during the write.
+            if (admission) run(Deferred.fail(admission, new NotAdmitted({ reason: "storage" })))
+            throw error
+          }
           if (admission) run(Deferred.succeed(admission, undefined))
         }
       }
@@ -413,7 +419,13 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           void offline.commit().catch(() => undefined)
           void transaction.isPersisted.promise.then(
             () => run(Deferred.succeed(admission, undefined)),
-            () => run(Deferred.fail(admission, new NotAdmitted({ reason: "storage" })))
+            () =>
+              run(Deferred.fail(
+                admission,
+                new NotAdmitted({
+                  reason: executor.isOfflineEnabled ? "storage" : "follower"
+                })
+              ))
           ).finally(() => admissions.delete(transaction.id))
           return {
             id: transaction.id,

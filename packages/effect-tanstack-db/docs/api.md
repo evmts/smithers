@@ -410,7 +410,8 @@ interface Status {
 | `retryNow` | Sends every waiting write now instead of waiting out its backoff: the network detector's `notifyOnline`.                                                                                                                                                                                                                                                                                                       |
 
 `Write.admitted` succeeds once the write is stored, and fails with
-`NotAdmitted` (`reason: "storage"`) when the storage refused it; the write then
+`NotAdmitted` (`reason: "storage"`) when the storage refused it, or
+`reason: "follower"` when leadership was lost before persistence; the write then
 rolls back. `Write.settled` succeeds once the mutation succeeded, and fails
 with `TransactionFailed` when the write rolled back.
 
