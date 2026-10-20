@@ -8,20 +8,25 @@
  * then resumes the run. The engine re-dispatches the step because it carries an
  * idempotency key, and the provider must end up with the side effect exactly
  * once.
+ *
+ * The last case crashes between two attempts instead: a rate limit failed the
+ * first, and the process dies while the engine waits the server's Retry-After.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { EngineStore, Kernel } from "@smthrs/flows"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect, Layer, ManagedRuntime, type Schema } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { afterEach, expect, it } from "vitest"
 import * as GitHubActions from "../src/github/Actions.ts"
 import * as GitHubClient from "../src/github/GitHubClient.ts"
 import { type FakeGitHub, startGitHub } from "./GitHubFake.ts"
+import { faultingTransport, gitHubLayer, gitHubLayerOver } from "./Http.ts"
 
 const cleanups: Array<() => Promise<void>> = []
 
@@ -32,8 +37,8 @@ afterEach(async () => {
 type PureSchema = { readonly DecodingServices: never; readonly EncodingServices: never }
 
 /**
- * Starts the run, crashes it once `held` resolves, and resumes it on a fresh
- * runtime over the same database.
+ * Starts the run, crashes it once `held` resolves for the run's database, and
+ * resumes it on a fresh runtime over the same database.
  */
 const crashThenResume = async <
   Tag extends string,
@@ -46,9 +51,10 @@ const crashThenResume = async <
   implementation: Layer.Layer<Action.Requirement<Tag>, never, Client | FlowRuntime.FlowRuntime>,
   client: Layer.Layer<Client>,
   payload: Payload["Type"],
-  held: Promise<void>
+  held: (database: string) => Promise<void>
 ): Promise<Success["Type"]> => {
   const root = mkdtempSync(join(tmpdir(), "write-back-resume-"))
+  const database = join(root, "engine.sqlite")
   cleanups.push(async () => rmSync(root, { recursive: true, force: true }))
   const flow = Flow.make(`${declaration.name}/resume-flow`, {
     payload: declaration.payloadSchema,
@@ -82,7 +88,7 @@ const crashThenResume = async <
     ManagedRuntime.make(
       NodeRuntime.layer(
         {
-          filename: join(root, "engine.sqlite"),
+          filename: database,
           workspaceRoot: root,
           owner: { hostId: "write-back-resume" },
           // Incarnations are sequential and the crashed one is gone.
@@ -101,7 +107,7 @@ const crashThenResume = async <
   )
   const crashed = boot()
   const first = crashed.runPromise(execute).then(() => "settled", () => "interrupted")
-  await held
+  await held(database)
   await crashed.dispose()
   expect(await first).toBe("interrupted")
   const resumed = boot()
@@ -116,7 +122,7 @@ const gitHub = async (): Promise<[FakeGitHub, Layer.Layer<GitHubClient.GitHubCli
   const github = await startGitHub()
   cleanups.push(() => github.fixture.close())
   github.hold = true
-  return [github, Layer.orDie(GitHubClient.layer({ token: "t", apiBaseUrl: github.fixture.origin }, {}))]
+  return [github, Layer.orDie(gitHubLayer({ token: "t", apiBaseUrl: github.fixture.origin }, {}))]
 }
 
 it("add-labels resumes to one label", async () => {
@@ -126,7 +132,7 @@ it("add-labels resumes to one label", async () => {
     GitHubActions.layerAddLabels,
     client,
     { owner: "o", repo: "r", issueNumber: 7, labels: ["triage"] },
-    github.held
+    () => github.held
   )
   expect(result).toEqual({ added: [], labels: ["triage"] })
   expect(github.labels).toEqual(["triage"])
@@ -140,7 +146,7 @@ it("upsert-comment resumes to one sticky comment", async () => {
     GitHubActions.layerUpsertComment,
     client,
     { owner: "o", repo: "r", issueNumber: 7, key: "run-1", body: "Working", author: { login: "smithers" } },
-    github.held
+    () => github.held
   )
   expect(result.outcome).toBe("unchanged")
   expect(github.comments.map((comment) => comment.body)).toEqual(["<!-- smithers:key=run-1 -->\nWorking"])
@@ -154,7 +160,7 @@ it("check-run resumes to one check run", async () => {
     GitHubActions.layerCheckRun,
     client,
     { owner: "o", repo: "r", headSha: "b".repeat(40), name: "smithers", key: "run-1", status: "in_progress" },
-    github.held
+    () => github.held
   )
   expect(result).toMatchObject({ created: false, status: "in_progress" })
   expect(github.checkRuns).toHaveLength(1)
@@ -169,9 +175,55 @@ it("link-pr resumes to one closing reference", async () => {
     GitHubActions.layerLinkPullRequest,
     client,
     { owner: "o", repo: "r", pullNumber: 9, issueNumber: 7 },
-    github.held
+    () => github.held
   )
   expect(result.updated).toBe(false)
   expect(github.pullBody).toBe("Parser fix.\n\nCloses #7")
   expect(github.writes()).toEqual(["PATCH /repos/o/r/pulls/9"])
+})
+
+/** Resolves once the run's database records a failed attempt. */
+const failedAttempt = async (database: string): Promise<void> => {
+  for (let polls = 0; polls < 1_000; polls++) {
+    try {
+      const reader = new DatabaseSync(database, { readOnly: true })
+      try {
+        const row = reader.prepare("SELECT COUNT(*) AS failed FROM flows_attempts WHERE state = 'failed'").get()
+        if (Number(row?.["failed"]) > 0) return
+      } finally {
+        reader.close()
+      }
+    } catch {
+      // The database or its tables may not exist yet.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  throw new Error("no attempt failed")
+}
+
+it("add-labels resumes after a crash between attempts, waits the persisted Retry-After, and writes once", async () => {
+  const github = await startGitHub()
+  cleanups.push(() => github.fixture.close())
+  // GitHub refuses the first write. The wait it names is far past the policy's
+  // backoff and past the time a crash and a restart take, so only a resumed
+  // engine that read the journaled retryAfterMillis waits this long.
+  let posts = 0
+  const { transport, handled } = faultingTransport(({ method }) =>
+    method === "POST" && ++posts === 1
+      ? { status: 429, headers: { "retry-after": "3" }, body: { message: "rate limited" } }
+      : undefined
+  )
+  const result = await crashThenResume(
+    GitHubActions.AddLabels,
+    GitHubActions.layerAddLabels,
+    Layer.orDie(gitHubLayerOver(transport, { token: "t", apiBaseUrl: github.fixture.origin })),
+    { owner: "o", repo: "r", issueNumber: 7, labels: ["triage"] },
+    failedAttempt
+  )
+  expect(result).toEqual({ added: ["triage"], labels: ["triage"] })
+  expect(github.labels).toEqual(["triage"])
+  expect(github.writes()).toEqual(["POST /repos/o/r/issues/7/labels"])
+  const writes = handled.filter((request) => request.method === "POST")
+  expect(writes.map((request) => request.faulted ?? "sent")).toEqual([429, "sent"])
+  expect(writes[1]!.at - writes[0]!.at).toBeGreaterThanOrEqual(3_000)
 })

@@ -24,9 +24,11 @@ calls. It wires the provider's two pieces of provider-specific code into the
 coordinator's skeleton:
 
 - `verify(raw, secret)` sees the exact delivered bytes and the resolved
-  secret, and returns a boolean. A verifier that throws is treated as a
-  failed verification: the delivery is refused with `Unauthorized`, not
-  turned into a defect that kills the ingress fiber.
+  secret, and returns a boolean or an `Effect<boolean>`, such as
+  `Core.Signature.verifySignature` returns. Only `true` verifies. A verifier
+  that throws, or whose Effect fails or dies, is treated as a failed
+  verification: the delivery is refused with `Unauthorized`, not turned into
+  a defect that kills the ingress fiber.
 - `decode(raw, payload)` runs only after verification, and may throw an
   `IntegrationError` for a delivery whose headers or body it cannot read.
 

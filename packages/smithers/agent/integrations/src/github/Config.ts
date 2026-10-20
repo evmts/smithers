@@ -10,7 +10,7 @@
  * @since 1.0.0
  */
 
-import { Duration } from "effect"
+import { Duration, type Redacted } from "effect"
 import * as Environment from "../Environment.ts"
 
 /**
@@ -22,7 +22,7 @@ import * as Environment from "../Environment.ts"
 export const DEFAULT_API_BASE_URL = "https://api.github.com"
 
 /**
- * The default deadline for one attempt, covering the response headers and the
+ * The default deadline for one request, covering the response headers and the
  * body read.
  *
  * @category constants
@@ -30,7 +30,16 @@ export const DEFAULT_API_BASE_URL = "https://api.github.com"
  */
 export const DEFAULT_REQUEST_TIMEOUT: Duration.Duration = Duration.seconds(30)
 
-const DEFAULT_MAX_RETRIES = 3
+/**
+ * An App's OAuth client: its client id and client secret.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface ClientCredentials {
+  readonly clientId: string
+  readonly clientSecret: Redacted.Redacted<string>
+}
 
 /**
  * What a caller may supply. Every field is optional; each consumer fails
@@ -46,19 +55,24 @@ export interface GitHubConfig {
    */
   readonly token?: string | undefined
   /**
+   * A GitHub App's or OAuth App's client id and secret, sent as HTTP Basic
+   * authentication in place of any token: how GitHub authenticates the
+   * `/applications/{client_id}/...` endpoints, such as deleting a user's
+   * token. Never logged.
+   */
+  readonly clientCredentials?: ClientCredentials | undefined
+  /**
    * REST base URL, for GitHub Enterprise or a fixture server. Falls back to
    * `SMITHERS_GITHUB_API_BASE_URL`.
    */
   readonly apiBaseUrl?: string | undefined
-  /** Retries for rate-limited and 5xx responses. Defaults to 3. */
-  readonly maxRetries?: number | undefined
   /**
-   * Deadline for one attempt, covering the response headers *and* the body
+   * Deadline for one request, covering the response headers *and* the body
    * read. Defaults to 30 seconds, and must be a finite, positive duration.
    *
-   * The retry budget bounds only completed attempts, so without this a peer
-   * that answers with headers and then trickles the body forever holds the
-   * call open for as long as it likes.
+   * A retry policy sees only attempts that end, so without this a peer that
+   * answers with headers and then trickles the body forever holds the call
+   * open for as long as it likes.
    */
   readonly requestTimeout?: Duration.Input | undefined
 }
@@ -72,7 +86,6 @@ export interface GitHubConfig {
 export interface ResolvedGitHubConfig {
   readonly token: string | undefined
   readonly apiBaseUrl: string
-  readonly maxRetries: number
   readonly requestTimeout: Duration.Input
 }
 
@@ -99,6 +112,5 @@ export const resolve = (
 ): ResolvedGitHubConfig => ({
   token: firstNonEmpty([config.token, env["SMITHERS_GITHUB_TOKEN"], env["GITHUB_TOKEN"]]),
   apiBaseUrl: firstNonEmpty([config.apiBaseUrl, env["SMITHERS_GITHUB_API_BASE_URL"]]) ?? DEFAULT_API_BASE_URL,
-  maxRetries: config.maxRetries ?? DEFAULT_MAX_RETRIES,
   requestTimeout: config.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT
 })

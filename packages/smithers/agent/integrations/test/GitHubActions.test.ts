@@ -13,10 +13,12 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Effect, Layer, type Schema } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
-import { IntegrationFailure } from "../src/core/ActionFailure.ts"
+import { IntegrationFailure, RetryableIntegrationFailure } from "../src/core/ActionFailure.ts"
+import type { IntegrationError } from "../src/core/IntegrationError.ts"
 import * as Actions from "../src/github/Actions.ts"
-import * as GitHubClient from "../src/github/GitHubClient.ts"
+import type * as GitHubClient from "../src/github/GitHubClient.ts"
 import { type FakeGitHub, startGitHub } from "./GitHubFake.ts"
+import { type Fault, faultingTransport, gitHubLayer, gitHubLayerOver } from "./Http.ts"
 
 let github: FakeGitHub | undefined
 
@@ -35,7 +37,11 @@ const runAction = <
   Error extends Schema.Top & PureSchema
 >(
   declaration: Action.Declared<Tag, Payload, Success, Error>,
-  payload: Payload["~type.make.in"]
+  payload: Payload["~type.make.in"],
+  clientLayer: Layer.Layer<GitHubClient.GitHubClient, IntegrationError> = gitHubLayer({
+    token: "t",
+    apiBaseUrl: (github as FakeGitHub).fixture.origin
+  }, {})
 ): Promise<Success["Type"]> => {
   const flow = Flow.make(`${declaration.name}/test-flow`, {
     payload: declaration.payloadSchema,
@@ -44,7 +50,6 @@ const runAction = <
     // The cast is on the payload value only (decoded Type vs planned make-in); R is untouched.
     body: (input) => declaration.call(input as never)
   })
-  const clientLayer = GitHubClient.layer({ token: "t", apiBaseUrl: (github as FakeGitHub).fixture.origin }, {})
   const implementation = Actions.layer as Layer.Layer<
     Action.Requirement<Tag>,
     never,
@@ -112,6 +117,83 @@ describe("AddLabels", () => {
     })
     expect(Actions.AddLabels.tier).toBe("irreversible")
     expect(Actions.retryPolicy.maxAttempts).toBe(3)
+  })
+})
+
+// The engine's retry policy is the only retry a write gets. These cases inject
+// a provider refusal at an exact request through the client's `HttpClient`
+// and count every request the client made, so a retry hidden in the client
+// would show up as an extra one.
+describe("the engine is the only retry", () => {
+  const labels = { owner: "o", repo: "r", issueNumber: 7, labels: ["triage"] as const }
+
+  /** A client over a transport that answers the POSTs `fault` picks in place of GitHub. */
+  const faulting = (fault: (post: number) => Fault | undefined) => {
+    let posts = 0
+    const { transport, handled } = faultingTransport(({ method }) => method === "POST" ? fault(++posts) : undefined)
+    return {
+      handled,
+      client: gitHubLayerOver(transport, { token: "t", apiBaseUrl: (github as FakeGitHub).fixture.origin })
+    }
+  }
+
+  it("waits the Retry-After a rate-limited write named, then writes once", async () => {
+    github = await startGitHub()
+    // The asked-for wait is past the policy's 500 ms first backoff, so only an
+    // engine that read the failure's retryAfterMillis produces this gap.
+    const { handled, client } = faulting((post) =>
+      post === 1 ? { status: 429, headers: { "retry-after": "1" }, body: { message: "rate limited" } } : undefined
+    )
+    const added = await runAction(Actions.AddLabels, labels, client)
+    expect(added).toEqual({ added: ["triage"], labels: ["triage"] })
+    expect(handled.map((request) => `${request.method} ${request.faulted ?? "sent"}`)).toEqual([
+      "GET sent",
+      "POST 429",
+      "GET sent",
+      "POST sent"
+    ])
+    expect(handled[3]!.at - handled[1]!.at).toBeGreaterThanOrEqual(1_000)
+    expect(github.writes()).toEqual(["POST /repos/o/r/issues/7/labels"])
+  })
+
+  // A client that retried a rate limit itself, inside each of the engine's
+  // attempts, made one write up to twelve requests.
+  it("makes at most the policy's attempts at a write that stays rate limited, not a client budget per attempt", async () => {
+    github = await startGitHub()
+    const { handled, client } = faulting(() => ({
+      status: 429,
+      headers: { "retry-after": "0" },
+      body: { message: "rate limited" }
+    }))
+    const failure = await rejected(runAction(Actions.AddLabels, labels, client))
+    expect(failure).toBeInstanceOf(RetryableIntegrationFailure)
+    expect(failure).toMatchObject({ retryable: true, retryAfterMillis: 0 })
+    expect(handled.filter((request) => request.method === "POST")).toHaveLength(Actions.retryPolicy.maxAttempts!)
+    expect(github.writes()).toEqual([])
+  })
+
+  it("reports a refusal another attempt cannot clear at once", async () => {
+    github = await startGitHub()
+    const { handled, client } = faulting(() => ({ status: 422, body: { message: "Validation Failed" } }))
+    const failure = await rejected(runAction(Actions.AddLabels, labels, client))
+    expect(failure).toBeInstanceOf(IntegrationFailure)
+    expect(failure).toMatchObject({ retryable: false })
+    expect(handled.map((request) => request.method)).toEqual(["GET", "POST"])
+  })
+
+  it("never repeats a comment, and hands a rate limit's wait to the flow", async () => {
+    github = await startGitHub()
+    const { handled, client } = faulting(() => ({
+      status: 429,
+      headers: { "retry-after": "1" },
+      body: { message: "rate limited" }
+    }))
+    const failure = await rejected(
+      runAction(Actions.CommentOnIssue, { owner: "o", repo: "r", issueNumber: 7, body: "hi" }, client)
+    )
+    expect(failure).toBeInstanceOf(RetryableIntegrationFailure)
+    expect(failure).toMatchObject({ retryable: true, retryAfterMillis: 1_000 })
+    expect(handled).toHaveLength(1)
   })
 })
 

@@ -1,11 +1,20 @@
-import { type Duration, Effect, Exit, Fiber, Schema } from "effect"
+import { type Duration, Effect, Exit, Fiber, Redacted, Schema } from "effect"
+import * as HttpClient from "effect/http/HttpClient"
 import { inspect } from "node:util"
-import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest"
+import { afterEach, describe, expect, expectTypeOf, it } from "vitest"
 import { fromIntegrationError } from "../src/core/ActionFailure.ts"
 import { type IntegrationError, isIntegrationError } from "../src/core/IntegrationError.ts"
 import { DEFAULT_API_BASE_URL, DEFAULT_REQUEST_TIMEOUT, resolve } from "../src/github/Config.ts"
-import { isRateLimitResponse, make, nextPageUrl, retryAfterMs } from "../src/github/GitHubClient.ts"
+import { isRateLimitResponse, nextPageUrl, retryAfterMs } from "../src/github/GitHubClient.ts"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
+import {
+  brokenBodyTransport,
+  fetchLayer,
+  gitHubClient,
+  gitHubClientOver,
+  gitHubConfigFailure,
+  rejectingTransport
+} from "./Http.ts"
 
 const TOKEN = "ghp-fixture-token"
 
@@ -14,11 +23,9 @@ let fixture: Fixture | undefined
 afterEach(async () => {
   await fixture?.close()
   fixture = undefined
-  vi.unstubAllGlobals()
 })
 
-const client = (extra: { readonly maxRetries?: number } = {}) =>
-  make({ token: TOKEN, apiBaseUrl: (fixture as Fixture).origin, ...extra })
+const client = () => gitHubClient({ token: TOKEN, apiBaseUrl: (fixture as Fixture).origin })
 
 describe("GitHub config", () => {
   it("prefers explicit values, then SMITHERS_GITHUB_TOKEN, then GITHUB_TOKEN", () => {
@@ -32,7 +39,9 @@ describe("GitHub config", () => {
     expect(resolve({}, { GITHUB_TOKEN: "github" }).token).toBe("github")
     expect(resolve({}, env).apiBaseUrl).toBe("https://ghe.example/api/v3")
     expect(resolve({}, {}).apiBaseUrl).toBe(DEFAULT_API_BASE_URL)
-    expect(resolve({}, {}).maxRetries).toBe(3)
+    // The client keeps no retry budget: the flow engine's retry policy is the
+    // only retry a request gets.
+    expect(resolve({}, {})).not.toHaveProperty("maxRetries")
   })
 
   it("ignores a blank value and trims what it keeps", () => {
@@ -41,14 +50,9 @@ describe("GitHub config", () => {
 
   it("rejects an unparseable or non-HTTP API base URL as invalid-config", () => {
     for (const apiBaseUrl of ["not a url", "httpx://nope"]) {
-      let failure: unknown
-      try {
-        make({ apiBaseUrl }, {})
-      } catch (cause) {
-        failure = cause
-      }
+      const failure = gitHubConfigFailure({ apiBaseUrl })
       expect(isIntegrationError(failure), apiBaseUrl).toBe(true)
-      expect(isIntegrationError(failure) && failure.reason, apiBaseUrl).toBe("invalid-config")
+      expect(failure.reason, apiBaseUrl).toBe("invalid-config")
     }
   })
 })
@@ -110,7 +114,7 @@ describe("rate-limit detection", () => {
 
 describe("GitHubClient request typing", () => {
   it("names a response type only through a schema", () => {
-    const offline = make({ token: TOKEN })
+    const offline = gitHubClient({ token: TOKEN })
 
     // Schemaless: the client validated nothing, so the result is `unknown`.
     const raw = offline.request("GET", "/user")
@@ -223,24 +227,66 @@ describe("GitHubClient over a real HTTP server", () => {
     expect(page.truncated).toBe(false)
   })
 
-  it("retries a 429 that names its own delay, then succeeds", async () => {
-    let calls = 0
-    fixture = await startFixture((_request, response) => {
-      calls += 1
-      if (calls === 1) {
-        json(response, 429, { message: "rate limited" }, { "retry-after": "0" })
-        return
-      }
-      json(response, 200, { ok: true })
-    })
-    expect(await Effect.runPromise(client().request("GET", "/x"))).toEqual({ ok: true })
-    expect(calls).toBe(2)
+  // The flow engine decides every retry, durably. The client makes one request
+  // per call and hands the engine what it needs to decide: whether another
+  // attempt may help, and how long the server asked to wait.
+  it("fails a 429 after one request, carrying its Retry-After for the engine", async () => {
+    fixture = await startFixture((_request, response) =>
+      json(response, 429, { message: "rate limited" }, { "retry-after": "2" })
+    )
+    const failure = await Effect.runPromise(Effect.flip(client().request("GET", "/x")))
+    expect(fixture.requests).toHaveLength(1)
+    expect(failure.details).toMatchObject({ status: 429, retryable: true, rateLimited: true, retryAfterMillis: 2_000 })
+    expect(fromIntegrationError(failure)).toMatchObject({ retryable: true, retryAfterMillis: 2_000 })
   })
 
-  it("retries a 5xx and gives up with the last failure once the budget is spent", async () => {
-    fixture = await startFixture((_request, response) => json(response, 503, { message: "unavailable" }))
-    const exit = await Effect.runPromise(Effect.exit(client({ maxRetries: 1 }).request("GET", "/x")))
-    expect(exit._tag).toBe("Failure")
+  it("fails a 5xx read after one request, retryable, with the wait it named", async () => {
+    fixture = await startFixture((_request, response) =>
+      json(response, 503, { message: "unavailable" }, { "retry-after": "3", "x-ratelimit-reset": "9999999999" })
+    )
+    const failure = await Effect.runPromise(Effect.flip(client().request("GET", "/x")))
+    expect(fixture.requests).toHaveLength(1)
+    expect(failure.details).toMatchObject({ status: 503, retryable: true, rateLimited: false, retryAfterMillis: 3_000 })
+  })
+
+  // `x-ratelimit-reset` rides on every GitHub response. It says when the
+  // primary budget refills, which says nothing about when a 5xx clears, so only
+  // a rate limit reads it.
+  it("does not turn a 5xx's rate-limit reset into a wait", async () => {
+    fixture = await startFixture((_request, response) =>
+      json(response, 502, { message: "bad gateway" }, { "x-ratelimit-reset": "9999999999" })
+    )
+    const failure = await Effect.runPromise(Effect.flip(client().request("GET", "/x")))
+    expect(failure.details).toMatchObject({ retryable: true })
+    expect(failure.details).not.toHaveProperty("retryAfterMillis")
+  })
+
+  it("carries a secondary rate limit's wait, and a spent budget's reset", async () => {
+    const resetAt = Math.floor(Date.now() / 1_000) + 30
+    fixture = await startFixture((request, response) =>
+      request.url === "/secondary"
+        ? json(response, 403, { message: "You have exceeded a secondary rate limit" }, { "retry-after": "60" })
+        : json(response, 403, { message: "API rate limit exceeded" }, {
+          "x-ratelimit-remaining": "0",
+          "x-ratelimit-reset": String(resetAt)
+        })
+    )
+    const secondary = await Effect.runPromise(Effect.flip(client().request("POST", "/secondary", { a: 1 })))
+    expect(secondary.details).toMatchObject({
+      status: 403,
+      retryable: true,
+      rateLimited: true,
+      outcomeUnknown: false,
+      retryAfterMillis: 60_000
+    })
+    const spent = await Effect.runPromise(Effect.flip(client().request("GET", "/primary")))
+    expect(spent.details).toMatchObject({ retryable: true, rateLimited: true })
+    const wait = spent.details?.["retryAfterMillis"] as number
+    expect(wait).toBeGreaterThan(20_000)
+    expect(wait).toBeLessThanOrEqual(30_000)
+    // The reset itself, uncapped, for telling a person when GitHub answers again; a secondary limit names none.
+    expect(spent.details?.["rateLimitResetAt"]).toBe(resetAt * 1000)
+    expect(secondary.details).not.toHaveProperty("rateLimitResetAt")
     expect(fixture.requests).toHaveLength(2)
   })
 
@@ -273,64 +319,25 @@ describe("GitHubClient over a real HTTP server", () => {
     expect(fixture.requests[0]?.url).toBe("/repos/o/r")
   })
 
-  // `Retry-After` is the provider saying when, and honoring it is the whole
-  // point of reading the header: a retry that ignores it walks straight back
-  // into the same limit.
-  it("waits the interval a rate limit asked for before repeating", async () => {
-    // The asked-for interval is far past the 250 ms base backoff, so a client
-    // that dropped the header would repeat inside the barrier below and only a
-    // client that adds the header's delay can produce the gap this measures.
-    const askedForMs = 2_000
-    let calls = 0
-    let refusedAt = 0
-    fixture = await startFixture((_request, response) => {
-      calls += 1
-      if (calls === 1) {
-        refusedAt = Date.now()
-        json(response, 429, { message: "rate limited" }, { "retry-after": String(askedForMs / 1_000) })
-        return
-      }
-      json(response, 200, { ok: true })
-    })
-    const pending = Effect.runPromise(client().request("GET", "/x"))
-    await Effect.runPromise(Effect.sleep("750 millis"))
-    expect(calls).toBe(1)
-    expect(await pending).toEqual({ ok: true })
-    expect(calls).toBe(2)
-    const repeated = (fixture as Fixture).requests[1]
-    expect((repeated?.receivedAt ?? 0) - refusedAt).toBeGreaterThanOrEqual(askedForMs)
-  })
-
   // A rate limit is a refusal, not an ambiguous outcome: the request was not
   // performed, so repeating it is safe for any verb.
-  it("still retries a rate-limited write, because it was refused rather than applied", async () => {
-    let calls = 0
-    fixture = await startFixture((_request, response) => {
-      calls += 1
-      if (calls === 1) {
-        json(response, 429, { message: "rate limited" }, { "retry-after": "0" })
-        return
-      }
-      json(response, 201, { ok: true })
-    })
-    expect(await Effect.runPromise(client().request("POST", "/x", { a: 1 }))).toEqual({ ok: true })
-    expect(calls).toBe(2)
+  it("classifies a rate-limited write as retryable, because it was refused rather than applied", async () => {
+    fixture = await startFixture((_request, response) =>
+      json(response, 429, { message: "rate limited" }, { "retry-after": "0" })
+    )
+    const failure = await Effect.runPromise(Effect.flip(client().request("POST", "/x", { a: 1 })))
+    expect(fixture.requests).toHaveLength(1)
+    expect(failure.details).toMatchObject({ retryable: true, outcomeUnknown: false, retryAfterMillis: 0 })
   })
 
-  it("repeats an unsafe write when the caller opts in", async () => {
-    let calls = 0
-    fixture = await startFixture((_request, response) => {
-      calls += 1
-      if (calls < 3) {
-        json(response, 502, { message: "bad gateway" })
-        return
-      }
-      json(response, 201, { ok: true })
-    })
-    expect(
-      await Effect.runPromise(client().request("POST", "/x", { a: 1 }, { retryUnsafeWrites: true }))
-    ).toEqual({ ok: true })
-    expect(calls).toBe(3)
+  it("classifies a lost write as retryable when the caller says the endpoint is idempotent", async () => {
+    fixture = await startFixture((_request, response) => json(response, 502, { message: "bad gateway" }))
+    const failure = await Effect.runPromise(
+      Effect.flip(client().request("PUT", "/x", { a: 1 }, { retryUnsafeWrites: true }))
+    )
+    expect(fixture.requests).toHaveLength(1)
+    expect(failure.details).toMatchObject({ retryable: true, outcomeUnknown: false })
+    expect(failure.message).not.toContain("outcome unknown")
   })
 
   // `new URL("httpx")` throws a bare TypeError, which used to escape the
@@ -342,18 +349,13 @@ describe("GitHubClient over a real HTTP server", () => {
     expect(fixture.requests).toHaveLength(0)
   })
 
-  it("refuses a retry budget that is not a finite bound", async () => {
-    fixture = await startFixture((_request, response) => json(response, 200, {}))
-    expect(() => client({ maxRetries: Number.POSITIVE_INFINITY })).toThrow(/maxRetries/)
-  })
-
   // A read is repeatable by definition, so its failure must never claim the
   // outcome is in doubt.
   it("never marks a read's failure outcome-unknown", async () => {
     fixture = await startFixture((_request, response) => json(response, 502, { message: "bad gateway" }))
-    const failure = await Effect.runPromise(Effect.flip(client({ maxRetries: 1 }).request("GET", "/x")))
+    const failure = await Effect.runPromise(Effect.flip(client().request("GET", "/x")))
     expect(failure.details).toMatchObject({ outcomeUnknown: false, retryable: true })
-    expect(fixture.requests).toHaveLength(2)
+    expect(fixture.requests).toHaveLength(1)
   })
 
   // The boundary that matters: the budget was spent exactly, and the last page
@@ -451,10 +453,10 @@ describe("GitHubClient over a real HTTP server", () => {
     expect(await Effect.runPromise(client().request("DELETE", "/x"))).toBeNull()
   })
 
-  it("uses statusText when the error body carries no message", async () => {
+  it("names the status alone when the error body carries no message", async () => {
     fixture = await startFixture((_request, response) => json(response, 418, { detail: "teapot" }))
     const failure = await Effect.runPromise(Effect.flip(client().request("GET", "/x")))
-    expect(failure.message).toContain("418")
+    expect(failure.summary).toBe("GitHub request failed: GET /x -> 418")
   })
 
   it("interrupting the fiber aborts the request in flight", async () => {
@@ -483,8 +485,28 @@ describe("GitHubClient over a real HTTP server", () => {
   // GITHUB_TOKEN decide which account a call runs as.
   it("omits the Authorization header when the supplied environment has no token", async () => {
     fixture = await startFixture((_request, response) => json(response, 200, {}))
-    await Effect.runPromise(make({ apiBaseUrl: fixture.origin }, {}).request("GET", "/x"))
+    await Effect.runPromise(gitHubClient({ apiBaseUrl: fixture.origin }, {}).request("GET", "/x"))
     expect(fixture.requests[0]?.headers["authorization"]).toBeUndefined()
+  })
+
+  // GitHub authenticates `/applications/{client_id}/...` as the App's OAuth
+  // client: HTTP Basic with the client id and secret, never a user's token.
+  it("authenticates as an App's client with Basic credentials in place of any token, and redacts them", async () => {
+    const secret = "client-secret:with/reserved chars"
+    const clientCredentials = { clientId: "Iv1.fixture", clientSecret: Redacted.make(secret) }
+    fixture = await startFixture((_request, response) => json(response, 422, { message: `Bad ${secret}` }))
+    const failure = await Effect.runPromise(Effect.flip(
+      gitHubClient({ clientCredentials, token: TOKEN, apiBaseUrl: fixture.origin }, { GITHUB_TOKEN: "ambient" })
+        .request("DELETE", "/applications/Iv1.fixture/token", { access_token: "ghu_user" })
+    ))
+    const [sent] = fixture.requests
+    const basic = btoa(`Iv1.fixture:${encodeURIComponent(secret)}`)
+    expect(sent?.method).toBe("DELETE")
+    expect(sent?.headers["authorization"]).toBe(`Basic ${basic}`)
+    expect(JSON.parse(sent?.body ?? "{}")).toEqual({ access_token: "ghu_user" })
+    expect(failure.details).toMatchObject({ status: 422 })
+    expectRedacted(failure, secret)
+    expectRedacted(failure, basic)
   })
 })
 
@@ -508,28 +530,43 @@ describe("text GitHub or the transport wrote", () => {
     fixture = await startFixture((_request, response) =>
       json(response, 401, { message: `Bad credentials: ${TOKEN} is not valid` })
     )
-    const failure = await Effect.runPromise(Effect.flip(client({ maxRetries: 0 }).request("GET", "/user")))
+    const failure = await Effect.runPromise(Effect.flip(client().request("GET", "/user")))
     expect(failure.message).not.toContain(TOKEN)
     expect(failure.message).toContain("Bad credentials: [REDACTED] is not valid")
     expect(fromIntegrationError(failure).message).not.toContain(TOKEN)
   })
 
-  it("reaches the journal with the token removed when fetch itself reports it", async () => {
-    const realFetch = globalThis.fetch
-    globalThis.fetch =
-      (() => Promise.reject(new Error(`proxy rejected authorization ${TOKEN}`))) as unknown as typeof fetch
-    try {
-      const failure = await Effect.runPromise(
-        Effect.flip(
-          make({ token: TOKEN, apiBaseUrl: "https://api.github.test", maxRetries: 0 }, {}).request("GET", "/user")
-        )
+  // An injected transport fault: no server can make the transport itself
+  // reject with a message that quotes the token.
+  it("reaches the journal with the token removed when the transport itself reports it", async () => {
+    const transport = rejectingTransport(new Error(`proxy rejected authorization ${TOKEN}`))
+    const failure = await Effect.runPromise(
+      Effect.flip(
+        gitHubClientOver(transport, { token: TOKEN, apiBaseUrl: "https://api.github.test" })
+          .request("GET", "/user")
       )
-      expect(failure.message).not.toContain(TOKEN)
-      expect(failure.message).toContain("proxy rejected authorization [REDACTED]")
-      expect(fromIntegrationError(failure).message).not.toContain(TOKEN)
-    } finally {
-      globalThis.fetch = realFetch
-    }
+    )
+    expect(failure.message).not.toContain(TOKEN)
+    expect(failure.message).toContain("proxy rejected authorization [REDACTED]")
+    expect(fromIntegrationError(failure).message).not.toContain(TOKEN)
+  })
+})
+
+describe("a transport failure without a cause", () => {
+  // An HttpClient of the caller's own may fail with no underlying cause. The
+  // failure then names the client's own description, never "undefined".
+  it("reports the client's own message", async () => {
+    const failure = await Effect.runPromise(
+      Effect.flip(
+        gitHubClientOver(rejectingTransport(undefined), {
+          token: TOKEN,
+          apiBaseUrl: "https://api.github.test"
+        }).request("GET", "/user")
+      )
+    )
+    expect(failure.reason).toBe("delivery-failed")
+    expect(failure.summary).toBe("GitHub request failed: GET - Transport error (GET https://api.github.test/user)")
+    expect(failure.details).toMatchObject({ retryable: true, outcomeUnknown: false })
   })
 })
 
@@ -541,24 +578,16 @@ const expectRedacted = (failure: IntegrationError, secret: string) => {
 }
 
 describe("credential redaction", () => {
-  it.each(["fetch", "body", "primitive"])("sanitizes a %s failure and its retained cause", async (stage) => {
+  // Injected transport faults: a send that rejects, and a body read that fails
+  // with an Error or with a bare string.
+  it.each(["transport", "body", "primitive"])("sanitizes a %s failure and its retained cause", async (stage) => {
     const message = `rejected Bearer ${TOKEN}; ${TOKEN}; Bearer ${TOKEN}`
     const cause = Object.assign(new Error(message, { cause: new Error(message) }), { authorization: message })
-    vi.stubGlobal(
-      "fetch",
-      vi.fn<typeof fetch>().mockImplementation(async () => {
-        if (stage === "fetch") throw cause
-        return new Response(
-          new ReadableStream({
-            start(controller) {
-              controller.error(stage === "primitive" ? message : cause)
-            }
-          })
-        )
-      })
-    )
+    const transport = stage === "transport"
+      ? rejectingTransport(cause)
+      : brokenBodyTransport(stage === "primitive" ? message : cause)
     const failure = await Effect.runPromise(
-      Effect.flip(make({ token: TOKEN, maxRetries: 0 }, {}).request("POST", "/user"))
+      Effect.flip(gitHubClientOver(transport, { token: TOKEN }).request("POST", "/user"))
     )
     expectRedacted(failure, TOKEN)
     expect(failure.cause).toBeInstanceOf(Error)
@@ -567,35 +596,33 @@ describe("credential redaction", () => {
   })
 })
 
-it("redacts provider status text, repeated tokens, response headers, and paths", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn<typeof fetch>().mockResolvedValue(
-      new Response("no JSON", {
-        status: 401,
-        statusText: `Bearer ${TOKEN} rejected ${TOKEN} ${TOKEN}`,
-        headers: { "x-ratelimit-remaining": TOKEN }
-      })
-    )
+it("redacts a provider message, repeated tokens, response headers, and paths", async () => {
+  fixture = await startFixture((_request, response) =>
+    json(response, 401, { message: `Bearer ${TOKEN} rejected ${TOKEN} ${TOKEN}` }, {
+      "x-ratelimit-remaining": TOKEN
+    })
   )
   const failure = await Effect.runPromise(Effect.flip(
-    make({ token: TOKEN, maxRetries: 0 }, {}).request("GET", `/${TOKEN}`)
+    gitHubClient({ token: TOKEN, apiBaseUrl: fixture.origin }, {}).request("GET", `/${TOKEN}`)
   ))
   expectRedacted(failure, TOKEN)
   expect(failure.summary).toContain("[REDACTED] rejected [REDACTED] [REDACTED]")
+  expect(failure.details).toMatchObject({ ratelimitRemaining: "[REDACTED]", path: "/[REDACTED]" })
 })
 
 it("redacts credentials retained by a schema decoding error", async () => {
-  vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(Response.json(TOKEN)))
+  fixture = await startFixture((_request, response) => json(response, 200, TOKEN))
   const failure = await Effect.runPromise(Effect.flip(
-    make({ token: TOKEN }, {}).request("GET", "/user", undefined, { schema: Schema.Number })
+    gitHubClient({ token: TOKEN, apiBaseUrl: fixture.origin }, {}).request("GET", "/user", undefined, {
+      schema: Schema.Number
+    })
   ))
   expectRedacted(failure, TOKEN)
 })
 
-// A peer that answers with headers and then trickles the body forever is the
-// case the retry budget cannot bound: the budget counts completed attempts,
-// and this attempt never completes.
+// A peer that answers with headers and then trickles the body forever holds
+// the call, and the step around it, open: an attempt that never completes is
+// one no retry policy ever sees.
 describe("GitHub request deadline", () => {
   const stalled = (onClose: () => void) =>
     startFixture((_request, response) => {
@@ -605,10 +632,9 @@ describe("GitHub request deadline", () => {
     })
 
   const deadlined = (extra: { readonly requestTimeout?: Duration.Input } = {}) =>
-    make({
+    gitHubClient({
       token: TOKEN,
       apiBaseUrl: (fixture as Fixture).origin,
-      maxRetries: 0,
       requestTimeout: "200 millis",
       ...extra
     })
@@ -640,13 +666,8 @@ describe("GitHub request deadline", () => {
 
   it("refuses a deadline that is not finite and positive", () => {
     for (const requestTimeout of [0, -1, "Infinity"] as const) {
-      let thrown: unknown
-      try {
-        make({ token: TOKEN, requestTimeout }, {})
-      } catch (cause) {
-        thrown = cause
-      }
-      expect(isIntegrationError(thrown) && thrown.reason, String(requestTimeout)).toBe("invalid-config")
+      const failure = gitHubConfigFailure({ token: TOKEN, requestTimeout })
+      expect(isIntegrationError(failure) && failure.reason, String(requestTimeout)).toBe("invalid-config")
     }
     expect(resolve({}, {}).requestTimeout).toEqual(DEFAULT_REQUEST_TIMEOUT)
   })
@@ -654,18 +675,31 @@ describe("GitHub request deadline", () => {
 
 describe("GitHub redirects", () => {
   // A 3xx is answered, not followed: the redirected request would re-send the
-  // bearer token to wherever the Location header points.
-  it("fails on a redirect and never sends the token to its target", async () => {
-    fixture = await startFixture((request, response) => {
-      if (request.url === "/captured") return json(response, 200, { stolen: true })
-      response.writeHead(302, { location: "/captured" })
-      response.end()
-    })
-    const failure = await Effect.runPromise(Effect.flip(client().request("GET", "/x")))
-    expect(failure.reason).toBe("delivery-failed")
-    expect(failure.details).toMatchObject({ status: 302, retryable: false })
-    expect(fixture.requests.map((request) => request.url)).toEqual(["/x"])
-  })
+  // bearer token, and a write's body, to wherever the Location header points.
+  it.each([["GET", 302], ["POST", 307]] as const)(
+    "fails a %s answered %i to another origin and never sends the token there",
+    async (method, status) => {
+      const elsewhere = await startFixture((_request, response) => json(response, 200, { stolen: true }))
+      try {
+        fixture = await startFixture((_request, response) => {
+          response.writeHead(status, { location: `${elsewhere.origin}/captured` })
+          response.end()
+        })
+        const body = method === "GET" ? undefined : { a: 1 }
+        const failure = await Effect.runPromise(Effect.flip(client().request(method, "/x", body)))
+        expect(failure.reason).toBe("delivery-failed")
+        expect(failure.details).toMatchObject({ status, retryable: false })
+        expect(fixture.requests.map((request) => request.url)).toEqual(["/x"])
+        expect(elsewhere.requests).toHaveLength(0)
+        // The control: the same fetch transport, unconfigured, follows the
+        // redirect, so it is the client's configuration that stopped it.
+        await Effect.runPromise(Effect.provide(HttpClient.get(`${fixture.origin}/x`), fetchLayer))
+        expect(elsewhere.requests).toHaveLength(1)
+      } finally {
+        await elsewhere.close()
+      }
+    }
+  )
 })
 
 describe("GitHub proxy refusals", () => {
@@ -693,14 +727,13 @@ describe("GitHub proxy refusals", () => {
     expect(fromIntegrationError(failure).reason).toBe("rate-limited")
   })
 
-  it("treats a 429 without the proxy's header as GitHub's own limit and retries it", async () => {
-    let calls = 0
-    fixture = await startFixture((_request, response) => {
-      calls += 1
-      if (calls === 1) return json(response, 429, { message: "rate limited" }, { "x-smithers-retry-at": "never" })
-      json(response, 200, { ok: true })
-    })
-    expect(await Effect.runPromise(client().request("GET", "/x"))).toEqual({ ok: true })
-    expect(calls).toBe(2)
+  it("treats a 429 without the proxy's instant as GitHub's own, retryable limit", async () => {
+    fixture = await startFixture((_request, response) =>
+      json(response, 429, { message: "rate limited" }, { "x-smithers-retry-at": "never" })
+    )
+    const failure = await Effect.runPromise(Effect.flip(client().request("GET", "/x")))
+    expect(failure.reason).toBe("delivery-failed")
+    expect(failure.details).toMatchObject({ retryable: true, rateLimited: true })
+    expect(fixture.requests).toHaveLength(1)
   })
 })

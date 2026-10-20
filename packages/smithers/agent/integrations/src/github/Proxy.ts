@@ -21,16 +21,28 @@
  * transport failure is a `502` and a deadline a `504`, which a caller treats
  * as an unknown outcome for a write.
  *
+ * The proxy calls GitHub through the `HttpClient` in context, which the caller
+ * provides through a layer, usually `FetchHttpClient.layer` from
+ * `effect/http`. A redirect from GitHub is answered to the caller, never
+ * followed with the injected credential: the client sets the fetch
+ * transport's `redirect` to `"manual"`. The proxy drops `content-encoding` and
+ * `content-length` from GitHub's answer, so the client must decode the body,
+ * as `fetch` does.
+ *
  * @since 1.0.0
  */
 
 import { Clock, Duration, Effect, Exit, HashMap, Layer, Option, SynchronizedRef } from "effect"
 import * as Headers from "effect/http/Headers"
+import * as HttpBody from "effect/http/HttpBody"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as HttpServer from "effect/http/HttpServer"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
-import { timingSafeEqual } from "node:crypto"
+import { forCredentials, webHeaders } from "../core/CredentialHttp.ts"
 import { type IntegrationError, isIntegrationError } from "../core/IntegrationError.ts"
+import { constantTimeEqual } from "../core/Signature.ts"
 import { DEFAULT_API_BASE_URL, DEFAULT_REQUEST_TIMEOUT } from "./Config.ts"
 import { isRateLimitResponse, PROXY_REASON, PROXY_RETRY_AT } from "./GitHubClient.ts"
 import * as RateLimit from "./RateLimit.ts"
@@ -86,7 +98,7 @@ export interface ProxyOptions {
  */
 export const CONTROL_PREFIX = "/_smithers/"
 
-// Hop-by-hop headers, and the encoding headers `fetch` has already undone.
+// Hop-by-hop headers, and the encoding headers the HTTP client has already undone.
 const DROPPED_RESPONSE_HEADERS = new Set([
   "connection",
   "keep-alive",
@@ -123,11 +135,12 @@ export const repositoryOf = (path: string): string | undefined => {
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   HttpServerResponse.jsonUnsafe(body, { status, headers })
 
-const sameSecret = (sent: string, expected: string): boolean => {
-  const a = Buffer.from(sent)
-  const b = Buffer.from(expected)
-  return a.length === b.length && timingSafeEqual(a, b)
-}
+const encoder = new TextEncoder()
+
+// The capability is compared as UTF-8 bytes without an early return, so the
+// time a refusal takes says nothing about how much of it a caller guessed.
+const sameSecret = (sent: string, expected: string): boolean =>
+  constantTimeEqual(encoder.encode(sent), encoder.encode(expected))
 
 interface Answer {
   readonly status: number
@@ -144,16 +157,21 @@ const parsed = (body: Uint8Array): unknown => {
 }
 
 /**
- * The proxy as an HTTP application. Serve it with {@link layer}, or mount it
- * in a server of your own.
+ * The proxy as an HTTP application, calling GitHub through the `HttpClient` in
+ * context. Serve it with {@link layer}, or mount it in a server of your own.
  *
  * @category constructors
  * @since 1.0.0
  */
 export const make = (
   options: ProxyOptions
-): Effect.Effect<Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpServerRequest.HttpServerRequest>> =>
+): Effect.Effect<
+  Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpServerRequest.HttpServerRequest>,
+  never,
+  HttpClient.HttpClient
+> =>
   Effect.gen(function*() {
+    const http = forCredentials(yield* HttpClient.HttpClient)
     const upstream = new URL(options.upstream ?? DEFAULT_API_BASE_URL).origin
     const maxWait = Duration.fromInputUnsafe(options.maxWait ?? RateLimit.DEFAULT_MAX_WAIT)
     const timeout = Duration.fromInputUnsafe(options.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT)
@@ -234,23 +252,22 @@ export const make = (
           if (value !== undefined) headers[name] = value
         }
         headers["authorization"] = `Bearer ${credential.token}`
-        const send = Effect.tryPromise({
-          try: async (signal): Promise<Answer> => {
-            const response = await fetch(`${upstream}${path}`, {
-              method: request.method,
-              headers,
-              ...(body === undefined ? {} : { body }),
-              redirect: "manual",
-              signal
-            })
-            return {
+        const outbound = HttpClientRequest.make(request.method)(`${upstream}${path}`)
+        // The raw body carries no content type of its own, so the caller's,
+        // or none, is what GitHub sees.
+        const send = http.execute(HttpClientRequest.setHeaders(
+          body === undefined ? outbound : HttpClientRequest.setBody(outbound, HttpBody.raw(body)),
+          headers
+        )).pipe(
+          Effect.flatMap((response) =>
+            Effect.map(response.arrayBuffer, (bytes): Answer => ({
               status: response.status,
-              headers: response.headers,
-              body: new Uint8Array(await response.arrayBuffer())
-            }
-          },
-          catch: (cause) => cause
-        }).pipe(Effect.timeoutOrElse({ duration: timeout, orElse: () => Effect.fail("timeout" as const) }))
+              headers: webHeaders(response.headers),
+              body: new Uint8Array(bytes)
+            }))
+          ),
+          Effect.timeoutOrElse({ duration: timeout, orElse: () => Effect.fail("timeout" as const) })
+        )
         const respond = (answer: Answer) => {
           const forwarded: Record<string, string> = {}
           answer.headers.forEach((value, name) => {
@@ -292,10 +309,13 @@ export const make = (
   })
 
 /**
- * Serves the proxy on the `HttpServer` in context.
+ * Serves the proxy on the `HttpServer` in context, calling GitHub through the
+ * `HttpClient` in context.
  *
  * @category layers
  * @since 1.0.0
  */
-export const layer = (options: ProxyOptions): Layer.Layer<never, never, HttpServer.HttpServer> =>
+export const layer = (
+  options: ProxyOptions
+): Layer.Layer<never, never, HttpServer.HttpServer | HttpClient.HttpClient> =>
   Layer.unwrap(Effect.map(make(options), (app) => HttpServer.serve(app)))

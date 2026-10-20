@@ -11,14 +11,14 @@
  */
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { make } from "../src/github/GitHubClient.ts"
+import { gitHubClient } from "./Http.ts"
 
 const token = process.env["GITHUB_TOKEN"] ?? process.env["SMITHERS_GITHUB_TOKEN"]
 
 // Skipped without a credential: set GITHUB_TOKEN (or SMITHERS_GITHUB_TOKEN) to
 // a token with public read access to run it.
 describe.skipIf(token === undefined)("GitHub live contract (GITHUB_TOKEN)", () => {
-  const client = make({ token })
+  const client = gitHubClient({ token })
 
   it("authenticates and returns the viewer", async () => {
     const viewer = await Effect.runPromise(

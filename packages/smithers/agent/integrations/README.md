@@ -8,22 +8,32 @@ Release scope and compatibility are defined in the [library support policy](http
 ## GitHub
 
 ```ts
-import { Core, GitHub } from "@smthrs/integrations"
+import { GitHub } from "@smthrs/integrations"
 import { Effect } from "effect"
+import { FetchHttpClient } from "effect/http"
 
-const client = GitHub.GitHubClient.make({})
-await Effect.runPromise(
-  client.request("POST", "/repos/OWNER/REPO/issues/1/comments", { body: "Triaged." })
-)
+const comment = Effect.gen(function*() {
+  const client = yield* GitHub.GitHubClient.make({})
+  return yield* client.request("POST", "/repos/OWNER/REPO/issues/1/comments", { body: "Triaged." })
+})
+await Effect.runPromise(comment.pipe(Effect.provide(FetchHttpClient.layer)))
 ```
 
 The client reads `SMITHERS_GITHUB_TOKEN`, then `GITHUB_TOKEN`. Explicit
 configuration wins; a supplied environment replaces the ambient environment.
 `SMITHERS_GITHUB_API_BASE_URL` selects GitHub Enterprise or a fixture server.
 
+The package runs in a browser, a Cloudflare Worker, Node and Bun: crypto is
+WebCrypto, and HTTP is the Effect `HttpClient` you provide, usually
+`FetchHttpClient.layer`. A test provides its own client to inject a transport
+fault. The client never follows a redirect. A host without a process
+environment, such as a Worker, passes the token in the config or an `env`
+record.
+
 Use `GitHub.Actions.CommentOnIssue` inside a flow to journal its result.
 `AddLabels`, `UpsertComment`, `CheckRun`, and `LinkPullRequest` provide keyed
-write-back actions. Rate-limit refusals may retry; ambiguous writes report
+write-back actions, which the flow engine retries durably, waiting a rate
+limit's `Retry-After`; the clients never retry. Ambiguous writes report
 `outcomeUnknown` and are not blindly repeated. GitHub webhooks enter through
 the backend at `POST /webhooks/github`.
 

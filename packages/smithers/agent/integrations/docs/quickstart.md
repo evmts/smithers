@@ -34,17 +34,22 @@ Replace `TOKEN` with your GitHub token.
 ## 3. Call the GitHub API
 
 Build a client with `GitHub.GitHubClient.make` and ask for the authenticated
-viewer. `make` is a plain constructor, so the first call needs no layers.
+viewer. The client sends HTTP through Effect's `HttpClient`;
+`FetchHttpClient.layer` provides the platform `fetch`.
 
 ```ts
 import { GitHub } from "@smthrs/integrations"
 import { Effect, Schema } from "effect"
-
-const client = GitHub.GitHubClient.make({})
+import { FetchHttpClient } from "effect/http"
 
 const Viewer = Schema.Struct({ login: Schema.String })
 
-const viewer = await Effect.runPromise(client.request("GET", "/user", undefined, { schema: Viewer }))
+const program = Effect.gen(function*() {
+  const client = yield* GitHub.GitHubClient.make({})
+  return yield* client.request("GET", "/user", undefined, { schema: Viewer })
+})
+
+const viewer = await Effect.runPromise(program.pipe(Effect.provide(FetchHttpClient.layer)))
 console.log(viewer.login)
 ```
 
@@ -56,9 +61,10 @@ node viewer.ts
 
 The program prints your GitHub login. Behind that one call the client pinned
 the request URL to the configured API origin, put the token in the
-`Authorization` header and nowhere else, and stood ready to retry a rate
-limit. A failure rejects with an `IntegrationError` whose `reason` is
-machine-readable; [troubleshooting](./troubleshooting.md) reads them.
+`Authorization` header and nowhere else, and made exactly one request. A
+failure rejects with an `IntegrationError` whose `reason` is machine-readable
+and whose `details` say whether another attempt may help;
+[troubleshooting](./troubleshooting.md) reads them.
 
 ## 4. Post a comment as a durable flow step
 
@@ -73,6 +79,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Core, GitHub } from "@smthrs/integrations"
 import { Effect, Layer } from "effect"
+import { FetchHttpClient } from "effect/http"
 
 const CommentFlow = Flow.make("comment-flow", {
   payload: GitHub.Actions.CommentOnIssuePayload,
@@ -86,7 +93,7 @@ const layer = Layer.mergeAll(GitHub.Actions.layer, Interpreter.layer(CommentFlow
   Layer.provideMerge(
     Layer.mergeAll(
       FlowEngine.layerMemory,
-      GitHub.GitHubClient.layer({}),
+      GitHub.GitHubClient.layer({}).pipe(Layer.provide(FetchHttpClient.layer)),
       NodeCrypto.layer
     )
   )
@@ -109,8 +116,9 @@ Three things in the wiring are load-bearing:
   context. A composition that calls the action but forgets the layer fails to
   compile, because the plan node demands the requirement the layer provides.
 - `GitHub.GitHubClient.layer({})` builds the client from the environment you
-  exported in step 2. Passing an `env` record as the second argument instead
-  replaces the ambient environment outright.
+  exported in step 2, over the `HttpClient` that `FetchHttpClient.layer`
+  provides. Passing an `env` record as the second argument instead replaces
+  the ambient environment outright.
 - `FlowEngine.layerMemory` runs the flow without durability, which is what a
   first run wants. Production flows use a durable engine; see
   [the engine API](/api/engine).
@@ -123,8 +131,8 @@ node comment.ts
 
 The program prints the new comment's API URL, and the comment is visible on
 the issue. The action is `tier: "irreversible"`: the engine never retries it
-on its own, and the client does not repeat a write whose answer was lost. It
-reports `outcomeUnknown` instead. [Durable actions](./concepts/durable-actions.md)
+on its own, and the client never repeats a request. A write whose answer was
+lost reports `outcomeUnknown` instead. [Durable actions](./concepts/durable-actions.md)
 explains the contract.
 
 ## Next steps

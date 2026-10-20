@@ -37,7 +37,10 @@
  * `SourceRecord.tombstone`s. A transferred issue leaves this repository's
  * listing the same way.
  *
- * Rate limits and transient read failures are retried by `GitHubClient`.
+ * A rate limit or a transient read failure fails the run, `retryable` and
+ * with the server's `retryAfterMillis`: run the sync as a durable step whose
+ * retry policy repeats it (`Core.ActionFailure.retryPolicy`), and the repeat
+ * resumes from the committed cursor. The client never repeats a request.
  *
  * @since 1.0.0
  */

@@ -1,11 +1,11 @@
 import { Effect } from "effect"
+import { createHmac } from "node:crypto"
 import { afterEach, describe, expect, it } from "vitest"
 import { readIssueComment } from "../examples/github-webhook.ts"
 import { listOpenIssueTitles } from "../examples/list-open-issues.ts"
 import { isIntegrationError } from "../src/core/IntegrationError.ts"
-import { computeHmacSha256Hex } from "../src/core/Signature.ts"
-import { make } from "../src/github/GitHubClient.ts"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
+import { gitHubClient } from "./Http.ts"
 
 let fixture: Fixture | undefined
 
@@ -22,10 +22,14 @@ describe("examples/github-webhook", () => {
     comment: { id: 1, body: "/triage", user: { login: "octocat" } },
     repository: { full_name: "octo/repo" }
   })
-  const signed = { body, signature: `sha256=${computeHmacSha256Hex(body, SECRET)}` }
+  // GitHub's side of the exchange, signed with `node:crypto`.
+  const sign = (payload: string) => `sha256=${createHmac("sha256", SECRET).update(payload).digest("hex")}`
+  const signed = { body, signature: sign(body) }
+  const read = (delivery: Parameters<typeof readIssueComment>[0], secret: string) =>
+    Effect.runPromise(readIssueComment(delivery, secret))
 
-  it("reads the comment from a correctly signed delivery", () => {
-    expect(readIssueComment(signed, SECRET)).toEqual({
+  it("reads the comment from a correctly signed delivery", async () => {
+    expect(await read(signed, SECRET)).toEqual({
       repository: "octo/repo",
       issueNumber: 7,
       author: "octocat",
@@ -33,21 +37,20 @@ describe("examples/github-webhook", () => {
     })
   })
 
-  it("refuses a delivery signed with another secret, a missing header, or a changed body", () => {
-    expect(readIssueComment(signed, "other-secret")).toBeUndefined()
-    expect(readIssueComment({ body, signature: undefined }, SECRET)).toBeUndefined()
-    expect(readIssueComment({ ...signed, body: body.replace("/triage", "/merge") }, SECRET)).toBeUndefined()
+  it("refuses a delivery signed with another secret, a missing header, or a changed body", async () => {
+    expect(await read(signed, "other-secret")).toBeUndefined()
+    expect(await read({ body, signature: undefined }, SECRET)).toBeUndefined()
+    expect(await read({ ...signed, body: body.replace("/triage", "/merge") }, SECRET)).toBeUndefined()
   })
 
-  it("refuses a signed body that is not an issue_comment payload", () => {
+  it("refuses a signed body that is not an issue_comment payload", async () => {
     const push = JSON.stringify({ ref: "refs/heads/main", repository: { full_name: "octo/repo" } })
-    expect(readIssueComment({ body: push, signature: `sha256=${computeHmacSha256Hex(push, SECRET)}` }, SECRET))
-      .toBeUndefined()
+    expect(await read({ body: push, signature: sign(push) }, SECRET)).toBeUndefined()
   })
 })
 
 describe("examples/list-open-issues", () => {
-  const client = () => make({ token: "ghp-fixture-token", apiBaseUrl: (fixture as Fixture).origin, maxRetries: 0 })
+  const client = () => gitHubClient({ token: "ghp-fixture-token", apiBaseUrl: (fixture as Fixture).origin })
 
   it("follows rel=next pages and returns every title in page order", async () => {
     fixture = await startFixture((request, response) =>

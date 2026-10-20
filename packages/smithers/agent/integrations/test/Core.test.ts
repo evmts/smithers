@@ -1,11 +1,15 @@
 import { ERROR_REFERENCE_URL } from "@smthrs/errors/ErrorCode"
 import { SmithersError } from "@smthrs/errors/SmithersError"
+import { RetryPolicy } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { createHash } from "node:crypto"
+import { describe, expect, it, vi } from "vitest"
 import {
+  Failure,
   fromIntegrationError,
   IntegrationFailure,
   MAX_MESSAGE_LENGTH,
+  RetryableIntegrationFailure,
   toIntegrationError
 } from "../src/core/ActionFailure.ts"
 import { buildAuthorizationUrl } from "../src/core/AuthorizationUrl.ts"
@@ -21,6 +25,7 @@ import { readInteger, readJsonPath, readString } from "../src/core/JsonPath.ts"
 import { createCodeVerifier, createPkcePair, deriveCodeChallenge } from "../src/core/Pkce.ts"
 import * as SignalName from "../src/core/SignalName.ts"
 import * as Environment from "../src/Environment.ts"
+import { retryPolicy } from "../src/github/Actions.ts"
 import * as GitHubConfig from "../src/github/Config.ts"
 
 describe("readJsonPath", () => {
@@ -268,6 +273,9 @@ describe("SignalName conversions", () => {
 describe("PKCE", () => {
   const VERIFIER = /^[A-Za-z0-9\-._~]{43,128}$/
   const BASE64URL = /^[A-Za-z0-9\-_]+$/
+  const challengeOf = (verifier: string) => Effect.runPromise(deriveCodeChallenge(verifier))
+  // `node:crypto` is the oracle; the module under test hashes with WebCrypto.
+  const oracle = (verifier: string) => createHash("sha256").update(verifier).digest("base64url")
 
   it("draws a 43-character verifier by default", () => {
     const verifier = createCodeVerifier()
@@ -283,32 +291,43 @@ describe("PKCE", () => {
     expect(() => createCodeVerifier(32.5)).toThrow(/integer/)
   })
 
-  it("matches RFC 7636 Appendix B", () => {
-    expect(deriveCodeChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"))
+  it("matches RFC 7636 Appendix B", async () => {
+    expect(await challengeOf("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"))
       .toBe("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
   })
 
-  it("derives an unpadded base64url challenge", () => {
-    const challenge = deriveCodeChallenge(createCodeVerifier())
+  it("derives an unpadded base64url challenge", async () => {
+    const verifier = createCodeVerifier(96)
+    const challenge = await challengeOf(verifier)
     expect(challenge).toHaveLength(43)
     expect(challenge).toMatch(BASE64URL)
-    expect(challenge).not.toContain("=")
+    expect(challenge).toBe(oracle(verifier))
   })
 
-  it("validates the verifier length and character set", () => {
+  it("validates the verifier length and character set when called", async () => {
     expect(() => deriveCodeChallenge("a".repeat(42))).toThrow(/43\.\.128/)
     expect(() => deriveCodeChallenge("a".repeat(129))).toThrow(/43\.\.128/)
     expect(() => deriveCodeChallenge(`${"a".repeat(42)}!`)).toThrow(/unreserved/)
     expect(() => deriveCodeChallenge(7 as unknown as string)).toThrow(/must be a string/)
-    expect(deriveCodeChallenge(`${"a".repeat(41)}.~`)).toMatch(BASE64URL)
-    expect(deriveCodeChallenge("a".repeat(128))).toMatch(BASE64URL)
+    expect(await challengeOf(`${"a".repeat(41)}.~`)).toBe(oracle(`${"a".repeat(41)}.~`))
+    expect(await challengeOf("a".repeat(128))).toBe(oracle("a".repeat(128)))
   })
 
-  it("returns a consistent S256 pair", () => {
-    const pair = createPkcePair(96)
+  it("returns a consistent S256 pair", async () => {
+    const pair = await Effect.runPromise(createPkcePair(96))
     expect(pair.codeChallengeMethod).toBe("S256")
     expect(pair.codeVerifier).toHaveLength(128)
-    expect(pair.codeChallenge).toBe(deriveCodeChallenge(pair.codeVerifier))
+    expect(pair.codeChallenge).toBe(oracle(pair.codeVerifier))
+  })
+
+  it("validates the pair's byte length when called, and draws a fresh pair on every run", async () => {
+    expect(() => createPkcePair(31)).toThrow(/32\.\.96/)
+    expect(() => createPkcePair(97)).toThrow(/32\.\.96/)
+    const pair = createPkcePair()
+    const [first, second] = await Effect.runPromise(Effect.all([pair, pair]))
+    expect(first!.codeVerifier).toHaveLength(43)
+    expect(first!.codeVerifier).not.toBe(second!.codeVerifier)
+    expect(second!.codeChallenge).toBe(oracle(second!.codeVerifier))
   })
 })
 
@@ -386,8 +405,8 @@ describe("buildAuthorizationUrl", () => {
     expect(url.searchParams.get("code_challenge")).toBe(BASE.codeChallenge)
   })
 
-  it("takes the challenge a PKCE pair produced", () => {
-    const pair = createPkcePair()
+  it("takes the challenge a PKCE pair produced", async () => {
+    const pair = await Effect.runPromise(createPkcePair())
     expect(new URL(buildAuthorizationUrl({ ...BASE, codeChallenge: pair.codeChallenge })).searchParams
       .get("code_challenge")).toBe(pair.codeChallenge)
   })
@@ -625,6 +644,80 @@ describe("ActionFailure conversion is total", () => {
   })
 })
 
+// The flow engine decides every retry, and it reads two things off a failure:
+// its tag, against the policy's `nonRetryable` list, and an own
+// `retryAfterMillis`, which replaces the policy's backoff. So the client's
+// classification has to survive the conversion as exactly those two.
+describe("ActionFailure carries the client's retry classification to the engine", () => {
+  const rateLimited = new IntegrationError("delivery-failed", "slow down", {
+    retryable: true,
+    rateLimited: true,
+    retryAfterMillis: 2_000
+  })
+
+  it("makes a retryable failure a RetryableIntegrationFailure with the server's wait", () => {
+    const failure = fromIntegrationError(rateLimited)
+    expect(failure).toBeInstanceOf(RetryableIntegrationFailure)
+    expect(failure._tag).toBe("/integrations/RetryableIntegrationFailure")
+    expect(failure).toMatchObject({ retryable: true, retryAfterMillis: 2_000 })
+    expect(RetryPolicy.decide(retryPolicy, { attempt: 1, error: failure })).toEqual(RetryPolicy.retryAfter(2_000))
+  })
+
+  it("makes every other failure an IntegrationFailure the write-back policy never retries", () => {
+    const refused = fromIntegrationError(new IntegrationError("permission-denied", "no", { retryable: false }))
+    expect(refused).toBeInstanceOf(IntegrationFailure)
+    expect(RetryPolicy.decide(retryPolicy, { attempt: 1, error: refused })).toEqual(RetryPolicy.giveUp("nonRetryable"))
+    expect(fromIntegrationError(new Error("boom"))).toBeInstanceOf(IntegrationFailure)
+  })
+
+  it("retries a lost write only for a step that reconciles before it writes", () => {
+    const lost = new IntegrationError("delivery-failed", "502", { retryable: false, outcomeUnknown: true })
+    expect(fromIntegrationError(lost)).toBeInstanceOf(IntegrationFailure)
+    const reconciled = fromIntegrationError(lost, { reconciles: true })
+    expect(reconciled).toBeInstanceOf(RetryableIntegrationFailure)
+    expect(reconciled).toMatchObject({ retryable: true, outcomeUnknown: true })
+    // A definite refusal stays final even for a reconciling step.
+    expect(fromIntegrationError(new IntegrationError("delivery-failed", "404", { retryable: false }), {
+      reconciles: true
+    })).toBeInstanceOf(IntegrationFailure)
+  })
+
+  it("journals only a wait the engine can use", () => {
+    const waitOf = (retryAfterMillis: unknown) =>
+      fromIntegrationError(new IntegrationError("delivery-failed", "x", { retryable: true, retryAfterMillis }))
+        .retryAfterMillis
+    expect(waitOf(0)).toBe(0)
+    expect(waitOf(1_500)).toBe(1_500)
+    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY, 1.5, "2000", null, undefined]) {
+      expect(waitOf(bad)).toBeUndefined()
+    }
+  })
+
+  it("round-trips the wait through the journal codec and back to the class", () => {
+    const failure = fromIntegrationError(rateLimited)
+    const codec = Schema.toCodecJson(Failure)
+    const decoded = Effect.runSync(
+      Schema.decodeUnknownEffect(codec)(Effect.runSync(Schema.encodeEffect(codec)(failure)))
+    )
+    expect(decoded).toBeInstanceOf(RetryableIntegrationFailure)
+    expect(decoded.retryAfterMillis).toBe(2_000)
+    expect(toIntegrationError(decoded).details).toMatchObject({ retryable: true, retryAfterMillis: 2_000 })
+    expect(toIntegrationError(fromIntegrationError(new Error("boom"))).details).not.toHaveProperty("retryAfterMillis")
+    const decode = (retryAfterMillis: unknown) =>
+      Effect.runSync(Effect.exit(
+        Schema.decodeUnknownEffect(Failure)({
+          _tag: "/integrations/RetryableIntegrationFailure",
+          reason: "delivery-failed",
+          message: "x",
+          retryable: true,
+          retryAfterMillis
+        })
+      ))._tag
+    expect(decode(0)).toBe("Success")
+    for (const bad of [-1, 1.5, "2000"]) expect(decode(bad)).toBe("Failure")
+  })
+})
+
 describe("Environment", () => {
   // Both ambient reads are spelled once, in this module, rather than appearing
   // as a bare `process.env` or `process.cwd()` in the middle of an API that
@@ -640,6 +733,20 @@ describe("Environment", () => {
       if (previous === undefined) delete process.env["SMITHERS_GITHUB_TOKEN"]
       else process.env["SMITHERS_GITHUB_TOKEN"] = previous
     }
+  })
+
+  // A browser, and a Cloudflare Worker without `nodejs_compat`, have no
+  // `process`. The ambient environment there is empty, not a ReferenceError
+  // from a client that only omitted its `env` argument.
+  it("is empty on a host without a process environment", () => {
+    vi.stubGlobal("process", undefined)
+    try {
+      expect(Environment.ambientEnvironment()).toEqual({})
+      expect(GitHubConfig.resolve({ token: "explicit" }).token).toBe("explicit")
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    expect(Environment.ambientEnvironment()).toBe(process.env)
   })
 })
 

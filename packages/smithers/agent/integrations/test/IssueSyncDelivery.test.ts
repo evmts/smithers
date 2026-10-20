@@ -1,5 +1,5 @@
 import { expect, it } from "vitest"
-import { IntegrationFailure } from "../src/core/ActionFailure.ts"
+import { IntegrationFailure, RetryableIntegrationFailure } from "../src/core/ActionFailure.ts"
 import * as IssueSync from "../src/core/IssueSync.ts"
 
 const delivery = (overrides: Partial<typeof IssueSync.Delivery.Type> = {}): typeof IssueSync.Delivery.Type => ({
@@ -134,6 +134,17 @@ it.each([
     }),
     "outcome_unknown",
     "10,11"
+  ],
+  // A step whose retry policy ran out reports its last, retryable, failure.
+  [
+    new RetryableIntegrationFailure({
+      reason: "delivery-failed",
+      message: "rate limited",
+      retryable: true,
+      retryAfterMillis: 1_000
+    }),
+    "failed",
+    ""
   ],
   [new Error("foreign failure"), "outcome_unknown", ""]
 ])(

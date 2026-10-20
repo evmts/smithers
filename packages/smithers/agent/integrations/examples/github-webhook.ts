@@ -1,5 +1,5 @@
 import { Core, GitHub } from "@smthrs/integrations"
-import { Option, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 
 /**
  * One GitHub delivery as a receiver sees it: the exact body bytes and the
@@ -34,24 +34,27 @@ const decodeIssueComment = Schema.decodeUnknownOption(GitHub.Payload.IssueCommen
  *
  * @param delivery - The delivered bytes and their signature header.
  * @param secret - The webhook secret configured on the GitHub repository.
- * @returns The comment, or `undefined` when the signature does not verify or
- *   the body is not an `issue_comment` payload.
+ * @returns An Effect that succeeds with the comment, or with `undefined` when
+ *   the signature does not verify or the body is not an `issue_comment`
+ *   payload.
  * @since 1.0.0
  */
-export const readIssueComment = (delivery: Delivery, secret: string): IssueComment | undefined => {
-  const verified = Core.Signature.verifySignature({
+export const readIssueComment = (delivery: Delivery, secret: string): Effect.Effect<IssueComment | undefined> =>
+  Core.Signature.verifySignature({
     payload: delivery.body,
     secret,
     signature: delivery.signature,
     prefix: Core.Signature.GITHUB_SIGNATURE_PREFIX
-  })
-  if (!verified) return undefined
-  const event = decodeIssueComment(JSON.parse(delivery.body))
-  if (Option.isNone(event)) return undefined
-  return {
-    repository: event.value.repository.full_name,
-    issueNumber: event.value.issue.number,
-    author: event.value.comment.user?.login ?? "unknown",
-    body: event.value.comment.body ?? ""
-  }
-}
+  }).pipe(
+    Effect.map((verified) => {
+      if (!verified) return undefined
+      const event = decodeIssueComment(JSON.parse(delivery.body))
+      if (Option.isNone(event)) return undefined
+      return {
+        repository: event.value.repository.full_name,
+        issueNumber: event.value.issue.number,
+        author: event.value.comment.user?.login ?? "unknown",
+        body: event.value.comment.body ?? ""
+      }
+    })
+  )

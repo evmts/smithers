@@ -21,14 +21,20 @@
  *   any process that commits first wins and this source keeps its token.
  * - **Recovery.** Independent sources sharing one credential can both present
  *   the same refresh token, and a rotating provider refuses the second with
- *   `invalid_grant`. The loser reloads the stored token and, only when it
- *   changed since the refused exchange, retries with it, a bounded number of
- *   times. An unchanged token after `invalid_grant` is a genuine refusal.
+ *   `invalid_grant`. The loser re-reads the stored token once and fails
+ *   `retryable`: with `retryAfterMillis: 0` when the stored token has already
+ *   changed, so another attempt presents it at once, and with
+ *   {@link ROTATION_SETTLE_MS} when it has not, because the winner may still be
+ *   persisting its rotation. The source never repeats an exchange itself: the
+ *   flow engine's retry policy, around the step that asked for the token,
+ *   decides whether there is another attempt, durably, and a step's bounded
+ *   attempts are what end a grant that is genuinely revoked.
  * - **Classification.** No stored refresh token or no credential storage is
  *   `credentials-missing`; `invalid_grant` (revoked, expired, or reused grant)
  *   and a refused credential are `permission-denied`; a rejected client id or
  *   secret is `invalid-config`; a 429, a 5xx and a lost connection are
- *   `delivery-failed`, retried a bounded number of times first.
+ *   `delivery-failed`, `retryable` when the grant may be presented again, with
+ *   the server's `Retry-After` as `retryAfterMillis`.
  *
  * Tokens never leave this module except as `Redacted` values and the
  * `Authorization` header or form body of the one request that needs them.
@@ -37,13 +43,21 @@
  * endpoint is refused rather than followed, so a moved endpoint cannot receive
  * the form body.
  *
+ * The token request goes through the `HttpClient` in context, which the caller
+ * provides through a layer, usually `FetchHttpClient.layer` from
+ * `effect/http`. The client sets the fetch transport's `redirect` to
+ * `"manual"` and sends no `b3` or `traceparent` header.
+ *
  * @since 1.0.0
  */
 
 import type { Credential, CredentialRef } from "@smthrs/control/Credential"
-import { Clock, Duration, Effect, Option, Redacted, Ref, Schedule, Schema, Semaphore } from "effect"
+import { Clock, Duration, Effect, Option, Redacted, Ref, Schema, Semaphore } from "effect"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type { AccessTokenSource } from "./AccessToken.ts"
-import { IntegrationError, isRetryable } from "./IntegrationError.ts"
+import { forCredentials, retryAfterHeader, transportCause, webHeaders } from "./CredentialHttp.ts"
+import { IntegrationError, isIntegrationError } from "./IntegrationError.ts"
 import { redactedError } from "./RedactedError.ts"
 
 /**
@@ -65,16 +79,16 @@ export const DEFAULT_SKEW: Duration.Duration = Duration.seconds(60)
  */
 export const DEFAULT_REQUEST_TIMEOUT: Duration.Duration = Duration.seconds(30)
 
-const DEFAULT_MAX_RETRIES = 2
-/** How many times one refresh follows a stored token another source rotated. */
-const MAX_ROTATION_RECOVERIES = 3
 /**
- * When a refused refresh re-reads the stored token, in milliseconds after the
- * refusal. The source that won the exchange may still be persisting its
- * rotation when the loser's refusal arrives.
+ * How long after a refused refresh another attempt should re-read the stored
+ * token, in milliseconds, when it has not changed yet: the source that won the
+ * exchange may still be persisting its rotation when the loser's refusal
+ * arrives.
+ *
+ * @category constants
+ * @since 1.0.0
  */
-const ROTATION_SETTLE_MS: ReadonlyArray<number> = [0, 100, 250, 500]
-const MAX_RETRY_AFTER_MS = 60_000
+export const ROTATION_SETTLE_MS = 500
 
 /**
  * Where a refresh token is kept, with compare-and-set replacement.
@@ -185,10 +199,8 @@ export interface Endpoint {
   readonly clientAuthentication?: ClientAuthentication | undefined
   /** A name for messages, such as `Google`. Defaults to `OAuth`. */
   readonly provider?: string | undefined
-  /** Deadline for one attempt, headers and body. Defaults to 30 seconds. */
+  /** Deadline for one request, headers and body. Defaults to 30 seconds. */
   readonly requestTimeout?: Duration.Input | undefined
-  /** Retries for a 429, a 5xx or a lost connection. Defaults to 2, at most 10. */
-  readonly maxRetries?: number | undefined
 }
 
 /**
@@ -243,8 +255,11 @@ const decodeErrorResponse = Schema.decodeUnknownOption(ErrorResponse)
  * `invalid_grant` is a revoked, expired or already-rotated refresh token, or a
  * used authorization code: the grant itself is gone and only a new consent
  * restores it. `invalid_client` is a client id or secret the endpoint does not
- * accept, which is configuration. Anything else a 400 or 401 carries is
- * reported as a refused delivery.
+ * accept, which is configuration. GitHub names the same cases its own way:
+ * `bad_verification_code` and `bad_refresh_token` are a used or expired code
+ * or refresh token, and `incorrect_client_credentials` and
+ * `redirect_uri_mismatch` are configuration. Anything else a 400 or 401
+ * carries is reported as a refused delivery.
  *
  * @category getters
  * @since 1.0.0
@@ -255,21 +270,18 @@ export const reasonForOAuthError = (code: string): IntegrationError["reason"] =>
     case "unauthorized_client":
     case "invalid_scope":
     case "access_denied":
+    case "bad_verification_code":
+    case "bad_refresh_token":
       return "permission-denied"
     case "invalid_client":
     case "invalid_request":
     case "unsupported_grant_type":
+    case "incorrect_client_credentials":
+    case "redirect_uri_mismatch":
       return "invalid-config"
     default:
       return "delivery-failed"
   }
-}
-
-const retryAfterMs = (headers: Headers): number | null => {
-  const value = headers.get("retry-after")
-  if (value === null) return null
-  const seconds = Number(value)
-  return Number.isFinite(seconds) && seconds >= 0 ? Math.min(seconds * 1000, MAX_RETRY_AFTER_MS) : null
 }
 
 interface Resolved {
@@ -279,7 +291,6 @@ interface Resolved {
   readonly authentication: ClientAuthentication
   readonly provider: string
   readonly timeout: Duration.Duration
-  readonly maxRetries: number
 }
 
 const invalidConfig = (message: string, details: Record<string, unknown>): IntegrationError =>
@@ -300,10 +311,6 @@ const resolveEndpoint = (endpoint: Endpoint): Resolved => {
       retryable: false
     })
   }
-  const maxRetries = endpoint.maxRetries ?? DEFAULT_MAX_RETRIES
-  if (!Number.isSafeInteger(maxRetries) || maxRetries < 0 || maxRetries > 10) {
-    throw invalidConfig(`${provider} maxRetries must be an integer between 0 and 10.`, { provider, maxRetries })
-  }
   const timeout = Option.getOrUndefined(Duration.fromInput(endpoint.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT))
   if (timeout === undefined || !Duration.isFinite(timeout) || Duration.toMillis(timeout) <= 0) {
     throw invalidConfig(`${provider} requestTimeout must be a finite, positive duration.`, {
@@ -317,8 +324,7 @@ const resolveEndpoint = (endpoint: Endpoint): Resolved => {
     clientSecret: endpoint.clientSecret,
     authentication: endpoint.clientAuthentication ?? "body",
     provider,
-    timeout,
-    maxRetries
+    timeout
   }
 }
 
@@ -329,12 +335,14 @@ interface Answer {
 }
 
 /**
- * One POST to the token endpoint, retried for a rate limit and, when the
- * grant can be presented again, for a 5xx or a lost connection.
+ * One POST to the token endpoint, never repeated. A rate limit, and when the
+ * grant can be presented again a 5xx or a lost connection, fails `retryable`
+ * for the retry policy of the step that asked.
  *
  * `secrets` are the values the form carries; every error removes them first.
  */
 const requestGrant = (
+  http: HttpClient.HttpClient,
   endpoint: Resolved,
   form: Readonly<Record<string, string>>,
   secrets: ReadonlyArray<Redacted.Redacted<string>>,
@@ -342,9 +350,10 @@ const requestGrant = (
 ): Effect.Effect<Grant, IntegrationError> => {
   const plain = secrets.map(Redacted.value)
   const secret = endpoint.clientSecret === undefined ? undefined : Redacted.value(endpoint.clientSecret)
+  // Percent-encoding leaves only ASCII, which `btoa` encodes byte for byte.
   const basic = secret === undefined || endpoint.authentication !== "basic"
     ? undefined
-    : Buffer.from(`${encodeURIComponent(endpoint.clientId)}:${encodeURIComponent(secret)}`).toString("base64")
+    : btoa(`${encodeURIComponent(endpoint.clientId)}:${encodeURIComponent(secret)}`)
   const failure = redactedError([...plain, secret, basic])
   const provider = endpoint.provider
   const path = endpoint.url.pathname
@@ -354,44 +363,42 @@ const requestGrant = (
     body.set("client_id", endpoint.clientId)
     if (secret !== undefined) body.set("client_secret", secret)
   }
-  const headers: Record<string, string> = {
-    accept: "application/json",
-    "content-type": "application/x-www-form-urlencoded"
-  }
+  const headers: Record<string, string> = { accept: "application/json" }
   if (basic !== undefined) headers["authorization"] = `Basic ${basic}`
-  const encoded = body.toString()
+  const request = HttpClientRequest.post(endpoint.url, { headers }).pipe(
+    HttpClientRequest.bodyText(body.toString(), "application/x-www-form-urlencoded")
+  )
   const timeoutMs = Duration.toMillis(endpoint.timeout)
   const ambiguity = repeatable ? "" : " (outcome unknown: the grant was not presented again)"
 
-  const attempt: Effect.Effect<Answer, IntegrationError> = Effect.tryPromise({
-    try: async (signal) => {
-      // A redirect is answered, not followed: following a 307 would re-send
-      // the form, secret included, to wherever the endpoint pointed.
-      const response = await fetch(endpoint.url, {
-        method: "POST",
-        headers,
-        body: encoded,
-        redirect: "manual",
-        signal
-      })
-      const text = await response.text()
-      let json: unknown = null
-      try {
-        json = text.length === 0 ? null : JSON.parse(text)
-      } catch {
-        json = null
-      }
-      return { status: response.status, headers: response.headers, json }
-    },
+  const parseBody = (text: string): unknown => {
+    try {
+      return text.length === 0 ? null : JSON.parse(text)
+    } catch {
+      return null
+    }
+  }
+
+  // A redirect is answered, not followed: following a 307 would re-send the
+  // form, secret included, to wherever the endpoint pointed. `http` does not
+  // follow one, and a 3xx fails below as a refusal.
+  const attempt: Effect.Effect<Answer, IntegrationError> = http.execute(request).pipe(
+    Effect.flatMap((response) =>
+      Effect.map(response.text, (text) => ({
+        status: response.status,
+        headers: webHeaders(response.headers),
+        json: parseBody(text)
+      }))
+    ),
     // The transport's own message stays on the (redacted) cause.
-    catch: (cause) =>
+    Effect.mapError((error) =>
       failure(
         "delivery-failed",
         `${provider} token request failed before an answer arrived${ambiguity}`,
         { provider, path, retryable: repeatable, outcomeUnknown: !repeatable },
-        { cause }
+        { cause: transportCause(error) }
       )
-  }).pipe(
+    ),
     Effect.timeoutOrElse({
       duration: endpoint.timeout,
       orElse: () =>
@@ -404,7 +411,11 @@ const requestGrant = (
   )
 
   const classify = (answer: Answer): Effect.Effect<Grant, IntegrationError> => {
-    if (answer.status >= 200 && answer.status < 300) {
+    // GitHub answers a refused grant with 200 OK and an OAuth error body, so an
+    // answer carrying `error` and no token is that refusal, whatever its status.
+    const success = answer.status >= 200 && answer.status < 300 &&
+      !(Option.isNone(decodeTokenResponse(answer.json)) && Option.isSome(decodeErrorResponse(answer.json)))
+    if (success) {
       const decoded = decodeTokenResponse(answer.json)
       const expires = Option.isSome(decoded) ? Number(decoded.value.expires_in ?? Number.NaN) : Number.NaN
       if (
@@ -436,6 +447,7 @@ const requestGrant = (
     const rateLimited = answer.status === 429
     const serverError = answer.status >= 500
     const retryable = rateLimited || (serverError && repeatable)
+    const wait = rateLimited || serverError ? retryAfterHeader(answer.headers) : null
     const reason = code !== null && !rateLimited && !serverError ? reasonForOAuthError(code) : "delivery-failed"
     return Effect.fail(failure(
       reason,
@@ -450,27 +462,63 @@ const requestGrant = (
         retryable,
         rateLimited,
         outcomeUnknown: serverError && !repeatable,
-        retryAfterMs: retryable ? retryAfterMs(answer.headers) : null
+        ...(wait === null ? {} : { retryAfterMillis: wait })
       }
     ))
   }
 
-  const schedule = Schedule.exponential("250 millis").pipe(
-    Schedule.upTo({ times: endpoint.maxRetries }),
-    Schedule.while(({ input }) => isRetryable(input)),
-    Schedule.passthrough,
-    Schedule.addDelay(({ input }) => {
-      const wait = (input as IntegrationError).details?.["retryAfterMs"]
-      return Effect.succeed(typeof wait === "number" && wait > 0 ? Duration.millis(wait) : Duration.zero)
-    })
-  )
-
   return attempt.pipe(
     Effect.flatMap(classify),
-    Effect.retry(schedule),
     Effect.withSpan("OAuthToken.request", { attributes: { "oauth.provider": provider } })
   )
 }
+
+/**
+ * What {@link exchangeRefreshToken} needs beyond the endpoint.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface RefreshExchange extends Endpoint {
+  /** The refresh token to present, once. */
+  readonly refreshToken: Redacted.Redacted<string>
+  /** Narrows the refreshed token to these scopes. Omitted keeps the granted set. */
+  readonly scopes?: ReadonlyArray<string> | undefined
+}
+
+/**
+ * Trades one refresh token for a new grant, once, and returns the whole grant.
+ *
+ * For a host that keeps refresh tokens of its own, such as one per signed-in
+ * person, and persists a rotation itself; {@link make} is the cached source
+ * over one stored token. A provider that rotates refresh tokens may already
+ * have redeemed this one when the answer is lost (GitHub's are single-use), so
+ * a 5xx or a lost connection says the outcome is unknown. A rate limit is
+ * `retryable`, with the server's `retryAfterMillis`, because a refused request
+ * redeemed nothing. The exchange is made once: a step's retry policy repeats
+ * it. A used, expired or revoked refresh token is `permission-denied`.
+ *
+ * The request goes through the `HttpClient` in context.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const exchangeRefreshToken = (
+  exchange: RefreshExchange
+): Effect.Effect<Grant, IntegrationError, HttpClient.HttpClient> =>
+  Effect.all([
+    Effect.service(HttpClient.HttpClient),
+    Effect.try({ try: () => resolveEndpoint(exchange), catch: (cause) => cause as IntegrationError })
+  ]).pipe(
+    Effect.flatMap(([http, endpoint]) => {
+      const form: Record<string, string> = {
+        grant_type: "refresh_token",
+        refresh_token: Redacted.value(exchange.refreshToken)
+      }
+      if (exchange.scopes !== undefined && exchange.scopes.length > 0) form["scope"] = exchange.scopes.join(" ")
+      return requestGrant(forCredentials(http), endpoint, form, [exchange.refreshToken], false)
+    })
+  )
 
 /**
  * What {@link exchangeCode} needs beyond the endpoint.
@@ -492,17 +540,26 @@ export interface CodeExchange extends Endpoint {
  *
  * This finishes the consent flow `AuthorizationUrl` and `Pkce` start; the host
  * stores the returned refresh token with `Credential.create`. A code is
- * single-use, so a 5xx or a lost connection is not retried: the provider may
- * have redeemed it and lost the answer, and the failure says the outcome is
- * unknown. A rate limit is retried, because a refused request redeemed
- * nothing.
+ * single-use, so a 5xx or a lost connection is not `retryable`: the provider
+ * may have redeemed it and lost the answer, and the failure says the outcome
+ * is unknown. A rate limit is `retryable`, with the server's
+ * `retryAfterMillis`, because a refused request redeemed nothing. The exchange
+ * is made once: a step's retry policy repeats it.
+ *
+ * The request goes through the `HttpClient` in context; provide
+ * `FetchHttpClient.layer` from `effect/http`, or a client of your own.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const exchangeCode = (exchange: CodeExchange): Effect.Effect<Grant, IntegrationError> =>
-  Effect.try({ try: () => resolveEndpoint(exchange), catch: (cause) => cause as IntegrationError }).pipe(
-    Effect.flatMap((endpoint) => {
+export const exchangeCode = (
+  exchange: CodeExchange
+): Effect.Effect<Grant, IntegrationError, HttpClient.HttpClient> =>
+  Effect.all([
+    Effect.service(HttpClient.HttpClient),
+    Effect.try({ try: () => resolveEndpoint(exchange), catch: (cause) => cause as IntegrationError })
+  ]).pipe(
+    Effect.flatMap(([http, endpoint]) => {
       const form: Record<string, string> = {
         grant_type: "authorization_code",
         code: Redacted.value(exchange.code),
@@ -513,7 +570,7 @@ export const exchangeCode = (exchange: CodeExchange): Effect.Effect<Grant, Integ
         form["code_verifier"] = Redacted.value(exchange.codeVerifier)
         secrets.push(exchange.codeVerifier)
       }
-      return requestGrant(endpoint, form, secrets, false)
+      return requestGrant(forCredentials(http), endpoint, form, secrets, false)
     })
   )
 
@@ -523,20 +580,9 @@ interface Cached {
   readonly staleAtMs: number
 }
 
-/**
- * An access-token source that refreshes from `options.refreshToken`.
- *
- * Validates the endpoint and bounds up front, throwing a typed
- * `IntegrationError`: `invalid-config` for a malformed URL or bound, and
- * `credentials-missing` for a missing client id.
- *
- * A grant without `expires_in` is used for the call that minted it and not
- * cached, since nothing says how long it lives.
- *
- * @category constructors
- * @since 1.0.0
- */
-export const make = (options: Options): AccessTokenSource => {
+// The source over `http`. Throws an IntegrationError for a bad config; `make`
+// turns that into a typed failure.
+const build = (options: Options, http: HttpClient.HttpClient): AccessTokenSource => {
   const endpoint = resolveEndpoint(options)
   const skew = Option.getOrUndefined(Duration.fromInput(options.skew ?? DEFAULT_SKEW))
   if (skew === undefined || !Duration.isFinite(skew) || Duration.toMillis(skew) < 0) {
@@ -558,47 +604,39 @@ export const make = (options: Options): AccessTokenSource => {
   const exchange = (current: Redacted.Redacted<string>) => {
     const form: Record<string, string> = { grant_type: "refresh_token", refresh_token: Redacted.value(current) }
     if (scope !== undefined) form["scope"] = scope
-    return requestGrant(endpoint, form, [current], true).pipe(Effect.map((grant) => ({ current, grant })))
+    return requestGrant(http, endpoint, form, [current], true).pipe(Effect.map((grant) => ({ current, grant })))
   }
 
-  /** The stored token once it differs from `current`, re-read a bounded number of times. */
-  const rotatedFrom = (current: Redacted.Redacted<string>): Effect.Effect<
-    Option.Option<Redacted.Redacted<string>>,
-    IntegrationError
-  > =>
-    Effect.gen(function*() {
-      let waited = 0
-      for (const at of ROTATION_SETTLE_MS) {
-        yield* Effect.sleep(Duration.millis(at - waited))
-        waited = at
-        const stored = yield* options.refreshToken.load
-        if (Redacted.value(stored) !== Redacted.value(current)) return Option.some(stored)
-      }
-      return Option.none()
+  // `invalid_grant` for a token another source has since rotated is not a
+  // revocation, but the source cannot tell the two apart without waiting, and
+  // waiting belongs to the step's retry policy, which survives a crash. So the
+  // refusal becomes retryable: at once when the stored token already changed,
+  // after the settle time when it has not. The next attempt reads the store
+  // again; a grant that really is revoked ends with the step's attempts.
+  const rotationPending = (
+    current: Redacted.Redacted<string>,
+    error: IntegrationError
+  ): Effect.Effect<never, IntegrationError> =>
+    Effect.flatMap(options.refreshToken.load, (stored) => {
+      const rotated = Redacted.value(stored) !== Redacted.value(current)
+      return Effect.fail(
+        new IntegrationError(
+          error.reason,
+          `${error.summary} (${
+            rotated ? "the stored refresh token has rotated" : "the stored refresh token may still be rotating"
+          }; another attempt presents it)`,
+          { ...error.details, retryable: true, rotated, retryAfterMillis: rotated ? 0 : ROTATION_SETTLE_MS },
+          { cause: error }
+        )
+      )
     })
 
-  // `invalid_grant` for a token another source has since rotated is not a
-  // revocation: follow the stored token, but only while it keeps changing.
-  const exchangeFollowingRotation = (
-    current: Redacted.Redacted<string>,
-    recoveries: number
-  ): Effect.Effect<{ readonly current: Redacted.Redacted<string>; readonly grant: Grant }, IntegrationError> =>
-    exchange(current).pipe(
-      Effect.catchIf(
-        (error) => recoveries > 0 && error.details?.["oauthError"] === "invalid_grant",
-        (error) =>
-          Effect.flatMap(rotatedFrom(current), (stored) =>
-            Option.isNone(stored)
-              ? Effect.fail(error)
-              : exchangeFollowingRotation(stored.value, recoveries - 1))
-      )
-    )
-
   const refresh = Effect.gen(function*() {
-    const { current, grant } = yield* exchangeFollowingRotation(
-      yield* options.refreshToken.load,
-      MAX_ROTATION_RECOVERIES
-    )
+    const { current, grant } = yield* Effect.flatMap(options.refreshToken.load, (current) =>
+      exchange(current).pipe(
+        Effect.catchIf((error) => error.details?.["oauthError"] === "invalid_grant", (error) =>
+          rotationPending(current, error))
+      ))
     const now = yield* Clock.currentTimeMillis
     if (grant.refreshToken !== null && Redacted.value(grant.refreshToken) !== Redacted.value(current)) {
       const replaced = yield* options.refreshToken.replace(current, grant.refreshToken)
@@ -629,3 +667,47 @@ export const make = (options: Options): AccessTokenSource => {
 
   return { token, invalidate: Ref.set(cache, Option.none()) }
 }
+
+/**
+ * An access-token source that refreshes from `options.refreshToken`, over the
+ * `HttpClient` in context.
+ *
+ * Validates the endpoint and bounds up front, failing with a typed
+ * `IntegrationError`: `invalid-config` for a malformed URL or bound, and
+ * `credentials-missing` for a missing client id. Provide the `HttpClient` with
+ * `FetchHttpClient.layer` from `effect/http`, or a client of your own.
+ *
+ * A grant without `expires_in` is used for the call that minted it and not
+ * cached, since nothing says how long it lives.
+ *
+ * @example
+ * ```ts
+ * import { Core } from "@smthrs/integrations"
+ * import { Effect, Redacted } from "effect"
+ * import { FetchHttpClient } from "effect/http"
+ *
+ * const token = Effect.gen(function*() {
+ *   const source = yield* Core.OAuthToken.make({
+ *     tokenUrl: "https://oauth2.googleapis.com/token",
+ *     clientId: "client-id",
+ *     refreshToken: Core.OAuthToken.memoryStore(Redacted.make("refresh-token"))
+ *   })
+ *   return yield* source.token
+ * }).pipe(Effect.provide(FetchHttpClient.layer))
+ * ```
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const make = (options: Options): Effect.Effect<AccessTokenSource, IntegrationError, HttpClient.HttpClient> =>
+  Effect.flatMap(Effect.service(HttpClient.HttpClient), (http) =>
+    Effect.suspend(() => {
+      // A config error is a typed failure. Anything else build throws is a
+      // defect and stays one.
+      try {
+        return Effect.succeed(build(options, forCredentials(http)))
+      } catch (error) {
+        if (isIntegrationError(error)) return Effect.fail(error)
+        throw error
+      }
+    }))

@@ -17,10 +17,12 @@
  * issue, a comment carrying its key, a check run under its external id, a
  * closing reference already in the pull request — and only writes what is
  * missing. That makes a repeat safe, so they declare an `idempotencyKey` and a
- * bounded {@link retryPolicy}: a write whose answer was lost, or a process that
- * died mid-step, is resumed by repeating the step, and the repeat finds its own
- * work instead of doing it twice. They stay `irreversible`, because a reader
- * sees the change the moment GitHub accepts it.
+ * bounded {@link retryPolicy}: a rate limit, a write whose answer was lost, or
+ * a process that died mid-step, is resumed by repeating the step, and the
+ * repeat finds its own work instead of doing it twice. The policy is the only
+ * retry: the client underneath makes one request per call. They stay
+ * `irreversible`, because a reader sees the change the moment GitHub accepts
+ * it.
  *
  * The limit: GitHub enforces neither the comment marker nor a check run's
  * `external_id` as unique. A write still in flight at GitHub when the repeat
@@ -31,9 +33,9 @@
  * @since 1.0.0
  */
 
-import { Action, type FlowRuntime, RetryPolicy } from "@smthrs/flow"
+import { Action, type FlowRuntime, type RetryPolicy } from "@smthrs/flow"
 import { Effect, Layer, Schema } from "effect"
-import { fromIntegrationError, IntegrationFailure } from "../core/ActionFailure.ts"
+import { Failure, fromIntegrationError, retryPolicy as stepRetryPolicy } from "../core/ActionFailure.ts"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { GitHubClient } from "./GitHubClient.ts"
 import { IssueNumber, Owner, Repo, requireRepositoryPath } from "./Repository.ts"
@@ -75,9 +77,12 @@ export const Comment = Schema.Struct({
  *
  * The tier is `irreversible`: the comment is visible the moment GitHub
  * accepts it, and deleting it afterwards is a different call with a different
- * outcome, so the engine must never retry this step on its own. Nor does the
- * client underneath: a 5xx or a dropped connection on the POST reports
- * `outcomeUnknown` rather than posting a second comment.
+ * outcome, so the engine never retries this step and neither does the client:
+ * a 5xx or a dropped connection on the POST fails an `IntegrationFailure` with
+ * `outcomeUnknown` rather than posting a second comment. A rate limit fails a
+ * `RetryableIntegrationFailure` with the server's `retryAfterMillis`: nothing
+ * was posted, so a flow may call again once that wait has passed. For a comment
+ * the engine retries on its own, use {@link UpsertComment}.
  *
  * @category actions
  * @since 1.0.0
@@ -85,7 +90,7 @@ export const Comment = Schema.Struct({
 export const CommentOnIssue = Action.make("integrations/github/comment-on-issue", {
   payload: CommentOnIssuePayload,
   success: Comment,
-  error: IntegrationFailure,
+  error: Failure,
   tier: "irreversible"
 })
 
@@ -113,21 +118,27 @@ export const layerCommentOnIssue: Layer.Layer<
 )
 
 /**
- * The engine retry policy of the write-back actions.
+ * The engine retry policy of the write-back actions, and the only retry a
+ * GitHub write gets: the client itself never repeats a request. It is
+ * `Core.ActionFailure.retryPolicy`.
  *
- * Three attempts, half a second then a second apart. Each attempt reads
- * before it writes, so a repeat after a lost answer finds the first
- * attempt's work rather than doing it again.
+ * At most three attempts, so one write reaches GitHub at most three times.
+ * Between attempts the engine waits half a second, then a second, or the wait
+ * the server named in `retryAfterMillis` (its `Retry-After`, up to a minute).
+ * A failure the client classified as final, an `IntegrationFailure`, is never
+ * repeated. Each attempt reads before it writes, so a repeat after a lost
+ * answer finds the first attempt's work rather than doing it again. The
+ * attempt count is durable, so a process that dies between attempts resumes on
+ * the next one.
  *
  * @category constants
  * @since 1.0.0
  */
-export const retryPolicy: RetryPolicy.RetryPolicy = RetryPolicy.make({
-  initialMs: 500,
-  factor: 2,
-  maxMs: 5_000,
-  maxAttempts: 3
-})
+export const retryPolicy: RetryPolicy.RetryPolicy = stepRetryPolicy
+
+// A write-back step reads before it writes, so a write whose answer was lost
+// is safe to repeat at the step even though the request alone is not.
+const reconciled = (error: unknown): Failure => fromIntegrationError(error, { reconciles: true })
 
 /**
  * How many pages of 100 a reconciling read walks before it gives up.
@@ -196,7 +207,7 @@ export const LabelsAdded = Schema.Struct({
 export const AddLabels = Action.make("integrations/github/add-labels", {
   payload: AddLabelsPayload,
   success: LabelsAdded,
-  error: IntegrationFailure,
+  error: Failure,
   tier: "irreversible",
   implementationVersion: "github/add-labels/v1",
   idempotencyKey: (payload) => ({
@@ -234,7 +245,7 @@ export const layerAddLabels: Layer.Layer<
       if (missing.length === 0) return { added: [], labels: current }
       const labels = yield* client.request("POST", path, { labels: missing }, { schema: Schema.Array(Label) })
       return { added: missing, labels: labels.map((label) => label.name) }
-    }).pipe(Effect.mapError(fromIntegrationError)),
+    }).pipe(Effect.mapError(reconciled)),
   { implementationVersion: "github/add-labels/v1" }
 )
 
@@ -313,7 +324,7 @@ export const StickyComment = Schema.Struct({
 export const UpsertComment = Action.make("integrations/github/upsert-comment", {
   payload: UpsertCommentPayload,
   success: StickyComment,
-  error: IntegrationFailure,
+  error: Failure,
   tier: "irreversible",
   implementationVersion: "github/upsert-comment/v1",
   idempotencyKey: (payload) => ({
@@ -388,7 +399,7 @@ export const layerUpsertComment: Layer.Layer<
         { schema: Comment }
       )
       return { ...updated, outcome: "updated" as const }
-    }).pipe(Effect.mapError(fromIntegrationError)),
+    }).pipe(Effect.mapError(reconciled)),
   { implementationVersion: "github/upsert-comment/v1" }
 )
 
@@ -462,7 +473,7 @@ export const CheckRunReceipt = Schema.Struct({
 export const CheckRun = Action.make("integrations/github/check-run", {
   payload: CheckRunPayload,
   success: CheckRunReceipt,
-  error: IntegrationFailure,
+  error: Failure,
   tier: "irreversible",
   implementationVersion: "github/check-run/v1",
   idempotencyKey: (payload) => ({
@@ -535,7 +546,7 @@ export const layerCheckRun: Layer.Layer<
         conclusion: written.conclusion,
         created: existing === undefined
       }
-    }).pipe(Effect.mapError(fromIntegrationError)),
+    }).pipe(Effect.mapError(reconciled)),
   { implementationVersion: "github/check-run/v1" }
 )
 
@@ -584,7 +595,7 @@ export const PullRequestLinked = Schema.Struct({
 export const LinkPullRequest = Action.make("integrations/github/link-pr", {
   payload: LinkPullRequestPayload,
   success: PullRequestLinked,
-  error: IntegrationFailure,
+  error: Failure,
   tier: "irreversible",
   implementationVersion: "github/link-pr/v1",
   idempotencyKey: (payload) => ({
@@ -659,7 +670,7 @@ export const layerLinkPullRequest: Layer.Layer<
         schema: PullRequest
       })
       return { ...linked, updated: true }
-    }).pipe(Effect.mapError(fromIntegrationError)),
+    }).pipe(Effect.mapError(reconciled)),
   { implementationVersion: "github/link-pr/v1" }
 )
 

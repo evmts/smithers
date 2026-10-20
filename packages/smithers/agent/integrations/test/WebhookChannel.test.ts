@@ -1,11 +1,16 @@
 import * as Channels from "@smthrs/control/Channels"
 import * as Control from "@smthrs/control/Control"
 import { Unauthorized } from "@smthrs/control/ControlError"
-import { Effect, Layer, Redacted, Stream } from "effect"
+import { Effect, Exit, Layer, Redacted, Stream } from "effect"
+import { createHmac } from "node:crypto"
 import { describe, expect, it } from "vitest"
 import * as Core from "../src/core/Channel.ts"
 import { readHeader } from "../src/core/JsonPath.ts"
-import { computeHmacSha256Hex, GITHUB_SIGNATURE_PREFIX, verifySignature } from "../src/core/Signature.ts"
+import { GITHUB_SIGNATURE_PREFIX, verifySignature } from "../src/core/Signature.ts"
+
+/** Signs a test delivery with `node:crypto`, independent of the verifier under test. */
+const computeHmacSha256Hex = (payload: string, secret: string) =>
+  createHmac("sha256", secret).update(payload).digest("hex")
 
 const SECRET = "shared-secret-correct"
 const WRONG_SECRET = "shared-secret-wrong"
@@ -61,7 +66,7 @@ const ingest = (
   channel: Channels.Channel,
   raw: Channels.RawInbound,
   calls: Array<string> = []
-): Promise<{ readonly _tag: "Success" | "Failure" }> =>
+): Promise<Exit.Exit<unknown, unknown>> =>
   Effect.runPromise(
     Effect.gen(function*() {
       const channels = yield* Channels.Channels
@@ -277,6 +282,22 @@ describe("secret resolution", () => {
     const failure = await Effect.runPromise(Effect.flip(resolver(CREDENTIAL)))
     expect(failure.message).toBe("denied")
   })
+
+  // `Credential.resolve` declares only `Unauthorized`. A store that breaks
+  // that contract still refuses, naming the credential and not its failure.
+  it("reports any other credential failure as Unauthorized without quoting it", async () => {
+    const resolver = Core.credentialSecret({
+      list: () => Effect.die("unused"),
+      get: () => Effect.die("unused"),
+      create: () => Effect.die("unused"),
+      resolve: () => Effect.fail(new Error("store offline at 10.0.0.7")) as never,
+      rotate: () => Effect.die("unused"),
+      revoke: () => Effect.die("unused")
+    })
+    const failure = await Effect.runPromise(Effect.flip(resolver(CREDENTIAL)))
+    expect(failure).toBeInstanceOf(Unauthorized)
+    expect(failure.message).toBe("credential signed-webhook is unavailable")
+  })
 })
 
 describe("a channel refuses rather than dies", () => {
@@ -318,6 +339,33 @@ describe("a channel refuses rather than dies", () => {
     expect(exit._tag).toBe("Failure")
     // The internal message does not cross to the control plane.
     expect(JSON.stringify(exit)).not.toContain("verifier bug")
+  })
+
+  // `Signature.verifySignature` is an Effect, so a verifier may return one.
+  // Its failure or defect is a refusal too, and its `false` is a mismatch.
+  it("treats a failing, dying or false verifier Effect as a failed verification", async () => {
+    for (
+      const verify of [
+        () => Effect.fail("verifier failed"),
+        () => Effect.die(new TypeError("verifier bug")),
+        () => Effect.succeed(false)
+      ]
+    ) {
+      const calls: Array<string> = []
+      const exit = await ingest(custom({ verify }), raw(), calls)
+      expect(exit._tag).toBe("Failure")
+      expect(JSON.stringify(exit)).toContain("unauthorized")
+      expect(JSON.stringify(exit)).not.toContain("verifier")
+      expect(calls).toEqual([])
+    }
+  })
+
+  // An interrupted verifier did not refuse anything: the ingest stops, it
+  // does not report a bad signature.
+  it("lets an interrupted verifier interrupt the ingest", async () => {
+    const exit = await ingest(custom({ verify: () => Effect.interrupt }), raw())
+    expect(Exit.hasInterrupts(exit)).toBe(true)
+    expect(JSON.stringify(exit)).not.toContain("unauthorized")
   })
 
   it("reports a decoder that throws a plain error without quoting it", async () => {

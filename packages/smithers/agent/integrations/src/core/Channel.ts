@@ -25,7 +25,7 @@ import { InvalidInput, Unauthorized } from "@smthrs/control/ControlError"
 import type { FlowId, RunId, RunSummary } from "@smthrs/control/ControlSchema"
 import type { Credential, CredentialRef } from "@smthrs/control/Credential"
 import * as WebhookChannel from "@smthrs/control/WebhookChannel"
-import { Effect, Redacted, Schema } from "effect"
+import { Cause, Effect, Redacted, Schema } from "effect"
 import { decode as decodeExternalEvent, type ExternalEvent } from "./ExternalEvent.ts"
 import { IntegrationError, isIntegrationError, toInvalidInput, toUnauthorized } from "./IntegrationError.ts"
 import * as SignalName from "./SignalName.ts"
@@ -85,13 +85,14 @@ export interface Config {
   /** Non-secret headers whose values affect the decoded event. */
   readonly fingerprintHeaders?: ReadonlyArray<string> | undefined
   /**
-   * The provider's signature check over the exact delivered bytes.
+   * The provider's signature check over the exact delivered bytes, as a
+   * boolean or as an Effect such as `Signature.verifySignature` returns.
    *
-   * A verifier that throws is treated as a failed verification: the delivery
-   * is refused with `Unauthorized`, not turned into a defect that kills the
-   * ingress fiber.
+   * A verifier that throws, or whose Effect fails or dies, is treated as a
+   * failed verification: the delivery is refused with `Unauthorized`, not
+   * turned into a defect that kills the ingress fiber. Only `true` verifies.
    */
-  readonly verify: (raw: RawInbound, secret: string) => boolean
+  readonly verify: (raw: RawInbound, secret: string) => boolean | Effect.Effect<boolean, unknown>
   /**
    * The provider's decoder. Runs only after verification, and may throw an
    * `IntegrationError` for a delivery whose headers or body it cannot read.
@@ -128,10 +129,17 @@ export const make = (config: Config): Channel => {
   const verifier: WebhookChannel.SignatureVerifier = (raw, credential) =>
     config.secret(credential).pipe(
       Effect.flatMap((secret) =>
-        // An application-supplied verifier is ordinary code that can throw.
-        // A throw is a refusal, not a defect: the delivery did not verify.
-        Effect.try({ try: () => config.verify(raw, Redacted.value(secret)), catch: unauthorized }).pipe(
-          Effect.flatMap((verified) => verified ? Effect.void : Effect.fail(unauthorized()))
+        // An application-supplied verifier is ordinary code that can throw,
+        // fail or die. Each is a refusal, not a defect: the delivery did not
+        // verify. An interruption stays one. An Effect verdict is run, never
+        // read for truthiness: an unrun Effect is a truthy object that would
+        // pass every delivery.
+        Effect.suspend(() => {
+          const verdict = config.verify(raw, Redacted.value(secret))
+          return Effect.isEffect(verdict) ? verdict : Effect.succeed(verdict)
+        }).pipe(
+          Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.fail(unauthorized())),
+          Effect.flatMap((verified) => verified === true ? Effect.void : Effect.fail(unauthorized()))
         )
       )
     )

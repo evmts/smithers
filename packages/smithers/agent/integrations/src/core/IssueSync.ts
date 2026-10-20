@@ -5,7 +5,7 @@
 import { isRecord } from "@smthrs/canonical/Record"
 import type { FlowRuntime } from "@smthrs/flow"
 import { Schema } from "effect"
-import { IntegrationFailure } from "./ActionFailure.ts"
+import { Failure } from "./ActionFailure.ts"
 import type { ExternalEvent } from "./ExternalEvent.ts"
 
 /** Persisted connector routing.
@@ -78,14 +78,14 @@ export const requireDurableRuntime = (runtime: FlowRuntime.FlowRuntime["Service"
     throw new Error("Issue sync requires a durable engine store; FlowEngine.layerMemory cannot replay after restart")
   }
 }
-const failureOf = (value: unknown): IntegrationFailure | undefined => {
+const failureOf = (value: unknown): Failure | undefined => {
   const pending = [value]
   const seen = new Set<unknown>()
   while (pending.length > 0 && seen.size < 20) {
     const next = pending.shift()
     if (seen.has(next)) continue
     seen.add(next)
-    if (Schema.is(IntegrationFailure)(next)) return next
+    if (Schema.is(Failure)(next)) return next
     if (isRecord(next)) pending.push(next["cause"], next["error"])
   }
   return undefined

@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it } from "vitest"
 import type { SourceRecord } from "../src/core/SourceRecord.ts"
 import { layerMemory, SourceStore } from "../src/core/SourceStore.ts"
 import { runSync } from "../src/core/Sync.ts"
-import { make as makeClient } from "../src/github/GitHubClient.ts"
 import { commentId, issueId, make, PROVIDER } from "../src/github/Sync.ts"
 import { type Fixture, json, type Recorded, startFixture } from "./Fixture.ts"
+import { gitHubClient as makeClient } from "./Http.ts"
 import { runWith, sqlLayer } from "./SourceStoreFixtures.ts"
 
 const OWNER = "example-org"
@@ -127,7 +127,7 @@ const adapterFor = (origin: string, options: { perPage?: number; fullListing?: b
     connectionId: CONNECTION,
     owner: OWNER,
     repo: REPO,
-    client: makeClient({ token: "ghp_example_token", apiBaseUrl: origin, maxRetries: 3 }, {}),
+    client: makeClient({ token: "ghp_example_token", apiBaseUrl: origin }, {}),
     ...options
   })
 
@@ -311,17 +311,24 @@ const contract = (name: string, layer: Layer.Layer<SourceStore>) => {
       expect(Option.getOrThrow(stored).record.text).toBe("Issue 1\n\nEdited body")
     })
 
-    it("retries a rate-limited listing through the client and completes the sync", async () => {
+    // The client never repeats a request; the retry policy of the durable step
+    // that runs the sync does. A rate-limited listing fails the run once,
+    // classified for that policy, and the next run completes the sync.
+    it("fails a rate-limited listing once, retryable, and the next run completes the sync", async () => {
       const server = await serve({
         repository: { id: REPO_ID, private: true },
         issues: [issue(1, 10)],
         comments: [],
-        rateLimited: 2
+        rateLimited: 1
       })
-      const report = await run(runSync({ adapter: adapterFor(server.origin) }))
+      const [refused, report] = await run(Effect.gen(function*() {
+        const refused = yield* Effect.flip(runSync({ adapter: adapterFor(server.origin) }))
+        return [refused, yield* runSync({ adapter: adapterFor(server.origin) })] as const
+      }))
+      expect(refused.details).toMatchObject({ status: 429, retryable: true, rateLimited: true, retryAfterMillis: 0 })
       expect(report).toMatchObject({ inserted: 1, done: true })
       const issueRequests = listingRequests(server).filter((url) => url.pathname.endsWith("/issues"))
-      expect(issueRequests).toHaveLength(3)
+      expect(issueRequests).toHaveLength(2)
     })
 
     it("finds deletions only through a full listing, which sweeps what it no longer lists", async () => {

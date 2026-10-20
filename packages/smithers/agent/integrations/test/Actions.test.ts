@@ -19,8 +19,8 @@ import { afterEach, describe, expect, it } from "vitest"
 import { fromIntegrationError, IntegrationFailure, toIntegrationError } from "../src/core/ActionFailure.ts"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
 import * as GitHubActions from "../src/github/Actions.ts"
-import * as GitHubClient from "../src/github/GitHubClient.ts"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
+import { gitHubLayer } from "./Http.ts"
 
 let fixture: Fixture | undefined
 
@@ -79,7 +79,7 @@ class Unprovided extends Context.Service<Unprovided, { readonly value: string }>
 /** Never called; tsc checks it (#2704). */
 const unprovidedServiceProbe = () => {
   const payload = { owner: "o", repo: "r", issueNumber: 7, body: "hello" }
-  const clients = GitHubClient.layer({ token: "t", apiBaseUrl: "http://127.0.0.1" }, {})
+  const clients = gitHubLayer({ token: "t", apiBaseUrl: "http://127.0.0.1" }, {})
   const needsUnprovided = GitHubActions.CommentOnIssue.toLayer(() =>
     Effect.map(Unprovided, (service) => ({ id: 1, url: service.value }))
   )
@@ -106,7 +106,7 @@ describe("GitHub actions", () => {
       GitHubActions.CommentOnIssue,
       GitHubActions.layer,
       { owner: "o", repo: "r", issueNumber: 7, body: "hello" },
-      GitHubClient.layer({ token: "t", apiBaseUrl: fixture.origin }, {})
+      gitHubLayer({ token: "t", apiBaseUrl: fixture.origin }, {})
     )
     expect(sent).toEqual({ id: 42, url: "https://api.github.com/repos/o/r/issues/comments/42" })
     expect(fixture.requests).toHaveLength(1)
@@ -123,7 +123,7 @@ describe("GitHub actions", () => {
       GitHubActions.CommentOnIssue,
       GitHubActions.layer,
       { owner: "o", repo: "r", issueNumber: 7, body: "hello" },
-      GitHubClient.layer({ token: "secret-token", apiBaseUrl: fixture.origin }, {})
+      gitHubLayer({ token: "secret-token", apiBaseUrl: fixture.origin }, {})
     ).then(() => undefined, (error: any) => error)
     // The engine surfaces the failure through the flow's error channel, so the
     // value that comes back is the decoded schema instance, not the class.
@@ -187,7 +187,7 @@ describe("what an action journals", () => {
       GitHubActions.CommentOnIssue,
       GitHubActions.layer,
       { owner: "..", repo: "..", issueNumber: 1, body: "hello" },
-      GitHubClient.layer({ token: "t", apiBaseUrl: fixture.origin }, {})
+      gitHubLayer({ token: "t", apiBaseUrl: fixture.origin }, {})
     ).then(() => undefined, (error: unknown) => error)
     expect(fixture.requests).toHaveLength(0)
   })
@@ -202,7 +202,7 @@ describe("a partial or ambiguous outcome reaches the journal", () => {
       GitHubActions.CommentOnIssue,
       GitHubActions.layer,
       { owner: "o", repo: "r", issueNumber: 7, body: "hello" },
-      GitHubClient.layer({ token: "t", apiBaseUrl: fixture.origin }, {})
+      gitHubLayer({ token: "t", apiBaseUrl: fixture.origin }, {})
     ).then(() => undefined, (error: any) => error)
     const carried: any = failure?.cause?.error ?? failure?.error ?? failure
     expect(carried).toBeInstanceOf(IntegrationFailure)
@@ -217,7 +217,7 @@ describe("a partial or ambiguous outcome reaches the journal", () => {
       GitHubActions.CommentOnIssue,
       GitHubActions.layer,
       { owner: "o", repo: "r", issueNumber: 7, body: "hello" },
-      GitHubClient.layer({ token: "t", apiBaseUrl: fixture.origin }, {})
+      gitHubLayer({ token: "t", apiBaseUrl: fixture.origin }, {})
     ).then(() => undefined, (error: any) => error)
     const carried: any = failure?.cause?.error ?? failure?.error ?? failure
     expect(carried.outcomeUnknown).toBeUndefined()

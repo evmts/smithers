@@ -17,27 +17,23 @@ export default defineConfig({
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-integrations-coverage-${process.pid}`),
       include: ["src/**"],
-      // Ratcheted to exactly what the default gate reaches. Raise these when a
-      // case closes; never lower them. The explicit shortfall below is limited
-      // to host/runtime boundaries the real suite cannot manufacture safely.
+      // Ratcheted to exactly what one storage backend reaches. Raise these
+      // when a case closes; never lower them.
       //
-      // The numbers are the exact figures the suite reaches, carrying no
-      // slack, so any new uncovered branch fails the gate. Only the three
-      // `test/*Live.test.ts` suites change the figures, and only upward: they
-      // execute more of `src` when a credential is present, and `include`
-      // fixes the denominator whether they run or not.
+      // The numbers carry no slack, so any new uncovered branch fails the
+      // gate. Only the three `test/*Live.test.ts` suites change the figures,
+      // and only upward: they execute more of `src` when a credential is
+      // present, and `include` fixes the denominator whether they run or not.
       //
-      // What the remaining shortfall stands for, behavior by behavior:
-      //
-      // - `core/Channel.ts:68` can only see `Unauthorized`, the declared failure
-      //   of `Credential.resolve`; its defensive other arm needs a service
-      //   that violates the public type. Keep that refusal intact.
-      // The database matrix merges real SQLite and PostgreSQL coverage.
+      // The one shortfall is `core/SourceStore.ts:930`, the PostgreSQL arm of
+      // the text search. The database matrix (`pnpm coverage`, the package's
+      // `test` target) runs every suite on real SQLite and real PostgreSQL and
+      // merges the two to 100% on all four measures.
       thresholds: {
-        branches: 99.81,
-        functions: 99.74,
-        lines: 99.88,
-        statements: 99.83
+        branches: 100,
+        functions: 99.78,
+        lines: 99.93,
+        statements: 99.94
       }
     }
   }

@@ -8,7 +8,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { EngineStore, Kernel } from "@smthrs/flows"
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { Layer, ManagedRuntime } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -16,6 +16,7 @@ import { join } from "node:path"
 import * as Actions from "../src/github/Actions.ts"
 import * as Client from "../src/github/GitHubClient.ts"
 import { json, startFixture } from "./Fixture.ts"
+import { gitHubClient } from "./Http.ts"
 
 it("refuses a memory runtime before any connector can claim or send", async () => {
   const runtime = await Effect.runPromise(
@@ -34,7 +35,7 @@ const Post = Flow.make("test/integrations/github/issue-post", {
 it("reopens the durable store and replays a lapsed delivery without sending twice", async () => {
   const root = mkdtempSync(join(tmpdir(), "issue-sync-restart-"))
   const server = await startFixture((_req, res) => json(res, 201, { id: 10, url: "https://github.test/comment/10" }))
-  const client = Client.make({ token: "fixture", apiBaseUrl: server.origin }, {})
+  const client = gitHubClient({ token: "fixture", apiBaseUrl: server.origin }, {})
   const registration = Interpreter.layer(Post).pipe(
     Layer.provideMerge(Actions.layer.pipe(Layer.provide(Layer.succeed(Client.GitHubClient, client)))),
     Layer.provideMerge(Action.layerImplementations)

@@ -1,7 +1,8 @@
 /**
  * The GitHub proxy over real sockets: a fixture server stands in for
- * api.github.com, the proxy listens on an ephemeral port, and clients reach
- * it by URL, including two separate Node processes.
+ * api.github.com, the proxy listens on an ephemeral port and calls it over the
+ * real fetch transport, and clients reach it by URL, including two separate
+ * Node processes.
  */
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { Context, Effect, Exit, Layer, Scope } from "effect"
@@ -12,10 +13,10 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { afterEach, describe, expect, it } from "vitest"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
-import { make as client } from "../src/github/GitHubClient.ts"
 import { type Credential, layer, make, type ProxyOptions, repositoryOf } from "../src/github/Proxy.ts"
 import { DEFAULT_LIMITS } from "../src/github/RateLimit.ts"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
+import { fetchLayer, gitHubClient as client } from "./Http.ts"
 
 const TOKEN = "ghs_operator_token"
 const closers: Array<() => Promise<void>> = []
@@ -43,7 +44,7 @@ const proxy = async (upstream: Fixture, options: Partial<ProxyOptions> = {}): Pr
   const context = await Effect.runPromise(Layer.buildWithScope(
     Layer.provideMerge(
       layer({ upstream: upstream.origin, credential: operator, ...options }),
-      NodeHttpServer.layer(createServer, { port: 0, host: "127.0.0.1" })
+      Layer.merge(NodeHttpServer.layer(createServer, { port: 0, host: "127.0.0.1" }), fetchLayer)
     ),
     scope
   ))
@@ -81,22 +82,37 @@ describe("GitHub proxy forwarding", () => {
     expect(sent?.headers["x-github-api-version"]).toBe("2022-11-28")
   })
 
-  it("keeps pagination on the proxy and answers redirects without following them", async () => {
-    const upstream = await github((request, response) => {
-      if (request.url === "/moved") {
-        response.writeHead(301, { location: "https://api.github.com/elsewhere" })
-        response.end()
-        return
-      }
+  it("keeps pagination on the proxy", async () => {
+    const upstream = await github((_request, response) =>
       json(response, 200, [1], { link: `<${upstream.origin}/repos/o/r/issues?page=2>; rel="next"` })
-    })
+    )
     const origin = await proxy(upstream)
     const page = await fetch(`${origin}/repos/o/r/issues`)
     expect(page.headers.get("link")).toBe(`<${origin}/repos/o/r/issues?page=2>; rel="next"`)
-    const moved = await fetch(`${origin}/moved`, { redirect: "manual" })
-    expect(moved.status).toBe(301)
-    expect(upstream.requests.map((request) => request.url)).toEqual(["/repos/o/r/issues", "/moved"])
   })
+
+  // Following GitHub's redirect would send the operator's credential, which
+  // the proxy injected, to the origin the Location names.
+  it.each([["GET", 302], ["POST", 307]] as const)(
+    "answers a %s redirected %i to another origin without following it",
+    async (method, status) => {
+      const elsewhere = await github((_request, response) => json(response, 200, { stolen: true }))
+      const upstream = await github((_request, response) => {
+        response.writeHead(status, { location: `${elsewhere.origin}/captured` })
+        response.end()
+      })
+      const origin = await proxy(upstream)
+      const moved = await fetch(`${origin}/repos/o/r/issues`, {
+        method,
+        redirect: "manual",
+        ...(method === "GET" ? {} : { body: "{}" })
+      })
+      expect(moved.status).toBe(status)
+      expect(moved.headers.get("location")).toBe(`${elsewhere.origin}/captured`)
+      expect(upstream.requests.map((request) => request.headers["authorization"])).toEqual([`Bearer ${TOKEN}`])
+      expect(elsewhere.requests).toHaveLength(0)
+    }
+  )
 
   it("lets a GitHubClient paginate through it with no token of its own", async () => {
     const upstream = await github((request, response) =>
@@ -136,6 +152,9 @@ describe("GitHub proxy capability", () => {
     const origin = await proxy(upstream, { capability: "cap-secret" })
     expect((await fetch(`${origin}/repos/o/r`)).status).toBe(401)
     expect((await fetch(`${origin}/repos/o/r`, { headers: { authorization: "Bearer wrong" } })).status).toBe(401)
+    // As long as the capability, or extending it: refused without a length shortcut.
+    expect((await fetch(`${origin}/repos/o/r`, { headers: { authorization: "Bearer cap-secreX" } })).status).toBe(401)
+    expect((await fetch(`${origin}/repos/o/r`, { headers: { authorization: "Bearer cap-secret2" } })).status).toBe(401)
     expect((await fetch(`${origin}/_smithers/admission?repo=o/r`)).status).toBe(401)
     expect(upstream.requests).toHaveLength(0)
     const ok = await fetch(`${origin}/repos/o/r`, { headers: { authorization: "token cap-secret" } })
@@ -166,7 +185,7 @@ describe("GitHub proxy control endpoints", () => {
   })
 
   it("defaults to api.github.com and GitHub's limits", async () => {
-    const app = await Effect.runPromise(make({ credential: operator }))
+    const app = await Effect.runPromise(Effect.provide(make({ credential: operator }), fetchLayer))
     expect(Effect.isEffect(app)).toBe(true)
   })
 })
@@ -205,12 +224,15 @@ describe("GitHub proxy rate limit", () => {
     const source = new URL("../src/github/GitHubClient.ts", import.meta.url).href
     const writer = `
       import { Effect } from "effect"
+      import { FetchHttpClient } from "effect/http"
       import { make } from ${JSON.stringify(source)}
-      const github = make({ apiBaseUrl: process.argv[1] }, {})
-      await Effect.runPromise(Effect.all(
-        [1, 2, 3].map((n) => github.request("POST", "/repos/o/r/issues/1/comments", { body: String(n) })),
-        { concurrency: "unbounded" }
-      ))
+      await Effect.runPromise(Effect.gen(function*() {
+        const github = yield* make({ apiBaseUrl: process.argv[1] }, {})
+        yield* Effect.all(
+          [1, 2, 3].map((n) => github.request("POST", "/repos/o/r/issues/1/comments", { body: String(n) })),
+          { concurrency: "unbounded" }
+        )
+      }).pipe(Effect.provide(FetchHttpClient.layer)))
     `
     const spawn = () =>
       promisify(execFile)(process.execPath, ["--input-type=module", "-e", writer, origin], {

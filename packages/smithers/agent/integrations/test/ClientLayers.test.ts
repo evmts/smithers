@@ -1,6 +1,7 @@
 import { Cause, Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import * as GitHubClient from "../src/github/GitHubClient.ts"
+import { fetchLayer, gitHubLayer } from "./Http.ts"
 
 // A bad config used to throw out of `Layer.sync`, which dies as a defect that
 // `catchTag` and `Effect.flip` cannot see, behind a `Layer<Client>` type that
@@ -8,7 +9,7 @@ import * as GitHubClient from "../src/github/GitHubClient.ts"
 describe("client layers", () => {
   it.each(
     [
-      ["GitHub", GitHubClient.layer({ apiBaseUrl: "not a url" }, {}), "INTEGRATION_ERROR"]
+      ["GitHub", gitHubLayer({ apiBaseUrl: "not a url" }, {}), "INTEGRATION_ERROR"]
     ] as const
   )("fails the %s layer build with a typed error for a bad config", async (_name, layer, code) => {
     const failure = await Effect.runPromise(
@@ -21,7 +22,7 @@ describe("client layers", () => {
   // and stays a defect.
   it.each(
     [
-      ["GitHub", () => GitHubClient.layer(null as never, {})]
+      ["GitHub", () => gitHubLayer(null as never, {})]
     ] as const
   )("keeps a non-config throw from the %s layer a defect", async (_name, layer) => {
     const exit = await Effect.runPromiseExit(Effect.scoped(Layer.build(layer() as Layer.Layer<unknown, unknown>)))
@@ -29,9 +30,19 @@ describe("client layers", () => {
     if (exit._tag === "Failure") expect(Cause.hasDies(exit.cause)).toBe(true)
   })
 
+  // The layer takes its transport from context, so a caller can hand it any
+  // HttpClient, the fetch one or a test service.
+  it("requires an HttpClient and builds over the one provided", async () => {
+    const layer = GitHubClient.layer({ token: "t" }, {})
+    const client = await Effect.runPromise(
+      Effect.provide(Effect.service(GitHubClient.GitHubClient), Layer.provide(layer, fetchLayer))
+    )
+    expect(typeof client.paginate).toBe("function")
+  })
+
   it("builds the layer for a valid config", async () => {
     const client = await Effect.runPromise(
-      Effect.provide(Effect.service(GitHubClient.GitHubClient), GitHubClient.layer({ token: "t" }, {}))
+      Effect.provide(Effect.service(GitHubClient.GitHubClient), gitHubLayer({ token: "t" }, {}))
     )
     expect(typeof client.request).toBe("function")
   })

@@ -25,37 +25,57 @@ Passing an `env` record as the second argument to `make`, `layer`, or
 code that carries its own credentials cannot have an ambient `GITHUB_TOKEN`
 decide which account a call runs as.
 
+GitHub authenticates its `/applications/{client_id}/...` endpoints as the App's
+OAuth client, not with a token. Pass `clientCredentials` and the client sends
+the client id and secret as HTTP Basic in place of any token; error text never
+carries either.
+
+```ts
+const app = yield* GitHub.GitHubClient.make({ clientCredentials: { clientId, clientSecret } }, {})
+// Revokes a user's token: 204, or 404 or 422 when GitHub no longer has it.
+yield* app.request("DELETE", `/applications/${clientId}/token`, { access_token })
+```
+
 ## Call the REST API
 
 Build the client with `GitHub.GitHubClient.make` for direct use, or
-`GitHub.GitHubClient.layer` when a flow composition needs it in context.
+`GitHub.GitHubClient.layer` when a flow composition needs it in context. Both
+send HTTP through Effect's `HttpClient`: provide `FetchHttpClient.layer` from
+`effect/http`, or, in a test, a client of your own that injects a transport
+fault.
 
 ```ts
 import { GitHub } from "@smthrs/integrations"
 import { Effect, Schema } from "effect"
-
-const client = GitHub.GitHubClient.make({})
+import { FetchHttpClient } from "effect/http"
 
 const Viewer = Schema.Struct({ login: Schema.String })
 
 const program = Effect.gen(function*() {
+  const client = yield* GitHub.GitHubClient.make({})
   const viewer = yield* client.request("GET", "/user", undefined, { schema: Viewer })
   return viewer.login
-})
+}).pipe(Effect.provide(FetchHttpClient.layer))
 ```
+
+The client never follows a redirect. It sets the fetch transport's `redirect`
+to `"manual"`, so a 3xx fails `delivery-failed` with its status and the token
+never reaches the `Location` host.
 
 The response type comes from the schema. Without one, `request` returns the
 parsed JSON as `unknown`, because the client checked nothing and so promises
 nothing.
 
-`request` retries a rate limit for every method, waiting the server's
-`Retry-After` or `x-ratelimit-reset` capped at one minute. To keep a whole
-machine inside GitHub's limits, send it through the
-[GitHub proxy](#stay-inside-githubs-rate-limits). A 5xx or a dropped
-connection is retried only for a read. On a write it reports
+`request` makes one request and never repeats it. Call it from a durable flow
+step, and that step's retry policy is the retry: it survives a crash and waits
+what GitHub asked. A rate limit fails `retryable` for every method, with the
+server's `Retry-After` or `x-ratelimit-reset`, capped at one minute, as
+`details.retryAfterMillis`. To keep a whole machine inside GitHub's limits,
+send it through the [GitHub proxy](#stay-inside-githubs-rate-limits). A 5xx or
+a dropped connection is `retryable` only for a read. On a write it reports
 `outcomeUnknown: true` in the failure's `details`, because GitHub may have
 applied the write and lost the answer. If you know your endpoint is
-idempotent, opt into repeating writes per call:
+idempotent, mark its lost writes retryable per call:
 
 ```ts
 yield * client.request("POST", path, body, { retryUnsafeWrites: true })
@@ -114,8 +134,9 @@ export SMITHERS_GITHUB_API_BASE_URL=http://127.0.0.1:47821
 ```
 
 A request the proxy will not wait for (more than a minute) fails
-`rate-limited` with `details.retryAt`, and nothing reached GitHub. In a flow,
-sleep durably until that instant rather than retrying at once.
+`rate-limited` with `details.retryAt`, and nothing reached GitHub. It is not
+`retryable`: in a flow, sleep durably until that instant with
+`DurableClock.sleep` rather than retrying at once.
 
 `gh api` reaches the proxy when you give it an absolute URL. `gh` sends no
 token to a host it has no login for, and `GH_ENTERPRISE_TOKEN` satisfies its

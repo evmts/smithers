@@ -41,22 +41,37 @@ team, the message may already have been read. Deleting the evidence
 afterwards is a different call with a different outcome, so the engine never
 retries an unkeyed one on its own.
 
-Neither does the client underneath, and the line it draws is worth knowing:
+## The engine is the only retry
 
-- A rate limit is retried for every method. A refused request was not
-  performed, so repeating it is safe.
+The clients never repeat a request. Every retry is the flow engine's: the
+`retryPolicy` of the step that made the call decides whether there is another
+attempt, and its attempt count is durable, so a process that dies between
+attempts resumes on the next one instead of starting over. What the client
+owns is the classification that policy reads:
+
+- A rate limit is `retryable` for every method. A refused request was not
+  performed, so repeating it is safe. The server's `Retry-After`, or for an
+  exhausted budget its `x-ratelimit-reset`, capped at one minute, becomes
+  `retryAfterMillis`, and the engine waits that instead of its backoff.
+- A 5xx or a dropped connection on a read is `retryable`, with a 5xx's
+  `Retry-After`.
 - A 5xx or a dropped connection on a write (a POST, PATCH, PUT, DELETE, or a
-  GraphQL mutation) is not repeated. The provider may have committed it and
-  lost the answer, so the failure reports `outcomeUnknown` rather than
-  posting the comment twice. A caller that knows its endpoint is idempotent
-  opts in with `retryUnsafeWrites` on `GitHubClient.request`.
+  GraphQL mutation) is not. The provider may have committed it and lost the
+  answer, so the failure reports `outcomeUnknown` rather than posting the
+  comment twice. A caller that knows its endpoint is idempotent opts in with
+  `retryUnsafeWrites` on `GitHubClient.request`.
+
+`CommentOnIssue` declares no retry policy, so a rate-limited comment fails
+with the server's `retryAfterMillis` and a flow may call again once it has
+passed.
 
 ## Keyed write-back
 
 The GitHub write-back actions
 read before they write, which makes a repeat safe. They declare an
-`idempotencyKey` and a retry policy, so the engine repeats one after a lost
-answer or a process that died mid-step:
+`idempotencyKey` and `Core.ActionFailure.retryPolicy`, so the engine repeats
+one after a rate limit, a lost answer, or a process that died mid-step. One
+write reaches GitHub at most three times:
 
 - `AddLabels` adds only the labels the issue lacks.
 - `UpsertComment` finds its comment by a hidden `<!-- smithers:key=... -->`
@@ -76,8 +91,17 @@ The retry backoff narrows that window; it does not close it.
 `IntegrationError` is a class, and a class cannot cross the journal. A
 durable action has to write its failure down and read it back after a
 restart, so the action boundary uses a schema instead:
-`Core.ActionFailure.IntegrationFailure`. Its fields are the ones an operator
-reads after a restart:
+`Core.ActionFailure.Failure`, two tagged errors with the same fields.
+
+The engine decides retries from a failure's tag, against the policy's
+`nonRetryable` list, so the classification crosses as the tag.
+`RetryableIntegrationFailure` is a failure another attempt may clear: a rate
+limit, a 5xx or lost connection on a repeatable request, or a lost write in a
+step that reads before it writes. `IntegrationFailure` is every other failure,
+and `retryPolicy` lists its tag as non-retryable, so the engine reports it at
+once. The client decides which, once; nothing else re-decides.
+
+The fields are the ones an operator reads after a restart:
 
 | Field                 | Meaning                                                                     |
 | --------------------- | --------------------------------------------------------------------------- |
@@ -86,10 +110,14 @@ reads after a restart:
 | `retryable`           | Whether another attempt could clear it.                                     |
 | `outcomeUnknown`      | The write may already have been applied. Absent when it definitely was not. |
 | `deliveredMessageIds` | Ids a partially completed external delivery already produced.               |
+| `retryAfterMillis`    | How long the server asked to wait before another attempt.                   |
 
 `outcomeUnknown` is the difference between "this did not happen" and "nobody
 knows", and an operator deciding whether to run the step again needs it, so
 it crosses the journal rather than living only on the client error.
+
+`retryAfterMillis` crosses the journal under the name the engine's
+`RetryPolicy.decide` reads, so a resumed run still waits what the server asked.
 
 The conversion into the schema is total. `fromIntegrationError` reports any
 failure that is not a well-formed `IntegrationError` (a forged name, a reason
@@ -103,8 +131,11 @@ control-plane mappings.
 
 ## Write your own action
 
-An application that needs an endpoint these three do not cover writes its own
-`Action.make` over the same client. That is the intended extension point, not
+An application that needs an endpoint these actions do not cover writes its
+own `Action.make` over the same client, with `error: Core.ActionFailure.Failure`,
+`retryPolicy: Core.ActionFailure.retryPolicy`, and its client errors mapped
+with `fromIntegrationError`. Pass `{ reconciles: true }` only when the step
+reads before it writes, so a lost write is safe to repeat. That is the intended extension point, not
 a gap: the client is the reusable part, and the action is a thin declaration
 plus a `toLayer` implementation. The [API reference](../api.md) lists the
 client methods available to build on.

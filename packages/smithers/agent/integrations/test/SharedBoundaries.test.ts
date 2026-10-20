@@ -1,12 +1,10 @@
 import { Effect, Redacted } from "effect"
-import { afterEach, expect, it, vi } from "vitest"
+import { expect, it } from "vitest"
 import * as AccessToken from "../src/core/AccessToken.ts"
 import * as Channel from "../src/core/Channel.ts"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
 import { readHeader } from "../src/core/JsonPath.ts"
-import { computeHmacSha256Hex, verifySignature } from "../src/core/Signature.ts"
 
-afterEach(() => vi.restoreAllMocks())
 const event = {
   source: "example",
   eventName: "integration:example:opened",
@@ -54,18 +52,6 @@ it("preserves a provider-safe decoder refusal through the shared channel", async
     Effect.flip(channel.decode({ body: new TextEncoder().encode("{}"), headers: {}, idempotencyKey: "one" }))
   )
   expect(failure).toMatchObject({ _tag: "/control/InvalidInput", issue: "invalid event" })
-})
-
-it("refuses a signature if the byte decoder fails instead of killing the ingress", () => {
-  const signature = Buffer.from(computeHmacSha256Hex("body", "secret"), "hex").toString("base64")
-  const from = Buffer.from
-  vi.spyOn(Buffer, "from").mockImplementation(
-    ((value: any, encoding: any) => {
-      if (encoding === "base64") throw new Error("decoder unavailable")
-      return from(value, encoding)
-    }) as typeof Buffer.from
-  )
-  expect(verifySignature({ payload: "body", secret: "secret", signature })).toBe(false)
 })
 
 it("projects nothing by default while preserving a stable run cursor", () => {
