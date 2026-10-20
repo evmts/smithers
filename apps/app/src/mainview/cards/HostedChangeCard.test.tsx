@@ -1,3 +1,4 @@
+import { lintCopy } from "./productWords"
 import { readFileSync } from "node:fs"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, expect, test } from "bun:test"
@@ -149,18 +150,26 @@ test("stage details have real disclosures, measured durations and no empty contr
   expect(h.host.querySelector(".hosted-change-file span")?.textContent).toBe("+18")
   h.close()
 })
-test("failed-test sentence highlights only the outcome and preserves deletion counts", () => {
-  const h = render({
-    ...base,
-    result: { ...base.result!, test_receipt: { ...base.result!.test_receipt!, exit_code: 1 } },
-    files: [{ path: "src/slug.ts", additions: 18, deletions: 2 }]
-  })
-  expect(h.host.querySelector(".hosted-change-failure")?.textContent).toBe("Tests failed (exit 1).")
-  expect(h.host.querySelector(".hosted-change-failure")?.parentElement?.textContent).toBe(
-    "Tests failed (exit 1). You can still open a pull request; the failure goes in its description."
-  )
+test("a failing test reads as a result to review, not an error, and preserves deletion counts", () => {
+  const failing = { ...base.result!, test_receipt: { ...base.result!.test_receipt!, exit_code: 1 } }
+  const h = render({ ...base, result: failing, files: [{ path: "src/slug.ts", additions: 18, deletions: 2 }] })
+  const result = h.host.querySelector(".hosted-change-test-result")!
+  expect([...result.querySelectorAll("p")].map(p => p.textContent)).toEqual([
+    "Smithers ran your tests: bun test exited 1 (33 tests).",
+    "Review the diff before you open a pull request.",
+    "The failure goes in its description."
+  ])
+  // Each sentence is its own block within the copy rules; the command is the repository's content.
+  expect(lintCopy(result)).toEqual([])
+  expect(result.querySelector("code[data-content]")?.textContent).toBe("bun test")
+  expect(h.host.querySelector(".hosted-change-failure")).toBeNull()
+  expect(h.host.querySelector(".hosted-change-chip")?.textContent).toBe("Tests failed")
   expect(h.host.querySelector(".hosted-change-file span")?.textContent).toBe("+18 −2")
   h.close()
+  const pr = render({ ...base, result: failing, pull: { landing_number: 1, branch: "change", pull_number: 37,
+    pull_url: "https://github.com/maya/tinyhttp/pull/37", head_commit: "abc", tested: true, passed: false } })
+  expect(pr.host.textContent).not.toContain("Your review is next")
+  pr.close()
 })
 test("an observed GitHub merge names its person and commit without offering a merge", () => {
   const h = render({
@@ -264,7 +273,7 @@ test.each([
   expect(h.host.querySelector('.hosted-change-detail code')?.textContent ?? null).toBe(commit === 'abc' ? 'bun test' : null)
   expect(h.host.querySelector('.hosted-change-chip')?.textContent).toBe(commit === 'abc' && !passed ? 'Tests failed' : 'Done')
   expect(h.host.querySelector('[data-flow="change.open-pull"]')?.classList.contains('repo-ui-btn-primary')).toBe(passed)
-  if (!passed) expect(h.host.textContent).toContain(commit !== 'abc' ? 'Tests not run at this commit' : tests_run === 0 ? 'No tests ran.' : 'Tests failed (exit 1).')
+  if (!passed) expect(h.host.textContent).toContain(commit !== 'abc' ? 'Tests not run at this commit' : tests_run === 0 ? 'No tests ran.' : 'Smithers ran your tests: bun test exited 1 (33 tests).')
   h.close()
   const pr = render({ ...row, pull: { landing_number: 1, branch: 'change', pull_number: 37, pull_url: 'https://github.com/maya/tinyhttp/pull/37', head_commit: 'abc', tested: commit === 'abc', passed } })
   expect(pr.host.querySelector('.hosted-change-pull')?.textContent).toContain(`main is unchanged.${passed ? ' Your review is next.' : ''}`)

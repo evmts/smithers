@@ -147,19 +147,18 @@ export const HostedChangeView = ({ row, run: runCommand }: { row: HostedObservat
             </div>
           ))}
           <p><TestingText testing={view.testing} /></p>
-          {view.testing.note && (
-            <p>
-              {view.testing.tested && row.result?.test_receipt && row.result.test_receipt.exit_code !== 0 ? (
-                <>
-                  <span className="hosted-change-failure">
-                    Tests failed (exit {row.result.test_receipt.exit_code}).
-                  </span>{" "}
-                  You can still open a pull request; the failure goes in its description.
-                </>
-              ) : (
-                view.testing.note
-              )}
-            </p>
+          {view.testing.failing ? (
+            <div className="hosted-change-test-result">
+              <p>
+                Smithers ran your tests: <code data-content>{view.testing.failing.command}</code> exited{" "}
+                {view.testing.failing.exitCode}
+                {view.testing.failing.testsRun === null ? "" : ` (${view.testing.failing.testsRun} tests)`}.
+              </p>
+              <p>Review the diff before you open a pull request.</p>
+              <p>The failure goes in its description.</p>
+            </div>
+          ) : (
+            view.testing.note && <p>{view.testing.note}</p>
           )}
           {!row.pull && (
             <button className={`repo-ui-btn${view.testing.passed ? " repo-ui-btn-primary" : ""}`} {...open}>

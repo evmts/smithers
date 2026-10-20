@@ -119,9 +119,15 @@ export const testingCopy = (result: CodingResult | null) => {
         : receipt.tests_run === 0
           ? "No tests ran. You can still open a pull request; this goes in its description."
           : !passed
-            ? `Tests failed (exit ${receipt.exit_code}). You can still open a pull request; the failure goes in its description.`
+            ? // A failing test is a result Smithers reports, not a product error (PM d-wjx0ua). No "N of M":
+              // the receipt carries no failed count, and runner output is never parsed for one.
+              `Smithers ran your tests: ${receipt.command} exited ${receipt.exit_code}${receipt.tests_run === null ? "" : ` (${receipt.tests_run} tests)`}. Review the diff before you open a pull request. The failure goes in its description.`
             : null
-  return { tested, passed, text, note, command: tested ? receipt.command : null }
+  // The failing note's facts, for a card that sets each of its three sentences as its own block (lintCopy).
+  const failing = tested && !passed && receipt.tests_run !== 0
+    ? { command: receipt.command, exitCode: receipt.exit_code, testsRun: receipt.tests_run }
+    : null
+  return { tested, passed, text, note, failing, command: tested ? receipt.command : null }
 }
 export const finishedCopy = (session: HostedSession | null): string | null => {
   const start = session?.run?.started_at
