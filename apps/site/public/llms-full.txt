@@ -4328,8 +4328,8 @@ directly. Both packages are on npm under the `next` tag.
 
 The `exports` map publishes the index, every module under `src` through the `./*` subpath, and the manifest:
 
-| Import                         | Source          | Platform        |
-| ------------------------------ | --------------- | --------------- |
+| Import                         | Source          | Platform         |
+| ------------------------------ | --------------- | ---------------- |
 | `@smthrs/targets`              | `src/index.ts`  | Node.js 22.19.0+ |
 | `@smthrs/targets/Target`       | `src/Target.ts` | Node.js 22.19.0+ |
 | `@smthrs/targets/package.json` | `package.json`  | Node.js 22.19.0+ |
@@ -14342,7 +14342,7 @@ than a typed failure because neither refusal is recoverable at run time.
 
 | Code                        | Refused when                                                       | Message                                                                                                        |
 | --------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `unsupported_runtime`       | `process.versions.bun` is set                                      | `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=22.19.0`                       |
+| `unsupported_runtime`       | `process.versions.bun` is set                                      | `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=22.19.0`                      |
 | `unsupported_database_file` | the file has at least one table and no `flows_migrations` table    | `<path> is not a Smithers 1.0 database (1.0.0-rc.16 does not load a 0.x smithers.db)`                          |
 | `database_locked`           | a peer held the file for the whole open ladder                     | `<path> could not be inspected because another process holds it`                                               |
 | `postgres_url_missing`      | `SMITHERS_BACKEND=postgres` with no PostgreSQL URL set             | `PostgreSQL requires SMITHERS_POSTGRES_URL or DATABASE_URL`                                                    |
@@ -31729,7 +31729,7 @@ commands use, and fails that operation with `JjError` `not_installed` or
 
 | Requirement                     | Why                                                                   |
 | ------------------------------- | --------------------------------------------------------------------- |
-| Node.js >=22.19.0                | the minimum this package's `engines` field declares                   |
+| Node.js >=22.19.0               | the minimum this package's `engines` field declares                   |
 | the `smithers-jj-export` helper | `AtomicFileSystem` runs every guarded filesystem operation through it |
 | a POSIX host                    | Windows has none of those primitives and is unsupported               |
 

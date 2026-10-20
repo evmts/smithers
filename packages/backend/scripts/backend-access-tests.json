@@ -127,6 +127,16 @@
   },
   {
     "package": "packages/backend/internal/compose",
+    "file": "agent_session_landing_credential_test.go",
+    "tests": [
+      "TestSessionLandingRawAgentCredentialBeforeAuthLoader",
+      "TestSessionLandingRealGuestCookieHasNoAuthority",
+      "TestHostedPullPublicationCredentials",
+      "TestSessionLandingHostedExactOriginComposed"
+    ]
+  },
+  {
+    "package": "packages/backend/internal/compose",
     "file": "archive_route_authorization_integration_test.go",
     "tests": [
       "TestChatArchiveRoutesAuthorizeByActorPostgres"
@@ -171,6 +181,21 @@
     "tests": [
       "TestFlowWorkerRechecksMeteredAdmissionBeforeHostLaunch",
       "TestTodoAndReviewHostsDifferOnlyInLandingAuthorityPostgres"
+    ]
+  },
+  {
+    "package": "packages/backend/internal/compose",
+    "file": "flow_admission_payer_integration_test.go",
+    "tests": [
+      "TestBranchMachineHostStartIsAdmittedUnderItsRepositoryPayer",
+      "TestUnlistedOrganizationHostStartIsAdmittedUnderItsOwnPlan"
+    ]
+  },
+  {
+    "package": "packages/backend/internal/compose",
+    "file": "flow_admission_sandbox_limit_integration_test.go",
+    "tests": [
+      "TestAPlanRefusedHostStartEndsItsRunAtOnceTyped"
     ]
   },
   {
@@ -584,6 +609,13 @@
   },
   {
     "package": "packages/backend/internal/compose",
+    "file": "org_member_add_test.go",
+    "tests": [
+      "TestOrgMemberAddIsClosedOnHosted"
+    ]
+  },
+  {
+    "package": "packages/backend/internal/compose",
     "file": "parallel_admission_integration_test.go",
     "tests": [
       "TestParallelAdmissionInstallBoundary",
@@ -806,6 +838,14 @@
   },
   {
     "package": "packages/backend/internal/services",
+    "file": "core_pool_person_start_pg_test.go",
+    "tests": [
+      "TestAPersonStartOfAMachineOwnedBranchIsAdmittedAtTheShippedCorePool",
+      "TestRefusedRetainedGuestStopsAreCountedByKindStageAndPool"
+    ]
+  },
+  {
+    "package": "packages/backend/internal/services",
     "file": "git_http_proxy_ref_admission_test.go",
     "tests": [
       "TestGitHTTPProxyService_ReceivePack_RefusesPseudorefsForEveryCredential"
@@ -838,7 +878,8 @@
       "TestGitMirrorCredentialsNativeTargetRequiresVerifiedConnection",
       "TestMirrorCredentialUsesURLScopedHeader",
       "TestGitMirrorInternalRefsDoNotFailAnOtherwiseSyncedRepository",
-      "TestGitMirrorPreservesNotesAndCustomRefScope"
+      "TestGitMirrorPreservesNotesAndCustomRefScope",
+      "TestResolveGitHubDestinationRefusesANativeRepositoryTyped"
     ]
   },
   {
@@ -1042,6 +1083,13 @@
     "file": "provider_credentials_test.go",
     "tests": [
       "TestIsUsableProviderCredential"
+    ]
+  },
+  {
+    "package": "packages/backend/internal/services",
+    "file": "repository_jobs_member_events_test.go",
+    "tests": [
+      "TestRepositoryJobsAdmitOnlyMemberEventsOnHosted"
     ]
   },
   {

@@ -25,8 +25,8 @@ directly. Both packages are on npm under the `next` tag.
 
 The `exports` map publishes the index, every module under `src` through the `./*` subpath, and the manifest:
 
-| Import                         | Source          | Platform        |
-| ------------------------------ | --------------- | --------------- |
+| Import                         | Source          | Platform         |
+| ------------------------------ | --------------- | ---------------- |
 | `@smthrs/targets`              | `src/index.ts`  | Node.js 22.19.0+ |
 | `@smthrs/targets/Target`       | `src/Target.ts` | Node.js 22.19.0+ |
 | `@smthrs/targets/package.json` | `package.json`  | Node.js 22.19.0+ |
