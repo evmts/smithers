@@ -9,7 +9,8 @@
  *
  * - forwards only the Electric client's protocol parameters, so a browser
  *   can follow the shape but not change it;
- * - sets the table, and optionally a `where` and its `params`, from the host;
+ * - sets the table, and optionally a `where`, its `params` and the `columns`
+ *   a browser receives, from the host;
  * - drops every other parameter, subset requests' (`subset__*`) included, so
  *   a browser reads the whole shape or nothing;
  * - adds Electric's `secret` and Electric Cloud's `source_id`;
@@ -49,7 +50,8 @@ export interface Connection {
 
 /**
  * The shape every request reads, chosen by the host. `where` and `params`
- * narrow it for every request, for example to one account's rows.
+ * narrow it for every request, for example to one account's rows, and
+ * `columns` to the columns a browser may see.
  *
  * @category models
  * @since 0.1.0
@@ -59,6 +61,15 @@ export interface Shape {
   readonly where?: string | undefined
   /** The values of `where`'s `$1`, `$2`, ... placeholders, keyed `"1"`, `"2"`, ... */
   readonly params?: Readonly<Record<string, string>> | undefined
+  /**
+   * The only columns Electric sends, sent as `columns`; every column when
+   * omitted. Name each as Electric quotes it, and include the primary key.
+   * A column added to the table later stays on the server until the host
+   * lists it.
+   *
+   * @since 0.2.0
+   */
+  readonly columns?: ReadonlyArray<string> | undefined
 }
 
 /**
@@ -213,6 +224,7 @@ export const make = (
       ["table", options.shape.table],
       ...(options.shape.where === undefined ? [] : [["where", options.shape.where] as const]),
       ...Object.entries(options.shape.params ?? {}).map(([key, value]) => [`params[${key}]`, value] as const),
+      ...(options.shape.columns === undefined ? [] : [["columns", options.shape.columns.join(",")] as const]),
       // Redacted, so the client span's `url.full` shows `secret=REDACTED`; the request carries the value.
       ...(options.secret === undefined ? [] : [["secret", options.secret] as const]),
       ...(options.sourceId === undefined ? [] : [["source_id", options.sourceId] as const])

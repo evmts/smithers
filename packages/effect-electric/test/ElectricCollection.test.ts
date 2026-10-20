@@ -324,6 +324,21 @@ describe.skipIf(!electricUp)("sync status and the sync policy", () => {
     expect(result.resumedFrom).not.toBe("-1")
   })
 
+  test("a subscriber that starts after the shape stopped still hears it stopped", async () => {
+    const events = await run(Effect.gen(function*() {
+      const { table } = yield* scratchTable
+      const { faults, collection: notes } = yield* faulty(notesOf(table))
+      const early = yield* record(notes)
+      yield* faults.refuse(400)
+      yield* notes.preload.pipe(Effect.ignore, Effect.forkScoped)
+      yield* eventually(() => early.includes("Stopped:400"))
+      const late = yield* record(notes)
+      yield* eventually(() => late.length > 0)
+      return late
+    }))
+    expect(events).toEqual(["Stopped:400"])
+  })
+
   test.each([
     ["a network failure", (faults: ShapeSource.Switches) => faults.down(), "Stopped:none"],
     ["a 503", (faults: ShapeSource.Switches) => faults.refuse(503), "Stopped:503"]

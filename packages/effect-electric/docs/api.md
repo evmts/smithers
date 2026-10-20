@@ -95,7 +95,7 @@ included, and:
 
 | Field        | Does                                                                                                                                                                     |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `sync`       | The shape's sync status: each request's outcome, and the shape stopping, from when the stream starts.                                                                    |
+| `sync`       | The shape's sync status: each request's outcome, and the shape stopping. A stream started late begins with the latest event.                                             |
 | `reconnect`  | Sends every request waiting out the policy now, and restarts a stopped shape where it stopped.                                                                           |
 | `awaitTxId`  | Waits until Electric delivers Postgres transaction `txid` and TanStack DB has applied it.                                                                                |
 | `awaitMatch` | Waits until Electric delivers a change `match` accepts and TanStack DB has applied it. A change already applied and still among the collection's recent messages counts. |
@@ -288,11 +288,11 @@ const config: (options?: { readonly url?: string }) => Config.Config<Connection>
 const defaultMetric: Metric.Counter<number>
 ```
 
-| Model        | Fields                                                                                             |
-| ------------ | -------------------------------------------------------------------------------------------------- |
-| `Connection` | `url: string`, `secret?: Redacted<string>`, `sourceId?: string`                                    |
-| `Shape`      | `table: string`, `where?: string`, `params?: Readonly<Record<string, string>>`                     |
-| `Options`    | everything in `Connection`, and `shape: Shape`, `name?: string`, `metric?: Metric.Counter<number>` |
+| Model        | Fields                                                                                                                                                               |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Connection` | `url: string`, `secret?: Redacted<string>`, `sourceId?: string`                                                                                                      |
+| `Shape`      | `table: string`, `where?: string`, `params?: Readonly<Record<string, string>>`, `columns?: ReadonlyArray<string>` (the only columns sent; every column when omitted) |
+| `Options`    | everything in `Connection`, and `shape: Shape`, `name?: string`, `metric?: Metric.Counter<number>`                                                                   |
 
 `make` serves one shape; `config` reads `ELECTRIC_URL`, `ELECTRIC_SECRET` and
 `ELECTRIC_SOURCE_ID`; `defaultMetric` is the `electric_shape_requests` counter

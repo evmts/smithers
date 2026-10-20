@@ -52,7 +52,8 @@ The proxy builds every upstream request itself, in this order:
    `experimental_live_sse`, `cursor`, `expired_handle`, `log` and
    `cache-buster`.
 2. The host's shape: `table`, then `where` and its `params` when `shape` sets
-   them, as `params[1]`, `params[2]` and so on.
+   them, as `params[1]`, `params[2]` and so on, then `columns`, comma-separated,
+   when `shape` lists them.
 3. `secret` and `source_id`, when the connection has them.
 
 Every other parameter the browser sends is dropped, including `table`,
@@ -101,5 +102,8 @@ clause or a parameter value.
 ## Limits
 
 - **The shape is the read boundary.** A browser reads the whole shape. To keep
-  a browser to some rows, set `shape.where` and `shape.params` on the server.
+  a browser to some rows, set `shape.where` and `shape.params` on the server;
+  to keep a column on the server, list the others in `shape.columns`, the
+  primary key included. A column added to the table later stays on the server
+  until you list it.
 - **Tested with `@electric-sql/client` 1.5.28 and Electric 1.8.1.**

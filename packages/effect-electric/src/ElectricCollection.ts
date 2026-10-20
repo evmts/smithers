@@ -137,7 +137,10 @@ export interface Persist<A extends object> {
 export interface ElectricCollection<A extends object>
   extends Collection.Collection<A, Key, ElectricCollectionUtils<Row<unknown>>>
 {
-  /** The shape's sync status: each request's outcome, and the shape stopping, from when the stream starts. */
+  /**
+   * The shape's sync status: each request's outcome, and the shape stopping. A stream started late begins with the
+   * latest event, so a shape that stopped before anyone listened still says so.
+   */
   readonly sync: Stream.Stream<SyncEvent>
   /** Sends every request waiting out the sync policy now, and restarts a stopped shape where it stopped. */
   readonly reconnect: Effect.Effect<void>
@@ -231,7 +234,8 @@ export function make<A extends Row<unknown>, E = never, R = never>(
     const run = <X, Y>(effect: Effect.Effect<X, Y, R>, signal: AbortSignal) =>
       Effect.runPromiseWith(context)(effect, { signal })
 
-    const events = yield* PubSub.unbounded<SyncEvent>()
+    // The latest event is replayed to each new subscriber: a status read after the fact is still the status.
+    const events = yield* PubSub.unbounded<SyncEvent>({ replay: 1 })
     const publish = (event: SyncEvent) => PubSub.publish(events, event)
     const woken = yield* Latch.make(false)
     const restart = yield* Latch.make(false)

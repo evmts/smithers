@@ -236,12 +236,12 @@ describe("faults: no Electric needed", () => {
 })
 
 describe.skipIf(!electricUp)("through Electric", () => {
-  test("forwards only the protocol parameters, the first of each, then the host's shape and credentials", async () => {
+  test("forwards only the protocol parameters, the first of each, then the host's shape, its columns, and credentials", async () => {
     const secret = "electric-secret-4b2d"
     const h = harness({
       secret: Redacted.make(secret),
       sourceId: "source-1",
-      shape: { table: "items", where: "\"position\" > $1", params: { "1": "0" } }
+      shape: { table: "items", where: "\"position\" > $1", params: { "1": "0" }, columns: ["id", "position"] }
     })
     await h.request(
       "?table=users&offset=-1&where=true&handle=h-1&offset=0_0&live=false&cursor=7&live_sse=false" +
@@ -261,6 +261,7 @@ describe.skipIf(!electricUp)("through Electric", () => {
       ["table", "items"],
       ["where", "\"position\" > $1"],
       ["params[1]", "0"],
+      ["columns", "id,position"],
       ["secret", secret],
       ["source_id", "source-1"]
     ])

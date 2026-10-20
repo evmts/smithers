@@ -28,7 +28,7 @@ plus what syncing needs.
   again. Electric's own backoff is off. `reconnect` ends every wait at once and
   restarts a stopped shape. See [The sync policy](sync-policy.md).
 - **Sync status as a stream.** `sync` streams each request's outcome and the
-  shape stopping, from when the stream starts.
+  shape stopping, beginning with the latest event.
 - **Write confirmation.** `awaitTxId` waits for a Postgres transaction to
   arrive; `awaitMatch` waits for a change a predicate accepts.
 - **Rows on the device.** With `persist`, the rows and Electric's resume state

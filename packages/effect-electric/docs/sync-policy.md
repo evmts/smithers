@@ -66,7 +66,8 @@ Electric, and Electric stops the shape: `sync` publishes `Stopped`, with the
 
 ## What the events mean for a UI
 
-`sync` publishes, from when the stream starts:
+`sync` publishes the latest event first, then each one as it happens, so a UI
+built after the shape stopped still shows it stopped:
 
 | Event                     | Means                                                   | A UI can show                |
 | ------------------------- | ------------------------------------------------------- | ---------------------------- |
