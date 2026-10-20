@@ -77,6 +77,14 @@ type changeTestQueries struct {
 	linkedIssues           []db.ListLinkedIssuesForChangeRow
 	userByIDCalls          []int64
 	agentSessionCalls      []string
+	recordedPush           []db.RecordedPushChange
+	recordedPushErr        error
+	recordedPushLookups    [][]string
+}
+
+func (q *changeTestQueries) ListRecordedPushChanges(_ context.Context, _ int64, changeIDs []string) ([]db.RecordedPushChange, error) {
+	q.recordedPushLookups = append(q.recordedPushLookups, changeIDs)
+	return q.recordedPush, q.recordedPushErr
 }
 
 func changeConflictKey(repositoryID int64, changeID, filePath string) string {
@@ -506,6 +514,132 @@ func TestChangeService_RecordPushRefreshesConflictCache(t *testing.T) {
 	stored, newExists := queries.conflicts[changeConflictKey(42, "change-1", "new.go")]
 	require.True(t, newExists)
 	assert.Equal(t, "rename", stored.ConflictType)
+}
+
+func TestChangeService_RecordPushSkipsOnlyChangesRecordedUnchanged(t *testing.T) {
+	t.Parallel()
+
+	recorded := func(change repohost.Change, links ...string) db.RecordedPushChange {
+		parents, err := json.Marshal(change.ParentChangeIDs)
+		require.NoError(t, err)
+		return db.RecordedPushChange{
+			ChangeID: change.ChangeID, CommitID: change.CommitID, Description: change.Description,
+			AuthorName: change.AuthorName, AuthorEmail: change.AuthorEmail, HasConflict: change.HasConflict,
+			IsEmpty: change.IsEmpty, ParentChangeIds: parents, IssueLinks: links,
+		}
+	}
+	base := repohost.Change{
+		ChangeID: "change-1", CommitID: "commit-1", Description: "Fix\n\nIssue: #7\nCloses: #9",
+		AuthorName: "Alice", AuthorEmail: "alice@example.com", ParentChangeIDs: []string{"parent-1"},
+	}
+	cases := []struct {
+		name   string
+		pushed func(repohost.Change) repohost.Change
+		stored func(db.RecordedPushChange) db.RecordedPushChange
+		skip   bool
+	}{
+		{name: "unchanged", skip: true},
+		{name: "links stored in another order", stored: func(r db.RecordedPushChange) db.RecordedPushChange {
+			r.IssueLinks = []string{"9:closes", "7:issue"}
+			return r
+		}, skip: true},
+		{name: "moved commit", pushed: func(c repohost.Change) repohost.Change { c.CommitID = "commit-2"; return c }},
+		{name: "description", pushed: func(c repohost.Change) repohost.Change { c.Description += "!"; return c }},
+		{name: "author name", pushed: func(c repohost.Change) repohost.Change { c.AuthorName = "Bob"; return c }},
+		{name: "author email", pushed: func(c repohost.Change) repohost.Change { c.AuthorEmail = "bob@example.com"; return c }},
+		{name: "emptiness", pushed: func(c repohost.Change) repohost.Change { c.IsEmpty = true; return c }},
+		{name: "parents", pushed: func(c repohost.Change) repohost.Change { c.ParentChangeIDs = []string{"parent-2"}; return c }},
+		{name: "parent order", pushed: func(c repohost.Change) repohost.Change {
+			c.ParentChangeIDs = []string{"parent-1", "parent-0"}
+			return c
+		}, stored: func(r db.RecordedPushChange) db.RecordedPushChange {
+			r.ParentChangeIds = json.RawMessage(`["parent-0", "parent-1"]`)
+			return r
+		}},
+		{name: "unreadable parents", stored: func(r db.RecordedPushChange) db.RecordedPushChange {
+			r.ParentChangeIds = json.RawMessage(`{}`)
+			return r
+		}},
+		{name: "conflicted", pushed: func(c repohost.Change) repohost.Change { c.HasConflict = true; return c }, stored: func(r db.RecordedPushChange) db.RecordedPushChange {
+			r.HasConflict = true
+			return r
+		}},
+		{name: "stored conflicted", stored: func(r db.RecordedPushChange) db.RecordedPushChange { r.HasConflict = true; return r }},
+		{name: "missing link", stored: func(r db.RecordedPushChange) db.RecordedPushChange { r.IssueLinks = []string{"7:issue"}; return r }},
+		{name: "extra link", stored: func(r db.RecordedPushChange) db.RecordedPushChange {
+			r.IssueLinks = append(r.IssueLinks, "11:issue")
+			return r
+		}},
+		{name: "link the recorder cannot recreate", stored: func(r db.RecordedPushChange) db.RecordedPushChange {
+			r.IssueLinks = []string{"7:issue", ":closes"}
+			return r
+		}},
+		{name: "link type", stored: func(r db.RecordedPushChange) db.RecordedPushChange {
+			r.IssueLinks = []string{"7:closes", "9:closes"}
+			return r
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pushed := base
+			if tc.pushed != nil {
+				pushed = tc.pushed(base)
+			}
+			stored := recorded(base, "7:issue", "9:closes")
+			if tc.stored != nil {
+				stored = tc.stored(stored)
+			}
+			queries := &changeTestQueries{recordedPush: []db.RecordedPushChange{stored}}
+			repoHost := &changeTestRepoHost{pages: map[string][]repohost.Change{"": {pushed, {ChangeID: "change-new", CommitID: "commit-new"}}}}
+
+			require.NoError(t, NewChangeService(queries, repoHost, nil).RecordPush(context.Background(), 42, "alice", "demo"))
+
+			assert.Equal(t, [][]string{{"change-1", "change-new"}}, queries.recordedPushLookups)
+			written := []string{}
+			for _, upsert := range queries.upserts {
+				written = append(written, upsert.ChangeID)
+			}
+			if tc.skip {
+				assert.Equal(t, []string{"change-new"}, written)
+				assert.Len(t, queries.records, 1)
+				assert.Len(t, queries.turnUpdates, 1)
+				assert.Len(t, queries.conflictDeletes, 1)
+				return
+			}
+			assert.Equal(t, []string{"change-1", "change-new"}, written)
+			assert.Len(t, queries.records, 2)
+		})
+	}
+}
+
+func TestChangeService_RecordPushLooksUpOnlyIdentifiedChangesPerPage(t *testing.T) {
+	t.Parallel()
+
+	queries := &changeTestQueries{}
+	repoHost := &changeTestRepoHost{
+		pages: map[string][]repohost.Change{
+			"":     {{ChangeID: "change-1", CommitID: "commit-1"}, {ChangeID: " ", CommitID: "commit-x"}, {ChangeID: "change-y", CommitID: ""}},
+			"next": {{ChangeID: "", CommitID: "commit-z"}},
+		},
+		next: map[string]string{"": "next", "next": ""},
+	}
+
+	require.NoError(t, NewChangeService(queries, repoHost, nil).RecordPush(context.Background(), 42, "alice", "demo"))
+	assert.Equal(t, [][]string{{"change-1"}}, queries.recordedPushLookups, "a page without an identified change needs no lookup")
+	require.Len(t, queries.upserts, 1)
+}
+
+func TestChangeService_RecordPushFailsWhenRecordedChangesCannotBeRead(t *testing.T) {
+	t.Parallel()
+
+	queries := &changeTestQueries{recordedPushErr: errors.New("database unavailable")}
+	repoHost := &changeTestRepoHost{pages: map[string][]repohost.Change{"": {{ChangeID: "change-1", CommitID: "commit-1"}}}}
+
+	err := NewChangeService(queries, repoHost, nil).RecordPush(context.Background(), 42, "alice", "demo")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to load recorded changes")
+	assert.Empty(t, queries.upserts, "nothing is written when the recorded state is unknown")
 }
 
 func TestChangeService_RecordGeneratedRevertDoesNotTrustCopiedTrailers(t *testing.T) {

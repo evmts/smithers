@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,6 +30,7 @@ const changeSyncPageSize = 100
 // ChangeRevisionQuerier is the database surface used by ChangeService.
 type ChangeRevisionQuerier interface {
 	UpsertChange(ctx context.Context, arg db.UpsertChangeParams) (db.Change, error)
+	ListRecordedPushChanges(ctx context.Context, repositoryID int64, changeIDs []string) ([]db.RecordedPushChange, error)
 	RecordChangeRevision(ctx context.Context, arg db.RecordChangeRevisionParams) (db.ChangeRevision, error)
 	UpdateLandingRequestsTurnForRevision(ctx context.Context, arg db.UpdateLandingRequestsTurnForRevisionParams) error
 	UpsertConflict(ctx context.Context, arg db.UpsertConflictParams) (db.Conflict, error)
@@ -299,7 +301,8 @@ func NewChangeService(queries ChangeRevisionQuerier, repoHost ChangeRepoHost, po
 // RecordPush snapshots every current stable change after repo-host has accepted
 // and imported a push. Commit uniqueness makes repeated callbacks idempotent;
 // scanning all heads also captures every member of a newly pushed stack, not
-// only the ref's tip commit.
+// only the ref's tip commit. A change whose current commit is already recorded
+// in full is skipped, so a push writes only the changes it moved or created.
 func (s *ChangeService) RecordPush(ctx context.Context, repositoryID int64, owner, repo string) error {
 	if s == nil || s.queries == nil || s.repoHost == nil {
 		return pkgerrors.Internal("change revision service not configured")
@@ -311,8 +314,15 @@ func (s *ChangeService) RecordPush(ctx context.Context, repositoryID int64, owne
 		if err != nil {
 			return mapChangeRepoHostError(err, "failed to load pushed changes")
 		}
+		recorded, err := s.recordedPushChanges(ctx, repositoryID, changes)
+		if err != nil {
+			return err
+		}
 		for _, change := range changes {
 			if strings.TrimSpace(change.ChangeID) == "" || strings.TrimSpace(change.CommitID) == "" {
+				continue
+			}
+			if stored, ok := recorded[change.ChangeID]; ok && pushedChangeAlreadyRecorded(stored, change) {
 				continue
 			}
 			if err := s.recordRepoHostChange(ctx, repositoryID, owner, repo, change); err != nil {
@@ -327,6 +337,57 @@ func (s *ChangeService) RecordPush(ctx context.Context, repositoryID int64, owne
 		}
 		cursor = nextCursor
 	}
+}
+
+// recordedPushChanges loads the stored snapshot of each listed change whose
+// current commit the push recorder has already written in full.
+func (s *ChangeService) recordedPushChanges(ctx context.Context, repositoryID int64, changes []repohost.Change) (map[string]db.RecordedPushChange, error) {
+	changeIDs := make([]string, 0, len(changes))
+	for _, change := range changes {
+		if strings.TrimSpace(change.ChangeID) != "" && strings.TrimSpace(change.CommitID) != "" {
+			changeIDs = append(changeIDs, change.ChangeID)
+		}
+	}
+	if len(changeIDs) == 0 {
+		return nil, nil
+	}
+	stored, err := s.queries.ListRecordedPushChanges(ctx, repositoryID, changeIDs)
+	if err != nil {
+		return nil, pkgerrors.Internal("failed to load recorded changes").WithCause(err)
+	}
+	recorded := make(map[string]db.RecordedPushChange, len(stored))
+	for _, change := range stored {
+		recorded[change.ChangeID] = change
+	}
+	return recorded, nil
+}
+
+// pushedChangeAlreadyRecorded reports whether recording change again would
+// leave every row recordChange writes as it is: the same UpsertChange columns,
+// the same issue links, and no conflicts to refresh. A conflicted change is
+// always recorded, because only repo-host knows its current conflict paths.
+func pushedChangeAlreadyRecorded(stored db.RecordedPushChange, change repohost.Change) bool {
+	if change.HasConflict || stored.HasConflict ||
+		stored.CommitID != change.CommitID ||
+		stored.Description != change.Description ||
+		stored.AuthorName != change.AuthorName ||
+		stored.AuthorEmail != change.AuthorEmail ||
+		stored.IsEmpty != change.IsEmpty {
+		return false
+	}
+	var storedParents []string
+	if err := json.Unmarshal(stored.ParentChangeIds, &storedParents); err != nil || !slices.Equal(storedParents, change.ParentChangeIDs) {
+		return false
+	}
+	trailers := parseIssueTrailers(change.Description)
+	wantLinks := make([]string, 0, len(trailers))
+	for _, link := range trailers {
+		wantLinks = append(wantLinks, strconv.FormatInt(link.Number, 10)+":"+link.LinkType)
+	}
+	storedLinks := slices.Clone(stored.IssueLinks)
+	slices.Sort(wantLinks)
+	slices.Sort(storedLinks)
+	return slices.Equal(storedLinks, wantLinks)
 }
 
 // recordRepoHostChange snapshots one repo-host change exactly as a push
