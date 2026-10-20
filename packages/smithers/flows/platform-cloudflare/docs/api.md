@@ -1,10 +1,17 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/platform-cloudflare: the Host surface, the runtime for one execution, the per-execution Durable Object functions, and the edge cache."
+description: "Every public export of @smthrs/platform-cloudflare: the Host surface, the runtime for one execution, the per-execution Durable Object functions, the edge cache, and the container object's wake and terminal."
 ---
 
 ```ts
-import { CloudflareHost, CloudflareRuntime, EdgeCache, ExecutionObject } from "@smthrs/platform-cloudflare"
+import {
+  CloudflareHost,
+  CloudflareRuntime,
+  ContainerTerminal,
+  EdgeCache,
+  ExecutionObject,
+  SandboxObject
+} from "@smthrs/platform-cloudflare"
 ```
 
 The package has one entry point, its root. It imports no `node:` built-in and
@@ -327,3 +334,219 @@ What the Workers Cache API means for it:
   max-age=31536000, immutable`; without it the Workers cache stores nothing.
 - **Previews.** The dashboard editor and Playground previews ignore every Cache
   API call, so there every `get` misses.
+
+## SandboxObject
+
+What a container Durable Object runs before it uses its container. See
+[attach a terminal to a container](./guides/attach-a-terminal-to-a-container.md).
+
+### `SandboxObject.wake`
+
+```ts
+const wake: <F, E, R>(
+  machine: SandboxObject.Machine<F, E, R>,
+  options: SandboxObject.WakeOptions<F>
+) => Effect.Effect<SandboxObject.WakeOutcome, E, R>
+
+interface WakeOptions<F> {
+  readonly intercepts: ReadonlyArray<{ readonly host: string; readonly fetcher: F }>
+  readonly inactivityTimeoutMs?: number | undefined
+}
+
+type WakeOutcome = "started" | "running"
+```
+
+1. Starts the container with `{ enableInternet: false }` when `running` is
+   false.
+2. Arms the inactivity timeout: `inactivityTimeoutMs`, default
+   `SandboxObject.defaultInactivityTimeoutMs` (30 minutes).
+3. Registers each intercept with `interceptOutboundHttp(host, fetcher)`, in
+   order.
+
+It runs all three on every call, so a restarted object, or one that died
+between its start and its registration, gets its timeout and intercepts back.
+It keeps no state and runs no timer or retry. A failure is the container
+client's own error, unchanged; the `sandbox.wake` span and the
+`cloudflare.sandbox.wake` log line carry only its tag.
+
+### `SandboxObject.Machine`
+
+```ts
+interface Machine<F, E = never, R = never> {
+  readonly running: Effect.Effect<boolean, E, R>
+  start(options: { readonly enableInternet: false }): Effect.Effect<void, E, R>
+  setInactivityTimeout(durationMs: number): Effect.Effect<void, E, R>
+  interceptOutboundHttp(addr: string, binding: F): Effect.Effect<void, E, R>
+}
+```
+
+The slice of an Effect container client `wake` uses. An Alchemy Durable
+Object's container handle satisfies it, with `F` Alchemy's `Fetcher`, `E` its
+start and container errors and `R = RuntimeContext`.
+
+### Metrics
+
+| Export                | Name                                | Attributes                                  |
+| --------------------- | ----------------------------------- | ------------------------------------------- |
+| `SandboxObject.wakes` | `smithers_cloudflare_sandbox_wakes` | `outcome`: `started`, `running` or `failed` |
+
+## ContainerTerminal
+
+A browser terminal on a tmux session in a Durable Object's container, over
+`@smthrs/sandbox`'s `TerminalProtocol`. See
+[attach a terminal to a container](./guides/attach-a-terminal-to-a-container.md).
+
+### `ContainerTerminal.ensureSession`
+
+```ts
+const ensureSession: <E, R>(
+  container: ContainerTerminal.Container<E, R>,
+  options: { readonly name: string; readonly user: string; readonly cwd: string }
+) => Effect.Effect<"created" | "existing", E | ContainerTerminal.InvalidSession | ContainerTerminal.SessionFailed, R>
+```
+
+As `user`, runs `tmux has-session -t =<name>`, and when it fails, `tmux
+new-session -d -s <name> -c <cwd>`, each as an argument vector with no shell.
+A session another caller created meanwhile counts as `existing`. It fails
+with `InvalidSession` before running anything when `name` is not a lowercase
+UUID, `user` is `root` or not a plain user name, or `cwd` is not an absolute
+path of letters, digits, `.`, `_`, `-` and `/`; with `SessionFailed` when no
+session runs after `new-session`; and with the container's error when `exec`
+fails. Its span is `terminal.session`.
+
+### `ContainerTerminal.attach`
+
+```ts
+const attach: <E, R>(
+  container: ContainerTerminal.Container<E, R>,
+  socket: ContainerTerminal.Socket,
+  options: {
+    readonly name: string
+    readonly user: string
+    readonly access: "write" | "read"
+    readonly cols: number
+    readonly rows: number
+  }
+) => Effect.Effect<ContainerTerminal.Report, never, R>
+```
+
+Bridges an accepted server WebSocket to a new tmux client on a
+pseudo-terminal of `cols` by `rows`, until one side ends. It never fails.
+
+- **The client.** A writer's is `tmux attach-session -t =<name>` with piped
+  stdin; a reader's adds `-f read-only,ignore-size` and has no stdin, so it
+  neither types nor sizes the window. Both run as `user` under `TERM`
+  `ContainerTerminal.clientTerm` (`xterm-256color`).
+- **Output.** `ready {access}` first, then the shell's output as binary
+  frames of at most `TerminalProtocol.maxFrameBytes` (64 KiB), in order.
+- **Input.** A writer's binary frames (an `ArrayBuffer`, a typed array or a
+  `Blob`) go to stdin, and its `resize` resizes the pseudo-terminal. A
+  reader's binary frames and resizes are dropped.
+- **Refusals.** A frame over the cap closes with `CloseCode.tooBig` (1009); a
+  malformed control frame, or a frame that is neither text nor binary, with
+  `CloseCode.unsupported` (1003). Invalid options close with 1003 before
+  anything runs.
+- **The end.** When the tmux client exits, the viewer gets `ended {reason:
+  "closed"}` and `CloseCode.ended` (1000). When the viewer leaves, or a
+  refusal or failure closes the socket, `attach` SIGKILLs only its own tmux
+  client and waits for its exit; the session keeps running. A failed `exec`,
+  stdin, resize, `Blob` read or output stream closes with `CloseCode.failed`
+  (1011), after which the viewer reconnects.
+
+Start it right after `accept()`, never `acceptWebSocket()`, and run it in the
+background for the socket's lifetime.
+
+### `ContainerTerminal.Report`
+
+```ts
+interface Report {
+  readonly outcome: "ended" | "closed" | "unsupported" | "too_big" | "failed"
+  readonly closeCode: number | null
+  readonly bytes: { readonly in: number; readonly out: number; readonly dropped: number }
+}
+```
+
+`closeCode` is `null` when the viewer closed the socket first. `bytes` counts
+what went to the shell, to the viewer, and was dropped from a reader.
+
+### `ContainerTerminal.Container` and `ContainerTerminal.Process`
+
+```ts
+interface Container<E = never, R = never> {
+  exec(cmd: Array<string>, options?: ExecOptions): Effect.Effect<Process<E, R>, E, R | Scope.Scope>
+}
+
+interface Process<E = never, R = never> {
+  readonly stdin: Sink.Sink<unknown, Uint8Array, unknown, E, R> | undefined
+  readonly stdout: Stream.Stream<Uint8Array, E, R> | undefined
+  readonly exitCode: Effect.Effect<number, E, R>
+  kill(signal?: number): Effect.Effect<void, E, R>
+  resize(cols: number, rows: number): Effect.Effect<void, E, R>
+}
+
+interface ExecOptions {
+  readonly user?: string
+  readonly env?: Record<string, string>
+  readonly pty?: { readonly cols: number; readonly rows: number }
+  readonly stdin?: "pipe"
+  readonly stdout?: "pipe" | "ignore"
+  readonly stderr?: "pipe" | "ignore" | "combined"
+}
+```
+
+The slice of an Effect container client the functions use. An Alchemy Durable
+Object's container handle satisfies it with `E = ContainerError` and
+`R = RuntimeContext`.
+
+### `ContainerTerminal.Socket`
+
+```ts
+interface Socket {
+  send(message: string | ArrayBuffer | Uint8Array): void
+  close(code?: number, reason?: string): void
+  addEventListener(
+    type: "message" | "close" | "error",
+    listener: (event: { readonly type: string; readonly data?: unknown }) => void
+  ): void
+}
+```
+
+The slice of a server WebSocket `attach` uses: the server side of
+`new WebSocketPair()`, already accepted.
+
+### `ContainerTerminal.isSessionName`
+
+```ts
+const isSessionName: (value: string) => boolean
+```
+
+Whether `value` is a lowercase UUID, the only session name the functions
+accept. A Worker can check a terminal id from a URL before it upgrades.
+
+### Errors
+
+```ts
+class InvalidSession extends Schema.TaggedError<InvalidSession>()(
+  "@smthrs/platform-cloudflare/InvalidSession",
+  { field: Schema.Literals(["name", "user", "cwd", "size"]), message: Schema.String }
+)
+
+class SessionFailed extends Schema.TaggedError<SessionFailed>()(
+  "@smthrs/platform-cloudflare/SessionFailed",
+  { name: Schema.String, exitCode: Schema.Number, message: Schema.String }
+)
+```
+
+### Metrics
+
+| Export                           | Name                                         | Attributes                                                        |
+| -------------------------------- | -------------------------------------------- | ----------------------------------------------------------------- |
+| `ContainerTerminal.sessions`     | `smithers_cloudflare_terminal_sessions`      | `outcome`: `created`, `existing` or `failed`                      |
+| `ContainerTerminal.connects`     | `smithers_cloudflare_terminal_connects`      | `access`, and `outcome` as in `Report`                            |
+| `ContainerTerminal.sessionsOpen` | `smithers_cloudflare_terminal_sessions_open` | `access`; up at `ready`, down when the attach ends                |
+| `ContainerTerminal.bytes`        | `smithers_cloudflare_terminal_bytes`         | `direction`: `in`, `out` or `dropped`; a count, never the content |
+
+No metric attribute holds an id. Each `attach` runs in a `terminal.connect`
+span with `smithers.terminal.id`, `smithers.terminal.access`,
+`smithers.terminal.outcome`, `smithers.terminal.close_code` and the three byte
+counts, and logs one `cloudflare.terminal.connect` line inside it.

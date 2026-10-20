@@ -2134,6 +2134,7 @@
         "@smthrs/journal": "1.0.0-rc.16",
         "@smthrs/kernel": "1.0.0-rc.16",
         "@smthrs/run-store": "1.0.0-rc.16",
+        "@smthrs/sandbox": "1.0.0-rc.16",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2149,6 +2150,7 @@
         "@tanstack/browser-db-sqlite-persistence": "0.2.36",
         "@tanstack/db": "0.15.1",
         "@types/node": "26.4.1",
+        "@types/ws": "8.18.2",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
         "effect": "4.0.5",
@@ -2163,6 +2165,7 @@
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
         "vitest": "5.0.0",
+        "ws": "8.22.0",
       },
       "peerDependencies": {
         "effect": "4.0.5",
@@ -2224,6 +2227,7 @@
         "@smthrs/flows": "1.0.0-rc.16",
         "@smthrs/jj": "1.0.0-rc.16",
         "@smthrs/run-store": "1.0.0-rc.16",
+        "@smthrs/sandbox": "1.0.0-rc.16",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2340,6 +2344,7 @@
       "name": "@smthrs/sandbox",
       "version": "1.0.0-rc.16",
       "dependencies": {
+        "@smthrs/flow": "1.0.0-rc.16",
         "@smthrs/jj": "1.0.0-rc.16",
         "@smthrs/kernel": "1.0.0-rc.16",
       },
@@ -2348,7 +2353,8 @@
         "@effect/platform-node": "4.0.5",
         "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
-        "@smthrs/flow": "1.0.0-rc.16",
+        "@smthrs/engine": "1.0.0-rc.16",
+        "@smthrs/plan": "1.0.0-rc.16",
         "@smthrs/platform-bun": "1.0.0-rc.16",
         "@smthrs/platform-node": "1.0.0-rc.16",
         "@smthrs/std": "1.0.0-rc.16",

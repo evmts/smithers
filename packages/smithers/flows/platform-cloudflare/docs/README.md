@@ -29,6 +29,12 @@ run and comes back when it stops. This package supplies that host:
 - `EdgeCache` is the edge cache: `@smthrs/artifacts`' `ImmutableCache` over the
   Workers Cache API, for content that never changes at its key, such as a file
   at a commit SHA.
+- `SandboxObject` wakes a container Durable Object's container: it starts it
+  with internet access off, re-arms its inactivity timeout, and registers the
+  outbound HTTP intercepts that are its only way out.
+- `ContainerTerminal` gives that container browser terminals: one tmux session
+  per terminal and one tmux client per WebSocket, where the owner types and
+  everyone else watches.
 
 ## Install
 
@@ -46,6 +52,9 @@ compatibility flags and the database.
   service does on a Worker.
 - [Host a flow in a Durable Object](./guides/host-a-flow-in-a-durable-object.md):
   the Alchemy wiring, binding and Hyperdrive included.
+- [Attach a terminal to a container](./guides/attach-a-terminal-to-a-container.md):
+  wake a container offline, create a tmux session, and bridge each viewer's
+  WebSocket.
 - [Troubleshooting](./troubleshooting.md): every `Retrying` failure and what
   resolves it.
 - [API reference](./api.md): every public export.

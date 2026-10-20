@@ -25,6 +25,7 @@ describe("@smthrs/sandbox barrel", () => {
       "SandboxHealth",
       "SandboxMerge",
       "SandboxSupervision",
+      "TerminalProtocol",
       "VercelSandbox"
     ])
   })

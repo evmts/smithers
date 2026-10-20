@@ -154,7 +154,8 @@
     "@smthrs/jj": "1.0.0-rc.16",
     "@smthrs/journal": "1.0.0-rc.16",
     "@smthrs/kernel": "1.0.0-rc.16",
-    "@smthrs/run-store": "1.0.0-rc.16"
+    "@smthrs/run-store": "1.0.0-rc.16",
+    "@smthrs/sandbox": "1.0.0-rc.16"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -183,7 +184,9 @@
     "@smthrs/database": "1.0.0-rc.16",
     "@smthrs/observability": "1.0.0-rc.16",
     "@tanstack/browser-db-sqlite-persistence": "0.2.36",
-    "@tanstack/db": "0.15.1"
+    "@tanstack/db": "0.15.1",
+    "@types/ws": "8.18.2",
+    "ws": "8.22.0"
   },
   "peerDependencies": {
     "effect": "4.0.5"

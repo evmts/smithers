@@ -22,6 +22,7 @@
  * @since 1.0.0
  */
 
+import type { RunInspection } from "@smthrs/engine-store"
 import type { Flow as FlowTypes } from "@smthrs/flow"
 import * as Context from "effect/Context"
 import * as Deferred from "effect/Deferred"
@@ -35,6 +36,7 @@ import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
 import * as Protocol from "./internal/Protocol.ts"
+import * as RunReads from "./internal/RunReads.ts"
 import { StoragePersistence } from "./StoragePersistence.ts"
 import * as StoragePersistenceLayer from "./StoragePersistence.ts"
 import { TabChannel } from "./TabChannel.ts"
@@ -162,6 +164,25 @@ export interface Service {
     name: string,
     value: Schema.Json
   ) => Effect.Effect<void, RequestRefused | EngineUnavailable>
+  /**
+   * Reads one run of the leader's engine: its lifecycle, its steps with their
+   * attempts, the runs it started, and the page of its journal after
+   * `afterSeq`, at most `limit` events (500 at most). Every value is redacted
+   * and cut to 16 KiB by the leader (`@smthrs/engine-store`'s
+   * `RunInspection`). A run the engine never held is refused with
+   * `@smthrs/engine-store/RunNotFound`.
+   */
+  readonly inspect: (
+    runId: string,
+    options?: { readonly afterSeq?: number; readonly limit?: number }
+  ) => Effect.Effect<RunInspection.Inspection, RequestRefused | EngineUnavailable>
+  /**
+   * Lists the leader's runs newest first, `limit` at a time (200 at most)
+   * from `cursor`; `roots`, the default, keeps the runs with no parent.
+   */
+  readonly list: (
+    options?: { readonly limit?: number; readonly cursor?: string; readonly roots?: boolean }
+  ) => Effect.Effect<RunInspection.RunList, RequestRefused | EngineUnavailable>
   /** Every event the leader's engine commits from now on, for every run. */
   readonly events: Stream.Stream<RunEvent>
   /**
@@ -332,10 +353,23 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
         Effect.withSpan("browser.engine.request", {
           attributes: {
             "smithers.request": body._tag,
-            "smithers.flow": body.flow,
-            "smithers.execution.id": body.executionId
+            ...("flow" in body ? { "smithers.flow": body.flow, "smithers.execution.id": body.executionId } : {}),
+            ...("runId" in body ? { "smithers.execution.id": body.runId } : {})
           }
         })
+      )
+
+    /** A read's reply, decoded; a reply this tab cannot read is refused as `SchemaError`. */
+    const read = <A>(
+      body: Body,
+      decode: (input: unknown) => Effect.Effect<A, Schema.SchemaError>
+    ): Effect.Effect<A, RequestRefused | EngineUnavailable> =>
+      request(body).pipe(
+        Effect.flatMap((reply) =>
+          decode(reply.result).pipe(
+            Effect.mapError(() => new RequestRefused({ request: body._tag, error: "SchemaError" }))
+          )
+        )
       )
 
     const poll = (flow: FlowReference, executionId: string) =>
@@ -375,6 +409,8 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
       cancel: (flow, executionId) => Effect.asVoid(request({ _tag: "Cancel", flow: flow._tag, executionId })),
       signal: (flow, executionId, name, value) =>
         Effect.asVoid(request({ _tag: "Signal", flow: flow._tag, executionId, name, value })),
+      inspect: (runId, options = {}) => read({ _tag: "Inspect", runId, ...options }, RunReads.decodeInspection),
+      list: (options = {}) => read({ _tag: "List", ...options }, RunReads.decodeRunList),
       events: Stream.fromPubSub(notices).pipe(
         Stream.filterMap((notice) =>
           notice._tag === "RunChanged"

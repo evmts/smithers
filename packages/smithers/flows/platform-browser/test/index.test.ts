@@ -34,6 +34,7 @@ describe("@smthrs/platform-browser barrel", () => {
         "SharedSqlite",
         "StoragePersistence",
         "TabChannel",
+        "TerminalSocket",
         "WebLock"
       ].sort()
     )

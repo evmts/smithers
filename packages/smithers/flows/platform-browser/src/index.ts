@@ -100,6 +100,13 @@ export * as StoragePersistence from "./StoragePersistence.ts"
 export * as TabChannel from "./TabChannel.ts"
 
 /**
+ * The reconnecting WebSocket a page holds to a terminal.
+ *
+ * @since 1.0.0
+ */
+export * as TerminalSocket from "./TerminalSocket.ts"
+
+/**
  * Exclusive Web Locks as a service.
  *
  * @since 1.0.0

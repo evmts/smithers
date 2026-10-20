@@ -23,6 +23,9 @@ export * as RemoteChildProcessSpawner from "./RemoteChildProcessSpawner/index.ts
 /** The conformance suite a provider implementation must pass. */
 export * as ProviderConformance from "./ProviderConformance/index.ts"
 
+/** The wire protocol between a browser terminal and the host that attaches it to a sandbox shell. */
+export * as TerminalProtocol from "./TerminalProtocol/index.ts"
+
 /** The provisioned-machine contract and its projections. */
 export * as Sandbox from "./Sandbox/index.ts"
 

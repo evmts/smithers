@@ -1,16 +1,18 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as TestClock from "effect/testing/TestClock"
 import { randomUUID } from "node:crypto"
 import { CloudflareRuntime, ExecutionObject } from "../src/index.ts"
-import { Answer, registration, runtime } from "./fixtures/AnswerFlow.ts"
+import { Answer, Record, registration, runtime } from "./fixtures/AnswerFlow.ts"
 import * as MemoryStorage from "./fixtures/MemoryStorage.ts"
 import * as Objects from "./fixtures/Objects.ts"
 import * as Postgres from "./fixtures/Postgres.ts"
@@ -36,6 +38,21 @@ const awaitingRegistration = Layer.effectDiscard(Effect.gen(function*() {
     () => DurableDeferred.await(DurableDeferred.make("reply", { success: Schema.String }))
   )
 }))
+
+/**
+ * The next build's {@link Answer}: the same flow with a required field a
+ * payload recorded by the build before it lacks.
+ */
+const AnswerWithLocale = Flow.make("cloudflare-test/Answer", {
+  payload: { question: Schema.String, pauseMs: Schema.Number, locale: Schema.String },
+  success: Schema.String,
+  error: Sleep.SleepRequestInvalid,
+  body: Node.capture({}, ({ pauseMs, question }) =>
+    Record.call({ label: `ask:${question}` }).pipe(
+      Node.andThen(Sleep.action.call({ millis: pauseMs })),
+      Node.andThen(Record.call({ label: "answer" }))
+    ))
+})
 
 /** A `Settled` outcome, whatever window it was armed to forget at. */
 const settled = { _tag: "Settled", forgetAtMs: expect.any(Number) }
@@ -311,6 +328,55 @@ for (const target of Postgres.targets) {
         expect(yield* o.alarm()).toEqual({ _tag: "Settled", forgetAtMs: wakeAtMs + ExecutionObject.settledRetentionMs })
         expect(o.steps).toEqual(["ask:hi", "answer"])
         expect(o.memory.alarm()).toBe(wakeAtMs + ExecutionObject.settledRetentionMs)
+      }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(o.schema))))
+    })
+
+    it.effect("a deploy whose payload schema no longer decodes a parked execution's payload settles it payload_changed", () => {
+      const o = object(target)
+      const nextBuild = (intent: ExecutionObject.Intent) =>
+        CloudflareRuntime.layer(
+          { hostId: o.hostId, executionId: intent.executionId },
+          Interpreter.layerWithImplementations(
+            AnswerWithLocale,
+            Record.toLayer(({ label }) => Effect.sync(() => o.steps.push(label)).pipe(Effect.as(label)))
+          ).pipe(Layer.provideMerge(Action.layerImplementations))
+        ).pipe(Layer.provide(Postgres.database(o.schema, target.url)))
+      const deployed = () =>
+        ExecutionObject.alarm(o.memory.storage, {
+          flows: [AnswerWithLocale],
+          runtime: nextBuild,
+          router: Objects.unrouted
+        })
+      return Effect.gen(function*() {
+        yield* TestClock.setTime(Date.now())
+        const value = yield* o.intent({ question: "hi", pauseMs: 60_000 })
+        yield* ExecutionObject.start(o.memory.storage, value, Effect.void)
+        const parked = yield* o.alarm()
+        const wakeAtMs = (parked as { readonly wakeAtMs: number }).wakeAtMs
+        expect(o.steps).toEqual(["ask:hi"])
+
+        // An early alarm under the new build leaves the run parked: the store
+        // holds it, so the stored intent's payload is never decoded.
+        expect(yield* deployed()).toEqual({ _tag: "Parked", wakeAtMs })
+        expect(yield* o.status).toBe("suspended")
+
+        // Its timer comes due: the engine refuses the recorded payload, and the
+        // run settles instead of retrying a decode that can never succeed.
+        yield* TestClock.setTime(wakeAtMs)
+        expect(yield* deployed()).toEqual({
+          _tag: "Settled",
+          forgetAtMs: wakeAtMs + ExecutionObject.settledRetentionMs
+        })
+        expect(o.memory.values.has(ExecutionObject.failuresKey)).toBe(false)
+        expect(o.steps).toEqual(["ask:hi"])
+        expect(yield* o.status).toBe("failed")
+        const result = yield* Effect.gen(function*() {
+          const runtime = yield* FlowRuntime.FlowRuntime
+          return yield* runtime.poll(AnswerWithLocale, o.executionId)
+        }).pipe(Effect.provide(nextBuild(value)))
+        const settled = Option.getOrThrow(result)
+        if (settled._tag !== "Complete" || Exit.isSuccess(settled.exit)) throw new Error("the run did not fail")
+        expect(Interpreter.refusalCode(settled.exit.cause)).toEqual(Option.some("payload_changed"))
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(o.schema))))
     })
   })

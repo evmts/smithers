@@ -45,6 +45,8 @@
     "./ProviderConformance/*": null,
     "./RemoteChildProcessSpawner": "./src/RemoteChildProcessSpawner/index.ts",
     "./RemoteChildProcessSpawner/*": null,
+    "./TerminalProtocol": "./src/TerminalProtocol/index.ts",
+    "./TerminalProtocol/*": null,
     "./Sandbox": "./src/Sandbox/index.ts",
     "./Sandbox/*": null,
     "./SandboxConformance": "./src/SandboxConformance/index.ts",

@@ -96,6 +96,15 @@ browser persistence, so it loads one SQLite build and opens one pool.
   new one, never run twice. A statement outside a transaction that the old
   leader never answered is sent to the new one, which may run it a second
   time if the old one ran it before it stopped.
+- The record fails closed. A leader that can't write it rolls the
+  transaction back, and the statement that opened it fails with
+  `TransactionUnrecorded`. A leader that can't read it runs nothing, and the
+  statement fails with `TransactionUndecided`; the tab's next statement asks
+  again. A leader that can't create the table still runs reads and single
+  statements, so no transaction commits twice.
+- A statement that fails after it opened a transaction, such as
+  `BEGIN; <refused>`, rolls that transaction back, so no transaction stays
+  open that its tab doesn't know of.
 
 ## Tabs reach the leader over a channel
 
@@ -116,23 +125,44 @@ with the flow's own schemas. The channel is open to every script of the
 origin, which is the app's own trust boundary; the leader runs only the flows
 it was given, and only with a payload their schema decodes.
 
+## Tabs read runs through the leader
+
+A run page reads the engine's runs the same way: `BrowserEngine.inspect(runId,
+{ afterSeq, limit })` posts `Inspect`, and `BrowserEngine.list({ limit,
+cursor, roots })` posts `List`. Neither names a flow. The leader answers from
+its engine's `RunInspection` (`@smthrs/engine-store`), so every value is
+redacted and cut to 16 KiB before it reaches the channel, and a failure travels
+as its closed code. `inspect` returns the run, its steps with their attempts,
+the runs it started and one page of its journal; page on by passing the
+reply's `journal.nextSeq` as `afterSeq`. A run the engine never held is
+refused with `@smthrs/engine-store/RunNotFound`. The tab decodes each reply with
+a declaration of its own, so a tab bundle never loads `@smthrs/engine-store`.
+
+The engine host gives every registered flow `RunInspection` as well, so a flow
+running in the engine, such as one that retries another run, can read it. The
+reads know the flows `BrowserRuntime.run` serves, and each action their plans
+call, so a `Schema.Redacted` value in a run's input or result, a step's output
+or a journal preview reads as `<redacted>`, and a value its schema no longer
+decodes as `<withheld>`.
+
 ## Observability
 
 Every operation is logged, traced and counted with ids, counts and error tags,
 never content:
 
-| Signal                                                                | Where                                                   |
-| --------------------------------------------------------------------- | ------------------------------------------------------- |
-| `browser.runtime.elect` span                                          | the wait for the lock                                   |
-| `smithers_browser_runtime_leaderships`, `browser.runtime.leader`      | each worker that becomes leader                         |
-| `smithers_browser_runtime_wakes`, `browser.runtime.wake` span and log | each unfinished run a new leader finds, by outcome      |
-| `smithers_browser_runtime_requests`, `browser.runtime.request` span   | each request the leader answers, by request and outcome |
-| `smithers_browser_engine_requests`, `browser.engine.request` span     | each request a tab sends                                |
-| `smithers_browser_engine_storage`, `browser.engine.storage`           | whether the origin holds persistent storage             |
-| `smithers_browser_runtime_statements`, `browser.runtime.statement`    | each shared-database statement, by outcome              |
-| `smithers_browser_engine_unavailable`, `browser.engine.unavailable`   | a tab whose own worker failed, by reason                |
-| `browser.runtime.stopped`                                             | an engine that stopped                                  |
-| `browser.runtime.lost`                                                | a leader whose lock another context stole               |
+| Signal                                                                | Where                                                                                                                           |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `browser.runtime.elect` span                                          | the wait for the lock                                                                                                           |
+| `smithers_browser_runtime_leaderships`, `browser.runtime.leader`      | each worker that becomes leader                                                                                                 |
+| `smithers_browser_runtime_wakes`, `browser.runtime.wake` span and log | each unfinished run a new leader finds, by outcome                                                                              |
+| `smithers_browser_runtime_requests`, `browser.runtime.request` span   | each request the leader answers, by request and outcome                                                                         |
+| `smithers_browser_engine_requests`, `browser.engine.request` span     | each request a tab sends                                                                                                        |
+| `run.inspect` span and log                                            | each `Inspect` the leader reads: host `local`, outcome (`read`, `not_found`, `failed`), events, bytes, clipped values, duration |
+| `smithers_browser_engine_storage`, `browser.engine.storage`           | whether the origin holds persistent storage                                                                                     |
+| `smithers_browser_runtime_statements`, `browser.runtime.statement`    | each shared-database statement, by outcome                                                                                      |
+| `smithers_browser_engine_unavailable`, `browser.engine.unavailable`   | a tab whose own worker failed, by reason                                                                                        |
+| `browser.runtime.stopped`                                             | an engine that stopped                                                                                                          |
+| `browser.runtime.lost`                                                | a leader whose lock another context stole                                                                                       |
 
 The engine's own journal, run and attempt telemetry comes from `@smthrs/flows`
 as on every host. A worker's records stay in the worker unless `run` gets a

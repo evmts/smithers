@@ -33,6 +33,18 @@ isolate, so a flow's callbacks need stable identity. Register the flow with
 `Interpreter.layerWithImplementations` and write its body with `Node.capture`,
 capturing every value the callback reads.
 
+## The flow settled as failed with `payload_changed`
+
+A deploy changed the flow's payload schema so it no longer decodes the payload
+the run recorded, such as a new required field. The object decodes the stored
+intent's payload only to admit an execution the store does not hold yet; a run
+the store holds resumes from its recorded payload, and the engine settles it
+`failed` with `InterpreterError` code `payload_changed` instead of retrying.
+An intent whose run was never admitted still fails each alarm with
+`error.type` `SchemaError`. See
+[`@smthrs/engine-store` troubleshooting](../../engine-store/docs/troubleshooting.md#a-run-resumed-after-a-deploy-fails-with-payload_changed)
+for the schema-evolution rule.
+
 ## The execution is `Parked` with `wakeAtMs: null` and never resumes
 
 The run waits on an event, such as a `DurableDeferred` or a person, with no

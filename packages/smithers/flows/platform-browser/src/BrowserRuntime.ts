@@ -45,6 +45,14 @@ export interface Options {
    * one app passes the same name.
    */
   readonly name: string
+  /**
+   * The flows whose runs the engine's run reads (`RunInspection`, the
+   * `Inspect` and `List` requests) render through their own schemas, so a
+   * `Schema.Redacted` field reads as `<redacted>`. `run` passes the flows it
+   * serves; a run of a flow not given here is read as stored, behind the
+   * journal's redaction rules alone.
+   */
+  readonly flows?: ReadonlyArray<Flow.Any> | undefined
 }
 
 /**
@@ -63,8 +71,9 @@ export interface HostOptions extends Options {
 
 /**
  * The services the engine host gives every registered flow: WebCrypto,
- * the owner identity, POSIX paths, the fetch client, and a `Jj` that
- * refuses, because a worker holds no repository.
+ * the owner identity, POSIX paths, the fetch client, a `Jj` that refuses,
+ * because a worker holds no repository, and `RunInspection`, the engine's
+ * own run reads.
  *
  * @category models
  * @since 1.0.0
@@ -72,8 +81,9 @@ export interface HostOptions extends Options {
 export type Host = Engine.Host
 
 /**
- * Provides the durable engine, with `registerFlows` registered, and the run
- * catalog over the `SqlClient` the caller provides. The engine sweeps its own
+ * Provides the durable engine, with `registerFlows` registered, the run
+ * catalog and the run reads (`RunInspection`) over the `SqlClient` the caller
+ * provides. The engine sweeps its own
  * store while it lives, so due timers fire and stalled runs are reclaimed.
  *
  * Only the worker that holds the engine's Web Lock builds an engine, so the
@@ -169,8 +179,11 @@ export const requests = Metrics.requests
 
 /**
  * Statements the leader ran on the app's shared database, by `outcome`
- * (`executed`, `failed`, `lost`), and tabs' transactions it rolled back when
- * the tab ended (`abandoned`).
+ * (`executed`; `committed`, a statement an earlier leader committed; `failed`;
+ * `lost`; `unrecorded`, a transaction it rolled back because it could not
+ * record it; `undecided`, a statement it ran nothing for because it could not
+ * read that record), and tabs' transactions it rolled back when the tab ended
+ * (`abandoned`).
  *
  * @category metrics
  * @since 1.0.0

@@ -89,7 +89,8 @@
     "@smthrs/flow": "1.0.0-rc.16",
     "@smthrs/flows": "1.0.0-rc.16",
     "@smthrs/jj": "1.0.0-rc.16",
-    "@smthrs/run-store": "1.0.0-rc.16"
+    "@smthrs/run-store": "1.0.0-rc.16",
+    "@smthrs/sandbox": "1.0.0-rc.16"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

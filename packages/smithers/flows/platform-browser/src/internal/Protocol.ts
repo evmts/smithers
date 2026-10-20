@@ -2,9 +2,10 @@
  * The messages the engine's leader and its followers exchange over the
  * engine's `BroadcastChannel`.
  *
- * - A follower posts a request (`Start`, `Poll`, `Cancel`, `Signal`) under its
- *   own client id and a request number; only the leader answers, with
- *   `Replied` or `Refused` addressed to that client and number.
+ * - A follower posts a request (`Start`, `Poll`, `Cancel`, `Signal`, and the
+ *   reads `Inspect` and `List`) under its own client id and a request number;
+ *   only the leader answers, with `Replied` or `Refused` addressed to that
+ *   client and number.
  * - A worker that becomes leader posts `Leader`, and every follower posts its
  *   unanswered requests again. Every request is idempotent, so a request the
  *   previous leader handled before it died is safe to handle twice.
@@ -64,12 +65,42 @@ export const Cancel = Schema.TaggedStruct("Cancel", execution)
 export const Signal = Schema.TaggedStruct("Signal", { ...execution, name: Schema.String, value: Schema.Json })
 
 /**
+ * Read one run: its lifecycle, steps, children and the journal page after
+ * `afterSeq`, at most `limit` events. The reply's `result` is the run's
+ * redacted, bounded `RunInspection.Inspection`.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const Inspect = Schema.TaggedStruct("Inspect", {
+  ...addressed,
+  runId: Schema.String,
+  afterSeq: Schema.optionalKey(Schema.Number),
+  limit: Schema.optionalKey(Schema.Number)
+})
+
+/**
+ * List runs newest first, `limit` at a time from `cursor`; `roots`, the
+ * default, keeps the runs with no parent. The reply's `result` is a
+ * `RunInspection.RunList`.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const List = Schema.TaggedStruct("List", {
+  ...addressed,
+  limit: Schema.optionalKey(Schema.Number),
+  cursor: Schema.optionalKey(Schema.String),
+  roots: Schema.optionalKey(Schema.Boolean)
+})
+
+/**
  * Any request a follower sends.
  *
  * @category protocol
  * @since 1.0.0
  */
-export const Request = Schema.Union([Start, Poll, Cancel, Signal])
+export const Request = Schema.Union([Start, Poll, Cancel, Signal, Inspect, List])
 
 /**
  * The value form of {@link Request}.
@@ -81,7 +112,8 @@ export type Request = typeof Request.Type
 
 /**
  * The leader handled the request. `result` is the encoded flow result a
- * `Poll` read, and `null` for every other request.
+ * `Poll` read, the read an `Inspect` or a `List` made, and `null` for every
+ * other request.
  *
  * @category protocol
  * @since 1.0.0
@@ -119,7 +151,7 @@ export const RunChanged = Schema.TaggedStruct("RunChanged", { executionId: Schem
  * @category protocol
  * @since 1.0.0
  */
-export const Message = Schema.Union([Start, Poll, Cancel, Signal, Replied, Refused, Leader, RunChanged])
+export const Message = Schema.Union([Start, Poll, Cancel, Signal, Inspect, List, Replied, Refused, Leader, RunChanged])
 
 /**
  * The value form of {@link Message}.

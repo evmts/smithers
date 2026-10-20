@@ -147,12 +147,38 @@ each guarantee and what proves it.
 
 ## Modules
 
-| Module              | What it provides                                                                                                                         |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `CloudflareHost`    | `layer`: the closed Host surface on Cloudflare, with `@smthrs/crypto`'s `WebCrypto.layer` as `effect/Crypto`.                            |
-| `CloudflareRuntime` | `layer({ hostId, executionId }, registerFlows)`: the durable engine for one execution over an injected `SqlClient`.                      |
-| `ExecutionObject`   | `start`, `wake`, `alarm` and `intent`: the per-execution Durable Object, as functions over a structural slice of Durable Object storage. |
-| `EdgeCache`         | `layer({ name?, maxEntryBytes? })`: `@smthrs/artifacts`' `ImmutableCache` over the Workers Cache API, `caches.default` or a named cache. |
+| Module              | What it provides                                                                                                                                                                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CloudflareHost`    | `layer`: the closed Host surface on Cloudflare, with `@smthrs/crypto`'s `WebCrypto.layer` as `effect/Crypto`.                                                                             |
+| `CloudflareRuntime` | `layer({ hostId, executionId }, registerFlows)`: the durable engine for one execution over an injected `SqlClient`.                                                                       |
+| `ExecutionObject`   | `start`, `wake`, `alarm` and `intent`: the per-execution Durable Object, as functions over a structural slice of Durable Object storage.                                                  |
+| `EdgeCache`         | `layer({ name?, maxEntryBytes? })`: `@smthrs/artifacts`' `ImmutableCache` over the Workers Cache API, `caches.default` or a named cache.                                                  |
+| `SandboxObject`     | `wake(container, { intercepts, inactivityTimeoutMs? })`: start a container Durable Object's container offline, re-arm its inactivity timeout, register its outbound HTTP intercepts.      |
+| `ContainerTerminal` | `ensureSession` and `attach`: a browser terminal over `@smthrs/sandbox`'s `TerminalProtocol`, one tmux session per terminal and one tmux client per WebSocket; readers' input is dropped. |
+
+## A terminal in a container
+
+A container Durable Object (a Cloudflare Container with
+`schedulingPolicy: "durable_object"`) wakes its box with `SandboxObject.wake`,
+creates a terminal's tmux session with `ContainerTerminal.ensureSession`, and
+bridges each viewer's accepted WebSocket with `ContainerTerminal.attach`. Both
+take the container as a structural slice of an Effect container client, so an
+Alchemy object's container handle passes in as is:
+
+```ts
+const box = yield * Box // the object's Cloudflare.Container handle
+yield * SandboxObject.wake(box, { intercepts: [{ host: "forge.example.internal", fetcher: egress }] })
+yield * ContainerTerminal.ensureSession(box, { name: terminalId, user: "smithers", cwd: "/workspace" })
+
+// per socket, after server.accept()
+yield *
+  state.waitUntil(ContainerTerminal.attach(box, server, { name: terminalId, user: "smithers", access, cols, rows }))
+```
+
+The owner (`write`) types and resizes; every byte and resize from a `read`
+viewer is dropped. A reload attaches a new tmux client to the same shell.
+[Attach a terminal to a container](docs/guides/attach-a-terminal-to-a-container.md)
+walks the wiring.
 
 ## What it does not do
 
@@ -171,5 +197,6 @@ each guarantee and what proves it.
   whoever cancels an execution.
 
 Everything here bundles for workerd: no module imports a `node:` built-in or a
-Cloudflare module, and the tests run under Node with an in-memory stand-in for
-Durable Object storage.
+Cloudflare module, and the tests run under Node with in-memory stand-ins for
+Durable Object storage, a container and a WebSocket. The terminal's suite also
+runs a real container through Miniflare and Docker when Docker is present.

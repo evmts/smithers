@@ -11,7 +11,7 @@
  * @since 1.0.0
  */
 
-import { EngineStore, RunCatalogRead } from "@smthrs/engine-store"
+import { EngineStore, RunCatalogRead, RunInspection } from "@smthrs/engine-store"
 import { Flow, FlowRuntime, RetryPolicy, WaitFor } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
@@ -46,6 +46,7 @@ export type Services =
   | RunStore.RunStore
   | Journal.Journal
   | RunCatalogRead.RunCatalogRead
+  | RunInspection.RunInspection
 
 /**
  * What {@link serve} runs.
@@ -137,9 +138,15 @@ const wake = (flows: ReadonlyMap<string, Flow.Any>) =>
     }
   })
 
-/** Handles one request; the reply carries the poll's result, or `null`. */
-const handle = (flows: ReadonlyMap<string, Flow.Any>, request: Protocol.Request) =>
-  (Effect.gen(function*() {
+/** A request that names the flow it acts on. */
+type FlowRequest = Exclude<Protocol.Request, { readonly _tag: "Inspect" | "List" }>
+
+/** A read of the engine's runs, which names no flow. */
+type ReadRequest = Extract<Protocol.Request, { readonly _tag: "Inspect" | "List" }>
+
+/** Runs a request that acts on a flow; the reply carries the poll's result, or `null`. */
+const flowRequest = (flows: ReadonlyMap<string, Flow.Any>, request: FlowRequest) =>
+  Effect.gen(function*() {
     const flow = flows.get(request.flow) as AnyFlow | undefined
     if (flow === undefined) return yield* new UnknownFlow()
     const runtime = yield* FlowRuntime.FlowRuntime
@@ -172,40 +179,133 @@ const handle = (flows: ReadonlyMap<string, Flow.Any>, request: Protocol.Request)
         return null
       }
     }
-    // A flow's schemas carry the services they need with the flow's
-    // registration, so the requirements erased here are satisfied there.
-  }) as Effect.Effect<Schema.Json | null, unknown, FlowRuntime.FlowRuntime | RunStore.RunStore>).pipe(
-    Effect.exit,
-    Effect.flatMap((exit) => {
-      const outcome = Exit.isSuccess(exit) ? "replied" : "refused"
-      const failure = Exit.isFailure(exit) ? { "error.type": RetryPolicy.failureType(exit.cause) } : {}
-      const reply: Protocol.Message = Exit.isSuccess(exit)
-        ? { _tag: "Replied", client: request.client, id: request.id, result: exit.value }
-        : { _tag: "Refused", client: request.client, id: request.id, error: failure["error.type"]! }
-      return Metric.update(Metric.withAttributes(requests, { request: request._tag, outcome }), 1).pipe(
-        Effect.andThen(
-          (Exit.isSuccess(exit) ? Effect.logDebug : Effect.logWarning)("browser.runtime.request").pipe(
-            Effect.annotateLogs({ request: request._tag, outcome, ...failure })
-          )
-        ),
-        Effect.andThen(Effect.annotateCurrentSpan({ "smithers.request.outcome": outcome, ...failure })),
-        Effect.as(reply)
-      )
-    }),
-    Effect.withSpan("browser.runtime.request", {
-      attributes: {
-        "smithers.request": request._tag,
-        "smithers.flow": request.flow,
-        "smithers.execution.id": request.executionId
+  })
+
+/** How many of an inspection's values were cut to their limit. */
+const clippedValues = (inspection: RunInspection.Inspection): number =>
+  [
+    inspection.run.input,
+    inspection.run.result,
+    ...inspection.steps.flatMap((step) => [step.output, ...step.attempts.map((attempt) => attempt.outcome)]),
+    ...inspection.children.flatMap((child) => [child.input, child.result]),
+    ...inspection.journal.events.map((event) => event.payload)
+  ].filter((value) => value?.clipped === true).length
+
+/**
+ * Reads one run for a tab, as `run.inspect`: a span and a log line with the
+ * host (`local`), the outcome (`read`, `not_found` or `failed`), how many
+ * journal events and bytes it released, how many values it cut, and how long
+ * it took. No value is recorded.
+ */
+const inspectRun = (request: Extract<ReadRequest, { readonly _tag: "Inspect" }>) =>
+  Effect.gen(function*() {
+    const startedAt = yield* Clock.currentTimeMillis
+    const exit = yield* Effect.exit(
+      Effect.flatMap(RunInspection.RunInspection, (reads) =>
+        reads.inspect(request.runId, {
+          ...(request.afterSeq === undefined ? {} : { afterSeq: request.afterSeq }),
+          ...(request.limit === undefined ? {} : { limit: request.limit })
+        }))
+    )
+    const durationMs = (yield* Clock.currentTimeMillis) - startedAt
+    const fields = Exit.isSuccess(exit) ?
+      {
+        outcome: "read",
+        events: exit.value.journal.events.length,
+        bytes: new TextEncoder().encode(JSON.stringify(exit.value)).length,
+        clipped: clippedValues(exit.value)
       }
-    })
-  )
+      : { outcome: RetryPolicy.failureType(exit.cause) === "@smthrs/engine-store/RunNotFound" ? "not_found" : "failed" }
+    yield* Effect.annotateCurrentSpan({ "smithers.run.host": "local", ...fields, durationMs })
+    yield* (Exit.isSuccess(exit) ? Effect.logInfo : Effect.logWarning)("run.inspect").pipe(
+      Effect.annotateLogs({ host: "local", ...fields, durationMs })
+    )
+    return yield* exit
+  }).pipe(Effect.withSpan("run.inspect", { attributes: { "smithers.execution.id": request.runId } }))
+
+/** Runs a read of the engine's runs; the reply carries what it read. */
+const readRequest = (request: ReadRequest) =>
+  request._tag === "Inspect"
+    ? inspectRun(request)
+    : Effect.flatMap(RunInspection.RunInspection, (reads) =>
+      reads.list({
+        ...(request.limit === undefined ? {} : { limit: request.limit }),
+        ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
+        ...(request.roots === undefined ? {} : { roots: request.roots })
+      }))
+
+/** The span attributes that name what a request acts on. */
+const requestAttributes = (request: Protocol.Request): Record<string, string> =>
+  request._tag === "List" ?
+    {} :
+    request._tag === "Inspect"
+    ? { "smithers.execution.id": request.runId }
+    : { "smithers.flow": request.flow, "smithers.execution.id": request.executionId }
+
+/** Handles one request; the reply carries what it read, or `null`. */
+const handle = (flows: ReadonlyMap<string, Flow.Any>, request: Protocol.Request) =>
+  ((request._tag === "Inspect" || request._tag === "List"
+    ? readRequest(request)
+    : flowRequest(flows, request)) as Effect.Effect<
+      Schema.Json | null,
+      unknown,
+      FlowRuntime.FlowRuntime | RunStore.RunStore | RunInspection.RunInspection
+    >).pipe(
+      // A flow's schemas carry the services they need with the flow's
+      // registration, so the requirements erased here are satisfied there.
+      Effect.exit,
+      Effect.flatMap((exit) => {
+        const outcome = Exit.isSuccess(exit) ? "replied" : "refused"
+        const failure = Exit.isFailure(exit) ? { "error.type": RetryPolicy.failureType(exit.cause) } : {}
+        const reply: Protocol.Message = Exit.isSuccess(exit)
+          ? { _tag: "Replied", client: request.client, id: request.id, result: exit.value }
+          : { _tag: "Refused", client: request.client, id: request.id, error: failure["error.type"]! }
+        return Metric.update(Metric.withAttributes(requests, { request: request._tag, outcome }), 1).pipe(
+          Effect.andThen(
+            (Exit.isSuccess(exit) ? Effect.logDebug : Effect.logWarning)("browser.runtime.request").pipe(
+              Effect.annotateLogs({ request: request._tag, outcome, ...failure })
+            )
+          ),
+          Effect.andThen(Effect.annotateCurrentSpan({ "smithers.request.outcome": outcome, ...failure })),
+          Effect.as(reply)
+        )
+      }),
+      Effect.withSpan("browser.runtime.request", {
+        attributes: { "smithers.request": request._tag, ...requestAttributes(request) }
+      })
+    )
 
 /** The engine built no database for tabs: its store is not SQLite on OPFS. */
 class DatabaseUnavailable extends Schema.TaggedError<DatabaseUnavailable>()(
   "@smthrs/platform-browser/DatabaseUnavailable",
   {}
 ) {}
+
+/**
+ * The leader could not record the transaction a statement opened, so it rolled
+ * it back: unrecorded, a later leader could not tell whether it committed.
+ */
+class TransactionUnrecorded extends Schema.TaggedError<TransactionUnrecorded>()(
+  "@smthrs/platform-browser/TransactionUnrecorded",
+  {}
+) {}
+
+/**
+ * The leader could not read whether an earlier leader committed the statement's
+ * transaction, so it ran nothing. The tab keeps the transaction, and its next
+ * statement asks again.
+ */
+class TransactionUndecided extends Schema.TaggedError<TransactionUndecided>()(
+  "@smthrs/platform-browser/TransactionUndecided",
+  {}
+) {}
+
+/** The `outcome` of a statement that failed with each of these tags; any other failure is `failed`. */
+const failureOutcomes: Readonly<Record<string, string>> = {
+  "@smthrs/platform-browser/TransactionLost": "lost",
+  "@smthrs/platform-browser/TransactionUnrecorded": "unrecorded",
+  "@smthrs/platform-browser/TransactionUndecided": "undecided"
+}
 
 /** SQLite's own result code and message for a statement it refused, never logged. */
 const sqliteDetail = (error: unknown): { readonly code?: number; readonly message?: string } => {
@@ -222,8 +322,10 @@ const commitsKeptFor = 24 * 60 * 60 * 1000
 
 /**
  * Creates the table of each tab's last transaction (`SqlProtocol.commits`) and
- * drops records older than a day. Without it, a statement the old leader never
- * answered is never taken as committed, and its tab runs the transaction again.
+ * drops records older than a day. A leader that can't still serves: a
+ * transaction opens only once its record is written, so without the table
+ * every statement that opens one fails (`TransactionUnrecorded`), while reads
+ * and single statements still run and a tab can repair the table.
  */
 const prepareCommits = (connection: Connection, leader: string) =>
   Effect.gen(function*() {
@@ -240,8 +342,10 @@ const prepareCommits = (connection: Connection, leader: string) =>
       false
     )
   }).pipe(
-    Effect.catch(() =>
-      Effect.logWarning("browser.runtime.statement").pipe(Effect.annotateLogs({ outcome: "unrecorded" }))
+    Effect.catch((error) =>
+      Effect.logWarning("browser.runtime.statement").pipe(
+        Effect.annotateLogs({ outcome: "unprepared", "error.type": error._tag })
+      )
     )
   )
 
@@ -252,7 +356,9 @@ const prepareCommits = (connection: Connection, leader: string) =>
  * transaction is recorded inside it (`SqlProtocol.commits`), so that when a
  * statement for a transaction an earlier leader held arrives, this leader
  * answers it as committed if that leader committed the transaction with it,
- * and refuses it otherwise.
+ * and refuses it otherwise. The record fails closed: a transaction it can't
+ * record is rolled back and its statement fails, and a statement whose record
+ * it can't read fails without running, so no transaction commits twice.
  */
 const serveStatements = (name: string, database: Option.Option<Connection>) =>
   Effect.gen(function*() {
@@ -307,7 +413,8 @@ const serveStatements = (name: string, database: Option.Option<Connection>) =>
             false
           ).pipe(
             Effect.map(({ rows }) => (rows[0] as { readonly opened?: unknown } | undefined)?.opened),
-            Effect.orElseSucceed(() => undefined)
+            // Taken as absent, the tab would run a transaction that may have committed again.
+            Effect.mapError(() => new TransactionUndecided())
           )
           if (request.opened !== undefined && recorded === request.opened) {
             return { rows: [], open: false, committed: true }
@@ -316,7 +423,8 @@ const serveStatements = (name: string, database: Option.Option<Connection>) =>
         }
         const result = yield* connection.run(request.client, request.sql, request.params, continuing)
         if (result.open && !continuing) {
-          // This statement opened a transaction: record it inside, so it commits with the transaction.
+          // This statement opened a transaction: record it inside, so it commits with the transaction. Unrecorded, a
+          // later leader could not tell whether it committed, so it does not stand.
           yield* connection.run(
             request.client,
             `INSERT OR REPLACE INTO ${SqlProtocol.commits} (client, opened, at) VALUES (?, ?, ?)`,
@@ -324,7 +432,7 @@ const serveStatements = (name: string, database: Option.Option<Connection>) =>
             true
           ).pipe(
             Effect.catch(() =>
-              Effect.logWarning("browser.runtime.statement").pipe(Effect.annotateLogs({ outcome: "unrecorded" }))
+              connection.abandon(request.client).pipe(Effect.andThen(Effect.fail(new TransactionUnrecorded())))
             )
           )
         }
@@ -339,9 +447,7 @@ const serveStatements = (name: string, database: Option.Option<Connection>) =>
             const failure = Exit.isFailure(exit) ? RetryPolicy.failureType(exit.cause) : undefined
             const outcome = failure === undefined ?
               Exit.isSuccess(exit) && exit.value.committed ? "committed" : "executed"
-              : failure === "@smthrs/platform-browser/TransactionLost" ?
-              "lost"
-              : "failed"
+              : failureOutcomes[failure] ?? "failed"
             const reply: SqlProtocol.Message = Exit.isSuccess(exit)
               ? {
                 _tag: "Executed",
@@ -357,14 +463,15 @@ const serveStatements = (name: string, database: Option.Option<Connection>) =>
                 id: request.id,
                 error: failure!,
                 leader,
-                open,
+                // An undecided transaction may still be the tab's: say nothing of it, so the tab asks again.
+                ...(failure === "@smthrs/platform-browser/TransactionUndecided" ? {} : { open }),
                 ...sqliteDetail(Cause.squash(exit.cause))
               }
             return yield* Metric.update(Metric.withAttributes(statements, { outcome }), 1).pipe(
               Effect.andThen(
                 // A statement SQLite refused is its tab's to handle, and TanStack DB's
                 // persistence expects some (a column it already added), so only a
-                // lost transaction or a missing database is a warning.
+                // lost, unrecorded or undecided transaction is a warning.
                 failure === undefined ?
                   Effect.void
                   : (outcome === "failed" ? Effect.logDebug : Effect.logWarning)("browser.runtime.statement").pipe(

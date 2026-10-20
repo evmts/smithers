@@ -9,6 +9,12 @@
  *   `Router` reaches the objects of child and handoff executions.
  * - `EdgeCache`: `@smthrs/artifacts`' `ImmutableCache` over the Workers Cache
  *   API.
+ * - `SandboxObject`: what a container Durable Object runs before it uses its
+ *   container: start it with internet access off, re-arm its inactivity
+ *   timeout, register its outbound HTTP intercepts.
+ * - `ContainerTerminal`: a browser terminal over `@smthrs/sandbox`'s
+ *   `TerminalProtocol`, one tmux session per terminal in the container and
+ *   one tmux client per socket.
  *
  * ```ts
  * import { CloudflareRuntime, EdgeCache, ExecutionObject } from "@smthrs/platform-cloudflare"
@@ -47,3 +53,19 @@ export * as ExecutionObject from "./ExecutionObject.ts"
  * @since 1.0.0
  */
 export * as EdgeCache from "./EdgeCache.ts"
+
+/**
+ * A browser terminal attached to a tmux session in a Durable Object's
+ * container.
+ *
+ * @since 1.0.0-rc.17
+ */
+export * as ContainerTerminal from "./ContainerTerminal.ts"
+
+/**
+ * The container Durable Object's wake: start, inactivity timeout and outbound
+ * intercepts.
+ *
+ * @since 1.0.0-rc.17
+ */
+export * as SandboxObject from "./SandboxObject.ts"

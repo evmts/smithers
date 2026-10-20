@@ -111,13 +111,15 @@ const exit = await runtime.runPromise(Effect.gen(function*() {
 background. Pick the execution id yourself and keep it: it is how any tab
 asks about the run later, and starting the same id again is a no-op.
 
-| Call                                     | What it does                                                                          |
-| ---------------------------------------- | ------------------------------------------------------------------------------------- |
-| `start(flow, { executionId, payload })`  | Admits the run and returns; the payload is encoded with the flow's own schema.        |
-| `result(flow, executionId)`              | Waits for the run to settle and returns its `Exit`; a cancelled run ends interrupted. |
-| `cancel(flow, executionId)`              | Requests cancellation, which runs the flow's normal cleanup.                          |
-| `signal(flow, executionId, name, value)` | Resolves the run's `WaitFor` point `name` with a JSON value.                          |
-| `events`                                 | Streams the execution id and event type of every event the engine commits.            |
+| Call                                     | What it does                                                                                  |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `start(flow, { executionId, payload })`  | Admits the run and returns; the payload is encoded with the flow's own schema.                |
+| `result(flow, executionId)`              | Waits for the run to settle and returns its `Exit`; a cancelled run ends interrupted.         |
+| `cancel(flow, executionId)`              | Requests cancellation, which runs the flow's normal cleanup.                                  |
+| `signal(flow, executionId, name, value)` | Resolves the run's `WaitFor` point `name` with a JSON value.                                  |
+| `events`                                 | Streams the execution id and event type of every event the engine commits.                    |
+| `inspect(runId, { afterSeq?, limit? })`  | Reads one run: lifecycle, steps, child runs and a journal page; values redacted, 16 KiB each. |
+| `list({ limit?, cursor?, roots? })`      | Pages the engine's runs, newest first; parentless runs unless `roots` is `false`.             |
 
 A request the leader refuses fails with `RequestRefused`, whose `error` is the
 tag of what failed, never its message.

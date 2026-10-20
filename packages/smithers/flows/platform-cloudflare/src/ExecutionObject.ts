@@ -24,7 +24,7 @@
 import { canonicalize } from "@smthrs/canonical"
 import { type DurableEngineState, EngineStore } from "@smthrs/engine-store"
 import { type Flow, RetryPolicy } from "@smthrs/flow"
-import type { RunStore } from "@smthrs/run-store"
+import { RunStore } from "@smthrs/run-store"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -406,12 +406,24 @@ class UnknownFlow extends Schema.TaggedError<UnknownFlow>()("@smthrs/platform-cl
  */
 class Undriven extends Schema.TaggedError<Undriven>()("@smthrs/platform-cloudflare/Undriven", {}) {}
 
-/** Drives the execution once (`EngineStore.drive`) and reads what that left it as. */
+/**
+ * Drives the execution once (`EngineStore.drive`) and reads what that left it as.
+ *
+ * Only an execution the store does not hold yet is admitted with the intent's
+ * payload, so only then is the payload decoded. A held run resumes from the
+ * payload the store recorded, and the engine settles one the deployed flow's
+ * schema no longer decodes as `payload_changed`: decoding the intent first
+ * would fail every alarm of that run, forever.
+ */
 const drive = (flow: Flow.Any, value: Intent) =>
   Effect.gen(function*() {
+    const held = yield* (yield* RunStore.RunStore).get(value.executionId).pipe(
+      Effect.as(true),
+      Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeed(false))
+    )
     // A flow's schemas carry the services they need with the flow's
     // registration, so the erased requirements are satisfied there.
-    const payload = yield* (Schema.decodeUnknownEffect(Schema.toCodecJson(flow.payloadSchema))(
+    const payload = held ? {} : yield* (Schema.decodeUnknownEffect(Schema.toCodecJson(flow.payloadSchema))(
       value.payload
     ) as Effect.Effect<object, Schema.SchemaError>)
     const driven = yield* EngineStore.drive(flow, { executionId: value.executionId, payload })

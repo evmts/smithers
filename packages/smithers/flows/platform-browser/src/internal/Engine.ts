@@ -7,7 +7,7 @@
  */
 
 import { WebCrypto } from "@smthrs/crypto"
-import { OwnerIdentity, RunCatalogRead, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
+import { OwnerIdentity, RunCatalogRead, RunInspection, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { type Flow, type FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Runtime } from "@smthrs/flows"
 import * as Jj from "@smthrs/jj"
@@ -28,13 +28,15 @@ import * as Protocol from "./Protocol.ts"
 import * as SqlConnection from "./SqlConnection.ts"
 
 /**
- * What names one engine.
+ * What names one engine, and the flows whose runs its run reads render
+ * through their own schemas (`RunInspection.Options`).
  *
  * @category models
  * @since 1.0.0
  */
 export interface Options {
   readonly name: string
+  readonly flows?: ReadonlyArray<Flow.Any> | undefined
 }
 
 /**
@@ -48,15 +50,23 @@ export interface HostOptions extends Options {
 }
 
 /**
- * The services the engine host gives every registered flow.
+ * The services the engine host gives every registered flow: the platform's,
+ * and `RunInspection`, the engine's own run reads, so a flow such as a retry
+ * can read another run of the same engine.
  *
  * @category models
  * @since 1.0.0
  */
-export type Host = Crypto.Crypto | OwnerIdentity.OwnerIdentity | Path.Path | HttpClient | Jj.Jj
+export type Host =
+  | Crypto.Crypto
+  | OwnerIdentity.OwnerIdentity
+  | Path.Path
+  | HttpClient
+  | Jj.Jj
+  | RunInspection.RunInspection
 
-/** The browser engine host. */
-const engineHost: Layer.Layer<Host> = Layer.mergeAll(
+/** The browser engine host's platform services; the run reads come from the engine's own database. */
+const engineHost: Layer.Layer<Exclude<Host, RunInspection.RunInspection>> = Layer.mergeAll(
   OwnerIdentity.layerWithoutPid,
   Path.layer,
   HttpClientLayer.layer,
@@ -64,8 +74,8 @@ const engineHost: Layer.Layer<Host> = Layer.mergeAll(
 ).pipe(Layer.provideMerge(WebCrypto.layer))
 
 /**
- * The durable engine and the run catalog over the `SqlClient` the caller
- * provides; see `BrowserRuntime.layer`.
+ * The durable engine, the run catalog and the run reads over the `SqlClient`
+ * the caller provides; see `BrowserRuntime.layer`.
  *
  * @category layers
  * @since 1.0.0
@@ -79,7 +89,10 @@ export const layer = <Registered, RegistrationError, RegistrationRequirements>(
     StepBoundary.layerUnsupported,
     WorkspaceSandbox.layerUnsupported,
     registerFlows
-  ).pipe(Layer.provideMerge(RunCatalogRead.layer), Layer.provideMerge(engineHost))
+  ).pipe(
+    Layer.provideMerge(Layer.merge(RunCatalogRead.layer, RunInspection.layerWith({ flows: options.flows }))),
+    Layer.provideMerge(engineHost)
+  )
 
 /**
  * {@link layer} over SQLite in OPFS, with the app's shared database beside
