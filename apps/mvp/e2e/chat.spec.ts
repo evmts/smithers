@@ -1,8 +1,8 @@
 import { answerTo, expect, test } from "./fixtures"
 
-// Real browser, real Worker, real model: no mocks. Runs locally, or against production with BASE_URL.
+// Real browser, Workers, Postgres, Electric and model: no mocks. Runs locally, or against a deployment with BASE_URL.
 
-test("⌘K opens and hides chat, and Esc and the Hide button hide it too", async ({ page }) => {
+test("shortcut: ⌘K opens and hides chat, and Esc and the Hide button hide it too", async ({ page }) => {
   await page.goto("/app")
   await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
   const composer = page.getByRole("textbox", { name: "Message Smithers" })
@@ -30,7 +30,7 @@ test("⌘K opens and hides chat, and Esc and the Hide button hide it too", async
   await expect(composer).toBeHidden()
 })
 
-test("a user asks Smithers and gets a streamed answer", async ({ page }) => {
+test("ask: a user asks Smithers and gets a streamed answer", async ({ page }) => {
   await page.goto("/app")
   await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
   await page.keyboard.press("ControlOrMeta+k")
@@ -45,27 +45,58 @@ test("a user asks Smithers and gets a streamed answer", async ({ page }) => {
   await expect(answerTo(conversation, `Reply with exactly the word: ${word}`)).toContainText(word, { timeout: 60_000 })
 })
 
-test("reloading mid-answer fails that answer and leaves chat usable", async ({ page }) => {
+test("reload mid-answer: the answer continues on the server and completes after the reload, and the composer works", async ({ page }) => {
   await page.goto("/app")
   await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
   await page.keyboard.press("ControlOrMeta+k")
   const composer = page.getByRole("textbox", { name: "Message Smithers" })
   const word = `count-${Date.now()}`
-  await composer.fill(`Write ${word}, then count from 1 to 3000 in words, one number per line.`)
+  const question = `Write ${word} on the first line, then count from 1 to 120 in words, one number per line, then write end-${word} on the last line.`
+  const taken = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/questions")
+  await composer.fill(question)
   await composer.press("Enter")
 
-  // The page reloads as soon as the answer is underway; a long answer takes seconds to finish.
+  // ChatApi took the question (202), so the server is answering it. The page reloads while the answer is unfinished.
   const conversation = page.getByRole("region", { name: "Conversation", exact: true })
-  const answer = answerTo(conversation, `Write ${word}`)
-  await expect(answer).toHaveAttribute("data-role", "assistant")
+  const answer = answerTo(conversation, question)
+  expect((await taken).status()).toBe(202)
+  // Unfinished: "Smithers is answering", or text still streaming.
+  await expect(answer.locator('[role="status"], [data-slot="message-response"][data-streaming="true"]')).toHaveCount(1)
   await page.reload()
 
-  await expect(answer).toContainText("Smithers couldn't answer. Try again.", { timeout: 30_000 })
+  // After the reload the same answer finishes: its last line arrives and it stops streaming.
+  await expect(answer).toContainText(`end-${word}`, { timeout: 60_000 })
+  await expect(answer).toContainText(word)
+  await expect(answer.locator('[data-slot="message-response"]')).toHaveAttribute("data-streaming", "false")
+  await expect(conversation.locator(".sui-chat-message", { hasText: question })).toHaveCount(1)
 
-  // The composer stays open across the reload, and the next question gets its answer.
+  // The composer works after the reload: it opens, and the next question gets its answer.
   const next = `after-${Date.now()}`
-  await expect(composer).toBeVisible()
+  await page.keyboard.press("ControlOrMeta+k")
+  await expect(composer).toBeFocused()
   await composer.fill(`Reply with exactly the word: ${next}`)
   await composer.press("Enter")
   await expect(answerTo(conversation, `Reply with exactly the word: ${next}`)).toContainText(next, { timeout: 60_000 })
+})
+
+// What a person sees, not just what is in the page: `toBeInViewport`, where `toBeVisible` passes for an element
+// scrolled out of sight. The conversation keeps its newest message in view, as the transcript's bottom anchor intends.
+test("in view: opening chat shows the newest message and the Chat button, and a new question and its answer stay in view", async ({ page }) => {
+  await page.goto("/app")
+  const chatButton = page.getByRole("button", { name: /Chat/ })
+  await expect(chatButton).toBeVisible({ timeout: 30_000 })
+  const conversation = page.getByRole("region", { name: "Conversation", exact: true })
+  await expect(conversation.locator(".sui-chat-message").last(), "the newest message shows without scrolling").toBeInViewport()
+  await expect(chatButton, "the Chat button shows without scrolling").toBeInViewport()
+
+  await chatButton.click()
+  const composer = page.getByRole("textbox", { name: "Message Smithers" })
+  const word = `view-${Date.now()}`
+  const question = `Reply with exactly the word: ${word}`
+  await composer.fill(question)
+  await composer.press("Enter")
+  await expect(conversation.locator(".sui-chat-message", { hasText: question }), "the question shows where the person looks").toBeInViewport()
+  await expect(answerTo(conversation, question)).toContainText(word, { timeout: 60_000 })
+  await expect(answerTo(conversation, question), "its answer shows without scrolling").toBeInViewport()
+  await expect(composer).toBeInViewport()
 })
