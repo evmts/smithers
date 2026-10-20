@@ -250,6 +250,9 @@ const missingGifs = specs.flatMap((spec) => spec.tests.filter((test) => !flows.s
 for (const test of missingGifs) warnings.push(`no GIF for ${test.flow} (${test.spec}.spec.ts:${test.line})`)
 
 // ---------------------------------------------------------------------------------------------------------
+// TODO: the open task items (\`- [ ]\`) in apps/mvp/docs/todo.md, counted for the nav.
+const openTodos = (raw.get("apps/mvp/docs/todo.md") ?? "").match(/^\s*[-*] \[ \]/gm)?.length ?? 0
+
 // Decisions: docs/decisions/NNNN-*.md with a "Status: <status> (<who>, <date>)" line.
 
 const decisions = notes
@@ -332,6 +335,7 @@ writeFileSync(
         <a href="#/" data-view="home">Home</a>
         <a href="#/flows" data-view="flows">Flows <span class="count">${flows.length}</span></a>
         <a href="#/graph" data-view="graph">Graph</a>
+        <a href="#/apps/mvp/docs/todo.md" data-view="todo">TODO <span class="count">${openTodos}</span></a>
       </nav>
       <nav class="tree" id="ms-tree" aria-label="Notes"></nav>
     </div>
