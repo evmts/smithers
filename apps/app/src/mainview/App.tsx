@@ -1,7 +1,7 @@
 import { isOpenPull } from "./cards/GithubParts"
 import { PullViews } from "./repository/PullViews"
 import { IssueViews, matchesIssueReadKey } from "./repository/IssueViews"
-import { guestAdmission, RepoFrame } from "./repository/RepoFrame"
+import { frameAskPlaceholder, guestAdmission, RepoFrame } from "./repository/RepoFrame"
 import { CodeHome } from "./repository/CodeHome"
 import { latestCommitKey, readmeReadKey, repositoryLatestCommits, repositoryReadmeReads } from "./repository/RepositoryCodeRead"
 import { RepositoryCodeView } from "./repository/RepositoryCodeView"
@@ -545,7 +545,7 @@ function AppContent() {
       <Composer
         typing={typing}
         autoFocus={!inAsk && authMessage === undefined}
-        placeholder="Ask Smithers to work on something…"
+        placeholder={(inAsk ? frameAskPlaceholder(identity?.state === "signed-in", bootEntry?.canWrite === true) : undefined) ?? "Ask Smithers to work on something…"}
       />
     </div>
   )

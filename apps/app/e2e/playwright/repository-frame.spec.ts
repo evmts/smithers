@@ -139,6 +139,13 @@ for (const member of [false, true]) for (const width of [1440, 1280, 390]) for (
       await page.getByRole("button", { name: "Ask", exact: true }).click()
       await expect(page.getByRole("complementary", { name: "Ask", exact: true })).toBeVisible()
       await expect(page.getByRole("complementary", { name: "Ask", exact: true }).getByTestId("composer-input")).toBeVisible()
+      // Design f-8wfsm7: typed text and placeholder share one size (14px, 16px on a phone), and the composer clears the viewport's foot by 16px.
+      // PM d-szeq1q: this viewer is signed in without write access (the document grants no can_write), so the frame invites a question.
+      const fontSize = width === 390 ? "16px" : "14px"
+      expect(await page.getByRole("complementary", { name: "Ask", exact: true }).getByTestId("composer-input").evaluate(node => ({
+        text: getComputedStyle(node).fontSize, placeholder: getComputedStyle(node, "::placeholder").fontSize,
+        words: (node as HTMLTextAreaElement).placeholder, clear: node.closest(".smithers-composer")!.getBoundingClientRect().bottom <= innerHeight - 16
+      }))).toEqual({ text: fontSize, placeholder: fontSize, words: "Ask a question…", clear: true })
       expect(await page.locator(".repo-code-home-main").evaluate(element => element.getBoundingClientRect().width)).toBe(
         await page.locator(".repo-code-home-layout").evaluate(element => element.getBoundingClientRect().width))
       await page.getByTestId("composer-input").focus()
@@ -330,6 +337,8 @@ const CANARY_README = [
   "Open the repository in your browser.",
   "Explore its files.",
   "",
+  "Follow the [app quickstart](https://smithers.sh/docs/quickstart/).",
+  "",
   "> [!TIP]",
   "> Ask your agent to help you figure out how Smithers can help you and your project, based on everything it knows about you."
 ].join("\n")
@@ -384,6 +393,16 @@ for (const member of [false, true]) for (const width of [1280, 390]) for (const 
     expect(await readme.textContent()).not.toContain("Generated from")
     await expect(readme.locator("strong", { hasText: "Automate maintaining your codebase" })).toBeVisible()
     await expect(readme.getByText("Open the repository in your browser. Explore its files.", { exact: true })).toBeVisible()
+    // Design live review .17/.18/.20 item 1 (mock ui/ui.css:77): a README link is brand, not body text, and underlines on hover.
+    const quickstart = readme.getByRole("link", { name: "app quickstart", exact: true })
+    const linkLook = () => quickstart.evaluate(node => {
+      const probe = document.createElement("span"); probe.style.color = "var(--brand)"; node.parentElement!.append(probe)
+      const brand = getComputedStyle(probe).color; probe.remove()
+      return { brand: getComputedStyle(node).color === brand, line: getComputedStyle(node).textDecorationLine }
+    })
+    expect(await linkLook()).toEqual({ brand: true, line: "none" })
+    await quickstart.hover()
+    expect(await linkLook()).toEqual({ brand: true, line: "underline" })
     const banner = readme.locator("pre")
     await expect(banner).toHaveCount(1)
     expect(await banner.evaluate(node => {

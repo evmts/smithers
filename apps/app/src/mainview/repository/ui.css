@@ -74,7 +74,9 @@
 .repo-ui-markdown .app-md h2 { margin: 28px 0 12px; font-size: var(--fs-5); font-weight: 500; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 .repo-ui-markdown .app-md h3 { margin: 20px 0 8px; font-size: var(--fs-4); font-weight: 500; }
 .repo-ui-markdown .app-md p { margin-bottom: 16px; }
-.repo-ui-markdown .app-md a { color: var(--brand); }
+/* The mock's markdown link (ui/ui.css:77) on the app's markup: a README or home block link is `a.sui-md-link`, which `.repo-frame a` would otherwise paint as body text. */
+.repo-ui-markdown a.sui-md-link { color: var(--brand); text-decoration: none; }
+.repo-ui-markdown a.sui-md-link:hover, .repo-ui-markdown a.sui-md-link:focus-visible { text-decoration: underline; }
 .repo-ui-markdown .app-md pre { background: var(--code-bg); border-radius: var(--r-2); font-size: var(--fs-2); max-width: 100%; }
 .repo-ui-markdown .app-md-dense { font-size: var(--fs-2); line-height: 1.65; }
 .repo-ui-markdown .app-md-dense p { margin-bottom: 10px; }

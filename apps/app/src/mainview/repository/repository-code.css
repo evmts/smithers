@@ -14,3 +14,6 @@
 .repo-code-token-plain { color: var(--text); }
 .repo-frame .repository-code { padding: 0; overflow: visible; }
 .repo-frame .repository-code .repo-code-permalink { color: var(--on-action-primary); background: var(--brand); border-color: var(--brand); }
+/* `.repository-code button` sets `font: inherit` (16px, 400): Copy permalink keeps the repo button's own type and padding (mock: 14px, 500, 36px, a link icon). */
+.repo-frame .repository-code button.repo-ui-btn { padding: 0 12px; font: 500 var(--fs-2)/1.4 var(--font-ui); }
+.repository-code a.repo-ui-btn:hover { text-decoration: none; }

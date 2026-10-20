@@ -84,7 +84,11 @@
 .repo-frame .repository-chat .smithers-composer .sui-chat-composer-send { background: var(--brand-soft); border: 1px solid var(--brand-border); color: var(--brand); }
 .repo-frame .repository-chat .smithers-composer .sui-chat-composer-send:hover, .repo-frame .repository-chat .smithers-composer .sui-chat-composer-send:active:not(:disabled) { background: var(--surface-2); color: var(--brand); }
 .repo-frame .repository-chat .smithers-composer .sui-chat-composer-send:disabled { opacity: .4; }
-.repo-frame .repository-chat .smithers-composer .sui-chat-composer-input::placeholder { font-size: var(--fs-2); }
+/* Design f-8wfsm7 (a): typed text and placeholder share one size, so nothing jumps on the first keystroke; 16px on a phone, where iOS zooms into a smaller input on focus. */
+.repo-frame .repository-chat .smithers-composer .sui-chat-composer-input, .repo-frame .repository-chat .smithers-composer .sui-chat-composer-input::placeholder { font-size: var(--fs-2); }
+@media (max-width: 600px) { .repo-frame .repository-chat .smithers-composer .sui-chat-composer-input, .repo-frame .repository-chat .smithers-composer .sui-chat-composer-input::placeholder { font-size: 16px; } }
+/* Design f-8wfsm7 (b): the composer sits 16px above the panel's foot (the mock's .repo-frame-composer margin), not on the viewport edge. */
+.repo-frame .repository-chat .composer-overlay .composer-wrap { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
 /* One ring: the composer's own border carries focus in the frame (as the mock's composer does: a brand border plus a 1px brand ring,
    design-mocks frame/frame.css), so the textarea draws no second outline and the library's 4px :focus-within halo
    (packages/smithers/ui uiCss.ts, injected after the app's sheets) is replaced: this selector's (0,4,0) outranks its (0,2,0). */
