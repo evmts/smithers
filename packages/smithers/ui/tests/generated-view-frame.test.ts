@@ -173,6 +173,18 @@ describe("the frame runtime", () => {
 });
 
 describe("formValues", () => {
+  test("omits hidden controls, including hidden ancestors and CSS", () => {
+    const window = new Window();
+    window.document.body.innerHTML = `<form>
+      <input name="visible" value="yes"><input type="hidden" name="secret" value="no">
+      <div hidden><input name="ancestor" value="no"></div>
+      <input name="display" style="display:none" value="no">
+      <input name="visibility" style="visibility:hidden" value="no">
+      <div style="opacity:0"><textarea name="opacity">no</textarea></div>
+      </form>`;
+    expect(formValues(window.document.querySelector("form") as never)).toEqual({ visible: "yes" });
+  });
+
   test("reads named, enabled fields as booleans, numbers and strings", () => {
     const window = new Window();
     window.document.body.innerHTML =

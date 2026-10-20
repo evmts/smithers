@@ -47,7 +47,7 @@ interface Opened {
 }
 
 /** Opens the host page with a view, and waits for the frame's runtime to show it. */
-const open = async (probe: { html: string; interactions: Record<string, unknown>; runtime?: string }, ready = "[data-smithers-view]"): Promise<Opened> => {
+const open = async (probe: { html: string; interactions: Record<string, unknown>; runtime?: string; siblings?: boolean }, ready = "[data-smithers-view]"): Promise<Opened> => {
   const page = await browser.newPage();
   const leaks: Array<string> = [];
   const dialogs: Array<string> = [];
@@ -203,6 +203,34 @@ describe("the bridge in Chromium", () => {
     });
     await page.waitForFunction(() => window.log.refusals.length > 0);
     expect(await page.evaluate(() => window.log.refusals)).toEqual(["wrong_source"]);
+    await page.close();
+  }, 60_000);
+
+  test("two mounted views initialize without false refusals", async () => {
+    const { page } = await open({ html: '<button data-event="ask">Ask</button>', interactions: { ask: { kind: "message", label: "Ask" } }, siblings: true });
+    const frames = page.frames().filter((frame) => frame !== page.mainFrame());
+    expect(frames).toHaveLength(2);
+    for (const frame of frames) await frame.click("button");
+    await page.waitForFunction(() => window.log.interactions.length === 2);
+    expect(await page.evaluate(() => window.log.refusals)).toEqual([]);
+    await page.close();
+  }, 60_000);
+
+  test("submits only visible form controls", async () => {
+    const { frame, page } = await open({
+      html: `<form data-event="ask"><input name="visible" value="yes">
+        <input type="hidden" name="hidden" value="no"><div hidden><input name="ancestor" value="no"></div>
+        <input style="display:none" name="display" value="no"><input style="visibility:hidden" name="visibility" value="no">
+        <div style="opacity:0"><textarea name="opacity">no</textarea></div>
+        <details><input name="closed" value="no"></details>
+        <button type="submit">Ask</button></form>`,
+      interactions: { ask: { kind: "message", label: "Ask" } },
+    }, "button");
+    await frame.click("button");
+    await page.waitForFunction(() => window.log.interactions.length === 1);
+    expect(await page.evaluate(() => window.log.interactions)).toEqual([
+      { _tag: "Message", event: { name: "ask" }, label: "Ask", values: { visible: "yes" } },
+    ]);
     await page.close();
   }, 60_000);
 

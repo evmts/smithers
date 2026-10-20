@@ -84,13 +84,14 @@ export function webPageTarget(url: string, hostOrigin?: string): WebPageTarget |
  * origin can remove its sandbox and reach the host, and one on the host's site
  * shares its cookies. The site is approximated as {@link siteOf} describes, so
  * hosts under a public suffix such as `pages.dev` refuse their neighbors too.
- * An opaque host origin (`"null"`) shares nothing; any other `hostOrigin` that
+ * An unknown host origin refuses every page. An opaque host origin (`"null"`) shares nothing; any other `hostOrigin` that
  * is not a URL refuses every page.
  */
 export function framedPageTarget(url: string, hostOrigin?: string): WebPageTarget | null {
   const page = parsePage(url);
   if (page === null || page.protocol !== "https:") return null;
-  if (hostOrigin === undefined || hostOrigin === "null") return targetOf(page);
+  if (hostOrigin === undefined) return null;
+  if (hostOrigin === "null") return targetOf(page);
   let host: URL;
   try {
     host = new URL(hostOrigin);

@@ -12,6 +12,7 @@ interface Probe {
   readonly html: string;
   readonly interactions: Interactions.Declared;
   readonly runtime?: string;
+  readonly siblings?: boolean;
 }
 
 declare global {
@@ -43,7 +44,7 @@ window.sanitizeHtml = (html) => {
 const app = document.getElementById("app");
 if (app !== null) {
   createRoot(app).render(
-    <GeneratedView
+    <>{[0, ...(window.probe.siblings ? [1] : [])].map((key) => <GeneratedView key={key}
       html={window.probe.html}
       interactions={window.probe.interactions}
       runtime={window.probe.runtime}
@@ -53,6 +54,6 @@ if (app !== null) {
       style={{ height: 400 }}
       onInteraction={(interaction) => window.log.interactions.push(interaction)}
       onRefused={(reason) => window.log.refusals.push(reason)}
-    />,
+    />)}</>,
   );
 }

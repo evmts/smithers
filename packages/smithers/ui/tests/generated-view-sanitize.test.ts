@@ -58,6 +58,12 @@ describe("sanitize drops", () => {
     for (const html of refused) expect(clean(html).replace(/<\/?svg>/g, "")).toBe("");
   });
 
+  test("removes hidden inputs rather than submitting invisible text", () => {
+    expect(clean('<input type="HIDDEN" name="secret" value="no"><input name="visible" value="yes">')).toBe(
+      '<input name="visible" value="yes">',
+    );
+  });
+
   test("handlers, links, remote sources and URL-bearing styles", () => {
     expect(clean('<p onclick="alert(1)" OnMouseOver="x" title="t">x</p>')).toBe('<p title="t">x</p>');
     expect(clean('<img src="https://evil.example/p.png" srcset="a.png 1x" alt="x">')).toBe('<img alt="x">');

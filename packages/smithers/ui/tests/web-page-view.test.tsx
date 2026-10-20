@@ -200,13 +200,13 @@ describe("WebPageView", () => {
     });
   });
 
-  test("renders on the server, where there is no window", () => {
+  test("refuses framing on the server, where the host origin is unknown", () => {
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "window")!;
     delete (globalThis as { window?: unknown }).window;
     try {
       const html = renderToStaticMarkup(<WebPageView url="https://example.com/" />);
-      expect(html).toContain('src="https://example.com/"');
-      expect(html).toContain('sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"');
+      expect(html).toContain('data-refused="true"');
+      expect(html).not.toContain("<iframe");
     } finally {
       Object.defineProperty(globalThis, "window", descriptor);
     }

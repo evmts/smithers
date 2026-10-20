@@ -70,10 +70,12 @@ import { GeneratedView } from "@smthrs/ui"
 - **Events.** `onInteraction` receives only events the module declared. A
   `State` event changes the view's state: run `realm.interact` and pass the new
   HTML back as `html`. A `Message` event becomes a question with its `label`
-  and form `values`.
+  and form `values`. Hidden inputs and controls hidden by ancestors or CSS
+  are excluded from those values.
 - **Refusals.** `onRefused` receives a reason only: `wrong_source`,
   `malformed`, `too_large`, `undeclared` or `rate_limited`. Count it; never log
-  a message's content.
+  a message's content. Sibling views ignore each other's initialization
+  broadcasts; each still validates its own source, nonce and single port.
 - **Sizes.** `inline` takes the height the frame reports, from 80 to 480
   pixels. `full` fills its container. Both render the same frame from the
   same HTML.

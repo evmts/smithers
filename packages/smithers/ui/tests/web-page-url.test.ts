@@ -141,8 +141,8 @@ describe("framedPageTarget", () => {
     expect(framedPageTarget("https://shop.example.co.uk/", "https://app.mine.co.uk")).toBeNull();
   });
 
-  test("with no host origin or an opaque one, refuses only by URL; with a host origin that is not a URL, refuses all", () => {
-    expect(framedPageTarget("https://smithers.sh/")?.host).toBe("smithers.sh");
+  test("refuses an unknown host origin; accepts an explicitly opaque one", () => {
+    expect(framedPageTarget("https://smithers.sh/")).toBeNull();
     expect(framedPageTarget("https://smithers.sh/", "null")?.host).toBe("smithers.sh");
     expect(framedPageTarget("https://example.com/", "not a url")).toBeNull();
   });

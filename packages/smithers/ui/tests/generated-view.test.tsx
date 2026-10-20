@@ -160,6 +160,25 @@ describe("GeneratedView answers the frame", () => {
     expect(view.refusals).toEqual([]);
   });
 
+  test("ignores sibling handshakes while accepting each view's own", async () => {
+    const refusals: Array<string> = [];
+    await render();
+    await act(async () => root!.render(<>{["one", "two"].map((title) => (
+      <GeneratedView key={title} html="<p>view</p>" interactions={declared} title={title} theme="light"
+        onInteraction={() => {}} onRefused={(reason) => refusals.push(reason)} />
+    ))}</>));
+    const posted: Array<unknown> = [];
+    for (const frame of Array.from(container!.querySelectorAll("iframe"))) {
+      frame.contentWindow!.postMessage = ((message: unknown) => posted.push(message)) as never;
+      await act(async () => window.dispatchEvent(new MessageEvent("message", {
+        data: { jsonrpc: "2.0", id: "f", method: "ui/initialize", params: { nonce: nonceOf(frame.srcdoc) } },
+        source: frame.contentWindow as never,
+      })));
+    }
+    expect(posted).toHaveLength(2);
+    expect(refusals).toEqual([]);
+  });
+
   test("never another window, another nonce, or a second request", async () => {
     const view = await render();
     expect((await handshake({ source: window })).posted).toEqual([]);

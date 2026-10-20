@@ -29,11 +29,24 @@ type FieldValue = string | number | boolean;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
-/** The values of a form's named, enabled fields: booleans for checkboxes, numbers for number and range inputs. */
+/** Whether a field is visible, using the browser's layout check when available. */
+const visibleField = (field: Element): boolean => {
+  if (field.getAttribute("type")?.toLowerCase() === "hidden") return false;
+  // DOM hosts without layout still support the explicit hiding mechanisms.
+  for (let element: Element | null = field; element !== null; element = element.parentElement) {
+    const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+    if (element.hasAttribute("hidden") || style?.display === "none" || style?.visibility === "hidden" ||
+      style?.visibility === "collapse" || style?.opacity === "0") return false;
+  }
+  return typeof field.checkVisibility !== "function" ||
+    field.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+};
+
+/** The values of a form's visible, named, enabled fields: booleans for checkboxes, numbers for number and range inputs. */
 export const formValues = (form: HTMLFormElement): Record<string, FieldValue> => {
   const values: Record<string, FieldValue> = {};
   for (const field of Array.from(form.elements) as Array<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) {
-    if (!field.name || field.disabled || field.type === "submit" || field.type === "button" || field.type === "reset") {
+    if (!visibleField(field) || !field.name || field.disabled || field.type === "submit" || field.type === "button" || field.type === "reset") {
       continue;
     }
     if (field.type === "checkbox") values[field.name] = (field as HTMLInputElement).checked;

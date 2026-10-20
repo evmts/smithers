@@ -31,6 +31,9 @@ export type GeneratedViewProps = Omit<ComponentProps<"div">, "children" | "title
   now?: (() => number) | undefined;
 };
 
+// Other mounted views receive the same window broadcasts; they are not this view.
+const mountedFrames = new WeakSet<object>();
+
 const defaultStyles = () => `${frameBaseCss}${composeSmithersUiStyles({ withTheme: true })}`;
 
 /** A fresh per-mount secret: 24 random bytes as base64url. */
@@ -100,12 +103,15 @@ export function GeneratedView({
 
   useEffect(() => {
     if (!visible) return;
+    const ownWindow = frame.current?.contentWindow;
+    if (ownWindow) mountedFrames.add(ownWindow);
     let window: Bridge.RateWindow = [];
     const onMessage = (event: MessageEvent) => {
       const data: unknown = event.data;
       const asks = typeof data === "object" && data !== null && (data as { method?: unknown }).method === "ui/initialize";
       if (!asks) return;
       const contentWindow = frame.current?.contentWindow;
+      if (event.source !== contentWindow && event.source !== null && mountedFrames.has(event.source)) return;
       const initialize = event.source === contentWindow && contentWindow !== null && port.current === undefined
         ? Bridge.acceptInitialize(data, nonce)
         : undefined;
@@ -140,6 +146,7 @@ export function GeneratedView({
     globalThis.addEventListener("message", onMessage);
     return () => {
       globalThis.removeEventListener("message", onMessage);
+      if (ownWindow) mountedFrames.delete(ownWindow);
       port.current?.close();
       port.current = undefined;
     };

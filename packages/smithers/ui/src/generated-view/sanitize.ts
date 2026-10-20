@@ -84,6 +84,7 @@ const copy = (source: Node, target: Document): Node | null => {
   if (!svg && element.namespaceURI !== HTML) return null;
   const name = svg ? element.localName : element.localName.toLowerCase();
   if (!(svg ? svgElements : htmlElements).has(name)) return null;
+  if (!svg && name === "input" && element.getAttribute("type")?.toLowerCase() === "hidden") return null;
   const copied = svg ? target.createElementNS(SVG, name) : target.createElement(name);
   for (const attribute of Array.from(element.attributes)) {
     if (attribute.namespaceURI !== null) continue;
