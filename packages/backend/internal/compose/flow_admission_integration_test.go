@@ -108,41 +108,46 @@ func TestFlowWorkerRechecksMeteredAdmissionBeforeHostLaunch(t *testing.T) {
 		require.NoError(t, err)
 		return receipt
 	}
-	// A refused start is recorded as the dispatch's retryable error. The third
-	// failed start on the host exhausts it: its machine is released and the
-	// dispatch fails terminally (#3783).
-	waitRefused := func(receipt jobs.RequestReceipt) {
+	// A start the payer's plan refuses ends its dispatch at once, typed: it
+	// never reaches the host, and retrying cannot free the payer's other
+	// machine (QA b-jpt11m; flow_admission.go sandboxPlanRefusal). The person
+	// retries, as the refusal's sentence says.
+	waitRefused := func(receipt jobs.RequestReceipt, codes ...string) {
 		require.Eventually(t, func() bool {
-			var failure string
-			err := pool.QueryRow(ctx, `SELECT last_error FROM product_job_dispatches WHERE operation_id=$1`, receipt.OperationID).Scan(&failure)
-			if err == nil && failure != "" {
-				return true
-			}
 			operation, err := store.Get(ctx, scope, receipt.OperationID)
-			return err == nil && operation.State == jobs.StateFailed && strings.Contains(string(operation.TerminalReceipt), "runtime_start_exhausted")
+			if err != nil || operation.State != jobs.StateFailed {
+				return false
+			}
+			for _, code := range codes {
+				if strings.Contains(string(operation.TerminalReceipt), code) {
+					return true
+				}
+			}
+			return false
 		}, 8*time.Second, 10*time.Millisecond)
 	}
-	exhausted := dispatch("exhausted")
-	waitRefused(exhausted)
+	waitRefused(dispatch("exhausted"), "plan_limit:concurrent_sandboxes")
 	require.Zero(t, attempts.Load(), "exhausted worker must refuse before contacting launch transport")
 	var account int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO billing_accounts(owner_type,owner_id,stripe_customer_id) VALUES ('user',$1,'cus_worker') RETURNING id`, owner).Scan(&account))
 	_, err = pool.Exec(ctx, `INSERT INTO billing_subscriptions(billing_account_id,stripe_subscription_id,stripe_price_id,plan_key,billing_interval,status,quantity) VALUES ($1,'sub_worker','price_pro','pro','monthly','active',1)`, account)
 	require.NoError(t, err)
-	// The same durable request becomes eligible after the projection changes;
+	// The same running worker reads the changed projection at the next start;
 	// neither its policy nor its worker process is reconstructed.
+	admitted := dispatch("admitted")
 	require.Eventually(t, func() bool { return attempts.Load() > 0 }, 8*time.Second, 10*time.Millisecond)
-	_, err = store.RequestCancellation(ctx, scope, exhausted.OperationID)
+	_, err = store.RequestCancellation(ctx, scope, admitted.OperationID)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		operation, err := store.Get(ctx, scope, exhausted.OperationID)
+		operation, err := store.Get(ctx, scope, admitted.OperationID)
 		return err == nil && operation.State.Terminal()
 	}, 8*time.Second, 10*time.Millisecond)
 	contacted := attempts.Load()
 	_, err = pool.Exec(ctx, `UPDATE billing_subscriptions SET status='canceled' WHERE billing_account_id=$1`, account)
 	require.NoError(t, err)
-	canceled := dispatch("canceled")
-	waitRefused(canceled)
+	// The admitted run's failed starts exhausted this binding (#3783), so the
+	// refusal may name either cause; both come before the host is contacted.
+	waitRefused(dispatch("canceled"), "plan_limit:concurrent_sandboxes", "runtime_start_exhausted")
 	require.Equal(t, contacted, attempts.Load(), "same running worker must observe cancellation and refuse before launch")
 }
 
