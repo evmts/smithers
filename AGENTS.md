@@ -1,5 +1,28 @@
 # Permanent product interaction rules
 
+## Everything is a durable flow (Will, 2026-10-19, permanent)
+
+Smithers is built on its own durable flows (`@smthrs/flow`). Every action the
+app or an agent takes runs as a durable flow step, and that includes every model
+call. Flows run on the user's machine, on Cloudflare, or on our sandbox
+provider.
+
+- **Durable by default.** The flow engine supplies retries, resumption after a
+  crash, idempotency and deadlines. App and library code never write their own
+  retry loops, background jobs, sweeps, queues or "re-dispatch" logic.
+- **Model calls go through the durable layer only.** That means a flow step,
+  through `@smthrs/agent` or `@smthrs/flow`. No handler or app module calls
+  `Model.stream` directly.
+- **Never substitute another runtime for one.** No Cloudflare Workflows,
+  Durable Object job loops, bare `waitUntil` work, Temporal, Inngest,
+  Trigger.dev, Vercel AI SDK, LangChain or LangGraph, or Mastra. If the flow
+  engine can't run where a job must run, the fix is a host for it in the SDK
+  (`@smthrs/platform-node`, `-bun`, `-browser`, and the Cloudflare and sandbox
+  hosts). A workaround in an app is not a fix.
+- **Before choosing any library,** find the job in
+  [the library catalog](docs/libraries.md), and say in the change which entry
+  you used. A brief written for another agent states this rule.
+
 ## Doneish first; release continuously (Will, 2026-10-08)
 
 Make it work, then make it good. The goal is **doneish**, and every doneish

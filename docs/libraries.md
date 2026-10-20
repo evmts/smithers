@@ -6,6 +6,13 @@ workflow, renders UI, or touches GitHub, find the job below and use that
 library. Hand-rolling one needs a stated reason in the change, such as a
 missing feature and the issue that tracks it.
 
+**Everything is a durable flow** ([AGENTS.md](../AGENTS.md)):
+- Every action, including every model call, runs as an `@smthrs/flow` step on
+  the user's machine, on Cloudflare, or on the sandbox provider.
+- Retries, resumption and idempotency come from the engine, never from app code.
+- Never use Cloudflare Workflows, `waitUntil` jobs, Temporal, Inngest, the
+  Vercel AI SDK or LangChain in place of it. A missing host is SDK work.
+
 Paths are relative to the repository root. A package is published to npm under
 the `next` tag unless it is marked *private*. Every library takes `effect`
 4.0.5 as a peer dependency. Each package's `README.md` and `docs/` hold the
