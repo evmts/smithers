@@ -87,6 +87,22 @@ type routerExtras struct {
 	WikiSelection http.Handler
 }
 
+// orgMemberAdd is POST /orgs/{org}/members. Adding a person grants them the
+// organization's repositories, credentials and billing without their
+// consent, so until invite-and-accept exists a hosted deployment refuses it,
+// typed and not retryable (launch gate item 13: Security d-aso4h5, PM
+// d-20prd2). Team adds need an existing member, member reads and removals
+// stay, and a self-hosted install is unchanged.
+func orgMemberAdd(add http.HandlerFunc, hosted bool) http.HandlerFunc {
+	if !hosted {
+		return add
+	}
+	return func(w http.ResponseWriter, _ *http.Request) {
+		writeConfirmationDispatchError(w, &services.AccessError{Status: http.StatusServiceUnavailable, Class: "policy", Code: "org_members_unavailable",
+			Message: "Adding people to an organization isn't open on smithers.sh yet."})
+	}
+}
+
 func buildRouter(
 	cfg *config.Config,
 	queries *db.Queries,
@@ -2255,7 +2271,7 @@ func buildRouter(
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs", orgHandler.PostOrg)
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Patch("/orgs/{org}", orgHandler.PatchOrg)
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadOrganization)).Get("/orgs/{org}/members", orgHandler.GetOrgMembers)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/members", orgHandler.PostOrgMember)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/members", orgMemberAdd(orgHandler.PostOrgMember, config.IsMultitenant(cfg.Auth)))
 			// Organization subscriptions (RFD-003): members list legacy rows so
 			// an owner can revoke them; the service refuses new ones because a
 			// subscription serves only its account holder's own runs.
