@@ -147,3 +147,30 @@ func TestWorkflowSandboxSchedulerAdmitsOrganizationsOnlyByTheirOwnID(t *testing.
 		assert.Equal(t, []int64{42}, base.markFailureIDs, tc.name)
 	}
 }
+
+// Nothing ran in a refused run, so its commit status on the repository's
+// pull request says why rather than "Workflow failed" (PM d-4yqhsn).
+func TestWorkflowSandboxSchedulerRefusedRunStatusSaysWhy(t *testing.T) {
+	row := testWorkflowSandboxClaimRow(db.WorkflowRun{ID: 42, RepositoryID: 100, WorkflowDefinitionID: 5, TriggerEvent: "landing_request", TriggerRef: "main", TriggerCommitSha: "cafebabe"})
+	base := nixCIQuerier([]db.WorkflowTask{nixCITaskRow(1, 11, "build", nil)})
+	base.markWorkflowRunFailureFn = func(context.Context, int64) (db.WorkflowRun, error) {
+		return sandboxTerminalRun("failure"), nil
+	}
+	publisher, surfaces := newTerminalPublisher(t)
+	guests := &fakeNixCIGuests{polls: map[string]int{}, scripts: map[string]nixCIGuestScript{"build": {exitCode: "0"}}}
+	client := guests.client(t)
+	worker := NewWorkflowSandboxSchedulerWorker(
+		badClaimSchedulerQuerier{mockWorkflowSandboxSchedulerQuerier: base, rows: []runtimeports.ClaimQueuedWorkflowRunsRow{row}},
+		client,
+		WithWorkflowSandboxSchedulerGitBaseURL("https://git.example.test"),
+		WithWorkflowSandboxSchedulerCIGuests(guests),
+		WithWorkflowSandboxSchedulerTerminalPublisher(publisher),
+		WithWorkflowSandboxSchedulerOwners(&WorkflowOwners{Users: config.HostedWorkspaceUsers{UserIDs: []int64{1}}}),
+	)
+
+	require.NoError(t, worker.PollOnce(context.Background()))
+	assert.Empty(t, client.createCalls)
+	require.Len(t, surfaces.commitStatuses.updateCalls, 1)
+	assert.Equal(t, "failure", surfaces.commitStatuses.updateCalls[0].status)
+	assert.Equal(t, "Repository workflows don't run on smithers.sh yet.", surfaces.commitStatuses.updateCalls[0].description)
+}

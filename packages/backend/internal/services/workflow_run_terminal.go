@@ -47,15 +47,30 @@ type workflowRunTerminalQuerier interface {
 	ListWorkflowLogsSince(ctx context.Context, arg db.ListWorkflowLogsSinceParams) ([]db.WorkflowLog, error)
 }
 
+// workflowRunRefusalPublisher settles a run the deployment refused to run.
+// Nothing ran, so its commit status says why instead of "Workflow failed".
+type workflowRunRefusalPublisher interface {
+	PublishWorkflowRunRefused(ctx context.Context, run db.WorkflowRun, description string)
+}
+
 // PublishWorkflowRunTerminal implements WorkflowRunTerminalPublisher.
 func (s *workflowRunService) PublishWorkflowRunTerminal(ctx context.Context, run db.WorkflowRun) {
+	s.publishWorkflowRunTerminal(ctx, run, WorkflowRunStatusDescription(run.Status))
+}
+
+// PublishWorkflowRunRefused implements workflowRunRefusalPublisher.
+func (s *workflowRunService) PublishWorkflowRunRefused(ctx context.Context, run db.WorkflowRun, description string) {
+	s.publishWorkflowRunTerminal(ctx, run, description)
+}
+
+func (s *workflowRunService) publishWorkflowRunTerminal(ctx context.Context, run db.WorkflowRun, description string) {
 	if !IsTerminalWorkflowRunStatus(run.Status) {
 		return
 	}
 	logger := middleware.LoggerWithWorkflowRun(ctx, run.ID)
 	recordWorkflowRunCompletion(s.metrics, run, run.Status)
 	if s.commitStatusWriter != nil {
-		if _, err := s.commitStatusWriter.UpdateCommitStatusForWorkflowRun(ctx, run.ID, run.Status, WorkflowRunStatusDescription(run.Status), ""); err != nil {
+		if _, err := s.commitStatusWriter.UpdateCommitStatusForWorkflowRun(ctx, run.ID, run.Status, description, ""); err != nil {
 			logger.Error("failed to update commit status for workflow run", "status", run.Status, "error", err)
 		}
 	}

@@ -242,6 +242,8 @@ type workflowSandboxRunClaim struct {
 	Token          string
 	Generation     int64
 	LeaseExpiresAt time.Time
+	// refusal, when set, is the commit status a refused run publishes.
+	refusal string
 }
 
 func workflowSandboxRunClaimFromRow(row runtimeports.ClaimQueuedWorkflowRunsRow) workflowSandboxRunClaim {
@@ -625,6 +627,7 @@ func (w *WorkflowSandboxSchedulerWorker) refuseRun(ctx context.Context, claim wo
 		stepID = tasks[0].StepID
 	}
 	w.logger.Info("workflow run refused", "run_id", claim.Run.ID, "repository_id", claim.Run.RepositoryID, "reason", workflowsUnavailable, "detail", detail)
+	claim.refusal = "Repository workflows don't run on smithers.sh yet."
 	return w.failRun(ctx, claim, stepID, "Repository workflows don't run on smithers.sh yet. Run them locally with npx smthrs@next flow start "+name+".")
 }
 
@@ -667,7 +670,11 @@ func (w *WorkflowSandboxSchedulerWorker) finalizeFailure(ctx context.Context, cl
 	RevokeWorkflowRunCredentials(ctx, w.queries, runID, run.RepositoryID)
 	w.cancelRunTasks(ctx, runID)
 	NotifyWorkflowRunEvent(ctx, w.queries, runID, "workflow_sandbox.failure")
-	w.publishTerminal(ctx, run)
+	if refused, ok := w.terminalPublisher.(workflowRunRefusalPublisher); ok && claim.refusal != "" {
+		refused.PublishWorkflowRunRefused(ctx, run, claim.refusal)
+	} else {
+		w.publishTerminal(ctx, run)
+	}
 	return stdErrors.New(message)
 }
 

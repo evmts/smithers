@@ -44,7 +44,7 @@ type sessionLandingTestFixture struct {
 	head, changeID string
 }
 
-func newSessionLandingTestFixture(t *testing.T) *sessionLandingTestFixture {
+func newSessionLandingTestFixture(t *testing.T, opts ...LandingServiceOption) *sessionLandingTestFixture {
 	f := newPublicationFixture(t, false)
 	config := f.pool.(*pgxpool.Pool).Config()
 	config.MaxConns = 3
@@ -68,7 +68,7 @@ func newSessionLandingTestFixture(t *testing.T) *sessionLandingTestFixture {
 	rh := &mockLandingRepoHostClient{getChangeFn: func(context.Context, string, string, string) (repohost.Change, error) {
 		return repohost.Change{ChangeID: changeID, CommitID: head}, nil
 	}}
-	landings := NewLandingServiceWithPool(q, rh, pool)
+	landings := NewLandingServiceWithPool(q, rh, pool, opts...)
 	userRepos := NewGitHubUserReposService(q, fakeOAuthTokenDecrypter{token: "ghu_githubfake_owner"})
 	pulls := NewLandingGitHubPullService(landings, q, f.connections, userRepos, "http://smithers.test", f.connections)
 	remotes := pulls.remotes
