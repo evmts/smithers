@@ -1,7 +1,7 @@
 import { describe, expect } from "@effect/vitest"
 import { DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Option, Schema, Scope } from "effect"
 import { FlowEngine } from "../src/index.ts"
 import { effect, pollUntil } from "./Harness.ts"
 
@@ -161,3 +161,37 @@ describe("memory execution admission with asynchronous constructors", () => {
       })).pipe(Effect.provide(FlowEngine.layerMemory))
   )
 })
+
+effect(
+  "closing the last registration during admission rejects without publishing a fiberless run",
+  () =>
+    Effect.scoped(Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const value = Schema.declareConstructor<number>()(
+        [],
+        () => (input) =>
+          Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.as(input as number))
+      )
+      const flow = Flow.make("MemoryAdmission/closed", {
+        payload: { value },
+        success: Schema.Number,
+        body: () => Node.succeed(0)
+      })
+      const engine = yield* FlowRuntime.FlowRuntime
+      const registration = yield* Scope.make()
+      yield* engine.register(flow, () => Effect.succeed(1)).pipe(Scope.provide(registration))
+      const pending = yield* engine.execute(flow, { executionId: "closed", payload: { value: 1 } })
+        .pipe(Effect.exit, Effect.forkScoped)
+      yield* Deferred.await(entered)
+      yield* Scope.close(registration, Exit.void)
+      yield* Deferred.succeed(release, undefined)
+      const exit = yield* Fiber.join(pending)
+      expect(Exit.isFailure(exit) && exit.cause.reasons.find(Cause.isDieReason)?.defect)
+        .toBeInstanceOf(FlowEngine.FlowNotRegistered)
+      const polled = yield* Effect.exit(flow.poll("closed"))
+      expect(Exit.isFailure(polled)).toBe(true)
+      yield* engine.interrupt(flow, "closed")
+      yield* engine.interruptUnsafe(flow, "closed")
+    })).pipe(Effect.provide(FlowEngine.layerMemory))
+)

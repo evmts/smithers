@@ -123,10 +123,10 @@ describe("joining an execution under a capability ceiling", () => {
       yield* Effect.gen(function*() {
         expect(yield* flow.execute({ id: "a" }, { executionId: "polled" })).toBe("secret contents")
         const polled = yield* Effect.exit(under(readSource)(flow.poll("polled")))
-        expect(conflictOf(polled)).toMatchObject({ field: "capabilities", executionId: "polled" })
+        expect(conflictOf(polled)).toMatchObject({ field: "capabilities", executionId: "polled", status: "completed" })
         const runtime = yield* FlowRuntime.FlowRuntime
         const resumed = yield* Effect.exit(under(readSource)(runtime.resume(flow, "polled")))
-        expect(conflictOf(resumed)).toMatchObject({ field: "capabilities" })
+        expect(conflictOf(resumed)).toMatchObject({ field: "capabilities", status: "completed" })
         const polledWide = yield* flow.poll("polled")
         expect(Option.isSome(polledWide)).toBe(true)
         yield* runtime.resume(flow, "polled")
@@ -175,7 +175,11 @@ describe("joining an execution under a capability ceiling", () => {
         const runtime = yield* FlowRuntime.FlowRuntime
         for (const cancel of [runtime.interrupt, runtime.interruptUnsafe]) {
           const refused = yield* Effect.exit(under(readSource)(cancel(flow, "cancel-wide")))
-          expect(conflictOf(refused)).toMatchObject({ field: "capabilities", executionId: "cancel-wide" })
+          expect(conflictOf(refused)).toMatchObject({
+            field: "capabilities",
+            executionId: "cancel-wide",
+            status: "completed"
+          })
           yield* cancel(flow, "unknown")
         }
         expect(Option.isSome(yield* flow.poll("cancel-wide"))).toBe(true)

@@ -92,6 +92,7 @@ interface LineageRound {
 
 type Instance = FlowRuntime.FlowInstance["Service"]
 type Result = Flow.Result<unknown, unknown>
+type Dispatch = Effect.Effect<Result, FlowRuntime.FlowCycleDetected>
 
 /**
  * One `execute` call following its lineage. The linked-cancellation finalizer
@@ -123,7 +124,7 @@ interface Follower {
  * the dispatch that immediately follows a handoff, which is the one edge a
  * durable driver links the new round's row back through.
  */
-const dispatch = (follower: Follower, previousExecutionId?: string, follow = false): Effect.Effect<Result> => {
+const dispatch = (follower: Follower, previousExecutionId?: string, follow = false): Dispatch => {
   const step = follower.lineage
   return follower.options.execute(step.flow, {
     executionId: step.executionId,
@@ -133,7 +134,7 @@ const dispatch = (follower: Follower, previousExecutionId?: string, follow = fal
     round: previousExecutionId === undefined ? step.round : { ...step.round, previousExecutionId },
     ...(step.deadline === undefined ? {} : { lineageDeadline: step.deadline }),
     ...(follow ? { follow } : {})
-  }).pipe(CapabilitySet.attenuateGroups(follower.capabilityCeilings)) as Effect.Effect<Result>
+  }).pipe(CapabilitySet.attenuateGroups(follower.capabilityCeilings))
 }
 
 /**
@@ -177,8 +178,8 @@ const linkCancellation = (follower: Follower, parent: Instance) =>
  */
 const settle = (
   follower: Follower,
-  round: Effect.Effect<Result>
-): Effect.Effect<Result, never, FlowRuntime.FlowInstance> =>
+  round: Dispatch
+): Effect.Effect<Result, FlowRuntime.FlowCycleDetected, FlowRuntime.FlowInstance> =>
   follower.waiter === undefined ? round : Flow.wrapActionResult(round, (result) => result._tag === "Suspended")
 
 /**
@@ -272,7 +273,7 @@ const awaitWake = (follower: Follower, delayMs: number): Effect.Effect<boolean> 
  * every handoff, and through every suspension, which a waiting parent takes
  * as its own and any other caller polls under its suspended retry policy.
  */
-const followLineage = Effect.fnUntraced(function*(follower: Follower, first: Effect.Effect<Result>) {
+const followLineage = Effect.fnUntraced(function*(follower: Follower, first: Dispatch) {
   // The retry policy is 1-based; only elapsed polls advance this counter.
   let resumeAttempt = 1
   // The expiration origin is in-process by design: the loop lives only as
@@ -309,7 +310,7 @@ const followLineage = Effect.fnUntraced(function*(follower: Follower, first: Eff
  * lineage. A low-level adapter without a local handler uses the caller's
  * scope instead.
  */
-const submit = Effect.fnUntraced(function*(follower: Follower, first: Effect.Effect<Result>) {
+const submit = Effect.fnUntraced(function*(follower: Follower, first: Dispatch) {
   const { executionId, lineage, origin } = follower
   yield* follower.options.execute(origin, {
     executionId,
@@ -319,7 +320,13 @@ const submit = Effect.fnUntraced(function*(follower: Follower, first: Effect.Eff
     round: lineage.round
   })
   const scope = follower.declarations.get(origin._tag)?.at(-1)?.scope ?? (yield* Effect.scope)
-  yield* Effect.forkIn(followLineage(follower, first), scope)
+  yield* Effect.forkIn(
+    followLineage(follower, first).pipe(
+      Effect.ignoreCause({ log: "Error" }),
+      Effect.annotateLogs({ flow: origin._tag, executionId })
+    ),
+    scope
+  )
   return executionId
 })
 

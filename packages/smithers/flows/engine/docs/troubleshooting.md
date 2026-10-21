@@ -288,3 +288,18 @@ the durable one does.
 
 **Fix.** Provide a platform crypto layer, such as `NodeCrypto.layer` from
 `@effect/platform-node`, or the browser equivalent.
+
+## Cancellation and discarded executions
+
+Automatic remote cancellation carries the same capability ceilings as the
+execution request. A completed remote call sends no cancellation; a discarded
+submission still forwards cancellation because its response only acknowledges
+admission. Delivery remains bounded and failures are logged against the flow
+and execution ID.
+
+Discarded lineage followers explicitly log failures with their flow and
+execution ID. Memory-engine authorization conflicts report the execution's
+current status. A completed shared child wakes every parent that joined it.
+Closing the last registration during payload admission rejects the request as
+`FlowNotRegistered` instead of publishing an execution without a driver.
+The trampoline preserves `FlowCycleDetected` in its dispatch failure type.

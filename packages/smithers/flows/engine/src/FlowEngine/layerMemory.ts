@@ -71,7 +71,6 @@ interface Registration {
 interface ExecutionState {
   readonly capabilityCeilings: CapabilitySet.CapabilitySet["groups"]
   readonly payload: unknown
-  readonly parent: string | undefined
   readonly rootExecutionId: Round.RootExecutionId
   instance: Instance
   fiber: Fiber.Fiber<Result> | undefined
@@ -132,7 +131,7 @@ interface Memory {
   /**
    * Every child execution request records an edge, including a fan-in that
    * joins an existing execution. This mirrors the durable engine's edge
-   * table: keeping only `ExecutionState.parent` would miss second-parent
+   * table: keeping only the original parent would miss second-parent
    * cycles and let the participants join one another forever.
    */
   readonly parents: Map<string, Set<string>>
@@ -199,7 +198,7 @@ const authorize = (flow: Flow.Any, state: ExecutionState, executionId: string): 
   Effect.flatMap(requestedAuthority(flow), (requested) =>
     joinable(state.capabilityCeilings, requested)
       ? Effect.void
-      : Effect.die(capabilityConflict(executionId)))
+      : Effect.die(capabilityConflict(executionId, executionStatus(state))))
 
 /** Runs `effect` holding the admission lock of `executionId`. */
 const withExecutionLock = <A, E, R>(memory: Memory, executionId: string, effect: Effect.Effect<A, E, R>) =>
@@ -451,10 +450,14 @@ const endExpiredLineage = (memory: Memory, state: ExecutionState, result: Result
   return Effect.forEach(linked, (id) => interruptExecution(memory, id), { discard: true })
 }
 
-/** A completed child re-drives the parent that may be parked on it. */
+/** A completed child re-drives every parent that may be parked on it. */
 const redriveParent = (memory: Memory, state: ExecutionState, result: Result) => {
-  if (!state.parent || result._tag !== "Complete") return Effect.void
-  return Effect.forkIn(resume(memory, state.parent), memory.scope)
+  if (result._tag !== "Complete") return Effect.void
+  return Effect.forEach(
+    memory.parents.get(state.instance.executionId) ?? [],
+    (parent) => Effect.forkIn(resume(memory, parent), memory.scope),
+    { discard: true }
+  )
 }
 
 /**
@@ -481,7 +484,8 @@ const drive = (memory: Memory, state: ExecutionState, entry: Registration, insta
 const resumeUnlocked = Effect.fnUntraced(function*(
   memory: Memory,
   executionId: string,
-  state: ExecutionState
+  state: ExecutionState,
+  admittedEntry?: Registration
 ): Effect.fn.Return<void> {
   wake(memory, executionId)
   // Only the first drive and a suspended round are driven: a live round
@@ -493,7 +497,7 @@ const resumeUnlocked = Effect.fnUntraced(function*(
   // registration closed the execution stays parked for a process that
   // registers the flow again, the posture the durable driver takes for a run
   // that wakes where its flow is unknown.
-  const entry = memory.flows.get(state.instance.flow._tag)?.at(-1)
+  const entry = admittedEntry ?? memory.flows.get(state.instance.flow._tag)?.at(-1)
   if (entry === undefined) return
   const previous = state.instance
   const instance = makeInstance(previous.flow, previous.executionId, previous.lineageDeadline)
@@ -603,11 +607,13 @@ const refuseJoin = Effect.fnUntraced(function*(
 /** Publishes an admitted execution and installs its driver in one step. */
 const publish = (memory: Memory, executionId: string, state: ExecutionState) =>
   Effect.uninterruptible(Effect.suspend(() => {
+    const entry = memory.flows.get(state.instance.flow._tag)?.at(-1)
+    if (entry === undefined) return Effect.die(registrationMissing(state.instance.flow))
     memory.executions.set(executionId, state)
     const members = memory.rounds.get(state.rootExecutionId) ?? new Set<string>()
     members.add(executionId)
     memory.rounds.set(state.rootExecutionId, members)
-    return resumeUnlocked(memory, executionId, state)
+    return resumeUnlocked(memory, executionId, state, entry)
   }))
 
 /**
@@ -635,8 +641,7 @@ const install = Effect.fnUntraced(function*(
     instance,
     rootExecutionId,
     fiber: undefined,
-    bodyFiber: undefined,
-    parent: parent?.executionId
+    bodyFiber: undefined
   }
   // All asynchronous payload rebuilding now belongs to the driver, inside
   // `Flow.intoResult`.

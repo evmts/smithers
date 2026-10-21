@@ -8,6 +8,7 @@
  */
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { describe, expect, it } from "@effect/vitest"
+import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Placement from "@smthrs/plan/Placement"
@@ -17,6 +18,7 @@ import { HttpClientErrorSchema } from "effect/http/HttpClientError"
 import { RpcClient, RpcSerialization, RpcServer } from "effect/rpc"
 import { RpcClientDefect, RpcClientError } from "effect/rpc/RpcClientError"
 import { TestClock } from "effect/testing"
+import { callRemote } from "../src/FlowEngine/Placed.ts"
 import { FlowEngine, FlowProxy, FlowProxyServer, Hosts } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 
@@ -666,3 +668,55 @@ describe("a placed .child()'s forwarded cancellation", () => {
       }).pipe(Effect.scoped)
     ))
 })
+
+const observeInterrupt = (requests: Array<object>) => (proxy: Hosts.Binding): Hosts.Binding => ({
+  _tag: "Proxy",
+  connect: (group) =>
+    Effect.map(
+      (proxy as Extract<Hosts.Binding, { _tag: "Proxy" }>).connect(group),
+      (client) =>
+        new Proxy(client as Record<string, (request: object) => Effect.Effect<unknown, unknown>>, {
+          get: (target, name: string) => (request: object) => {
+            if (name === "placement/releaseInterrupt") requests.push(request)
+            return target[name]!(request)
+          }
+        })
+    )
+})
+
+it.effect("automatic cancellation forwards the admitted ceilings", () =>
+  withCrypto(
+    Effect.gen(function*() {
+      const started = yield* Deferred.make<void>()
+      const b = yield* engineB(() => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)))
+      const requests: Array<object> = []
+      const a = yield* engineA(b, [], observeInterrupt(requests))
+      const running = yield* Parent.execute({ version: "ceilings" }, { executionId: "parent-ceilings" })
+        .pipe(CapabilitySet.attenuate([]), onA(a), Effect.forkChild)
+      yield* Deferred.await(started)
+      yield* runtimeOf(a as never).interrupt(Parent, "parent-ceilings")
+      yield* Fiber.await(running)
+      expect(requests).toHaveLength(1)
+      expect(requests[0]).toMatchObject({ capabilityCeilings: [[]] })
+    }).pipe(Effect.scoped)
+  ))
+
+it.effect("completed remote calls do not forward cancellation at scope close", () =>
+  withCrypto(
+    Effect.gen(function*() {
+      const b = yield* engineB(() => Effect.succeed("done"))
+      const sent: Array<string> = []
+      const a = yield* engineA(b, sent)
+      const hosts = yield* Hosts.Hosts.pipe(onA(a))
+      const binding = hosts.resolve(Placement.remote({ target: "b" })) as Extract<Hosts.Binding, { _tag: "Proxy" }>
+      const parent = FlowEngine.makeInstance(Parent, "completed-parent")
+      parent.interrupted = true
+      const result = yield* callRemote(binding, Release, {
+        executionId: "completed-remote",
+        payload: { version: "done" }
+      })
+        .pipe(Effect.provideService(FlowRuntime.FlowInstance, parent))
+      expect(result).toBe("done")
+      expect(sent).toEqual(["placement/release"])
+    }).pipe(Effect.scoped)
+  ))

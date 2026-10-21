@@ -9,6 +9,7 @@
  * @since 1.0.0
  */
 
+import type * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
@@ -90,9 +91,10 @@ const cancelRemote = (
   client: Client,
   operation: FlowProxy.OperationAddresses,
   flow: Flow.Any,
-  executionId: string
+  executionId: string,
+  capabilityCeilings: CapabilitySet.CapabilitySet["groups"]
 ) =>
-  client[operation.interrupt]!({ executionId }).pipe(
+  client[operation.interrupt]!({ executionId, capabilityCeilings }).pipe(
     Effect.interruptible,
     Effect.timeout("5 seconds"),
     Effect.ignore({ log: "Warn" }),
@@ -108,12 +110,16 @@ const forwardCancellation = (
   client: Client,
   operation: FlowProxy.OperationAddresses,
   flow: Flow.Any,
-  executionId: string
+  executionId: string,
+  capabilityCeilings: CapabilitySet.CapabilitySet["groups"],
+  settlement: { completed: boolean }
 ) =>
   Effect.flatMap(Effect.serviceOption(FlowRuntime.FlowInstance), (parent) => {
     if (Option.isNone(parent)) return Effect.void
     return Effect.addFinalizer(() =>
-      parent.value.interrupted ? cancelRemote(client, operation, flow, executionId) : Effect.void
+      parent.value.interrupted && !settlement.completed
+        ? cancelRemote(client, operation, flow, executionId, capabilityCeilings)
+        : Effect.void
     )
   })
 
@@ -137,13 +143,25 @@ export const callRemote = (
 ): Effect.Effect<unknown, unknown> =>
   remote(binding, flow, (client, operation) =>
     Effect.gen(function*() {
-      yield* forwardCancellation(client, operation, flow, request.executionId)
       const capabilityCeilings = yield* requestedAuthority(flow)
+      const settlement = { completed: false }
+      yield* forwardCancellation(client, operation, flow, request.executionId, capabilityCeilings, settlement)
       const wire = { payload: request.payload, executionId: request.executionId, capabilityCeilings }
       const ask = request.discard === true
         ? Effect.as(client[operation.discard]!(wire), request.executionId)
         : client[operation.execute]!(wire)
-      return yield* retryTransport(ask)
+      return yield* retryTransport(ask).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            settlement.completed = request.discard !== true
+          })
+        ),
+        Effect.tapError((error) =>
+          Effect.sync(() => {
+            if (!(error instanceof RpcClientError)) settlement.completed = true
+          })
+        )
+      )
     }))
 
 /**
