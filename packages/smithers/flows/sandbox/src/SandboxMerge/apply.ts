@@ -28,11 +28,17 @@ export interface ApplyOptions<E = never, R = never> {
   /** The change's description. */
   readonly message: string
   /**
-   * What makes two applications the same application. Default: the work's
-   * session, base and patch. Applying with a key already applied answers the
-   * existing change's outcome and lands nothing new.
+   * What makes two applications the same application: the change's id
+   * derives from it. Applying with a key already applied answers the existing
+   * change's outcome and lands nothing new.
+   *
+   * Name the application, never what it lands: take it from the step that
+   * applies, such as `Action.effectKey("apply")` from `@smthrs/flow` inside a
+   * dispatch, or an id recorded before the work ran. A key made of the work's
+   * patch would fold two applications of the same patch into one change and
+   * land a retry whose patch changed as a second one.
    */
-  readonly key?: string | undefined
+  readonly key: string
   /**
    * Arguments to `jj git fetch` when the work's base is not in the
    * repository: a session usually fetched its checkout from the same remote
@@ -148,7 +154,7 @@ export const apply = <E = never, R = never>(
     (mutation) =>
       Effect.gen(function*() {
         const repository = yield* repositoryAt(options.repository)
-        const change = yield* changeIdOf(options.key ?? `${work.session}\0${work.base}\0${work.patch}`)
+        const change = yield* changeIdOf(options.key)
         // Fetch before the fences: network latency must not block local snapshots.
         // The fenced reads below re-check presence and resolve the refreshed onto.
         if (

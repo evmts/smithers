@@ -170,7 +170,7 @@ describe("CloudSandbox work", () => {
     expect(existsSync(guest)).toBe(false)
 
     const outcome = await Effect.runPromise(
-      SandboxMerge.apply(work, { repository: host, onto: base, message: "cloud work", fetch: false }).pipe(
+      SandboxMerge.apply(work, { repository: host, onto: base, message: "cloud work", key: "cloud-work", fetch: false }).pipe(
         Effect.provide(Layer.merge(NodeServices.layer, NodeJj.layerRepositoryMutation))
       )
     )

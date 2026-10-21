@@ -68,13 +68,19 @@ const workOn = (repository: string, files: Readonly<Record<string, string>>, ses
     return work as Sandbox.Changed
   })
 
+/**
+ * The application's key in these cases: the session that made the work, which is the identity a caller records
+ * before the work runs. Never the patch: two applications of one patch are two changes.
+ */
+const keyOf = (work: Sandbox.Work): string => `application:${work.session}`
+
 const apply = <E = never, R = never>(
   work: Sandbox.Work,
   options: Partial<SandboxMerge.ApplyOptions<E, R>> & {
     readonly repository: string
   }
 ) =>
-  SandboxMerge.apply(work, { onto: "main", message: "sandbox work", ...options }).pipe(
+  SandboxMerge.apply(work, { onto: "main", message: "sandbox work", key: keyOf(work), ...options }).pipe(
     Effect.provide(Layer.merge(rawPlatform, layerRepositoryMutation))
   )
 
@@ -96,7 +102,7 @@ const durableApply = (work: Sandbox.Work, repository: string, onto: string) =>
     repository,
     onto,
     message: "sandbox work",
-    key: work._tag === "Changed" ? `${work.session}\0${work.base}\0${work.patch}` : work.session
+    key: keyOf(work)
   }, {
     executionId: `merge:${repository}:${work.session}`
   }).pipe(Effect.provide(mergeRuntime))
@@ -178,7 +184,7 @@ describe("SandboxMerge.apply", slow, () => {
       const repo = hostRepository(fresh(), { "a.txt": "a\n", "b.txt": "b\n" })
       const work = yield* workOn(repo.path, { "a.txt": "captured\n" })
       const main = advanceMain(repo.path, { "b.txt": "host\n" })
-      const change = yield* SandboxMerge.changeIdOf(`${work.session}\0${work.base}\0${work.patch}`)
+      const change = yield* SandboxMerge.changeIdOf(keyOf(work))
       crashAfterImport(repo.path, work, change)
       const checkout = jj(repo.path, "log --no-graph -r @ -T commit_id")
       writeFileSync(join(repo.path, "untracked.txt"), "unrelated host contents\n")
@@ -320,7 +326,7 @@ PATH=${quote(saved ?? "/usr/bin:/bin")} exec ${quote(real)} "$@"
     Effect.gen(function*() {
       const repo = hostRepository(fresh(), { "a.txt": "a\n" })
       const work = yield* workOn(repo.path, { "a.txt": "captured\n" })
-      const change = yield* SandboxMerge.changeIdOf(`${work.session}\0${work.base}\0${work.patch}`)
+      const change = yield* SandboxMerge.changeIdOf(keyOf(work))
       const captured = crashAfterImport(repo.path, work, change)
       const indexLock = join(gitDirOf(repo.path), "index.lock")
       writeFileSync(indexLock, "active writer", { flag: "wx" })
@@ -394,7 +400,7 @@ PATH=${quote(saved ?? "/usr/bin:/bin")} exec ${quote(real)} "$@"
       expect(error.reason).toBe("conflict")
       expect(error.paths).toEqual(["README.md"])
       expect(error.message).toContain("in README.md")
-      const change = yield* SandboxMerge.changeIdOf(`${work.session}\0${work.base}\0${work.patch}`)
+      const change = yield* SandboxMerge.changeIdOf(keyOf(work))
       expect(commitsOf(repo.path, change)).toEqual([])
     }))
 
@@ -447,7 +453,7 @@ PATH=${quote(saved ?? "/usr/bin:/bin")} exec ${quote(real)} "$@"
       const two = yield* rejection((conflicted) => `${conflicted.commit} | ${conflicted.onto}`)
       expect(two.message).toContain("must name exactly one commit")
       // Every rejection left the conflicted change as it was.
-      const change = yield* SandboxMerge.changeIdOf(`${work.session}\0${work.base}\0${work.patch}`)
+      const change = yield* SandboxMerge.changeIdOf(keyOf(work))
       expect(commitsOf(repo.path, change)).toHaveLength(1)
     }))
 
@@ -464,6 +470,29 @@ PATH=${quote(saved ?? "/usr/bin:/bin")} exec ${quote(real)} "$@"
       const third = (yield* apply(work, { repository: repo.path, key: "another" })) as SandboxMerge.Merged
       expect(third.change).toBe(yield* SandboxMerge.changeIdOf("another"))
       expect(third.change).not.toBe(first.change)
+    }))
+
+  // The key names the application, never its content (inventory #27, apps/mvp/docs/proposals/durable-external-effects.md):
+  // a key made of the patch folded two applications of one patch into one change, and landed a retry whose patch had
+  // changed as a second one.
+  it.effect("keys an application by its caller: one patch under two keys is two changes; one key is one change", () =>
+    Effect.gen(function*() {
+      const repo = hostRepository(fresh(), { "a.txt": "a\n" })
+      const work = yield* workOn(repo.path, { "a.txt": "same patch\n" })
+      // @ts-expect-error an application names its key; none is made from the work
+      const keyless: SandboxMerge.ApplyOptions = { repository: repo.path, onto: "main", message: "m" }
+      expect(keyless.key).toBeUndefined()
+      const first = (yield* apply(work, { repository: repo.path, key: "step-a" })) as SandboxMerge.Merged
+      const second = (yield* apply(work, { repository: repo.path, key: "step-b" })) as SandboxMerge.Merged
+      expect(first.change).toBe(yield* SandboxMerge.changeIdOf("step-a"))
+      expect(second.change).toBe(yield* SandboxMerge.changeIdOf("step-b"))
+      expect(commitsOf(repo.path, first.change)).toEqual([first.commit])
+      expect(commitsOf(repo.path, second.change)).toEqual([second.commit])
+      // A retry of step-a whose session produced a different patch answers step-a's change; nothing new lands.
+      const retried = yield* workOn(repo.path, { "a.txt": "another patch\n" }, work.session)
+      expect(retried.patch).not.toBe(work.patch)
+      expect(yield* apply(retried, { repository: repo.path, key: "step-a" })).toEqual(first)
+      expect(commitsOf(repo.path, first.change)).toEqual([first.commit])
     }))
 
   it.effect("finishes an application that crashed between importing the change and rebasing it", () =>
@@ -658,7 +687,7 @@ PATH=${quote(saved ?? "/usr/bin:/bin")} exec ${quote(real)} "$@"
       const error = yield* Effect.flip(apply(corrupted, { repository: repo.path }))
       expect(error.reason).toBe("patch_rejected")
       expect(error.message).toContain(`the patch does not apply to its base ${work.base}`)
-      const change = yield* SandboxMerge.changeIdOf(`${work.session}\0${work.base}\0${corrupted.patch}`)
+      const change = yield* SandboxMerge.changeIdOf(keyOf(corrupted))
       expect(commitsOf(repo.path, change)).toEqual([])
       // The private index is removed even though the apply failed.
       expect(readdirSync(gitDirOf(repo.path)).filter((name) => name.startsWith("smithers-sandbox-"))).toEqual([])

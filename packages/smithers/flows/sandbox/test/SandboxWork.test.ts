@@ -61,9 +61,10 @@ const fileAt = (repository: string, revision: string, path: string): string =>
   host(repository, `jj --ignore-working-copy file show -r ${quote(revision)} ${quote(path)}`)
 
 const apply = (work: Sandbox.Work, repository: string) =>
-  SandboxMerge.apply(work, { repository, onto: "main", message: "sandbox work" }).pipe(
-    Effect.provide(Layer.merge(rawPlatform, layerRepositoryMutation))
-  )
+  SandboxMerge.apply(work, { repository, onto: "main", message: "sandbox work", key: `application:${work.session}` })
+    .pipe(
+      Effect.provide(Layer.merge(rawPlatform, layerRepositoryMutation))
+    )
 
 /** The jj operation the host repository is at: unchanged when nothing was written. */
 const operation = (repository: string): string =>

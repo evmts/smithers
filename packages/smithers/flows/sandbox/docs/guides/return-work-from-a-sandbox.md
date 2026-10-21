@@ -24,7 +24,7 @@ Sandbox.run(provider, { session }, body)
        +--> action result -------------> journal
                                              |
                                              v
-                             SandboxMerge.apply(work, { repository, onto })
+                             SandboxMerge.apply(work, { repository, onto, key })
                                build commit on base (git plumbing)
                                jj rebase onto `onto`
                                -> Merged | Conflicted | Unchanged
@@ -142,11 +142,13 @@ The work is part of the `Implement` action's journaled result. A crash after
 the machine is gone loses neither the result nor the patch, and a resumed run
 replays `Implement` from the journal without provisioning a machine.
 
-`apply` is idempotent per `key`. The change id derives from the key (default:
-the session, base, and patch), so applying twice answers the existing change
-and lands nothing new. An apply interrupted between creating the change and
-rebasing it finishes on the next attempt. Pass a `key` when a retry of the
-machine side can produce a different patch for the same unit of work.
+`apply` is idempotent per `key`, which every call names. The change id
+derives from the key, so applying twice answers the existing change and lands
+nothing new. An apply interrupted between creating the change and rebasing it
+finishes on the next attempt. Take the key from the step that applies, such as
+`Action.effectKey("apply")` from `@smthrs/flow`, never from the patch: a retry
+of the machine side can produce a different patch for the same unit of work,
+and two units of work can produce the same patch.
 
 Host application shares the workspace/store fences with snapshots. The default
 120-second deadline bounds fence acquisition only; an acquired application runs

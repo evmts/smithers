@@ -13,7 +13,7 @@ it("keeps the public package browser import and unchanged work independent of th
         globalThis.runBrowserProbe = async () => {
           const work = new Sandbox.Sandbox.Unchanged({ session: "browser", base: "base" })
           const result = await Effect.runPromise(Sandbox.SandboxMerge.apply(work, {
-            repository: "/unused", onto: "main", message: "unused"
+            repository: "/unused", onto: "main", message: "unused", key: "browser"
           }))
           return JSON.stringify({
             processAbsent: typeof process === "undefined",
