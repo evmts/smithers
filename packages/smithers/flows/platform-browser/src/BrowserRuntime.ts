@@ -235,12 +235,12 @@ export const requests = Metrics.requests
 
 /**
  * Statements the leader ran on the app's shared database, by `outcome`
- * (`executed`; `committed`, a statement an earlier leader committed; `failed`;
+ * (`executed`; `committed`, a request an earlier leader committed; `failed`;
  * `fenced`, refused because this build could not prepare the database;
- * `lost`; `unrecorded`, a transaction it rolled back because it could not
- * record it; `undecided`, a statement it ran nothing for because it could not
- * read that record), and tabs' transactions it rolled back when the tab ended
- * (`abandoned`).
+ * `lost`; `unrecorded`, a change it rolled back because it could not write its
+ * receipt; `undecided`, a request it committed nothing of because it could not
+ * read whether an earlier leader committed it), and tabs' transactions it
+ * rolled back when the tab ended (`abandoned`).
  *
  * @category metrics
  * @since 1.0.0

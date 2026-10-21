@@ -32,7 +32,7 @@ import { WebLock } from "../WebLock.ts"
 import { leaderships, requests, statements, wakes } from "./Metrics.ts"
 import * as Prepare from "./Prepare.ts"
 import * as Protocol from "./Protocol.ts"
-import { type Service as Connection, SqlConnection, TransactionLost } from "./SqlConnection.ts"
+import { type Service as Connection, SqlConnection, TransactionLost, TransactionUndecided } from "./SqlConnection.ts"
 import * as SqlProtocol from "./SqlProtocol.ts"
 
 /**
@@ -289,25 +289,6 @@ class DatabaseUnavailable extends Schema.TaggedError<DatabaseUnavailable>()(
   {}
 ) {}
 
-/**
- * The leader could not record the transaction a statement opened, so it rolled
- * it back: unrecorded, a later leader could not tell whether it committed.
- */
-class TransactionUnrecorded extends Schema.TaggedError<TransactionUnrecorded>()(
-  "@smthrs/platform-browser/TransactionUnrecorded",
-  {}
-) {}
-
-/**
- * The leader could not read whether an earlier leader committed the statement's
- * transaction, so it ran nothing. The tab keeps the transaction, and its next
- * statement asks again.
- */
-class TransactionUndecided extends Schema.TaggedError<TransactionUndecided>()(
-  "@smthrs/platform-browser/TransactionUndecided",
-  {}
-) {}
-
 /** The `outcome` of a statement that failed with each of these tags; any other failure is `failed`. */
 const failureOutcomes: Readonly<Record<string, string>> = {
   "@smthrs/platform-browser/PrepareFailed": "fenced",
@@ -327,11 +308,12 @@ const sqliteDetail = (error: unknown): { readonly code?: number; readonly messag
 }
 
 /**
- * Creates the table of each tab's last transaction (`SqlProtocol.commits`).
+ * Creates the table of each tab's receipts (`SqlProtocol.commits`).
  * Receipts do not expire: a suspended tab may ask about a commit at any age.
- * A leader that cannot create the table still serves: a transaction opens only once its record is written, so without the table
- * every statement that opens one fails (`TransactionUnrecorded`), while reads
- * and single statements still run and a tab can repair the table.
+ * A leader that can't create it still serves reads: every change commits
+ * only with its receipt, so without the table every request that would
+ * change something fails (`TransactionUnrecorded`), and a tab's first write,
+ * whose receipt this leader can't read, fails undecided.
  */
 const prepareCommits = (connection: Connection, leader: string) =>
   Effect.gen(function*() {
@@ -355,13 +337,16 @@ const prepareCommits = (connection: Connection, leader: string) =>
  * Serves tabs' statements on the app's shared database until the scope
  * closes: each request once, in the order each tab sent them, and a rollback
  * of the open transaction of a tab that ends. With `fence`, the preparation's
- * failure, it runs none and refuses each with it. A statement that opens a
- * transaction is recorded inside it (`SqlProtocol.commits`), so that when a
- * statement for a transaction an earlier leader held arrives, this leader
- * answers it as committed if that leader committed the transaction with it,
- * and refuses it otherwise. The record fails closed: a transaction it can't
- * record is rolled back and its statement fails, and a statement whose record
- * it can't read fails without running, so no transaction commits twice.
+ * failure, it runs none and refuses each with it. Every change a request
+ * commits carries its receipt (`SqlProtocol.commits`, written by
+ * `SqlConnection`), so this leader answers as committed a request an earlier
+ * leader committed and never answered: a tab's first request outside a
+ * transaction whose receipt names it, or a statement of a transaction that
+ * leader held whose receipt names the request that opened it. It refuses a
+ * statement of a transaction that leader held otherwise. The receipt fails
+ * closed: a change it can't record is rolled back and its request fails, and a
+ * request whose receipt it can't read commits nothing, so no request commits
+ * twice.
  */
 const serveStatements = (name: string, database: Option.Option<Connection>, fence: Prepare.PrepareFailed | undefined) =>
   Effect.gen(function*() {
@@ -401,7 +386,7 @@ const serveStatements = (name: string, database: Option.Option<Connection>, fenc
         }
       })
 
-    const execute = (request: Extract<SqlProtocol.Message, { readonly _tag: "Execute" }>) =>
+    const execute = (request: Extract<SqlProtocol.Message, { readonly _tag: "Execute" }>, first: boolean) =>
       Effect.gen(function*() {
         if (Option.isNone(database)) return yield* new DatabaseUnavailable()
         // A database this build could not prepare may hold what it can't read: nothing runs on it.
@@ -426,21 +411,30 @@ const serveStatements = (name: string, database: Option.Option<Connection>, fenc
           }
           return yield* new TransactionLost()
         }
-        const result = yield* connection.run(request.client, request.sql, request.params, continuing)
-        if (result.open && !continuing) {
-          // This statement opened a transaction: record it inside, so it commits with the transaction. Unrecorded, a
-          // later leader could not tell whether it committed, so it does not stand.
-          yield* connection.run(
+        // The first request this leader takes from a tab may be one an earlier leader ran and never answered: its
+        // receipt says whether it committed. A receipt this leader can't read leaves it undecided, so nothing of it
+        // commits, while a read still runs.
+        let undecided = false
+        if (!continuing && first) {
+          const recorded = yield* connection.run(
             request.client,
-            `INSERT OR REPLACE INTO ${SqlProtocol.commits} (client, opened, at) VALUES (?, ?, ?)`,
-            [request.client, request.id, yield* Clock.currentTimeMillis],
-            true
+            `SELECT opened FROM ${SqlProtocol.commits} WHERE client = ?`,
+            [request.client],
+            false
           ).pipe(
-            Effect.catch(() =>
-              connection.abandon(request.client).pipe(Effect.andThen(Effect.fail(new TransactionUnrecorded())))
-            )
+            Effect.map(({ rows }) => (rows[0] as { readonly opened?: unknown } | undefined)?.opened),
+            Effect.option
           )
+          if (Option.isSome(recorded) && recorded.value === request.id) {
+            return { rows: [], open: false, committed: true }
+          }
+          undecided = Option.isNone(recorded)
         }
+        const result = yield* connection.run(request.client, request.sql, request.params, continuing, {
+          id: request.id,
+          at: yield* Clock.currentTimeMillis,
+          undecided
+        })
         yield* watch(request.client, result.open, connection)
         return { ...result, committed: false }
       }).pipe(
@@ -493,8 +487,9 @@ const serveStatements = (name: string, database: Option.Option<Connection>, fenc
       Stream.runForEach((input) => {
         const message = SqlProtocol.decode(input)
         if (message?._tag !== "Execute" || (taken.get(message.client) ?? -1) >= message.id) return Effect.void
+        const first = !taken.has(message.client)
         taken.set(message.client, message.id)
-        return execute(message).pipe(
+        return execute(message, first).pipe(
           Effect.flatMap((reply) => port.post(SqlProtocol.encode(reply))),
           Effect.forkScoped
         )

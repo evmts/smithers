@@ -95,22 +95,31 @@ browser persistence, so it loads one SQLite build and opens one pool.
   handover is invisible to the caller. If one returns other rows, because
   another tab wrote in between, the tab rolls the transaction back and the
   statement fails with a `ConnectionError`.
-- The leader records each transaction inside it, by the request that opened
-  it, in the table `shared_sqlite_commits`. A statement that committed the
-  transaction just as the old leader ended is answered as committed by the
-  new one, never run twice. Commit receipts do not expire: a suspended tab
-  can resume after any interval. A statement outside a transaction that the old
-  leader never answered is sent to the new one, which may run it a second
-  time if the old one ran it before it stopped.
-- The record fails closed. A leader that can't write it rolls the
-  transaction back, and the statement that opened it fails with
-  `TransactionUnrecorded`. A leader that can't read it runs nothing, and the
-  statement fails with `TransactionUndecided`; the tab's next statement asks
-  again. A leader that can't create the table still runs reads and single
-  statements, so no transaction commits twice.
+- Every change a request commits carries the request's receipt, in the same
+  SQLite transaction, in the table `shared_sqlite_commits`. A transaction a
+  request opens is receipted at once, inside it. A write outside a
+  transaction would commit on its own, so SQLite's commit hook refuses it and
+  the leader runs the request again inside a transaction it opens with the
+  receipt: all of the request commits, or none of it. A read commits nothing
+  and pays for no receipt.
+- So a handover never runs a committed request twice. A statement that
+  committed a transaction just as the old leader ended is answered as
+  committed by the new one when the receipt names the request that opened
+  the transaction. A tab's first request to the new leader, outside a
+  transaction, is answered as committed, with no rows, when the receipt names
+  it. Receipts do not expire: a suspended tab can resume after any interval.
+- The receipt fails closed. A leader that can't write it rolls the change
+  back, and the request fails with `TransactionUnrecorded`. A leader that
+  can't read whether an earlier leader committed a request commits nothing of
+  it: a write fails with `TransactionUndecided`, a read still runs, and a
+  statement of a transaction the old leader held fails the same way, so the
+  tab's next statement asks again. A leader that can't create the table still
+  runs reads.
 - A statement that fails after it opened a transaction, such as
-  `BEGIN; <refused>`, rolls that transaction back, so no transaction stays
-  open that its tab doesn't know of.
+  `BEGIN; <refused>`, leaves that transaction open and the tab's: the reply
+  says so, and the leader rolls it back if the tab ends.
+- A request that writes outside a transaction and opens one of its own, such
+  as `INSERT ...; BEGIN`, fails as a nested `BEGIN` does. Send them apart.
 
 ## Preparing the app's database before any tab reads it
 

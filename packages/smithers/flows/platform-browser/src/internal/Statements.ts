@@ -50,7 +50,9 @@ const bindable = (value: unknown): unknown =>
 /**
  * Runs every statement in `sql`, binding `params` to each, and collects the
  * rows of those that return any, as objects keyed by column name or as
- * arrays. `columns` is `0` when no statement had result columns.
+ * arrays. `columns` is `0` when no statement had result columns. `after`,
+ * when given, runs after each statement completes and before the next
+ * starts; what it throws ends the run.
  *
  * @category running
  * @since 1.0.0
@@ -59,7 +61,8 @@ export const runAll = async (
   { db, sqlite3 }: Database,
   sql: string,
   params: ReadonlyArray<unknown>,
-  shape: "object" | "array"
+  shape: "object" | "array",
+  after?: () => Promise<void>
 ): Promise<{ readonly rows: Array<unknown>; readonly columns: number }> => {
   const rows: Array<unknown> = []
   let columns = 0
@@ -77,6 +80,7 @@ export const runAll = async (
         rows.push(entry)
       }
     }
+    await after?.()
   }
   return { rows, columns }
 }

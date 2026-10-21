@@ -9,6 +9,7 @@ import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import { BrowserRuntime, BrowserSqlite } from "../src/index.ts"
 import * as SqlConnection from "../src/internal/SqlConnection.ts"
+import * as SqlProtocol from "../src/internal/SqlProtocol.ts"
 import * as MemorySqlite from "./fixtures/MemorySqlite.ts"
 import * as Telemetry from "./fixtures/Telemetry.ts"
 
@@ -129,4 +130,162 @@ describe("SqlConnection", () => {
         service.run("a", "SELECT 7 AS seven", [], false)).pipe(Effect.provide(opened))
       expect(rows).toEqual({ rows: [{ seven: 7 }], open: false })
     }))
+})
+
+/** A connection with a table `t` and the receipts table, as the leader prepares it. */
+const receipting = Effect.gen(function*() {
+  const service = yield* connection
+  yield* service.run(
+    "leader",
+    `CREATE TABLE ${SqlProtocol.commits} (client TEXT PRIMARY KEY, opened INTEGER NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID`,
+    [],
+    false
+  )
+  return service
+})
+
+const decided = (id: number): SqlConnection.Request => ({ id, at: 1_000 + id, undecided: false })
+const undecided = (id: number): SqlConnection.Request => ({ id, at: 1_000 + id, undecided: true })
+
+const ids = (service: SqlConnection.Service) =>
+  Effect.map(service.run("reader", "SELECT id FROM t ORDER BY id", [], false), ({ rows }) => rows)
+
+const receipts = (service: SqlConnection.Service) =>
+  Effect.map(
+    service.run("reader", `SELECT client, opened, at FROM ${SqlProtocol.commits} ORDER BY client`, [], false),
+    ({ rows }) => rows
+  )
+
+const tagOf = <A, E extends { readonly _tag: string }>(effect: Effect.Effect<A, E>) =>
+  Effect.map(Effect.flip(effect), (error) => error._tag)
+
+describe("SqlConnection receipts", () => {
+  it.effect("runs a request's write outside a transaction inside one with its receipt, and returns its rows", () =>
+    Effect.gen(function*() {
+      const service = yield* receipting
+      expect(yield* service.run("a", "INSERT INTO t (id) VALUES (1) RETURNING id", [], false, decided(4))).toEqual({
+        rows: [{ id: 1 }],
+        open: false
+      })
+      expect(yield* ids(service)).toEqual([{ id: 1 }])
+      expect(yield* receipts(service)).toEqual([{ client: "a", opened: 4, at: 1_004 }])
+    }).pipe(Effect.scoped))
+
+  it.effect("writes no receipt for a read, which commits nothing", () =>
+    Effect.gen(function*() {
+      const service = yield* receipting
+      expect(yield* service.run("a", "SELECT 1 AS one", [], false, decided(0))).toEqual({
+        rows: [{ one: 1 }],
+        open: false
+      })
+      expect(yield* receipts(service)).toEqual([])
+    }).pipe(Effect.scoped))
+
+  it.effect("receipts a transaction a request opens at once, inside it, whether a later request or the same one commits it", () =>
+    Effect.gen(function*() {
+      const service = yield* receipting
+      expect(yield* service.run("a", "BEGIN IMMEDIATE", [], false, decided(0))).toEqual({ rows: [], open: true })
+      yield* service.run("a", "INSERT INTO t (id) VALUES (1)", [], true, decided(1))
+      yield* service.run("a", "COMMIT", [], true, decided(2))
+      yield* service.run("b", "BEGIN; INSERT INTO t (id) VALUES (2); COMMIT", [], false, decided(7))
+      yield* service.run("c", "SAVEPOINT s; INSERT INTO t (id) VALUES (3); RELEASE s", [], false, decided(9))
+      expect(yield* ids(service)).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }])
+      expect(yield* receipts(service)).toEqual([
+        { client: "a", opened: 0, at: 1_000 },
+        { client: "b", opened: 7, at: 1_007 },
+        { client: "c", opened: 9, at: 1_009 }
+      ])
+    }).pipe(Effect.scoped))
+
+  it.effect("commits all of a wrapped request or none of it", () =>
+    Effect.gen(function*() {
+      const service = yield* receipting
+      const duplicate = yield* tagOf(
+        service.run("a", "INSERT INTO t (id) VALUES (1); INSERT INTO t (id) VALUES (1)", [], false, decided(0))
+      )
+      expect(duplicate).toBe("SqlError")
+      // A request that writes outside a transaction and opens one of its own fails as a nested BEGIN does.
+      const nested = yield* tagOf(service.run("a", "INSERT INTO t (id) VALUES (2); BEGIN", [], false, decided(1)))
+      expect(nested).toBe("SqlError")
+      expect(service.isOpen("a")).toBe(false)
+      expect(yield* ids(service)).toEqual([])
+      expect(yield* receipts(service)).toEqual([])
+    }).pipe(Effect.scoped))
+
+  it.effect("commits a wrapped request's own COMMIT with its receipt, and leaves a transaction it opens after that open", () =>
+    Effect.gen(function*() {
+      const service = yield* receipting
+      expect(yield* service.run("a", "INSERT INTO t (id) VALUES (1); COMMIT", [], false, decided(0))).toEqual({
+        rows: [],
+        open: false
+      })
+      expect(yield* service.run("a", "INSERT INTO t (id) VALUES (2); COMMIT; SAVEPOINT s", [], false, decided(1)))
+        .toEqual({ rows: [], open: true })
+      yield* service.run("a", "INSERT INTO t (id) VALUES (3); RELEASE s", [], true, decided(2))
+      expect(yield* ids(service)).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }])
+      expect(yield* receipts(service)).toEqual([{ client: "a", opened: 1, at: 1_001 }])
+    }).pipe(Effect.scoped))
+
+  it.effect("refuses a change that would commit without a receipt once some of the request committed, and rolls it back", () =>
+    Effect.gen(function*() {
+      const service = yield* receipting
+      const outside = yield* tagOf(
+        service.run(
+          "a",
+          "BEGIN; INSERT INTO t (id) VALUES (1); COMMIT; INSERT INTO t (id) VALUES (2)",
+          [],
+          false,
+          decided(0)
+        )
+      )
+      expect(outside).toBe("@smthrs/platform-browser/TransactionUnrecorded")
+      const wrapped = yield* tagOf(
+        service.run("b", "INSERT INTO t (id) VALUES (3); COMMIT; INSERT INTO t (id) VALUES (4)", [], false, decided(0))
+      )
+      expect(wrapped).toBe("@smthrs/platform-browser/TransactionUnrecorded")
+      yield* service.run("c", "BEGIN IMMEDIATE", [], false, decided(0))
+      const continuing = yield* tagOf(
+        service.run("c", "INSERT INTO t (id) VALUES (5); COMMIT; INSERT INTO t (id) VALUES (6)", [], true, decided(1))
+      )
+      expect(continuing).toBe("@smthrs/platform-browser/TransactionUnrecorded")
+      expect(yield* ids(service)).toEqual([{ id: 1 }, { id: 3 }, { id: 5 }])
+    }).pipe(Effect.scoped))
+
+  it.effect("commits nothing of an undecided request, rolling back what it left open, and still runs its reads", () =>
+    Effect.gen(function*() {
+      const service = yield* receipting
+      expect(yield* tagOf(service.run("a", "INSERT INTO t (id) VALUES (1)", [], false, undecided(0)))).toBe(
+        "@smthrs/platform-browser/TransactionUndecided"
+      )
+      expect(
+        yield* tagOf(
+          service.run("a", "SAVEPOINT s; INSERT INTO t (id) VALUES (2); RELEASE s", [], false, undecided(0))
+        )
+      ).toBe("@smthrs/platform-browser/TransactionUndecided")
+      expect(service.isOpen("a")).toBe(false)
+      expect(yield* service.run("a", "SELECT count(*) AS n FROM t", [], false, undecided(0))).toEqual({
+        rows: [{ n: 0 }],
+        open: false
+      })
+      // Opening a transaction commits nothing; its later statements are decided.
+      expect(yield* service.run("a", "BEGIN IMMEDIATE", [], false, undecided(0))).toEqual({ rows: [], open: true })
+      yield* service.run("a", "INSERT INTO t (id) VALUES (3)", [], true, decided(1))
+      yield* service.run("a", "COMMIT", [], true, decided(2))
+      expect(yield* ids(service)).toEqual([{ id: 3 }])
+    }).pipe(Effect.scoped))
+
+  it.effect("rolls back a change whose receipt it can't write, inside a transaction or out", () =>
+    Effect.gen(function*() {
+      const service = yield* connection
+      expect(yield* tagOf(service.run("a", "BEGIN IMMEDIATE", [], false, decided(0)))).toBe(
+        "@smthrs/platform-browser/TransactionUnrecorded"
+      )
+      expect(service.isOpen("a")).toBe(false)
+      expect(yield* tagOf(service.run("a", "INSERT INTO t (id) VALUES (1)", [], false, decided(1)))).toBe(
+        "@smthrs/platform-browser/TransactionUnrecorded"
+      )
+      // The leader's own statements need no receipt.
+      yield* service.run("leader", "INSERT INTO t (id) VALUES (2)", [], false)
+      expect(yield* ids(service)).toEqual([{ id: 2 }])
+    }).pipe(Effect.scoped))
 })

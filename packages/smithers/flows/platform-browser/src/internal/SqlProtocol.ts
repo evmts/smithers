@@ -12,8 +12,10 @@
  *   committed when the old one committed the transaction with it, and refuses
  *   it otherwise, so the tab runs the transaction again.
  * - A worker that starts serving posts `Ready`, and every tab posts its
- *   unanswered request again. A leader runs each request once; a new leader
- *   runs a request the old one may have run before it stopped.
+ *   unanswered request again. A leader runs each request once. Every change a
+ *   request commits carries its receipt ({@link commits}), so a new leader
+ *   answers a request the old one committed as committed, with no rows, and
+ *   never runs it again.
  *
  * Rows, parameters and SQLite's own messages travel in the replies; none is
  * ever logged.
@@ -133,10 +135,11 @@ export const channel = (name: string): string => `${name}/sql`
 export const clientLock = (name: string, client: string): string => `${name}/sql/${client}`
 
 /**
- * The leader's table in the app's database: each tab's last transaction, as
- * the request that opened it, written inside that transaction. It commits with
- * the transaction and goes with a rollback, so a new leader can tell whether a
- * statement the old one never answered committed it.
+ * The leader's table in the app's database: each tab's receipt, the request
+ * whose change it last committed or whose transaction it holds open, written
+ * inside the transaction that commits the change. It commits with the change
+ * and goes with a rollback, so a new leader can tell whether a request the old
+ * one never answered committed.
  *
  * @category protocol
  * @since 1.0.0

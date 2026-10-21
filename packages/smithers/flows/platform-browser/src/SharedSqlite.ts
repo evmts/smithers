@@ -23,8 +23,9 @@
  *   the rows it returned before; a handover is invisible to the caller, as
  *   TanStack DB's persistence needs. If any returns other rows, the tab rolls
  *   the transaction back and the statement fails with a `ConnectionError`. A
- *   statement that committed the transaction just as the old leader ended is
- *   answered as committed, never run twice.
+ *   statement that committed, a transaction or a write of its own, just as
+ *   the old leader ended is answered as committed, with no rows, never run
+ *   twice: every change commits with its request's receipt.
  *
  * @since 1.0.0
  */

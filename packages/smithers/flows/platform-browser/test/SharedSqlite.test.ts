@@ -362,34 +362,28 @@ describe("SharedSqlite", () => {
       })
     }).pipe(Effect.scoped))
 
-  it.live("opens no transaction it can't record when a table of the tab's own stands where the leader records them, and serves the rest", () => {
+  it.live("commits nothing it can't record when a table of the tab's own stands where the leader records receipts, and serves reads", () => {
     const telemetry = Telemetry.make()
     return telemetry.observed(
       Effect.gen(function*() {
         const { leader, name, pool, tab } = yield* setup
-        yield* tab.execute(`DROP TABLE ${SqlProtocol.commits}`)
-        yield* tab.execute(`CREATE TABLE ${SqlProtocol.commits} (x INTEGER)`)
+        // One request, so its receipt is written to the leader's table before the tab's own replaces it.
+        yield* tab.execute(`DROP TABLE ${SqlProtocol.commits}; CREATE TABLE ${SqlProtocol.commits} (x INTEGER)`)
         yield* Engines.close(leader)
-        const second = yield* leaderOver(name, pool)
-        // The record can't be written, so the transaction is rolled back and the statement that opened it fails.
-        const unrecorded = yield* tab.execute("BEGIN IMMEDIATE; INSERT INTO t (id) VALUES (1)").pipe(Effect.flip)
-        expect(unrecorded.reason.cause).toMatchObject({ name: "@smthrs/platform-browser/TransactionUnrecorded" })
-        // Single statements still run, so the tab can put the table back.
-        yield* tab.execute("INSERT INTO t (id) VALUES (2)")
-        yield* tab.execute(`DROP TABLE ${SqlProtocol.commits}`)
-        yield* Engines.close(second)
-        const third = yield* leaderOver(name, pool)
-        yield* tab.execute("BEGIN IMMEDIATE")
-        yield* tab.execute("INSERT INTO t (id) VALUES (3)")
-        yield* Engines.close(third)
         yield* leaderOver(name, pool)
-        yield* tab.execute("COMMIT")
-        expect(yield* tab.execute("SELECT id FROM t")).toEqual([{ id: 2 }, { id: 3 }])
+        // The receipt can't be written, so the transaction is rolled back and the statement that opened it fails.
+        const opened = yield* tab.execute("BEGIN IMMEDIATE; INSERT INTO t (id) VALUES (1)").pipe(Effect.flip)
+        expect(opened.reason.cause).toMatchObject({ name: "@smthrs/platform-browser/TransactionUnrecorded" })
+        // A write outside a transaction can't carry its receipt either, so it is rolled back too.
+        const single = yield* tab.execute("INSERT INTO t (id) VALUES (2)").pipe(Effect.flip)
+        expect(single.reason.cause).toMatchObject({ name: "@smthrs/platform-browser/TransactionUnrecorded" })
+        // A read commits nothing, and runs.
+        expect(yield* tab.execute("SELECT id FROM t")).toEqual([])
       }).pipe(Effect.scoped)
     ).pipe(Effect.andThen(Effect.sync(() => {
       const lines = telemetry.lines("browser.runtime.statement").map((line) => line.annotations)
       expect(lines).toContainEqual(expect.objectContaining({ outcome: "unprepared", "error.type": "SqlError" }))
-      expect(telemetry.count(BrowserRuntime.statements, { outcome: "unrecorded" })).toBe(1)
+      expect(telemetry.count(BrowserRuntime.statements, { outcome: "unrecorded" })).toBe(2)
     })))
   })
 
@@ -412,6 +406,8 @@ interface Faults {
   hangAfterCommit: boolean
   /** Reading the record of tabs' transactions fails, as on an I/O error. */
   refuseRecordRead: boolean
+  /** The next statement with this SQL runs and is never answered, as when the leader's tab closes right then. */
+  hangAfter?: string | undefined
 }
 
 /**
@@ -431,16 +427,22 @@ const faultyLeaderOver = (name: string, pool: Effect.Success<typeof MemorySqlite
         SqlConnection.SqlConnection.of({
           abandon: connection.abandon,
           isOpen: connection.isOpen,
-          run: (owner, sql, params, continuing) =>
+          run: ((
+            owner: string,
+            sql: string,
+            params: ReadonlyArray<unknown>,
+            continuing: boolean,
+            request?: SqlConnection.Request
+          ) =>
             faults.refuseRecordRead && sql.startsWith(`SELECT opened FROM ${SqlProtocol.commits}`) ?
               Effect.fail(Statements.failed({ code: 10, message: "disk I/O error" }, "Failed to read", "execute"))
-              : connection.run(owner, sql, params, continuing).pipe(
+              : connection.run(owner, sql, params, continuing, request).pipe(
                 Effect.tap(() =>
-                  faults.hangAfterCommit && sql === "COMMIT" ?
+                  (faults.hangAfterCommit && sql === "COMMIT") || sql === faults.hangAfter ?
                     Deferred.succeed(committed, undefined).pipe(Effect.andThen(Effect.never))
                     : Effect.void
                 )
-              )
+              )) as SqlConnection.Service["run"]
         }))
     ).pipe(Layer.provide(real))
     const database = yield* MemorySqlite.open
@@ -469,9 +471,9 @@ describe("SharedSqlite across a handover", () => {
         const first = yield* faultyLeaderOver(name, pool, faults)
         const tab = yield* Engines.sharedTab(name)
         yield* tab.execute("CREATE TABLE log (v TEXT)")
-        // Writing the record fails as a full disk would, inside the transaction the tab opens.
+        // Writing the receipt fails as a full disk would, inside the transaction the tab opens next: its third request.
         yield* tab.execute(
-          `CREATE TRIGGER refuse_record BEFORE INSERT ON ${SqlProtocol.commits} BEGIN SELECT RAISE(ABORT, 'database or disk is full'); END`
+          `CREATE TRIGGER refuse_record BEFORE INSERT ON ${SqlProtocol.commits} WHEN NEW.opened = 2 BEGIN SELECT RAISE(ABORT, 'database or disk is full'); END`
         )
         const transaction = (value: string) =>
           Effect.gen(function*() {
@@ -558,6 +560,62 @@ describe("SharedSqlite across a handover", () => {
       )
     })))
   })
+})
+
+describe("SharedSqlite across a handover, outside a transaction", () => {
+  it.live("never runs a write twice when the leader ends before answering it: the next leader answers it as committed", () => {
+    const telemetry = Telemetry.make()
+    return telemetry.observed(
+      Effect.gen(function*() {
+        const name = Engines.name()
+        const pool = yield* MemorySqlite.pool
+        const write = "INSERT INTO log (v) VALUES ('once')"
+        const first = yield* faultyLeaderOver(name, pool, {
+          hangAfterCommit: false,
+          refuseRecordRead: false,
+          hangAfter: write
+        })
+        const tab = yield* Engines.sharedTab(name)
+        yield* tab.execute("CREATE TABLE log (v TEXT)")
+        const work = yield* Effect.forkChild(tab.execute(write))
+        // The write committed on its own, and the leader's tab closed before it answered.
+        expect(yield* untilCommitted(work, first)).toBe("committed")
+        yield* Engines.close(first.fiber)
+        yield* leaderOver(name, pool)
+        // The tab sends it again; the new leader finds its receipt and runs nothing.
+        expect(yield* Fiber.join(work)).toEqual([])
+        expect(yield* tab.execute("SELECT v FROM log")).toEqual([{ v: "once" }])
+      }).pipe(Effect.scoped)
+    ).pipe(Effect.andThen(Effect.sync(() => {
+      expect(telemetry.count(BrowserRuntime.statements, { outcome: "committed" })).toBe(1)
+    })))
+  })
+
+  it.live("refuses a write the next leader can't tell committed, and still serves a read", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const pool = yield* MemorySqlite.pool
+      const write = "INSERT INTO log (v) VALUES ('once')"
+      const first = yield* faultyLeaderOver(name, pool, {
+        hangAfterCommit: false,
+        refuseRecordRead: false,
+        hangAfter: write
+      })
+      const tab = yield* Engines.sharedTab(name)
+      const reader = yield* Engines.sharedTab(name)
+      yield* tab.execute("CREATE TABLE log (v TEXT)")
+      const work = yield* Effect.forkChild(tab.execute(write))
+      expect(yield* untilCommitted(work, first)).toBe("committed")
+      yield* Engines.close(first.fiber)
+      yield* faultyLeaderOver(name, pool, { hangAfterCommit: false, refuseRecordRead: true })
+      const undecided = yield* Fiber.await(work)
+      expect(Exit.isFailure(undecided) ? Cause.squash(undecided.cause) : undecided).toMatchObject({
+        _tag: "SqlError",
+        reason: { cause: { name: "@smthrs/platform-browser/TransactionUndecided" } }
+      })
+      // A tab's first read on the new leader runs although its receipt can't be read: a read commits nothing.
+      expect(yield* reader.execute("SELECT v FROM log")).toEqual([{ v: "once" }])
+    }).pipe(Effect.scoped))
 })
 
 describe("SharedSqlite.open", () => {
