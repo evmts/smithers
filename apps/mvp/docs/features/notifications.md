@@ -17,12 +17,12 @@ notifications ─▶ Electric (/api/shapes/notifications, your rows) ─▶ ever
 | `run:<id>` | each report of an agent's answer | its launcher | every state: working, waiting, needs you (Answer), failed, done (Open) |
 | | | everyone watching the run's branch who may open it | a quiet toast naming the launcher while it lives (`Waiting` while the launcher is asked), gone 4 s after it settles; never an entry |
 | `clone:<repo id>` | each write to a clone's row (worker/CloneFeed.ts, [repo.md](repo.md#the-clone-in-the-feed)) | the person who asked for the attempt | `Clone · <repository> · Requested`, `Fetching 640.0 KB`, `Indexing`; done; or failed with why and Try again, which runs `repo/clone` again |
-| `main:<repo id>` | GitHub's `push` to the default branch | everyone watching the repository | `main · <commit> <first line>`, raised again for each newer push |
+| `main:<repo id>` | GitHub's `push` to the default branch | everyone watching the repository | `main · <commit> <first line>`, raised again for each newer push, including distinct commits in the same second |
 | `release:<repo id>:<tag>` | GitHub's `release` `published` | everyone watching the repository | `Release · <name>` |
 
 - **You're on a branch** when a tab of yours shows its conversation: the tab runs `watch/set` once per conversation, which follows the branch and its repository at `attention`. A watch stays until you mute it (there is no Unwatch yet). `/app` is the deployment repository's `main`.
-- **Routing** is `@smthrs/notifications`' `Inbox.route` and `Inbox.audience`: the launcher always; watchers at `attention` hear someone else's run quietly, at `all` as an entry; `muted` hears nothing. A watcher hears only of a branch they may open now (worker/branch/Access.ts), checked at each report.
-- **Versions.** A row's `version` goes up when it needs attention again (`Inbox.raises`: a new row, a question, a failure, done; a second question while one is open). A row is open while `dismissed_version < version`, hidden while `hidden_version ≥ version`, unread while `read_version < version`. A new version shows again everywhere.
+- **Routing** is `@smthrs/notifications`' `Inbox.route` and `Inbox.audience`: the launcher hears their own run; watchers at `attention` hear someone else's run quietly, at `all` as an entry; `muted` hears nothing. Every recipient, including the launcher and anyone with an existing row, hears only of a branch they may open now (worker/branch/Access.ts), checked at each report. Muted recipients with access still see an existing row settle; revoked recipients receive no more updates.
+- **Versions.** A row's `version` goes up when it needs attention again (`Inbox.raises`: a new row, a question, a failure, done; a second question while one is open). A row is open while `dismissed_version < version`, hidden while `hidden_version ≥ version`, unread while `read_version < version`. A new version shows again everywhere. A quiet-only change preserves the version; a changed question title raises it.
 
 ## The stack
 

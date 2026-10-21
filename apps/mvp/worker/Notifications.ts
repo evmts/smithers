@@ -122,8 +122,9 @@ interface Existing {
 
 /**
  * Routes run `runId`'s current state to its recipients, inside the caller's transaction (worker/Runs.ts writes the
- * run's row first; worker/Answers.ts and `chat/Expire` settle its answer first): its launcher and every watcher of its branch (`Inbox.route`), and anyone whose row it already has,
- * so no row goes stale. A row's version goes up when the change needs attention again (`Inbox.raises`); a row that
+ * run's row first; worker/Answers.ts and `chat/Expire` settle its answer first): its launcher, branch watchers
+ * (`Inbox.route`) and existing recipients, each subject to current branch access. Accessible existing rows still
+ * settle after muting. A row's version goes up when the change needs attention again (`Inbox.raises`); a row that
  * would show the same thing is left alone. `launcherLogin` names the launcher on other people's rows. Records a span
  * `runs.fold` and a count per row written; never a title.
  */
@@ -150,17 +151,18 @@ export const foldRun = (runId: string, launcherLogin: string | undefined) =>
     const existing = yield* sql<Existing>`
       SELECT recipient, state, mine, quiet, title, version FROM notifications WHERE subject = ${subject} FOR UPDATE`
     const before = new Map(existing.map((row) => [row.recipient, row]))
-    // A watcher hears only of a branch they may still open (worker/branch/Access.ts): a feed is a Member's, so each is
+    // Every recipient hears only of a branch they may still open (worker/branch/Access.ts): a feed is a Member's, so each is
     // checked as one, against the branch's shares as they are now.
     const policy = run.branchId === null ? undefined : yield* policyOf(run.branchId)
+    const mayRead = (principal: string) => policy !== undefined && canView(underPolicy(policy, principal, "member"))
     const deliveries = Inbox.route({
       launcher: run.launchedBy,
       state,
       watchers,
-      mayRead: (principal) => policy !== undefined && canView(underPolicy(policy, principal, "member")),
+      mayRead,
     })
     const routedTo = new Set(deliveries.map((delivery) => delivery.recipient))
-    // Someone who no longer hears about the run (they muted its branch) still sees their row settle.
+    // A muted recipient with branch access still sees their existing row settle.
     const all = [
       ...deliveries,
       ...existing.filter((row) => !routedTo.has(row.recipient)).map((row): Inbox.Delivery => ({
@@ -169,7 +171,7 @@ export const foldRun = (runId: string, launcherLogin: string | undefined) =>
         quiet: row.quiet,
         state: !row.mine && state === "needs_you" ? "waiting" : state,
       })),
-    ]
+    ].filter((delivery) => run.branchId === null ? delivery.recipient === run.launchedBy : mayRead(delivery.recipient))
     const home = run.conversationId === null ? undefined : yield* Conversations.home
     const href = run.conversationId !== null && run.conversationId === home
       ? HOME_HREF
@@ -182,7 +184,7 @@ export const foldRun = (runId: string, launcherLogin: string | undefined) =>
       const title = delivery.state === "needs_you" ? titleOf(run.prompt) : titleOf(run.question)
       if (old !== undefined && old.state === delivery.state && old.quiet === delivery.quiet && old.title === title) continue
       // A run that asks again while it still needs the person asks a new question: it shows again too.
-      const again = old !== undefined && delivery.state === "needs_you" && old.state === "needs_you"
+      const again = old !== undefined && delivery.state === "needs_you" && old.state === "needs_you" && old.title !== title
       const version = old === undefined
         ? 1
         : Inbox.raises(old.state, delivery.state) || again
@@ -321,7 +323,7 @@ export const recordRepoEvent = (event: RepoEvent) =>
           ON CONFLICT (recipient, subject) DO UPDATE SET
             actor = EXCLUDED.actor, title = EXCLUDED.title, ref = EXCLUDED.ref, href = EXCLUDED.href,
             occurred_at = EXCLUDED.occurred_at, version = n.version + 1, updated_at = now()
-          WHERE EXCLUDED.occurred_at > n.occurred_at AND EXCLUDED.ref IS DISTINCT FROM n.ref
+          WHERE EXCLUDED.occurred_at >= n.occurred_at AND EXCLUDED.ref IS DISTINCT FROM n.ref
           RETURNING 1`
         : yield* sql`
           INSERT INTO notifications (recipient, subject, kind, state, repo_id, actor, title, ref, href, occurred_at)

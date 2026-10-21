@@ -85,7 +85,7 @@ export const resolve = (role: ModelRole) =>
 
 /**
  * Sets `role`'s model and records the change, in one transaction. `invocationKey` names the step that made the change,
- * so a replayed step writes the same row again and records its change once.
+ * so a replayed step changes neither the setting nor its audit history.
  */
 export const set = (
   change: { readonly role: ModelRole; readonly model: ModelRecord },
@@ -96,15 +96,17 @@ export const set = (
     const model = JSON.stringify(change.model)
     yield* sql.withTransaction(
       Effect.gen(function* () {
+        const inserted = yield* sql`
+          INSERT INTO model_role_changes (invocation_key, role, model, changed_by)
+          VALUES (${by.invocationKey}, ${change.role}, ${model}::jsonb, ${by.actorId})
+          ON CONFLICT (invocation_key) DO NOTHING
+          RETURNING invocation_key`
+        if (inserted.length === 0) return
         yield* sql`
           INSERT INTO model_roles (role, model, updated_by, updated_at)
           VALUES (${change.role}, ${model}::jsonb, ${by.actorId}, now())
           ON CONFLICT (role) DO UPDATE SET model = EXCLUDED.model, updated_by = EXCLUDED.updated_by,
             updated_at = EXCLUDED.updated_at`
-        yield* sql`
-          INSERT INTO model_role_changes (invocation_key, role, model, changed_by)
-          VALUES (${by.invocationKey}, ${change.role}, ${model}::jsonb, ${by.actorId})
-          ON CONFLICT (invocation_key) DO NOTHING`
       }),
     )
   })

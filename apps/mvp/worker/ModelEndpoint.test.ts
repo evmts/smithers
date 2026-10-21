@@ -408,6 +408,19 @@ describe("the request's size", () => {
 })
 
 describe("roles", () => {
+  test("replaying an older model change preserves the newer setting and audit", async () => {
+    const first = { role: "judge" as const, model: rowModel("https://models.example", "first") }
+    const second = { ...first, model: rowModel("https://models.example", "second") }
+    const by = { actorId: "person-admin", invocationKey: "first-step" }
+    await runtime.runPromise(ModelRoles.set(first, by))
+    await runtime.runPromise(ModelRoles.set(second, { ...by, invocationKey: "second-step" }))
+    await runtime.runPromise(ModelRoles.set(first, by))
+    const result = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      SELECT model->>'modelId' AS model, (SELECT count(*)::int FROM model_role_changes) AS changes
+      FROM model_roles WHERE role = 'judge'`))
+    expect(result).toEqual([{ model: "second", changes: 2 }])
+  })
+
   test("a role with no setting uses the deployment's default model", async () => {
     const h = await harness(runtime, answering, { actor: member, modelId: "default-model" })
 
@@ -509,9 +522,8 @@ describe("database failures", () => {
     const sql = (statement: string) =>
       runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe(statement)))
     await sql("ALTER TABLE model_roles RENAME TO model_roles_away")
-    const h = await harness(runtime, answering, { actor: member })
-
     try {
+      const h = await harness(runtime, answering, { actor: member })
       const { status, error } = await call(h, ask("hi"))
 
       expect(status).toBe(503)
@@ -966,18 +978,8 @@ describe("budget and metering", () => {
   })
 
   test("a settle that can't be written is logged and counted, the answer still ends, and the reservation stays", async () => {
-    await runtime.runPromise(
-      Effect.flatMap(SqlClient.SqlClient, (sql) =>
-        Effect.andThen(
-          sql`CREATE FUNCTION refuse_usage() RETURNS trigger LANGUAGE plpgsql AS $$
-            BEGIN RAISE EXCEPTION 'refused'; END $$`,
-          sql`CREATE TRIGGER refuse_usage BEFORE UPDATE ON model_usage FOR EACH ROW EXECUTE FUNCTION refuse_usage()`,
-        )),
-    )
-    const h = await harness(runtime, answering, { actor: member })
     const request = ask("hi")
-
-    try {
+    await withMeteringFault("settle", {}, async (h) => {
       const { lines } = await call(h, request)
 
       expect(lines.at(-1)).toEqual({ type: "end" })
@@ -985,29 +987,33 @@ describe("budget and metering", () => {
       expect(h.only("model.usage").annotations).toMatchObject({ role: "agent", errorCode: expect.stringMatching(/^sql:/) })
       // Fail-closed: the call still counts at its worst case.
       expect(await committedToday()).toBe(new TextEncoder().encode(body(request)).length + ModelEndpoint.MAX_OUTPUT_TOKENS)
-    } finally {
-      await runtime.runPromise(
-        Effect.flatMap(SqlClient.SqlClient, (sql) =>
-          Effect.andThen(sql`DROP TRIGGER refuse_usage ON model_usage`, sql`DROP FUNCTION refuse_usage()`)),
-      )
-    }
+    })
   })
 
   test("a reservation Postgres refuses is a 503 provider_internal, logged by its SQL reason, before any model", async () => {
-    const sql = (statement: string) =>
-      runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe(statement)))
-    await sql("ALTER TABLE model_budget_days RENAME TO model_budget_days_away")
-    const h = await harness(runtime, answering, { actor: member })
-
-    try {
+    await withMeteringFault("reserve", {}, async (h) => {
       const { status, error } = await call(h, ask("hi"))
 
       expect(status).toBe(503)
       expect(error).toMatchObject({ code: "provider_internal" })
       expect(h.only("model.endpoint").annotations).toMatchObject({ role: "agent", errorCode: expect.stringMatching(/^sql:/) })
       expect(h.requests).toEqual([])
+    })
+  })
+
+  test.each(["settle", "reserve"] as const)("%s fault is removed when harness setup fails", async (fault) => {
+    try {
+      await expect(withMeteringFault(fault, { MODEL_MAX_MESSAGES: "invalid" }, async () => {})).rejects.toThrow()
+      const rows = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'refuse_usage'
+          AND tgrelid = to_regclass('model_usage')) AS trigger,
+          to_regclass('model_budget_days') IS NOT NULL AS budget`))
+      expect(rows).toEqual([{ trigger: false, budget: true }])
     } finally {
-      await sql("ALTER TABLE model_budget_days_away RENAME TO model_budget_days")
+      // Keep the regression itself safe on the unfixed lifecycle.
+      await faultSql("DROP TRIGGER IF EXISTS refuse_usage ON model_usage")
+      await faultSql("DROP FUNCTION IF EXISTS refuse_usage()")
+      await faultSql("DO $$ BEGIN IF to_regclass('model_budget_days_away') IS NOT NULL THEN ALTER TABLE model_budget_days_away RENAME TO model_budget_days; END IF; END $$")
     }
   })
 
@@ -1023,6 +1029,39 @@ describe("budget and metering", () => {
     expect(h.requests).toEqual([])
   })
 })
+
+const faultSql = (statement: string) =>
+  runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe(statement)))
+
+const withMeteringFault = async (
+  fault: "settle" | "reserve",
+  config: Record<string, string>,
+  use: (h: Awaited<ReturnType<typeof harness>>) => Promise<void>,
+) => {
+  if (fault === "settle") {
+    await runtime.runPromise(
+      Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql.withTransaction(Effect.andThen(
+          sql`CREATE FUNCTION refuse_usage() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN RAISE EXCEPTION 'refused'; END $$`,
+          sql`CREATE TRIGGER refuse_usage BEFORE UPDATE ON model_usage FOR EACH ROW EXECUTE FUNCTION refuse_usage()`,
+        ))),
+    )
+  } else {
+    await faultSql("ALTER TABLE model_budget_days RENAME TO model_budget_days_away")
+  }
+  try {
+    const h = await harness(runtime, answering, { actor: member, config })
+    await use(h)
+  } finally {
+    if (fault === "settle") {
+      await faultSql("DROP TRIGGER IF EXISTS refuse_usage ON model_usage")
+      await faultSql("DROP FUNCTION IF EXISTS refuse_usage()")
+    } else {
+      await faultSql("ALTER TABLE model_budget_days_away RENAME TO model_budget_days")
+    }
+  }
+}
 
 describe("telemetry", () => {
   test("never carries the prompt, the answer, the provider's error text or the key", async () => {

@@ -108,6 +108,32 @@ const watches = (principal: string) =>
   )
 
 describe("a run's reports route to its launcher and the people on its branch", () => {
+  test("revoked recipients receive no further run updates, including the launcher", async () => {
+    const a = await open(ann)
+    const { branchId, conversationId } = await branch()
+    await sql(`INSERT INTO watches (principal_id, subject, level) VALUES ('person-ben', $1, 'attention')`, `branch:${branchId}`)
+    const runId = await asked(a, conversationId)
+    await report(a, runId, { status: "working" })
+    const subject = Notifications.runSubject(runId)
+    const before = await rows(subject)
+    expect(before).toHaveLength(2)
+    await sql(`DELETE FROM branch_shares WHERE branch_id = $1`, branchId)
+    await sql(`UPDATE runs SET status = 'needs_you', waiting = 'input', wait = $2::jsonb WHERE id = $1`, runId, JSON.stringify(wait()))
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.withTransaction(Notifications.foldRun(runId, "ann"))))
+    expect(await rows(subject)).toEqual(before)
+  })
+
+  test("a quiet-only needs_you change preserves the attention version", async () => {
+    const a = await open(ann)
+    const runId = await asked(a)
+    await report(a, runId, { status: "needs_you", wait: wait() })
+    const subject = Notifications.runSubject(runId)
+    const before = (await rowOf(subject, "person-ann"))!
+    await sql(`UPDATE notifications SET quiet = true WHERE subject = $1 AND recipient = 'person-ann'`, subject)
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.withTransaction(Notifications.foldRun(runId, "ann"))))
+    expect(await rowOf(subject, "person-ann")).toMatchObject({ quiet: false, version: before.version })
+  })
+
   test("the launcher hears every state; a watcher hears a quiet copy, waiting where the launcher is asked", async () => {
     const a = await open(ann)
     const b = await open(ben)
@@ -422,6 +448,18 @@ describe("GitHub's `main` and release deliveries reach the repository's watchers
       `repo:${REPOSITORY.id}`,
     )
   const mainRows = () => rows(`main:${REPOSITORY.id}`)
+
+  test("distinct pushes in the same second advance the commit and version", async () => {
+    await watchRepo()
+    const h = await githubHarness(runtime)
+    const first = await delivery("push", push(SHA("a")))
+    const second = await delivery("push", push(SHA("b")))
+    expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, first)).status).toBe(200)
+    expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, second)).status).toBe(200)
+    expect((await mainRows()).map(({ ref, version }) => ({ ref, version }))).toEqual([
+      { ref: SHA("b"), version: 2 }, { ref: SHA("b"), version: 2 },
+    ])
+  })
 
   test("`main` moving is one row per watcher, raised for each newer commit; a replay or an older push changes nothing", async () => {
     await watchRepo()

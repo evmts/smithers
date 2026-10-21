@@ -98,6 +98,8 @@ Every refusal is a JSON body `{ code, message, requestId }` with a `ModelError` 
 
 ## Postgres
 
+A model-setting invocation claims its audit key and updates the setting in one transaction. Replaying an older invocation leaves a newer setting and its audit history unchanged.
+
 Migrations `0004_model_roles`, `0012_model_reservations` and `0017_model_charges`. None of these tables is synced to browsers.
 
 | Table | Columns | |
