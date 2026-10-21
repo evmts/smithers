@@ -10,6 +10,7 @@ import { Node } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
+import * as Queue from "effect/Queue"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -158,7 +159,7 @@ describe("BrowserEngine.inspect", () => {
         Effect.provide(TabChannel.layer)
       )
       const inbox = yield* stranger.subscribe
-      yield* Stream.fromSubscription(inbox).pipe(
+      yield* Stream.fromQueue(inbox).pipe(
         Stream.runForEach((input) => {
           const message = Protocol.decode(input)
           return message?._tag === "Inspect" || message?._tag === "List"

@@ -55,9 +55,11 @@ export const asker = <I, S extends Schema.Constraint>(options: {
           const id = crypto.randomUUID()
           const replies = yield* port.subscribe
           yield* port.post({ kind: "smithers/asking-tab", id, requester, input } satisfies typeof Call.Type)
-          const reply = yield* Stream.fromSubscription(replies).pipe(
+          const reply = yield* Stream.fromQueue(replies).pipe(
             Stream.filter((message) => isReply(message) && message.id === id && isOutput(message.output)),
             Stream.runHead,
+            // Fallen the channel's capacity behind, this step hears no answer: as when the tab is gone. The channel logs it.
+            Effect.orElseSucceed(Option.none),
             Effect.timeoutOption(options.within),
           )
           return Option.map(Option.flatten(reply), (answered) => {
@@ -84,7 +86,9 @@ export const answerAskingTab = <S extends Schema.Constraint, O, R>(options: {
     const port = yield* (yield* TabChannel.TabChannel).open(options.channel)
     const calls = yield* port.subscribe
     const isInput = Schema.is(options.input)
-    yield* Stream.fromSubscription(calls).pipe(
+    // Fallen the channel's capacity behind, this tab stops answering, and steps that ask it find it gone; the channel
+    // logs and counts it.
+    yield* Stream.fromQueue(calls).pipe(
       Stream.filter(isCall),
       Stream.runForEach((call) =>
         Effect.gen(function* () {

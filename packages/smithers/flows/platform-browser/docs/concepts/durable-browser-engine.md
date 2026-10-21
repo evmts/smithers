@@ -185,6 +185,18 @@ engine commits. `BrowserEngine.result` waits on those rather than on a timer:
 it polls once, then again after each event for its execution and after each
 new leader.
 
+Each port holds at most 10,000 messages its subscriber has not taken
+(`TabChannel.defaultCapacity`). A subscriber that falls that far behind is
+ended, never dropped from silently: after what it holds it fails with
+`TabChannelOverflow`, and the channel logs `browser.tab_channel.overflow` and
+counts `smithers_browser_tab_channel_overflows` by channel. A leader that falls
+behind stops leading, logs `browser.runtime.lost` with `reason: overflow`, and
+waits for the lock again; whichever worker leads next announces itself, and
+tabs send it what went unanswered. A tab that falls behind hears no answer
+again: its `SharedSqlite` fails every statement with a `ConnectionError` naming
+`TabChannelOverflow`, and its `BrowserEngine` becomes unavailable with reason
+`channel-overflow`, until it reloads.
+
 Payloads, values and results cross the channel as JSON, encoded and decoded
 with the flow's own schemas. The channel is open to every script of the
 origin, which is the app's own trust boundary; the leader runs only the flows

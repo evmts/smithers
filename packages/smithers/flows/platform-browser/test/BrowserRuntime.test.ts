@@ -12,6 +12,7 @@ import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as PubSub from "effect/PubSub"
+import * as Queue from "effect/Queue"
 import * as Scope from "effect/Scope"
 import { afterEach, beforeEach, vi } from "vitest"
 import { BrowserRuntime, TabChannel, WebLock } from "../src/index.ts"
@@ -223,12 +224,12 @@ describe("BrowserRuntime.serve", () => {
       )
       const announcements = yield* listener.subscribe
       const first = yield* Engines.leader(name, Engines.engine(name, yield* MemorySqlite.open, Engines.steps()))
-      expect(yield* PubSub.take(announcements)).toEqual({ _tag: "Leader" })
+      expect(yield* Queue.take(announcements)).toEqual({ _tag: "Leader" })
       yield* Engines.leader(name, Engines.engine(name, yield* MemorySqlite.open, Engines.steps()))
       yield* Effect.sleep("100 millis")
-      expect(yield* PubSub.remaining(announcements)).toBe(0)
+      expect(yield* Queue.size(announcements)).toBe(0)
       yield* Engines.close(first)
-      expect(yield* PubSub.take(announcements)).toEqual({ _tag: "Leader" })
+      expect(yield* Queue.take(announcements)).toEqual({ _tag: "Leader" })
     }).pipe(Effect.scoped))
 
   it.live("stops leading when another context steals its lock, and leads again once that context lets go", () => {
@@ -242,7 +243,7 @@ describe("BrowserRuntime.serve", () => {
         const announcements = yield* listener.subscribe
         const run = Engines.steps()
         yield* Engines.leader(name, Engines.engine(name, yield* MemorySqlite.open, run))
-        expect(yield* PubSub.take(announcements)).toEqual({ _tag: "Leader" })
+        expect(yield* Queue.take(announcements)).toEqual({ _tag: "Leader" })
         const thief = yield* Scope.make()
         yield* Effect.flatMap(WebLock.WebLock, (lock) => lock.hold(name, { steal: true })).pipe(
           Effect.provide(WebLock.layer),
@@ -260,7 +261,7 @@ describe("BrowserRuntime.serve", () => {
         // The tab's own request is on the channel too; the next announcement follows it.
         let announced: unknown
         while ((announced as { readonly _tag?: string } | undefined)?._tag !== "Leader") {
-          announced = yield* PubSub.take(announcements)
+          announced = yield* Queue.take(announcements)
         }
         yield* Fiber.join(started)
         expect(yield* engine.result(Steps, "stolen-1")).toEqual(Exit.succeed("s:three"))

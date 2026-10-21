@@ -61,9 +61,11 @@ export class RequestRefused extends Schema.TaggedError<RequestRefused>()(
 
 /**
  * This tab's engine worker failed; requests fail until another leader announces itself: `reason` is
- * `worker-failed` when the worker threw, as when its module fails to load, and
+ * `worker-failed` when the worker threw, as when its module fails to load,
  * `engine-failed` when the worker could not build the engine, as without
- * OPFS. `error` is the failure's tag or name, never its message.
+ * OPFS, and `channel-overflow` when this tab fell the engine channel's
+ * capacity behind (`TabChannelOverflow`), so it hears no leader again until it
+ * reloads. `error` is the failure's tag or name, never its message.
  *
  * @category errors
  * @since 1.0.0
@@ -71,7 +73,7 @@ export class RequestRefused extends Schema.TaggedError<RequestRefused>()(
 export class EngineUnavailable extends Schema.TaggedError<EngineUnavailable>()(
   "@smthrs/platform-browser/EngineUnavailable",
   {
-    reason: Schema.Literals(["worker-failed", "engine-failed"]),
+    reason: Schema.Literals(["worker-failed", "engine-failed", "channel-overflow"]),
     error: Schema.String
   }
 ) {}
@@ -290,7 +292,7 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
       })
     const unavailableFailure = Effect.suspend(() => Effect.flatMap(Deferred.await(failed), Effect.fail))
 
-    yield* Stream.fromSubscription(inbox).pipe(
+    yield* Stream.fromQueue(inbox).pipe(
       Stream.runForEach((input) =>
         Effect.gen(function*() {
           const message = Protocol.decode(input)
@@ -316,6 +318,8 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
           }
         })
       ),
+      // Behind by the channel's capacity, this tab hears no leader again: every request fails until it reloads.
+      Effect.catch((overflow) => fail("channel-overflow", overflow._tag)),
       Effect.forkScoped
     )
 

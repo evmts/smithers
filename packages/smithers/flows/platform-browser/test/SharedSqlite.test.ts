@@ -12,6 +12,7 @@ import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as PubSub from "effect/PubSub"
+import * as Queue from "effect/Queue"
 import * as Scope from "effect/Scope"
 import { BrowserRuntime, BrowserSqlite, SharedSqlite, TabChannel, WebLock } from "../src/index.ts"
 import * as SqlConnection from "../src/internal/SqlConnection.ts"
@@ -58,8 +59,10 @@ const rawTab = (name: string) =>
     yield* Effect.flatMap(WebLock.WebLock, (locks) => locks.hold(SqlProtocol.clientLock(name, client)))
     const port = yield* Effect.flatMap(TabChannel.TabChannel, (channels) => channels.open(SqlProtocol.channel(name)))
     const replies = yield* port.subscribe
-    const next = (accept: (message: SqlProtocol.Message) => boolean): Effect.Effect<SqlProtocol.Message> =>
-      Effect.flatMap(PubSub.take(replies), (input) => {
+    const next = (
+      accept: (message: SqlProtocol.Message) => boolean
+    ): Effect.Effect<SqlProtocol.Message, TabChannel.TabChannelOverflow> =>
+      Effect.flatMap(Queue.take(replies), (input) => {
         const message = SqlProtocol.decode(input)
         return message !== undefined && accept(message) ? Effect.succeed(message) : next(accept)
       })
@@ -311,7 +314,7 @@ describe("SharedSqlite", () => {
       yield* port.post("not a message")
       yield* port.post(request)
       yield* port.post(request)
-      const reply = SqlProtocol.decode(yield* PubSub.take(replies))
+      const reply = SqlProtocol.decode(yield* Queue.take(replies))
       expect(reply).toMatchObject({ _tag: "Executed", client: "stranger", id: 0, open: false })
       // The stranger's reply reached this tab too, which ignored it.
       expect(yield* tab.execute("SELECT id FROM t")).toEqual([{ id: 9 }])

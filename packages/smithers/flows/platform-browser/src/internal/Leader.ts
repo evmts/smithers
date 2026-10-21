@@ -18,6 +18,7 @@ import { RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -27,7 +28,7 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
-import { TabChannel } from "../TabChannel.ts"
+import { TabChannel, type TabChannelOverflow } from "../TabChannel.ts"
 import { WebLock } from "../WebLock.ts"
 import { leaderships, requests, statements, wakes } from "./Metrics.ts"
 import * as Prepare from "./Prepare.ts"
@@ -348,7 +349,12 @@ const prepareCommits = (connection: Connection, leader: string) =>
  * request whose receipt it can't read commits nothing, so no request commits
  * twice.
  */
-const serveStatements = (name: string, database: Option.Option<Connection>, fence: Prepare.PrepareFailed | undefined) =>
+const serveStatements = (
+  name: string,
+  database: Option.Option<Connection>,
+  fence: Prepare.PrepareFailed | undefined,
+  overflowed: Deferred.Deferred<TabChannelOverflow>
+) =>
   Effect.gen(function*() {
     const locks = yield* WebLock
     const port = yield* (yield* TabChannel).open(SqlProtocol.channel(name))
@@ -483,7 +489,7 @@ const serveStatements = (name: string, database: Option.Option<Connection>, fenc
         )
       )
 
-    yield* Stream.fromSubscription(inbox).pipe(
+    yield* Stream.fromQueue(inbox).pipe(
       Stream.runForEach((input) => {
         const message = SqlProtocol.decode(input)
         if (message?._tag !== "Execute" || (taken.get(message.client) ?? -1) >= message.id) return Effect.void
@@ -494,6 +500,8 @@ const serveStatements = (name: string, database: Option.Option<Connection>, fenc
           Effect.forkScoped
         )
       }),
+      // A leader that fell the channel's capacity behind its tabs stops leading.
+      Effect.catch((overflow) => Deferred.succeed(overflowed, overflow)),
       Effect.forkScoped
     )
     yield* port.post(SqlProtocol.encode({ _tag: "Ready" }))
@@ -502,7 +510,9 @@ const serveStatements = (name: string, database: Option.Option<Connection>, fenc
 /**
  * One leadership: waits for the engine's lock, builds `engine`, wakes
  * unfinished runs, announces itself, then serves both channels until the
- * lock is stolen, when it returns and everything it built closes.
+ * lock is stolen or the leader falls a channel's capacity behind its tabs
+ * (`TabChannelOverflow`), when it returns and everything it built closes. Its
+ * tabs send what it never answered to whichever worker leads next.
  */
 const lead = <E, R>(
   options: Options,
@@ -513,11 +523,13 @@ const lead = <E, R>(
     const held = yield* (yield* WebLock).hold(options.name).pipe(Effect.withSpan("browser.runtime.elect"))
     yield* Metric.update(leaderships, 1)
     yield* Effect.logInfo("browser.runtime.leader").pipe(Effect.annotateLogs({ flows: flows.size }))
-    // Loss fences the whole leadership, including initialization and preparation.
+    // Losing the lock, or falling a channel's capacity behind its tabs, ends the whole leadership, including
+    // initialization and preparation.
     yield* Effect.gen(function*() {
       const context = yield* Layer.build(engine)
       const port = yield* (yield* TabChannel).open(options.name)
       const inbox = yield* port.subscribe
+      const overflowed = yield* Deferred.make<TabChannelOverflow>()
       const changes = yield* Effect.flatMap(Journal.Journal, (journal) => journal.changes).pipe(
         Effect.provideContext(context)
       )
@@ -530,9 +542,14 @@ const lead = <E, R>(
       )
       // The app's database is prepared for this build before any tab's statement runs on it, and fenced if it can't be.
       const fence = options.prepare === undefined ? undefined : yield* Prepare.run(options.prepare, context)
-      yield* serveStatements(options.name, Context.getOption(context as Context.Context<unknown>, SqlConnection), fence)
+      yield* serveStatements(
+        options.name,
+        Context.getOption(context as Context.Context<unknown>, SqlConnection),
+        fence,
+        overflowed
+      )
       yield* port.post(Protocol.encode({ _tag: "Leader" }))
-      yield* Stream.fromSubscription(inbox).pipe(
+      yield* Stream.fromQueue(inbox).pipe(
         Stream.runForEach((input) => {
           const message = Protocol.decode(input)
           return !isRequest(message)
@@ -543,12 +560,20 @@ const lead = <E, R>(
               Effect.forkScoped
             )
         }),
+        Effect.catch((overflow) => Deferred.succeed(overflowed, overflow)),
         Effect.forkScoped
       )
-      yield* Effect.never
+      const overflow = yield* Deferred.await(overflowed)
+      yield* Effect.logWarning("browser.runtime.lost").pipe(
+        Effect.annotateLogs({ reason: "overflow", channel: overflow.channel })
+      )
     }).pipe(
       Effect.scoped,
-      Effect.raceFirst(held.lost.pipe(Effect.andThen(Effect.logWarning("browser.runtime.lost"))))
+      Effect.raceFirst(
+        held.lost.pipe(
+          Effect.andThen(Effect.logWarning("browser.runtime.lost").pipe(Effect.annotateLogs({ reason: "stolen" })))
+        )
+      )
     )
   })
 

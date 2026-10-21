@@ -84,7 +84,7 @@ describe("the tab that asked", () => {
         const port = yield* (yield* TabChannel.TabChannel).open(channel)
         const calls = yield* port.subscribe
         yield* Effect.forkScoped(Effect.gen(function* () {
-          const call = Option.getOrThrow(yield* Stream.runHead(Stream.fromSubscription(calls))) as { readonly id: string }
+          const call = Option.getOrThrow(yield* Stream.runHead(Stream.fromQueue(calls))) as { readonly id: string }
           yield* port.post("junk")
           yield* port.post({ kind: "smithers/asking-tab-reply", id: "another", door: "button", output: { length: 1 } })
           yield* port.post({ kind: "smithers/asking-tab-reply", id: call.id, door: "button", output: { length: "x" } })

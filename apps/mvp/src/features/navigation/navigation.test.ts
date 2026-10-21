@@ -336,7 +336,7 @@ describe("refusals", () => {
             requester: "nav-1",
             input: { path: "https://example.com" },
           })
-          return yield* Stream.fromSubscription(replies).pipe(
+          return yield* Stream.fromQueue(replies).pipe(
             Stream.filter((message) => (message as { kind?: string }).kind === "smithers/asking-tab-reply"),
             Stream.runHead,
           )

@@ -45,7 +45,7 @@ import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import * as Stream from "effect/Stream"
 import * as SqlProtocol from "./internal/SqlProtocol.ts"
 import * as Statements from "./internal/Statements.ts"
-import { TabChannel } from "./TabChannel.ts"
+import { TabChannel, type TabChannelOverflow } from "./TabChannel.ts"
 import * as TabChannelLayer from "./TabChannel.ts"
 import { WebLock } from "./WebLock.ts"
 import * as WebLockLayer from "./WebLock.ts"
@@ -115,8 +115,11 @@ interface Transaction {
 /** What a leader answers a statement of a transaction that ended with an earlier leader. */
 const lost = "@smthrs/platform-browser/TransactionLost"
 
-/** What a leader answers every statement with when this build could not prepare the database. */
-const unprepared = "@smthrs/platform-browser/PrepareFailed"
+/** Why a statement never reached SQLite, by the tag it failed with: the `ConnectionError`'s message. */
+const unreached: Readonly<Record<string, string>> = {
+  "@smthrs/platform-browser/PrepareFailed": "The database is not prepared for this build",
+  "@smthrs/platform-browser/TabChannelOverflow": "This tab fell too far behind the database's channel"
+}
 
 /** The `SqlError` a refused statement fails with. */
 const refused = (reply: Extract<Reply, { readonly _tag: "Failed" }>): SqlError =>
@@ -128,11 +131,11 @@ const refused = (reply: Extract<Reply, { readonly _tag: "Failed" }>): SqlError =
         operation: "execute"
       })
     })
-    : reply.error === unprepared ?
+    : reply.error in unreached ?
     new SqlError({
       reason: new ConnectionError({
         cause: { name: reply.error },
-        message: "The database is not prepared for this build",
+        message: unreached[reply.error]!,
         operation: "execute"
       })
     })
@@ -165,8 +168,11 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
     // This tab's open transaction, if one is open: the leader holding it, the request that opened it, and every
     // statement it ran with the rows it returned, so a new leader can run it again.
     let transaction: Transaction | null = null
+    // Set once this tab fell the channel's capacity behind: it hears no answer any more, so every statement fails.
+    let overflow: TabChannelOverflow | undefined
+    const overflowed = (id: number): Reply => ({ _tag: "Failed", client, id, error: overflow!._tag })
 
-    yield* Stream.fromSubscription(inbox).pipe(
+    yield* Stream.fromQueue(inbox).pipe(
       Stream.runForEach((input) =>
         Effect.suspend(() => {
           const message = SqlProtocol.decode(input)
@@ -180,6 +186,12 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
           return Effect.void
         })
       ),
+      Effect.catch((error) =>
+        Effect.suspend(() => {
+          overflow = error
+          return pending === undefined ? Effect.void : Deferred.succeed(pending.reply, overflowed(pending.id))
+        })
+      ),
       Effect.forkScoped
     )
 
@@ -187,6 +199,7 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
     const send = (sql: string, params: ReadonlyArray<unknown>) =>
       Effect.gen(function*() {
         const id = next++
+        if (overflow !== undefined) return { id, answer: overflowed(id) }
         const reply = yield* Deferred.make<Reply>()
         const message = SqlProtocol.encode({
           _tag: "Execute",
