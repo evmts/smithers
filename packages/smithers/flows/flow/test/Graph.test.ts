@@ -1015,6 +1015,26 @@ describe("Graph.build into a plan", () => {
     expect(Graph.nodes(Graph.build(nodeWith(new Array(1))))[0]?.payload).toEqual([undefined])
   })
 
+  it("refuses enumerable symbol payload keys instead of silently dropping data", () => {
+    for (const payload of [Object.assign({}, { [Symbol("data")]: 1 }), Object.assign([], { [Symbol("data")]: 1 })]) {
+      const node = Node.succeed<unknown>(null)
+      ;(node.ast as { value: unknown }).value = payload
+      expect(() => Graph.build(node)).toThrowError(expect.objectContaining({ code: "invalid_payload" }))
+    }
+  })
+
+  it("copies an array proxy through inert descriptors without reading its length getter", () => {
+    const payload = new Proxy([7], {
+      get(target, key, receiver) {
+        if (key === "length") throw new Error("length trap")
+        return Reflect.get(target, key, receiver)
+      }
+    })
+    const node = Node.succeed<unknown>(null)
+    ;(node.ast as { value: unknown }).value = payload
+    expect(Graph.nodes(Graph.build(node))[0]?.payload).toEqual([7])
+  })
+
   it("fails closed when an authored outcome loses its branded payload", () => {
     const done = Flow.done(1)
     ;(done.ast as { value: unknown }).value = 1

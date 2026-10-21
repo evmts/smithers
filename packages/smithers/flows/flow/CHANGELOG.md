@@ -24,6 +24,12 @@
 
 ### Fixed
 
+- Publish node outcomes only after their settlement records persist. Join journal
+  reads isolate their waiting annotation, and joins request loser interruption
+  before persisting the cancellation snapshot.
+- Reject enumerable symbol payload keys instead of dropping data, and copy
+  array lengths from inert descriptors without invoking proxy getters.
+
 - Breaking: `RetryPolicy.decide` reads a failure's Retry-After hint from
   `retryAfterMillis`, the field `@smthrs/model`'s `ModelError` carries a
   provider's `Retry-After` in, instead of `retryAfterMs`, which no failure

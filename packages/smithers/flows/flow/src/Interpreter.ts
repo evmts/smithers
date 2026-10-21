@@ -1072,7 +1072,7 @@ const countDispatch = (dispatches: Dispatches, dispatch: DispatchOutcome): void 
 const rebuilt = (dispatches: Dispatches): NodeRecord.NodeOutcome =>
   dispatches.executed === 0 && dispatches.replayed > 0 ? "clean" : "built"
 
-/** Files a node's settlement in `into`, then writes the record it settled with. @private */
+/** Persists a settlement before publishing it to other demands. @private */
 const file = (
   walk: Walk,
   into: Map<string, unknown>,
@@ -1080,10 +1080,10 @@ const file = (
   settlement: unknown,
   make: () => NodeRecord.NodeRecord
 ) =>
-  Effect.sync(() => {
+  walk.record(make).pipe(Effect.andThen(Effect.sync(() => {
     into.set(id, settlement)
     walk.reported.add(id)
-  }).pipe(Effect.andThen(walk.record(make)))
+  })))
 
 /** The record a node settles with. @private */
 const settledRecord = (
@@ -1511,8 +1511,9 @@ const decide = (
  * Settles a `Race` node: `race`, `any`, or `quorum`.
  *
  * The members that decided are journaled, in the order they decided, under a
- * durable deferred named for the node before any loser is interrupted. A
- * resumed walk that finds the record settles exactly those members — whose
+ * durable deferred named for the node. Losing node fibers receive an
+ * interruption request before that write can yield, and their child executions
+ * are cancelled after it persists. A resumed walk that finds the record settles exactly those members — whose
  * own dispatches replay from their durable records — and never demands the
  * others, so it reaches the same verdict without running a loser again. A
  * defect or an interpreter refusal in a member is not a decision: it
@@ -1536,9 +1537,9 @@ const join = Effect.fnUntraced(function*(
   const instance = yield* FlowInstance
   // A join is not a wait: reading its record must not consume the waiting
   // classification a parked sibling declared.
-  const waiting = instance.waiting
-  const recorded = yield* walk.runtime.deferredResult(journal)
-  instance.waiting = waiting
+  const recorded = yield* walk.runtime.deferredResult(journal).pipe(
+    Effect.provideService(FlowInstance, { ...instance })
+  )
   if (Option.isSome(recorded) && Exit.isSuccess(recorded.value)) {
     return yield* replayJoin(walk, node, ast, children, recorded.value.value)
   }
@@ -1679,9 +1680,9 @@ const raceJoin = Effect.fnUntraced(function*(
 })
 
 /**
- * Stops the work of a decided join's losers: journals the decision, when it
- * is one, together with the child executions the losers opened; interrupts
- * the losers' running node fibers; and cancels those children.
+ * Stops the work of a decided join's losers: requests interruption of their
+ * running node fibers; journals the decision, when it is one, together with
+ * the child executions the losers opened; and cancels those children.
  *
  * @private
  */
@@ -1693,7 +1694,8 @@ const stopLosers = Effect.fnUntraced(function*(
   journalDecision: ((decision: JoinDecision) => Effect.Effect<void>) | undefined
 ) {
   const { childRuns, fibers } = losingWork(walk, joinId, losers)
-  if (journalDecision !== undefined) yield* journalDecision({ members: decided, children: childRuns })
+  // Request interruption before the journal write can yield: otherwise a
+  // loser can open work absent from the cancellation snapshot.
   // The interruption is requested, not awaited: a loser's finalizers may wait
   // on work that only settles after the join returns, and the node scope
   // awaits every fiber when the walk ends anyway.
@@ -1702,6 +1704,7 @@ const stopLosers = Effect.fnUntraced(function*(
       for (const fiber of fibers) fiber.interruptUnsafe(current.id)
     })
   )
+  if (journalDecision !== undefined) yield* journalDecision({ members: decided, children: childRuns })
   yield* cancelChildren(walk, childRuns)
 })
 

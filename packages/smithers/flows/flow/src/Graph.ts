@@ -515,8 +515,26 @@ const objectMembers = (
 /** Starts walking one container: its members, in the walk's order, and an empty copy to fill. @private */
 const openFrame = (walk: PayloadWalk, source: Record<string, unknown> | ReadonlyArray<unknown>): PayloadFrame => {
   const descriptors = ownDescriptors(source, walk.at)
+  if (
+    Object.getOwnPropertySymbols(descriptors).some((key) =>
+      Object.getOwnPropertyDescriptor(descriptors, key)!.value.enumerable
+    )
+  ) {
+    throw new GraphBuildError({
+      code: "invalid_payload",
+      node: walk.at,
+      path: [],
+      message: `Payload at "${walk.at}" contains an enumerable symbol key. Pass string-keyed data.`
+    })
+  }
   if (Array.isArray(source)) {
-    return { source, keys: undefined, members: arrayMembers(source.length, descriptors, walk.at), output: [], index: 0 }
+    return {
+      source,
+      keys: undefined,
+      members: arrayMembers(descriptors.length!.value, descriptors, walk.at),
+      output: [],
+      index: 0
+    }
   }
   const keys = walk.keysOf(Object.keys(descriptors).filter((key) => descriptors[key]?.enumerable === true))
   return {
