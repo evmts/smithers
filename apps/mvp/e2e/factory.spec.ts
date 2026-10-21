@@ -1,5 +1,6 @@
 import { expect, type Page, test, type TestInfo } from "@playwright/test"
 import { recordActions, step, themeOf, writeManifest } from "./fixtures"
+import { requires, scriptedAgent } from "./target"
 
 // The coding factory, end to end (decision 0016, the factory simplified; docs/features/todos.md#the-run): a person asks
 // Smithers for a TODO and commits it; the `todo` run takes it to a mergeable pull request on GitHub. Everything is real
@@ -9,25 +10,22 @@ import { recordActions, step, themeOf, writeManifest } from "./fixtures"
 // On the way it shows ruling TODO-3 (the Working TODO blinks and links to its run, watched live from Cloudflare) and
 // ruling GH-9 (beside Merge into the default branch, the pull request says merging deploys it).
 //
-// It writes to GitHub, so it runs only against a live instance (BASE_URL) with the GitHub App and `TODO_RUNS` on, on a
-// scratch repository the test account administers with the App installed, and skips naming what it lacks:
-// - E2E_FACTORY_REPOSITORY: `owner/name` of that repository, which is the deployment's GITHUB_REPOSITORY;
-// - E2E_SESSION_COOKIE: the test account's session cookie on the app under test (`name=value`), from a real sign-in.
-// It never merges: a person merges, and the pull request stays open for one.
+// It writes to GitHub, so it runs only against a live instance with the GitHub App and `TODO_RUNS` on, whose
+// GITHUB_REPOSITORY is a scratch repository the test account administers with the App installed, named in
+// E2E_FACTORY_REPOSITORY (`factoryRepository`, e2e/target.ts). The scripted agent needs a dev build: `alchemy dev` on
+// this machine, signing in through GitHub, run as a deployment (`E2E_TARGET=deployment BASE_URL=<its URL>`), so the
+// setup project signs the test account in (e2e/deployment/sign-in.setup.ts). It never runs against production, and
+// never merges: a person merges, and the pull request stays open for one.
 
 const started = new WeakMap<TestInfo, number>()
 const repo = process.env.E2E_FACTORY_REPOSITORY ?? ""
 
-test.beforeEach(async ({ context, page }, info) => {
+test.beforeEach(async ({ page }, info) => {
   started.set(info, Date.now())
-  const raw = process.env.E2E_SESSION_COOKIE
-  test.skip(!raw || repo === "" || process.env.BASE_URL === undefined, "Needs a live instance, its scratch repository and a real session")
+  // The setup signed the test account in and read its role; every context here starts from that session.
+  requires("factoryRepository", "scriptedAgent", "member")
   await page.emulateMedia({ colorScheme: themeOf(info) })
-  await context.addCookies([{ name: raw!.slice(0, raw!.indexOf("=")), value: raw!.slice(raw!.indexOf("=") + 1), url: process.env.BASE_URL! }])
   await recordActions(page, info, "Maya")
-  const session = await (await context.request.get("/api/auth/session")).json() as { signedIn: boolean; role?: string }
-  expect(session.signedIn, "The live session must be renewed before running this spec").toBe(true)
-  expect(["admin", "maintainer", "member"], `the test account's role on ${repo}`).toContain(session.role)
 })
 
 test.afterEach(async ({}, info) => {
@@ -50,7 +48,7 @@ test("factory: a TODO runs to a mergeable pull request", {
   const title = `Greet in the README ${word}`
 
   await step("Ask Smithers for a TODO", async () => {
-    await page.goto("/app?agent=todo-draft")
+    await page.goto(scriptedAgent("todo-draft"))
     await expect(page.getByRole("main", { name: "App" })).toBeVisible({ timeout: 60_000 })
     const composer = page.getByRole("textbox", { name: "Message Smithers" })
     if (await composer.isHidden()) await page.keyboard.press("ControlOrMeta+k")
