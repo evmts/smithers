@@ -1,11 +1,12 @@
 import { Agent, Budget, QuotaPolicy } from "@smthrs/agent"
-import { digestSync } from "@smthrs/crypto"
+import { digestSync, Uuid } from "@smthrs/crypto"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Evaluator } from "@smthrs/model"
 import { Clock, Effect, Layer, Option } from "effect"
 import * as AgentHost from "../agent/host"
 import { startRoot } from "../runs/start"
 import { FlowsClient } from "./api"
+import { DRAFT_ID_NAMESPACE } from "./contract"
 import { PROMPT_CALLABLE } from "./callable"
 import { checkSource, passes, readSource } from "./checks"
 import {
@@ -55,7 +56,8 @@ export const open = ({ name, request }: { readonly name: string; readonly reques
     const instance = yield* FlowRuntime.FlowInstance
     const openedAtMs = yield* Clock.currentTimeMillis
     const named = roundOf(instance.executionId)
-    const draftId = named?.draftId ?? crypto.randomUUID()
+    // A draft started outside a round (an agent's call, a slash command) is named by its execution, never at random.
+    const draftId = named?.draftId ?? (yield* Uuid.v5(DRAFT_ID_NAMESPACE, instance.executionId).pipe(Effect.orDie))
     const round = named?.round ?? 0
     if (round === 0) {
       // A name the person already has: this draft edits that flow, from its latest revision.

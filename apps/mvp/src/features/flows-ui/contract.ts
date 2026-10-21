@@ -55,6 +55,13 @@ export const FORBIDDEN_CALLS = ["flow/", "run/"] as const
 /** A description: 1 to 1,024 characters ([skills]). */
 export const MAX_DESCRIPTION_CHARS = 1024
 
+/**
+ * The namespace a new draft's id is derived in (RFC 9562 version 5, `@smthrs/crypto`'s `Uuid.v5`): round 0 of a draft
+ * started by an agent's call or a slash command names its draft by its own execution, so a step run again after a lost
+ * answer or a crash writes the same draft, never a second.
+ */
+export const DRAFT_ID_NAMESPACE = "e26f87c1-9c9b-4016-8fd7-1f01cea1a54b"
+
 /** What a person asks `flow/new` for: 1 to 4,096 characters. */
 export const MAX_REQUEST_CHARS = 4096
 

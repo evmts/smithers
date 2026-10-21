@@ -10,6 +10,7 @@ import { stop, testFile, usage } from "../../../worker/test/harness.ts"
 import { contents } from "../../../worker/test/harness.ts"
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
+import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { FlowRuntime } from "@smthrs/flow"
 import { EngineStore } from "@smthrs/flows"
 import { Layer } from "effect"
@@ -17,6 +18,7 @@ import * as TestDatabase from "../../../db/TestDatabase.ts"
 import * as Catalog from "../../flows/catalog"
 import { cell, member, openAgent } from "../../test/agent"
 import { FlowAnswer, FlowDelete, FlowList, FlowNew, FlowRead, FlowRun, FlowSave, FlowWrite } from "./flows"
+import { DRAFT_ID_NAMESPACE } from "./contract"
 import { roundExecutionId, roundOf } from "./round"
 import { renderSource, SOURCE_PATH } from "./source"
 import { writeOutcome } from "./steps"
@@ -176,15 +178,16 @@ const readyRound = (name: string, overrides: object = {}) => ({
 })
 
 describe("flow/new, more rounds", () => {
-  test("any other execution id starts a new draft of its own", async () => {
+  test("any other execution id starts a new draft of its own, named by that execution so a step run again writes the same one", async () => {
     const d = await device(scripted(() => drafted()).script)
+    const executionId = `agent-${crypto.randomUUID()}`
     const exit = await d.run(d.engine.flows.execute(FlowNew, {
-      executionId: `agent-${crypto.randomUUID()}`,
+      executionId,
       payload: { name: "dark-mode", request: "Switch to dark mode" },
     }))
     expect(exit._tag).toBe("Success")
     const { draftId } = (exit as unknown as Exit.Success<{ draftId: string }>).value
-    expect(draftId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(draftId).toBe(await Effect.runPromise(Uuid.v5(DRAFT_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer))))
     expect(await draftRow(draftId)).toMatchObject({ status: "ready", round: 0 })
   }, SLOW)
 
