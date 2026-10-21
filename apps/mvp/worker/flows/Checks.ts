@@ -1,5 +1,5 @@
 import { ModelStep } from "@smthrs/agent"
-import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { digestSync, Uuid, WebCrypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { GitHub } from "@smthrs/integrations"
 import { ModelEvent, ModelRequest } from "@smthrs/model"
@@ -26,14 +26,15 @@ import { type Repository, repositoryOf } from "../github/Config.ts"
 import { fetchPull, projectPull } from "../github/Pulls.ts"
 import { type GitHubTokens, TokenUnavailable } from "../github/Tokens.ts"
 import type { Seat } from "../ModelEndpoint.ts"
-import { machineOf } from "./TodoMachine.ts"
+import type { SandboxBranch } from "../branch/Sandboxes.ts"
 
 // A pull request's checks (decision 0012 decision 12, decision 0016's factory simplified): Smithers runs on its head
 // SHA, never GitHub check runs. `checks/Run` runs once per head (`check:<repo>:<sha>:all`), started when the `todo` run
 // publishes. Each check is a row of `runs` with the head's SHA, which the pull request's Checks tab reads:
 //
-//   checks/Scripts  each `.smithers/checks/<name>.sh` of the head, run with sh on the attempt's machine at the head, one
-//                   after another: `checks/<name>`, Passed when it exits 0, else Failed
+//   checks/Scripts  each `.smithers/checks/<name>.sh` of the head, run with sh at the head on the head's own throwaway job
+//                   machine, one after another: `checks/<name>`, Passed when it exits 0, else Failed. The job machine
+//                   reaches the package registry and nothing else (worker/branch/JobEgress.ts), and sleeps once done
 //   checks/Review   the `review` check: the judge model reads the diff and the App posts one comment review with its
 //                   findings, never an approval; Failed when the review couldn't be made
 //   checks/Report   after the scripts, and again after the review: each check of the head that ended, as a GitHub commit
@@ -101,11 +102,17 @@ export const Reported = Schema.Struct({
 })
 export type Reported = typeof Reported.Type
 
+/**
+ * Reporting retries until GitHub takes it, 1 s doubling to a minute, never giving up: a status left `pending` would
+ * hold a required check forever. A refusal ends it.
+ */
+export const REPORT_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000 })
+
 export const Report = Action.make("checks/Report", {
   payload: { request: ChecksRequest, after: ReportAfter },
   success: Reported,
   error: ChecksUnavailable,
-  retryPolicy: CHECKS_RETRY,
+  retryPolicy: REPORT_RETRY,
 })
 
 /** `checks/Run`: a pull request head's checks, each a Smithers run on that commit, reported as a commit status. */
@@ -161,6 +168,25 @@ export interface Services<E, R> {
   readonly apiBaseUrl: string
   readonly judge: Seat
 }
+
+/**
+ * The throwaway machine `request`'s head's checks run on: one per repository and head SHA, a check job (`kind: "job"`),
+ * checking the head's branch out from GitHub, its tools running as the person who committed the TODO. Its box reaches
+ * the package registry and nothing else; never the TODO's own machine, whose working copy the agent made.
+ */
+export const jobMachineOf = (request: ChecksRequest): { readonly branch: SandboxBranch; readonly ownerId: string } => {
+  const [owner = "", name = ""] = request.repoId.replace(/^github\//, "").split("/")
+  // Named by a digest of the repository and the SHA together, so no two repositories' jobs share a machine, however
+  // their names split (`acme/tools-ui` and `acme-tools/ui`).
+  const job = digestSync(JSON.stringify([request.repoId, request.sha])).slice(0, 40)
+  return {
+    branch: { branchId: `job-${job}`, owner, name, branch: request.branch, forge: "github", kind: "job" },
+    ownerId: request.ownerId,
+  }
+}
+
+/** The check a head gets when its job machine couldn't check out exactly that commit: Failed, never a script's pass. */
+export const CHECKOUT_CHECK = "checkout"
 
 /** Check `name`'s run id on `request`'s head: the version 5 UUID of its execution and name. */
 export const checkRunIdOf = (request: ChecksRequest, name: string) =>
@@ -256,27 +282,40 @@ export const steps = <E, R>(services: Services<E, R>) => {
   const scripts = ({ request }: typeof Scripts.payloadSchema.Type) =>
     Effect.gen(function* () {
       const machines = yield* Machines
-      const machine = machineOf({ ...request, branch: request.branch, ownerId: request.ownerId })
+      const machine = jobMachineOf(request)
+      // The machine generation the last tool ran on, which the checkout's success sets: the one put to sleep at the end.
+      let generation = 0
       const tool = (name: string, call: SandboxTools.Call) =>
         Effect.gen(function* () {
           const callId = yield* Uuid.v5(CHECK_RUN_NAMESPACE, `${request.attemptId}:${request.sha}:${name}`).pipe(
             Effect.provide(WebCrypto.layer),
           )
-          return (yield* machines.tool(machine.branch, machine.ownerId, callId, call)).result
+          const ran = yield* machines.tool(machine.branch, machine.ownerId, callId, call)
+          generation = ran.generation
+          return ran.result
         })
       // The checkout at exactly the head: the machine fetches it from the forge. The branch passed git's ref rules and
-      // the SHA is 40 hex digits, so neither can change the command. A forge that can't serve it leaves the working
-      // copy the run committed from, whose files the head holds.
-      const sync = yield* tool("sync", {
+      // the SHA is 40 hex digits, so neither can change the command. A checkout that isn't exactly the head runs no
+      // script: the head gets a Failed `checkout` check, never a pass another commit earned. A machine that couldn't
+      // start is tried again; a command the machine ran and failed isn't, since it runs once per call.
+      const synced = !(GitHub.Refs.isBranch(request.branch) && SHA.test(request.sha)) ? "refused" as const : yield* tool("sync", {
         tool: "run",
-        command: GitHub.Refs.isBranch(request.branch) && SHA.test(request.sha)
-          ? `git fetch --quiet origin '${request.branch}' && git reset --quiet --hard ${request.sha} && git clean -fdq`
-          : "false",
+        command: `git fetch --quiet origin '${request.branch}' && git reset --quiet --hard ${request.sha} && git clean -fdq`,
         timeoutSeconds: 120,
-      }).pipe(Effect.option)
-      // A tool answers its own call's result.
-      if (Option.isNone(sync) || (sync.value as typeof SandboxTools.RunResult.Type).exitCode !== 0) {
-        yield* Effect.logWarning("checks.sync").pipe(Effect.annotateLogs({ repoId: request.repoId, sha: request.sha }))
+      }).pipe(
+        // A tool answers its own call's result.
+        Effect.map((result) => ((result as typeof SandboxTools.RunResult.Type).exitCode === 0 ? "synced" as const : "failed" as const)),
+        Effect.catch((error) =>
+          error._tag === "@smthrs/mvp/branch/SandboxUnavailable" ? Effect.fail(error) : Effect.succeed("failed" as const)
+        ),
+      )
+      if (synced !== "synced") {
+        yield* Effect.logWarning("checks.sync").pipe(Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, outcome: synced }))
+        const id = yield* checkRunIdOf(request, CHECKOUT_CHECK)
+        yield* started(request, id, CHECKOUT_CHECK)
+        yield* ended(id, "failed")
+        yield* Metric.update(Metric.withAttributes(checks, { check: "script", outcome: "failed" }), 1)
+        return { checks: [{ name: CHECKOUT_CHECK, status: "failed" as const }] } satisfies Checked
       }
       const listed = yield* tool("list", { tool: "list", path: CHECKS_DIRECTORY }).pipe(Effect.option)
       const names = Option.match(listed, {
@@ -309,6 +348,8 @@ export const steps = <E, R>(services: Services<E, R>) => {
         )
         done.push({ name, status })
       }
+      // Done with the job: its machine sleeps now rather than idling until its keep-alive gives up. Best effort.
+      yield* machines.sleepIfIdle(machine.branch.branchId, generation, 0).pipe(Effect.ignore)
       return { checks: done } satisfies Checked
     }).pipe(
       Effect.provide(services.database),
@@ -379,12 +420,18 @@ export const steps = <E, R>(services: Services<E, R>) => {
     )
 
   /**
-   * Sends each check of the head that ended, as its run in Postgres says, as a commit status. Reading the runs, not the
-   * step before, makes a report sent again say the same thing. A refusal (no Commit statuses permission, the App not
-   * installed, a commit GitHub doesn't have) is recorded and ends the report; an outage or a lost answer is retried.
+   * Sends each check of the head that ended, as its run in Postgres says, as a commit status, after failing any still
+   * Running: the step that ran it finished or gave up. Reading the runs, not the step before, makes a report sent again
+   * say the same thing. A refusal (no Commit statuses permission, the App not installed, a commit GitHub doesn't have)
+   * is recorded and ends the report; an outage or a lost answer is retried until GitHub takes it.
    */
   const report = ({ request }: typeof Report.payloadSchema.Type) =>
     Effect.gen(function* () {
+      // A report follows a step that finished or gave up, so a check of this head still Running never will: it failed.
+      yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`
+          UPDATE runs SET status = 'failed', updated_at = now()
+          WHERE repo_id = ${request.repoId} AND sha = ${request.sha} AND flow LIKE 'checks/%' AND status = 'working'`)
       const ended = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
         sql<{ readonly flow: string; readonly status: "done" | "failed" }>`
           SELECT flow, status FROM runs

@@ -29,7 +29,8 @@ test("withTodos registers the todo run and a head's checks, and the object runs 
   const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
   const { seat } = await judgeSeat(runtime, judging("abstain"))
   const { services } = await githubServices(runtime, github, { judge: seat })
-  // No App on the repository: the review check fails at once, and the machine has no checks to run.
+  // No App on the repository: the review check fails at once; the machine refuses every call, so the head's checkout
+  // fails and no script runs.
   github.installed = false
   const machines = Layer.succeed(Machines, Machines.of({
     tool: () => Effect.fail({ _tag: "@smthrs/sandbox/SandboxTools/ToolRefused", reason: "not_found" } as never),
@@ -80,5 +81,8 @@ test("withTodos registers the todo run and a head's checks, and the object runs 
       expect(driven).toMatchObject({ _tag: "Settled" })
     })),
   )
-  expect(await sql(runtime, `SELECT flow, status FROM runs`)).toEqual([{ flow: "checks/review", status: "failed" }])
+  expect(await sql(runtime, `SELECT flow, status FROM runs ORDER BY flow`)).toEqual([
+    { flow: "checks/checkout", status: "failed" },
+    { flow: "checks/review", status: "failed" },
+  ])
 })

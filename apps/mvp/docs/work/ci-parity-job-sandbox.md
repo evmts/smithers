@@ -1,11 +1,20 @@
 ---
 title: CI parity: a machine per job with toolchains
-status: todo
+status: in-progress
 area: sdk
-owner: none
-updated: 2026-10-20 22:50 PDT
-links: [../proposals/ci-cd-parity.md, sandboxes.md, sandbox-budgets.md, ../features/sandbox-tools.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md]
+owner: dogfood-loop builder (Claude Opus), from 12:40 on 2026-10-21; the image's toolchain is the sandboxes builder's
+updated: 2026-10-21 13:30 PDT
+links: [../proposals/ci-cd-parity.md, sandboxes.md, sandbox-budgets.md, ../features/sandbox-tools.md, ../features/pulls.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, dogfood-loop.md]
 ---
+
+## Built, 2026-10-21 (the dogfood loop's first slice)
+
+- A pull request head's checks run on a check job: a throwaway branch machine per head, `job-<owner>-<name>-<sha>`, `kind: "job"` on its `SandboxBranch`, put to sleep once its scripts ran ([where checks run](../features/pulls.md#where-checks-run)).
+- A job's box reaches `registry.npmjs.org` and `plugins.dprint.dev` and nothing else, through the object's existing outbound intercept and `@smthrs/secrets`' `Egress.forward` with no secret (`worker/branch/JobEgress.ts`). Branch sandboxes stay closed.
+- This repository's checks: `.smithers/checks/lint.sh` and `check.sh` run the changed packages' own `lint` and `check` scripts. Simulated on nyc-01 with pnpm 11.25.0 against a T1-like change.
+- The lead decided at 12:58 that the sandboxes builder installs Node 26.5.0 (nodejs.org, SHA-256 pinned) and corepack pnpm 11.25.0 in `infra/sandbox/Dockerfile`. Debian's nodejs is v20; the repository needs Node 26.4 or later.
+
+**Not built:** the `ci/job` child flow, matrices and outcome values below; one job per script; a job image of its own.
 
 ## What
 

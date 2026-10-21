@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import { checkExecutionId } from "../../src/features/pulls/contract.ts"
 import { Machines } from "../branch/Machines.ts"
+import { CheckoutFailed, SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { judgeSeat, REPOSITORY, reset, services as githubServices, signedIn, sql } from "../github/test/fixtures.ts"
 import { BOT_LOGIN, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { runFlow } from "../test/flowHost.ts"
@@ -24,8 +25,11 @@ beforeEach(async () => {
 /** A machine whose checkout holds `files`, whose `sh <path>` exits with `exits[path]` (0 unless set). */
 const machine = (files: Readonly<Record<string, string>>, exits: Readonly<Record<string, number>> = {}, sync = 0) => {
   const commands: Array<string> = []
+  const branches = new Set<string>()
+  const sleeps: Array<{ readonly branchId: string; readonly generation: number; readonly idleMs: number }> = []
   const service = Machines.of({
-    tool: (_branch, _owner, _callId, call) => {
+    tool: (branch, _owner, _callId, call) => {
+      branches.add(JSON.stringify(branch))
       const done = (result: SandboxTools.Result) => Effect.succeed({ result, generation: 1 })
       if (call.tool === "list") {
         const prefix = `${call.path}/`
@@ -61,9 +65,13 @@ const machine = (files: Readonly<Record<string, string>>, exits: Readonly<Record
       }
       return Effect.die(`checks never call ${call.tool}`)
     },
-    sleepIfIdle: () => Effect.die("checks never put a machine to sleep"),
+    sleepIfIdle: (branchId, generation, idleMs) =>
+      Effect.sync(() => {
+        sleeps.push({ branchId, generation, idleMs })
+        return "slept" as const
+      }),
   })
-  return { commands, layer: Layer.succeed(Machines, service) }
+  return { commands, branches, sleeps, layer: Layer.succeed(Machines, service) }
 }
 
 /** A judge that answers `text` once per call. */
@@ -146,6 +154,18 @@ describe("checks/Run", { timeout: 60_000 }, () => {
       "sh .smithers/checks/lint.sh",
       "sh .smithers/checks/readme.sh",
     ])
+    // On the head's own throwaway job machine, never the TODO's: a check job, put to sleep once its scripts ran.
+    const job = Checks.jobMachineOf(request)
+    expect([...box.branches].map((branch) => JSON.parse(branch))).toEqual([job.branch])
+    expect(job.branch).toEqual({
+      branchId: expect.stringMatching(/^job-[0-9a-f]{40}$/),
+      owner: REPOSITORY.owner,
+      name: REPOSITORY.name,
+      branch: "smithers/t1-readme",
+      forge: "github",
+      kind: "job",
+    })
+    expect(box.sleeps).toEqual([{ branchId: job.branch.branchId, generation: 1, idleMs: 0 }])
     // One comment review as the App, on the head, never an approval; its body names whom it acted for.
     const reviews = github.pulls.get(request.prNumber)!.reviews
     expect(reviews.map((review) => [review.event, review.login, review.commitId])).toEqual([["COMMENT", BOT_LOGIN, request.sha]])
@@ -165,7 +185,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     const { seat } = await judgeSeat(runtime, judge("No findings."))
     const { services } = await githubServices(runtime, github, { judge: seat })
     const request = await opened(github, maya)
-    const registration = Checks.registration({ ...services, judge: seat }).pipe(Layer.provide(machine({}, {}, 128).layer))
+    const registration = Checks.registration({ ...services, judge: seat }).pipe(Layer.provide(machine({}).layer))
     await runFlow(Checks.ChecksRun, request, registration)
     await runFlow(Checks.ChecksRun, request, registration)
     expect((await runs()).map(({ flow, status }) => [flow, status])).toEqual([["checks/review", "done"]])
@@ -216,46 +236,93 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     expect(github.pulls.get(request.prNumber)!.reviews).toHaveLength(0)
   })
 
-  test("a branch or head that isn't one syncs nothing; a check the machine can't run fails; an unknown owner is named so", async () => {
+  test("a branch or head that isn't one, or a checkout that fails, runs no script: the head's checkout check fails", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const { seat } = await judgeSeat(runtime, judge("No findings."))
+    const { services } = await githubServices(runtime, github, { judge: seat })
+    const request = await opened(github, maya)
+    const invalid = machine({ ".smithers/checks/a.sh": "" })
+    await runFlow(Checks.ChecksRun, { ...request, branch: "not a branch" }, Checks.registration({ ...services, judge: seat }).pipe(
+      Layer.provide(invalid.layer),
+    ))
+    expect(invalid.commands).toEqual([])
+    expect((await runs()).map(({ flow, status }) => [flow, status])).toEqual([["checks/checkout", "failed"], ["checks/review", "done"]])
+    expect(github.shownStatuses(request.sha)).toMatchObject({ "smithers/checkout": "failure" })
+    // The head moved past what the forge serves: the reset fails, so no script runs on some other commit.
+    await sql(runtime, "TRUNCATE runs")
+    const unsynced = machine({ ".smithers/checks/a.sh": "" }, {}, 128)
+    await runFlow(Checks.ChecksRun, request, Checks.registration({ ...services, judge: seat }).pipe(Layer.provide(unsynced.layer)))
+    expect(unsynced.commands).toHaveLength(1)
+    expect((await runs()).map(({ flow, status }) => [flow, status])).toEqual([["checks/checkout", "failed"], ["checks/review", "done"]])
+    // A clone the forge refused fails the checkout the same way.
+    await sql(runtime, "TRUNCATE runs")
+    const refused = Machines.of({
+      tool: () => Effect.fail(new CheckoutFailed()),
+      sleepIfIdle: () => Effect.die("a job that never checked out never sleeps"),
+    })
+    await runFlow(Checks.ChecksRun, request, Checks.registration({ ...services, judge: seat }).pipe(
+      Layer.provide(Layer.succeed(Machines, refused)),
+    ))
+    expect((await runs()).map(({ flow, status }) => [flow, status])).toEqual([["checks/checkout", "failed"], ["checks/review", "done"]])
+  })
+
+  test("a check the machine can't run fails; an unknown owner is named so", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     const { seat } = await judgeSeat(runtime, judge("- a finding"))
     const { services } = await githubServices(runtime, github, { judge: seat })
-    const request = { ...(await opened(github, { personId: crypto.randomUUID() })), branch: "not a branch" }
+    const request = await opened(github, { personId: crypto.randomUUID() })
     const commands: Array<string> = []
     const box = Machines.of({
       tool: (_branch, _owner, _callId, call) => {
+        const done = (result: SandboxTools.Result) => Effect.succeed({ result, generation: 1 })
         if (call.tool === "list") {
-          return Effect.succeed({
-            result: { tool: "list", path: call.path!, entries: [{ name: "a.sh", kind: "file", bytes: 1 }], truncated: false },
-            generation: 1,
-          })
+          return done({ tool: "list", path: call.path!, entries: [{ name: "a.sh", kind: "file", bytes: 1 }], truncated: false })
         }
-        if (call.tool === "run" && call.command === "false") {
+        if (call.tool === "run" && call.command.startsWith("git ")) {
           commands.push(call.command)
-          return Effect.succeed({
-            result: {
-              tool: "run",
-              exitCode: 1,
-              timedOut: false,
-              stdout: "",
-              stderr: "",
-              stdoutBytes: 0,
-              stderrBytes: 0,
-              truncated: false,
-            },
-            generation: 1,
-          })
+          return done({ tool: "run", exitCode: 0, timedOut: false, stdout: "", stderr: "", stdoutBytes: 0, stderrBytes: 0, truncated: false })
         }
-        return Effect.fail({ _tag: "@smthrs/mvp/branch/SandboxUnavailable" } as never)
+        return Effect.fail(new SandboxUnavailable({ reason: "exec" }))
       },
-      sleepIfIdle: () => Effect.die("checks never put a machine to sleep"),
+      // A machine that can't sleep stays awake: the checks' results stand.
+      sleepIfIdle: () => Effect.fail(new SandboxUnavailable({ reason: "exec" })),
     })
     await runFlow(Checks.ChecksRun, request, Checks.registration({ ...services, judge: seat }).pipe(
       Layer.provide(Layer.succeed(Machines, box)),
     ))
-    expect(commands).toEqual(["false"])
+    expect(commands).toHaveLength(1)
     expect((await runs()).map(({ flow, status }) => [flow, status])).toEqual([["checks/a", "failed"], ["checks/review", "done"]])
     expect(github.pulls.get(request.prNumber)!.reviews[0]!.body).toContain("Reviewed by Smithers for @unknown (review).")
+  })
+
+  test("a job machine that can't start fails the scripts step for its retry policy, runs no script and isn't put to sleep", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const { seat } = await judgeSeat(runtime, judge("No findings."))
+    const { services } = await githubServices(runtime, github, { judge: seat })
+    const request = await opened(github, maya)
+    const sleeps: Array<string> = []
+    const down = Machines.of({
+      tool: () => Effect.fail(new SandboxUnavailable({ reason: "start" })),
+      sleepIfIdle: (branchId) => Effect.sync(() => (sleeps.push(branchId), "slept" as const)),
+    })
+    const exit = await Effect.runPromise(
+      Effect.exit(Checks.steps({ ...services, judge: seat }).scripts({ request })).pipe(
+        Effect.provide(Layer.succeed(Machines, down)),
+      ),
+    )
+    expect(exit._tag === "Failure" && String(exit.cause)).toContain("ChecksUnavailable")
+    expect(await runs()).toEqual([])
+    expect(sleeps).toEqual([])
+  })
+
+  test("two repositories whose names split differently never share a job machine", () => {
+    const base = { sha: "a".repeat(40), prNumber: 1, baseSha: "b".repeat(40), attemptId: "x", branch: "main", ownerId: "p" }
+    const one = Checks.jobMachineOf({ ...base, repoId: "github/acme/tools-ui" }).branch
+    const other = Checks.jobMachineOf({ ...base, repoId: "github/acme-tools/ui" }).branch
+    expect(one.branchId).not.toBe(other.branchId)
+    expect([one.owner, one.name, other.owner, other.name]).toEqual(["acme", "tools-ui", "acme-tools", "ui"])
   })
 
   test("Postgres down fails the scripts step for its retry policy", async () => {
@@ -392,6 +459,21 @@ describe("checks/Run's commit statuses (GH-10)", { timeout: 60_000 }, () => {
     ), { executionId: checkExecutionId(newer.repoId, newer.sha, "all") })
     expect(github.shownStatuses(older.sha)).toEqual({ "smithers/lint": "failure", "smithers/review": "success" })
     expect(github.shownStatuses(newer.sha)).toEqual({ "smithers/lint": "success", "smithers/review": "success" })
+  })
+
+  test("a check still Running when its report comes, its step having given up, is failed and reported failed", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const { seat } = await judgeSeat(runtime, judge("No findings."))
+    const { services } = await githubServices(runtime, github, { judge: seat })
+    const request = await opened(github, maya)
+    await sql(runtime, `INSERT INTO runs (id, flow, status, launched_by, repo_id, sha)
+      VALUES (gen_random_uuid(), 'checks/review', 'working', '${maya.personId}', '${request.repoId}', '${request.sha}')`)
+    expect(await Effect.runPromise(Checks.steps({ ...services, judge: seat }).report({ request, after: "review" }))).toEqual({
+      statuses: [{ name: "review", state: "failure", outcome: "sent" }],
+    })
+    expect((await runs()).map(({ status }) => status)).toEqual(["failed"])
+    expect(github.shownStatuses(request.sha)).toEqual({ "smithers/review": "failure" })
   })
 
   test("a check run's status is GitHub's: passed is success, anything else failure; the words are the Checks tab's", () => {

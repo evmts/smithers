@@ -29,6 +29,7 @@ import {
 } from "./branch/Sandboxes.ts"
 import { codeOf } from "./ErrorCode.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
+import * as JobEgress from "./branch/JobEgress.ts"
 import * as SandboxEgress from "./secrets/SandboxEgress.ts"
 
 // Branch sandboxes on Cloudflare (decision 0013 §3, decision 0005 §2, docs/features/branch-workspace.md#the-machine):
@@ -223,12 +224,13 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
       >()
       // The box's forge requests go to ChatApi's own entrypoint with props naming this object, and come back to it
       // (`answerBox`), which answers them as the forge proxy; with the egress on, every other request it makes does
-      // too, and the object answers it as the secrets egress.
+      // too, and the object answers it as the secrets egress. A check job's box always has its egress, held to the
+      // package registry (worker/branch/JobEgress.ts); a branch's stays closed.
       const own = Cloudflare.fromCloudflareFetcher(
         (state.raw as unknown as Loopback).exports.default({ props: { [BOX_PROP]: state.id.toString() } }),
       )
       const intercepts = [{ host: FORGE_HOST, fetcher: own }]
-      const egressTo = secretsOn ? own : undefined
+      const egressOf = (job: boolean) => (secretsOn || job ? own : undefined)
       // One-use tickets ChatApi took for the sockets it is about to hand this object (TICKET_HEADER).
       const tickets = new Set<string>()
       const branchOf = state.storage.get<SandboxBranch>("branch").pipe(
@@ -237,7 +239,12 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
 
       /** Starts the box unless it runs, and advances the generation when it started it. */
       const start = Effect.gen(function* () {
-        const outcome = yield* SandboxHost.wake(box, { intercepts, egress: egressTo, instance, startTimeoutMs })
+        const outcome = yield* SandboxHost.wake(box, {
+          intercepts,
+          egress: egressOf(JobEgress.isJob(yield* branchOf)),
+          instance,
+          startTimeoutMs,
+        })
         const generation = (yield* state.storage.get<number>("generation")) ?? 0
         if (outcome === "running" && generation > 0) return generation
         yield* state.storage.put("generation", generation + 1)
@@ -276,7 +283,8 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
             stage = "restore"
             yield* timed(Machine.restore(machine, generation))
             stage = "placeholders"
-            if (secretsOn) yield* timed(placeholders(branch, generation))
+            if (JobEgress.isJob(branch)) yield* timed(trustEgress)
+            else if (secretsOn) yield* timed(placeholders(branch, generation))
             yield* Effect.logInfo("sandbox.wake").pipe(
               Effect.annotateLogs({ branchId: branch.branchId, outcome: "woken", generation, ...took }),
             )
@@ -325,8 +333,25 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           Effect.withSpan("sandbox.egress.setup", { attributes: { "smithers.branch.id": branch.branchId } }),
         )
 
-      /** The placeholders of the running generation, for a tool's command; none with the egress off. */
+      /**
+       * A check job's box: its egress's CA trusted (EGRESS_SETUP with no placeholders), so its package installs reach the
+       * registry over HTTPS. A failure leaves the box without the registry, and its install fails as a check would.
+       */
+      const trustEgress = Effect.gen(function* () {
+        const root = yield* ContainerSession.make(box, { id: state.id.toString(), workdir: "/", ...(yield* asUser("root")) })
+        const code = yield* Effect.scoped(Effect.flatMap(root.spawn(EGRESS_SETUP, { stdin: new Uint8Array() }), (process) => process.exitCode))
+        if (code !== 0) yield* Effect.logWarning("sandbox.egress.setup").pipe(Effect.annotateLogs({ exitCode: code }))
+      }).pipe(
+        Effect.catchCause((cause) => Effect.logWarning("sandbox.egress.setup").pipe(Effect.annotateLogs(failureFields(cause)))),
+        Effect.withSpan("sandbox.job.setup"),
+      )
+
+      /**
+       * The placeholders of the running generation, for a tool's command; none with the egress off. A check job's
+       * commands get no placeholder, only their tools' trust of the egress's CA (`JobEgress.trustOf`).
+       */
       const environmentNow = Effect.gen(function* () {
+        if (JobEgress.isJob(yield* branchOf)) return JobEgress.trustOf(CONTAINER_CA)
         if (!secretsOn) return {}
         const kept = yield* state.storage.get<{ readonly generation: number; readonly environment: string }>("environment")
         const generation = yield* state.storage.get<number>("generation")
@@ -530,7 +555,10 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           if (host === FORGE_HOST) return yield* egress(request)
           // Only ChatApi holds a ticket: a socket it hands over is attached, once per ticket.
           if (tickets.delete(request.headers[TICKET_HEADER] ?? "")) return yield* attach(request)
-          if (egressTo !== undefined) return yield* egressOut
+          if (JobEgress.isJob(yield* branchOf)) {
+            return yield* JobEgress.forward(request).pipe(Effect.provide(FetchHttpClient.layer))
+          }
+          if (secretsOn) return yield* egressOut
           return HttpServerResponse.empty({ status: 404 })
         })),
       }
