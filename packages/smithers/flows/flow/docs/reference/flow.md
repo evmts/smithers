@@ -602,6 +602,22 @@ Offers a payload to the queue under the name `DurableQueue/<name>`, attaches a t
 
 Creates the worker effect that processes items from the queue. It throws a `RangeError` when `concurrency` is not a positive safe integer.
 
+Each item runs as a durable execution named by the deferred it completes, `DurableQueue/<name>/item`: a `handle` step runs the handler and records its exit, then a `complete` step records that exit against the caller's deferred under `DurableQueue.completionRetryPolicy`, which never gives up. A completion the store refuses is retried on its own and never runs the handler again; the caller always receives the handler's exit once the store records it. Until the handler's exit is recorded, a crash runs the handler again. The persisted queue never drops an item: a delivery whose execution could not start is redelivered on the queue's own schedule, and each delivery attaches to the same execution.
+
+### `DurableQueue.CompletionUnavailable`
+
+- **Type:** `Schema.TaggedError` with field `queue: string`
+- **Since:** `1.0.0`
+
+The `complete` step's failure when the store refused to record a handler's exit. Its fault class is `infra`, and the step retries it.
+
+### `DurableQueue.completionRetryPolicy`
+
+- **Type:** `RetryPolicy.RetryPolicy`
+- **Since:** `1.0.0`
+
+How the `complete` step retries: from 500 ms, growing by half, to a minute between tries, without a limit.
+
 ### `DurableQueue.worker`
 
 - **Signature:** `worker(self: DurableQueue<Payload, Success, Error>, f: (payload: Payload["Type"]) => Effect.Effect<Success["Type"], Error["Type"], R>, options?: { readonly concurrency?: number | undefined }): Layer.Layer<never, never, ...>`

@@ -553,60 +553,50 @@ describe("DurableQueue", () => {
     )
   })
 
-  for (const maxAttempts of [2, 3]) {
-    effect(`completion-write failures rerun the handler with maxAttempts=${maxAttempts}`, () => {
-      let handled = 0
-      let writes = 0
-      const logs: Array<{ level: string; annotations: Record<string, unknown> }> = []
-      const capture = Logger.make((entry) => {
-        logs.push({ level: entry.logLevel, annotations: Logger.formatStructured.log(entry).annotations })
+  // A completion the store failed to record used to run the handler again on the next take. The item now runs as
+  // a durable execution whose first step records the handler's exit, so a redelivery replays that exit instead. This
+  // in-memory runtime runs no retry policies, so the item's execution ends at the failed completion; the engine's
+  // retries, and the caller's result, are proved on a durable engine in @smthrs/engine-store
+  // (`test/DurableQueueCrash.test.ts`).
+  effect("a completion the store fails to record never runs the handler again", () => {
+    let handled = 0
+    let writes = 0
+    const runtime = Layer.effect(FlowRuntime.FlowRuntime)(Effect.gen(function*() {
+      const base = yield* FlowRuntime.FlowRuntime
+      return FlowRuntime.FlowRuntime.of({
+        ...base,
+        deferredDone: (deferred, options) =>
+          Effect.suspend(() => {
+            if (options.deferredName.startsWith(Queue.deferred.name)) {
+              writes++
+              return Effect.die("completion store unavailable")
+            }
+            return base.deferredDone(deferred, options)
+          })
       })
-      const runtime = Layer.effect(FlowRuntime.FlowRuntime)(Effect.gen(function*() {
-        const base = yield* FlowRuntime.FlowRuntime
-        return FlowRuntime.FlowRuntime.of({
-          ...base,
-          deferredDone: (deferred, options) =>
-            Effect.suspend(() => {
-              if (options.deferredName.startsWith(Queue.deferred.name) && ++writes <= 2) {
-                return Effect.die("completion store unavailable")
-              }
-              return base.deferredDone(deferred, options)
-            })
-        })
-      })).pipe(Layer.provide(layerMemory))
-      const layer = Layer.mergeAll(
-        Offer.toLayer((payload) => DurableQueue.process(Queue, payload)),
-        Interpreter.layer(Flow_),
-        DurableQueue.worker(Queue, ({ value }) => Effect.sync(() => (handled++, value + 1)), { maxAttempts })
-      ).pipe(
-        Layer.provideMerge(Action.layerImplementations),
-        Layer.provideMerge(runtime),
-        Layer.provideMerge(PersistedQueueLayer)
-      )
-      return Effect.gen(function*() {
-        const id = yield* Flow_.execute({ id: `write-${maxAttempts}`, value: 41 }, { discard: true })
-        for (let turn = 0; turn < 50 && writes === 0; turn++) yield* Effect.yieldNow
-        yield* TestClock.adjust(1500)
-        const result = yield* pollUntil(Flow_.poll(id), isComplete, { turns: 10, advance: "10 millis" })
-        expect(handled).toBe(maxAttempts)
-        expect(writes).toBe(maxAttempts)
-        const errors = logs.filter((entry) => entry.level === "Error")
-        expect(errors).toHaveLength(2)
-        expect(errors[0]!.annotations.queueName).toBe(Queue.name)
-        expect(errors[0]!.annotations.token).toEqual(expect.any(String))
-        expect(errors[1]!.annotations.attempt).toBe(2)
-        expect(errors[1]!.annotations.maxAttempts).toBe(maxAttempts)
-        expect(errors[1]!.annotations.exhausted).toBe(maxAttempts === 2)
-        if (maxAttempts === 3) {
-          expect(Option.isSome(result) && result.value._tag === "Complete" && result.value.exit).toEqual(
-            Exit.succeed(42)
-          )
-        } else {
-          expect(Option.isSome(result) && result.value._tag).toBe("Suspended")
-        }
-      }).pipe(Effect.provide(layer), Effect.provide(Logger.layer([capture])))
-    })
-  }
+    })).pipe(Layer.provide(layerMemory))
+    const layer = Layer.mergeAll(
+      Offer.toLayer((payload) => DurableQueue.process(Queue, payload)),
+      Interpreter.layer(Flow_),
+      DurableQueue.worker(Queue, ({ value }) => Effect.sync(() => (handled++, value + 1)))
+    ).pipe(
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(runtime),
+      Layer.provideMerge(PersistedQueueLayer)
+    )
+    return Effect.gen(function*() {
+      const id = yield* Flow_.execute({ id: "write", value: 41 }, { discard: true })
+      for (let turn = 0; turn < 500 && writes === 0; turn++) yield* Effect.yieldNow
+      expect(writes).toBe(1)
+      // The item is redelivered on the persisted queue's schedule; each delivery attaches to the same execution.
+      for (let delivery = 0; delivery < 5; delivery++) {
+        yield* TestClock.adjust("5 minutes")
+        for (let turn = 0; turn < 100; turn++) yield* Effect.yieldNow
+      }
+      expect(handled).toBe(1)
+      expect(Option.isSome(yield* Flow_.poll(id))).toBe(true)
+    }).pipe(Effect.provide(layer))
+  })
 
   for (const mixed of [false, true]) {
     effect(
@@ -653,10 +643,12 @@ describe("DurableQueue", () => {
                 const child = yield* Effect.forkChild(Effect.never)
                 yield* Fiber.interrupt(child)
                 return yield* Fiber.join(child)
-              }), { maxAttempts: 1 }),
+              })),
             { startImmediately: true }
           )
-          for (let turn = 0; turn < 50; turn++) yield* Effect.yieldNow
+          for (let turn = 0; turn < 500 && (handled === 0 || (mixed && recorded.length === 0)); turn++) {
+            yield* Effect.yieldNow
+          }
           expect(handled).toBe(1)
           yield* Fiber.interrupt(worker)
           if (mixed) {

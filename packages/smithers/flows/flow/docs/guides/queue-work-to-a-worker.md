@@ -69,7 +69,7 @@ import * as Effect from "effect/Effect"
 export const RendersWorker = DurableQueue.worker(
   Renders,
   ({ page }) => Effect.succeed(`<html>${page}</html>`),
-  { concurrency: 4, maxAttempts: 10 }
+  { concurrency: 4 }
 )
 ```
 
@@ -84,12 +84,18 @@ handler that dies resumes it with a defect. An interrupt-only handler exit recor
 nothing and requeues the item without consuming an attempt. Mixed failures are
 recorded with interrupt reasons removed.
 
-Handler execution is at least once: if recording its result fails, a subsequent
-take runs the handler again. Make side effects idempotent using a business key in
-the payload. `maxAttempts` is passed to the persisted queue and defaults to `10`
-on both worker constructors. Failed takes consume attempts; interrupt-only exits
-do not. A declared handler failure that is successfully recorded completes the
-item instead of retrying it.
+Each item runs as a durable execution named by the deferred it completes. Its
+first step runs the handler and records the handler's exit; its second records
+that exit against the caller's deferred. A completion the store refuses is
+retried by the engine on its own, from half a second up to a minute between
+tries and without a limit, and never runs the handler again, so the caller always
+receives the handler's exit once the store records it. Until the handler's exit
+is recorded, a crash runs the handler again on the next delivery: make its side
+effects idempotent using a business key in the payload.
+
+The persisted queue never drops an item. A delivery whose execution could not
+start, because the engine was unavailable, is redelivered on the queue's own
+schedule, and every delivery attaches to the same execution.
 
 A worker completes only the wait its own `process` call created: an item stored
 under ID `key` must carry a token for `DurableQueue/<name>/<key>`. An item whose
@@ -98,12 +104,8 @@ acknowledged without running the handler. The worker links its span to the
 offering span only when the stored trace and span ids are 32 and 16 lowercase hex
 characters.
 
-A take failure after the handler produces a recordable exit is logged at error
-level with the queue name, item ID, completion token, attempt, attempt limit, and
-whether that limit was reached. At exhaustion the store drops or quarantines the
-item according to its policy. If completion writes exhaust the attempts without
-recording a result, the caller remains suspended and requires recovery by the
-host. Raising `maxAttempts` allows more retries but does not guarantee completion.
+A completion the store refuses is logged at warning level with the queue name
+each time the step retries it.
 
 ## When to reach for it
 
