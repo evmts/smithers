@@ -26,6 +26,7 @@ describe("integration product scope", () => {
       "RateLimit",
       "Refs",
       "Repository",
+      "Statuses",
       "Sync"
     ])
     expect(typeof Integrations.Core.Channel.make).toBe("function")

@@ -1,20 +1,30 @@
 ---
 title: "CI parity: write-only GitHub commit statuses"
-status: todo
+status: blocked
 area: sdk
-owner: unassigned; lead schedules after deployment
-updated: 2026-10-20 23:44 PDT
-links: [../rulings.md, ../proposals/ci-cd-parity.md, ci-parity-required-checks.md, ci-parity-github-writes.md, no-github-actions.md]
+owner: dogfood-loop builder (Claude Opus), from 11:20 on 2026-10-21
+updated: 2026-10-21 11:45 PDT
+links: [../rulings.md, ../proposals/ci-cd-parity.md, ../features/pulls.md, ci-parity-required-checks.md, ci-parity-github-writes.md, no-github-actions.md, dogfood-loop.md]
 ---
 
 **What:** Publish durable Smithers flow outcomes as GitHub commit statuses named `smithers/<flow>` on the exact tested commit.
 
-**Why:** GitHub branch protection must be able to require Smithers checks without reading or displaying GitHub Actions.
+**Why:** GitHub branch protection must be able to require Smithers checks without reading or displaying GitHub Actions (GH-10). The [dogfood loop](dogfood-loop.md)'s step 4 reports our CI this way.
 
-**Current state:** Will approved write-only statuses at 23:36:55; lead recorded GH-10 at 23:37. Implementation is after deployment and has no completion receipt. This explicitly amends M-52; it does not grant Actions ingestion or agent merge authority.
+**Current state:** Built, 2026-10-21 11:45, in the dogfood workspace ([pull requests](../features/pulls.md#commit-statuses)):
+- `@smthrs/integrations` gains `GitHub.Statuses.create` (write-only; 20 tests on a real socket, 100%).
+- `checks/Run` reports each check `pending` as it starts (best effort) and its result from `runs` in a durable `checks/Report` step after the scripts and after the review, as the App with a token minted for `statuses: write` only.
+- Refusals (no permission, no App, an unknown commit) are recorded once and never retried; outages and lost answers are retried.
+- `docs/rules.md`'s `github.no-actions` and its Jev rule allow this one write.
 
-**Next step:** Add a scoped status-write action through the Smithers integration library and durable flow layer. Prove pending and terminal outcomes, failed delivery/recovery, stale-head isolation and branch-protection use with real dependencies. Document permissions and content-free observability.
+**Blocked on:** the production App lacks "Commit statuses: Read and write" (the prod-flows panel's live check, 2026-10-21: Issues, Contents and Pull requests write, Metadata read). Until Will grants it and the smithersai installation accepts it, production records each status `refused` and the checks still run. The lead asked Will on 2026-10-21 about 11:25.
 
-**Open questions for Will:** None; the permission decision is answered.
+**Next step:** Once the permission is granted, run a TODO on production and read `smithers/<name>` on its head through GitHub's combined status as a person would. Requiring a check on `main` is [required checks](ci-parity-required-checks.md).
 
-History: added by Codex tracker curator from script-extracted lead text and Will’s queue answer, 2026-10-20 23:44 PDT. Execution remains unassigned; no product tests performed by tracker.
+**Open questions for Will:** None beyond the permission the lead asked for.
+
+## History
+
+2026-10-20 23:44 PDT: added by the Codex tracker curator from the lead's text and Will's queue answer (GH-10, 23:36:55).
+
+2026-10-21 11:45 PDT: built by the dogfood-loop builder; production waits on the App permission.

@@ -87,6 +87,14 @@ export interface ScriptedPull {
   }>
 }
 
+/** One commit status as the scripted GitHub keeps it: GitHub keeps every one sent, and shows the latest per context. */
+export interface ScriptedStatus {
+  readonly state: string
+  readonly context: string
+  readonly description: string | null
+  readonly login: string
+}
+
 /** A one-shot fault on the next request that `match`es: GitHub's `status`, or `lost` (applied, then no answer). */
 export interface Fault {
   readonly match: (method: string, path: string) => boolean
@@ -157,6 +165,12 @@ export interface ScriptedGitHub {
   readonly commits: Map<string, ScriptedCommit>
   /** Every pull request, by number. */
   readonly pulls: Map<number, ScriptedPull>
+  /** Whether the App was granted Commit statuses: write; without it, a token asking for it is refused 422. */
+  statusesGranted: boolean
+  /** Every commit status sent, by commit SHA, oldest first. */
+  readonly statuses: Map<string, Array<ScriptedStatus>>
+  /** What commit `sha` shows: the latest state per context. */
+  readonly shownStatuses: (sha: string) => Readonly<Record<string, string>>
   /** Whether GitHub refuses to merge any pull request: a required check it ran failed (405). */
   unmergeable: boolean
   /** Runs right after a pull request is opened, such as a person merging it on github.com. */
@@ -276,6 +290,8 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
           ? github.contentsGranted
           : name === "pull_requests"
           ? within(github.pullsGranted, asked)
+          : name === "statuses"
+          ? github.statusesGranted
           : name === "metadata"
           // Every App has Metadata: read, and GitHub grants nothing more of it.
           ? asked === "read"
@@ -300,6 +316,29 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     }
     const pulled = pullsAnswer(method, url, rest, login, body)
     if (pulled !== undefined) return pulled
+    const statusOf = /^\/statuses\/([0-9a-f]{40})$/.exec(rest)
+    if (statusOf !== null && method === "POST") {
+      const sha = statusOf[1]!
+      if (!github.commits.has(sha)) return { response: json({ message: "No commit found for SHA: " + sha }, 422) }
+      const input = body as { readonly state: string; readonly context: string; readonly description?: string }
+      const status: ScriptedStatus = {
+        state: input.state,
+        context: input.context,
+        description: input.description ?? null,
+        login,
+      }
+      return {
+        response: json({
+          id: (ids += 1),
+          state: status.state,
+          context: status.context,
+          description: status.description,
+          target_url: null,
+          created_at: iso(tick()),
+        }, 201),
+        apply: () => void github.statuses.set(sha, [...(github.statuses.get(sha) ?? []), status]),
+      }
+    }
     if (rest === "/labels" && method === "POST") {
       const input = body as { readonly name: string; readonly color: string }
       if (github.labels.has(input.name.toLowerCase())) {
@@ -748,7 +787,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
         )
       }
       // An installation token writes only with the permission it was minted with: issues and labels need Issues, branches
-      // and commits Contents, pull requests and their reviews Pull requests.
+      // and commits Contents, pull requests and their reviews Pull requests, commit statuses Commit statuses.
       const writing = method === "POST" || method === "DELETE" || method === "PATCH" || method === "PUT"
       const scoped = url.pathname.startsWith(apiPath) || url.pathname === "/graphql"
       if ((who.token === "installation" || who.token === "installation-contents") && writing && scoped) {
@@ -758,6 +797,8 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
           ? "contents"
           : rest.startsWith("/pulls")
           ? "pull_requests"
+          : rest.startsWith("/statuses/")
+          ? "statuses"
           : "issues"
         if (installationTokens.get(bearer)?.[scope] !== "write") {
           return Effect.succeed(
@@ -789,6 +830,10 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     installed: true,
     granted: "write",
     contentsGranted: true,
+    statusesGranted: true,
+    statuses: new Map(),
+    shownStatuses: (sha) =>
+      Object.fromEntries((github.statuses.get(sha) ?? []).map((status) => [status.context, status.state])),
     labels: new Map(),
     files: new Map(),
     roles: new Map(),

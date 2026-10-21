@@ -5,7 +5,7 @@ import { GitHub } from "@smthrs/integrations"
 import { ModelEvent, ModelRequest } from "@smthrs/model"
 import { Node } from "@smthrs/plan"
 import type { SandboxTools } from "@smthrs/sandbox"
-import { Effect, Layer, Metric, Option, Schema } from "effect"
+import { Effect, Layer, Metric, Option, type Redacted, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import {
@@ -17,11 +17,12 @@ import {
   MAX_PATCH_CHARS,
   REVIEW_CHECK,
   SHA,
+  statusContextOf,
 } from "../../src/features/pulls/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { classify, withToken } from "../github/Calls.ts"
-import { repositoryOf } from "../github/Config.ts"
+import { type Repository, repositoryOf } from "../github/Config.ts"
 import { fetchPull, projectPull } from "../github/Pulls.ts"
 import { type GitHubTokens, TokenUnavailable } from "../github/Tokens.ts"
 import type { Seat } from "../ModelEndpoint.ts"
@@ -35,9 +36,13 @@ import { machineOf } from "./TodoMachine.ts"
 //                   after another: `checks/<name>`, Passed when it exits 0, else Failed
 //   checks/Review   the `review` check: the judge model reads the diff and the App posts one comment review with its
 //                   findings, never an approval; Failed when the review couldn't be made
+//   checks/Report   after the scripts, and again after the review: each check of the head that ended, as a GitHub commit
+//                   status `smithers/<name>` on that SHA (ruling GH-10), success or failure, as the App
 //
-// Checks never gate the merge: a person reads them and merges (GitHub's own branch protection still applies). Records
-// carry ids, names and outcomes, never a command's output, a diff or a finding.
+// Each check also reports `pending` as it starts, best effort: a status that couldn't be sent is dropped and counted,
+// because `checks/Report` sends the result from the runs, durably. Statuses are write-only: Smithers never reads one
+// back, and a repository's branch protection, not Smithers, decides whether they gate the merge. Records carry ids,
+// names and outcomes, never a command's output, a diff or a finding.
 
 /** What one head's checks run for: the pull request's head and base, and the attempt whose machine runs them. */
 export const ChecksRequest = Schema.Struct({
@@ -83,20 +88,45 @@ export const Review = Action.make("checks/Review", {
   retryPolicy: CHECKS_RETRY,
 })
 
-/** `checks/Run`: a pull request head's checks, each a Smithers run on that commit. */
+/** Which checks a report follows: the scripts, or the review. */
+export const ReportAfter = Schema.Literals(["scripts", "review"])
+
+/** What `checks/Report` sent: each ended check's status, or why none was sent. */
+export const Reported = Schema.Struct({
+  statuses: Schema.Array(Schema.Struct({
+    name: Schema.String,
+    state: Schema.Literals(["success", "failure"]),
+    outcome: Schema.Literals(["sent", "refused"]),
+  })),
+})
+export type Reported = typeof Reported.Type
+
+export const Report = Action.make("checks/Report", {
+  payload: { request: ChecksRequest, after: ReportAfter },
+  success: Reported,
+  error: ChecksUnavailable,
+  retryPolicy: CHECKS_RETRY,
+})
+
+/** `checks/Run`: a pull request head's checks, each a Smithers run on that commit, reported as a commit status. */
 export const ChecksRun = Flow.make("checks/Run", {
   description: "Run a pull request head's checks as Smithers runs on its commit: each .smithers/checks script on the " +
-    "branch's machine, and the review, which posts the judge's findings as one comment review.",
+    "branch's machine, and the review, which posts the judge's findings as one comment review. Each check is reported " +
+    "on the commit as the GitHub status smithers/<name>.",
   capabilities: ["db:write:runs", "db:write:reviews"],
   modelInvocable: false,
   payload: ChecksRequest,
-  success: Checked,
+  success: Reported,
   error: ChecksUnavailable,
-  body: Node.capture({ scripts: Scripts.name, review: Review.name }, (request) =>
+  body: Node.capture({ scripts: Scripts.name, review: Review.name, report: Report.name }, (request) =>
     Scripts.call({ request }).pipe(
       Node.catch({ onFailure: Node.capture({ none: "none" }, () => Node.succeed({ checks: [] })) }),
+      Node.andThen(Report.call({ request, after: "scripts" })),
+      Node.catch({ onFailure: Node.capture({ none: "none" }, () => Node.succeed({ statuses: [] })) }),
       Node.andThen(Review.call({ request })),
       Node.catch({ onFailure: Node.capture({ none: "none" }, () => Node.succeed({ checks: [] })) }),
+      Node.andThen(Report.call({ request, after: "review" })),
+      Node.catch({ onFailure: Node.capture({ none: "none" }, () => Node.succeed({ statuses: [] })) }),
     )),
 })
 
@@ -105,6 +135,23 @@ export const checks = Metric.counter("smithers_checks", {
   description: "Pull request checks run as Smithers runs, by check kind and outcome",
   incremental: true,
 })
+
+/**
+ * Commit statuses, by `state` (`pending`, `success`, `failure`) and `outcome`: `sent`; `refused` by GitHub or a token
+ * the App can't have (no Commit statuses permission, the App not installed); `dropped`, a pending status that couldn't
+ * be sent, which the report's result replaces.
+ */
+export const statuses = Metric.counter("smithers_check_statuses", {
+  description: "GitHub commit statuses reporting Smithers checks, by state and outcome",
+  incremental: true,
+})
+
+/** A check run's status as GitHub's: a check that passed is `success`, any other end `failure`. */
+export const statusStateOf = (status: "done" | "failed"): "success" | "failure" =>
+  status === "done" ? "success" : "failure"
+
+/** What a commit status says beside its context, in the Checks tab's words. */
+export const STATUS_DESCRIPTIONS = { pending: "Running", success: "Passed", failure: "Failed" } as const
 
 /** What the checks need: Postgres, GitHub, and the judge model role. The host provides `Machines`. */
 export interface Services<E, R> {
@@ -167,6 +214,45 @@ export const reviewBodyOf = (findings: string, login: string): string =>
 export const steps = <E, R>(services: Services<E, R>) => {
   const repositoryOfRequest = (request: ChecksRequest) => repositoryOf(request.repoId.replace(/^github\//, ""))
 
+  /** Sends check `name`'s `state` on the head as the App, with a token that may write commit statuses only. */
+  const sendStatus = (
+    repository: Repository,
+    request: ChecksRequest,
+    token: Redacted.Redacted<string>,
+    name: string,
+    state: "pending" | "success" | "failure",
+  ) =>
+    GitHub.Statuses.create(repository.owner, repository.name, request.sha, {
+      state,
+      context: statusContextOf(name),
+      description: STATUS_DESCRIPTIONS[state],
+    }).pipe(withToken(token, services.apiBaseUrl), Effect.provideService(HttpClient.HttpClient, services.http))
+
+  const statusRecorded = (request: ChecksRequest, name: string, state: string, outcome: string, error?: unknown) =>
+    Effect.andThen(
+      Metric.update(Metric.withAttributes(statuses, { state, outcome }), 1),
+      Effect.logInfo("checks.status").pipe(Effect.annotateLogs({
+        repoId: request.repoId,
+        sha: request.sha,
+        check: name,
+        state,
+        outcome,
+        ...(error === undefined ? {} : { errorCode: codeOf(error) }),
+      })),
+    )
+
+  /**
+   * Reports check `name` running, best effort: a token or status that couldn't be had is dropped and counted, since
+   * `checks/Report` sends the result durably once the check ends.
+   */
+  const pending = (request: ChecksRequest, name: string) =>
+    Effect.gen(function* () {
+      const repository = repositoryOfRequest(request)
+      const token = yield* services.tokens.forInstallation(repository, "status")
+      yield* sendStatus(repository, request, token, name, "pending")
+      yield* statusRecorded(request, name, "pending", "sent")
+    }).pipe(Effect.catch((error) => statusRecorded(request, name, "pending", "dropped", error)))
+
   const scripts = ({ request }: typeof Scripts.payloadSchema.Type) =>
     Effect.gen(function* () {
       const machines = yield* Machines
@@ -203,6 +289,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
       for (const name of names) {
         const id = yield* checkRunIdOf(request, name)
         yield* started(request, id, name)
+        yield* pending(request, name)
         const ran = yield* tool(`check:${name}`, {
           tool: "run",
           command: `sh ${CHECKS_DIRECTORY}/${name}.sh`,
@@ -233,6 +320,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
     Effect.gen(function* () {
       const id = yield* checkRunIdOf(request, REVIEW_CHECK)
       yield* started(request, id, REVIEW_CHECK)
+      yield* pending(request, REVIEW_CHECK)
       const repository = repositoryOfRequest(request)
       const reviewed = yield* Effect.gen(function* () {
         const token = yield* services.tokens.forInstallation(repository, "review")
@@ -290,7 +378,53 @@ export const steps = <E, R>(services: Services<E, R>) => {
       Effect.withSpan("checks.review", { attributes: { "smithers.checks.sha": request.sha } }),
     )
 
-  return { scripts, review }
+  /**
+   * Sends each check of the head that ended, as its run in Postgres says, as a commit status. Reading the runs, not the
+   * step before, makes a report sent again say the same thing. A refusal (no Commit statuses permission, the App not
+   * installed, a commit GitHub doesn't have) is recorded and ends the report; an outage or a lost answer is retried.
+   */
+  const report = ({ request }: typeof Report.payloadSchema.Type) =>
+    Effect.gen(function* () {
+      const ended = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly flow: string; readonly status: "done" | "failed" }>`
+          SELECT flow, status FROM runs
+          WHERE repo_id = ${request.repoId} AND sha = ${request.sha} AND flow LIKE 'checks/%'
+            AND status IN ('done', 'failed')
+          ORDER BY flow`)
+      const ofHead = ended.map((run) => ({ name: run.flow.slice("checks/".length), state: statusStateOf(run.status) }))
+        .filter((run) => CHECK_NAME.test(run.name))
+      if (ofHead.length === 0) return { statuses: [] } satisfies Reported
+      const repository = repositoryOfRequest(request)
+      const refusedBy = (error: unknown) =>
+        Effect.gen(function* () {
+          for (const run of ofHead) yield* statusRecorded(request, run.name, run.state, "refused", error)
+          return { statuses: ofHead.map((run) => ({ ...run, outcome: "refused" as const })) } satisfies Reported
+        })
+      const token = yield* services.tokens.forInstallation(repository, "status").pipe(Effect.result)
+      if (token._tag === "Failure") {
+        return yield* token.failure.reason === "unavailable" ? Effect.fail(new ChecksUnavailable()) : refusedBy(token.failure)
+      }
+      const sent: Array<Reported["statuses"][number]> = []
+      for (const run of ofHead) {
+        const outcome = yield* sendStatus(repository, request, token.success, run.name, run.state).pipe(
+          Effect.as("sent" as const),
+          Effect.catch((error) =>
+            classify(error).kind === "refused"
+              ? Effect.as(statusRecorded(request, run.name, run.state, "refused", error), "refused" as const)
+              : Effect.fail(new ChecksUnavailable())
+          ),
+        )
+        if (outcome === "sent") yield* statusRecorded(request, run.name, run.state, "sent")
+        sent.push({ ...run, outcome })
+      }
+      return { statuses: sent } satisfies Reported
+    }).pipe(
+      Effect.provide(services.database),
+      Effect.mapError(() => new ChecksUnavailable()),
+      Effect.withSpan("checks.report", { attributes: { "smithers.checks.sha": request.sha } }),
+    )
+
+  return { scripts, review, report }
 }
 
 /** Registers `checks/Run` with its steps over `services` and the host's `Machines`. */
@@ -298,6 +432,10 @@ export const registration = <E, R>(services: Services<E, R>) => {
   const implementation = steps(services)
   return Interpreter.layerWithImplementations(
     ChecksRun,
-    Layer.merge(Scripts.toLayer(implementation.scripts), Review.toLayer(implementation.review)),
+    Layer.mergeAll(
+      Scripts.toLayer(implementation.scripts),
+      Review.toLayer(implementation.review),
+      Report.toLayer(implementation.report),
+    ),
   ).pipe(Layer.provideMerge(Action.layerImplementations))
 }

@@ -1,6 +1,6 @@
 # Pull requests
 
-GitHub is the truth for pull requests, as for issues ([issues](issues.md)): Postgres holds a projection that only the server's GitHub flows write, and Electric syncs it to every device. A person merges, never the agent; a pull request's checks are Smithers runs on its head, never GitHub check runs (decision [0012](../decisions/0012-git-end-to-end.md) decisions 6 and 12). The `todo` run opens the pull requests ([TODOs](todos.md#the-run)).
+GitHub is the truth for pull requests, as for issues ([issues](issues.md)): Postgres holds a projection that only the server's GitHub flows write, and Electric syncs it to every device. A person merges, never the agent; a pull request's checks are Smithers runs on its head, never GitHub check runs (decision [0012](../decisions/0012-git-end-to-end.md) decisions 6 and 12), each reported on the head as the write-only commit status `smithers/<name>` (ruling GH-10). The `todo` run opens the pull requests ([TODOs](todos.md#the-run)).
 
 ```
 GitHub ── pull_request, pull_request_review ─▶ POST /api/github/webhook ─▶ github/Apply (re-read the pull request)
@@ -9,13 +9,14 @@ Merge (a Maintainer's own press) ─▶ POST /api/repos/<o>/<n>/writes { op: "pr
                                      recheck head, base, draft ─▶ PUT /pulls/<n>/merge { sha: head } with their token
 the todo run publishes ─▶ checks/Run on the head ─▶ runs rows with the head's SHA (the Checks tab)
                                      each .smithers/checks/<name>.sh on the branch's machine · the review: one comment
+                                     each check's result ─▶ POST /statuses/<head> smithers/<name>, as the App (GH-10)
 GET /api/repos/<o>/<n>/compare/<base>...<head> ─▶ the files two commits differ by, kept forever
 ```
 
 - **One row per pull request, beside its issue row.** A pull request is an `items` row of kind `pull` (title, body, state, author, conversation) and a `pulls` row with its head, base, draft, merge and size. `github/Apply` reads it with its commits and reviews (`worker/github/Pulls.ts`), under the same newer-than guard as an issue.
 - **Merging into the default branch is a deploy** (ruling GH-9). Beside Merge on a pull request into the repository's default branch, the page says `Merging into <branch> deploys it.`, with the branch's real name. Production work, checks and runs, happens on Smithers.
 - **A person merges, bound to what they saw.** The writes route takes `pr/merge` only from a person's own session, Maintainer or Admin, never from a run credential (the agent, a flow, a frame or a sandbox; `PROTECTED_ACTS`, worker/Actor.ts). `pr/Merge` re-reads the pull request and refuses a moved head or base, a draft, or one already merged or closed, then merges with the person's own GitHub token at the head they saw, squash by default. GitHub's refusal, a required check included, is `not_mergeable`. A lost answer is read back: merged at that head is this merge.
-- **Checks are Smithers runs.** `checks/Run` runs once per head. Each `.smithers/checks/<name>.sh` runs with `sh` on the attempt's branch machine, synced to the head, and the `review` check reads the diff with the `judge` role and posts one comment review as the App, never an approval. Each is a `runs` row with the head's SHA. Checks never gate the merge: GitHub's branch protection does.
+- **Checks are Smithers runs.** `checks/Run` runs once per head. Each `.smithers/checks/<name>.sh` runs with `sh` on the attempt's branch machine, synced to the head, and the `review` check reads the diff with the `judge` role and posts one comment review as the App, never an approval. Each is a `runs` row with the head's SHA, reported on GitHub as the commit status `smithers/<name>` ([commit statuses](#commit-statuses)). Smithers never gates the merge on them itself: a repository's branch protection may require `smithers/<name>`.
 - **Libraries** (`docs/libraries.md`): "Touch GitHub" (`@smthrs/integrations`: `GitHub.Pulls`, `GitHub.Refs`, `GitHub.Commits`, `GitHub.AppAuth`), `@smthrs/flow`, `@smthrs/agent` (`ModelStep` for the review), `@smthrs/sandbox` (`SandboxTools` on the branch machine), `@smthrs/effect-electric` (`ShapeProxy`).
 
 ## Who reads, who writes
@@ -25,6 +26,7 @@ GET /api/repos/<o>/<n>/compare/<base>...<head> ─▶ the files two commits diff
 | Read pull requests, their commits, reviews and checks; compare two commits | as issues: a role on the repository, or anyone once GitHub said it is public | the App's, for the compare route |
 | Merge | a Maintainer or Admin, in person (`repo:merge`); never the agent | the person's own |
 | The review's comment | the `review` check, for the person who committed the TODO | the App's (`smithers[bot]`), "Reviewed by Smithers for @maya" |
+| A check's commit status | `checks/Run`, never a person or the agent | the App's, minted with only `statuses: write` |
 
 ## Routes
 
@@ -68,6 +70,23 @@ Screens (`src/screens/pulls/`), at GitHub's paths:
 
 `pr/Merge { writeId }` (`worker/github/Merge.ts`): `pr/Merge/send` (1 s doubling to 15 s, 5 minutes), then `pr/Merge/give-up` settles `failed unavailable`. Its write settles `done`, or `refused` with `head_moved`, `base_moved`, `draft`, `merged`, `closed`, `not_mergeable`, `sign_in_required`, `not_found`, `invalid` or `not_allowed`. `github/Write` refuses a `pr/merge` write it is handed: only `pr/Merge` merges.
 
+## Commit statuses
+
+Ruling GH-10: Smithers writes GitHub commit statuses, write-only, so branch protection can require Smithers checks. It never reads one back, and it still neither reads nor shows GitHub Actions ([github.no-actions](../rules.md#githubno-actions)).
+
+```
+checks/Scripts   each script: its run row ─▶ smithers/<name> pending "Running", best effort ─▶ the script
+checks/Report    after the scripts: each check of the head that ended, read from runs ─▶ success "Passed" or failure "Failed"
+checks/Review    smithers/review pending ─▶ the judge, the comment review
+checks/Report    after the review: every ended check again, the review's included
+```
+
+- **On the exact head.** A status names the SHA the check ran on. A newer head starts with none, so an older head's result never stands in for it.
+- **The runs are the truth.** `checks/Report` reads the head's ended `checks/*` runs, not the step before it, so a report sent again says the same thing, and a status always matches the Checks tab.
+- **Durable, and safe to repeat.** A report that meets an outage, a rate limit or a lost answer fails for `CHECKS_RETRY` and is sent again; GitHub keeps the latest status per context. A pending status that couldn't be sent is dropped and counted: the report replaces it.
+- **The permission.** The App needs "Commit statuses: Read and write". Without it, or without the App, the token is refused: every check still runs and keeps its result, and each status is recorded `refused`, never retried. GitHub's `422` for a commit it doesn't have is a refusal too.
+- **Requiring a check.** A Maintainer adds `smithers/<name>` to the branch's required status checks on GitHub. GitHub then holds Merge, ours and its own, until that context reports `success` on the head.
+
 ## Postgres
 
 Migrations `0031_pulls`, `0033_pull_writes` and `0037_pull_default_branch`.
@@ -88,6 +107,7 @@ Migrations `0031_pulls`, `0033_pull_writes` and `0037_pull_default_branch`.
 | `smithers_pr_merges{outcome}` | counter | |
 | `github.compare`, `smithers_github_compares{outcome}` | log, span, counter | `outcome`, `files` |
 | `checks.script`, `checks.review`, `checks.sync`; `smithers_checks{check,outcome}` | logs, spans, counter | `repoId`, `sha`, `check`, `prNumber`, `outcome` |
+| `checks.status`, `checks.report`; `smithers_check_statuses{state,outcome}` | log, span, counter | `repoId`, `sha`, `check`, `state` (`pending`, `success`, `failure`), `outcome` (`sent`, `refused`, `dropped`), `errorCode` |
 | `github.apply` | log, span | as issues' (`event` `pull_request` or `pull_request_review`) |
 | `pulls.merge.post`, `pulls.compare.get`; `smithers_web_pull_merges{outcome}` | browser spans, counter | `outcome`: `sent`, the route's status, or `unreachable` |
 
@@ -100,7 +120,8 @@ No record carries a title, a body, a diff, a finding, a command's output or a lo
 | `packages/smithers/agent/integrations/test/Pulls.test.ts` | `GitHub.Pulls`, `Refs` and `Commits` against a fake GitHub on a real socket: fenced merges and commits, adoption after a lost answer, every refusal, 100% |
 | `worker/github/Merge.test.ts` | `pr/Merge` on the Node host against the scripted GitHub: as the person, each refusal, a lost answer adopted, a run again, give-up |
 | `worker/github/PullsApi.test.ts` | the merge write's admission (a Maintainer only; never the agent or a flow), the pull request webhooks and Apply's projection, the compare route, the shapes |
-| `worker/flows/Checks.test.ts` | script checks pass and fail, the review's one comment as the App, a lost review adopted, a failing judge, no App |
+| `worker/flows/Checks.test.ts` | script checks pass and fail, the review's one comment as the App, a lost review adopted, a failing judge, no App; each check's status pending then its result on the head, as the App with only `statuses: write`; no permission or an unknown commit refused once and the results kept; a 502 and a lost answer sent again; each head's statuses its own |
+| `packages/smithers/agent/integrations/test/Statuses.test.ts` | `GitHub.Statuses.create` against a fake GitHub on a real socket: per-commit statuses, a lost answer retryable, refusals unretried, every invalid input refused before a request, 100% |
 | `src/features/pulls/pulls.test.ts` | the browser's layer on a Node device against ChatApi's real routes and Electric: the list, a pull request's tabs, the checks on its head only, the files through the compare route on the scripted GitHub, a Maintainer's merge followed to its write's refusal, a Member's, a signed-out person's and an unreachable ChatApi's |
 | `src/features/pulls/view.test.ts`, `contract.test.ts`, `api.test.ts` | the pages' words and the merge box, the deploy warning (into the default branch only, never without Merge), the paths, and the client against a local server |
 

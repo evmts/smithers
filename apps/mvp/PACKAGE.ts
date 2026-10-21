@@ -628,10 +628,13 @@ export const jevRules: ReadonlyArray<JevRule> = [
       "check_suite, status, workflow_run or workflow_job webhook event, @smthrs/integrations' GitHub.Actions.CheckRun, " +
       "or a table or view of them? GitHub.Actions in @smthrs/integrations is that SDK's module of integration steps, " +
       "not GitHub Actions, and the app's own /$owner/$repo/actions route lists Smithers flow runs; neither is a " +
-      "finding by itself.",
-    violation: "The file reads, writes, stores or shows GitHub Actions, check runs, check suites or commit statuses.",
-    compliant: "The file touches none of GitHub's Actions, check-run, check-suite or commit-status APIs or events; a " +
-      "pull request's checks are Smithers flow runs from the runs table."
+      "finding by itself. One write is allowed (ruling GH-10): reporting a Smithers check's own result on a commit " +
+      "with GitHub.Statuses.create, as the context smithers/<name>; reading any status back is still a finding.",
+    violation: "The file reads, stores or shows GitHub Actions, check runs, check suites or commit statuses, or writes " +
+      "any of them other than a Smithers check's own smithers/<name> status.",
+    compliant: "The file touches none of GitHub's Actions, check-run, check-suite or commit-status APIs or events, or " +
+      "only reports a Smithers check's result as its smithers/<name> status through GitHub.Statuses.create; a pull " +
+      "request's checks are Smithers flow runs from the runs table."
   }
 ]
 

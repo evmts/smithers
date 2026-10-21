@@ -109,7 +109,33 @@ describe("checks/Run", { timeout: 60_000 }, () => {
       Layer.provide(box.layer),
     ), { executionId: checkExecutionId(request.repoId, request.sha, "all") })
 
-    expect(ran.exit).toEqual(Exit.succeed({ checks: [{ name: "review", status: "done" }] }))
+    expect(ran.exit).toEqual(Exit.succeed({
+      statuses: [
+        { name: "lint", state: "failure", outcome: "sent" },
+        { name: "readme", state: "success", outcome: "sent" },
+        { name: "review", state: "success", outcome: "sent" },
+      ],
+    }))
+    // Each check reports running, then its result, on the head as the App (GH-10); Smithers never reads one back.
+    expect(github.statuses.get(request.sha)!.map(({ context, state, description, login }) => [context, state, description, login]))
+      .toEqual([
+        ["smithers/lint", "pending", "Running", BOT_LOGIN],
+        ["smithers/readme", "pending", "Running", BOT_LOGIN],
+        ["smithers/lint", "failure", "Failed", BOT_LOGIN],
+        ["smithers/readme", "success", "Passed", BOT_LOGIN],
+        ["smithers/review", "pending", "Running", BOT_LOGIN],
+        ["smithers/lint", "failure", "Failed", BOT_LOGIN],
+        ["smithers/readme", "success", "Passed", BOT_LOGIN],
+        ["smithers/review", "success", "Passed", BOT_LOGIN],
+      ])
+    expect(github.shownStatuses(request.sha)).toEqual({
+      "smithers/lint": "failure",
+      "smithers/readme": "success",
+      "smithers/review": "success",
+    })
+    expect(github.seen("GET", /statuses/)).toEqual([])
+    // Its token may write commit statuses and nothing else.
+    expect(github.minted.map(({ body }) => (body as { permissions: unknown }).permissions)).toContainEqual({ statuses: "write" })
     expect(await runs()).toEqual([
       { flow: "checks/lint", status: "failed", sha: request.sha, launchedBy: maya.personId },
       { flow: "checks/readme", status: "done", sha: request.sha, launchedBy: maya.personId },
@@ -155,7 +181,8 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     const ran = await runFlow(Checks.ChecksRun, request, Checks.registration({ ...services, judge: seat }).pipe(
       Layer.provide(machine({}).layer),
     ))
-    expect(ran.exit).toEqual(Exit.succeed({ checks: [{ name: "review", status: "failed" }] }))
+    expect(ran.exit).toEqual(Exit.succeed({ statuses: [{ name: "review", state: "failure", outcome: "sent" }] }))
+    expect(github.shownStatuses(request.sha)).toEqual({ "smithers/review": "failure" })
     expect(await runs()).toEqual([{ flow: "checks/review", status: "failed", sha: request.sha, launchedBy: maya.personId }])
     expect(github.pulls.get(request.prNumber)!.reviews).toHaveLength(0)
   })
@@ -171,6 +198,8 @@ describe("checks/Run", { timeout: 60_000 }, () => {
       Layer.provide(machine({ ".smithers/checks/a.sh": "" }).layer),
     ))
     expect((await runs()).map(({ flow, status }) => [flow, status])).toEqual([["checks/a", "done"], ["checks/review", "failed"]])
+    // No App, no token: no status is sent, and the runs keep the results.
+    expect(github.statuses.size).toBe(0)
   })
 
   test("a judge the provider refuses fails the review check and posts nothing", async () => {
@@ -183,7 +212,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     const ran = await runFlow(Checks.ChecksRun, request, Checks.registration({ ...services, judge: seat }).pipe(
       Layer.provide(machine({}).layer),
     ))
-    expect(ran.exit).toEqual(Exit.succeed({ checks: [{ name: "review", status: "failed" }] }))
+    expect(ran.exit).toEqual(Exit.succeed({ statuses: [{ name: "review", state: "failure", outcome: "sent" }] }))
     expect(github.pulls.get(request.prNumber)!.reviews).toHaveLength(0)
   })
 
@@ -255,6 +284,119 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     ))
     expect(github.pulls.get(request.prNumber)!.reviews).toHaveLength(1)
     expect((await runs()).map(({ status }) => status)).toEqual(["done"])
+  })
+})
+
+describe("checks/Run's commit statuses (GH-10)", { timeout: 60_000 }, () => {
+  const statusWrite = (method: string, path: string) => method === "POST" && path.includes("/statuses/")
+
+  test("without the Commit statuses permission every check still runs; each status is refused once and counted, never retried", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    github.statusesGranted = false
+    const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const { seat } = await judgeSeat(runtime, judge("No findings."))
+    const { services } = await githubServices(runtime, github, { judge: seat })
+    const request = await opened(github, maya)
+    const ran = await runFlow(Checks.ChecksRun, request, Checks.registration({ ...services, judge: seat }).pipe(
+      Layer.provide(machine({ ".smithers/checks/lint.sh": "" }).layer),
+    ))
+    expect(ran.exit).toEqual(Exit.succeed({
+      statuses: [
+        { name: "lint", state: "success", outcome: "refused" },
+        { name: "review", state: "success", outcome: "refused" },
+      ],
+    }))
+    expect((await runs()).map(({ flow, status }) => [flow, status])).toEqual([["checks/lint", "done"], ["checks/review", "done"]])
+    expect(github.statuses.size).toBe(0)
+    expect(github.seen("POST", /statuses/)).toEqual([])
+  })
+
+  test("a commit GitHub doesn't have refuses the report, and the runs keep the results", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const { seat } = await judgeSeat(runtime, judge("No findings."))
+    const { services } = await githubServices(runtime, github, { judge: seat })
+    const request = await opened(github, maya)
+    const report = await Effect.runPromise(
+      Checks.steps({ ...services, judge: seat }).report({ request: { ...request, sha: "f".repeat(40) }, after: "scripts" }),
+    )
+    expect(report).toEqual({ statuses: [] })
+    await sql(runtime, `INSERT INTO runs (id, flow, status, launched_by, repo_id, sha)
+      VALUES (gen_random_uuid(), 'checks/lint', 'done', '${maya.personId}', '${request.repoId}', '${"f".repeat(40)}')`)
+    expect(
+      await Effect.runPromise(
+        Checks.steps({ ...services, judge: seat }).report({ request: { ...request, sha: "f".repeat(40) }, after: "scripts" }),
+      ),
+    ).toEqual({ statuses: [{ name: "lint", state: "success", outcome: "refused" }] })
+    expect(github.statuses.size).toBe(0)
+  })
+
+  test("GitHub's 502 drops a pending status and fails the report for its retry policy; retried, the head shows each result", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const { seat } = await judgeSeat(runtime, judge("No findings."))
+    const { services } = await githubServices(runtime, github, { judge: seat })
+    const request = await opened(github, maya)
+    // The first status write is lint's pending, dropped; the second is the scripts' report, which the engine retries.
+    github.faults.push({ match: statusWrite, status: 502 }, { match: statusWrite, status: 502 })
+    const ran = await runFlow(Checks.ChecksRun, request, Checks.registration({ ...services, judge: seat }).pipe(
+      Layer.provide(machine({ ".smithers/checks/lint.sh": "" }, { ".smithers/checks/lint.sh": 2 }).layer),
+    ))
+    expect(Exit.isSuccess(ran.exit)).toBe(true)
+    expect(github.statuses.get(request.sha)!.map(({ context, state }) => `${context} ${state}`)).toEqual([
+      "smithers/lint failure",
+      "smithers/review pending",
+      "smithers/lint failure",
+      "smithers/review success",
+    ])
+    expect(github.shownStatuses(request.sha)).toEqual({ "smithers/lint": "failure", "smithers/review": "success" })
+  })
+
+  test("a report whose answer was lost fails for its retry policy; sent again, it says the same thing", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const { seat } = await judgeSeat(runtime, judge("No findings."))
+    const { services } = await githubServices(runtime, github, { judge: seat })
+    const request = await opened(github, maya)
+    await sql(runtime, `INSERT INTO runs (id, flow, status, launched_by, repo_id, sha)
+      VALUES (gen_random_uuid(), 'checks/lint', 'failed', '${maya.personId}', '${request.repoId}', '${request.sha}')`)
+    github.faults.push({ match: statusWrite, lost: true })
+    const steps = Checks.steps({ ...services, judge: seat })
+    const first = await Effect.runPromise(Effect.exit(steps.report({ request, after: "scripts" })))
+    expect(first._tag === "Failure" && String(first.cause)).toContain("ChecksUnavailable")
+    expect(await Effect.runPromise(steps.report({ request, after: "scripts" }))).toEqual({
+      statuses: [{ name: "lint", state: "failure", outcome: "sent" }],
+    })
+    expect(github.statuses.get(request.sha)!.map(({ state }) => state)).toEqual(["failure", "failure"])
+    expect(github.shownStatuses(request.sha)).toEqual({ "smithers/lint": "failure" })
+    // GitHub failing to mint the token fails the report for its retry policy too.
+    github.faults.push({ match: (method, path) => method === "POST" && path.endsWith("/access_tokens"), status: 502 })
+    const unminted = await Effect.runPromise(Effect.exit(steps.report({ request, after: "review" })))
+    expect(unminted._tag === "Failure" && String(unminted.cause)).toContain("ChecksUnavailable")
+    expect(github.statuses.get(request.sha)).toHaveLength(2)
+  })
+
+  test("each head's statuses are its own: a newer head starts with none, and an older head's failure never shows on it", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const { seat } = await judgeSeat(runtime, judge("No findings."))
+    const { services } = await githubServices(runtime, github, { judge: seat })
+    const older = await opened(github, maya)
+    await runFlow(Checks.ChecksRun, older, Checks.registration({ ...services, judge: seat }).pipe(
+      Layer.provide(machine({ ".smithers/checks/lint.sh": "" }, { ".smithers/checks/lint.sh": 1 }).layer),
+    ), { executionId: checkExecutionId(older.repoId, older.sha, "all") })
+    const newer = { ...older, sha: github.push("smithers/t1-readme", { "README.md": "# Widgets\n\nA line.\n" }) }
+    expect(github.shownStatuses(newer.sha)).toEqual({})
+    await runFlow(Checks.ChecksRun, newer, Checks.registration({ ...services, judge: seat }).pipe(
+      Layer.provide(machine({ ".smithers/checks/lint.sh": "" }).layer),
+    ), { executionId: checkExecutionId(newer.repoId, newer.sha, "all") })
+    expect(github.shownStatuses(older.sha)).toEqual({ "smithers/lint": "failure", "smithers/review": "success" })
+    expect(github.shownStatuses(newer.sha)).toEqual({ "smithers/lint": "success", "smithers/review": "success" })
+  })
+
+  test("a check run's status is GitHub's: passed is success, anything else failure; the words are the Checks tab's", () => {
+    expect([Checks.statusStateOf("done"), Checks.statusStateOf("failed")]).toEqual(["success", "failure"])
+    expect(Checks.STATUS_DESCRIPTIONS).toEqual({ pending: "Running", success: "Passed", failure: "Failed" })
   })
 })
 

@@ -22,6 +22,7 @@ import {
   pullTabPath,
   reviewId,
   SHA,
+  statusContextOf,
   todoExecutionId,
 } from "./contract"
 
@@ -35,6 +36,7 @@ test("the compare route, GitHub's page, a review's row id and each run's executi
   expect(mergeExecutionId("x")).toBe("pr-merge:x")
   expect(checkExecutionId("github/o/n", "s", "all")).toBe("check:github/o/n:s:all")
   expect(checkFlowOf("readme")).toBe("checks/readme")
+  expect(statusContextOf("lint")).toBe("smithers/lint")
 })
 
 test("a SHA is 40 lowercase hex digits; a check's name is a file name's stem", () => {

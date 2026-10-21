@@ -46,9 +46,10 @@ export interface Services {
 /**
  * The access an installation token is minted with: reading issues, writing them (triage's labels included), or reading
  * the repository's files (`contents`: triage's guidelines); reading a pull request with its diff (`pulls`), publishing
- * a TODO's branch, commit and pull request (`publish`), or reviewing one (`review`, a comment review's findings).
+ * a TODO's branch, commit and pull request (`publish`), reviewing one (`review`, a comment review's findings), or reporting a
+ * check on a commit (`status`, GH-10's write-only commit statuses).
  */
-export type Access = "read" | "write" | "contents" | "pulls" | "publish" | "review"
+export type Access = "read" | "write" | "contents" | "pulls" | "publish" | "review" | "status"
 
 /** The permissions GitHub mints a token with for `access`: only what the step needs. */
 export const permissionsOf = (access: Access): Readonly<Record<string, "read" | "write">> => {
@@ -61,6 +62,8 @@ export const permissionsOf = (access: Access): Readonly<Record<string, "read" | 
       return { issues: "read", pull_requests: "write", contents: "write" }
     case "review":
       return { issues: "read", pull_requests: "write", contents: "read" }
+    case "status":
+      return { statuses: "write" }
     default:
       return { issues: access }
   }

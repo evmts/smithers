@@ -104,4 +104,10 @@ export * as Repository from "./github/Repository.ts"
  * @category constructors
  * @since 1.0.0
  */
+export * as Statuses from "./github/Statuses.ts"
+
+/**
+ * @category constructors
+ * @since 1.0.0
+ */
 export * as Sync from "./github/Sync.ts"

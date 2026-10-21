@@ -158,6 +158,12 @@ export const REVIEW_CHECK = "review"
 /** A check run's flow tag, as the Checks tab shows it: `checks/<name>`. */
 export const checkFlowOf = (name: string): string => `checks/${name}`
 
+/**
+ * A check's commit status context on GitHub (ruling GH-10): `smithers/<name>`, write-only, which a repository's branch
+ * protection can require. The check itself stays a Smithers run; Smithers never reads statuses back.
+ */
+export const statusContextOf = (name: string): string => `smithers/${name}`
+
 /** The `todo` run's execution id: one per attempt (decision 0016 §Decision 4). */
 export const todoExecutionId = (attemptId: string): string => `todo:${attemptId}`
 

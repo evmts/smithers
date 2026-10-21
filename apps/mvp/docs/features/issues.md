@@ -194,7 +194,7 @@ ChatApi and the `FlowExecution` Durable Object read them with Effect `Config`, s
 
 What the App needs, set by its owner in the App's settings on GitHub; each installation owner then accepts the new permissions:
 
-- **Repository permissions:** Issues: Read and write. Contents: Read and write (triage's guidelines; a TODO's branch and commit, [TODOs](todos.md#the-run)). Pull requests: Read and write (a TODO's pull request, a person's merge, the review check's comment, [pull requests](pulls.md)). Metadata: Read-only (always on; triage re-checks the enabler's role with it).
+- **Repository permissions:** Issues: Read and write. Contents: Read and write (triage's guidelines; a TODO's branch and commit, [TODOs](todos.md#the-run)). Pull requests: Read and write (a TODO's pull request, a person's merge, the review check's comment, [pull requests](pulls.md)). Commit statuses: Read and write (each check's `smithers/<name>` status, GH-10, [commit statuses](pulls.md#commit-statuses)). Metadata: Read-only (always on; triage re-checks the enabler's role with it).
 - **Webhook:** active, URL `<deployment url>/api/github/webhook` (for local development, a tunnel to `http://localhost:1337/api/github/webhook`), content type `application/json`, a secret that is also `GITHUB_WEBHOOK_SECRET`.
 - **Subscribe to events:** Issues, Issue comment, Pull request, Pull request review. (0012 §2's other events wait for branches.)
 - **Secrets:** the App ID as `GITHUB_APP_ID` and a generated private key as `GITHUB_APP_PRIVATE_KEY`.

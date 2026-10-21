@@ -631,6 +631,21 @@ const sha = yield * Action.once("commit", GitHub.Once.commitOnBranch(owner, repo
 | `review`                                                                    | `(owner, repo, number, { commitId, event, body }) => Keyed<Review, IntegrationError, GitHubClient>`                                  | Found among every review.                                                                                                                                                                                      |
 | `withTrailer`, `trailerKeyOf`, `branchName`, `TRAILER`, `BRANCH_KEY_LENGTH` | helpers                                                                                                                              | The trailer and the branch name the adapters write.                                                                                                                                                            |
 
+### GitHub.Statuses
+
+Write-only commit statuses over the `GitHubClient` in context: a check's state
+on one exact commit, which branch protection can require by its context. An
+App's installation token needs `statuses: write`. Repeating a status changes
+nothing anyone reads, so a lost answer fails `retryable`, never
+`outcomeUnknown`.
+
+| Export | Signature | Notes |
+| --- | --- | --- |
+| `create` | `(owner, repo, sha, { state, context, description?, targetUrl? }) => Effect<Status, IntegrationError, GitHubClient>` | `POST /repos/{owner}/{repo}/statuses/{sha}`. `sha` is 40 or 64 lowercase hex digits; a longer description is cut to `MAX_DESCRIPTION`; `targetUrl` is an absolute `https:` URL. 403 or 404 for a token without the permission or a repository it can't see, 422 for a commit GitHub doesn't have: passed through, unretried. |
+| `STATES`, `State` | `["pending", "success", "failure", "error"]` | |
+| `CONTEXT_PATTERN`, `MAX_DESCRIPTION` | regex, `140` | 1 to 255 printable characters, without leading or trailing space. |
+| `Status`, `Input` | schema, type | GitHub's answer narrowed to `id`, `state`, `context`, `description`, `target_url` and `created_at`. |
+
 ### GitHub.Sync
 
 `make(options)` is a `Core.Sync` adapter over one repository's issues, pull
