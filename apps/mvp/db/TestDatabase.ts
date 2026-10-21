@@ -69,9 +69,18 @@ export const layer = (prefix: string) =>
       const database = Database.layer(Effect.succeed(url))
       const admin = yield* Layer.build(PgClient.layer({ url: Redacted.make(server.toString()), maxConnections: 1 }))
       const sql = Context.get(admin, SqlClient.SqlClient)
+      // A connection still open on the schema when its scope closes, such as a request ChatApi was still serving, is
+      // ended first. The drop takes every table's lock in turn, so a transaction holding one table while it waits for
+      // another deadlocked with it.
       yield* Effect.acquireRelease(
         sql`CREATE SCHEMA ${sql(name)}`,
-        () => Effect.orDie(sql`DROP SCHEMA ${sql(name)} CASCADE`),
+        () =>
+          Effect.orDie(
+            Effect.andThen(
+              sql`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = ${name}`,
+              sql`DROP SCHEMA ${sql(name)} CASCADE`,
+            ),
+          ),
       )
       yield* Effect.provide(Database.migrate, database)
       return Layer.merge(

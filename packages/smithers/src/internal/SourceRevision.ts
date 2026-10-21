@@ -130,9 +130,11 @@ export const read = (root: string, reader: Reader = spawnReader): Effect.Effect<
      * every change including untracked files, so a single line means `HEAD`
      * does not describe what this host loaded and there is no honest revision
      * to record. An unreadable status is the same answer: not knowing whether
-     * the tree moved is not knowing the revision.
+     * the tree moved is not knowing the revision. `--no-optional-locks`: a
+     * read never takes `.git/index.lock` to write the refreshed index back,
+     * which would fail every git and jj command in the checkout meanwhile.
      */
-    const status = yield* reader("git", ["status", "--porcelain"], root)
+    const status = yield* reader("git", ["--no-optional-locks", "status", "--porcelain"], root)
     if (status === undefined || status.trim() !== "") return undefined
     return objectId(yield* reader("git", ["rev-parse", "HEAD"], root))
   })

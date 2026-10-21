@@ -4,7 +4,7 @@
 // a scripted provider on loopback HTTP. `admin/SetModel` runs on the Node host (worker/test/flowHost.ts).
 import { Model, ModelError, type ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
-import { ConfigProvider, Duration, Effect, Exit, Layer, Redacted, Schema, Stream } from "effect"
+import { ConfigProvider, Deferred, Duration, Effect, Exit, Fiber, Layer, Redacted, Schema, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http"
@@ -1082,12 +1082,18 @@ describe("a server flow's own calls (ModelEndpoint.local)", () => {
 
   test("a call its caller interrupts after its text keeps its whole reservation", async () => {
     const { judge } = await seat(() => Stream.concat(Stream.make(delta("partial")), Stream.never))
-    const exit = await Effect.runPromiseExit(
-      Stream.runDrain(judge.model.stream(ask("judge this"))).pipe(Effect.timeout("200 millis")),
+    // Interrupted once its text arrived, not at a fixed time: under load, admission alone can outlast any deadline,
+    // and the call would then end before it reserved or streamed anything.
+    const texted = Effect.runSync(Deferred.make<void>())
+    const caller = Effect.runFork(
+      Stream.runForEach(judge.model.stream(ask("judge this")), () => Deferred.succeed(texted, undefined)),
     )
-    expect(Exit.isFailure(exit)).toBe(true)
-    await eventually(async () => (await ledger())[0]?.settled === true)
+    await Effect.runPromise(Deferred.await(texted))
+    // The interruption returns once the call has ended, its reservation settled.
+    await Effect.runPromise(Fiber.interrupt(caller))
+    expect(Exit.hasInterrupts(await Effect.runPromise(Fiber.await(caller)))).toBe(true)
     const [row] = await ledger()
+    expect(row!.settled).toBe(true)
     expect((await charges())[0]!.charged).toBe(row!.reserved)
   })
 

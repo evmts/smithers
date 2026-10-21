@@ -9,7 +9,7 @@
  */
 import { Effect } from "effect"
 import { execFileSync } from "node:child_process"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
@@ -29,7 +29,7 @@ const scripted = (answers: Readonly<Record<string, string | undefined>>) => {
 }
 
 const JJ = "jj log -r @ --no-graph --color=never -T commit_id"
-const STATUS = "git status --porcelain"
+const STATUS = "git --no-optional-locks status --porcelain"
 const HEAD = "git rev-parse HEAD"
 
 describe("which tool names the tree", async () => {
@@ -106,6 +106,27 @@ describe("against a real repository", async () => {
 
       await writeFile(join(root, "flow.ts"), "export const flow = 2\n")
       expect(await Effect.runPromise(SourceRevision.read(root))).toBeUndefined()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it("never takes the index lock: a stale index stays unwritten, and a held lock doesn't block the read", async () => {
+    const { root, head } = await gitRepository()
+    try {
+      // A tracked file touched but unchanged: a status that may take `.git/index.lock` refreshes its stat data and
+      // writes the index, holding the lock every other git and jj command in the checkout then fails on.
+      const index = join(root, ".git", "index")
+      const later = new Date(Date.now() + 60_000)
+      await utimes(join(root, "flow.ts"), later, later)
+      const before = await readFile(index)
+
+      expect(await Effect.runPromise(SourceRevision.read(root))).toBe(head)
+      expect((await readFile(index)).equals(before)).toBe(true)
+
+      // Another process holds the lock: the revision is read all the same.
+      await writeFile(join(root, ".git", "index.lock"), "")
+      expect(await Effect.runPromise(SourceRevision.read(root))).toBe(head)
     } finally {
       await rm(root, { recursive: true, force: true })
     }

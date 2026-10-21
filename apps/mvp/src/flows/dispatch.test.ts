@@ -2,7 +2,7 @@
 // every dispatch's records, read back without the flow's input. Unhappy paths inject the faulty service: an engine
 // that refuses or dies, `Preferences` that can't be written.
 import { Persistence } from "@smthrs/effect-tanstack-db"
-import { Action, type Flow, Interpreter } from "@smthrs/flow"
+import { Action, type Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Logger, Metric, Option, Schema, Scope, Tracer } from "effect"
 import { afterEach, describe, expect, test } from "vitest"
@@ -215,6 +215,65 @@ describe("a client flow", () => {
 
     expect(failure(exit)).toEqual(new DispatchFailed({ flow: "app/theme/set", reason: "refused" }))
     expect(d.painted).toEqual([])
+  })
+
+  test("an execution started again with another input is refused by this process's engine, with the refusal's code", async () => {
+    const d = await open()
+    await d.observed(d.dispatch("app/theme/set", { mode: "dark" }, { door: "button", executionId: "theme-again" }))
+
+    const exit = await d.observed(d.dispatch("app/theme/set", { mode: "light" }, { door: "button", executionId: "theme-again" }))
+
+    expect(failure(exit)).toEqual(
+      new DispatchFailed({ flow: "app/theme/set", reason: "refused", refusal: "execution_identity_conflict" }),
+    )
+    expect(d.painted).toEqual(["dark"])
+    expect(d.recorded.logs.filter((log) => log.message === "flow.dispatch").at(-1)).toMatchObject({
+      level: "ERROR",
+      annotations: { outcome: "error", reason: "refused", refusal: "execution_identity_conflict" },
+    })
+  })
+
+  // A runtime that refuses or dies as told (test.faults-by-injection): `start` for the admission, `result` for the run.
+  const faultyRuntime = (fault: { readonly start?: Effect.Effect<never, unknown>; readonly result?: Effect.Effect<never, unknown> }) =>
+    open({
+      engine: ClientEngine.layerRuntime([SetTheme]).pipe(
+        Layer.provide(
+          Layer.succeed(
+            FlowRuntime.FlowRuntime,
+            {
+              execute: (_flow: unknown, run: { readonly discard?: boolean }) =>
+                (run.discard === true ? fault.start : fault.result) ?? Effect.void,
+            } as never,
+          ),
+        ),
+      ),
+    })
+
+  test("a run the engine refuses is refused with the refusal's code, never the flow's own failure", async () => {
+    const cycle = new FlowRuntime.FlowCycleDetected({ path: ["theme-1", "theme-1"] })
+    const d = await faultyRuntime({ result: Effect.fail(cycle) })
+
+    const exit = await d.observed(d.dispatch("app/theme/set", { mode: "dark" }, { door: "agent" }))
+
+    expect(failure(exit)).toEqual(
+      new DispatchFailed({ flow: "app/theme/set", reason: "refused", refusal: "flow_cycle_detected" }),
+    )
+    expect(d.count({ flow: "app/theme/set", door: "agent", outcome: "failed" })).toBe(0)
+    expect(d.count({ flow: "app/theme/set", door: "agent", outcome: "error" })).toBe(1)
+  })
+
+  test("a start the runtime refuses is refused with its code when it has one; a start that dies is a defect", async () => {
+    const coded = await faultyRuntime({ start: Effect.fail(new FlowRuntime.FlowCycleDetected({ path: ["a", "a"] })) })
+    const uncoded = await faultyRuntime({ start: Effect.fail(new Error("the host refused the start")) })
+    const died = await faultyRuntime({ start: Effect.die(new Error("bug")) })
+    const dispatchOn = async (d: Awaited<ReturnType<typeof open>>) =>
+      failure(await d.observed(d.dispatch("app/theme/set", { mode: "dark" }, { door: "button" })))
+
+    expect(await dispatchOn(coded)).toEqual(
+      new DispatchFailed({ flow: "app/theme/set", reason: "refused", refusal: "flow_cycle_detected" }),
+    )
+    expect(await dispatchOn(uncoded)).toEqual(new DispatchFailed({ flow: "app/theme/set", reason: "refused" }))
+    expect(await dispatchOn(died)).toEqual(new DispatchFailed({ flow: "app/theme/set", reason: "defect" }))
   })
 })
 

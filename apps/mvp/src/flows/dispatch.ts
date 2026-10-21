@@ -87,7 +87,11 @@ export class ClientEngine extends Context.Service<
   /**
    * An engine in this process: the `FlowRuntime` a Node or Bun host composes, for the native app and the tests. It
    * runs the declaration in `flows` that a dispatched reference names (src/flows/declarations.ts `clientFlows`); a
-   * name none of them declares is `refused`, and so is a start the runtime refuses.
+   * name none of them declares is `refused`, and so is a start the runtime refuses, with the refusal's code: a typed
+   * failure, or a defect the engine refuses with, such as `execution_identity_conflict` for an execution started again
+   * with another payload. A start that dies with no code is a `defect`. A run that ends with a failure its flow doesn't
+   * declare, such as `flow_cycle_detected`, was refused by the engine: it is `refused` with that code, never the flow's
+   * own failure.
    */
   static readonly layerRuntime = (flows: ReadonlyArray<FlowTypes.Any>) =>
     Layer.effect(
@@ -101,17 +105,34 @@ export class ClientEngine extends Context.Service<
             ? Effect.fail(new DispatchFailed({ flow: flow._tag, reason: "refused" }))
             : Effect.succeed(declaration)
         }
+        const refused = (flow: BrowserEngine.FlowReference, error: unknown) =>
+          new DispatchFailed({ flow: flow._tag, reason: "refused", ...codeOf(error) })
         return ClientEngine.of({
           start: (flow, run) =>
             Effect.flatMap(declarationOf(flow), (declaration) =>
               (runtime.execute(declaration as never, { ...run, discard: true } as never) as Effect.Effect<unknown, unknown>).pipe(
                 Effect.asVoid,
-                Effect.mapError(() => new DispatchFailed({ flow: flow._tag, reason: "refused" })),
+                Effect.mapError((error) => refused(flow, error)),
+                Effect.catchDefect((defect) =>
+                  Effect.fail(
+                    codeOf(defect).refusal === undefined
+                      ? new DispatchFailed({ flow: flow._tag, reason: "defect" })
+                      : refused(flow, defect),
+                  )
+                ),
               )),
           // The same execution again joins the run its start admitted.
           result: (flow, run) =>
             Effect.flatMap(declarationOf(flow), (declaration) =>
-              Effect.exit(runtime.execute(declaration as never, run as never) as Effect.Effect<unknown, unknown>)),
+              Effect.flatMap(
+                Effect.exit(runtime.execute(declaration as never, run as never) as Effect.Effect<unknown, unknown>),
+                (exit) => {
+                  const error = Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : Option.none()
+                  return Option.isSome(error) && !Schema.is(declaration.errorSchema)(error.value)
+                    ? Effect.fail(refused(flow, error.value))
+                    : Effect.succeed(exit)
+                },
+              )),
         })
       }),
     )
@@ -207,6 +228,12 @@ const admission = (name: string, exit: Exit.Exit<void, DispatchFailed>): Exit.Ex
   Exit.isFailure(exit) && Option.isNone(Cause.findErrorOption(exit.cause))
     ? Exit.fail(new DispatchFailed({ flow: name, reason: Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "defect" }))
     : exit
+
+/** An engine error's stable `code`, as `DispatchFailed`'s `refusal`; nothing for an error without one. */
+const codeOf = (error: unknown): { readonly refusal?: string } =>
+  typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? { refusal: error.code }
+    : {}
 
 /** A client flow's end as dispatch answers it: its value, its declared failure, or `DispatchFailed`. */
 const settled = (name: string, exit: Exit.Exit<unknown, unknown>): Effect.Effect<Dispatched<never>, DispatchFailed> => {

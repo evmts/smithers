@@ -76,7 +76,7 @@ Its laws, enforced by `src/flows/registry.test.ts`:
 `FlowDispatch.dispatch(name, payload, { door, executionId?, admitted? })` starts the run on this device's engine (`ClientEngine.start`, which returns once the engine recorded it), then waits for it to end (`ClientEngine.result`), and answers:
 - `Done { value }`: a client flow's success;
 - `Failed { error }`: a client flow's declared failure, as a value;
-- or fails with `DispatchFailed { flow, reason, refusal? }`: `refused` (the engine refused it, or nothing answered), `unavailable` (this tab's engine worker failed), `invalid` (its payload doesn't encode), `defect` or `interrupted`. A run the engine's interpreter refused died with its code as `refusal` (`Interpreter.refusalCode` from `@smthrs/flow`), such as `plan_changed` for a run parked under one build of the app and resumed under the next.
+- or fails with `DispatchFailed { flow, reason, refusal? }`: `refused` (the engine refused it, or nothing answered), `unavailable` (this tab's engine worker failed), `invalid` (its payload doesn't encode), `defect` or `interrupted`. A run the engine's interpreter refused died with its code as `refusal` (`Interpreter.refusalCode` from `@smthrs/flow`), such as `plan_changed` for a run parked under one build of the app and resumed under the next. An engine in this process (`ClientEngine.layerRuntime`) answers its own refusals as `refused` with their code, never as the flow's failure: a start of an execution again with another input is `refused` `execution_identity_conflict`, and a run that ends with a failure its flow doesn't declare is `refused` with that failure's code, such as `flow_cycle_detected`.
 
 The execution id is minted once per dispatch unless the caller passes one. A door is `button`, `slash`, `view`, `composer` or `agent`. `admitted`, a `Deferred`, completes once the engine recorded the run, or fails with the dispatch's `DispatchFailed` (`interrupted` when the dispatch was interrupted first), so a caller can wait for the run to exist without waiting for it to end: chat's outbox keeps a question until the run that answers it is recorded ([state.md](../state.md#chat-2026-10-20)).
 
@@ -206,7 +206,7 @@ Nothing records a flow's payload, a cell's code or a flow's result.
 
 | Record | Kind | Fields |
 |---|---|---|
-| `flow.dispatch` | log, span | `flow`, `door`, `outcome` (`done`, `failed`, `error`), `executionId`, `durationMs`, `reason` on an error, and `refusal` when the engine's interpreter refused the run (such as `plan_changed`) |
+| `flow.dispatch` | log, span | `flow`, `door`, `outcome` (`done`, `failed`, `error`), `executionId`, `durationMs`, `reason` on an error, and `refusal` when the engine refused the run, with the refusal's code (such as `plan_changed` or `execution_identity_conflict`) |
 | `smithers_flow_dispatches` | counter | `flow`, `door`, `outcome` |
 | `web.navigate` | log, span | `door`, `outcome`, `executionId`, `durationMs`, `reason` on a refusal; the span's `smithers.navigation.door` and `smithers.navigation.outcome`. Info, Warn for `refused`, Error for `failed` |
 | `smithers_web_navigations` | counter | `door` (the dispatch's; `agent` for the agent's call; `unknown` when the tab that dispatched it is gone), `outcome` (`navigated`, `refused`, `gone`, `failed`) |

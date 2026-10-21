@@ -1,7 +1,7 @@
 // The guard every Postgres test passes (db/TestDatabase.ts): the compose Postgres only, a schema of its own, and a
 // failure that says `pnpm db:up` when nothing is running.
 import { PgClient } from "@effect/sql-pg"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Redacted } from "effect"
+import { ConfigProvider, Context, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime, Option, Redacted, Scope } from "effect"
 import { SqlClient, SqlError } from "effect/sql"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import * as TestDatabase from "./TestDatabase.ts"
@@ -93,6 +93,38 @@ describe("layer", () => {
     )
     expect((await runtime.runPromise(schemas)).map((schema) => schema.name)).not.toContain(name)
   })
+
+  test("ends a connection still open on the schema before the drop, so a transaction left open never holds it up", async () => {
+    const outcome = await runtime.runPromise(
+      Effect.gen(function* () {
+        const scope = yield* Scope.make()
+        const context = yield* Layer.buildWithScope(TestDatabase.layer("probe"), scope)
+        const scratch = Context.get(context, TestDatabase.Scratch)
+        // A request ChatApi is still serving: its transaction holds `messages`, and writes again only once let go.
+        const holding = yield* Deferred.make<void>()
+        const letGo = yield* Deferred.make<void>()
+        const writer = yield* Effect.provide(
+          Effect.flatMap(SqlClient.SqlClient, (sql) =>
+            sql.withTransaction(
+              sql`LOCK TABLE messages IN ROW EXCLUSIVE MODE`.pipe(
+                Effect.andThen(Deferred.succeed(holding, undefined)),
+                Effect.andThen(Deferred.await(letGo)),
+                Effect.andThen(sql`SELECT 1`),
+              ),
+            )),
+          scratch.database,
+        ).pipe(Effect.forkDetach)
+        yield* Deferred.await(holding)
+
+        const closed = yield* Scope.close(scope, Exit.void).pipe(Effect.timeoutOption("10 seconds"))
+        yield* Deferred.succeed(letGo, undefined)
+        return { closed: Option.isSome(closed), writer: Exit.isFailure(yield* Fiber.await(writer)) }
+      }),
+    )
+
+    // The drop didn't wait on the transaction: it ended the transaction's connection, so its next write failed.
+    expect(outcome).toEqual({ closed: true, writer: true })
+  }, 30_000)
 
   test("refuses DATABASE_URL naming another server before connecting to it", async () => {
     const refused = await runtime.runPromise(

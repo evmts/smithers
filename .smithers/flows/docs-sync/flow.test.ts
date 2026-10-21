@@ -6,15 +6,18 @@
  * writes or compares, so no case changes the checkout.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
 import { FlowEngine } from "@smthrs/engine"
-import { Interpreter } from "@smthrs/flow"
-import { Effect, Exit, Layer } from "effect"
+import { Flow, Interpreter } from "@smthrs/flow"
+import { Discovery } from "@smthrs/registry"
+import { Effect, Exit, FileSystem, Layer, Path } from "effect"
 import assert from "node:assert/strict"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { pathToFileURL } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import DocsSync, { argv, layer, Request } from "./flow.ts"
 import { pageMapOf, redirectMapOf, renderModule } from "./package-docs.mjs"
 
@@ -100,4 +103,23 @@ test("check refuses a stale generated module as a typed failure", async () => {
 test("check passes on this checkout: the map is fresh and every published tarball carries its docs", async () => {
   const exit = await run({ mode: "check" }, "docs-sync-check")
   assert.ok(Exit.isSuccess(exit), JSON.stringify(Exit.isFailure(exit) ? exit.cause : undefined))
+})
+
+// `pnpm docs:sync` and `docs:check` are repository maintenance an agent runs. `smthrs flow start` approves a plan
+// itself, for the run alone, unless its envelope grants every capability ("*", which discovery substitutes for a flow
+// that declares none): that one is refused until a person reviews and approves it (packages/smithers/src/commands/
+// Launch.ts). So the flow's envelope, as discovery reads it from this source, is its declared capabilities.
+test("an agent's flow start is approved with no person: discovery reads the declared capabilities, never every one", async () => {
+  const flows = fileURLToPath(new URL("..", import.meta.url))
+  const scan = await Effect.runPromise(
+    Effect.gen(function*() {
+      const discovery = Discovery.make(yield* FileSystem.FileSystem, yield* Path.Path)
+      return yield* discovery.scan({ source: "project", root: flows, naming: "path" })
+    }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)))
+  )
+  const entry = scan.entries.find((candidate) => candidate.name === "docs-sync")
+  assert.ok(entry !== undefined, "discovery finds docs-sync")
+  assert.deepEqual([...entry.capabilities], Flow.capabilityCeilings(DocsSync.annotations).flat())
+  assert.ok(!entry.capabilities.includes("*"))
+  assert.equal(entry.modelInvocable, false)
 })

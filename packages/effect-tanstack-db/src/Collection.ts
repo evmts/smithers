@@ -36,6 +36,7 @@ import type * as Stream from "effect/Stream"
 import { type Change, type Key, LoadFailed, type MutationRefused, type Transaction } from "./internal/model.ts"
 import { changes, mutate, preload, release, toArray } from "./internal/readers.ts"
 import { Persistence, restoreMs, writeFailures } from "./Persistence.ts"
+import { wholeTransactions } from "./internal/wholeTransactions.ts"
 
 export { LoadFailed, MutationRefused, TransactionFailed } from "./internal/model.ts"
 export type { Change, Key, Transaction } from "./internal/model.ts"
@@ -160,6 +161,8 @@ export function make<A extends object, K extends Key, U extends UtilsRecord = Ut
       create<A, K, U>(
         persistedCollectionOptions({
           ...config,
+          // Each of the source's transactions reaches the persisted core whole, so none crosses a hydration cycle.
+          sync: wholeTransactions(options.sync),
           persistence: persistence.value,
           schemaVersion: settings.persist.schemaVersion,
           initialRender: { strategy: "network-first", networkTimeoutMs: 0 }

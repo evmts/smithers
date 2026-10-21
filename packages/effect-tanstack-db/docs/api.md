@@ -76,6 +76,15 @@ the network's rows follow. `restored` waits for them, and the milliseconds it
 took are recorded in `Persistence.restoreMs`. Without a database, the rows stay
 in memory.
 
+Each transaction the sync adapter opens reaches TanStack DB's persisted core
+whole, at its commit: begin, its writes and metadata in order, then the commit,
+in one turn. The persisted core refuses a commit whose transaction began before
+the device's rows were read again, which another tab's commit to the shared
+database does, and Electric keeps a transaction open from a batch that ends
+without `up-to-date` until the next batch. A read of the sync metadata inside a
+transaction hands the core what the transaction holds so far, so the read sees
+its own writes.
+
 ### `Collection.Persist`
 
 ```ts
