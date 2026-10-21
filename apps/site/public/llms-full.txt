@@ -15122,6 +15122,7 @@ handoffs; explicit cancellation still cascades to linked children.
 | `clockFireRetryPolicy` | `Schedule<unknown, unknown>` (optional)                | Redispatch policy for a durable clock whose fire failed. Defaults to exponential from 100ms capped at 30s, forever, the same option shape as the engine's `suspendedRetryPolicy`.                                                                                                                                                                                                       |
 | `requestResume`        | `(executionId, reason) => Effect<void>` (optional)     | Called for every wake this engine initiates against a PARKED execution: `"deferred"` (a durable deferred completed), `"clock"` (a durable clock fired), `"parent"` (a child settled under a parent parked on it). An operator's own resume is not reported. A host that refuses to re-enter a parked run nobody asked for reads it to tell an engine wake from its own heartbeat sweep. |
 | `sweep`                | `Sweep` (optional)                                     | Who wakes this store's runs. `"process"`, the default, sweeps the store every heartbeat interval and renews each owned run's lease. `{ host: executionId }` runs no sweep and renews no lease, and registration re-arms only that execution's clocks and completions. See [Hosted executions](#hosted-executions).                                                                      |
+| `placement`            | `string` (optional)                                    | Where this store's runs run, as their usage metrics label it (`@smthrs/flow` `RunMetrics`): `browser`, `cloudflare`, `sandbox` or `local`, the default; any other value reads `other`. The engine counts each run it admits and settles, its steps, retries and durable waits, and keeps the caller's `RunMetrics.CurrentOrigin` with the run. |
 
 ### Required services
 
@@ -18939,6 +18940,14 @@ reports unfinished observation independently of the run's terminal verdict.
 authentication on every RPC and refuses non-presence operations as `unsupported`.
 This is a host adapter used by `GatewayServer`, rather than a package export path.
 
+### Engine inspection journals
+
+`InspectionJournal.inspectionJournal(runId, events)` adapts `RunInspection.Event` pages into the existing control journal envelope. It sorts and deduplicates by the native sequence, preserves timestamps and generation, and refuses clipped, malformed or non-object payloads. `monitorFromInspection(run, events, at?)` invokes the canonical `RunTrace.monitorFromJournal` fold. No flow body runs and no new engine events or storage are introduced.
+
+`RunTrace.monitorFromJournal` additionally accepts a fourth options argument `{ childBoundaries: true }` to show named child-flow calls alongside action steps. Root flow calls remain hidden; their visible dependencies pass through the hidden structural nodes. The default monitor presentation is unchanged.
+
+`inspectionForest([{ runId, events }, ...])` merges related runs' recorded evidence by timestamp, execution identity and native sequence, exposing a presentation cursor while retaining the original envelope sequence and source identity. Step and call facts preserve the source coordinates required by the canonical agent-cell fold. A host must freeze the read snapshot while replaying: newly discovered child evidence can otherwise change presentation ordinals.
+
 ---
 
 # @smthrs/harness
@@ -21413,6 +21422,7 @@ Service interface:
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `request`  | `(method: RequestMethod, path: string, body?: unknown, options?: RequestOptions) => Effect<unknown, IntegrationError>`, or `<A>(method: RequestMethod, path: string, body: unknown, options: DecodedRequestOptions<A>) => Effect<A, IntegrationError>` | One REST call. Without a schema the result is the parsed JSON as `unknown`; a `schema` decodes it, fixes the result type, and fails `decode-failed` when the body does not match. A rate limit (a 429, or the 403 forms GitHub uses for a secondary limit) is never repeated: it fails `retryable` for every method, with the server's `Retry-After` or `x-ratelimit-reset`, capped at one minute, as `details.retryAfterMillis`. A 5xx or transport failure is `retryable` only for a read, with a 5xx's `Retry-After`; on a write it reports `outcomeUnknown` unless `retryUnsafeWrites` is set. The retry policy of the step that made the call decides whether there is another attempt. An unserializable body or an unparseable path fails `invalid-config` before any request. Interrupting the fiber aborts the request in flight. Each request also carries the configured `requestTimeout`; expiring aborts the exchange and fails `delivery-failed` with `timedOut: true`, and on a write with `outcomeUnknown: true`. |
 | `paginate` | `(path: string, options?: { perPage?: number; maxPages?: number }) => Effect<Page, IntegrationError>`                                                                                                                                                  | Follows `Link: rel="next"` within the page budget and concatenates the pages. `perPage` defaults to 100 and accepts 1 to 100; `maxPages` defaults to 10 and accepts 1 to 1000. A bound outside its range fails `invalid-config` before the first request. Running out of budget with a next link outstanding is reported as `truncated: true`, never as a short but complete answer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `count` | `(path: string, options?: RequestOptions) => Effect<Count, IntegrationError>` | One request for pages of one item (`per_page=1`): `total` is the `rel="last"` link's page, so a repository's branches, tags, commits or contributors are counted without walking them, and `first` is the first item as parsed JSON (`undefined` for an empty list). A list with no `last` link holds what its one page holds. |
 
 | Export                | Signature                                                                             | Notes                                                                                                                                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -21422,6 +21432,7 @@ Service interface:
 | `isRateLimitResponse` | `(status: number, headers: Headers, body: unknown) => boolean`                        | Whether a response is GitHub telling the client to slow down.                                                                                                                                 |
 | `retryAfterMs`        | `(headers: Headers, nowMs?: number) => number \| null`                                | The wait a rate limit asked for, from `Retry-After` or `x-ratelimit-reset`, capped at one minute.                                                                                             |
 | `nextPageUrl`         | `(linkHeader: string \| null) => string \| null`                                      | The `rel="next"` URL in an RFC 5988 `Link` header.                                                                                                                                            |
+| `lastPageNumber` | `(linkHeader: string \| null) => number \| null` | The `page` of the `rel="last"` URL in an RFC 5988 `Link` header; `null` without one or for a page that isn't a whole number. |
 | `UNSAFE_METHODS`      | `readonly RequestMethod[]`                                                            | `POST`, `PATCH`, `PUT`, `DELETE`: the verbs whose effect the server may already have applied when the answer is lost.                                                                         |
 | `MAX_PER_PAGE`        | `100`                                                                                 | The largest `per_page` GitHub accepts.                                                                                                                                                        |
 | `DEFAULT_MAX_PAGES`   | `10`                                                                                  | The default page budget.                                                                                                                                                                      |
@@ -21603,6 +21614,48 @@ decoded with `atob` and `TextDecoder`, so it runs in a browser and a Worker.
 | `permission`    | `(owner, repo, login) => Effect<Option<Permission>, IntegrationError, GitHubClient>` | `GET /repos/{owner}/{repo}/collaborators/{login}/permission`; `Option.none()` on a 404, which GitHub answers for an account that does not exist or a repository the token cannot see. |
 | `Permission`    | `{ permission: string; roleName: string }`                                           | `permission` is the base role (`admin`, `write`, `read`, `none`); `roleName` may be `maintain`, `triage` or a custom role.                                                            |
 | `LOGIN_PATTERN` | regex                                                                                | `Repository.OWNER_PATTERN`'s account name, optionally followed by `[bot]`.                                                                                                            |
+
+### GitHub.Pulls
+
+Pull request operations over the `GitHubClient` in context. Opening a pull
+request and submitting a review are not idempotent: mark the body with
+`Issues.withWriteMarker`, and after `outcomeUnknown` look first with
+`findPullByHead` or `findReviewByWrite`. A merge is fenced by the head SHA the
+person saw; a lost merge is read back with `getPull`. Closing is idempotent.
+
+| Export | Signature | Notes |
+| --- | --- | --- |
+| `getPull` | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>` | `GET /repos/{owner}/{repo}/pulls/{number}`, with merge state and size. |
+| `listPulls` | `(owner, repo, options?: { state?, head?, maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>` | Most recently updated first; `state` defaults to `all`; `head` is a branch of the repository itself. |
+| `findPullByHead` | `(owner, repo, { head, writeId? }) => Effect<Option<PullRequest>, IntegrationError, GitHubClient>` | The earliest-opened pull request from `head`, carrying `writeId`'s marker when given. |
+| `createPull` | `(owner, repo, { head, base, title, body, draft? }) => Effect<PullRequest, IntegrationError, GitHubClient>` | `POST /repos/{owner}/{repo}/pulls`. 422 for no commits, a duplicate or a refused draft. A lost answer fails `outcomeUnknown`. |
+| `closePull` | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>` | `PATCH` with `state: closed`; a lost answer fails `retryable`. |
+| `mergePull` | `(owner, repo, number, { sha, method, commitTitle?, commitMessage? }) => Effect<Merged, IntegrationError, GitHubClient>` | `PUT /repos/{owner}/{repo}/pulls/{number}/merge` at exactly `sha`. 409 when the head moved, 405 when not mergeable, 422 for a disallowed method. A lost answer fails `outcomeUnknown`. |
+| `listCommits`, `listReviews` | `(owner, repo, number, options?: { maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>` | Oldest first; at most 3 pages unless `maxPages` says otherwise. |
+| `createReview` | `(owner, repo, number, { commitId, event, body }) => Effect<Review, IntegrationError, GitHubClient>` | `POST .../reviews` against head `commitId`. `event` is `COMMENT`, `APPROVE` or `REQUEST_CHANGES`; `COMMENT` needs a body. A lost answer fails `outcomeUnknown`. |
+| `findReviewByWrite` | `(owner, repo, number, { writeId }) => Effect<Option<Review>, IntegrationError, GitHubClient>` | The review whose body carries the marker. |
+| `PullRequest`, `PullEnd`, `PullCommit`, `Review` | schemas | GitHub's JSON narrowed to the fields Smithers reads. A listing's missing merge and size fields decode as `false`, `null` or `0`. |
+| `MergeMethod`, `ReviewEvent`, `Merged` | types | `squash`, `merge`, `rebase`; the review events; `{ sha, merged }`. |
+
+### GitHub.Refs
+
+Branch refs. Nothing here moves an existing ref, so nothing can force one.
+
+| Export | Signature | Notes |
+| --- | --- | --- |
+| `getBranch` | `(owner, repo, name) => Effect<Option<Branch>, IntegrationError, GitHubClient>` | `GET /repos/{owner}/{repo}/git/ref/heads/{name}`; `Option.none()` on a 404. |
+| `createBranch` | `(owner, repo, { name, sha }) => Effect<Branch, IntegrationError, GitHubClient>` | `POST /repos/{owner}/{repo}/git/refs`. 422 when the branch exists. A lost answer fails `outcomeUnknown`; read it back with `getBranch`. |
+| `isBranch`, `requireBranch` | `(name) => boolean`, `(name) => Effect<string, IntegrationError>` | 1 to 200 characters of letters, digits, `.`, `_`, `-` and `/`, in segments that are not empty, don't start with `.` and don't end with `.lock`, with no `..`. |
+| `Branch`, `MAX_BRANCH_LENGTH` | `{ name, sha }`, `200` | |
+
+### GitHub.Commits
+
+| Export | Signature | Notes |
+| --- | --- | --- |
+| `createOnBranch` | `(owner, repo, { branch, expectedHeadOid, headline, body?, additions, deletions }) => Effect<string, IntegrationError, GitHubClient>` | GraphQL `createCommitOnBranch` (`POST /graphql`), fenced by `expectedHeadOid`; answers the new SHA. Each addition is a whole file, base64; 1 to 1,000 changes. A moved branch fails `status: 409, stale: true`, any other GraphQL error `status: 422`, neither retryable. A lost answer fails `outcomeUnknown`: read the branch back and adopt its head when `getCommit` shows it is yours. |
+| `getCommit` | `(owner, repo, sha) => Effect<GitCommit, IntegrationError, GitHubClient>` | `GET /repos/{owner}/{repo}/git/commits/{sha}`: tree, parents and message. |
+| `compare` | `(owner, repo, base, head) => Effect<Comparison, IntegrationError, GitHubClient>` | `GET /repos/{owner}/{repo}/compare/{base}...{head}` with two SHAs, so the answer never changes. `truncated` when GitHub listed `MAX_COMPARE_FILES` (300) files. |
+| `FileAddition`, `GitCommit`, `ChangedFile`, `Comparison` | types and schemas | A changed file's `patch` is absent for a binary or very large file. |
 
 ### GitHub.Sync
 
@@ -28551,6 +28604,77 @@ Import from `@smthrs/notifications/Inbox`. See
 Each predicate reads only the two fields it compares, so any row carrying them
 can be passed.
 
+## Channels
+
+One short message sent to people outside the app, by email (Resend) or
+Telegram (the Bot API), with every failure classified for a flow engine's
+retry. Import from `@smthrs/notifications/Channels`.
+
+### Models
+
+| Export           | Shape                                                                                                                                                                                               |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Channel`        | `"email" \| "telegram"`.                                                                                                                                                                            |
+| `Destination`    | `{ _tag: "email"; to: NonEmptyArray<EmailAddress> }` (at most `maxEmailRecipients`, 50) or `{ _tag: "telegram"; chatId: TelegramChatId }`.                                                          |
+| `Message`        | `{ id; subject; text }`. `id` is the idempotency key, 1 to 256 printable ASCII characters, the same on every attempt; `subject` 1 to 200 characters; `text` 1 to 3,500, so a Telegram message fits. |
+| `Receipt`        | `{ channel: Channel; providerId: string \| null }`: Resend's email id, or Telegram's `message_id` as a string; `null` when the answer named none.                                                   |
+| `EmailAddress`   | A string `isEmailAddress` accepts.                                                                                                                                                                  |
+| `TelegramChatId` | A string `isTelegramChatId` accepts.                                                                                                                                                                |
+
+| Export             | Signature                    | Returns                                                                                                               |
+| ------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `isEmailAddress`   | `(value: string) => boolean` | One `@`, a dot in the domain, no spaces, angle brackets, commas or other separators, at most 254 characters.          |
+| `isTelegramChatId` | `(value: string) => boolean` | A chat's number, such as `123456789` or a supergroup's `-1001234567890`, or a public channel's `@username` (5 to 32). |
+
+### Failures
+
+| Export            | Shape                                                                                                                                                                                                                                         |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DeliveryFailed`  | Tagged `@smthrs/notifications/DeliveryFailed`: `{ channel; code: FailedCode; status?; reason?; retryAfterMillis? }`. Another attempt may clear it: let the engine retry.                                                                      |
+| `DeliveryRefused` | Tagged `@smthrs/notifications/DeliveryRefused`: `{ channel; code: RefusedCode; status?; reason? }`. Another attempt would be refused too: record it and stop.                                                                                 |
+| `DeliveryError`   | The union of both, as a schema a flow step declares.                                                                                                                                                                                          |
+| `FailedCode`      | `"unreachable"` (no answer: the transport failed), `"timeout"` (no whole answer within the bound), `"unavailable"` (5xx, 408 or 409), `"rate_limited"` (429).                                                                                 |
+| `RefusedCode`     | `"rejected"` (a 3xx, which is never followed, or another 4xx; or a destination or message outside its schema, `reason: "invalid_message"`), `"unauthorized"` (401 or 403), `"unconfigured"` (the deployment has no provider for the channel). |
+
+`reason` is the provider's own short error, at most 120 characters: Resend's
+error `name` (`validation_error`, `rate_limit_exceeded`, …) or the Bot API's
+`description` (`Bad Request: chat not found`). `retryAfterMillis` is the wait a
+429 named, from the `Retry-After` header in whole seconds or the Bot API's
+`parameters.retry_after`; it is an own property, which `@smthrs/flow`'s retry
+decision uses in place of the policy's backoff, and it survives the journal.
+Neither failure holds the request, its url, a header or the destination.
+
+### Service and layer
+
+| Export             | Signature                                                                                                      | What it is                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------ | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ChannelsService`  | `{ available: ReadonlyArray<Channel>; send: (destination, message) => Effect.Effect<Receipt, DeliveryError> }` | `available` lists the channels with a provider. `send` makes one request; a destination or message outside its schema is refused `rejected`, then a channel with no provider `unconfigured`, before any request.                                                                                                                                                     |
+| `Channels`         | `Context.Service` under `@smthrs/notifications/Channels`                                                       | The service tag.                                                                                                                                                                                                                                                                                                                                                     |
+| `layer`            | `(options: Options) => Layer<Channels>`                                                                        | Email through Resend when `options.email` is set, Telegram through the Bot API when `options.telegram` is. It owns its Fetch transport, keeps the host's `FetchHttpClient.RequestInit` but forces `redirect: "manual"`, and bounds each send by `options.timeout`. A provider url that isn't absolute `http:` or `https:` fails the layer as a defect naming no url. |
+| `Options`          | `{ email?: EmailProvider; telegram?: TelegramProvider; timeout?: Duration.Duration }`                          |                                                                                                                                                                                                                                                                                                                                                                      |
+| `EmailProvider`    | `{ apiKey: Redacted<string>; from: string; url?: string }`                                                     | A Resend API key, the sender (`Name <address>` on a domain Resend verified, or `onboarding@resend.dev` to reach only the account's own address), and Resend's origin.                                                                                                                                                                                                |
+| `TelegramProvider` | `{ token: Redacted<string>; url?: string }`                                                                    | A bot's token from @BotFather, and the Bot API's origin.                                                                                                                                                                                                                                                                                                             |
+
+| Export               | Value                         |
+| -------------------- | ----------------------------- |
+| `defaultEmailUrl`    | `"https://api.resend.com"`.   |
+| `defaultTelegramUrl` | `"https://api.telegram.org"`. |
+| `defaultTimeout`     | Ten seconds.                  |
+| `maxEmailRecipients` | `50`, Resend's own limit.     |
+
+Email is `POST <url>/emails` with `Authorization: Bearer <apiKey>`,
+`Idempotency-Key: <message.id>` and `{ from, to, subject, text }`: Resend sends
+one email per key within 24 hours. Telegram is `POST <url>/bot<token>/sendMessage`
+with `{ chat_id, text: "<subject>\n\n<text>", link_preview_options: { is_disabled: true } }`,
+as plain text. The Bot API has no idempotency key, so a process that dies between
+Telegram's answer and its own record of it sends twice.
+
+Each send is one span, `notifications.channel.send`, with `smithers.channel`,
+`http.response.status_code`, `smithers.channel.outcome` (`sent`, `failed` or
+`refused`) and `smithers.channel.code`. The HTTP client's own span, which records
+the url (and so the bot token), is off for these requests, and no trace context
+is sent to the provider.
+
 ## Alerts
 
 Run conditions that have lasted too long, turned into durable, coalesced,
@@ -31875,7 +31999,7 @@ https://smithers.sh/docs/reference/api/platform-browser/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-browser/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-browser/docs)
 
-> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/)
+> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/) · [`@smthrs/std`](/docs/reference/api/std/)
 
 ```ts
 import { BrowserServices } from "@smthrs/platform-browser"
@@ -31894,8 +32018,9 @@ OPFS, memory) and which just-bash instance is wired to it, and the signature
 says so. The package's own dependencies are `effect`, `@smthrs/kernel`, whose
 `CommandLine.render` produces the line the interpreter runs and whose
 `withIsolatedFileSystem` marks the mounted volume as confined, `@smthrs/jj`,
-whose wasm-backed `Jj` service the `BrowserHost` bundle composes, and, for the
-durable engine, `@smthrs/flows` with the engine packages it composes and
+whose wasm-backed `Jj` service the `BrowserHost` bundle composes, `@smthrs/std`,
+whose `LanguageServer` the language server binds (TypeScript itself is an
+argument), and, for the durable engine, `@smthrs/flows` with the engine packages it composes and
 `@journeyapps/wa-sqlite`.
 
 :::danger
@@ -32070,32 +32195,32 @@ through them, and [The durable browser engine](https://github.com/smithersai/smi
 explains the design. The three platform services are injected, so a test
 provides faulty ones and an app can share one instance.
 
-| Export                                                                                    | Side   | What it is                                                                                                                                                                                                                                                                                                                                                   |
-| ----------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `BrowserEngine.layer({ name, worker })`                                                   | tab    | Starts the tab's engine worker, asks for persistent storage, and provides `BrowserEngine` over the browser's own channel and storage.                                                                                                                                                                                                                        |
-| `BrowserEngine.make(options)`                                                             | tab    | The same service, requiring `TabChannel` and `StoragePersistence` and a `Scope`.                                                                                                                                                                                                                                                                             |
-| `BrowserEngine.BrowserEngine`                                                             | tab    | The service: `start`, `result`, `cancel`, `signal`, `events`, and `unavailable`, which completes with an `EngineUnavailable` once the tab's worker failed; and the run reads `inspect(runId, { afterSeq?, limit? })` and `list({ limit?, cursor?, roots? })`, answered by the leader's `RunInspection` (`@smthrs/engine-store`), redacted and cut to 16 KiB. |
-| `BrowserEngine.RequestRefused`                                                            | tab    | The leader refused a request; `request` names it and `error` is the failure's tag.                                                                                                                                                                                                                                                                           |
-| `BrowserEngine.EngineUnavailable`                                                         | tab    | The tab's own worker failed: `reason` is `worker-failed` (it threw, as at load) or `engine-failed` (no engine could be built); `error` is a tag. Pending requests fail; later requests recover when a new leader announces itself.                                                                                                                           |
-| `BrowserEngine.RunEvent`, `WorkerLike`, `Options`                                         | tab    | An engine event's execution id and type; the slice of `Worker` the tab uses; the layer's options.                                                                                                                                                                                                                                                            |
-| `BrowserEngine.FlowReference`                                                             | tab    | What the service's calls take of a flow: its `_tag` and its payload, success and error schemas. A whole flow is one.                                                                                                                                                                                                                                         |
-| `BrowserEngine.requests`, `persistence`, `unavailable`                                    | tab    | Counters: requests by `request` and `outcome`; storage answers by `outcome`; failed workers by `reason`.                                                                                                                                                                                                                                                     |
-| `BrowserRuntime.run(options)`                                                             | worker | The worker entry: `serve` over `layerHost` with the browser's own lock and channel, and `options.telemetry`, if given, as where its records go. Returns the fiber.                                                                                                                                                                                           |
-| `BrowserRuntime.serve(options, engine)`                                                   | worker | Waits for the lock, builds `engine`, wakes unfinished runs, announces itself, answers requests and runs tabs' statements. Stops leading if its lock is stolen.                                                                                                                                                                                               |
-| `BrowserRuntime.layerHost({ name, sqlite }, registerFlows)`                               | worker | `layer` over `BrowserSqlite.layer`: `engine.db` on a pool in the OPFS directory `smithers/<name>`, and the shared `app.db` beside it on a connection of its own.                                                                                                                                                                                             |
-| `BrowserRuntime.layer(options, registerFlows)`                                            | worker | `@smthrs/flows`' `Runtime.layer` over an injected `SqlClient`, with the run catalog, the run reads (`RunInspection`, rendering through `options.flows` when given) and the engine host: WebCrypto, the owner identity, `Path`, fetch, a refusing `Jj`, and `RunInspection` for registered flows.                                                             |
-| `BrowserRuntime.Services`, `Host`, `Options`, `HostOptions`, `ServeOptions`, `RunOptions` | worker | The types the functions above take and provide.                                                                                                                                                                                                                                                                                                              |
-| `BrowserRuntime.leaderships`, `wakes`, `requests`, `statements`                           | worker | Counters: leaders; unfinished runs by `outcome`; requests by `request` and `outcome`; shared-database statements by `outcome`.                                                                                                                                                                                                                               |
-| `BrowserSqlite.layerSqlite({ build, directory })`                                         | worker | The `Sqlite` service: the wa-sqlite `build`, loaded lazily, with the OPFS pool `directory` registered as its VFS, held until the scope closes.                                                                                                                                                                                                               |
-| `BrowserSqlite.Build`, `Factory`                                                          | worker | The build as lazy imports: `module` imports `wa-sqlite.mjs`, `wasm` loads `wa-sqlite.wasm`. The package itself never imports the build.                                                                                                                                                                                                                      |
-| `BrowserSqlite.layer({ filename })`                                                       | worker | A `SqlClient` over `filename`, opened on the `Sqlite` service's VFS until the scope closes.                                                                                                                                                                                                                                                                  |
-| `BrowserSqlite.Sqlite`, `open(filename)`, `make(database)`                                | worker | The build-and-VFS service an app can provide itself; open a database on it; build a `SqlClient` over any open wa-sqlite database.                                                                                                                                                                                                                            |
-| `SharedSqlite.layer({ name })`, `make(options)`, `SharedSqlite`                           | tab    | `execute(sql, params)`: run statements on the app's shared database, on the leader's connection, one at a time per tab.                                                                                                                                                                                                                                      |
-| `SharedSqlite.open({ name, within? })`, `Database`, `filename`                            | tab    | The database as `{ execute, close }` Promises, for TanStack DB's browser persistence; resolves once a leader answers, rejects after `within` (30 s) otherwise.                                                                                                                                                                                               |
-| `SharedSqlite.SqliteError`                                                                | tab    | What `Database.execute` rejects with: SQLite's own `message` and `code`, as wa-sqlite's `SQLiteError`, which TanStack DB reads; the `SqlError` is its `cause`.                                                                                                                                                                                               |
-| `WebLock.WebLock`, `make(locks)`, `layer`                                                 | both   | `hold(name, { steal? })`: wait for the exclusive lock, or take it at once with `steal`; hold it until the scope closes. `lost` completes if another context steals it.                                                                                                                                                                                       |
-| `TabChannel.TabChannel`, `make(construct)`, `layer`                                       | both   | `open(name)`: a port that posts to every other port of the channel and subscribes to what they post.                                                                                                                                                                                                                                                         |
-| `StoragePersistence.StoragePersistence`, `make(storage)`, `layer`                         | tab    | `persist`: ask for persistent storage and answer whether the origin has it.                                                                                                                                                                                                                                                                                  |
+| Export                                                                                               | Side   | What it is                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `BrowserEngine.layer({ name, worker })`                                                              | tab    | Starts the tab's engine worker, asks for persistent storage, and provides `BrowserEngine` over the browser's own channel and storage.                                                                                                                                                                                                                        |
+| `BrowserEngine.make(options)`                                                                        | tab    | The same service, requiring `TabChannel` and `StoragePersistence` and a `Scope`.                                                                                                                                                                                                                                                                             |
+| `BrowserEngine.BrowserEngine`                                                                        | tab    | The service: `start`, `result`, `cancel`, `signal`, `events`, and `unavailable`, which completes with an `EngineUnavailable` once the tab's worker failed; and the run reads `inspect(runId, { afterSeq?, limit? })` and `list({ limit?, cursor?, roots? })`, answered by the leader's `RunInspection` (`@smthrs/engine-store`), redacted and cut to 16 KiB. |
+| `BrowserEngine.RequestRefused`                                                                       | tab    | The leader refused a request; `request` names it and `error` is the failure's tag.                                                                                                                                                                                                                                                                           |
+| `BrowserEngine.EngineUnavailable`                                                                    | tab    | The tab's own worker failed: `reason` is `worker-failed` (it threw, as at load) or `engine-failed` (no engine could be built); `error` is a tag. Pending requests fail; later requests recover when a new leader announces itself.                                                                                                                           |
+| `BrowserEngine.RunEvent`, `WorkerLike`, `Options`                                                    | tab    | An engine event's execution id and type; the slice of `Worker` the tab uses; the layer's options.                                                                                                                                                                                                                                                            |
+| `BrowserEngine.FlowReference`                                                                        | tab    | What the service's calls take of a flow: its `_tag` and its payload, success and error schemas. A whole flow is one.                                                                                                                                                                                                                                         |
+| `BrowserEngine.requests`, `persistence`, `unavailable`                                               | tab    | Counters: requests by `request` and `outcome`; storage answers by `outcome`; failed workers by `reason`.                                                                                                                                                                                                                                                     |
+| `BrowserRuntime.run(options)`                                                                        | worker | The worker entry: `serve` over `layerHost` with the browser's own lock and channel, and `options.telemetry`, if given, as where its records go. With `options.prepare`, the leader runs it on the app's database as `device/prepare` before serving any tab (`BrowserRuntime.Prepare`). Returns the fiber.                                                   |
+| `BrowserRuntime.serve(options, engine)`                                                              | worker | Waits for the lock, builds `engine`, wakes unfinished runs, announces itself, answers requests and runs tabs' statements. Stops leading if its lock is stolen.                                                                                                                                                                                               |
+| `BrowserRuntime.layerHost({ name, sqlite }, registerFlows)`                                          | worker | `layer` over `BrowserSqlite.layer`: `engine.db` on a pool in the OPFS directory `smithers/<name>`, and the shared `app.db` beside it on a connection of its own.                                                                                                                                                                                             |
+| `BrowserRuntime.layer(options, registerFlows)`                                                       | worker | `@smthrs/flows`' `Runtime.layer` over an injected `SqlClient`, with the run catalog, the run reads (`RunInspection`, rendering through `options.flows` when given) and the engine host: WebCrypto, the owner identity, `Path`, fetch, a refusing `Jj`, and `RunInspection` for registered flows.                                                             |
+| `BrowserRuntime.Services`, `Host`, `Options`, `HostOptions`, `ServeOptions`, `RunOptions`, `Prepare` | worker | The types the functions above take and provide. `Prepare` is `{ epoch, success, run }`: what the leader runs on the app's database before serving it.                                                                                                                                                                                                        |
+| `BrowserRuntime.leaderships`, `wakes`, `preparations`, `requests`, `statements`                      | worker | Counters: leaders; unfinished runs by `outcome`; preparations of the app's database by `outcome`; requests by `request` and `outcome`; shared-database statements by `outcome`.                                                                                                                                                                              |
+| `BrowserSqlite.layerSqlite({ build, directory })`                                                    | worker | The `Sqlite` service: the wa-sqlite `build`, loaded lazily, with the OPFS pool `directory` registered as its VFS, held until the scope closes.                                                                                                                                                                                                               |
+| `BrowserSqlite.Build`, `Factory`                                                                     | worker | The build as lazy imports: `module` imports `wa-sqlite.mjs`, `wasm` loads `wa-sqlite.wasm`. The package itself never imports the build.                                                                                                                                                                                                                      |
+| `BrowserSqlite.layer({ filename })`                                                                  | worker | A `SqlClient` over `filename`, opened on the `Sqlite` service's VFS until the scope closes.                                                                                                                                                                                                                                                                  |
+| `BrowserSqlite.Sqlite`, `open(filename)`, `make(database)`                                           | worker | The build-and-VFS service an app can provide itself; open a database on it; build a `SqlClient` over any open wa-sqlite database.                                                                                                                                                                                                                            |
+| `SharedSqlite.layer({ name })`, `make(options)`, `SharedSqlite`                                      | tab    | `execute(sql, params)`: run statements on the app's shared database, on the leader's connection, one at a time per tab.                                                                                                                                                                                                                                      |
+| `SharedSqlite.open({ name, within? })`, `Database`, `filename`                                       | tab    | The database as `{ execute, close }` Promises, for TanStack DB's browser persistence; resolves once a leader answers, rejects after `within` (30 s) otherwise.                                                                                                                                                                                               |
+| `SharedSqlite.SqliteError`                                                                           | tab    | What `Database.execute` rejects with: SQLite's own `message` and `code`, as wa-sqlite's `SQLiteError`, which TanStack DB reads; the `SqlError` is its `cause`.                                                                                                                                                                                               |
+| `WebLock.WebLock`, `make(locks)`, `layer`                                                            | both   | `hold(name, { steal? })`: wait for the exclusive lock, or take it at once with `steal`; hold it until the scope closes. `lost` completes if another context steals it.                                                                                                                                                                                       |
+| `TabChannel.TabChannel`, `make(construct)`, `layer`                                                  | both   | `open(name)`: a port that posts to every other port of the channel and subscribes to what they post.                                                                                                                                                                                                                                                         |
+| `StoragePersistence.StoragePersistence`, `make(storage)`, `layer`                                    | tab    | `persist`: ask for persistent storage and answer whether the origin has it.                                                                                                                                                                                                                                                                                  |
 
 `BrowserSqlite` uses `@journeyapps/wa-sqlite`, the build TanStack DB's browser
 persistence uses, so an app ships one SQLite. The leader's `layerHost` opens
@@ -32214,6 +32339,75 @@ const terminal = Effect.gen(function*() {
   yield* connection.send("ls\r")
 }).pipe(Effect.scoped, Effect.provide(TerminalSocket.layerWebSocket))
 ```
+
+## The language server
+
+`BrowserLanguageServer` binds `@smthrs/std`'s `LanguageServer` to
+TypeScript's language service in a dedicated worker, over a read-only
+workspace whose files the tab supplies: a repository at a commit, say. Its
+answers are the Language Server Protocol's own shapes, as
+`@smthrs/platform-node`'s `NodeLanguageServer` gives them, so a consumer
+decodes one wire whichever host answered.
+
+```ts
+// In the tab: starts the worker, sends it the file list, answers its reads.
+const make: (options: {
+  readonly worker: () => WorkerLike
+  readonly workspace: {
+    readonly paths: ReadonlyArray<string>
+    readonly read: (path: string) => Effect.Effect<string | undefined, unknown>
+  }
+  readonly timeout?: Duration.Input // default 60 seconds
+  readonly concurrency?: number // reads at once, default 8
+}) => Effect.Effect<LanguageServer.LanguageServer, never, Scope.Scope>
+
+// In the worker module: the worker entry.
+const serve: (options: {
+  readonly typescript: typeof import("typescript")
+  readonly lib: (fileName: string) => Promise<string | undefined>
+  readonly limits?: { readonly files?: number; readonly bytes?: number }
+}) => Fiber.Fiber<never>
+```
+
+| Request                               | Answer                                                                                                                  |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `hover`                               | `{ contents: { kind: "markdown", value }, range }`: the signature in a `typescript` fence, the documentation, the tags. |
+| `definition`, `implementation`        | `Location[]`; a definition in TypeScript's own lib files names a path under `/.typescript/` (`isLib`).                  |
+| `references`                          | `Location[]` across every script under the file's `tsconfig.json`.                                                      |
+| `documentSymbols`                     | `DocumentSymbol[]`, the file's outline, without its imports.                                                            |
+| `workspaceSymbols`                    | `SymbolInformation[]`, at most 100, over the files loaded so far.                                                       |
+| `diagnostics`                         | `{ kind: "full", items }`: syntactic and semantic, minus the errors that only say a package is missing.                 |
+| `sync`, `close`                       | Overlay a file's text, or drop the overlay; a file the workspace lacks can be synced.                                   |
+| `prepareCallHierarchy`, calls in, out | Fail with `unsupported`.                                                                                                |
+
+- **Paths.** Requests name absolute workspace paths (`/src/index.ts` for the
+  file list's `src/index.ts`), with 0-based positions; every URI in an answer
+  is `uriOf` one, and `pathOf` reads it back.
+- **Loading.** A request loads its file and the file's import closure:
+  relative imports, `/// <reference path>`, and what `tsconfig.json`'s `paths`
+  and `baseUrl` map into the workspace, resolved against the file list. The
+  options are the nearest `tsconfig.json` or `jsconfig.json`, with relative
+  `extends`, over defaults that allow JavaScript and JSX. `references` widens
+  the program to every script under that config's directory, outside
+  `node_modules`.
+- **Limits.** A workspace loads at most 2,000 files and 16 MiB. A file past
+  them fails with `response_too_large`; each answer's span records `files` and
+  `partial`.
+- **Packages.** A commit holds no `node_modules`, so diagnostics leave out a
+  missing module or its declarations (2307, 2792, 7016, 2688), missing
+  `@types/node` or test-runner globals (2580 to 2584, 2591 to 2593) and JSX
+  without React's types (7026, 2875).
+- **Failures.** A path outside the workspace is `not_found`, a file that is
+  not text `binary_file`, a TypeScript crash `request_failed`; a worker that
+  fails fails every waiting and later request with `provider_unavailable`; a
+  request past the timeout fails with `timeout`.
+- **Records.** `smithers_browser_language_server_requests` by `method` and
+  `outcome`, `smithers_browser_language_server_ms` by `method`,
+  `smithers_browser_language_server_files`, and a span
+  `browser.language_server.<method>` per request; none carries a path or text.
+
+[Show code intelligence in a page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/guides/show-code-intelligence.md) wires
+it into a Vite app.
 
 ## Browser support
 
@@ -32683,7 +32877,10 @@ Stores the intent and arms the alarm at now plus `startGraceMs`, runs `effect`,
 then moves the alarm to now. Returns `effect`'s result, or its failure
 unchanged. The same intent again stores nothing and runs `effect` again;
 another intent for the same object fails with `IntentConflict` before anything
-is stored or run.
+is stored or run. An intent's `origin`, the door and actor kind `intent` read
+from the caller's `RunMetrics.CurrentOrigin` (`@smthrs/flow`), is not part of
+its identity: the alarm admits the run under it, so the run's usage metrics
+carry it, and a second start with another origin is the same intent.
 
 ### `ExecutionObject.wake`
 
@@ -40512,6 +40709,27 @@ gone. `Identity.data` over `maxDataBytes`, or joining one socket twice, dies.
 | `roster`     | `Stream<ReadonlyArray<Participant>>` | The current roster, then every change; empty while not open.                                         |
 | `status`     | `Stream<Status>`                     | `Connecting`, `Open { self }`, `Offline { attempt, code }`, `Closed { code }`.                       |
 
+## Shared text
+
+Since 1.0.0-rc.17. [Shared text](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/concepts/shared-text.md) explains the design;
+this section lists the exports.
+
+| Export                              | What it is                                                                                                                  |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `make`                              | `Effect<SharedText, never, Scope>`: an empty replica, closed with its scope.                                                |
+| `SharedText.text`                   | `Effect<string>`: the text now.                                                                                             |
+| `SharedText.apply(update)`          | Merges another replica's update; fails `InvalidUpdate` (`malformed`) and changes nothing for bytes that aren't one.         |
+| `SharedText.edit(changes)`          | Makes `Change`s (`{ from, to, insert }`) in one transaction; answers the update, or `undefined` when nothing changed.        |
+| `SharedText.replace(next, options)` | Makes the text `next` with one change, placed by `caret` and moved past what arrived since `base`; answers as `edit` does. |
+| `SharedText.anchor(index)`          | `Effect<Uint8Array>`: a place other replicas resolve.                                                                       |
+| `SharedText.resolve(anchor)`        | `Effect<number \| undefined>`: where an anchor is now; `undefined` before its text arrives or for bytes that aren't one.     |
+| `SharedText.snapshot`               | `Effect<Uint8Array>`: everything the replica holds, as one update.                                                          |
+| `changeOf(before, after, caret?)`   | The one change between two texts, never splitting a surrogate pair.                                                         |
+| `seed(text)`                        | A document's first content, the same bytes for the same text.                                                               |
+| `validate(update, { seed })`        | Fails `InvalidUpdate` for malformed bytes, or `seed_client` for text written as `seedClient` outside a seed or a seed with anyone else's. |
+| `merge(updates)`                    | Several updates as one.                                                                                                     |
+| `textName`, `seedClient`            | `"text"`, the document's one text, and `0`, the replica only a seed writes as.                                              |
+
 ## Test helpers
 
 | Export                                                               | Source                                                                                                                         | Notes                                                  |
@@ -44536,6 +44754,386 @@ Migrations are internal. The export map null-maps
 `0004_fire_run_index` in order. The package exports
 `@smthrs/triggers/package.json`. It does not export `internal/*` or nested
 `*/index` subpaths.
+
+---
+
+# @smthrs/views
+https://smithers.sh/docs/reference/api/views/
+
+> **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/ui/views/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/ui/views/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/ui/views/docs)
+
+> **Related APIs:** [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/harness`](/docs/reference/api/harness/)
+
+The package root exports eight namespaces and nothing else:
+
+```ts
+import { Bridge, Home, Interactions, Presentation, PresentationRealm, ViewCode, ViewCsp, WebPage } from "@smthrs/views"
+```
+
+## `ViewCode`
+
+### `ViewCode.check`
+
+```ts
+const check: (source: string, options: CheckOptions) => Effect.Effect<CheckedModule, ViewCodeError>
+```
+
+Checks and compiles a view module. `options.components` is the component
+names the presentation bundle carries, usually `realm.components`. It parses
+the module with `@babel/parser`, reads its `interactions`, refuses what a view
+may not do, and compiles it with sucrase (`typescript`, `jsx`, `imports`, the
+automatic JSX runtime) to the CommonJS body the realm evaluates.
+
+It refuses:
+
+- more than `maxSourceBytes` (64 KiB) of UTF-8, or a lone UTF-16 surrogate;
+- imports other than `react` (values `Fragment`, `createElement`,
+  `Children`, `cloneElement`, `isValidElement`; any type), `@smthrs/ui` (named
+  components from `options.components`) and `smithers:view` (`event`,
+  `ViewProps`, `ViewEvent`); `React.<name>` outside the same values;
+- dynamic `import()`, `import.meta`, `import x = require()`, `export =`,
+  `export ... from`, namespaces and `declare` blocks, `debugger`;
+- exports other than `default`, `interactions`, `reduce` and types;
+- the names `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`,
+  `navigator`, `localStorage`, `sessionStorage`, `indexedDB`, `caches`,
+  `document`, `window`, `globalThis`, `self`, `location`, `top`, `parent`,
+  `opener`, `postMessage`, `setTimeout`, `setInterval`,
+  `requestAnimationFrame`, `queueMicrotask`, `Date`, `performance`, `eval`,
+  `Function`, `Proxy`, `Reflect`, `require`, `module`, `exports`, `process`,
+  `WebAssembly` and the others in `src/internal/vocabulary.ts`, and
+  `Math.random`;
+- the properties `constructor`, `__proto__`, `prototype`,
+  `dangerouslySetInnerHTML`, `innerHTML`, `outerHTML`, `srcdoc`,
+  `contentWindow`, `cookie` and the other accessors in the vocabulary;
+- the elements `script`, `iframe`, `object`, `embed`, `link`, `meta`, `base`,
+  `a`, `style`, `template`, `foreignObject`, `use`, `image`, `animate`, media
+  elements and the others in the vocabulary, in JSX or as a literal
+  `createElement` type;
+- every `on*` attribute, `href`, `src` (except a `data:image` URL on `<img>`),
+  `srcSet`, `action`, `formAction`, `formTarget`, `target`, `download`,
+  `ping`, `poster`, `background`, `data`, `srcdoc`, `sandbox`, `allow`,
+  `httpEquiv`, `xmlns` and namespaced attributes such as `xlink:href`;
+- `javascript:` and `vbscript:` anywhere in a string, template or JSX text,
+  and `<!--` or `-->` anywhere in the source;
+- an `interactions` export that is not an object literal of declared
+  interactions, a `state` interaction without `reduce`, and a literal
+  `data-event` that is malformed or names an undeclared event.
+
+### `ViewCode.CheckedModule`
+
+```ts
+class CheckedModule {
+  readonly source: string // the TSX as written
+  readonly compiled: string // the CommonJS body the realm evaluates
+  readonly digest: string // SHA-256 of source, lowercase hex
+  readonly interactions: Interactions.Declared
+  readonly reduces: boolean // whether it exports reduce
+}
+```
+
+### `ViewCode.ViewCodeError`
+
+```ts
+class ViewCodeError {
+  readonly _tag: "@smthrs/views/ViewCodeError"
+  readonly reason: "too_large" | "malformed_text" | "syntax" | "refused"
+  readonly detail: Redacted.Redacted<string> // one line per problem, "line:column: message"
+  readonly problems: Redacted.Redacted<ReadonlyArray<{ message: string; line?: number; column?: number }>>
+  readonly message: string // the reason only
+}
+```
+
+`detail` and `problems` are written for the renderer that wrote the module,
+at most `maxProblems` (20) problems in source order. They quote the module's
+identifiers and text, which a model can fill with conversation content, so
+both print as `<redacted>`; read them with `Redacted.value` for a correction
+prompt, never for a log, a span or a metric. `message` is fixed text for the
+reason, such as `The view's module does something a view may not`, so a
+caller's own span or log line around a check carries no module content.
+
+### Constants
+
+`maxSourceBytes` (65536), `maxProblems` (20), `modules`, `reactValues`,
+`viewValues`.
+
+## `PresentationRealm`
+
+### `PresentationRealm.make`
+
+```ts
+const make: (options: Options) => Effect.Effect<Realm, RealmError, QuickJSVariant.Variant | Scope.Scope>
+
+interface Options {
+  readonly bundle: string // the presentation bundle's source
+  readonly limits?: Partial<Limits> | undefined
+}
+```
+
+Loads a realm over the bundle for the life of the scope. It compiles the
+QuickJS build the host names (`QuickJSVariant` from `@smthrs/harness`), at most
+once per build, removes `Date`, `Math.random`, `Proxy`, `WeakRef` and
+`FinalizationRegistry`, evaluates the bundle, and fails with `load_failed` when
+the bundle throws or installs no renderer. That runtime serves the first call;
+every later render or interaction loads the bundle into a fresh runtime, and
+each runtime closes after its call, so nothing one view changes reaches
+another. Once its scope closes, every call fails with `load_failed`.
+
+### `PresentationRealm.layer`
+
+```ts
+const layer: (options: Options) => Layer.Layer<PresentationRealm, RealmError, QuickJSVariant.Variant>
+```
+
+### `PresentationRealm.Realm`
+
+```ts
+interface Realm {
+  readonly render: (
+    input: { module: CheckedModule; props: unknown; state: unknown }
+  ) => Effect.Effect<string, RealmError>
+  readonly interact: (
+    input: { module: CheckedModule; props: unknown; state: unknown; event: Interactions.Event }
+  ) => Effect.Effect<{ state: unknown; html: string }, RealmError>
+  readonly components: ReadonlyArray<string>
+}
+```
+
+- `render` evaluates the module afresh and renders its default export with
+  `{ props, state }` through `renderToStaticMarkup`.
+- `interact` runs `reduce(state, event)` and renders the state it returns.
+- `components` is what the bundle resolves `@smthrs/ui` to, for
+  `ViewCode.check`.
+
+Props and state must be JSON. Each call is traced as
+`PresentationRealm.render` or `PresentationRealm.interact`. A failed call's
+span ends through `SpanFailure` from `@smthrs/flow`: its status reads
+`redacted`, and only the attributes `realm.reason` and `realm.limit` say why.
+
+### `PresentationRealm.Limits` and `defaultLimits`
+
+| Limit         | Default | Bounds                                                             |
+| ------------- | ------- | ------------------------------------------------------------------ |
+| `memoryBytes` | 64 MiB  | the realm's heap                                                   |
+| `stackBytes`  | 128 KiB | the interpreter's stack; keep it under a third of the host's stack |
+| `loadMs`      | 10 000  | loading the bundle                                                 |
+| `renderMs`    | 1 000   | one render or interaction                                          |
+| `steps`       | 2 000   | interrupt polls per render, about ten thousand operations each     |
+| `propsBytes`  | 256 KiB | a render's props, as UTF-8 JSON                                    |
+
+State is bounded by `Bridge.maxStateBytes` (16 KiB) on the way in and out, and
+HTML by `Bridge.maxHtmlBytes` (512 KiB).
+
+### `PresentationRealm.RealmError`
+
+```ts
+class RealmError {
+  readonly _tag: "@smthrs/views/RealmError"
+  readonly reason: "load_failed" | "invalid_input" | "render_failed" | "limit_exceeded"
+  readonly limit?: "time" | "steps" | "memory" | "stack" | "html" | "state" | "props"
+  readonly detail: Redacted.Redacted<string> // for the renderer; read with Redacted.value
+  readonly message: string // the reason and the limit only
+}
+```
+
+After a time, step, memory or stack limit the realm loads again on its next
+call. A host stack overflow instead abandons the runtime without disposal and
+quarantines its shared WASM module. Calls and new realms over that module fail
+closed; supply a fresh variant to recover.
+
+`detail` says what went wrong for the renderer that wrote the module, such as
+`RangeError: no board`. It can quote the module or what the module threw,
+which can be its props, state or event, so it prints as `<redacted>`; read it
+with `Redacted.value` for a correction prompt, never for a log, a span or a
+metric. `message` is fixed text for the reason and the limit, such as
+`The view's module failed` or `The view crossed its steps limit`, so a
+caller's own span or log line around a render carries no view content.
+
+### `PresentationRealm.limitHits`
+
+`Metric.Counter<number>` named `realm.limit_hit`, with the attribute `limit`.
+
+## `Presentation`
+
+The realm half of a presentation bundle. It runs inside QuickJS, so it imports
+nothing but this package's vocabulary.
+
+### `Presentation.install`
+
+```ts
+const install: (options: InstallOptions) => Installed
+
+interface InstallOptions {
+  readonly react: { Fragment; createElement; Children; cloneElement; isValidElement }
+  readonly jsxRuntime: { Fragment; jsx; jsxs }
+  readonly renderToStaticMarkup: (element: any) => string
+  readonly components: Readonly<Record<string, unknown>>
+}
+```
+
+Publishes the renderer at `globalThis.__smithersPresentation` (`globalName`)
+and deeply freezes everything a view reaches by name: the realm's global and
+its prototypes, and `require` with every module behind it, React's `Children`,
+each component and its statics, the element constructors and `event`
+included. A bundle calls it once, as its last statement. A view's `require` resolves `react`,
+`react/jsx-runtime`, `@smthrs/ui` (the components, frozen) and
+`smithers:view`; anything else throws. The `react` and `react/jsx-runtime`
+element constructors refuse refused elements and attributes early.
+
+Before it publishes, it sets `globalThis.__smithersHostGuard`
+(`hostGuardName`) to `guardHost` and renders an element built by hand as
+`<script>`; if the renderer emits it, `install` throws, so a bundle whose
+renderer skips the guard never loads.
+
+### `Presentation.guardRenderer`
+
+```ts
+const guardRenderer: (source: string) => string
+```
+
+Patches the source of React's static renderer
+(`react-dom/cjs/react-dom-server-legacy.browser.production.js`) so every
+element it emits passes `guardHost` first, whether a constructor, a component
+or the view's own hand built it, and whatever changed it afterwards. A bundle
+builder applies it where it loads that file, for example in an esbuild
+`onLoad` hook. It throws when the source has no single
+`pushStartInstance(target, type, props, ...)`.
+
+### `Presentation.guardHost`
+
+```ts
+const guardHost: (type: string, props: unknown) => Readonly<Record<string, unknown>>
+```
+
+Reads an element's own enumerable props once, drops event handlers (React
+never emits one, and a component such as Radix's `Label` sets its own),
+refuses what `ViewCode` refuses, and returns the frozen copy the renderer
+emits.
+
+### `Presentation.make`
+
+The same renderer without publishing it on the global, for tests. It shallow-freezes the React, JSX-runtime, component and `smithers:view` facades; deep hardening happens only during `install`. It renders with the `renderToStaticMarkup` it is given, guarded or not.
+
+### `Presentation.Installed`
+
+```ts
+interface Installed {
+  readonly render: (factory: ModuleFactory, props: string, state: string) => string
+  readonly reduce: (factory: ModuleFactory, state: string, event: string) => string
+  readonly components: ReadonlyArray<string>
+}
+```
+
+## `ViewCsp`
+
+| Export                                             | What it is                                                                                                                                                                                                                                            |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sandbox`                                          | `"allow-scripts"`, the frame's whole `sandbox` attribute                                                                                                                                                                                              |
+| `nonceAttribute`                                   | `"data-smithers-nonce"`, where the frame document carries the mount's nonce                                                                                                                                                                           |
+| `hash(script)`                                     | `'sha256-<base64>'` over the script's UTF-8                                                                                                                                                                                                           |
+| `policy(runtimeHash)`                              | the frame's CSP: `default-src 'none'`, `script-src` the hash, `script-src-attr 'none'`, `style-src 'unsafe-inline'`, `img-src data:`, `font-src data:`, and `'none'` for connect, media, object, frame, child, worker, manifest, base and form-action |
+| `frameDocument({ runtime, nonce, theme, styles })` | the frame's `srcdoc`: the policy, the styles and the runtime, with no view content. A `</script` or `</style` inside is escaped, and the hash covers the runtime as written                                                                           |
+
+## `Bridge`
+
+The four messages, JSON-RPC 2.0, named after MCP Apps where they overlap:
+
+| Schema               | Method                                  | Direction                                                                   |
+| -------------------- | --------------------------------------- | --------------------------------------------------------------------------- |
+| `Initialize`         | `ui/initialize`                         | frame to page, by window message, with `{ nonce }`                          |
+| `InitializeResult`   | (the answer)                            | page to frame, with `{ html, theme, size }` and a transferred `MessagePort` |
+| `HostContextChanged` | `ui/notifications/host-context-changed` | page to frame, `{ html?, theme? }`                                          |
+| `SizeChanged`        | `ui/notifications/size-changed`         | frame to page, `{ height }`                                                 |
+| `Interaction`        | `smithers/interaction`                  | frame to page, `{ event, arg?, values? }`                                   |
+
+### `Bridge.receive`
+
+```ts
+const receive: (input: {
+  message: unknown
+  declared: Interactions.Declared
+  window: RateWindow
+  now: number
+}) => { verdict: Verdict; window: RateWindow }
+
+type Verdict =
+  | { _tag: "Resize"; height: number }
+  | { _tag: "State"; event: Interactions.Event }
+  | { _tag: "Message"; event: Interactions.Event; label: string; values: Values }
+  | { _tag: "Refused"; reason: "wrong_source" | "malformed" | "too_large" | "undeclared" | "rate_limited" }
+```
+
+What the page does with one message from the frame's port. It decodes the
+message, refuses values over `maxValuesBytes` (16 KiB), an event the view did
+not declare (own properties only), and more than `maxInteractionsPerSecond`
+(10) in any second. Start `window` empty and keep the one it returns.
+
+### `Bridge.acceptInitialize`, `initializeResult`, `hostContextChanged`
+
+`acceptInitialize(message, nonce)` decodes `ui/initialize` and checks the
+nonce; the caller checks that the message came from its own frame.
+`initializeResult(initialize, context)` and `hostContextChanged(params)` write
+the page's messages.
+
+### Sizes and bounds
+
+`Size` (`"inline" | "full"`), `Theme` (`"light" | "dark"`), `inlineHeight`
+(80 to 480), `inlineFrameHeight(reported)`, `maxStateBytes`, `maxHtmlBytes`,
+`maxValues` (64), `maxReportedHeight`.
+
+## `Interactions`
+
+| Export                   | What it is                                                                                                   |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `Name`                   | a lowercase letter, then up to 31 letters, digits, `_` or `-`                                                |
+| `Interaction`            | `{ kind: "state" }` or `{ kind: "message", label }`                                                          |
+| `Declared`               | a module's `interactions`: at most `maxDeclared` (32), every key a `Name`                                    |
+| `Event`                  | `{ name, arg? }`, what `reduce` receives                                                                     |
+| `parse(attribute)`       | reads `"name"` or `"name:arg"`; everything after the first `:` is the argument, at most `maxArgLength` (256) |
+| `format(event)`          | the inverse of `parse`                                                                                       |
+| `lookup(declared, name)` | the declared interaction, or `None`; inherited names never match                                             |
+
+## `Home`
+
+A repository's own home: the sections and blocks `.smithers/home.json` declares, and who sees each section. See
+[Read a repository's home](https://github.com/smithersai/smithers/blob/main/packages/smithers/ui/views/docs/read-a-home.md).
+
+| Export | What it is |
+| --- | --- |
+| `path` | `".smithers/home.json"` |
+| `read(text)` | `{ _tag: "Declared", sections, contributors, skipped }` or `{ _tag: "Invalid", reason }`; never throws |
+| `Read`, `Invalid`, `Section` | the answer; why a file is not a home: `json`, `shape`, `sections`, `section`, `blocks` or `block`; a section `{ title?, audience, blocks }` |
+| `Audience`, `audiences` | `everyone`, `contributor`, `maintainer`, from the widest |
+| `Contributors` | who counts as a contributor: `role` or `anyone` |
+| `sees(viewer, section)`, `visible(sections, viewer)`, `widen(viewer, contributors)` | whether an audience may see a section's; the sections it may see, in order; `everyone` as a contributor on a home open to anyone |
+| `SectionHeading` | a section's `{ title?, audience? }` as declared |
+| `Block`, `kinds`, `liveKinds` | the union of the sixteen block schemas, and its type; every kind; the live ones, `flows`, `stack`, `issues`, `runs` |
+| `TextBlock`, `LinksBlock`, `FlowsBlock`, `PromptBlock` | `{ type, title?, text }`; `{ type, title?, links: [{ label, url }] }`; `{ type, title? }`; `{ type, flow?, title?, placeholder? }` |
+| `MarkdownBlock`, `StackBlock`, `AppBlock`, `ViewBlock` | `{ type, path, title? }`; `{ type, title? }`; `{ type, flow, title, picture }`; `{ type, flow }` |
+| `HeroBlock`, `CodeBlock`, `CardsBlock`, `StatsBlock`, `ReleasesBlock` | `{ type, title, tagline?, text?, install?, actions?, announcement? }`; `{ type, code, file?, language?, title? }`; `{ type, cards, title?, more? }`; `{ type, stats, title? }`; `{ type, releases, title?, more? }` |
+| `IssuesBlock`, `RunsBlock`, `ActionBlock` | `{ type, title? }`; `{ type, title? }`; `{ type, flow, title, key? }` |
+| `Card`, `Stat`, `Release`, `Link` | `{ title, text?, label?, url? }`; `{ value, label }`; `{ name, url, date, summary? }`; `{ label, url }` |
+| `Title`, `Prose`, `Line`, `Command`, `Code`, `Language`, `IsoDate`, `Key`, `Url`, `RepositoryPath`, `FlowName`, `AppPicture` | the field schemas the blocks share |
+| `maximumSections`, `maximumBlocks`, `maximumEntries`, `maximumStats`, `maximumActions` | 8, 32, 12, 6, 3 |
+| `maximumTitleLength`, `maximumLineLength`, `maximumTextLength`, `maximumCodeLength`, `maximumUrlLength`, `htmlPattern` | 120, 280, 4,096, 4,096, 2,048, and the pattern of a tag, a closing tag, a comment or a processing instruction |
+
+## `WebPage`
+
+Whether an outside page shows in a frame, asked from a server, and the card
+shown in its place. See [Check a web page before framing it](https://github.com/smithersai/smithers/blob/main/packages/smithers/ui/views/docs/check-a-web-page.md).
+
+| Export                                         | What it is                                                                                                                                  |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check(url, options)`                          | `Effect<Checked, never, HttpClient>`: requests the page as a frame would, guarded on every hop; never fails                                 |
+| `Options`                                      | `{ ancestors, privateHosts?, maxRedirects? (5), timeout? (8 s), headTimeout? (3 s), maxBytes? (256 KiB), userAgent? }`                      |
+| `Checked`                                      | schema and type: `{ framing, reason?, status?, title?, description?, icon? }`                                                               |
+| `Preview`                                      | schema and type: `{ title?, description?, icon? }`                                                                                          |
+| `FRAMINGS`, `Framing`                          | `allowed`, `refused`, `unknown`                                                                                                             |
+| `REASONS`, `Reason`                            | `x_frame_options`, `frame_ancestors`, `insecure`, `content`, `status`, `invalid_url`, `private_host`, `redirects`, `timeout`, `unreachable` |
+| `framing(headers, { page, ancestors })`        | `{ framing: "allowed" }` or `{ framing: "refused", reason }` from a response's headers, as a browser decides                                |
+| `content(headers)`                             | whether a sandboxed frame shows the response: not an attachment, a PDF or an octet stream                                                   |
+| `preview(html, pageUrl)`                       | the `Preview` read from a page's head                                                                                                       |
+| `HeaderRecord`                                 | response headers by name, in any case                                                                                                       |
+| `MAX_TITLE`, `MAX_DESCRIPTION`, `MAX_ICON_URL` | 200, 300 and 2,048 characters                                                                                                               |
 
 ---
 

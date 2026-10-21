@@ -606,3 +606,11 @@ reports unfinished observation independently of the run's terminal verdict.
 `/branch` presence RPCs and lease roster. It requires `RuntimeBridge.Config`
 authentication on every RPC and refuses non-presence operations as `unsupported`.
 This is a host adapter used by `GatewayServer`, rather than a package export path.
+
+### Engine inspection journals
+
+`InspectionJournal.inspectionJournal(runId, events)` adapts `RunInspection.Event` pages into the existing control journal envelope. It sorts and deduplicates by the native sequence, preserves timestamps and generation, and refuses clipped, malformed or non-object payloads. `monitorFromInspection(run, events, at?)` invokes the canonical `RunTrace.monitorFromJournal` fold. No flow body runs and no new engine events or storage are introduced.
+
+`RunTrace.monitorFromJournal` additionally accepts a fourth options argument `{ childBoundaries: true }` to show named child-flow calls alongside action steps. Root flow calls remain hidden; their visible dependencies pass through the hidden structural nodes. The default monitor presentation is unchanged.
+
+`inspectionForest([{ runId, events }, ...])` merges related runs' recorded evidence by timestamp, execution identity and native sequence, exposing a presentation cursor while retaining the original envelope sequence and source identity. Step and call facts preserve the source coordinates required by the canonical agent-cell fold. A host must freeze the read snapshot while replaying: newly discovered child evidence can otherwise change presentation ordinals.

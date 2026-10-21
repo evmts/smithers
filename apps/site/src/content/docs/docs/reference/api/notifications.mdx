@@ -381,6 +381,77 @@ Import from `@smthrs/notifications/Inbox`. See
 Each predicate reads only the two fields it compares, so any row carrying them
 can be passed.
 
+## Channels
+
+One short message sent to people outside the app, by email (Resend) or
+Telegram (the Bot API), with every failure classified for a flow engine's
+retry. Import from `@smthrs/notifications/Channels`.
+
+### Models
+
+| Export           | Shape                                                                                                                                                                                               |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Channel`        | `"email" \| "telegram"`.                                                                                                                                                                            |
+| `Destination`    | `{ _tag: "email"; to: NonEmptyArray<EmailAddress> }` (at most `maxEmailRecipients`, 50) or `{ _tag: "telegram"; chatId: TelegramChatId }`.                                                          |
+| `Message`        | `{ id; subject; text }`. `id` is the idempotency key, 1 to 256 printable ASCII characters, the same on every attempt; `subject` 1 to 200 characters; `text` 1 to 3,500, so a Telegram message fits. |
+| `Receipt`        | `{ channel: Channel; providerId: string \| null }`: Resend's email id, or Telegram's `message_id` as a string; `null` when the answer named none.                                                   |
+| `EmailAddress`   | A string `isEmailAddress` accepts.                                                                                                                                                                  |
+| `TelegramChatId` | A string `isTelegramChatId` accepts.                                                                                                                                                                |
+
+| Export             | Signature                    | Returns                                                                                                               |
+| ------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `isEmailAddress`   | `(value: string) => boolean` | One `@`, a dot in the domain, no spaces, angle brackets, commas or other separators, at most 254 characters.          |
+| `isTelegramChatId` | `(value: string) => boolean` | A chat's number, such as `123456789` or a supergroup's `-1001234567890`, or a public channel's `@username` (5 to 32). |
+
+### Failures
+
+| Export            | Shape                                                                                                                                                                                                                                         |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DeliveryFailed`  | Tagged `@smthrs/notifications/DeliveryFailed`: `{ channel; code: FailedCode; status?; reason?; retryAfterMillis? }`. Another attempt may clear it: let the engine retry.                                                                      |
+| `DeliveryRefused` | Tagged `@smthrs/notifications/DeliveryRefused`: `{ channel; code: RefusedCode; status?; reason? }`. Another attempt would be refused too: record it and stop.                                                                                 |
+| `DeliveryError`   | The union of both, as a schema a flow step declares.                                                                                                                                                                                          |
+| `FailedCode`      | `"unreachable"` (no answer: the transport failed), `"timeout"` (no whole answer within the bound), `"unavailable"` (5xx, 408 or 409), `"rate_limited"` (429).                                                                                 |
+| `RefusedCode`     | `"rejected"` (a 3xx, which is never followed, or another 4xx; or a destination or message outside its schema, `reason: "invalid_message"`), `"unauthorized"` (401 or 403), `"unconfigured"` (the deployment has no provider for the channel). |
+
+`reason` is the provider's own short error, at most 120 characters: Resend's
+error `name` (`validation_error`, `rate_limit_exceeded`, …) or the Bot API's
+`description` (`Bad Request: chat not found`). `retryAfterMillis` is the wait a
+429 named, from the `Retry-After` header in whole seconds or the Bot API's
+`parameters.retry_after`; it is an own property, which `@smthrs/flow`'s retry
+decision uses in place of the policy's backoff, and it survives the journal.
+Neither failure holds the request, its url, a header or the destination.
+
+### Service and layer
+
+| Export             | Signature                                                                                                      | What it is                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------ | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ChannelsService`  | `{ available: ReadonlyArray<Channel>; send: (destination, message) => Effect.Effect<Receipt, DeliveryError> }` | `available` lists the channels with a provider. `send` makes one request; a destination or message outside its schema is refused `rejected`, then a channel with no provider `unconfigured`, before any request.                                                                                                                                                     |
+| `Channels`         | `Context.Service` under `@smthrs/notifications/Channels`                                                       | The service tag.                                                                                                                                                                                                                                                                                                                                                     |
+| `layer`            | `(options: Options) => Layer<Channels>`                                                                        | Email through Resend when `options.email` is set, Telegram through the Bot API when `options.telegram` is. It owns its Fetch transport, keeps the host's `FetchHttpClient.RequestInit` but forces `redirect: "manual"`, and bounds each send by `options.timeout`. A provider url that isn't absolute `http:` or `https:` fails the layer as a defect naming no url. |
+| `Options`          | `{ email?: EmailProvider; telegram?: TelegramProvider; timeout?: Duration.Duration }`                          |                                                                                                                                                                                                                                                                                                                                                                      |
+| `EmailProvider`    | `{ apiKey: Redacted<string>; from: string; url?: string }`                                                     | A Resend API key, the sender (`Name <address>` on a domain Resend verified, or `onboarding@resend.dev` to reach only the account's own address), and Resend's origin.                                                                                                                                                                                                |
+| `TelegramProvider` | `{ token: Redacted<string>; url?: string }`                                                                    | A bot's token from @BotFather, and the Bot API's origin.                                                                                                                                                                                                                                                                                                             |
+
+| Export               | Value                         |
+| -------------------- | ----------------------------- |
+| `defaultEmailUrl`    | `"https://api.resend.com"`.   |
+| `defaultTelegramUrl` | `"https://api.telegram.org"`. |
+| `defaultTimeout`     | Ten seconds.                  |
+| `maxEmailRecipients` | `50`, Resend's own limit.     |
+
+Email is `POST <url>/emails` with `Authorization: Bearer <apiKey>`,
+`Idempotency-Key: <message.id>` and `{ from, to, subject, text }`: Resend sends
+one email per key within 24 hours. Telegram is `POST <url>/bot<token>/sendMessage`
+with `{ chat_id, text: "<subject>\n\n<text>", link_preview_options: { is_disabled: true } }`,
+as plain text. The Bot API has no idempotency key, so a process that dies between
+Telegram's answer and its own record of it sends twice.
+
+Each send is one span, `notifications.channel.send`, with `smithers.channel`,
+`http.response.status_code`, `smithers.channel.outcome` (`sent`, `failed` or
+`refused`) and `smithers.channel.code`. The HTTP client's own span, which records
+the url (and so the bot token), is off for these requests, and no trace context
+is sent to the provider.
+
 ## Alerts
 
 Run conditions that have lasted too long, turned into durable, coalesced,

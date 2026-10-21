@@ -78,6 +78,7 @@
 - [@smthrs/testing](https://smithers.sh/docs/reference/api/testing/): Testing and conformance library for flows
 - [@smthrs/time-travel](https://smithers.sh/docs/reference/api/time-travel/): Durable replay, fork, and rewind primitives for flows
 - [@smthrs/triggers](https://smithers.sh/docs/reference/api/triggers/): Durable cron triggers and channel contracts for flows
+- [@smthrs/views](https://smithers.sh/docs/reference/api/views/): Generated views as safe arbitrary output: check a model-written TSX module, render it to HTML in a QuickJS presentation realm, and frame it behind a pinned CSP and a validated MessageChannel bridge
 - [CLI reference](https://smithers.sh/docs/reference/cli.md): Every smthrs command with its usage, arguments, options and defaults, generated from the CLI's own help.
 - [HTTP and RPC endpoints](https://smithers.sh/docs/reference/http-api/): The routes smthrs serve mounts, their protocols, their authentication rules, and the RPC groups each one serves.
 
@@ -131,6 +132,7 @@
 - [@smthrs/mcp](https://github.com/smithersai/smithers/tree/main/packages/smithers/mcp/docs): Model Context Protocol client and flow adapter: projects a remote MCP server's tools as ordinary FlowBinding.Source entries
 - [@smthrs/migrate](https://github.com/smithersai/smithers/tree/main/packages/smithers/migrate/docs): Upgrades Smithers 0.x projects to Smithers 1.0 flows and writes an auditable migration report
 - [@smthrs/notifications](https://github.com/smithersai/smithers/tree/main/packages/smithers/notifications/docs): Durable notification queue, admission policy, and journal projection for flows
+- [@smthrs/views](https://github.com/smithersai/smithers/tree/main/packages/smithers/ui/views/docs): Generated views as safe arbitrary output: check a model-written TSX module, render it to HTML in a QuickJS presentation realm, and frame it behind a pinned CSP and a validated MessageChannel bridge
 - [smthrs](https://github.com/smithersai/smithers/tree/main/packages/smthrs-deprecation/docs): The `smthrs` command for npx, and a migration notice for Smithers 1.0: importing this package throws.
 - [@smthrs/testing](https://github.com/smithersai/smithers/tree/main/packages/testing/docs): Testing and conformance library for flows
 
