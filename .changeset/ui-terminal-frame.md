@@ -1,8 +1,8 @@
 ---
-"@smthrs/ui": minor
+"@smthrs/terminal-frame": minor
 ---
 
-Adds `TerminalFrame` at `@smthrs/ui/adapters/terminal-frame`: xterm.js runs in an opaque-origin frame
+Adds `TerminalFrame`: xterm.js runs in an opaque-origin frame
 (`sandbox="allow-scripts"`, `srcdoc`) whose CSP pins the generated frame runtime by hash and allows no network, while
 the page holds the connection.
 
@@ -12,5 +12,5 @@ the page holds the connection.
 - `readOnly` sets xterm's `disableStdin`, and neither the frame nor the page passes input on.
 - A link opens only from the person's click and activation, through `onLink` or a `noopener,noreferrer` window. The
   frame loads no clipboard addon and follows no link itself.
-- The frame mounts only while it is near the screen. `scripts/build-views.mjs` generates its runtime, and `--check`
+- The frame mounts only while it is near the screen. `scripts/build-runtime.mjs` generates its runtime, and `--check`
   covers it.

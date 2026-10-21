@@ -61,7 +61,7 @@ stop()
 Components that paint through CSS need neither function: the browser
 re-evaluates the `var()` chain on its own. The two exports exist for widget
 adapters that must hand a literal palette to a third-party renderer, which is
-what `Terminal` and the pierre surfaces do.
+what `Terminal` and `@smthrs/repo-view`'s pierre surfaces do.
 
 ## Selecting a palette
 

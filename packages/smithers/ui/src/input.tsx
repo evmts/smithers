@@ -9,8 +9,19 @@ export function Input({ className, ...props }: ComponentProps<"input">) {
   return <input data-slot="input" className={cn("sui-input", className)} {...props} />;
 }
 
-/** Multiline input matching the styleguide `.textarea`/`.prompt` (88px min, resize-y). */
-export function Textarea({ className, ...props }: ComponentProps<"textarea">) {
+/**
+ * Multiline input matching the styleguide `.textarea`/`.prompt` (88px min, resize-y). `code` sets source text: the
+ * mono stack, no wrapping, two-space tabs, and no spelling or autocorrection.
+ */
+export function Textarea({ className, code = false, ...props }: ComponentProps<"textarea"> & { code?: boolean }) {
   useInjectUiCss();
-  return <textarea data-slot="textarea" className={cn("sui-textarea", className)} {...props} />;
+  return (
+    <textarea
+      data-slot="textarea"
+      data-code={code ? "" : undefined}
+      className={cn("sui-textarea", className)}
+      {...(code ? { spellCheck: false, autoCapitalize: "off", autoCorrect: "off", wrap: "off" } : {})}
+      {...props}
+    />
+  );
 }

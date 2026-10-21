@@ -293,7 +293,7 @@ const flowBlocks = (blocks: ReadonlyArray<FlowBlock>, key: number): ReactNode =>
           {block.nodes}
         </p>
       ) : (
-        <div className={`sui-md-heading sui-md-h${block.level}`} key={index} style={style}>
+        <div className={`sui-md-heading sui-md-h${block.level}`} role="heading" aria-level={block.level} key={index} style={style}>
           {block.nodes}
         </div>
       );
@@ -649,7 +649,7 @@ function renderSpan(
       const heading = /^(#{1,6})\s+(.*)$/.exec(lines[0]!)!;
       const level = heading[1]!.length;
       return (
-        <div className={`sui-md-heading sui-md-h${level}`} key={key}>
+        <div className={`sui-md-heading sui-md-h${level}`} role="heading" aria-level={level} key={key}>
           {inline(heading[2]!, `h${key}`)}
         </div>
       );

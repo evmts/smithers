@@ -56,6 +56,8 @@ export type ItemConversationProps = Omit<ComponentProps<"article">, "children" |
   composer?: ItemConversationComposer;
   /** The title's heading level. Default `h1`. */
   headingLevel?: 1 | 2 | 3;
+  /** Controls at the end of the header's meta row, such as `TriageControl`. Not rendered while `loading`. */
+  headerActions?: ReactNode;
 };
 
 /** ⌘Enter on macOS, Ctrl+Enter elsewhere; never while an IME composes. */
@@ -80,8 +82,8 @@ function PendingChip({ pending }: { readonly pending: IssuesViewPending | undefi
 
 /**
  * One issue's page: the title with `#number` (`#–` before GitHub numbers it),
- * an Open or Closed badge, the author and an optional "Open on GitHub ↗" link;
- * the body; the comments in order as an `<ol>`; and the composer when the
+ * an Open or Closed badge, the author, an optional "Open on GitHub ↗" link
+ * and the host's `headerActions`; the body; the comments in order as an `<ol>`; and the composer when the
  * person may comment.
  *
  * Bodies and comments render through the light `Markdown` in its `document`
@@ -92,7 +94,7 @@ function PendingChip({ pending }: { readonly pending: IssuesViewPending | undefi
  * `data-pending`; a not-sent comment shows its `reason` and `actions`. The
  * composer submits on its button, ⌘Enter or Ctrl+Enter, and only while the
  * trimmed draft is non-empty and it isn't `disabled`. While `loading` the page
- * shows placeholders and a status, and no composer.
+ * shows placeholders and a status, and no composer or header actions.
  */
 export function ItemConversation({
   title,
@@ -107,6 +109,7 @@ export function ItemConversation({
   loading = false,
   composer,
   headingLevel = 1,
+  headerActions,
   className,
   ...props
 }: ItemConversationProps) {
@@ -165,6 +168,9 @@ export function ItemConversation({
             <a className="sui-item-conv-external" href={external} target="_blank" rel="noopener noreferrer">
               Open on GitHub ↗
             </a>
+          )}
+          {headerActions === undefined || headerActions === null ? null : (
+            <div className="sui-item-conv-header-actions">{headerActions}</div>
           )}
         </div>
       </header>

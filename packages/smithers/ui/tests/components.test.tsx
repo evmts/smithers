@@ -192,6 +192,49 @@ describe("form controls", () => {
 });
 
 describe("chat", () => {
+  test("puts a message's actions after its meta, and makes a message with actions focusable but never a tab stop", () => {
+    const both = renderToStaticMarkup(
+      <ChatMessage role="user" meta={<span>Queued</span>} actions={<button type="button">Edit</button>}>
+        Hi
+      </ChatMessage>,
+    );
+    expect(both).toContain('tabindex="-1"');
+    expect(both).toContain(
+      '<div class="sui-chat-message-meta"><span>Queued</span><span class="sui-chat-message-actions"><button type="button">Edit</button></span></div>',
+    );
+
+    const actionsOnly = renderToStaticMarkup(
+      <ChatMessage role="assistant" actions={<button type="button">Copy</button>}>
+        Word
+      </ChatMessage>,
+    );
+    expect(actionsOnly).toContain(
+      '<div class="sui-chat-message-meta"><span class="sui-chat-message-actions"><button type="button">Copy</button></span></div>',
+    );
+
+    const metaOnly = renderToStaticMarkup(
+      <ChatMessage role="user" meta={<span>Not sent</span>}>
+        Hi
+      </ChatMessage>,
+    );
+    expect(metaOnly).not.toContain("tabindex");
+    expect(metaOnly).not.toContain("sui-chat-message-actions");
+    expect(metaOnly).toContain('<div class="sui-chat-message-meta"><span>Not sent</span></div>');
+
+    expect(renderToStaticMarkup(<ChatMessage role="user">Hi</ChatMessage>)).not.toContain("sui-chat-message-meta");
+  });
+
+  test("hides a message's actions until hover (on a pointer that hovers) or focus inside, keeping their space", () => {
+    expect(smithersUiCss).toContain(
+      ".sui-chat-message-actions { display:inline-flex; align-items:center; opacity:0; transition:opacity .12s ease; }",
+    );
+    expect(smithersUiCss).toContain(
+      "@media (hover: hover) { .sui-chat-message:hover .sui-chat-message-actions { opacity:1; } }",
+    );
+    expect(smithersUiCss).toContain(".sui-chat-message:focus-within .sui-chat-message-actions { opacity:1; }");
+    expect(smithersUiCss).not.toMatch(/hover:\s*none[^}]*sui-chat-message-actions/);
+  });
+
   test("renders user, assistant, terminal, and pending message treatments", () => {
     const html = renderToStaticMarkup(
       <ChatTranscript pending pendingLabel="Agent is working">

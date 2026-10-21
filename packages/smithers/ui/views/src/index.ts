@@ -6,7 +6,8 @@
  * a presentation bundle built from {@link Presentation}, and a trusted page
  * shows the HTML in a frame {@link ViewCsp} writes. The frame talks back over
  * the {@link Bridge}, sending only the events the module's
- * {@link Interactions} declare.
+ * {@link Interactions} declare. {@link Home} reads the blocks a repository
+ * declares as its own home, which a page draws from data.
  *
  * @since 0.1.0
  */
@@ -16,6 +17,12 @@
  * @since 0.1.0
  */
 export * as Bridge from "./Bridge.ts"
+
+/**
+ * @category homes
+ * @since 0.1.0
+ */
+export * as Home from "./Home.ts"
 
 /**
  * @category messaging

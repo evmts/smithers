@@ -119,6 +119,17 @@ const docsFiles = Smithers.Filegroup({
   cwd
 })
 
+/**
+ * The component sources as a file group, for the packages that compose these
+ * components (`@smthrs/repo-view`, `@smthrs/terminal-frame`), reached by
+ * `Smithers.Target.subtree("//packages/smithers/ui/...", "sourceFiles")`. A
+ * glob in another package cannot reach them; a label can.
+ */
+const sourceFiles = Smithers.Filegroup({
+  srcs: [Smithers.glob("src/**/*.ts"), Smithers.glob("src/**/*.tsx")],
+  cwd
+})
+
 /** Complete React source input for the reproducible Solid projection. */
 const solidCodegenInputs = Smithers.Filegroup({
   srcs: [Smithers.glob("src/**/*"), Smithers.file("package.json")],
@@ -174,8 +185,7 @@ const securityReview = Smithers.SecurityReview({
       threat: "Model output, stack traces, diffs, terminal streams, or vault notes inject HTML or script into the user's app page.",
       lookFor: [
         "dangerouslySetInnerHTML, innerHTML, outerHTML, insertAdjacentHTML, or document.write fed from props or model data instead of a module constant.",
-        "The markdown primitive, CodeBlock, StackTrace, Snippet, or agent-output renderers switching to an HTML string renderer.",
-        "Milkdown Crepe or pierre diff/code-view configured to render raw HTML nodes from document content."
+        "The markdown primitive, CodeBlock, StackTrace, Snippet, or agent-output renderers switching to an HTML string renderer."
       ],
       paths: [
         "src/primitives/**",
@@ -213,9 +223,9 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "ChartStyle emitting a key or id that fails CSS_IDENTIFIER, or a color that SAFE_CSS_COLOR does not admit.",
         "SAFE_CSS_COLOR widening so a value such as url(https://...) or image-set(...) reaches fill/stroke.",
-        "Any other style injection (styles.tsx, terminal.tsx, MarkdownEditor.tsx) built from props rather than static CSS."
+        "Any other style injection (styles.tsx, terminal.tsx) built from props rather than static CSS."
       ],
-      paths: ["src/adapters/chart.tsx", "src/styles.tsx", "src/adapters/terminal.tsx", "src/adapters/markdown-editor/MarkdownEditor.tsx"]
+      paths: ["src/adapters/chart.tsx", "src/styles.tsx", "src/adapters/terminal.tsx"]
     },
     {
       id: "secret-display",
@@ -265,22 +275,7 @@ const securityReview = Smithers.SecurityReview({
         "sanitize keeping an element or attribute that runs, loads or navigates: script, iframe, a, meta, base, link, style, on*, href, a non-data:image src, srcset, action, formaction, xlink:href, or a style with url().",
         "The frame runtime reading document.body or other document properties after view content is inserted (DOM clobbering), or sending an interaction for an untrusted event."
       ],
-      paths: ["src/generated-view/**", "src/presentation/**"]
-    },
-    {
-      id: "terminal-frame",
-      title: "A shell's output reaches xterm.js only inside the sandboxed terminal frame, and the frame reaches the page only through its port",
-      threat:
-        "Escape sequences or links in a shell's output run script in, read from, or navigate the signed-in user's page, or a stale or foreign frame types into a shell.",
-      lookFor: [
-        "TerminalFrame rendering xterm in the page, or an iframe sandbox other than allow-scripts, or an `allow` delegation.",
-        "A srcdoc not built by ViewCsp.frameDocument with the hashed terminal runtime, or a policy that admits a network directive beyond 'none' or data:.",
-        "The handshake answering a message whose source is not this mount's contentWindow or whose nonce differs, or a second terminal/initialize.",
-        "terminal/input reaching onInput while readOnly, or the frame posting input while readOnly.",
-        "A link opened by the frame itself, or by the page without decodeFrameMessage's http(s) check and the person's activation, or without noopener and noreferrer.",
-        "A clipboard (OSC 52) addon or any other xterm addon loaded in the frame runtime."
-      ],
-      paths: ["src/adapters/terminal-frame/**", "src/internal/frameMount.ts"]
+      paths: ["src/generated-view/**", "src/presentation/**", "src/internal/frameMount.ts"]
     },
     {
       id: "attachment-intake",
@@ -307,6 +302,7 @@ export const Package = Smithers.Package({
     solidCodegenInputs,
     check,
     docsFiles,
+    sourceFiles,
     importRules,
     jevRules,
     unitTests,

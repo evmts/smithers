@@ -33,35 +33,6 @@ when the native API is absent or refuses the write, and returns `{ ok: true }` o
 The copied state is set only after the write fulfills, so a control that says
 "Copied" copied something.
 
-### `MarkdownEditor`
-
-`src/adapters/markdown-editor/MarkdownEditor.tsx` reports through `onError` with
-`MarkdownEditorError = { code, cause }`, where `cause` is the original
-rejection.
-
-| Code                   | Emitted when                                                                                                     |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `editor-load-failed`   | The `@milkdown/*` modules could not be loaded. With the default `loadEditor` seam that is the dynamic import rejecting. |
-| `editor-create-failed` | The modules loaded, but constructing the Crepe editor or awaiting its `create()` threw or rejected.              |
-
-The component tracks an `EditorState` of `"loading"`, `"ready"`, or `"failed"`.
-Either code moves it to `"failed"`, and a failed editor renders the seeded
-textarea with `data-mode="failed"` rather than the empty host div it used to
-leave behind. The textarea carries the current markdown, so a load failure
-degrades to a plain editing surface instead of losing the document. A consumer
-that renders its own fallback can key on `onError`; one that does not still gets
-a working textarea.
-
-`setMarkdown` received while modules load or `create()` is pending replaces the
-seed before the editor becomes ready. Only the latest value is applied, without
-an `onChange` echo. Failed attempts release their editor and ignore stale
-callbacks. Retries wait for pending creation and teardown before reusing the
-host; teardown rejection does not prevent recovery.
-
-`data-mode` has three values: `"wysiwyg"` for the real editor, `"fallback"` when
-the caller passed `fallback` or the host failed the rich-text capability probe,
-and `"failed"` after one of the codes above.
-
 ### `PromptInput`
 
 `src/prompt/PromptInput.tsx` reports through `onError` with

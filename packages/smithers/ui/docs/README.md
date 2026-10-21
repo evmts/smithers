@@ -40,10 +40,10 @@ is styled, in whichever mode the document asks for. See
 [how styling ships](./concepts/styling.md).
 
 **Heavy renderers live behind subpaths.** Importing `@smthrs/ui` gets you the
-component library, about 500 KB bundled. Shiki, recharts, xterm.js, and Milkdown
-are reachable only through `@smthrs/ui/adapters/*`, so you pay for one after you
-ask for it. See [the adapters boundary](./concepts/adapters.md) for the measured
-costs.
+component library, about 500 KB bundled. Recharts, xterm.js and d3-force are
+reachable only through `@smthrs/ui/adapters/*`, and Shiki and Milkdown only
+through `@smthrs/repo-view`, so you pay for one after you ask for it. See
+[the adapters boundary](./concepts/adapters.md) for the measured costs.
 
 ## The shortest real example
 
@@ -116,7 +116,9 @@ and Paper light/dark, rather than restating them.
   [use a heavy renderer](./guides/use-a-heavy-renderer.md),
   [show a generated view](./guides/show-a-generated-view.md),
   [show a web page](./guides/show-a-web-page.md),
-  [show a run](./guides/show-a-run.md), and
+  [show a run](./guides/show-a-run.md),
+  [show a repository home](./guides/show-a-repository-home.md),
+  [show a stack](./guides/show-a-stack.md), and
   [test a component](./guides/test-a-component.md).
 - [API reference](./api.md): every export of the base barrel and the ten
   subpaths, with signatures.

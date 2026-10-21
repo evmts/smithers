@@ -19,6 +19,8 @@ export const itemConversationCss = `
 .sui-item-conv-external { margin-left:auto; color:${t.primary}; text-decoration:none; border-radius:${t.radiusControl}; }
 .sui-item-conv-external:hover { text-decoration:underline; text-underline-offset:3px; }
 .sui-item-conv-external:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.ring}; }
+.sui-item-conv-header-actions { margin-left:auto; display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.sui-item-conv-external + .sui-item-conv-header-actions { margin-left:0; }
 .sui-item-conv-post, .sui-item-conv-comment { min-width:0; display:grid; gap:8px; padding:12px 14px; border:1px solid ${t.border}; border-radius:${t.radius}; background:${t.card}; color:${t.cardForeground}; }
 .sui-item-conv-comments { margin:0; padding:0; list-style:none; display:grid; gap:10px; }
 .sui-item-conv-comment[data-pending='requested'] { border-style:dashed; border-color:${t.borderStrong}; }

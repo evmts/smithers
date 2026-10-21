@@ -36,35 +36,10 @@
       "import": "./src/adapters/chart.tsx",
       "default": "./src/adapters/chart.tsx"
     },
-    "./adapters/markdown-editor": {
-      "types": "./src/adapters/markdown-editor/index.ts",
-      "import": "./src/adapters/markdown-editor/index.ts",
-      "default": "./src/adapters/markdown-editor/index.ts"
-    },
-    "./adapters/pierre-diff-view": {
-      "types": "./src/adapters/pierre-diff-view.tsx",
-      "import": "./src/adapters/pierre-diff-view.tsx",
-      "default": "./src/adapters/pierre-diff-view.tsx"
-    },
-    "./adapters/repo-view": {
-      "types": "./src/adapters/repo-view/index.ts",
-      "import": "./src/adapters/repo-view/index.ts",
-      "default": "./src/adapters/repo-view/index.ts"
-    },
-    "./adapters/code-view": {
-      "types": "./src/adapters/code-view/index.ts",
-      "import": "./src/adapters/code-view/index.ts",
-      "default": "./src/adapters/code-view/index.ts"
-    },
     "./adapters/terminal": {
       "types": "./src/adapters/terminal.tsx",
       "import": "./src/adapters/terminal.tsx",
       "default": "./src/adapters/terminal.tsx"
-    },
-    "./adapters/terminal-frame": {
-      "types": "./src/adapters/terminal-frame/index.ts",
-      "import": "./src/adapters/terminal-frame/index.ts",
-      "default": "./src/adapters/terminal-frame/index.ts"
     },
     "./status": {
       "types": "./src/status.ts",
@@ -158,10 +133,6 @@
     "test": "bun test tests"
   },
   "dependencies": {
-    "@milkdown/crepe": "7.22.1",
-    "@milkdown/kit": "7.22.1",
-    "@milkdown/plugin-listener": "7.22.1",
-    "@pierre/diffs": "^1.3.6",
     "@smthrs/ui-styleguide": "workspace:*",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",

@@ -1,7 +1,7 @@
 /**
  * The `issues` template's sheet. `inline` bounds the list's height and lets it
  * scroll; `full` lets it grow with the page. A linked title takes the brand on
- * hover and the house ring on focus; a pending chip is a compact badge.
+ * hover and the house ring on focus; a pending or triage chip is a compact badge.
  */
 import { tokens as t } from "../tokens";
 
@@ -26,7 +26,7 @@ export const issuesViewCss = `
 .sui-issues-link { text-decoration:none; border-radius:${t.radiusControl}; }
 .sui-issues-link:hover { color:${t.primary}; text-decoration:underline; text-underline-offset:3px; }
 .sui-issues-link:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.ring}; }
-.sui-issues-pending { min-height:18px; padding:0 6px; font-size:11px; }
+.sui-issues-pending, .sui-issues-triage { min-height:18px; padding:0 6px; font-size:11px; }
 .sui-issues-meta { display:flex; flex-wrap:wrap; align-items:center; gap:8px; color:${t.mutedForeground}; font-size:${t.fontSizeCompact}; }
 .sui-issues-comments { flex:none; color:${t.mutedForeground}; font-size:${t.fontSizeCompact}; }
 `;

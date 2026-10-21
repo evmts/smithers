@@ -33,6 +33,16 @@ describe("Markdown (static markup)", () => {
     expect((Markdown as { $$typeof?: symbol }).$$typeof).toBe(Symbol.for("react.memo"));
   });
 
+  test("a heading is a heading to assistive technology, at its level, written in Markdown or HTML", () => {
+    const html = renderToStaticMarkup(
+      <Markdown content={"# Welcome home\n\n### Setup\n\n<h2>From HTML</h2>\n\nText"} variant="document" />,
+    );
+    expect(html).toContain('role="heading" aria-level="1">Welcome home</div>');
+    expect(html).toContain('role="heading" aria-level="3">Setup</div>');
+    expect(html).toMatch(/role="heading" aria-level="2"[^>]*>From HTML<\/div>/);
+    expect(html).not.toMatch(/role="heading"[^>]*>Text</);
+  });
+
   test("renders headings, lists, code fence, inline styles, and links", () => {
     const html = renderToStaticMarkup(<Markdown content={SAMPLE} />);
     expect(html).toContain('data-slot="markdown"');

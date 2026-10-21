@@ -51,7 +51,7 @@ const trackCaptureKeydown = (target: Document): (() => number) => {
 const openCaptureKeydown = trackCaptureKeydown(document)
 
 afterAll(async () => {
-  const { disposeCodeViewPool } = await import("@smthrs/ui/adapters/code-view")
+  const { disposeCodeViewPool } = await import("@smthrs/repo-view")
   disposeCodeViewPool()
   for (let tick = 0; tick < 3; tick += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0))

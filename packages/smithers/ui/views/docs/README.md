@@ -49,6 +49,8 @@ page: GeneratedView ─▶ iframe sandbox="allow-scripts" srcdoc (ViewCsp) ─�
   composition, sizes, and the workerd host.
 - [Security model](security.md): each layer, what it stops, and what is
   tested.
+- [Read a repository's home](read-a-home.md): the blocks a repository
+  declares in `.smithers/home.json`, read where the home is shown.
 - [API reference](api.md)
 
 ## Tests

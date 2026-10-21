@@ -39,6 +39,10 @@ export { tokens, type SmithersUiTokens } from "./tokens";
 export { resolveTheme, subscribeTheme, type ResolvedTheme } from "./internal/resolveTheme";
 export { resolvePalette, subscribePalette, type ResolvedPalette } from "./internal/resolvePalette";
 export { useResolvedPalette } from "./internal/useResolvedPalette";
+export { useResolvedTheme } from "./internal/useResolvedTheme";
+export { isPlainNavigationClick } from "./internal/navigationClick";
+export { newNonce, useNearScreen } from "./internal/frameMount";
+export { xtermBaseCss } from "./adapters/xtermCss";
 export {
   normalizeStatus,
   statusClass,
@@ -249,6 +253,20 @@ export { Breadcrumbs, type BreadcrumbItem, type BreadcrumbsProps } from "./bread
 export { Popover, PopoverTrigger, PopoverContent } from "./popover";
 export { RefPicker, type RefPickerProps, type RefPickerRef, type RefPickerRefs } from "./ref-picker";
 export { CopyButton, type CopyButtonProps } from "./copy-button";
+export { Kbd, type KbdProps } from "./kbd";
+export { SegmentedControl, type SegmentedControlOption, type SegmentedControlProps } from "./segmented-control";
+export { CommandPalette, type CommandPaletteItem, type CommandPaletteProps } from "./command-palette";
+export { commandPaletteCss, kbdCss, segmentedControlCss } from "./commandCss";
+// Branch sharing: presence avatars and the share dialog.
+export { AvatarStack, type AvatarStackPerson, type AvatarStackProps } from "./avatar-stack";
+export {
+  ShareDialog,
+  type ShareAccess,
+  type ShareDialogProps,
+  type ShareGeneral,
+  type SharePerson,
+} from "./share-dialog";
+export { avatarStackCss, shareDialogCss } from "./sharingCss";
 export {
   DirectoryListing,
   type DirectoryEntry,
@@ -265,6 +283,7 @@ export type { Diff, DiffFile, DiffFileStatus, DiffLine, DiffLineKind, Hunk } fro
 export {
   binaryBodyLabel,
   byteCountString,
+  decodeGitPath,
   detectBinary,
   diffTotals,
   fileLineCount,
@@ -740,7 +759,14 @@ export {
 export { frameRuntime } from "./generated-view/runtime.generated";
 export { loadPresentationBundle, presentationComponentNames, presentationComponents } from "./presentation";
 export { FlowFormView, flowFormViewCss, type FlowFormSubmission, type FlowFormViewProps } from "./flow-form-view";
-export { IssuesView, issuesViewCss, type IssuesViewIssue, type IssuesViewProps } from "./issues-view";
+export {
+  IssuesView,
+  issuesViewCss,
+  TRIAGE_WORDS,
+  type IssuesViewIssue,
+  type IssuesViewProps,
+  type IssuesViewTriage,
+} from "./issues-view";
 export {
   IssueForm,
   ItemConversation,
@@ -750,7 +776,9 @@ export {
   type ItemConversationComposer,
   type ItemConversationProps,
 } from "./item-conversation";
-// The agent's status (apps/mvp decision 0015): the pill, the needs-you card, the toast stack and the tab title.
+export { TriageControl, triageControlCss, type TriageControlProps } from "./triage-control";
+// The agent's status (apps/mvp decision 0015): the pill, the needs-you card, the toast stack and the tab title; and
+// notices (decision 0009 §4): their words and glyphs, and when a notice's toast shows.
 export {
   AGENT_STATES,
   AGENT_STATUS_GLYPHS,
@@ -761,13 +789,18 @@ export {
   answerText,
   isAgentState,
   NeedsYouCard,
+  NOTICE_GLYPHS,
+  NOTICE_WORDS,
+  noticeDismissDelay,
   Toast,
   ToastStack,
+  workNoticeVisible,
   type AgentState,
   type AgentStatusPillProps,
   type NeedsYouAnswer,
   type NeedsYouCardProps,
   type NeedsYouKind,
+  type NoticeState,
   type ToastProps,
   type ToastStackProps,
 } from "./agent-status";
@@ -830,6 +863,24 @@ export {
   isAssumed,
   questionValue,
 } from "./flow-draft-view";
+// A repository's home: the blocks its `.smithers/home.json` declares (`Home` in `@smthrs/views`).
+export { RepositoryHome, repositoryHomeCss, type RepositoryHomeFile, type RepositoryHomeProps } from "./repository-home";
+// TODOs and the stack (apps/mvp decision 0016 §4): the stack's rows, one TODO at full size, and the private draft.
+export {
+  StackList,
+  stackCss,
+  TODO_PENDING_WORDS,
+  TODO_STATE_WORDS,
+  TodoCard,
+  TodoDraftCard,
+  todoNumberText,
+  type StackListProps,
+  type StackListTodo,
+  type TodoCardProps,
+  type TodoDraftCardProps,
+  type TodoPending,
+  type TodoState,
+} from "./stack";
 // An outside web page: in a sandboxed frame, or as a card that opens a tab.
 export {
   framedPageTarget,

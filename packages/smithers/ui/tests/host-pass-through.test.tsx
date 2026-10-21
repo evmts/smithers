@@ -1,13 +1,12 @@
 /** @jsxImportSource react */
 // Every seam a host needs so it never reaches into a component's rendered DOM,
 // proven at the boundary the host reaches for: pass-through attributes on the
-// buttons ChatComposer and FileTree render, Tab leaving MarkdownEditor, and a
-// GitHub-flavored table rendered as a table.
+// buttons ChatComposer and FileTree render, and a GitHub-flavored table
+// rendered as a table. MarkdownEditor's Tab order is @smthrs/repo-view's.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ChatComposer, FileTree, Markdown, SMITHERS_UI_STYLE_ATTR } from "../src/index";
-import { MarkdownEditor } from "../src/adapters/markdown-editor";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -84,23 +83,6 @@ describe("FileTree pass-through attributes", () => {
   test("renders without the hook, exactly as before", async () => {
     await render(<FileTree nodes={["README.md"]} />);
     expect(document.querySelector('[data-slot="file-tree-file"]')?.getAttribute("data-flow")).toBeNull();
-  });
-});
-
-describe("MarkdownEditor Tab order", () => {
-  test("declares that Tab leaves the editor by default", async () => {
-    await render(<MarkdownEditor value="# hello" aria-label="World" />);
-    const host = document.querySelector('[data-slot="markdown-editor"]');
-    // A ProseMirror body binds Tab to indentation, which makes the editor a
-    // focus trap a keyboard user cannot leave. The default releases it.
-    expect(host?.getAttribute("data-escape-tab-order")).toBe("true");
-  });
-
-  test("a surface that wants the editor's own Tab can say so", async () => {
-    await render(<MarkdownEditor value="# hello" aria-label="World" escapeTabOrder={false} />);
-    expect(document.querySelector('[data-slot="markdown-editor"]')?.getAttribute("data-escape-tab-order")).toBe(
-      "false",
-    );
   });
 });
 

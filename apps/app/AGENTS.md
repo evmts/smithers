@@ -1,5 +1,7 @@
 # Smithers MVP engineering rules
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (SCOPE-1, SCOPE-3, SCOPE-4). Kept as prior art: this is the old app ("v4"), not the app being built. Build in `apps/mvp` ([its rules](../mvp/AGENTS.md)); port only minimal proven code from here.
+
 ## Background work controls and prompt queue (Will, 2026-09-24)
 
 Background worker controls belong in the shared toast stack. Offer the actions

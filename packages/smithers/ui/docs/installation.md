@@ -65,18 +65,18 @@ adapter's dependency lands in your bundle.
 | `@smthrs/ui/vault`                     | Wikilinks, the graph model, the outline and backlinks panels, autosave | None             |
 | `@smthrs/ui/adapters/chart`            | `ChartContainer` and the categorical series palette                    | `recharts`       |
 | `@smthrs/ui/adapters/terminal`         | `Terminal`, an xterm.js render surface                                 | `@xterm/*`       |
-| `@smthrs/ui/adapters/terminal-frame`   | `TerminalFrame`, xterm.js in a sandboxed frame                         | `@xterm/*`, as the frame's runtime |
-| `@smthrs/ui/adapters/code-view`        | `CodeFileView`, one syntax-highlighted file                            | `@pierre/diffs`  |
-| `@smthrs/ui/adapters/pierre-diff-view` | `PierreDiffView`, a syntax-highlighted patch                           | `@pierre/diffs`  |
-| `@smthrs/ui/adapters/repo-view`        | `RepoView`, a repository's tree, listings, code and Markdown           | `@pierre/diffs`, `@milkdown/*` |
-| `@smthrs/ui/adapters/markdown-editor`  | `MarkdownEditor`, the Milkdown Crepe surface                           | `@milkdown/*`    |
 | `@smthrs/ui/adapters/knowledge-graph`  | `KnowledgeGraph`, the force-directed vault graph                       | `d3-force`       |
 
 The four subpaths without a heavy dependency exist for import ergonomics, not
-for weight: everything they export is also on the root barrel. The seven adapter
+for weight: everything they export is also on the root barrel. The adapter
 subpaths are the opposite, and reaching one is the only way to load its
 dependency. For what each adapter costs and how the boundary holds, read
 [The adapters boundary](./concepts/adapters.md).
+
+The repository views (`RepoView`, `CodeFileView`, `PierreDiffView`,
+`MarkdownEditor`) are in `@smthrs/repo-view`, and `TerminalFrame` is in
+`@smthrs/terminal-frame`. Add those packages as dependencies and import from
+their roots.
 
 ## Render the stylesheet once
 

@@ -1,6 +1,7 @@
 /**
  * The agent-status sheet: the pill's glyph, pulse and count; the needs-you
- * card in gold; the toast stack at the bottom-left, full width on a phone.
+ * card in gold; the toast stack at the bottom-left, full width on a phone;
+ * an update's toast in muted tones, and an unread entry's brand dot.
  * Gold is `--warning` and ember is `--danger` (mvp.md §6.4: "Needs you is gold
  * and failures are ember").
  */
@@ -20,17 +21,21 @@ button.sui-agent-status:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.r
 .sui-needs-you-answered { display:flex; flex-direction:column; gap:2px; min-width:0; padding:0 2px; color:${t.mutedForeground}; font-size:13px; }
 .sui-needs-you-answered-label { font-size:12px; font-weight:650; }
 .sui-needs-you-answer { color:${t.foreground}; overflow-wrap:anywhere; }
-.sui-toast-stack { position:fixed; z-index:40; left:16px; bottom:16px; display:flex; flex-direction:column; align-items:flex-start; gap:6px; width:min(380px, calc(100vw - 32px)); }
+.sui-toast-stack { position:fixed; z-index:40; left:16px; bottom:16px; display:flex; flex-direction:column; align-items:flex-start; gap:6px; width:min(380px, calc(100vw - 32px)); pointer-events:none; }
+.sui-toast-stack > * { pointer-events:auto; }
 .sui-toast { display:flex; align-items:center; gap:8px; width:100%; min-width:0; padding:6px 6px 6px 12px; border:1px solid ${t.borderStrong}; border-left:3px solid ${t.mutedForeground}; border-radius:${t.radius}; background:${t.card}; color:${t.foreground}; box-shadow:${t.shadow3}; font-size:13px; }
 .sui-toast[data-delayed] { animation:sui-toast-in .12s ease .3s both; }
 @keyframes sui-toast-in { from { opacity:0; } to { opacity:1; } }
 .sui-toast[data-tone='needs_you'] { border-left-color:${t.warning}; }
 .sui-toast[data-tone='failed'] { border-left-color:${t.destructive}; }
 .sui-toast[data-tone='working'] { border-left-color:${t.primary}; }
+.sui-toast[data-tone='update'] { border-left-color:${t.mutedForeground}; }
 .sui-toast-glyph { flex:none; font-size:12px; }
 .sui-toast[data-tone='needs_you'] .sui-toast-glyph { color:${t.warning}; }
 .sui-toast[data-tone='failed'] .sui-toast-glyph { color:${t.destructive}; }
 .sui-toast[data-tone='working'] .sui-toast-glyph { color:${t.primary}; }
+.sui-toast[data-tone='update'] .sui-toast-glyph { color:${t.mutedForeground}; }
+.sui-toast-unread { flex:none; width:6px; height:6px; margin-right:-2px; border-radius:${t.radiusFull}; background:${t.primary}; }
 .sui-toast-text { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sui-toast-text b { font-weight:650; }
 .sui-toast-hide { flex:none; color:${t.mutedForeground}; }

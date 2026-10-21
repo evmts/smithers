@@ -1,0 +1,12 @@
+# Register happy-dom before any test file loads, as @smthrs/ui does: ESM
+# imports are hoisted above an in-file register() call. Coverage is on for
+# every run, and the suite fails below 100% of lines and functions. Run it with
+# `--isolate` (`pnpm test` does): each file gets a fresh module registry, so a
+# module-level cache such as the Markdown editor's layout probe starts
+# unmeasured in every file, and coverage still adds up across files.
+[test]
+preload = ["./test/happy-dom-preload.ts"]
+coverage = true
+coverageThreshold = { lines = 1.0, functions = 1.0 }
+coverageSkipTestFiles = true
+coveragePathIgnorePatterns = ["test/**", "../**"]

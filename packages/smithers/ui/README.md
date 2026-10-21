@@ -27,7 +27,8 @@ import { Button, SmithersUiStyles, StatusPill } from "@smthrs/ui";
 - Base primitives: `Button`, `Badge`, `Card`, `Input`, `Label`, `Alert`,
   `Table`, `Tabs`, `Dialog`, `Tooltip`, `Select`, `Progress`, `Separator`,
   `Skeleton`, `Spinner`, `EmptyState`, `SectionHeader`, `RowButton`, `KpiStat`,
-  `StageStrip`, `CollapsiblePanel`, `DiffHunks`, `FileTree`, `Markdown`.
+  `StageStrip`, `CollapsiblePanel`, `DiffHunks`, `FileTree`, `Markdown`,
+  `Kbd`, `SegmentedControl`, `CommandPalette`.
 - Conversation: `Message` family, `MessageBranch` family, `Bubble` family,
   `MessageScroller` (drop-in and compound anatomy plus hooks), `CompactGroup`,
   `ConversationCheckpoint`, `ChatMessage`, `ChatTranscript`, `ChatComposer`,
@@ -53,6 +54,11 @@ import { Button, SmithersUiStyles, StatusPill } from "@smthrs/ui";
 - Web pages: `WebPageView` (an outside page in a sandboxed frame),
   `WebLinkCard` (a card that opens it in a new tab), and their URL guards
   `framedPageTarget` and `webPageTarget`.
+- Repository home: `RepositoryHome`, the blocks a repository declares in
+  `.smithers/home.json`.
+- TODOs and the stack: `StackList`, `TodoCard` and `TodoDraftCard`.
+- Sharing: `AvatarStack` (presence avatars with `+N`) and `ShareDialog`
+  (people with access, general access and Copy link).
 - Workflow canvas: `WorkflowCanvas` node/edge/controls/panel/toolbar/minimap
   anatomy.
 - Vault: `BacklinksPanel`, `OutlineView`, the `wikilinks` and `graphModel`
@@ -61,9 +67,11 @@ import { Button, SmithersUiStyles, StatusPill } from "@smthrs/ui";
 - Calendar: `Calendar` with month, week, and agenda views.
 
 Heavy renderers stay behind `@smthrs/ui/adapters/*` subpaths so the base barrel
-tree-shakes clean: `pierre-diff-view`, `code-view`, `terminal`, `markdown-editor`,
-`chart`, `knowledge-graph`. `tests/barrel-weight.test.ts` is the ratchet that keeps them
-out of `src/index.ts`.
+tree-shakes clean: `terminal`, `chart`, `knowledge-graph`.
+`tests/barrel-weight.test.ts` is the ratchet that keeps them out of
+`src/index.ts`. The repository views (`RepoView`, `CodeFileView`,
+`PierreDiffView`, `MarkdownEditor`) live in `@smthrs/repo-view`, and
+`TerminalFrame` in `@smthrs/terminal-frame`.
 
 ## Documentation
 
@@ -108,8 +116,9 @@ Four suites hold the invariants the docs promise:
 - `tests/barrel-weight.test.ts` bundles `src/index.ts` in a fresh Bun
   subprocess and fails when `recharts`, `@xterm`, `@milkdown`, `@pierre/diffs`,
   or `d3-force` reaches the output. It also asserts a minimum bundle size, the
-  presence of `node_modules/react`, and a control entry point that must contain
-  each dependency, because a negative assertion passes against an empty bundle.
+  presence of `node_modules/react`, and a control entry point (the
+  knowledge-graph adapter) that must contain its dependency, because a negative
+  assertion passes against an empty bundle.
   The subprocess is load-bearing: Bun's bundler shares its file cache with the
   test runner's module registry, so an in-process `Bun.build` after another
   suite imported the same modules reads crossed content.

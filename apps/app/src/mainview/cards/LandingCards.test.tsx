@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { CardSchema } from "@smthrs/rpc/Cards"
 import { LandingCardBody } from "./LandingCards"
 import { gitPatch } from "./DiffSurface"
-import { patchToCodeViewItems } from "@smthrs/ui/adapters/pierre-diff-view"
+import { patchToCodeViewItems } from "@smthrs/repo-view"
 
 const render = (state: string, draft = false) => {
   const card = CardSchema.parse({ id: "pr", kind: "pr", title: "Fix", status: "active", ordinal: 0, createdAt: 1,

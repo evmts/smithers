@@ -1,7 +1,7 @@
 import { useLiveQuery } from "@tanstack/react-db"
 import { useController } from "./ControllerContext"
-import { MarkdownEditor, MarkdownEditorStyles } from "@smthrs/ui/adapters/markdown-editor"
-import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
+import { MarkdownEditor, MarkdownEditorStyles } from "@smthrs/repo-view"
+import type { MarkdownEditorHandle } from "@smthrs/repo-view"
 
 /**
  * Heavy editor adapter boundary: loaded only when a markdown document is

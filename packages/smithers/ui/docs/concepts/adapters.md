@@ -1,6 +1,6 @@
 ---
 title: "The adapters boundary"
-description: "Why heavy third-party renderers ship behind @smthrs/ui/adapters/* subpaths, what each one costs your bundle, and the test that keeps them out of the base barrel."
+description: "Why heavy third-party renderers ship behind @smthrs/ui/adapters/* subpaths or in their own packages, what each one costs your bundle, and the test that keeps them out of the base barrel."
 sidebar:
   order: 4
 ---
@@ -12,7 +12,13 @@ boundary between the two is a package subpath.
 The rule has one sentence: a heavy third-party renderer lives under
 `src/adapters/`, ships behind its own entry in the `exports` map, and is never
 re-exported from `src/index.ts`. Import `@smthrs/ui` and you get the component
-library. Import `@smthrs/ui/adapters/pierre-diff-view` and you also get Shiki.
+library. Import `@smthrs/ui/adapters/chart` and you also get Recharts.
+
+The heaviest renderers left this package for packages of their own, each
+imported from its root: `@smthrs/repo-view` holds `RepoView`, `CodeFileView`,
+`PierreDiffView` and `MarkdownEditor` (pierre, Shiki and Milkdown), and
+`@smthrs/terminal-frame` holds `TerminalFrame`. `@smthrs/ui` no longer depends
+on `@pierre/diffs` or `@milkdown/*` at all.
 
 ## What the base barrel costs, and what each adapter adds
 
@@ -29,16 +35,12 @@ budgets.
 | `@smthrs/ui/adapters/knowledge-graph`   |     about 155 KB | `d3-force`                                    |
 | `@smthrs/ui/adapters/chart`             |     about 270 KB | `recharts`                                    |
 | `@smthrs/ui/adapters/terminal`          |     about 390 KB | `@xterm/xterm` and `@xterm/addon-fit`         |
-| `@smthrs/ui/adapters/terminal-frame`    |     about 470 KB | The frame runtime's text, xterm.js included, and `ViewCsp` |
-| `@smthrs/ui/adapters/markdown-editor`   |     about 2.9 MB | `@milkdown/crepe` and `@milkdown/kit`         |
-| `@smthrs/ui/adapters/code-view`         |      about 10 MB | `@pierre/diffs`, and Shiki's grammars and themes |
-| `@smthrs/ui/adapters/pierre-diff-view`  |      about 10 MB | The same Shiki payload                        |
-| `@smthrs/ui/adapters/repo-view`         |      about 14 MB | The code view's Shiki payload and the Markdown editor |
 
-The two pierre surfaces are the reason this boundary exists at all. A single
-`export` line that pulled `CodeFileView` onto the root barrel would multiply
-every consumer's bundle by roughly twenty, including the consumers that render
-nothing but a `Button`.
+The pierre surfaces, now in `@smthrs/repo-view`, are the reason this boundary
+exists at all: Shiki's grammars and themes bundle at about 10 MB unsplit. A
+single `export` line that pulled `CodeFileView` onto the root barrel would have
+multiplied every consumer's bundle by roughly twenty, including the consumers
+that render nothing but a `Button`.
 
 ## Why a subpath rather than tree shaking
 
@@ -77,9 +79,9 @@ dependency at all:
 
 | You want                          | Base barrel                                              | Adapter                                                     |
 | --------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------- |
-| Render a unified diff             | `DiffHunks` plus the `parseUnifiedFile` helpers          | `PierreDiffView` for per-token syntax highlighting          |
-| Render fenced code                | `CodeBlock`, with an optional `highlight` seam           | `CodeFileView` for a whole file on Shiki                    |
-| Render markdown                   | `Markdown`, a dependency-free renderer with no `innerHTML` | `MarkdownEditor` for WYSIWYG editing                       |
+| Render a unified diff             | `DiffHunks` plus the `parseUnifiedFile` helpers          | `PierreDiffView` (`@smthrs/repo-view`) for per-token syntax highlighting |
+| Render fenced code                | `CodeBlock`, with an optional `highlight` seam           | `CodeFileView` (`@smthrs/repo-view`) for a whole file on Shiki |
+| Render markdown                   | `Markdown`, a dependency-free renderer with no `innerHTML` | `MarkdownEditor` (`@smthrs/repo-view`) for WYSIWYG editing |
 | Draw a vault graph                | `computeGraphModel`, `nodeRadius`, `folderTint`          | `KnowledgeGraph` for the force simulation and the canvas    |
 
 `CodeBlock` is the sharpest example. Its `highlight` prop takes a
@@ -92,13 +94,11 @@ one. The component itself imports nothing heavier than React.
 Import it from its own subpath, in the module that renders it, and keep that
 module off your app's initial route when the payload matters. Nothing in the
 package re-exports these names, so an import from `@smthrs/ui` that names
-`Terminal`, `ChartContainer`, `CodeFileView`, `PierreDiffView`,
-`MarkdownEditor`, or `KnowledgeGraph` fails to resolve rather than working by
-accident.
+`Terminal`, `ChartContainer` or `KnowledgeGraph` fails to resolve rather than
+working by accident.
 
 The task-shaped version of this page is the guide
 [Use a heavy renderer](../guides/use-a-heavy-renderer.md).
 
-`PierreDiffView.unsafeCSS` accepts trusted static host CSS for its shadow
-surface. Keep repository content out of this styling input. The File/Diff host
-uses it to apply Paper contrast and focus tokens to Pierre’s rendered spans.
+The task-shaped page for the repository views is `@smthrs/repo-view`'s guide,
+"Use the repository views".

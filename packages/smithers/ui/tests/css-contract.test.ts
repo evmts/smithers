@@ -186,9 +186,10 @@ describe("geometry contract", () => {
   // 400 body, 500 de-emphasis, 650 the one emphasis weight; 700 is reserved
   // for KPI numerals and pinned to exactly one rule below.
   const FONT_WEIGHTS = new Set([400, 500, 650, 700]);
-  // --r-1 controls, --r-2 cards, --r-bubble chat surfaces, --r-full pills, plus
-  // the named micro-radii: 2px caret, 4px favicon/status chips.
-  const RADII = new Set([2, 4, 6, 10, 18, 999]);
+  // --r-1 controls, --r-2 cards, --r-3 the command palette, --r-bubble chat
+  // surfaces, --r-full pills, plus the named micro-radii: 2px caret, 4px
+  // favicon/status/key chips.
+  const RADII = new Set([2, 4, 6, 10, 12, 18, 999]);
 
   test("every raw font-size sits on the type scale or a named exception", () => {
     const sizes = [...smithersUiCss.matchAll(/font-size:([\d.]+)px/g)].map((m) => Number(m[1]));

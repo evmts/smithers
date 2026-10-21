@@ -1,12 +1,12 @@
 ---
 title: "API reference"
-description: "Every export of @smthrs/views: the ViewCode, PresentationRealm, Presentation, ViewCsp, Bridge and Interactions namespaces, their models, constructors and errors."
+description: "Every export of @smthrs/views: the ViewCode, PresentationRealm, Presentation, ViewCsp, Bridge, Interactions and Home namespaces, their models, constructors and errors."
 ---
 
-The package root exports six namespaces and nothing else:
+The package root exports seven namespaces and nothing else:
 
 ```ts
-import { Bridge, Interactions, Presentation, PresentationRealm, ViewCode, ViewCsp } from "@smthrs/views"
+import { Bridge, Home, Interactions, Presentation, PresentationRealm, ViewCode, ViewCsp } from "@smthrs/views"
 ```
 
 ## `ViewCode`
@@ -330,3 +330,20 @@ the page's messages.
 | `parse(attribute)`       | reads `"name"` or `"name:arg"`; everything after the first `:` is the argument, at most `maxArgLength` (256) |
 | `format(event)`          | the inverse of `parse`                                                                                       |
 | `lookup(declared, name)` | the declared interaction, or `None`; inherited names never match                                             |
+
+## `Home`
+
+A repository's own home: the blocks `.smithers/home.json` declares. See
+[Read a repository's home](read-a-home.md).
+
+| Export                                                                                        | What it is                                                                                                                         |
+| --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `path`                                                                                        | `".smithers/home.json"`                                                                                                            |
+| `read(text)`                                                                                  | `{ _tag: "Declared", blocks, skipped }` or `{ _tag: "Invalid", reason }`; never throws                                             |
+| `Read`, `Invalid`                                                                             | the answer, and why a file is not a home: `json`, `shape`, `blocks` or `block`                                                     |
+| `Block`                                                                                       | the union of the eight block schemas, and its type                                                                                 |
+| `kinds`                                                                                       | `text`, `links`, `flows`, `prompt`, `markdown`, `stack`, `app`, `view`                                                             |
+| `TextBlock`, `LinksBlock`, `FlowsBlock`, `PromptBlock`                                        | `{ type, title?, text }`; `{ type, title?, links: [{ label, url }] }`; `{ type, title? }`; `{ type, flow?, title?, placeholder? }` |
+| `MarkdownBlock`, `StackBlock`, `AppBlock`, `ViewBlock`                                        | `{ type, path, title? }`; `{ type, title? }`; `{ type, flow, title, picture }`; `{ type, flow }`                                   |
+| `Title`, `Prose`, `Url`, `RepositoryPath`, `FlowName`, `AppPicture`                           | the field schemas the blocks share                                                                                                 |
+| `maximumBlocks`, `maximumTitleLength`, `maximumTextLength`, `maximumUrlLength`, `htmlPattern` | 32, 120, 4,096, 2,048, and the pattern of a tag, a closing tag, a comment or a processing instruction                              |

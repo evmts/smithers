@@ -7,6 +7,8 @@
     "declarationMap": false,
     "composite": false,
     "resolveJsonModule": true,
+    // test/HomeTargets.test.ts reads @smthrs/targets' sources, which use ES2024's String#isWellFormed.
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
   "include": ["src/**/*", "test/**/*", "examples/**/*"]

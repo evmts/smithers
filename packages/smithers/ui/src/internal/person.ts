@@ -1,0 +1,31 @@
+/**
+ * One person, one color: the lane an id paints with and the initial a name
+ * shows, shared by `AvatarStack` and `ShareDialog` so a person looks the same
+ * in both.
+ */
+
+/** How many lanes `.sui-avatar[data-lane]` paints (`--lane-0` to `--lane-5`). */
+export const PERSON_LANES = 6;
+
+/**
+ * The lane a person paints with: FNV-1a of the id over the six lanes, the hash
+ * apps/app's `personaLane` uses, so one id gets one color on every surface.
+ */
+export function personLane(id: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < id.length; index++) {
+    hash ^= id.charCodeAt(index);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash % PERSON_LANES;
+}
+
+/**
+ * The initial a name shows: its first letter or digit, upper-cased, else its
+ * first character (an emoji stays whole), else nothing.
+ */
+export function personInitial(name: string): string {
+  const letter = /[\p{L}\p{N}]/u.exec(name)?.[0];
+  if (letter !== undefined) return letter.toUpperCase();
+  return [...name.trim()][0] ?? "";
+}

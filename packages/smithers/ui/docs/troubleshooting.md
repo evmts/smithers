@@ -55,24 +55,27 @@ than inside them.
 **Symptom.** An application's bundle jumped after a change that added no
 obvious dependency.
 
-**Cause.** Something reached an adapter. The two pierre surfaces carry Shiki's
-grammars and themes and bundle at roughly 10 MB against the base barrel's 500
-KB.
+**Cause.** Something reached an adapter or `@smthrs/repo-view`. The pierre
+surfaces in `@smthrs/repo-view` carry Shiki's grammars and themes, roughly
+10 MB unsplit against the base barrel's 500 KB.
 
-**Fix.** Import an adapter only from the module that renders it, and load that
-module lazily. Find the offending import in your bundler's production output:
-the adapter's dependency belongs to a lazily loaded chunk, not to the entry
-chunk. Importing `@smthrs/ui` itself never pulls one in. See
+**Fix.** Import an adapter or a repository view only from the module that
+renders it, and load that module lazily. Find the offending import in your
+bundler's production output: the dependency belongs to a lazily loaded chunk,
+not to the entry chunk. Importing `@smthrs/ui` itself never pulls one in. See
 [The adapters boundary](./concepts/adapters.md).
 
 ## An import from `@smthrs/ui` does not resolve
 
-**Symptom.** `Terminal`, `ChartContainer`, `CodeFileView`, `PierreDiffView`,
-`MarkdownEditor`, or `KnowledgeGraph` is not exported from `@smthrs/ui`.
+**Symptom.** `Terminal`, `ChartContainer`, `KnowledgeGraph`, `CodeFileView`,
+`PierreDiffView`, `MarkdownEditor`, `RepoView` or `TerminalFrame` is not
+exported from `@smthrs/ui`.
 
-**Cause.** That is the boundary working. None of the six is on the base barrel.
+**Cause.** That is the boundary working. None of them is on the base barrel.
 
-**Fix.** Import from the adapter's own subpath. The mapping is in
+**Fix.** Import `Terminal`, `ChartContainer` or `KnowledgeGraph` from its
+adapter subpath, the repository views from `@smthrs/repo-view`, and
+`TerminalFrame` from `@smthrs/terminal-frame`. The mapping is in
 [Installation](./installation.md).
 
 ## An import of the unscoped package throws
@@ -160,19 +163,6 @@ For a preview that must outlive the prompt, call `URL.createObjectURL` on that
 `File` and revoke your own URL. See
 [Collect a prompt with attachments](./guides/collect-a-prompt.md).
 
-## The markdown editor shows a plain textarea
-
-**Symptom.** `MarkdownEditor` renders a textarea instead of the rich surface.
-
-**Cause.** Read `data-mode` on the rendered element. `"fallback"` means the
-caller passed `fallback` or the host failed the rich-text capability probe.
-`"failed"` means the editor tried to start and could not, reporting
-`editor-load-failed` or `editor-create-failed` through `onError`.
-
-**Fix.** For `"failed"`, inspect `error.cause`: with the default `loadEditor`
-seam, `editor-load-failed` is the dynamic import rejecting. The document is not
-lost either way, because the textarea carries the current markdown.
-
 ## An unknown status renders as a neutral pill
 
 **Symptom.** A status you expected to be tinted appears muted.
@@ -194,18 +184,6 @@ discard CSS artifacts.
 
 **Fix.** Remove that import. The adapter vendors the sheet as a string and
 injects it through the library's own style seam.
-
-## A diff renders as plain text
-
-**Symptom.** `PierreDiffView` shows the patch verbatim instead of highlighting
-it.
-
-**Cause.** The patch did not parse. `@pierre/diffs` names a file from a
-`diff --git` line; without one it reads the `---` and `+++` labels as a rename.
-
-**Fix.** Check with `patchToCodeViewItems` before rendering, and prepend a
-`diff --git a/<old> b/<new>` line built from the paths you already hold. See
-[Use a heavy renderer](./guides/use-a-heavy-renderer.md).
 
 ## Related
 

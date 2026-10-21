@@ -1,12 +1,12 @@
 import { useMemo } from "react"
-import { patchToCodeViewItems, PierreDiffView } from "@smthrs/ui/adapters/pierre-diff-view"
+import { patchToCodeViewItems, PierreDiffView } from "@smthrs/repo-view"
 import type { DiffCard, DiffViewProps } from "@smthrs/rpc/DiffCard"
 import { DiffAction } from "./views/DiffAction"
 import { ActorChip, actorName } from "./views/ActorChip"
 import { formatBytes } from "./views/formatBytes"
 /*
  * The diff card's hunks (docs/code-intel/PLAN.md §7, L5): one file's patch on
- * `@pierre/diffs` CodeView through `@smthrs/ui/adapters/pierre-diff-view`,
+ * `@pierre/diffs` CodeView through `@smthrs/repo-view`,
  * the engine and theme mapping the file card's CodeSurface runs on. The
  * adapter is heavy, so ChangeCards loads this module lazily: it is the async
  * chunk boundary and the only place in the app graph that imports the

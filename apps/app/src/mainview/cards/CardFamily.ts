@@ -10,7 +10,7 @@
  * a slice entry in its family's file and one spread line in the aggregator.
  */
 import type { ReactNode } from "react"
-import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
+import type { MarkdownEditorHandle } from "@smthrs/repo-view"
 import type { FlowName } from "../flows/FlowName"
 import type { Card, FlowDurationsRow, RepositoryFlowsRow, WorldDocument } from "../state/AppState"
 import type { AppStore } from "../state/AppStore"

@@ -1,4 +1,4 @@
-import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
+import type { MarkdownEditorHandle } from "@smthrs/repo-view"
 import { parseWikilinks, restoreWikilinks } from "@smthrs/ui/vault"
 import { Effect } from "effect"
 import {

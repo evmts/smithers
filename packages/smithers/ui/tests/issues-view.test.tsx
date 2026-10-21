@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { IssuesView, issuesViewCss, type IssuesViewIssue } from "../src/issues-view";
+import { IssuesView, issuesViewCss, type IssuesViewIssue, type IssuesViewTriage, TRIAGE_WORDS } from "../src/issues-view";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/styles";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -236,3 +236,43 @@ describe("IssuesView: pending rows, links, loading and actions", () => {
   });
 });
 
+describe("IssuesView: triage", () => {
+  const TRIAGED: ReadonlyArray<IssuesViewIssue> = [
+    { number: 31, title: "Crash on empty body", state: "open", triage: "proposed", pending: "requested", author: "sam" },
+    { number: 30, title: "Add HTTP/2", state: "open", triage: "accepted" },
+    { number: 29, title: "Rewrite in Rust", state: "open", triage: "not_accepted" },
+    { number: 28, title: "Router drops trailing slash", state: "closed", triage: "conflict" },
+    { number: 27, title: "Docs: middleware order", state: "open" },
+  ];
+  const chip = (row: HTMLElement) => row.querySelector<HTMLElement>(".sui-issues-triage");
+
+  test("each triaged row shows its state's chip in its variant; a row without triage shows none", async () => {
+    await render(<IssuesView repo="maya/tinyhttp" issues={TRIAGED} />);
+    const expected: ReadonlyArray<[IssuesViewTriage, string, string]> = [
+      ["proposed", "Proposed", "sui-badge-outline"],
+      ["accepted", "Accepted", "sui-badge-success"],
+      ["not_accepted", "Not accepted", "sui-badge-muted"],
+      ["conflict", "Conflict", "sui-badge-warning"],
+    ];
+    const all = rows();
+    expected.forEach(([triage, word, variant], index) => {
+      const shown = chip(all[index]!)!;
+      expect([shown.textContent, shown.dataset.triage, TRIAGE_WORDS[triage]]).toEqual([word, triage, word]);
+      expect(shown.className).toContain(variant);
+      expect(shown.closest(".sui-issues-meta")).not.toBeNull();
+    });
+    expect(chip(all[4]!)).toBeNull();
+    expect(all[4]!.querySelector("[data-triage]")).toBeNull();
+  });
+
+  test("the chip follows the number and precedes the pending chip and author", async () => {
+    await render(<IssuesView repo="r" issues={TRIAGED.slice(0, 1)} />);
+    const meta = rows()[0]!.querySelector(".sui-issues-meta")!;
+    expect([...meta.children].map((child) => child.textContent)).toEqual(["#31", "Proposed", "Requested", "sam"]);
+  });
+
+  test("triage adds no link, button or other control", async () => {
+    await render(<IssuesView repo="r" issues={TRIAGED} size="full" />);
+    expect(container!.querySelectorAll("a, button, [href], [role=link], [onclick]")).toHaveLength(0);
+  });
+});

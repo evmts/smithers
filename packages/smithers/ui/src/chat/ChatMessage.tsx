@@ -10,8 +10,14 @@ export type ChatMessageProps = Omit<ComponentProps<"article">, "role"> & {
   role: ChatMessageRole;
   /** Optional small heading above the bubble, such as a pipeline stage name. */
   label?: ReactNode;
-  /** Optional timestamp or delivery state below the bubble. */
+  /** Delivery state below the bubble, always shown, such as `Queued` or a Retry button. */
   meta?: ReactNode;
+  /**
+   * The message's time and controls, such as Copy, after `meta`. Hidden until the pointer is over the message or
+   * focus is inside it; on a touch screen, until the message is tapped. Their space is kept, so nothing moves when
+   * they show.
+   */
+  actions?: ReactNode;
   /** Monospace treatment for terminal or tool output. */
   variant?: "default" | "terminal";
   /** Render the shared three-dot assistant typing state. */
@@ -25,6 +31,7 @@ export function ChatMessage({
   role,
   label,
   meta,
+  actions,
   variant = "default",
   pending = false,
   pendingLabel = "Smithers is thinking",
@@ -39,6 +46,8 @@ export function ChatMessage({
       data-role={role}
       data-variant={variant}
       className={cn("sui-chat-message", className)}
+      // A tap focuses the message, which shows its actions on a touch screen (:focus-within); never a tab stop.
+      tabIndex={actions ? -1 : undefined}
       {...props}
     >
       {label ? <div className="sui-chat-message-label">{label}</div> : null}
@@ -62,7 +71,12 @@ export function ChatMessage({
           children
         )}
       </div>
-      {meta ? <div className="sui-chat-message-meta">{meta}</div> : null}
+      {meta || actions ? (
+        <div className="sui-chat-message-meta">
+          {meta}
+          {actions ? <span className="sui-chat-message-actions">{actions}</span> : null}
+        </div>
+      ) : null}
     </article>
   );
 }

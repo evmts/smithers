@@ -313,6 +313,48 @@ describe("ItemConversation: composer", () => {
   });
 });
 
+describe("ItemConversation: header actions", () => {
+  const actions = () => article().querySelector<HTMLElement>(".sui-item-conv-header-actions");
+
+  test("headerActions render at the end of the header's meta row", async () => {
+    let pressed = 0;
+    await render(
+      <ItemConversation
+        {...BASE}
+        externalHref="https://github.com/maya/tinyhttp/issues/12"
+        headerActions={
+          <button type="button" onClick={() => (pressed += 1)}>
+            Accept
+          </button>
+        }
+      />,
+    );
+    const meta = article().querySelector(".sui-item-conv-meta")!;
+    expect(meta.lastElementChild).toBe(actions());
+    expect(actions()!.closest("header")).not.toBeNull();
+    const accept = actions()!.querySelector("button")!;
+    accept.focus();
+    expect(document.activeElement).toBe(accept);
+    await click(accept);
+    expect(pressed).toBe(1);
+  });
+
+  test("absent or null headerActions render no container", async () => {
+    await render(<ItemConversation {...BASE} />);
+    expect(actions()).toBeNull();
+    await rerender(<ItemConversation {...BASE} headerActions={null} />);
+    expect(actions()).toBeNull();
+  });
+
+  test("loading renders no header actions", async () => {
+    await render(<ItemConversation {...BASE} loading headerActions={<button type="button">Accept</button>} />);
+    expect(actions()).toBeNull();
+    expect(article().querySelectorAll("button")).toHaveLength(0);
+    await rerender(<ItemConversation {...BASE} headerActions={<button type="button">Accept</button>} />);
+    expect(actions()!.textContent).toBe("Accept");
+  });
+});
+
 describe("ItemConversation: loading and themes", () => {
   test("loading shows a status and placeholders, never a header, comments or composer", async () => {
     await render(

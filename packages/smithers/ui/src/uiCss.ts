@@ -43,16 +43,21 @@ import { canvasCss } from "./canvas/canvasCss";
 import { calendarCss } from "./calendar/calendarCss";
 import { vaultCss } from "./vault/vaultCss";
 import { wordmarkCss } from "./wordmark/wordmarkCss";
-import { breadcrumbsCss, directoryListingCss, popoverCss, refPickerCss, repoViewCss } from "./repositoryCss";
+import { breadcrumbsCss, directoryListingCss, popoverCss, refPickerCss } from "./repositoryCss";
 import { flowFormViewCss } from "./flow-form-view/flowFormViewCss";
 import { generatedViewCss } from "./generated-view/generatedViewCss";
 import { issuesViewCss } from "./issues-view/issuesViewCss";
 import { itemConversationCss } from "./item-conversation/itemConversationCss";
+import { triageControlCss } from "./triage-control/triageControlCss";
 import { webPageCss } from "./web-page/webPageCss";
 import { agentStatusCss } from "./agent-status/agentStatusCss";
 import { jsonValueCss } from "./json-value/jsonValueCss";
 import { runPageCss } from "./run-page/runPageCss";
 import { flowDraftViewCss } from "./flow-draft-view/flowDraftViewCss";
+import { repositoryHomeCss } from "./repository-home/repositoryHomeCss";
+import { stackCss } from "./stack/stackCss";
+import { avatarStackCss, shareDialogCss } from "./sharingCss";
+import { commandPaletteCss, kbdCss, segmentedControlCss } from "./commandCss";
 
 const shadowCard = t.shadow2;
 const shadowOverlay = t.shadow3;
@@ -162,6 +167,7 @@ export const formCss = `
 .sui-textarea:focus-visible { ${focusRing} }
 .sui-textarea::placeholder { color:${t.placeholder}; }
 .sui-textarea:disabled { cursor:not-allowed; opacity:.45; }
+.sui-textarea[data-code] { font-family:${t.fontMono}; font-size:12px; line-height:20px; white-space:pre; overflow:auto; tab-size:2; }
 .sui-label { color:${t.mutedForeground}; font-size:11px; font-weight:650; text-transform:uppercase; letter-spacing:.05em; }
 .sui-field { min-width:0; display:grid; gap:6px; }
 `;
@@ -187,6 +193,12 @@ export const chatCss = `
 .sui-chat-message-label, .sui-chat-message-meta { max-width:80%; padding:0 8px; color:${t.mutedForeground}; font-size:11px; line-height:1.4; }
 .sui-chat-message-label { margin-bottom:4px; font-weight:650; }
 .sui-chat-message-meta { margin-top:4px; }
+/* A message's time and controls show only while the pointer is over it or focus is inside it (a tap focuses it on a
+   touch screen). Opacity, not display, so their space is kept and the controls stay in the tab order. */
+.sui-chat-message-actions { display:inline-flex; align-items:center; opacity:0; transition:opacity .12s ease; }
+@media (hover: hover) { .sui-chat-message:hover .sui-chat-message-actions { opacity:1; } }
+.sui-chat-message:focus-within .sui-chat-message-actions { opacity:1; }
+.sui-chat-message:focus { outline:none; }
 .sui-chat-bubble > :first-child { margin-top:0; }
 .sui-chat-bubble > :last-child { margin-bottom:0; }
 .sui-chat-bubble-pending { display:inline-flex; align-items:center; padding:14px; }
@@ -615,31 +627,6 @@ export const agentOutputCss = `
 `;
 
 /* -------------------------------------------------------------------------- */
-/* PierreDiffView adapter (thin frame; CodeView owns the highlighted body)     */
-/* -------------------------------------------------------------------------- */
-
-export const pierreDiffCss = `
-.sui-pierre-diff-frame { min-width:0; border-radius:${t.radius}; background:${t.card}; color:${t.foreground}; }
-.sui-pierre-diff { --diffs-font-family:${t.fontMono}; --diffs-header-font-family:${t.fontSans}; --diffs-light-bg:${t.card}; --diffs-dark-bg:${t.card}; --diffs-light:${t.foreground}; --diffs-dark:${t.foreground}; --diffs-addition-color:${t.success}; --diffs-deletion-color:${t.destructive}; --diffs-bg-addition-override:${t.successSoft}; --diffs-bg-deletion-override:${t.destructiveSoft}; --diffs-bg-context-override:${t.surface2}; --diffs-bg-separator-override:${t.surface2}; --diffs-fg-number-override:${t.mutedForeground}; display:block; min-width:0; border:1px solid ${t.border}; border-radius:${t.radius}; background:${t.card}; color:${t.foreground}; overflow:hidden; }
-.sui-pierre-diff-empty { padding:24px; border:1px solid ${t.border}; border-radius:${t.radius}; background:${t.card}; text-align:center; color:${t.mutedForeground}; font-size:13px; }
-`;
-
-/*
- * The code-view adapter (`adapters/code-view`): one file on the same pierre
- * engine. The frame follows the house CODE tokens on both theme axes so a
- * file card reads like the app's other code, and pierre's own background
- * variables point at the same token. The plain `<pre>` is the complete state
- * until pierre has painted; the adapter flips `data-state` and the sheet
- * hides the fallback.
- */
-export const codeViewCss = `
-.sui-code-view { --diffs-font-family:${t.fontMono}; --diffs-light-bg:${t.codeBg}; --diffs-dark-bg:${t.codeBg}; --diffs-light:${t.codeText}; --diffs-dark:${t.codeText}; --diffs-fg-number-override:${t.mutedForeground}; display:block; min-width:0; border-radius:${t.radius}; background:${t.codeBg}; color:${t.codeText}; overflow:hidden; }
-.sui-code-view > diffs-container { display:block; min-width:0; }
-.sui-code-view-plain { margin:0; padding:12px 14px; font-family:${t.fontMono}; font-size:12px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; tab-size:4; }
-.sui-code-view[data-state="ready"] > .sui-code-view-plain { display:none; }
-`;
-
-/* -------------------------------------------------------------------------- */
 /* StageStrip: horizontal pipeline-stage chips                                */
 /* -------------------------------------------------------------------------- */
 
@@ -737,9 +724,6 @@ export const smithersUiCss = [
   markdownCss,
   agenticResponseCss,
   agentOutputCss,
-  pierreDiffCss,
-  codeViewCss,
-  repoViewCss,
   popoverCss,
   refPickerCss,
   stageStripCss,
@@ -761,11 +745,19 @@ export const smithersUiCss = [
   flowFormViewCss,
   issuesViewCss,
   itemConversationCss,
+  triageControlCss,
   webPageCss,
   agentStatusCss,
   jsonValueCss,
   runPageCss,
   flowDraftViewCss,
+  repositoryHomeCss,
+  stackCss,
+  avatarStackCss,
+  shareDialogCss,
+  kbdCss,
+  segmentedControlCss,
+  commandPaletteCss,
   reducedMotionCss,
 ]
   .map((block) => block.trim())

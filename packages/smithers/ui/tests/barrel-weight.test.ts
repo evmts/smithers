@@ -21,6 +21,8 @@ import { join, resolve } from "node:path";
 const HEAVY_MODULES = [
   "node_modules/recharts",
   "node_modules/@xterm",
+  // Milkdown, pierre and Shiki moved to `@smthrs/repo-view`, which this package
+  // no longer depends on; the barrel must not grow them back.
   "node_modules/@milkdown",
   "node_modules/@pierre/diffs",
   "node_modules/d3-force",
@@ -107,27 +109,11 @@ describe("the base barrel carries no heavy renderer", () => {
     expect(Object.keys(manifest.exports)).toEqual(
       expect.arrayContaining([
         "./adapters/chart",
-        "./adapters/code-view",
         "./adapters/knowledge-graph",
-        "./adapters/markdown-editor",
-        "./adapters/pierre-diff-view",
         "./adapters/terminal",
-        "./adapters/terminal-frame",
       ]),
     );
   });
-
-  test("the code-view subpath is where pierre and Shiki live", () => {
-    // The second control: the file surface reaches `@pierre/diffs` only
-    // through its own subpath, never through the barrel a consumer of
-    // `@smthrs/ui` pays for.
-    const bundle = bundleAsConsumed("src/adapters/code-view/index.ts");
-    expect({
-      pierre: bundle.includes("node_modules/@pierre/diffs"),
-      shiki: bundle.includes("node_modules/@shikijs/core") || bundle.includes("node_modules/shiki"),
-      bytes: bundle.length,
-    }).toMatchObject({ pierre: true, shiki: true });
-  }, 120_000);
 
   test("the knowledge-graph subpath does bundle d3-force", () => {
     // The control: the negative assertion above only means something while the

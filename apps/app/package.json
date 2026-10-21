@@ -51,6 +51,7 @@
     "@smthrs/patterns": "workspace:*",
     "@smthrs/platform-browser": "workspace:*",
     "@smthrs/registry": "workspace:*",
+    "@smthrs/repo-view": "workspace:*",
     "@smthrs/rpc": "workspace:*",
     "@smthrs/ui": "workspace:*",
     "@standard-schema/spec": "1.1.0",

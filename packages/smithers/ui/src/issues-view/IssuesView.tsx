@@ -15,6 +15,28 @@ export type IssuesViewPending = "requested" | "not_sent";
 /** The chip each pending state shows. */
 export const PENDING_WORDS: Readonly<Record<IssuesViewPending, string>> = { requested: "Requested", not_sent: "Not sent" };
 
+/**
+ * An issue's triage, read from its `smithers:` labels: neither is `proposed`,
+ * one is `accepted` or `not_accepted`, and both at once is `conflict`.
+ */
+export type IssuesViewTriage = "proposed" | "accepted" | "not_accepted" | "conflict";
+
+/** The chip each triage state shows. */
+export const TRIAGE_WORDS: Readonly<Record<IssuesViewTriage, string>> = {
+  proposed: "Proposed",
+  accepted: "Accepted",
+  not_accepted: "Not accepted",
+  conflict: "Conflict",
+};
+
+/** The Badge variant each triage state's chip takes. */
+export const TRIAGE_VARIANTS: Readonly<Record<IssuesViewTriage, "outline" | "success" | "muted" | "warning">> = {
+  proposed: "outline",
+  accepted: "success",
+  not_accepted: "muted",
+  conflict: "warning",
+};
+
 /** One issue, as the host loaded it. */
 export type IssuesViewIssue = {
   /** Stable row key; defaults to the number. Pending rows have no number yet. */
@@ -30,6 +52,8 @@ export type IssuesViewIssue = {
   readonly updatedAt?: string;
   /** This device's write still on its way ("requested") or refused ("not_sent"); shown as a small status chip. */
   readonly pending?: IssuesViewPending;
+  /** The issue's triage; shown as a small chip. Absent: no chip. */
+  readonly triage?: IssuesViewTriage;
 };
 
 export type IssuesViewProps = Omit<ComponentProps<"section">, "children"> & {
@@ -58,8 +82,9 @@ export const issueNumberText = (number: number | null): string => (number === nu
 /**
  * The `issues` template and a repository's issue list: the issues as the host
  * passed them, in a GitHub-like list. Each row shows the state, number (`#–`
- * before GitHub numbers it), title, labels, a `Requested` or `Not sent` chip
- * for this device's pending write, author, comment count and date.
+ * before GitHub numbers it), title, labels, a triage chip when the host passes
+ * `triage`, a `Requested` or `Not sent` chip for this device's pending write,
+ * author, comment count and date.
  *
  * Without `href` it renders data only. With `href` each title is a link, and
  * `onNavigate` turns a plain click into in-app navigation. While `loading`,
@@ -146,6 +171,15 @@ export function IssuesView({
                   </div>
                   <div className="sui-issues-meta">
                     <span className="sui-issues-number">{issueNumberText(issue.number)}</span>
+                    {issue.triage === undefined ? null : (
+                      <Badge
+                        variant={TRIAGE_VARIANTS[issue.triage]}
+                        className="sui-issues-triage"
+                        data-triage={issue.triage}
+                      >
+                        {TRIAGE_WORDS[issue.triage]}
+                      </Badge>
+                    )}
                     {issue.pending === undefined ? null : (
                       <Badge
                         variant={issue.pending === "not_sent" ? "destructive" : "muted"}

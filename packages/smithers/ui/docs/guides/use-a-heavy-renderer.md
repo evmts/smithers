@@ -1,11 +1,15 @@
 ---
 title: "Use a heavy renderer"
-description: "Pick the adapter subpath for a diff, a file, a terminal, a chart, a markdown editor, or a graph, wire its props, and keep its dependency out of your application's initial chunk."
+description: "Pick the adapter subpath for a terminal, a chart, or a graph, wire its props, and keep its dependency out of your application's initial chunk."
 ---
 
-Six renderers in this package carry a heavy third-party dependency, and each one
-ships behind its own subpath so importing the base library never loads it. This
-guide is how to reach one on purpose.
+Three renderers in this package carry a heavy third-party dependency, and each
+one ships behind its own subpath so importing the base library never loads it.
+This guide is how to reach one on purpose.
+
+A diff, a highlighted file, a Markdown editor or a whole repository is
+`@smthrs/repo-view`'s, and a sandboxed shell is `@smthrs/terminal-frame`'s; each
+package has its own guide.
 
 Before you do, check whether the light surface already covers the job: see the
 table in [The adapters boundary](../concepts/adapters.md). Rendering markdown, a
@@ -16,90 +20,23 @@ plain diff, or fenced code needs no adapter at all.
 An adapter import is a chunk boundary. Put the adapter in a module of its own,
 import that module lazily from the surface that needs it, and the dependency
 stays out of your application's first paint. One module imports
-`@smthrs/ui/adapters/pierre-diff-view`, and the card that renders a change
-reaches it through `React.lazy`.
+`@smthrs/ui/adapters/chart`, and the card that renders it reaches it through
+`React.lazy`.
 
 ```tsx
 import { lazy, Suspense } from "react"
 import { Skeleton } from "@smthrs/ui"
 
-const DiffSurface = lazy(() => import("./DiffSurface"))
+const ChartSurface = lazy(() => import("./ChartSurface"))
 
-export function ChangeCard({ patch }: { readonly patch: string }) {
+export function RunsCard({ passed, failed }: { readonly passed: number; readonly failed: number }) {
   return (
     <Suspense fallback={<Skeleton />}>
-      <DiffSurface patch={patch} />
+      <ChartSurface passed={passed} failed={failed} />
     </Suspense>
   )
 }
 ```
-
-## Render a patch
-
-`PierreDiffView` takes a unified patch string and renders it with per-token
-syntax highlighting. `layout` chooses side by side (`"split"`, the default)
-against a single unified column (`"inline"`), and `selectedPath` narrows a
-multi-file patch to one file.
-
-`patchToCodeViewItems` is the pure seam behind it, exported so you can ask
-whether the patch parses before you commit to rendering it:
-
-```tsx
-import { patchToCodeViewItems, PierreDiffView } from "@smthrs/ui/adapters/pierre-diff-view"
-
-function readable(patch: string): boolean {
-  const items = patchToCodeViewItems(patch)
-  return items.length > 0 && items.every((item) => item.type === "diff" && item.fileDiff.hunks.length > 0)
-}
-
-export default function DiffSurface({ patch }: { readonly patch: string }) {
-  return readable(patch)
-    ? <PierreDiffView layout="inline" patch={patch} />
-    : <pre>{patch}</pre>
-}
-```
-
-A patch the renderer cannot read falls back to the verbatim text, which is the
-honest outcome: nothing is drawn that the source did not contain.
-
-Theme and palette follow the document by default. Pass `mode` or `palette` only
-when you are rendering into a surface that deliberately differs from the page.
-
-## Render one file
-
-`CodeFileView` highlights a whole file on the same engine. The grammar comes
-from the file name's extension, and `languageForFile` tells you in advance when
-no grammar claims it, so you can keep your own plain text instead:
-
-```tsx
-import { CodeFileView, languageForFile } from "@smthrs/ui/adapters/code-view"
-
-export function FileSurface({ contents, line, name }: {
-  readonly contents: string
-  readonly line?: number
-  readonly name: string
-}) {
-  return languageForFile(name) === null
-    ? <pre>{contents}</pre>
-    : <CodeFileView contents={contents} line={line} name={name} />
-}
-```
-
-`line` is 1-based. Setting it marks that line and scrolls it into the middle of
-the nearest scrolling ancestor; changing it moves the mark and scrolls again.
-Until the highlighter has painted, the component renders a plain `<pre>`, so
-there is no blank frame.
-
-`CodeFileView` automatically starts the shared worker pool on first use. The
-adapter supplies Bun and browser worker factories, with a 15-second
-initialization deadline (`CODE_VIEW_POOL_DEADLINE_MS`). Highlighting falls back
-to the main thread only when workers are unavailable or the pool fails,
-including startup errors or a missed initialization deadline.
-
-For embedded page teardown, call `disposeCodeViewPool` from
-`@smthrs/ui/adapters/code-view` after unmounting its code views, while its DOM
-still exists. This releases the shared pool so the next page can start a fresh
-one.
 
 ## Attach a terminal
 
@@ -138,39 +75,9 @@ style seam the rest of the library uses. Never add
 `import "@xterm/xterm/css/xterm.css"` yourself: a bundler configured to drop CSS
 artifacts discards it silently.
 
-## Frame a shell
-
-A shell's output is untrusted: it can carry escape sequences and links. Show a
-live shell with `TerminalFrame`, which runs xterm.js in a sandboxed frame with
-no network while your page keeps the connection:
-
-```tsx
-import { TerminalFrame } from "@smthrs/ui/adapters/terminal-frame"
-
-export function ShellTerminal({ session, watching }: {
-  readonly session: TerminalSession
-  readonly watching: boolean
-}) {
-  return (
-    <TerminalFrame
-      title="Terminal"
-      theme="dark"
-      readOnly={watching}
-      style={{ height: 320 }}
-      onInput={(data) => session.input(data)}
-      onResize={(cols, rows) => session.resize(cols, rows)}
-      onKey={() => openCommandPalette()}
-      stream={(write) => session.attach({ onOutput: write.output })}
-    />
-  )
-}
-```
-
-Give the frame a height; it fills its container. `stream` runs again each time
-the frame scrolls back near the screen, so attach there and detach in its
-teardown. In a browser, `TerminalSocket` from `@smthrs/platform-browser` is the
-session: it reconnects, drops keystrokes typed while offline, and keeps only
-the latest size.
+`Terminal` runs xterm.js in your page, so give it only output you trust. A live
+shell's output belongs in `TerminalFrame` from `@smthrs/terminal-frame`, which
+runs xterm.js in a sandboxed frame with no network.
 
 ## Draw a chart
 
@@ -188,46 +95,6 @@ const slots: number = CHART_SERIES.length // 8
 Never reorder, cycle, or generate hues past the eight slots. An index past the
 palette clamps to the last slot rather than wrapping, which is deliberate: fold
 the tail into an "Other" series or facet the chart instead.
-
-## Edit markdown
-
-`MarkdownEditor` is the Milkdown Crepe WYSIWYG surface behind an injectable
-`loadEditor` seam. `value` is the initial document, not a controlled value:
-re-seeding on every keystroke would move the caret. Live edits arrive through
-`onChange`.
-
-Render `MarkdownEditorStyles` once to ship the Crepe theme:
-
-```tsx
-import { MarkdownEditor, MarkdownEditorStyles } from "@smthrs/ui/adapters/markdown-editor"
-
-export function NoteEditor({ initial, onChange }: {
-  readonly initial: string
-  readonly onChange: (markdown: string) => void
-}) {
-  return (
-    <>
-      <MarkdownEditorStyles />
-      <MarkdownEditor
-        onChange={onChange}
-        onError={(error) => console.warn(error.code, error.cause)}
-        value={initial}
-      />
-    </>
-  )
-}
-```
-
-The component decides between the rich editor and a controlled textarea with a
-layout probe, exported as `supportsRichTextEditing()` for a host that wants to
-branch on the same answer. Pass `fallback` to force one path. The rendered
-`data-mode` attribute reports which path is live: `"wysiwyg"`, `"fallback"`, or
-`"failed"`.
-
-A failed load is not a lost document. The component reports `editor-load-failed`
-or `editor-create-failed` through `onError` and renders a seeded textarea with
-`data-mode="failed"`, so editing continues in plain text. See
-[Failure codes and limits](../reference/contracts.md) for both codes.
 
 ## Draw a vault graph
 
@@ -261,3 +128,5 @@ suite enforces.
 - [The adapters boundary](../concepts/adapters.md): why the boundary exists and
   what each subpath costs.
 - [API reference](../api.md): every export of every adapter.
+- `@smthrs/repo-view`'s guide "Use the repository views" and
+  `@smthrs/terminal-frame`'s guide "Frame a shell".

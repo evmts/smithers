@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/ui and its ten subpaths: the styling and theming core, the status vocabulary, every component family, the pure helpers, and the six heavy adapters."
+description: "Every public export of @smthrs/ui and its subpaths: the styling and theming core, the status vocabulary, every component family, the pure helpers, and the heavy adapters."
 sidebar:
   order: 1
 ---
@@ -26,15 +26,14 @@ it takes an explicit props bag instead.
 | `@smthrs/ui/vault`                     | [Vault](#vault)                                               | None             |
 | `@smthrs/ui/adapters/chart`            | [Chart](#chart)                                               | `recharts`       |
 | `@smthrs/ui/adapters/terminal`         | [Terminal](#terminal)                                         | `@xterm/*`       |
-| `@smthrs/ui/adapters/terminal-frame`   | [Terminal frame](#terminal-frame)                             | `@xterm/*`, as the frame's runtime |
-| `@smthrs/ui/adapters/code-view`        | [Code view](#code-view)                                       | `@pierre/diffs`  |
-| `@smthrs/ui/adapters/repo-view`        | [Repo view](#repo-view)                                       | `@pierre/diffs`, `@milkdown/*` |
-| `@smthrs/ui/adapters/pierre-diff-view` | [Pierre diff view](#pierre-diff-view)                         | `@pierre/diffs`  |
-| `@smthrs/ui/adapters/markdown-editor`  | [Markdown editor](#markdown-editor)                           | `@milkdown/*`    |
 | `@smthrs/ui/adapters/knowledge-graph`  | [Knowledge graph](#knowledge-graph)                           | `d3-force`       |
 
 The four non-adapter subpaths are slices of the root barrel, offered for import
 ergonomics. Everything they export is also on `@smthrs/ui`.
+
+The repository views (`RepoView`, `CodeFileView`, `PierreDiffView`,
+`MarkdownEditor`) are `@smthrs/repo-view`'s, and `TerminalFrame` is
+`@smthrs/terminal-frame`'s, each imported from its package root.
 
 ## Styling
 
@@ -79,6 +78,7 @@ function subscribeTheme(onChange: () => void): () => void
 function resolvePalette(root?: PaletteRoot | null): ResolvedPalette
 function subscribePalette(onChange: () => void): () => void
 function useResolvedPalette(): ResolvedPalette
+function useResolvedTheme(): ResolvedTheme
 
 type ResolvedTheme = "light" | "dark"
 type ResolvedPalette = keyof typeof themeRegistry
@@ -93,6 +93,7 @@ type SmithersUiTokens = typeof tokens
 | `resolvePalette`     | Reads `data-palette` on `<html>`, accepting only registered keys and falling back to `DEFAULT_THEME_KEY`.                                |
 | `subscribePalette`   | Fires on a `data-palette` mutation. Returns an unsubscribe function.                                                                     |
 | `useResolvedPalette` | The hook form of `resolvePalette`, re-rendering on change.                                                                               |
+| `useResolvedTheme`   | The hook form of `resolveTheme`, re-rendering on change; `"light"` in a server render.                                                   |
 | `themeRegistry`      | Paper light/dark, re-exported from [`@smthrs/ui-styleguide`](https://github.com/smithersai/smithers/tree/main/packages/smithers/ui/ui-styleguide).                                                      |
 
 Both `resolveTheme` and `resolvePalette` take optional injectable roots, which
@@ -137,7 +138,7 @@ sourced from a host cannot resolve through `Object.prototype`.
 | `Badge`, `badgeVariants`                                                                   | `BadgeProps`                   | `asChild`.                                                                                    |
 | `StatusPill`                                                                               | `StatusPillProps`              | `status`, `label`, `withDot`.                                                                 |
 | `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardAction`, `CardContent`, `CardFooter` | Element props               | The panel family.                                                                             |
-| `Input`, `Textarea`                                                                        | Element props                  | Themed form controls.                                                                         |
+| `Input`, `Textarea`                                                                        | Element props                  | Themed form controls. `Textarea`'s `code` sets source text: the mono stack, no wrapping, no spelling or autocorrection. |
 | `Label`, `Field`                                                                           | Element props                  | `Field` pairs a label with its control.                                                       |
 | `Alert`, `AlertTitle`, `AlertDescription`, `alertVariants`                                  | `AlertProps`                   | Tone through the CVA recipe.                                                                  |
 | `Table`, `TableHeader`, `TableBody`, `TableRow`, `TableHead`, `TableCell`, `TableCaption`   | Element props                  | Themed table anatomy.                                                                         |
@@ -162,6 +163,86 @@ sourced from a host cannot resolve through `Object.prototype`.
 | `CopyButton`                                                                                | `CopyButtonProps`              | A `Button` that copies through the host's `onCopy`, which resolves once the text is on the clipboard and rejects when it isn't. Shows `copiedLabel` ("Copied") for `copiedDurationMs` (2,000), sets `data-copy-failed` on a rejection, and ignores clicks while a copy is in flight (`data-copying`). It never touches the clipboard itself. |
 | `DirectoryListing`                                                                          | `DirectoryListingProps`, `DirectoryEntry`, `DirectoryTarget` | One directory's entries as links with folder and file icons, under a `..` row when `parent` is set. `href` builds each link, `onOpen` takes a plain click, and `empty` shows when there is nothing to list. |
 | `useDialogFocusTrap`                                                                        | `UseDialogFocusTrapOptions`    | `{ active, containerRef, initialFocusRef, onClose }`. Focus containment for a custom overlay. |
+| `Kbd`                                                                                       | `KbdProps`                     | A `<kbd>` key chip. See [Keys, choices and the command palette](#keys-choices-and-the-command-palette). |
+| `SegmentedControl`                                                                          | `SegmentedControlProps`, `SegmentedControlOption` | A controlled single-choice row of buttons. |
+| `CommandPalette`                                                                            | `CommandPaletteProps`, `CommandPaletteItem` | A controlled, stateless modal search list. |
+| `isPlainNavigationClick`                                                                    | `(event: MouseEvent<HTMLAnchorElement>) => boolean` | Whether a click on a link is a plain primary click a host may turn into in-app navigation. A modified, middle or already-handled click keeps the browser's behavior. |
+
+## Keys, choices and the command palette
+
+```ts
+function Kbd(props: ComponentProps<"kbd">): JSX.Element
+
+type SegmentedControlProps = Omit<ComponentProps<"div">, "children" | "role" | "onChange" | "defaultValue" | "aria-label"> & {
+  value: string
+  options: ReadonlyArray<{ value: string; label: ReactNode; disabled?: boolean; title?: string }>
+  onValueChange: (value: string) => void
+  "aria-label": string
+  size?: "sm"                  // --ctl-h-sm tall; the default is --ctl-h
+}
+
+type CommandPaletteProps = {
+  open: boolean
+  query: string
+  onQueryChange: (query: string) => void
+  items: ReadonlyArray<{ id: string; label: ReactNode; detail?: ReactNode; badge?: ReactNode }>
+  highlighted: number          // out of range highlights nothing
+  onHighlight: (index: number) => void
+  onChoose: (id: string) => void
+  onClose: () => void
+  placeholder?: string
+  footer?: ReactNode
+  "aria-label"?: string        // default "Command palette"
+  className?: string
+}
+```
+
+- `Kbd` renders `<kbd class="sui-kbd">` with the host's props.
+- `SegmentedControl` is a `radiogroup` of `radio` buttons with
+  `aria-checked`. Only the checked option is in the tab order. The arrow
+  keys check and focus the next enabled option, wrapping; a click checks the
+  one clicked. A `disabled` option is skipped and struck through.
+- `CommandPalette` holds no state. Its input is a `combobox` whose
+  `aria-activedescendant` is the highlighted `option` in a `listbox`.
+  ArrowUp and ArrowDown call `onHighlight` with the index clamped to `items`,
+  Enter and a click call `onChoose(id)`, and Escape and a click on the
+  backdrop call `onClose`. It is built on `Dialog`, so focus stays inside
+  while it is open.
+
+```tsx
+const [open, setOpen] = useState(false)
+const [query, setQuery] = useState("")
+const [highlighted, setHighlighted] = useState(0)
+const items = exports.filter((item) => item.name.includes(query)).map((item) => ({
+  id: item.name,
+  label: item.name,
+  detail: item.packageName,
+}))
+
+<CommandPalette
+  open={open}
+  query={query}
+  onQueryChange={(next) => { setQuery(next); setHighlighted(0) }}
+  items={items}
+  highlighted={highlighted}
+  onHighlight={setHighlighted}
+  onChoose={(id) => { setOpen(false); navigate(id) }}
+  onClose={() => setOpen(false)}
+  placeholder="Jump to an export"
+  footer={<span><Kbd>↵</Kbd> open</span>}
+/>
+
+<SegmentedControl
+  aria-label="Format"
+  size="sm"
+  value={format}
+  onValueChange={setFormat}
+  options={[{ value: "json", label: "JSON" }, { value: "table", label: "Table" }]}
+/>
+```
+
+`kbdCss`, `segmentedControlCss` and `commandPaletteCss` are part of
+`smithersUiCss`.
 
 ## Diffs
 
@@ -178,6 +259,7 @@ function statusLetter(file: DiffFile): string
 function detectBinary(file: DiffFile): boolean
 function binaryBodyLabel(file: DiffFile): string
 function byteCountString(bytes: number): string
+function decodeGitPath(quoted: string): string
 function isLargeDiff(diff: Diff): boolean
 function initialExpanded(diff: Diff): string[]
 
@@ -190,7 +272,8 @@ type Diff, DiffFile, DiffFileStatus, DiffLine, DiffLineKind, Hunk, ParseUnifiedF
 ```
 
 `DiffHunks` (`DiffHunksProps`) is the renderer over that model, with no
-third-party dependency. `byteCountString` answers `"unknown size"` for a
+third-party dependency. `decodeGitPath` decodes the inside of git's quoted path
+form, octal escapes included. `byteCountString` answers `"unknown size"` for a
 negative or non-finite count rather than rendering `NaN`. The four constants are
 the pagination policy documented in
 [Failure codes and limits](./reference/contracts.md).
@@ -227,7 +310,7 @@ and `title` rather than throwing.
 
 | Export                                                                                                                                                   | Types                                                                                       | Notes                                              |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `ChatMessage`                                                                                                                                            | `ChatMessageProps`, `ChatMessageRole`                                                       | One message with an optional label, meta, and pending state. |
+| `ChatMessage`                                                                                                                                            | `ChatMessageProps`, `ChatMessageRole`                                                       | One message with an optional label, `meta` (delivery state, always shown), `actions` (its time and controls, shown while the pointer is over it, focus is inside it, or a touch taps it) and pending state. |
 | `ChatTranscript`                                                                                                                                         | `ChatTranscriptProps`                                                                       | The drop-in transcript surface.                    |
 | `ChatComposer`                                                                                                                                           | `ChatComposerProps`, `ChatComposerStatus`, `ChatComposerError`, `ChatComposerCompletions`   | Controlled glass composer. `submitProps` and `stopProps` stamp host attributes on the two buttons. `onError` receives a failed `onSubmit` as `submit-failed`. `completions` lists rows above the input, such as slash commands: arrows move, Enter accepts, Tab completes, Escape dismisses ([complete slash commands](./guides/complete-slash-commands.md)). |
 | `CompletionList`                                                                                                                                         | `CompletionListProps`, `ComposerCompletion`                                                 | The listbox `completions` renders, for a host composing its own input. |
@@ -557,224 +640,8 @@ replaces the dynamic `@xterm/*` imports.
 
 The xterm base stylesheet is vendored as a string and injected through the same
 seam as the rest of the library, so a host must not import
-`@xterm/xterm/css/xterm.css`.
-
-## Terminal frame
-
-`@smthrs/ui/adapters/terminal-frame`. xterm.js and its fit addon run in an
-opaque-origin frame; the page bundles them only as the frame runtime's text.
-
-```ts
-function TerminalFrame(props: TerminalFrameProps): JSX.Element
-
-type TerminalFrameProps = Omit<ComponentProps<"div">, "children" | "title" | "onInput" | "onResize" | "ref"> & {
-  title: string
-  theme: TerminalFrameTheme
-  readOnly?: boolean
-  stream: TerminalFrameStream
-  onInput: (data: string) => void
-  onResize: (cols: number, rows: number) => void
-  onKey?: (key: TerminalFrameKey) => void
-  onLink?: (url: string) => void
-  runtime?: string
-  ref?: Ref<TerminalFrameHandle>
-}
-type TerminalFrameStream = (write: TerminalFrameWriter) => () => void
-type TerminalFrameWriter = { readonly output: (bytes: Uint8Array | string) => void }
-type TerminalFrameHandle = { readonly focus: () => void }
-type TerminalFrameKey = { key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }
-type TerminalFrameTheme = "light" | "dark"
-
-const terminalFrameRuntime: string
-```
-
-`TerminalFrame` shows `<iframe sandbox="allow-scripts" srcdoc
-referrerPolicy="no-referrer">` with the document `ViewCsp.frameDocument`
-writes: the frame runtime is its only script, pinned by hash, and
-`connect-src 'none'` leaves the frame no network. `style-src 'unsafe-inline'`
-stays, because xterm.js injects `<style>` elements and writes 24-bit colors
-as `style` attributes. The frame mounts only while it is within 200 px of the
-screen, with a new nonce and document each time.
-
-The frame asks with `terminal/initialize` and its nonce. The page answers
-only its own frame's `contentWindow`, only with this mount's nonce and only
-once, and transfers a `MessagePort`; everything after uses the port.
-
-| Message | Direction | Params |
-| --- | --- | --- |
-| `terminal/initialize` | frame to page, window | `{ nonce }`; the answer's `result` is `{ theme, colors, readOnly }` |
-| `terminal/output` | page to frame | `{ bytes }`, a transferred `Uint8Array` |
-| `terminal/options` | page to frame | `{ theme, colors, readOnly }`, after any changes |
-| `terminal/focus` | page to frame | `{}` |
-| `terminal/input` | frame to page | `{ data }`, at most 1 MiB |
-| `terminal/resize` | frame to page | `{ cols, rows }`, first and after each fit that changes them |
-| `terminal/key` | frame to page | a `TerminalFrameKey`, for ⌘K and Ctrl+K only |
-| `terminal/link` | frame to page | `{ url }`, an `http:` or `https:` URL of at most 2048 characters |
-
-`stream` runs each time the frame connects; its teardown runs when the frame
-unmounts or leaves the screen. `output` transfers a `Uint8Array` that spans
-its whole buffer, so the caller must not reuse it; anything else is copied,
-and a string is sent as UTF-8. `colors` is the terminal palette for `theme`
-from the document's `data-palette`.
-
-`readOnly` sets xterm's `disableStdin` and removes the frame's input listener,
-and the page drops any `terminal/input` while it is set. ⌘K and Ctrl+K reach
-`onKey` and never the shell; Esc stays in the shell. A link is posted only for
-a person's click on an OSC 8 link or a URL in the text, and the page acts on
-it only while it has the person's activation: `onLink`, or by default
-`window.open(url, "_blank", "noopener,noreferrer")`. The frame loads no
-clipboard (OSC 52) addon and follows no link itself. `ref.focus()` focuses the
-terminal.
-
-## Code view
-
-`@smthrs/ui/adapters/code-view`. Pulls in `@pierre/diffs` and Shiki.
-
-```ts
-function languageForFile(name: string): string | null
-
-const CODE_VIEW_REST_MS: 300
-const CODE_VIEW_POOL_DEADLINE_MS: 15000
-const currentCodeViewPool: () => CodeViewPool
-const subscribeCodeViewPool: (listener: () => void) => () => void
-```
-
-`CodeFileView` (`CodeFileViewProps`) renders one file: `name` supplies the
-grammar, `contents` the text, `line` a 1-based anchor that is marked and
-scrolled into view, `lineEnd` widens the mark to the range from `line` to it,
-and `mode` and `palette` override the document's theme.
-`annotations` (`CodeLineAnnotation`) render under their lines, and the consumer
-must memoize the array because a new one redraws the rows. `onTokenRest` fires
-once per token after the pointer rests for `CODE_VIEW_REST_MS`, reporting a
-`CodeTokenPosition`.
-
-`languageForFile` answers `null` when no grammar claims the name, which is the
-signal to keep your own plain text. Until the highlighter paints, the component
-renders a plain `<pre>`.
-
-## Repo view
-
-`@smthrs/ui/adapters/repo-view`. Pulls in `@pierre/diffs`, Shiki and
-`@milkdown/*`, through the code view and the Markdown editor.
-
-```ts
-type RepoViewLocation = { kind: "tree" | "blob"; path: string; line?: number; lineEnd?: number }
-type RepoViewTree =
-  | { state: "loading" }
-  | { state: "ready"; paths: ReadonlyArray<string>; truncated?: boolean }
-  | { state: "failed"; message: ReactNode }
-type RepoViewFile =
-  | { state: "loading" }
-  | { state: "text"; contents: string; size: number }
-  | { state: "binary"; size: number }
-  | { state: "too-large"; size: number }
-  | { state: "failed"; message: ReactNode }
-type RepoViewSize = "inline" | "full"
-type RepoViewMarkdownMode = "preview" | "source"
-```
-
-`RepoView` (`RepoViewProps`) is a repository browser. It shows the file tree
-beside a directory's listing and its README, or a file as code or as a
-Markdown document.
-
-- **It fetches nothing.**
-  - `tree` is every file's path at the revision.
-  - `file` is the file at a `blob` location.
-  - `readme` (`{ path, file }`) is a directory's README, which the host
-    chooses.
-- **The host owns the location.** `location` says where the view is, `href`
-  builds every link, and `onNavigate` takes a plain click on any of them,
-  including a relative link in a Markdown document, which resolves against the
-  repository as GitHub resolves it. One view therefore serves a routed page
-  and a conversation.
-- **`size`:** `full` (the default) puts the tree beside the content. `inline`
-  drops the tree and bounds the content's height. Below 720 px of its own
-  width, a `full` view drops the tree too: the view measures its container,
-  not the window.
-- **The tree's open directories:** `expanded` and `onToggle`. Uncontrolled,
-  the view opens the location's directories as it navigates; a host that
-  controls `expanded` does the same.
-- **Markdown:** a file renders as a read-only WYSIWYG document by default.
-  Preview and Code switch it to its source and back, through `markdownMode`
-  and `onMarkdownModeChange`, controlled or not.
-- **The host's slots:** `revision` leads the header, `actions` trails it,
-  `summary` sits between the header and the content, and `fileActions` trails
-  a file's toolbar.
-- **Other props:** `codeMode` sets the code theme. `markdownEditor` passes the
-  editor's `fallback` and `loadEditor` seams.
-- **States:**
-  - A tree or file still `loading` shows a spinner.
-  - A `failed` one shows its message as an alert.
-  - A location that isn't in the tree shows "Not found".
-  - A binary or too-large file shows its size.
-
-## Pierre diff view
-
-`@smthrs/ui/adapters/pierre-diff-view`. Pulls in `@pierre/diffs` and Shiki.
-
-```ts
-function patchToCodeViewItems(patch: string, selectedPath?: string | null): CodeViewItem[]
-function diffsThemeForMode(mode: PierreDiffMode, palette?: ResolvedPalette): DiffsThemeNames
-function diffStyleForLayout(layout: PierreDiffLayout): "split" | "unified"
-function normalizeDiffPath(path: string | undefined): string
-
-type PierreDiffMode = "light" | "dark"
-type PierreDiffLayout = "split" | "inline"
-```
-
-`PierreDiffView` (`PierreDiffViewProps`) renders a unified patch: `layout`
-chooses side by side against unified, `selectedPath` narrows a multi-file patch
-to one file, and `emptyLabel` covers an empty or unparseable patch.
-
-`normalizeDiffPath` decodes git's quoted, octal-escaped path form and strips a
-leading `a/` or `b/`, which is why `selectedPath` compares equal across all four
-spellings of a name.
-
-Syntax token colors follow the resolved `mode` and `palette`, which default to
-the document's theme and palette. `diffsThemeForMode` selects
-`themeRegistry[palette].syntax.shikiLight` or `shikiDark` for light or dark mode.
-Calling the helper without a palette uses `"paper"`, the registered Paper
-palette. Set it explicitly on the component:
-
-```tsx
-<PierreDiffView patch={patch} palette="paper" />
-```
-
-Registered palettes select bundled Shiki themes. The adapter exposes no
-registration prop for custom unregistered themes; those require a separate
-highlighter and worker registration path.
-
-## Markdown editor
-
-`@smthrs/ui/adapters/markdown-editor`. Pulls in `@milkdown/*`.
-
-```ts
-function supportsRichTextEditing(): boolean
-
-const markdownEditorCss: string
-const MARKDOWN_EDITOR_STYLE_ATTR: string
-
-type MarkdownEditorErrorCode = "editor-load-failed" | "editor-create-failed"
-```
-
-`MarkdownEditor` (`MarkdownEditorProps`) takes `value` as the initial document,
-not a controlled value, and reports edits through `onChange`. `resetKey` forces
-a re-seed when the host switches documents. `loadEditor`
-(`MarkdownEditorModule`) is the injectable module loader, which is how a test or
-a host with its own build drives the rich path. `escapeTabOrder` defaults to
-true so Tab moves focus out rather than trapping a keyboard user. `fallback`
-forces the textarea or the rich editor, overriding the
-`supportsRichTextEditing` probe. `onLinkClick` receives a clicked link's
-`href` as written in the markdown; returning true stops the browser from
-following it, which is how a host opens a document's relative links itself.
-`MarkdownEditorHandle` exposes `getMarkdown` and the imperative seams.
-Images stay inline Markdown images, so their alt text and title round-trip
-unchanged. Crepe's image block is off because it saves its display ratio as
-the alt text.
-
-`MarkdownEditorStyles` ships the Crepe theme through the library's style seam.
-`MarkdownEditorError` carries a `code` and the original `cause`; both codes are
-described in [Failure codes and limits](./reference/contracts.md).
+`@xterm/xterm/css/xterm.css`. The root exports it as `xtermBaseCss` for
+`@smthrs/terminal-frame`, whose frame carries the same sheet.
 
 ## Knowledge graph
 
@@ -854,6 +721,7 @@ is near the screen.
 | Export | What it is |
 | --- | --- |
 | `frameRuntime` | the frame runtime as one script, generated by `scripts/build-views.mjs` from `src/generated-view/runtime.ts` |
+| `newNonce()`, `useNearScreen(element)` | a fresh per-mount handshake secret, and whether an element is within 200 px of the screen; `GeneratedView` and `@smthrs/terminal-frame` mount their frames with them |
 | `sanitizeViewHtml(html, document, parser)` | the frame's sanitizer: an inert `DOMParser` parse, then an allowlist copy into `document` |
 | `generatedViewCss` | the component's sheet, part of `smithersUiCss` |
 | `loadPresentationBundle()` | `Promise<string>`: the presentation bundle a `PresentationRealm` loads, imported on first use |
@@ -909,7 +777,12 @@ type IssuesViewIssue = {
   comments?: number
   updatedAt?: string
   pending?: "requested" | "not_sent"                       // a Requested or Not sent chip
+  triage?: IssuesViewTriage                                // a triage chip; absent: none
 }
+
+type IssuesViewTriage = "proposed" | "accepted" | "not_accepted" | "conflict"
+
+const TRIAGE_WORDS: Readonly<Record<IssuesViewTriage, string>>   // Proposed, Accepted, Not accepted, Conflict
 ```
 
 The `issues` template, and the issue list (`/issues`) of apps/mvp decision
@@ -919,8 +792,10 @@ plain click calls `onNavigate` after `preventDefault`, and a modified click
 (⌘, Ctrl, Shift, Alt, middle button) keeps the browser's behavior. `loading`
 sets `aria-busy`, replaces the counts with a `Loading issues` status and, with
 no rows, shows placeholders instead of `EmptyState`. A row carries
-`data-pending`. An empty list shows `EmptyState`. `inline` scrolls inside 320
-pixels.
+`data-pending`. `triage` adds a chip (`sui-issues-triage`, `data-triage`) after
+the number: `Proposed` outline, `Accepted` success, `Not accepted` muted,
+`Conflict` warning. An empty list shows `EmptyState`. `inline` scrolls inside
+320 pixels.
 
 `declaredInput(document)` and `formFieldsFor(input, hints?, payload?)`, with
 their `FieldKind`, `FieldValue`, `FormDraft`, `FormField` and `FormHints`
@@ -955,6 +830,7 @@ type ItemConversationProps = Omit<ComponentProps<"article">, "children" | "title
   loading?: boolean
   composer?: ItemConversationComposer           // absent: no composer at all
   headingLevel?: 1 | 2 | 3                      // default 1
+  headerActions?: ReactNode                     // end of the header's meta row, such as TriageControl
 }
 
 type ItemConversationComment = {
@@ -990,15 +866,15 @@ type IssueFormProps = Omit<ComponentProps<"form">, "children" | "onSubmit"> & {
 `ItemConversation` renders an `article` (`data-slot="item-conversation"`,
 `data-state`, `data-pending`) named by its title heading: the title with
 `#12` or `#–`, an `Open` or `Closed` badge, a `Requested` or `Not sent` chip,
-the author, a `RelativeTime`, and `Open on GitHub ↗` in a new tab when
-`externalHref` passes `safeHref`. The body and each comment render through
+the author, a `RelativeTime`, `Open on GitHub ↗` in a new tab when
+`externalHref` passes `safeHref`, and `headerActions` at the row's end. The body and each comment render through
 `Markdown` with `variant="document"`, so an HTML comment is dropped and no tag
 in the text, a `<script>` included, becomes an element. Comments are an `ol`
 labelled `Comments`, each `li` with `data-pending`. The composer is a labelled
 `Textarea` and a `Comment` button; the button, ⌘Enter and Ctrl+Enter submit
 only while the trimmed draft is non-empty and `disabled` is unset. `loading`
-shows a `Loading` status and placeholders, with no header, comments or
-composer.
+shows a `Loading` status and placeholders, with no header, header actions,
+comments or composer.
 
 `IssueForm` labels a `Title` input and a `Description` textarea. The submit
 button, Enter in the title, and ⌘Enter or Ctrl+Enter in either field submit
@@ -1006,6 +882,120 @@ only while the trimmed title is non-empty and `disabled` is unset. `error` is a
 `role="alert"` paragraph that describes both fields.
 
 `itemConversationCss` is part of `smithersUiCss`.
+
+## Triage
+
+An issue's triage state and the buttons a person may press (apps/mvp decision
+0012 §5). Controlled: the host owns the state and the writes.
+
+```ts
+function TriageControl(props: TriageControlProps): JSX.Element
+
+type TriageControlProps = Omit<ComponentProps<"div">, "children"> & {
+  state: IssuesViewTriage
+  pending?: "requested" | "not_sent"            // a Requested or Not sent chip
+  onAccept?: () => void                         // Accept, unless accepted
+  onReject?: () => void                         // Not accepted, unless not_accepted
+  onRunAgain?: () => void                       // Run triage again
+  disabled?: boolean                            // disables every button shown
+}
+```
+
+`TriageControl` renders a `div` with `role="group"` and `aria-label="Triage"`
+(a host `aria-label` replaces it), `data-slot="triage-control"`,
+`data-triage` and `data-pending`. It shows the state chip in the words and
+variants of `IssuesView`'s triage chip, the pending chip, then small outline
+`Accept` and `Not accepted` buttons and a ghost `Run triage again`. A button
+whose handler is absent is not rendered, so a person who can't act sees the
+state only.
+
+| `state` | Buttons, with every handler |
+|---|---|
+| `proposed` | Accept · Not accepted · Run triage again |
+| `accepted` | Not accepted · Run triage again |
+| `not_accepted` | Accept · Run triage again |
+| `conflict` | Accept · Not accepted · Run triage again |
+
+`triageControlCss` is part of `smithersUiCss`.
+
+## Sharing
+
+Who is on a branch, and who may open it (apps/mvp decision 0013 §5), after
+Google Docs and Figma. Both are controlled: the host owns the people, the
+access and the writes.
+
+```ts
+function AvatarStack(props: AvatarStackProps): JSX.Element | null
+function ShareDialog(props: ShareDialogProps): JSX.Element
+
+interface AvatarStackPerson {
+  id: string                                    // stable key; also picks the color
+  name: string                                  // such as a GitHub login; the initial comes from it
+  title?: string                                // the tooltip, such as "maya · Terminal"; default name
+}
+
+type AvatarStackProps = Omit<ComponentProps<"ul">, "children" | "onSelect"> & {
+  people: ReadonlyArray<AvatarStackPerson>
+  max?: number                                  // default 4; the rest fold into one +N
+  onSelect?: (id: string) => void               // present: each avatar is a button
+  label?: string                                // the list's name; default "People here"
+}
+
+type ShareAccess = "view" | "edit"
+type ShareGeneral = "restricted" | ShareAccess  // restricted: only people added
+
+interface SharePerson { id: string; name: string; access: ShareAccess | "owner" }
+
+interface ShareDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  title: string                                 // such as "Share test-branch"
+  people: ReadonlyArray<SharePerson>            // in order, owner first
+  self?: string                                 // the viewer's id: "<name> (you)"
+  general: ShareGeneral
+  groupLabel: string                            // such as "Anyone in this repository with the link"
+  link: string                                  // what Copy link copies
+  onAdd: (name: string, access: ShareAccess) => void
+  onAccessChange: (id: string, access: ShareAccess) => void
+  onRemove: (id: string) => void
+  onGeneralChange: (general: ShareGeneral) => void
+  error?: string                                // under the add row, such as "No such person"
+  pending?: ReadonlyArray<string>               // people being changed: their controls disabled
+}
+```
+
+`AvatarStack` renders a `ul` (`data-slot="avatar-stack"`) named by `label`,
+or renders nothing for no people. Each avatar is a 24px circle with the
+name's first letter or digit, named by the name, with a tooltip of its
+`title`. Without `onSelect` it is `role="img"`; with it, a button that calls
+`onSelect(id)` on click, Enter or Space. Past `max`, one focusable `+N` is named
+by, and tooltips, the rest's names. Avatars overlap, each ringed in
+`--sui-avatar-ring` (default the page background, `--bg`); a host on a card
+surface sets it to `var(--surface)`.
+
+An avatar's color is a lane picked by hashing its `id`, the same FNV-1a hash
+apps/app's identity marks use, so one person has one color everywhere. Lanes
+paint with the host's `--lane-0` to `--lane-5` and `--avatar-ink` when it
+defines them, and with the theme's danger, info, muted, warning, brand and
+success hues otherwise, which follow light and dark.
+
+`ShareDialog` is a Radix `Dialog` titled `title`, with no close button: Done,
+Escape and a click outside call `onOpenChange(false)`. Top to bottom:
+
+- The add row: an `Add people` input, an access select (`Can view`, the default,
+  or `Can edit`) and `Share`. `Share` and Enter call `onAdd` with the trimmed
+  text, only while it isn't blank, then clear the input and keep focus there.
+- `error`, a `role="alert"` paragraph that describes the input.
+- `People with access`: a row per person with the same avatar as
+  `AvatarStack`, the name (`<name> (you)` for `self`), and `Owner` for the owner,
+  else an access select named `Access for <name>` and `Remove`, named
+  `Remove <name>`. A `pending` person's select and `Remove` are disabled.
+- `General access`: a select between `Restricted` and `groupLabel`, named by
+  that heading; choosing the group calls `onGeneralChange("view")`. Past
+  `Restricted`, a `Link access` select picks `view` or `edit`.
+- `Copy link`, a `CopyButton` that copies `link` through `copyText`, and `Done`.
+
+`avatarStackCss` and `shareDialogCss` are part of `smithersUiCss`.
 
 ## Web pages
 
@@ -1067,8 +1057,11 @@ pulsing), `waiting` (`○ Waiting`, quiet), `needs_you` (`◆ Needs you`, gold:
 | --- | --- | --- |
 | `AgentStatusPill` | `AgentStatusPillProps` | `state`, `count` (shown above 1), `onClick` (renders a button), `label` (the button's name). `data-slot="agent-status"`, `data-state`. |
 | `NeedsYouCard` | `NeedsYouCardProps` | `kind` (`question` or `approval`), `prompt`, `options`, `value` and `onValueChange` (the app keeps the draft), `onAnswer` (the words or option, or `true` for Approve and `false` for Deny), `sending`, `answered` (collapses to the answer), `focusRequest` (each new value focuses the field and scrolls the card into view). |
-| `ToastStack`, `Toast` | `ToastStackProps`, `ToastProps` | The stack is a polite live region, `max` toasts (3) then `+N`. `placement` `fixed` (the default) floats at the bottom-left, full width on a phone; `inline` sits where it is rendered, such as above a composer. A toast has a `tone` (an agent state), a one-line `detail`, at most one `action`, Hide (`onHide`), and `delayed`, which fades it in after 300 ms. |
+| `ToastStack`, `Toast` | `ToastStackProps`, `ToastProps` | The stack is a polite live region, `max` toasts (3) then `+N`. `more` holds the person's other entries, shown only while expanded, after the toasts. `+N` counts the toasts past `max` plus the `more` entries, and shows even with no toasts; expanded, it reads `Less` (`aria-expanded`) and collapses the stack. The stack renders nothing with no toasts and no `more` entries. `placement` `fixed` (the default) floats at the bottom-left, full width on a phone; `inline` sits where it is rendered, such as above a composer. A toast has a `tone` (a notice state), `word` (shown in bold in place of the state's word), a one-line `detail`, at most one `action`, Hide (`onHide`, named by `hideLabel`, default `Hide`), `unread` (`data-unread`, a brand dot and `Unread` for screen readers), and `delayed`, which fades it in after 300 ms. |
 | `AGENT_STATES`, `AGENT_STATUS_WORDS`, `AGENT_STATUS_GLYPHS`, `isAgentState` | `AgentState` | The vocabulary, most urgent first. |
+| `NOTICE_WORDS`, `NOTICE_GLYPHS` | `NoticeState` | A notice's states: the agent's five plus `update` (`● Updated`, muted), an event such as a repository's main moving. |
+| `noticeDismissDelay(state)` | `NoticeState` | Milliseconds a toast shows before it hides on its own: 4000 for `done` and `update`, `Infinity` for the rest. |
+| `workNoticeVisible(notice, nowMs)` | | Whether a notice's toast shows (decision 0009 §4): `open`, not `hidden`, and `nowMs < updatedAtMs + noticeDismissDelay(state)`. Pure, so a view keeps no timers. |
 | `agentStatusTitle(base, count)` | | The tab title: `(2) Smithers` while 2 runs need the person. |
 | `answerText(answer)` | `NeedsYouAnswer` | An answer as it reads: the words, `Approved` or `Denied`. |
 
@@ -1107,11 +1100,157 @@ The pure helpers the components use, for a terminal or a test:
 
 `jsonValueCss`, `runPageCss` and `flowDraftViewCss` are part of `smithersUiCss`.
 
+## Repository home
+
+The blocks a repository declares in `.smithers/home.json`, as `Home.read`
+from `@smthrs/views` answers them (apps/mvp decision 0014). See
+[show a repository home](./guides/show-a-repository-home.md).
+
+```ts
+function RepositoryHome(props: RepositoryHomeProps): JSX.Element | null
+
+const repositoryHomeCss: string
+
+type RepositoryHomeFile =
+  | { readonly state: "loading" }
+  | { readonly state: "text"; readonly text: string }
+  | { readonly state: "failed" }
+
+type RepositoryHomeProps = Omit<ComponentProps<"section">, "children"> & {
+  blocks: ReadonlyArray<Home.Block>                      // from @smthrs/views
+  files?: Readonly<Record<string, RepositoryHomeFile>>   // by path; absent shows as loading
+  askHref?: string                                       // a prompt or app button's link; without it neither draws
+  onAsk?: (flow: string | undefined) => void             // a plain click: default prevented, the host navigates
+  offered?: (flow: string) => boolean                    // an app block draws only when true; default none
+}
+```
+
+`RepositoryHome` renders a `section` (`data-slot="repository-home"`). Each
+drawn block is a `div` (`repository-home-block`, `data-kind` its `type`) under
+its optional `title` as an `<h2>`: `text` in a pre-wrapped paragraph, never
+markup; `links` as a list of links with `target="_blank"` and
+`rel="noopener noreferrer"`, absolute `http` and `https` only; `markdown` as a
+`Spinner` named `Loading <path>`, `Markdown variant="document"`, or the status
+line `Couldn't read <path>`; `prompt` as a `Button asChild variant="outline"`
+link to `askHref` labelled `placeholder ?? "Ask Smithers"`; and `app` as the
+same link labelled `title` with `data-picture`, adjacent app blocks in one
+wrapping row (`repository-home-apps`). With `onAsk`, a plain click on either
+prevents its default and calls `onAsk(flow)`; a modified or non-primary click
+keeps the browser's behavior. `flows`, `stack` and `view` are not
+drawn yet. When no block draws, it renders `null`. `repositoryHomeCss` is part
+of `smithersUiCss`.
+
+## TODOs and the stack
+
+A repository's stack, one TODO at full size, and the private draft a person
+commits (apps/mvp decision 0016 §4). All three are controlled. See
+[show a stack](./guides/show-a-stack.md).
+
+```ts
+type TodoState = "queued" | "starting" | "working" | "needs_you" | "in_review" | "merged" | "dropped" | "failed"
+type TodoPending = "requested" | "not_sent"
+
+const TODO_STATE_WORDS: Readonly<Record<TodoState, string>>      // Queued … Failed
+const TODO_PENDING_WORDS: Readonly<Record<TodoPending, string>>  // Requested, Not sent
+function todoNumberText(number: number | null): string           // T4, or T– when null
+
+function StackList(props: StackListProps): JSX.Element
+function TodoCard(props: TodoCardProps): JSX.Element
+function TodoDraftCard(props: TodoDraftCardProps): JSX.Element
+
+type StackListTodo = {
+  id: string
+  number: number | null                        // null shows T–
+  title: string
+  state: TodoState
+  pending?: TodoPending                        // a Requested or Not sent chip
+}
+
+type StackListProps = Omit<ComponentProps<"section">, "children" | "onDrop"> & {
+  repo: string                                 // names the section `<repo> stack`
+  todos: ReadonlyArray<StackListTodo>          // in the host's order
+  href?: (todo: StackListTodo) => string | undefined
+  onNavigate?: (todo: StackListTodo, href: string) => void
+  onDrop?: (todo: StackListTodo) => void       // Drop on droppable rows; absent: none
+  loading?: boolean
+  actions?: ReactNode                          // in the header, such as New TODO
+  selected?: string                            // this row gets aria-current="true"
+}
+
+type TodoCardProps = Omit<ComponentProps<"article">, "children" | "title" | "onDrop"> & {
+  number: number | null
+  title: string
+  state: TodoState
+  prompt: string                               // Markdown, untrusted
+  acceptance?: ReadonlyArray<string>
+  pending?: TodoPending
+  onDrop?: () => void
+}
+
+type TodoDraftCardProps = Omit<ComponentProps<"form">, "children" | "onSubmit" | "title"> & {
+  repo?: string
+  title: string
+  prompt: string
+  acceptance?: ReadonlyArray<string>           // read only
+  onTitleChange: (title: string) => void
+  onPromptChange: (prompt: string) => void
+  onCommit: () => void
+  onDiscard: () => void
+  committing?: boolean                         // disables Commit
+  refused?: string                             // a chip, such as Stack full
+  maxTitleLength?: number                      // default 120
+}
+```
+
+`StackList` renders a `section` (`data-slot="stack-list"`, `aria-label`
+`<repo> stack`, `aria-busy` while `loading`) with an `<h2>` `Stack`, the
+`actions`, and an `ol` named by that heading. Each row is an `li` with
+`data-todo`, `data-state`, `data-pending` and `aria-current="true"` when
+`selected`: the number, the title (an `<a>` when `href` gives a link that passes
+`safeHref`), the state chip, the pending chip, and Drop. A plain click on a
+title calls `onNavigate` after `preventDefault`; a modified click keeps the
+browser's behavior. ArrowDown, ArrowUp, Home and End move focus between rows'
+links, or rows without a link, which are tab stops themselves. `loading` with no
+rows shows a `Loading stack` status and placeholders; no rows otherwise shows
+`EmptyState` `No TODOs`.
+
+Drop shows when `onDrop` is set, the TODO is numbered, not merged or dropped,
+and has no pending chip. It confirms inline once: `Drop T4` (destructive) and
+`Cancel`, with focus on `Cancel`. `Cancel` and Escape restore Drop and focus it;
+`Drop T4` calls `onDrop` once, restores Drop, and focuses the row's title or
+the card's heading.
+
+| `state` | Chip |
+|---|---|
+| `queued`, `starting` | outline |
+| `working` | default, with the status dot |
+| `needs_you` | warning |
+| `in_review` | default |
+| `merged` | success |
+| `dropped` | muted |
+| `failed` | destructive |
+
+`TodoCard` renders an `article` (`data-slot="todo-card"`, `data-state`,
+`data-pending`) named by its `<h2>` title: the number, the state and pending
+chips, the prompt through `Markdown variant="document"`, so no tag in it
+becomes an element, an `Acceptance criteria` list, and Drop in a `footer`.
+
+`TodoDraftCard` renders a `form` (`data-slot="todo-draft-card"`) named
+`TODO draft`: a header with `Draft`, a muted `Only you` badge and `repo`; a
+labelled `Title` input (`maxLength`) and `Prompt` textarea; the acceptance
+criteria; then `Commit` (submit) and `Discard` (ghost). Commit is disabled while
+`committing`, when the trimmed title or prompt is empty, or when the title is
+longer than `maxTitleLength`. Submitting, Enter in the title, and ⌘Enter or
+Ctrl+Enter in the prompt always prevent the default and call `onCommit` only
+while Commit is enabled. `refused` is a destructive `role="alert"` chip.
+
+`stackCss` is part of `smithersUiCss`.
+
 ## Related
 
 - [Failure codes and limits](./reference/contracts.md): the codes and bounds
   referenced throughout this page.
-- [The adapters boundary](./concepts/adapters.md): what the six adapter
+- [The adapters boundary](./concepts/adapters.md): what the adapter
   subpaths cost.
 - [Troubleshooting](./troubleshooting.md): symptoms and fixes.
 
