@@ -38,6 +38,8 @@ The server has no dependencies and binds to 127.0.0.1. It refuses another host n
 | `GET /api/markdown?path=…` | A Markdown file rendered to HTML, `{ html, title }`, with the file endpoint's roots and refusals |
 | `GET /api/stats` | Answers today, remaining by kind, and coverage |
 
+Code slices send `slice=<id>` to the file and outline endpoints. A slice’s `commit` pins both to jj history (with a 32-entry cache by commit and path); `revision` is only its text hash. Older slices without `commit` read the working copy. An unavailable commit returns 404.
+
 The server also serves the built site at `/`. Set `PORT`, `QUEUE_DIR`, `MAINTAINER_SITE_REPO`, `MAINTAINER_SITE_GIFS`, `MAINTAINER_SITE_VIDEOS` or `MAINTAINER_SITE_OUT` to change where it listens and reads.
 
 ```sh

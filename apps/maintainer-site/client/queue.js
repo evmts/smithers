@@ -47,10 +47,10 @@
   let serverLast = null
   const inFlight = new Set() // answered here, not yet hidden by the server
   const sent = [] // this session's answers, newest last, for undo
-  const files = new Map() // path -> Promise<{ ok, text, type }>
+  const files = new Map() // [slice, commit, revision, path] -> Promise<{ ok, text, type }>
   let stats = { doneToday: 0, remaining: {}, total: 0, coverage: null }
   let missing = false
-  const outlines = new Map() // path -> Promise<{ comments, folds, symbols } | null>
+  const outlines = new Map() // [slice, commit, revision, path] -> Promise<{ comments, folds, symbols } | null>
   let hideComments = store.get(COMMENTS_KEY) === "1" // c, per viewer
   let outlineOpen = store.get(OUTLINE_KEY) === "1" // O, per viewer
   const foldedBy = new Map() // path -> Set of folded first lines, this session
@@ -79,11 +79,12 @@
   const IMAGE = new Set(["gif", "png", "jpg", "jpeg", "webp", "avif", "svg"])
   const VIDEO = new Set(["mp4", "webm"])
 
-  const loadFile = (path) => {
-    if (!files.has(path))
+  const loadFile = (path, slice = "", commit = "", revision = "") => {
+    const key = JSON.stringify([slice, commit, revision, path])
+    if (!files.has(key))
       files.set(
-        path,
-        fetch(fileUrl(path), { cache: "no-store" })
+        key,
+        fetch(fileUrl(path) + `&slice=${encodeURIComponent(slice)}`, { cache: "no-store" })
           .then(async (response) => {
             const text = await response.text()
             if (!response.ok) {
@@ -97,29 +98,30 @@
           })
           .catch((error) => ({ ok: false, text: String(error.message || error) })),
       )
-    return files.get(path)
+    return files.get(key)
   }
 
   // Comments, folds and symbols from the server's TypeScript parse; null for other languages or on failure. A failure
   // is not kept, so the next view of the file asks again (a server restarted with the endpoint, a file that parses now).
   const canOutline = (path) => /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/i.test(path ?? "")
-  const loadOutline = (path) => {
-    if (!outlines.has(path)) {
+  const loadOutline = (path, slice = "", commit = "", revision = "") => {
+    const key = JSON.stringify([slice, commit, revision, path])
+    if (!outlines.has(key)) {
       const failed = () => {
-        outlines.delete(path)
+        outlines.delete(key)
         return null
       }
       outlines.set(
-        path,
+        key,
         canOutline(path)
-          ? fetch(`/api/outline?path=${encodeURIComponent(path)}`, { cache: "no-store" })
+          ? fetch(`/api/outline?path=${encodeURIComponent(path)}&slice=${encodeURIComponent(slice)}`, { cache: "no-store" })
               .then((response) => (response.ok ? response.json() : failed()))
               .then((outline) => (outline?.supported ? outline : null))
               .catch(failed)
           : Promise.resolve(null),
       )
     }
-    return outlines.get(path)
+    return outlines.get(key)
   }
 
   async function refresh() {
@@ -156,8 +158,8 @@
   function prefetch(item) {
     if (item.kind === "code")
       for (const file of item.files ?? []) {
-        loadFile(file.path)
-        loadOutline(file.path)
+        loadFile(file.path, item.id, item.commit, item.revision)
+        loadOutline(file.path, item.id, item.commit, item.revision)
       }
   }
 
@@ -327,7 +329,7 @@
     const token = {}
     codeToken = token
     view = null
-    Promise.all([loadFile(file.path), loadOutline(file.path)]).then(([result, outline]) => {
+    Promise.all([loadFile(file.path, item.id, item.commit, item.revision), loadOutline(file.path, item.id, item.commit, item.revision)]).then(([result, outline]) => {
       if (!target.isConnected) return
       target.classList.remove("loading")
       if (!result.ok) {

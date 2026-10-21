@@ -10,6 +10,7 @@
 // MAINTAINER_SITE_GIFS (~/Desktop/smithers-mvp/gifs), MAINTAINER_SITE_VIDEOS (~/Desktop/smithers-mvp/videos),
 // MAINTAINER_SITE_OUT (~/Desktop/smithers-maintainer).
 import { closeSync, createReadStream, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync, watch, writeSync } from "node:fs"
+import { execFileSync } from "node:child_process"
 import { createServer } from "node:http"
 import { homedir } from "node:os"
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path"
@@ -219,6 +220,33 @@ export function startServer(options = {}) {
       cached = { ...cached, key, error: String(error.message ?? error) }
     }
     return cached.queue
+  }
+
+  // A slice owns its commit; callers cannot request arbitrary repository history.
+  const commitFiles = new Map()
+  const recordedFile = (url, path = url.searchParams.get("path")) => {
+    const id = url.searchParams.get("slice")
+    if (!id) return null
+    const item = readQueue().items.find((item) => item.id === id)
+    let coverage
+    try { coverage = JSON.parse(readFileSync(coverageFile, "utf8")).slices?.[id] } catch {}
+    const commit = item?.commit || coverage?.commit
+    if (!commit) return null
+    const entries = item?.files ?? coverage?.files ?? []
+    if (typeof path !== "string" || !entries.some((file) => (typeof file === "string" ? file.replace(/:\d+(?:-\d+)?$/, "") : file.path) === path))
+      return { status: 403, error: "file is not in this slice" }
+    if (isAbsolute(path) || path.split(/[\\/]/).some((part) => part === ".." || part === ".") || path.includes("\0"))
+      return { status: 403, error: "refused path" }
+    const refusal = refusalFor(path.split("/"))
+    if (refusal) return { status: 403, error: refusal }
+    const key = JSON.stringify([commit, path])
+    if (commitFiles.has(key)) return { path, body: commitFiles.get(key) }
+    try {
+      const body = execFileSync("jj", ["--ignore-working-copy", "file", "show", "-r", String(commit), "--", path], { cwd: repo, maxBuffer: MAX_FILE, stdio: ["ignore", "pipe", "pipe"] })
+      commitFiles.set(key, body)
+      if (commitFiles.size > 32) commitFiles.delete(commitFiles.keys().next().value)
+      return { path, body }
+    } catch { return { status: 404, error: "recorded file unavailable" } }
   }
 
   const state = () => {
@@ -497,6 +525,12 @@ export function startServer(options = {}) {
           return send(response, 400, { error: "bad path" })
         }
       }
+      const recorded = recordedFile(url, requested)
+      if (recorded?.error) return send(response, recorded.status, { error: recorded.error })
+      if (recorded) {
+        response.writeHead(200, { "Content-Type": TYPES[extname(recorded.path)] ?? "text/plain; charset=utf-8", "Cache-Control": "no-store", "Content-Security-Policy": "sandbox allow-scripts" })
+        return response.end(recorded.body)
+      }
       const found = resolveFile(requested, roots)
       if (found.error) return send(response, found.status, { error: found.error })
       // A design renders in a sandboxed frame; opened directly, the page is sandboxed too.
@@ -508,6 +542,11 @@ export function startServer(options = {}) {
       return send(response, 200, renderDocument(found.real, roots[0].real))
     }
     if (path === "/api/outline") {
+      const recorded = recordedFile(url)
+      if (recorded?.error) return send(response, recorded.status, { error: recorded.error })
+      if (recorded) return send(response, 200, OUTLINE_EXT.has(extname(recorded.path).toLowerCase())
+        ? { supported: true, ...outlineOf(await loadTypeScript(), recorded.body.toString("utf8"), recorded.path) }
+        : { supported: false })
       const found = resolveFile(url.searchParams.get("path"), roots)
       if (found.error) return send(response, found.status, { error: found.error })
       return send(response, 200, await outline(found.real))
