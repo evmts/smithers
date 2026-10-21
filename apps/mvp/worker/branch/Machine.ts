@@ -247,8 +247,8 @@ exit 0`
 /**
  * Puts generation `generation` to sleep when nothing happened in it for `idleMs`: it saves the working copy, then
  * stops the container. `gone` when that generation isn't running any more; `busy` when something happened, or the
- * checkpoint couldn't be saved. A call or a terminal that came while it probed and saved (`activeAt` moved) makes it
- * `busy` too, so the machine never stops under new work.
+ * checkpoint couldn't be saved. A call, a terminal or terminal input that came while it probed and saved makes it
+ * `busy` too, so the machine never stops under new work: after saving it reads `activeAt` and probes again.
  */
 export const sleepIfIdle = <R>(box: Box<R>, generation: number, idleMs: number): Effect.Effect<SleepOutcome, unknown, R> =>
   Effect.gen(function* () {
@@ -261,6 +261,7 @@ export const sleepIfIdle = <R>(box: Box<R>, generation: number, idleMs: number):
     const saved = yield* save(box, generation)
     if (saved !== "saved" && saved !== "skipped") return "busy" as const
     if ((yield* box.storage.get<number>("activeAt")) !== activeAt) return "busy" as const
+    if ((yield* box.run(probe, "root")) !== 0) return "busy" as const
     yield* box.destroy
     return "slept" as const
   }).pipe(Effect.withSpan("sandbox.object.sleep", { attributes: { "smithers.sandbox.generation": generation } }))

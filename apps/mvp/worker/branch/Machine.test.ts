@@ -476,4 +476,16 @@ describe("sleepIfIdle", () => {
     expect(machine.state).toEqual({ running: true, destroyed: 0 })
     expect(saved(machine.map)).toMatchObject({ generation: 3 })
   })
+
+  test("terminal input that comes while it saves keeps the machine awake: it probes again before it stops", async () => {
+    let probes = 0
+    // The first probe finds nothing; by the second, a person typed into their terminal.
+    const typing = boxOf({
+      store: memory({ generation: 3, restored: 3 }),
+      root: (argv) => Effect.sync(() => (isProbe(argv) && ++probes === 2 ? 3 : 0)),
+    })
+    expect(await Effect.runPromise(Machine.sleepIfIdle(typing.box, 3, 1_000))).toBe("busy")
+    expect(probes).toBe(2)
+    expect(typing.state).toEqual({ running: true, destroyed: 0 })
+  })
 })

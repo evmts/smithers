@@ -20,9 +20,12 @@ describe("idOf", () => {
     const user = userOf("12345")
     expect(idOf(user)).toBe(`${uidOf(user)}:2000`)
     // The person's uid comes from their name: the same on every machine, above every system and image user.
-    expect(uidOf(user)).toBe(PERSON_UID_BASE + Number.parseInt(user.slice(1, 7), 16))
-    expect(uidOf("p000000aaaaaaaaaa")).toBe(PERSON_UID_BASE)
-    expect(uidOf("pffffff0000000000")).toBe(PERSON_UID_BASE + 0xffffff)
+    expect(uidOf(user)).toBe(PERSON_UID_BASE + Math.floor(Number.parseInt(user.slice(1, 9), 16) / 4))
+    expect(uidOf("p00000003aaaaaaaa")).toBe(PERSON_UID_BASE)
+    expect(uidOf("pffffffff00000000")).toBe(PERSON_UID_BASE + 2 ** 30 - 1)
+    expect(uidOf("pffffffff00000000")).toBeLessThan(2 ** 31)
+    // 30 bits, not 24: names alike in their first 24 bits get different uids.
+    expect(uidOf("p95d4362bd3cd4315")).not.toBe(uidOf("p95d4361a36944b76"))
     expect(idOf(userOf("12346"))).not.toBe(idOf(user))
   })
 

@@ -453,6 +453,45 @@ describe("SandboxTools checkpoint and restore", () => {
         }), { git: false })
     }), slow)
 
+  it.effect("fetches a bundle's base the shallow clone lacks from origin; an origin that can't be reached is unavailable", () =>
+    Effect.gen(function*() {
+      const origin = join(root, `origin-${++sessions}`)
+      mkdirSync(origin)
+      git(origin, "init", "-q", "-b", "main")
+      git(origin, "config", "uploadpack.allowReachableSHA1InWant", "true")
+      writeFileSync(join(origin, "a.txt"), "a\n")
+      git(origin, "add", ".")
+      git(origin, "commit", "-q", "-m", "base")
+
+      const saved = yield* onMachine((session) =>
+        Effect.gen(function*() {
+          git(session.workdir, "clone", "-q", `file://${origin}`, ".")
+          writeFileSync(join(session.workdir, "local.txt"), "local\n")
+          git(session.workdir, "add", "local.txt")
+          git(session.workdir, "commit", "-q", "-m", "local")
+          return yield* SandboxTools.checkpoint(session)
+        }), { git: false })
+
+      // The branch moves on, so a depth-1 clone no longer has the commit the box's commit sits on.
+      for (const name of ["b", "c"]) {
+        writeFileSync(join(origin, `${name}.txt`), `${name}\n`)
+        git(origin, "add", ".")
+        git(origin, "commit", "-q", "-m", name)
+      }
+      yield* onMachine((session) =>
+        Effect.gen(function*() {
+          git(session.workdir, "clone", "-q", "--depth", "1", `file://${origin}`, ".")
+          // An origin that doesn't answer: try again later, never "not found".
+          git(session.workdir, "remote", "set-url", "origin", "http://127.0.0.1:9/unreachable")
+          const down = yield* Effect.flip(SandboxTools.restore(session, saved))
+          expect(down).toEqual(new SandboxTools.ToolUnavailable({ code: "unavailable" }))
+          git(session.workdir, "remote", "set-url", "origin", `file://${origin}`)
+          yield* SandboxTools.restore(session, saved)
+          expect(git(session.workdir, "rev-parse", "HEAD").trim()).toBe(saved.head)
+          expect(readFileSync(join(session.workdir, "local.txt"), "utf8")).toBe("local\n")
+        }), { git: false })
+    }), slow)
+
   it.effect("fetches a base commit the fresh clone lacks from origin by its id", () =>
     Effect.gen(function*() {
       const origin = join(root, `origin-${++sessions}`)

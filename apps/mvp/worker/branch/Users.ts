@@ -20,7 +20,10 @@ export const WORKSPACE_GID = 2000
 /** The checkout user's uid, as infra/sandbox/Dockerfile makes it. */
 export const SANDBOX_UID = 1000
 
-/** The first uid a person's user gets; their uids span the next 2^24. */
+/**
+ * The first uid a person's user gets; their uids span the next 2^30, below 2^31. Two people of one branch share a uid
+ * with odds of about one in a billion per pair; the second is then refused (`provisionArgv`), never merged.
+ */
 export const PERSON_UID_BASE = 100_000
 
 /** A person's user name in the machine: `p` and 16 hex digits of the SHA-256 of their person id. */
@@ -28,8 +31,8 @@ export const userOf = (ownerId: string): string => `p${digestSync(ownerId).slice
 
 const personName = /^p[0-9a-f]{16}$/
 
-/** The uid of a person's user `name`: `PERSON_UID_BASE` plus its first 24 bits. */
-export const uidOf = (name: string): number => PERSON_UID_BASE + Number.parseInt(name.slice(1, 7), 16)
+/** The uid of a person's user `name`: `PERSON_UID_BASE` plus the first 30 bits of its hash. */
+export const uidOf = (name: string): number => PERSON_UID_BASE + (Number.parseInt(name.slice(1, 9), 16) >>> 2)
 
 /**
  * The `uid:gid` a command runs as for the machine's user `name`: root, the checkout's user, or a person's; nothing for

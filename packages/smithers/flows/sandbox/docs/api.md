@@ -310,8 +310,9 @@ const ran = yield* SandboxTools.execute(session, { tool: "run", command: "npm te
 untracked change (ignored files are not carried), and a git `bundle` of the commits no remote has, such as one made in
 the box; the patch and bundle together are at most `limits.checkpointBytes` (8 MiB). `restore(session, saved)` moves
 `HEAD` to the checkpoint's commit when it is elsewhere and applies the patch; restore onto a clean checkout. A commit
-the working copy lacks comes from the bundle, else is fetched from `origin` by its id; `not_found` when neither has it.
-A checkpoint without a `bundle` restores as one with an empty bundle.
+the working copy lacks comes from the bundle, whose base commits are fetched from `origin` first, else is fetched from
+`origin` by its id; `not_found` when neither has it, and `ToolUnavailable` with code `unavailable` when `origin` can't be
+reached. A checkpoint without a `bundle` restores as one with an empty bundle.
 
 ## SandboxMerge
 

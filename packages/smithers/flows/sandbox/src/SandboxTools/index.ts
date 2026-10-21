@@ -477,10 +477,14 @@ const refusals: Readonly<Record<number, ToolRefused["reason"]>> = {
   69: "not_a_repository"
 }
 
-/** The script's exit code `code` as a refusal, the lost fence, or the session failing. */
+/**
+ * The script's exit code `code` as a refusal, the lost fence, something the script needed that didn't answer (76:
+ * `unavailable`, worth trying again), or the session failing.
+ */
 const failedWith = (code: number): ToolFailure => {
   const reason = refusals[code]
   if (reason !== undefined) return new ToolRefused({ reason })
+  if (code === 76) return new ToolUnavailable({ code: "unavailable" })
   return code === 75 ? new ToolLost() : new ToolUnavailable({ code: "unknown" })
 }
 
@@ -799,10 +803,22 @@ cat >"$dir/in" || exit 125
 # BSD head refuses -c 0.
 if [ "$3" -gt 0 ]; then head -c "$3" "$dir/in" >"$dir/patch" || exit 125; else : >"$dir/patch"; fi
 tail -c +$(($3 + 1)) "$dir/in" >"$dir/bundle" || exit 125
-if ! git cat-file -e "$2^{commit}" 2>/dev/null; then
-  if [ -s "$dir/bundle" ]; then git fetch -q "$dir/bundle" 2>/dev/null; fi
-  git cat-file -e "$2^{commit}" 2>/dev/null || git fetch -q --depth=1 origin "$2" 2>/dev/null
-  git cat-file -e "$2^{commit}" 2>/dev/null || exit 44
+has() { git cat-file -e "$1^{commit}" 2>/dev/null; }
+# Fetches commit $1 from origin by its id. An origin that can't be reached exits 76, so the restore is tried again; one
+# that answered without the commit leaves it missing.
+fetch() {
+  out=$(git fetch -q --depth=1 origin "$1" 2>&1) && return 0
+  case "$out" in *"unable to access"*|*"returned error: 5"*|*"RPC failed"*|*"early EOF"*|*"Could not resolve"*|*"timed out"*) exit 76 ;; esac
+  return 1
+}
+if ! has "$2"; then
+  if [ -s "$dir/bundle" ]; then
+    # The bundle's base commits first: a branch that moved on may have left them out of a shallow clone.
+    for base in $(sed -n '/^$/q; s/^-\\([0-9a-f]\\{40,64\\}\\).*/\\1/p' "$dir/bundle"); do has "$base" || fetch "$base" || true; done
+    git fetch -q "$dir/bundle" 2>/dev/null
+  fi
+  has "$2" || fetch "$2" || true
+  has "$2" || exit 44
 fi
 umask 002
 if [ "$(git rev-parse HEAD)" != "$2" ]; then git reset -q --hard "$2" || exit 125; fi
@@ -812,8 +828,11 @@ git apply --binary --whitespace=nowarn "$dir/patch" || exit 125`
 /**
  * Puts a {@link Checkpoint} back on the session's working copy: moves `HEAD`
  * to its commit when it is elsewhere, then applies its patch. A commit the
- * working copy lacks comes from the checkpoint's bundle, else is fetched from
- * `origin` by its id; `not_found` when neither has it. Restore onto a clean
+ * working copy lacks comes from the checkpoint's bundle, whose base commits
+ * are fetched from `origin` by their ids first, else is fetched from `origin`
+ * by its id; `not_found` when neither has it. An `origin` that can't be
+ * reached fails `ToolUnavailable` with code `unavailable`, so the caller can
+ * try again. Restore onto a clean
  * checkout: a working copy with changes may refuse the patch.
  *
  * @category operations
