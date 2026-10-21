@@ -6,6 +6,8 @@ import { recordActions, step, themeOf, writeManifest } from "./fixtures"
 // but the chat agent that drafts the TODO, the scripted one in the browser's engine worker (`/app?agent=todo-draft`,
 // src/test/scriptedAgent.ts), so the draft is the same every run. The run itself is the deployment's: the branch on
 // GitHub, the agent writing the change on the branch's machine with the real model, the commit and the pull request.
+// On the way it shows ruling TODO-3 (the Working TODO blinks and links to its run, watched live from Cloudflare) and
+// ruling GH-9 (beside Merge into the default branch, the pull request says merging deploys it).
 //
 // It writes to GitHub, so it runs only against a live instance (BASE_URL) with the GitHub App and `TODO_RUNS` on, on a
 // scratch repository the test account administers with the App installed, and skips naming what it lacks:
@@ -28,8 +30,9 @@ test.beforeEach(async ({ context, page }, info) => {
   expect(["admin", "maintainer", "member"], `the test account's role on ${repo}`).toContain(session.role)
 })
 
-test.afterEach(async ({ page }, info) => {
-  await writeManifest(info, "flow.json", started.get(info) ?? Date.now(), [{ name: "Maya", video: await page.video()?.path(), openedAt: 0 }])
+test.afterEach(async ({}, info) => {
+  // Playwright saves the page's video beside the manifest as video.webm once the test ends; a relative path names it there.
+  await writeManifest(info, "flow.json", started.get(info) ?? Date.now(), [{ name: "Maya", video: "video.webm", openedAt: 0 }])
 })
 
 /** The stack page's row of the TODO whose title has `word`. */
@@ -40,7 +43,7 @@ const row = (page: Page, word: string) =>
 const todoPage = (page: Page, title: string) => page.getByRole("article", { name: new RegExp(title) })
 
 test("factory: a TODO runs to a mergeable pull request", {
-  annotation: { type: "summary", description: "Commit a TODO; Smithers branches, writes the change, and opens a pull request a person can merge." },
+  annotation: { type: "summary", description: "Commit a TODO; it blinks while Smithers works, you watch the agent, and its pull request is mergeable, with checks and a deploy warning." },
 }, async ({ page }) => {
   test.setTimeout(30 * 60_000)
   const word = `f${Date.now().toString(36)}`
@@ -67,15 +70,28 @@ test("factory: a TODO runs to a mergeable pull request", {
 
   const number = (await row(page, word).textContent())!.match(/T(\d+)/)![1]!
 
-  await step("Smithers starts working on it", async () => {
+  await step("Smithers starts working on it: the TODO blinks", async () => {
     await expect(row(page, word)).toHaveAttribute("data-status", "running", { timeout: 120_000 })
+    await expect(row(page, word).locator("[data-live]"), "a Working TODO's icon blinks (ruling TODO-3)").toBeVisible()
+    await page.waitForTimeout(2_500)
     await row(page, word).getByRole("link", { name: title }).click()
     await expect(page).toHaveURL(new RegExp(`/${repo}/stack/${number}$`))
     await expect(todoPage(page, title)).toHaveAttribute("data-status", /running|in_review/, { timeout: 60_000 })
+    await page.waitForTimeout(2_000)
+  })
+
+  await step("Watch the agent work on Cloudflare", async () => {
+    await todoPage(page, title).getByRole("link", { name: "Watch", exact: true }).click()
+    await expect(page).toHaveURL(/\/app\/runs\/todo%3A|\/app\/runs\/todo:/)
+    await expect(page.getByText("Cloud", { exact: true }).first(), "the run page reads the run from Cloudflare").toBeVisible({ timeout: 60_000 })
+    await expect(page.getByText(/todo\/Implement/).first(), "the agent's step shows").toBeVisible({ timeout: 5 * 60_000 })
+    await page.waitForTimeout(8_000)
   })
 
   await step("The agent writes the change and opens a pull request", async () => {
+    await page.goBack()
     await expect(todoPage(page, title)).toHaveAttribute("data-status", "in_review", { timeout: 25 * 60_000 })
+    await expect(todoPage(page, title).locator("[data-live]"), "In review waits on a person, so it doesn't blink").toHaveCount(0)
   })
 
   const pull = await step("The pull request is open and mergeable on GitHub", async () => {
@@ -84,11 +100,34 @@ test("factory: a TODO runs to a mergeable pull request", {
     const prNumber = Number((await link.textContent())!.slice(1))
     const response = await page.request.get(`https://api.github.com/repos/${repo}/pulls/${prNumber}`)
     expect(response.status()).toBe(200)
-    const body = await response.json() as { state: string; merged: boolean; mergeable: boolean | null; head: { ref: string } }
+    const body = await response.json() as { state: string; merged: boolean; head: { ref: string }; base: { ref: string } }
     expect(body.state).toBe("open")
     expect(body.merged).toBe(false)
     expect(body.head.ref).toMatch(new RegExp(`^smithers/t${number}-`))
-    return { prNumber, body }
+    return { prNumber, link, base: body.base.ref }
+  })
+
+  await step("Open the pull request: Merge warns that merging deploys", async () => {
+    await pull.link.click()
+    await expect(page).toHaveURL(new RegExp(`/${repo}/pull/${pull.prNumber}$`))
+    await expect(page.getByRole("button", { name: "Squash and merge" })).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByRole("note"), "ruling GH-9").toHaveText(`Merging into ${pull.base} deploys it.`, { timeout: 60_000 })
+    await page.waitForTimeout(3_000)
+  })
+
+  await step("Its checks are Smithers runs", async () => {
+    await page.getByRole("link", { name: /^Checks/ }).click()
+    // The review check runs the model on the pull request's diff; the tab counts it once it passed.
+    await expect(page.getByRole("link", { name: /^Checks (\d+)\/\1$/ })).toBeVisible({ timeout: 10 * 60_000 })
+    await expect(page.getByRole("link", { name: "Conversation" }), "one tab is current").not.toHaveAttribute("aria-current", "page")
+    await page.waitForTimeout(2_500)
+  })
+
+  await step("Its files: the README line the agent wrote", async () => {
+    await page.getByRole("link", { name: /^Files/ }).click()
+    await expect(page.getByRole("region", { name: "Files" })).toContainText("README.md", { timeout: 60_000 })
+    await expect(page.getByRole("region", { name: "Files" })).toContainText(word)
+    await page.waitForTimeout(3_000)
   })
   expect(pull.prNumber).toBeGreaterThan(0)
 })

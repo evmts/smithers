@@ -3,19 +3,19 @@ title: VibeLang coding factory
 status: in-progress
 area: process
 owner: factory-run builder (Claude Opus, session 6253ecf2) from 03:00 on 2026-10-21; tracker: Codex tracker curator
-updated: 2026-10-21 03:45 PDT
+updated: 2026-10-21 09:50 PDT
 links: [vibelang-release-docs.md, vibelang-0-0-2-publish.md, maintainer-app-plugins.md]
 ---
 
-## Factory run — 2026-10-21, 03:45 PDT
+## Factory run — 2026-10-21, 09:50 PDT
 
 **What:** Run the coding factory end to end on the Cloudflare stack: a TODO to a mergeable pull request.
 
-**Current state:** The `todo` run works under `alchemy dev` on workerd. Its agent's cells run in QuickJS's separate-`.wasm` build (`worker/AgentSandbox.ts`, `#quickjs.wasm`), proven by `worker/AgentSandbox.workerd.test.ts` and by two live runs on `codeplanesmithers/smithers-j2-scratch-20261005`: each TODO branched, the agent wrote the README line on the branch's machine with the default model, and the run opened a clean, mergeable pull request (#5 and #6, closed when their TODOs were dropped). `TODO_RUNS` is on unless set to `false`.
+**Current state:** Works end to end under `alchemy dev` on workerd, recorded live (`e2e/factory.spec.ts`, video `factory/factory.mp4`, GIF `factory-factory.gif`, 9 chapters). A person asks Smithers for a TODO and commits it; the Working TODO blinks and links to its run (ruling TODO-3), watched live from Cloudflare; the agent's cells run in QuickJS's separate-`.wasm` build (`worker/AgentSandbox.ts`) and write the change on the branch's machine; the pull request opens with its review check passed and `Merging into main deploys it.` beside Squash and merge (ruling GH-9). `TODO_RUNS` is on unless set to `false`. Steering the running agent is not built.
 
-**Blocked on the planned repository:** the test account `codeplanesmithers` has `read` on `roninjin10/smithers-github-tests`, which is Smithers' Guest; committing a TODO needs Member (write). The live runs use the test account's own scratch repository, where it is Admin and the App is installed.
+**Blocked on the planned repository:** the test account `codeplanesmithers` has `read` on `roninjin10/smithers-github-tests`, which is Smithers' Guest; committing a TODO needs Member (write). The live runs use the test account's own scratch repository, `codeplanesmithers/smithers-j2-scratch-20261005`, where it is Admin and the App is installed.
 
-**Next step:** land the PR pages, TODO-3's running TODO and GH-9's merge warning, then record the whole loop.
+**Next step:** land the stack, deploy, and run the same spec against production on the VibeLang repository.
 
 ## Tracker reconciliation — 2026-10-20, 22:44 PDT
 
