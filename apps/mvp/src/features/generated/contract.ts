@@ -22,7 +22,8 @@ export const MARKER_LINES = 5
 
 /**
  * The header markers that say a file is generated, as tools write them: `@generated` (Meta's convention, which many
- * code generators follow) and Go's `Code generated … DO NOT EDIT.`, in any comment style.
+ * code generators follow) and Go's `Code generated … DO NOT EDIT.`. Detection reads a standalone `@generated` line or
+ * the first content in a line, C-style block or HTML comment.
  */
 export const MARKERS: ReadonlyArray<RegExp> = [/^@generated\b/, /^Code generated\b.*\bDO NOT EDIT\b/i]
 
