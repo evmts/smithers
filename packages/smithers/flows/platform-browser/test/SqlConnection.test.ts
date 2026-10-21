@@ -4,11 +4,13 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
-import { BrowserSqlite } from "../src/index.ts"
+import { BrowserRuntime, BrowserSqlite } from "../src/index.ts"
 import * as SqlConnection from "../src/internal/SqlConnection.ts"
 import * as MemorySqlite from "./fixtures/MemorySqlite.ts"
+import * as Telemetry from "./fixtures/Telemetry.ts"
 
 /** A connection over a fresh in-memory database with a table `t`. */
 const connection = Effect.gen(function*() {
@@ -21,6 +23,40 @@ const count = (service: SqlConnection.Service, owner: string) =>
   Effect.map(service.run(owner, "SELECT count(*) AS n FROM t", [], false), ({ rows }) => rows)
 
 describe("SqlConnection", () => {
+  it.live("fails abandonment and wakes blocked owners when SQLite refuses rollback", () => {
+    const telemetry = Telemetry.make()
+    return telemetry.observed(
+      Effect.gen(function*() {
+        const database = yield* MemorySqlite.open
+        const service = yield* SqlConnection.make(database)
+        yield* service.run("a", "BEGIN", [], false)
+        // SQLite's real authorizer refuses ROLLBACK and leaves autocommit off.
+        database.sqlite3.set_authorizer(
+          database.db,
+          (_, action, operation) => action === 22 && operation === "ROLLBACK" ? 1 : 0,
+          null
+        )
+        const reader = yield* Effect.forkChild(service.run("b", "SELECT 1", [], false))
+        yield* Effect.sleep("20 millis")
+        expect(reader.pollUnsafe()).toBeUndefined()
+        const abandoned = yield* Effect.exit(service.abandon("a"))
+        expect(Exit.isFailure(abandoned)).toBe(true)
+        expect(Exit.isFailure(yield* Effect.exit(service.abandon("a")))).toBe(true)
+        const waiting = yield* Fiber.await(reader).pipe(Effect.timeoutOption("300 millis"))
+        expect(waiting).toMatchObject({ _tag: "Some", value: { _tag: "Failure" } })
+        expect(yield* service.run("c", "SELECT 1", [], false).pipe(Effect.flip)).toMatchObject({ _tag: "SqlError" })
+        database.sqlite3.set_authorizer(database.db, () => 0, null)
+        yield* Effect.promise(() => database.sqlite3.exec(database.db, "ROLLBACK"))
+      }).pipe(Effect.scoped)
+    ).pipe(Effect.andThen(Effect.sync(() => {
+      expect(telemetry.count(BrowserRuntime.statements, { outcome: "abandon_failed" })).toBe(1)
+      expect(telemetry.lines("browser.runtime.statement")).toMatchObject([
+        { annotations: { outcome: "abandon_failed", "error.type": "SqlError" } }
+      ])
+      expect(telemetry.named("browser.runtime.abandon")).toHaveLength(2)
+    })))
+  })
+
   it.effect("returns rows, and says whether the statement left a transaction open", () =>
     Effect.gen(function*() {
       const service = yield* connection

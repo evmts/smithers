@@ -6,12 +6,14 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import * as Scope from "effect/Scope"
 import { afterEach, beforeEach } from "vitest"
-import { BrowserRuntime, type SharedSqlite } from "../src/index.ts"
+import { BrowserRuntime, type SharedSqlite, WebLock } from "../src/index.ts"
 import * as Engines from "./fixtures/Engines.ts"
 import { flows, registration } from "./fixtures/Flows.ts"
 import * as MemoryOpfs from "./fixtures/MemoryOpfs.ts"
@@ -56,6 +58,29 @@ const worker = (name: string, prepare: BrowserRuntime.Prepare, telemetry = Telem
 const select = (tab: SharedSqlite.Service) => tab.execute("SELECT epoch FROM prepared ORDER BY epoch")
 
 describe("BrowserRuntime.run with prepare", () => {
+  it.live("interrupts pending preparation when leadership is stolen", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const entered = yield* Deferred.make<void>()
+      const stopped = yield* Deferred.make<void>()
+      const running = worker(
+        name,
+        preparation(1, [], () =>
+          Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.onInterrupt(() => Deferred.succeed(stopped, undefined))
+          ))
+      )
+      yield* Effect.addFinalizer(() => Fiber.interrupt(running))
+      yield* Deferred.await(entered)
+      const thief = yield* Effect.acquireRelease(Scope.make(), (scope) => Scope.close(scope, Exit.void))
+      yield* Effect.flatMap(WebLock.WebLock, (locks) => locks.hold(name, { steal: true })).pipe(
+        Effect.provide(WebLock.layer),
+        Scope.provide(thief)
+      )
+      expect(yield* Deferred.await(stopped).pipe(Effect.timeoutOption("300 millis"))).toMatchObject({ _tag: "Some" })
+    }).pipe(Effect.scoped))
+
   let remove: () => void = () => undefined
   beforeEach(() => {
     remove = MemoryOpfs.install()

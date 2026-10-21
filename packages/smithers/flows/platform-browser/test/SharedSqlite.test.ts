@@ -330,6 +330,8 @@ describe("SharedSqlite", () => {
         yield* raw.send({ id: 1, sql: "INSERT INTO t (id) VALUES (1)", transaction: held, opened: 0 })
         const commit = { id: 2, sql: "COMMIT", transaction: held, opened: 0 }
         expect(yield* raw.send(commit)).toMatchObject({ _tag: "Executed", open: false })
+        // A suspended tab can outlive any wall-clock retention period.
+        yield* tab.execute(`UPDATE ${SqlProtocol.commits} SET at = 0`)
         yield* Engines.close(leader)
         yield* leaderOver(name, pool)
         yield* raw.ready

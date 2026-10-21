@@ -215,7 +215,11 @@ export const lineStarts = (text: string): Array<number> => {
 export const offsetAt = (text: string, starts: ReadonlyArray<number>, position: Position): number => {
   const start = starts[position.line]
   if (start === undefined) return text.length
-  const end = starts[position.line + 1] ?? text.length
+  let end = starts[position.line + 1] ?? text.length
+  if (starts[position.line + 1] !== undefined) {
+    if (text.charCodeAt(end - 1) === 10) end--
+    if (text.charCodeAt(end - 1) === 13) end--
+  }
   return Math.min(start + Math.max(0, position.character), end)
 }
 
@@ -378,41 +382,61 @@ export const make = (
     range: rangeOf(entry.fileName, entry.textSpan)
   })
 
+  const directoryExists = (path: string): boolean =>
+    directories.has(path) || [...overlays.keys()].some((file) => file.startsWith(`${path}/`))
+
   const resolution: TS.ModuleResolutionHost = {
     fileExists: (path) => listing.has(path) || overlays.has(path),
     readFile: textOf,
-    directoryExists: (path) => directories.has(path),
+    directoryExists,
     getCurrentDirectory: () => "/"
   }
 
   const needsLoad = (path: string) => listing.has(path) && !texts.has(path) && !unreadable.has(path)
 
   /** What `text` imports that the workspace holds, resolved with `options`. */
-  const importsOf = (path: string, text: string, options: TS.CompilerOptions): Array<string> => {
-    const info = ts.preProcessFile(text, true, true)
-    const found = info.referencedFiles.map((reference) => normalize(join(dirname(path), reference.fileName)))
-    for (const imported of info.importedFiles) {
-      const resolved = ts.resolveModuleName(imported.fileName, path, options, resolution).resolvedModule
-      if (resolved !== undefined) found.push(resolved.resolvedFileName)
-    }
-    return found
-  }
+  const importsOf = (path: string, text: string, options: TS.CompilerOptions): Effect.Effect<Array<string>> =>
+    Effect.gen(function*() {
+      const info = ts.preProcessFile(text, true, true)
+      // Resolution is synchronous, but manifests arrive through the asynchronous loader.
+      // Read the manifests it probes, then resolve again with their actual contents.
+      while (true) {
+        const manifests = new Set<string>()
+        const host: TS.ModuleResolutionHost = {
+          ...resolution,
+          readFile: (name) => {
+            if (name.endsWith("/package.json") && needsLoad(name)) manifests.add(name)
+            return textOf(name)
+          }
+        }
+        const found = info.referencedFiles.map((reference) => normalize(join(dirname(path), reference.fileName)))
+        for (const imported of info.importedFiles) {
+          const resolved = ts.resolveModuleName(imported.fileName, path, options, host).resolvedModule
+          if (resolved !== undefined) found.push(resolved.resolvedFileName)
+        }
+        if (manifests.size === 0) return found
+        const before = texts.size + unreadable.size
+        yield* load([...manifests], options)
+        if (texts.size + unreadable.size === before) return found
+      }
+    })
 
   /** Loads `wanted` and everything they import, within the caps. */
-  const load = (wanted: ReadonlyArray<string>, options: TS.CompilerOptions) =>
+  const load = (wanted: ReadonlyArray<string>, options: TS.CompilerOptions): Effect.Effect<void> =>
     Effect.suspend(() => {
       const added: Array<string> = []
       const initialBytes = bytes
       const initialPartial = partial
       return Effect.gen(function*() {
-        let frontier = [...new Set(wanted)].filter(needsLoad)
+        const visited = new Set<string>()
+        let frontier = [...new Set(wanted)]
         while (frontier.length > 0) {
+          const pending = frontier.filter(needsLoad)
           const room = Math.max(0, limits.files - texts.size)
-          if (frontier.length > room || bytes >= limits.bytes) partial = true
-          const batch = bytes >= limits.bytes ? [] : frontier.slice(0, room)
-          if (batch.length === 0) return
-          const read = yield* loader.read(batch)
-          const next = new Set<string>()
+          if (pending.length > room || (pending.length > 0 && bytes >= limits.bytes)) partial = true
+          const batch = bytes >= limits.bytes ? [] : pending.slice(0, room)
+          const read = batch.length === 0 ? [] : yield* loader.read(batch)
+          // Reserve every admitted file before asynchronous import discovery can load manifests.
           for (const [path, text] of read) {
             if (text === null) {
               unreadable.add(path)
@@ -421,9 +445,17 @@ export const make = (
             texts.set(path, text)
             added.push(path)
             bytes += text.length
-            if (SCRIPT.test(path)) { for (const imported of importsOf(path, text, options)) next.add(imported) }
+            if (bytes > limits.bytes) partial = true
           }
-          frontier = [...next].filter(needsLoad)
+          const next = new Set<string>()
+          for (const path of frontier) {
+            visited.add(path)
+            const text = textOf(path)
+            // Cached text is not evidence that an interrupted request finished its imports.
+            if (text === undefined || !SCRIPT.test(path)) continue
+            for (const imported of yield* importsOf(path, text, options)) next.add(imported)
+          }
+          frontier = [...next].filter((path) => !visited.has(path))
         }
       }).pipe(Effect.onInterrupt(() =>
         Effect.sync(() => {
@@ -457,7 +489,7 @@ export const make = (
         options = { ...options, ...(yield* configOptions(file, depth + 1)) }
       }
       const own = ts.convertCompilerOptionsFromJson(json?.compilerOptions ?? {}, dirname(path), path).options
-      return { ...options, ...own }
+      return { ...options, ...own, ...(own.paths === undefined ? {} : { pathsBasePath: dirname(path) }) }
     })
 
   /** Loads the lib files `options` names and every lib they reference. */
@@ -530,7 +562,7 @@ export const make = (
         getDefaultLibFileName: (settings) => `${LIB_DIRECTORY}/${ts.getDefaultLibFileName(settings)}`,
         fileExists: (name) => textOf(name) !== undefined,
         readFile: textOf,
-        directoryExists: (name) => directories.has(name) || name === LIB_DIRECTORY
+        directoryExists: (name) => directoryExists(name) || name === LIB_DIRECTORY
       }
       const project: Project = {
         directory: config === undefined ? "/" : dirname(config),

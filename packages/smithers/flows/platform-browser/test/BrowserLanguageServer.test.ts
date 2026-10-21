@@ -523,7 +523,7 @@ describe("TypeScriptWorkspace helpers", () => {
     const text = "ab\ncd"
     const starts = TypeScriptWorkspace.lineStarts(text)
     expect(TypeScriptWorkspace.offsetAt(text, starts, { line: 1, character: 1 })).toBe(4)
-    expect(TypeScriptWorkspace.offsetAt(text, starts, { line: 0, character: 99 })).toBe(3)
+    expect(TypeScriptWorkspace.offsetAt(text, starts, { line: 0, character: 99 })).toBe(2)
     expect(TypeScriptWorkspace.offsetAt(text, starts, { line: 0, character: -1 })).toBe(0)
     expect(TypeScriptWorkspace.offsetAt(text, starts, { line: 9, character: 0 })).toBe(5)
     expect(TypeScriptWorkspace.positionAt(starts, 4)).toEqual({ line: 1, character: 1 })

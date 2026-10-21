@@ -55,7 +55,8 @@ timers fire and stalled runs are reclaimed while the tab stays open.
 
 Another context can take the lock with `WebLock.hold(name, { steal: true })`.
 The leader whose lock is stolen stops leading at once, closing its engine and
-store, logs `browser.runtime.lost`, and waits for the lock again.
+store, logs `browser.runtime.lost`, and waits for the lock again. Lock loss
+also interrupts unfinished engine initialization and database preparation.
 
 ## A tab whose worker fails
 
@@ -82,6 +83,10 @@ browser persistence, so it loads one SQLite build and opens one pool.
 - A transaction is one tab's from the statement that opens it to the one that
   ends it, by SQLite's own autocommit flag. Another tab's statement waits, so
   it never runs inside the transaction or reads what it has not committed.
+  If abandonment cannot roll back the transaction, the connection fails closed:
+  abandonment fails and waiting statements fail instead of hanging. The failure
+  logs `browser.runtime.statement` and counts `statements` with outcome
+  `abandon_failed`, without SQL or user content.
 - Each tab holds a Web Lock of its own while it lives. When a tab ends with a
   transaction open, the leader takes that lock and rolls the transaction back.
 - A transaction open when the leader's tab closes ends with that connection.
@@ -93,7 +98,8 @@ browser persistence, so it loads one SQLite build and opens one pool.
 - The leader records each transaction inside it, by the request that opened
   it, in the table `shared_sqlite_commits`. A statement that committed the
   transaction just as the old leader ended is answered as committed by the
-  new one, never run twice. A statement outside a transaction that the old
+  new one, never run twice. Commit receipts do not expire: a suspended tab
+  can resume after any interval. A statement outside a transaction that the old
   leader never answered is sent to the new one, which may run it a second
   time if the old one ran it before it stopped.
 - The record fails closed. A leader that can't write it rolls the

@@ -6,6 +6,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { EngineStore, RunCatalogRead } from "@smthrs/engine-store"
 import { FlowRuntime } from "@smthrs/flow"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -21,6 +22,30 @@ import * as MemorySqlite from "./fixtures/MemorySqlite.ts"
 import * as Telemetry from "./fixtures/Telemetry.ts"
 
 describe("BrowserRuntime.layer", () => {
+  it.live("interrupts pending engine initialization when leadership is stolen", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const entered = yield* Deferred.make<void>()
+      const stopped = yield* Deferred.make<void>()
+      const database = yield* MemorySqlite.open
+      const engine = Layer.unwrap(
+        Deferred.succeed(entered, undefined).pipe(
+          Effect.andThen(Effect.never),
+          Effect.onInterrupt(() => Deferred.succeed(stopped, undefined)),
+          Effect.as(Engines.engine(name, database, Engines.steps()))
+        )
+      )
+      yield* Engines.leader(name, engine)
+      yield* Deferred.await(entered)
+      const thief = yield* Scope.make()
+      yield* Effect.flatMap(WebLock.WebLock, (locks) => locks.hold(name, { steal: true })).pipe(
+        Effect.provide(WebLock.layer),
+        Scope.provide(thief)
+      )
+      expect(yield* Deferred.await(stopped).pipe(Effect.timeoutOption("300 millis"))).toMatchObject({ _tag: "Some" })
+      yield* Scope.close(thief, Exit.void)
+    }).pipe(Effect.scoped))
+
   it.effect("runs a three-step flow durably over wa-sqlite", () =>
     Effect.gen(function*() {
       const runtime = yield* FlowRuntime.FlowRuntime

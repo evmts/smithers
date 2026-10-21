@@ -15,11 +15,13 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import type { SqlError } from "effect/sql/SqlError"
 import * as BrowserSqlite from "../BrowserSqlite.ts"
+import { statements } from "./Metrics.ts"
 import * as Statements from "./Statements.ts"
 
 /**
@@ -67,7 +69,11 @@ export interface Service {
   ) => Effect.Effect<Result, SqlError | TransactionLost>
   /** Whether this owner still holds an open transaction, including after a failed statement. */
   readonly isOpen: (owner: string) => boolean
-  /** Rolls back `owner`'s open transaction, if it has one, and lends the connection again. */
+  /**
+   * Rolls back `owner`'s open transaction, if it has one, and lends the connection again.
+   * A failed rollback poisons the connection, wakes its waiters with SQL errors,
+   * and defects instead of reporting successful abandonment.
+   */
   readonly abandon: (owner: string) => Effect.Effect<void>
 }
 
@@ -91,6 +97,7 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
   Effect.gen(function*() {
     // One statement at a time; `holder` and `released` change only under it.
     const statement = yield* Semaphore.make(1)
+    let poisoned: SqlError | undefined
     let holder: { readonly owner: string; readonly released: Deferred.Deferred<void> } | undefined
 
     /** Runs `sql` and moves ownership by the autocommit flag it leaves. Under `statement`. */
@@ -118,6 +125,7 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
 
     const run: Service["run"] = (owner, sql, params, continuing) =>
       statement.withPermits(1)(Effect.suspend((): Effect.Effect<Outcome, SqlError> => {
+        if (poisoned !== undefined) return Effect.fail(poisoned)
         const held = holder !== undefined && holder.owner === owner
         if (continuing && !held) return Effect.succeed({ _tag: "Lost" })
         if (holder !== undefined && !held) return Effect.succeed({ _tag: "Wait", released: holder.released })
@@ -138,11 +146,31 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
       )
 
     const abandon: Service["abandon"] = (owner) =>
-      statement.withPermits(1)(Effect.suspend(() =>
-        holder?.owner === owner ?
-          Effect.uninterruptible(Effect.ignore(execute(owner, "ROLLBACK", [])))
-          : Effect.void
-      ))
+      statement.withPermits(1)(Effect.suspend(() => {
+        if (poisoned !== undefined) return Effect.die(poisoned)
+        const abandoned = holder
+        if (abandoned?.owner !== owner) return Effect.void
+        return Effect.uninterruptible(
+          execute(owner, "ROLLBACK", []).pipe(
+            Effect.catch((error) => {
+              // The connection still contains the abandoned transaction. Fail closed,
+              // and wake every waiter so none can hang or read its uncommitted data.
+              poisoned = error
+              Deferred.doneUnsafe(abandoned.released, Exit.void)
+              holder = undefined
+              return Metric.update(Metric.withAttributes(statements, { outcome: "abandon_failed" }), 1).pipe(
+                Effect.andThen(
+                  Effect.logError("browser.runtime.statement").pipe(
+                    Effect.annotateLogs({ outcome: "abandon_failed", "error.type": error._tag })
+                  )
+                ),
+                Effect.andThen(Effect.die(error))
+              )
+            }),
+            Effect.asVoid
+          )
+        )
+      })).pipe(Effect.withSpan("browser.runtime.abandon"))
 
     return SqlConnection.of({ run, abandon, isOpen: (owner) => holder?.owner === owner })
   })

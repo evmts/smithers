@@ -325,13 +325,10 @@ const sqliteDetail = (error: unknown): { readonly code?: number; readonly messag
     : {}
 }
 
-/** How long the record of a tab's last transaction is kept: a new leader needs it seconds after the old one ends. */
-const commitsKeptFor = 24 * 60 * 60 * 1000
-
 /**
- * Creates the table of each tab's last transaction (`SqlProtocol.commits`) and
- * drops records older than a day. A leader that can't still serves: a
- * transaction opens only once its record is written, so without the table
+ * Creates the table of each tab's last transaction (`SqlProtocol.commits`).
+ * Receipts do not expire: a suspended tab may ask about a commit at any age.
+ * A leader that cannot create the table still serves: a transaction opens only once its record is written, so without the table
  * every statement that opens one fails (`TransactionUnrecorded`), while reads
  * and single statements still run and a tab can repair the table.
  */
@@ -343,12 +340,8 @@ const prepareCommits = (connection: Connection, leader: string) =>
       [],
       false
     )
-    yield* connection.run(
-      leader,
-      `DELETE FROM ${SqlProtocol.commits} WHERE at < ?`,
-      [(yield* Clock.currentTimeMillis) - commitsKeptFor],
-      false
-    )
+    // Validate an existing table without deleting evidence a delayed tab may need.
+    yield* connection.run(leader, `SELECT client, opened, at FROM ${SqlProtocol.commits} LIMIT 0`, [], false)
   }).pipe(
     Effect.catch((error) =>
       Effect.logWarning("browser.runtime.statement").pipe(
@@ -521,38 +514,43 @@ const lead = <E, R>(
     const held = yield* (yield* WebLock).hold(options.name).pipe(Effect.withSpan("browser.runtime.elect"))
     yield* Metric.update(leaderships, 1)
     yield* Effect.logInfo("browser.runtime.leader").pipe(Effect.annotateLogs({ flows: flows.size }))
-    const context = yield* Layer.build(engine)
-    const port = yield* (yield* TabChannel).open(options.name)
-    const inbox = yield* port.subscribe
-    const changes = yield* Effect.flatMap(Journal.Journal, (journal) => journal.changes).pipe(
-      Effect.provideContext(context)
+    // Loss fences the whole leadership, including initialization and preparation.
+    yield* Effect.gen(function*() {
+      const context = yield* Layer.build(engine)
+      const port = yield* (yield* TabChannel).open(options.name)
+      const inbox = yield* port.subscribe
+      const changes = yield* Effect.flatMap(Journal.Journal, (journal) => journal.changes).pipe(
+        Effect.provideContext(context)
+      )
+      yield* wake(flows).pipe(Effect.provideContext(context))
+      yield* Stream.fromSubscription(changes).pipe(
+        Stream.runForEach((entry) =>
+          port.post(Protocol.encode({ _tag: "RunChanged", executionId: entry.runId, eventType: entry.eventType }))
+        ),
+        Effect.forkScoped
+      )
+      // The app's database is prepared for this build before any tab's statement runs on it.
+      if (options.prepare !== undefined) yield* Prepare.run(options.prepare, context)
+      yield* serveStatements(options.name, Context.getOption(context as Context.Context<unknown>, SqlConnection))
+      yield* port.post(Protocol.encode({ _tag: "Leader" }))
+      yield* Stream.fromSubscription(inbox).pipe(
+        Stream.runForEach((input) => {
+          const message = Protocol.decode(input)
+          return !isRequest(message)
+            ? Effect.void
+            : handle(flows, message).pipe(
+              Effect.flatMap((reply) => port.post(Protocol.encode(reply))),
+              Effect.provideContext(context),
+              Effect.forkScoped
+            )
+        }),
+        Effect.forkScoped
+      )
+      yield* Effect.never
+    }).pipe(
+      Effect.scoped,
+      Effect.raceFirst(held.lost.pipe(Effect.andThen(Effect.logWarning("browser.runtime.lost"))))
     )
-    yield* wake(flows).pipe(Effect.provideContext(context))
-    yield* Stream.fromSubscription(changes).pipe(
-      Stream.runForEach((entry) =>
-        port.post(Protocol.encode({ _tag: "RunChanged", executionId: entry.runId, eventType: entry.eventType }))
-      ),
-      Effect.forkScoped
-    )
-    // The app's database is prepared for this build before any tab's statement runs on it.
-    if (options.prepare !== undefined) yield* Prepare.run(options.prepare, context)
-    yield* serveStatements(options.name, Context.getOption(context as Context.Context<unknown>, SqlConnection))
-    yield* port.post(Protocol.encode({ _tag: "Leader" }))
-    yield* Stream.fromSubscription(inbox).pipe(
-      Stream.runForEach((input) => {
-        const message = Protocol.decode(input)
-        return !isRequest(message)
-          ? Effect.void
-          : handle(flows, message).pipe(
-            Effect.flatMap((reply) => port.post(Protocol.encode(reply))),
-            Effect.provideContext(context),
-            Effect.forkScoped
-          )
-      }),
-      Effect.forkScoped
-    )
-    yield* held.lost
-    yield* Effect.logWarning("browser.runtime.lost")
   })
 
 /**

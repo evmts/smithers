@@ -58,3 +58,10 @@ server's.
 A test runs both halves in one process over a `MessageChannel`: `serve` with
 `port` set to one end, and `make` with a `worker` whose `postMessage` and
 `addEventListener` are the other.
+
+Workspace reads include package manifests needed for self-references and
+`package.json` imports. Path mappings without `baseUrl` use the directory of
+the config declaring them, including inherited mappings. A request after
+`sync` loads newly introduced imports, including files in new overlay directories. Interrupted references requests leave
+widening available to the next request. Oversized columns stop at the line's
+end, and a load that exceeds the text cap reports a partial workspace.
