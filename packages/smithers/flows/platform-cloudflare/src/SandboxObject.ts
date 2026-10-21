@@ -3,10 +3,17 @@
  * it uses its container.
  *
  * {@link wake} starts the container when it is not running, with internet
- * access off, re-arms its inactivity timeout, and registers the outbound
- * HTTP intercepts that are the box's only way out. It is idempotent: an
- * object calls it before each use of the container, and a container already
- * running costs a timeout and the intercepts, re-registered.
+ * access off, on the instance type it names, re-arms its inactivity timeout,
+ * and registers the outbound HTTP intercepts that are the box's only way
+ * out. It is idempotent: an object calls it before each use of the
+ * container, and a container already running costs a timeout and the
+ * intercepts, re-registered.
+ *
+ * {@link rearm} re-arms the timeout of a container that runs, and starts
+ * nothing. A Durable Object that restarts, after a deploy for one, starts
+ * with no timeout, and Cloudflare then stops its container shortly after the
+ * object goes idle; an object calls it once per incarnation and on each use
+ * that doesn't wake the container.
  *
  * The function takes the container as a structural slice of an Effect
  * container client, so an Alchemy Durable Object's container handle passes in
@@ -34,7 +41,7 @@ import * as Observed from "./internal/Observed.ts"
  */
 export interface Machine<F, E = never, R = never> {
   readonly running: Effect.Effect<boolean, E, R>
-  start(options: { readonly enableInternet: false }): Effect.Effect<void, E, R>
+  start(options: { readonly enableInternet: false; readonly instance?: Instance }): Effect.Effect<void, E, R>
   setInactivityTimeout(durationMs: number): Effect.Effect<void, E, R>
   interceptOutboundHttp(addr: string, binding: F): Effect.Effect<void, E, R>
   interceptAllOutboundHttp(binding: F): Effect.Effect<void, E, R>
@@ -55,10 +62,30 @@ export interface Intercept<F> {
 }
 
 /**
+ * A container's instance type, as `start` takes it: a named type, or custom
+ * resources (`memoryMib` in mebibytes, `diskMb` in megabytes). Cloudflare
+ * starts a container with none on `lite`: 1/16 vCPU, 256 MiB of memory and
+ * 2 GB of disk.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export type Instance =
+  | "lite"
+  | "basic"
+  | "standard-1"
+  | "standard-2"
+  | "standard-3"
+  | "standard-4"
+  | { readonly vcpu: number; readonly memoryMib: number; readonly diskMb: number }
+
+/**
  * Options for {@link wake}.
  *
  * - `intercepts`: every outbound HTTP intercept the box gets, registered on
  *   every wake.
+ * - `instance`: the instance type a stopped container starts on; Cloudflare's
+ *   default, `lite`, when absent.
  * - `inactivityTimeoutMs`: how long the container runs with no activity on
  *   its Durable Object before Cloudflare stops it. Defaults to
  *   {@link defaultInactivityTimeoutMs}.
@@ -73,6 +100,7 @@ export interface Intercept<F> {
  */
 export interface WakeOptions<F> {
   readonly intercepts: ReadonlyArray<Intercept<F>>
+  readonly instance?: Instance | undefined
   readonly inactivityTimeoutMs?: number | undefined
   readonly egress?: F | undefined
 }
@@ -107,10 +135,22 @@ export const wakes = Metric.counter("smithers_cloudflare_sandbox_wakes", {
 })
 
 /**
+ * {@link rearm} calls, by `outcome`: `rearmed`, `stopped` or `failed`.
+ *
+ * @category metrics
+ * @since 1.0.0-rc.17
+ */
+export const rearms = Metric.counter("smithers_cloudflare_sandbox_rearms", {
+  description: "Container Durable Object inactivity timeouts re-armed, by outcome",
+  incremental: true
+})
+
+/**
  * Makes the container ready to use.
  *
- * 1. Starts it when it is not running, with `enableInternet: false`: the box
- *    reaches nothing but the intercepted hosts.
+ * 1. Starts it when it is not running, with `enableInternet: false` and
+ *    `instance` when given: the box reaches nothing but the intercepted
+ *    hosts.
  * 2. Arms its inactivity timeout, `inactivityTimeoutMs`. A restarted Durable
  *    Object loses the timeout, so every wake sets it again.
  * 3. Registers each intercept, in order, then, with `egress`, every other
@@ -130,7 +170,13 @@ export const wakes = Metric.counter("smithers_cloudflare_sandbox_wakes", {
 export const wake = <F, E, R>(machine: Machine<F, E, R>, options: WakeOptions<F>): Effect.Effect<WakeOutcome, E, R> =>
   Effect.gen(function*() {
     const running = yield* machine.running
-    if (!running) yield* machine.start({ enableInternet: false })
+    if (!running) {
+      yield* machine.start(
+        options.instance === undefined
+          ? { enableInternet: false }
+          : { enableInternet: false, instance: options.instance }
+      )
+    }
     yield* machine.setInactivityTimeout(options.inactivityTimeoutMs ?? defaultInactivityTimeoutMs)
     for (const intercept of options.intercepts) {
       yield* machine.interceptOutboundHttp(intercept.host, intercept.fetcher)
@@ -150,5 +196,33 @@ export const wake = <F, E, R>(machine: Machine<F, E, R>, options: WakeOptions<F>
       attribute: "smithers.sandbox.wake",
       counter: wakes,
       log: "cloudflare.sandbox.wake"
+    })
+  )
+
+/**
+ * Re-arms the inactivity timeout of a container that runs, to
+ * `inactivityTimeoutMs` ({@link defaultInactivityTimeoutMs} unless given),
+ * and starts nothing. It answers `rearmed`, or `stopped` when the container
+ * isn't running. A failed read or timeout fails with the container client's
+ * own error, unchanged; the span and the log line carry only its tag.
+ *
+ * @category operations
+ * @since 1.0.0-rc.17
+ */
+export const rearm = <F, E, R>(
+  machine: Pick<Machine<F, E, R>, "running" | "setInactivityTimeout">,
+  inactivityTimeoutMs: number = defaultInactivityTimeoutMs
+): Effect.Effect<"rearmed" | "stopped", E, R> =>
+  Effect.gen(function*() {
+    if (!(yield* machine.running)) return "stopped" as const
+    yield* machine.setInactivityTimeout(inactivityTimeoutMs)
+    return "rearmed" as const
+  }).pipe((effect) =>
+    Observed.observed(effect, {
+      span: "sandbox.rearm",
+      attributes: { "smithers.sandbox.inactivity_timeout_ms": inactivityTimeoutMs },
+      attribute: "smithers.sandbox.rearm",
+      counter: rearms,
+      log: "cloudflare.sandbox.rearm"
     })
   )

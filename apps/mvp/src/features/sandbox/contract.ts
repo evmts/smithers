@@ -50,8 +50,11 @@ export const keepExecutionId = (branchId: string, generation: number): string =>
  */
 export const DEFAULT_IDLE_SECONDS = 15 * 60
 
-/** How often `sandbox/Keep` asks a machine whether it is idle. */
-export const KEEP_EVERY_SECONDS = 5 * 60
+/**
+ * How often `sandbox/Keep` asks a machine whether it is idle: every minute, so a machine sleeps within a minute of its
+ * idle time running out (15 to 16 minutes after the last activity), and each ask also re-arms Cloudflare's backstop.
+ */
+export const KEEP_EVERY_SECONDS = 60
 
 /**
  * What the sandbox tools record in the browser (docs/observability.md#browser): each call's request and wait, by tool

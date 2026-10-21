@@ -70,21 +70,26 @@ The tool's result is `sandbox/Tool`'s journaled success, so a replay reads it an
 `SandboxObject.tool` (`worker/BranchSandboxes.ts`) wakes the machine (start, checkout, restore) and hands the call to `worker/branch/Machine.ts`:
 
 - **As the person:** the call runs as their own user (`worker/branch/Users.ts`), made on first use, through `@smthrs/platform-cloudflare`'s `ContainerSession`, the container as a `Sandbox.Session`.
+- **Numeric users:** a deployed container's `exec` refuses a user name and runs a bare uid as root, so every command runs as a `uid:gid`: root `0:0`, the checkout's `smithers` `1000:2000`, and a person `100000` plus 24 bits of their user name's hash, in the `workspace` group `2000`. `exec` gives a command only `PATH`, so each also gets `HOME`, `USER`, `LOGNAME` and `LANG=C.UTF-8`. Under Cloudflare's `durable_object` policy every process keeps root's capabilities whatever its user: these users give files and shells an owner; they don't isolate one editor of a branch from another.
+- **Size:** the machine starts on `SANDBOX_INSTANCE`, `standard-1` by default (1/2 vCPU, 4 GiB, 8 GB of disk). Cloudflare's own default, `lite`, has 256 MiB.
 - **At most once:** a command's fence, exit and output live in that user's `~/.smithers/calls/<call id>`, outside the checkout (`SandboxTools.execute`). That disk goes with the machine, so the object also records the generation it started each command on: a command an earlier generation started settles `lost` on a restarted machine and never runs again (0005's `MachineLost`).
 - **No secrets inside:** the machine has no internet and no credential. Its only way out is the forge proxy, and, with `SANDBOX_SECRETS` on (off by default), the secrets egress for every other host, whose placeholders the tools' commands get as their environment ([secrets](secrets.md#wiring-into-the-box)).
 
 ## Sleep and wake
 
 - **Create on demand:** the first call or terminal wakes the machine: it starts the container, clones the branch and puts back the last checkpoint.
-- **Keep awake while used:** each wake starts that generation's `sandbox/Keep` (`worker/flows/SandboxKeep.ts`, once per generation: `sandbox-keep:<branch>:<generation>`). Every `KEEP_EVERY_SECONDS` (5 minutes) it asks the machine whether anything happened within the idle time (`SANDBOX_IDLE_SECONDS`, 15 minutes): a call, terminal input, or a person's process other than their shells and tmux. Busy, it asks again later; asking also keeps Cloudflare's 30-minute inactivity timeout, the backstop, from firing. A machine never sleeps while a person's process runs.
-- **Sleep when idle:** the machine saves the working copy, then stops; `sandbox/Slept` ends that generation's open terminals `slept`. A machine whose checkpoint can't be saved stays awake.
-- **Resume with the working copy:** the working copy is saved as a checkpoint (`SandboxTools.checkpoint`: its commit and a binary patch with every tracked and untracked change, 8 MiB at most) in the object's storage after every `run` and `write`, whenever a terminal socket closes, and before sleep. The next generation's first wake resets to that commit and applies the patch, once.
+- **Keep awake while used:** each wake starts that generation's `sandbox/Keep` (`worker/flows/SandboxKeep.ts`, once per generation: `sandbox-keep:<branch>:<generation>`). Every `KEEP_EVERY_SECONDS` (1 minute) it asks the machine whether anything happened within the idle time (`SANDBOX_IDLE_SECONDS`, 15 minutes): a call, a terminal opened, terminal input, or a person's process other than their shells and tmux. Busy, it asks again later, so an idle machine sleeps 15 to 16 minutes after its last activity. A machine never sleeps while a person's process runs; a shell busy only with its own builtins, such as `while :; do :; done`, doesn't count as one.
+- **Cloudflare's backstop:** a 30-minute inactivity timeout stops a container whose sleep never ran. A Durable Object that restarts (every deploy) loses it, and Cloudflare then stops the container soon after the object goes idle, process or not. So the object re-arms it in its constructor and on every ask, socket and sharing change (`SandboxObject.rearm`), not only on a wake.
+- **Sleep when idle:** the machine saves the working copy, then stops; `sandbox/Slept` ends that generation's open terminals `slept`. A machine whose checkpoint can't be saved stays awake, and so does one a call or a terminal reached while it saved.
+- **Resume with the working copy:** the working copy is saved as a checkpoint (`SandboxTools.checkpoint`: its commit, a binary patch with every tracked and untracked change, and a git bundle of the commits no remote has, such as one made in the terminal; 8 MiB at most) in the object's storage after every `run` and `write`, whenever a terminal socket closes, and before sleep. The next generation's first wake fetches that commit from the bundle (or from the forge by its id), resets to it and applies the patch, once. Ignored files, such as `node_modules`, and running processes don't carry over.
+- **Never lose a checkpoint:** a wake whose restore can't reach the machine fails and is tried again before anything saves over the checkpoint. A checkpoint that can't go on the fresh checkout (its commit is gone everywhere, or its patch won't apply) is kept aside in the object's storage as `stranded:<seq>`, and the machine starts from the branch.
 
 ## Configuration
 
 | Setting | Default | What |
 |---|---|---|
 | `SANDBOX_IDLE_SECONDS` | `900` | how long a machine stays awake with nothing happening in it before `sandbox/Keep` puts it to sleep. Read by the `FlowExecution` Durable Object |
+| `SANDBOX_INSTANCE` | `standard-1` | the Cloudflare instance type a machine starts on: `lite`, `basic` or `standard-1` to `standard-4`. Read by `SandboxObject` |
 | `SANDBOX_SECRETS` | `false` | whether the box's other outbound requests reach the secrets egress and it gets its placeholders ([secrets](secrets.md#wiring-into-the-box)). Read by `SandboxObject` |
 
 ## Observability
@@ -96,7 +101,7 @@ Content-free: ids, tools, outcomes, exit codes, statuses, counts and durations; 
 | ChatApi | `sandbox.call`, `sandbox.result` (logs, spans), `smithers_sandbox_call_requests{route,outcome}` |
 | `sandbox/Call` | `sandbox.tool`, `sandbox.call` (logs), `sandbox.call.tool`, `sandbox.call.settle` (spans), `smithers_sandbox_calls{tool,outcome}` |
 | `sandbox/Keep` | `sandbox.keep`, `sandbox.slept` (logs, spans), `smithers_sandbox_keeps{outcome}` |
-| `SandboxObject` | `sandbox.object.tool`, `sandbox.object.sleep`, `sandbox.checkpoint.save`, `sandbox.checkpoint.restore` (spans), `smithers_sandbox_checkpoints{op,outcome}`, and `@smthrs/sandbox`'s `sandbox.tool` span |
+| `SandboxObject` | `sandbox.object.tool`, `sandbox.object.sleep`, `sandbox.checkpoint.save`, `sandbox.checkpoint.restore` (spans), `smithers_sandbox_checkpoints{op,outcome}`; `sandbox.wake` and `sandbox.object.session` warnings with the failed `stage` (`start`, `checkout`, `restore`, `placeholders`) and the error's code; `@smthrs/platform-cloudflare`'s `cloudflare.sandbox.wake`, `cloudflare.sandbox.rearm` and `@smthrs/sandbox`'s `sandbox.tool` span |
 | Browser (`SANDBOX_TELEMETRY`) | `sandbox.call`, `sandbox.call.start`, `sandbox.call.post`, `sandbox.call.result`, `smithers_web_sandbox_calls{tool,outcome}` |
 
 ## Tests

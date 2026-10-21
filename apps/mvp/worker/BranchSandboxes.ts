@@ -14,7 +14,7 @@ import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.ts"
 import { checkoutArgv, forgeRemote } from "./branch/Checkout.ts"
 import * as Machine from "./branch/Machine.ts"
 import { Machines, type SleepOutcome, type ToolOutcome } from "./branch/Machines.ts"
-import { provisionArgv, userOf } from "./branch/Users.ts"
+import { envOf, idOf, provisionArgv, userOf } from "./branch/Users.ts"
 import { Forge, forgeOf } from "./branch/Forge.ts"
 import {
   type Attachment,
@@ -57,6 +57,16 @@ const TICKET_HEADER = "x-smithers-ticket"
  */
 export const sandboxSecrets = Config.Boolean("SANDBOX_SECRETS").pipe(Config.withDefault(false))
 
+/**
+ * `SANDBOX_INSTANCE`: the instance type a branch's machine starts on (decision 0013 §9), `standard-1` unless set: 1/2
+ * vCPU, 4 GiB of memory and 8 GB of disk. Cloudflare's own default, `lite`, has 256 MiB, too little for a real
+ * repository's clone and tests.
+ */
+export const sandboxInstance = Config.schema(
+  Schema.Literals(["lite", "basic", "standard-1", "standard-2", "standard-3", "standard-4"]),
+  "SANDBOX_INSTANCE",
+).pipe(Config.withDefault("standard-1" as const))
+
 /** Where Cloudflare puts the container's per-instance CA, which signs the HTTPS the egress decrypts. */
 export const CONTAINER_CA = "/etc/cloudflare/certs/cloudflare-containers-ca.crt"
 
@@ -79,6 +89,20 @@ printf '%s\n' '[ -r /run/smithers/env ] && { set -a; . /run/smithers/env; set +a
 const failureFields = (cause: Cause.Cause<unknown>) => {
   const error = Cause.squash(cause)
   return { errorCode: codeOf(error), errorName: error instanceof Error ? error.name : typeof error }
+}
+
+/** The step of a wake a failure happened in, as its `sandbox.wake` log line names it. */
+type WakeStage = "start" | "checkout" | "restore" | "placeholders"
+
+/**
+ * How a command runs as the machine's user `name`: its numeric `uid:gid` (a deployed container refuses a name) and the
+ * variables `exec` doesn't give it (worker/branch/Users.ts). A name with no uid is a defect.
+ */
+const asUser = (name: string) => {
+  const user = idOf(name)
+  return user === undefined
+    ? Effect.die(new Error("the machine has no uid for this user"))
+    : Effect.succeed({ user, env: envOf(name) })
 }
 
 /** `NAME=value` lines as variables. */
@@ -135,6 +159,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
     const self = (yield* Cloudflare.DurableObject) as Cloudflare.DurableObject<SandboxObjectShape>
     const forge = yield* Effect.service(Forge).pipe(Effect.provide(Forge.layerConfig), Effect.provide(FetchHttpClient.layer))
     const secretsOn = yield* sandboxSecrets.pipe(Effect.orDie)
+    const instance = yield* sandboxInstance.pipe(Effect.orDie)
     const secretKeys = yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layerConfig), Effect.orDie)
     const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(connection)
     const database = Database.layer(hyperdrive.connectionString)
@@ -142,6 +167,11 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
       // This incarnation's own scope: each socket's pump runs in it for as long as its socket is open, and the object
       // stays in memory while an accepted socket is (no hibernation, which would drop the tmux client's handle).
       const pumps = yield* Scope.make()
+      /** Re-arms a running box's inactivity timeout; its failure is logged (`cloudflare.sandbox.rearm`) and ignored. */
+      const rearm = Effect.ignore(SandboxHost.rearm(box))
+      // A restarted object has no inactivity timeout, and Cloudflare stops its container soon after it goes idle, even
+      // while a process runs: re-arm it now, in the constructor, as Cloudflare's docs say (`SandboxHost.rearm`).
+      yield* rearm
       // Every socket attached now, with who attached it, so a change of the branch's sharing reaches it (`enforce`).
       const attached = new Map<
         WebSocket,
@@ -165,46 +195,52 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
 
       /** Starts the box unless it runs, and advances the generation when it started it. */
       const start = Effect.gen(function* () {
-        const outcome = yield* SandboxHost.wake(box, { intercepts, egress: egressTo })
+        const outcome = yield* SandboxHost.wake(box, { intercepts, egress: egressTo, instance })
         const generation = (yield* state.storage.get<number>("generation")) ?? 0
         if (outcome === "running" && generation > 0) return generation
         yield* state.storage.put("generation", generation + 1)
         return generation + 1
       })
 
+      /** Runs `argv` as the machine's user `name`, answering its exit code. */
+      const run = (argv: Array<string>, name: string) =>
+        Effect.flatMap(asUser(name), (options) =>
+          Effect.scoped(Effect.flatMap(box.exec(argv, options), (process) => process.exitCode)))
+
+      // A wake's failure is logged with the step it failed in: the container's start, the checkout, the restore or
+      // the placeholders, so a failure only production shows says where it happened.
       const wake = (branch: SandboxBranch) =>
-        Effect.gen(function* () {
-          yield* state.storage.put("branch", branch)
-          const generation = yield* start
-          const exit = yield* Effect.scoped(
-            Effect.flatMap(
-              box.exec(checkoutArgv(branch.branch, forgeRemote(branch.owner, branch.name)), { user: SANDBOX_USER }),
-              (process) => process.exitCode,
+        Effect.suspend(() => {
+          let stage: WakeStage = "start"
+          return Effect.gen(function* () {
+            yield* state.storage.put("branch", branch)
+            const generation = yield* start
+            stage = "checkout"
+            const exit = yield* run(checkoutArgv(branch.branch, forgeRemote(branch.owner, branch.name)), SANDBOX_USER)
+            if (exit !== 0) {
+              yield* Effect.logWarning("sandbox.checkout").pipe(
+                Effect.annotateLogs({ branchId: branch.branchId, exitCode: exit }),
+              )
+              return { _tag: "CheckoutFailed" } as const
+            }
+            // A fresh generation gets the working copy the last one saved (worker/branch/Machine.ts); once. A machine
+            // that doesn't answer fails the wake, which is tried again, before anything can save over the checkpoint.
+            stage = "restore"
+            yield* Machine.restore(machine, generation)
+            stage = "placeholders"
+            if (secretsOn) yield* placeholders(branch, generation)
+            return { _tag: "Woken", generation } as const
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Effect.as(
+                Effect.logWarning("sandbox.wake").pipe(
+                  Effect.annotateLogs({ branchId: branch.branchId, stage, ...failureFields(cause) }),
+                ),
+                { _tag: "Unavailable" } as const,
+              )
             ),
           )
-          if (exit !== 0) {
-            yield* Effect.logWarning("sandbox.checkout").pipe(
-              Effect.annotateLogs({ branchId: branch.branchId, exitCode: exit }),
-            )
-            return { _tag: "CheckoutFailed" } as const
-          }
-          // A fresh generation gets the working copy the last one saved (worker/branch/Machine.ts); once.
-          yield* Machine.restore(machine, generation)
-          if (secretsOn) yield* placeholders(branch, generation)
-          return { _tag: "Woken", generation } as const
-        }).pipe(
-          Effect.catchCause((cause) =>
-            Effect.as(
-              Effect.logWarning("sandbox.wake").pipe(Effect.annotateLogs(failureFields(cause))),
-              { _tag: "Unavailable" } as const,
-            )
-          ),
-          Effect.withSpan("sandbox.object.wake", { attributes: { "smithers.branch.id": branch.branchId } }),
-        )
-
-      /** Runs `argv` as `user`, answering its exit code. */
-      const run = (argv: Array<string>, user: string) =>
-        Effect.scoped(Effect.flatMap(box.exec(argv, { user }), (process) => process.exitCode))
+        }).pipe(Effect.withSpan("sandbox.object.wake", { attributes: { "smithers.branch.id": branch.branchId } }))
 
       /** The guest the box is: its repository's branch at the running generation, from this object's own state. */
       const guestOf = (branch: SandboxBranch, generation: number): SandboxEgress.Guest => ({
@@ -224,7 +260,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
             Effect.provide(database),
           )
           yield* state.storage.put("environment", { generation, environment })
-          const root = yield* ContainerSession.make(box, { id: state.id.toString(), workdir: "/", user: "root" })
+          const root = yield* ContainerSession.make(box, { id: state.id.toString(), workdir: "/", ...(yield* asUser("root")) })
           const code = yield* Effect.scoped(Effect.flatMap(
             root.spawn(EGRESS_SETUP, { stdin: new TextEncoder().encode(environment) }),
             (process) => process.exitCode,
@@ -248,14 +284,17 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
 
       // The machine as its tools and lifecycle use it (worker/branch/Machine.ts, docs/features/sandbox-tools.md).
       const machine: Machine.Box<RuntimeContext> = {
-        sessionAs: (user) =>
-          Effect.flatMap(environmentNow, (placeholders) =>
-            ContainerSession.make(box, {
+        sessionAs: (name) =>
+          Effect.gen(function* () {
+            const placeholders = yield* environmentNow
+            const { env, user } = yield* asUser(name)
+            return yield* ContainerSession.make(box, {
               id: state.id.toString(),
               workdir: WORKSPACE,
               user,
-              env: { ...placeholders, HOME: `/home/${user}` },
-            })),
+              env: { ...placeholders, ...env },
+            })
+          }),
         run,
         running: box.running,
         destroy: box.destroy(),
@@ -282,8 +321,10 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           return yield* Machine.tool(machine, { ownerId, callId, call, generation: woken.generation })
         })
 
+      // Each ask re-arms the inactivity timeout first, so a box this object restarted under (a deploy) keeps its backstop
+      // while `sandbox/Keep` decides.
       const sleepIfIdle = (generation: number, idleMs: number) =>
-        Machine.sleepIfIdle(machine, generation, idleMs).pipe(
+        Effect.andThen(rearm, Machine.sleepIfIdle(machine, generation, idleMs)).pipe(
           Effect.catchCause((cause) =>
             Effect.as(
               Effect.logWarning("sandbox.object.sleep").pipe(Effect.annotateLogs(failureFields(cause))),
@@ -292,18 +333,28 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           ),
         )
 
-      // Each person's shell runs as their own user, made on first use (worker/branch/Users.ts).
+      // Each person's shell runs as their own user, made on first use (worker/branch/Users.ts). Opening one is use.
       const session = (terminalId: string, ownerId: string) =>
         Effect.gen(function* () {
           yield* start
-          const user = userOf(ownerId)
-          if ((yield* run(provisionArgv(user), "root")) !== 0) return false
-          yield* ContainerTerminal.ensureSession(box, { name: terminalId, user, cwd: WORKSPACE })
+          yield* Machine.touch(machine)
+          const name = userOf(ownerId)
+          if ((yield* run(provisionArgv(name), "root")) !== 0) return false
+          const { env, user } = yield* asUser(name)
+          yield* ContainerTerminal.ensureSession(box, { name: terminalId, user, cwd: WORKSPACE, env })
           return true
-        }).pipe(Effect.catchCause(() => Effect.succeed(false)))
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.as(
+              Effect.logWarning("sandbox.object.session").pipe(Effect.annotateLogs(failureFields(cause))),
+              false,
+            )
+          ),
+        )
 
       const alive = (terminalId: string, ownerId: string) =>
         Effect.gen(function* () {
+          yield* rearm
           if (!ContainerTerminal.isSessionName(terminalId) || !(yield* box.running)) return false
           return (yield* run(["tmux", "has-session", "-t", `=${terminalId}`], userOf(ownerId))) === 0
         }).pipe(Effect.catchCause(() => Effect.succeed(false)))
@@ -318,11 +369,13 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           if (!ContainerTerminal.isSessionName(terminalId) || ownerId === "" || principal === "") {
             return HttpServerResponse.empty({ status: 400 })
           }
+          yield* rearm
+          const { env, user } = yield* asUser(userOf(ownerId))
           const pair = new WebSocketPair()
           const [client, server] = [pair[0], pair[1]]
           server.accept()
           const fiber = yield* Effect.forkIn(
-            ContainerTerminal.attach(box, server, { name: terminalId, user: userOf(ownerId), access, cols: 80, rows: 24 })
+            ContainerTerminal.attach(box, server, { name: terminalId, user, access, cols: 80, rows: 24, env })
               .pipe(Effect.ensuring(Effect.sync(() => attached.delete(server))), Effect.ensuring(saveNow)),
             pumps,
           )
@@ -373,6 +426,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
             yield* Effect.sync(() => socket.close(code, code === 1008 ? "no access" : "access changed")).pipe(Effect.ignore)
             yield* Fiber.interrupt(viewer.fiber)
           }
+          yield* rearm
           if (revoked.length > 0 && (yield* box.running)) {
             for (const terminal of revoked) {
               if (!ContainerTerminal.isSessionName(terminal.terminalId)) continue

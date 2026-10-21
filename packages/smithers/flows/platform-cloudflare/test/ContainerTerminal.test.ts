@@ -38,7 +38,7 @@ const open = (
     const fiber = yield* Effect.forkChild(
       ContainerTerminal.attach(memory.container, viewer.socket, {
         name: id,
-        user: "smithers",
+        user: "1000:2000",
         access,
         cols: 100,
         rows: 30,
@@ -55,7 +55,7 @@ describe("ContainerTerminal.attach", () => {
       const { client, fiber, viewer } = yield* open("write")
       expect(client.argv).toEqual(["tmux", "attach-session", "-t", `=${id}`])
       expect(client.options).toEqual({
-        user: "smithers",
+        user: "1000:2000",
         env: { TERM: "xterm-256color" },
         pty: { cols: 100, rows: 30 },
         stdin: "pipe"
@@ -103,12 +103,13 @@ describe("ContainerTerminal.attach", () => {
 
   it.effect("a reader's client is read-only and sizes nothing; its bytes and resizes are dropped", () =>
     Effect.gen(function*() {
-      const { client, fiber, viewer } = yield* open("read")
+      // The caller's variables reach the client; TERM is always xterm's own.
+      const { client, fiber, viewer } = yield* open("read", {}, { env: { LANG: "C.UTF-8", TERM: "dumb" } })
       expect(client.argv).toEqual(["tmux", "attach-session", "-f", "read-only,ignore-size", "-t", `=${id}`])
       // No stdin at all: nothing a reader sends has a way in.
       expect(client.options).toEqual({
-        user: "smithers",
-        env: { TERM: "xterm-256color" },
+        user: "1000:2000",
+        env: { LANG: "C.UTF-8", TERM: "xterm-256color" },
         pty: { cols: 100, rows: 30 }
       })
       expect(control(yield* viewer.next)).toEqual({ type: "ready", access: "read" })
@@ -173,8 +174,10 @@ describe("ContainerTerminal.attach", () => {
     [
       ["a name that is not a lowercase UUID", { name: id.toUpperCase() }],
       ["a name with a tmux target suffix", { name: `${id}:0` }],
-      ["root", { user: "root" }],
-      ["a user that is not a plain name", { user: "smithers;id" }],
+      ["root", { user: "0:2000" }],
+      ["a user name", { user: "smithers" }],
+      ["a uid with no gid", { user: "1000" }],
+      ["a user that is not numeric", { user: "1000:2000;id" }],
       ["no columns", { cols: 0 }],
       ["too many rows", { rows: TerminalProtocol.maxRows + 1 }]
     ] as const
@@ -184,7 +187,7 @@ describe("ContainerTerminal.attach", () => {
       const viewer = MemoryContainer.socket()
       const report = yield* ContainerTerminal.attach(memory.container, viewer.socket, {
         name: id,
-        user: "smithers",
+        user: "1000:2000",
         access: "write",
         cols: 80,
         rows: 24,
@@ -201,7 +204,7 @@ describe("ContainerTerminal.attach", () => {
       const viewer = MemoryContainer.socket()
       const report = yield* ContainerTerminal.attach(memory.container, viewer.socket, {
         name: id,
-        user: "smithers",
+        user: "1000:2000",
         access: "write",
         cols: 80,
         rows: 24
@@ -282,7 +285,7 @@ describe("ContainerTerminal.attach", () => {
       early.breakSends()
       const report = yield* ContainerTerminal.attach(memory.container, early.socket, {
         name: id,
-        user: "smithers",
+        user: "1000:2000",
         access: "read",
         cols: 80,
         rows: 24
@@ -297,7 +300,7 @@ describe("ContainerTerminal.attach", () => {
       const viewer = MemoryContainer.socket()
       const fiber = yield* Effect.forkChild(ContainerTerminal.attach(memory.container, viewer.socket, {
         name: id,
-        user: "smithers",
+        user: "1000:2000",
         access: "write",
         cols: 80,
         rows: 24
@@ -337,7 +340,7 @@ describe("ContainerTerminal.attach", () => {
       const failed = MemoryContainer.make(shell, { exec: true })
       yield* ContainerTerminal.attach(failed.container, MemoryContainer.socket().socket, {
         name: id,
-        user: "smithers",
+        user: "1000:2000",
         access: "write",
         cols: 80,
         rows: 24
@@ -406,10 +409,10 @@ describe("ContainerTerminal.attach", () => {
 })
 
 describe("ContainerTerminal.ensureSession", () => {
-  const options = { name: id, user: "smithers", cwd: "/workspace" }
+  const options = { name: id, user: "1000:2000", cwd: "/workspace" }
   const has = ["tmux", "has-session", "-t", `=${id}`]
   const create = ["tmux", "new-session", "-d", "-s", id, "-c", "/workspace"]
-  const quiet = { user: "smithers", stdout: "ignore", stderr: "ignore", env: { TERM: "xterm-256color" } }
+  const quiet = { user: "1000:2000", stdout: "ignore", stderr: "ignore", env: { TERM: "xterm-256color" } }
 
   /** A container whose `has-session` answers each code of `hasCodes` in turn, and `new-session` `createCode`. */
   const tmux = (hasCodes: ReadonlyArray<number>, createCode: number) => {
@@ -429,6 +432,15 @@ describe("ContainerTerminal.ensureSession", () => {
       const memory = tmux([1], 0)
       expect(yield* ContainerTerminal.ensureSession(memory.container, options)).toBe("created")
       expect(memory.commands).toEqual([{ argv: has, options: quiet }, { argv: create, options: quiet }])
+    }))
+
+  it.effect("runs tmux under the caller's variables, with TERM always xterm's own", () =>
+    Effect.gen(function*() {
+      const memory = tmux([1], 0)
+      const env = { HOME: "/home/p1", USER: "p1", LANG: "C.UTF-8", TERM: "dumb" }
+      expect(yield* ContainerTerminal.ensureSession(memory.container, { ...options, env })).toBe("created")
+      const expected = { ...quiet, env: { ...env, TERM: "xterm-256color" } }
+      expect(memory.commands).toEqual([{ argv: has, options: expected }, { argv: create, options: expected }])
     }))
 
   it.effect("a session another caller created meanwhile counts as existing", () =>
@@ -457,8 +469,10 @@ describe("ContainerTerminal.ensureSession", () => {
     [
       ["name", { name: "not-a-uuid" }],
       ["name", { name: `${id} ` }],
-      ["user", { user: "root" }],
-      ["user", { user: "Smithers" }],
+      ["user", { user: "0:0" }],
+      ["user", { user: "00:2000" }],
+      ["user", { user: "smithers" }],
+      ["user", { user: "1000" }],
       ["cwd", { cwd: "workspace" }],
       // tmux expands formats in -c, and #(...) runs a command.
       ["cwd", { cwd: "/tmp/#(touch /tmp/pwned)" }],

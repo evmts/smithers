@@ -589,7 +589,11 @@ const write = (session: Session, call: typeof Write.Type) =>
     if (content.byteLength > limits.fileBytes) return yield* refused("too_large")
     const { code } = yield* gather(session, script(WRITE, [path]), 0, content)
     if (code !== 0) return yield* Effect.fail(failedWith(code))
-    return { tool: "write", path: relative(session.workdir, path), bytes: content.byteLength } satisfies typeof WriteResult.Type
+    return {
+      tool: "write",
+      path: relative(session.workdir, path),
+      bytes: content.byteLength
+    } satisfies typeof WriteResult.Type
   })
 
 const LIST = `p=$1; max=$2
@@ -648,8 +652,9 @@ const status = (session: Session) =>
     const entries: Array<StatusEntry> = []
     for (let index = 0; index < records.length; index++) {
       const record = records[index]!
-      if (record.startsWith("## ")) branch = branchOf(record.startsWith("## No commits yet on ") ? `## ${record.slice(21)}` : record)
-      else if (record.length > 3) {
+      if (record.startsWith("## ")) {
+        branch = branchOf(record.startsWith("## No commits yet on ") ? `## ${record.slice(21)}` : record)
+      } else if (record.length > 3) {
         const [x, y] = [record[0]!, record[1]!]
         // A rename or copy names its old path in the next record.
         const from = x === "R" || x === "C" ? records[++index] : undefined
@@ -722,15 +727,21 @@ export const execute = (session: Session, call: Call, options: ExecuteOptions): 
         ...result.tool === "run" ? { "smithers.sandbox.tool.exit_code": result.exitCode } : {}
       })
     ),
-    Effect.tapError((error) => Effect.annotateCurrentSpan({ "smithers.sandbox.tool.outcome": error._tag.split("/").at(-1)! })),
+    Effect.tapError((error) =>
+      Effect.annotateCurrentSpan({ "smithers.sandbox.tool.outcome": error._tag.split("/").at(-1)! })
+    ),
     Effect.withSpan("sandbox.tool", { attributes: { "smithers.sandbox.tool": call.tool } })
   )
 }
 
 /**
- * A working copy, carried to another machine: the commit it is based on, and
- * a binary patch from that commit with every tracked and untracked change.
- * Ignored files are not carried.
+ * A working copy, carried to another machine: the commit it is based on, a
+ * binary patch from that commit with every tracked and untracked change, and
+ * a git bundle of the commits no remote has, such as a commit made in the
+ * box, so a fresh clone can reach that commit. Ignored files are not carried.
+ *
+ * `bundle` is empty when every commit is on a remote; a checkpoint without
+ * one restores as one with an empty bundle.
  *
  * @category models
  * @since 1.0.0-rc.17
@@ -738,57 +749,87 @@ export const execute = (session: Session, call: Call, options: ExecuteOptions): 
 export interface Checkpoint {
   readonly head: string
   readonly patch: Uint8Array
+  readonly bundle?: Uint8Array | undefined
 }
 
 const CHECKPOINT = `cd -- "$1" 2>/dev/null && git rev-parse --verify -q HEAD >/dev/null 2>&1 || exit 69
 dir=$(mktemp -d) || exit 125
-export GIT_INDEX_FILE="$dir/index"
-git read-tree HEAD && git add -A && git diff --cached --binary --no-color --no-ext-diff HEAD >"$dir/patch" || { rm -rf -- "$dir"; exit 125; }
-printf '%s %s\\n' "$(git rev-parse HEAD)" $(($(wc -c <"$dir/patch")))
-if [ $(($(wc -c <"$dir/patch"))) -le "$2" ]; then cat -- "$dir/patch"; fi
-rm -rf -- "$dir"`
+trap 'rm -rf -- "$dir"' EXIT
+GIT_INDEX_FILE="$dir/index" git read-tree HEAD || exit 125
+GIT_INDEX_FILE="$dir/index" git add -A || exit 125
+GIT_INDEX_FILE="$dir/index" git diff --cached --binary --no-color --no-ext-diff HEAD >"$dir/patch" || exit 125
+: >"$dir/bundle"
+if [ -n "$(git rev-list -n 1 HEAD --not --remotes)" ]; then
+  git bundle create "$dir/bundle" HEAD --not --remotes 2>/dev/null || exit 125
+fi
+p=$(($(wc -c <"$dir/patch"))); b=$(($(wc -c <"$dir/bundle")))
+printf '%s %s %s\\n' "$(git rev-parse HEAD)" "$p" "$b"
+if [ $((p + b)) -le "$2" ]; then cat -- "$dir/patch" "$dir/bundle"; fi`
 
 /**
- * Captures the session's working copy without changing it: its `HEAD` and a
- * binary patch from it. A patch over `limits.checkpointBytes` is refused
+ * Captures the session's working copy without changing it: its `HEAD`, a
+ * binary patch from it, and a bundle of the commits no remote has. A patch
+ * and bundle together over `limits.checkpointBytes` are refused
  * `too_large`; a workdir with no commit, `not_a_repository`.
  *
  * @category operations
  * @since 1.0.0-rc.17
  */
-export const checkpoint = (session: Session): Effect.Effect<Checkpoint, ToolRefused | ToolUnavailable> =>
+export const checkpoint = (
+  session: Session
+): Effect.Effect<Checkpoint & { readonly bundle: Uint8Array }, ToolRefused | ToolUnavailable> =>
   Effect.gen(function*() {
     const max = limits.checkpointBytes
-    const { code, stdout } = yield* gather(session, script(CHECKPOINT, [resolve(session.workdir, ".")!, String(max)]), max + 128)
+    const { code, stdout } = yield* gather(
+      session,
+      script(CHECKPOINT, [resolve(session.workdir, ".")!, String(max)]),
+      max + 128
+    )
     if (code !== 0) return yield* Effect.fail(failedWith(code) as ToolRefused | ToolUnavailable)
     const { body, header } = headed(stdout)
-    if (Number(header[1]) > max) return yield* Effect.fail(new ToolRefused({ reason: "too_large" }))
-    return { head: header[0]!, patch: body.slice() }
+    const patchBytes = Number(header[1])
+    if (patchBytes + Number(header[2]) > max) return yield* Effect.fail(new ToolRefused({ reason: "too_large" }))
+    return { head: header[0]!, patch: body.slice(0, patchBytes), bundle: body.slice(patchBytes) }
   }).pipe(Effect.withSpan("sandbox.checkpoint"))
 
 const RESTORE = `cd -- "$1" 2>/dev/null && git rev-parse --verify -q HEAD >/dev/null 2>&1 || exit 69
-git cat-file -e "$2^{commit}" 2>/dev/null || exit 44
+dir=$(mktemp -d) || exit 125
+trap 'rm -rf -- "$dir"' EXIT
+cat >"$dir/in" || exit 125
+# BSD head refuses -c 0.
+if [ "$3" -gt 0 ]; then head -c "$3" "$dir/in" >"$dir/patch" || exit 125; else : >"$dir/patch"; fi
+tail -c +$(($3 + 1)) "$dir/in" >"$dir/bundle" || exit 125
+if ! git cat-file -e "$2^{commit}" 2>/dev/null; then
+  if [ -s "$dir/bundle" ]; then git fetch -q "$dir/bundle" 2>/dev/null; fi
+  git cat-file -e "$2^{commit}" 2>/dev/null || git fetch -q --depth=1 origin "$2" 2>/dev/null
+  git cat-file -e "$2^{commit}" 2>/dev/null || exit 44
+fi
 umask 002
 if [ "$(git rev-parse HEAD)" != "$2" ]; then git reset -q --hard "$2" || exit 125; fi
 [ "$3" = 0 ] && exit 0
-git apply --binary --whitespace=nowarn || exit 125`
+git apply --binary --whitespace=nowarn "$dir/patch" || exit 125`
 
 /**
  * Puts a {@link Checkpoint} back on the session's working copy: moves `HEAD`
- * to its commit when it is elsewhere, then applies its patch. Its commit must
- * be in the working copy's history (`not_found` when it isn't). Restore onto
- * a clean checkout: a working copy with changes may refuse the patch.
+ * to its commit when it is elsewhere, then applies its patch. A commit the
+ * working copy lacks comes from the checkpoint's bundle, else is fetched from
+ * `origin` by its id; `not_found` when neither has it. Restore onto a clean
+ * checkout: a working copy with changes may refuse the patch.
  *
  * @category operations
  * @since 1.0.0-rc.17
  */
 export const restore = (session: Session, saved: Checkpoint): Effect.Effect<void, ToolRefused | ToolUnavailable> =>
   Effect.gen(function*() {
+    const bundle = saved.bundle ?? new Uint8Array()
+    const input = new Uint8Array(saved.patch.byteLength + bundle.byteLength)
+    input.set(saved.patch)
+    input.set(bundle, saved.patch.byteLength)
     const { code } = yield* gather(
       session,
       script(RESTORE, [resolve(session.workdir, ".")!, saved.head, String(saved.patch.byteLength)]),
       0,
-      saved.patch
+      input
     )
     if (code !== 0) return yield* Effect.fail(failedWith(code) as ToolRefused | ToolUnavailable)
   }).pipe(Effect.withSpan("sandbox.restore"))

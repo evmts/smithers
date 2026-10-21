@@ -34,7 +34,7 @@ describe("ContainerSession", () => {
       const session = yield* ContainerSession.make(container, {
         id: "branch-1",
         workdir: root,
-        user: "p0123",
+        user: "100123:2000",
         env: { SHARED: "session", KEPT: "kept" }
       })
       expect(session).toMatchObject({ id: "branch-1", remoteId: "branch-1", workdir: root })
@@ -49,7 +49,7 @@ describe("ContainerSession", () => {
       expect(commands[0]).toEqual({
         argv: ["sh", "-c", "pwd; echo $SHARED $KEPT; cat"],
         options: {
-          user: "p0123",
+          user: "100123:2000",
           cwd: root,
           env: { SHARED: "command", KEPT: "kept" },
           stdin: "pipe",
@@ -63,8 +63,24 @@ describe("ContainerSession", () => {
       execFileSync("mkdir", ["-p", join(root, "sub")])
       expect(yield* where("sub")).toBe(`${root}/sub\n`)
       expect(yield* where("/")).toBe("/\n")
-      expect(commands.at(-1)!.options.user).toBe("p0123")
+      expect(commands.at(-1)!.options.user).toBe("100123:2000")
     }))
+
+  it.effect.each(["smithers", "1000", "1000:2000;id", " 1000:2000"])(
+    "refuses user %j before the container runs anything",
+    (user) =>
+      Effect.gen(function*() {
+        const { commands, container } = ProcessContainer.make()
+        const session = yield* ContainerSession.make(container, { id: "named", workdir: root, user })
+        const error = yield* Effect.flip(Effect.scoped(session.spawn("true", {})))
+        expect(error).toMatchObject({
+          code: "spawn_error",
+          message: "container session: the user is not a numeric uid:gid"
+        })
+        expect(yield* Effect.flip(session.ping!)).toMatchObject({ code: "spawn_error" })
+        expect(commands).toEqual([])
+      })
+  )
 
   it.effect("reads and writes files byte for byte, making directories, and reports an absent one", () =>
     Effect.gen(function*() {

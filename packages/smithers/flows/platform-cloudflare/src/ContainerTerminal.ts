@@ -16,6 +16,12 @@
  * client, so an Alchemy Durable Object's container handle passes in as is
  * (`R` is its `RuntimeContext`), and a test passes an in-memory one.
  *
+ * Both run as a user given as numeric `uid:gid`. A deployed container's
+ * `exec` refuses a user name, and runs a bare `uid` as root; local Docker
+ * accepts both, so a name would pass in development and fail in
+ * production. A command started with `exec` inherits only `PATH` from the
+ * image, so `env` carries what the shell needs, such as `HOME` and `LANG`.
+ *
  * Bytes never reach telemetry. Spans, log lines and metrics carry the
  * terminal's id (never as a metric attribute), the viewer's access, the
  * outcome, close codes and byte counts.
@@ -118,10 +124,10 @@ export interface Socket {
 
 /**
  * {@link ensureSession} or {@link attach} was given a value it refuses: a
- * session name that is not a lowercase UUID, a user that is `root` or not a
- * plain user name, a working directory that is not an absolute path of
- * letters, digits, `.`, `_`, `-` and `/`, or a terminal size outside
- * `TerminalProtocol`'s bounds. Nothing ran.
+ * session name that is not a lowercase UUID, a user that is not a numeric
+ * `uid:gid` or whose uid is 0 (root), a working directory that is not an
+ * absolute path of letters, digits, `.`, `_`, `-` and `/`, or a terminal
+ * size outside `TerminalProtocol`'s bounds. Nothing ran.
  *
  * @category errors
  * @since 1.0.0-rc.17
@@ -198,8 +204,12 @@ export interface Report {
  * Options for {@link ensureSession}.
  *
  * - `name`: the session's name, the terminal's id, as a lowercase UUID.
- * - `user`: the non-root user the session's shell runs as.
+ * - `user`: the non-root user the session's shell runs as, as `uid:gid`,
+ *   such as `1000:2000`.
  * - `cwd`: the directory the shell starts in.
+ * - `env`: variables tmux runs under, such as `HOME`, `USER` and `LANG`. The
+ *   user's tmux server, started by its first session, hands them to every
+ *   shell it starts. `TERM` is always {@link clientTerm}.
  *
  * @category models
  * @since 1.0.0-rc.17
@@ -208,15 +218,18 @@ export interface SessionOptions {
   readonly name: string
   readonly user: string
   readonly cwd: string
+  readonly env?: Readonly<Record<string, string>> | undefined
 }
 
 /**
  * Options for {@link attach}.
  *
- * - `name` and `user`: the session, and the user {@link ensureSession} ran it
- *   as; tmux keeps one server per user.
+ * - `name` and `user`: the session, and the `uid:gid` {@link ensureSession}
+ *   ran it as; tmux keeps one server per user.
  * - `access`: `write` for the terminal's owner, `read` for everyone else.
  * - `cols` and `rows`: the viewer's terminal size when it attached.
+ * - `env`: variables the tmux client runs under, such as `LANG`, which tells
+ *   it the terminal speaks UTF-8. `TERM` is always {@link clientTerm}.
  *
  * @category models
  * @since 1.0.0-rc.17
@@ -227,6 +240,7 @@ export interface AttachOptions {
   readonly access: TerminalProtocol.Access
   readonly cols: number
   readonly rows: number
+  readonly env?: Readonly<Record<string, string>> | undefined
 }
 
 /**
@@ -286,7 +300,7 @@ export const bytes = Metric.counter("smithers_cloudflare_terminal_bytes", {
 })
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-const userName = /^[a-z_][a-z0-9_-]{0,31}$/
+const uidGid = /^(\d{1,10}):\d{1,10}$/
 // tmux expands formats in `-c`, and `#(...)` there runs a shell command, so
 // the directory admits no `#`, `$`, quote or space.
 const directory = /^\/[A-Za-z0-9._/-]*$/
@@ -306,10 +320,22 @@ const checkName = (name: string) =>
     ? Effect.void
     : Effect.fail(new InvalidSession({ field: "name", message: "A session name is a lowercase UUID" }))
 
+/**
+ * Whether `value` is a user {@link ensureSession} and {@link attach} accept:
+ * a numeric `uid:gid` whose uid is not 0, such as `1000:2000`.
+ *
+ * @category validation
+ * @since 1.0.0-rc.17
+ */
+export const isSessionUser = (value: string): boolean => {
+  const match = uidGid.exec(value)
+  return match !== null && Number(match[1]) !== 0
+}
+
 const checkUser = (user: string) =>
-  userName.test(user) && user !== "root"
+  isSessionUser(user)
     ? Effect.void
-    : Effect.fail(new InvalidSession({ field: "user", message: "A session runs as a plain, non-root user" }))
+    : Effect.fail(new InvalidSession({ field: "user", message: "A session runs as a non-root uid:gid" }))
 
 const checkCwd = (cwd: string) =>
   directory.test(cwd)
@@ -328,11 +354,17 @@ const checkSize = (cols: number, rows: number) =>
 /** The exact-match target for a session: `=` stops tmux matching a prefix or a pattern. */
 const target = (name: string) => `=${name}`
 
+/** The variables a tmux command runs under: `env`, with `TERM` always {@link clientTerm}. */
+const envOf = (env: Readonly<Record<string, string>> | undefined): Record<string, string> => ({
+  ...env,
+  TERM: clientTerm
+})
+
 /** Runs a command to completion in its own scope and answers its exit code. */
-const run = <E, R>(container: Container<E, R>, cmd: Array<string>, user: string) =>
+const run = <E, R>(container: Container<E, R>, cmd: Array<string>, options: SessionOptions) =>
   Effect.scoped(
     Effect.flatMap(
-      container.exec(cmd, { user, stdout: "ignore", stderr: "ignore", env: { TERM: clientTerm } }),
+      container.exec(cmd, { user: options.user, stdout: "ignore", stderr: "ignore", env: envOf(options.env) }),
       (process) => process.exitCode
     )
   )
@@ -357,7 +389,7 @@ export const ensureSession = <E, R>(
   options: SessionOptions
 ): Effect.Effect<SessionOutcome, E | InvalidSession | SessionFailed, R> => {
   const exists = Effect.map(
-    run(container, ["tmux", "has-session", "-t", target(options.name)], options.user),
+    run(container, ["tmux", "has-session", "-t", target(options.name)], options),
     (code) => code === 0
   )
   return Effect.gen(function*() {
@@ -368,7 +400,7 @@ export const ensureSession = <E, R>(
     const exitCode = yield* run(
       container,
       ["tmux", "new-session", "-d", "-s", options.name, "-c", options.cwd],
-      options.user
+      options
     )
     if (exitCode === 0) return "created" as const
     if (yield* exists) return "existing" as const
@@ -435,7 +467,7 @@ type Inbound = { readonly _tag: "Message"; readonly data: unknown } | { readonly
  *
  * 1. Listens to the socket first, so a close during the attach is not lost.
  * 2. As `user`, runs `tmux attach-session -t =<name>` on a pseudo-terminal
- *    of `cols` × `rows`, under `TERM` {@link clientTerm}. A writer's client
+ *    of `cols` × `rows`, under `env` and `TERM` {@link clientTerm}. A writer's client
  *    has piped stdin; a reader's is `-f read-only,ignore-size` with no stdin,
  *    so it can neither type nor size the window.
  * 3. Sends `ready {access}`.
@@ -509,7 +541,7 @@ export const attach = <E, R>(
       : ["tmux", "attach-session", "-f", "read-only,ignore-size", "-t", target(options.name)]
     const spawned = yield* Effect.exit(container.exec(argv, {
       user: options.user,
-      env: { TERM: clientTerm },
+      env: envOf(options.env),
       pty: { cols: options.cols, rows: options.rows },
       ...(access === "write" ? { stdin: "pipe" as const } : {})
     }))

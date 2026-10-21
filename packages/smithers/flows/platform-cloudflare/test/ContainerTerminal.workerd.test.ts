@@ -55,7 +55,7 @@ const call = async (path: string, init?: RequestInit) => {
   return mf.dispatchFetch(`http://terminal${path}${separator}object=${object}`, init as never)
 }
 
-const exec = async (argv: ReadonlyArray<string>, user = "smithers") => {
+const exec = async (argv: ReadonlyArray<string>, user = "1000:2000") => {
   const response = await call("/exec", { method: "POST", body: JSON.stringify({ argv, user }) })
   expect(response.status).toBe(200)
   return (await response.json()) as { readonly exitCode: number; readonly stdout: string; readonly stderr: string }
@@ -94,7 +94,7 @@ class Viewer {
     const opened = performance.now()
     const query = new URLSearchParams({
       name: options.name,
-      user: "smithers",
+      user: "1000:2000",
       access: options.access,
       cols: String(options.cols),
       rows: String(options.rows)
@@ -259,7 +259,7 @@ describe.skipIf(!("socketPath" in docker))(`ContainerTerminal in workerd with a 
         "sh",
         "-c",
         "env; for f in /proc/[0-9]*/cmdline /proc/[0-9]*/environ; do tr '\\0' ' ' < \"$f\" 2>/dev/null; echo; done"
-      ], "root")
+      ], "0:0")
       expect(processes.exitCode).toBe(0)
       expect(processes.stdout).toContain("HOME=")
       expect(processes.stdout).not.toContain(token)
@@ -272,7 +272,7 @@ describe.skipIf(!("socketPath" in docker))(`ContainerTerminal in workerd with a 
         "sh",
         token.slice(0, half),
         token.slice(half)
-      ], "root")
+      ], "0:0")
       expect(files.stdout.trim()).toBe("grep=1")
     },
     180_000
@@ -281,9 +281,9 @@ describe.skipIf(!("socketPath" in docker))(`ContainerTerminal in workerd with a 
   const terminal = randomUUID()
 
   it("the owner's keystrokes reach the shell; a reader's bytes, replies and sizes never do", async () => {
-    const created = await call(`/session?name=${terminal}&user=smithers&cwd=/workspace`, { method: "POST" })
+    const created = await call(`/session?name=${terminal}&user=1000:2000&cwd=/workspace`, { method: "POST" })
     expect(await created.json()).toEqual({ outcome: "created" })
-    expect(await (await call(`/session?name=${terminal}&user=smithers&cwd=/workspace`, { method: "POST" })).json())
+    expect(await (await call(`/session?name=${terminal}&user=1000:2000&cwd=/workspace`, { method: "POST" })).json())
       .toEqual({ outcome: "existing" })
 
     const owner = await Viewer.open({ name: terminal, access: "write", cols: 100, rows: 30 })

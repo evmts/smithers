@@ -153,9 +153,9 @@ each guarantee and what proves it.
 | `CloudflareRuntime` | `layer({ hostId, executionId }, registerFlows)`: the durable engine for one execution over an injected `SqlClient`.                                                                       |
 | `ExecutionObject`   | `start`, `wake`, `alarm` and `intent`: the per-execution Durable Object, as functions over a structural slice of Durable Object storage.                                                  |
 | `EdgeCache`         | `layer({ name?, maxEntryBytes? })`: `@smthrs/artifacts`' `ImmutableCache` over the Workers Cache API, `caches.default` or a named cache.                                                  |
-| `SandboxObject`     | `wake(container, { intercepts, inactivityTimeoutMs? })`: start a container Durable Object's container offline, re-arm its inactivity timeout, register its outbound HTTP intercepts.      |
+| `SandboxObject`     | `wake` and `rearm`: start a container Durable Object's container offline on its instance type, register its outbound HTTP intercepts, and re-arm its inactivity timeout.                  |
 | `ContainerTerminal` | `ensureSession` and `attach`: a browser terminal over `@smthrs/sandbox`'s `TerminalProtocol`, one tmux session per terminal and one tmux client per WebSocket; readers' input is dropped. |
-| `ContainerSession`  | `make(container, { id, workdir, user?, env? })`: the container as `@smthrs/sandbox`'s `Sandbox.Session`, so `SandboxTools` and `Sandbox.layerHost` run on it.                    |
+| `ContainerSession`  | `make(container, { id, workdir, user?, env? })`: the container as `@smthrs/sandbox`'s `Sandbox.Session`, so `SandboxTools` and `Sandbox.layerHost` run on it.                             |
 
 ## A terminal in a container
 
@@ -169,11 +169,13 @@ Alchemy object's container handle passes in as is:
 ```ts
 const box = yield * Box // the object's Cloudflare.Container handle
 yield * SandboxObject.wake(box, { intercepts: [{ host: "forge.example.internal", fetcher: egress }] })
-yield * ContainerTerminal.ensureSession(box, { name: terminalId, user: "smithers", cwd: "/workspace" })
+yield * ContainerTerminal.ensureSession(box, { name: terminalId, user: "1000:2000", cwd: "/workspace", env })
 
 // per socket, after server.accept()
 yield *
-  state.waitUntil(ContainerTerminal.attach(box, server, { name: terminalId, user: "smithers", access, cols, rows }))
+  state.waitUntil(
+    ContainerTerminal.attach(box, server, { name: terminalId, user: "1000:2000", access, cols, rows, env })
+  )
 ```
 
 The owner (`write`) types and resizes; every byte and resize from a `read`

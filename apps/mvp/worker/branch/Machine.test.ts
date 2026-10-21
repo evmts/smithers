@@ -163,7 +163,7 @@ const tool = (box: Machine.Box<never>, call: Parameters<typeof Machine.tool>[1][
 
 /** The checkpoint record the object's storage holds. */
 const saved = (map: Map<string, unknown>) =>
-  map.get("checkpoint") as { generation: number; head: string; seq: number; pieces: number; bytes: number }
+  map.get("checkpoint") as { generation: number; head: string; seq: number; pieces: number; bytes: number; bundleBytes?: number }
 
 describe("tool", () => {
   test("runs a call as the person's own user, made first, and saves the working copy after a write or a run only", async () => {
@@ -345,26 +345,71 @@ describe("restore", () => {
     expect(readFileSync(join(second.workdir, "README.md"), "utf8")).toBe("edited since\n")
   })
 
-  test("its own generation's checkpoint is nothing to restore; a missing commit or a broken patch is recorded", async () => {
+  test("its own generation's checkpoint is nothing to restore; one that can't go back is kept aside, never lost", async () => {
     const same = boxOf({ store: memory({ checkpoint: { generation: 3, head: base, seq: 1, pieces: 0, bytes: 0 } }) })
     expect(await Effect.runPromise(Machine.restore(same.box, 3))).toBe("none")
     expect(same.map.get("restored")).toBe(3)
     expect(same.sessions).toEqual([])
 
-    const missing = boxOf({
-      store: memory({ checkpoint: { generation: 1, head: "0".repeat(40), seq: 1, pieces: 0, bytes: 0 } }),
-    })
+    const gone = { generation: 1, head: "0".repeat(40), seq: 4, pieces: 1, bytes: 3 }
+    const missing = boxOf({ store: memory({ checkpoint: gone, "checkpoint:4:0": new Uint8Array([1, 2, 3]) }) })
     const notFound = await observed(Machine.restore(missing.box, 2))
     expect(notFound.value).toBe("not_found")
     expect(notFound.counted("restore", "not_found")).toBe(1)
     expect(notFound.lines).toMatchObject([{ level: "WARN", annotations: { outcome: "not_found" } }])
     expect(missing.map.get("restored")).toBe(2)
+    // Kept aside, pieces and all: the next save takes a sequence after it, so it can't overwrite or delete them.
+    expect(missing.map.get("stranded:4")).toEqual(gone)
+    expect(missing.map.has("checkpoint")).toBe(false)
+    writeFileSync(join(missing.workdir, "since.txt"), "since\n")
+    expect(await Effect.runPromise(Machine.save(missing.box, 2))).toBe("saved")
+    expect(saved(missing.map)).toMatchObject({ generation: 2, seq: 5 })
+    expect(missing.map.get("checkpoint:4:0")).toEqual(new Uint8Array([1, 2, 3]))
+    expect(missing.map.get("stranded:4")).toEqual(gone)
 
     // A record whose piece was lost: the patch is all zeros, and git refuses it.
-    const broken = boxOf({ store: memory({ checkpoint: { generation: 1, head: base, seq: 1, pieces: 1, bytes: 64 } }) })
+    const lost = { generation: 1, head: base, seq: 1, pieces: 1, bytes: 64 }
+    const broken = boxOf({ store: memory({ checkpoint: lost }) })
     expect(await Effect.runPromise(Machine.restore(broken.box, 2))).toBe("failed")
     expect(broken.map.get("restored")).toBe(2)
+    expect(broken.map.get("stranded:1")).toEqual(lost)
     expect(git(broken.workdir, "status", "--porcelain")).toBe("")
+  })
+
+  test("a machine that doesn't answer fails the restore and records nothing, so a save can't replace the checkpoint", async () => {
+    const first = boxOf({ store: memory({ restored: 1 }) })
+    writeFileSync(join(first.workdir, "kept.txt"), "kept\n")
+    expect(await Effect.runPromise(Machine.save(first.box, 1))).toBe("saved")
+    const kept = saved(first.map)
+
+    const down = boxOf({ store: first.store, downFor: [SANDBOX_USER] })
+    const failed = await observed(Effect.flip(Machine.restore(down.box, 2)))
+    expect(failed.value).toMatchObject({ _tag: "@smthrs/sandbox/SandboxTools/ToolUnavailable", code: "unavailable" })
+    expect(failed.counted("restore", "unavailable")).toBe(1)
+    expect(down.map.get("restored")).toBe(1)
+    // Not restored yet: the save is skipped, and the checkpoint stays for the next wake.
+    expect(await Effect.runPromise(Machine.save(down.box, 2))).toBe("skipped")
+    expect(saved(down.map)).toEqual(kept)
+
+    const second = boxOf({ store: first.store })
+    expect(await Effect.runPromise(Machine.restore(second.box, 2))).toBe("restored")
+    expect(readFileSync(join(second.workdir, "kept.txt"), "utf8")).toBe("kept\n")
+  })
+
+  test("a commit made in the machine, which the branch doesn't have, comes back on the next generation", async () => {
+    const first = boxOf({ store: memory({ restored: 1 }) })
+    writeFileSync(join(first.workdir, "local.txt"), "committed here\n")
+    git(first.workdir, "add", "local.txt")
+    git(first.workdir, "commit", "-q", "-m", "local")
+    writeFileSync(join(first.workdir, "after.txt"), "after\n")
+    expect(await Effect.runPromise(Machine.save(first.box, 1))).toBe("saved")
+    expect(saved(first.map).bundleBytes).toBeGreaterThan(0)
+
+    const second = boxOf({ store: first.store })
+    expect(await Effect.runPromise(Machine.restore(second.box, 2))).toBe("restored")
+    expect(git(second.workdir, "log", "-1", "--format=%s")).toBe("local")
+    expect(readFileSync(join(second.workdir, "local.txt"), "utf8")).toBe("committed here\n")
+    expect(readFileSync(join(second.workdir, "after.txt"), "utf8")).toBe("after\n")
   })
 })
 
@@ -411,5 +456,24 @@ describe("sleepIfIdle", () => {
     expect(await Effect.runPromise(Machine.sleepIfIdle(fresh.box, 3, 1_000))).toBe("slept")
     expect(fresh.state.destroyed).toBe(1)
     expect(fresh.map.has("checkpoint")).toBe(false)
+  })
+
+  test("a call that comes while it saves keeps the machine awake", async () => {
+    const machine = boxOf({ store: memory({ generation: 3, restored: 3, activeAt: 1 }) })
+    // The call is admitted (and touches the machine) while the checkpoint is being written.
+    const racing: Machine.Box<never> = {
+      ...machine.box,
+      storage: {
+        ...machine.box.storage,
+        put: (key, value) =>
+          key === "checkpoint"
+            ? Effect.andThen(machine.box.storage.put(key, value), Machine.touch(machine.box))
+            : machine.box.storage.put(key, value),
+      },
+    }
+    writeFileSync(join(machine.workdir, "typed.txt"), "typed\n")
+    expect(await Effect.runPromise(Machine.sleepIfIdle(racing, 3, 1_000))).toBe("busy")
+    expect(machine.state).toEqual({ running: true, destroyed: 0 })
+    expect(saved(machine.map)).toMatchObject({ generation: 3 })
   })
 })

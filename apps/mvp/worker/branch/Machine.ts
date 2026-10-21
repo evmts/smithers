@@ -14,8 +14,9 @@ import { provisionArgv, userOf } from "./Users.ts"
 //   user's home so it runs at most once, and by generation in the object's storage, so a machine that restarted never
 //   runs it again either.
 // - The working copy outlives the machine: after a call that changes it, and before the machine sleeps, the object
-//   saves a checkpoint (`SandboxTools.checkpoint`: the commit and a binary patch) in its storage, and the first wake of
-//   the next generation puts it back. A machine whose checkpoint can't be saved stays awake.
+//   saves a checkpoint (`SandboxTools.checkpoint`: the commit, a binary patch, and a bundle of the commits no remote
+//   has) in its storage, and the first wake of the next generation puts it back. A machine whose checkpoint can't be
+//   saved stays awake. A checkpoint that can't be put back is kept aside, never overwritten.
 // - Idle means nothing happened for the idle time: no call, no terminal input, and no process of a person but their
 //   shells and tmux.
 
@@ -45,9 +46,10 @@ export const callsDirectory = (user: string): string => `/home/${user}/.smithers
 export const CHUNK_BYTES = 120 * 1024
 
 /**
- * A saved checkpoint's record in the object's storage. Its patch is in `checkpoint:<seq>:<n>` pieces: each save writes
- * a new sequence's pieces before it switches the record to them, so a save that stops part way leaves the record on
- * the previous checkpoint, whole.
+ * A saved checkpoint's record in the object's storage. Its patch, then its bundle (`bundleBytes` of the `bytes`; none
+ * in a record saved before bundles), are in `checkpoint:<seq>:<n>` pieces: each save writes a new sequence's pieces
+ * before it switches the record to them, so a save that stops part way leaves the record on the previous checkpoint,
+ * whole. `seq` in storage is the last sequence any save took, so a new one never reuses a kept-aside checkpoint's.
  */
 interface Saved {
   readonly generation: number
@@ -55,6 +57,7 @@ interface Saved {
   readonly seq: number
   readonly pieces: number
   readonly bytes: number
+  readonly bundleBytes?: number
 }
 
 /** The key of piece `index` of checkpoint sequence `seq`. */
@@ -96,23 +99,46 @@ export const save = <R>(box: Box<R>, generation: number) =>
       yield* counted("save", outcome)
       return outcome
     }
-    const { head, patch } = captured.success
+    const { bundle, head, patch } = captured.success
+    const blob = new Uint8Array(patch.byteLength + bundle.byteLength)
+    blob.set(patch)
+    blob.set(bundle, patch.byteLength)
     const before = yield* box.storage.get<Saved>("checkpoint")
-    const seq = (before?.seq ?? 0) + 1
-    const pieces = Math.ceil(patch.byteLength / CHUNK_BYTES)
+    const seq = Math.max(before?.seq ?? 0, (yield* box.storage.get<number>("seq")) ?? 0) + 1
+    yield* box.storage.put("seq", seq)
+    const pieces = Math.ceil(blob.byteLength / CHUNK_BYTES)
     // The new pieces first, then the record: until it switches, the record names the previous checkpoint's pieces.
     for (let index = 0; index < pieces; index++) {
-      yield* box.storage.put(pieceKey(seq, index), patch.slice(index * CHUNK_BYTES, (index + 1) * CHUNK_BYTES))
+      yield* box.storage.put(pieceKey(seq, index), blob.slice(index * CHUNK_BYTES, (index + 1) * CHUNK_BYTES))
     }
-    yield* box.storage.put("checkpoint", { generation, head, seq, pieces, bytes: patch.byteLength } satisfies Saved)
+    yield* box.storage.put("checkpoint", {
+      generation,
+      head,
+      seq,
+      pieces,
+      bytes: blob.byteLength,
+      bundleBytes: bundle.byteLength,
+    } satisfies Saved)
     for (let index = 0; index < (before?.pieces ?? 0); index++) yield* box.storage.delete(pieceKey(before!.seq, index))
     yield* counted("save", "saved")
     return "saved" as const
   }).pipe(Effect.withSpan("sandbox.checkpoint.save", { attributes: { "smithers.sandbox.generation": generation } }))
 
 /**
+ * Whether a restore's failure is the machine not answering, which a later wake retries, rather than a checkpoint that
+ * can't go on this checkout: a refusal (its commit is gone, say), or its script failing (a patch that won't apply).
+ */
+const isTransient = (failure: SandboxTools.ToolRefused | SandboxTools.ToolUnavailable): boolean =>
+  failure._tag === "@smthrs/sandbox/SandboxTools/ToolUnavailable" && failure.code !== "unknown"
+
+/**
  * Puts the last checkpoint back on generation `generation`'s fresh checkout, once: a checkpoint of an earlier
- * generation is applied (`restored`); there may be none (`none`). A failure is recorded and the machine stays usable.
+ * generation is applied (`restored`); there may be none (`none`).
+ *
+ * - The machine not answering fails it with `ToolUnavailable`, and nothing is recorded: the wake fails, and the next
+ *   one tries again before any save can replace the checkpoint.
+ * - A checkpoint that can't go on this checkout (its refusal's reason, or `failed`) is kept aside as
+ *   `stranded:<seq>`, pieces and all, so no later save overwrites it, and the machine stays usable.
  */
 export const restore = <R>(box: Box<R>, generation: number) =>
   Effect.gen(function* () {
@@ -120,17 +146,29 @@ export const restore = <R>(box: Box<R>, generation: number) =>
     const saved = yield* box.storage.get<Saved>("checkpoint")
     let outcome: string = "none"
     if (saved !== undefined && saved.generation < generation) {
-      const patch = new Uint8Array(saved.bytes)
+      const blob = new Uint8Array(saved.bytes)
       for (let index = 0; index < saved.pieces; index++) {
-        patch.set((yield* box.storage.get<Uint8Array>(pieceKey(saved.seq, index))) ?? new Uint8Array(), index * CHUNK_BYTES)
+        blob.set((yield* box.storage.get<Uint8Array>(pieceKey(saved.seq, index))) ?? new Uint8Array(), index * CHUNK_BYTES)
       }
+      const patchBytes = saved.bytes - (saved.bundleBytes ?? 0)
       const session = yield* box.sessionAs(SANDBOX_USER)
-      const restored = yield* Effect.result(SandboxTools.restore(session, { head: saved.head, patch }))
+      const restored = yield* Effect.result(
+        SandboxTools.restore(session, { head: saved.head, patch: blob.subarray(0, patchBytes), bundle: blob.subarray(patchBytes) }),
+      )
+      if (restored._tag === "Failure" && isTransient(restored.failure)) {
+        yield* counted("restore", "unavailable")
+        return yield* Effect.fail(restored.failure)
+      }
       outcome = restored._tag === "Success"
         ? "restored"
         : restored.failure._tag === "@smthrs/sandbox/SandboxTools/ToolRefused"
         ? restored.failure.reason
         : "failed"
+      if (restored._tag === "Failure") {
+        yield* box.storage.put(`stranded:${saved.seq}`, saved)
+        yield* box.storage.put("seq", Math.max((yield* box.storage.get<number>("seq")) ?? 0, saved.seq))
+        yield* box.storage.delete("checkpoint")
+      }
     }
     yield* box.storage.put("restored", generation)
     yield* counted("restore", outcome)
@@ -209,17 +247,20 @@ exit 0`
 /**
  * Puts generation `generation` to sleep when nothing happened in it for `idleMs`: it saves the working copy, then
  * stops the container. `gone` when that generation isn't running any more; `busy` when something happened, or the
- * checkpoint couldn't be saved.
+ * checkpoint couldn't be saved. A call or a terminal that came while it probed and saved (`activeAt` moved) makes it
+ * `busy` too, so the machine never stops under new work.
  */
 export const sleepIfIdle = <R>(box: Box<R>, generation: number, idleMs: number): Effect.Effect<SleepOutcome, unknown, R> =>
   Effect.gen(function* () {
     if ((yield* box.storage.get<number>("generation")) !== generation || !(yield* box.running)) return "gone" as const
     const now = yield* Clock.currentTimeMillis
-    if (now - ((yield* box.storage.get<number>("activeAt")) ?? 0) < idleMs) return "busy" as const
+    const activeAt = yield* box.storage.get<number>("activeAt")
+    if (now - (activeAt ?? 0) < idleMs) return "busy" as const
     const probe = ["sh", "-c", PROBE, "probe", String(Math.ceil(idleMs / 1000))]
     if ((yield* box.run(probe, "root")) !== 0) return "busy" as const
     const saved = yield* save(box, generation)
     if (saved !== "saved" && saved !== "skipped") return "busy" as const
+    if ((yield* box.storage.get<number>("activeAt")) !== activeAt) return "busy" as const
     yield* box.destroy
     return "slept" as const
   }).pipe(Effect.withSpan("sandbox.object.sleep", { attributes: { "smithers.sandbox.generation": generation } }))

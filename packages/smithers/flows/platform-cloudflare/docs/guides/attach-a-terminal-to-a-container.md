@@ -22,19 +22,31 @@ directory. Set tmux's `window-size latest` so the owner's size wins:
 FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends bash ca-certificates git tmux \
   && rm -rf /var/lib/apt/lists/* \
-  && useradd --create-home --shell /bin/bash --uid 1000 smithers \
-  && install -d -o smithers -g smithers /workspace
+  && groupadd --gid 2000 workspace \
+  && useradd --create-home --shell /bin/bash --uid 1000 --gid workspace smithers \
+  && install -d -o smithers -g workspace /workspace
 RUN printf 'set -g window-size latest\nset -g default-shell /bin/bash\n' > /etc/tmux.conf
 USER smithers
 WORKDIR /workspace
 ENTRYPOINT ["/bin/sh", "-c", "exec sleep infinity", "box"]
 ```
 
+Every command runs as a numeric `uid:gid`, here `1000:2000`. A deployed
+container's `exec` refuses a user name and runs a bare `uid` as root, so give
+the user fixed ids in the image. A command inherits only `PATH` from the
+image: pass `HOME`, `USER` and `LANG` yourself.
+
+```ts
+const user = "1000:2000"
+const env = { HOME: "/home/smithers", USER: "smithers", LANG: "C.UTF-8" }
+```
+
 ## 2. Wake the container before each use
 
 `SandboxObject.wake` starts the container with `enableInternet: false` when it
-is not running, arms its inactivity timeout (30 minutes unless you pass
-another), and registers each outbound HTTP intercept. The intercepts are the
+is not running, on the `instance` type you name (Cloudflare's default is
+`lite`: 1/16 vCPU and 256 MiB), arms its inactivity timeout (30 minutes unless
+you pass another), and registers each outbound HTTP intercept. The intercepts are the
 box's only way out. An intercept's fetcher runs outside the box, so it can add
 a credential the box never holds.
 
@@ -50,12 +62,24 @@ import { Box } from "./Box.ts" // a Cloudflare.Container with schedulingPolicy: 
 const state = yield* Cloudflare.DurableObjectState
 const box = yield* Box
 const egress = Cloudflare.fromCloudflareFetcher(state.raw.exports.Egress({ props: { repo } }))
-const wake = SandboxObject.wake(box, { intercepts: [{ host: "forge.example.internal", fetcher: egress }] })
+const wake = SandboxObject.wake(box, {
+  intercepts: [{ host: "forge.example.internal", fetcher: egress }],
+  instance: "standard-1"
+})
 ```
 
 `wake` registers the intercepts on every call, not only after a start: a
 restarted object, or one that died between its start and its registration,
 gets them back.
+
+A Durable Object that restarts, after a deploy for one, starts with no
+inactivity timeout, and Cloudflare then stops its container soon after the
+object goes idle, even while a process runs in it. Re-arm it once per
+incarnation, in the object's constructor, and on each use that doesn't wake:
+
+```ts
+yield * SandboxObject.rearm(box)
+```
 
 ## 3. Create the session
 
@@ -66,11 +90,11 @@ already runs, as a non-root user, in the working directory:
 ```ts
 const open = (terminalId: string) =>
   wake.pipe(
-    Effect.andThen(ContainerTerminal.ensureSession(box, { name: terminalId, user: "smithers", cwd: "/workspace" }))
+    Effect.andThen(ContainerTerminal.ensureSession(box, { name: terminalId, user, cwd: "/workspace", env }))
   )
 ```
 
-The name must be a lowercase UUID. The working directory admits only letters,
+The name must be a lowercase UUID, and the user a `uid:gid` that is not root. The working directory admits only letters,
 digits, `.`, `_`, `-` and `/`, because tmux expands formats in it.
 
 ## 4. Bridge each socket
@@ -91,7 +115,7 @@ const connect = (terminalId: string, access: "write" | "read", cols: number, row
     const [client, server] = Object.values(new WebSocketPair())
     server.accept()
     yield* state.waitUntil(
-      ContainerTerminal.attach(box, server, { name: terminalId, user: "smithers", access, cols, rows })
+      ContainerTerminal.attach(box, server, { name: terminalId, user, access, cols, rows, env })
     )
     return HttpServerResponse.setBody(
       HttpServerResponse.empty({ status: 101 }),

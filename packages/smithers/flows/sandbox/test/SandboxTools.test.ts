@@ -389,6 +389,8 @@ describe("SandboxTools checkpoint and restore", () => {
           return saved
         }), { git: false })
       expect(saved.head).toBe(base)
+      // Every commit is on the remote: no bundle.
+      expect(saved.bundle!.byteLength).toBe(0)
 
       // The branch moved on since; the restore puts the working copy back on its own base.
       writeFileSync(join(origin, "later.txt"), "later\n")
@@ -414,6 +416,75 @@ describe("SandboxTools checkpoint and restore", () => {
           expect(git(session.workdir, "status", "--porcelain")).toBe("")
         })
       )
+    }), slow)
+
+  it.effect("carries a commit made in the box, which no remote has, to a fresh clone", () =>
+    Effect.gen(function*() {
+      const origin = join(root, `origin-${++sessions}`)
+      mkdirSync(origin)
+      git(origin, "init", "-q", "-b", "main")
+      writeFileSync(join(origin, "a.txt"), "a\n")
+      git(origin, "add", ".")
+      git(origin, "commit", "-q", "-m", "base")
+
+      const saved = yield* onMachine((session) =>
+        Effect.gen(function*() {
+          git(session.workdir, "clone", "-q", origin, ".")
+          writeFileSync(join(session.workdir, "local.txt"), "committed in the box\n")
+          git(session.workdir, "add", "local.txt")
+          git(session.workdir, "commit", "-q", "-m", "local")
+          writeFileSync(join(session.workdir, "after.txt"), "typed after the commit\n")
+          return { checkpoint: yield* SandboxTools.checkpoint(session), head: git(session.workdir, "rev-parse", "HEAD").trim() }
+        }), { git: false })
+      expect(saved.checkpoint.head).toBe(saved.head)
+      expect(saved.checkpoint.bundle!.byteLength).toBeGreaterThan(0)
+
+      yield* onMachine((session) =>
+        Effect.gen(function*() {
+          git(session.workdir, "clone", "-q", origin, ".")
+          // The fresh clone lacks the box's commit; without its bundle, it can't be restored.
+          const lacking = yield* Effect.flip(SandboxTools.restore(session, { head: saved.head, patch: saved.checkpoint.patch }))
+          expect(lacking).toMatchObject({ reason: "not_found" })
+          yield* SandboxTools.restore(session, saved.checkpoint)
+          expect(git(session.workdir, "rev-parse", "HEAD").trim()).toBe(saved.head)
+          expect(git(session.workdir, "log", "-1", "--format=%s").trim()).toBe("local")
+          expect(readFileSync(join(session.workdir, "local.txt"), "utf8")).toBe("committed in the box\n")
+          expect(readFileSync(join(session.workdir, "after.txt"), "utf8")).toBe("typed after the commit\n")
+        }), { git: false })
+    }), slow)
+
+  it.effect("fetches a base commit the fresh clone lacks from origin by its id", () =>
+    Effect.gen(function*() {
+      const origin = join(root, `origin-${++sessions}`)
+      mkdirSync(origin)
+      git(origin, "init", "-q", "-b", "main")
+      git(origin, "config", "uploadpack.allowAnySHA1InWant", "true")
+      writeFileSync(join(origin, "a.txt"), "a\n")
+      git(origin, "add", ".")
+      git(origin, "commit", "-q", "-m", "base")
+      writeFileSync(join(origin, "b.txt"), "b\n")
+      git(origin, "add", ".")
+      git(origin, "commit", "-q", "-m", "rewritten away")
+      const gone = git(origin, "rev-parse", "HEAD").trim()
+
+      const saved = yield* onMachine((session) =>
+        Effect.gen(function*() {
+          git(session.workdir, "clone", "-q", origin, ".")
+          writeFileSync(join(session.workdir, "c.txt"), "c\n")
+          return yield* SandboxTools.checkpoint(session)
+        }), { git: false })
+      expect(saved).toMatchObject({ head: gone })
+
+      // The branch is rewritten: its tip no longer reaches the checkpoint's commit, which origin still holds.
+      git(origin, "reset", "-q", "--hard", "HEAD~1")
+      yield* onMachine((session) =>
+        Effect.gen(function*() {
+          git(session.workdir, "clone", "-q", "--depth", "1", `file://${origin}`, ".")
+          yield* SandboxTools.restore(session, saved)
+          expect(git(session.workdir, "rev-parse", "HEAD").trim()).toBe(gone)
+          expect(readFileSync(join(session.workdir, "b.txt"), "utf8")).toBe("b\n")
+          expect(readFileSync(join(session.workdir, "c.txt"), "utf8")).toBe("c\n")
+        }), { git: false })
     }), slow)
 
   it.effect("refuses a commit the working copy doesn't have, a workdir with no commit, and a patch over the limit", () =>

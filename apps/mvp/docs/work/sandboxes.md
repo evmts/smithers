@@ -2,10 +2,26 @@
 title: Branch sandboxes (feature 5)
 status: in-progress
 area: infra
-owner: agent-in-the-sandbox builder (from 13:43:30 on 2026-10-20) keeps a sandbox awake while something runs; the per-branch `SandboxObject` and container shipped with the branch slice (13:42:00). Until 13:46: unassigned; from 13:21:12 on 2026-10-20 it waits for the [branch terminal](branch-terminal.md) slice. Until 13:21: Panel S (Opus lead, Sol)
-updated: 2026-10-21 09:24 PDT
+owner: sandboxes builder (Claude Opus, workspace `sandboxes`, from 09:50 on 2026-10-21)
+updated: 2026-10-21 10:07 PDT
 links: [branch-terminal.md, branch-sharing.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../todo.md, sandbox-budgets.md, ../decisions/0007-roles-and-tags.md, ../decisions/0002-local-first.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, connect-agents-sandboxes-forge.md, model-endpoint.md, token-spend-alerts.md, secrets-proxy.md]
 ---
+
+## Production sandboxes — 2026-10-21 10:07 PDT
+
+**State:** doesn't work in production yet; nothing has ever started a container there (0 instances). The four-model panel (Sol, Astra, Opus, Fable) agreed on the cause; the merged plan is in the session's `sandbox-panel/MERGED.md`.
+
+**Why it fails in production** (each fixed in this change unless noted):
+- Every sandbox flow runs on `FlowExecution`, which fails `MigrationError` in prod. The prod-remote-flows builder owns that fix; sandboxes wait on it.
+- A deployed container's `exec` refuses user names; local Docker accepts them, so dev passed. Every command now runs as a numeric `uid:gid`, with `HOME`, `USER` and `LANG`, which `exec` doesn't pass.
+- Every box started as `lite` (256 MiB). It now starts as `SANDBOX_INSTANCE`, `standard-1` by default.
+- A deploy restarts the object, which loses the inactivity timeout, and Cloudflare then stops a busy box. The object now re-arms it in its constructor and on every ask.
+- A failed restore marked the checkpoint restored, and the next save overwrote it; a commit made in the box was lost on wake. Restore now fails on a transient error, keeps an unrestorable checkpoint aside, and carries unpushed commits as a git bundle.
+- Wake failures now log the step that failed.
+- The image was already published and bound in prod; it now also has Node and npm.
+- Not fixed here: a signed-in Member and the Spoon-Knife fixture in prod (the prod-e2e builder's sign-in).
+
+**Next step:** land the fix, run `e2e/sandbox-lifecycle.spec.ts` locally, deploy once the MigrationError fix is live, then run the same spec against production with a GIF.
 
 ## Tracker reconciliation — 2026-10-21 09:24 PDT
 

@@ -14,6 +14,13 @@
  * surfaces as a `ProviderError` with code `unavailable`, its message naming
  * the operation and never the command or a path.
  *
+ * The user is a numeric `uid:gid`: a deployed container's `exec` refuses a
+ * user name and runs a bare `uid` as root, while local Docker accepts both.
+ * A session given anything else fails every command with `spawn_error`
+ * before it reaches the container, so development fails as production
+ * would. A command inherits only `PATH` from the image; `env` carries the
+ * rest, such as `HOME`.
+ *
  * @since 1.0.0-rc.17
  */
 
@@ -72,8 +79,8 @@ export interface Container<E = never, R = never> {
  * - `id`: the session's key, and the `remoteId` it reports.
  * - `workdir`: the absolute directory commands run in unless they name
  *   another; a relative `cwd` is taken under it.
- * - `user`: the user every command runs as; the container's default user
- *   when absent.
+ * - `user`: the `uid:gid` every command runs as, such as `1000:2000` or
+ *   `0:0` for root; the image's user when absent.
  * - `env`: variables every command gets, under the command's own.
  *
  * @category models
@@ -93,6 +100,8 @@ const unavailable = (operation: string) => (cause: unknown) =>
 
 const quote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
 
+const uidGid = /^\d{1,10}:\d{1,10}$/
+
 /**
  * The container as a session. Needs `R`, the container client's own
  * requirement, once, here; the session's operations carry it.
@@ -105,6 +114,11 @@ export const make = <E, R>(container: Container<E, R>, options: Options): Effect
     const workdir = options.workdir
     const spawn: Sandbox.Session["spawn"] = (command, spawnOptions) =>
       Effect.gen(function*() {
+        if (options.user !== undefined && !uidGid.test(options.user)) {
+          return yield* Effect.fail(
+            new ProviderError({ code: "spawn_error", message: "container session: the user is not a numeric uid:gid" })
+          )
+        }
         const env: Record<string, string> = { ...options.env }
         for (const [name, value] of Object.entries(spawnOptions.env ?? {})) {
           if (value !== undefined) env[name] = value
@@ -177,13 +191,16 @@ export const make = <E, R>(container: Container<E, R>, options: Options): Effect
           ({ code }) =>
             code === 0
               ? Effect.void
-              : Effect.fail(new ProviderError({ code: "unknown", message: `container session: write failed (${code})` }))
+              : Effect.fail(
+                new ProviderError({ code: "unknown", message: `container session: write failed (${code})` })
+              )
         ),
       ping: Effect.flatMap(run("true"), ({ code }) =>
         code === 0
           ? Effect.void
-          : Effect.fail(new ProviderError({ code: "unavailable", message: `container session: ping failed (${code})` })))
+          : Effect.fail(
+            new ProviderError({ code: "unavailable", message: `container session: ping failed (${code})` })
+          ))
     }
     return session
   })
-

@@ -283,14 +283,14 @@ const ran = yield* SandboxTools.execute(session, { tool: "run", command: "npm te
 // { tool: "run", exitCode, timedOut, stdout, stderr, stdoutBytes, stderrBytes, truncated }
 ```
 
-| Tool     | Input (`Call`)                          | Output (`Result`)                                                   |
-| -------- | --------------------------------------- | ------------------------------------------------------------------- |
-| `run`    | `command`, `cwd?`, `timeoutSeconds?`     | exit code, whether the timeout stopped it, each stream's first bytes |
-| `read`   | `path`                                  | the file's text, its size, whether it was cut                       |
-| `write`  | `path`, `content`                       | the path and its size; directories are made                         |
-| `list`   | `path?`                                 | entries `{ name, kind, bytes }` in name order                       |
-| `status` | none                                    | the branch (`null` when detached) and git's short status per path   |
-| `diff`   | `paths?`                                | a unified diff from `HEAD`, untracked files as new ones              |
+| Tool     | Input (`Call`)                       | Output (`Result`)                                                    |
+| -------- | ------------------------------------ | -------------------------------------------------------------------- |
+| `run`    | `command`, `cwd?`, `timeoutSeconds?` | exit code, whether the timeout stopped it, each stream's first bytes |
+| `read`   | `path`                               | the file's text, its size, whether it was cut                        |
+| `write`  | `path`, `content`                    | the path and its size; directories are made                          |
+| `list`   | `path?`                              | entries `{ name, kind, bytes }` in name order                        |
+| `status` | none                                 | the branch (`null` when detached) and git's short status per path    |
+| `diff`   | `paths?`                             | a unified diff from `HEAD`, untracked files as new ones              |
 
 - **Bounded (`limits`):** a command runs 60 s unless it names a timeout, 600 s at most; each stream returns 64 KiB, a
   read and a write 1 MiB, a listing 1,000 entries, a diff 256 KiB, and each result says when it cut.
@@ -306,9 +306,12 @@ const ran = yield* SandboxTools.execute(session, { tool: "run", command: "npm te
 - **Telemetry:** a span `sandbox.tool` with the tool, its outcome and a command's exit code; never a path, a command,
   content or output.
 
-`checkpoint(session)` captures the working copy without changing it: `HEAD` and a binary patch with every tracked and
-untracked change (ignored files are not carried), at most `limits.checkpointBytes` (8 MiB). `restore(session, saved)`
-moves `HEAD` to the checkpoint's commit when it is elsewhere and applies the patch; restore onto a clean checkout.
+`checkpoint(session)` captures the working copy without changing it: `HEAD`, a binary patch with every tracked and
+untracked change (ignored files are not carried), and a git `bundle` of the commits no remote has, such as one made in
+the box; the patch and bundle together are at most `limits.checkpointBytes` (8 MiB). `restore(session, saved)` moves
+`HEAD` to the checkpoint's commit when it is elsewhere and applies the patch; restore onto a clean checkout. A commit
+the working copy lacks comes from the bundle, else is fetched from `origin` by its id; `not_found` when neither has it.
+A checkpoint without a `bundle` restores as one with an empty bundle.
 
 ## SandboxMerge
 

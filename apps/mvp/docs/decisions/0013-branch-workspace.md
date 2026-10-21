@@ -241,6 +241,7 @@ Work already done in the box can't be recalled, and the UI never claims it was u
 - **Keep** extends 0005's `sandbox/Keep`. When its timer fires, it asks the box rather than counting writes. The machine is idle when no job runs, no session had input for 15 minutes (`#{session_activity}`), and every pane's foreground command is its shell. Otherwise it waits again. The object re-arms the container's inactivity timeout (30 minutes) in its constructor, as Cloudflare's example does [1].
 - **Sleep** runs `tmux capture-pane -p -e -S -1000` per session into `last_screen` (64 KiB at most), then ends each session `slept`. A reader opening a sleeping branch's Terminal tab sees the last screens, and nothing wakes.
 - **Users:** the first slice runs every shell as non-root `smithers`, with no `sudo` (M-29). Per-person Unix users and homes (mvp.md §6.8) come later.
+  - **Addendum (2026-10-21, production sandboxes):** per-person users shipped (`worker/branch/Users.ts`). A deployed container's `exec` takes only a numeric `uid:gid` (a name is refused, a bare uid runs as root), so each user has a fixed uid. Under the `durable_object` scheduling policy, Cloudflare says, "`user` does not restrict a process… Every process has the same Linux capabilities as `root`" [5]. Per-person users give files and shells an owner; they don't isolate one editor of a branch from another. Viewers run nothing, and editors already type into the owner's shell (§4), so the new exposure is one editor reaching another editor's tmux on the same branch.
 - **Conversation cards:** a terminal can appear in the conversation as a `views` row of template `terminal`, with props `{ terminalId }` and nothing else. Only `terminal/Open` writes one. A generic URL or a generated view can never acquire a shell.
 
 ## 4. Sharing and multiplayer
@@ -429,7 +430,7 @@ Until 13:31 on 2026-10-20:
 
 [4] GitHub: [repository permissions for a user](https://docs.github.com/en/rest/collaborators/collaborators?apiVersion=2022-11-28#get-repository-permissions-for-a-user) (`permission`: admin, write, read, none; maintain maps to write, triage to read), [rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)
 
-[5] Cloudflare Containers: [pricing](https://developers.cloudflare.com/containers/pricing/), [limits and instance types](https://developers.cloudflare.com/containers/platform-details/limits/)
+[5] Cloudflare Containers: [pricing](https://developers.cloudflare.com/containers/pricing/), [limits and instance types](https://developers.cloudflare.com/containers/platform-details/limits/), [the Durable Object container API](https://developers.cloudflare.com/containers/api/durable-object-container/) (`exec` users and capabilities, `start` instance types, the inactivity timeout after a restart)
 
 [6] Yjs: [awareness](https://docs.yjs.dev/api/about-awareness) (30 s timeout); [y-electric](https://github.com/electric-sql/electric/tree/main/packages/y-electric) 0.1.54
 

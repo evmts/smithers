@@ -27,6 +27,20 @@ describe("SandboxObject.wake", () => {
       ])
     }))
 
+  it.effect("starts a stopped container on the instance type it names; a running one keeps its own", () =>
+    Effect.gen(function*() {
+      const stopped = MemoryContainer.machine(false)
+      expect(yield* SandboxObject.wake(stopped.machine, { intercepts: [], instance: "standard-1" })).toBe("started")
+      expect(stopped.calls[0]).toEqual({ _tag: "start", options: { enableInternet: false, instance: "standard-1" } })
+      const custom = MemoryContainer.machine(false)
+      const resources = { vcpu: 2, memoryMib: 4096, diskMb: 8000 }
+      yield* SandboxObject.wake(custom.machine, { intercepts: [], instance: resources })
+      expect(custom.calls[0]).toEqual({ _tag: "start", options: { enableInternet: false, instance: resources } })
+      const running = MemoryContainer.machine(true)
+      yield* SandboxObject.wake(running.machine, { intercepts: [], instance: "standard-1" })
+      expect(running.calls.map((call) => call._tag)).toEqual(["timeout"])
+    }))
+
   it.effect("a running container is not started again; its timeout and intercepts are set again", () =>
     Effect.gen(function*() {
       const { calls, machine } = MemoryContainer.machine(true)
@@ -64,7 +78,9 @@ describe("SandboxObject.wake", () => {
           ["start", "timeout", "intercept", "interceptAll", "interceptHttps"].indexOf(fail) + 1
         )
         expect(calls.filter((call) => after.includes(call._tag) && call._tag !== "intercept")).toEqual([])
-        expect(calls.filter((call) => call._tag === "intercept").length).toBe(fail === "intercept" ? 1 : fail === "start" || fail === "timeout" ? 0 : 2)
+        expect(calls.filter((call) => call._tag === "intercept").length).toBe(
+          fail === "intercept" ? 1 : fail === "start" || fail === "timeout" ? 0 : 2
+        )
       })
   )
 
@@ -120,6 +136,51 @@ describe("SandboxObject.wake", () => {
         expect(Object.fromEntries(t.named("sandbox.wake")[0]!.attributes)).toMatchObject({ "error.type": "unknown" })
         t.expectNoContent("no capacity")
       })
+    )
+  })
+})
+
+describe("SandboxObject.rearm", () => {
+  it.effect("re-arms a running container's timeout and starts nothing; a stopped one is left alone", () =>
+    Effect.gen(function*() {
+      const running = MemoryContainer.machine(true)
+      expect(yield* SandboxObject.rearm(running.machine)).toBe("rearmed")
+      expect(yield* SandboxObject.rearm(running.machine, 60_000)).toBe("rearmed")
+      expect(running.calls).toEqual([{ _tag: "timeout", ms: 30 * 60 * 1000 }, { _tag: "timeout", ms: 60_000 }])
+      const stopped = MemoryContainer.machine(false)
+      expect(yield* SandboxObject.rearm(stopped.machine)).toBe("stopped")
+      expect(stopped.calls).toEqual([])
+    }))
+
+  it.effect("a failed timeout fails unchanged; telemetry counts every outcome and records only the tag", () => {
+    const t = Telemetry.make()
+    return Effect.gen(function*() {
+      yield* SandboxObject.rearm(MemoryContainer.machine(true).machine)
+      yield* SandboxObject.rearm(MemoryContainer.machine(false).machine)
+      const error = yield* Effect.flip(SandboxObject.rearm(MemoryContainer.machine(true, "timeout").machine))
+      expect(error).toBeInstanceOf(MemoryContainer.ContainerFailure)
+    }).pipe(
+      t.observed,
+      Effect.andThen(Effect.sync(() => {
+        expect(t.count(SandboxObject.rearms, { outcome: "rearmed" })).toBe(1)
+        expect(t.count(SandboxObject.rearms, { outcome: "stopped" })).toBe(1)
+        expect(t.count(SandboxObject.rearms, { outcome: "failed" })).toBe(1)
+        expect(t.named("sandbox.rearm").map((span) => Object.fromEntries(span.attributes))).toEqual([
+          { "smithers.sandbox.inactivity_timeout_ms": 1_800_000, "smithers.sandbox.rearm": "rearmed" },
+          { "smithers.sandbox.inactivity_timeout_ms": 1_800_000, "smithers.sandbox.rearm": "stopped" },
+          {
+            "smithers.sandbox.inactivity_timeout_ms": 1_800_000,
+            "smithers.sandbox.rearm": "failed",
+            "error.type": "ContainerFailure"
+          }
+        ])
+        expect(t.lines("cloudflare.sandbox.rearm").map((line) => line.annotations.outcome)).toEqual([
+          "rearmed",
+          "stopped",
+          "failed"
+        ])
+        t.expectNoContent("timeout broke")
+      }))
     )
   })
 })

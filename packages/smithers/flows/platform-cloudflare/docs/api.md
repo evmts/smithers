@@ -354,15 +354,23 @@ const wake: <F, E, R>(
 
 interface WakeOptions<F> {
   readonly intercepts: ReadonlyArray<{ readonly host: string; readonly fetcher: F }>
+  readonly instance?: SandboxObject.Instance | undefined
   readonly inactivityTimeoutMs?: number | undefined
   readonly egress?: F | undefined
 }
 
 type WakeOutcome = "started" | "running"
+
+type Instance = "lite" | "basic" | "standard-1" | "standard-2" | "standard-3" | "standard-4" | {
+  readonly vcpu: number
+  readonly memoryMib: number
+  readonly diskMb: number
+}
 ```
 
-1. Starts the container with `{ enableInternet: false }` when `running` is
-   false.
+1. Starts the container with `{ enableInternet: false }`, and `instance` when
+   given, when `running` is false. Without `instance`, Cloudflare starts it on
+   `lite`: 1/16 vCPU, 256 MiB of memory and 2 GB of disk.
 2. Arms the inactivity timeout: `inactivityTimeoutMs`, default
    `SandboxObject.defaultInactivityTimeoutMs` (30 minutes).
 3. Registers each intercept with `interceptOutboundHttp(host, fetcher)`, in
@@ -376,12 +384,33 @@ It keeps no state and runs no timer or retry. A failure is the container
 client's own error, unchanged; the `sandbox.wake` span and the
 `cloudflare.sandbox.wake` log line carry only its tag.
 
+### `SandboxObject.rearm`
+
+```ts
+const rearm: <F, E, R>(
+  machine: Pick<SandboxObject.Machine<F, E, R>, "running" | "setInactivityTimeout">,
+  inactivityTimeoutMs?: number
+) => Effect.Effect<"rearmed" | "stopped", E, R>
+```
+
+Re-arms the inactivity timeout of a container that runs, to
+`inactivityTimeoutMs` (default 30 minutes), and starts nothing; `stopped` when
+the container isn't running. A Durable Object that restarts, after a deploy
+for one, starts with no timeout, and Cloudflare then stops its container
+shortly after the object goes idle, even while a process runs in it. Call it
+once per incarnation, in the object's constructor, and on each use that
+doesn't call `wake`. A failure is the container client's own error,
+unchanged; the `sandbox.rearm` span and the `cloudflare.sandbox.rearm` log
+line carry only its tag.
+
 ### `SandboxObject.Machine`
 
 ```ts
 interface Machine<F, E = never, R = never> {
   readonly running: Effect.Effect<boolean, E, R>
-  start(options: { readonly enableInternet: false }): Effect.Effect<void, E, R>
+  start(
+    options: { readonly enableInternet: false; readonly instance?: SandboxObject.Instance }
+  ): Effect.Effect<void, E, R>
   setInactivityTimeout(durationMs: number): Effect.Effect<void, E, R>
   interceptOutboundHttp(addr: string, binding: F): Effect.Effect<void, E, R>
   interceptAllOutboundHttp(binding: F): Effect.Effect<void, E, R>
@@ -395,9 +424,10 @@ start and container errors and `R = RuntimeContext`.
 
 ### Metrics
 
-| Export                | Name                                | Attributes                                  |
-| --------------------- | ----------------------------------- | ------------------------------------------- |
-| `SandboxObject.wakes` | `smithers_cloudflare_sandbox_wakes` | `outcome`: `started`, `running` or `failed` |
+| Export                 | Name                                 | Attributes                                  |
+| ---------------------- | ------------------------------------ | ------------------------------------------- |
+| `SandboxObject.wakes`  | `smithers_cloudflare_sandbox_wakes`  | `outcome`: `started`, `running` or `failed` |
+| `SandboxObject.rearms` | `smithers_cloudflare_sandbox_rearms` | `outcome`: `rearmed`, `stopped` or `failed` |
 
 ## ContainerTerminal
 
@@ -405,20 +435,33 @@ A browser terminal on a tmux session in a Durable Object's container, over
 `@smthrs/sandbox`'s `TerminalProtocol`. See
 [attach a terminal to a container](./guides/attach-a-terminal-to-a-container.md).
 
+A user is a numeric `uid:gid`, such as `1000:2000`. A deployed container's
+`exec` refuses a user name and runs a bare `uid` as root; local Docker accepts
+both, so a name would pass in development and fail in production. A command
+started with `exec` inherits only `PATH` from the image, so pass the shell's
+`HOME`, `USER` and `LANG` in `env`.
+
 ### `ContainerTerminal.ensureSession`
 
 ```ts
 const ensureSession: <E, R>(
   container: ContainerTerminal.Container<E, R>,
-  options: { readonly name: string; readonly user: string; readonly cwd: string }
+  options: {
+    readonly name: string
+    readonly user: string
+    readonly cwd: string
+    readonly env?: Readonly<Record<string, string>> | undefined
+  }
 ) => Effect.Effect<"created" | "existing", E | ContainerTerminal.InvalidSession | ContainerTerminal.SessionFailed, R>
 ```
 
-As `user`, runs `tmux has-session -t =<name>`, and when it fails, `tmux
-new-session -d -s <name> -c <cwd>`, each as an argument vector with no shell.
-A session another caller created meanwhile counts as `existing`. It fails
-with `InvalidSession` before running anything when `name` is not a lowercase
-UUID, `user` is `root` or not a plain user name, or `cwd` is not an absolute
+As `user`, under `env` with `TERM` `xterm-256color`, runs `tmux has-session -t
+=<name>`, and when it fails, `tmux new-session -d -s <name> -c <cwd>`, each as
+an argument vector with no shell. The user's tmux server, started by its first
+session, hands `env` to every shell it starts. A session another caller
+created meanwhile counts as `existing`. It fails with `InvalidSession` before
+running anything when `name` is not a lowercase UUID, `user` is not a numeric
+`uid:gid` or its uid is 0, or `cwd` is not an absolute
 path of letters, digits, `.`, `_`, `-` and `/`; with `SessionFailed` when no
 session runs after `new-session`; and with the container's error when `exec`
 fails. Its span is `terminal.session`.
@@ -435,6 +478,7 @@ const attach: <E, R>(
     readonly access: "write" | "read"
     readonly cols: number
     readonly rows: number
+    readonly env?: Readonly<Record<string, string>> | undefined
   }
 ) => Effect.Effect<ContainerTerminal.Report, never, R>
 ```
@@ -444,8 +488,9 @@ pseudo-terminal of `cols` by `rows`, until one side ends. It never fails.
 
 - **The client.** A writer's is `tmux attach-session -t =<name>` with piped
   stdin; a reader's adds `-f read-only,ignore-size` and has no stdin, so it
-  neither types nor sizes the window. Both run as `user` under `TERM`
-  `ContainerTerminal.clientTerm` (`xterm-256color`).
+  neither types nor sizes the window. Both run as `user` under `env`, with
+  `TERM` always `ContainerTerminal.clientTerm` (`xterm-256color`). `LANG`
+  set to a UTF-8 locale tells the client the terminal speaks UTF-8.
 - **Output.** `ready {access}` first, then the shell's output as binary
   frames of at most `TerminalProtocol.maxFrameBytes` (64 KiB), in order.
 - **Input.** A writer's binary frames (an `ArrayBuffer`, a typed array or a
@@ -532,6 +577,15 @@ const isSessionName: (value: string) => boolean
 Whether `value` is a lowercase UUID, the only session name the functions
 accept. A Worker can check a terminal id from a URL before it upgrades.
 
+### `ContainerTerminal.isSessionUser`
+
+```ts
+const isSessionUser: (value: string) => boolean
+```
+
+Whether `value` is a numeric `uid:gid` whose uid is not 0, the only user the
+functions accept.
+
 ### Errors
 
 ```ts
@@ -569,7 +623,12 @@ A container Durable Object's container as `@smthrs/sandbox`'s `Sandbox.Session`,
 import { ContainerSession } from "@smthrs/platform-cloudflare"
 import { SandboxTools } from "@smthrs/sandbox"
 
-const session = yield* ContainerSession.make(box, { id: branchId, workdir: "/workspace", user: "p1a2b3", env: { HOME: "/home/p1a2b3" } })
+const session = yield* ContainerSession.make(box, {
+  id: branchId,
+  workdir: "/workspace",
+  user: "100123:2000",
+  env: { HOME: "/home/p1a2b3", USER: "p1a2b3", LANG: "C.UTF-8" }
+})
 const status = yield* SandboxTools.execute(session, { tool: "status" }, { callId, callsDirectory: "/home/p1a2b3/.smithers/calls" })
 ```
 
@@ -582,9 +641,12 @@ declare const make: <E, R>(
 ) => Effect.Effect<Sandbox.Session, never, R>
 ```
 
-- Every command runs as `sh -c <command>` as `options.user` (the container's default user when absent), in
-  `options.workdir` unless the command names a `cwd`; a relative `cwd` is under the workdir.
-- `options.env` reaches every command, under the command's own variables.
+- Every command runs as `sh -c <command>` as `options.user`, a numeric `uid:gid` such as `1000:2000` or `0:0` (the
+  image's user when absent), in `options.workdir` unless the command names a `cwd`; a relative `cwd` is under the
+  workdir. A deployed container's `exec` refuses a user name and runs a bare `uid` as root, so a session given anything
+  but `uid:gid` fails every command with `ProviderError` code `spawn_error` before it reaches the container.
+- `options.env` reaches every command, under the command's own variables. A command inherits only `PATH` from the
+  image, so `env` carries the rest, such as `HOME`.
 - A command's input is fed beside its output, so one that writes before it has read all its input doesn't stall.
 - `readFile` and `writeFile` are commands (`cat`), so the container needs only `sh` and `cat`; `readFile` of an absent
   path or a directory fails `not_found`, and `writeFile` makes the file's directories.
