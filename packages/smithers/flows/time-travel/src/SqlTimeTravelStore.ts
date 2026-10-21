@@ -163,6 +163,16 @@ const spawnEffectKind = EventTypes.childSpawnKind
  */
 const handoffEventType = EventTypes.runDecision
 
+/**
+ * The run decision a cancellation request journals on the run it cancels.
+ * With a deferred completion, it is how anything outside a child, the
+ * parent's later history included, writes into the child's journal, so a
+ * carried child is cut before the first of either.
+ *
+ * @private
+ */
+const cancelRequestedDecision = "cancel-requested"
+
 /** @private */
 const DecisionPayload = Schema.Struct({ state: Schema.Unknown })
 const decisionState = Schema.decodeUnknownOption(DecisionPayload)
@@ -1200,15 +1210,6 @@ export const make: Effect.Effect<
               const children = rebinding?.children ?? []
               if (children.length > 0) {
                 const edges = yield* edgesUnder(parentRunId)
-                const [cut] = yield* sql<{ readonly emitted_at_ms: number }>`
-                  SELECT emitted_at_ms FROM flows_journal_events
-                  WHERE run_id = ${parentRunId} AND seq = ${frame.seq}`
-                const [tail] = yield* sql<{ readonly seq: number }>`
-                  SELECT MAX(seq) AS seq FROM flows_journal_events WHERE run_id = ${parentRunId}`
-                const cutMs = Number(cut?.emitted_at_ms ?? 0)
-                // Same-millisecond child records have no ordering against an
-                // earlier parent frame. Only its full tail admits that tie.
-                const inclusive = Number(tail?.seq) === frame.seq
                 for (const child of children) {
                   const edge = edges.find((candidate) =>
                     candidate.kind === "child" &&
@@ -1221,12 +1222,40 @@ export const make: Effect.Effect<
                     ))
                   }
                   if (Number(edge.parent_seq) > frame.seq) continue
+                  /**
+                   * THE CHILD IS CUT BY ITS OWN SEQUENCE, NEVER BY A CLOCK.
+                   *
+                   * The cut used to be the parent frame record's
+                   * `emitted_at_ms`, but a child can run on another host, and
+                   * two hosts' clocks order nothing: a child whose clock ran
+                   * ahead lost history the parent's frame had already consumed,
+                   * and one whose clock ran behind kept records written after
+                   * the frame. The causal facts are recorded instead. The spawn
+                   * sits at or below the frame (`edge.parent_seq`), and what
+                   * the child journals after it depends on the spawn alone
+                   * until something from outside the child reaches it: a
+                   * cancellation request or a deferred completion. Either may
+                   * come from the parent's history after the frame, and the
+                   * record does not say who wrote it, so the child keeps every
+                   * record before the first of them, in its own `seq` order.
+                   * The fork's child starts uncancelled
+                   * (`restartableStateJson`), and a deferred it awaited after
+                   * the cut is completed again on the carried child.
+                   */
+                  const [inbound] = yield* sql<{ readonly seq: number | string | null }>`
+                    SELECT MIN(seq) AS seq FROM flows_journal_events
+                    WHERE run_id = ${child.from}
+                      AND (
+                        event_type = ${EventTypes.deferredCompleted}
+                        OR (
+                          event_type = ${EventTypes.runDecision}
+                          AND ${Dialect.jsonText(sql, sql`payload_json`, "$.decision")} = ${cancelRequestedDecision}
+                        )
+                      )`
+                  const cut = inbound!.seq === null ? Number.MAX_SAFE_INTEGER : Number(inbound!.seq)
                   const [last] = yield* sql<{ readonly seq: number }>`
                     SELECT MAX(seq) AS seq FROM flows_journal_events
-                    WHERE run_id = ${child.from} AND seq < COALESCE((
-                      SELECT MIN(seq) FROM flows_journal_events WHERE run_id = ${child.from}
-                      AND (emitted_at_ms > ${cutMs} OR (${inclusive ? 0 : 1} = 1 AND emitted_at_ms = ${cutMs}))
-                    ), 9223372036854775807)`
+                    WHERE run_id = ${child.from} AND seq < ${cut}`
                   const childFrame = { lineageId: child.from, seq: Number(last?.seq ?? 0) }
                   if (override !== undefined) {
                     const [editedAt] = yield* sql<{ readonly seq: number | null }>`
@@ -1285,7 +1314,8 @@ export const make: Effect.Effect<
                       (run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json)
                     SELECT ${child.to}, seq, ${`fork:${child.to}:`} || event_id, source_id, source_seq,
                            emitted_at_ms, event_type, payload_json, meta_json
-                    FROM flows_journal_events WHERE run_id = ${child.from} AND seq <= ${childFrame.seq}`
+                    FROM flows_journal_events
+                    WHERE run_id = ${child.from} AND seq <= ${childFrame.seq} AND seq < ${cut}`
                   yield* sql`
                     INSERT INTO flows_attempts
                       (run_id, step_key_digest, attempt, state, started_at_ms, finished_at_ms,

@@ -9,6 +9,7 @@ import { DurableWriter } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
 import { DurableEngineState, EngineStore, OwnerIdentity, StepBoundary } from "@smthrs/engine-store"
+import { EventTypes } from "@smthrs/engine-store/EventTypes"
 import * as Migrations from "@smthrs/engine-store/Migrations"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as TimeTravelJj from "@smthrs/jj"
@@ -281,18 +282,116 @@ describe("fork carrying a spawned child, across forks and rewinds", () => {
       expect(JSON.parse(state!).payload).toEqual({ edited: true })
     })))
 
-  it.effect("carries nothing written in the frame's millisecond unless the frame is the parent's last record", () =>
+  it.effect("carries the child's history at a frame past its spawn that is not the parent's last record", () =>
     provided(Effect.gen(function*() {
       const dispatched: Array<string> = []
       yield* execute("parent", dispatched)
       const { child, frame } = yield* recorded("parent")
-      // Every record of this test is written at the test clock's zero.
+      // Every record of this test is written at the test clock's zero, which
+      // the clock cut could not order against an earlier parent frame.
       const earlier = { ...frame, seq: frame.seq - 1 }
       const fork = yield* (yield* TimeTravel.TimeTravel).fork({ runId: "parent", frame: earlier }, {
         rebind: carry(child)
       })
+      expect(yield* execute(fork.runId, dispatched)).toBe("outer: published: original draft")
+      expect(dispatched).toEqual(["draft", "publish"])
+    })))
+
+  it.effect("carries a child whose host's clock ran ahead of the parent's", () =>
+    provided(Effect.gen(function*() {
+      const dispatched: Array<string> = []
+      yield* execute("parent", dispatched)
+      const { child, frame } = yield* recorded("parent")
       const sql = yield* SqlClient.SqlClient
-      expect(yield* sql`SELECT 1 FROM flows_attempts WHERE run_id = ${yield* childOf(fork.runId)}`).toEqual([])
+      // The child ran on a second host whose clock is an hour ahead: every
+      // record it wrote is stamped after the parent's last one, though the
+      // parent's frame already holds the child's result.
+      yield* sql`UPDATE flows_journal_events SET emitted_at_ms = emitted_at_ms + 3600000 WHERE run_id = ${child}`
+      const fork = yield* (yield* TimeTravel.TimeTravel).fork({ runId: "parent", frame }, { rebind: carry(child) })
+      expect(yield* execute(fork.runId, dispatched)).toBe("outer: published: original draft")
+      // Both of the child's steps replayed rather than running again.
+      expect(dispatched).toEqual(["draft", "publish"])
+    })))
+
+  it.effect("cuts a child whose host's clock ran behind at its cancellation request", () =>
+    provided(Effect.gen(function*() {
+      const dispatched: Array<string> = []
+      yield* execute("parent", dispatched)
+      const { child, frame } = yield* recorded("parent")
+      const sql = yield* SqlClient.SqlClient
+      // The parent ran on a host an hour ahead of the child's, and after the
+      // frame its history requested the child's cancellation, which the
+      // child's host stamped by its own, earlier clock.
+      yield* sql`UPDATE flows_journal_events SET emitted_at_ms = emitted_at_ms + 3600000 WHERE run_id = 'parent'`
+      const [tail] = yield* sql<{ readonly seq: number }>`
+        SELECT MAX(seq) AS seq FROM flows_journal_events WHERE run_id = ${child}`
+      yield* sql`
+        INSERT INTO flows_journal_events
+          (run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json)
+        VALUES (${child}, ${Number(tail!.seq) + 1}, ${`${child}:cancel`}, 'canceller', 0, 0,
+          'flows.engine.run-decision', ${JSON.stringify({ decision: "cancel-requested" })},
+          ${JSON.stringify({ lineageId: FlowEngine.Lineage.root(child) })})`
+      const fork = yield* (yield* TimeTravel.TimeTravel).fork({ runId: "parent", frame }, { rebind: carry(child) })
+      const carried = yield* childOf(fork.runId)
+      const copied = yield* sql<{ readonly seq: number; readonly payload_json: string }>`
+        SELECT seq, payload_json FROM flows_journal_events WHERE run_id = ${carried} ORDER BY seq`
+      // The copy ends at the child's last record before the request, and the
+      // fork's marker sits directly above it.
+      expect(copied.map((row) => Number(row.seq))).toEqual(
+        Array.from({ length: Number(tail!.seq) + 2 }, (_, seq) => seq)
+      )
+      expect(copied.some((row) => row.payload_json.includes("cancel-requested"))).toBe(false)
+      expect(yield* execute(fork.runId, dispatched)).toBe("outer: published: original draft")
+      expect(dispatched).toEqual(["draft", "publish"])
+    })))
+
+  it.effect("cuts a child at a deferred completion and runs again what followed it", () =>
+    provided(Effect.gen(function*() {
+      const dispatched: Array<string> = []
+      yield* execute("parent", dispatched)
+      const { child, frame } = yield* recorded("parent")
+      const sql = yield* SqlClient.SqlClient
+      // A deferred completion reached the child right after its draft
+      // finished: anyone may have written it, the parent's history after the
+      // frame included, so what the child did after it is not carried.
+      const [draft] = yield* sql<{ readonly seq: number }>`
+        SELECT MIN(seq) AS seq FROM flows_journal_events
+        WHERE run_id = ${child} AND event_type = 'flows.engine.attempt-finished'`
+      const at = Number(draft!.seq) + 1
+      yield* sql`UPDATE flows_journal_events SET seq = seq + 1000000 WHERE run_id = ${child} AND seq >= ${at}`
+      yield* sql`UPDATE flows_journal_events SET seq = seq - 999999 WHERE run_id = ${child} AND seq >= 1000000`
+      yield* sql`
+        INSERT INTO flows_journal_events
+          (run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json)
+        VALUES (${child}, ${at}, ${`${child}:deferred`}, 'completer', 0, 0,
+          'flows.engine.deferred-completed', ${JSON.stringify({ deferredName: "approval" })},
+          ${JSON.stringify({ lineageId: FlowEngine.Lineage.root(child) })})`
+      const fork = yield* (yield* TimeTravel.TimeTravel).fork({ runId: "parent", frame }, { rebind: carry(child) })
+      expect(yield* execute(fork.runId, dispatched)).toBe("outer: published: original draft")
+      // The draft replayed; the publish after the completion ran again.
+      expect(dispatched).toEqual(["draft", "publish", "publish"])
+    })))
+
+  it.effect("carries no record of a child whose first record reached it from outside", () =>
+    provided(Effect.gen(function*() {
+      yield* execute("parent", [])
+      const { child, frame } = yield* recorded("parent")
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`DELETE FROM flows_journal_events WHERE run_id = ${child}`
+      yield* sql`
+        INSERT INTO flows_journal_events
+          (run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json)
+        VALUES (${child}, 0, ${`${child}:cancel`}, 'canceller', 0, 0,
+          'flows.engine.run-decision', ${JSON.stringify({ decision: "cancel-requested" })},
+          ${JSON.stringify({ lineageId: child })})`
+      const fork = yield* (yield* TimeTravel.TimeTravel).fork({ runId: "parent", frame }, { rebind: carry(child) })
+      const carried = yield* childOf(fork.runId)
+      const copied = yield* sql<{ readonly seq: number; readonly event_type: string }>`
+        SELECT seq, event_type FROM flows_journal_events WHERE run_id = ${carried} ORDER BY seq`
+      // Only the fork's own marker: the cancellation request is not copied.
+      expect(copied.map((row) => ({ seq: Number(row.seq), type: row.event_type }))).toEqual([
+        { seq: 1, type: "flows.time-travel.fork-created" }
+      ])
     })))
 
   it.effect("replaces a carried child's recorded payload when its rebinding names one", () =>
@@ -365,25 +464,43 @@ describe("fork carrying a spawned child, across forks and rewinds", () => {
 })
 
 describe("the memory store carrying a spawned child", () => {
+  const cancelRequest = (seq: number) => ({
+    runId: "c",
+    seq,
+    eventId: `c${seq}`,
+    lineageId: "c",
+    eventType: EventTypes.runDecision,
+    payload: { decision: "cancel-requested" },
+    emittedAtMs: 1
+  })
   const seeded = () =>
     Memory.make({
       records: [
         { runId: "p", seq: 0, eventId: "p0", lineageId: "p", payload: null, emittedAtMs: 1 },
         { runId: "p", seq: 1, eventId: "p1", lineageId: "p", payload: null, emittedAtMs: 5 },
-        { runId: "c", seq: 0, eventId: "c0", lineageId: "c", payload: null, emittedAtMs: 2 },
-        { runId: "c", seq: 1, eventId: "c1", lineageId: "c", payload: null, emittedAtMs: 9 }
+        // The child's host runs ahead of the parent's: its records are
+        // stamped after the parent's frame, and that orders nothing.
+        { runId: "c", seq: 0, eventId: "c0", lineageId: "c", payload: null, emittedAtMs: 20 },
+        { runId: "c", seq: 1, eventId: "c1", lineageId: "c", payload: null, emittedAtMs: 90 },
+        // A cancellation the parent's later history requested, stamped by a
+        // clock behind the frame's.
+        cancelRequest(2),
+        { runId: "c", seq: 3, eventId: "c3", lineageId: "c", payload: null, emittedAtMs: 2 }
       ],
       edges: [{ parentRunId: "p", parentSeq: 0, childRunId: "c", kind: "child", attached: false }]
     })
 
-  it.effect("copies the child's records written by the frame and links it to the fork", () =>
+  it.effect("copies the child's records before its cancellation request and links it to the fork", () =>
     Effect.gen(function*() {
       const store = seeded()
       const fork = yield* store.createFork("p", { lineageId: "p", seq: 1 }, "f", undefined, {
         children: [{ from: "c", to: "c2" }]
       })
       expect(fork.runId).toBe("f")
-      expect(store.state().records.filter((record) => record.runId === "c2").map((record) => record.seq)).toEqual([0])
+      expect(store.state().records.filter((record) => record.runId === "c2").map((record) => record.seq)).toEqual([
+        0,
+        1
+      ])
       expect(store.state().edges).toContainEqual({
         parentRunId: "f",
         parentSeq: 0,
@@ -393,23 +510,61 @@ describe("the memory store carrying a spawned child", () => {
       })
     }))
 
-  it.effect("cuts at the frame record however the parent's records were seeded, keeping a child wholly before it", () =>
+  it.effect("carries a child seeded in the older shape whole, in sequence order", () =>
     Effect.gen(function*() {
       const store = Memory.make({
         records: [
-          // Seeded newest first: the cut is the frame record, not the last one listed.
           { runId: "p", seq: 1, eventId: "p1", lineageId: "p", payload: null, emittedAtMs: 5 },
           { runId: "p", seq: 0, eventId: "p0", lineageId: "p", payload: null, emittedAtMs: 1 },
-          // A record with no emission time counts as written at zero.
+          // Seeded newest first, one record with no emission time and no event
+          // type, and one run decision that requests nothing.
+          { runId: "c", seq: 2, eventId: "c2", lineageId: "c", payload: null, emittedAtMs: 4 },
           { runId: "c", seq: 0, eventId: "c0", lineageId: "c", payload: null },
-          { runId: "c", seq: 1, eventId: "c1", lineageId: "c", payload: null, emittedAtMs: 4 }
+          {
+            runId: "c",
+            seq: 1,
+            eventId: "c1",
+            lineageId: "c",
+            eventType: EventTypes.runDecision,
+            payload: { decision: "resumed" }
+          },
+          { runId: "c", seq: 3, eventId: "c3", lineageId: "c", eventType: EventTypes.runDecision, payload: null }
         ],
         edges: [{ parentRunId: "p", parentSeq: 0, childRunId: "c", kind: "child", attached: false }]
       })
       yield* store.createFork("p", { lineageId: "p", seq: 1 }, "f", undefined, { children: [{ from: "c", to: "c2" }] })
       expect(store.state().records.filter((record) => record.runId === "c2").map((record) => record.eventId)).toEqual([
         "fork:c2:c0",
-        "fork:c2:c1"
+        "fork:c2:c1",
+        "fork:c2:c2",
+        "fork:c2:c3"
+      ])
+    }))
+
+  it.effect("carries nothing of a child whose first record is a cancellation request", () =>
+    Effect.gen(function*() {
+      const store = Memory.make({
+        records: [{ runId: "p", seq: 0, eventId: "p0", lineageId: "p", payload: null }, cancelRequest(0)],
+        edges: [{ parentRunId: "p", parentSeq: 0, childRunId: "c", kind: "child", attached: false }]
+      })
+      yield* store.createFork("p", { lineageId: "p", seq: 0 }, "f", undefined, { children: [{ from: "c", to: "c2" }] })
+      expect(store.state().records.some((record) => record.runId === "c2")).toBe(false)
+    }))
+
+  it.effect("cuts a child before a deferred completion", () =>
+    Effect.gen(function*() {
+      const store = Memory.make({
+        records: [
+          { runId: "p", seq: 0, eventId: "p0", lineageId: "p", payload: null },
+          { runId: "c", seq: 0, eventId: "c0", lineageId: "c", payload: null },
+          { runId: "c", seq: 1, eventId: "c1", lineageId: "c", eventType: EventTypes.deferredCompleted, payload: {} },
+          { runId: "c", seq: 2, eventId: "c2", lineageId: "c", payload: null }
+        ],
+        edges: [{ parentRunId: "p", parentSeq: 0, childRunId: "c", kind: "child", attached: false }]
+      })
+      yield* store.createFork("p", { lineageId: "p", seq: 0 }, "f", undefined, { children: [{ from: "c", to: "c2" }] })
+      expect(store.state().records.filter((record) => record.runId === "c2").map((record) => record.eventId)).toEqual([
+        "fork:c2:c0"
       ])
     }))
 

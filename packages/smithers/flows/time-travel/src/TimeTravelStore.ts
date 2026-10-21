@@ -108,8 +108,11 @@ export type StepOverride = typeof StepOverride.Type
  *
  * `from` is a child the parent spawned; `to` is the id the forked parent will
  * open that child under, which only the caller can derive. The carried child
- * keeps the attempts it had finished when the parent's frame was written,
- * keyed by `from`'s step keys, so it replays them. `payload`, when
+ * keeps the attempts its journal finished before the first record that
+ * reached it from outside (a deferred completion or a cancellation request),
+ * keyed by `from`'s step keys, so it replays them. The cut is the child's own
+ * sequence, never a clock: the spawn is at or before the frame, and either
+ * inbound record may come from the parent's history after it. `payload`, when
  * present, replaces the child's recorded invocation payload.
  *
  * @since 1.0.0
@@ -525,9 +528,9 @@ export interface Service {
    * spawned children (see {@link CarriedChild}). A named child the parent
    * never spawned refuses `invalid`; one it spawned after the frame is not
    * carried, and the forked parent opens it afresh. A carried child keeps the
-   * attempts its journal had finished by the parent's frame record (by
-   * emission time), or by the edited step when `override` names one of its
-   * steps, and is driven from its start by the forked parent.
+   * attempts its journal finished before the first record that reached it
+   * from outside (see {@link CarriedChild}), or by the edited step when `override` names
+   * one of its steps, and is driven from its start by the forked parent.
    */
   readonly createFork: (
     parentRunId: string,

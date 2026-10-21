@@ -174,8 +174,16 @@ their steps again. Name one in `children` to carry it. `from` is the child the
 parent spawned and `to` is the id the forked parent will open it under, which
 only the caller can derive: a `.child()` boundary derives it with
 `Interpreter.childExecutionId` from the parent's execution id. The carried
-child keeps the attempts it had finished when the parent's frame was written,
-so the forked parent drives it again and those steps replay. `override` may
+child keeps the attempts its journal finished before the first record that
+reached it from outside, a deferred completion or a cancellation request, so the
+forked parent drives it again and those steps replay. The cut follows the
+child's own sequence and never a clock, because a child can run on another host
+and two hosts' clocks order nothing. The spawn is at or before the frame, and
+until something from outside reaches the child, what it journals depends on the
+spawn alone. A deferred completion or a cancellation request may come from the
+parent's history after the frame, so the fork's child starts before the first
+of them: it is not cancelled, and a deferred it awaited after the cut must be
+completed again on the carried child. `override` may
 name a step the carried child recorded: the child replays the steps before it
 and runs every step after it again. A child spawned after the frame is not
 carried, and a run the parent never spawned refuses `invalid`. The memory store

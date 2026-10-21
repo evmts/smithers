@@ -58,11 +58,24 @@ export interface JournalRecord {
    */
   readonly eventType?: string | undefined
   /**
-   * When the record was written, for the cut a carried child is copied at
-   * (`TimeTravelStore.CarriedChild`). Absent reads as zero.
+   * When the record was written, by its writer's clock. Kept for seeds
+   * written against the older store; no read orders records by it, because
+   * two hosts' clocks order nothing.
    */
   readonly emittedAtMs?: number | undefined
 }
+
+/**
+ * Whether a record reached a child from outside it: a deferred completion, or
+ * the run decision a cancellation request journals. Either may come from the
+ * parent's history after a fork's frame, so a carried child is cut before
+ * the first of them.
+ */
+const isInbound = (record: JournalRecord): boolean =>
+  record.eventType === EventTypes.deferredCompleted ||
+  (record.eventType === EventTypes.runDecision &&
+    typeof record.payload === "object" && record.payload !== null &&
+    (record.payload as { readonly decision?: unknown }).decision === "cancel-requested")
 /**
  * The store's entire contents, as returned by the `state()` method
  * {@link make} attaches.
@@ -555,14 +568,11 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
             payload: { parentRunId, forkJournalOffset: frame.seq, childRunId: runId }
           })
           // Named spawned children cross under the ids the forked parent opens
-          // them with, cut at the parent frame record's emission time, as the
-          // SQL store cuts them. This store keeps journal records and no run
-          // or attempt rows, so the records stand in for the attempts the SQL
-          // store carries, and a payload rebinding has nothing to replace.
-          const cutMs = prefix.reduce(
-            (latest, record) => record.seq >= latest.seq ? record : latest,
-            { seq: -1, emittedAtMs: 0 } as Pick<JournalRecord, "seq" | "emittedAtMs">
-          ).emittedAtMs ?? 0
+          // them with, cut by their own sequence before the first record that
+          // reached them from outside (a deferred completion or a cancellation
+          // request), as the SQL store cuts them; no clock is read. This store keeps journal records and no run or attempt
+          // rows, so the records stand in for the attempts the SQL store
+          // carries, and a payload rebinding has nothing to replace.
           for (const child of rebinding?.children ?? []) {
             const spawned = edges.find((edge) =>
               edge.kind === "child" && edge.parentRunId === parentRunId && edge.childRunId === child.from
@@ -572,7 +582,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
             }
             if (spawned.parentSeq > frame.seq) continue
             const own = records.filter((record) => record.runId === child.from).sort((a, b) => a.seq - b.seq)
-            const cut = own.findIndex((record) => (record.emittedAtMs ?? 0) > cutMs)
+            const cut = own.findIndex(isInbound)
             const kept = cut < 0 ? own : own.slice(0, cut)
             records.push(
               ...kept.map((record) => ({ ...record, runId: child.to, eventId: `fork:${child.to}:${record.eventId}` }))
