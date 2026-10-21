@@ -48,6 +48,16 @@ after everyone's edits, or `undefined` before the replica has received the text
 it points into. A page sends its caret's anchors to the others, for example as
 a presence room's state, and each draws it where it resolves.
 
+## Marks
+
+`mark(name, value)` sets a small named string beside the text and answers the
+update to send, or `undefined` when the mark already holds `value`. `marks` is
+every mark the replica holds. Marks travel in the same updates as the text and
+never change it. Of two replicas that set one mark without having seen each
+other's, every replica keeps the same one; a mark set after seeing another
+replaces it. A shared file's Save, for example, marks the digest of what it
+wrote, so every editor can say whether its text is what was saved.
+
 ## The first content
 
 A file's text starts from the file. `seed(text)` writes it as one fixed

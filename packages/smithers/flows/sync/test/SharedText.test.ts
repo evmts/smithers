@@ -19,7 +19,11 @@ const run = <A>(effect: Effect.Effect<A, unknown>) => Effect.runSync(effect)
 
 /** One edit a replica makes, in proportions of its text's length so it always lands. */
 const Op = fc.oneof(
-  fc.record({ kind: fc.constant("insert" as const), at: fc.double({ min: 0, max: 1, noNaN: true }), text: fc.string({ maxLength: 4 }) }),
+  fc.record({
+    kind: fc.constant("insert" as const),
+    at: fc.double({ min: 0, max: 1, noNaN: true }),
+    text: fc.string({ maxLength: 4 })
+  }),
   fc.record({
     kind: fc.constant("delete" as const),
     at: fc.double({ min: 0, max: 1, noNaN: true }),
@@ -217,10 +221,15 @@ describe("SharedText", () => {
 
     it("turns any text into any other", () => {
       fc.assert(
-        fc.property(fc.string(), fc.string(), fc.option(fc.integer({ min: -2, max: 40 }), { nil: undefined }), (before, after, caret) => {
-          const change = SharedText.changeOf(before, after, caret)
-          expect(before.slice(0, change.from) + change.insert + before.slice(change.to)).toBe(after)
-        })
+        fc.property(
+          fc.string(),
+          fc.string(),
+          fc.option(fc.integer({ min: -2, max: 40 }), { nil: undefined }),
+          (before, after, caret) => {
+            const change = SharedText.changeOf(before, after, caret)
+            expect(before.slice(0, change.from) + change.insert + before.slice(change.to)).toBe(after)
+          }
+        )
       )
     })
   })
@@ -286,6 +295,80 @@ describe("SharedText", () => {
           yield* bob!.apply(SharedText.seed("body { }"))
           yield* bob!.apply((yield* ada!.edit([{ from: 7, to: 7, insert: "color: red; " }]))!)
           expect(yield* bob!.text).toBe("body { color: red; }")
+        })))
+  })
+
+  describe("marks", () => {
+    it("converge: replicas setting marks at once, updates delivered shuffled and repeated, end with one value per mark", () => {
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.array(fc.tuple(fc.constantFrom("saved", "other"), fc.string({ maxLength: 4 })), { maxLength: 4 }),
+            {
+              minLength: 2,
+              maxLength: 4
+            }
+          ),
+          fc.array(fc.nat(), { minLength: 20, maxLength: 20 }),
+          (scripts, shuffle) =>
+            run(replicas(scripts.length, (texts) =>
+              Effect.gen(function*() {
+                const sent: Array<Uint8Array> = []
+                for (const [index, script] of scripts.entries()) {
+                  for (const [name, value] of script) {
+                    const update = yield* texts[index]!.mark(name, value)
+                    if (update !== undefined) sent.push(update)
+                  }
+                }
+                const late = [...sent, ...sent.slice(0, shuffle[0]! % (sent.length + 1))]
+                  .map((update, index) => ({ update, key: shuffle[index % shuffle.length]! + index * 7919 }))
+                  .sort((left, right) => left.key - right.key)
+                  .map(({ update }) => update)
+                for (const text of texts) for (const update of late) yield* text.apply(update)
+                const finals = yield* Effect.forEach(
+                  texts,
+                  (text) => Effect.map(text.marks, (marks) => JSON.stringify([...marks].sort()))
+                )
+                expect(new Set(finals).size).toBe(1)
+                // Marks never touch the text.
+                for (const text of texts) expect(yield* text.text).toBe("")
+              })))
+        ),
+        { numRuns: 150 }
+      )
+    })
+
+    it.effect("a mark set after seeing another replaces it; setting the value it holds sends nothing", () =>
+      replicas(3, ([ada, bob, carol]) =>
+        Effect.gen(function*() {
+          yield* ada!.apply(SharedText.seed("body {}"))
+          yield* bob!.apply(SharedText.seed("body {}"))
+          expect(yield* ada!.marks).toEqual(new Map())
+          const first = yield* ada!.mark("saved", "one")
+          yield* bob!.apply(first!)
+          expect(yield* bob!.marks).toEqual(new Map([["saved", "one"]]))
+          expect(yield* bob!.mark("saved", "one")).toBeUndefined()
+          yield* ada!.apply((yield* bob!.mark("saved", "two"))!)
+          expect(yield* ada!.marks).toEqual(new Map([["saved", "two"]]))
+          // A late, repeated delivery of the older mark changes nothing.
+          yield* ada!.apply(first!)
+          expect(yield* ada!.marks).toEqual(new Map([["saved", "two"]]))
+          expect(yield* ada!.text).toBe("body {}")
+          // A snapshot carries the marks, and a mark is an ordinary update to a server.
+          yield* carol!.apply(yield* ada!.snapshot)
+          expect(yield* carol!.marks).toEqual(new Map([["saved", "two"]]))
+          yield* SharedText.validate((yield* carol!.mark("saved", "three"))!, { seed: false })
+        })))
+
+    it.effect("a value that isn't a string, from a replica outside this module, isn't a mark", () =>
+      replicas(1, ([ada]) =>
+        Effect.gen(function*() {
+          const foreign = new Y.Doc()
+          foreign.getMap(SharedText.marksName).set("count", 3)
+          foreign.getMap(SharedText.marksName).set("saved", "x")
+          yield* ada!.apply(Y.encodeStateAsUpdate(foreign))
+          foreign.destroy()
+          expect(yield* ada!.marks).toEqual(new Map([["saved", "x"]]))
         })))
   })
 

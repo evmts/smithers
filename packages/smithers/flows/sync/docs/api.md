@@ -332,21 +332,23 @@ gone. `Identity.data` over `maxDataBytes`, or joining one socket twice, dies.
 Since 1.0.0-rc.17. [Shared text](./concepts/shared-text.md) explains the design;
 this section lists the exports.
 
-| Export                              | What it is                                                                                                                  |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `make`                              | `Effect<SharedText, never, Scope>`: an empty replica, closed with its scope.                                                |
-| `SharedText.text`                   | `Effect<string>`: the text now.                                                                                             |
-| `SharedText.apply(update)`          | Merges another replica's update; fails `InvalidUpdate` (`malformed`) and changes nothing for bytes that aren't one.         |
-| `SharedText.edit(changes)`          | Makes `Change`s (`{ from, to, insert }`) in one transaction; answers the update, or `undefined` when nothing changed.        |
-| `SharedText.replace(next, options)` | Makes the text `next` with one change, placed by `caret` and moved past what arrived since `base`; answers as `edit` does. |
-| `SharedText.anchor(index)`          | `Effect<Uint8Array>`: a place other replicas resolve.                                                                       |
-| `SharedText.resolve(anchor)`        | `Effect<number \| undefined>`: where an anchor is now; `undefined` before its text arrives or for bytes that aren't one.     |
-| `SharedText.snapshot`               | `Effect<Uint8Array>`: everything the replica holds, as one update.                                                          |
-| `changeOf(before, after, caret?)`   | The one change between two texts, never splitting a surrogate pair.                                                         |
-| `seed(text)`                        | A document's first content, the same bytes for the same text.                                                               |
-| `validate(update, { seed })`        | Fails `InvalidUpdate` for malformed bytes, or `seed_client` for text written as `seedClient` outside a seed or a seed with anyone else's. |
-| `merge(updates)`                    | Several updates as one.                                                                                                     |
-| `textName`, `seedClient`            | `"text"`, the document's one text, and `0`, the replica only a seed writes as.                                              |
+| Export                                | What it is                                                                                                                                |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `make`                                | `Effect<SharedText, never, Scope>`: an empty replica, closed with its scope.                                                              |
+| `SharedText.text`                     | `Effect<string>`: the text now.                                                                                                           |
+| `SharedText.apply(update)`            | Merges another replica's update; fails `InvalidUpdate` (`malformed`) and changes nothing for bytes that aren't one.                       |
+| `SharedText.edit(changes)`            | Makes `Change`s (`{ from, to, insert }`) in one transaction; answers the update, or `undefined` when nothing changed.                     |
+| `SharedText.replace(next, options)`   | Makes the text `next` with one change, placed by `caret` and moved past what arrived since `base`; answers as `edit` does.                |
+| `SharedText.anchor(index)`            | `Effect<Uint8Array>`: a place other replicas resolve.                                                                                     |
+| `SharedText.resolve(anchor)`          | `Effect<number \| undefined>`: where an anchor is now; `undefined` before its text arrives or for bytes that aren't one.                  |
+| `SharedText.mark(name, value)`        | Sets a named string beside the text; answers the update, or `undefined` when the mark holds `value` already.                              |
+| `SharedText.marks`                    | `Effect<ReadonlyMap<string, string>>`: every mark the replica holds; marks never change the text.                                         |
+| `SharedText.snapshot`                 | `Effect<Uint8Array>`: everything the replica holds, as one update.                                                                        |
+| `changeOf(before, after, caret?)`     | The one change between two texts, never splitting a surrogate pair.                                                                       |
+| `seed(text)`                          | A document's first content, the same bytes for the same text.                                                                             |
+| `validate(update, { seed })`          | Fails `InvalidUpdate` for malformed bytes, or `seed_client` for text written as `seedClient` outside a seed or a seed with anyone else's. |
+| `merge(updates)`                      | Several updates as one.                                                                                                                   |
+| `textName`, `marksName`, `seedClient` | `"text"`, the document's one text; `"marks"`, its marks; and `0`, the replica only a seed writes as.                                      |
 
 ## Test helpers
 

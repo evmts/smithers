@@ -17,6 +17,9 @@
  * - **{@link seed}** makes a document's first content, the same bytes for the
  *   same text, so two replicas that seed a document at once agree.
  * - **{@link validate}** checks an update on a server before it stores it.
+ * - **{@link SharedText.mark}** and **{@link SharedText.marks}** keep small
+ *   named values beside the text that every replica agrees on, such as the
+ *   digest of what a Save wrote; they travel in the same updates.
  *
  * Positions are UTF-16 code units, as JavaScript strings, a `<textarea>` and
  * CodeMirror count them. The module is pure and runs in a browser, a Worker,
@@ -37,6 +40,15 @@ import * as Y from "yjs"
  * @since 1.0.0-rc.17
  */
 export const textName = "text"
+
+/**
+ * The name of a document's marks: small named values beside the text, written
+ * with {@link SharedText.mark}.
+ *
+ * @category constants
+ * @since 1.0.0-rc.17
+ */
+export const marksName = "marks"
 
 /**
  * The replica that writes a {@link seed}. No other replica takes it.
@@ -117,6 +129,16 @@ export interface SharedText {
    * received the text it points into, or the bytes aren't an anchor.
    */
   readonly resolve: (anchor: Uint8Array) => Effect.Effect<number | undefined>
+  /**
+   * Sets mark `name` to `value` and answers the update for the other
+   * replicas, or `undefined` when the mark already holds `value`. Marks never
+   * change the text. Of two replicas that set one mark without having seen
+   * each other's, every replica keeps the same one; a mark set after seeing
+   * another replaces it.
+   */
+  readonly mark: (name: string, value: string) => Effect.Effect<Uint8Array | undefined>
+  /** Every mark this replica holds, by name. */
+  readonly marks: Effect.Effect<ReadonlyMap<string, string>>
   /** Everything this replica holds, as one update. */
   readonly snapshot: Effect.Effect<Uint8Array>
 }
@@ -246,6 +268,7 @@ export const make: Effect.Effect<SharedText, never, Scope.Scope> = Effect.map(
   ),
   (doc): SharedText => {
     const text = doc.getText(textName)
+    const marks = doc.getMap<string>(marksName)
     const edit = (changes: ReadonlyArray<Change>) =>
       Effect.sync(() =>
         capture(doc, () => {
@@ -287,6 +310,15 @@ export const make: Effect.Effect<SharedText, never, Scope.Scope> = Effect.map(
             return undefined
           }
         }),
+      mark: (name, value) =>
+        Effect.sync(() => marks.get(name) === value ? undefined : capture(doc, () => marks.set(name, value))),
+      marks: Effect.sync(() => {
+        const all = new Map<string, string>()
+        marks.forEach((value, name) => {
+          if (typeof value === "string") all.set(name, value)
+        })
+        return all
+      }),
       snapshot: Effect.sync(() => Y.encodeStateAsUpdate(doc))
     }
   }
