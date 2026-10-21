@@ -3,7 +3,7 @@ title: E2e tests against production
 status: in-progress
 area: test
 owner: prod-e2e builder (Claude Opus)
-updated: 2026-10-21 11:41 PDT
+updated: 2026-10-21 14:22 PDT
 links: [../rulings.md, ../rules.md, ../infrastructure.md, e2e-suite-and-gifs.md, major-feature-e2e-derisk.md, sign-in.md]
 ---
 
@@ -19,14 +19,22 @@ links: [../rulings.md, ../rules.md, ../infrastructure.md, e2e-suite-and-gifs.md,
 - 11:05: the first full run (124 tests) gave 15 passed, 14 failed, 17 broken (expected), 43 declared skips and 35 blocked. Of the 14 failures, 8 were asking tests failing on the new gate instead of skipping; they now skip as blocked. The home conversation gained no rows.
 - 11:35: after the review fixes, `chat`, `start-app` and `navigate` hover passed, and 4 asking tests skipped as blocked.
 
+- 12:30 to 13:10: the full run after remote flows began to run in production (smoke 18:48 UTC on 931fed70), with the own branch tracked. 124 tests: 40 passed, 29 failed, 3 broken, 1 fixed, 58 declared skips, 0 blocked. Chat's asks, jev, the branch conversation and views, code-intel, home, repo clones and local-first-conflicts passed in the account's own conversation.
+- 13:15 to 14:15: two reruns after the harness fixes. flow-usage, slash-commands and web-page now pass. From 20:55 UTC the own conversation's answers failed `rate_limited`, the model provider's limit, with other production runs going at the same time.
+
 **Production state found by the runs:**
 - In production a branch is read from its repository's Code Storage mirror, and only the remote flow `repo/Clone` makes one. Until remote flows run, the run can't track its own branch, so every asking test reports blocked (`ownConversation`).
 - `flows.spec`: a run reaches Done, but its Steps list has no `flow/run/load`. This fails twice in a row.
 - Timing flakes in production: `navigate` hover opened in 348 ms against its 300 ms budget, `flow-usage` showed the Runs row before its success rate, and `start-app` landing took more than 5 s once.
 
+**Found on the branch page:** asking tests now run on the account's own branch, and that page differs from `/app`:
+- the connection pill doesn't read Offline when the device is offline (local-first);
+- the page sets no theme attribute until a mode is chosen;
+- a page opened offline after storage eviction doesn't show its branch chrome (sign-in's ownerless activation).
+- `POST /api/branches {create: true}` on a branch Code Storage already holds answers 503, not `exists`.
+
 **Waiting on:**
-- Remote flows in production, which fail MigrationError and then QuickJS. The `broken remoteFlows` marks and the blocked `ownConversation` tests depend on them. The lead says when to remove the marks.
-- A Workers tail adapter for `LogTail`, which the prod-flows builder owns.
+- A rerun of the asking specs once the model provider isn't rate limiting.
 
 **Built:**
 - `e2e/target.ts` declares needs.

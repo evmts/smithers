@@ -79,7 +79,8 @@ test("theme by the agent: asking Smithers to switch to dark mode runs app/theme/
   const [a] = await devices.open("A")
   // The page it asks on may have no theme button (a branch's, in a deployment): the painted mode is the evidence, and
   // "theme by button" proves the button.
-  await expect.poll(() => painted(a.page), { timeout: 30_000 }).toBe("light")
+  // A branch's page sets the attribute only once a mode is chosen; either way the page isn't dark yet.
+  await expect.poll(() => painted(a.page), { timeout: 30_000 }).not.toBe("dark")
   const question = `Switch to dark mode, then reply with the word theme-${word}.`
   await a.askAndWaitTaken(question)
   await expect.poll(() => painted(a.page), { timeout: 60_000 }).toBe("dark")
