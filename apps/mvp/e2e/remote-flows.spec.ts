@@ -147,3 +147,52 @@ test("role check: a session whose role is an hour old is checked again on its ne
     await logs.dispose()
   }
 })
+
+/** The repository a TODO run writes a branch and a pull request to: a scratch one, never smithersai's. */
+const TODO_REPOSITORY = process.env.E2E_TODO_REPOSITORY ?? "roninjin10/smithers-github-tests"
+
+test("todo run: a TODO committed on the stack runs on Cloudflare to an open pull request, and Drop closes it", {
+  annotation: { type: "summary", description: "A TODO runs to a pull request on GitHub; dropping it closes the pull request." },
+}, async ({ devices }) => {
+  requires("githubApp", "member", "longRun")
+  expect(TODO_REPOSITORY, "a TODO run writes to GitHub: never a smithersai repository").not.toMatch(/^smithersai\//i)
+  test.setTimeout(45 * 60_000)
+  const word = devices.word
+  const [a] = await devices.open("A")
+  const stack = a.page.getByRole("region", { name: `${TODO_REPOSITORY} stack` })
+  const row = stack.locator("[data-slot=issues-row]", { hasText: word })
+  const title = `README line ${word}`
+  await a.page.goto(`/${TODO_REPOSITORY}/stack`)
+  await expect(stack).toBeVisible({ timeout: 60_000 })
+
+  // A person writes the TODO and commits it; the stack's writer starts its `todo` run on Cloudflare.
+  await a.page.getByRole("button", { name: "New TODO" }).click()
+  const draft = a.page.getByRole("form", { name: "TODO draft" }).first()
+  await draft.getByLabel("Title").fill(title)
+  await draft.getByLabel("Prompt").fill(`Append one line that says ${word} to the end of README.md. Change nothing else.`)
+  await draft.getByRole("button", { name: "Commit" }).click()
+  await expect(row).toContainText(/T\d+/, { timeout: 60_000 })
+  const number = (await row.textContent())!.match(/T(\d+)/)![1]!
+
+  // Working: the branch on GitHub, its machine's checkout from GitHub, the agent; then In review with its pull request.
+  await expect(row).toHaveAttribute("data-status", "running", { timeout: 5 * 60_000 })
+  await row.getByRole("link", { name: title }).click()
+  const todo = a.page.getByRole("article", { name: new RegExp(title) })
+  await expect(todo).toHaveAttribute("data-status", "in_review", { timeout: 35 * 60_000 })
+  const link = a.page.getByRole("link", { name: /^#\d+$/ })
+  await expect(link).toBeVisible({ timeout: 60_000 })
+  const pr = Number((await link.textContent())!.slice(1))
+  const pull = async () =>
+    (await (await a.page.request.get(`https://api.github.com/repos/${TODO_REPOSITORY}/pulls/${pr}`)).json()) as {
+      state: string
+      merged: boolean
+      head: { ref: string }
+    }
+  expect(await pull()).toMatchObject({ state: "open", merged: false, head: { ref: expect.stringMatching(new RegExp(`^smithers/t${number}-`)) } })
+
+  // A person drops it: the run closes the pull request it opened, as the App, and the TODO shows Dropped.
+  await todo.getByRole("button", { name: "Drop", exact: true }).click()
+  await a.page.getByRole("dialog", { name: `Drop T${number}?` }).getByRole("button", { name: "Drop", exact: true }).click()
+  await expect(todo).toHaveAttribute("data-status", "dropped", { timeout: 60_000 })
+  await expect.poll(async () => (await pull()).state, { timeout: 5 * 60_000, intervals: [15_000] }).toBe("closed")
+})
