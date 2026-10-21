@@ -73,6 +73,7 @@ const open = async (actor: Actor | null, forge: "github" | "code-storage" = "git
 describe("a curated home in the app", () => {
   test("a visitor sees everyone's section, and the stack's shape is never asked", { timeout: 240_000 }, async () => {
     const tab = await open(null)
+    expect(tab.home.queries.stack("unopened").toArray).toEqual([])
     tab.home.actions.open(OWNER, NAME)
     await until(() => expect(tab.shown()).toEqual(["everyone"]))
     expect(tab.state().current).toMatchObject({ audience: "everyone", answering: false, stack: null })

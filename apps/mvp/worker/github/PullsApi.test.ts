@@ -3,6 +3,7 @@
 // against the scripted GitHub (worker/github/test/harness.ts): the merge write, which only a Maintainer's own press
 // admits, the pull request webhooks, the compare route, and the shapes.
 import { Effect } from "effect"
+import { HttpClient } from "effect/http"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
@@ -270,6 +271,16 @@ describe("GET .../compare/<base>...<head>", () => {
     expect((await noApp.fetch(compareRoute("acme", "widgets", base, base))).status).toBe(503)
     github.installed = false
     expect((await h.fetch(compareRoute("acme", "widgets", base, base))).status).toBe(503)
+  })
+
+  test("a compare whose provider dies returns 503 without a partial diff", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const base = github.refs.get("main")!
+    const http = HttpClient.make(() => Effect.die("provider defect"))
+    const h = await githubHarness(runtime, { github: { ...github, http }, app: app({ privateKey: await appKey() }) })
+    const response = await h.fetch(compareRoute("acme", "widgets", base, SHA_A))
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ code: "unavailable" })
   })
 
   test("the route's paths: two SHAs, nothing else", () => {

@@ -14,6 +14,9 @@ import { CuratedRow, CurrentRow, emptyCurrent, FileRow, HomeRow } from "./rows"
 
 type Rows<A extends object> = Collection.Collection<A, string>
 
+/** Identity shared by the tab's rows, including its empty fallback collections. */
+const rowId = (row: { readonly id: string }): string => row.id
+
 /** Whose home the page shows, with its declared home once this device has read it, and its curated one. */
 export const homeQuery = (current: Rows<CurrentRow>, homes: Rows<HomeRow>, curated: Rows<CuratedRow>) =>
   LiveQuery.make((q) =>
@@ -70,20 +73,20 @@ const make = Effect.gen(function* () {
   const current = yield* Collection.local<CurrentRow, string>({
     id: "home-current",
     schema: CurrentRow,
-    getKey: (row) => row.id,
+    getKey: rowId,
     initialData: [emptyCurrent],
   })
   // The live blocks' rows, from the stores that sync them: the synced repository's issues and pull requests and its
   // sync, and this person's runs. A `stack` block's rows are the TODOs store's own (`TodosStore.opened`).
   const issues = yield* Effect.serviceOption(IssuesStore)
   const status = yield* Effect.serviceOption(StatusStore)
-  const items = yield* liveRows(issues, (store) => store.items, { id: "home-no-items", schema: Item, getKey: (row) => row.id })
+  const items = yield* liveRows(issues, (store) => store.items, { id: "home-no-items", schema: Item, getKey: rowId })
   const syncs = yield* liveRows(issues, (store) => store.sync, { id: "home-no-syncs", schema: SyncRow, getKey: syncKey })
-  const runs = yield* liveRows(status, (store) => store.runs, { id: "home-no-runs", schema: Run, getKey: (row) => row.id })
+  const runs = yield* liveRows(status, (store) => store.runs, { id: "home-no-runs", schema: Run, getKey: rowId })
   // What a `stack` block reads on a tab with no TODOs store: no TODOs, and no word on access.
-  const noTodos = yield* rowsOf(yield* Collection.local<Todo, string>({ id: "home-no-todos", schema: Todo, getKey: (row) => row.id }))
+  const noTodos = yield* rowsOf(yield* Collection.local<Todo, string>({ id: "home-no-todos", schema: Todo, getKey: rowId }))
   const noAccess = yield* rowsOf(
-    yield* Collection.local<Access, string>({ id: "home-no-access", schema: Access, getKey: (row) => row.id }),
+    yield* Collection.local<Access, string>({ id: "home-no-access", schema: Access, getKey: rowId }),
   )
   return {
     homes,

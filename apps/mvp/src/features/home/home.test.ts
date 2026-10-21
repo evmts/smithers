@@ -89,6 +89,8 @@ describe("a repository's home", () => {
     const h = await repoHarness(server)
     await seeded(h, { [HOME_FILE]: declared, "docs/intro.md": `# Intro ${SECRET}\n` })
     const tab = await open(h)
+    expect(tab.home.queries.stack("unopened").toArray).toEqual([])
+    expect(tab.home.queries.stackAccess.toArray).toEqual([])
     tab.home.actions.open("maya", "tinyhttp")
     await waitFor(() => expect(page(tab).page.kind).toBe("home"))
     const { page: shown, tabs: links, home } = page(tab)

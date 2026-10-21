@@ -289,6 +289,14 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     ann.attention.actions.read(done)
     expect(ann.pending().filter((id) => id.startsWith(done))).toEqual([])
 
+    // Answer over this conversation focuses the existing card without navigating away.
+    const focused = ann.focus(askId) ?? 0
+    ann.attention.actions.answer(asks, "conversation")
+    await until(() => expect(ann.focus(askId)).toBe(focused + 1))
+    expect(ann.host.navigated).toEqual([])
+    expect(ann.panel().open).toBe(false)
+    ann.attention.actions.openPanel("key", done)
+
     // Answering from the panel answers the run, and it no longer waits on her.
     ann.attention.actions.expand(asks)
     ann.status.actions.answer(askId, "docs-v2")
@@ -382,7 +390,7 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     ;(await Effect.runPromise(api.answerTo("Rename the feature branch", 1))).cell(`ctx.done("Renamed.")`)
     await until(() => expect(ann.entry(subject)).toMatchObject({ state: "done" }))
     // Open takes the person to the branch, at the answer.
-    ann.attention.actions.open(subject, "page")
+    ann.attention.actions.open(subject, "conversation")
     expect(ann.host.navigated).toEqual([`/acme/widgets/tree/feature#${answerId}`])
     // Answering what isn't open, or a run this device has no row of, does nothing.
     ann.status.actions.answer(answerId, false)

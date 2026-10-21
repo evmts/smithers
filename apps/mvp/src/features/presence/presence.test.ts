@@ -266,6 +266,9 @@ describe("the header's avatars", () => {
     expect(followOf(participants, "c-3")).toEqual({ path: "", terminal: "me" })
     expect(followOf(participants, "c-4")).toBeUndefined()
     expect(followOf(participants, "gone")).toBeUndefined()
+    expect(followOf([{ ...participants[0]!, where: { view: "edit", path: "docs/guide.md" } }], participants[0]!.id))
+      .toEqual({ path: "docs", edit: "docs/guide.md" })
+
     expect(selfAccessOf(participants)).toBeUndefined()
   })
 })

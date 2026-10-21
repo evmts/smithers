@@ -16,6 +16,13 @@ import {
 import deployed from "./fixtures/7b96f878.json" with { type: "json" }
 import currentDeployed from "./fixtures/c6940ac53e5a.json" with { type: "json" }
 import {
+  SpendSeenStore,
+  AttentionPendingStore,
+  TodoDraftsStore,
+  TodoRequestedStore,
+  HomesStore,
+  CuratedHomesStore,
+  TimelineSummariesStore,
   AuthConfirmedStore,
   ChatDraftsStore,
   ChatUnsentStore,
@@ -199,4 +206,29 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
       expect(JSON.parse((agent as { readonly value: string }).value).metadata.versions).toEqual({ "issue-sending": 3 })
     }
   })
+})
+
+
+test("cached homes and timeline summaries restore and replace by their declared identity", async () => {
+  const { path } = await deviceFrom({ build: "empty", collections: {}, outbox: {} } as Fixture)
+  await prepare(path, deviceRegistry)
+  const cases = [
+    [HomesStore, { key: "repo@sha", state: "absent", sections: [], contributors: "role", skipped: 0, reason: null }, "reason", "missing"],
+    [CuratedHomesStore, { key: "repo", state: "absent", defaultBranch: null, sections: [] }, "defaultBranch", "main"],
+    [SpendSeenStore, { kind: "budget", through: "first" }, "through", "next"],
+    [AttentionPendingStore, { id: "ack", subject: "run:one", act: "read", version: 1 }, "version", 2],
+    [TodoDraftsStore, { id: "draft", repo: "a/b", repoId: "repo", title: "First", prompt: "Build", acceptance: [], answerId: null, createdAt: 1 }, "title", "Next"],
+    [TodoRequestedStore, { id: "op", op: "drop", repo: "a/b", title: "", prompt: "", acceptance: [], number: 1, repoId: "repo", queuedAt: 1, status: "requested", reason: null, taken: null }, "taken", 2],
+    [TimelineSummariesStore, { id: "message", revision: "v1", summary: "Before" }, "summary", "After"],
+  ] as const
+  for (const [store, row, field, next] of cases) {
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const collection = yield* Collection.persisted(store as Migrations.Local<any, string>)
+      yield* collection.restored
+      yield* collection.insert(row)
+      const key = "key" in row ? row.key : "id" in row ? row.id : row.kind
+      yield* (yield* collection.update(key, (draft) => { draft[field] = next })).persisted
+    })).pipe(Effect.provide(persistenceOn(path, deviceRegistry))))
+    expect(await opened(path, store as Migrations.Local<any, string>)).toEqual([{ ...row, [field]: next }])
+  }
 })

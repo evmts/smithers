@@ -28,6 +28,7 @@ import { Todos } from "./features/todos/todos"
 import { CodeIntel } from "./features/code-intel/codeIntel"
 import { StoragePersistence } from "@smthrs/platform-browser"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "./test/chatApi"
+import { inProcessWorker } from "./test/languageServer"
 import { faultyServices } from "./test/faults"
 import { read } from "./test/otlp"
 
@@ -262,7 +263,7 @@ test("start is the boundary: it builds the one runtime, renders the chat layer o
     }
   })()
   const rendered: Array<ChatView> = []
-  const page = { origin: api.origin, fetch: api.fetch, reload: api.reload, host: nodeDevice() }
+  const page = { origin: api.origin, fetch: api.fetch, reload: api.reload, host: nodeDevice({ codeIntelWorker: inProcessWorker }) }
   const { stop } = start(
     { ...page, target, startedAt: Date.now(), render: (chat) => {
       // Auth's subscriber is attached before the page becomes interactive; chat's subscriber follows rendering.
@@ -280,6 +281,14 @@ test("start is the boundary: it builds the one runtime, renders the chat layer o
   expect(chat!.queries.composer.toArray[0]?.open).toBe(true)
   // A Stream subscription starts its callback on a child fiber; wait for the real binding before asserting cleanup.
   await until(() => expect(bound.filter((event) => event === "online")).toHaveLength(2))
+  target.dispatchEvent(new Event("offline"))
+  await until(() => expect(chat!.queries.connection.toArray[0]?.status).toBe("offline"))
+  target.dispatchEvent(new Event("online"))
+  await until(() => expect(chat!.queries.connection.toArray[0]?.status).toBe("up"))
+  await chat!.queries.history.preload()
+  const history = chat!.queries.history.toArray[0]
+  chat!.actions.loadEarlier()
+  expect(chat!.queries.history.toArray[0]).toEqual(history)
   await stop()
   // Three key bindings, chat connectivity and scoped auth refresh on reconnect are all removed.
   expect(unbound.sort()).toEqual([

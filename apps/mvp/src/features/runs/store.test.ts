@@ -310,3 +310,97 @@ test("continuous engine events refresh the page before the stream goes quiet", a
     expect(reads).toBeGreaterThan(0)
   }, { timeout: 5_000, interval: 50 })
 })
+
+test("a repeated or failed journal page terminates the snapshot read and preserves its events", async () => {
+  for (const failure of [false, true]) {
+    const reads: Array<number | undefined> = []
+    const t = open({
+      inspect: (id, options) => {
+        reads.push(options?.afterSeq)
+        if (options?.afterSeq !== undefined && failure) return refused("unavailable")
+        return Effect.succeed(inspection(id, [event(0)], true))
+      },
+      list: () => Effect.succeed({ runs: [], cursor: null }),
+    })
+    await t.run(t.store.readRun("r"))
+    expect(reads).toEqual([undefined, 0])
+    expect(t.page("r")).toMatchObject({ state: "read", more: [], hasMore: true })
+  }
+})
+
+test("descendants keep separate paginated journals, ignore cycles and tolerate an unreadable child", async () => {
+  const reads: string[] = []
+  let childFails = false
+  let duplicate = false
+  const child = (id: string) => ({ ...summary(id), parentRunId: "r", input: value("{}"), result: null })
+  const t = open({
+    inspect: (id, options) => {
+      reads.push(`${id}:${options?.afterSeq ?? "first"}`)
+      if (id === "gone" || (id === "child" && options?.afterSeq !== undefined && childFails)) return refused("unavailable")
+      if (id === "r") return Effect.succeed({ ...inspection(id, [], false), children: [child("child"), child("gone"), child("child")] })
+      const events = options?.afterSeq === undefined || duplicate ? [event(0)] : [event(1), event(2), event(3)]
+      return Effect.succeed({ ...inspection(id, events, options?.afterSeq === undefined || duplicate), children: [child("r")] })
+    },
+    list: () => Effect.succeed({ runs: [], cursor: null }),
+  })
+  await t.run(t.store.readRun("r"))
+  expect(reads).toEqual(["r:first", "child:first", "child:0", "gone:first"])
+  expect((t.page("r")!.descendants as Inspection[]).map((read) => read.journal.events.map((event) => event.seq))).toEqual([[0, 1, 2, 3]])
+  // A parent's event reuses the child's complete snapshot.
+  await t.run(t.store.view.update(VIEW, (draft) => { draft.runId = "r" }))
+  reads.length = 0
+  t.publish("r")
+  await vi.waitFor(() => expect(reads).toContain("r:first"))
+  expect(reads).not.toContain("child:first")
+  // A changed child keeps the previously read later pages.
+  await t.run(t.store.readRun("r"))
+  expect((t.page("r")!.descendants as Inspection[])[0]!.journal.events).toEqual([0, 1, 2, 3].map(event))
+  // Fresh snapshots stop on refused or repeated child pages.
+  for (const mode of ["failure", "duplicate"]) {
+    childFails = mode === "failure"
+    duplicate = mode === "duplicate"
+    await t.run(t.store.pages.delete("r"))
+    await t.run(t.store.readRun("r"))
+    expect((t.page("r")!.descendants as Inspection[])[0]!.journal.events).toEqual([event(0)])
+  }
+})
+
+test("a run read awaiting the engine cannot overwrite a replay snapshot", async () => {
+  const started = Effect.runSync(Deferred.make<void>())
+  const pending = Effect.runSync(Deferred.make<Inspection>())
+  let held = false
+  const t = open({
+    inspect: (id) => held ? Effect.andThen(Deferred.succeed(started, undefined), Deferred.await(pending)) : Effect.succeed(inspection(id, [event(0)], false)),
+    list: () => Effect.succeed({ runs: [], cursor: null }),
+  })
+  await t.run(t.store.readRun("r"))
+  held = true
+  const snapshot = t.page("r")
+  const reading = t.run(t.store.readRun("r"))
+  await t.run(Deferred.await(started))
+  await t.run(t.store.view.update(VIEW, (draft) => { draft.runId = "r"; draft.at = 0 }))
+  await t.run(Deferred.succeed(pending, inspection("r", [event(1)], false)))
+  await reading
+  expect(t.page("r")).toEqual(snapshot)
+})
+
+test("replay selected while a child is loading keeps the previously shown forest", async () => {
+  const started = Effect.runSync(Deferred.make<void>())
+  const pending = Effect.runSync(Deferred.make<Inspection>())
+  let hasChild = false
+  const t = open({
+    inspect: (id) => id === "child"
+      ? Effect.andThen(Deferred.succeed(started, undefined), Deferred.await(pending))
+      : Effect.succeed({ ...inspection(id, [], false), children: hasChild ? [{ ...summary("child"), parentRunId: id, input: value("{}"), result: null }] : [] }),
+    list: () => Effect.succeed({ runs: [], cursor: null }),
+  })
+  await t.run(t.store.readRun("r"))
+  const snapshot = t.page("r")
+  hasChild = true
+  const reading = t.run(t.store.readRun("r"))
+  await t.run(Deferred.await(started))
+  await t.run(t.store.view.update(VIEW, (draft) => { draft.runId = "r"; draft.at = 0 }))
+  await t.run(Deferred.succeed(pending, inspection("child", [], false)))
+  await reading
+  expect(t.page("r")).toEqual(snapshot)
+})

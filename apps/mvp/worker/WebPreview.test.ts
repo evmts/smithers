@@ -168,7 +168,7 @@ describe("POST /api/web/preview", () => {
     expect(await refused(await check("{"))).toEqual([400, { code: "invalid" }])
     expect(await refused(await check({ url: `https://a.example/${"a".repeat(MAX_PREVIEW_BODY_BYTES)}`, mode: "tab" })))
       .toEqual([413, { code: "too_large" }])
-    expect(await refused(await check(new Uint8Array([0xff, 0xfe]) as unknown as string))).toEqual([
+    expect(await refused(await h.fetch("/api/web/preview", { method: "POST", body: new Uint8Array([0xff, 0xfe]) }))).toEqual([
       400,
       { code: "invalid" },
     ])

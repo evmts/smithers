@@ -197,6 +197,8 @@ describe("chaptersOf", () => {
     expect(chaptersOf([step("inner", 1, 2), step("outer", 1, 2)], at(0))).toHaveLength(1)
     expect(chaptersOf([step("Open A", -2, -1)], at(0))).toEqual([{ t: 0, label: "Open A" }])
     expect(chaptersOf([], at(0))).toEqual([])
+    expect(chaptersOf([action("Click the page", 1), action("Press Escape", 2)], at(-RECORDING_LAG))).toEqual([{ t: 2, label: "Press Escape" }])
+
     // A step and an action that start in the same millisecond: the step holds the action.
     expect(chaptersOf([action("Click A", 2), step("Step", 2, 3)], at(-RECORDING_LAG))).toEqual([{ t: 2, label: "Step" }])
     expect(chaptersOf([step("Step", 2, 3), action("Click A", 2)], at(-RECORDING_LAG))).toEqual([{ t: 2, label: "Step" }])

@@ -146,6 +146,16 @@ describe("a flow of your own, from a tab", () => {
     t.runs.actions.select(`step:${step.nodeId}`)
     await until(() => expect(t.page()?.view.selected).toBe(`step:${step.nodeId}`))
 
+    // Replay and inspector controls affect only this tab, and returning live reads the current run.
+    t.runs.actions.scrub(0)
+    await until(() => expect(t.page()?.view.at).toBe(0))
+    t.runs.actions.inspectStep(`step:${step.nodeId}`)
+    await until(() => expect(t.page()?.view).toMatchObject({ selected: `step:${step.nodeId}`, inspectorOpen: true }))
+    t.runs.actions.showInspector(false)
+    await until(() => expect(t.page()?.view.inspectorOpen).toBe(false))
+    t.runs.actions.scrub(null)
+    await until(() => expect(t.page()?.view.at).toBeNull())
+
     t.runs.actions.retry("pinned")
     await until(() => expect(t.went(`${RUNS_PATH}/retry%3A`)).toBeDefined())
     await t.reply(RUN_TASK, 'ctx.done("Hello again.")', 1)

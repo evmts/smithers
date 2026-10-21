@@ -20,6 +20,7 @@ import {
   Sessions,
 } from "./Actor.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
+import * as Database from "../db/Database.ts"
 import * as RunCredentials from "./RunCredentials.ts"
 import * as SessionKeys from "./SessionKeys.ts"
 import * as SignIn from "./SignIn.ts"
@@ -361,6 +362,7 @@ describe("POST /api/runs/<run>/credential", () => {
     }
     // The bad requests to the route, and an unknown flow, are refused before anything is minted.
     expect((await mine.fetch(credentialRoute(first), { method: "POST", body: "{" })).status).toBe(400)
+    expect((await mine.fetch(credentialRoute(first), { method: "POST", body: new Uint8Array([0xff]) })).status).toBe(400)
     expect((await mine.fetch(credentialRoute(first), { method: "POST", body: "x".repeat(17_000) })).status).toBe(413)
     expect((await post(mine, credentialRoute(first), { flow: "Not A Flow" })).status).toBe(400)
     expect((await post(mine, "/api/runs/%E0%A4%A/credential", { flow: "chat/Answer" })).status).toBe(404)
@@ -389,6 +391,12 @@ describe("a credential's life, with sign-in configured", () => {
     ).toBe(202)
     const token = (await mint(h, answerId, { flow: "chat/Answer" }, session)).body.token as string
     expect((await post(h, `/api/runs/${answerId}`, { status: "needs_you", wait: waiting }, bearer(token))).status).toBe(200)
+    // A valid credential whose live session cannot be read fails closed, with an unavailable response.
+    const unavailable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
+    const downSignIn = await signInHarness(runtime, { github: signIn.github, database: unavailable })
+    const down = await harness(runtime, () => Stream.empty, { sessions: downSignIn.sessions })
+    const denied = await post(down, `/api/runs/${answerId}`, { status: "working" }, bearer(token))
+    expect(denied.status).toBe(503)
     // A credential beside the cookie is still the agent: person-only routes refuse it.
     const both = await post(h, `/api/runs/${answerId}/answer`, { version: 1, value: "main" }, { ...session, ...bearer(token) })
     expect(both.status).toBe(403)

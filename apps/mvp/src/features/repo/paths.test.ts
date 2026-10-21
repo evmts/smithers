@@ -3,6 +3,7 @@ import {
   blobKey,
   copyPayloadOf,
   encodePath,
+  editHrefFor,
   hrefFor,
   lineSearch,
   parseLines,
@@ -215,5 +216,15 @@ describe("copyPayloadOf", () => {
     expect(copyPayloadOf({ ...view, path: "" }, "contents")).toBeUndefined()
     expect(copyPayloadOf({ ...view, sha: null }, "permalink")).toBeUndefined()
     expect(copyPayloadOf({ ...view, sha: null }, "contents")).toBeUndefined()
+  })
+})
+
+
+describe("editHrefFor", () => {
+  test("opens root and nested files with a quoted search path, preserving numeric names and URL punctuation", () => {
+    expect(editHrefFor(repo, "main", "123")).toBe('/octocat/Spoon-Knife/tree/main?edit=%22123%22')
+    expect(editHrefFor({ owner: "a b", name: "c#d" }, "feature/docs", "docs/a b#.md")).toBe(
+      '/a%20b/c%23d/tree/feature/docs/docs?edit=%22docs%2Fa%20b%23.md%22',
+    )
   })
 })

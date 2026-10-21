@@ -16,7 +16,7 @@ const libDirectory = dirname(createRequire(import.meta.url).resolve("typescript"
 const lib = (name: string) => readFile(join(libDirectory, name), "utf8").catch(() => undefined)
 
 /** A worker: `serve` on one end of a channel, the tab's `Worker` on the other. Terminating it ends both. */
-const inProcessWorker = (): BrowserLanguageServer.WorkerLike => {
+export const inProcessWorker = (): BrowserLanguageServer.WorkerLike => {
   const channel = new MessageChannel()
   const fiber = BrowserLanguageServer.serve({ typescript: ts, lib, port: channel.port1 as never })
   return {

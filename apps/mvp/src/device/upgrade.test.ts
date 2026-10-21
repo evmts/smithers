@@ -72,3 +72,24 @@ test.each([deployed, currentDeployed])(
   },
   60_000
 )
+
+test("a follower restores a newer payload as Not sent while another tab holds the outbox", async () => {
+  const server = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(TestDatabase.layer("test_device_future"))))
+  runtimes.push(server)
+  const api = await server.runPromise(Effect.service(TestChatApi))
+  const future = structuredClone(currentDeployed as Fixture)
+  const [key, encoded] = Object.entries(future.outbox).find(([, raw]) => JSON.parse(raw).mutationFnName === "ask")!
+  const transaction = JSON.parse(encoded)
+  transaction.metadata = { ...transaction.metadata, versions: { asking: 99 } }
+  const { outbox, path } = await deviceFrom({ ...future, outbox: { [key]: JSON.stringify(transaction) } })
+  await prepare(path, deviceRegistry)
+  const host = nodeDevice({ agent: api, file: path, outboxEntries: outbox, lock: { hold: () => Effect.never } })
+  const runtime = openTab(api, { host })
+  runtimes.push(runtime)
+  const store = await runtime.runPromise(Effect.service(ChatStore))
+  await until(async () => expect(Option.getOrUndefined(await runtime.runPromise(store.unsent.get(QUESTION)))).toMatchObject({
+    text: "What changed in the last deploy?", reason: "not_admitted",
+  }))
+  expect((await server.runPromise(api.rows)).filter(({ id }) => id === QUESTION)).toEqual([])
+  expect([...outbox.keys()].filter((name) => name.startsWith("parked:"))).toEqual([])
+}, 60_000)
