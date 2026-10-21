@@ -520,8 +520,11 @@ describe("admission", () => {
     const browser = crypto.randomUUID()
     const late = WebLock.make({
       request: (name, options, callback) =>
-        new Promise((resolve, reject) =>
-          setTimeout(() => navigator.locks.request(`${browser}/${name}`, options, callback).then(resolve, reject), 300)
+        Effect.runPromise(
+          Effect.andThen(
+            Effect.sleep("300 millis"),
+            Effect.promise(() => navigator.locks.request(`${browser}/${name}`, options, callback)),
+          ),
         ),
     })
     const tab = await openChat({ host: { ...device, lock: late } })
