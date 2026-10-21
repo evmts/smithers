@@ -1,3 +1,4 @@
+import { FlowRegistry } from "./registry"
 // Run credentials on the device (src/flows/credentials.ts, decision 0017 slice 0), on the Node host's durable engine
 // over the compose Postgres (`pnpm db:up`), against ChatApi's real runs routes: the person's own press goes in their
 // session; an agent's run and every run nested in it, a run nobody pressed and a run whose tab is gone each go with a
@@ -170,7 +171,7 @@ const device = async (
     tabDoors({ name }),
   ).pipe(
     Layer.provideMerge(Layer.effect(Sender, HttpClient.HttpClient)),
-    Layer.provideMerge(RunCredentials.layer({ origin: ORIGIN, name, flows })),
+    Layer.provideMerge(RunCredentials.layer({ origin: ORIGIN, name, flows }).pipe(Layer.provide(FlowRegistry.layer))),
     Layer.provideMerge(requests),
     Layer.provide(TabChannel.layer),
     Layer.provide(

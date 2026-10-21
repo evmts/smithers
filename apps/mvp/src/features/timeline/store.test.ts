@@ -1,3 +1,4 @@
+import { FlowRegistry } from "../../flows/registry"
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { Action } from "@smthrs/flow"
 import { Model, type ModelEvent } from "@smthrs/model"
@@ -28,7 +29,7 @@ test("real durable summary results project once, refresh changed content and ski
     ))))
     const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(Layer.mergeAll(
       Persistence.memory,
-      FlowDispatch.layer.pipe(Layer.provide(ClientEngine.layerRuntime([Summarize])), Layer.provide(Layer.succeedContext(engine))),
+      FlowDispatch.layer.pipe(Layer.provide(FlowRegistry.layer)).pipe(Layer.provide(ClientEngine.layerRuntime([Summarize])), Layer.provide(Layer.succeedContext(engine))),
     ))))
     const run = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.runPromise(Scope.provide(scope)(Effect.provide(effect, context)) as Effect.Effect<A, E>)
     const messages = await run(Collection.local<Message, Collection.Key>({ id: "test-timeline-messages", schema: Message, getKey: message => message.id }))

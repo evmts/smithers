@@ -1,3 +1,4 @@
+import { FlowRegistry } from "../flows/registry"
 // A browser tab's repository feature in Node, as React drives it: the `Repo` layer's plain actions, lookups and live
 // queries, and the repository's home (the `Home` layer), over the real store and client, and dispatch over this device's engine: the Node host running the
 // repository flows and `app/navigate` (src/features/repo/steps.ts), as the engine worker registers them. The tab answers
@@ -112,7 +113,7 @@ export const openTab = async (options: DeviceOptions) => {
           tabNavigation({ name, origin: options.origin, navigate: (path) => void navigated.push(path) }),
         ).pipe(Layer.provide(TabChannel.layer)),
       ),
-      Layer.provideMerge(FlowDispatch.layer),
+      Layer.provideMerge(FlowDispatch.layer.pipe(Layer.provide(FlowRegistry.layer))),
       Layer.provideMerge(
         ClientEngine.layerRuntime(options.engine === "refusing" ? [] : flows).pipe(Layer.provide(engine)),
       ),

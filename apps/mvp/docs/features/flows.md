@@ -37,6 +37,8 @@ The tab never imports `@smthrs/agent`: it dispatches by each flow's reference (`
 
 ## The registry
 
+`FlowRegistry` is an Effect service tag (`Context.Service` in Effect 4). The tab and engine hosts provide its default `layer`; dispatch, credentials and the agent catalog read it with `yield* FlowRegistry`. A host may inject another registry layer. The reference table remains the single declaration list used to derive static command metadata and types; flow bodies stay out of the tab.
+
 | Name | Placement | Agent | Doors |
 |---|---|---|---|
 | `app/theme/set { mode }` | client | yes | the theme button, `/theme`, the agent |

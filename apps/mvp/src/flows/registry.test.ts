@@ -3,13 +3,13 @@
 // engine runs are the registry's flows, one to one, with the very schemas the tab dispatches by.
 import { Flow } from "@smthrs/flow"
 import { Placement } from "@smthrs/plan"
-import { Context, Option } from "effect"
+import { Context, Effect, Option } from "effect"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"
 import { agentFlows, catalogDescription, childExecutionId, publicError } from "./catalog"
 import { clientFlows, declarationOf, declarations, modelInvocable } from "./declarations"
-import { entryOf, names, registry } from "./registry"
+import { entryOf, FlowRegistry, names, registry } from "./registry"
 import { requesterOf } from "./requests"
 import { AGENT_FLOWS, PERSON_ONLY_FLOWS } from "../../worker/Actor.ts"
 
@@ -264,4 +264,16 @@ describe("the agent's catalog", () => {
     )
     expect(publicError(new Error("secret"))).toBe("failed")
   })
+})
+
+
+test("the registry service supplies the app's exact references and declaration order", async () => {
+  const registered = await Effect.runPromise(Effect.gen(function* () {
+    return yield* FlowRegistry
+  }).pipe(Effect.provide(FlowRegistry.layer)))
+  expect(registered.names).toEqual(names)
+  for (const name of registered.names) {
+    expect(registered.entryOf(name)).toBe(registered.entries[name])
+    expect(registered.entries[name]!.flow).toBe(registry[name].flow)
+  }
 })

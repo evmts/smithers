@@ -3,7 +3,7 @@ import { FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Cause, Clock, Context, Deferred, Effect, Exit, Layer, Metric, Option, Schema } from "effect"
 import type { DOORS } from "./contract"
-import { type Entry, type FlowName, type FlowOf, registry } from "./registry"
+import { type Entry, type FlowName, type FlowOf, FlowRegistry } from "./registry"
 import { TabRequests } from "./requests"
 
 // Dispatch (docs/features/flows.md#dispatch): the one way the UI runs a flow. A button, a slash command, a view and
@@ -276,6 +276,10 @@ export class FlowDispatch extends Context.Service<
    */
   static readonly layer = Layer.effect(
     FlowDispatch,
-    Effect.map(makeDispatch(registry), (dispatch) => FlowDispatch.of({ dispatch: dispatch as never })),
+    Effect.gen(function* () {
+      const registered = yield* FlowRegistry
+      const dispatch = yield* makeDispatch(registered.entries)
+      return FlowDispatch.of({ dispatch: dispatch as never })
+    }),
   ).pipe(Layer.provideMerge(TabRequests.layer()))
 }

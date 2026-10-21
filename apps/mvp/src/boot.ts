@@ -1,3 +1,4 @@
+import { FlowRegistry } from "./flows/registry"
 import { Otlp } from "@smthrs/observability"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import {
@@ -254,7 +255,7 @@ export const appLayer = <S = never>(
         tabDoors({ name: host.engineName }),
       ).pipe(Layer.provide(TabChannel.layer)),
     ),
-    Layer.provideMerge(FlowDispatch.layer),
+    Layer.provideMerge(FlowDispatch.layer.pipe(Layer.provide(FlowRegistry.layer))),
     Layer.provideMerge(tabAnswers),
     Layer.provideMerge(ThemeStore.layer(host.theme)),
     Layer.provideMerge(services),

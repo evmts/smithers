@@ -6,7 +6,7 @@ import { asker } from "./askingTab"
 import { withBearer, withoutCookie } from "./bearer"
 import { CREDENTIAL_TTL_MS, credentialRoute, doorChannel, PERSON_DOORS } from "./contract"
 import { DoorCall } from "./doors"
-import { registry } from "./registry"
+import { FlowRegistry } from "./registry"
 import { requesterOf } from "./requests"
 
 // Run credentials on the device (decision 0017 slice 0, docs/features/sign-in.md#run-credentials). The engine, which is
@@ -55,8 +55,8 @@ const decodeMinted = Schema.decodeUnknownOption(Minted)
 const decodeRefusal = Schema.decodeUnknownOption(Refusal)
 
 /** Whether `flow` is a person's flow: registered, with no `acts` mark. */
-const personFlow = (flow: string): boolean =>
-  Object.hasOwn(registry, flow) && (registry[flow as keyof typeof registry] as { readonly acts?: string }).acts === undefined
+const personFlow = (registry: FlowRegistry["Service"], flow: string): boolean =>
+  Object.hasOwn(registry.entries, flow) && registry.entries[flow]!.acts === undefined
 
 /**
  * The credentials of the runs on this engine, and the `HttpClient` its flows' steps use: `client` sends each request to
@@ -86,6 +86,7 @@ export const layer = (options: {
 }) =>
   Layer.effectContext(
     Effect.gen(function* () {
+      const registry = yield* FlowRegistry
       const ceilings = new Map(options.flows.map((flow) => [flow._tag, Flow.capabilityCeilings(flow.annotations)]))
       const base = yield* HttpClient.HttpClient
       const inspection = yield* EngineStore.RunInspection.RunInspection
@@ -127,7 +128,7 @@ export const layer = (options: {
         (run: string): Effect.Effect<Credential, CredentialUnavailable> =>
           Effect.gen(function* () {
             const { flow, parent } = yield* runOf(run)
-            if (parent === null && personFlow(flow)) {
+            if (parent === null && personFlow(registry, flow)) {
               const answered = yield* askDoor(run, {})
               if (Option.isSome(answered) && PERSON_DOORS.includes(answered.value.door)) return { _tag: "Session" } as const
             }

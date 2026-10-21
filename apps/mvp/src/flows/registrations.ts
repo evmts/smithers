@@ -1,3 +1,4 @@
+import { FlowRegistry } from "./registry"
 import * as Timeline from "../features/timeline/steps"
 import { Action } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
@@ -92,7 +93,7 @@ export const registrations = (options: HostOptions) =>
     ChatSteps.registration,
     Attention.registrationAt(options.origin),
     SpendSteps.registrationAt(options.origin),
-  ).pipe(Layer.provide(statusReports(options.origin)), Layer.provideMerge(Action.layerImplementations))
+  ).pipe(Layer.provide(FlowRegistry.layer), Layer.provide(statusReports(options.origin)), Layer.provideMerge(Action.layerImplementations))
 
 /**
  * Where runs report their status and people's answers are recorded (docs/features/agent-status.md): ChatApi's runs
@@ -119,7 +120,7 @@ export const workerRegistrations = (scope: Endpoint, options: WorkerOptions) =>
   registrations(options).pipe(
     // Every request a run makes to ChatApi goes as that run: the person's session only for their own press, else the
     // run's credential (decision 0017 slice 0).
-    Layer.provide(RunCredentials.layer({ origin: options.origin, name: options.name, flows: clientFlows })),
+    Layer.provide(RunCredentials.layer({ origin: options.origin, name: options.name, flows: clientFlows }).pipe(Layer.provide(FlowRegistry.layer))),
     Layer.provide(Theme.workerPreferences),
     Layer.provide(TabPort.layer(scope)),
     Layer.provide(Navigation.Tabs.layerChannel({ name: options.name, origin: options.origin })),

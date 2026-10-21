@@ -1,3 +1,4 @@
+import { FlowRegistry } from "../../flows/registry"
 // The theme (docs/features/flows.md#the-theme): its store and follower in Node over TanStack DB with persistence in
 // memory, the engine worker's `Preferences` over a tab port that answers or fails, and the button's toggle through
 // dispatch on the Node host's engine over the compose Postgres (`pnpm db:up`).
@@ -151,7 +152,7 @@ describe("the theme button's toggle", () => {
       Scope.provide(scope)(
         Layer.build(
           Theme.layer.pipe(
-            Layer.provide(FlowDispatch.layer),
+            Layer.provide(FlowDispatch.layer.pipe(Layer.provide(FlowRegistry.layer))),
             Layer.provide(ClientEngine.layerRuntime([SetTheme])),
             Layer.provide(Layer.succeedContext(context)),
           ),

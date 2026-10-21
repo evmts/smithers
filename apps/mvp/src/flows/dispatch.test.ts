@@ -1,3 +1,4 @@
+import { FlowRegistry } from "./registry"
 // Dispatch (src/flows/dispatch.ts): a flow on the Node host's engine over the compose Postgres (`pnpm db:up`), and
 // every dispatch's records, read back without the flow's input. Unhappy paths inject the faulty service: an engine
 // that refuses or dies, `Preferences` that can't be written.
@@ -427,7 +428,7 @@ describe("FlowDispatch", () => {
     const exit = await Effect.runPromise(
       Effect.flatMap(FlowDispatch, (flows) => flows.dispatch("app/theme/set", { mode: "light" }, { door: "button" }))
         .pipe(
-          Effect.provide(FlowDispatch.layer),
+          Effect.provide(FlowDispatch.layer.pipe(Layer.provide(FlowRegistry.layer))),
           Effect.provide(ClientEngine.layerRuntime(clientFlows)),
           Effect.provide(Layer.succeedContext(context)),
           Effect.exit,
@@ -435,6 +436,24 @@ describe("FlowDispatch", () => {
     )
 
     expect(exit).toEqual(Exit.succeed({ _tag: "Done", value: { mode: "light" } }))
+    expect(painted).toEqual(["light"])
+    // Dispatch reaches the injected reference, which this engine has not registered.
+    const restricted = await Effect.runPromise(
+      Effect.flatMap(FlowDispatch, (flows) => flows.dispatch("app/theme/set", { mode: "dark" }, { door: "button" })).pipe(
+        Effect.provide(FlowDispatch.layer),
+        Effect.provideService(FlowRegistry, {
+          entries: { "app/theme/set": { ...registry["app/theme/set"], flow: { ...registry["app/theme/set"].flow, _tag: "probe/NotRegistered" } } },
+          names: ["app/theme/set"],
+          entryOf: () => registry["app/theme/set"],
+        }),
+        Effect.provide(ClientEngine.layerRuntime(clientFlows)),
+        Effect.provide(Layer.succeedContext(context)),
+        Effect.exit,
+      ),
+    )
+    expect(Exit.isFailure(restricted)).toBe(true)
+    if (Exit.isSuccess(restricted)) throw new Error("unregistered reference was started")
+    expect(Cause.findErrorOption(restricted.cause)).toEqual(Option.some(new DispatchFailed({ flow: "probe/NotRegistered", reason: "refused" })))
     expect(painted).toEqual(["light"])
   })
 })

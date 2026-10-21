@@ -1,3 +1,4 @@
+import { Context, Layer } from "effect"
 import { Summarize } from "../features/timeline/flow"
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import { BranchCreate, BranchTrack } from "../features/branch/flows"
@@ -311,3 +312,14 @@ export const names = Object.keys(registry) as ReadonlyArray<FlowName>
 
 /** The entry registered under `name`. */
 export const entryOf = (name: FlowName): Entry => registry[name]
+
+
+/** The registry read by dispatch, credentials and the agent on this host. Effect 4's service tag is Context.Service. */
+export class FlowRegistry extends Context.Service<FlowRegistry, {
+  readonly entries: Readonly<Record<string, Entry>>
+  readonly names: ReadonlyArray<FlowName>
+  readonly entryOf: (name: FlowName) => Entry
+}>()("@smthrs/mvp/flows/FlowRegistry") {
+  /** The app's declared references, without loading any flow implementation into the tab. */
+  static readonly layer = Layer.succeed(FlowRegistry, FlowRegistry.of({ entries: registry, names, entryOf }))
+}

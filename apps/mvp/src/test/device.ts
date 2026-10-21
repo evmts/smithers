@@ -1,3 +1,4 @@
+import { FlowRegistry } from "../flows/registry"
 // A device in Node, as the browser builds it (decision 0011 §4): a tab with its own `ThemeStore`, `BrowserEngine`,
 // dispatch and navigation answers (src/flows/engine.ts `tabEngine` and `tabAnswers`, src/features/navigation/tab.ts), and the leader its engine worker runs (`BrowserRuntime.serve` over every
 // client flow, src/flows/registrations.ts), over Node's own Web Locks and `BroadcastChannel`. The worker is a
@@ -95,7 +96,7 @@ export const openDevice = async (fetch: typeof globalThis.fetch, telemetry: Devi
   // and the tab's navigation answers.
   const tab = Theme.layer.pipe(
     Layer.provideMerge(navigation(name, navigated)),
-    Layer.provideMerge(FlowDispatch.layer),
+    Layer.provideMerge(FlowDispatch.layer.pipe(Layer.provide(FlowRegistry.layer))),
     Layer.provideMerge(tabAnswers),
     Layer.provideMerge(store),
     Layer.provideMerge(tabEngine(() => worker, name)),
@@ -110,7 +111,7 @@ export const openDevice = async (fetch: typeof globalThis.fetch, telemetry: Devi
   const openTab = async () => {
     const moved: Array<string> = []
     const other = navigation(name, moved).pipe(
-      Layer.provideMerge(FlowDispatch.layer),
+      Layer.provideMerge(FlowDispatch.layer.pipe(Layer.provide(FlowRegistry.layer))),
       Layer.provideMerge(tabEngine(idleWorker, name)),
     )
     const built = await Effect.runPromise(Scope.provide(scope)(Layer.build(other)))

@@ -1,3 +1,4 @@
+import { FlowRegistry } from "../flows/registry"
 // The browser's agent on the Node host, for the tests (docs/features/agent.md#tests). ChatApi's real handler on the
 // test file's schema of the compose Postgres serves the model endpoint and the answer routes, with a scripted model as
 // the deployment's default model: the only scripted seam. The engine is the Node host's (`Runtime.layer` over
@@ -130,7 +131,7 @@ export const openAgent = async (
       tabDoors({ name: doors }).pipe(Layer.provide(personPresses)),
     ).pipe(
       // Every request goes as the run that made it, as in the browser's engine worker.
-      Layer.provide(RunCredentials.layer({ origin: ORIGIN, name: doors, flows: clientFlows })),
+      Layer.provide(RunCredentials.layer({ origin: ORIGIN, name: doors, flows: clientFlows }).pipe(Layer.provide(FlowRegistry.layer))),
       Layer.provide(tabPreferences),
       // No tab listens on this engine's navigation, clipboard, issues, TODOs or chat channels: a navigation, a copy, an
       // issue or TODO write or a message's Copy or Edit here finds its tab gone.

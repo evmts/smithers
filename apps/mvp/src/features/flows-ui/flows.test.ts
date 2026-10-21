@@ -1,3 +1,4 @@
+import { FlowRegistry, registry as flowEntries } from "../../flows/registry"
 // Your own flows on this device's engine (decision 0014 §2, docs/features/flows.md#your-own-flows): every `flow/*` flow
 // runs as the browser's engine worker registers it (src/flows/registrations.ts), on the Node host over the compose
 // Postgres, against ChatApi's real handler on this file's schema. The model is the only scripted seam: the endpoint's
@@ -496,8 +497,20 @@ describe("the agent's catalog", () => {
       return (yield* source.bindings()).map((binding) => binding.descriptor.name)
     })).pipe(
       Effect.provideService(FlowRuntime.FlowRuntime, d.engine.flows),
+      Effect.provide(FlowRegistry.layer),
       Effect.provide(EngineStore.RunInspection.layer.pipe(Layer.provide(store))),
     ))
     expect(names).toEqual(Catalog.agentFlows)
+    const scoped = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const source = yield* Catalog.source
+      return (yield* source.bindings()).map((binding) => binding.descriptor)
+    })).pipe(
+      Effect.provideService(FlowRuntime.FlowRuntime, d.engine.flows),
+      Effect.provideService(FlowRegistry, { entries: flowEntries, names: ["app/theme/set"], entryOf: (name) => ({ ...flowEntries[name], changes: "updates this test's theme" }) }),
+      Effect.provide(EngineStore.RunInspection.layer.pipe(Layer.provide(store))),
+    ))
+    expect(scoped.map((flow) => flow.name)).toEqual(["app/theme/set"])
+    expect(scoped[0]!.description).toContain("Side effect: updates this test's theme")
+
   }, SLOW)
 })
