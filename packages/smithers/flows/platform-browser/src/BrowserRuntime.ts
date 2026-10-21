@@ -29,6 +29,7 @@ import type * as Engine from "./internal/Engine.ts"
 import type * as Leader from "./internal/Leader.ts"
 import * as Metrics from "./internal/Metrics.ts"
 import type * as PrepareModule from "./internal/Prepare.ts"
+import type * as SharedSqlite from "./SharedSqlite.ts"
 import * as TabChannel from "./TabChannel.ts"
 import * as WebLock from "./WebLock.ts"
 
@@ -75,10 +76,26 @@ export interface HostOptions extends Options {
    * tab's statement: see {@link Prepare}.
    */
   readonly prepare?: Prepare | undefined
-  /** Checked on every activation before the engine exists, resumes work or exposes the device database. A failure
-   * ends activation; unlike a replayed preparation this check is never cached. */
-  readonly authorize?: ((database: import("./SharedSqlite.ts").Service) => Effect.Effect<void, unknown>) | undefined
+  /**
+   * What the worker checks on the app's shared database each time it is about
+   * to lead, before it builds the engine, resumes any run or serves any tab,
+   * such as whether the stored data belongs to the person signed in. A
+   * failure ends this activation as an engine that cannot be built does; the
+   * tab hears `EngineStopped`. Unlike {@link Prepare}, it runs on every
+   * activation and is never recorded as done. A transaction it leaves open is
+   * rolled back before anything else runs.
+   */
+  readonly authorize?: Authorize | undefined
 }
+
+/**
+ * The activation check {@link HostOptions.authorize} runs, over the app's
+ * shared database.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Authorize = (database: SharedSqlite.Service) => Effect.Effect<void, unknown>
 
 /**
  * What the leader runs on the app's shared database before any tab reads it,

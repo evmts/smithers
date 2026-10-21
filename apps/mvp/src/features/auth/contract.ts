@@ -1,8 +1,16 @@
 // Sign-in's contract between the browser and ChatApi (docs/features/sign-in.md): the one home of every value the
 // browser, ChatApi and the tests share. Nothing here imports a library, so every side can.
 
-/** A device request binds its retained data to this person; the server refuses a different cookie owner. */
+/**
+ * The person whose device data a request comes from (src/device/identity.ts): a stable person id, `@visitor` for data
+ * made without a verified session, or {@link NO_DEVICE_DATA} from a page that opened nothing of the device's. ChatApi
+ * reads a request whose cookie or credential is another person's as nobody, and refuses a cookie-authenticated write
+ * that names no one, as an earlier build's tab sends.
+ */
 export const DEVICE_PERSON_HEADER = "x-smithers-device-person"
+
+/** {@link DEVICE_PERSON_HEADER}'s value for a page or worker that opened none of the device's data. */
+export const NO_DEVICE_DATA = "@none"
 
 /** Every sign-in route starts with this. */
 export const AUTH_ROUTE = "/api/auth"
@@ -66,7 +74,8 @@ export const composerAccess = (
 /**
  * What `GET /api/auth/session` answers:
  * - signed out, with whether this deployment can sign anyone in (`available`: the GitHub App is configured);
- * - signed in, with the person's GitHub login and their role on the repository, `null` when they have none.
+ * - signed in, with the person's stable id, their GitHub login and their role on the repository, `null` when they have
+ *   none. The id is optional only so a build from before it was added still reads.
  */
 export type SessionState =
   | { readonly signedIn: false; readonly available: boolean }
@@ -95,11 +104,9 @@ export const SIGN_OUT = "Sign out"
  */
 export const AUTH_TELEMETRY = {
   records: [
-    "auth.device_identity",
     "auth.session_subscription",
     "auth.session_refresh",
     "smithers_auth_session_refreshes",
-    "smithers_device_identity_checks",
     "session loaded",
     "session unreachable",
     "sign in pressed",
@@ -113,5 +120,6 @@ export const AUTH_TELEMETRY = {
     "smithers_web_sign_outs",
     "smithers_web_device_wipes",
   ],
+  // `stage`, `reason` and `via` also carry the engine worker's owner check (src/device/identity.ts, FLOWS_TELEMETRY).
   fields: ["signedIn", "status", "outcome", "stage", "reason", "via"],
 } as const

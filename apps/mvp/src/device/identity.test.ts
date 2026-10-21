@@ -1,317 +1,525 @@
-import { createServer } from "node:http"
+import { createServer, type IncomingHttpHeaders } from "node:http"
 import type { AddressInfo } from "node:net"
-import { DatabaseSync } from "node:sqlite"
+import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import { Effect, Exit, Logger, Metric } from "effect"
-import { describe, expect, test, vi } from "vitest"
+import { afterEach, describe, expect, test } from "vitest"
 import { AuthUnreachable } from "../features/auth/api"
-import { activationGate, authorizeDevice, boundFetch, checks, DeviceIdentityRefused, readOwner, readSession } from "./identity"
+import { NO_DEVICE_DATA, type SessionState } from "../features/auth/contract"
+import { deviceFrom, type Fixture } from "../test/deviceFixture"
+import deployed from "./fixtures/7b96f878.json" with { type: "json" }
+import production from "./fixtures/c6940ac53e5a.json" with { type: "json" }
+import {
+  activationGate,
+  answer,
+  authorizeDevice,
+  boundFetch,
+  checks,
+  DeviceIdentityRefused,
+  IDENTITY_MESSAGE,
+  type Outcome,
+  readReceipt,
+  readSession,
+  sessionNow,
+  stale,
+  VISITOR,
+} from "./identity"
 
-const alice = { v: 1 as const, personId: "person-alice", login: "alice" }
-const session = (personId: string, login = personId) => Effect.succeed({ signedIn: true as const, personId, login, role: "member" as const })
-const open = () => {
-  const sqlite = new DatabaseSync(":memory:")
-  return {
-    sqlite,
-    database: { execute: (sql: string, params: ReadonlyArray<unknown> = []) => Effect.sync(() => sqlite.prepare(sql).all(...params as never[])) },
-    close: () => sqlite.close(),
+// The device's owner check (src/device/identity.ts) on real SQLite: the deployed builds' device stores (7b96f878, and
+// c6940ac53e5a, which production runs), built by TanStack DB's own persistence from their fixtures, and empty stores. Sessions are ChatApi's answers as values; a
+// broken store is an injected database.
+
+const fixture = deployed as Fixture
+/** The login the deployed build confirmed on the fixture's device. */
+const LOGIN = "codeplanesmithers"
+
+const opened: Array<DatabaseSync> = []
+afterEach(() => {
+  for (const sqlite of opened.splice(0)) sqlite.close()
+})
+
+/** A device store as the engine worker's `SharedSqlite` service, over a SQLite file or memory. */
+const store = (path = ":memory:") => {
+  const sqlite = new DatabaseSync(path)
+  opened.push(sqlite)
+  const database = {
+    execute: (sql: string, params: ReadonlyArray<unknown> = []) =>
+      Effect.sync(() => {
+        const statement = sqlite.prepare(sql)
+        if (statement.columns().length > 0) return statement.all(...(params as Array<SQLInputValue>)) as ReadonlyArray<unknown>
+        statement.run(...(params as Array<SQLInputValue>))
+        return []
+      }),
   }
+  return { sqlite, database }
 }
-const legacy = (sqlite: DatabaseSync, row: unknown) => {
-  sqlite.exec("CREATE TABLE collection_registry (collection_id TEXT, table_name TEXT); CREATE TABLE auth_rows (value TEXT)")
-  sqlite.prepare("INSERT INTO collection_registry VALUES (?, ?)").run("auth-confirmed", "auth_rows")
-  sqlite.prepare("INSERT INTO auth_rows VALUES (?)").run(JSON.stringify(row))
+type Store = ReturnType<typeof store>
+
+/** A deployed build's device store; without its confirmed login when `confirmed` is false. */
+const deployedStore = async (confirmed = true, build: Fixture = fixture) => {
+  const { path } = await deviceFrom(build)
+  const device = store(path)
+  if (!confirmed) {
+    const [{ table }] = device.sqlite
+      .prepare("SELECT table_name AS 'table' FROM collection_registry WHERE collection_id = 'auth-confirmed'")
+      .all() as Array<{ table: string }>
+    device.sqlite.exec(`DELETE FROM "${table}"`)
+  }
+  return device
 }
 
-describe("the engine's activation identity boundary", () => {
-  test("Alice → expired session → Bob never opens Alice's store or resumes it; the retained owner survives expiry", async () => {
-    const device = open()
-    legacy(device.sqlite, { id: "session", ...alice, role: "member" })
-    const reports: unknown[] = []
-    const run = (answer: Parameters<typeof authorizeDevice>[0]["session"]) => Effect.runPromise(Effect.exit(authorizeDevice({ database: device.database, session: answer, report: (owner, outcome) => reports.push({ owner, outcome }) })))
-    try {
-      expect(Exit.isFailure(await run(Effect.succeed({ signedIn: false, available: true })))).toBe(true)
-      expect(Exit.isFailure(await run(session("person-bob", "bob")))).toBe(true)
-      expect(reports).toEqual([{ owner: alice, outcome: "signed_out" }, { owner: alice, outcome: "changed" }])
-      expect(device.sqlite.prepare("SELECT value FROM auth_rows").get()).toEqual({ value: JSON.stringify({ id: "session", ...alice, role: "member" }) })
-      expect(Exit.isSuccess(await run(session(alice.personId, alice.login)))).toBe(true)
-    } finally { device.close() }
+const signedIn = (personId: string, login: string): Effect.Effect<SessionState> =>
+  Effect.succeed({ signedIn: true, personId, login, role: "member" })
+const signedOut: Effect.Effect<SessionState> = Effect.succeed({ signedIn: false, available: true })
+const offline: Effect.Effect<SessionState, AuthUnreachable> = Effect.fail(new AuthUnreachable({}))
+
+/** One activation: its exit and what it reported. */
+const activate = async (device: Store, session: Effect.Effect<SessionState, unknown>) => {
+  const reports: Array<{ owner: string | undefined; outcome: Outcome }> = []
+  const exit = await Effect.runPromise(
+    Effect.exit(authorizeDevice({ database: device.database, session, report: (owner, outcome) => reports.push({ owner, outcome }) })),
+  )
+  expect(reports.length).toBeLessThanOrEqual(1)
+  return { exit, ...reports[0] }
+}
+
+const recorded = (device: Store) =>
+  (device.sqlite.prepare("SELECT person_id FROM smithers_device_identity").get() as { person_id: string } | undefined)?.person_id
+
+/** Every row of every table but the owner record, so a test can say nothing was deleted or changed. */
+const contents = (device: Store) => {
+  const tables = device.sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name != 'smithers_device_identity' ORDER BY name")
+    .all() as Array<{ name: string }>
+  return Object.fromEntries(tables.map(({ name }) => [name, device.sqlite.prepare(`SELECT * FROM "${name}"`).all()]))
+}
+
+const refused = (reason: string) => Exit.fail(new DeviceIdentityRefused({ reason }))
+
+describe("a device from the deployed build 7b96f878", () => {
+  test.each([fixture, production as Fixture])("regression: build $build's own person opens it as theirs, every row and queued write kept", async (build) => {
+    const device = await deployedStore(true, build)
+    const before = contents(device)
+    expect(Object.keys(before).length).toBeGreaterThan(10)
+    // Before the fix, this activation was `changed`, the device was wiped, and its queued writes were lost.
+    expect(await activate(device, signedIn("person-1", LOGIN))).toEqual({ exit: Exit.void, owner: "person-1", outcome: "verified" })
+    expect(recorded(device)).toBe("person-1")
+    expect(contents(device)).toEqual(before)
+    // From now on the stable owner decides, and the login no longer matters.
+    expect(await activate(device, signedIn("person-1", "renamed"))).toMatchObject({ owner: "person-1", outcome: "verified" })
   })
 
-  test("same-person offline recovery and login renaming keep the stable owner", async () => {
-    const device = open()
-    const reports: unknown[] = []
-    try {
-      await Effect.runPromise(authorizeDevice({ database: device.database, session: session(alice.personId, "alice"), report: () => {} }))
-      for (const answer of [Effect.fail(new AuthUnreachable({})), session(alice.personId, "alice-renamed")]) {
-        await Effect.runPromise(authorizeDevice({ database: device.database, expectedOwner: alice, session: answer, report: (owner, outcome) => reports.push({ owner, outcome }) }))
-      }
-      expect(reports).toEqual([{ owner: alice, outcome: "offline" }, { owner: { ...alice, login: "alice-renamed" }, outcome: "verified" }])
-      expect(device.sqlite.prepare("SELECT person_id FROM smithers_device_identity").get()).toEqual({ person_id: alice.personId })
-      const switched = await Effect.runPromise(Effect.exit(authorizeDevice({ database: device.database, expectedOwner: { ...alice, personId: "person-bob" }, session: session("person-bob", "bob"), report: () => {} })))
-      expect(Exit.isFailure(switched)).toBe(true)
-    } finally { device.close() }
+  test("logins match without regard to case, as GitHub's do", async () => {
+    const device = await deployedStore()
+    expect(await activate(device, signedIn("person-1", "CodePlaneSmithers"))).toMatchObject({ outcome: "verified" })
   })
 
-  test("legacy login-only and unknown nonempty stores cannot acquire the new cookie owner, even when a login was reassigned", async () => {
-    const device = open()
-    legacy(device.sqlite, { id: "session", login: "Alice", role: "member" })
-    let outcome = ""
-    try {
-      const check = (answer: Parameters<typeof authorizeDevice>[0]["session"]) => Effect.runPromise(Effect.exit(authorizeDevice({ database: device.database, session: answer, report: (_, value) => { outcome = value } })))
-      expect(Exit.isFailure(await check(session(alice.personId, "alice")))).toBe(true)
-      expect(outcome).toBe("changed")
-      device.sqlite.exec("DELETE FROM auth_rows; INSERT INTO collection_registry VALUES ('chat-drafts', 'drafts')")
-      expect(Exit.isFailure(await check(session("person-bob", "bob")))).toBe(true)
-      expect(outcome).toBe("changed")
-    } finally { device.close() }
+  test("a confirmed session that kept a stable id is matched by that id, not the login", async () => {
+    const withId = async () => {
+      const device = await deployedStore()
+      const [{ table }] = device.sqlite
+        .prepare("SELECT table_name AS 'table' FROM collection_registry WHERE collection_id = 'auth-confirmed'")
+        .all() as Array<{ table: string }>
+      const stored = device.sqlite.prepare(`SELECT value FROM "${table}"`).get() as { value: string }
+      device.sqlite.prepare(`UPDATE "${table}" SET value = ?`).run(JSON.stringify({ ...JSON.parse(stored.value), personId: "person-1" }))
+      return device
+    }
+    expect(await activate(await withId(), signedIn("person-2", LOGIN))).toMatchObject({ outcome: "changed" })
+    expect(await activate(await withId(), signedIn("person-1", "renamed"))).toMatchObject({ outcome: "verified", owner: "person-1" })
   })
 
-  test("a new visitor and the first verified person can open an empty device; missing stable identity refuses activation", async () => {
-    const device = open()
-    try {
-      const check = (answer: Parameters<typeof authorizeDevice>[0]["session"]) => Effect.runPromise(Effect.exit(authorizeDevice({ database: device.database, session: answer, report: () => {} })))
-      expect(Exit.isSuccess(await check(Effect.succeed({ signedIn: false, available: true })))).toBe(true)
-      expect(Exit.isSuccess(await check(session(alice.personId, alice.login)))).toBe(true)
-      expect(await check(Effect.succeed({ signedIn: true, login: "alice", role: "member" }))).toEqual(Exit.fail(new DeviceIdentityRefused({ reason: "missing_person" })))
-    } finally { device.close() }
+  test("another login is refused: the data stays sealed and whole, and its own person can still open it", async () => {
+    const device = await deployedStore()
+    const before = contents(device)
+    expect(await activate(device, signedIn("person-2", "someone-else"))).toEqual({
+      exit: refused("changed"),
+      owner: undefined,
+      outcome: "changed",
+    })
+    expect(recorded(device)).toBeUndefined()
+    expect(contents(device)).toEqual(before)
+    expect(await activate(device, signedIn("person-1", LOGIN))).toMatchObject({ exit: Exit.void, outcome: "verified" })
+    expect(contents(device)).toEqual(before)
   })
 
-  test("the versioned ownership mirror rejects malformed and unknown versions", () => {
-    expect(readOwner(null)).toBeUndefined()
-    expect(readOwner("broken")).toBeUndefined()
-    expect(readOwner(JSON.stringify({ ...alice, v: 2 }))).toBeUndefined()
-    expect(readOwner(JSON.stringify(alice))).toEqual(alice)
+  test("offline or signed out it waits, sealed, for an online sign-in", async () => {
+    const device = await deployedStore()
+    const before = contents(device)
+    expect(await activate(device, offline)).toEqual({ exit: refused("unverified"), owner: undefined, outcome: "unverified" })
+    expect(await activate(device, signedOut)).toEqual({ exit: refused("signed_out"), owner: undefined, outcome: "signed_out" })
+    expect(recorded(device)).toBeUndefined()
+    expect(contents(device)).toEqual(before)
+    expect(await activate(device, signedIn("person-1", LOGIN))).toMatchObject({ outcome: "verified" })
+  })
+
+  test("without a confirmed login nobody can be told it is theirs: it stays sealed for everyone", async () => {
+    const device = await deployedStore(false)
+    const before = contents(device)
+    for (const [session, outcome] of [
+      [signedIn("person-1", LOGIN), "changed"],
+      [signedOut, "signed_out"],
+      [offline, "unverified"],
+    ] as const) {
+      expect(await activate(device, session)).toEqual({ exit: refused(outcome), owner: undefined, outcome })
+    }
+    expect(recorded(device)).toBeUndefined()
+    expect(contents(device)).toEqual(before)
+  })
+})
+
+describe("a device this build owns", () => {
+  test("a new device belongs to the first person to sign in", async () => {
+    const device = store()
+    expect(await activate(device, signedIn("alice", "alice"))).toEqual({ exit: Exit.void, owner: "alice", outcome: "verified" })
+    expect(recorded(device)).toBe("alice")
+  })
+
+  test("the owner's data opens offline as theirs; signed out or another person keeps it sealed until they sign in again", async () => {
+    const device = store()
+    await activate(device, signedIn("alice", "alice"))
+    device.sqlite.exec("CREATE TABLE drafts (text TEXT); INSERT INTO drafts VALUES ('private')")
+    expect(await activate(device, offline)).toEqual({ exit: Exit.void, owner: "alice", outcome: "offline" })
+    expect(await activate(device, signedOut)).toEqual({ exit: refused("signed_out"), owner: undefined, outcome: "signed_out" })
+    expect(await activate(device, signedIn("bob", "bob"))).toEqual({ exit: refused("changed"), owner: undefined, outcome: "changed" })
+    // Bob's login matching an earlier one changes nothing: the stable owner decides.
+    expect(await activate(device, signedIn("bob", "alice"))).toMatchObject({ outcome: "changed" })
+    expect(recorded(device)).toBe("alice")
+    expect(device.sqlite.prepare("SELECT text FROM drafts").all()).toEqual([{ text: "private" }])
+    expect(await activate(device, signedIn("alice", "alice-renamed"))).toEqual({ exit: Exit.void, owner: "alice", outcome: "verified" })
+  })
+
+  test("a visitor's device, signed out or offline, is adopted by the next person to sign in, and then is theirs", async () => {
+    for (const visiting of [signedOut, offline]) {
+      const device = store()
+      expect(await activate(device, visiting)).toEqual({ exit: Exit.void, owner: VISITOR, outcome: "visitor" })
+      expect(await activate(device, signedOut)).toEqual({ exit: Exit.void, owner: VISITOR, outcome: "visitor" })
+      expect(recorded(device)).toBe(VISITOR)
+      expect(await activate(device, signedIn("alice", "alice"))).toMatchObject({ owner: "alice", outcome: "verified" })
+      expect(await activate(device, signedIn("bob", "bob"))).toMatchObject({ outcome: "changed" })
+    }
+  })
+
+  test("after sign-out's wipe the device store is new, owner record included, and the next person to sign in owns it", async () => {
+    // The owner record lives in the device store itself, which sign-out's wipe deletes with the engine's directory
+    // (src/wipe.ts); nothing of it survives elsewhere.
+    const before = store()
+    await activate(before, signedIn("alice", "alice"))
+    expect(recorded(before)).toBe("alice")
+    const wiped = store()
+    expect(await activate(wiped, signedIn("bob", "bob"))).toEqual({ exit: Exit.void, owner: "bob", outcome: "verified" })
+  })
+
+  test("a confirmed session TanStack DB registered but never created reads as none", async () => {
+    const empty = store()
+    empty.sqlite.exec(
+      "CREATE TABLE collection_registry (collection_id TEXT, table_name TEXT); INSERT INTO collection_registry VALUES ('auth-confirmed', 'not_created'), ('preferences', 'prefs')",
+    )
+    expect(await activate(empty, signedIn("alice", "alice"))).toMatchObject({ outcome: "verified" })
+    const used = store()
+    used.sqlite.exec(
+      "CREATE TABLE collection_registry (collection_id TEXT, table_name TEXT); INSERT INTO collection_registry VALUES ('auth-confirmed', 'not_created'), ('chat-drafts', 'drafts')",
+    )
+    expect(await activate(used, signedIn("alice", "alice"))).toMatchObject({ outcome: "changed" })
+  })
+})
+
+describe("observability", () => {
+  const observe = async <A, E>(program: Effect.Effect<A, E>, registry: Metric.MetricRegistry, logs: Array<unknown>) =>
+    Effect.runPromise(
+      Effect.exit(program).pipe(
+        Effect.provideService(Metric.MetricRegistry, registry),
+        Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))])),
+      ),
+    )
+  const count = (registry: Metric.MetricRegistry, attributes: Record<string, string>) =>
+    Effect.runPromise(Metric.value(Metric.withAttributes(checks, attributes)).pipe(Effect.provideService(Metric.MetricRegistry, registry))).then(
+      (state) => state.count,
+    )
+
+  test("every outcome is counted and logged, by how it verified, never with a login or a person", async () => {
+    const registry: Metric.MetricRegistry = new Map()
+    const logs: Array<unknown> = []
+    const legacy = await deployedStore()
+    const fresh = store()
+    const run = (device: Store, session: Effect.Effect<SessionState, unknown>) =>
+      observe(authorizeDevice({ database: device.database, session, report: () => {} }), registry, logs)
+    await run(legacy, signedIn("person-secret-id", LOGIN))
+    await run(legacy, signedIn("person-secret-id", LOGIN))
+    await run(legacy, offline)
+    await run(legacy, signedOut)
+    await run(legacy, signedIn("intruder-secret-id", "intruder-login"))
+    await run(fresh, signedOut)
+    await run(fresh, signedIn("fresh-secret-id", "fresh-login"))
+    expect(await count(registry, { outcome: "verified", via: "legacy" })).toBe(1)
+    expect(await count(registry, { outcome: "verified", via: "owner" })).toBe(1)
+    expect(await count(registry, { outcome: "verified", via: "visitor" })).toBe(1)
+    expect(await count(registry, { outcome: "offline" })).toBe(1)
+    expect(await count(registry, { outcome: "signed_out" })).toBe(1)
+    expect(await count(registry, { outcome: "changed" })).toBe(1)
+    expect(await count(registry, { outcome: "visitor" })).toBe(1)
+    const lines = logs as Array<{ message: unknown; annotations: Record<string, unknown> }>
+    expect(lines.map((line) => line.annotations)).toContainEqual({ outcome: "verified", via: "legacy" })
+    const text = JSON.stringify(logs)
+    for (const secret of [LOGIN, "person-secret-id", "intruder", "fresh-"]) expect(text).not.toContain(secret)
+  })
+
+  test("a session without a stable person, an unreadable owner record or a broken store refuses, counted by stage, never with content", async () => {
+    const registry: Metric.MetricRegistry = new Map()
+    const logs: Array<unknown> = []
+    const sentinel = "a row's private text"
+    const missing = Effect.succeed({ signedIn: true, login: "alice", role: "member" } as SessionState)
+    const unknownVersion = store()
+    unknownVersion.sqlite.exec(
+      "CREATE TABLE smithers_device_identity (singleton INTEGER PRIMARY KEY, v INTEGER NOT NULL, person_id TEXT NOT NULL, login TEXT NOT NULL); INSERT INTO smithers_device_identity VALUES (1, 2, 'alice', 'alice')",
+    )
+    const broken = { execute: () => Effect.die(new Error(sentinel)) }
+    const exits = [
+      await observe(authorizeDevice({ database: store().database, session: missing, report: () => {} }), registry, logs),
+      await observe(authorizeDevice({ database: unknownVersion.database, session: signedIn("alice", "alice"), report: () => {} }), registry, logs),
+      await observe(authorizeDevice({ database: broken, session: signedIn("alice", "alice"), report: () => {} }), registry, logs),
+    ]
+    expect(exits[0]).toEqual(refused("missing_person"))
+    expect(exits.every(Exit.isFailure)).toBe(true)
+    expect(await count(registry, { outcome: "unavailable" })).toBe(3)
+    const annotations = (logs as Array<{ annotations: Record<string, unknown> }>).map((line) => line.annotations)
+    expect(annotations).toEqual([
+      { outcome: "unavailable", stage: "session", reason: "missing_person" },
+      { outcome: "unavailable", stage: "owner", reason: "storage" },
+      { outcome: "unavailable", stage: "owner", reason: "storage" },
+    ])
+    expect(JSON.stringify(logs)).not.toContain(sentinel)
+  })
+
+  test("a store that fails while claiming the owner is counted at that stage", async () => {
+    const registry: Metric.MetricRegistry = new Map()
+    const logs: Array<unknown> = []
+    const device = store()
+    const claimFails = {
+      execute: (sql: string, params?: ReadonlyArray<unknown>) =>
+        sql.startsWith("INSERT") ? Effect.die(new Error("disk full")) : device.database.execute(sql, params),
+    }
+    const exit = await observe(authorizeDevice({ database: claimFails, session: signedIn("alice", "alice"), report: () => {} }), registry, logs)
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect((logs as Array<{ annotations: Record<string, unknown> }>).map((line) => line.annotations)).toEqual([
+      { outcome: "unavailable", stage: "claim", reason: "storage" },
+    ])
+  })
+})
+
+describe("a tab about to follow a leader", () => {
+  const receipt = (owner: string | undefined, outcome: Outcome = "verified") => ({ _tag: IDENTITY_MESSAGE, owner, outcome }) as const
+  const sealedFor = (outcome: Outcome) => ({ _tag: IDENTITY_MESSAGE, owner: undefined, outcome }) as const
+  const alice: SessionState = { signedIn: true, personId: "alice", login: "alice", role: "member" }
+  const bob: SessionState = { signedIn: true, personId: "bob", login: "bob", role: "member" }
+  const out: SessionState = { signedIn: false, available: true }
+
+  test("gets the leader's receipt only while the browser's session now agrees; another person reopens every tab", () => {
+    expect(answer(receipt("alice"), alice)).toEqual(receipt("alice"))
+    expect(answer(receipt("alice", "offline"), "unreachable")).toEqual(receipt("alice", "offline"))
+    expect(answer(receipt(VISITOR, "visitor"), out)).toEqual(receipt(VISITOR, "visitor"))
+    expect(answer(receipt("alice"), bob)).toEqual({ ...sealedFor("verified"), reopen: true })
+    expect(answer(receipt(VISITOR, "visitor"), alice)).toEqual({ ...sealedFor("visitor"), reopen: true })
+    expect(answer(receipt("alice"), out)).toEqual(sealedFor("verified"))
+    expect(answer(receipt("alice"), "malformed")).toEqual(sealedFor("verified"))
+    expect(answer(sealedFor("changed"), alice)).toEqual(sealedFor("changed"))
+  })
+
+  test("reads only well-formed receipts, and sessions that name a stable person", async () => {
+    expect(readReceipt(receipt("alice"))).toEqual(receipt("alice"))
+    expect(readReceipt({ ...sealedFor("verified"), reopen: true })).toEqual({ ...sealedFor("verified"), reopen: true })
+    expect(readReceipt({ ...sealedFor("changed"), reopen: "yes" })).toEqual(sealedFor("changed"))
+    for (const bad of [undefined, null, { request: true }, { _tag: IDENTITY_MESSAGE }, { _tag: IDENTITY_MESSAGE, outcome: "verified", owner: 1 }]) {
+      expect(readReceipt(bad)).toBeUndefined()
+    }
+    expect(readSession(alice)).toEqual(alice)
+    expect(readSession(out)).toEqual(out)
     expect(readSession({ signedIn: true, login: "alice", role: "member" })).toBeUndefined()
     expect(readSession({ signedIn: "yes" })).toBeUndefined()
-    expect(readSession({ signedIn: false, available: true })).toEqual({ signedIn: false, available: true })
-    expect(readSession({ signedIn: true, personId: alice.personId, login: "alice", role: "member" })).toMatchObject({ personId: alice.personId })
+    const json = (body: string, status = 200) => new Response(body, { status })
+    expect(await sessionNow(json(JSON.stringify(alice)))).toEqual(alice)
+    expect(await sessionNow(json(JSON.stringify({ signedIn: true, login: "alice", role: "member" })))).toBe("malformed")
+    expect(await sessionNow(json("not json"))).toBe("malformed")
+    expect(await sessionNow(json("", 503))).toBe("unreachable")
   })
 })
 
+describe("requests", () => {
+  const serve = async (answer: () => unknown) => {
+    const seen: Array<{ url: string; headers: IncomingHttpHeaders }> = []
+    const server = createServer((request, response) => {
+      seen.push({ url: request.url!, headers: request.headers })
+      const body = answer()
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(typeof body === "string" ? body : JSON.stringify(body))
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    return {
+      origin,
+      seen,
+      person: () => seen.map(({ headers }) => headers["x-smithers-device-person"]),
+      close: async () => {
+        server.closeAllConnections()
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+      },
+    }
+  }
 
-test("the fetch boundary waits for identity and carries it only to this origin's API", async () => {
-  const seen: Array<string | undefined> = []
-  const server = createServer((request, response) => { seen.push(request.headers["x-smithers-device-person"] as string | undefined); response.end("ok") })
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
-  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-  let release!: () => void
-  const ready = new Promise<void>((resolve) => { release = resolve })
-  const bound = boundFetch(fetch, () => alice, origin, ready)
-  try {
-    const sending = bound(`${origin}/api/questions`, { headers: { "x-smithers-device-person": "different-person" } })
-    expect(seen).toEqual([])
-    release()
-    await sending
-    await bound(`${origin}/public`)
-    await boundFetch(fetch, () => alice, "http://elsewhere.test")(`${origin}/api/questions`)
-    await boundFetch(fetch, () => undefined, origin)(`${origin}/api/questions`)
-    expect(seen).toEqual([alice.personId, undefined, undefined, "@visitor"])
-  } finally { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())) }
+  test("wait for the activation, then carry the owner to this origin's API only; a page with no data open says so", async () => {
+    const api = await serve(() => ({}))
+    let release!: () => void
+    const ready = new Promise<void>((resolve) => (release = resolve))
+    let owner = "alice"
+    const sent: Array<string> = []
+    const next: typeof fetch = (input, init) => {
+      sent.push(new Request(input, init).url)
+      return fetch(input, init)
+    }
+    const bound = boundFetch(next, { origin: api.origin, principal: () => owner, ready })
+    try {
+      const sending = bound(`${api.origin}/api/questions`, { headers: { "x-smithers-device-person": "forged" } })
+      // Nothing leaves while the activation is pending, however many turns pass.
+      for (let turn = 0; turn < 10; turn++) await Promise.resolve()
+      expect(sent).toEqual([])
+      release()
+      await sending
+      await bound(`${api.origin}/assets/app.js`, { headers: { "x-smithers-device-person": "kept" } })
+      await boundFetch(fetch, { origin: "http://elsewhere.test", principal: () => "alice" })(`${api.origin}/api/questions`)
+      owner = NO_DEVICE_DATA
+      await bound(`${api.origin}/api/questions`, { headers: { "x-smithers-device-person": "forged" } })
+      expect(api.person()).toEqual(["alice", "kept", undefined, NO_DEVICE_DATA])
+    } finally {
+      await api.close()
+    }
+  })
+
+  test("a session answer naming someone else reauthorizes once, and every request after it fails until the page loads again", async () => {
+    let session: unknown = { signedIn: true, personId: "alice", login: "alice", role: "member" }
+    const api = await serve(() => session)
+    let reauthorized = 0
+    const bound = boundFetch(fetch, { origin: api.origin, principal: () => "alice", reauthorize: async () => void reauthorized++ })
+    try {
+      expect((await bound(`${api.origin}/api/auth/session`)).ok).toBe(true)
+      session = { signedIn: false, available: true }
+      expect((await bound(`${api.origin}/api/auth/session`)).ok).toBe(true)
+      session = { signedIn: true, login: "bob", role: "member" }
+      expect((await bound(`${api.origin}/api/auth/session`)).ok).toBe(true)
+      session = "not json"
+      expect(await (await bound(`${api.origin}/api/auth/session`)).text()).toBe("not json")
+      expect(reauthorized).toBe(0)
+      session = { signedIn: true, personId: "bob", login: "bob", role: "member" }
+      const results = await Promise.allSettled([bound(`${api.origin}/api/auth/session`), bound(`${api.origin}/api/auth/session`)])
+      expect(results.map((result) => result.status)).toEqual(["rejected", "rejected"])
+      const sent = api.seen.length
+      await expect(bound(`${api.origin}/api/questions`, { method: "POST", body: "{}" })).rejects.toEqual(
+        new DeviceIdentityRefused({ reason: "reauthorizing" }),
+      )
+      expect(api.seen).toHaveLength(sent)
+      expect(reauthorized).toBe(1)
+    } finally {
+      await api.close()
+    }
+  })
+
+  test("a refusal under another person's session reauthorizes, so the write stays queued; any other refusal stands", async () => {
+    let session: { status: number; body: unknown } = { status: 200, body: { signedIn: true, personId: "alice", login: "alice", role: "member" } }
+    const seen: Array<string> = []
+    const server = createServer((request, response) => {
+      seen.push(request.url!)
+      const answer = request.url === "/api/auth/session" ? session : request.url === "/api/questions" ? { status: 401, body: {} } : { status: 200, body: {} }
+      response.writeHead(answer.status, { "content-type": "application/json" })
+      response.end(JSON.stringify(answer.body))
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    let reauthorized = 0
+    const bound = boundFetch(fetch, { origin, principal: () => "alice", reauthorize: async () => void reauthorized++ })
+    const ask = () => bound(`${origin}/api/questions`, { method: "POST", body: "{}" })
+    try {
+      // Taken: no session read.
+      expect((await bound(`${origin}/api/views`, { method: "POST", body: "{}" })).status).toBe(200)
+      expect(seen).toEqual(["/api/views"])
+      // Refused while Alice herself is signed in, signed out, or ChatApi can't say: the refusal stands.
+      expect((await ask()).status).toBe(401)
+      session = { status: 200, body: { signedIn: false, available: true } }
+      expect((await ask()).status).toBe(401)
+      session = { status: 503, body: {} }
+      expect((await ask()).status).toBe(401)
+      expect(reauthorized).toBe(0)
+      // Refused because Bob is signed in now: the page reopens, and the write fails as unsent, to be sent again.
+      session = { status: 200, body: { signedIn: true, personId: "bob", login: "bob", role: "member" } }
+      await expect(ask()).rejects.toEqual(new DeviceIdentityRefused({ reason: "reauthorizing" }))
+      await expect(ask()).rejects.toEqual(new DeviceIdentityRefused({ reason: "reauthorizing" }))
+      expect(reauthorized).toBe(1)
+      expect(seen.filter((url) => url === "/api/questions")).toHaveLength(4)
+    } finally {
+      server.closeAllConnections()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+    // ChatApi gone altogether: the refusal it can't explain stands.
+    const unreachable = boundFetch(
+      async (input, init) => new URL(new Request(input, init).url).pathname === "/api/questions" ? new Response("{}", { status: 401 }) : Promise.reject(new TypeError("offline")),
+      { origin, principal: () => "alice", reauthorize: async () => void reauthorized++ },
+    )
+    expect((await unreachable(`${origin}/api/questions`, { method: "POST", body: "{}" })).status).toBe(401)
+    expect(reauthorized).toBe(1)
+  })
+
+  test("a page with no data open reopens only when sealed until someone signs in; the worker never does", async () => {
+    let session: unknown = { signedIn: false, available: true }
+    const api = await serve(() => session)
+    let reauthorized = 0
+    const reauthorize = async () => void reauthorized++
+    const read = (bound: typeof fetch) => bound(`${api.origin}/api/auth/session`)
+    try {
+      // Sealed for another person, or a visitor's tab on memory: a sign-in changes nothing here.
+      session = { signedIn: true, personId: "bob", login: "bob", role: "member" }
+      await read(boundFetch(fetch, { origin: api.origin, principal: () => NO_DEVICE_DATA, reauthorize }))
+      await read(boundFetch(fetch, { origin: api.origin, principal: () => "alice" }))
+      expect(reauthorized).toBe(0)
+      // Sealed until someone signs in: still signed out, nothing; signed in, the activation is made again.
+      let sealed = true
+      const waiting = boundFetch(fetch, { origin: api.origin, principal: () => NO_DEVICE_DATA, reauthorize, reopensOnSignIn: () => sealed })
+      session = { signedIn: false, available: true }
+      expect((await read(waiting)).ok).toBe(true)
+      expect(reauthorized).toBe(0)
+      session = { signedIn: true, personId: "alice", login: "alice", role: "member" }
+      await expect(read(waiting)).rejects.toEqual(new DeviceIdentityRefused({ reason: "reauthorizing" }))
+      expect(reauthorized).toBe(1)
+      sealed = false
+    } finally {
+      await api.close()
+    }
+  })
+
+  test("staleness is one rule: another person for opened data, any person for a page sealed until sign-in", () => {
+    const alice: SessionState = { signedIn: true, personId: "alice", login: "alice", role: "member" }
+    const out: SessionState = { signedIn: false, available: true }
+    expect(stale("alice", false, alice)).toBe(false)
+    expect(stale("bob", false, alice)).toBe(true)
+    expect(stale(VISITOR, false, alice)).toBe(true)
+    expect(stale("alice", false, out)).toBe(false)
+    expect(stale("alice", false, undefined)).toBe(false)
+    expect(stale(NO_DEVICE_DATA, false, alice)).toBe(false)
+    expect(stale(NO_DEVICE_DATA, true, alice)).toBe(true)
+    expect(stale(NO_DEVICE_DATA, true, out)).toBe(false)
+  })
 })
 
-
-test("an earlier build's expired ownerless private store is blocked while signed out, rather than opened as a visitor", async () => {
-  const device = open()
-  legacy(device.sqlite, { id: "session", login: "alice", role: "member" })
-  device.sqlite.exec("DELETE FROM auth_rows; INSERT INTO collection_registry VALUES ('chat-drafts', 'private_drafts'); CREATE TABLE private_drafts (text TEXT); INSERT INTO private_drafts VALUES ('private')")
-  const reported: unknown[] = []
-  try {
-    const exit = await Effect.runPromise(Effect.exit(authorizeDevice({ database: device.database, session: Effect.succeed({ signedIn: false, available: true }), report: (owner, outcome) => reported.push({ owner, outcome }) })))
-    expect(exit).toEqual(Exit.fail(new DeviceIdentityRefused({ reason: "signed_out" })))
-    expect(reported).toEqual([{ owner: undefined, outcome: "signed_out" }])
-    expect(device.sqlite.prepare("SELECT COUNT(*) AS count FROM private_drafts").get()).toEqual({ count: 1 })
-  } finally { device.close() }
-})
-
-test("an old leader with no identity receipt selects memory at the deadline; a late receipt never enables retained stores", async () => {
+test("the activation settles once: memory or retained, and a later receipt can't change it", async () => {
   let stopped = 0
-  const gate = activationGate(5, () => { stopped++ })
-  await gate.ready
-  expect(gate.state()).toBe("memory")
-  expect(stopped).toBe(1)
-  expect(gate.allow()).toBe(false)
-  expect(gate.state()).toBe("memory")
-  expect(gate.refuse()).toBe(false)
-  let refused = 0
-  const denied = activationGate(1_000, () => { refused++ })
+  const denied = activationGate(() => void stopped++)
+  expect(denied.state()).toBe("pending")
   expect(denied.refuse()).toBe(true)
   await denied.ready
-  expect(refused).toBe(1)
   expect(denied.allow()).toBe(false)
   expect(denied.refuse()).toBe(false)
-  expect(refused).toBe(1)
-  const accepted = activationGate(1_000, () => { throw new Error("settled activation timed out") })
-  expect(accepted.allow()).toBe(true)
-  await accepted.ready
-  expect(accepted.refuse()).toBe(false)
-  expect(accepted.state()).toBe("retained")
-})
+  expect(denied.state()).toBe("memory")
+  expect(stopped).toBe(1)
 
-
-test("an offline legacy identity grants no new session authority, and an offline empty device stays anonymous", async () => {
-  for (const old of [false, true]) {
-    const device = open()
-    if (old) legacy(device.sqlite, { id: "session", login: "alice", role: "member" })
-    const reports: unknown[] = []
-    try {
-      await Effect.runPromise(authorizeDevice({ database: device.database, session: Effect.fail(new AuthUnreachable({})), report: (owner, outcome) => reports.push({ owner, outcome }) }))
-      expect(reports).toEqual([{ owner: old ? { v: 1, personId: "@unverified", login: "alice" } : undefined, outcome: "offline" }])
-      expect(device.sqlite.prepare("SELECT COUNT(*) AS count FROM smithers_device_identity").get()).toEqual({ count: 0 })
-      if (old) {
-        const signedOut = await Effect.runPromise(Effect.exit(authorizeDevice({ database: device.database, session: Effect.succeed({ signedIn: false, available: true }), report: () => {} })))
-        expect(signedOut).toEqual(Exit.fail(new DeviceIdentityRefused({ reason: "signed_out" })))
-        expect(device.sqlite.prepare("SELECT COUNT(*) AS count FROM auth_rows").get()).toEqual({ count: 1 })
-      }
-    } finally { device.close() }
-  }
-})
-
-test("a conflicting ownership mirror quarantines a verified store and cannot replace the durable owner", async () => {
-  const device = open()
-  try {
-    await Effect.runPromise(authorizeDevice({ database: device.database, session: session(alice.personId, alice.login), report: () => {} }))
-    const exit = await Effect.runPromise(Effect.exit(authorizeDevice({ database: device.database, expectedOwner: { ...alice, personId: "person-bob" }, session: session(alice.personId, alice.login), report: () => {} })))
-    expect(exit).toEqual(Exit.fail(new DeviceIdentityRefused({ reason: "changed" })))
-    expect(device.sqlite.prepare("SELECT person_id FROM smithers_device_identity").get()).toEqual({ person_id: alice.personId })
-  } finally { device.close() }
-})
-
-test("unreadable legacy ownership or absent auth registry cannot assign retained content to a cookie", async () => {
-  for (const malformed of [false, true]) {
-    const device = open()
-    legacy(device.sqlite, { id: "session", login: "alice", role: "member" })
-    if (malformed) device.sqlite.exec("UPDATE auth_rows SET value = 'not-json'")
-    else device.sqlite.exec("DELETE FROM collection_registry WHERE collection_id = 'auth-confirmed'")
-    device.sqlite.exec("INSERT INTO collection_registry VALUES ('chat-drafts', 'private_drafts')")
-    try {
-      const exit = await Effect.runPromise(Effect.exit(authorizeDevice({ database: device.database, session: session(alice.personId, alice.login), report: () => {} })))
-      expect(exit).toEqual(Exit.fail(new DeviceIdentityRefused({ reason: "changed" })))
-    } finally { device.close() }
-  }
-})
-
-test("a broken ownership store or missing stable server identity fails closed with content-free stage diagnostics", async () => {
-  const registry: Metric.MetricRegistry = new Map()
-  const logs: unknown[] = []
-  const observe = <A, E>(program: Effect.Effect<A, E>) => Effect.runPromise(Effect.exit(program).pipe(
-    Effect.provideService(Metric.MetricRegistry, registry),
-    Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => { logs.push(Logger.formatStructured.log(entry)) })])),
-  ))
-  const sentinel = "sensitive-error-content-must-never-be-logged"
-  expect(Exit.isFailure(await observe(authorizeDevice({ database: { execute: () => Effect.die(new Error(sentinel)) }, session: session(alice.personId, alice.login), report: () => {} })))).toBe(true)
-  const device = open()
-  try {
-    expect(Exit.isFailure(await observe(authorizeDevice({ database: device.database, session: Effect.succeed({ signedIn: true, login: "alice", role: "member" }), report: () => {} })))).toBe(true)
-    const count = await Effect.runPromise(Metric.value(Metric.withAttributes(checks, { outcome: "unavailable" })).pipe(Effect.provideService(Metric.MetricRegistry, registry)))
-    expect(count.count).toBe(2)
-    const recorded = logs
-    expect(recorded).toEqual(expect.arrayContaining([expect.objectContaining({ annotations: expect.objectContaining({ stage: "owner", reason: "storage" }) }), expect.objectContaining({ annotations: expect.objectContaining({ stage: "session", reason: "missing_person" }) })]))
-    expect(JSON.stringify(recorded)).not.toContain(sentinel)
-  } finally { device.close() }
-})
-
-test("a recovered session cannot rebind an offline anonymous or legacy runtime in place", async () => {
-  let body: unknown = { signedIn: false, available: true }
-  let status = 200
-  const seen: string[] = []
-  const server = createServer((request, response) => {
-    seen.push(request.url!)
-    response.writeHead(status, { "content-type": "application/json" })
-    response.end(body === "malformed" ? "bad-json" : JSON.stringify(body))
-  })
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
-  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-  try {
-    for (const owner of [undefined, { ...alice, personId: "@unverified" }, alice]) {
-      let reactivations = 0
-      const bound = boundFetch(fetch, () => owner, origin, Promise.resolve(), async () => { reactivations++ })
-      body = "malformed"
-      expect((await bound(`${origin}/api/auth/session`)).status).toBe(200)
-      body = { signedIn: false, available: true }
-      await bound(`${origin}/api/auth/session`)
-      status = 503
-      await bound(`${origin}/api/auth/session`)
-      status = 200
-      body = { signedIn: true, personId: alice.personId, login: alice.login, role: "member" }
-      if (owner === alice) {
-        expect((await bound(`${origin}/api/auth/session`)).status).toBe(200)
-        expect(reactivations).toBe(0)
-      } else {
-        const recovered = await Promise.allSettled([
-          bound(`${origin}/api/auth/session`),
-          bound(`${origin}/api/auth/session`),
-        ])
-        expect(recovered).toEqual([
-          { status: "rejected", reason: expect.objectContaining({ reason: "reauthorizing" }) },
-          { status: "rejected", reason: expect.objectContaining({ reason: "reauthorizing" }) },
-        ])
-        const requests = seen.length
-        await expect(bound(`${origin}/api/questions`, { method: "POST" })).rejects.toMatchObject({ reason: "reauthorizing" })
-        expect(seen).toHaveLength(requests)
-        expect(reactivations).toBe(1)
-      }
-    }
-  } finally { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())) }
-})
-
-test("stable bootstrap ownership does not depend on an interrupted collection registration", async () => {
-  const device = open()
-  try {
-    await Effect.runPromise(authorizeDevice({ database: device.database, session: session(alice.personId, alice.login), report: () => {} }))
-    // TanStack registers a table before creating it. A navigation between those operations leaves this valid state.
-    device.sqlite.exec("CREATE TABLE collection_registry (collection_id TEXT, table_name TEXT); INSERT INTO collection_registry VALUES ('auth-confirmed', 'not_created_yet')")
-    const reports: unknown[] = []
-    await Effect.runPromise(authorizeDevice({ database: device.database, session: session(alice.personId, alice.login), report: (owner, outcome) => reports.push({ owner, outcome }) }))
-    expect(reports).toEqual([{ owner: alice, outcome: "verified" }])
-  } finally { device.close() }
-})
-
-test("activation timeout starts after wipe locks and session preflight finish", async () => {
-  let prepared!: () => void
-  const preflight = new Promise<void>((resolve) => { prepared = resolve })
-  vi.useFakeTimers()
-  try {
-    const gate = activationGate(10, () => {}, preflight)
-    await vi.advanceTimersByTimeAsync(40)
-    const before = gate.state()
-    prepared()
-    expect(before).toBe("pending")
-    expect(gate.allow()).toBe(true)
-    await gate.ready
-    expect(gate.state()).toBe("retained")
-  } finally {
-    vi.useRealTimers()
-  }
-})
-
-test("a prepared activation still times out when no leader responds", async () => {
-  const reasons: string[] = []
-  const gate = activationGate(5, (reason) => { reasons.push(reason) }, Promise.resolve())
-  await gate.ready
-  expect(gate.state()).toBe("memory")
-  expect(reasons).toEqual(["timeout"])
-})
-
-test("a refused activation cannot arm a deadline when preparation finishes later", async () => {
-  let prepared!: () => void
-  const reasons: string[] = []
-  vi.useFakeTimers()
-  try {
-    const gate = activationGate(5, (reason) => { reasons.push(reason) }, new Promise<void>((resolve) => { prepared = resolve }))
-    expect(gate.refuse()).toBe(true)
-    prepared()
-    await vi.advanceTimersByTimeAsync(20)
-    expect(reasons).toEqual(["refused"])
-    expect(gate.state()).toBe("memory")
-  } finally {
-    vi.useRealTimers()
-  }
-})
-
-test("failed preparation refuses retained activation", async () => {
-  const reasons: string[] = []
-  const gate = activationGate(5, (reason) => { reasons.push(reason) }, Promise.reject(new Error("preparation failed")))
-  await gate.ready
-  expect(gate.state()).toBe("memory")
-  expect(reasons).toEqual(["refused"])
+  const allowed = activationGate(() => void stopped++)
+  expect(allowed.allow()).toBe(true)
+  await allowed.ready
+  expect(allowed.refuse()).toBe(false)
+  expect(allowed.state()).toBe("retained")
+  expect(stopped).toBe(1)
 })

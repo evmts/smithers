@@ -4,10 +4,10 @@
 // authority intersection run here directly, with property tests; the mint route, the person-only routes and a
 // credential's whole life run through ChatApi's real handler on this file's schema of the compose Postgres.
 import { Flow } from "@smthrs/flow"
-import { Arbitrary, Clock, ConfigProvider, Effect, Layer, Option, Redacted, Result, Schema, Stream } from "effect"
+import { Arbitrary, Clock, ConfigProvider, Effect, Layer, Logger, Metric, Option, Redacted, Result, Schema, Stream } from "effect"
 import { FetchHttpClient, HttpServerRequest } from "effect/http"
 import { beforeAll, describe, expect, test } from "vitest"
-import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract.ts"
+import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../src/features/auth/contract.ts"
 import { CREDENTIAL_TTL_MS, credentialRoute } from "../src/flows/contract.ts"
 import {
   type Act,
@@ -275,6 +275,61 @@ describe("signing and reading a credential", () => {
     expect(await resolve({})).toEqual(Option.some(member))
     expect(await resolve({ authorization: `Bearer ${signed}` })).toMatchObject({ value: { act: { kind: "agent" } } })
     expect(await resolve({ authorization: "Bearer forged", cookie: "smithers_session=x" })).toEqual(Option.none())
+  })
+
+  test("a request from another person's device data reads as nobody, counted and logged without either person", async () => {
+    const registry: Metric.MetricRegistry = new Map()
+    const logs: Array<unknown> = []
+    const sessions = RunCredentials.sessionsWith(Effect.succeedSome(member)).pipe(
+      Layer.provide(Layer.succeed(RunCredentials.RunCredentials, credentials)),
+    )
+    const resolve = (headers: Record<string, string>, method = "GET") =>
+      at(
+        NOW,
+        Effect.flatMap(Effect.service(Sessions), (service) => service.resolve).pipe(
+          Effect.provideService(
+            HttpServerRequest.HttpServerRequest,
+            HttpServerRequest.fromWeb(new Request("http://chat.test/", { method, headers })),
+          ),
+          Effect.provide(sessions),
+          Effect.provideService(Metric.MetricRegistry, registry),
+          Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))])),
+        ),
+      )
+    const device = (person: string) => ({ [DEVICE_PERSON_HEADER]: person })
+    // The device's own person, or no device data at all: the cookie's person, and the credential's run.
+    expect(await resolve(device("person-member"))).toEqual(Option.some(member))
+    expect(await resolve({ ...device("person-member"), authorization: `Bearer ${signed}` })).toMatchObject({ value: { act: { kind: "agent" } } })
+    // Another person's data, or a visitor's, under this cookie or this credential: nobody.
+    expect(await resolve(device("person-other"))).toEqual(Option.none())
+    expect(await resolve(device("@visitor"))).toEqual(Option.none())
+    expect(await resolve({ ...device("person-other"), authorization: `Bearer ${signed}` })).toEqual(Option.none())
+    // A page that opened none of the device's data writes as its cookie's person; one that names no one, as an
+    // earlier build's tab, is refused.
+    expect(await resolve({ ...device(NO_DEVICE_DATA), cookie: "smithers_session=x" }, "POST")).toEqual(Option.some(member))
+    expect(await resolve({ cookie: "smithers_session=x" }, "POST")).toEqual(Option.none())
+    const unbound = await Effect.runPromise(
+      Metric.value(Metric.withAttributes(RunCredentials.devicePrincipalRefusals, { outcome: "unbound" })).pipe(
+        Effect.provideService(Metric.MetricRegistry, registry),
+      ),
+    )
+    expect(unbound.count).toBe(1)
+    const refused = await Effect.runPromise(
+      Metric.value(Metric.withAttributes(RunCredentials.devicePrincipalRefusals, { outcome: "mismatch" })).pipe(
+        Effect.provideService(Metric.MetricRegistry, registry),
+      ),
+    )
+    expect(refused.count).toBe(3)
+    const lines = (logs as Array<{ message: unknown; annotations: Record<string, unknown> }>).filter((line) =>
+      JSON.stringify(line.message).includes("auth.device_principal")
+    )
+    expect(lines.map((line) => line.annotations)).toEqual([
+      { outcome: "mismatch" },
+      { outcome: "mismatch" },
+      { outcome: "mismatch" },
+      { outcome: "unbound" },
+    ])
+    expect(JSON.stringify(logs)).not.toMatch(/person-member|person-other/)
   })
 })
 

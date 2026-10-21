@@ -10,7 +10,7 @@ import {
   Sessions,
   type SessionsUnavailable,
 } from "./Actor.ts"
-import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract.ts"
+import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../src/features/auth/contract.ts"
 import { CREDENTIAL_TTL_MS } from "../src/flows/contract.ts"
 import type { SessionKeys } from "./SessionKeys.ts"
 
@@ -138,7 +138,12 @@ export class RunCredentials extends Context.Service<
   }
 >()("@smthrs/mvp/RunCredentials") {}
 
-const credentialsCounter = Metric.counter("smithers_device_principal_refusals", { incremental: true })
+/**
+ * Requests read as nobody because of whose device data they come from (`x-smithers-device-person`), by `outcome`:
+ * `mismatch`, another person's; `unbound`, a cookie-authenticated write that names no one, as an earlier build's tab
+ * sends.
+ */
+export const devicePrincipalRefusals = Metric.counter("smithers_device_principal_refusals", { incremental: true })
 
 const decodeClaims = Schema.decodeUnknownOption(Schema.fromJsonString(Claims))
 
@@ -203,8 +208,12 @@ export const bearerOf = (request: HttpServerRequest.HttpServerRequest): Option.O
 
 /**
  * Who a request is: the run its credential names, when it carries one, and never its cookie's person then, even when the
- * credential doesn't read; else `session`, the person behind its cookie. Annotates the span with who acts, as which
- * `act`, never with content.
+ * credential doesn't read; else `session`, the person behind its cookie. A request that says whose device data it comes
+ * from (`x-smithers-device-person`, src/device/identity.ts) and names anyone else reads as nobody, so one person's
+ * queued writes and open pages never act as the next person signed in on the browser; so does a cookie-authenticated
+ * write that names no one. A page that opened none of the device's data says so (`@none`) and acts as its cookie's
+ * person. Annotates the span with who acts, as which `act`, never with content; a refusal is logged and counted
+ * without either person.
  */
 export const resolveWith = <R>(
   credentials: RunCredentials["Service"],
@@ -214,11 +223,13 @@ export const resolveWith = <R>(
     const request = yield* HttpServerRequest.HttpServerRequest
     const bearer = bearerOf(request)
     const actor = Option.isSome(bearer) ? yield* credentials.verify(bearer.value) : yield* session
-    const expected = request.headers[DEVICE_PERSON_HEADER]
+    const header = request.headers[DEVICE_PERSON_HEADER]
+    // A page with none of the device's data carries no one's data: it binds nothing.
+    const expected = header === NO_DEVICE_DATA ? undefined : header
     const cookieMutation = Option.isNone(bearer) && request.headers.cookie !== undefined && !["GET", "HEAD", "OPTIONS"].includes(request.method)
-    if (Option.isSome(actor) && ((cookieMutation && expected === undefined) || (expected !== undefined && actor.value.subject.id !== expected))) {
+    if (Option.isSome(actor) && ((cookieMutation && header === undefined) || (expected !== undefined && actor.value.subject.id !== expected))) {
       const outcome = expected === undefined ? "unbound" : "mismatch"
-      yield* Metric.update(Metric.withAttributes(credentialsCounter, { outcome }), 1)
+      yield* Metric.update(Metric.withAttributes(devicePrincipalRefusals, { outcome }), 1)
       yield* Effect.logWarning("auth.device_principal").pipe(Effect.annotateLogs({ outcome }))
       return Option.none()
     }

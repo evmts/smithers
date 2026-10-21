@@ -8,7 +8,7 @@ import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
-import { DEVICE_PERSON_HEADER, type SessionState } from "../src/features/auth/contract.ts"
+import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA, type SessionState } from "../src/features/auth/contract.ts"
 import * as Flows from "./Flows.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
 import * as SessionKeys from "./SessionKeys.ts"
@@ -855,6 +855,18 @@ test("an old account's bound sign-out cannot revoke a new account or clear its c
   const actual = await h.session(bob.cookies) as SessionState
   if (!actual.signedIn) throw new Error("expected Bob")
   expect((await h.fetch("/api/auth/sign-out", { method: "POST", headers: { ...headers, [DEVICE_PERSON_HEADER]: actual.personId! } })).status).toBe(204)
+})
+
+test("a page that opened none of the device's data signs its cookie's person out; one that names no one can't", async () => {
+  const h = await signInHarness(runtime)
+  const { cookies } = await h.signInAs()
+  const headers = { origin: "http://smithers.test", cookie: cookie(cookies) }
+  const unbound = await h.fetch("/api/auth/sign-out", { method: "POST", headers })
+  expect(unbound.status).toBe(403)
+  expect(h.revocations).toEqual([])
+  const sealed = await h.fetch("/api/auth/sign-out", { method: "POST", headers: { ...headers, [DEVICE_PERSON_HEADER]: NO_DEVICE_DATA } })
+  expect(sealed.status).toBe(204)
+  expect((await sessionRows()).every((row) => row.revokedAt !== null)).toBe(true)
 })
 
 test("local development's old bound sign-out cannot change the next person's session", async () => {

@@ -5,6 +5,7 @@ import type { SqlClient } from "effect/sql"
 import {
   CALLBACK_ROUTE,
   DEVICE_PERSON_HEADER,
+  NO_DEVICE_DATA,
   SESSION_ROUTE,
   type SessionState,
   SIGN_IN_FAILED_PARAM,
@@ -457,8 +458,10 @@ export const make = <E, R>(
         yield* record("sign_out", { outcome: "refused", reason: "cross_site" })
         return HttpServerResponse.empty({ status: 403, headers: noStore })
       }
+      // Signing out ends the cookie's session and wipes the device: only a page bound to that person, or one that
+      // opened none of the device's data (`@none`), may do it (src/device/identity.ts).
       const expected = request.headers[DEVICE_PERSON_HEADER]
-      if (expected !== undefined || request.headers.cookie !== undefined) {
+      if (expected !== NO_DEVICE_DATA && (expected !== undefined || request.headers.cookie !== undefined)) {
         const owner = Option.isNone(setup)
           ? Option.map(yield* current, (signed) => signed.actor.subject.id)
           : yield* Effect.gen(function* () {

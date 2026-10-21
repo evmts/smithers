@@ -21,7 +21,7 @@ import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
 import * as BrowserSqlite from "../BrowserSqlite.ts"
-import { filename } from "../SharedSqlite.ts"
+import { filename, type Service as SharedDatabase } from "../SharedSqlite.ts"
 import type * as TabChannel from "../TabChannel.ts"
 import type * as WebLock from "../WebLock.ts"
 import * as HttpClientLayer from "./HttpClient.ts"
@@ -52,7 +52,8 @@ export interface HostOptions extends Options {
   readonly sqlite: BrowserSqlite.Build
   /** What the leader runs on the app's database before serving it; its flow is registered here. */
   readonly prepare?: Prepare.Prepare | undefined
-  readonly authorize?: ((database: import("../SharedSqlite.ts").Service) => Effect.Effect<void, unknown>) | undefined
+  /** Checked on every activation, before the engine exists; see `BrowserRuntime.HostOptions.authorize`. */
+  readonly authorize?: ((database: SharedDatabase) => Effect.Effect<void, unknown>) | undefined
 }
 
 /**
@@ -102,6 +103,9 @@ export const layer = <Registered, RegistrationError, RegistrationRequirements>(
     Layer.provide(RunMetrics.layerInfoLines)
   )
 
+/** The owner the activation check's statements run as on the leader's connection. */
+const AUTHORIZE_OWNER = "@authorize"
+
 /**
  * {@link layer} over SQLite in OPFS, with the app's shared database beside
  * it; see `BrowserRuntime.layerHost`.
@@ -114,12 +118,12 @@ export const layerHost = <Registered, RegistrationError, RegistrationRequirement
   registerFlows: Layer.Layer<Registered, RegistrationError, RegistrationRequirements>
 ) =>
   Layer.unwrap(Effect.gen(function*() {
+    // The activation check runs before the engine is built, so a refusal leaves no run resumed and no tab served.
     if (options.authorize !== undefined) {
       const connection = yield* SqlConnection.SqlConnection
-      yield* options.authorize({
-        execute: (sql, params = []) =>
-          connection.run("@authorize", sql, params, false).pipe(Effect.map((result) => result.rows), Effect.orDie)
-      }).pipe(Effect.ensuring(connection.abandon("@authorize")))
+      yield* options.authorize(Prepare.database(connection, AUTHORIZE_OWNER)).pipe(
+        Effect.ensuring(connection.abandon(AUTHORIZE_OWNER))
+      )
     }
     return layer(
       options,

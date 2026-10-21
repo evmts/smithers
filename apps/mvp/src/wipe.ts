@@ -1,4 +1,3 @@
-import { OWNER_KEY } from "./device/identity"
 import type { StorageAdapter } from "@tanstack/offline-transactions"
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import type { Host } from "./boot"
@@ -56,6 +55,11 @@ export interface PageWipe {
   readonly started: (stop: () => Promise<void>) => void
   /** `Host.wipe`: marks the device and tells every page, this one included, to leave. */
   readonly wipe: () => Promise<void>
+  /**
+   * Tells every page, this one included, to leave and load again without marking a wipe, so the next boot checks
+   * the device's owner again (src/device/identity.ts). Nothing is deleted.
+   */
+  readonly reopen: () => void
   /** Stops hearing wipes and lets go of the data, as the page ending does. */
   readonly close: () => void
 }
@@ -111,7 +115,6 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
     })
     if (engines !== undefined) await removeEntry(engines, targets.engine)
     await deleteDatabase(host.indexedDB, targets.outbox)
-    host.marks.removeItem(OWNER_KEY)
     host.marks.removeItem(WIPE)
   }
 
@@ -134,6 +137,13 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
     })
   }
 
+  // Every page hears it on its own channel, this one's included, and leaves.
+  const tell = (message: "wipe" | "reopen") => {
+    const telling = host.channel(WIPE)
+    telling.postMessage(message)
+    telling.close()
+  }
+
   const hold = () =>
     new Promise<void>((granted) => {
       void host.locks.request(DATA_LOCK, { mode: "shared" }, () => {
@@ -153,10 +163,9 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
     },
     wipe: async () => {
       host.marks.setItem(WIPE, "1")
-      const telling = host.channel(WIPE)
-      telling.postMessage("wipe")
-      telling.close()
+      tell("wipe")
     },
+    reopen: () => tell("reopen"),
     close: () => {
       hearing.close()
       release()
@@ -183,25 +192,31 @@ export const memoryStorage = (): StorageAdapter => {
 
 const nothing = () => {}
 
-/** An engine worker that fails as it starts, with `WipeUnfinished`: the tab's engine is unavailable, and says so. */
-const failedWorker = (): BrowserEngine.WorkerLike & Endpoint => ({
+/** An engine worker that fails as it starts, with `error`: the tab's engine is unavailable, and says why. */
+const failedWorker = (error: () => Error) => (): BrowserEngine.WorkerLike & Endpoint => ({
   terminate: nothing,
   postMessage: nothing,
   removeEventListener: nothing,
   addEventListener: (type: string, listener: (event: never) => void) => {
-    if (type === "error") queueMicrotask(() => listener({ error: new WipeUnfinished() } as never))
+    if (type === "error") queueMicrotask(() => listener({ error: error() } as never))
   },
 })
 
 /**
- * The host a page starts on when its wipe couldn't delete the device's stores: the device store can't open, so its
- * rows stay in memory (`persistence unavailable`); the outbox keeps its writes in memory, so no ask a previous session
- * queued is sent; and the engine is unavailable, so no run of that session resumes (`browser.engine.unavailable`,
- * `WipeUnfinished`), and the pill offers Reload, whose boot deletes again.
+ * A host that opens nothing of the device's, failing with `error`: the device store can't open, so its rows stay in
+ * memory (`persistence unavailable`); the outbox keeps its writes in memory, so no ask the device queued is sent; and
+ * the engine is unavailable, so none of its runs resumes (`browser.engine.unavailable`).
  */
-export const unwiped = (host: Host): Host => ({
+export const inMemory = (host: Host, error: () => Error): Host => ({
   ...host,
-  persistence: { ...host.persistence, open: () => Promise.reject(new WipeUnfinished()) },
+  persistence: { ...host.persistence, open: () => Promise.reject(error()) },
   outbox: { ...host.outbox, storage: memoryStorage() },
-  engineWorker: failedWorker,
+  engineWorker: failedWorker(error),
 })
+
+/**
+ * The host a page starts on when its wipe couldn't delete the device's stores: `inMemory`, with `WipeUnfinished`, so
+ * no ask a previous session queued is sent and none of its runs resumes, and the pill offers Reload, whose boot
+ * deletes again.
+ */
+export const unwiped = (host: Host): Host => inMemory(host, () => new WipeUnfinished())

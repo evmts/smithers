@@ -70,13 +70,17 @@ const tagOf = (cause: Cause.Cause<unknown>) => {
 
 /**
  * The app's database as a `SharedSqlite` service over the leader's own
- * connection, under the preparation's owner: a transaction it opens is its
- * own until a statement ends it, and the tabs' statements wait meanwhile.
+ * connection, under `owner`: a transaction it opens is its own until a
+ * statement ends it, and the tabs' statements wait meanwhile. The preparation
+ * and the activation check (`Engine.layerHost`) each use it.
+ *
+ * @category constructors
+ * @since 1.0.0
  */
-const database = (connection: SqlConnection["Service"]): SharedSqlite.Service => ({
-  // Nothing else runs on the connection until the preparation ends, so its transaction is never lost.
+export const database = (connection: SqlConnection["Service"], owner: string): SharedSqlite.Service => ({
+  // Nothing else runs on the connection until its user ends, so its transaction is never lost.
   execute: (sql, params = []) =>
-    connection.run(OWNER, sql, params, false).pipe(
+    connection.run(owner, sql, params, false).pipe(
       Effect.map((result) => result.rows),
       Effect.catchTag("@smthrs/platform-browser/TransactionLost", Effect.die)
     )
@@ -112,7 +116,7 @@ export const declare = (prepare: Prepare): Declared => {
   const run = () =>
     Effect.gen(function*() {
       const connection = yield* SqlConnection
-      return yield* prepare.run(database(connection)).pipe(
+      return yield* prepare.run(database(connection, OWNER)).pipe(
         Effect.ensuring(connection.abandon(OWNER)),
         Effect.catchCause((cause) => Effect.fail(new PrepareFailed({ error: tagOf(cause) })))
       )

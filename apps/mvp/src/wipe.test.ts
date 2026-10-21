@@ -3,7 +3,7 @@ import { Effect, ManagedRuntime } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { tabEngine } from "./flows/engine"
 import { nodeDevice } from "./test/chatApi"
-import { DATA_LOCK, ENGINES_DIRECTORY, memoryStorage, pageWipe, unwiped, WIPE, type WipeHost, WipeUnfinished } from "./wipe"
+import { DATA_LOCK, ENGINES_DIRECTORY, inMemory, memoryStorage, pageWipe, unwiped, WIPE, type WipeHost, WipeUnfinished } from "./wipe"
 
 // Sign-out's device wipe across pages (src/wipe.ts, docs/features/sign-in.md#signing-out), on Node's own Web Locks and
 // BroadcastChannel. Node has no OPFS and no IndexedDB, so those two are stand-ins that keep what was deleted, and a
@@ -305,4 +305,35 @@ test("a marker that becomes unreadable while waiting for the wipe lock preserves
   expect(device.marks.get(WIPE)).toBe("1")
   expect(device.entries.has(targets.engine)).toBe(true)
   expect(device.deleted).toEqual([])
+})
+
+test("reopening loads every page again, this one included, and deletes nothing: the next boot checks the owner again", async () => {
+  const device = browser()
+  const other = device.page(async () => {})
+  expect(await other.open()).toBe(true)
+  const asking = device.page(async () => {})
+  asking.reopen()
+  await until(() => {
+    expect(asking.events).toEqual(["stop", "reload"])
+    expect(other.events).toEqual(["stop", "reload"])
+  })
+  expect(device.marks.has(WIPE)).toBe(false)
+  other.close()
+  expect(await device.page().open()).toBe(true)
+  expect(device.removed).toEqual([])
+  expect(device.deleted).toEqual([])
+})
+
+test("a page refused the device's data runs in memory, and its engine says why", async () => {
+  class Sealed extends Error {
+    override readonly name = "Sealed"
+  }
+  const host = inMemory(nodeDevice(), () => new Sealed())
+  await expect(Promise.resolve(host.persistence.open())).rejects.toBeInstanceOf(Sealed)
+  await host.outbox.storage.set("a", "1")
+  expect(await host.outbox.storage.keys()).toEqual(["a"])
+  const runtime = ManagedRuntime.make(tabEngine(host.engineWorker, `smithers-${crypto.randomUUID()}`))
+  const engine = await runtime.runPromise(Effect.service(BrowserEngine.BrowserEngine))
+  expect(await runtime.runPromise(engine.unavailable)).toMatchObject({ reason: "worker-failed", error: "Sealed" })
+  await runtime.dispose()
 })

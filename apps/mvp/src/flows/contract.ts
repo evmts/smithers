@@ -39,9 +39,10 @@ export const FLOWS_TELEMETRY = {
   records: [
     "flow.dispatch",
     "smithers_flow_dispatches",
-    // Run credentials on the device (src/flows/credentials.ts).
+    // Whose data the device holds, checked before the engine starts (src/device/identity.ts).
     "auth.device_identity",
     "smithers_device_identity_checks",
+    // Run credentials on the device (src/flows/credentials.ts).
     "auth.run_credential",
     "smithers_run_credential_mints",
     // The tab's side of the engine (@smthrs/platform-browser BrowserEngine, StoragePersistence).

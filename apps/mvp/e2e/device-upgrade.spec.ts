@@ -1,27 +1,29 @@
 import { statSync } from "node:fs"
 import { join } from "node:path"
-import { OWNER_KEY } from "../src/device/identity"
 import { serveBuilds } from "./builds"
 import { serverRows } from "./devices"
 import { expect, QUEUED, step, test } from "./fixtures"
 import { oldBuildDir, requires } from "./target"
 
-// A deploy from a login-only legacy device (decisions 0021 and 0023): server-backed messages return, but the old
-// local queue and draft cannot be assigned to a stable person and are cleared online. Once this build establishes
-// the owner, its new queued question and draft survive a same-owner reload. Both builds use the real dev ChatApi,
-// Electric and Postgres on one origin. Service workers are blocked so the reload selects the build served now. It
-// serves both builds from this machine (e2e/builds.ts), so it runs locally only, and the old build must be on disk.
+// A deploy, on one device (decisions 0021 and 0023): the build production ran before it (its files, mirrored from
+// production, in OLD_BUILD_DIR) makes a synced message, a question queued offline and a draft while signed in. Then
+// this build opens on the same origin, so the same OPFS store and IndexedDB outbox. Its owner check finds the old
+// build's confirmed login is the person signed in, makes them the device's owner and keeps everything: the queued
+// question is sent once and the draft is still the draft. The owner then queues a question and saves a draft offline
+// in this build; both survive reopening. ChatApi, Electric and Postgres are the dev server's, for both builds. Service
+// workers are blocked, so the reload gets the build the origin serves now, as a deploy's service worker update does.
+// It serves both builds from this machine (e2e/builds.ts), so it runs locally only, and the old build must be on disk.
 
 const OLD_BUILD = oldBuildDir(process.env)
 
 test.use({ serviceWorkers: "block" })
 
 test(
-  "deploy: legacy local data clears, then the verified owner's queued question and draft survive reload",
+  "deploy: the deployed build's synced message, queued question and draft are its owner's in this build, and stay",
   {
     annotation: {
       type: "summary",
-      description: "Legacy data clears before sign-in; a verified owner's queue and draft survive reload."
+      description: "A device's messages, its queued question and its draft survive a deploy, and its owner's new ones survive reload."
     }
   },
   async ({ page, context, request }) => {
@@ -42,25 +44,19 @@ test(
       const word = `deploy-${Date.now().toString(36)}`
       const synced = `Which build is this, ${word}?`
       const queued = `Asked offline before the deploy, ${word}`
-      const draft = `A legacy draft before the deploy, ${word}`
-      const ownedQueued = `Asked offline by the verified owner, ${word}`
-      const ownedDraft = `A verified owner's draft, ${word}`
-      let legacyQueuedId: string | null = null
-      let ownedQueuedId: string | null = null
-      let ownerId: string
-      const identityChecks: Array<string> = []
-      page.on("console", (message) => {
-        const text = message.text()
-        if (text.includes("auth.device_identity")) identityChecks.push(text)
-      })
+      const draft = `A draft kept across the deploy, ${word}`
+      const ownedQueued = `Asked offline after the deploy, ${word}`
+      const ownedDraft = `A draft made after the deploy, ${word}`
       // The questions Postgres holds for this run, read through ChatApi's shape as devices read them.
       const storedRows = async () => (await serverRows(request, word)).filter((row) => row.role === "user")
       const stored = async () => (await storedRows()).map((row) => row.text)
-      const assertQueueIds = async () => {
+      // Each question reaches Postgres once, under the id the device gave it.
+      const sentOnce = async (ids: ReadonlyArray<string | null>) => {
         const rows = await storedRows()
-        expect(rows.filter((row) => row.id === legacyQueuedId)).toHaveLength(0)
-        expect(rows.filter((row) => row.id === ownedQueuedId)).toHaveLength(1)
+        for (const id of ids) expect(rows.filter((row) => row.id === id)).toHaveLength(1)
       }
+      let queuedId: string | null = null
+      let ownedQueuedId: string | null = null
 
       await step("Open the deployed build", async () => {
         await page.goto(app)
@@ -79,8 +75,8 @@ test(
         await composer.fill(queued)
         await composer.press("Enter")
         await expect(question(queued).getByText(QUEUED, { exact: true })).toBeVisible({ timeout: 15_000 })
-        legacyQueuedId = await question(queued).getAttribute("data-id")
-        expect(legacyQueuedId).toEqual(expect.any(String))
+        queuedId = await question(queued).getAttribute("data-id")
+        expect(queuedId).toEqual(expect.any(String))
       })
       await step("Leave a draft", async () => {
         await composer.fill(draft)
@@ -97,28 +93,24 @@ test(
         await page.goto(app)
         await expect(page.getByRole("main", { name: "App" })).toBeVisible({ timeout: 60_000 })
       })
-      await step("The synced messages are there", async () => {
+      await step("The synced message is there", async () => {
         await expect(question(synced)).toHaveCount(1, { timeout: 60_000 })
       })
-      await step("The legacy queue and draft are cleared before this owner opens the device", async () => {
-        const session = await (await page.request.get(new URL("/api/auth/session", app).href)).json()
-        expect(session.signedIn).toBe(true)
-        expect(typeof session.personId).toBe("string")
-        ownerId = session.personId
-        await expect.poll(() =>
-          page.evaluate((key) => {
-            const owner = localStorage.getItem(key)
-            return owner === null ? undefined : JSON.parse(owner).personId
-          }, OWNER_KEY), { timeout: 60_000 }).toBe(session.personId)
-        expect(identityChecks.some((line) => line.includes("changed"))).toBe(true)
-        expect(identityChecks.some((line) => line.includes("verified"))).toBe(true)
-        await expect(question(queued)).toHaveCount(0)
-        await openComposer()
-        await expect(composer).toHaveValue("")
-        await expect(composer).toHaveAttribute("data-draft", "saved")
-        expect(await stored()).toEqual([synced])
+      await step("The question queued before the deploy is sent, once", async () => {
+        await expect(question(queued)).toHaveCount(1, { timeout: 60_000 })
+        // This build's outbox sent the old build's write as its owner's: Postgres has it, once.
+        await expect.poll(stored, { timeout: 60_000 }).toEqual([synced, queued])
+        await sentOnce([queuedId])
+        await expect(question(queued).getByText(QUEUED, { exact: true })).toHaveCount(0)
       })
-      await step("The verified owner queues a new question and saves a draft offline", async () => {
+      await step("The draft is in the composer, and stays", async () => {
+        await openComposer()
+        await expect(composer).toHaveValue(draft, { timeout: 30_000 })
+        // This build stored it too, and it is still the draft once stored.
+        await expect(composer).toHaveAttribute("data-draft", "saved", { timeout: 15_000 })
+        await expect(composer).toHaveValue(draft)
+      })
+      await step("Offline, the owner asks again and leaves a new draft", async () => {
         await context.setOffline(true)
         await composer.fill(ownedQueued)
         await composer.press("Enter")
@@ -127,33 +119,29 @@ test(
         expect(ownedQueuedId).toEqual(expect.any(String))
         await composer.fill(ownedDraft)
         await expect(composer).toHaveAttribute("data-draft", "saved", { timeout: 15_000 })
-        // Close the page while still offline, so the pending write cannot
-        // reach Postgres until the next activation reopens its stored outbox.
+        // Leave while still offline, so the write reaches Postgres only from the next activation's stored outbox.
         await page.goto("about:blank")
         await context.setOffline(false)
         await page.goto(app)
         await expect(page.getByRole("main", { name: "App" })).toBeVisible({ timeout: 60_000 })
       })
-      await step("The owner's queued question sends once; the legacy queue never sends", async () => {
+      await step("Reopened: the owner's question is sent once, and their draft stays", async () => {
         await expect(question(ownedQueued)).toHaveCount(1, { timeout: 60_000 })
-        await expect.poll(stored, { timeout: 60_000 }).toEqual([synced, ownedQueued])
-        await assertQueueIds()
+        await expect.poll(stored, { timeout: 60_000 }).toEqual([synced, queued, ownedQueued])
+        await sentOnce([queuedId, ownedQueuedId])
         await expect(question(ownedQueued).getByText(QUEUED, { exact: true })).toHaveCount(0)
-        await expect(question(queued)).toHaveCount(0)
         await openComposer()
         await expect(composer).toHaveValue(ownedDraft, { timeout: 30_000 })
         await expect(composer).toHaveAttribute("data-draft", "saved")
       })
-      await step("Reload: the owner's draft stays and neither queue replays", async () => {
+      await step("Reload: the draft is still there, and nothing is sent again", async () => {
         await page.reload()
         await expect(page.getByRole("main", { name: "App" })).toBeVisible({ timeout: 60_000 })
         await openComposer()
         await expect(composer).toHaveValue(ownedDraft, { timeout: 30_000 })
         await expect(composer).toHaveAttribute("data-draft", "saved")
-        expect(await stored()).toEqual([synced, ownedQueued])
-        await assertQueueIds()
-        expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!).personId, OWNER_KEY)).toBe(ownerId)
-        await expect(question(queued)).toHaveCount(0)
+        expect(await stored()).toEqual([synced, queued, ownedQueued])
+        await sentOnce([queuedId, ownedQueuedId])
       })
     } finally {
       await builds.close()

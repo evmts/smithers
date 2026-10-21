@@ -28,8 +28,9 @@ import { TodosProvider } from "./features/todos/components/TodosContext"
 import { ViewsProvider } from "./features/views/components/ViewsContext"
 import { WebProvider } from "./features/web/components/WebContext"
 import { router } from "./router"
-import { activationGate, boundFetch, DeviceIdentityRefused, IDENTITY_MESSAGE, OWNER_KEY, readOwner, readSession, type DeviceOwner } from "./device/identity"
-import { memoryStorage, pageWipe, unwiped } from "./wipe"
+import { activationGate, boundFetch, DeviceIdentityRefused, IDENTITY_MESSAGE, readReceipt } from "./device/identity"
+import { NO_DEVICE_DATA } from "./features/auth/contract"
+import { inMemory, memoryStorage, pageWipe, unwiped } from "./wipe"
 import "./styles/fonts.css"
 
 // The page: `start` runs the app's one program, and React renders the chat, sign-in, theme, repository and slash-command
@@ -59,61 +60,64 @@ const wipe = pageWipe(
   { engine: ENGINE_NAME, outbox: OUTBOX_DATABASE },
 )
 
-// The device store: the app's shared SQLite database in the engine worker's OPFS pool (@smthrs/platform-browser's
-// `SharedSqlite`), one per origin, reached by every tab through the leading tab's worker. The outbox: IndexedDB,
-// sending when the browser says it can, led by one tab through @smthrs/platform-browser's Web Lock service.
-let deviceOwner: DeviceOwner | undefined
-try { deviceOwner = readOwner(localStorage.getItem(OWNER_KEY)) } catch {}
-let identityWorker: Worker | undefined
-let activationPrepared!: () => void
-const preparation = new Promise<void>((resolve) => { activationPrepared = resolve })
-const activation = activationGate(30_000, (reason) => {
-  // A leader from an earlier build cannot report ownership. End this tab's engine as well as selecting memory.
-  identityWorker?.terminate()
-  identityWorker?.dispatchEvent(new ErrorEvent("error", { error: new DeviceIdentityRefused({ reason: `activation_${reason}` }) }))
-}, preparation)
-const identityKnown = activation.ready
+// Whose data the device holds (src/device/identity.ts, decision 0021 "Device ownership"). The leading engine worker
+// checks before its engine starts and sends a receipt, checked against the browser's session now for a tab that
+// follows it. This page opens the device store and the outbox only on a receipt that names an owner (`retained`);
+// until one comes, both wait, as they wait for a leader anyway. Otherwise it runs on memory stores, and the device's
+// data stays sealed and whole.
+let deviceOwner: string | undefined
+// Sealed only because no one was signed in, or ChatApi couldn't say who: the owner signing in reopens this page.
+let sealedUntilSignIn = false
+let engineWorker: Worker | undefined
+const sealed = () => new DeviceIdentityRefused({ reason: "sealed" })
+const activation = activationGate(() => {
+  // This page's worker never serves it, nor leads with its view: its engine is unavailable, and says why.
+  engineWorker?.terminate()
+  engineWorker?.dispatchEvent(new ErrorEvent("error", { error: sealed() }))
+})
+// Reopening loads every page again so a new activation checks the session the browser has now. Once a minute at most
+// from this tab: a second mismatch so soon settles on memory instead of reloading again.
+const REOPENED = "smithers-identity-reopened"
+const reopen = () => {
+  let last = 0
+  try {
+    last = Number(sessionStorage.getItem(REOPENED) ?? 0)
+    sessionStorage.setItem(REOPENED, String(Date.now()))
+  } catch {}
+  if (Date.now() - last < 60_000) return
+  console.info("auth.device_identity", { outcome: "reopened" })
+  wipe.reopen()
+}
+const accept = (message: unknown) => {
+  const receipt = readReceipt(message)
+  if (receipt === undefined || activation.state() !== "pending") return
+  if (receipt.owner !== undefined) {
+    deviceOwner = receipt.owner
+    activation.allow()
+    return
+  }
+  // Reopening or not, this page never opens the data it was told of: it runs on memory until it loads again.
+  sealedUntilSignIn = receipt.outcome === "signed_out" || receipt.outcome === "unverified"
+  if (receipt.reopen === true) reopen()
+  activation.refuse()
+}
+const identity = new BroadcastChannel(IDENTITY_MESSAGE)
+identity.onmessage = (event: MessageEvent) => accept(event.data)
 const memoryOutbox = memoryStorage()
 let retainedOutbox: IndexedDBAdapter | undefined
 const outboxStorage = async () => {
-  await identityKnown
+  await activation.ready
   return activation.state() === "retained" ? (retainedOutbox ??= new IndexedDBAdapter(OUTBOX_DATABASE, "transactions")) : memoryOutbox
 }
-let identityChecking = false
-const acceptIdentity = async (snapshot: { owner?: DeviceOwner; outcome: string }) => {
-  if (identityChecking || activation.state() !== "pending") return
-  identityChecking = true
-  deviceOwner = snapshot.owner
-  if (snapshot.outcome === "changed") { await wipe.wipe(); return }
-  let signedOut = snapshot.outcome === "signed_out"
-  try {
-    const response = await window.fetch(`${window.location.origin}/api/auth/session`, { cache: "no-store", signal: AbortSignal.timeout(10_000) })
-    if (response.ok) {
-      const session = readSession(await response.json())
-      if (session === undefined) signedOut = true
-      else if (session.signedIn && session.personId !== deviceOwner?.personId) { await wipe.wipe(); return }
-      signedOut ||= session !== undefined && !session.signedIn && deviceOwner !== undefined
-    }
-  } catch {}
-  if (activation.state() !== "pending") return
-  if (signedOut) activation.refuse()
-  else activation.allow()
-  if (deviceOwner !== undefined) {
-    try { localStorage.setItem(OWNER_KEY, JSON.stringify(deviceOwner)) } catch {}
-  }
-}
-const identityChannel = new BroadcastChannel(IDENTITY_MESSAGE)
-identityChannel.onmessage = (event) => {
-  if (event.data?._tag === IDENTITY_MESSAGE) void acceptIdentity(event.data)
-}
-const identityFailed = () => {
-  if (!identityChecking) activation.refuse()
-}
+
+// The device store: the app's shared SQLite database in the engine worker's OPFS pool (@smthrs/platform-browser's
+// `SharedSqlite`), one per origin, reached by every tab through the leading tab's worker. The outbox: IndexedDB,
+// sending when the browser says it can, led by one tab through @smthrs/platform-browser's Web Lock service.
 const host: Host = {
   persistence: {
     open: async () => {
-      await identityKnown
-      if (activation.state() !== "retained") throw new DeviceIdentityRefused({ reason: "signed_out" })
+      await activation.ready
+      if (activation.state() !== "retained") throw sealed()
       return SharedSqlite.open({ name: ENGINE_NAME })
     },
     make: (database, coordinator) => createBrowserWASQLitePersistence({ database, ...(coordinator ? { coordinator } : {}) }),
@@ -121,6 +125,7 @@ const host: Host = {
   },
   outbox: {
     start: startOfflineExecutor,
+    // The device's IndexedDB outbox once this page may open the device's data; memory otherwise.
     storage: {
       get: async (key) => (await outboxStorage()).get(key),
       set: async (key, value) => (await outboxStorage()).set(key, value),
@@ -176,8 +181,8 @@ const host: Host = {
   // worker reads it from its name, and a production build drops the branch.
   engineName: ENGINE_NAME,
   engineWorker: () => {
-    // Refusal may precede worker creation (a slow wipe/preflight). Never attach a real client afterward.
-    if (activation.state() === "memory") return unwiped(host).engineWorker()
+    // A page already on memory never starts a worker that could lead over the device's data.
+    if (activation.state() === "memory") return inMemory(host, sealed).engineWorker()
     // Vite reads the worker's `type` statically, so it comes after the spread.
     const worker = new Worker(new URL("./flows/engine.worker.ts", import.meta.url), {
       ...(import.meta.env.DEV && new URLSearchParams(window.location.search).has("agent")
@@ -185,14 +190,15 @@ const host: Host = {
         : {}),
       type: "module",
     })
-    identityWorker = worker
-    worker.addEventListener("error", identityFailed)
+    engineWorker = worker
+    // Its own receipt when it leads; a stopped engine or a failed worker sends none, and this page runs on memory.
     worker.addEventListener("message", (event) => {
-      if (event.data?._tag === "@smthrs/platform-browser/EngineStopped") identityFailed()
-      if (event.data?._tag === IDENTITY_MESSAGE) void acceptIdentity(event.data)
+      if (event.data?._tag === "@smthrs/platform-browser/EngineStopped") activation.refuse()
+      else accept(event.data)
     })
-    identityChannel.postMessage({ request: true })
-    worker.postMessage({ _tag: IDENTITY_MESSAGE, owner: deviceOwner })
+    worker.addEventListener("error", () => activation.refuse())
+    // A leader in another tab answers with its receipt, checked against the browser's session now.
+    identity.postMessage({ request: true })
     return worker
   },
   // The tab's title, which counts the agent's open questions (decision 0015).
@@ -275,9 +281,15 @@ const render: BootOptions["render"] = (
 
 const page = {
   origin: window.location.origin,
-  fetch: boundFetch(window.fetch.bind(window), () => deviceOwner, window.location.origin, identityKnown, async () => {
-    console.info("auth.device_identity", { outcome: "reauthorizing" })
-    await wipe.wipe()
+  // Every request to ChatApi waits for the activation and carries the device's owner while this page has its data
+  // open. Every session answer, Auth's at startup and on reconnect alike, checks the activation again: one naming
+  // someone else, or a person signing in while this page is sealed until they do, reopens every page.
+  fetch: boundFetch(window.fetch.bind(window), {
+    origin: window.location.origin,
+    principal: () => (activation.state() === "retained" && deviceOwner !== undefined ? deviceOwner : NO_DEVICE_DATA),
+    ready: activation.ready,
+    reauthorize: async () => void reopen(),
+    reopensOnSignIn: () => activation.state() === "memory" && sealedUntilSignIn,
   }),
   reload: () => window.location.reload(),
   host,
@@ -290,29 +302,9 @@ const page = {
 // (src/test/e2e.ts). A production build drops this branch, and the test module with it. Either way, a wipe a sign-out
 // marked finishes first, and a page whose wipe couldn't delete starts on stores that aren't the device's
 // (src/wipe.ts `unwiped`). Leaving on a wipe drops the view, then stops the program.
-void wipe.open().then(async (wiped) => {
-  try { deviceOwner = readOwner(localStorage.getItem(OWNER_KEY)) } catch {}
-  // Verify a known owner before opening any collection, even when this tab follows an already-running engine.
-  // The worker performs the same check on the SQLite upgrade source when no mirror exists yet.
-  let retainedSession = false
-  if (deviceOwner !== undefined) {
-    try {
-      const response = await window.fetch(`${page.origin}/api/auth/session`, { cache: "no-store", signal: AbortSignal.timeout(10_000) })
-      if (response.ok) {
-        const session = readSession(await response.json())
-        if (session === undefined) retainedSession = true
-        else if (session.signedIn && session.personId !== deviceOwner.personId) {
-          await wipe.wipe()
-          return
-        }
-        retainedSession ||= session !== undefined && !session.signedIn
-      }
-    } catch {}
-  }
-  if (!wiped || retainedSession) activation.refuse()
-  // Wipe-lock waits and the session preflight are not part of the worker's activation deadline.
-  activationPrepared()
-  const opened = wiped && !retainedSession ? page : { ...page, host: unwiped(host) }
+void wipe.open().then((wiped) => {
+  if (!wiped) activation.refuse()
+  const opened = wiped ? page : { ...page, host: unwiped(host) }
   const leaving = (stop: () => Promise<void>) =>
     wipe.started(() => {
       root.unmount()

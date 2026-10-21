@@ -378,7 +378,7 @@ describe("the composer", () => {
   })
 })
 
-test("expiry keeps the owner; another GitHub person with the same login triggers a wipe before becoming visible", async () => {
+test("expiry keeps the confirmed session; another person signing in wipes nothing here, since the owner check decides what opens", async () => {
   const h = await signInHarness(server)
   const b = browser(h)
   await b.signIn()
@@ -390,13 +390,14 @@ test("expiry keeps the owner; another GitHub person with the same login triggers
   tab.actions.reload()
   await tab.settled("signed_out")
   await confirmedOn(device, 1)
-  // GitHub can reassign a login; immutable person identity, not that name, decides device ownership.
+  // Another GitHub person, even one holding the same login. Whether this device's data may open under them is
+  // decided before the app opens it (src/device/identity.ts); signing in never deletes it.
   h.github.person = { id: 900001, login: "octocat" }
   await b.signIn()
   tab.actions.reload()
-  await vi.waitFor(() => expect(tab.count(deviceWipes, { outcome: "wiped" })).toBe(1))
-  expect(tab.session()).toMatchObject({ status: "loading", login: null })
-  await confirmedOn(device, 0)
+  await tab.settled("signed_in")
+  expect(tab.count(deviceWipes, { outcome: "wiped" })).toBe(0)
+  await confirmedOn(device, 1)
 })
 
 describe("signing out wipes the device", () => {

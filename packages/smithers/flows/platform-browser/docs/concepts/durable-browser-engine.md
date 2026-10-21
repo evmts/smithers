@@ -127,6 +127,23 @@ tab's statement waits meanwhile.
 - An engine without the app's database, such as `BrowserRuntime.layer`'s,
   skips it (`outcome: skipped`).
 
+## Checking the app's database before the engine starts
+
+`BrowserRuntime.run({ authorize })` gives the worker a check to run on
+`app.db` each time it is about to lead, before it builds the engine. The app
+decides what it checks, such as whether the stored data belongs to the person
+signed in.
+
+- **Before anything runs.** No run resumes, no flow registers and no tab's
+  statement runs until the check succeeds.
+- **Every activation.** Unlike `prepare`, the check is never recorded as
+  done: each new leader runs it again.
+- **Fails closed.** A failure ends the activation as an engine that cannot be
+  built does: the worker logs `browser.runtime.stopped` and tells its tab
+  `EngineStopped`.
+- **Leaves nothing open.** A transaction the check opens is rolled back
+  before the engine is built.
+
 ## Tabs reach the leader over a channel
 
 A tab never talks to the engine directly, not even its own worker. It posts
