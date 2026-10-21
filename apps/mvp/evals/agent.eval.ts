@@ -20,7 +20,7 @@ import { agentFlows, catalogDescription } from "../src/flows/catalog"
 import { CASES, type CaseInput, caseNamed, inputOf } from "./cases"
 import { everyAnswer, grade, safe, type Trial } from "./checks"
 import { judgeScorer } from "./judge"
-import { endpointSpend, judgeSpend, type ReadingUsage, type Scored, summary } from "./report"
+import { capGate, endpointSpend, judgeSpend, type ReadingUsage, type Scored, summary } from "./report"
 import { canUpdateBaseline } from "./baseline-update"
 import { openSession } from "./session"
 
@@ -126,7 +126,14 @@ test("the agent evals", async () => {
       try: async () => {
         const input = suiteCase.input as CaseInput
         const trials: Array<Trial> = []
-        for (let index = 0; index < k; index++) trials.push(await session.trial(input))
+        for (let index = 0; index < k; index++) {
+          trials.push(await session.trial(input))
+          // The trial that took the run past its cap fails its case, and every later trial is refused before it starts.
+          if (session.cap.over) {
+            outputs.set(input.name, { trials })
+            throw new Error(session.cap.past(input.name))
+          }
+        }
         outputs.set(input.name, { trials })
         // The model failing says nothing about the agent: the case didn't run, and the run is undecided. A case whose
         // provider refuses by design expects it.
@@ -194,6 +201,8 @@ test("the agent evals", async () => {
     const verdict = await Effect.runPromise(Gate.check(comparison, { mean: MEAN_THRESHOLD }))
     gate = { ...Gate.ciGrade(verdict), report: Report.markdown(comparison) }
   }
+  // Whatever the scores, a run that spent past its cap fails: the last trial can't take it past unseen.
+  gate = capGate(gate, endpointSpend(trials), maxTokens)
 
   const scored = cases.map((kase) => ({
     name: kase.name,

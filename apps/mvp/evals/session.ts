@@ -27,6 +27,7 @@ import { answerRow, openAgent } from "../src/test/agent"
 import { openDevice } from "../src/test/device"
 import type { CaseInput, Person } from "./cases"
 import type { Asked, Draft, Trial, Usage, View } from "./checks"
+import { tokenCap } from "./report"
 
 /** How long one answer may take, asks and flow drafts included, before the trial counts it unanswered. */
 export const ANSWER_WITHIN_MS = 4 * 60_000
@@ -95,8 +96,8 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
   }
   const query = <A>(statement: (sql: SqlClient.SqlClient) => Effect.Effect<ReadonlyArray<A>, unknown>) =>
     runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, statement))
-  /** The tokens the model reported for every trial so far. */
-  let spent = 0
+  /** The tokens the model reported for every trial so far, against the run's cap. */
+  const cap = tokenCap(maxTokens)
 
   /**
    * Runs `answerId`'s answer on `device` to its end, answering each question the agent asks as `person` would.
@@ -129,7 +130,7 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
 
   /** One trial of `kase`: a fresh conversation and device, its ask, and what came of it. */
   const trial = async (kase: CaseInput): Promise<Trial> => {
-    if (spent >= maxTokens) throw new Error(`The run spent its ${maxTokens} tokens (${spent}) before ${kase.name}`)
+    cap.before(kase.name)
     await query((sql) =>
       sql`TRUNCATE messages, views, runs, flow_drafts, flow_revisions, flows, model_usage RESTART IDENTITY CASCADE`
     )
@@ -153,7 +154,7 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
             charged_tokens AS "chargedTokens"
           FROM model_usage ORDER BY created_at`
       )
-      spent += usage.reduce((sum, call) => sum + call.inputTokens + call.outputTokens, 0)
+      cap.add(usage.reduce((sum, call) => sum + call.inputTokens + call.outputTokens, 0))
       return {
         status: asked === null ? "unanswered" : row.status,
         failure: row.failure,
@@ -188,7 +189,13 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
     }
   }
 
-  return { modelId: model.modelId, trial, price: candidate ? { modelId: model.modelId, input: candidate.input, output: candidate.output } : undefined, campaignEstimatedUsd: () => budget?.total() }
+  return {
+    modelId: model.modelId,
+    trial,
+    cap,
+    price: candidate ? { modelId: model.modelId, input: candidate.input, output: candidate.output } : undefined,
+    campaignEstimatedUsd: () => budget?.total(),
+  }
 }
 
 /** A child's input as the engine shows it: JSON when it reads, else the text. */

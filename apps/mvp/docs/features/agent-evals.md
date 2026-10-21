@@ -47,7 +47,7 @@ EVAL_BASELINE=update pnpm eval              # record evals/baseline.json from th
 |---|---|---|
 | `EVAL_ONLY` | every case | case names, comma-separated |
 | `EVAL_K` | `1` | trials per case. With more than one, the artifact adds `Trials.aggregate`'s pass@1, pass@k and pass^k |
-| `EVAL_MAX_TOKENS` | `350000` | the most the run spends on the model endpoint, as the model reported it: about $0.35 at the default model's list price (the lead's ruling, 2026-10-20). A trial that would start once the run has spent it fails its case at once. The endpoint charges a call what it spent, and a call the provider refused before any output what the provider reported ([budget](model-endpoint.md#budget)), so the two agree |
+| `EVAL_MAX_TOKENS` | `350000` | the most the run spends on the model endpoint, as the model reported it: about $0.35 at the default model's list price (the lead's ruling, 2026-10-20). A trial that would start once the run has spent it fails its case at once. The trial that takes the run past it fails its case and ends the run, the last trial too, and a run whose endpoint spent past the cap exits 6 (`capGate`), whatever its scores. The endpoint charges a call what it spent, and a call the provider refused before any output what the provider reported ([budget](model-endpoint.md#budget)), so the two agree |
 | `EVAL_BASELINE` | unset | `update` writes `evals/baseline.json` instead of comparing, and only when the full suite ran successfully with no unsafe observations; filtered runs never replace the baseline |
 
 ## How a case runs

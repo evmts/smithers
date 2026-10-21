@@ -63,6 +63,45 @@ export const judgeSpend = (readings: ReadonlyArray<ReadingUsage | null>): Spend 
   return { roles, total: totalOf(roles) }
 }
 
+/**
+ * The run's token cap (`EVAL_MAX_TOKENS`, docs/features/agent-evals.md#running-them): what the trials have spent on the
+ * model endpoint, as the model reported it. A trial may not start once the run has spent the cap, and the trial that
+ * takes the run past it fails its case and ends the run, the last trial too.
+ */
+export const tokenCap = (cap: number) => {
+  let spent = 0
+  return {
+    get spent() {
+      return spent
+    },
+    /** Whether the trials have spent more than the cap. */
+    get over() {
+      return spent > cap
+    },
+    /** Before a trial of `name`: refused once the run has spent its cap. */
+    before: (name: string) => {
+      if (spent >= cap) throw new Error(`The run spent its ${cap} tokens (${spent}) before ${name}`)
+    },
+    /** After a trial: what it spent. */
+    add: (tokens: number) => {
+      spent += tokens
+    },
+    /** Why the trial of `name` ended the run, once the trials are past the cap. */
+    past: (name: string) => `The run spent ${spent} tokens in ${name}, past its cap of ${cap}`,
+  }
+}
+
+/** The exit code of a run whose model endpoint spent past its cap, whatever its scores. */
+export const OVER_CAP_EXIT = 6
+
+/** `gate`, failed when `spend` passed `cap`: a run that spent more than it may never passes. */
+export const capGate = <G extends { readonly exitCode: number; readonly summary: string }>(gate: G, spend: Spend, cap: number): G =>
+  spend.total.tokens <= cap ? gate : {
+    ...gate,
+    exitCode: gate.exitCode === 0 ? OVER_CAP_EXIT : gate.exitCode,
+    summary: `${gate.summary}; the model endpoint spent ${spend.total.tokens} tokens, past the run's cap of ${cap}`,
+  }
+
 /** A scorer's result for one case: its score, or `null` when it couldn't score, and why. */
 export interface Scored {
   readonly score: number | null

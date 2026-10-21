@@ -1,7 +1,7 @@
 // What an eval run spent and how its table reads (docs/features/agent-evals.md#results).
 import { describe, expect, test } from "vitest"
 import { trial } from "./fixtures"
-import { endpointSpend, judgeSpend, summary } from "./report"
+import { capGate, endpointSpend, judgeSpend, OVER_CAP_EXIT, summary, tokenCap } from "./report"
 
 describe("endpointSpend", () => {
   test("adds the endpoint's calls by role, priced at the model's list price", () => {
@@ -80,4 +80,50 @@ test('candidate prices override a global model alias and refuse unpriced routes'
  const trials=[trial({usage:[{role:'agent',modelId:'qwen/qwen3.8-27b',inputTokens:1_000_000,outputTokens:1_000_000,chargedTokens:2_000_000}]})]
  expect(endpointSpend(trials,{modelId:'qwen/qwen3.8-27b',input:.8,output:4}).total.costUsd).toBe(4.8)
  expect(()=>endpointSpend(trials,{modelId:'wrong-provider',input:.8,output:4})).toThrow('Unpriced model')
+})
+
+describe("tokenCap", () => {
+  test("lets trials start until the run has spent its cap, and counts what each spent", () => {
+    const cap = tokenCap(1_000)
+    cap.before("first")
+    cap.add(600)
+    cap.before("second")
+    cap.add(400)
+    expect(cap.spent).toBe(1_000)
+    expect(cap.over).toBe(false)
+    expect(() => cap.before("third")).toThrow("The run spent its 1000 tokens (1000) before third")
+  })
+
+  test("is over once a trial takes the run past the cap, the last trial too, and says where", () => {
+    const cap = tokenCap(1_000)
+    cap.before("only")
+    cap.add(1_001)
+    expect(cap.over).toBe(true)
+    expect(cap.past("only")).toBe("The run spent 1001 tokens in only, past its cap of 1000")
+  })
+})
+
+describe("capGate", () => {
+  const spent = (tokens: number) => ({ roles: {}, total: { calls: 1, tokens, costUsd: 0 } })
+  const passed = { exitCode: 0, summary: "pass" }
+
+  test("leaves a run within its cap as it is", () => {
+    expect(capGate(passed, spent(350_000), 350_000)).toBe(passed)
+  })
+
+  test("fails a run whose endpoint spend passed its cap, even when every case passed", () => {
+    expect(capGate(passed, spent(350_001), 350_000)).toEqual({
+      exitCode: OVER_CAP_EXIT,
+      summary: "pass; the model endpoint spent 350001 tokens, past the run's cap of 350000",
+    })
+  })
+
+  test("keeps a failing run's own exit code, and still says it spent past its cap", () => {
+    const failed = { exitCode: 3, summary: "regressed", report: "r" }
+    expect(capGate(failed, spent(400_000), 350_000)).toEqual({
+      exitCode: 3,
+      summary: "regressed; the model endpoint spent 400000 tokens, past the run's cap of 350000",
+      report: "r",
+    })
+  })
 })
