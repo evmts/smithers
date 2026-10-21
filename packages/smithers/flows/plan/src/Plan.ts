@@ -319,7 +319,7 @@ const topological = (drafts: ReadonlyArray<NodeDraft>, known: ReadonlySet<string
           ok: false,
           error: new PlanError({
             code: "unknown_dependency",
-            message: `Node ${frame.draft.id} depends on unknown node ${dependency}`
+            message: `Node ${describeNodeId(frame.draft.id)} depends on unknown node ${describeNodeId(dependency)}`
           })
         }
       }
@@ -328,7 +328,7 @@ const topological = (drafts: ReadonlyArray<NodeDraft>, known: ReadonlySet<string
       if (mark === "visiting") {
         return {
           ok: false,
-          error: new PlanError({ code: "cycle", message: `Plan cycle through node ${next.id}` })
+          error: new PlanError({ code: "cycle", message: `Plan cycle through node ${describeNodeId(next.id)}` })
         }
       }
       state.set(next.id, "visiting")
@@ -427,13 +427,13 @@ const validateIdentity = (planId: unknown, flow: unknown): PlanError | undefined
   if (typeof planId !== "string" || planId.length === 0) {
     return new PlanError({
       code: "invalid_node",
-      message: `Plan option planId must be a non-empty string, received ${describeValue(planId)}`
+      message: "Plan option planId must be a non-empty string"
     })
   }
   if (typeof flow !== "string" || flow.length === 0) {
     return new PlanError({
       code: "invalid_node",
-      message: `Plan option flow must be a non-empty string, received ${describeValue(flow)}`
+      message: "Plan option flow must be a non-empty string"
     })
   }
   return undefined
@@ -617,7 +617,7 @@ const validateEffects = (id: string, effects: NodeEffects): PlanError | undefine
     if (writes.some((entry) => FileSet.overlaps(entry, removal))) {
       return new PlanError({
         code: "invalid_effects",
-        message: `Node ${id} declares ${removal} as both a write and a removal`
+        message: `Node ${describeNodeId(id)} declares ${removal} as both a write and a removal`
       })
     }
   }
@@ -649,7 +649,7 @@ const keyNodes = (
     for (const draft of drafts) {
       if (known.has(draft.id)) {
         return yield* Effect.fail(
-          new PlanError({ code: "duplicate_node", message: `Node ${draft.id} is already in the plan` })
+          new PlanError({ code: "duplicate_node", message: `Node ${describeNodeId(draft.id)} is already in the plan` })
         )
       }
       known.add(draft.id)
@@ -817,7 +817,7 @@ export const verify = (
     let previous = 0
     for (const node of decoded.nodes) {
       if (!Number.isSafeInteger(node.generation) || node.generation < previous || node.generation > previous + 1) {
-        return yield* Effect.fail(invalid(`Node ${node.id} has an invalid or out-of-order generation`))
+        return yield* Effect.fail(invalid(`Node ${describeNodeId(node.id)} has an invalid or out-of-order generation`))
       }
       generations.set(node.id, node.generation)
       previous = node.generation
@@ -829,7 +829,7 @@ export const verify = (
       for (const dependency of KeyMaterial.dependencies(node.material)) {
         const generation = generations.get(dependency)
         if (generation !== undefined && generation > node.generation) {
-          return yield* Effect.fail(invalid(`Node ${node.id} refers to a future generation`))
+          return yield* Effect.fail(invalid(`Node ${describeNodeId(node.id)} refers to a future generation`))
         }
       }
     }

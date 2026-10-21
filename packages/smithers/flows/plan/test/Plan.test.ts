@@ -884,7 +884,7 @@ describe("Plan admission", () => {
       const emptyPlanId = yield* withCryptoFailure(Plan.compile({ planId: "", flow: "flow", nodes: [] }))
       expect(emptyPlanId).toMatchObject({
         code: "invalid_node",
-        message: "Plan option planId must be a non-empty string, received \"\""
+        message: "Plan option planId must be a non-empty string"
       })
 
       const nonStringPlanId = yield* withCryptoFailure(
@@ -892,7 +892,7 @@ describe("Plan admission", () => {
       )
       expect(nonStringPlanId).toMatchObject({
         code: "invalid_node",
-        message: "Plan option planId must be a non-empty string, received 1"
+        message: "Plan option planId must be a non-empty string"
       })
     }))
 
@@ -901,7 +901,7 @@ describe("Plan admission", () => {
       const emptyFlow = yield* withCryptoFailure(Plan.compile({ planId: "plan", flow: "", nodes: [] }))
       expect(emptyFlow).toMatchObject({
         code: "invalid_node",
-        message: "Plan option flow must be a non-empty string, received \"\""
+        message: "Plan option flow must be a non-empty string"
       })
 
       const nonStringFlow = yield* withCryptoFailure(
@@ -909,7 +909,7 @@ describe("Plan admission", () => {
       )
       expect(nonStringFlow).toMatchObject({
         code: "invalid_node",
-        message: "Plan option flow must be a non-empty string, received 1"
+        message: "Plan option flow must be a non-empty string"
       })
     }))
 
@@ -919,12 +919,12 @@ describe("Plan admission", () => {
       const planIdFailure = yield* withCryptoFailure(Plan.append({ ...base, planId: "" }, [draft("next")]))
       expect(planIdFailure).toMatchObject({
         code: "invalid_node",
-        message: "Plan option planId must be a non-empty string, received \"\""
+        message: "Plan option planId must be a non-empty string"
       })
       const flowFailure = yield* withCryptoFailure(Plan.append({ ...base, flow: "" }, [draft("next")]))
       expect(flowFailure).toMatchObject({
         code: "invalid_node",
-        message: "Plan option flow must be a non-empty string, received \"\""
+        message: "Plan option flow must be a non-empty string"
       })
     }))
 

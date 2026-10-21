@@ -540,7 +540,7 @@ export const bindPlanned: {
 )
 
 /**
- * Maximum eagerly nested branch arms. Arm construction precedes graph walking;
+ * Maximum eagerly nested branch and catch arms. Arm construction precedes graph walking;
  * this bound leaves native stack headroom for a typed refusal.
  *
  * @since 1.0.0
@@ -557,15 +557,16 @@ let armDepth = 0
 const arm = <A, B, E, R>(
   build: (value: Planned.Planned<A>) => Node<B, E, R>,
   subject: Planned.Planned<A>,
-  side: string
+  side: string,
+  owner = branchSubject
 ): Ast => {
   if (armDepth >= maximumArmDepth) {
     throw new GraphBuildError({
       code: "graph_too_deep",
-      node: `${branchSubject}/${side}`,
+      node: owner === catchSubject ? catchSubject : `${owner}/${side}`,
       path: [],
-      message: "Node.branch recursion needs a plan-time bound, such as a payload-derived round count. " +
-        "Both arms are built before the run-time predicate is evaluated."
+      message: "Node arm recursion needs a plan-time bound, such as a payload-derived round count. " +
+        "Arms are built before run-time evaluation."
     })
   }
   armDepth++
@@ -574,9 +575,11 @@ const arm = <A, B, E, R>(
     if (!isNode(node)) {
       throw new GraphBuildError({
         code: "invalid_continuation",
-        node: `${branchSubject}/${side}`,
+        node: owner === catchSubject ? catchSubject : `${owner}/${side}`,
         path: [],
-        message: `Node.branch expected its "${side}" arm to return a Node`
+        message: owner === catchSubject
+          ? "Node.catch expected its failure arm to return a Node"
+          : `Node.branch expected its "${side}" arm to return a Node`
       })
     }
     return node.ast
@@ -682,16 +685,8 @@ const catch_: {
     options: CatchOptions<E, B, E2, R2, Handled>
   ): Node<A | B, E | E2, R | R2> => {
     const subjectToken = `${catchSubject}/${subjects.catch++}`
-    const failure = options.onFailure(Planned.make<Handled>(subjectToken))
-    if (!isNode(failure)) {
-      throw new GraphBuildError({
-        code: "invalid_continuation",
-        node: catchSubject,
-        path: [],
-        message: "Node.catch expected its failure arm to return a Node"
-      })
-    }
-    return internal.makeNode(internal.catch_(subjectToken, self.ast, failure.ast, options.error))
+    const failure = arm(options.onFailure, Planned.make<Handled>(subjectToken), "onFailure", catchSubject)
+    return internal.makeNode(internal.catch_(subjectToken, self.ast, failure, options.error))
   }
 )
 

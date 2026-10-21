@@ -165,3 +165,9 @@ runs, and inspects flows for someone who never imports a package at all.
   store composition and every outcome `record` can answer with.
 - [Troubleshooting](./troubleshooting.md): every refusal this package raises and
   what to change.
+
+Plan admission omits invalid plan and flow identity values from typed errors
+and bounds node identifiers in validation diagnostics. Branch and catch arm
+construction share the same depth budget and refuse unbounded recursion with
+`graph_too_deep`. Diff input attribution follows changes to the referenced
+upstream id, including when upstream nodes exchange their keys.

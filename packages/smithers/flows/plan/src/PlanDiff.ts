@@ -205,13 +205,14 @@ export const diff = (previous: Plan.Plan, next: Plan.Plan): PlanDiff => {
     const original = byKey.get(node.key)?.shift()
     if (original !== undefined) pair(node, original)
   }
-  const rekeyedIds = new Set<string>()
+  // Attribution follows a reference's id, independently of identity pairing:
+  // two upstream nodes can exchange keys and pair as unchanged moved steps.
+  const rekeyedIds = new Set(next.nodes.filter((node) => before.get(node.id)?.key !== node.key).map((node) => node.id))
   for (const node of next.nodes) {
     if (pairs.has(node)) continue
     const original = before.get(node.id)
     if (original !== undefined && !paired.has(original)) {
       pair(node, original)
-      rekeyedIds.add(node.id)
     }
   }
   const added: Array<string> = []
