@@ -296,6 +296,43 @@ describe("a lineage on the memory engine", () => {
       expect(calls).toEqual([1])
     }))
 
+  it.effect("resolves a handoff under the latest registration of its tag while that registration is open", () =>
+    Effect.gen(function*() {
+      const Outer = Flow.make("trampoline/scoped-open", {
+        payload: { value: Schema.Number },
+        success: Schema.Number,
+        body: ({ value }) => Increment.call({ value })
+      })
+      // The same tag under a payload schema the sender's handoff cannot
+      // satisfy, so resolving the open inner declaration is visible.
+      const Inner = Flow.make("trampoline/scoped-open", {
+        payload: { value: Schema.Number, gate: Schema.String },
+        success: Schema.Number,
+        body: ({ value }) => Increment.call({ value })
+      })
+      const Sender = Flow.make("trampoline/scoped-open-sender", {
+        payload: { value: Schema.Number },
+        success: Schema.Number,
+        body: ({ value }) => Outer.to({ value })
+      })
+      const { calls, layer } = wire(Interpreter.layer(Sender), Interpreter.layer(Outer))
+
+      const exit = yield* withCrypto(
+        Effect.gen(function*() {
+          const runtime = yield* FlowRuntime.FlowRuntime
+          yield* runtime.register(Inner, () => Effect.succeed(0))
+          return yield* Sender.execute({ value: 1 }, { executionId: "memory-scoped-open" }).pipe(Effect.exit)
+        }).pipe(Effect.scoped, Effect.provide(layer))
+      )
+
+      const defect = Exit.isFailure(exit)
+        ? exit.cause.reasons.find((reason) => reason._tag === "Die")?.defect
+        : undefined
+      expect(defect).toBeInstanceOf(Schema.SchemaError)
+      expect(String(defect)).toContain("gate")
+      expect(calls).toEqual([])
+    }))
+
   it.effect("counts to its target across rounds and answers with the lineage's value", () =>
     Effect.gen(function*() {
       const { calls, layer } = wire(Interpreter.layer(Counter))
@@ -425,6 +462,26 @@ describe("a lineage on the memory engine", () => {
       expect(Exit.isFailure(exit)).toBe(true)
       expect(Exit.isFailure(exit) && exit.cause.toString()).toContain("MaxRoundsExceeded")
       expect(calls).toEqual([])
+    }))
+
+  it.effect("charges a second handoff to the origin flow's budget, not the target's", () =>
+    Effect.gen(function*() {
+      // The origin allows rounds 0 and 1. Round 1 runs an unbounded counter,
+      // whose own handoff asks for round 2.
+      const OriginTwo = Flow.make("trampoline/origin-two", {
+        payload: { value: Schema.Number },
+        success: Schema.Number,
+        maxRounds: 2,
+        body: ({ value }) => Counter.to({ value, target: 5 })
+      })
+      const { calls, layer } = wire(Interpreter.layer(OriginTwo), Interpreter.layer(Counter))
+
+      const exit = yield* withCrypto(
+        OriginTwo.execute({ value: 0 }, { executionId: "memory-origin-two" }).pipe(Effect.exit, Effect.provide(layer))
+      )
+
+      expect(Exit.isFailure(exit) && exit.cause.toString()).toContain("MaxRoundsExceeded")
+      expect(calls).toEqual([0])
     }))
 
   it.effect("follows every round of a lineage executed from a parent flow", () =>

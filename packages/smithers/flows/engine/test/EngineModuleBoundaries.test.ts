@@ -80,10 +80,10 @@ describe("engine module boundaries", () => {
     // The four `let round*` bindings were re-declared as `runRound`
     // parameters of the same names, so a reader could not tell which binding
     // a round identity came from. One replaced-whole record removes the
-    // shadowing outright.
+    // shadowing outright. The follower record holds it as one field.
     for (const shadowed of ["let round ", "let roundFlow", "let roundExecutionId", "let roundPayload"]) {
       expect(trampoline).not.toContain(shadowed)
     }
-    expect(trampoline).toContain("let lineage: LineageRound")
+    expect(trampoline).toContain("  lineage: LineageRound\n")
   })
 })
