@@ -1250,7 +1250,7 @@ The translation boundary's own failures.
 export class HarnessError extends Schema.TaggedError<HarnessError>()("/harness/HarnessError", {
   code: HarnessErrorCode,
   message: Schema.String,
-  cause: Schema.optional(Schema.Defect())
+  cause: Schema.optional(Schema.Union([Evaluator.EvaluatorError, ModelError.ModelError, Schema.Defect()]))
 }) {}
 ```
 
@@ -1262,9 +1262,12 @@ construction site; a foreign CLI adapter declares its own family beside the
 adapter rather than borrowing this one. Interrupting a run raises no
 `HarnessError`: `CellTurn` emits `AgentEvent.Aborted` and forwards the
 interrupt cause unchanged. A failed projection is a
-`Transcript.TranscriptError`, not a `HarnessError`. `cause` is a
-`Schema.Defect` so a live `Error` attached as cause still encodes to JSON for
-the durable exit schema. `FlowBinding.make` passes existing `HarnessError`
+`Transcript.TranscriptError`, not a `HarnessError`. An `Evaluator.EvaluatorError`
+cause keeps its typed fields across replay, and so does a provider's
+`ModelError`, live or as `AgentAction` renders it to JSON before journaling: a
+flow that catches a refused model call reads its `code` and `httpStatus`. Any other cause is a `Schema.Defect`, so
+a live `Error` attached as cause still encodes to JSON for the durable exit
+schema. `FlowBinding.make` passes existing `HarnessError`
 values through unchanged; only permission requirements and denials are
 converted to code `suspended`. A handler error the binding's `timedOut`
 classifies becomes a `timeout` call result whose `value` records

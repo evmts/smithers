@@ -5,6 +5,7 @@
  */
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
+import { ModelError } from "@smthrs/model/ModelError"
 import { HarnessError } from "../src/HarnessError.ts"
 import { SandboxError } from "../src/Sandbox.ts"
 import { TranscriptError } from "../src/Transcript.ts"
@@ -67,5 +68,25 @@ describe("a harness failure carrying a non-JSON cause", () => {
     )
     expect(decoded.code).toBe("projection_failed")
     expect(decoded.message).toBe("the projection failed")
+  })
+
+  it("keeps a provider's ModelError, live or rendered to JSON, as a ModelError across the journal", () => {
+    // What AgentAction journals for a refused model call: the ModelError rendered to plain JSON.
+    const rendered = {
+      _tag: "flows/model/ModelError",
+      code: "no_route",
+      httpStatus: 409,
+      message: "Model route unavailable"
+    }
+    const fromJson = roundTrip(HarnessError, new HarnessError({ code: "model_failed", message: "m", cause: rendered }))
+    expect(fromJson.decoded.cause).toBeInstanceOf(ModelError)
+    expect(fromJson.decoded.cause).toMatchObject({ code: "no_route", httpStatus: 409 })
+    const live = new ModelError({ code: "rate_limited", message: "slow down", httpStatus: 429, retryAfterMillis: 5 })
+    const fromLive = roundTrip(HarnessError, new HarnessError({ code: "model_failed", message: "m", cause: live }))
+    expect(fromLive.encoded.cause).toMatchObject({ _tag: "flows/model/ModelError", code: "rate_limited" })
+    expect(fromLive.decoded.cause).toMatchObject({ code: "rate_limited", httpStatus: 429, retryAfterMillis: 5 })
+    // A JSON cause that isn't a ModelError stays a Defect, as before.
+    const other = roundTrip(HarnessError, new HarnessError({ code: "model_failed", message: "m", cause: { status: 500 } }))
+    expect(other.decoded.cause).not.toBeInstanceOf(ModelError)
   })
 })

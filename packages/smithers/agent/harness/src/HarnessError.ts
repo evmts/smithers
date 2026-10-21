@@ -6,6 +6,7 @@
 
 import * as Fault from "@smthrs/flow/Fault"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as ModelError from "@smthrs/model/ModelError"
 import { Schema } from "effect"
 
 /**
@@ -58,7 +59,10 @@ export type HarnessErrorCode = typeof HarnessErrorCode.Type
 /**
  * A failure while translating a recorded agent turn.
  *
- * Evaluator causes retain their typed fields across replay. Other causes use
+ * Evaluator causes retain their typed fields across replay, and so does a
+ * provider's `ModelError`, live or as `AgentAction` renders it to JSON before
+ * journaling: a flow that catches a refused model call reads its `code` and
+ * `httpStatus`, which `Schema.Defect` alone decoded away. Other causes use
  * {@link Schema.Defect} rather than {@link Schema.Unknown}: a
  * `HarnessError` is a member of `@smthrs/agent/AgentAction`'s `AgentFailure`
  * union, which is encoded through the durable exit schema for journaling. A
@@ -76,7 +80,7 @@ export type HarnessErrorCode = typeof HarnessErrorCode.Type
 export class HarnessError extends Schema.TaggedError<HarnessError>()("/harness/HarnessError", {
   code: HarnessErrorCode,
   message: Schema.String,
-  cause: Schema.optional(Schema.Union([Evaluator.EvaluatorError, Schema.Defect()]))
+  cause: Schema.optional(Schema.Union([Evaluator.EvaluatorError, ModelError.ModelError, Schema.Defect()]))
 }) {}
 Fault.register(
   "/harness/HarnessError",
