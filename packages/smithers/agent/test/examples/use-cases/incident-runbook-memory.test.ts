@@ -1,17 +1,20 @@
 import { afterAll, expect, it } from "@effect/vitest"
+import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
+import { DurableDeferred, HumanTask } from "@smthrs/flow"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
+import * as Schedule from "effect/Schedule"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
-  Approve,
+  approvalTask,
   IncidentRunbookMemory,
   layer,
-  namespace,
-  RuleDenied
+  namespace
 } from "../../../examples/use-cases/incident-runbook-memory.ts"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 
@@ -30,7 +33,7 @@ const listed = (asked: string, heading: string): ReadonlyArray<string> => {
  * per incident, a distiller whose rule counts the lessons it was handed, and a
  * person who answers `decision`. Every request is recorded in order.
  */
-const script = (decision: "approve" | "deny") => {
+const script = () => {
   const turns: Array<string> = []
   const answer: Kit.Script = (asked) => {
     if (asked.includes("You are an on-call triage assistant.")) {
@@ -59,16 +62,27 @@ const script = (decision: "approve" | "deny") => {
     }
     return undefined
   }
-  const person = Approve.toLayer((request) =>
-    Effect.suspend(() => {
-      turns.push(`approve ${JSON.stringify(request.input)}`)
-      return decision === "approve"
-        ? Effect.succeed("approved" as const)
-        : Effect.fail(new RuleDenied({ note: "too broad" }))
-    })
-  )
-  return { actions: Layer.mergeAll(layer, person), answer, turns }
+  return { answer, turns }
 }
+
+/** Answers the real durable question once the engine parks on it. */
+const approver = (executionId: string, decision: "approve" | "deny", turns: Array<string>) =>
+  Layer.effectDiscard(Effect.forkScoped(Effect.orDie(Effect.gen(function*() {
+    const state = yield* DurableEngineState.DurableEngineState
+    const row = yield* state.waiting(executionId).pipe(Effect.repeat({
+      until: (waiting) => Option.isSome(waiting) && waiting.value.reason === "approval" && waiting.value.token !== null,
+      schedule: Schedule.spaced(10)
+    }))
+    const { request, token } = Option.getOrThrow(row)
+    const { name, kind, prompt } = request as { readonly name: string; readonly kind: string; readonly prompt: string }
+    expect(name).toBe(approvalTask)
+    expect(kind).toBe("json")
+    turns.push(`approve ${prompt}`)
+    yield* HumanTask.answer({
+      token: DurableDeferred.Token.make(token ?? ""),
+      value: { approved: decision === "approve", note: "too broad" }
+    })
+  }))))
 
 /** Records the on-call fact the recall reads, as an operator would. */
 const seedOnCall = (filename: string, onCall: string) =>
@@ -83,17 +97,17 @@ const seedOnCall = (filename: string, onCall: string) =>
     )
   )
 
-it.effect("banks a lesson per incident and ratifies a rule once three have piled up", () =>
+it.live("banks a lesson per incident and ratifies a rule once three have piled up", () =>
   Effect.gen(function*() {
     const filename = join(directory, "ratified.sqlite")
     yield* seedOnCall(filename, "ada")
-    const { actions, answer, turns } = script("approve")
+    const { answer, turns } = script()
     const run = (n: number) =>
       Kit.run(IncidentRunbookMemory, { incident: `scale-down ${n}`, topic: "deploys" }, {
         filename,
         executionId: `irm-${n}`,
         script: answer,
-        actions
+        actions: Layer.mergeAll(layer, approver(`irm-${n}`, "approve", turns))
       })
 
     const first = yield* run(1)
@@ -111,7 +125,7 @@ it.effect("banks a lesson per incident and ratifies a rule once three have piled
       "triage on-call ada, 0 rules, 3 lessons",
       "bank",
       "distill 3",
-      "approve {\"ruleNoteId\":\"rule/irm-4\"}"
+      "approve Ratify the distilled runbook rule\n\nrule/irm-4"
     ])
     expect([...fourth.recall.lessonIds].sort()).toEqual(["lesson/irm-1/0", "lesson/irm-2/0", "lesson/irm-3/0"])
     expect(fourth.proposal).toEqual({ ruleNoteId: "rule/irm-4", rationale: "it keeps recurring" })
@@ -130,29 +144,37 @@ it.effect("banks a lesson per incident and ratifies a rule once three have piled
       lessonCount: 1
     })
     expect(fifth.proposal).toBeNull()
-  }))
+  }), { timeout: 60_000 })
 
-it.effect("leaves the lessons live when a person rejects the rule", () =>
+it.live("leaves the lessons live when a person rejects the rule", () =>
   Effect.gen(function*() {
     const filename = join(directory, "denied.sqlite")
-    const { actions, answer, turns } = script("deny")
+    const { answer, turns } = script()
     const run = (n: number) =>
       Kit.run(IncidentRunbookMemory, { incident: `scale-down ${n}` }, {
         filename,
         executionId: `irm-denied-${n}`,
         script: answer,
-        actions
+        actions: Layer.mergeAll(layer, approver(`irm-denied-${n}`, "deny", turns))
       })
 
     for (const n of [1, 2, 3]) yield* run(n)
-    const fourth = yield* run(4)
+    const failure = yield* Effect.flip(run(4))
     expect(turns).toContain("distill 3")
-    expect(fourth.proposal?.ruleNoteId).toBe("rule/irm-denied-4")
-    expect(fourth.ratification).toBeNull()
+    expect(failure).toMatchObject({ _tag: "examples/IncidentRunbookMemory/RuleDenied", note: "too broad" })
 
-    // A pending rule hides nothing: no live rule, and every lesson still recalled.
-    const fifth = yield* run(5)
-    expect(fifth.recall.onCall).toBe("unassigned")
-    expect(fifth.recall.rules).toEqual([])
-    expect(fifth.recall.lessonCount).toBe(4)
-  }))
+    // A pending rule hides nothing: inspect the real store after the denied run.
+    const knowledge = yield* Effect.scoped(
+      Effect.gen(function*() {
+        const store = yield* MemoryStore.MemoryStore
+        return {
+          rules: yield* store.listNotes({ namespace, prefix: "rule/" }),
+          lessons: yield* store.listNotes({ namespace, prefix: "lesson/" })
+        }
+      }).pipe(Effect.provide(
+        Layer.orDie(MemoryStore.layer).pipe(Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "inspect")))
+      ))
+    )
+    expect(knowledge.rules).toEqual([])
+    expect(knowledge.lessons).toHaveLength(4)
+  }), { timeout: 60_000 })

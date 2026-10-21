@@ -86,9 +86,7 @@ ahead of the rest.
 returned. The deferred body that core runs when the graph builds reads that
 snapshot and never the caller's option object again. `run` snapshots its
 options when it is called, before the `Effect` is returned, so an edit
-between the call and the execution does not reach the effect. The decorator
-factory `WithApproval.make` snapshots when `make` is called, not when the
-decorator is applied. `Pattern.slot` returns a
+between the call and the execution does not reach the effect. `Pattern.slot` returns a
 frozen copy of its declaration, which is what `Pattern.bind` reads.
 
 ### What is copied
@@ -210,23 +208,14 @@ list left to right, which puts the last decorator outermost.
 supplied flow: the capabilities, reads, writes, mode, and tier that the
 re-declaration removes.
 
-`WithApproval` uses this combinator to attach an approval policy.
+`Pattern.Approved` is the literal `"approved"` that `Runbook` and `Intervene`
+require from their approval members. To ask a person, call `HumanTask` and
+branch on the answer.
 
 A retry is not a decorator. Declare it as the `retryPolicy` of the action that
 can fail: the engine records every attempt and the wait before the next one,
 so a crash resumes the ladder where it stopped. See
 [Retries](/docs/concepts/retries/).
-
-## `WithApproval`
-
-`WithApproval.withApproval(flow, { reason, approval })` runs an approval flow
-ahead of the flow it gates, calling it with `{ input, reason, scope }`, where
-`scope` is the string `"run"`. The approval flow must declare its output as
-`WithApproval.Approved`, the literal `"approved"`. A denial therefore cannot
-decode, and it fails on the typed schema-error channel before the gated flow
-starts, rather than arriving as a boolean the gated flow is trusted to honor.
-An empty `reason` is refused with `invalid_decorator`. `WithApproval.make`
-is the decorator form.
 
 ## `Bounded`
 

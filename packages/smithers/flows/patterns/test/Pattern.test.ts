@@ -18,6 +18,7 @@ import { expect } from "vitest"
 import * as Decorate from "../src/internal/Decorate.ts"
 import * as Pattern from "../src/Pattern.ts"
 import { PatternError } from "../src/PatternError.ts"
+import { execute } from "./Execute.ts"
 
 const effect = (
   reads: ReadonlyArray<string>,
@@ -75,6 +76,28 @@ const bindInput = (expected: Schema.Top, actual: Schema.Top): Flow.Any =>
   )
 
 describe("Pattern", () => {
+  it("executes a decorator through its declared call with the original payload", async () => {
+    const payload = Schema.Struct({ value: Schema.String })
+    const inner = Flow.make("pattern/uppercase", {
+      payload,
+      success: Schema.String,
+      body: Node.capture(
+        {},
+        ({ value }) => Node.map(Node.succeed(value), Node.capture({}, (text) => text.toUpperCase()))
+      )
+    })
+    const decorated = Pattern.decorate(inner, () =>
+      Flow.make("pattern/brackets", {
+        description: "Wrap the result in brackets.",
+        payload,
+        success: Schema.String,
+        body: Node.capture({}, (input) => Node.map(inner.call(input), Node.capture({}, (text) => `[${text}]`)))
+      }))
+
+    expect(decorated.description).toBe("Wrap the result in brackets.")
+    expect(await execute(decorated as never, { value: "ship" }, "pattern-decorator-run")).toBe("[SHIP]")
+  })
+
   it("fails typed when a required slot has no binding", () => {
     const required = Pattern.slot({ input: Schema.String, output: Schema.String })
 

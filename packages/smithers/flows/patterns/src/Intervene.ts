@@ -13,12 +13,17 @@ import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Approval from "./internal/Approval.ts"
 import * as Compose from "./internal/Compose.ts"
 import * as Decorate from "./internal/Decorate.ts"
+import * as Failure from "./internal/Failure.ts"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.ts"
-import * as WithApproval from "./WithApproval.ts"
+import * as Pattern from "./Pattern.ts"
+import { PatternError } from "./PatternError.ts"
+
+const ApprovalInput = Schema.Struct({ input: Schema.Unknown, reason: Schema.String, scope: Schema.String })
 
 const DEFAULT_REASON = "apply the proposed intervention"
 
@@ -26,9 +31,8 @@ const DEFAULT_REASON = "apply the proposed intervention"
  * Configuration for {@link make}.
  *
  * `dryRun` removes the apply call from the declaration itself, so a dry-run
- * plan cannot reach a writing step. `approval` wraps apply with
- * {@link WithApproval.withApproval}, whose approval flow must produce the
- * literal `"approved"`.
+ * plan cannot reach a writing step. The optional `approval` flow must produce
+ * the literal `"approved"` before apply runs.
  *
  * @category models
  * @since 0.1.0
@@ -39,8 +43,7 @@ export interface MakeOptions<R = never> {
   readonly read: Member<R>
   readonly propose: Member<R>
   /**
-   * The writing stage. It is a whole flow rather than any member, because
-   * `approval` decorates it and a decorator re-declares what it wraps.
+   * The writing stage, called after the optional approval flow settles.
    */
   readonly apply: Flow.Any
   readonly report: Member<R>
@@ -92,7 +95,7 @@ export interface RuntimeOptions<I, Context, Proposal, Applied, Report, E, R, E2,
     | undefined
 }
 
-const decide = Schema.decodeUnknownEffect(WithApproval.Approved)
+const decide = Schema.decodeUnknownEffect(Pattern.Approved)
 
 /**
  * The declared form of an intervention.
@@ -112,10 +115,10 @@ export type InterveneFlow<R = never> = Flow.Flow<
  * Builds the intervention topology: read, propose, then either report the
  * proposal alone (dry run) or apply it and report what was written.
  *
- * When `approval` is supplied, the apply flow is wrapped with
- * {@link WithApproval.withApproval}, so the built graph shows the approval call
- * ahead of apply. A denial cannot decode as `"approved"` and therefore fails on
- * the typed schema-error channel before apply starts.
+ * When `approval` is supplied, the built graph calls it ahead of apply and
+ * runs apply only when it answers the literal `"approved"`. Any other answer
+ * fails the flow with a `PatternError` (`invalid_input`) carrying the answer,
+ * and apply never starts.
  *
  * @category constructors
  * @since 0.1.0
@@ -126,9 +129,13 @@ export const make = <R = never>(options: MakeOptions<R>): InterveneFlow<R> => {
   const stages = { read: options.read, propose: options.propose, report: options.report }
   const dryRun = options.dryRun
   const reason = options.reason ?? DEFAULT_REASON
-  const apply = options.approval === undefined
-    ? options.apply
-    : WithApproval.withApproval(options.apply, { reason, approval: options.approval })
+  const apply = options.apply
+  if (options.approval !== undefined && reason.trim().length === 0) {
+    throw new PatternError({ code: "invalid_decorator", message: "Approval reason must not be empty" })
+  }
+  const approval = options.approval === undefined
+    ? undefined
+    : Pattern.bind(Pattern.slot({ input: ApprovalInput, output: Pattern.Approved }), options.approval)
   const captures = { dryRun, gated: options.approval !== undefined, reason }
   const { name, description } = Compose.label("intervene", { dryRun }, options)
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> =>
@@ -147,7 +154,13 @@ export const make = <R = never>(options: MakeOptions<R>): InterveneFlow<R> => {
                 dryRun: true
               })
               : Node.bindPlanned(
-                Decorate.call<R>(apply, { phase: "apply", input, proposal }),
+                approval === undefined
+                  ? Decorate.call<R>(apply, { phase: "apply", input, proposal })
+                  : Approval.gate(
+                    Decorate.call<R>(approval, { input: { phase: "apply", input, proposal }, reason, scope: "run" }),
+                    () => Decorate.call<R>(apply, { phase: "apply", input, proposal }),
+                    captures
+                  ),
                 Node.capture(captures, (applied: Planned.Planned<unknown>) =>
                   callMember(stages.report, {
                     phase: "report",
@@ -163,11 +176,12 @@ export const make = <R = never>(options: MakeOptions<R>): InterveneFlow<R> => {
     ...(description === undefined ? {} : { description }),
     payload: OpaqueInput,
     success: Schema.Unknown,
-    // `@smthrs/core` carried its error type as a phantom parameter and
-    // declared no error schema. `@smthrs/flow` needs a real one, because the
-    // engine encodes a typed failure through it, and an intervention fails
-    // with whatever the stage it called failed with.
-    error: Schema.Unknown,
+    // The engine encodes a typed failure through this schema: a refused gate's
+    // `PatternError`, and whatever a stage or the approval failed with.
+    error: Failure.schemaFor(
+      [PatternError],
+      [stages.read, stages.propose, apply, stages.report, options.approval]
+    ) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
   })
 }

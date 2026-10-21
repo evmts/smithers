@@ -331,6 +331,35 @@ describe("Mapping.classify", () => {
     expect(Mapping.classify(hit("Loop", ["continueAsNewEvery"]))).toBe("guided")
   })
 
+  it("maps approvals to durable human tasks and runbooks to their pattern", () => {
+    for (const construct of ["Approval", "ApprovalGate"]) {
+      expect(Mapping.byConstruct(construct)).toMatchObject({
+        target: "HumanTask.action (kind: confirm) with Node.branch",
+        targetModule: "@smthrs/flow, @smthrs/plan/Node"
+      })
+      const snippet = Mapping.snippet(hit(construct, ["request"], { request: "Ship production", id: "release" }))
+      expect(snippet).toBe([
+        "Node.branch(HumanTask.action.call({ name: \"release\", kind: \"confirm\", prompt: \"Ship production\" }).pipe(HumanTask.decode(Schema.Boolean)), {",
+        "  if: Node.capture({}, (approved) => approved),",
+        "  then: Node.capture({}, () => inner.call(payload)),",
+        "  else: Node.capture({}, () => Node.fail(\"Approval denied\"))",
+        "})"
+      ].join("\n"))
+    }
+    expect(Mapping.byConstruct("Runbook")).toMatchObject({
+      target: "Runbook.make",
+      targetModule: "@smthrs/patterns/Runbook"
+    })
+    const conditional = Mapping.snippet(hit("ApprovalGate", ["request", "when"], {
+      request: "Ship production",
+      when: "payload.risky"
+    }))!
+    expect(conditional).toContain("if: Node.capture({}, (payload) => payload.risky)")
+    expect(conditional).toContain("name: \"approval\"")
+    expect(conditional).toContain("else: Node.capture({}, () => inner.call(payload))")
+    expect(transpiles(conditional)).toBe(true)
+  })
+
   it("raises a select approval to guided", () => {
     expect(Mapping.classify(hit("Approval", ["request"], { request: "ship it" }))).toBe("automatic")
     expect(Mapping.classify(hit("Approval", ["mode", "options"], { mode: "select" }))).toBe("guided")
@@ -623,7 +652,7 @@ describe("Mapping invents nothing over the real fixtures", () => {
     }))
 })
 
-// `.smithers/workflows/context-doctor.tsx` from `/Users/williamcory/smithers`
+// `.smithers/workflows/context-doctor.tsx` from the repository
 // at `cfb570f193`, cut to the declarations the scanner reads. It is the one
 // shape the golden fixture shows: a step whose payload the source threads out
 // of the step before it, by field.

@@ -185,7 +185,7 @@ export const flow = (role: string): Flow.Any => {
 }
 
 /**
- * A role called as an approval flow: `WithApproval` binds it to the slot
+ * A role called as an approval flow: the pattern binds it to the slot
  * `{ input, reason, scope }`, so its payload is exactly that struct.
  */
 export const approval = (role: string): Flow.Any => {

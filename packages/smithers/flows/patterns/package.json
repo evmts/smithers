@@ -63,7 +63,7 @@
     "./Supervisor": "./src/Supervisor.ts",
     "./Trellis": "./src/Trellis.ts",
     "./TryCatchFinally": null,
-    "./WithApproval": "./src/WithApproval.ts",
+    "./WithApproval": null,
     "./WithCache": null,
     "./WithRetry": null,
     "./index": "./src/index.ts"
@@ -349,16 +349,7 @@
         }
       },
       "./TryCatchFinally": null,
-      "./WithApproval": {
-        "import": {
-          "types": "./dist/esm/WithApproval.d.ts",
-          "default": "./dist/esm/WithApproval.js"
-        },
-        "require": {
-          "types": "./dist/cjs/WithApproval.d.ts",
-          "default": "./dist/cjs/WithApproval.js"
-        }
-      },
+      "./WithApproval": null,
       "./WithCache": null,
       "./WithRetry": null,
       "./index": {

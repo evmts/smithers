@@ -15,10 +15,29 @@
 
 import * as Flow from "@smthrs/flow/Flow"
 import { dual } from "effect/Function"
-import type * as Schema from "effect/Schema"
+import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
 import * as Decorate from "./internal/Decorate.ts"
 import { PatternError } from "./PatternError.ts"
+
+/**
+ * The sole value accepted from an approval step.
+ *
+ * A denial cannot decode as this schema and therefore fails on the typed
+ * schema-error channel before the inner flow starts.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Approved = Schema.Literal("approved")
+
+/**
+ * An accepted approval decision.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Approved = typeof Approved.Type
 
 /**
  * A schema-constrained hole which may provide a default flow.

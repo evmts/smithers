@@ -130,9 +130,10 @@ each step a stable identity.
 | Coordinate several agents as a team, with approvals and a landing order | `Supervisor`, `Intervene`, `CheckSuite`, `Kanban`, `Runbook`, `MergeQueue` | [Teams](./teams.md)           |
 | Claim and work every backlog item that is ours, round after round       | `Burndown`                                                                 | [Burndown](./burndown.md)     |
 | Run a plan a model wrote, inside bounds it cannot widen                 | `Trellis`, `DelegationChain`                                               | [Delegation](./delegation.md) |
-| Wrap one flow with an approval                                          | `WithApproval`, `Pattern`                                                  | [API reference](./api.md)     |
 
-The [module index](./modules.md) lists all 26 modules with their import
+To ask a person, call `HumanTask` and branch on the answer.
+
+The [module index](./modules.md) lists all 25 modules with their import
 specifiers.
 
 Use `Node.catch` to recover and `Effect.ensuring` in the action's handler to clean up.
@@ -168,7 +169,7 @@ start there.
 - [API reference](./api.md): the two halves of a pattern, string identity and
   ownership, the three error types, and every module the pages below do not
   cover.
-- [Module index](./modules.md): all 26 modules, their import specifiers, and
+- [Module index](./modules.md): all 25 modules, their import specifiers, and
   where each one is documented.
 - [Loops](./loops.md): `Loop`, `Optimizer`, `ScanFixVerify`, `DriftDetector`,
   and `Sidecar`, plus why a declaration cannot branch on a value.

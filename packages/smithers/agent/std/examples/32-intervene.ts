@@ -6,7 +6,7 @@
  * this example uses both over the same std flows. `Intervene.make` builds the
  * declaration: the read and apply steps name `Read.flow` and `Edit.flow` from
  * `@smthrs/std` and inherit their capabilities and effect envelopes, and the
- * apply step sits behind `WithApproval`, so a planner can see the gate before
+ * apply step follows the approval member, so a planner can see the gate before
  * anything runs. `Intervene.run` performs the value-dependent part over a real
  * temp directory, through `Read.run` and `Edit.run`, which are the
  * implementations of the very flows the declaration named.
@@ -19,7 +19,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { Node } from "@smthrs/core"
 import { Action, Flow } from "@smthrs/flow"
 import * as Intervene from "@smthrs/patterns/Intervene"
-import * as WithApproval from "@smthrs/patterns/WithApproval"
+import * as Pattern from "@smthrs/patterns/Pattern"
 import * as Edit from "@smthrs/std/Edit"
 import * as Read from "@smthrs/std/Read"
 import * as StdError from "@smthrs/std/StdError"
@@ -118,15 +118,15 @@ export const ReportEdit = Flow.make("report-edit", {
  * literal `"approved"`, so a denial fails the typed schema decode instead of
  * reaching the edit.
  *
- * `WithApproval` calls it with the wrapped step's payload, the reason the
+ * `Intervene` calls it with the wrapped step's payload, the reason the
  * decorator was given, and the scope the answer is remembered under, so that
  * struct is the input it declares.
  */
 const ApprovalPayload = Schema.Struct({ input: Schema.Unknown, reason: Schema.String, scope: Schema.String })
-const ApprovalAction = Action.make("approve-edit", { payload: ApprovalPayload, success: WithApproval.Approved })
+const ApprovalAction = Action.make("approve-edit", { payload: ApprovalPayload, success: Pattern.Approved })
 export const ApproveEdit = Flow.make("approve-edit", {
   payload: Schema.Struct({ input: Schema.Unknown, reason: Schema.String, scope: Schema.String }),
-  success: WithApproval.Approved,
+  success: Pattern.Approved,
   body: (payload) => ApprovalAction.call(payload)
 })
 

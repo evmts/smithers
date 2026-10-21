@@ -3,7 +3,7 @@ title: "Teams"
 description: "Supervisor, Intervene, CheckSuite, Kanban, Runbook, and MergeQueue: the @smthrs/patterns shapes that coordinate several agents, gate the risky steps, and fix a landing order."
 ---
 
-This page covers the six `@smthrs/patterns` modules that coordinate several agents as a team: `Supervisor`, `Intervene`, `CheckSuite`, `Kanban`, `Runbook`, and `MergeQueue`. They build on the composition primitives `Pattern`, `WithApproval`, and `MapReduce`, which are in [the API reference](./api.md).
+This page covers the six `@smthrs/patterns` modules that coordinate several agents as a team: `Supervisor`, `Intervene`, `CheckSuite`, `Kanban`, `Runbook`, and `MergeQueue`. They build on the composition primitives `Pattern` and `MapReduce`, which are in [the API reference](./api.md).
 
 Every module here follows the two-surface shape the package uses everywhere:
 
@@ -106,7 +106,7 @@ const intervention = Intervene.make({
 
 `dryRun: true` removes the apply call from the declaration, so a dry-run plan cannot reach a writing step at all. It is not a runtime flag the apply step is expected to honor.
 
-When `approval` is supplied, `make` wraps the apply flow with `WithApproval.withApproval`, so the built graph shows the approval call ahead of apply. The approval flow must declare its output as `WithApproval.Approved`, the literal `"approved"`, so a denial cannot decode and fails on the typed schema-error channel before apply starts. `make` throws when the supplied approval flow permits any other value.
+When `approval` is supplied, `make` calls it before apply and runs apply only when it answers the literal `"approved"`. Any other answer fails the flow with a `PatternError` (`invalid_input`) whose `cause.decision` is the answer, and apply never starts. The approval flow must declare its output as `Pattern.Approved`; `make` throws when it permits any other value.
 
 ### Execution
 
@@ -246,7 +246,7 @@ const release = Runbook.make({
 
 ### Declaration
 
-`make` chains the steps in declaration order and wraps every non-safe step with `WithApproval.withApproval`. Each step is called with `{ step, risk, elevated, input, previous }`, and the approval that gates a step sees that same envelope, so a built graph names the step an approval belongs to and whether it is elevated. A safe step declares no approval call. The declared flow settles to the same `{ outputs, ran, skipped }` record `run` returns; every step it settles ran.
+`make` chains the steps in declaration order and calls the approval member before every non-safe step. Each step is called with `{ step, risk, elevated, input, previous }`, and the approval that gates a step sees that same envelope, so a built graph names the step an approval belongs to and whether it is elevated. A safe step declares no approval call. A gated step runs only when its approval answers the literal `"approved"`; any other answer fails the runbook with a `PatternError` (`invalid_input`) whose `cause.decision` is the answer. The declared flow settles to the same `{ outputs, ran, skipped }` record `run` returns; every step it settles ran.
 
 `onDeny: "skip"` is not declarable, and `make` refuses it rather than building a plan that halts where you asked it to skip. The gated step is one flow whose failure channel carries the denial and the step's own failures together, and a plan has no branch to select between them, so the recovery arm that would skip a denial also declares that the runbook continues past a failed critical step. Declare the runbook with `onDeny: "fail"` and call `run` with `onDeny: "skip"`, which skips a denied step at run time.
 

@@ -9,7 +9,7 @@
  * `confidenceThreshold` (default 0.8), or a review that blocks, sends the
  * package to a person first; a packager agent assembles the proposal.
  *
- * 0.x's `<Approval>` is a `HumanTask` JSON question decoded to the same approval schema, so the packager reads the decision as 0.x's did. A denial ends the run with `ProposalDenied`, the reading `@smthrs/migrate` gives `<Approval>` (it maps it to `WithApproval`, which fails on denial).
+ * 0.x's `<Approval>` is a `HumanTask` JSON question decoded to the same approval schema, so the packager reads the decision as 0.x's did. A denial ends the run with `ProposalDenied`, the reading `@smthrs/migrate` gives `<Approval>`.
  * 0.x re-rendered its tree once the requirements landed; here the drafts run in a `.child()` flow whose body plans over the real requirements.
  * 0.x's prompts ended by asking for structured data matching the output schema; `AgentAction` renders and enforces the output schema instead.
  * 0.x gave the agents `read`, `write`, `grep` and `bash` tools; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).

@@ -86,7 +86,9 @@ A workflow is a \`Flow\`. A step is an \`Action\`. A model-backed step is an
   payload.
 - \`Sleep.action\` and \`DurableClock\` from \`@smthrs/flow\` are durable
   timers. \`WaitFor.action\` over \`DurableDeferred\` is a durable wait.
-- \`WithApproval.withApproval\`, \`ReviewLoop.run\`, \`MapReduce.make\`,
+- \`HumanTask.action\` from \`@smthrs/flow\` asks a person. Decode the answer
+  with \`HumanTask.decode\` and branch with \`Node.branch\`.
+- \`ReviewLoop.run\`, \`MapReduce.make\`,
   \`Panel.make\`, \`Debate.run\`, \`Escalation.run\`, \`Recursion.recurse\`
   from \`@smthrs/patterns\` are the higher-order patterns.
   \`RetryPolicy.make\` from \`@smthrs/flow\` is a retry policy, declared as

@@ -7,14 +7,17 @@
  * `Literal` of `keyMaterial.inputs`.
  */
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph } from "@smthrs/flow"
+import { Action, Flow, Graph } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
+import * as Pattern from "../src/Pattern.ts"
 import { PatternError } from "../src/PatternError.ts"
 import * as Runbook from "../src/Runbook.ts"
-import * as WithApproval from "../src/WithApproval.ts"
+import { executeExit } from "./Execute.ts"
 import { callsTo, payloadOf } from "./Graphs.ts"
 
 /** The envelope every declared step is handed. */
@@ -35,7 +38,7 @@ const step = Flow.make("runbook/step", {
 
 const approval = Flow.make("human-approval", {
   payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
-  success: WithApproval.Approved,
+  success: Pattern.Approved,
   error: Schema.Unknown,
   body: Node.capture({}, () => Node.succeed("approved" as const))
 }) as unknown as Flow.Any
@@ -67,11 +70,104 @@ const approvalCalls = (graph: Graph.Graph): ReadonlyArray<Record<string, unknown
     .sort((left, right) => String(left.step).localeCompare(String(right.step)))
 
 describe("Runbook", () => {
+  it("never runs a gated step on the engine when the approval answers denied", async () => {
+    const trace: Array<string> = []
+    const decide = Action.make("runbook/decide", {
+      payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
+      success: Pattern.Approved
+    })
+    const runStep = Action.make("runbook/run", { payload: Envelope, success: Schema.Unknown })
+    const gate = Flow.make("runbook/gate", {
+      payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
+      success: Pattern.Approved,
+      body: Node.capture({}, (request) => decide.call(request))
+    })
+    const gatedStep = Flow.make("runbook/gated", {
+      payload: Envelope,
+      success: Schema.Unknown,
+      body: Node.capture({}, (request) => runStep.call(request))
+    })
+    const exit = await executeExit(
+      Runbook.make({ steps: [{ id: "deploy", flow: gatedStep, risk: "critical" }], approval: gate, onDeny: "fail" }),
+      { input: "release" },
+      "runbook-denied-run",
+      decide.toLayer(() =>
+        Effect.sync(() => {
+          trace.push("approval")
+          // Inject a faulty approver implementation; the real engine checks its output.
+          return "denied" as Pattern.Approved
+        })
+      ),
+      runStep.toLayer(() => Effect.sync(() => trace.push("deploy")))
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) expect(Schema.isSchemaError(Cause.squash(exit.cause))).toBe(true)
+    expect(trace).toEqual(["approval"])
+  })
+
+  it("fails closed when an approval flow answers anything but \"approved\"", async () => {
+    for (const answer of ["denied", true, { approved: true }, null]) {
+      const trace: Array<string> = []
+      // The answer reaches the gate unchecked: the action admits any value,
+      // and an inline flow call does not decode its flow's declared output.
+      const decide = Action.make("runbook/decide-loose", {
+        payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
+        success: Schema.Unknown
+      })
+      const runStep = Action.make("runbook/run-loose", { payload: Envelope, success: Schema.Unknown })
+      const gate = Flow.make("runbook/gate-loose", {
+        payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
+        success: Pattern.Approved,
+        body: Node.capture({}, (request) => decide.call(request) as never)
+      })
+      const gatedStep = Flow.make("runbook/gated-loose", {
+        payload: Envelope,
+        success: Schema.Unknown,
+        body: Node.capture({}, (request) => runStep.call(request))
+      })
+      const exit = await executeExit(
+        Runbook.make({ steps: [{ id: "deploy", flow: gatedStep, risk: "critical" }], approval: gate, onDeny: "fail" }),
+        { input: "release" },
+        `runbook-loose-${JSON.stringify(answer)}`,
+        decide.toLayer(() => Effect.sync(() => (trace.push("approval"), answer))),
+        runStep.toLayer(() => Effect.sync(() => trace.push("deploy")))
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(Cause.squash(exit.cause)).toMatchObject({ code: "invalid_input", cause: { decision: answer } })
+      }
+      expect(trace).toEqual(["approval"])
+    }
+  })
+
   it("declares an approval call only for a non-safe step", () => {
     const graph = Graph.build(Runbook.make({ steps, approval, onDeny: "fail" }), { input: "release" })
 
     expect(Graph.diagnostics(graph)).toEqual([])
     expect(approvalCalls(graph).map((value) => value.step)).toEqual(["deploy", "migrate"])
+  })
+
+  it("preserves the approval member's own authority", () => {
+    const privileged = Flow.make("privileged-approval", {
+      payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
+      success: Pattern.Approved,
+      capabilities: ["fs:read:policy/**"],
+      effects: { reads: ["approval-policy"], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+      body: Node.capture({}, () => Node.succeed("approved" as const))
+    })
+    const graph = Graph.build(Runbook.make({ steps, approval: privileged, onDeny: "fail" }), { input: "release" })
+    const approvals = Graph.nodes(graph).filter((node) =>
+      node.kind === "FlowCall" &&
+      (node.ast as { readonly flow: string }).flow === "privileged-approval"
+    )
+
+    expect(approvals).toHaveLength(2)
+    for (const node of approvals) {
+      expect(node.capabilityCeilings.flat()).toContain("fs:read:policy/**")
+    }
+    expect(Graph.diagnostics(graph)).toEqual([])
   })
 
   it("marks a critical step's approval elevated and a risky one not", () => {

@@ -7,19 +7,18 @@
  * a banker agent writes 1-2 new lessons that the flow saves as notes. Once
  * the recall found at least three lessons, a distiller agent writes one rule
  * that the flow saves as pending and superseding them, and a person ratifies
- * it: approved, the rule goes live and the lessons drop out of recall; denied,
- * the store stays as it was.
+ * it: approval makes the rule live and removes the lessons from recall;
+ * denial fails with `RuleDenied` and leaves the lessons live.
  *
  * 0.x's agents saved notes through `record_lesson` and `propose_runbook_rule` tools; here they return the text and an action saves it with the run's provenance, so the model still writes bodies, never coordinates.
  * 0.x's note `kind` (`lesson`, `runbook-rule`) is the note id's prefix; its topic tag is `scope:<topic>`.
- * 0.x's `needsApproval` on `ratify` is `WithApproval` around it; the decision is the host's `Approve` action, which answers `"approved"` or fails with `RuleDenied`.
+ * `HumanTask` records the person's decision before ratification.
  * `WithMemory` and `.smithers/flows/memory/mine` scope memory the agents reach through tools; these agents have none, so the actions use `MemoryStore` directly.
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
-import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, HumanTask } from "@smthrs/flow"
 import { MemoryError } from "@smthrs/memory/MemoryError"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
-import * as WithApproval from "@smthrs/patterns/WithApproval"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
@@ -82,8 +81,15 @@ export const Output = Schema.Struct({
   ratification: Schema.NullOr(Ratification)
 })
 
-/** What the approval is asked: the rule's payload, the reason, and the scope `WithApproval` remembers it under. */
-export const ApprovalRequest = Schema.Struct({ input: Schema.Unknown, reason: Schema.String, scope: Schema.String })
+/** The durable question a person answers before the write. */
+export const approvalTask = "incident-runbook-memory/ratify"
+
+const Approval = Schema.Struct({ approved: Schema.Boolean, note: Schema.String })
+const approvalSchema = {
+  type: "object",
+  properties: { approved: { type: "boolean" }, note: { type: "string" } },
+  required: ["approved", "note"]
+}
 
 /** A person rejected the rule. */
 export class RuleDenied extends Schema.TaggedError<RuleDenied>()("examples/IncidentRunbookMemory/RuleDenied", {
@@ -174,21 +180,6 @@ export const RatifyRule = Action.make("examples/IncidentRunbookMemory/Ratify", {
   nondeterministic: true
 })
 
-/** The person's decision. A host implements it, for example with a control-plane approval token. */
-export const Approve = Action.make("examples/IncidentRunbookMemory/Approve", {
-  payload: ApprovalRequest,
-  success: WithApproval.Approved,
-  error: RuleDenied
-})
-
-/** The approval flow `WithApproval` calls before the ratification. */
-export const ApproveRule = Flow.make("examples/IncidentRunbookMemory/ApproveRule", {
-  payload: ApprovalRequest,
-  success: WithApproval.Approved,
-  error: RuleDenied,
-  body: (request) => Approve.call(request)
-})
-
 /** The ratification a person must approve. */
 export const Ratify = Flow.make("examples/IncidentRunbookMemory/RatifyRule", {
   payload: { ruleNoteId: Schema.String },
@@ -197,22 +188,29 @@ export const Ratify = Flow.make("examples/IncidentRunbookMemory/RatifyRule", {
   body: ({ ruleNoteId }) => RatifyRule.call({ ruleNoteId })
 })
 
-type Requirements = Action.Requirement<
-  "examples/IncidentRunbookMemory/Ratify" | "examples/IncidentRunbookMemory/Approve"
->
-
-/**
- * The ratification behind its approval. `WithApproval` returns a type-erased
- * flow, so its inline call is typed here once.
- */
-const gatedRatify = WithApproval.withApproval(Ratify, {
-  reason: "Ratify the distilled runbook rule",
-  approval: ApproveRule
-}) as unknown as {
-  readonly call: (
-    payload: { readonly ruleNoteId: Planned.Planned<string> }
-  ) => Node.Node<typeof Ratification.Type, MemoryError | RuleDenied, Requirements>
-}
+/** Asks a person, then ratifies only after approval. */
+const gatedRatify = (ruleNoteId: Planned.Planned<string>) =>
+  Node.bindPlanned(
+    Node.map(
+      Node.succeed({ ruleNoteId }),
+      Node.capture({}, ({ ruleNoteId }) => `Ratify the distilled runbook rule\n\n${ruleNoteId}`)
+    ),
+    Node.capture({}, (prompt: Planned.Planned<string>) =>
+      Node.branch(
+        HumanTask.decode(Approval)(
+          HumanTask.action.call({ name: approvalTask, kind: "json", prompt, schema: approvalSchema })
+        ),
+        {
+          if: Node.capture({}, (answer) => answer.approved),
+          then: Node.capture({}, () => Ratify.call({ ruleNoteId })),
+          else: Node.capture({}, (answer) =>
+            Node.bindPlanned(
+              Node.map(Node.succeed({ note: answer.note }), Node.capture({}, ({ note }) => new RuleDenied({ note }))),
+              Node.capture({}, (error: Planned.Planned<RuleDenied>) => Node.fail(error))
+            ))
+        }
+      ))
+  )
 
 /** The banker writes the lessons, and the flow saves them. */
 const bankLessons = (incident: string, topic: string, existingLessons: Planned.Planned<ReadonlyArray<string>>) =>
@@ -221,7 +219,7 @@ const bankLessons = (incident: string, topic: string, existingLessons: Planned.P
     (lessons: Planned.Planned<typeof Lessons.Type>) => RecordLessons.call({ topic, lessons })
   )
 
-/** Distill, propose, and ratify behind the approval; a denial settles with no ratification. */
+/** Distills, proposes, and ratifies after approval; denial fails before ratification. */
 const distill = (topic: string, recall: Planned.Planned<typeof Recall.Type>) =>
   Node.bindPlanned(
     DistillRule.call({ topic, lessons: recall.lessons }),
@@ -230,13 +228,7 @@ const distill = (topic: string, recall: Planned.Planned<typeof Recall.Type>) =>
         ProposeRule.call({ topic, distilled, lessonIds: recall.lessonIds }),
         (proposal: Planned.Planned<typeof Proposal.Type>) =>
           Node.bindPlanned(
-            // A catch filtered by a schema keeps the handled error in its type,
-            // because a refinement could reject some values. `RuleDenied` is a
-            // whole class, so it cannot escape and the type drops it here.
-            Node.catch(gatedRatify.call({ ruleNoteId: proposal.ruleNoteId }), {
-              error: RuleDenied,
-              onFailure: () => Node.succeed(null)
-            }) as Node.Node<typeof Ratification.Type | null, MemoryError, Requirements>,
+            gatedRatify(proposal.ruleNoteId),
             (ratification: Planned.Planned<typeof Ratification.Type | null>) => Node.succeed({ proposal, ratification })
           )
       )
@@ -251,7 +243,7 @@ const distill = (topic: string, recall: Planned.Planned<typeof Recall.Type>) =>
 export const IncidentRunbookMemory = Flow.make("examples/IncidentRunbookMemory", {
   payload: { incident: Schema.optional(Schema.String), topic: Schema.optional(Schema.String) },
   success: Output,
-  error: Schema.Union([AgentAction.AgentFailure, MemoryError]),
+  error: Schema.Union([AgentAction.AgentFailure, MemoryError, HumanTask.HumanTaskFailed, RuleDenied]),
   body: ({ incident = "deploys failing, cache tier cold after the weekend scale-down", topic = "deploys" }) =>
     Node.bindPlanned(
       RecallKnowledge.call({ topic }),
@@ -358,5 +350,5 @@ const memorySteps = Layer.mergeAll(
   )
 ).pipe(Layer.provide(Layer.orDie(MemoryStore.layer)))
 
-/** Every model and memory step the flow calls. The host adds an implementation of {@link Approve}. */
+/** Every model and memory step the flow calls. The interpreter supplies human tasks. */
 export const layer = Layer.mergeAll(TriageIncident.layer, ExtractLessons.layer, DistillRule.layer, memorySteps)

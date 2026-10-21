@@ -1,0 +1,46 @@
+/**
+ * The declared approval gate `Runbook` and `Intervene` put before a step.
+ *
+ * The approval member is asked first, and the gated step runs only when its
+ * answer is the literal `"approved"`. Every other answer fails the gate with a
+ * `PatternError` carrying the answer, so a gate fails closed whatever the
+ * approval member's own output schema admits.
+ *
+ * @since 1.0.0
+ * @private
+ */
+
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
+import { PatternError } from "../PatternError.ts"
+
+const refused = (decision: unknown): PatternError =>
+  new PatternError({
+    code: "invalid_input",
+    message: "The approval did not answer \"approved\", so the gated step did not run",
+    cause: { decision }
+  })
+
+/**
+ * Runs `gated` only after `approval` answers `"approved"`.
+ *
+ * A `PatternError` is a class instance and a plan holds only data while it is
+ * built, so the refusal is minted from the real answer when the gate runs.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const gate = <R>(
+  approval: Node.Node<unknown, unknown, R>,
+  gated: () => Node.Node<unknown, unknown, R>,
+  marks: Readonly<Record<string, unknown>>
+): Node.Node<unknown, unknown, R> =>
+  Node.branch(approval, {
+    if: Node.capture({ ...marks, gate: true }, (decision: unknown) => decision === "approved"),
+    then: () => gated(),
+    else: (decision: Planned.Planned<unknown>) =>
+      Node.bindPlanned(
+        Node.map(Node.succeed(decision), Node.capture({ ...marks, gate: "refused" }, refused)),
+        Node.capture({ ...marks, gate: "refused" }, (failure: Planned.Planned<PatternError>) => Node.fail(failure))
+      )
+  })

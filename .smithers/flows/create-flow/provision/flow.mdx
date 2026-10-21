@@ -39,7 +39,8 @@ starting point. Note each candidate and why it is a good template.
 ### 3. Inventory the patterns already available
 
 `@smthrs/patterns` ships `Loop`, `ReviewLoop`, `MapReduce`, `Escalation`,
-`Saga`, `Trellis`, `Quarantine`, and `WithApproval`, among others.
+`Saga`, `Trellis`, and `Quarantine`, among others.
+To ask a person, call `HumanTask` and branch on the answer.
 Use `Node.catch` to recover and `Effect.ensuring` in the action's handler to clean up.
 Declare retries with an action's `retryPolicy` and cache policies with
 `Action.withCache(action, { ttlMs, scope })`. Use the library catalog's

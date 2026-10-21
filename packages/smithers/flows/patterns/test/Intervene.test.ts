@@ -10,13 +10,15 @@
 import { describe, it } from "@effect/vitest"
 import { Action, Flow, Graph, Interpreter } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Intervene from "../src/Intervene.ts"
+import * as Pattern from "../src/Pattern.ts"
 import { PatternError } from "../src/PatternError.ts"
-import * as WithApproval from "../src/WithApproval.ts"
-import { execute } from "./Execute.ts"
+import { execute, executeExit } from "./Execute.ts"
 import { payloadOf } from "./Graphs.ts"
 
 /** Every payload a declared stage was handed while the plan ran, in order. */
@@ -71,7 +73,7 @@ const report = stage("report", {
 
 const decide = Action.make("intervene/decide", {
   payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
-  success: WithApproval.Approved,
+  success: Pattern.Approved,
   error: Schema.Never
 })
 
@@ -79,7 +81,7 @@ const decideLayer = decide.toLayer(() => Effect.succeed("approved" as const))
 
 const gate: Scripted = Flow.make("human-approval", {
   payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
-  success: WithApproval.Approved,
+  success: Pattern.Approved,
   error: Schema.Unknown,
   body: Node.capture(
     {},
@@ -168,19 +170,11 @@ describe("Intervene", () => {
       { input: "refactor" }
     )
 
-    // `withApproval` contributes two wrapper calls, the decorator and the
-    // declaration it wraps, beside the approval and the apply flow itself:
-    // seven member calls where an ungated intervention declares four.
-    // `@smthrs/flow` lists a spliced body BEFORE the call that splices it,
-    // where `@smthrs/core` listed the enclosing call first, so the two wrapper
-    // calls sit after the pair they enclose rather than before it.
     expect(memberTags(gated)).toEqual([
       "intervene/read",
       "intervene/propose",
       "human-approval",
       "intervene/apply",
-      "withApproval(intervene/apply)",
-      "withApproval(intervene/apply)",
       "intervene/report"
     ])
     expect(memberTags(gated).indexOf("human-approval")).toBeLessThan(
@@ -193,6 +187,34 @@ describe("Intervene", () => {
       "intervene/report"
     ])
     expect(Graph.diagnostics(gated)).toEqual([])
+  })
+
+  it("rejects an empty approval reason", () => {
+    expect(() => Intervene.make({ read, propose, apply, report, dryRun: false, approval: gate, reason: " \t" }))
+      .toThrow(expect.objectContaining({ code: "invalid_decorator", message: "Approval reason must not be empty" }))
+  })
+
+  it("preserves the approval member's own authority", () => {
+    const privileged = Flow.make("privileged-approval", {
+      payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
+      success: Pattern.Approved,
+      capabilities: ["fs:read:policy/**"],
+      effects: { reads: ["approval-policy"], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+      body: Node.capture({}, () => Node.succeed("approved" as const))
+    })
+    const graph = Graph.build(Intervene.make({ read, propose, apply, report, dryRun: false, approval: privileged }), {
+      input: "release"
+    })
+    const approvals = Graph.nodes(graph).filter((node) =>
+      node.kind === "FlowCall" &&
+      (node.ast as { readonly flow: string }).flow === "privileged-approval"
+    )
+
+    expect(approvals).toHaveLength(1)
+    for (const node of approvals) {
+      expect(node.capabilityCeilings.flat()).toContain("fs:read:policy/**")
+    }
+    expect(Graph.diagnostics(graph)).toEqual([])
   })
 
   it("rejects an approval flow that permits denial", () => {
@@ -321,6 +343,73 @@ describe("Intervene", () => {
 })
 
 describe("Intervene execution", () => {
+  it("never runs apply on the engine when the approval answers denied", async () => {
+    seen.length = 0
+    answers.clear()
+    answers.set("read", ["a.ts"])
+    answers.set("propose", { edits: 1 })
+    const asked: Array<unknown> = []
+    const denied = decide.toLayer((request) =>
+      Effect.sync(() => {
+        asked.push(request)
+        // Inject a faulty approver implementation; the real engine checks its output.
+        return "denied" as Pattern.Approved
+      })
+    )
+    const exit = await executeExit(
+      Intervene.make({ read, propose, apply, report, dryRun: false, approval: gate, reason: "rewrite" }),
+      { input: "refactor" },
+      "intervene-denied-run",
+      recordLayer,
+      denied
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) expect(Schema.isSchemaError(Cause.squash(exit.cause))).toBe(true)
+    expect(asked).toEqual([{
+      input: { phase: "apply", input: "refactor", proposal: { edits: 1 } },
+      reason: "rewrite",
+      scope: "run"
+    }])
+    expect(seen).toEqual([
+      { phase: "read", input: "refactor" },
+      { phase: "propose", input: "refactor", context: ["a.ts"] }
+    ])
+  })
+
+  it("fails closed when an approval flow answers anything but \"approved\"", async () => {
+    for (const answer of ["denied", true, { approved: true }, null]) {
+      seen.length = 0
+      answers.clear()
+      answers.set("read", ["a.ts"])
+      answers.set("propose", { edits: 1 })
+      // The answer reaches the gate unchecked: the action admits any value,
+      // and an inline flow call does not decode its flow's declared output.
+      const loose = Action.make("intervene/decide-loose", {
+        payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
+        success: Schema.Unknown
+      })
+      const looseGate = Flow.make("intervene/gate-loose", {
+        payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
+        success: Pattern.Approved,
+        body: Node.capture({}, (request) => loose.call(request) as never)
+      })
+      const exit = await executeExit(
+        Intervene.make({ read, propose, apply, report, dryRun: false, approval: looseGate, reason: "rewrite" }),
+        { input: "refactor" },
+        `intervene-loose-${JSON.stringify(answer)}`,
+        recordLayer,
+        loose.toLayer(() => Effect.succeed(answer))
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(Cause.squash(exit.cause)).toMatchObject({ code: "invalid_input", cause: { decision: answer } })
+      }
+      expect(seen.map((call) => (call as { readonly phase: string }).phase)).toEqual(["read", "propose"])
+    }
+  })
+
   it("runs the whole declared intervention through the interpreter", async () => {
     seen.length = 0
     answers.clear()

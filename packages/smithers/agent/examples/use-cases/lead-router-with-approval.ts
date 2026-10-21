@@ -7,7 +7,7 @@
  * fails the run, as 0.x's default `onDeny` did, and the CRM step never runs.
  * Otherwise a CRM agent records the route and the next action.
  *
- * 0.x's `<Approval>` becomes a `HumanTask` asking for 0.x's approval schema. `WithApproval` passes only "approved" on, and 0.x's CRM step reads the reviewer's note.
+ * 0.x's `<Approval>` becomes a `HumanTask` asking for 0.x's approval schema. The CRM step reads the reviewer's note.
  * 0.x's prompts were placeholders that printed their props; these are minimal prompts over the same props.
  * 0.x gave the agents `read`, `bash` and `grep` tools; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
  */

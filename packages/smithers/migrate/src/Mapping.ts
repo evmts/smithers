@@ -187,16 +187,16 @@ const table: ReadonlyArray<MappingRow> = [
   ),
   row(
     "Approval",
-    "WithApproval.withApproval(inner, { reason, approval })",
-    "@smthrs/patterns/WithApproval",
-    "`request` becomes `reason`. `mode: \"select\"` and `mode: \"rank\"` have no decorator form and are recorded. `allowedUsers` or `allowedScopes` requires a guided decision: the operator must supply an approval flow that preserves the restrictions.",
+    "HumanTask.action (kind: confirm) with Node.branch",
+    "@smthrs/flow, @smthrs/plan/Node",
+    "`request` becomes the human task prompt. Branch on the confirmed answer before calling the gated flow. `mode: \"select\"` and `mode: \"rank\"` need a separate answer schema and are recorded. `allowedUsers` or `allowedScopes` requires a guided decision: the operator must supply an approval flow that preserves the restrictions.",
     "automatic"
   ),
   row(
     "ApprovalGate",
-    "WithApproval.withApproval",
-    "@smthrs/patterns/WithApproval",
-    "`when` becomes a `Node.branch` around the decorated call.",
+    "HumanTask.action (kind: confirm) with Node.branch",
+    "@smthrs/flow, @smthrs/plan/Node",
+    "`when` becomes a `Node.branch` around the human task and gated call.",
     "automatic"
   ),
   row(
@@ -388,9 +388,9 @@ const table: ReadonlyArray<MappingRow> = [
   row("ContentPipeline", "Node.bindPlanned", "@smthrs/plan/Node", "Stages become a chain.", "automatic"),
   row(
     "Runbook",
-    "Node.bindPlanned with WithApproval",
-    "@smthrs/plan/Node, @smthrs/patterns/WithApproval",
-    "Steps become a chain; the approval request becomes a decorator.",
+    "Runbook.make",
+    "@smthrs/patterns/Runbook",
+    "Declare ordered steps with risk and an approval member that returns Pattern.Approved.",
     "automatic"
   ),
   row(
@@ -1002,13 +1002,13 @@ const escalations: ReadonlyArray<{
     props: ["allowedUsers", "allowedScopes"],
     to: "guided",
     reason:
-      "allowedUsers and allowedScopes have no decorator fields; the operator must supply an approval flow that preserves the restrictions"
+      "allowedUsers and allowedScopes need a policy; the operator must supply an approval flow that preserves the restrictions"
   },
   {
     construct: "Approval",
     props: ["mode", "options"],
     to: "guided",
-    reason: "select and rank approvals have no decorator form",
+    reason: "select and rank approvals need a separate human task answer schema",
     when: (hit) => hit.detail?.["mode"] !== undefined || hit.props.includes("options")
   },
   {
@@ -1499,7 +1499,25 @@ export const snippet = (hit: InventoryEntry, parse: typeof Ts.parse = Ts.parse):
       if (hit.props.includes("allowedUsers") || hit.props.includes("allowedScopes")) return undefined
       const reason = detail["request"] ?? detail["reason"]
       if (reason === undefined) return undefined
-      return `WithApproval.withApproval(inner, { reason: ${JSON.stringify(reason)}, approval })`
+      const prompt = JSON.stringify(reason)
+      const gate = [
+        `Node.branch(HumanTask.action.call({ name: ${
+          JSON.stringify(detail["id"] ?? "approval")
+        }, kind: "confirm", prompt: ${prompt} }).pipe(HumanTask.decode(Schema.Boolean)), {`,
+        "  if: Node.capture({}, (approved) => approved),",
+        "  then: Node.capture({}, () => inner.call(payload)),",
+        "  else: Node.capture({}, () => Node.fail(\"Approval denied\"))",
+        "})"
+      ].join("\n")
+      const when = detail["when"]
+      if (when === undefined) return gate
+      return [
+        "Node.branch(Node.succeed(payload), {",
+        `  if: Node.capture({}, (payload) => ${when}),`,
+        `  then: Node.capture({}, () => ${indented(gate, "  ")}),`,
+        "  else: Node.capture({}, () => inner.call(payload))",
+        "})"
+      ].join("\n")
     }
     case "close":
       return "// the host layer owns the store lifecycle; delete this call"

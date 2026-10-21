@@ -1,11 +1,15 @@
 import { afterAll, expect, it } from "@effect/vitest"
+import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
+import { DurableDeferred, HumanTask } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
+import * as Schedule from "effect/Schedule"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Kit from "../../../examples/use-cases/kit.ts"
-import { Approve, layer, RollbackAdvisor, RollbackDenied } from "../../../examples/use-cases/rollback-advisor.ts"
+import { approvalTask, layer, RollbackAdvisor } from "../../../examples/use-cases/rollback-advisor.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "rollback-advisor-"))
 
@@ -17,7 +21,7 @@ afterAll(() => rmSync(directory, { recursive: true, force: true }))
  * answers `decision`. Every request, the person's included, is recorded in
  * order.
  */
-const script = (decision: "approve" | "deny") => {
+const script = () => {
   const turns: Array<string> = []
   const answer: Kit.Script = (asked) => {
     const gather = /Gather evidence about a failed deployment\.\n\nDeployment: (.+)\nSymptoms: (.*)/.exec(asked)
@@ -48,66 +52,73 @@ const script = (decision: "approve" | "deny") => {
     }
     return undefined
   }
-  const person = Approve.toLayer((request) =>
-    Effect.suspend(() => {
-      turns.push(`approve ${request.reason}: ${JSON.stringify(request.input)}`)
-      return decision === "approve"
-        ? Effect.succeed("approved" as const)
-        : Effect.fail(new RollbackDenied({ note: "not during the sale" }))
-    })
-  )
-  return { actions: Layer.mergeAll(layer, person), answer, turns }
+  return { answer, turns }
 }
 
-it.effect("rolls back once a person approves", () =>
+/** Answers the real durable question once the engine parks on it. */
+const approver = (executionId: string, decision: "approve" | "deny", turns: Array<string>) =>
+  Layer.effectDiscard(Effect.forkScoped(Effect.orDie(Effect.gen(function*() {
+    const state = yield* DurableEngineState.DurableEngineState
+    const row = yield* state.waiting(executionId).pipe(Effect.repeat({
+      until: (waiting) => Option.isSome(waiting) && waiting.value.reason === "approval" && waiting.value.token !== null,
+      schedule: Schedule.spaced(10)
+    }))
+    const { request, token } = Option.getOrThrow(row)
+    const { name, kind, prompt } = request as { readonly name: string; readonly kind: string; readonly prompt: string }
+    expect(name).toBe(approvalTask)
+    expect(kind).toBe("json")
+    turns.push(`approve ${prompt}`)
+    yield* HumanTask.answer({
+      token: DurableDeferred.Token.make(token ?? ""),
+      value: { approved: decision === "approve", note: "not during the sale" }
+    })
+  }))))
+
+it.live("rolls back once a person approves", () =>
   Effect.gen(function*() {
-    const { actions, answer, turns } = script("approve")
+    const { answer, turns } = script()
     const outcome = yield* Kit.run(RollbackAdvisor, { deployment: "api-v42", symptoms: ["5xx spike", "timeouts"] }, {
       filename: join(directory, "approved.sqlite"),
       executionId: "rollback-advisor-approved",
       script: answer,
-      actions
+      actions: Layer.mergeAll(layer, approver("rollback-advisor-approved", "approve", turns))
     })
 
     // The person was asked after the advisor, about this deployment and the advisor's reason.
     expect(turns).toEqual([
       "gather api-v42: 5xx spike, timeouts",
       "advise on findings for 5xx spike, timeouts",
-      "approve Rollback api-v42: {\"deployment\":\"api-v42\",\"reason\":\"findings for 5xx spike, timeouts after the deploy\"}"
+      "approve Rollback api-v42\n\nfindings for 5xx spike, timeouts after the deploy"
     ])
     expect(outcome).toEqual({
       action: "rollback",
       summary: "Approved rollback for api-v42: findings for 5xx spike, timeouts after the deploy",
       steps: ["Initiate rollback", "Verify service health", "Notify stakeholders"]
     })
-  }))
+  }), { timeout: 60_000 })
 
-it.effect("observes when a person denies the rollback", () =>
+it.live("fails with RollbackDenied before rollback when a person denies it", () =>
   Effect.gen(function*() {
-    const { actions, answer, turns } = script("deny")
-    const outcome = yield* Kit.run(RollbackAdvisor, { deployment: "api-v42", symptoms: ["5xx spike"] }, {
+    const { answer, turns } = script()
+    const failure = yield* Effect.flip(Kit.run(RollbackAdvisor, { deployment: "api-v42", symptoms: ["5xx spike"] }, {
       filename: join(directory, "denied.sqlite"),
       executionId: "rollback-advisor-denied",
       script: answer,
-      actions
-    })
+      actions: Layer.mergeAll(layer, approver("rollback-advisor-denied", "deny", turns))
+    }))
 
-    expect(turns.at(-1)).toMatch(/^approve Rollback api-v42: /)
-    expect(outcome).toEqual({
-      action: "observe",
-      summary: "Rollback recommended but awaiting approval: findings for 5xx spike after the deploy",
-      steps: ["Await approval", "Monitor error rates"]
-    })
-  }))
+    expect(turns.at(-1)).toBe("approve Rollback api-v42\n\nfindings for 5xx spike after the deploy")
+    expect(failure).toMatchObject({ _tag: "examples/RollbackAdvisor/RollbackDenied", note: "not during the sale" })
+  }), { timeout: 60_000 })
 
-it.effect("mitigates without asking anyone when no rollback is recommended", () =>
+it.live("mitigates without asking anyone when no rollback is recommended", () =>
   Effect.gen(function*() {
-    const { actions, answer, turns } = script("approve")
+    const { answer, turns } = script()
     const outcome = yield* Kit.run(RollbackAdvisor, {}, {
       filename: join(directory, "mitigate.sqlite"),
       executionId: "rollback-advisor-mitigate",
       script: answer,
-      actions
+      actions: Layer.mergeAll(layer, approver("rollback-advisor-mitigate", "approve", turns))
     })
 
     // The 0.x defaults: an unknown deployment and no symptoms. Nobody was asked to approve.
@@ -117,4 +128,4 @@ it.effect("mitigates without asking anyone when no rollback is recommended", () 
       summary: "Mitigation plan: Disable the new-cart flag. Shift 10% of traffic back",
       steps: ["Disable the new-cart flag", "Shift 10% of traffic back"]
     })
-  }))
+  }), { timeout: 60_000 })

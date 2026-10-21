@@ -10,7 +10,7 @@ const literal = (node: Graph.GraphNode): Record<string, unknown> => {
   return first !== undefined && first._tag === "Literal" ? first.value as Record<string, unknown> : {}
 }
 
-/** The nodes that call the approval, which `WithApproval` marks with a run scope. */
+/** The nodes that call the approval, which `Intervene` marks with a run scope. */
 const approvals = (graph: Graph.Graph): ReadonlyArray<Graph.GraphNode> =>
   Graph.nodes(graph).filter((node) => node.kind === "FlowCall" && literal(node).scope === "run")
 
@@ -86,16 +86,16 @@ it("plans the approval ahead of the write", () => {
   // expands into is the action a host implements.
   const body = Graph.nodes(graph).find((node) => node.id === `${write.id}.flow`)!
   expect(body.kind).toBe("ActionCall")
-  expect(body.dependencies).toContain(approval[0]!.id)
-  // Graph propagates continuation prerequisites into a FlowCall's body.
-  // Both the apply call and its executable body must wait for approval, so
-  // scheduling the body directly cannot bypass the gate. The third edge is the
-  // approval's own value reaching the call that asked for it.
-  const asked = approval[0]!.id.slice(0, approval[0]!.id.lastIndexOf("."))
+  // The gate is a branch on the approval's answer. The write is its `then`
+  // arm, which runs only after the approval answered and only when the answer
+  // is "approved"; the `else` arm fails the intervention instead. Both arms
+  // wait for the approval, and its answer is the value the branch decides on.
+  const gate = Graph.nodes(graph).find((node) => node.kind === "Branch" && node.dependencies.includes(approval[0]!.id))!
+  expect(gate.dependencies).toContain(write.id)
   expect(gates).toEqual([
-    { from: approval[0]!.id, to: asked, reason: "value" },
+    { from: approval[0]!.id, to: gate.id, reason: "value" },
     { from: approval[0]!.id, to: write.id, reason: "continuation" },
-    { from: approval[0]!.id, to: body.id, reason: "continuation" }
+    { from: approval[0]!.id, to: `${gate.id}.else`, reason: "continuation" }
   ])
 })
 

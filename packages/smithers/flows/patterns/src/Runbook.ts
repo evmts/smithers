@@ -14,11 +14,15 @@ import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Approval from "./internal/Approval.ts"
 import * as Compose from "./internal/Compose.ts"
 import * as Decorate from "./internal/Decorate.ts"
+import * as Failure from "./internal/Failure.ts"
 import { OpaqueInput } from "./internal/Payload.ts"
+import * as Pattern from "./Pattern.ts"
 import { PatternError } from "./PatternError.ts"
-import * as WithApproval from "./WithApproval.ts"
+
+const ApprovalInput = Schema.Struct({ input: Schema.Unknown, reason: Schema.String, scope: Schema.String })
 
 const DEFAULT_REASON = "run the step"
 
@@ -135,9 +139,7 @@ export interface Result<Out> {
   readonly skipped: ReadonlyArray<string>
 }
 
-type Approved = typeof WithApproval.Approved.Type
-
-const decide = Schema.decodeUnknownEffect(WithApproval.Approved)
+const decide = Schema.decodeUnknownEffect(Pattern.Approved)
 
 /**
  * Reports whether a step's risk requires an approval.
@@ -173,10 +175,13 @@ export type RunbookFlow<R = never> = Flow.Flow<
 
 /**
  * Builds the runbook topology: the steps chained in declaration order, with
- * every non-safe step wrapped by {@link WithApproval.withApproval}.
+ * an approval call before every non-safe step.
  *
  * Each step is called with `{ step, risk, elevated, input, previous }`, and the
- * approval that gates a step sees that same envelope, so a built graph shows
+ * approval that gates a step sees that same envelope. A gated step runs only
+ * when its approval answers the literal `"approved"`; any other answer fails
+ * the runbook with a `PatternError` (`invalid_input`) carrying the answer. The
+ * approval sees the envelope, so a built graph shows
  * which step an approval belongs to and whether it is elevated. The flow
  * settles to the same {@link Result} {@link run} returns, with every step in
  * `ran` and none in `skipped`.
@@ -219,17 +224,12 @@ export const make = <R = never>(options: MakeOptions): RunbookFlow<R> => {
   }
   const reason = options.reason ?? DEFAULT_REASON
   const captures = { steps: ids, risks: steps.map((step) => step.risk), onDeny: options.onDeny, reason }
-  const declared = steps.map((step) =>
-    gated(step.risk)
-      ? {
-        step,
-        flow: WithApproval.withApproval(step.flow, {
-          reason: `${reason}: ${step.id}`,
-          approval: options.approval
-        })
-      }
-      : { step, flow: step.flow }
-  )
+  const declared = steps.map((step) => {
+    if (!gated(step.risk)) return { step, approval: undefined }
+    const stepReason = `${reason}: ${step.id}`
+    const approval = Pattern.bind(Pattern.slot({ input: ApprovalInput, output: Pattern.Approved }), options.approval)
+    return { step, approval: { flow: approval, reason: stepReason } }
+  })
   const { name, description } = Compose.label("runbook", { steps: ids }, options)
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const envelope = (index: number, previous: unknown): unknown => ({
@@ -259,7 +259,17 @@ export const make = <R = never>(options: MakeOptions): RunbookFlow<R> => {
         )
       }
       return Node.bindPlanned(
-        Decorate.call<R>(step.flow, envelope(index, previous)),
+        step.approval === undefined
+          ? Decorate.call<R>(step.step.flow, envelope(index, previous))
+          : Approval.gate(
+            Decorate.call<R>(step.approval.flow, {
+              input: envelope(index, previous),
+              reason: step.approval.reason,
+              scope: "run"
+            }),
+            () => Decorate.call<R>(step.step.flow, envelope(index, previous)),
+            { step: step.step.id }
+          ),
         Node.capture(
           { ...captures, step: step.step.id },
           (value: Planned.Planned<unknown>) => walk(index + 1, value, { ...outputs, [step.step.id]: value })
@@ -272,11 +282,12 @@ export const make = <R = never>(options: MakeOptions): RunbookFlow<R> => {
     ...(description === undefined ? {} : { description }),
     payload: OpaqueInput,
     success: Schema.Unknown,
-    // `@smthrs/core` carried its error type as a phantom parameter and
-    // declared no error schema. `@smthrs/flow` needs a real one, because the
-    // engine encodes a typed failure through it, and a runbook fails with
-    // whatever the step it called failed with.
-    error: Schema.Unknown,
+    // The engine encodes a typed failure through this schema: a refused gate's
+    // `PatternError`, and whatever a step or the approval failed with.
+    error: Failure.schemaFor(
+      [PatternError],
+      [options.approval, ...steps.map((step) => step.flow)]
+    ) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
   })
 }
@@ -325,7 +336,7 @@ export const run = <I, Out, E = never, R = never, E2 = never, R2 = never>(
       }
       if (gated(step.risk)) {
         const answer = decide(yield* approve(request))
-        const decision: Approved | "denied" = onDeny === "skip"
+        const decision: Pattern.Approved | "denied" = onDeny === "skip"
           ? yield* Effect.catch(answer, () => Effect.succeed("denied" as const))
           : yield* answer
         if (decision === "denied") {

@@ -15,6 +15,7 @@ import * as Loop from "../src/Loop.ts"
 import * as MapReduce from "../src/MapReduce.ts"
 import * as Optimizer from "../src/Optimizer.ts"
 import * as Panel from "../src/Panel.ts"
+import * as Pattern from "../src/Pattern.ts"
 import * as Quarantine from "../src/Quarantine.ts"
 import * as Recursion from "../src/Recursion.ts"
 import * as ReviewLoop from "../src/ReviewLoop.ts"
@@ -22,7 +23,6 @@ import * as Runbook from "../src/Runbook.ts"
 import * as ScanFixVerify from "../src/ScanFixVerify.ts"
 import * as Sidecar from "../src/Sidecar.ts"
 import * as Trellis from "../src/Trellis.ts"
-import * as WithApproval from "../src/WithApproval.ts"
 
 // Every field any pattern here hands a member, as the one struct a
 // `@smthrs/flow` flow states. Two flows a plan can tell apart: a flow's tag
@@ -103,13 +103,13 @@ const other = flowNamed("other")
 const runtimeStep = step
 const runtimeOther = other
 
-// An approval member answers the one literal `WithApproval` admits, and states
+// An approval member answers the literal `Pattern.Approved`, and states
 // exactly the payload the approval slot declares, because `Pattern.bind`
 // compares the two schemas.
 const approving = (name: string) =>
   Flow.make(name, {
     payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
-    success: WithApproval.Approved,
+    success: Pattern.Approved,
     error: Schema.Unknown,
     body: PlanNode.capture({ name }, () => PlanNode.succeed("approved" as const))
   })
@@ -473,21 +473,6 @@ describe("options are snapshotted at the call", () => {
       expect(entry.edited()).not.toEqual(before)
     })
   }
-
-  it("WithApproval.make snapshots its options before the decorator is applied", () => {
-    const options = { reason: "publish", approval: approving("gate") }
-    const decorator = WithApproval.make(options)
-    options.reason = "something else"
-    options.approval = approving("other-gate")
-
-    const inner = flowNamed("publish")
-    const decorated = decorator(inner)
-    const reference = WithApproval.make({ reason: "publish", approval: approving("gate") })(inner)
-    expect(shape(decorated, { input: "release" })).toEqual(shape(reference, { input: "release" }))
-    expect(shape(decorated, { input: "release" })).not.toEqual(
-      shape(WithApproval.make(options)(inner), { input: "release" })
-    )
-  })
 
   it.effect("Bounded.run runs the members and options it was called with", () =>
     Effect.gen(function*() {

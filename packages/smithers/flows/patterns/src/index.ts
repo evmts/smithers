@@ -19,12 +19,6 @@ export * as PatternError from "./PatternError.ts"
 export * as Pattern from "./Pattern.ts"
 
 /**
- * @category decorators
- * @since 0.1.0
- */
-export * as WithApproval from "./WithApproval.ts"
-
-/**
  * @category patterns
  * @since 0.1.0
  */

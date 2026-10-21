@@ -8,7 +8,7 @@
  * ceiling and effect envelope as literal fields, so reading them was a property
  * access; `@smthrs/flow` carries both in the annotation bag, under the keys
  * `Graph.build` itself consults. This module is where that difference lives, so
- * `Pattern` and `WithApproval` state a wrapper the same way.
+ * `Pattern` reads and restates wrapper declarations through this seam.
  *
  * The envelope algebra it narrows with is `Compose`'s, which is
  * `@smthrs/plan/Effects`: a decorator that narrows a wrapped flow's authority

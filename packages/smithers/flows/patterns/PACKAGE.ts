@@ -48,11 +48,11 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A model or approver output that is a denial, malformed, or missing lets a write, deploy, or critical runbook step run without human consent.",
       lookFor: [
-        "A path in WithApproval, Intervene, or Runbook where apply or the inner flow is reached before or without decoding the approval output as WithApproval.Approved.",
+        "A path in Intervene or Runbook where apply or a gated step is reached before or without decoding the approval output as Pattern.Approved.",
         "Runbook.run with onDeny \"skip\" or \"fail\" treating a thrown or undefined approval result as approval, or a risky/critical step called without an approval call.",
         "Intervene with dryRun true still calling apply, or make and run disagreeing on whether apply is reachable."
       ],
-      paths: ["src/WithApproval.ts", "src/Intervene.ts", "src/Runbook.ts"]
+      paths: ["src/Intervene.ts", "src/Runbook.ts", "src/Pattern.ts"]
     },
     {
       id: "accepted-decision-strict",
@@ -82,13 +82,14 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A flow author wraps a privileged flow (or adds an approval member) so the composite's declared capabilities and effect envelope hide what actually runs, bypassing policy checks keyed on those declarations.",
       lookFor: [
-        "Decorate or WithApproval copying only the inner flow's capabilities while its body also calls a separately supplied flow such as the approval flow.",
+        "Decorate, Intervene, or Runbook restating only a gated flow's authority while also calling a separately supplied approval flow; sequence the calls without clipping the approval's authority.",
         "Compose.intersectCapabilities or intersectEffects used where a union of called members is required, or an envelope_conflict check that can be skipped when the template declares none."
       ],
       paths: [
         "src/internal/Decorate.ts",
         "src/internal/Compose.ts",
-        "src/WithApproval.ts"
+        "src/Intervene.ts",
+        "src/Runbook.ts"
       ]
     },
     {
