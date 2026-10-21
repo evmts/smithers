@@ -1,7 +1,8 @@
 import { test as base, type BrowserContextOptions } from "@playwright/test"
 import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { DEV_URL } from "../dev/https"
 import { DEVICE_PERSON_HEADER, type Role, ROLES } from "../src/features/auth/contract"
 
@@ -119,6 +120,24 @@ export type Run = {
 
 const set = (run: Run, ...names: ReadonlyArray<string>) => names.every((name) => (run.env[name] ?? "") !== "")
 
+/** The dev server's own settings file, apps/mvp/.env, which `alchemy dev` reads. */
+export const DOT_ENV = join(dirname(fileURLToPath(import.meta.url)), "..", ".env")
+
+/** Whether the dotenv file at `path` gives `name` a value. Presence only: the value is never read out. */
+export const dotEnvSets = (path: string, name: string): boolean => {
+  let text: string
+  try {
+    text = readFileSync(path, "utf8")
+  } catch {
+    return false
+  }
+  const line = new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=\\s*(?:"[^"\\s][^"]*"|'[^'\\s][^']*'|[^\\s"'#])`)
+  return text.split(/\r?\n/).some((each) => line.test(each))
+}
+
+/** The key the dev server's model endpoint reaches its default model with (worker/ModelRoles.ts `DEFAULT_CHAT_MODEL`). */
+const MODEL_KEY = "CEREBRAS_API_KEY"
+
 /**
  * A need: when a run meets it, and why a test that has it skips otherwise. A `blocked` need is a prerequisite the run
  * lacks, such as the test account's role, not something the target can never offer: the summary fails the run for it.
@@ -174,6 +193,11 @@ const needs = {
   codeStorage: {
     met: (run) => run.target === "deployment" || set(run, "CODE_STORAGE_ORG", "CODE_STORAGE_KEY"),
     reason: "it clones into Code Storage, which the local dev server reaches only with CODE_STORAGE_ORG and CODE_STORAGE_KEY set",
+  },
+  liveModel: {
+    met: (run) =>
+      run.target === "deployment" || set(run, MODEL_KEY) || dotEnvSets(run.env.E2E_DOT_ENV ?? DOT_ENV, MODEL_KEY),
+    reason: "it waits for the real model's answers: a deployment, or a local dev server with CEREBRAS_API_KEY set in its environment or apps/mvp/.env (the Mac mini's dev server has no model)",
   },
   factoryRepository: {
     met: (run) => run.target === "deployment" && set(run, "E2E_FACTORY_REPOSITORY") && !/^smithersai\//i.test(run.env.E2E_FACTORY_REPOSITORY!),

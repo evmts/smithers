@@ -8,6 +8,7 @@ import {
   type Broken,
   describeBroken,
   describeNeed,
+  dotEnvSets,
   guard,
   KNOWN_BROKEN,
   NEEDS,
@@ -24,7 +25,11 @@ import {
   UndeclaredNeed,
 } from "./target"
 
-const local: Run = { target: "local", role: () => "admin", env: { CODE_STORAGE_ORG: "o", CODE_STORAGE_KEY: "k" } }
+const local: Run = {
+  target: "local",
+  role: () => "admin",
+  env: { CODE_STORAGE_ORG: "o", CODE_STORAGE_KEY: "k", E2E_DOT_ENV: join(tmpdir(), "e2e-no-such-dot-env") },
+}
 const deployedAs = (role: ReturnType<Run["role"]>, env: Run["env"] = {}): Run => ({ target: "deployment", role: () => role, env })
 
 describe("the target", () => {
@@ -68,6 +73,7 @@ describe("needs", () => {
       "alertProviders",
       "oldBuild",
       "githubSignIn",
+      "liveModel",
       "factoryRepository",
       "githubScratch",
       "dogfood",
@@ -86,11 +92,11 @@ describe("needs", () => {
 
   it("in a deployment, leave out every dev-only need, and meet a role need by the account's role", () => {
     const met = (role: ReturnType<Run["role"]>) => (Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].met(deployedAs(role)))
-    expect(met("guest")).toEqual(["githubSignIn", "codeStorage", "githubApp"])
-    expect(met(null)).toEqual(["githubSignIn", "codeStorage", "githubApp"])
-    expect(met("member")).toEqual(["githubSignIn", "codeStorage", "githubApp", "member"])
-    expect(met("maintainer")).toEqual(["githubSignIn", "codeStorage", "githubApp", "member", "maintainer"])
-    expect(met("admin")).toEqual(["githubSignIn", "codeStorage", "githubApp", "member", "maintainer"])
+    expect(met("guest")).toEqual(["githubSignIn", "codeStorage", "liveModel", "githubApp"])
+    expect(met(null)).toEqual(["githubSignIn", "codeStorage", "liveModel", "githubApp"])
+    expect(met("member")).toEqual(["githubSignIn", "codeStorage", "liveModel", "githubApp", "member"])
+    expect(met("maintainer")).toEqual(["githubSignIn", "codeStorage", "liveModel", "githubApp", "member", "maintainer"])
+    expect(met("admin")).toEqual(["githubSignIn", "codeStorage", "liveModel", "githubApp", "member", "maintainer"])
   })
 
   it("for local development's people and sign-out, are unmet once the dev server signs in through GitHub", () => {
@@ -110,6 +116,36 @@ describe("needs", () => {
     expect(NEEDS.alertProviders.met({ ...local, env: providers })).toBe(true)
     expect(NEEDS.alertProviders.met({ ...local, env: { ...providers, ALERT_EMAIL_API_URL: "http://localhost:8" } })).toBe(false)
     expect(NEEDS.alertProviders.met({ ...local, env: { ...providers, MODEL_SPEND_ALERTS: "false" } })).toBe(false)
+  })
+
+  it("for the live model, are met by a deployment, or locally by the model key in the environment or the dev server's .env", () => {
+    expect(NEEDS.liveModel.met(deployedAs("member"))).toBe(true)
+    expect(NEEDS.liveModel.met(local)).toBe(false)
+    expect(NEEDS.liveModel.met({ ...local, env: { ...local.env, CEREBRAS_API_KEY: "k" } })).toBe(true)
+    expect(NEEDS.liveModel.met({ ...local, env: { ...local.env, CEREBRAS_API_KEY: "" } })).toBe(false)
+    const dir = mkdtempSync(join(tmpdir(), "e2e-dot-env-"))
+    try {
+      const file = join(dir, ".env")
+      const sets = (text: string) => {
+        writeFileSync(file, text)
+        return dotEnvSets(file, "CEREBRAS_API_KEY")
+      }
+      expect(sets("CEREBRAS_API_KEY=k\n")).toBe(true)
+      expect(sets("A=1\r\n  export CEREBRAS_API_KEY = \"k\"\r\n")).toBe(true)
+      expect(sets("CEREBRAS_API_KEY='k'")).toBe(true)
+      expect(sets("CEREBRAS_API_KEY=\n")).toBe(false)
+      expect(sets("CEREBRAS_API_KEY=\"\"")).toBe(false)
+      expect(sets("CEREBRAS_API_KEY=''")).toBe(false)
+      expect(sets("CEREBRAS_API_KEY= # unset")).toBe(false)
+      expect(sets("# CEREBRAS_API_KEY=k")).toBe(false)
+      expect(sets("OTHER_CEREBRAS_API_KEY=k")).toBe(false)
+      expect(NEEDS.liveModel.met({ ...local, env: { ...local.env, E2E_DOT_ENV: file } })).toBe(false)
+      sets("CEREBRAS_API_KEY=k")
+      expect(NEEDS.liveModel.met({ ...local, env: { ...local.env, E2E_DOT_ENV: file } })).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+    expect(dotEnvSets(join(tmpdir(), "e2e-no-such-dot-env"), "CEREBRAS_API_KEY")).toBe(false)
   })
 
   it("for the old build, are met only where its index.html is on disk", () => {

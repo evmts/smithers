@@ -262,6 +262,7 @@ E2E_PROD_URL=<the production URL> pnpm e2e:prod [spec…] [playwright options…
 - This machine only: local Worker logs (`localLogs`), local fixtures (`localServer`) and dev-server settings (`devConfig`).
 - A deployment only: GitHub sign-in (`githubSignIn`), and GitHub writes to a scratch repository (`githubScratch`, with `E2E_ISSUES_REPOSITORY`).
 - Code Storage (`codeStorage`), which locally needs its organization and key.
+- The real model (`liveModel`), which locally needs `CEREBRAS_API_KEY` in the environment or `apps/mvp/.env` (checked for presence only). The Mac mini's dev server has no model, so a spec that waits for real answers skips there.
 - The account's role (`member`, `maintainer`). A role need is **blocked** rather than skipped: the run lacks a prerequisite, and the run fails until it has it.
 - The run's own conversation (`ownConversation`, also blocked), for every test that asks:
   - A deployment run never asks in the team's home conversation, which every Member reads.
