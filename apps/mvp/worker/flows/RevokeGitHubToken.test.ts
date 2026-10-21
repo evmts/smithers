@@ -6,6 +6,7 @@ import { Cause, Effect, Exit, Logger, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
+import { DEVICE_PERSON_HEADER } from "../../src/features/auth/contract.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as SessionKeys from "../SessionKeys.ts"
 import { runFlow } from "../test/flowHost.ts"
@@ -29,12 +30,13 @@ const sql = (statement: string) =>
 const signedOut = async (github: ScriptedGitHub = scriptedGitHub()) => {
   const h = await signInHarness(runtime, { github })
   const { cookies } = await h.signInAs()
-  const [{ id }] = (await sql(`SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1`)) as unknown as [
-    { id: string },
-  ]
+  const [{ id, personId }] = (await sql(
+    `SELECT id, person_id AS "personId" FROM sessions ORDER BY created_at DESC LIMIT 1`,
+  )) as unknown as [{ id: string; personId: string }]
+  // The device says whose session it signs out, as the app's does (decision 0023); without it sign-out is refused.
   const response = await h.fetch("/api/auth/sign-out", {
     method: "POST",
-    headers: { origin: "http://smithers.test", cookie: cookie(cookies) },
+    headers: { origin: "http://smithers.test", cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: personId },
   })
   expect(response.status).toBe(204)
   const services: RevokeGitHubToken.Services = {
@@ -44,7 +46,7 @@ const signedOut = async (github: ScriptedGitHub = scriptedGitHub()) => {
   const database = await runtime.runPromise(Effect.gen(function* () {
     return (yield* TestDatabase.Scratch).database
   }))
-  return { h, github, cookies, id, services, database, access: github.issued[0]!.accessToken }
+  return { h, github, cookies, id, personId, services, database, access: github.issued[0]!.accessToken }
 }
 
 type SignedOut = Awaited<ReturnType<typeof signedOut>>
@@ -79,7 +81,10 @@ describe("auth/RevokeGitHubToken", () => {
     expect(s.h.revocations).toEqual([s.id])
     // Signing out again before the flow ran starts the same execution again, a no-op on the host.
     const signOut = () =>
-      s.h.fetch("/api/auth/sign-out", { method: "POST", headers: { origin: "http://smithers.test", cookie: cookie(s.cookies) } })
+      s.h.fetch("/api/auth/sign-out", {
+        method: "POST",
+        headers: { origin: "http://smithers.test", cookie: cookie(s.cookies), [DEVICE_PERSON_HEADER]: s.personId },
+      })
     await signOut()
     expect(s.h.revocations).toEqual([s.id, s.id])
 
