@@ -67,6 +67,13 @@ const call = async (h: Harness, request: ModelRequest.ModelRequest, role = "agen
 /** A default model that answers "default answer", reports usage and stops. */
 const answering = () => Stream.make(delta("default answer"), usage, stop)
 
+/**
+ * A model whose every call spends `tokens`, half in and half out. A call reserves its body's bytes plus 8,000 output
+ * tokens, and a reservation larger than the whole budget is refused, so a budget a test spends must hold at least that.
+ */
+const spending = (tokens: number) => () =>
+  Stream.make(delta("spent"), { type: "usage", inputTokens: tokens / 2, outputTokens: tokens / 2 } as ModelEvent.ModelEvent, stop)
+
 const usageRows = () =>
   runtime.runPromise(
     Effect.flatMap(
@@ -533,8 +540,8 @@ describe("budget and metering", () => {
   })
 
   test("calls that repeat one request id each book what they spent, against the budget", async () => {
-    // One call spends 46 tokens (12 in, 34 out); the budget allows two.
-    const h = await harness(runtime, answering, { actor: member, config: { MODEL_DAILY_TOKEN_BUDGET: "92" } })
+    // One call spends 10,000 tokens; the budget allows two.
+    const h = await harness(runtime, spending(10_000), { actor: member, config: { MODEL_DAILY_TOKEN_BUDGET: "20000" } })
     const repeat = () =>
       h.fetch("/api/model/agent", {
         method: "POST",
@@ -551,8 +558,8 @@ describe("budget and metering", () => {
           FROM model_usage ORDER BY created_at`),
     )
     expect(rows.map(({ requestId, tokens }) => ({ requestId, tokens }))).toEqual([
-      { requestId: "same", tokens: 46 },
-      { requestId: "same", tokens: 46 },
+      { requestId: "same", tokens: 10_000 },
+      { requestId: "same", tokens: 10_000 },
     ])
     // Each row is keyed by the call the server served, the id its log line carries, never by the caller's id.
     expect(rows.map((row) => row.invocationId)).toEqual(
@@ -563,8 +570,8 @@ describe("budget and metering", () => {
   })
 
   test("a call is refused with 429 quota_exceeded once today's spend reaches the budget", async () => {
-    // One call spends 46 tokens (12 in, 34 out).
-    const h = await harness(runtime, answering, { actor: member, config: { MODEL_DAILY_TOKEN_BUDGET: "46" } })
+    // One call spends 10,000 tokens, the whole budget.
+    const h = await harness(runtime, spending(10_000), { actor: member, config: { MODEL_DAILY_TOKEN_BUDGET: "10000" } })
 
     const first = await call(h, ask("hi"))
     const second = await call(h, ask("hi"))
@@ -581,18 +588,22 @@ describe("budget and metering", () => {
         INSERT INTO model_budget_days (day, committed)
         VALUES ((now() AT TIME ZONE 'UTC')::date - 1, 1000000)`),
     )
-    const h = await harness(runtime, answering, { actor: member, config: { MODEL_DAILY_TOKEN_BUDGET: "50" } })
+    const h = await harness(runtime, answering, { actor: member, config: { MODEL_DAILY_TOKEN_BUDGET: "10000" } })
 
     expect((await call(h, ask("hi"))).status).toBe(200)
     expect(await committedToday()).toBe(46)
   })
 
-  test("concurrent calls can't overshoot: against a budget of 46, eight at once admit exactly one", async () => {
+  test("concurrent calls can't overshoot: against a budget of one call's reservation, eight at once admit exactly one", async () => {
     // Every admitted call holds its model until all eight have answered, so a budget read before the call and
-    // written after it would let all eight through.
+    // written after it would let all eight through. One call reserves its body's bytes plus the 8,000 output tokens.
     let open = () => {}
     const gate = new Promise<void>((resolve) => (open = resolve))
-    const h = await harness(runtime, gated(gate), { actor: member, config: { MODEL_DAILY_TOKEN_BUDGET: "46" } })
+    const reservation = new TextEncoder().encode(body(ask("hi"))).length + 8_000
+    const h = await harness(runtime, gated(gate), {
+      actor: member,
+      config: { MODEL_DAILY_TOKEN_BUDGET: String(reservation) },
+    })
 
     const responses = await Promise.all(
       Array.from({ length: 8 }, () => h.fetch("/api/model/agent", { method: "POST", body: body(ask("hi")) })),
@@ -853,20 +864,35 @@ describe("budget and metering", () => {
     ])
   })
 
-  test("a reservation is refused only once committed spend reaches the budget, whatever its own size", async () => {
+  test("a reservation is refused only once committed spend reaches the budget, whatever its own size up to the budget", async () => {
     const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(effect)
     const reserve = (invocationId: string, tokens: number) =>
       run(ModelUsage.reserve({ invocationId, requestId: "r", role: "agent", modelId: "m", tokens }, { budget: 100, expiry }))
 
-    // The first call of the day is admitted even when it alone could pass the budget; the overshoot is one call's.
-    expect(await reserve("a", 150)).toBe(true)
-    expect(await reserve("b", 1)).toBe(false)
-    await run(ModelUsage.settle({ invocationId: "a", inputTokens: 60, outputTokens: 39, complete: true }))
-    expect(await reserve("c", 150)).toBe(true)
-    expect(await reserve("d", 1)).toBe(false)
+    // A call below the budget is admitted while committed is below it, so the overshoot is one call's.
+    expect(await reserve("a", 60)).toBe(true)
+    expect(await reserve("b", 100)).toBe(true)
+    expect(await reserve("c", 1)).toBe(false)
+    await run(ModelUsage.settle({ invocationId: "b", inputTokens: 20, outputTokens: 19, complete: true }))
+    expect(await reserve("d", 100)).toBe(true)
+    expect(await reserve("e", 1)).toBe(false)
 
-    expect(await committedToday()).toBe(249)
-    expect((await ledger()).map((row) => row.invocationId)).toEqual(["a", "c"])
+    expect(await committedToday()).toBe(199)
+    expect((await ledger()).map((row) => row.invocationId)).toEqual(["a", "b", "d"])
+  })
+
+  test("a reservation larger than the whole budget is refused, the day's first included", async () => {
+    // Before, the day's first reservation inserted the day's row unchecked: a 1,500-token call passed a 100-token
+    // budget fifteen times over, where the most any other call can pass it by is one call no larger than the budget.
+    const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(effect)
+    const reserve = (invocationId: string, tokens: number) =>
+      run(ModelUsage.reserve({ invocationId, requestId: "r", role: "agent", modelId: "m", tokens }, { budget: 100, expiry }))
+    expect(await reserve("first", 1_500)).toBe(false)
+    expect(await committedToday()).toBe(0)
+    expect(await ledger()).toEqual([])
+    expect(await reserve("fits", 100)).toBe(true)
+    expect(await reserve("later", 101)).toBe(false)
+    expect(await committedToday()).toBe(100)
   })
 
   // A reservation that never settles (its Worker died, or its settle never ran) is unknown spend, so it counts at its
@@ -1087,7 +1113,7 @@ describe("a server flow's own calls (ModelEndpoint.local)", () => {
   test("a refused call, a seat with no starter, or alerts off start no alert", async () => {
     const starts: Array<string> = []
     const starter = Flows.FlowStarter.of({ start: (_flow, { executionId }) => Effect.sync(() => void starts.push(executionId)) })
-    const spent = await seat(answering, { MODEL_DAILY_TOKEN_BUDGET: "46" })
+    const spent = await seat(spending(10_000), { MODEL_DAILY_TOKEN_BUDGET: "10000" })
     expect(Exit.isSuccess(await run(spent.local("judge"), ask("no starter")))).toBe(true)
     expect(Exit.isFailure(await run(spent.local("judge", starter), ask("refused")))).toBe(true)
     const off = await seat(answering, { MODEL_SPEND_ALERTS: "false" })
@@ -1102,7 +1128,7 @@ describe("a server flow's own calls (ModelEndpoint.local)", () => {
   })
 
   test("today's budget spent: the call fails quota_exceeded and never reaches a model", async () => {
-    const { judge, requests } = await seat(answering, { MODEL_DAILY_TOKEN_BUDGET: "46" })
+    const { judge, requests } = await seat(spending(10_000), { MODEL_DAILY_TOKEN_BUDGET: "10000" })
     expect(Exit.isSuccess(await run(judge, ask("first")))).toBe(true)
     const refused = await run(judge, ask("second"))
     expect(refused).toEqual(

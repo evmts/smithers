@@ -28,13 +28,16 @@ export interface Limits {
 /**
  * Reserves `call.tokens` for today, in one statement: raises today's committed tokens by them and writes the call's
  * ledger row, charged its reservation until it settles and expiring `limits.expiry` from now, only while committed is
- * below `limits.budget`. True when it reserved; false when today's budget is spent. A call is refused only once
- * committed reaches the budget, whatever its own size, so the budget is passed by at most one call's reservation, never
- * by how many calls run at once. The caller's `requestId` is kept to correlate the row with the caller's records; a
- * caller may repeat it, so it is never the key.
+ * below `limits.budget`. True when it reserved; false when today's budget is spent, or when the call alone is larger
+ * than the whole budget, which no day can hold. Otherwise a call is refused only once committed reaches the budget, so
+ * the budget is passed by at most one call's reservation, itself no larger than the budget, never by how many calls run
+ * at once. The caller's `requestId` is kept to correlate the row with the caller's records; a caller may repeat it, so
+ * it is never the key.
  */
 export const reserve = (call: Reservation, limits: Limits) =>
   Effect.gen(function* () {
+    // Checked before the day's row: the first reservation of a day inserts that row, which no budget check guards.
+    if (call.tokens > limits.budget) return false
     const sql = yield* SqlClient.SqlClient
     const rows = yield* sql<{ readonly invocationId: string }>`
       WITH counted AS (
