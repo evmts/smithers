@@ -70,7 +70,7 @@ describe("a TODO's run on Cloudflare", () => {
     // Nothing changes now, so nothing reads it again: the tab follows the run, never a clock.
     await until(() => expect(t.page()?.state).toBe("read"))
     const settled = t.reads()
-    await new Promise((resolve) => setTimeout(resolve, 2_500))
+    await Effect.runPromise(Effect.sleep(2_500))
     expect(t.reads()).toBe(settled)
   }, 120_000)
 

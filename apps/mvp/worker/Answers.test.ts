@@ -200,10 +200,11 @@ describe("GET /api/answers/<id>: the turn", () => {
     const pending = h.fetch(`/api/answers/${id}`, { method: "POST", body, duplex: "half" } as RequestInit)
     await reading
     try {
-      const renewed = await Promise.race([
-        h.fetch(`/api/answers/${id}`, { method: "PATCH" }),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("heartbeat blocked by request body")), 5_000)),
-      ])
+      const renewed = await Effect.runPromise(
+        Effect.tryPromise(() => h.fetch(`/api/answers/${id}`, { method: "PATCH" })).pipe(
+          Effect.timeout("5 seconds"),
+        ),
+      )
       expect(renewed.status).toBe(200)
     } finally {
       controller.enqueue(new TextEncoder().encode(JSON.stringify({ status: "streaming", parts: [] })))

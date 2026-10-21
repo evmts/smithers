@@ -233,7 +233,7 @@ describe("chat/Answer", () => {
     expect(await agent.answer(engine, second)).toEqual(Exit.succeed({ status: "done" }))
     expect(prompts[1]).toContain("Smithers: First answer.")
     const heartbeatCount = agent.h.line("chat.answer.heartbeat").length
-    await new Promise((resolve) => setTimeout(resolve, 1_200))
+    await Effect.runPromise(Effect.sleep(1_200))
     expect(agent.h.line("chat.answer.heartbeat")).toHaveLength(heartbeatCount)
   }, 90_000)
 

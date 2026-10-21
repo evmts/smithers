@@ -71,11 +71,9 @@ test("factory: a TODO runs to a mergeable pull request", {
   await step("Smithers starts working on it: the TODO blinks", async () => {
     await expect(row(page, word)).toHaveAttribute("data-status", "running", { timeout: 120_000 })
     await expect(row(page, word).locator("[data-live]"), "a Working TODO's icon blinks (ruling TODO-3)").toBeVisible()
-    await page.waitForTimeout(2_500)
     await row(page, word).getByRole("link", { name: title }).click()
     await expect(page).toHaveURL(new RegExp(`/${repo}/stack/${number}$`))
     await expect(todoPage(page, title)).toHaveAttribute("data-status", /running|in_review/, { timeout: 60_000 })
-    await page.waitForTimeout(2_000)
   })
 
   await step("Watch the agent work on Cloudflare", async () => {
@@ -83,7 +81,6 @@ test("factory: a TODO runs to a mergeable pull request", {
     await expect(page).toHaveURL(/\/app\/runs\/todo%3A|\/app\/runs\/todo:/)
     await expect(page.getByText("Cloud", { exact: true }).first(), "the run page reads the run from Cloudflare").toBeVisible({ timeout: 60_000 })
     await expect(page.getByText(/todo\/Implement/).first(), "the agent's step shows").toBeVisible({ timeout: 5 * 60_000 })
-    await page.waitForTimeout(8_000)
   })
 
   await step("The agent writes the change and opens a pull request", async () => {
@@ -110,7 +107,6 @@ test("factory: a TODO runs to a mergeable pull request", {
     await expect(page).toHaveURL(new RegExp(`/${repo}/pull/${pull.prNumber}$`))
     await expect(page.getByRole("button", { name: "Squash and merge" })).toBeVisible({ timeout: 60_000 })
     await expect(page.getByRole("note"), "ruling GH-9").toHaveText(`Merging into ${pull.base} deploys it.`, { timeout: 60_000 })
-    await page.waitForTimeout(3_000)
   })
 
   await step("Its checks are Smithers runs", async () => {
@@ -118,14 +114,12 @@ test("factory: a TODO runs to a mergeable pull request", {
     // The review check runs the model on the pull request's diff; the tab counts it once it passed.
     await expect(page.getByRole("link", { name: /^Checks (\d+)\/\1$/ })).toBeVisible({ timeout: 10 * 60_000 })
     await expect(page.getByRole("link", { name: "Conversation" }), "one tab is current").not.toHaveAttribute("aria-current", "page")
-    await page.waitForTimeout(2_500)
   })
 
   await step("Its files: the README line the agent wrote", async () => {
     await page.getByRole("link", { name: /^Files/ }).click()
     await expect(page.getByRole("region", { name: "Files" })).toContainText("README.md", { timeout: 60_000 })
     await expect(page.getByRole("region", { name: "Files" })).toContainText(word)
-    await page.waitForTimeout(3_000)
   })
   expect(pull.prNumber).toBeGreaterThan(0)
 })
