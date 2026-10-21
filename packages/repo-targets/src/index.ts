@@ -8,6 +8,8 @@ export type {
   Options as BuildAndCheckTypeScriptPackageOptions,
   PackageTargets
 } from "./BuildAndCheckTypeScriptPackage.ts"
+export { CircularImports } from "./CircularImports.ts"
+export type { Options as CircularImportsOptions } from "./CircularImports.ts"
 export { ImportRules } from "./ImportRules.ts"
 export type { ImportRulesTarget, Options as ImportRulesOptions } from "./ImportRules.ts"
 export type {

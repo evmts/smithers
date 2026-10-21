@@ -166,6 +166,8 @@ describe("which URLs a package ships", () => {
     assert.equal(isScanned("dist/esm/index.js"), false)
     assert.equal(isScanned("CHANGELOG.md"), false)
     assert.equal(isScanned("docs/CHANGELOG.md"), true)
+    // A published VibeLang source, such as @smthrs/errors' src/SmithersError.vibe.
+    assert.equal(isScanned("src/SmithersError.vibe"), true)
   })
 
   it("finds the notice, the CLI's refusal and the removed-command anchors in this repository", () => {

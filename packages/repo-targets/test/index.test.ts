@@ -3,6 +3,7 @@ import { describe, expect, expectTypeOf, it } from "vitest"
 import * as RepoTargets from "../src/index.ts"
 import type {
   BuildAndCheckTypeScriptPackageOptions,
+  CircularImportsOptions,
   ImportRulesOptions,
   ImportRulesTarget,
   JevRulesOptions,
@@ -20,6 +21,7 @@ describe("@smthrs/repo-targets package entry", () => {
   it("re-exports every macro and the shared review prompt", () => {
     expect(Object.keys(RepoTargets).sort()).toEqual([
       "BuildAndCheckTypeScriptPackage",
+      "CircularImports",
       "ImportRules",
       "JevRules",
       "ReviewDocsAgainstCode",
@@ -36,6 +38,7 @@ describe("@smthrs/repo-targets package entry", () => {
       BuildAndCheckTypeScriptPackageOptions
     >()
     expectTypeOf(RepoTargets.BuildAndCheckTypeScriptPackage).returns.toEqualTypeOf<PackageTargets>()
+    expectTypeOf(RepoTargets.CircularImports).parameter(0).toEqualTypeOf<CircularImportsOptions>()
     expectTypeOf(RepoTargets.ImportRules).parameter(0).toEqualTypeOf<ImportRulesOptions>()
     expectTypeOf(RepoTargets.ImportRules).returns.toEqualTypeOf<ImportRulesTarget>()
     expectTypeOf(RepoTargets.JevRules).parameter(0).toEqualTypeOf<JevRulesOptions>()
@@ -49,7 +52,7 @@ describe("@smthrs/repo-targets package entry", () => {
   })
 
   it("keeps one macro per module, named after its file", () => {
-    for (const name of ["ReviewDocsAgainstCode", "ReviewJsdocAgainstCode", "ReviewTagsMigrationsAndKeys"]) {
+    for (const name of ["CircularImports", "ReviewDocsAgainstCode", "ReviewJsdocAgainstCode", "ReviewTagsMigrationsAndKeys"]) {
       const source = readFileSync(new URL(`${name}.ts`, sourceDir), "utf8")
       expect([...source.matchAll(/^export const (\w+)/gm)].map((match) => match[1])).toEqual([name])
     }

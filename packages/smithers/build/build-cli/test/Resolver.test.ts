@@ -188,6 +188,30 @@ describe("relative resolution", () => {
     expect(paths(outcome)).toEqual(["data.json", "entry.ts"])
   })
 
+  it("follows a VibeLang module's imports, and a TypeScript module's imports of one", async () => {
+    await write("entry.ts", `export { find } from "./User.vibe"\n`)
+    await write(
+      "User.vibe",
+      [
+        `import { greeting } from "./Greeting.vibe"`,
+        `import { prefix } from "./prefix.ts"`,
+        ``,
+        `export error NotFound { id: string }`,
+        ``,
+        `export function find(id: string): string!NotFound {`,
+        `  if (id === "") throw new NotFound({ id })`,
+        `  return greeting(prefix + id)`,
+        `}`,
+        ``
+      ].join("\n")
+    )
+    await write("Greeting.vibe", `export function greeting(id: string): string {\n  return id\n}\n`)
+    await write("prefix.ts", `export const prefix = "user:"\n`)
+    const outcome = await closureOf(["entry.ts"])
+    expect(paths(outcome)).toEqual(["Greeting.vibe", "User.vibe", "entry.ts", "prefix.ts"])
+    expect(outcome.result.unresolved).toEqual([])
+  })
+
   it("handles import cycles as a fixed point", async () => {
     await write("a.ts", `import "./b"\nexport const a = 1\n`)
     await write("b.ts", `import "./a"\nexport const b = 1\n`)

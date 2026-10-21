@@ -182,12 +182,23 @@ export interface Source {
 }
 
 /**
- * The file extensions a source has.
+ * The file extensions a source has: TypeScript's and JavaScript's, and
+ * VibeLang's `.vibe`, whose import syntax is TypeScript's.
  *
  * @category constants
  * @since 0.1.0
  */
-export const sourceExtensions: ReadonlyArray<string> = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]
+export const sourceExtensions: ReadonlyArray<string> = [
+  ".ts",
+  ".tsx",
+  ".mts",
+  ".cts",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".vibe"
+]
 
 /**
  * Directories never read: dependencies, build and test output, and every

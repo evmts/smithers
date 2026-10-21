@@ -7,6 +7,7 @@
  * emits; the file exists to show the expansion, not to diverge from it.
  */
 import {
+  CircularImports,
   ImportRules,
   ReviewDocsAgainstCode,
   ReviewJsdocAgainstCode,
@@ -100,12 +101,7 @@ const docs = Smithers.DocsParity({
  * @since 0.1.0
  * @category test
  */
-const circular = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("scripts/circular.mjs")),
-  srcs: [sources],
-  deps: [],
-  cwd
-})
+const circular = CircularImports({ sources: [sources], cwd })
 
 /**
  * The package's own suite, re-run under Bun.

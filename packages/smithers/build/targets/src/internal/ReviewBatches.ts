@@ -40,7 +40,8 @@ export interface PlannedBatch {
   readonly omittedRelated: ReadonlyArray<string>
 }
 
-const scriptExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"] as const
+// VibeLang's `.vibe` modules import with TypeScript's syntax.
+const scriptExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".vibe"] as const
 
 /**
  * Whether static relative imports of a file can be resolved.

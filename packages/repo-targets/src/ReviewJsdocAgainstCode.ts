@@ -11,7 +11,8 @@ import type { Options, ReviewLint } from "./ReviewLint.ts"
 /**
  * Reviews changed exports against the JSDoc that describes them.
  *
- * `include` defaults to `src/**\/*.ts`, and findings report at `warning` while
+ * `include` defaults to the package's TypeScript and VibeLang sources,
+ * `src/**\/*.{ts,vibe}`, and findings report at `warning` while
  * the rubric is tuned. Presence of JSDoc is already gated by eslint; this
  * rubric is about truthfulness alone. The call returns a declaration and runs
  * no review; see "Failure contracts" in the package README for declaration
@@ -30,7 +31,7 @@ import type { Options, ReviewLint } from "./ReviewLint.ts"
 export const ReviewJsdocAgainstCode = (options: Options): ReviewLint =>
   review(options, {
     summary: "A cheap Codex review of changed exports against their JSDoc.",
-    include: [Input.glob("src/**/*.ts")],
+    include: [Input.glob("src/**/*.{ts,vibe}")],
     context: [],
     batchSize: 3,
     failOn: "warning",
@@ -38,9 +39,10 @@ export const ReviewJsdocAgainstCode = (options: Options): ReviewLint =>
       "For each export whose body changed in this diff:",
       "1. The JSDoc prose must still describe what the code does. Prose that describes the old",
       "   behavior is a warning.",
-      "2. The documented error channel must match the actual `Schema.TaggedError` union the",
-      "   code can fail with. A documented error the code cannot raise, or a raised error the",
-      "   doc never mentions, is a warning.",
+      "2. The documented error channel must match the actual error union the code can fail",
+      "   with: its `Schema.TaggedError` classes, or in a `.vibe` file its VibeLang `error` declarations",
+      "   and the `!E` of its `A!E` contracts. A documented error the code cannot raise, or a raised",
+      "   error the doc never mentions, is a warning.",
       "3. A documented default must match the default in the code.",
       "4. `@since` on a NEW export must be the current unreleased version, not a value",
       "   copy-pasted from a neighboring export.",

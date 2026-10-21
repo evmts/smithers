@@ -19,7 +19,6 @@ const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeSc
   cwd: "packages/smithers/flows/database",
   tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
   buildProgram: Smithers.file("//packages/repo-targets/scripts/build.mjs"),
-  circularScript: Smithers.file("//packages/repo-targets/scripts/circular.mjs"),
   eslintConfigs: [
     Smithers.file("eslint.config.js"),
     Smithers.file("//eslint.package.js"),

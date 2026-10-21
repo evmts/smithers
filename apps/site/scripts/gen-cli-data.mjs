@@ -28,6 +28,8 @@ process.chdir(root)
 // Load the same declaration identities as the executable, then build once.
 // Capturing every nested command in a fresh process makes a docs refresh pay
 // the complete control/build dependency graph's startup cost hundreds of times.
+// installEffectResolution also installs vibelang/register, which compiles the
+// VibeLang modules the CLI reaches.
 const { installEffectResolution } = await import(join(root, "packages/smithers/build/build-cli/src/effect-resolution.js"))
 installEffectResolution()
 const { makeCli } = await import(join(root, "packages/smithers/src/Cli.ts"))
@@ -81,7 +83,7 @@ const scan = (dir) => {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name)
     if (entry.isDirectory()) scan(path)
-    else if (entry.name.endsWith(".ts") && !entry.name.includes(".test.")) {
+    else if (/\.(?:ts|vibe)$/.test(entry.name) && !entry.name.includes(".test.")) {
       for (const m of readFileSync(path, "utf8").matchAll(/migration\/1\.0#([a-z0-9-]+)|\$\{migrationUrl\}#([a-z0-9-]+)/g)) {
         literalAnchors.add(m[1] ?? m[2])
       }

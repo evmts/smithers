@@ -1,5 +1,5 @@
 /** Standard package targets for the published target authoring surface. */
-import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import { CircularImports, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { docsWriter, referenceStyle, rootInvariantsConfig, rootJSDocConfig } from "../../../../PACKAGE.ts"
 
@@ -69,12 +69,7 @@ const docs = Smithers.DocsParity({
  * @since 0.1.0
  * @category test
  */
-const circular = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("scripts/circular.mjs")),
-  srcs: [sources],
-  deps: [],
-  cwd
-})
+const circular = CircularImports({ sources: [sources], cwd })
 
 // --- reference docs pipeline ----------------------------------------------
 /** Everything the reference writer may read: sources, README, package docs, the rule table. */

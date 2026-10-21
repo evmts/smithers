@@ -202,7 +202,8 @@ const targetEnvKeys = (declaration) => {
 /** Directory names never worth walking for tests. */
 const ignoredDirectories = new Set(["node_modules", "dist", "build", "coverage", ".git", "target"])
 
-const isTestFile = (name) => /\.(test|spec)\.(ts|tsx|mts|cts|js|mjs|cjs)$/.test(name)
+// VibeLang test files (`.test.vibe`) pin with the same runner calls.
+const isTestFile = (name) => /\.(test|spec)\.(ts|tsx|mts|cts|js|mjs|cjs|vibe)$/.test(name)
 
 /**
  * Every package directory whose manifest declares one of the guarded groups.

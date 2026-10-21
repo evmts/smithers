@@ -91,10 +91,10 @@ describe("BuildAndCheckTypeScriptPackage circular guard", () => {
    * not know about, so `smithers-build ci` was not gate-equivalent to the pnpm scripts
    * it was meant to replace. The macro emits it now.
    */
-  it("emits the conventional per-package circular-dependency guard", () => {
+  it("emits the repository's shared circular-dependency guard for the package", () => {
     const targets = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/smithers/flows/plan" })
     const attrs = attrsOf<NodeTest.Attrs>(targets.circular)
-    expect(NodeTest.runArgv(attrs)).toEqual(["node", "scripts/circular.mjs"])
+    expect(NodeTest.runArgv(attrs)).toEqual(["node", "../../../repo-targets/scripts/circular.mjs"])
     expect(attrs.cwd).toBe("packages/smithers/flows/plan")
     // The interpreter is the one the declared manager runs under, not a
     // hardcoded `node`.
@@ -462,7 +462,12 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
     ])
     expect(attrsOf<EsLint.Attrs>(relocated.lint).sources).toEqual([moved])
     expect(attrsOf<Dprint.Attrs>(relocated.fmt).sources).toEqual([moved, Input.glob("test/**/*.{ts,vibe}")])
-    expect(attrsOf<NodeTest.Attrs>(relocated.circular).srcs).toEqual([moved, Input.file("tsconfig.json")])
+    expect(attrsOf<NodeTest.Attrs>(relocated.circular).srcs).toEqual([
+      moved,
+      Input.file("tsconfig.json"),
+      Input.file("//packages/repo-targets/src/ImportAnalysis.ts"),
+      Input.file("//packages/repo-targets/scripts/workspace-packages.mjs")
+    ])
     // The published entry is one file, not the glob, so it stays where the
     // caller left it until `entry` moves it.
     expect(attrsOf<TsBuild.Attrs>(relocated.lib).entries).toEqual([Input.file("src/index.ts")])

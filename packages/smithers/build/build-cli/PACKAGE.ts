@@ -1,5 +1,5 @@
 /** Standard package targets for the published build CLI. */
-import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import { CircularImports, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { rootInvariantsConfig, rootJSDocConfig } from "../../../../PACKAGE.ts"
 
@@ -128,12 +128,7 @@ const docsFiles = Smithers.Filegroup({
  * @since 0.1.0
  * @category test
  */
-const circular = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("scripts/circular.mjs")),
-  srcs: [sources, javascript],
-  deps: [],
-  cwd
-})
+const circular = CircularImports({ sources: [sources, javascript], cwd })
 
 /**
  * Changed public APIs against the README, every docs page (concepts, guides,

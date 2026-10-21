@@ -66,7 +66,7 @@ import { posix, sha256Hex as sha256 } from "./internal/Text.ts"
  * @category constants
  * @since 0.1.0
  */
-export const implementationFingerprint = "smthrs-resolver/3"
+export const implementationFingerprint = "smthrs-resolver/4"
 
 /**
  * Maximum files one closure may reach before it refuses loudly.
@@ -87,8 +87,11 @@ export const maximumModuleBytes = 8 * 1024 * 1024
 /** Bound kept of a dynamic import's expression text in a row. */
 const dynamicTextLimit = 200
 
-/** Extensions whose files are parsed for specifiers. */
-const scannableExtensions = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"])
+/**
+ * Extensions whose files are parsed for specifiers. A VibeLang `.vibe` module
+ * imports with TypeScript's syntax and parses as TypeScript.
+ */
+const scannableExtensions = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".vibe"])
 
 /** Extension probe order for extensionless specifiers, the compiler's order. */
 const probeExtensions = [".ts", ".tsx", ".d.ts", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".json"] as const

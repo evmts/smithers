@@ -44,8 +44,8 @@ export const ORIGIN = "https://smithers.sh"
 /** A smithers.sh URL in running text, up to the first character a URL in prose or code cannot hold. */
 const urlPattern = /https?:\/\/smithers\.sh(?![\w-]|\.[\w-])[^\s<>"'`)\]}\\|]*/g
 
-/** The shipped files a person or a program reads as text. */
-const textExtensions = new Set([".ts", ".tsx", ".js", ".mjs", ".cjs", ".md", ".mdx", ".json", ".txt"])
+/** The shipped files a person or a program reads as text, VibeLang sources included. */
+const textExtensions = new Set([".ts", ".tsx", ".vibe", ".js", ".mjs", ".cjs", ".md", ".mdx", ".json", ".txt"])
 
 /**
  * Whether one shipped path is scanned: text, not build output of a file that

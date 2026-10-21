@@ -69,14 +69,14 @@ const skippedDirectories = new Set([
 /** Generated trees, pruned by repository-relative path so no shipped package sharing a name goes with them. */
 const skippedPaths = new Set([])
 
-/** Every JavaScript and TypeScript extension Node, Bun or a bundler loads as code. */
-const sourceExtension = /\.(?:[cm]?[jt]s|[jt]sx)$/
+/** Every JavaScript, TypeScript and VibeLang extension Node, Bun or a bundler loads as code. */
+const sourceExtension = /\.(?:[cm]?[jt]s|[jt]sx|vibe)$/
 
 /** Source files, never a test double and never a declaration. */
 export const isSource = (name) =>
   sourceExtension.test(name)
   && !/\.d\.[cm]?ts$/.test(name)
-  && !/\.(?:test|spec)\.(?:[cm]?[jt]s|[jt]sx)$/.test(name)
+  && !/\.(?:test|spec)\.(?:[cm]?[jt]s|[jt]sx|vibe)$/.test(name)
 
 /** Every shipped source file under {@link scanned}, as repository-relative paths. */
 export const sources = (repositoryRoot = root) => {
@@ -227,11 +227,11 @@ describe("the outbound HTTP client shipped compositions install", () => {
 })
 
 describe("the egress gate's own reading", () => {
-  it("scans every JavaScript and TypeScript extension, never a declaration or test", () => {
-    for (const name of ["a.ts", "a.tsx", "a.mts", "a.cts", "a.js", "a.jsx", "a.mjs", "a.cjs"]) {
+  it("scans every JavaScript, TypeScript and VibeLang extension, never a declaration or test", () => {
+    for (const name of ["a.ts", "a.tsx", "a.mts", "a.cts", "a.js", "a.jsx", "a.mjs", "a.cjs", "a.vibe"]) {
       assert.ok(isSource(name), `${name} is shipped source`)
     }
-    for (const name of ["a.d.ts", "a.d.mts", "a.d.cts", "a.test.js", "a.spec.cjs", "a.test.tsx", "a.test.mjs", "a.json", "a.md"]) {
+    for (const name of ["a.d.ts", "a.d.mts", "a.d.cts", "a.test.js", "a.spec.cjs", "a.test.tsx", "a.test.mjs", "a.test.vibe", "a.json", "a.md"]) {
       assert.ok(!isSource(name), `${name} is not shipped source`)
     }
   })
@@ -247,6 +247,8 @@ describe("the egress gate's own reading", () => {
     assert.deepEqual(bannedUses("a.ts", "const k = \"layerUndici\"\nLayer.provide(NodeHttpClient[k])\n"), ["1 NodeHttpClient.layerUndici"])
     assert.deepEqual(bannedUses("a.ts", "const k = `makeDispatcher`\n"), ["1 NodeHttpClient.makeDispatcher"])
     assert.deepEqual(bannedUses("a.ts", "Layer.provide(NodeHttpClient.layer\\u0055ndici)\n"), ["1 NodeHttpClient.layerUndici"])
+    const vibe = "const HttpLive = Layer.effect(Http) {\n  return NodeHttpClient.layerUndici\n}\n"
+    assert.deepEqual(bannedUses("a.vibe", vibe), ["2 NodeHttpClient.layerUndici"])
   })
 
   it("reads a symlinked source file and a symlinked directory, and survives a link loop", () => {

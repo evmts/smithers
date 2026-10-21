@@ -43,7 +43,9 @@ const dependencyPolicy = Smithers.DepsLint({
   ignoreDependencies: [
     "eslint-plugin-jsdoc",
     // scripts/build.mjs delegates to buildLibrary, which resolves esbuild from this package's manifest.
-    "esbuild"
+    "esbuild",
+    // The circular script runs packages/repo-targets/scripts/circular.mjs, which resolves madge from this package's manifest.
+    "madge"
   ],
   ignoreBinaries: [],
   cwd: "packages/smithers/flows/engine"

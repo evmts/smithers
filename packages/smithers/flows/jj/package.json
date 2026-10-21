@@ -170,7 +170,7 @@
     "build": "node scripts/build.mjs",
     "build:wasm": "node ../../../../packages/smithers/flows/jj-wasm/build-wasm.mjs",
     "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
-    "circular": "node scripts/circular.mjs",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
     "test": "vitest",
     "coverage": "vitest --coverage"
   },

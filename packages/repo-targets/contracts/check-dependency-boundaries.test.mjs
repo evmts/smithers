@@ -247,52 +247,81 @@ test("a banned import's message names the file, line, import and runtime, and po
   assert.ok(bannedImportMessage(entry).endsWith(durableFlowRule))
 })
 
-test("the gate fails on a banned import outside src/ and passes once it is gone", () => {
+/** A scratch repository holding the gate, its imports and one private app, `apps/chat`. */
+const gateFixture = () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "smithers-durable-flow-gate-")))
   /** @param {string} path @param {string} text */
   const write = (path, text) => {
     mkdirSync(dirname(join(root, path)), { recursive: true })
     writeFileSync(join(root, path), text)
   }
-  try {
-    write("package.json", JSON.stringify({ name: "fixture-root", private: true, devDependencies: { typescript: "5.9.3" } }))
-    write("pnpm-workspace.yaml", "packages:\n  - apps/*\n")
-    for (const file of [
-      "packages/repo-targets/contracts/check-dependency-boundaries.mjs",
-      "packages/repo-targets/src/ImportAnalysis.ts",
-      "packages/repo-targets/scripts/workspace-packages.mjs",
-      "packages/repo-targets/scripts/private-effect-adapters.mjs",
-    ]) {
-      let source = readFileSync(join(repoRoot, file), "utf8")
-      // This repository has none of the real one's legacy entries.
-      for (const list of ["knownReachThroughs", "knownLegacyFixtureImports"]) {
-        source = source.replace(new RegExp(`const ${list} = new Set\\(\\[[\\s\\S]*?\\]\\)`), `const ${list} = new Set([])`)
-      }
-      write(file, source)
+  write("package.json", JSON.stringify({ name: "fixture-root", private: true, devDependencies: { typescript: "5.9.3" } }))
+  write("pnpm-workspace.yaml", "packages:\n  - apps/*\n")
+  for (const file of [
+    "packages/repo-targets/contracts/check-dependency-boundaries.mjs",
+    "packages/repo-targets/src/ImportAnalysis.ts",
+    "packages/repo-targets/scripts/workspace-packages.mjs",
+    "packages/repo-targets/scripts/private-effect-adapters.mjs",
+  ]) {
+    let source = readFileSync(join(repoRoot, file), "utf8")
+    // This repository has none of the real one's legacy entries.
+    for (const list of ["knownReachThroughs", "knownLegacyFixtureImports"]) {
+      source = source.replace(new RegExp(`const ${list} = new Set\\(\\[[\\s\\S]*?\\]\\)`), `const ${list} = new Set([])`)
     }
-    symlinkSync(join(repoRoot, "node_modules"), join(root, "node_modules"), "dir")
-    write("apps/chat/package.json", JSON.stringify({ name: "chat", private: true }))
-    write("apps/chat/src/index.ts", "export const ok = 1\n")
-    // The declaration rule reads only src/ here; the ban reads the Worker too.
-    write("apps/chat/worker/Answer.ts", 'export const model = 1\nimport { generateText } from "ai"\n')
-    const run = () =>
-      spawnSync(process.execPath, [join(root, "packages/repo-targets/contracts/check-dependency-boundaries.mjs")], {
-        encoding: "utf8",
-        timeout: 60_000,
-      })
-    const banned = run()
-    assert.equal(banned.status, 1, banned.stdout)
-    assert.ok(
-      banned.stderr.includes(
-        '- apps/chat/worker/Answer.ts:2 imports "ai" (the Vercel AI SDK), which is banned: ' + durableFlowRule,
-      ),
-      banned.stderr,
-    )
-    write("apps/chat/worker/Answer.ts", "export const model = 1\n")
-    const clean = run()
-    assert.equal(clean.status, 0, clean.stderr)
-    assert.match(clean.stdout, /import no banned durable runtime/)
-  } finally {
-    rmSync(root, { recursive: true, force: true })
+    write(file, source)
   }
+  symlinkSync(join(repoRoot, "node_modules"), join(root, "node_modules"), "dir")
+  write("apps/chat/package.json", JSON.stringify({ name: "chat", private: true }))
+  write("apps/chat/src/index.ts", "export const ok = 1\n")
+  const run = () =>
+    spawnSync(process.execPath, [join(root, "packages/repo-targets/contracts/check-dependency-boundaries.mjs")], {
+      encoding: "utf8",
+      timeout: 60_000,
+    })
+  return { root, write, run, [Symbol.dispose]: () => rmSync(root, { recursive: true, force: true }) }
+}
+
+test("the gate fails on a banned import outside src/ and passes once it is gone", () => {
+  using fixture = gateFixture()
+  const { write, run } = fixture
+  // The declaration rule reads only src/ here; the ban reads the Worker too.
+  write("apps/chat/worker/Answer.ts", 'export const model = 1\nimport { generateText } from "ai"\n')
+  const banned = run()
+  assert.equal(banned.status, 1, banned.stdout)
+  assert.ok(
+    banned.stderr.includes(
+      '- apps/chat/worker/Answer.ts:2 imports "ai" (the Vercel AI SDK), which is banned: ' + durableFlowRule,
+    ),
+    banned.stderr,
+  )
+  write("apps/chat/worker/Answer.ts", "export const model = 1\n")
+  const clean = run()
+  assert.equal(clean.status, 0, clean.stderr)
+  assert.match(clean.stdout, /import no banned durable runtime/)
+})
+
+test("a VibeLang source is read like a TypeScript one: an undeclared import and a banned runtime both fail", () => {
+  using fixture = gateFixture()
+  const { write, run } = fixture
+  write(
+    "apps/chat/src/Answer.vibe",
+    [
+      'import { generateText } from "ai"',
+      'import { Route } from "@smthrs/fs"',
+      "",
+      "error Refused { reason: string }",
+      "",
+      "export function answer(prompt: string): string!Refused {",
+      "  const route = Route.lookup<string>(prompt) catch (e) => match (e) {",
+      "    when Route.Missing: throw new Refused({ reason: prompt });",
+      "  }",
+      "  return route",
+      "}",
+      "",
+    ].join("\n"),
+  )
+  const failed = run()
+  assert.equal(failed.status, 1, failed.stdout)
+  assert.ok(failed.stderr.includes('- apps/chat/src/Answer.vibe:1 imports "ai" (the Vercel AI SDK), which is banned'), failed.stderr)
+  assert.ok(failed.stderr.includes("- apps/chat/src/Answer.vibe imports @smthrs/fs; declare @smthrs/fs as a"), failed.stderr)
 })

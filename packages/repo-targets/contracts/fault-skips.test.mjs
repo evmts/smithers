@@ -196,12 +196,12 @@ const allowedSkips = new Map([
   ]
 ])
 
-/** Every TypeScript file under a package's `test/faults` tree. */
+/** Every TypeScript and VibeLang file under a package's `test/faults` tree. */
 const walk = (directory) =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) return walk(path)
-    return entry.isFile() && path.endsWith(".ts") ? [path] : []
+    return entry.isFile() && /\.(?:ts|vibe)$/.test(path) ? [path] : []
   })
 
 /**
@@ -212,7 +212,7 @@ const faultPackages = libraryPackages(root)
   .map((entry) => entry.dir.slice("packages/".length))
   .filter((name) => {
     const directory = join(packagesRoot, name, "test", "faults")
-    return existsSync(directory) && walk(directory).some((path) => path.endsWith(".test.ts"))
+    return existsSync(directory) && walk(directory).some((path) => /\.test\.(?:ts|vibe)$/.test(path))
   })
   .sort()
 

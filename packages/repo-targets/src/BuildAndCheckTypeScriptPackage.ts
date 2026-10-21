@@ -15,6 +15,7 @@ import type * as Target from "@smthrs/targets/Target"
 import { TsBuild } from "@smthrs/targets/TsBuild"
 import { Typecheck } from "@smthrs/targets/Typecheck"
 import { Vitest } from "@smthrs/targets/Vitest"
+import { CircularImports } from "./CircularImports.ts"
 
 /**
  * Options accepted by {@link BuildAndCheckTypeScriptPackage}.
@@ -105,8 +106,9 @@ export interface Options {
   readonly buildInputs?: ReadonlyArray<Input.Glob | Input.File> | undefined
   /**
    * The circular-dependency guard this package runs. It defaults to the
-   * conventional `scripts/circular.mjs`, which is what the repository's
-   * per-package `circular` script runs.
+   * repository's shared guard, `//packages/repo-targets/scripts/circular.mjs`
+   * (see {@link CircularImports}), which is also what every package's
+   * `circular` script runs.
    */
   readonly circularScript?: Input.File | undefined
 }
@@ -301,13 +303,12 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
     srcs: [Input.glob("docs/**/*.md"), readme, Input.file("package.json")],
     cwd
   })
-  const circular = NodeTest({
+  const circular = CircularImports({
     // Omitted, the executor fills in the workspace runtime; a caller that
     // named a manager gets that manager's own interpreter.
     ...(options.packageManager === undefined ? {} : { runtime: options.packageManager.runtime }),
-    runner: entrypoint(options.circularScript ?? Input.file("scripts/circular.mjs")),
-    srcs: [sources, tsconfig],
-    deps: [],
+    ...(options.circularScript === undefined ? {} : { script: options.circularScript }),
+    sources: [sources],
     cwd
   })
   return { lib, check, test, lint, fmt, docs, circular, docsFiles }

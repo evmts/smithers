@@ -142,8 +142,8 @@ describe("SdkRules", () => {
     for (const rule of attrs.rules) {
       expect(rule.files.map((file) => file.pattern)).toEqual(
         rule.id === "test.behavioral"
-          ? ["//packages/x/test/**/*.test.ts"]
-          : ["//packages/x/src/**/!(*.test).ts", "//packages/x/src/**/!(*.test).tsx"]
+          ? ["//packages/x/test/**/*.test.ts", "//packages/x/test/**/*.test.vibe"]
+          : ["//packages/x/src/**/!(*.test).ts", "//packages/x/src/**/!(*.test).tsx", "//packages/x/src/**/!(*.test).vibe"]
       )
     }
   })

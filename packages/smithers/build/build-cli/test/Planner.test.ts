@@ -368,6 +368,18 @@ describe("implementationFingerprint", () => {
     expect(await fingerprintSources([{ name: "x", directory }])).not.toBe(before)
   })
 
+  it("digests VibeLang modules as implementation source", async () => {
+    const directory = await scratch()
+    await Fs.writeFile(NodePath.join(directory, "a.ts"), "export const a = 1\n", "utf8")
+    const before = await fingerprintSources([{ name: "x", directory }])
+    const vibe = NodePath.join(directory, "User.vibe")
+    await Fs.writeFile(vibe, "export error NotFound { id: string }\n", "utf8")
+    const added = await fingerprintSources([{ name: "x", directory }])
+    expect(added).not.toBe(before)
+    await Fs.writeFile(vibe, "export error Missing { id: string }\n", "utf8")
+    expect(await fingerprintSources([{ name: "x", directory }])).not.toBe(added)
+  })
+
   it("reports the first source failure even when a later concurrent read fails first", async () => {
     const directory = await scratch()
     await Fs.writeFile(NodePath.join(directory, "a.ts"), "a", "utf8")

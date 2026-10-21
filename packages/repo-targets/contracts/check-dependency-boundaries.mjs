@@ -45,7 +45,8 @@ const evalSuites = [
   "packages/smithers/agent/harness/benchmarks/"
 ]
 const isEvalSuite = (dir) => evalSuites.some((suite) => suite.endsWith("/") ? dir.startsWith(suite) : dir === suite)
-const sourceExtensions = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"])
+// VibeLang sources (`.vibe`) import like TypeScript ones and are read the same way.
+const sourceExtensions = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vibe"])
 const ignoredDirs = new Set([
   ".alchemy",
   ".flows",

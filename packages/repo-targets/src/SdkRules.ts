@@ -65,7 +65,7 @@ export interface Options {
    * Package-relative globs of the package's test files, which
    * `test.behavioral` reads.
    *
-   * @default ["test/**\/*.test.ts"]
+   * @default ["test/**\/*.test.ts", "test/**\/*.test.vibe"]
    */
   readonly tests?: ReadonlyArray<string> | undefined
   /** @default none: every `@smthrs/*` import names a package root */
@@ -85,7 +85,9 @@ export interface SdkRulesTargets {
   readonly jevRules: JevRulesTarget
 }
 
-const sources = ["src/**/!(*.test).ts", "src/**/!(*.test).tsx"]
+// A package's TypeScript and VibeLang modules, tests left out.
+const sources = ["src/**/!(*.test).ts", "src/**/!(*.test).tsx", "src/**/!(*.test).vibe"]
+const defaultTests = ["test/**/*.test.ts", "test/**/*.test.vibe"]
 
 const effectFirst: ReadonlyArray<Role> = ["library", "app-library", "host"]
 const platformNeutral: ReadonlyArray<Role> = ["library", "app-library"]
@@ -249,6 +251,6 @@ export const SdkRules = (options: Options): SdkRulesTargets => ({
     cwd: options.cwd,
     threshold: 0.7,
     summary: "Will's SDK-wide judgment rules, asked of Jev one file at a time.",
-    rules: jevRulesFor(options.role, options.tests ?? ["test/**/*.test.ts"])
+    rules: jevRulesFor(options.role, options.tests ?? defaultTests)
   })
 })

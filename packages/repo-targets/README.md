@@ -5,6 +5,7 @@ Private build defaults and AI review rules used by this repository’s `PACKAGE.
 | Export                           | What it declares                                                                                                                                                                                                                   |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `BuildAndCheckTypeScriptPackage` | Build ESM and CommonJS, typecheck tests, run Vitest, ESLint, dprint, a README check, and the circular dependency script; expose documentation files as a file group. Defaults use this repository’s scripts and `eslint.jsdoc.js`. |
+| `CircularImports`                | Fail on a cycle of run-time imports among the package's own `.ts` and `.vibe` modules. See [Circular imports](#circular-imports).                                                                                                   |
 | `ReviewTagsMigrationsAndKeys`    | Ask Codex to check module-path tags, reject compatibility aliases, require new migrations for stored schema changes, and require an explanation for changed step, cache, or run keys.                                              |
 | `ReviewDocsAgainstCode`          | Ask Codex to compare changed public APIs with the package README, `docs/*.md`, and its matching site API reference page.                                                                                                                                                      |
 | `ReviewJsdocAgainstCode`         | Ask Codex to compare changed exports with their documented behavior, errors, defaults, and `@since` version.                                                                                                                       |
@@ -27,6 +28,21 @@ The default globs name VibeLang `.vibe` files beside `.ts` ones, `src/**/*.{ts,v
 `BuildAndCheckTypeScriptPackage` accepts `testData: readonly string[]` for package-relative fixture globs, for example `testData: ["test/fixtures/*.mjs", "test/fixtures/*.cjs"]`. These files join the test target inputs so fixture edits invalidate cached test results. The default is empty.
 
 `pnpm --filter @smthrs/repo-targets test` enforces 100% V8 coverage across `src/**`. Both required CI package selections reach its declared Vitest target, `//packages/repo-targets:test`. The suite checks the actual CLI discovery result and the target's runner configuration, so a declared test script alone cannot satisfy that contract.
+
+## Circular imports
+
+`CircularImports({ cwd, sources })` declares the `test`-kind `NodeTest` target that `BuildAndCheckTypeScriptPackage` emits as `circular`; a package that declares its targets by hand calls it directly. Every package runs the one guard, `scripts/circular.mjs` in this package, and its `circular` package script runs the same file, for example `node ../repo-targets/scripts/circular.mjs` from `packages/errors`.
+
+The guard reads the module graph the VibeLang compiler resolves for the package's `tsconfig.json`: `projectImports` from `vibelang/project` lists the program and every import its files write, each with the file it resolved to, without type-checking. `.vibe` modules, and `.ts` modules that import them, are therefore in the graph, with the compiler's own resolution of `.vibe` specifiers and package exports. An import is an edge when it loads at run time, which `src/ImportAnalysis.ts` decides from the importing file's syntax: `import type`, `export type`, `import()` types and imports whose every reference is type-only are not edges. Files under `node_modules` and in nested packages are not nodes, so a cycle is one package's own. madge, which every package declares, finds the cycles. The target keys on `sources`, `tsconfig.json`, and the guard's modules.
+
+On a cycle the guard prints one line per cycle and exits 1:
+
+```text
+Circular dependencies found: 1
+  src/SmithersError.vibe > src/ErrorCode.ts > src/SmithersError.vibe
+```
+
+It exits 2 with the compiler's diagnostics when the compiler cannot read the project, such as for an unknown compiler option.
 
 ## Import rules
 
@@ -85,7 +101,7 @@ A `forbidCalls` rule reads each call's callee as text, with parentheses, `as`, `
 
 An exact entry matches only its own text, so `page.route` misses `tab.page.route`. Use `*.<member>` when a member name belongs to one API, as Playwright's `route` does; a `*` anywhere else is refused. Both forms are syntactic: neither sees a callee reached through destructuring, as in `const { route } = page; route(url, handler)`, and an exact entry does not see `const model = yield* Model.Model; model.stream(request)`, an alias or a parameter.
 
-A source is a `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs` or `.cjs` file under `cwd`, outside `node_modules`, `dist`, `coverage`, `target`, `tmp`, `test-results`, `playwright-report`, any dot-directory, and any nested directory with its own `package.json`. Each source is parsed once with the TypeScript compiler API, in `src/ImportAnalysis.ts`, which the repository's dependency-boundary gate shares. A string or comment that mentions an import is not one.
+A source is a `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs` or VibeLang `.vibe` file under `cwd`, outside `node_modules`, `dist`, `coverage`, `target`, `tmp`, `test-results`, `playwright-report`, any dot-directory, and any nested directory with its own `package.json`. Each source is parsed once with the TypeScript compiler API, in `src/ImportAnalysis.ts`, which the repository's dependency-boundary gate and circular-import guard share. A `.vibe` file parses as TypeScript: VibeLang's imports, exports, type arguments and calls are TypeScript syntax, and the parser recovers from VibeLang's own declarations. A string or comment that mentions an import is not one.
 
 The target runs `scripts/import-rules.mjs <cwd> '<rules JSON>'` in `cwd`. On a violation it prints one line per violation to stderr and exits 1:
 
@@ -140,7 +156,7 @@ const { importRules, jevRules } = SdkRules({ cwd: "packages/effect-electric", ro
 | `host`        | A `@smthrs/platform-*` package                                                            | `sdk.platform-neutral`                                                           |
 | `components`  | `@smthrs/ui`, which renders React                                                         | everything but `sdk.root-imports-only`, `sdk.no-dead-code` and `test.behavioral` |
 
-`importRules` forbids host modules in `src/` (`sdk.platform-neutral`), a deep import of a Smithers package in `src/` or `examples/` (`sdk.root-imports-only`), and running an Effect in `src/` (`effect.boundary-only`). `jevRules` asks the judgment half of those rules, plus `effect.wrap-every-library`, `sdk.generic-libraries`, `obs.content-free`, `sdk.no-dead-code` (advisory) and `test.behavioral`, about `src/` and the package's tests (`test/**/*.test.ts`, or `tests`). `knownDeepImports: { packages, because }` names the `@smthrs/*` packages whose subpaths a package still imports, and why; the `because` joins the rule's message. `@smthrs/model-host` (the CLI's command catalog) and `@smthrs/rpc` (its runtime-free canonical imports) declare one.
+`importRules` forbids host modules in `src/` (`sdk.platform-neutral`), a deep import of a Smithers package in `src/` or `examples/` (`sdk.root-imports-only`), and running an Effect in `src/` (`effect.boundary-only`). `jevRules` asks the judgment half of those rules, plus `effect.wrap-every-library`, `sdk.generic-libraries`, `obs.content-free`, `sdk.no-dead-code` (advisory) and `test.behavioral`, about the `.ts`, `.tsx` and `.vibe` modules in `src/` and the package's tests (`test/**/*.test.ts` and `test/**/*.test.vibe`, or `tests`). `knownDeepImports: { packages, because }` names the `@smthrs/*` packages whose subpaths a package still imports, and why; the `because` joins the rule's message. `@smthrs/model-host` (the CLI's command catalog) and `@smthrs/rpc` (its runtime-free canonical imports) declare one.
 
 ## Failure contracts
 
@@ -159,7 +175,7 @@ Execution failures belong to the emitted targets. The [`@smthrs/targets` error t
 - Review targets fail with `smithers-build/ModelCliMissing` when the engine CLI, `codex` by default, is not on the host. It names the `engine` and the `executable`.
 - Review targets fail with `smithers-build/LlmReviewError` when a round fails in the `diff`, `read`, `review`, or `parse` phase.
 - Review targets fail with `smithers-build/FindingsError` when a finding meets the threshold: `error` for `ReviewTagsMigrationsAndKeys`, `warning` for `ReviewDocsAgainstCode` and `ReviewJsdocAgainstCode`. The error carries every finding.
-- `BuildAndCheckTypeScriptPackage` targets fail with `smithers-build/ExecError` when a tool such as `tsc`, Vitest, ESLint, dprint, or the circular script fails, and its `docs` target fails with `smithers-build/DocsParityError`.
+- `BuildAndCheckTypeScriptPackage` targets fail with `smithers-build/ExecError` when a tool such as `tsc`, Vitest, ESLint, dprint, or the circular-import guard fails, and its `docs` target fails with `smithers-build/DocsParityError`.
 - `ImportRules` targets fail with `smithers-build/ExecError` when a source breaks a rule (exit 1) or the program refuses its arguments (exit 2).
 - `JevRules` targets fail with `smithers-build/FindingsError` when a finding meets `failOn`, and with `smithers-build/LlmReviewError` when `AI_GATEWAY_API_KEY` is missing, a rule matches no file, a file cannot be read, or Jev fails or leaves a question unanswered.
 

@@ -166,13 +166,17 @@ test("a variable the package's own test target sets in its env is not a pin", ()
  * whatever the tree happens to pin today to a fixture this file owns, which is
  * why `findPins` and `undocumentedPins` are exported at all.
  */
-const withPinnedPackage = (title, run) => {
+const withPinnedPackage = (
+  title,
+  run,
+  { file = "Ledger.test.mjs", text = `it.skip(${JSON.stringify(title)}, () => {})\n` } = {}
+) => {
   const fixtureRoot = mkdtempSync(join(repoRoot, "packages/repo-targets/contracts", ".check-test-pins-"))
   const packageDirectory = join(fixtureRoot, "ledger")
-  const testFile = join(packageDirectory, "test", "Ledger.test.mjs")
+  const testFile = join(packageDirectory, "test", file)
   try {
     mkdirSync(dirname(testFile), { recursive: true })
-    writeFileSync(testFile, `it.skip(${JSON.stringify(title)}, () => {})\n`)
+    writeFileSync(testFile, text)
     // The register names a package by its path under `packages/`, which is the
     // half of the pair `undocumentedPins` builds from the directory it walks.
     run({ packageDirectory, packageName: relative(join(repoRoot, "packages"), packageDirectory), testFile })
@@ -208,6 +212,23 @@ test("a pin counts as documented only when Surviving pins pairs its package and 
     assert.equal(unexplained[0].title, title)
     assert.equal(unexplained[0].file, relative(repoRoot, testFile))
   })
+})
+
+test("a pin in a VibeLang test file is found like one in a TypeScript test file", () => {
+  const title = "refuses a ledger row the journal never wrote"
+  const text = [
+    'import { assert, it } from "@effect/vitest"',
+    'import { readRow } from "../src/Ledger.vibe"',
+    "",
+    `it.effect.skip(${JSON.stringify(title)}) {`,
+    '  assert.isUndefined(readRow("missing") catch undefined)',
+    "}",
+    ""
+  ].join("\n")
+  withPinnedPackage(title, ({ packageDirectory, testFile }) => {
+    const unexplained = undocumentedPins("# Alpha notes\n\nNothing here.\n", [packageDirectory])
+    assert.deepEqual(unexplained.map((pin) => [pin.title, pin.file]), [[title, relative(repoRoot, testFile)]])
+  }, { file: "Ledger.test.vibe", text })
 })
 
 test("reads Surviving pins through ordinary z text and through end of input", () => {

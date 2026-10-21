@@ -90,6 +90,34 @@ describe("ReviewBatches import graph", () => {
     expect(ReviewBatches.calleePaths(changed, (path) => names.has(path))).toEqual(["src/guard.ts"])
   })
 
+  it("relates VibeLang modules through their imports and callers like TypeScript ones", () => {
+    const changed = [{
+      path: "src/User.vibe",
+      contents: [
+        "import { greeting } from \"./Greeting.vibe\"",
+        "",
+        "export error NotFound { id: string }",
+        "",
+        "export function find(id: string): string!NotFound {",
+        "  if (id === \"\") throw new NotFound({ id })",
+        "  return greeting(id)",
+        "}",
+        ""
+      ].join("\n")
+    }]
+    const unchanged = [
+      { path: "src/Greeting.vibe", contents: "export function greeting(id: string): string {\n  return id\n}\n" },
+      { path: "src/index.ts", contents: "export { find } from \"./User.vibe\"\n" }
+    ]
+    const names = new Set([...changed, ...unchanged].map((file) => file.path))
+    expect(ReviewBatches.isScript("src/User.vibe")).toBe(true)
+    expect(ReviewBatches.calleePaths(changed, (path) => names.has(path))).toEqual(["src/Greeting.vibe"])
+    const caller = new RegExp(ReviewBatches.callerPatterns(["src/User.vibe"])[0]!)
+    expect(caller.test("export { find } from \"./User.vibe\"")).toBe(true)
+    const { related } = ReviewBatches.relate(changed, unchanged, (path) => names.has(path))
+    expect(related.get("src/User.vibe")).toEqual(["src/Greeting.vibe", "src/index.ts"])
+  })
+
   it("ignores unresolved imports and resolved files outside the related set, listing each relation once", () => {
     const changed = [{
       path: "src/a.ts",

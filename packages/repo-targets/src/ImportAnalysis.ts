@@ -116,11 +116,16 @@ export interface Analysis {
   readonly calls: ReadonlyArray<Call>
 }
 
-/** The parser's script kind for a file name. */
+/**
+ * The parser's script kind for a file name. A `.vibe` file parses as
+ * TypeScript: VibeLang's import and export declarations, type arguments and
+ * `import()` types are TypeScript's, and the parser recovers from its other
+ * syntax.
+ */
 const scriptKind = (file: string): ts.ScriptKind => {
   if (file.endsWith(".tsx")) return ts.ScriptKind.TSX
   if (file.endsWith(".jsx")) return ts.ScriptKind.JSX
-  if (/\.[mc]?ts$/.test(file)) return ts.ScriptKind.TS
+  if (/\.(?:[mc]?ts|vibe)$/.test(file)) return ts.ScriptKind.TS
   return ts.ScriptKind.JS
 }
 
@@ -177,7 +182,8 @@ const calleeText = (expression: ts.Expression): string | undefined => {
  * Reads one source's module references and calls.
  *
  * `file` names the source for its script kind: `.tsx` and `.jsx` parse with
- * JSX, `.ts`, `.mts` and `.cts` as TypeScript, anything else as JavaScript.
+ * JSX, `.ts`, `.mts`, `.cts` and VibeLang's `.vibe` as TypeScript, anything
+ * else as JavaScript.
  * A syntax error does not throw; the parser recovers and the rest is read.
  *
  * A member is recorded only through a binding a top-level import declares,

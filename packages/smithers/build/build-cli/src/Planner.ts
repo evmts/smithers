@@ -386,7 +386,8 @@ export interface SourceRoot {
   readonly directory: string
 }
 
-const sourceExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs"]
+// VibeLang `.vibe` modules are implementation source too: the CLI loads them.
+const sourceExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", ".vibe"]
 
 const skippedSourceDirectories = new Set(["node_modules", "dist", ".git"])
 

@@ -192,7 +192,7 @@ describe("ReviewDocsAgainstCode", () => {
     expect(await expandContext(attrsOf(Package.reviewDocsAgainstCode).context))
       .toEqual(["packages/repo-targets/README.md"])
     expect(attrsOf(Package.reviewJsdocAgainstCode).include)
-      .toEqual([{ _tag: "Glob", pattern: "//packages/repo-targets/src/**/*.ts", exclude: [] }])
+      .toEqual([{ _tag: "Glob", pattern: "//packages/repo-targets/src/**/*.{ts,vibe}", exclude: [] }])
   })
 
   it("reports at warning while its rubric is tuned", () => {
@@ -205,10 +205,10 @@ describe("ReviewDocsAgainstCode", () => {
 describe("ReviewJsdocAgainstCode", () => {
   const attrs = attrsOf(ReviewJsdocAgainstCode({ cwd: "packages/smithers/flows/journal" }))
 
-  it("covers the package's TypeScript sources alone", () => {
+  it("covers the package's TypeScript and VibeLang sources alone", () => {
     expect(attrs.include).toEqual([{
       _tag: "Glob",
-      pattern: "//packages/smithers/flows/journal/src/**/*.ts",
+      pattern: "//packages/smithers/flows/journal/src/**/*.{ts,vibe}",
       exclude: []
     }])
     expect(attrs.context).toEqual([])
@@ -217,6 +217,7 @@ describe("ReviewJsdocAgainstCode", () => {
   it("reports at warning and names truthfulness, not presence, as its scope", () => {
     expect(attrs.failOn).toBe("warning")
     expect(attrs.rubric).toContain("only truthfulness is in scope")
+    expect(attrs.rubric).toContain("VibeLang `error` declarations")
   })
 })
 

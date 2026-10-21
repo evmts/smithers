@@ -232,6 +232,34 @@ describe("analyze: script kinds", () => {
     for (const file of ["i.ts", "i.mts", "i.cts"]) expect(calls(file, generic)).toEqual(["2 pipe"])
     expect(references("i.js", 'const fs = require("node:fs")\nfs.readFileSync("x")')).toEqual(["1 require node:fs"])
   })
+
+  it("parses .vibe as TypeScript, whose import syntax VibeLang shares, past VibeLang's own declarations", () => {
+    const vibe = [
+      'import type { Flow } from "@smthrs/core/Flow"',
+      'import * as Route from "./Route.vibe"',
+      'import { record } from "./internal/Boundary.ts"',
+      "",
+      "error NotFound { path: string }",
+      "",
+      'type SchemaModule = typeof import("effect/Schema")',
+      "",
+      "export function resolve(path: string): Route.Route!NotFound {",
+      "  const route = Route.lookup<Flow>(path) catch (e) => match (e) {",
+      "    when Route.Missing: throw new NotFound({ path });",
+      "  }",
+      "  record(route)",
+      "  return route",
+      "}"
+    ].join("\n")
+    expect(references("Resolve.vibe", vibe)).toEqual([
+      "1 import @smthrs/core/Flow type",
+      "2 import ./Route.vibe",
+      "3 import ./internal/Boundary.ts",
+      "7 import-type effect/Schema type"
+    ])
+    // A generic call is lost when the file parses as JavaScript.
+    expect(calls("Resolve.vibe", vibe)).toEqual(expect.arrayContaining(["10 Route.lookup", "13 record"]))
+  })
 })
 
 describe("specifiers", () => {

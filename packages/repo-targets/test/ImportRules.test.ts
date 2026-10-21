@@ -297,6 +297,7 @@ describe("listSources", () => {
     const directory = scratchPackage({
       "src/View.tsx": "",
       "src/machine.ts": "",
+      "src/Route.vibe": "",
       "src/legacy.jsx": "",
       "worker/index.mts": "",
       "worker/config.cts": "",
@@ -323,6 +324,7 @@ describe("listSources", () => {
       "db/migrate.js",
       "e2e/gifs.mjs",
       "fixtures/odd/package.json/index.ts",
+      "src/Route.vibe",
       "src/View.tsx",
       "src/legacy.jsx",
       "src/machine.ts",
@@ -350,6 +352,38 @@ describe("run", () => {
         "",
         `- apps/mvp/src/View.tsx:1 imports "effect" (forbid). ${because}`,
         "- apps/mvp/worker/Answer.ts:3 calls Model.stream (forbidCalls). Model calls are flow steps. See AGENTS.md."
+      ].join("\n")
+    })
+  })
+
+  it("checks VibeLang sources like TypeScript ones", () => {
+    const directory = scratchPackage({
+      "src/Answer.vibe": [
+        'import * as Model from "@smthrs/model/Model"',
+        'import { NodeHost } from "@smthrs/platform-node"',
+        "",
+        "error Refused { reason: string }",
+        "",
+        "export function answer(request: Model.Request): string!Refused {",
+        "  const reply = Model.stream<Model.Reply>(request) catch (e) => match (e) {",
+        "    when Model.ModelError: throw new Refused({ reason: e.message });",
+        "  }",
+        "  return reply.text",
+        "}"
+      ].join("\n"),
+      "src/View.tsx": ""
+    })
+    const vibeRules: ReadonlyArray<ImportRule> = [
+      { kind: "forbid", modules: ["@smthrs/platform-node", "@smthrs/platform-node/**"], because },
+      rules[1]!
+    ]
+    expect(run({ packageDirectory: "packages/agent", directory, rules: vibeRules })).toEqual({
+      exitCode: 1,
+      output: [
+        "ImportRules failed in packages/agent: 2 violations of 2 rules over 2 source files.",
+        "",
+        `- packages/agent/src/Answer.vibe:2 imports "@smthrs/platform-node" (forbid). ${because}`,
+        "- packages/agent/src/Answer.vibe:7 calls Model.stream (forbidCalls). Model calls are flow steps. See AGENTS.md."
       ].join("\n")
     })
   })
@@ -434,7 +468,7 @@ describe("ImportRules", () => {
     expect(attrs.runner.entry.path).toBe("//packages/repo-targets/scripts/import-rules.mjs")
     expect(attrs.runner.args).toEqual(["apps/mvp", JSON.stringify(rules)])
     expect(attrs.srcs).toEqual([
-      { _tag: "Glob", pattern: "//apps/mvp/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs}", exclude: [] },
+      { _tag: "Glob", pattern: "//apps/mvp/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs,.vibe}", exclude: [] },
       { _tag: "File", path: "//packages/repo-targets/scripts/import-rules.mjs" },
       { _tag: "File", path: "//packages/repo-targets/src/ImportRulesCheck.ts" },
       { _tag: "File", path: "//packages/repo-targets/src/ImportAnalysis.ts" }

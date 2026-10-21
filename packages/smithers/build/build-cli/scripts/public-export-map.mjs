@@ -30,11 +30,11 @@ export const exportTarget = (map, subpath) => {
   return substitute(map[pattern], subpath.slice(star, suffix === 0 ? undefined : -suffix))
 }
 
-/** Existing source-addressable paths, including deliberately exposed nested modules. */
+/** Existing source-addressable paths, TypeScript and VibeLang, including deliberately exposed nested modules. */
 export const sourceSubpaths = (directory) =>
-  globSync("src/**/*.ts", { cwd: directory })
+  globSync("src/**/*.{ts,vibe}", { cwd: directory })
     .filter((file) => !/\.d\.[cm]?ts$/.test(file))
-    .map((file) => "./" + file.replaceAll("\\", "/").slice(4, -3)).sort()
+    .map((file) => "./" + file.replaceAll("\\", "/").slice(4).replace(/\.(?:ts|vibe)$/, "")).sort()
 
 /** Enumerate contracts from the old map before replacing its positive wildcard. */
 export const publicSubpaths = (map, directory) =>

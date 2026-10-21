@@ -25,6 +25,14 @@ const moduleDeclarations = (value) => {
   return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, moduleDeclarations(entry)]))
 }
 const reviewed = (value, mode) => mode === "published" ? moduleDeclarations(value) : value
+// A package migrated to VibeLang exports src/X.vibe where its reviewed map
+// exported src/X.ts: the same module, so the development maps compare equal.
+const asReviewedSource = (value) =>
+  typeof value === "string"
+    ? value.replace(/^(\.\/src\/.*)\.vibe$/, "$1.ts")
+    : value === null || typeof value !== "object"
+    ? value
+    : Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, asReviewedSource(entry)]))
 const additions = (name, mode) => Object.fromEntries(
   baseline.added.filter((entry) => entry.name === name).map((entry) => [entry.subpath, reviewed(entry[mode], mode)])
 )
@@ -145,7 +153,7 @@ describe("explicit public entrypoints", () => {
       const manifest = current.get(previous.name)?.manifest
       assert.ok(manifest, previous.name)
       const removed = denied(previous.name)
-      for (const [label, map] of [["development", manifest.exports], ["published", manifest.publishConfig.exports]]) {
+      for (const [label, map] of [["development", asReviewedSource(manifest.exports)], ["published", manifest.publishConfig.exports]]) {
         assert.deepEqual(map, { ...explicitMap(reviewed(previous[label], label), previous.subpaths, removed), ...additions(previous.name, label) }, `${previous.name} ${label}`)
         for (const subpath of previous.subpaths) {
           if (removed.includes(subpath)) {
@@ -330,10 +338,11 @@ process.stdout.write(JSON.stringify({assertions:'passed'}));
     try {
       const directory = join(root, "packages/fixture")
       mkdirSync(join(directory, "src/nested"), { recursive: true })
-      for (const file of ["index.ts", "valid.ts", "ambient.d.ts", "nested/ambient.d.ts"]) {
+      for (const file of ["index.ts", "valid.ts", "Route.vibe", "ambient.d.ts", "nested/ambient.d.ts"]) {
         writeFileSync(join(directory, "src", file), "")
       }
-      assert.deepEqual(sourceSubpaths(directory), ["./index", "./valid"])
+      // A VibeLang module is source-addressable like a TypeScript one.
+      assert.deepEqual(sourceSubpaths(directory), ["./Route", "./index", "./valid"])
       writeFileSync(join(root, "package.json"), JSON.stringify({ workspaces: ["packages/*"] }))
       writeFileSync(join(root, "pnpm-workspace.yaml"), "packages:\n  - \"packages/*\"\n")
       writeFileSync(
@@ -383,6 +392,13 @@ process.stdout.write(JSON.stringify({assertions:'passed'}));
   })
 
   it("proves ESM and CommonJS resolution equivalence with Node, including denied imports and real future files", () => {
+    // A package migrated to VibeLang exports src/X.vibe where it exported
+    // src/X.ts: the same module, so the development targets compare equal.
+    const sameModule = (resolution) =>
+      Object.fromEntries(Object.entries(resolution).map(([kind, result]) => [
+        kind,
+        result.target === undefined ? result : { target: result.target.replace(/(\/src\/.*)\.vibe$/, "$1.ts") }
+      ]))
     const root = realpathSync(mkdtempSync(join(tmpdir(), "smithers-public-exports-")))
     try {
       const jobs = []
@@ -401,7 +417,7 @@ process.stdout.write(JSON.stringify({assertions:'passed'}));
             // Both packages contain the same bytes, including the now-private
             // migration and an unreviewed future module. Only their maps differ.
             for (const subpath of paths) {
-              for (const target of targets(exportTarget(previous[mode], subpath))) {
+              for (const target of [...targets(exportTarget(previous[mode], subpath)), ...targets(exportTarget(map, subpath))]) {
                 if (target === "./package.json") continue
                 files.add(target)
               }
@@ -468,7 +484,7 @@ process.stdout.write(JSON.stringify(output));
               assert.ok(results[index][pathIndex].esm.target, `${label} was addressable before the change`)
             }
           } else {
-            assert.deepEqual(actual, results[index][pathIndex], label)
+            assert.deepEqual(sameModule(actual), sameModule(results[index][pathIndex]), label)
             assert.ok(actual.esm.target, `${label} retains an ESM target`)
           }
         }
