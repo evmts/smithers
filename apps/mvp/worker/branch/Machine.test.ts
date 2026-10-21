@@ -93,6 +93,8 @@ const memory = (entries: Record<string, unknown> = {}) => {
     get: <A>(key: string) => Effect.sync(() => map.get(key) as A | undefined),
     put: (key, value) => Effect.sync(() => void map.set(key, value)),
     delete: (key) => Effect.sync(() => map.delete(key)),
+    list: <A>(prefix: string) =>
+      Effect.sync(() => new Map([...map].filter(([key]) => key.startsWith(prefix))) as ReadonlyMap<string, A>),
   }
   return { map, store }
 }
@@ -225,7 +227,7 @@ describe("tool across machines", () => {
     const call = { tool: "run", command: "echo ran >> runs.log; cat runs.log" } as const
     const ran = await Effect.runPromise(tool(first.box, call, 1, "across"))
     expect(ran).toMatchObject({ _tag: "Done", result: { stdout: "ran\n" }, generation: 1 })
-    expect(store.map.get("run:across")).toBe(1)
+    expect(store.map.get("run:across")).toEqual({ generation: 1, at: expect.any(Number) })
     // The same generation again answers what the box recorded.
     expect(await Effect.runPromise(tool(first.box, call, 1, "across"))).toEqual(ran)
     // A new machine (a fresh disk with no fence) under the same object: the command is lost, and nothing runs.
@@ -237,6 +239,37 @@ describe("tool across machines", () => {
       _tag: "Done",
     })
     expect(store.map.has("run:across-read")).toBe(false)
+  })
+})
+
+describe("command records", () => {
+  test("a new command drops the records older than a day, and keeps the ones a retry may still ask for", async () => {
+    const now = Date.now()
+    const recent = { generation: 1, at: now - 60_000 }
+    const store = memory({
+      // A day and a minute old, a bare generation from before records were dated, and a minute old.
+      "run:expired": { generation: 1, at: now - Machine.RUN_RECORD_MS - 60_000 },
+      "run:undated": 1,
+      "run:recent": recent,
+      checkpoint: { generation: 1, head: base, seq: 1, pieces: 0, bytes: 0 },
+    })
+    const machine = boxOf({ store })
+    await Effect.runPromise(tool(machine.box, { tool: "run", command: "true" }, 2, "fresh"))
+    expect([...store.map.keys()].filter((key) => key.startsWith("run:")).sort()).toEqual(["run:fresh", "run:recent"])
+    expect(store.map.get("run:fresh")).toEqual({ generation: 2, at: expect.any(Number) })
+    // Other state stays.
+    expect(store.map.has("checkpoint")).toBe(true)
+    // The kept record still makes its command lost on a later generation, and a read records nothing.
+    expect(await Effect.runPromise(tool(machine.box, { tool: "run", command: "true" }, 2, "recent"))).toEqual({ _tag: "Lost" })
+    expect(store.map.get("run:recent")).toEqual(recent)
+  })
+
+  test("a bare generation from before records were dated still settles its command lost on another generation", async () => {
+    const machine = boxOf({ store: memory({ "run:legacy": 1 }) })
+    expect(await Effect.runPromise(tool(machine.box, { tool: "run", command: "touch ran" }, 2, "legacy"))).toEqual({
+      _tag: "Lost",
+    })
+    expect(existsSync(join(machine.workdir, "ran"))).toBe(false)
   })
 })
 

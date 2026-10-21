@@ -302,6 +302,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           get: (key) => state.storage.get(key),
           put: (key, value) => state.storage.put(key, value),
           delete: (key) => state.storage.delete(key),
+          list: (prefix) => state.storage.list({ prefix }),
         },
       }
 

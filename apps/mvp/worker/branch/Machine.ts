@@ -25,6 +25,8 @@ export interface Store<R> {
   readonly get: <A>(key: string) => Effect.Effect<A | undefined, never, R>
   readonly put: (key: string, value: unknown) => Effect.Effect<void, never, R>
   readonly delete: (key: string) => Effect.Effect<unknown, never, R>
+  /** Every entry whose key starts with `prefix`. */
+  readonly list: <A>(prefix: string) => Effect.Effect<ReadonlyMap<string, A>, never, R>
 }
 
 /** One branch's machine as its object holds it. */
@@ -38,6 +40,30 @@ export interface Box<R> {
   readonly destroy: Effect.Effect<void, unknown, R>
   readonly storage: Store<R>
 }
+
+/**
+ * How long the object remembers which generation started a command (`run:<call id>`): far past `sandbox/Call`'s
+ * 2-minute retry and a command's 10-minute cap, so any attempt of a call still finds its record, and a record nothing
+ * can ask for again is dropped.
+ */
+export const RUN_RECORD_MS = 24 * 60 * 60_000
+
+/** Which generation started a command, and when. A record saved before `at` existed is a bare generation. */
+interface RunStarted {
+  readonly generation: number
+  readonly at: number
+}
+
+const startedOf = (value: RunStarted | number | undefined): RunStarted | undefined =>
+  typeof value === "number" ? { generation: value, at: 0 } : value
+
+/** Drops every command record older than `RUN_RECORD_MS`, as a new command is recorded. */
+const dropOldRuns = <R>(box: Box<R>, now: number) =>
+  Effect.gen(function* () {
+    for (const [key, value] of yield* box.storage.list<RunStarted | number>("run:")) {
+      if (now - (typeof value === "number" ? 0 : value.at) > RUN_RECORD_MS) yield* box.storage.delete(key)
+    }
+  })
 
 /** Where a person's commands keep their fences and results: in their own home, outside the checkout. */
 export const callsDirectory = (user: string): string => `/home/${user}/.smithers/calls`
@@ -193,12 +219,16 @@ export const tool = <R>(
     if ((yield* box.run(provisionArgv(user), "root")) !== 0) return { _tag: "Unavailable" } as const
     const session = yield* box.sessionAs(user)
     // A command's fence lives on the machine's own disk, which a restart loses. The object remembers the generation it
-    // started each command on, so a command an earlier generation started settles lost and never runs again (0005's
-    // MachineLost): its effects went with that machine, and its result may have too.
+    // started each command on, for RUN_RECORD_MS, so a command an earlier generation started settles lost and never
+    // runs again (0005's MachineLost): its effects went with that machine, and its result may have too.
     if (options.call.tool === "run") {
-      const started = yield* box.storage.get<number>(`run:${options.callId}`)
-      if (started !== undefined && started !== options.generation) return { _tag: "Lost" } as const
-      if (started === undefined) yield* box.storage.put(`run:${options.callId}`, options.generation)
+      const started = startedOf(yield* box.storage.get<RunStarted | number>(`run:${options.callId}`))
+      if (started !== undefined && started.generation !== options.generation) return { _tag: "Lost" } as const
+      if (started === undefined) {
+        const now = yield* Clock.currentTimeMillis
+        yield* dropOldRuns(box, now)
+        yield* box.storage.put(`run:${options.callId}`, { generation: options.generation, at: now } satisfies RunStarted)
+      }
     }
     yield* touch(box)
     const ran = yield* Effect.result(
