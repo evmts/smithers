@@ -15,16 +15,13 @@ import { appHome, questionPost, requires, writeHeaders } from "./target"
 //
 // Three tests are marked broken (`test.fail`, docs/rulings.md TEST-5) just before the assertion the bug fails, so a failure
 // anywhere before it is still a failure. Once the bug is fixed the assertion passes, the run goes red, and the mark
-// comes off. One more, `stale tab`, fails now and then, its cause narrowed but not found, so it is marked as a whole.
+// comes off.
 
 /** Why each broken test fails today. */
 const BROKEN_WITHDRAW = "Broken: Outbox.withdraw takes back a write the server already took, between two of its sends"
 const BROKEN_GHOST = "Broken: a tab that loses the outbox's lead keeps the rows of writes another tab then takes back"
 const BROKEN_CLOCK =
   "Broken: after the device clock steps back, the device shows the next question twice, and the outbox orders its writes by that clock"
-// Red now and then on the real model, its cause narrowed but not found; marked for the whole test until it is.
-const BROKEN_STALE_TAB =
-  "Broken, cause narrowed: on a device with two tabs, a question both tabs saw arrive vanishes from both (docs/work/local-first-conflicts.md)"
 
 const DAY = 24 * 60 * 60 * 1000
 const HOUR = 60 * 60 * 1000
@@ -246,7 +243,6 @@ test.describe("Local-first conflicts", () => {
       description: "Tab 1 queues a question, tab 2 takes the lead and sends it, tab 1 leads again: the question is sent once, everywhere once.",
     },
   }, async ({ devices, request }) => {
-    test.fail(true, BROKEN_STALE_TAB)
     const word = devices.word
     const [one, b] = await devices.open("Tab 1", "B")
     const two = await devices.tab(one.device, "Tab 2")
