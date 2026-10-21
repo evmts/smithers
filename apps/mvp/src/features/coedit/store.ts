@@ -1,4 +1,4 @@
-import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { digestSync, Uuid, WebCrypto } from "@smthrs/crypto"
 import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
 import { type PresenceProtocol, PresenceSocket, SharedText } from "@smthrs/sync"
@@ -66,6 +66,16 @@ export const textIdOf = (of: TextOf) =>
 /** The key a text's row carries: the conversation, `<conversation>/<path>` for a file, or `<run>/<version>`. */
 export const keyOf = (of: TextOf) =>
   of.kind === "prompt" ? of.conversation : of.kind === "file" ? `${of.conversation}/${of.path}` : `${of.run}/${of.version}`
+
+/** The mark a Save leaves on a file's text: what it wrote, as its length and SHA-256, the same on every device. */
+export const SAVED_MARK = "saved"
+
+/** The `saved` mark of `text`: its length, then its SHA-256, so a text of another length is told apart unhashed. */
+export const savedMarkOf = (text: string): string => `${text.length}:${digestSync(text)}`
+
+/** Whether `text` is what the `saved` mark `mark` says a Save wrote. */
+const isSaved = (mark: string | undefined, text: string): boolean =>
+  mark !== undefined && mark.startsWith(`${text.length}:`) && mark === savedMarkOf(text)
 
 /** A cursor as a room state: the anchors, as base64. */
 export const encodeCursor = (mine: Mine): string =>
@@ -145,11 +155,14 @@ const make = Effect.fnUntraced(function* (config: CoeditConfig) {
         if (Option.isSome(at)) collaborators.push({ id: participant.id, name: participant.name, ...at.value })
       }
       const row = Option.getOrThrow(yield* texts.get(live.id))
-      const same = row.text === text && JSON.stringify(row.selection) === JSON.stringify(selection) &&
+      // Whoever saved, every tab reads it from the mark; a text changed since, by anyone, isn't saved.
+      const saved = isSaved((yield* live.replica.marks).get(SAVED_MARK), text)
+      const same = row.text === text && row.saved === saved && JSON.stringify(row.selection) === JSON.stringify(selection) &&
         JSON.stringify(row.collaborators) === JSON.stringify(collaborators)
       if (same) return
       yield* Effect.orDie(texts.update(live.id, (draft) => {
         draft.text = text
+        draft.saved = saved
         draft.selection = selection
         draft.collaborators = collaborators
       }))
@@ -207,7 +220,8 @@ const make = Effect.fnUntraced(function* (config: CoeditConfig) {
         selection: null,
         collaborators: [],
         saving: false,
-        saved: null,
+        saveFailed: false,
+        saved: false,
       }))
       // What ChatApi stored, then what this device typed and the outbox still holds. A file's first content comes only
       // from ChatApi, so every device starts it from the same seed.

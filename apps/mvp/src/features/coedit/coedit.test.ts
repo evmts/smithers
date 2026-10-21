@@ -35,7 +35,7 @@ import { postUpdate, TextsClient, UpdateNotTaken } from "./api"
 import { textRoomRoute } from "./contract"
 import { sends } from "./metrics"
 import { decodeCursor, encodeCursor } from "./store"
-import { answerOf, fileOf, openAnswerOf, promptOf, savedOf } from "./view"
+import { answerOf, fileOf, openAnswerOf, promptOf, saveLabelOf } from "./view"
 import { TextWrites } from "./writes"
 
 const closers: Array<() => Promise<void>> = []
@@ -398,23 +398,75 @@ describe("a shared file", () => {
     }))
     await saving
     const saved = fileOf(owner.texts(), conversation, "styles.css")!
-    expect(saved).toMatchObject({ saving: false, saved: merged })
-    expect(savedOf(saved)).toBe(true)
+    expect(saved).toMatchObject({ saving: false, saveFailed: false, saved: true, text: merged })
+    expect(saveLabelOf(saved)).toBe("Saved")
+    // The owner saved, and Ben's tab says so too: the save's mark reaches everyone with the text.
+    await until(() => expect(fileOf(benTabOpen.texts(), conversation, "styles.css")).toMatchObject({ saved: true, saving: false }))
+
+    // Ben types: neither says Saved. Ben saves: both do.
+    const benEdit = "html, body { color: blue; }\n"
+    benTabOpen.coedit.type(fileId, benEdit, { base: merged, selection: { anchor: 24, head: 24 } })
+    await until(() => {
+      expect(fileOf(owner.texts(), conversation, "styles.css")).toMatchObject({ text: benEdit, saved: false })
+      expect(fileOf(benTabOpen.texts(), conversation, "styles.css")).toMatchObject({ text: benEdit, saved: false })
+    })
+    const benSaving = benTabOpen.coedit.save(fileId)
+    const benWrite = await call(opened, "write", 2)
+    expect(benWrite.call).toEqual({ tool: "write", path: "styles.css", content: benEdit })
+    await opened.run(settle(benWrite.callId, {
+      status: "done",
+      result: { tool: "write", path: "styles.css", bytes: benEdit.length },
+      generation: 1,
+    }))
+    await benSaving
+    await until(() => {
+      expect(fileOf(owner.texts(), conversation, "styles.css")?.saved).toBe(true)
+      expect(fileOf(benTabOpen.texts(), conversation, "styles.css")?.saved).toBe(true)
+    })
+
+    // A save that missed an edit arriving while it ran: what it wrote isn't the text, so neither says Saved.
+    const beforeLate = "html, body { color: green; }\n"
+    benTabOpen.coedit.type(fileId, beforeLate, { base: benEdit, selection: { anchor: 25, head: 25 } })
+    await until(() => expect(fileOf(owner.texts(), conversation, "styles.css")).toMatchObject({ text: beforeLate, saved: false }))
+    const lateSave = owner.coedit.save(fileId)
+    await until(() => expect(fileOf(owner.texts(), conversation, "styles.css")?.saving).toBe(true))
+    expect(saveLabelOf(fileOf(owner.texts(), conversation, "styles.css")!)).toBe("Saving…")
+    const lateWrite = await call(opened, "write", 3)
+    expect(lateWrite.call).toMatchObject({ content: beforeLate })
+    const late = `${beforeLate}/* late */\n`
+    benTabOpen.coedit.type(fileId, late, { base: beforeLate, selection: { anchor: 39, head: 39 } })
+    await until(() => expect(fileOf(owner.texts(), conversation, "styles.css")?.text).toBe(late))
+    await opened.run(settle(lateWrite.callId, {
+      status: "done",
+      result: { tool: "write", path: "styles.css", bytes: beforeLate.length },
+      generation: 1,
+    }))
+    await lateSave
+    await until(() => {
+      expect(fileOf(owner.texts(), conversation, "styles.css")).toMatchObject({ saving: false, saved: false, text: late })
+      expect(fileOf(benTabOpen.texts(), conversation, "styles.css")).toMatchObject({ saved: false, text: late })
+    })
+    // Undoing the late edit makes the text what was written again: both say Saved.
+    benTabOpen.coedit.type(fileId, beforeLate, { base: late, selection: { anchor: 25, head: 25 } })
+    await until(() => {
+      expect(fileOf(owner.texts(), conversation, "styles.css")?.saved).toBe(true)
+      expect(fileOf(benTabOpen.texts(), conversation, "styles.css")?.saved).toBe(true)
+    })
 
     // Showing it again changes nothing; Save on a text that isn't a file, or isn't open, does nothing.
     expect(await owner.coedit.showFile(branchId, "styles.css")).toBe(fileId)
     await owner.coedit.save(owner.prompt()!.id)
     await owner.coedit.save(crypto.randomUUID())
     expect(opened.api.branches.starts.filter((start) => (start.payload as { call?: { tool?: string } }).call?.tool === "write"))
-      .toHaveLength(1)
+      .toHaveLength(3)
 
     // Leaving the editor (`showFile` with no file) leaves the file's room: Ben stops seeing the owner's caret.
     expect(await owner.coedit.showFile(branchId, undefined)).toBeUndefined()
     expect(fileOf(owner.texts(), conversation, "styles.css")?.shown).toBe(false)
     await until(() => expect(fileOf(benTabOpen.texts(), conversation, "styles.css")?.collaborators).toEqual([]))
     // Typed out of its room, an edit still reaches everyone; only the caret stays home.
-    owner.coedit.type(fileId, `${merged}/* end */\n`, { base: merged, selection: { anchor: 37, head: 37 } })
-    const ended = `${merged}/* end */\n`
+    owner.coedit.type(fileId, `${beforeLate}/* end */\n`, { base: beforeLate, selection: { anchor: 39, head: 39 } })
+    const ended = `${beforeLate}/* end */\n`
     await until(() => expect(fileOf(benTabOpen.texts(), conversation, "styles.css")?.text).toBe(ended))
     expect(fileOf(benTabOpen.texts(), conversation, "styles.css")?.collaborators).toEqual([])
     // Back in it, the file is as everyone left it, and nothing reads it again.
@@ -475,7 +527,8 @@ describe("a shared file", () => {
     await until(() => expect(fileOf(faulty.texts(), conversation, "b.txt")?.status).toBe("ready"))
     await Effect.runPromise(engine.refuseStarts("sandbox/write"))
     await faulty.coedit.save(fileId)
-    expect(fileOf(faulty.texts(), conversation, "b.txt")).toMatchObject({ saving: false, saved: null })
+    expect(fileOf(faulty.texts(), conversation, "b.txt")).toMatchObject({ saving: false, saveFailed: true, saved: false })
+    expect(saveLabelOf(fileOf(faulty.texts(), conversation, "b.txt")!)).toBe("Retry save")
     await faulty.coedit.hideFiles()
     expect(fileOf(faulty.texts(), conversation, "b.txt")?.shown).toBe(false)
   }, WITHIN)
@@ -511,8 +564,25 @@ describe("a shared file", () => {
     const write = await call(opened, "write")
     await opened.run(settle(write.callId, { status: "failed", failure: "unavailable" }))
     await saving
-    expect(fileOf(owner.texts(), conversation, "ok.txt")).toMatchObject({ saving: false, saved: null })
+    expect(fileOf(owner.texts(), conversation, "ok.txt")).toMatchObject({ saving: false, saveFailed: true, saved: false })
+    // Trying again clears the failure while it runs, and a write that lands says Saved.
+    const retry = owner.coedit.save(fileId)
+    await until(() => expect(fileOf(owner.texts(), conversation, "ok.txt")).toMatchObject({ saving: true, saveFailed: false }))
+    const retried = await call(opened, "write", 2)
+    await opened.run(settle(retried.callId, { status: "done", result: { tool: "write", path: "ok.txt", bytes: 2 }, generation: 1 }))
+    await retry
+    expect(fileOf(owner.texts(), conversation, "ok.txt")).toMatchObject({ saving: false, saveFailed: false, saved: true })
+    expect(saveLabelOf(fileOf(owner.texts(), conversation, "ok.txt")!)).toBe("Saved")
   }, WITHIN)
+})
+
+test("a file's Save button says what this tab's Save does, else whether the text is what the last Save wrote", () => {
+  const file = (change: { saving?: boolean; saveFailed?: boolean; saved?: boolean }) =>
+    ({ saving: false, saveFailed: false, saved: false, ...change }) as Parameters<typeof saveLabelOf>[0]
+  expect(saveLabelOf(file({}))).toBe("Save")
+  expect(saveLabelOf(file({ saving: true, saved: true }))).toBe("Saving…")
+  expect(saveLabelOf(file({ saved: true, saveFailed: true }))).toBe("Saved")
+  expect(saveLabelOf(file({ saveFailed: true }))).toBe("Retry save")
 })
 
 describe("a run's answer box", () => {

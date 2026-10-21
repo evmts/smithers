@@ -11,7 +11,7 @@ import { CONVERSATION_NAMESPACE } from "../branch/contract"
 import type { TextOf } from "./contract"
 import { saves } from "./metrics"
 import type { Selection, Sending, Shared } from "./schema"
-import { CoeditStore, encodeCursor, type Live } from "./store"
+import { CoeditStore, encodeCursor, type Live, SAVED_MARK, savedMarkOf } from "./store"
 import { TEXT_UPDATE, TextWrites } from "./writes"
 
 // What a person does with a text they edit together with others (decision 0013 §4, docs/features/coedit.md): type in
@@ -263,7 +263,9 @@ const seed = (live: Live, conversation: string, path: string) =>
 
 /**
  * Save on an open file: what everyone typed is written to the branch's working copy through `sandbox/write`, the
- * sandbox tools' one write path. The row says it is saving until the write settles, and what it wrote once it has.
+ * sandbox tools' one write path. This tab's row says it is saving until the write settles, and that it failed if it
+ * did. A written text gets the text's `saved` mark, which reaches everyone with it: every tab whose text is still what
+ * was written says Saved, and an edit anyone makes after says Save again.
  */
 export const save = (textId: string) =>
   Effect.gen(function* () {
@@ -273,16 +275,26 @@ export const save = (textId: string) =>
     const { conversation, path } = live.of
     const startedAt = yield* Clock.currentTimeMillis
     const content = yield* live.replica.text
-    yield* setRow(live, { saving: true })
+    // The run's id names its sandbox call too (src/features/sandbox/steps.ts), so the log line finds the machine's.
+    const executionId = crypto.randomUUID()
+    yield* setRow(live, { saving: true, saveFailed: false })
     const flows = yield* FlowDispatch
     const written = yield* Effect.result(
-      flows.dispatch("sandbox/write", { path, content, conversationId: conversation }, { door: "button" }),
+      flows.dispatch("sandbox/write", { path, content, conversationId: conversation }, { door: "button", executionId }),
     )
     const outcome = written._tag === "Success" && written.success._tag === "Done" ? "saved" : "failed"
-    yield* setRow(live, outcome === "saved" ? { saving: false, saved: content } : { saving: false })
+    if (outcome === "saved") yield* send(live, yield* live.replica.mark(SAVED_MARK, savedMarkOf(content)))
+    yield* setRow(live, { saving: false, saveFailed: outcome === "failed" })
+    yield* store.refresh(live)
     yield* Metric.update(Metric.withAttributes(saves, { outcome }), 1)
     yield* Effect.logWithLevel(outcome === "saved" ? "Info" : "Warn")("coedit.save").pipe(
-      Effect.annotateLogs({ outcome, textId, bytes: content.length, durationMs: (yield* Clock.currentTimeMillis) - startedAt }),
+      Effect.annotateLogs({
+        outcome,
+        textId,
+        executionId,
+        bytes: content.length,
+        durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+      }),
     )
   }).pipe(Effect.annotateLogs({ feature: "coedit" }), Effect.withSpan("coedit.save"))
 

@@ -53,16 +53,22 @@ A change of sharing holds the rooms of the branch's texts to the new list, as it
 
 `src/features/coedit/`:
 
-- **`store.ts`** keeps each open text: its replica, its synced updates (an Electric collection kept on the device), and, while it is shown, its room. Updates reach the replica from the shape and from the outbox's rows (`text-sending`), so text typed offline survives a reload. `coedit-texts` is what a frontend reads: the text, this person's selection as it now stands, everyone else's carets, and for a file whether it is saving and what it last saved.
+- **`store.ts`** keeps each open text: its replica, its synced updates (an Electric collection kept on the device), and, while it is shown, its room. Updates reach the replica from the shape and from the outbox's rows (`text-sending`), so text typed offline survives a reload. `coedit-texts` is what a frontend reads: the text, this person's selection as it now stands, everyone else's carets, and for a file whether this tab's Save is running or failed, and whether the text is saved.
 - **`writes.ts`** sends updates through the device's one outbox (`text-update`): a refusal drops the update for good. In a tab that doesn't lead the outbox, an edit waits and goes with the next one once the tab leads.
-- **`actions.ts`**: `type` merges an input's change, made on the text the input showed (`base`), past updates that arrived meanwhile, so it never undoes them; `select` sends the caret to the room; `showFile` opens a file and seeds it; `save` writes it through `sandbox/write`, the sandbox tools' one write path; `followPrompt` keeps the prompt of the shown conversation open while it is shared ([The prompt](#the-prompt)), and `followAnswers` the open questions' answer boxes.
+- **`actions.ts`**: `type` merges an input's change, made on the text the input showed (`base`), past updates that arrived meanwhile, so it never undoes them; `select` sends the caret to the room; `showFile` opens a file and seeds it; `save` writes it through `sandbox/write`, the sandbox tools' one write path, then sets the text's `saved` mark ([Saved](#saved)); `followPrompt` keeps the prompt of the shown conversation open while it is shared ([The prompt](#the-prompt)), and `followAnswers` the open questions' answer boxes.
 - **`prompt.ts`** is chat's `SharedPrompt`: on a shared branch, the composer's draft is the branch's prompt. Chat's draft actions hand each change to it, and everyone else's typing comes back into the draft.
+
+## Saved
+
+A Save marks what it wrote in the text itself: `SharedText.mark("saved", "<length>:<SHA-256>")`, sent through the outbox like any edit. Every replica gets the mark with the text, so every editor, on every device and after a reload, says `Saved` while its text is what was written, and `Save` once anyone edits it. A Save that missed an edit arriving while it ran marks what it wrote, which isn't the text: nobody's screen says `Saved`. `saving` and a failure are the saving tab's own.
+
+Two Saves of different text that finish within a second of each other, before either tab has heard the other's mark, can leave the mark of the one whose write landed first; the screens then say `Saved` for text the working copy doesn't hold until the next edit. Fencing the mark by the machine's write order would close it; nobody has seen it happen.
 
 ## The page
 
 - **The composer** (`ChatComposer`'s `collaborators`, `selection`, `onSelectionChange`) draws others' carets over its input on a shared branch. Sending is one person's act: the merged text is asked as them, and the prompt clears for everyone. Someone who may only view the branch (`Can view`) sees the prompt read-only, with the carets and no Send; `Owner` and `Can edit` type and send.
 - **The answer box** (`NeedsYouCard`, in the conversation and in the notifications panel) does the same for the person's devices.
-- **A file.** In a branch's Code view, someone who may edit opens a file in the live editor (`?edit=<path>`): `@smthrs/repo-view`'s `CodeEditor` (CodeMirror) with everyone's carets, or `LiveMarkdownEditor` for Markdown. `Save` writes it to the working copy, then reads `Saved`. Presence says where each person is (`edit`), and following them opens the same file.
+- **A file.** In a branch's Code view, someone who may edit opens a file in the live editor (`?edit=<path>`): `@smthrs/repo-view`'s `CodeEditor` (CodeMirror) with everyone's carets, or `LiveMarkdownEditor` for Markdown. `Save` writes it to the working copy: it reads `Saving…` while it runs, `Saved` on every editor's screen once written, and `Retry save` after a failure. Presence says where each person is (`edit`), and following them opens the same file.
 
 ## Observability
 
@@ -71,18 +77,19 @@ Content-free: ids, sizes, scopes' kinds, statuses and outcomes; never a text, an
 | Where | Records |
 |---|---|
 | ChatApi | `text.write` (log, span, `smithers_text_writes{outcome}`), `text.room` (log, span, `smithers_text_room_joins{outcome}`), `text.shape` (`smithers_text_shape_requests`) |
-| Browser (`COEDIT_TELEMETRY`) | `coedit.open`, `coedit.send`, `coedit.save`, `coedit.seed`, `coedit.apply` (an update that isn't one, skipped); `smithers_web_coedit_{opens,sends,saves}` |
+| Browser (`COEDIT_TELEMETRY`) | `coedit.open`, `coedit.send`, `coedit.save` (with the `executionId` that names its sandbox call), `coedit.seed`, `coedit.apply` (an update that isn't one, skipped); `smithers_web_coedit_{opens,sends,saves}` |
+| The branch's machine | `sandbox.wake` (`startMs`, `checkoutMs`, `restoreMs`, `placeholdersMs`, `generation`), `cloudflare.sandbox.wake` (`outcome`, `durationMs`): a slow Save says which step of the wake was slow |
 | Rooms | `@smthrs/sync`'s `smithers_presence_{joins,frames,evictions,open}` |
 
 ## Tests
 
 | Kind | Where |
 |---|---|
-| Unit and property | `@smthrs/sync`'s `test/SharedText.test.ts`: replicas converge with updates shuffled and repeated, every concurrent insertion survives once, an edit made on an older text never undoes what arrived meanwhile, seeds, anchors, and validation |
+| Unit and property | `@smthrs/sync`'s `test/SharedText.test.ts`: replicas converge with updates shuffled and repeated, every concurrent insertion survives once, an edit made on an older text never undoes what arrived meanwhile, marks converge and never change the text, seeds, anchors, and validation |
 | Routes | `worker/branch/Texts.test.ts`: writes, a viewer's update refused before it is stored, the home conversation, a run's answer box, one seed, shapes and rooms by scope, and a change of sharing |
-| Browser | `src/features/coedit/coedit.test.ts`: two people's tabs over ChatApi, Electric and real rooms on loopback (`src/test/rooms.ts`); which prompts are shared: the home conversation and a person's own branch keep the draft on the device, and an owner's first and last share switch it live |
+| Browser | `src/features/coedit/coedit.test.ts`: two people's tabs over ChatApi, Electric and real rooms on loopback (`src/test/rooms.ts`); which prompts are shared: the home conversation and a person's own branch keep the draft on the device, and an owner's first and last share switch it live; one person's Save says Saved on everyone's tab, an edit by anyone clears it, and a Save that missed a late edit says Saved nowhere |
 | UI | `@smthrs/ui`'s `tests/collaborators.test.tsx`; `@smthrs/repo-view`'s `test/code-editor.test.tsx` |
-| End to end | `e2e/coedit.spec.ts`: two people type in one prompt and one file and save it; two devices type one answer box |
+| End to end | `e2e/coedit.spec.ts`: one person's two devices type a new file at once and each saves it, both saying Saved, locally and on a deployment; two people type in one prompt and one file and save it, both saying Saved (local: a deployment has one test account); two devices type one answer box |
 
 ## What's not built
 

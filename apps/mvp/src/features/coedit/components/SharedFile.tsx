@@ -3,7 +3,7 @@ import { Button, Card, EmptyState } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useBranch } from "../../branch/components/BranchContext"
 import { GeneratedFileWarning } from "../../repo/components/FileMarks"
-import { fileOf, savedOf } from "../view"
+import { fileOf, saveLabelOf } from "../view"
 
 const FAILED = { too_large: "Too large", forbidden: "No access", unavailable: "Couldn't open" } as const
 
@@ -32,10 +32,10 @@ export function SharedFile({
           <Button
             size="sm"
             variant="outline"
-            disabled={file.saving || savedOf(file)}
+            disabled={file.saving || file.saved}
             onClick={() => void coedit.actions.save(file.id)}
           >
-            {savedOf(file) ? "Saved" : "Save"}
+            {saveLabelOf(file)}
           </Button>
         )}
       </div>

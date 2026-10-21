@@ -18,5 +18,6 @@ export const openAnswerOf = (texts: ReadonlyArray<Shared>, run: string): Shared 
 export const fileOf = (texts: ReadonlyArray<Shared>, conversation: string, path: string): Shared | undefined =>
   texts.find((row) => row.kind === "file" && row.key === `${conversation}/${path}`)
 
-/** Whether a file's text is what this tab's last Save wrote. */
-export const savedOf = (file: Shared): boolean => file.saved === file.text
+/** What a file's Save button says: what this tab's Save is doing, else whether the text is what the last Save wrote. */
+export const saveLabelOf = (file: Shared): "Saving…" | "Saved" | "Retry save" | "Save" =>
+  file.saving ? "Saving…" : file.saved ? "Saved" : file.saveFailed ? "Retry save" : "Save"
