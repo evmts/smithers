@@ -3,7 +3,7 @@ title: E2e tests against production
 status: in-progress
 area: test
 owner: prod-e2e builder (Claude Opus)
-updated: 2026-10-21 14:22 PDT
+updated: 2026-10-21 16:12 PDT
 links: [../rulings.md, ../rules.md, ../infrastructure.md, e2e-suite-and-gifs.md, major-feature-e2e-derisk.md, sign-in.md]
 ---
 
@@ -27,14 +27,16 @@ links: [../rulings.md, ../rules.md, ../infrastructure.md, e2e-suite-and-gifs.md,
 - `flows.spec`: a run reaches Done, but its Steps list has no `flow/run/load`. This fails twice in a row.
 - Timing flakes in production: `navigate` hover opened in 348 ms against its 300 ms budget, `flow-usage` showed the Runs row before its success rate, and `start-app` landing took more than 5 s once.
 
+- 15:50 to 16:05: the asking specs again, on the 5M daily budget, with the provider answering: 16 passed, 18 failed, 14 declared skips. Every answer in the own conversation settled `done`. The failures are on the device: the branch page below, and tests that assume `/app` (navigate by the agent, chat's "in view" and "reload mid-answer"). Three also need their owners: status "needs you, live", agent "ask", which sees a second model role, and sync, whose second device doesn't show the answer.
+
 **Found on the branch page:** asking tests now run on the account's own branch, and that page differs from `/app`:
 - the connection pill doesn't read Offline when the device is offline (local-first);
 - the page sets no theme attribute until a mode is chosen;
+- the composer doesn't mark a draft saved (message-controls "message edit");
 - a page opened offline after storage eviction doesn't show its branch chrome (sign-in's ownerless activation).
 - `POST /api/branches {create: true}` on a branch Code Storage already holds answers 503, not `exists`.
 
-**Waiting on:**
-- A rerun of the asking specs once the model provider isn't rate limiting.
+**Next:** the branch workspace owner settles each branch-page difference above, as a product fix or as a test change, with the spec's owner.
 
 **Built:**
 - `e2e/target.ts` declares needs.
