@@ -11,7 +11,8 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import { Effect, Layer, type Schema } from "effect"
+import { Node } from "@smthrs/plan"
+import { Cause, Effect, Exit, Layer, type Schema } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import { IntegrationFailure, RetryableIntegrationFailure } from "../src/core/ActionFailure.ts"
 import type { IntegrationError } from "../src/core/IntegrationError.ts"
@@ -65,6 +66,42 @@ const runAction = <
       Effect.scoped
     )
   )
+}
+
+/**
+ * Runs `flow` as `executionId` over every GitHub action's implementation, as `runAction` does, so a case can make
+ * several writes in one run or name the run.
+ */
+const runFlow = <Name extends string, P extends Flow.AnyStructSchema, S extends Schema.Top, E extends Schema.Top, R>(
+  flow: Flow.Flow<Name, P, S, E, R>,
+  payload: P["Type"],
+  executionId: string
+): Promise<S["Type"]> => {
+  const layer = Layer.mergeAll(Actions.layer, Interpreter.layer(flow)).pipe(
+    Layer.provideMerge(Action.layerImplementations),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        FlowEngine.layerMemory,
+        gitHubLayer({ token: "t", apiBaseUrl: (github as FakeGitHub).fixture.origin }, {}),
+        NodeCrypto.layer
+      )
+    )
+  )
+  return Effect.runPromise(
+    (flow.execute(payload, { executionId }) as Effect.Effect<S["Type"], unknown, never>).pipe(
+      Effect.provide(layer as unknown as Layer.Layer<never>),
+      Effect.scoped
+    )
+  )
+}
+
+/** The key a write without one gets in execution `executionId`: `run:` and 32 hex of SHA-256 over the run. */
+const runKeyOf = async (executionId: string): Promise<string> => {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`smithers/run-key/v1\n${executionId}`)
+  )
+  return `run:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 32)}`
 }
 
 const rejected = async (promise: Promise<unknown>): Promise<any> => {
@@ -307,6 +344,65 @@ describe("UpsertComment", () => {
     const failure = await rejected(runAction(Actions.UpsertComment, { ...payload, key: "a -->" }))
     expect(failure).toBeDefined()
     expect(github.fixture.requests).toHaveLength(0)
+  })
+})
+
+describe("UpsertComment and CheckRun without a key", () => {
+  const comment = { owner: "o", repo: "r", issueNumber: 7, body: "Working", author: { login: "smithers" } }
+  const check = { owner: "o", repo: "r", headSha: SHA, name: "smithers", status: "in_progress" as const }
+
+  /** One run that upserts its comment twice and reports its check run twice, from two steps each. */
+  const Progress = Flow.make("integrations/github/test-progress", {
+    payload: Actions.UpsertCommentPayload,
+    success: Actions.CheckRunReceipt,
+    error: Actions.UpsertComment.errorSchema,
+    body: () =>
+      Actions.UpsertComment.call(comment).pipe(
+        Node.andThen(Actions.UpsertComment.call({ ...comment, body: "Done" })),
+        Node.andThen(Actions.CheckRun.call(check)),
+        Node.andThen(Actions.CheckRun.call({ ...check, status: "completed", conclusion: "success" }))
+      )
+  })
+
+  it("keeps one comment and one check run per run, keyed by the run and never naming it", async () => {
+    github = await startGitHub()
+    const done = await runFlow(Progress, comment, "run-a")
+    expect(done).toMatchObject({ created: false, status: "completed" })
+    const key = await runKeyOf("run-a")
+    expect(key).toMatch(/^run:[0-9a-f]{32}$/)
+    expect(github.comments.map((each) => each.body)).toEqual([`<!-- smithers:key=${key} -->\nDone`])
+    expect(github.checkRuns.map((run) => [run.external_id, run.status])).toEqual([[key, "completed"]])
+    expect(JSON.stringify(github.fixture.requests)).not.toContain("run-a")
+    expect(github.writes()).toEqual([
+      "POST /repos/o/r/issues/7/comments",
+      "PATCH /repos/o/r/issues/comments/100",
+      "POST /repos/o/r/check-runs",
+      "PATCH /repos/o/r/check-runs/101"
+    ])
+
+    // Another run never takes over the first run's comment or check run.
+    await runFlow(Progress, comment, "run-b")
+    const other = await runKeyOf("run-b")
+    expect(other).not.toBe(key)
+    expect(github.comments.map((each) => each.body)).toEqual([
+      `<!-- smithers:key=${key} -->\nDone`,
+      `<!-- smithers:key=${other} -->\nDone`
+    ])
+    expect(github.checkRuns.map((run) => run.external_id)).toEqual([key, other])
+  })
+
+  it("leaves the idempotency key's slot for the key null, as canonical JSON needs", () => {
+    const keyOf = Actions.UpsertComment.idempotencyKey as (payload: unknown) => Record<string, unknown>
+    expect(keyOf(comment)).toMatchObject({ key: null })
+    expect(keyOf({ ...comment, key: "dashboard" })).toMatchObject({ key: "dashboard" })
+  })
+
+  it("has no key to give outside a flow execution: it dies rather than write under no one's", async () => {
+    const exit = await Effect.runPromise(Effect.exit(Actions.runKey(Actions.UpsertComment.name)))
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({
+      _tag: "@smthrs/flow/EffectKeyUnavailable",
+      name: "integrations/github/upsert-comment"
+    })
   })
 })
 

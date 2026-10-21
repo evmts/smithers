@@ -24,6 +24,14 @@
  * `irreversible`, because a reader sees the change the moment GitHub accepts
  * it.
  *
+ * **Whose object it is.** A sticky comment and a check run are found by a
+ * key. Leave `key` out and the action keys the object by the running
+ * execution ({@link runKey}): one sticky comment per run on an issue, one
+ * check run per run and name on a commit, and a new run never takes over an
+ * old run's. Pass `key` only for a domain key a flow chose and recorded before
+ * the write, such as a dashboard comment every run of a schedule edits; never
+ * derive it from what is written.
+ *
  * The limit: GitHub enforces neither the comment marker nor a check run's
  * `external_id` as unique. A write still in flight at GitHub when the repeat
  * reads can land after it, and then both exist. The engine's backoff and a
@@ -33,8 +41,8 @@
  * @since 1.0.0
  */
 
-import { Action, type FlowRuntime, type RetryPolicy } from "@smthrs/flow"
-import { Effect, Layer, Schema } from "effect"
+import { Action, FlowRuntime, type RetryPolicy } from "@smthrs/flow"
+import { Effect, Layer, Option, Schema } from "effect"
 import { Failure, fromIntegrationError, retryPolicy as stepRetryPolicy } from "../core/ActionFailure.ts"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { GitHubClient } from "./GitHubClient.ts"
@@ -259,6 +267,35 @@ export const layerAddLabels: Layer.Layer<
 export const StickyKey = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9._:/-]{1,200}$/))
 
 /**
+ * The key {@link UpsertComment} and {@link CheckRun} write under when the
+ * payload names none: `run:` and the first 32 hex digits of SHA-256 over the
+ * running execution's id. Every step of one run derives the same key, and
+ * another run derives another; the execution id itself never reaches GitHub.
+ * Dies with `Action.EffectKeyUnavailable` outside a flow execution.
+ *
+ * @category idempotency
+ * @since 1.0.0
+ */
+export const runKey = (action: string): Effect.Effect<string> =>
+  Effect.gen(function*() {
+    const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
+    if (Option.isNone(instance)) {
+      return yield* Effect.die(
+        new Action.EffectKeyUnavailable({
+          name: action,
+          message: `${action} ran outside a flow execution with no key. Without one it keys its object by the ` +
+            "running execution, so it runs only inside an action implementation, or under a key the caller recorded."
+        })
+      )
+    }
+    const digest = yield* Effect.promise(() =>
+      crypto.subtle.digest("SHA-256", new TextEncoder().encode(`smithers/run-key/v1\n${instance.value.executionId}`))
+    )
+    const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
+    return `run:${hex.slice(0, 32)}`
+  })
+
+/**
  * The hidden first line that marks a sticky comment as `key`'s.
  *
  * @category constructors
@@ -269,8 +306,10 @@ export const stickyMarker = (key: string): string => `<!-- smithers:key=${key} -
 /**
  * What {@link UpsertComment} needs.
  *
- * `key` names the comment. A flow passes its run id to keep one progress
- * comment per run; every upsert under that key edits the same comment.
+ * `key` names the comment. Leave it out to keep one comment per run: every
+ * upsert of one execution edits the same comment ({@link runKey}). Name one
+ * only for a domain key chosen and recorded before the write, never derived
+ * from what is written; every upsert under it, in any run, edits that comment.
  * `author` identifies the token’s user login or installation App id; comments
  * from other identities are never adopted.
  *
@@ -281,7 +320,7 @@ export const UpsertCommentPayload = Schema.Struct({
   owner: Owner,
   repo: Repo,
   issueNumber: IssueNumber,
-  key: StickyKey,
+  key: Schema.optionalKey(StickyKey),
   body: Schema.String,
   author: Schema.Union([
     Schema.Struct({ login: Schema.String.check(Schema.isMinLength(1)) }),
@@ -310,7 +349,8 @@ export const StickyComment = Schema.Struct({
 })
 
 /**
- * Creates or edits the one comment `key` names on an issue or pull request.
+ * Creates or edits the one comment `key` names on an issue or pull request,
+ * or, with no `key`, the one comment of the running execution.
  *
  * The comment's first line is {@link stickyMarker}, which GitHub renders as
  * nothing. The action looks for it among the thread's comments, then edits
@@ -326,13 +366,13 @@ export const UpsertComment = Action.make("integrations/github/upsert-comment", {
   success: StickyComment,
   error: Failure,
   tier: "irreversible",
-  implementationVersion: "github/upsert-comment/v1",
+  implementationVersion: "github/upsert-comment/v2",
   idempotencyKey: (payload) => ({
     action: "integrations/github/upsert-comment",
     owner: payload.owner,
     repo: payload.repo,
     issueNumber: payload.issueNumber,
-    key: payload.key,
+    key: payload.key ?? null,
     body: payload.body
   }),
   retryPolicy
@@ -361,7 +401,7 @@ export const layerUpsertComment: Layer.Layer<
     Effect.gen(function*() {
       const client = yield* GitHubClient
       const repository = yield* requireRepositoryPath(payload.owner, payload.repo)
-      const marker = stickyMarker(payload.key)
+      const marker = stickyMarker(payload.key ?? (yield* runKey(UpsertComment.name)))
       const body = `${marker}\n${payload.body}`
       const page = yield* client.paginate(`/repos/${repository}/issues/${payload.issueNumber}/comments`, {
         maxPages: RECONCILE_PAGES
@@ -400,7 +440,7 @@ export const layerUpsertComment: Layer.Layer<
       )
       return { ...updated, outcome: "updated" as const }
     }).pipe(Effect.mapError(reconciled)),
-  { implementationVersion: "github/upsert-comment/v1" }
+  { implementationVersion: "github/upsert-comment/v2" }
 )
 
 /**
@@ -427,8 +467,11 @@ export const CheckRunOutput = Schema.Struct({
  * What {@link CheckRun} needs.
  *
  * `key` becomes the check run's `external_id`, which is how a repeat finds
- * it. A flow reports progress by calling again under the same key with a new
- * `status`; `conclusion` is required once `status` is `completed`.
+ * it. Leave it out to keep one check run per run and name: every call of one
+ * execution updates the same run ({@link runKey}). Name one only for a domain
+ * key chosen and recorded before the write, never derived from what is
+ * written. A flow reports progress by calling again with a new `status`;
+ * `conclusion` is required once `status` is `completed`.
  *
  * @category schemas
  * @since 1.0.0
@@ -438,7 +481,7 @@ export const CheckRunPayload = Schema.Struct({
   repo: Repo,
   headSha: CommitSha,
   name: Schema.String.check(Schema.isMinLength(1)),
-  key: StickyKey,
+  key: Schema.optionalKey(StickyKey),
   status: Schema.optionalKey(Schema.Literals(["queued", "in_progress", "completed"])),
   conclusion: Schema.optionalKey(
     Schema.Literals(["action_required", "cancelled", "failure", "neutral", "success", "skipped", "timed_out"])
@@ -462,7 +505,8 @@ export const CheckRunReceipt = Schema.Struct({
 })
 
 /**
- * Creates or updates the check run `key` names on a commit.
+ * Creates or updates the check run `key` names on a commit, or, with no `key`,
+ * the running execution's check run of that name.
  *
  * Writing check runs needs a GitHub App installation token; GitHub refuses a
  * personal token with 403.
@@ -475,7 +519,7 @@ export const CheckRun = Action.make("integrations/github/check-run", {
   success: CheckRunReceipt,
   error: Failure,
   tier: "irreversible",
-  implementationVersion: "github/check-run/v1",
+  implementationVersion: "github/check-run/v2",
   idempotencyKey: (payload) => ({
     action: "integrations/github/check-run",
     ...(payload as unknown as Record<string, Schema.Json>)
@@ -508,6 +552,7 @@ export const layerCheckRun: Layer.Layer<
     Effect.gen(function*() {
       const client = yield* GitHubClient
       const repository = yield* requireRepositoryPath(payload.owner, payload.repo)
+      const key = payload.key ?? (yield* runKey(CheckRun.name))
       const listed = yield* client.request(
         "GET",
         `/repos/${repository}/commits/${payload.headSha}/check-runs`,
@@ -518,7 +563,7 @@ export const layerCheckRun: Layer.Layer<
         }
       )
       const runs = decodeItems(ListedCheckRun, listed.check_runs)
-      const existing = runs.find((run) => run.external_id === payload.key)
+      const existing = runs.find((run) => run.external_id === key)
       if (existing === undefined && listed.total_count > listed.check_runs.length) {
         return yield* Effect.fail(
           refused("check-run", `Commit ${payload.headSha} has more than 100 "${payload.name}" check runs.`)
@@ -526,7 +571,7 @@ export const layerCheckRun: Layer.Layer<
       }
       const fields = {
         name: payload.name,
-        external_id: payload.key,
+        external_id: key,
         ...(payload.status === undefined ? {} : { status: payload.status }),
         ...(payload.conclusion === undefined ? {} : { conclusion: payload.conclusion }),
         ...(payload.detailsUrl === undefined ? {} : { details_url: payload.detailsUrl }),
@@ -547,7 +592,7 @@ export const layerCheckRun: Layer.Layer<
         created: existing === undefined
       }
     }).pipe(Effect.mapError(reconciled)),
-  { implementationVersion: "github/check-run/v1" }
+  { implementationVersion: "github/check-run/v2" }
 )
 
 /**

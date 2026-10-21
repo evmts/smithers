@@ -81,10 +81,12 @@ write reaches GitHub at most three times:
 
 - `AddLabels` adds only the labels the issue lacks.
 - `UpsertComment` finds its comment by a hidden `<!-- smithers:key=... -->`
-  first line and edits it; a flow passes its run id to keep one progress
-  comment per run.
-- `CheckRun` finds its run by `external_id` and updates it. Writing check
-  runs needs a GitHub App installation token.
+  first line and edits it. Without a `key` the comment is the running
+  execution's, so each run keeps one progress comment and never takes over
+  another run's; a `key` is for a domain key recorded before the write.
+- `CheckRun` finds its run by `external_id` and updates it; without a `key`,
+  the running execution's run of that name. Writing check runs needs a GitHub
+  App installation token.
 - `LinkPullRequest` adds `Closes #N` to the pull request's description unless
   it already closes the issue.
 
