@@ -387,4 +387,46 @@ describe("flow registration ownership", () => {
         }
       })
   )
+
+  effect(
+    "keeps one admission at a time while a waiter outlives the first holder",
+    () =>
+      Effect.scoped(Effect.gen(function*() {
+        const flow = makeFlow("gate-lifetime")
+        const releases = yield* Effect.all(Array.from({ length: 3 }, () => Deferred.make<void>()))
+        let admitted = 0
+        let active = 0
+        let mostActive = 0
+        const runtime = scriptedEngine({
+          register: () =>
+            Effect.gen(function*() {
+              const release = releases[admitted++]!
+              mostActive = Math.max(mostActive, ++active)
+              yield* Deferred.await(release)
+              active--
+            })
+        })
+        const admit = (name: string) =>
+          runtime.register(flow, () => Effect.succeed(name)).pipe(
+            Effect.scoped,
+            Effect.forkChild({ startImmediately: true })
+          )
+        const settle = Effect.repeat(Effect.yieldNow, { times: 20 })
+        const first = yield* admit("first")
+        const second = yield* admit("second")
+        yield* settle
+        // The first holder leaves while the second still waits on the gate; a
+        // third arriving now must queue behind the second, not open a new gate.
+        yield* Deferred.succeed(releases[0]!, undefined)
+        yield* settle
+        const third = yield* admit("third")
+        yield* settle
+        expect({ admitted, mostActive }).toEqual({ admitted: 2, mostActive: 1 })
+        yield* Deferred.succeed(releases[1]!, undefined)
+        yield* settle
+        yield* Deferred.succeed(releases[2]!, undefined)
+        yield* Fiber.joinAll([first, second, third])
+        expect({ admitted, mostActive }).toEqual({ admitted: 3, mostActive: 1 })
+      }))
+  )
 })

@@ -209,6 +209,25 @@ describe("retry origin fallback when the durable hook yields none", () => {
   )
 
   effect(
+    "replaces a negative-infinite durable origin with the local clock instead of expiring at once",
+    () =>
+      Effect.gen(function*() {
+        const outcome = yield* runWithOrigin(
+          "RetryOriginFallback/negative-infinity",
+          Number.NEGATIVE_INFINITY,
+          { advanceMs: 1 }
+        )
+        // Taken as the budget's start, -Infinity would make every elapsed
+        // time infinite and expire the sequence after its first attempt.
+        expect(outcome.attempts).toEqual([1, 2])
+        const warnings = outcome.logs.filter((entry) => entry.logLevel === "Warn")
+        expect(warnings.length).toBe(1)
+        expect(String(warnings[0]?.message)).toContain("RetryOriginFallback/negative-infinity")
+        expect(String(warnings[0]?.message)).toContain("-Infinity")
+      })
+  )
+
+  effect(
     "keeps a valid past durable origin as consumed expiration budget without a warning",
     () =>
       Effect.gen(function*() {

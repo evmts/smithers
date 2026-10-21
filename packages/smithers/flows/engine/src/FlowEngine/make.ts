@@ -10,7 +10,7 @@
  * @since 0.1.0
  */
 
-import { Deadline, type DurableClock, type DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
+import { Deadline, type DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -25,6 +25,12 @@ import type { Encoded } from "./Encoded.ts"
 import { placeExecute, placeInterrupt, placeResume } from "./Placed.ts"
 import { type Declarations, makeExecute } from "./Trampoline.ts"
 
+/** The typed port this module adapts the driver into. */
+type Port = FlowRuntime.FlowRuntime["Service"]
+
+/** The handler a driver runs for one registered flow. */
+type Handler = Parameters<Encoded["register"]>[1]
+
 /** Recursive admission violates the registration ownership invariant. */
 class RegistrationFault extends Schema.TaggedError<RegistrationFault>()("@smthrs/engine/RegistrationFault", {
   flowName: Schema.String,
@@ -35,6 +41,195 @@ const CurrentRegistrations = Context.Reference<ReadonlyArray<{ readonly owner: o
   "@smthrs/engine/CurrentRegistrations",
   { defaultValue: () => [] }
 )
+
+interface Gate {
+  readonly semaphore: Semaphore.Semaphore
+  users: number
+}
+
+/**
+ * Admits one registration per flow name at a time. A registration that
+ * re-enters its own name's admission would wait on itself, so it dies.
+ */
+const makeRegistrationGate = () => {
+  const gates = new Map<string, Gate>()
+  const enter = (name: string) =>
+    Effect.sync(() => {
+      const gate = gates.get(name) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 }
+      gates.set(name, gate)
+      gate.users++
+      return gate
+    })
+  // Waiters count as users, so cancellation cannot replace the lock while
+  // another admission still owns or awaits it.
+  const leave = (name: string, gate: Gate) =>
+    Effect.sync(() => {
+      if (--gate.users === 0) gates.delete(name)
+    })
+  return <A, E, R>(name: string, admission: Effect.Effect<A, E, R>) =>
+    Effect.flatMap(CurrentRegistrations, (ancestors) => {
+      if (ancestors.some((entry) => entry.owner === gates && entry.name === name)) {
+        const message = `Flow ${name} cannot recursively register itself while admission is in progress`
+        return Effect.die(new RegistrationFault({ flowName: name, message }))
+      }
+      const admitting = [...ancestors, { owner: gates, name }]
+      return Effect.acquireUseRelease(
+        enter(name),
+        (gate) => gate.semaphore.withPermit(admission).pipe(Effect.provideService(CurrentRegistrations, admitting)),
+        (gate) => leave(name, gate)
+      )
+    })
+}
+
+/**
+ * Lists the registration under its flow's tag until its scope closes. A
+ * handoff names its next round's flow by tag, so the trampoline reads the
+ * declaration back from here.
+ */
+const declare = (declarations: Declarations, flow: Flow.Any, scope: Scope.Closeable) =>
+  Effect.suspend(() => {
+    const registration = { flow, scope }
+    const entries = declarations.get(flow._tag) ?? []
+    declarations.set(flow._tag, entries)
+    entries.push(registration)
+    return Scope.addFinalizer(
+      scope,
+      Effect.sync(() => {
+        entries.splice(entries.indexOf(registration), 1)
+        if (entries.length === 0) declarations.delete(flow._tag)
+      })
+    )
+  })
+
+/**
+ * Fails with a body error the flow declares, and dies with any other. The
+ * defect is the error itself, not the schema issue about it, so the message
+ * survives; and a defect, unlike an undeclared failure, can be encoded into
+ * the settled run. `FlowProxyServer` redacts it before it leaves the process.
+ */
+const failDeclared = (flow: Flow.Any, error: unknown) =>
+  Effect.matchEffect(flow.errorSchema.makeEffect(error), {
+    onFailure: () =>
+      Effect.logError("A flow body failed with an error outside its declared error schema").pipe(
+        Effect.annotateLogs({ flow: flow._tag, error: renderDiagnostic(error) }),
+        Effect.andThen(Effect.die(error))
+      ),
+    onSuccess: () => Effect.fail(error)
+  })
+
+/** Checks a round's success against the declared schema. A handoff round has none of its own. */
+const succeedDeclared = (flow: Flow.Any, value: unknown) =>
+  Effect.flatMap(FlowRuntime.FlowInstance, (instance) =>
+    instance.handoff === undefined
+      ? Effect.as(Effect.orDie(flow.successSchema.makeEffect(value)), value)
+      : Effect.succeed(value))
+
+/**
+ * Wraps a registered body for the driver: bounded by the flow's deadline,
+ * held to its declared schemas and capability ceilings, and run with the
+ * registration's services under the caller's, in a fresh dispatch context.
+ */
+const declaredHandler = (
+  flow: Flow.Any,
+  services: Context.Context<FlowRuntime.FlowRuntime>,
+  execute: (payload: object, executionId: string) => Effect.Effect<unknown, unknown, unknown>
+): Handler => {
+  const bounded = Deadline.bound({ flowName: flow._tag, deadline: flow.deadline })
+  return (payload, executionId) =>
+    Effect.suspend(() => bounded(execute(payload, executionId))).pipe(
+      Effect.matchEffect({
+        onFailure: (error) => failDeclared(flow, error),
+        onSuccess: (value) => succeedDeclared(flow, value)
+      }),
+      Flow.attenuateCapabilities(Flow.capabilityCeilings(flow.annotations)),
+      Effect.updateContext((input) => {
+        const caller = input.pipe(Context.omit(CurrentRegistrations))
+        return resetActionContext(Context.merge(services, caller)) as Context.Context<any>
+      })
+    )
+}
+
+const makeRegister = (options: Encoded, declarations: Declarations): Port["register"] => {
+  const withRegistrationGate = makeRegistrationGate()
+  // Only the driver's registration may be interrupted; its failure closes the
+  // registration's scope.
+  const admit = (flow: Flow.Any, handler: Handler, ifAbsent: boolean) =>
+    Effect.uninterruptibleMask((restore) =>
+      Effect.gen(function*() {
+        // The gate keeps a losing lazy admission behind the real handler's
+        // construction. Skipping acquires no registration resources.
+        if (ifAbsent && declarations.has(flow._tag)) return
+        const scope = yield* Scope.fork(yield* Effect.scope)
+        yield* declare(declarations, flow, scope)
+        const register = options.register(flow, handler).pipe(Effect.provideService(Scope.Scope, scope))
+        yield* restore(register).pipe(Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))))
+      })
+    )
+  // Untraced because registering a flow recursively re-enters the engine.
+  return Effect.fnUntraced(function*(flow, execute, registrationOptions) {
+    const services = (yield* Effect.context<FlowRuntime.FlowRuntime>()).pipe(Context.omit(CurrentRegistrations))
+    const handler = declaredHandler(flow, services, execute)
+    return yield* withRegistrationGate(flow._tag, admit(flow, handler, registrationOptions?.ifAbsent === true))
+  })
+}
+
+/** The driver stores exits encoded; the port's encoding services are the caller's to provide. */
+const encodeExit = <Success extends Schema.Constraint, Error extends Schema.Constraint>(
+  deferred: DurableDeferred.DurableDeferred<Success, Error>,
+  exit: Exit.Exit<Success["Type"], Error["Type"]>
+) => Schema.encodeEffect(deferred.exitSchema)(exit) as Effect.Effect<Exit.Exit<unknown, unknown>>
+
+const makeDeferredResult = (options: Encoded): Port["deferredResult"] =>
+  Effect.fnUntraced(
+    function*<Success extends Schema.Constraint, Error extends Schema.Constraint>(
+      deferred: DurableDeferred.DurableDeferred<Success, Error>
+    ) {
+      const instance = yield* FlowRuntime.FlowInstance
+      yield* Effect.annotateCurrentSpan({ executionId: instance.executionId })
+      const exit = yield* options.deferredResult(deferred)
+      if (Option.isNone(exit)) return Option.none()
+      // A persisted result consumes the wait annotation, so a replayed
+      // `annotateWaiting` cannot classify a later, unrelated suspension
+      // (issue #42).
+      instance.waiting = undefined
+      const decoded = Schema.decodeEffect(deferred.exitSchema)(toJsonExit(exit.value))
+      return Option.some(yield* Effect.orDie(decoded) as Effect.Effect<Exit.Exit<Success["Type"], Error["Type"]>>)
+    },
+    Effect.withSpan(
+      "FlowEngine.deferredResult",
+      (deferred) => ({ attributes: { name: deferred.name } }),
+      { captureStackTrace: false }
+    )
+  )
+
+const makeDeferredDone = (options: Encoded): Port["deferredDone"] =>
+  Effect.fnUntraced(
+    function*(deferred, done) {
+      const exit = yield* encodeExit(deferred, done.exit)
+      const { deferredName, executionId, flowName } = done
+      return yield* options.deferredDone({ flowName, executionId, deferredName, exit })
+    },
+    Effect.withSpan(
+      "FlowEngine.deferredDone",
+      (_, { deferredName, executionId }) => ({ attributes: { name: deferredName, executionId } }),
+      { captureStackTrace: false }
+    )
+  )
+
+const makeDeferredDoneIfWaiting = (options: Encoded): Port["deferredDoneIfWaiting"] =>
+  Effect.fnUntraced(
+    function*(deferred, done) {
+      if (options.deferredDoneIfWaiting === undefined) return "NotWaiting" as const
+      const exit = yield* encodeExit(deferred, done.exit)
+      const { deferredName, executionId, flowName, reason, token } = done
+      return yield* options.deferredDoneIfWaiting({ flowName, executionId, deferredName, reason, token, exit })
+    },
+    Effect.withSpan(
+      "FlowEngine.deferredDoneIfWaiting",
+      (_, { deferredName, executionId, reason }) => ({ attributes: { name: deferredName, executionId, reason } }),
+      { captureStackTrace: false }
+    )
+  )
 
 /**
  * Builds a typed `FlowRuntime` service from a low-level encoded
@@ -56,122 +251,8 @@ export const makeUnsafe = (options: Encoded): FlowRuntime.FlowRuntime["Service"]
   // A handoff crosses the journal by tag; retain its declaration to decode
   // the next round's payload and read its round budget.
   const declarations: Declarations = new Map()
-  const registrationGates = new Map<string, { readonly semaphore: Semaphore.Semaphore; users: number }>()
-  const withRegistrationGate = <A, E, R>(name: string, effect: Effect.Effect<A, E, R>) =>
-    Effect.flatMap(
-      CurrentRegistrations,
-      (ancestors) =>
-        ancestors.some((entry) => entry.owner === registrationGates && entry.name === name)
-          ? Effect.die(
-            new RegistrationFault({
-              flowName: name,
-              message: `Flow ${name} cannot recursively register itself while admission is in progress`
-            })
-          )
-          : Effect.acquireUseRelease(
-            Effect.sync(() => {
-              const gate = registrationGates.get(name) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 }
-              registrationGates.set(name, gate)
-              gate.users++
-              return gate
-            }),
-            (gate) =>
-              gate.semaphore.withPermit(effect).pipe(
-                Effect.provideService(CurrentRegistrations, [...ancestors, { owner: registrationGates, name }])
-              ),
-            (gate) =>
-              Effect.sync(() => {
-                // Include waiters in the lifetime so cancellation cannot replace
-                // the lock while another admission still owns or awaits it.
-                if (--gate.users === 0) registrationGates.delete(name)
-              })
-          )
-    )
   return FlowRuntime.FlowRuntime.of({
-    // Untraced because registering a flow recursively re-enters the engine.
-    register: Effect.fnUntraced(function*(flow, execute, registrationOptions) {
-      return yield* withRegistrationGate(
-        flow._tag,
-        Effect.uninterruptibleMask((restore) =>
-          Effect.gen(function*() {
-            const services = (yield* Effect.context<FlowRuntime.FlowRuntime>()).pipe(Context.omit(CurrentRegistrations))
-            const parent = yield* Effect.scope
-            // The registration gate keeps a losing lazy admission behind the real
-            // handler's construction. Skipping acquires no registration resources.
-            if (registrationOptions?.ifAbsent === true && declarations.has(flow._tag)) return
-            const scope = yield* Scope.fork(parent)
-            const registration = { flow, scope }
-            const entries = yield* Effect.sync(() => {
-              const entries = declarations.get(flow._tag) ?? []
-              declarations.set(flow._tag, entries)
-              entries.push(registration)
-              return entries
-            })
-            const retire = Effect.sync(() => {
-              entries.splice(entries.indexOf(registration), 1)
-              if (entries.length === 0) declarations.delete(flow._tag)
-            })
-            yield* Scope.addFinalizer(scope, retire)
-            const bounded = Deadline.bound({ flowName: flow._tag, deadline: flow.deadline })
-            yield* restore(
-              options.register(
-                flow,
-                (payload, executionId) =>
-                  Effect.matchEffect(Effect.suspend(() => bounded(execute(payload, executionId))), {
-                    onFailure: (error) =>
-                      Effect.matchEffect(flow.errorSchema.makeEffect(error), {
-                        // A body failure outside the flow's declared error schema is a
-                        // defect, and the defect is the ERROR, not the schema issue
-                        // about it. `orDie` on the validation reported only the
-                        // mismatch: for a flow declaring no error the whole report was
-                        // `InvalidType(<Never>)`, which erased the one message the
-                        // operator needed — the interpreter's refusal naming the
-                        // action it could not resolve. Dying with the error itself
-                        // keeps that message, and keeps it durably: the driver encodes
-                        // a settled exit through `Flow.Result({ success, error:
-                        // flow.errorSchema })`, whose defect channel is
-                        // `Schema.Defect`, so an undeclared failure delivered as a
-                        // FAILURE could not be encoded at all and left the run row
-                        // `running` and owned forever.
-                        //
-                        // The raw error stays IN THIS PROCESS. `FlowProxyServer` is
-                        // the boundary that must not republish it: a defect crossing
-                        // that boundary is rewritten to a redacted refusal there.
-                        onFailure: () =>
-                          Effect.andThen(
-                            Effect.annotateLogs(
-                              Effect.logError("A flow body failed with an error outside its declared error schema"),
-                              { flow: flow._tag, error: renderDiagnostic(error) }
-                            ),
-                            Effect.die(error)
-                          ),
-                        onSuccess: () => Effect.fail(error)
-                      }),
-                    onSuccess: (value) =>
-                      Effect.flatMap(FlowRuntime.FlowInstance, (instance) =>
-                        // A handoff has no success value for this round. Its handler
-                        // returns `undefined` only to leave through `Flow.intoResult`,
-                        // which replaces that value with the recorded handoff.
-                        instance.handoff === undefined
-                          ? Effect.as(Effect.orDie(flow.successSchema.makeEffect(value)), value)
-                          : Effect.succeed(value))
-                  }).pipe(
-                    Flow.attenuateCapabilities(Flow.capabilityCeilings(flow.annotations)),
-                    Effect.updateContext(
-                      (input) =>
-                        resetActionContext(
-                          Context.merge(services, input.pipe(Context.omit(CurrentRegistrations)))
-                        ) as Context.Context<any>
-                    )
-                  )
-              ).pipe(Effect.provideService(Scope.Scope, scope))
-            ).pipe(
-              Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause)))
-            )
-          })
-        )
-      )
-    }),
+    register: makeRegister(options, declarations),
     // A placement the `Hosts` table binds elsewhere runs on that engine.
     execute: placeExecute(makeExecute(options, declarations)),
     poll: options.poll,
@@ -179,118 +260,19 @@ export const makeUnsafe = (options: Encoded): FlowRuntime.FlowRuntime["Service"]
     interruptUnsafe: options.interruptUnsafe,
     resume: placeResume(options.resume),
     actionExecute: makeActionExecute(options),
-    // Untraced because the explicit span below carries deferred attributes.
-    deferredResult: Effect.fnUntraced(
-      function*<Success extends Schema.Constraint, Error extends Schema.Constraint>(
-        deferred: DurableDeferred.DurableDeferred<Success, Error>
-      ) {
-        const instance = yield* FlowRuntime.FlowInstance
-        yield* Effect.annotateCurrentSpan({
-          executionId: instance.executionId
-        })
-        const exit = yield* options.deferredResult(deferred)
-        if (Option.isNone(exit)) {
-          return Option.none()
-        }
-        // A persisted result means the annotated wait (if any) resolved: the
-        // waiting annotation is consumed here so a replayed
-        // `annotateWaiting` cannot classify a later, unrelated suspension
-        // (issue #42).
-        instance.waiting = undefined
-        return Option.some(
-          yield* Effect.orDie(
-            Schema.decodeEffect(deferred.exitSchema)(toJsonExit(exit.value))
-          ) as Effect.Effect<Exit.Exit<Success["Type"], Error["Type"]>>
+    deferredResult: makeDeferredResult(options),
+    deferredDone: makeDeferredDone(options),
+    deferredDoneIfWaiting: makeDeferredDoneIfWaiting(options),
+    scheduleClock: (flow, request) =>
+      options.scheduleClock(flow, request).pipe(
+        Effect.withSpan(
+          "FlowEngine.scheduleClock",
+          { attributes: { executionId: request.executionId, name: request.clock.name } },
+          { captureStackTrace: false }
         )
-      },
-      Effect.withSpan(
-        "FlowEngine.deferredResult",
-        (deferred) => ({
-          attributes: { name: deferred.name }
-        }),
-        { captureStackTrace: false }
-      )
-    ),
-    // Untraced because the explicit span below carries completion attributes.
-    deferredDone: Effect.fnUntraced(
-      function*<Success extends Schema.Constraint, Error extends Schema.Constraint>(
-        deferred: DurableDeferred.DurableDeferred<Success, Error>,
-        opts: {
-          readonly flowName: string
-          readonly executionId: string
-          readonly deferredName: string
-          readonly exit: Exit.Exit<Success["Type"], Error["Type"]>
-        }
-      ) {
-        return yield* options.deferredDone({
-          flowName: opts.flowName,
-          executionId: opts.executionId,
-          deferredName: opts.deferredName,
-          exit: yield* Schema.encodeEffect(deferred.exitSchema)(
-            opts.exit
-          ) as Effect.Effect<Exit.Exit<unknown, unknown>>
-        })
-      },
-      Effect.withSpan(
-        "FlowEngine.deferredDone",
-        (_, { deferredName, executionId }) => ({
-          attributes: { name: deferredName, executionId }
-        }),
-        { captureStackTrace: false }
-      )
-    ),
-    deferredDoneIfWaiting: Effect.fnUntraced(
-      function*<Success extends Schema.Constraint, Error extends Schema.Constraint>(
-        deferred: DurableDeferred.DurableDeferred<Success, Error>,
-        opts: {
-          readonly flowName: string
-          readonly executionId: string
-          readonly deferredName: string
-          readonly reason: string
-          readonly token: string
-          readonly exit: Exit.Exit<Success["Type"], Error["Type"]>
-        }
-      ) {
-        if (options.deferredDoneIfWaiting === undefined) return "NotWaiting" as const
-        return yield* options.deferredDoneIfWaiting({
-          flowName: opts.flowName,
-          executionId: opts.executionId,
-          deferredName: opts.deferredName,
-          reason: opts.reason,
-          token: opts.token,
-          exit: yield* Schema.encodeEffect(deferred.exitSchema)(opts.exit) as Effect.Effect<
-            Exit.Exit<unknown, unknown>
-          >
-        })
-      },
-      Effect.withSpan(
-        "FlowEngine.deferredDoneIfWaiting",
-        (_, { deferredName, executionId, reason }) => ({
-          attributes: { name: deferredName, executionId, reason }
-        }),
-        { captureStackTrace: false }
-      )
-    ),
-    // Untraced because the explicit span below carries clock attributes.
-    scheduleClock: Effect.fnUntraced(
-      function*(
-        flow: Flow.Any,
-        opts: { readonly executionId: string; readonly clock: DurableClock.DurableClock }
-      ) {
-        return yield* options.scheduleClock(flow, opts)
-      },
-      Effect.withSpan(
-        "FlowEngine.scheduleClock",
-        (_, opts) => ({
-          attributes: { executionId: opts.executionId, name: opts.clock.name }
-        }),
-        { captureStackTrace: false }
-      )
-    ),
-    // Forwarded only when the store keeps history. Left absent the property
-    // is absent on the typed port too, which is what the interpreter reads to
-    // decide whether to build records at all: a store with no journal must
-    // not pay for a graph summary nobody will store.
+      ),
+    // Forwarded only when the store keeps history: the interpreter builds no
+    // node records for a store that has nowhere to keep them.
     ...(options.recordNode === undefined ? {} : { recordNode: options.recordNode }),
     ...(options.nodeRecordBytes === undefined ? {} : { nodeRecordBytes: options.nodeRecordBytes })
   })

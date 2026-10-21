@@ -143,6 +143,23 @@ describe("durable attempt counter resume", () => {
     }).pipe((self) => provideInstance(self, engine))
   })
 
+  liveEffect("keeps the caller's attempt when it is ahead of the persisted sequence", () => {
+    const attempts: Array<number> = []
+    const action = Action.make({
+      name: "AttemptResume/caller-ahead",
+      success: Schema.Number,
+      error: Schema.String,
+      retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 10 }),
+      execute: Effect.die("scripted driver dispatches instead")
+    })
+    const engine = scriptedWith({ latestAttempt: Option.some(1), attempts })
+    return Effect.gen(function*() {
+      const result = yield* engine.actionExecute(action, 3)
+      expect(result._tag).toBe("Complete")
+      expect(attempts).toEqual([3, 4])
+    }).pipe((self) => provideInstance(self, engine))
+  })
+
   effect("propagates a replayed non-retryable failure at the persisted attempt without re-dispatching", () => {
     const attempts: Array<number> = []
     const action = Action.make({
