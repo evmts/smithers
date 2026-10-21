@@ -83,6 +83,49 @@ const rawTab = (name: string) =>
   }).pipe(Effect.provide(Engines.platform))
 
 describe("SharedSqlite", () => {
+  it.live("retains a BEGIN reply when its caller is interrupted", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const pool = yield* MemorySqlite.pool
+      const begun = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const real = SqlConnection.layer({ filename: SharedSqlite.filename }).pipe(
+        Layer.provide(Layer.succeed(BrowserSqlite.Sqlite)(pool))
+      )
+      const delayed = Layer.effect(
+        SqlConnection.SqlConnection,
+        Effect.map(SqlConnection.SqlConnection, (connection) =>
+          SqlConnection.SqlConnection.of({
+            ...connection,
+            run: (owner, sql, params, continuing) =>
+              connection.run(owner, sql, params, continuing).pipe(
+                Effect.tap(() =>
+                  sql === "BEGIN"
+                    ? Deferred.succeed(begun, undefined).pipe(Effect.andThen(Deferred.await(release)))
+                    : Effect.void
+                )
+              )
+          }))
+      ).pipe(Layer.provide(real))
+      const leader = yield* Engines.leader(
+        name,
+        Layer.merge(Engines.engine(name, yield* MemorySqlite.open, Engines.steps()), delayed)
+      )
+      const tab = yield* Engines.sharedTab(name)
+      const work = yield* Effect.forkChild(tab.execute("BEGIN"))
+      yield* Deferred.await(begun)
+      const interrupted = yield* Effect.forkChild(Fiber.interrupt(work))
+      yield* Effect.sleep("20 millis")
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(interrupted)
+      expect(yield* tab.execute("SELECT 1 AS n")).toEqual([{ n: 1 }])
+      yield* Engines.close(leader)
+      yield* leaderOver(name, pool)
+      expect(yield* tab.execute("COMMIT")).toEqual([])
+      const other = yield* Engines.sharedTab(name)
+      expect(yield* other.execute("SELECT 1 AS n")).toEqual([{ n: 1 }])
+    }).pipe(Effect.scoped))
+
   it.live("continues a failed opener on its leader and refuses replay after that leader ends", () =>
     Effect.gen(function*() {
       const { name, pool, leader, tab } = yield* setup

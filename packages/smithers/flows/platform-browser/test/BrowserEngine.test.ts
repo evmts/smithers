@@ -8,11 +8,12 @@ import { Node } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
+import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import { BrowserEngine, TabChannel } from "../src/index.ts"
+import { BrowserEngine, StoragePersistence, TabChannel } from "../src/index.ts"
 import * as Protocol from "../src/internal/Protocol.ts"
 import * as Engines from "./fixtures/Engines.ts"
 import { Sleeper, Step, Steps, Waiter } from "./fixtures/Flows.ts"
@@ -30,6 +31,27 @@ const setup = (run: Engines.Steps = Engines.steps()) =>
   })
 
 describe("BrowserEngine", () => {
+  it.live("reports synchronous worker construction failure through EngineUnavailable", () =>
+    Effect.gen(function*() {
+      const engine = yield* BrowserEngine.make({
+        name: Engines.name(),
+        worker: () => {
+          throw new TypeError("private")
+        }
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TabChannel.layer,
+            Layer.succeed(StoragePersistence.StoragePersistence)(
+              StoragePersistence.make({ persist: () => Promise.resolve(true) })
+            )
+          )
+        )
+      )
+      expect(yield* engine.unavailable).toMatchObject({ reason: "worker-failed", error: "TypeError" })
+      expect(yield* Effect.flip(engine.cancel(Steps, "never"))).toMatchObject({ reason: "worker-failed" })
+    }).pipe(Effect.scoped))
+
   it.live("starts a run, returns once it is recorded, and waits for its result", () =>
     Effect.gen(function*() {
       const { engine, run } = yield* setup()

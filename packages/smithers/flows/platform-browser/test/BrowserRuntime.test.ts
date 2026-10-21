@@ -159,6 +159,19 @@ describe("BrowserRuntime over OPFS", () => {
         expect(posted).toEqual([{ _tag: "@smthrs/platform-browser/EngineStopped", error: "SqlError" }])
       }))
 
+    it.live("run tells its tab when telemetry initialization fails", () =>
+      Effect.gen(function*() {
+        const worker = BrowserRuntime.run({
+          name: Engines.name(),
+          sqlite: MemorySqlite.build,
+          flows,
+          registerFlows: registration(Effect.succeed),
+          telemetry: Layer.effectDiscard(Effect.fail({ _tag: "TelemetryUnavailable" }))
+        })
+        expect(Exit.isFailure(yield* Fiber.await(worker))).toBe(true)
+        expect(posted).toEqual([{ _tag: "@smthrs/platform-browser/EngineStopped", error: "TelemetryUnavailable" }])
+      }))
+
     it.live("run tells its tab nothing when it is only interrupted", () =>
       Effect.gen(function*() {
         const name = Engines.name()

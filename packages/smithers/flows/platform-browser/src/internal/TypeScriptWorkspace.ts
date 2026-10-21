@@ -400,26 +400,39 @@ export const make = (
 
   /** Loads `wanted` and everything they import, within the caps. */
   const load = (wanted: ReadonlyArray<string>, options: TS.CompilerOptions) =>
-    Effect.gen(function*() {
-      let frontier = [...new Set(wanted)].filter(needsLoad)
-      while (frontier.length > 0) {
-        const room = Math.max(0, limits.files - texts.size)
-        if (frontier.length > room || bytes >= limits.bytes) partial = true
-        const batch = bytes >= limits.bytes ? [] : frontier.slice(0, room)
-        if (batch.length === 0) return
-        const read = yield* loader.read(batch)
-        const next = new Set<string>()
-        for (const [path, text] of read) {
-          if (text === null) {
-            unreadable.add(path)
-            continue
+    Effect.suspend(() => {
+      const added: Array<string> = []
+      const initialBytes = bytes
+      const initialPartial = partial
+      return Effect.gen(function*() {
+        let frontier = [...new Set(wanted)].filter(needsLoad)
+        while (frontier.length > 0) {
+          const room = Math.max(0, limits.files - texts.size)
+          if (frontier.length > room || bytes >= limits.bytes) partial = true
+          const batch = bytes >= limits.bytes ? [] : frontier.slice(0, room)
+          if (batch.length === 0) return
+          const read = yield* loader.read(batch)
+          const next = new Set<string>()
+          for (const [path, text] of read) {
+            if (text === null) {
+              unreadable.add(path)
+              continue
+            }
+            texts.set(path, text)
+            added.push(path)
+            bytes += text.length
+            if (SCRIPT.test(path)) { for (const imported of importsOf(path, text, options)) next.add(imported) }
           }
-          texts.set(path, text)
-          bytes += text.length
-          if (SCRIPT.test(path)) { for (const imported of importsOf(path, text, options)) next.add(imported) }
+          frontier = [...next].filter(needsLoad)
         }
-        frontier = [...next].filter(needsLoad)
-      }
+      }).pipe(Effect.onInterrupt(() =>
+        Effect.sync(() => {
+          // A cached root must never hide an unfinished import closure on retry.
+          for (const path of added) texts.delete(path)
+          bytes = initialBytes
+          partial = initialPartial
+        })
+      ))
     })
 
   /** A config's own `compilerOptions`, converted against its directory, under those of what it extends. */
@@ -449,22 +462,30 @@ export const make = (
 
   /** Loads the lib files `options` names and every lib they reference. */
   const loadLibs = (options: TS.CompilerOptions) =>
-    Effect.gen(function*() {
-      let names = options.lib ?? [ts.getDefaultLibFileName(options)]
-      while (names.length > 0) {
-        const next: Array<string> = []
-        for (const name of names) {
-          const path = `${LIB_DIRECTORY}/${name}`
-          if (libs.has(path)) continue
-          const text = yield* loader.lib(name)
-          libs.set(path, text ?? "")
-          if (text === undefined) continue
-          for (const reference of ts.preProcessFile(text, true, true).libReferenceDirectives) {
-            next.push(`lib.${reference.fileName.toLowerCase()}.d.ts`)
+    Effect.suspend(() => {
+      const added: Array<string> = []
+      return Effect.gen(function*() {
+        let names = options.lib ?? [ts.getDefaultLibFileName(options)]
+        while (names.length > 0) {
+          const next: Array<string> = []
+          for (const name of names) {
+            const path = `${LIB_DIRECTORY}/${name}`
+            if (libs.has(path)) continue
+            const text = yield* loader.lib(name)
+            libs.set(path, text ?? "")
+            added.push(path)
+            if (text === undefined) continue
+            for (const reference of ts.preProcessFile(text, true, true).libReferenceDirectives) {
+              next.push(`lib.${reference.fileName.toLowerCase()}.d.ts`)
+            }
           }
+          names = next
         }
-        names = next
-      }
+      }).pipe(Effect.onInterrupt(() =>
+        Effect.sync(() => {
+          for (const path of added) libs.delete(path)
+        })
+      ))
     })
 
   /** The nearest `tsconfig.json` or `jsconfig.json` above `path`, if any. */
@@ -546,13 +567,13 @@ export const make = (
   const widen = (project: Project) =>
     Effect.gen(function*() {
       if (project.widened) return
-      project.widened = true
       const prefix = project.directory === "/" ? "/" : `${project.directory}/`
       const scripts = [...listing].filter((path) =>
         path.startsWith(prefix) && SCRIPT.test(path) && !path.includes("/node_modules/")
       )
       yield* load(scripts, project.options)
       for (const path of scripts) if (texts.has(path)) project.roots.add(path)
+      project.widened = true
     })
 
   const at = (path: string, position: Position) =>

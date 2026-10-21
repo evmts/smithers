@@ -241,3 +241,20 @@ BrowserRuntime.run({
   browser decides.
 - **A run belongs to one browser profile.** Two profiles, or two devices, have
   two stores.
+
+## Failure boundaries
+
+Synchronous worker startup failures reach `BrowserEngine.unavailable` and its
+request errors as `EngineUnavailable`. Runtime import and telemetry setup
+failures send `EngineStopped` to the tab, with only the failure's tag or name.
+
+Cancelling a shared SQLite caller stops waiting without discarding the accepted
+statement's reply. The tab keeps processing that reply and recording transaction
+ownership before sending the next statement. Closing the tab interrupts this
+work and releases its ownership lock.
+
+Language-server request deadlines cancel the worker's current request and its
+workspace reads, so an unresolved read does not hold later requests. Interrupted
+workspace and library loads discard their incomplete cache additions; a later
+request reloads their imports and can finish project-wide references. Malformed
+percent encoding in a file URI makes `pathOf` return `undefined`.

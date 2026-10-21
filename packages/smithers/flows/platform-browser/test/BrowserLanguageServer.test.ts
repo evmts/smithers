@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import type { LanguageServer } from "@smthrs/std"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import type * as Scope from "effect/Scope"
@@ -119,6 +120,45 @@ const connect = (
 const at = (path: string, line: number, character: number) => ({ path, line, character })
 
 describe("BrowserLanguageServer", () => {
+  it.live("answers subsequent requests after an unresolved workspace read times out", () =>
+    Effect.gen(function*() {
+      const started = yield* Deferred.make<void>()
+      const stopped = yield* Deferred.make<void>()
+      const channel = new MessageChannel()
+      channel.port2.start()
+      yield* Effect.forkScoped(BrowserLanguageServer.program({ typescript: ts, lib, port: channel.port1 as never }))
+      const server = yield* BrowserLanguageServer.make({
+        worker: () => ({
+          postMessage: (message) => channel.port2.postMessage(message),
+          terminate: () => channel.port2.close(),
+          addEventListener: (type: "message" | "error", listener: (event: never) => void) => {
+            if (type === "message") {
+              channel.port2.addEventListener("message", (event) => {
+                listener(event as never)
+                // A duplicate cancellation must not disrupt the tab's dispatcher.
+                if (event.data._tag === "CancelRead") listener(event as never)
+              })
+            }
+          }
+        }),
+        workspace: {
+          paths: ["a.ts"],
+          read: () =>
+            Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Effect.never),
+              Effect.ensuring(Deferred.succeed(stopped, undefined))
+            )
+        },
+        timeout: "1 second"
+      })
+      const first = yield* Effect.forkChild(Effect.flip(server.hover(at("/a.ts", 0, 0))))
+      yield* Deferred.await(started).pipe(Effect.timeout("5 seconds"))
+      expect((yield* Fiber.join(first)).code).toBe("timeout")
+      yield* server.sync("/b.ts", "export const b = 1")
+      expect(yield* server.workspaceSymbols("b")).toEqual([])
+      yield* Deferred.await(stopped).pipe(Effect.timeout("5 seconds"))
+    }).pipe(Effect.scoped))
+
   it.effect("hover answers the signature and documentation as Markdown, with the symbol's range", () =>
     Effect.gen(function*() {
       const { server } = yield* connect(PROJECT, { concurrency: 1 })
@@ -465,6 +505,12 @@ describe("URIs and paths", () => {
     expect(BrowserLanguageServer.pathOf("https://example.com/a.ts")).toBeUndefined()
   })
 
+  it("rejects malformed percent encoding without throwing", () => {
+    for (const uri of ["file:///a%", "file:///a%ZZ.ts", "file:///%E0%A4.ts"]) {
+      expect(BrowserLanguageServer.pathOf(uri)).toBeUndefined()
+    }
+  })
+
   it("tells TypeScript's lib files from the workspace's", () => {
     expect(BrowserLanguageServer.isLib("/.typescript/lib.es5.d.ts")).toBe(true)
     expect(BrowserLanguageServer.isLib("/src/lib.ts")).toBe(false)
@@ -523,4 +569,75 @@ describe("TypeScriptWorkspace helpers", () => {
     expect(TypeScriptWorkspace.severityOf(ts, ts.DiagnosticCategory.Message)).toBe(3)
     expect(TypeScriptWorkspace.severityOf(ts, ts.DiagnosticCategory.Suggestion)).toBe(4)
   })
+})
+
+describe("TypeScriptWorkspace cancellation recovery", () => {
+  it.live("retries the import closure of a partially loaded root", () =>
+    Effect.gen(function*() {
+      const reading = yield* Deferred.make<void>()
+      let stalled = true
+      const project: Record<string, string> = {
+        "/root.ts": "import { value } from \"./dep\"\nexport const x = value\n",
+        "/dep.ts": "export const value = 1\n"
+      }
+      const workspace = TypeScriptWorkspace.make(ts, Object.keys(project), {
+        lib: (name) => Effect.promise(() => lib(name)),
+        read: (paths) =>
+          stalled && paths.includes("/dep.ts")
+            ? Deferred.succeed(reading, undefined).pipe(Effect.andThen(Effect.never))
+            : Effect.succeed(paths.map((path) => [path, project[path] ?? null] as const))
+      })
+      const interrupted = yield* Effect.forkChild(workspace.definition("/root.ts", { line: 1, character: 18 }))
+      yield* Deferred.await(reading).pipe(Effect.timeout("5 seconds"))
+      yield* Fiber.interrupt(interrupted)
+      stalled = false
+      expect(yield* workspace.definition("/root.ts", { line: 1, character: 18 })).toMatchObject([
+        { uri: "file:///dep.ts" }
+      ])
+    }))
+
+  it.live("retries the library closure after a lib read is interrupted", () =>
+    Effect.gen(function*() {
+      const reading = yield* Deferred.make<void>()
+      let stalled = true
+      const workspace = TypeScriptWorkspace.make(ts, ["/a.ts"], {
+        lib: (name) =>
+          stalled && name === "lib.esnext.d.ts"
+            ? Deferred.succeed(reading, undefined).pipe(Effect.andThen(Effect.never))
+            : Effect.promise(() => lib(name)),
+        read: (paths) => Effect.succeed(paths.map((path) => [path, "const xs: Array<number> = [1]\n"] as const))
+      })
+      const interrupted = yield* Effect.forkChild(workspace.diagnostics("/a.ts"))
+      yield* Deferred.await(reading).pipe(Effect.timeout("5 seconds"))
+      yield* Fiber.interrupt(interrupted)
+      stalled = false
+      expect(yield* workspace.diagnostics("/a.ts")).toMatchObject({ items: [] })
+    }))
+
+  it.live("retries project widening after its workspace read is interrupted", () =>
+    Effect.gen(function*() {
+      const reading = yield* Deferred.make<void>()
+      let stalled = true
+      const project: Record<string, string> = {
+        "/a.ts": "export const value = 1\n",
+        "/b.ts": "import { value } from \"./a\"\nexport const x = value\n"
+      }
+      const workspace = TypeScriptWorkspace.make(ts, Object.keys(project), {
+        lib: (name) => Effect.promise(() => lib(name)),
+        read: (paths) =>
+          stalled && paths.includes("/b.ts")
+            ? Deferred.succeed(reading, undefined).pipe(Effect.andThen(Effect.never))
+            : Effect.succeed(paths.map((path) => [path, project[path] ?? null] as const))
+      })
+      const interrupted = yield* Effect.forkChild(workspace.references("/a.ts", { line: 0, character: 14 }))
+      yield* Deferred.await(reading).pipe(Effect.timeout("5 seconds"))
+      yield* Fiber.interrupt(interrupted)
+      stalled = false
+      const references = yield* workspace.references("/a.ts", { line: 0, character: 14 })
+      expect(references).toMatchObject([
+        { uri: "file:///a.ts" },
+        { uri: "file:///b.ts" },
+        { uri: "file:///b.ts" }
+      ])
+    }))
 })

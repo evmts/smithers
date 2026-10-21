@@ -74,6 +74,7 @@ export interface ReadMessage {
 export type ToWorker =
   | { readonly _tag: "Open"; readonly paths: ReadonlyArray<string> }
   | RequestMessage
+  | { readonly _tag: "Cancel"; readonly id: number }
   | { readonly _tag: "Files"; readonly id: number; readonly files: Read }
 
 /**
@@ -99,6 +100,7 @@ export type FromWorker =
     readonly message: string
   }
   | ReadMessage
+  | { readonly _tag: "CancelRead"; readonly id: number }
 
 /**
  * What the tab's listeners hand its dispatcher.

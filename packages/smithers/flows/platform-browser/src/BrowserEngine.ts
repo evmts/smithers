@@ -24,7 +24,7 @@
 
 import type { RunInspection } from "@smthrs/engine-store"
 import type { Flow as FlowTypes } from "@smthrs/flow"
-import { RunMetrics } from "@smthrs/flow"
+import { RetryPolicy, RunMetrics } from "@smthrs/flow"
 import * as Context from "effect/Context"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
@@ -346,7 +346,7 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
         return worker
       }),
       (worker) => Effect.sync(() => worker.terminate())
-    )
+    ).pipe(Effect.catchCause((cause) => fail("worker-failed", RetryPolicy.failureType(cause))))
 
     const request = (
       body: Body

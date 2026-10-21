@@ -20,15 +20,17 @@
 
 import type { DurableWriter } from "@smthrs/database"
 import type { SqlClient } from "effect/sql/SqlClient"
-import type { Flow, FlowRuntime } from "@smthrs/flow"
+import { type Flow, type FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import type * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as Schema from "effect/Schema"
 import type * as BrowserSqlite from "./BrowserSqlite.ts"
 import type * as Engine from "./internal/Engine.ts"
 import type * as Leader from "./internal/Leader.ts"
 import * as Metrics from "./internal/Metrics.ts"
 import type * as PrepareModule from "./internal/Prepare.ts"
+import * as Protocol from "./internal/Protocol.ts"
 import type * as SharedSqlite from "./SharedSqlite.ts"
 import * as TabChannel from "./TabChannel.ts"
 import * as WebLock from "./WebLock.ts"
@@ -293,6 +295,20 @@ export const run = <Registered, RegistrationError, RegistrationRequirements exte
 ): Fiber.Fiber<never, unknown> =>
   Effect.runFork(
     Effect.flatMap(engine, (module) => module.program(options)).pipe(
-      Effect.provide(Layer.mergeAll(WebLock.layer, TabChannel.layer, options.telemetry ?? Layer.empty))
+      Effect.provide(Layer.mergeAll(WebLock.layer, TabChannel.layer, options.telemetry ?? Layer.empty)),
+      Effect.tapCause((cause) =>
+        Effect.logError("browser.runtime.stopped").pipe(
+          Effect.annotateLogs({ "error.type": RetryPolicy.failureType(cause) }),
+          Effect.andThen(Effect.sync(() => {
+            if (typeof (globalThis as { readonly WorkerGlobalScope?: unknown }).WorkerGlobalScope !== "function") return
+            ;(globalThis as unknown as { postMessage(message: unknown): void }).postMessage(
+              Schema.encodeSync(Protocol.Stopped)({
+                _tag: "@smthrs/platform-browser/EngineStopped",
+                error: RetryPolicy.failureType(cause)
+              })
+            )
+          }))
+        )
+      )
     )
   )

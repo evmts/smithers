@@ -35,6 +35,7 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Equal from "effect/Equal"
 import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Scope from "effect/Scope"
@@ -234,7 +235,11 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
         return true
       })
 
-    const execute: Service["execute"] = (sql, params = []) => turn.withPermits(1)(run(sql, params))
+    const scope = yield* Effect.scope
+    // The tab owns accepted requests until their replies update transaction state.
+    // Cancelling a caller stops waiting; closing the tab still interrupts the request.
+    const execute: Service["execute"] = (sql, params = []) =>
+      turn.withPermits(1)(run(sql, params)).pipe(Effect.forkIn(scope), Effect.flatMap(Fiber.join))
 
     return SharedSqlite.of({ execute })
   })

@@ -10,7 +10,7 @@ import type { DurableWriter } from "@smthrs/database"
 import type { SqlClient } from "effect/sql/SqlClient"
 import { WebCrypto } from "@smthrs/crypto"
 import { OwnerIdentity, RunCatalogRead, RunInspection, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
-import { type Flow, type FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow"
+import { type Flow, type FlowRuntime, RunMetrics } from "@smthrs/flow"
 import { Runtime } from "@smthrs/flows"
 import * as Jj from "@smthrs/jj"
 import { Ownership } from "@smthrs/run-store"
@@ -19,7 +19,6 @@ import * as Effect from "effect/Effect"
 import type { HttpClient } from "effect/http/HttpClient"
 import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
-import * as Schema from "effect/Schema"
 import * as BrowserSqlite from "../BrowserSqlite.ts"
 import { filename, type Service as SharedDatabase } from "../SharedSqlite.ts"
 import type * as TabChannel from "../TabChannel.ts"
@@ -27,7 +26,6 @@ import type * as WebLock from "../WebLock.ts"
 import * as HttpClientLayer from "./HttpClient.ts"
 import * as Leader from "./Leader.ts"
 import * as Prepare from "./Prepare.ts"
-import * as Protocol from "./Protocol.ts"
 import * as SqlConnection from "./SqlConnection.ts"
 
 /**
@@ -150,42 +148,18 @@ export interface RunOptions<Registered, RegistrationError, RegistrationRequireme
 }
 
 /**
- * The worker's program: `Leader.serve` over {@link layerHost}, logging how it
- * stopped by the failure's tag.
+ * The worker's program: `Leader.serve` over {@link layerHost}.
+ * `BrowserRuntime.run` reports failures across the entire worker initialization.
  *
  * @category running
  * @since 1.0.0
  */
 export const program = <Registered, RegistrationError, RegistrationRequirements extends FlowRuntime.FlowRuntime | Host | SqlClient | DurableWriter.DurableWriter>(
   options: RunOptions<Registered, RegistrationError, RegistrationRequirements>
-): Effect.Effect<never, unknown, WebLock.WebLock | TabChannel.TabChannel> =>
-  // Every service `RegistrationRequirements` may name is one the engine host
-  // provides, which the generic `Exclude` chain cannot show.
-  (Leader.serve(options, layerHost(options, options.registerFlows)) as Effect.Effect<
-    never,
-    unknown,
-    WebLock.WebLock | TabChannel.TabChannel
-  >).pipe(
-    Effect.tapCause((cause) =>
-      Effect.logError("browser.runtime.stopped").pipe(
-        Effect.annotateLogs({ "error.type": RetryPolicy.failureType(cause) }),
-        // A failure only: interrupting the worker's fiber, as its tab closing
-        // does, never reaches here.
-        Effect.andThen(tellTab(RetryPolicy.failureType(cause)))
-      )
-    )
-  )
-
-/**
- * Tells the tab that started this dedicated worker that its engine stopped,
- * so the tab fails its requests instead of waiting for a leader. Outside a
- * worker, as in a test that runs the entry on the main thread, there is no
- * such tab.
- */
-const tellTab = (error: string) =>
-  Effect.sync(() => {
-    if (typeof (globalThis as { readonly WorkerGlobalScope?: unknown }).WorkerGlobalScope !== "function") return
-    ;(globalThis as unknown as { postMessage(message: unknown): void }).postMessage(
-      Schema.encodeSync(Protocol.Stopped)({ _tag: "@smthrs/platform-browser/EngineStopped", error })
-    )
-  })
+): Effect.Effect<never, unknown, WebLock.WebLock | TabChannel.TabChannel> => // Every service `RegistrationRequirements` may name is one the engine host
+// provides, which the generic `Exclude` chain cannot show.
+(Leader.serve(options, layerHost(options, options.registerFlows)) as Effect.Effect<
+  never,
+  unknown,
+  WebLock.WebLock | TabChannel.TabChannel
+>)

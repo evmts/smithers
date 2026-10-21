@@ -48,7 +48,7 @@ import * as Clock from "effect/Clock"
 import * as Deferred from "effect/Deferred"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import type * as Fiber from "effect/Fiber"
+import * as Fiber from "effect/Fiber"
 import * as Metric from "effect/Metric"
 import * as Queue from "effect/Queue"
 import type * as Scope from "effect/Scope"
@@ -169,13 +169,19 @@ export const uriOf: (path: string) => string = TypeScriptWorkspace.uriOf
 
 /**
  * The absolute workspace path a `file:` URI names, or `undefined` for any
- * other URI.
+ * other URI or malformed percent encoding.
  *
  * @category paths
  * @since 1.0.0
  */
-export const pathOf = (uri: string): string | undefined =>
-  uri.startsWith("file:///") ? uri.slice("file://".length).split("/").map(decodeURIComponent).join("/") : undefined
+export const pathOf = (uri: string): string | undefined => {
+  if (!uri.startsWith("file:///")) return undefined
+  try {
+    return uri.slice("file://".length).split("/").map(decodeURIComponent).join("/")
+  } catch {
+    return undefined
+  }
+}
 
 /**
  * Whether an absolute path is one of TypeScript's own lib files rather than
@@ -219,6 +225,7 @@ export const make = (options: Options): Effect.Effect<LanguageServer.LanguageSer
     let failed: StdError.StdError | undefined
     let next = 0
 
+    const reading = new Map<number, Fiber.Fiber<unknown>>()
     const answerRead = (message: Protocol.ReadMessage) =>
       Effect.forEach(
         message.paths,
@@ -250,7 +257,13 @@ export const make = (options: Options): Effect.Effect<LanguageServer.LanguageSer
         }
         const message = event.data as Protocol.FromWorker
         if (message._tag === "Read") {
-          yield* Effect.forkScoped(answerRead(message))
+          reading.set(message.id, yield* Effect.forkScoped(answerRead(message)))
+          continue
+        }
+        if (message._tag === "CancelRead") {
+          const fiber = reading.get(message.id)
+          reading.delete(message.id)
+          if (fiber !== undefined) yield* Fiber.interrupt(fiber)
           continue
         }
         const waiting = pending.get(message.id)
@@ -284,7 +297,11 @@ export const make = (options: Options): Effect.Effect<LanguageServer.LanguageSer
                 })
               )
           }),
-          Effect.ensuring(Effect.sync(() => pending.delete(id)))
+          Effect.ensuring(
+            post({ _tag: "Cancel", id }).pipe(
+              Effect.andThen(Effect.sync(() => pending.delete(id)))
+            )
+          )
         )
       })
 
@@ -342,6 +359,7 @@ export const program = (
       () => Effect.sync(() => options.port.removeEventListener("message", listener))
     )
     const post = (message: Protocol.FromWorker) => Effect.sync(() => options.port.postMessage(message))
+    const cancelled = new Map<number, Deferred.Deferred<void>>()
     const reads = new Map<number, Deferred.Deferred<TypeScriptWorkspace.Read>>()
     let nextRead = 0
     const loader: TypeScriptWorkspace.Loader = {
@@ -351,7 +369,11 @@ export const program = (
           const answer = yield* Deferred.make<TypeScriptWorkspace.Read>()
           reads.set(id, answer)
           yield* post({ _tag: "Read", id, paths })
-          return yield* Deferred.await(answer)
+          return yield* Deferred.await(answer).pipe(Effect.ensuring(
+            Effect.sync(() => reads.delete(id)).pipe(
+              Effect.andThen(post({ _tag: "CancelRead", id }))
+            )
+          ))
         }),
       lib: (fileName) => Effect.tryPromise(() => options.lib(fileName)).pipe(Effect.orElseSucceed(() => undefined))
     }
@@ -375,7 +397,13 @@ export const program = (
           if (answer !== undefined) yield* Deferred.succeed(answer, message.files)
           return
         }
+        case "Cancel": {
+          const signal = cancelled.get(message.id)
+          if (signal !== undefined) yield* Deferred.succeed(signal, undefined)
+          return
+        }
         case "Request":
+          cancelled.set(message.id, yield* Deferred.make<void>())
           yield* Queue.offer(requests, message)
       }
     })))
@@ -410,7 +438,12 @@ export const program = (
 
     return yield* Effect.forever(Effect.gen(function*() {
       const message = yield* Queue.take(requests)
-      const exit = yield* Effect.exit(handle(message))
+      const signal = cancelled.get(message.id)!
+      const exit = yield* Effect.raceFirst(
+        Deferred.await(signal).pipe(Effect.as(null)),
+        Effect.exit(handle(message))
+      ).pipe(Effect.ensuring(Effect.sync(() => cancelled.delete(message.id))))
+      if (exit === null) return
       if (exit._tag === "Success") {
         return yield* post({ _tag: "Reply", id: message.id, result: exit.value, ...workspace!.loaded() })
       }
