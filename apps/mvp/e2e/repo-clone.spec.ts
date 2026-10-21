@@ -64,6 +64,8 @@ test("clone by the agent: asked to clone octocat/Spoon-Knife, it calls repo/clon
     .poll(async () => answerRow(await allServerRows(request), question)?.status, { timeout: 90_000 })
     .toBe("done")
   expect(steps(answerRow(await allServerRows(request), question), "repo/clone")).toContain("done")
+  // Cloned, not GitHub's preview: the branch picker shows only for a ready copy.
   await a.page.goto("/octocat/Spoon-Knife")
-  await expect(a.page.getByText("Well hello there!")).toBeVisible({ timeout: 120_000 })
+  await expect(a.page.getByRole("button", { name: "main", exact: true })).toBeVisible({ timeout: 120_000 })
+  await expect(a.page.getByText("Well hello there!")).toBeVisible()
 })

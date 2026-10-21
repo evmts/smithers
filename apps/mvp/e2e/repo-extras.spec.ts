@@ -24,9 +24,13 @@ const openReady = async (page: Page) => {
   const header = page.locator('header[aria-label="Repository"]')
   // The app's first render on a loaded machine can take seconds: the engine worker and the device store start first.
   await expect(header).toContainText("octocat / Spoon-Knife", { timeout: 30_000 })
+  // GitHub's preview shows the README before anyone clones, so ready is the branch picker, which only a clone has.
+  const picker = page.getByRole("button", { name: "main", exact: true })
   const clone = header.getByRole("button", { name: "Clone" })
+  await expect(picker.or(clone)).toBeVisible({ timeout: 60_000 })
   if (await clone.isVisible()) await clone.click()
-  await expect(page.getByText("Well hello there!")).toBeVisible({ timeout: 120_000 })
+  await expect(picker).toBeVisible({ timeout: 120_000 })
+  await expect(page.getByText("Well hello there!")).toBeVisible({ timeout: 30_000 })
 }
 
 const clipboard = (page: Page) => page.evaluate(() => navigator.clipboard.readText())

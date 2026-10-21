@@ -33,8 +33,9 @@ test(
       await expect(code.or(clone)).toBeVisible({ timeout: 60_000 })
       if (await clone.isVisible()) await clone.click()
       await expect(code).toHaveAttribute("data-state", "ready", { timeout: 180_000 })
-      // `      format(500, { long: true });`, highlighted: the call is a token of its own.
-      await expect(token(9, 6)).toHaveText("format", { timeout: 30_000 })
+      // `      format(500, { long: true });`, highlighted: the call is a token of its own. Shiki's first highlight on a
+      // cold worker pool can take a minute on a loaded machine; the plain text shows meanwhile.
+      await expect(token(9, 6)).toHaveText("format", { timeout: 120_000 })
     })
 
     await step("Hover format: its signature", async () => {

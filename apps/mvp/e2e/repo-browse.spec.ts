@@ -56,6 +56,37 @@ test(
   },
 )
 
+test(
+  "the header's bell: its own slot after Clone, never over it, at 1280 px and on a phone",
+  { annotation: { type: "summary", description: "The bell sits in the header's last slot and never covers Clone." } },
+  async ({ page, browser }) => {
+    type Box = { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+    const apart = (one: Box | null, two: Box | null) =>
+      one !== null && two !== null &&
+      (one.x + one.width <= two.x || two.x + two.width <= one.x || one.y + one.height <= two.y || two.y + two.height <= one.y)
+    const check = async (tab: import("@playwright/test").Page) => {
+      // octocat/linguist, which no test clones: its header offers Clone.
+      await tab.goto("/octocat/linguist")
+      const header = tab.locator('header[aria-label="Repository"]')
+      const clone = header.getByRole("button", { name: "Clone" })
+      const bell = header.getByRole("button", { name: /^Notifications/ })
+      await expect(clone).toBeVisible({ timeout: 30_000 })
+      await expect(bell).toBeVisible()
+      // One bell, the header's: the page floats no other.
+      await expect(tab.getByRole("button", { name: /^Notifications/ })).toHaveCount(1)
+      expect(apart(await clone.boundingBox(), await bell.boundingBox())).toBe(true)
+      return { clone: await clone.boundingBox(), bell: await bell.boundingBox() }
+    }
+    const wide = await check(page)
+    // At 1280 px it is the row's last slot, right of Clone.
+    expect(wide.bell!.x).toBeGreaterThanOrEqual(wide.clone!.x + wide.clone!.width)
+    // A phone's width, in a window of its own that isn't recorded: the row wraps, and still nothing overlaps.
+    const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, ignoreHTTPSErrors: true })
+    await check(await phone.newPage())
+    await phone.close()
+  },
+)
+
 test.describe("cloned repositories", () => {
   test.skip(noCodeStorage, needsCodeStorage)
 
@@ -70,13 +101,16 @@ test.describe("cloned repositories", () => {
       // GitHub has no such repository: the page says so before anyone clones it.
       await expect(page.getByText("Not found").first()).toBeVisible({ timeout: 30_000 })
       await header.getByRole("button", { name: "Clone" }).click()
-      // The toast follows the clone from the request; no spinner anywhere.
+      // The clone reports in the person's feed, never a spinner. This one stops within a second, and a stopped clone's
+      // toast shows for 4 s after its row changed, which a slow sync can miss: so the toast, or the stop it reports.
       const subject = `clone:github/octocat/${name}`
-      await expect(page.locator(`[data-slot="toast"][data-subject="${subject}"]`)).toContainText(`Clone · octocat/${name}`, {
-        timeout: 30_000,
-      })
+      const toast = page.locator(`[data-slot="toast"][data-subject="${subject}"]`)
+      const stopped = header.getByRole("status").filter({ hasText: "Not found" })
+      await expect(toast.or(stopped).first()).toBeVisible({ timeout: 60_000 })
+      const shown = await toast.textContent({ timeout: 100 }).catch(() => null)
+      if (shown !== null) expect(shown).toContain(`Clone · octocat/${name}`)
       // It stopped: the header says why, with Try again, and the entry stays in the person's list.
-      await expect(header.getByRole("status").filter({ hasText: "Not found" })).toBeVisible({ timeout: 60_000 })
+      await expect(stopped).toBeVisible({ timeout: 60_000 })
       await page.getByRole("region", { name: "Smithers" }).getByRole("button", { name: /^\+\d+$/ }).click()
       const entry = page.locator(`li[data-entry="${subject}"]`)
       await expect(entry).toContainText(`Clone · octocat/${name} · Not found`, { timeout: 30_000 })
