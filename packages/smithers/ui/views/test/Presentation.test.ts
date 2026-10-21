@@ -292,3 +292,12 @@ describe("harden", () => {
     }).not.toThrow()
   })
 })
+
+it("an own __proto__ prop cannot give the guarded copy unchecked inherited attributes", () => {
+  const props = JSON.parse("{\"__proto__\":{\"href\":\"https://example.com\"},\"title\":\"safe\"}")
+  const copy = Presentation.guardHost("p", props)
+  expect(Object.getPrototypeOf(copy)).toBeNull()
+  expect(Object.hasOwn(copy, "__proto__")).toBe(true)
+  expect(copy.href).toBeUndefined()
+  expect(copy.title).toBe("safe")
+})

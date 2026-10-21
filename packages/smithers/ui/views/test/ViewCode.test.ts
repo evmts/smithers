@@ -335,3 +335,50 @@ describe("ViewCode.check refuses", () => {
     ])
   })
 })
+
+describe("ViewCode security regressions", () => {
+  it("keeps a quoted __proto__ interaction for schema validation", () => {
+    expect(
+      messages("export const interactions = { \"__proto__\": { kind: \"state\" } }; export default () => null").join(
+        " "
+      )
+    )
+      .toContain("interactions must be an object literal")
+  })
+
+  it.each([
+    "const value = await 1; export default () => null",
+    "for await (const value of []) {} export default () => null",
+    "const value = { [await 1]() {} }; export default () => null"
+  ])("refuses module-level asynchronous execution: %s", (source) => {
+    expect(messages(source).join(" ")).toContain("Top-level await is refused")
+  })
+
+  it.each(["__proto__", "constructor", "prototype", "dangerouslySetInnerHTML"])(
+    "refuses quoted object key %s",
+    (key) => {
+      expect(messages(viewWith(`const value = { "${key}": {} }`)).join(" ")).toContain(`The property ${key} is refused`)
+    }
+  )
+
+  it.each([
+    "const math = Math; const value = math.random()",
+    "const { random } = Math; const value = random()",
+    "const value = Math[`random`]()",
+    "const value = Math?.[`random`]()",
+    "const key = \"random\"; const value = Math[key]()"
+  ])("refuses indirect randomness: %s", (source) => {
+    expect(messages(viewWith(source)).join(" ")).toContain("Math.random is refused")
+  })
+
+  it("keeps deterministic Math members and nested async functions", () => {
+    expect(
+      check(
+        viewWith(
+          "const value = Math.max(1, 2); const pi = Math?.PI; const object = { Math: 1 }; for (const x of []) {} async function later() { for await (const x of []) {} return await 1 }"
+        )
+      ).compiled
+    )
+      .toContain("Math.max")
+  })
+})

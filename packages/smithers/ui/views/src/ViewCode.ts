@@ -285,7 +285,7 @@ const literalValue = (node: unknown): unknown => {
     case "StringLiteral":
       return node.value
     case "ObjectExpression": {
-      const value: Record<string, unknown> = {}
+      const value: Record<string, unknown> = Object.create(null)
       for (const property of node.properties as Array<Node>) {
         if (property.type !== "ObjectProperty" || property.computed === true) return undefined
         const key = nameOf(property.key as Node)
@@ -454,7 +454,9 @@ const propertyName = (node: Node): string | undefined =>
 /** Walks the module once, iteratively so a deeply nested module cannot exhaust the host's stack. */
 const walk = (program: Node, components: ReadonlySet<string>, findings: Findings) => {
   const react = new Set<string>()
-  const stack: Array<{ readonly node: Node; readonly parent: Node; readonly key: string }> = []
+  const stack: Array<
+    { readonly node: Node; readonly parent: Node; readonly key: string; readonly inFunction: boolean }
+  > = []
   for (const statement of program.body as Array<Node>) {
     if (statement.type === "ImportDeclaration" && statement.importKind !== "type") {
       checkImport(statement, components, findings, react)
@@ -465,12 +467,18 @@ const walk = (program: Node, components: ReadonlySet<string>, findings: Findings
     } else if (statement.type === "TSModuleDeclaration") {
       findings.problems.push(at(statement, "Namespaces and declare blocks are refused in a view"))
     }
-    stack.push({ node: statement, parent: program, key: "body" })
+    stack.push({ node: statement, parent: program, key: "body", inFunction: false })
   }
   while (stack.length > 0) {
-    const { key, node, parent } = stack.pop()!
+    const { inFunction, key, node, parent } = stack.pop()!
     if (isTypeOnly(node) || node.type === "ImportDeclaration") continue
     switch (node.type) {
+      case "AwaitExpression":
+      case "ForOfStatement":
+        if (!inFunction && (node.type === "AwaitExpression" || node.await === true)) {
+          findings.problems.push(at(node, "Top-level await is refused in a view"))
+        }
+        break
       case "ImportExpression":
         findings.problems.push(at(node, "Dynamic import() is refused in a view"))
         break
@@ -482,6 +490,13 @@ const walk = (program: Node, components: ReadonlySet<string>, findings: Findings
         break
       case "Identifier": {
         const name = node.name as string
+        if (
+          name === "Math" && isReference(parent, key) &&
+          !((parent.type === "MemberExpression" || parent.type === "OptionalMemberExpression") &&
+            key === "object" && propertyName(parent) !== undefined)
+        ) {
+          findings.problems.push(at(node, "Math.random is refused in a view; use direct deterministic Math members"))
+        }
         if (isReference(parent, key) && refusedNames.has(name)) {
           findings.problems.push(at(node, `${name} is refused in a view`))
         }
@@ -509,7 +524,10 @@ const walk = (program: Node, components: ReadonlySet<string>, findings: Findings
         break
       }
       case "ObjectProperty":
-        if (node.computed === true && refusedProperties.has(nameOf(node.key as Node) ?? "")) {
+        if (
+          (node.computed === true || (node.key as Node).type === "StringLiteral") &&
+          refusedProperties.has(nameOf(node.key as Node) ?? "")
+        ) {
           findings.problems.push(at(node, `The property ${nameOf(node.key as Node)} is refused in a view`))
         }
         break
@@ -538,13 +556,21 @@ const walk = (program: Node, components: ReadonlySet<string>, findings: Findings
     }
     for (const child of Object.keys(node)) {
       if (skippedKeys.has(child)) continue
+      const childInFunction = inFunction || (child !== "key" && child !== "decorators" && [
+        "FunctionDeclaration",
+        "FunctionExpression",
+        "ArrowFunctionExpression",
+        "ObjectMethod",
+        "ClassMethod",
+        "ClassPrivateMethod"
+      ].includes(node.type))
       const value = node[child]
       if (Array.isArray(value)) {
         for (let index = value.length - 1; index >= 0; index--) {
           const item: unknown = value[index]
-          if (isNode(item)) stack.push({ node: item, parent: node, key: child })
+          if (isNode(item)) stack.push({ node: item, parent: node, key: child, inFunction: childInFunction })
         }
-      } else if (isNode(value)) stack.push({ node: value, parent: node, key: child })
+      } else if (isNode(value)) stack.push({ node: value, parent: node, key: child, inFunction: childInFunction })
     }
   }
 }

@@ -96,3 +96,11 @@ The realm shares portable lifecycle primitives and module quarantine with the
 cell sandbox through `QuickJSLifecycle` from `@smthrs/harness`. Presentation
 still removes weak references and hardens the bundle independently; sharing
 lifecycle code never grants a view the harness host bridge.
+
+The checker refuses module-level `await` and `for await`, because checked
+modules execute in a synchronous factory. Nested async functions remain valid.
+Math may be used only through direct, statically named deterministic members;
+passing or destructuring the Math object and dynamic member keys are refused.
+Forbidden object keys are refused whether identifiers or quoted strings.
+Literal interaction decoding and the render guard copy into null-prototype
+records, preserving an own `__proto__` as data for validation.

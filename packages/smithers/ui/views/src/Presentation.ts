@@ -141,7 +141,7 @@ const guarded = (create: CreateElement): CreateElement => (type, props, ...rest)
  * @since 0.1.0
  */
 export const guardHost = (type: string, props: unknown): Readonly<Record<string, unknown>> => {
-  const copy: Record<string, unknown> = {}
+  const copy: Record<string, unknown> = Object.create(null)
   if (typeof props === "object" && props !== null) {
     for (const key of Object.keys(props)) {
       if (!isEventHandler(key)) copy[key] = (props as Record<string, unknown>)[key]
