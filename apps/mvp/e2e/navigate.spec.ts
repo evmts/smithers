@@ -87,7 +87,9 @@ test("navigate by the agent: asking to open octocat/Spoon-Knife takes the tab th
 /** The repository page as the person sees it, held for 60 frames so the video shows it (the frame recorder runs). */
 const shown = (page: import("@playwright/test").Page) =>
   step("A: the repository's page", async () => {
-    await expect(page.locator('main[aria-label="Repository"] header[aria-label="Repository"]')).toContainText("octocat / Spoon-Knife")
+    const header = page.getByRole("main", { name: "Repository", exact: true }).locator(':scope > header[aria-label="Repository"]')
+    await expect(header).toHaveCount(1)
+    await expect(header).toContainText("octocat / Spoon-Knife")
     await framesPass(page, 60)
   })
 
