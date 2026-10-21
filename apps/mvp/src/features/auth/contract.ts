@@ -1,6 +1,9 @@
 // Sign-in's contract between the browser and ChatApi (docs/features/sign-in.md): the one home of every value the
 // browser, ChatApi and the tests share. Nothing here imports a library, so every side can.
 
+/** A device request binds its retained data to this person; the server refuses a different cookie owner. */
+export const DEVICE_PERSON_HEADER = "x-smithers-device-person"
+
 /** Every sign-in route starts with this. */
 export const AUTH_ROUTE = "/api/auth"
 
@@ -67,7 +70,7 @@ export const composerAccess = (
  */
 export type SessionState =
   | { readonly signedIn: false; readonly available: boolean }
-  | { readonly signedIn: true; readonly login: string; readonly role: Role | null }
+  | { readonly signedIn: true; readonly personId?: string; readonly login: string; readonly role: Role | null }
 
 // The app's sign-in copy. No other sign-in copy exists.
 
@@ -92,6 +95,11 @@ export const SIGN_OUT = "Sign out"
  */
 export const AUTH_TELEMETRY = {
   records: [
+    "auth.device_identity",
+    "auth.session_subscription",
+    "auth.session_refresh",
+    "smithers_auth_session_refreshes",
+    "smithers_device_identity_checks",
     "session loaded",
     "session unreachable",
     "sign in pressed",
@@ -105,5 +113,5 @@ export const AUTH_TELEMETRY = {
     "smithers_web_sign_outs",
     "smithers_web_device_wipes",
   ],
-  fields: ["signedIn", "status", "outcome"],
+  fields: ["signedIn", "status", "outcome", "stage", "reason", "via"],
 } as const

@@ -73,6 +73,9 @@ export interface HostOptions extends Options {
    * tab's statement: see {@link Prepare}.
    */
   readonly prepare?: Prepare | undefined
+  /** Checked on every activation before the engine exists, resumes work or exposes the device database. A failure
+   * ends activation; unlike a replayed preparation this check is never cached. */
+  readonly authorize?: ((database: import("./SharedSqlite.ts").Service) => Effect.Effect<void, unknown>) | undefined
 }
 
 /**

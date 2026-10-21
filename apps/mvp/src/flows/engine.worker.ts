@@ -1,4 +1,8 @@
 import wasmUrl from "@journeyapps/wa-sqlite/dist/wa-sqlite.wasm?url"
+import { FetchHttpClient } from "effect/http"
+import { getSession } from "../features/auth/api"
+import { Effect } from "effect"
+import { authorizeDevice, boundFetch, IDENTITY_MESSAGE, type DeviceOwner } from "../device/identity"
 import { Migrations } from "@smthrs/effect-tanstack-db"
 import type { Model } from "@smthrs/model"
 import { BrowserRuntime } from "@smthrs/platform-browser"
@@ -14,7 +18,16 @@ import { workerRegistrations } from "./registrations"
 // (decision 0011); the others wait their turn. It reaches ChatApi on the page's origin, and this device's collections
 // through its own tab. Its logs, spans and metrics go to ChatApi's relay, as the tab's do.
 
-const run = (model?: Model.Model, summaryModel?: Model.Model) =>
+let owner: DeviceOwner | undefined
+let identity: { _tag: string; owner: DeviceOwner | undefined; outcome: string } | undefined
+const identityChannel = new BroadcastChannel(IDENTITY_MESSAGE)
+identityChannel.onmessage = (event) => {
+  if (event.data?.request === true && identity !== undefined) identityChannel.postMessage(identity)
+}
+const reported = (snapshot: NonNullable<typeof identity>) => { identity = snapshot }
+const fetchHost = self.fetch.bind(self)
+self.fetch = boundFetch(fetchHost, () => owner, self.location.origin)
+const run = (expectedOwner: DeviceOwner | undefined, model?: Model.Model, summaryModel?: Model.Model) =>
   BrowserRuntime.run({
     name: ENGINE_NAME,
     // The SQLite build loads only once this worker leads, and only in this worker's bundle.
@@ -26,6 +39,19 @@ const run = (model?: Model.Model, summaryModel?: Model.Model) =>
     // Before it serves the device store to any tab, the leader brings it to this build's versions, once per epoch, as
     // the durable flow `device/prepare` (decision 0021).
     prepare: Migrations.prepare(deviceRegistry),
+    authorize: (database) => authorizeDevice({
+      database,
+      ...(expectedOwner === undefined ? {} : { expectedOwner }),
+      session: getSession(self.location.origin, "10 seconds").pipe(Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, fetchHost)),
+      report: (identity, outcome) => {
+        owner = identity
+        const snapshot = { _tag: IDENTITY_MESSAGE, owner: identity, outcome }
+        // Every follower must verify the database leader's owner, including one whose mirror was deleted.
+        self.postMessage(snapshot)
+        identityChannel.postMessage(snapshot)
+        reported(snapshot)
+      },
+    }),
     // `http:` pages on this machine open only under the dev server (src/features/web/url.ts).
     registerFlows: workerRegistrations(self, {
       origin: self.location.origin,
@@ -40,5 +66,10 @@ const run = (model?: Model.Model, summaryModel?: Model.Model) =>
 // Under the dev server, a worker named `agent:<script>` (main.tsx, from `?agent=<script>`) answers with a scripted model
 // for the end-to-end tests (src/test/scriptedAgent.ts). A production build drops this branch, and the module with it.
 const scripted = import.meta.env.DEV && self.name.startsWith("agent:") ? self.name.slice("agent:".length) : undefined
-if (scripted === undefined) run()
-else void Promise.all([import("../test/scriptedAgent"), import("../test/scriptedSummary")]).then(([agent, summary]) => run(agent.scriptedModel(scripted), summary.scriptedSummary))
+self.addEventListener("message", function opening(event: MessageEvent) {
+  if (event.data?._tag !== IDENTITY_MESSAGE) return
+  self.removeEventListener("message", opening)
+  const expectedOwner = event.data.owner as DeviceOwner | undefined
+  if (scripted === undefined) run(expectedOwner)
+  else void Promise.all([import("../test/scriptedAgent"), import("../test/scriptedSummary")]).then(([agent, summary]) => run(expectedOwner, agent.scriptedModel(scripted), summary.scriptedSummary))
+})

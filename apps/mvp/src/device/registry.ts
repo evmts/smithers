@@ -22,7 +22,7 @@ import { Preference } from "../features/theme/schema"
 import { Summary } from "../features/timeline/store"
 import { Draft as TodoDraft, Requested as TodoRequested, Sending as TodoSending, Todo, TodoRequest } from "../features/todos/schema"
 import { View } from "../features/views/schema"
-import { ChatDraftV1, IssueSendingV1, RequestedV1 } from "./history"
+import { AuthConfirmedV1, ChatDraftV1, IssueSendingV1, IssueSendingV2, RequestedV1 } from "./history"
 
 // Every store this device keeps, and its history (decision 0021): each persisted collection, synced or local, and
 // each payload the outbox carries. A store's collection opens only at the version declared here (the app's
@@ -57,7 +57,7 @@ export const IssueRequestedStore = Migrations.local({
 export const IssueDraftsStore = Migrations.local({ id: "issue-drafts", versions: [IssueDraft], getKey: (row) => row.id })
 
 /** Who this device last knew was signed in, and as what (src/features/auth/store.ts). */
-export const AuthConfirmedStore = Migrations.local({ id: "auth-confirmed", versions: [Confirmed], getKey: (row) => row.id })
+export const AuthConfirmedStore = Migrations.local({ id: "auth-confirmed", versions: [AuthConfirmedV1, Confirmed], migrations: [Migrations.step(AuthConfirmedV1, Confirmed, (row) => row)], getKey: (row) => row.id })
 
 /** This device's theme. */
 export const PreferencesStore = Migrations.local({ id: "preferences", versions: [Preference], getKey: (row) => row.id })
@@ -147,10 +147,11 @@ export const AskingPayload = Migrations.payload({ key: "asking", versions: [Aski
  */
 export const IssueSendingPayload = Migrations.payload({
   key: "issue-sending",
-  versions: [IssueSendingV1, IssueSending],
+  versions: [IssueSendingV1, IssueSendingV2, IssueSending],
   migrations: [
-    Migrations.step(IssueSendingV1, IssueSending, ({ via, ...row }) =>
+    Migrations.step(IssueSendingV1, IssueSendingV2, ({ via, ...row }) =>
       via === "agent" ? new Migrations.Unmigratable({ reason: "agent_write" }) : { ...row, v: 2 as const }),
+    Migrations.step(IssueSendingV2, IssueSending, (row) => ({ ...row, v: 3 as const })),
   ],
 })
 

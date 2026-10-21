@@ -7,6 +7,7 @@ import { Flow } from "@smthrs/flow"
 import { Arbitrary, Clock, ConfigProvider, Effect, Layer, Option, Redacted, Result, Schema, Stream } from "effect"
 import { FetchHttpClient, HttpServerRequest } from "effect/http"
 import { beforeAll, describe, expect, test } from "vitest"
+import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract.ts"
 import { CREDENTIAL_TTL_MS, credentialRoute } from "../src/flows/contract.ts"
 import {
   type Act,
@@ -379,7 +380,9 @@ describe("a credential's life, with sign-in configured", () => {
     const signIn = await signInHarness(runtime)
     const { cookies } = await signIn.signInAs()
     const h = await harness(runtime, () => Stream.empty, { sessions: signIn.sessions })
-    const session = { cookie: cookie(cookies) }
+    const identity = await signIn.session(cookies) as import("../src/features/auth/contract.ts").SessionState
+    if (!identity.signedIn) throw new Error("expected a signed-in person")
+    const session = { cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: identity.personId! }
     const answerId = crypto.randomUUID()
     expect(
       (await h.ask({ id: crypto.randomUUID(), answerId, text: "Deploy the docs preview" }, session)).status,
@@ -430,4 +433,64 @@ describe("local development, sign-in not configured", () => {
     const short = await Effect.runPromise((await start({ SESSION_SECRET: "short" })).sign(minted))
     expect(await Effect.runPromise((await start({ SESSION_SECRET: "short" })).verify(short))).toEqual(Option.none())
   })
+})
+
+describe("renewing a queued write's signed authority", () => {
+  test("an expired proof renews the exact agent principal, run, chain and ceiling", async () => {
+    const parent = acting(member, success(claims(member, "queued-answer", { flow: "chat/Answer", ceiling: [["net:post:github/**"]] })))
+    const original = { ...success(claims(parent, "queued-answer/call/1", { flow: "issue/create" })), exp: Date.now() - 1 }
+    const token = await sign(original)
+    expect(await Effect.runPromise(credentials.verify(token))).toEqual(Option.none())
+    const renewed = Option.getOrThrow(await Effect.runPromise(credentials.renew(token, member, original.run)))
+    expect({ ...renewed, exp: original.exp }).toEqual(original)
+    expect(renewed.exp).toBeGreaterThan(Date.now())
+    const actor = Option.getOrThrow(await Effect.runPromise(credentials.verify(await sign(renewed))))
+    expect(actor).toMatchObject({ subject: member.subject, act: { kind: "agent", id: original.run, root: original.root, ceiling: original.ceiling, chain: original.chain } })
+  })
+
+  test("another person/session/run, an acting caller, forgery and revocation cannot renew", async () => {
+    const original = { ...success(claims(member, "queued-run", { flow: "issue/create" })), exp: Date.now() - 1 }
+    const token = await sign(original)
+    for (const [proof, who, run] of [
+      [token, other, original.run],
+      [token, { ...member, session: "different-session" }, original.run],
+      [token, member, "different-run"],
+      [token, acting(member, original), original.run],
+      ["forged", member, original.run],
+    ] as const) expect(await Effect.runPromise(credentials.renew(proof, who, run))).toEqual(Option.none())
+    // A valid MAC does not turn malformed or non-JSON payloads into authority (including another purpose).
+    for (const payload of ["%%%", "bm90IGNsYWltcw"]) {
+      const malformed = await Effect.runPromise(keys.sign("run", payload))
+      expect(await Effect.runPromise(credentials.renew(malformed, member, original.run))).toEqual(Option.none())
+      expect(await Effect.runPromise(credentials.verify(malformed))).toEqual(Option.none())
+    }
+    const cookieProof = await Effect.runPromise(keys.sign("session", "session-token"))
+    expect(await Effect.runPromise(credentials.renew(cookieProof, member, original.run))).toEqual(Option.none())
+    const revoked = RunCredentials.make({ keys, person: () => Effect.succeedNone })
+    expect(await Effect.runPromise(revoked.renew(token, member, original.run))).toEqual(Option.none())
+  })
+
+  test("the real credential route renews an expired proof and rejects wider/foreign reinterpretations", async () => {
+    const h = await open(member)
+    const original = { ...success(claims(acting(member, success(claims(member, "answer", { flow: "chat/Answer", ceiling: [["net:post:github/**"]] }))), "answer/call/4", { flow: "issue/create" })), exp: Date.now() - 1 }
+    const token = await sign(original)
+    const reply = await mint(h, original.run, { flow: "repo/read", ceiling: [], renew: token })
+    expect(reply.status).toBe(200)
+    const actor = Option.getOrThrow(await Effect.runPromise(credentials.verify(reply.body.token as string)))
+    expect(actor.act).toEqual({ kind: "agent", id: original.run, root: original.root, chain: original.chain, ceiling: original.ceiling })
+    expect((await mint(await open(other), original.run, { flow: "issue/create", renew: token })).status).toBe(403)
+    expect((await mint(h, "another-run", { flow: "issue/create", renew: token })).status).toBe(403)
+  })
+})
+
+
+test("a stale tab's device-bound request never uses a different person's current cookie", async () => {
+  const sessions = RunCredentials.sessionsWith(Effect.succeedSome(other)).pipe(Layer.provide(Layer.succeed(RunCredentials.RunCredentials, credentials)))
+  const resolve = (expected: string) => Effect.runPromise(Effect.flatMap(Sessions, (service) => service.resolve).pipe(
+    Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://chat.test/", { headers: { [DEVICE_PERSON_HEADER]: expected } }))),
+    Effect.provide(sessions),
+  ))
+  expect(await resolve(member.subject.id)).toEqual(Option.none())
+  expect(await resolve("@visitor")).toEqual(Option.none())
+  expect(await resolve(other.subject.id)).toEqual(Option.some(other))
 })

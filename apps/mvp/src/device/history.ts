@@ -58,3 +58,18 @@ export type IssueSendingV1 = typeof IssueSendingV1.Type
  */
 export const ChatDraftV1 = Schema.Struct({ id: Schema.String, text: Schema.String })
 export type ChatDraftV1 = typeof ChatDraftV1.Type
+
+/** Last confirmed identity before stable person ownership (version 1). */
+export const AuthConfirmedV1 = Schema.Struct({ id: Schema.Literal("session"), login: Schema.String, role: Schema.NullOr(Schema.Literals(["admin", "maintainer", "member", "guest"])) })
+
+/** Issue outbox authority before delivery-time renewal (version 2). */
+export const IssueSendingV2 = Schema.Struct({
+  id: Schema.String, repo: Schema.String,
+  op: Schema.Literals(["issue/create", "issue/comment", "issue/triage", "issue/commitment", "triage/run", "triage/enable", "triage/pause", "pr/merge"]),
+  title: Schema.String, number: Schema.Number, body: Schema.String,
+  decision: Schema.optional(Schema.Literals(["accept", "reject"])),
+  dailyTokens: Schema.optional(Schema.Number),
+  commitment: Schema.optional(Schema.Literals(["now", "next", "later", "none"])),
+  credential: Schema.optional(Schema.String),
+  repoId: Schema.String, queuedAt: Schema.Number, v: Schema.Literal(2),
+})

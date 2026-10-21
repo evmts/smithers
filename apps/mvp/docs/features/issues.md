@@ -42,7 +42,7 @@ items, comments ◀── Electric ◀── Postgres ◀──┘
 
 - **Reading.** A signed-out request, or a person with no role, is refused (`401`, `403`) until `github/Reconcile` has recorded that GitHub says the repository is public (`github_repositories.private`). The read still starts the sync, so a public repository opens to visitors within one walk. Decision 0012 keeps private repositories to people GitHub lets see them until shapes are authorized per request (0007 phase 2).
 - **A Guest never writes as the bot.** A Guest has no agent, so the route refuses an agent's write for a Guest (`403`): their write goes as themselves, or not at all.
-- **The request says who acts, never the body** ([run credentials](sign-in.md#run-credentials)). A write the person pressed goes in their session (`via: "person"`); a write the agent's run queued carries that run's credential, which the tab sends with it and without the cookie (`via: "agent"`). A run with no credential to send queues nothing (`IssueWriteRefused`, `no_credential`). Triage's writes, setting a commitment and merging refuse anyone acting for the person (`403`, counted as `auth.person_only`).
+- **The request says who acts, never the body** ([run credentials](sign-in.md#run-credentials)). A write the person pressed goes in their session (`via: "person"`); a write the agent's run queued carries that run's credential, which the tab renews as the exact same authority at delivery and sends without the cookie (`via: "agent"`). A run with no credential to send queues nothing (`IssueWriteRefused`, `no_credential`). Triage's writes, setting a commitment and merging refuse anyone acting for the person (`403`, counted as `auth.person_only`).
 
 ## Routes
 

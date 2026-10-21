@@ -71,7 +71,7 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
     )
     const branch = Object.keys(fixture.collections).find((id) => id.startsWith("chat-messages:"))!
     expect(outcomes).toEqual({
-      "auth-confirmed": "current 1→1 migrated 0 kept 0",
+      "auth-confirmed": "migrated 1→2 migrated 1 kept 0",
       "chat-drafts": "current 1→1 migrated 0 kept 0",
       "chat-messages": "resync 2→3 migrated 0 kept 0",
       [branch]: "resync 2→3 migrated 0 kept 0",
@@ -96,7 +96,11 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
     expect(byId(await opened(path, ChatUnsentStore))).toEqual(rowsOf(fixture, "chat-unsent"))
     expect(byId(await opened(path, ChatDraftsStore))).toEqual(byId(rowsOf(fixture, "chat-drafts")))
     expect(await opened(path, IssueDraftsStore)).toEqual(rowsOf(fixture, "issue-drafts"))
-    expect(await opened(path, AuthConfirmedStore)).toEqual(rowsOf(fixture, "auth-confirmed"))
+    const confirmed = await opened(path, AuthConfirmedStore)
+    expect(confirmed).toEqual(rowsOf(fixture, "auth-confirmed"))
+    expect(confirmed.every(Schema.is(AuthConfirmedStore.schema))).toBe(true)
+    // A login-only legacy proof cannot acquire an invented stable person during migration.
+    expect(confirmed[0]).not.toHaveProperty("personId")
     expect(await opened(path, PreferencesStore)).toEqual(rowsOf(fixture, "preferences"))
     // Who acted is no longer the row's to say; everything else is as it was.
     const requested = byId(await opened(path, IssueRequestedStore))

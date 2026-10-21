@@ -109,7 +109,7 @@ describe("GET /api/answers/<id>: the turn", () => {
     expect([settled.status, await settled.json()]).toEqual([409, { code: "settled" }])
   })
 
-  test("an earlier answer whose device went quiet past the bound no longer holds up the turn, and stays", async () => {
+  test("an earlier answer whose device went quiet past the bound is fenced before a later turn starts", async () => {
     const h = await open()
     const orphan = await ask(h, "One")
     const quietJustUnder = await ask(h, "Two")
@@ -124,10 +124,92 @@ describe("GET /api/answers/<id>: the turn", () => {
     // Two's last write was within the bound, so it still held Three; then it was past it, and nothing held Three.
     expect([held.status, await held.json()]).toEqual([409, notYourTurn])
     expect(free.status).toBe(200)
-    // The routes settle nothing and re-run nothing: the quiet answers stream until their devices return, or until
-    // chat/Expire settles them (worker/flows/Expire.test.ts).
-    expect(await row(runtime, orphan)).toMatchObject({ status: "streaming", text: "" })
-    expect(await row(runtime, quietJustUnder)).toMatchObject({ status: "streaming", text: "" })
+    // A frozen old host cannot resume writing after another answer was admitted.
+    expect(await row(runtime, orphan)).toMatchObject({ status: "failed", failure: "abandoned", text: "" })
+    expect(await row(runtime, quietJustUnder)).toMatchObject({ status: "failed", failure: "abandoned", text: "" })
+    expect((await write(h, orphan, { status: "done", text: "Late" })).status).toBe(409)
+    expect((await h.fetch(`/api/answers/${orphan}`, { method: "PATCH" })).status).toBe(409)
+  })
+
+  test("confirmed host heartbeats keep a silent answer ahead of later turns without exposing text", async () => {
+    const h = await open()
+    const first = await ask(h, "First")
+    const second = await ask(h, "Second")
+    await quiet(first, AGENT_LIVE_SECONDS + 1)
+    const heartbeat = await h.fetch(`/api/answers/${first}`, { method: "PATCH" })
+    expect(heartbeat.status).toBe(200)
+    expect(await answerRow(runtime, first)).toMatchObject({ status: "streaming", text: "", parts: [] })
+    expect((await turn(h, second)).status).toBe(409)
+    expect(h.only("chat.answer.heartbeat").annotations).toMatchObject({ answerId: first, status: 200, renewed: true })
+    expect(h.count(Answers.requests, { route: "heartbeat", status: "200" })).toBe(1)
+    await write(h, first, { status: "done", text: "First answer." })
+    const next = await turn(h, second)
+    expect(await next.json()).toMatchObject({ history: [{ question: "First", answer: "First answer." }] })
+  })
+
+  test("heartbeat authority matches answer writes and cannot touch another person's answer", async () => {
+    const h = await open()
+    const other = await open({ actor: { subject: { kind: "person", id: "other" }, role: "member" } })
+    const signedOut = await open({ actor: null })
+    // An Admin passes branch access but still cannot renew another person's answer.
+    const admin = await open({ actor: { subject: { kind: "person", id: "heartbeat-admin" }, role: "admin" } })
+    const id = await ask(h, "Private")
+    await quiet(id, AGENT_LIVE_SECONDS + 1)
+    const before = await writtenAt(id)
+    expect((await other.fetch(`/api/answers/${id}`, { method: "PATCH" })).status).toBe(403)
+    expect((await signedOut.fetch(`/api/answers/${id}`, { method: "PATCH" })).status).toBe(401)
+    expect((await admin.fetch(`/api/answers/${id}`, { method: "PATCH" })).status).toBe(403)
+    expect(admin.only("chat.answer.heartbeat").annotations).toMatchObject({ status: 403, errorCode: "not_asker" })
+    expect(await writtenAt(id)).toBe(before)
+    const absent = await h.fetch(`/api/answers/${crypto.randomUUID()}`, { method: "PATCH" })
+    expect(absent.status).toBe(404)
+    expect(await absent.json()).toEqual({ code: "not_found" })
+  })
+
+  test("a later question leaves a durable open question answerable after its host lease", async () => {
+    const h = await open()
+    const first = await ask(h, "Please ask me")
+    const report = await h.fetch(`/api/runs/${first}`, { method: "POST", body: JSON.stringify({
+      status: "needs_you", wait: { execution: `${first}/call/0.0`, kind: "question", prompt: "Which one?", options: [] },
+    }) })
+    expect(report.status).toBe(200)
+    await quiet(first, AGENT_LIVE_SECONDS + 1)
+    const second = await ask(h, "Another question")
+    expect((await turn(h, second)).status).toBe(200)
+    expect(await row(runtime, first)).toMatchObject({ status: "streaming" })
+    expect((await h.fetch(`/api/runs/${first}/answer`, { method: "POST", body: JSON.stringify({ version: 1, value: "This one" }) })).status).toBe(200)
+    expect((await h.fetch(`/api/runs/${first}`, { method: "POST", body: JSON.stringify({ status: "working" }) })).status).toBe(200)
+    // A fresh status transition gives the resumed interpreter its first pulse's
+    // grace, even before its answer timestamp has been renewed.
+    const third = await ask(h, "One more")
+    await quiet(second, AGENT_LIVE_SECONDS + 1)
+    expect((await turn(h, third)).status).toBe(409)
+    expect((await write(h, first, { status: "done", text: "Answered your choice." })).status).toBe(200)
+  })
+
+  test("a stalled write body holds no conversation lock while the host renews its lease", async () => {
+    const h = await open()
+    const id = await ask(h, "Quiet")
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    let read!: () => void
+    const reading = new Promise<void>((resolve) => { read = resolve })
+    const body = new ReadableStream<Uint8Array>({
+      start: (stream) => { controller = stream },
+      pull: () => { read() },
+    }, { highWaterMark: 0 })
+    const pending = h.fetch(`/api/answers/${id}`, { method: "POST", body, duplex: "half" } as RequestInit)
+    await reading
+    try {
+      const renewed = await Promise.race([
+        h.fetch(`/api/answers/${id}`, { method: "PATCH" }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("heartbeat blocked by request body")), 5_000)),
+      ])
+      expect(renewed.status).toBe(200)
+    } finally {
+      controller.enqueue(new TextEncoder().encode(JSON.stringify({ status: "streaming", parts: [] })))
+      controller.close()
+    }
+    expect((await pending).status).toBe(200)
   })
 
   test("an answer waiting its turn stays live, so it keeps the answers after it in order", async () => {
@@ -202,17 +284,18 @@ describe("GET /api/answers/<id>: the turn", () => {
     expect(h.line("chat.answer.turn").map((line) => line.annotations.waitedMs)).toEqual([settledWait, askedWait])
   })
 
-  test("ANSWER_TURN_LIVE_SECONDS sets the bound: 30 seconds unless set, and a positive integer", async () => {
+  test("ANSWER_TURN_LIVE_SECONDS sets the bound: 30 seconds unless set, and an integer of at least five seconds", async () => {
     const short = await open({ config: { ANSWER_TURN_LIVE_SECONDS: "10" } })
     const usual = await open()
     const first = await ask(short, "One")
     const second = await ask(short, "Two")
     await quiet(first, 11)
 
-    expect((await turn(short, second)).status).toBe(200)
     expect((await turn(usual, second)).status).toBe(409)
+    expect((await turn(short, second)).status).toBe(200)
     expect(AGENT_LIVE_SECONDS).toBe(30)
     await expect(open({ config: { ANSWER_TURN_LIVE_SECONDS: "0" } })).rejects.toThrow()
+    await expect(open({ config: { ANSWER_TURN_LIVE_SECONDS: "4" } })).rejects.toThrow()
   })
 
   test("refuses a signed-out caller, an id that isn't an answer, and a method it doesn't serve", async () => {
@@ -224,7 +307,7 @@ describe("GET /api/answers/<id>: the turn", () => {
     expect((await turn(h, "not-a-uuid")).status).toBe(404)
     expect((await turn(h, crypto.randomUUID())).status).toBe(404)
     const put = await h.fetch(`/api/answers/${answerId}`, { method: "PUT", body: "{}" })
-    expect([put.status, put.headers.get("allow")]).toEqual([405, "GET, POST"])
+    expect([put.status, put.headers.get("allow")]).toEqual([405, "GET, POST, PATCH"])
   })
 })
 

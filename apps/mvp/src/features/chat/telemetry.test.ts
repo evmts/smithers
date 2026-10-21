@@ -7,6 +7,7 @@ import { QuestionFaults } from "../../test/faults"
 import { read } from "../../test/otlp"
 import { Chat } from "./chat"
 import { ChatStore } from "./store"
+import { SHAPE_ROUTE } from "./contract"
 
 // Every browser record docs/observability.md lists for chat, read back from the OTLP exports the browser sent
 // ChatApi's relay, attribute by attribute. A sentinel in what people write appears in none of them. The app's own
@@ -50,7 +51,8 @@ const open = async (options: TabOptions = {}) => {
   }
 }
 
-// Unique, and not shaped like an id: the agent hands an answer naming an id back to be said plainly (words.ts).
+// A UUID-shaped answer invokes the agent's product-word correction. This
+// marker tests redaction while remaining an ordinary answer the model can give.
 const sentinel = () => `sentinel-${crypto.randomUUID().replaceAll("-", "")}`
 const shown = (tab: Awaited<ReturnType<typeof open>>) =>
   tab.queries.conversation.toArray.map(({ role, status }) => `${role} ${status}`)
@@ -65,7 +67,11 @@ test("asking: asked, stored and not sent, one trace from the ask through the out
   reply.say(`It is ${secret}.`)
   reply.done()
   // The device's agent settles the answer: its engine's run, on a loaded machine, can take a while.
-  await until(() => expect(shown(tab)).toEqual(["user done", "assistant done"]), 15_000)
+  await until(() => expect(shown(tab)).toEqual(["user done", "assistant done"]), 15_000).catch(async (cause: unknown) => {
+    const diagnostics = await tab.onApi(tab.api.answerDiagnostics(stored.answerId))
+    throw new Error(`Answer did not settle: ${JSON.stringify(diagnostics)}`, { cause })
+  })
+  expect(tab.api.modelRequests(`What is ${secret}?`)).toBe(1)
   tab.fault(tab.questions.failNext("bad_request"))
   const refused = tab.actions.ask(`And ${secret} again?`)
   if (!refused.asked) throw new Error("not asked")
@@ -154,10 +160,27 @@ test("the connection and the window: offline, retried and up again, earlier mess
   await tab.onApi(tab.api.askElsewhere(`Later ${secret}`))
   await until(() => expect(tab.queries.history.toArray[0]?.earlier).toBe(true))
   tab.actions.loadEarlier()
-  // Down from the next request on; a change ends the live request Electric holds, so the next one goes.
+  const chatRequests = () => tab.runtime.runSync(tab.shapes.sent).filter((url) => url.pathname === SHAPE_ROUTE)
+  const sentBeforeFault = chatRequests().length
+  const observe = (stage: string, assertion: () => void, timeout = 4_000) => until(assertion, timeout).catch((cause: unknown) => {
+    const requests = chatRequests()
+    const connection = tab.queries.connection.toArray[0]
+    throw new Error(`Shape fault observation: ${JSON.stringify({
+      stage,
+      sentBeforeFault,
+      sent: requests.length,
+      live: requests.filter((url) => url.searchParams.get("live") === "true").length,
+      connection: { status: connection?.status, retry: connection?.retry },
+    })}`, { cause })
+  })
+  // Down applies when the next request starts. The held healthy long poll
+  // first delivers this change; replication latency is setup, not time spent
+  // failing. Observe the chat shape's next request before its four-second
+  // offline deadline, within the same 15-second delivery budget as a chat send.
   tab.fault(tab.shapes.down())
   await tab.onApi(tab.api.askElsewhere(`During ${secret}`))
-  await until(() => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "offline", retry: true }))
+  await observe("awaiting_fault_request", () => expect(chatRequests().length).toBeGreaterThan(sentBeforeFault), 15_000)
+  await observe("fault_applied", () => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "offline", retry: true }))
   tab.fault(tab.shapes.heal)
   tab.actions.retry()
   await until(() => expect(tab.queries.connection.toArray[0]?.status).toBe("up"))

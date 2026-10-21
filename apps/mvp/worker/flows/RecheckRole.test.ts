@@ -36,14 +36,14 @@ const keys = () => Effect.runPromise(SessionKeys.make(Redacted.make(SECRET)))
 const signedIn = async (github: ScriptedGitHub = scriptedGitHub()) => {
   const h = await signInHarness(runtime, { github })
   const { cookies } = await h.signInAs()
-  const [{ id }] = (await sql(`SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1`)) as unknown as [
-    { id: string },
+  const [{ id, personId }] = (await sql(`SELECT id, person_id::text AS "personId" FROM sessions ORDER BY created_at DESC LIMIT 1`)) as unknown as [
+    { id: string; personId: string },
   ]
   const services: RecheckRole.Services = { keys: await keys(), github: github.service, repository: "smithersai/smithers" }
   const database = await runtime.runPromise(Effect.gen(function* () {
     return (yield* TestDatabase.Scratch).database
   }))
-  return { h, github, cookies, id, services, database }
+  return { h, github, cookies, id, personId, services, database }
 }
 
 const session = async (id: string) =>
@@ -82,7 +82,7 @@ describe("auth/RecheckRole", () => {
     const after = await session(s.id)
     expect(after.role).toBe("admin")
     expect(after.age).toBeLessThan(60)
-    expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, login: "octocat", role: "admin" })
+    expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, personId: s.personId, login: "octocat", role: "admin" })
   })
 
   test("a GitHub that fails once is retried by the step's retry policy", async () => {
@@ -314,7 +314,7 @@ describe("one check of a session at a time", () => {
       })
       const h = await signInHarness(runtime, { github, roleChecks })
       const { cookies } = await h.signInAs()
-      const [{ id }] = (await sql(`SELECT id FROM sessions`)) as unknown as [{ id: string }]
+      const [{ id, personId }] = (await sql(`SELECT id, person_id::text AS "personId" FROM sessions`)) as unknown as [{ id: string; personId: string }]
       await sql(`UPDATE sessions SET role_checked_at = now() - interval '2 hours'`)
       await expiring(id)
       // Check A pauses once GitHub has redeemed the refresh token and issued its replacement, before A stores it.
@@ -329,7 +329,7 @@ describe("one check of a session at a time", () => {
       await Effect.runPromise(Deferred.await(redeemed))
       // The next request comes an hour later, in the next hour, while A still holds the replacement.
       h.advance(60 * 60 * 1000)
-      expect(await h.session(cookies)).toEqual({ signedIn: true, login: "octocat", role: "member" })
+      expect(await h.session(cookies)).toEqual({ signedIn: true, personId, login: "octocat", role: "member" })
       h.advance(-60 * 60 * 1000)
       // B runs before A goes on: a check of its own runs to its end first; the same check is A, still paused.
       if (started[1] !== started[0]) await runs[1]
@@ -348,7 +348,7 @@ describe("one check of a session at a time", () => {
         Exit.succeed({ outcome: "checked", role: "member" }),
         Exit.succeed({ outcome: "checked", role: "member" }),
       ])
-      expect(await h.session(cookies)).toEqual({ signedIn: true, login: "octocat", role: "member" })
+      expect(await h.session(cookies)).toEqual({ signedIn: true, personId, login: "octocat", role: "member" })
       // The check recorded the role, so the next stale request names a new check.
       await sql(`UPDATE sessions SET role_checked_at = role_checked_at - interval '2 hours'`)
       await h.session(cookies)
@@ -421,7 +421,7 @@ describe("one check of a session at a time", () => {
       const after = await session(s.id)
       expect(after.revokedReason).toBeNull()
       expect(after.refreshDigest).toBe(SessionKeys.digest(Redacted.value(s.github.issued[1]!.refreshToken!)))
-      expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, login: "octocat", role: "member" })
+      expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, personId: s.personId, login: "octocat", role: "member" })
     } finally {
       await removeFault()
     }

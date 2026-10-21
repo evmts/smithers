@@ -7,8 +7,9 @@ import { PostgresDatabase } from "@smthrs/database"
 import { type Flow, FlowRuntime } from "@smthrs/flow"
 import { EngineStore, RunStore, Runtime } from "@smthrs/flows"
 import { NodeHost } from "@smthrs/platform-node"
-import { Context, Effect, type Exit, Layer, Redacted, type Schema } from "effect"
+import { Context, Effect, type Exit, Layer, Redacted, type Schema, Stream } from "effect"
 import { SqlClient } from "effect/sql"
+import type { Connection } from "effect/sql/SqlConnection"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 
 /** Where a Node-host runtime keeps its engine: a fresh schema of the compose Postgres, dropped with the runtime. */
@@ -39,6 +40,10 @@ export interface HostOptions {
    * parallel, and together with Electric's they must fit Postgres' limit of 100 (the pool's own default is 10).
    */
   readonly maxConnections?: number
+  /** A test fault service before every engine SQL operation; available unless set. */
+  readonly databaseGate?: Effect.Effect<void>
+  /** Names this engine pool's physical connections so a hard-crash test can terminate every one. */
+  readonly connectionName?: string
 }
 
 /** A client for the compose Postgres itself, outside any engine schema, for the scope that builds it. */
@@ -48,6 +53,24 @@ const admin = Layer.unwrap(
     (url) => Pg.PgClient.layer({ url: Redacted.make(url.toString()), maxConnections: 1 }),
   ),
 )
+
+/** Block both new reservations and previously reserved connections when a host is cut off. */
+const gatedDriver = (gate: Effect.Effect<void>): PostgresDatabase.Driver => ({
+  ...Pg,
+  PgClient: {
+    ...Pg.PgClient,
+    make: (options) => Effect.map(Pg.PgClient.make(options), (client) => Object.assign(client, {
+      reserve: Effect.andThen(gate, Effect.map(client.reserve, (connection): Connection => ({
+        execute: (...args) => Effect.andThen(gate, connection.execute(...args)),
+        executeRaw: (...args) => Effect.andThen(gate, connection.executeRaw(...args)),
+        executeValues: (...args) => Effect.andThen(gate, connection.executeValues(...args)),
+        executeValuesUnprepared: (...args) => Effect.andThen(gate, connection.executeValuesUnprepared(...args)),
+        executeUnprepared: (...args) => Effect.andThen(gate, connection.executeUnprepared(...args)),
+        executeStream: (...args) => Stream.unwrap(Effect.as(gate, connection.executeStream(...args))),
+      }))),
+    })),
+  },
+})
 
 /**
  * Builds the Node-host runtime in the caller's scope: a fresh engine schema on the compose Postgres (created by the
@@ -85,9 +108,12 @@ export const build = <ROut, RE, RR>(registration: Layer.Layer<ROut, RE, RR>, opt
       Layer.provide(
         PostgresDatabase.layer({
           url: server.toString(),
-          driver: Pg,
+          driver: options.databaseGate === undefined ? Pg : gatedDriver(options.databaseGate),
           schema,
-          postgres: { maxConnections: options.maxConnections ?? 4 },
+          postgres: {
+            maxConnections: options.maxConnections ?? 4,
+            ...(options.connectionName === undefined ? {} : { applicationName: options.connectionName }),
+          },
         }),
       ),
     )

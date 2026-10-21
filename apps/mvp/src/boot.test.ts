@@ -49,7 +49,7 @@ const cmdK = () => Object.assign(new Event("keydown", { cancelable: true }), { k
 
 /** The browser app over a fresh ChatApi, its ChatApi, and its exports once every runtime has closed. */
 const app = async () => {
-  const runtime = openTestApp()
+  const runtime = openTestApp({ sessionLifecycle: false })
   runtimes.push(runtime)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   const exported = async () => {
@@ -79,7 +79,7 @@ test("renders the chat, sign-in, theme, repository, slash-command, views and web
   )
   const store = await runtime.runPromise(Effect.service(ChatStore))
   await until(() => expect(store.history.tanstack.get("history")?.opened).toBe(true))
-  expect(rendered).toHaveLength(1)
+  await until(() => expect(rendered).toHaveLength(1))
   const layers = await runtime.runPromise(
     Effect.all([
       Effect.service(Chat),
@@ -176,11 +176,12 @@ test("when the device's conversation can't be restored, it logs that, records no
       open: () => ({ execute: () => Promise.reject(new Error("disk")), close: () => undefined }),
     },
   }
-  const runtime = openTab(api, { host: broken })
+  const runtime = openTab(api, { host: broken, sessionLifecycle: false })
   runtimes.push(runtime)
   const fiber = runtime.runFork(boot({ target: new EventTarget(), startedAt: Date.now(), render: () => {}, storage: granted }))
   const store = await runtime.runPromise(Effect.service(ChatStore))
   await until(() => expect(store.messages.tanstack.status).toBe("error"))
+  await until(() => expect(read(api.telemetry).log("chat couldn't restore")).toHaveLength(1))
   expect(fiber.pollUnsafe()).toBeUndefined()
   await runtime.runPromise(Fiber.interrupt(fiber))
   await runtimes.pop()!.dispose()
@@ -249,7 +250,12 @@ test("reload counts and logs the reload, then asks the page to reload", async ()
 test("start is the boundary: it builds the one runtime, renders the chat layer once, and stops everything", async () => {
   const api = await chatApi()
   const unbound: Array<string> = []
+  const bound: Array<string> = []
   const target = new (class extends EventTarget {
+    override addEventListener(...args: Parameters<EventTarget["addEventListener"]>) {
+      bound.push(args[0])
+      super.addEventListener(...args)
+    }
     override removeEventListener(...args: Parameters<EventTarget["removeEventListener"]>) {
       unbound.push(args[0])
       super.removeEventListener(...args)
@@ -258,7 +264,11 @@ test("start is the boundary: it builds the one runtime, renders the chat layer o
   const rendered: Array<ChatView> = []
   const page = { origin: api.origin, fetch: api.fetch, reload: api.reload, host: nodeDevice() }
   const { stop } = start(
-    { ...page, target, startedAt: Date.now(), render: (chat) => rendered.push(chat) },
+    { ...page, target, startedAt: Date.now(), render: (chat) => {
+      // Auth's subscriber is attached before the page becomes interactive; chat's subscriber follows rendering.
+      expect(bound.filter((event) => event === "online")).toHaveLength(1)
+      rendered.push(chat)
+    } },
     realServices(page),
   )
   await until(() => expect(rendered).toHaveLength(1))
@@ -268,9 +278,10 @@ test("start is the boundary: it builds the one runtime, renders the chat layer o
   expect(chat!.queries.connection.toArray[0]?.status).toBe("up")
   target.dispatchEvent(cmdK())
   expect(chat!.queries.composer.toArray[0]?.open).toBe(true)
+  // A Stream subscription starts its callback on a child fiber; wait for the real binding before asserting cleanup.
+  await until(() => expect(bound.filter((event) => event === "online")).toHaveLength(2))
   await stop()
-  // Three keydown listeners: ⌘K as the event goes down, Esc as it comes back up (src/features/chat/shortcuts.ts), and a
-  // button's one-key shortcut (src/features/keys/keys.ts).
+  // Three key bindings, chat connectivity and scoped auth refresh on reconnect are all removed.
   expect(unbound.sort()).toEqual([
     "error",
     "focus",
@@ -279,6 +290,7 @@ test("start is the boundary: it builds the one runtime, renders the chat layer o
     "keydown",
     "keydown",
     "offline",
+    "online",
     "online",
     "pageshow",
     "unhandledrejection",

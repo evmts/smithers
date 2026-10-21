@@ -293,6 +293,9 @@ export {
  * @category models
  */
 export interface HeartbeatLoopOptions {
+  /** Called after a fenced pulse. The caller must keep this nonblocking so
+   * external receipts cannot hold ownership supervision. */
+  readonly onPulse?: (() => Effect.Effect<void>) | undefined
   /** Called after the same unclaimed owner reconfirms an expired heartbeat budget. */
   readonly onReconfirm?: ((unconfirmedMs: number) => Effect.Effect<void>) | undefined
   /** Called with the unconfirmed milliseconds when the lease lapses, before the loop interrupts itself. */
@@ -370,6 +373,7 @@ export const heartbeatLoop = (
               if (outcome._tag !== "Updated") return false
               lastConfirmedPulseMs = Math.max(lastConfirmedPulseMs, Math.floor(nowMs))
               failing = false
+              yield* options.onPulse?.() ?? Effect.void
               const confirmedAtMs = yield* Clock.currentTimeMillis
               const remainingMs = lastConfirmedPulseMs + toleranceMs - confirmedAtMs
               if (remainingMs <= 0) return false
@@ -412,7 +416,7 @@ export const heartbeatLoop = (
               ? Effect.sync(() => {
                 lastConfirmedPulseMs = Math.max(lastConfirmedPulseMs, nowMs)
                 failing = false
-              })
+              }).pipe(Effect.andThen(options.onPulse?.() ?? Effect.void))
               : Effect.interrupt
           ),
           // A failed write keeps the confirmed lease; the independent deadline

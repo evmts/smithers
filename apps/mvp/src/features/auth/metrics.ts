@@ -20,3 +20,6 @@ export const deviceWipes = Metric.counter("smithers_web_device_wipes", {
   description: "Times a sign-out wiped this device's synced data and outbox, by outcome",
   incremental: true,
 })
+
+/** Session checks triggered by the device reconnecting. */
+export const sessionRefreshes = Metric.counter("smithers_auth_session_refreshes", { incremental: true })

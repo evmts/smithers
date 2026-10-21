@@ -110,7 +110,7 @@ export const keepParked = (requested: Collection.Collection<Requested, string>, 
   Effect.gen(function* () {
     const row = Schema.decodeUnknownOption(ParkedWrite)(write.rows[0])
     if (Option.isNone(row)) return false
-    yield* keep(requested, { ...row.value, v: 2 }, "not_sent", "not_allowed")
+    yield* keep(requested, { ...row.value, v: 3 }, "not_sent", "not_allowed")
     yield* Effect.logWarning("issue write parked").pipe(
       Effect.annotateLogs({ feature: "issues", reason: write.reason, writeId: row.value.id, op: row.value.op }),
     )

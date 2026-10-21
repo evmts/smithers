@@ -10,6 +10,7 @@ import {
   Sessions,
   type SessionsUnavailable,
 } from "./Actor.ts"
+import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract.ts"
 import { CREDENTIAL_TTL_MS } from "../src/flows/contract.ts"
 import type { SessionKeys } from "./SessionKeys.ts"
 
@@ -42,7 +43,7 @@ const Ceiling = Schema.Array(Schema.Array(Schema.String.check(Schema.isMaxLength
  * it declares one. A declared ceiling only ever narrows: the server intersects it, and refuses a callee whose declared
  * ceiling its caller's doesn't cover.
  */
-export const MintRequest = Schema.Struct({ flow: FlowTag, ceiling: Schema.optional(Ceiling) })
+export const MintRequest = Schema.Struct({ flow: FlowTag, ceiling: Schema.optional(Ceiling), renew: Schema.optional(Schema.String.check(Schema.isMaxLength(MAX_TOKEN_LENGTH))) })
 export type MintRequest = typeof MintRequest.Type
 
 /** What a credential says, signed: who, which run acts for them and as what, its chain, its ceiling and its end. */
@@ -115,7 +116,7 @@ export const claimsFor = (
 /** How a credential a request carried read: as its run (`verified`), or not at all, and why not. */
 export type Verification = "verified" | "forged" | "expired" | "ended"
 
-/** Credentials minted and read, by `op` (`mint`, `verify`), `outcome` and `act`. */
+/** Credentials minted, renewed and read, by `op` (`mint`, `renew`, `verify`), `outcome` and `act`. */
 export const credentials = Metric.counter("smithers_run_credentials", {
   description: "Run credentials minted and read, by op, outcome and act",
   incremental: true,
@@ -132,8 +133,12 @@ export class RunCredentials extends Context.Service<
      * when it is forged, has expired, or its session ended. Each read that fails is logged and counted.
      */
     readonly verify: (token: string) => Effect.Effect<Option.Option<Actor>, SessionsUnavailable>
+    /** Renew the exact signed authority while its original session is live; never reinterpret it as a new run. */
+    readonly renew: (token: string, actor: Actor, run: string) => Effect.Effect<Option.Option<Claims>, SessionsUnavailable>
   }
 >()("@smthrs/mvp/RunCredentials") {}
+
+const credentialsCounter = Metric.counter("smithers_device_principal_refusals", { incremental: true })
 
 const decodeClaims = Schema.decodeUnknownOption(Schema.fromJsonString(Claims))
 
@@ -153,7 +158,22 @@ export const make = (options: {
       ),
       Option.none<Actor>(),
     )
+  const read = (token: string) => Effect.gen(function* () {
+    const value = yield* options.keys.verify("run", token)
+    if (Option.isNone(value)) return Option.none<Claims>()
+    const text = Base64Url.decodeString(value.value)
+    return Result.isSuccess(text) ? decodeClaims(text.success) : Option.none<Claims>()
+  })
   return RunCredentials.of({
+    renew: (token, actor, run) => Effect.gen(function* () {
+      const claims = yield* read(token)
+      if (Option.isNone(claims)) return Option.none()
+      const original = claims.value
+      if (actor.act !== undefined || actor.subject.id !== original.sub || actor.session !== original.sid || run !== original.run) return Option.none()
+      const person = yield* options.person(original)
+      if (Option.isNone(person)) return Option.none()
+      return Option.some({ ...original, exp: (yield* Clock.currentTimeMillis) + CREDENTIAL_TTL_MS })
+    }).pipe(Effect.withSpan("auth.credential.renew")),
     sign: (claims) => options.keys.sign("run", Base64Url.encode(JSON.stringify(claims))),
     verify: (token) =>
       Effect.gen(function* () {
@@ -191,8 +211,17 @@ export const resolveWith = <R>(
   session: Effect.Effect<Option.Option<Actor>, SessionsUnavailable, R>,
 ): Effect.Effect<Option.Option<Actor>, SessionsUnavailable, R | HttpServerRequest.HttpServerRequest> =>
   Effect.gen(function* () {
-    const bearer = bearerOf(yield* HttpServerRequest.HttpServerRequest)
+    const request = yield* HttpServerRequest.HttpServerRequest
+    const bearer = bearerOf(request)
     const actor = Option.isSome(bearer) ? yield* credentials.verify(bearer.value) : yield* session
+    const expected = request.headers[DEVICE_PERSON_HEADER]
+    const cookieMutation = Option.isNone(bearer) && request.headers.cookie !== undefined && !["GET", "HEAD", "OPTIONS"].includes(request.method)
+    if (Option.isSome(actor) && ((cookieMutation && expected === undefined) || (expected !== undefined && actor.value.subject.id !== expected))) {
+      const outcome = expected === undefined ? "unbound" : "mismatch"
+      yield* Metric.update(Metric.withAttributes(credentialsCounter, { outcome }), 1)
+      yield* Effect.logWarning("auth.device_principal").pipe(Effect.annotateLogs({ outcome }))
+      return Option.none()
+    }
     yield* Effect.annotateCurrentSpan({
       "smithers.actor.act": Option.match(actor, { onNone: () => "none", onSome: (who) => who.act?.kind ?? "person" }),
     })

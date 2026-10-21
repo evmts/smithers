@@ -1,5 +1,5 @@
 {
-  "epoch": 47,
+  "epoch": 49,
   "stores": {
     "chat-unsent": {
       "kind": "local",
@@ -29,7 +29,8 @@
     "auth-confirmed": {
       "kind": "local",
       "versions": {
-        "1": "5952c0a213ac7491"
+        "1": "5952c0a213ac7491",
+        "2": "e01a331097b98bbc"
       }
     },
     "preferences": {
@@ -200,7 +201,8 @@
       "kind": "payload",
       "versions": {
         "1": "5f06729ded14d532",
-        "2": "fcf63f783785b96c"
+        "2": "fcf63f783785b96c",
+        "3": "51762534f91c11e1"
       }
     },
     "text-sending": {

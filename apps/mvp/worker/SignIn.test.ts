@@ -1,13 +1,14 @@
 // Sign-in's routes and sessions (worker/SignIn.ts, docs/features/sign-in.md) on this file's own schema of the compose
 // Postgres (`pnpm db:up`), with the scripted GitHub (worker/test/github.ts) as the only stand-in. The model endpoint
 // cases run ChatApi's real handler (worker/test/harness.ts) with sign-in's sessions.
+import { credentialRoute } from "../src/flows/contract.ts"
 import { ModelRequest } from "@smthrs/model"
 import { ConfigProvider, Effect, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
-import type { SessionState } from "../src/features/auth/contract.ts"
+import { DEVICE_PERSON_HEADER, type SessionState } from "../src/features/auth/contract.ts"
 import * as Flows from "./Flows.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
 import * as SessionKeys from "./SessionKeys.ts"
@@ -169,7 +170,7 @@ describe("the callback", () => {
     const rows = await stored()
     expect(rows).not.toContain(Redacted.value(tokens.accessToken))
     expect(rows).not.toContain(Redacted.value(tokens.refreshToken!))
-    expect(await h.session(cookies)).toEqual({ signedIn: true, login: "octocat", role: "member" } satisfies SessionState)
+    expect(await h.session(cookies)).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role: "member" } satisfies SessionState)
     expect(h.github.repositories).toEqual(["smithersai/smithers"])
     const [line] = h.line("auth.callback")
     expect(line!.annotations).toMatchObject({ outcome: "signed_in", role: "member", personId: session!.personId })
@@ -316,7 +317,7 @@ describe("the callback", () => {
     github.expiring = false
     const h = await signInHarness(runtime, { github })
     const { cookies } = await h.signInAs()
-    expect(await h.session(cookies)).toEqual({ signedIn: true, login: "octocat", role: "member" })
+    expect(await h.session(cookies)).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role: "member" })
     const [session] = await sessionRows()
     expect(session!.refresh).toBeNull()
   })
@@ -369,7 +370,7 @@ describe("roles", () => {
       github.permission = permission
       const h = await signInHarness(runtime, { github })
       const { cookies } = await h.signInAs()
-      expect(await h.session(cookies), permission).toEqual({ signedIn: true, login: "octocat", role })
+      expect(await h.session(cookies), permission).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role })
     }
   })
 
@@ -415,7 +416,7 @@ describe("signing out", () => {
     const { cookies } = await h.signInAs()
     const response = await h.fetch("/api/auth/sign-out", {
       method: "POST",
-      headers: { origin: "http://smithers.test", cookie: cookie(cookies) },
+      headers: { origin: "http://smithers.test", cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId },
     })
     expect(response.status).toBe(204)
     expect(setCookies(response)["smithers_session"]!.line).toMatch(/Max-Age=0|Expires=Thu, 01 Jan 1970/)
@@ -429,10 +430,10 @@ describe("signing out", () => {
     expect(await h.session(cookies)).toEqual({ signedIn: false, available: true })
     expect(h.count({ route: "sign_out", outcome: "signed_out" })).toBe(1)
     // Signing out again while its tokens wait for the flow starts the same execution again, a no-op on the host.
-    const signOut = () =>
+    const signOut = async () =>
       h.fetch("/api/auth/sign-out", {
         method: "POST",
-        headers: { "sec-fetch-site": "same-origin", cookie: cookie(cookies) },
+        headers: { "sec-fetch-site": "same-origin", cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId },
       })
     expect((await signOut()).status).toBe(204)
     expect(h.revocations).toEqual([session!.id, session!.id])
@@ -458,8 +459,8 @@ describe("signing out", () => {
       }),
     })
     const { cookies } = await h.signInAs()
-    const signOut = () =>
-      h.fetch("/api/auth/sign-out", { method: "POST", headers: { origin: "http://smithers.test", cookie: cookie(cookies) } })
+    const signOut = async () =>
+      h.fetch("/api/auth/sign-out", { method: "POST", headers: { origin: "http://smithers.test", cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId } })
 
     const refused = await signOut()
 
@@ -494,7 +495,7 @@ describe("signing out", () => {
 
     const again = await h.fetch("/api/auth/sign-out", {
       method: "POST",
-      headers: { origin: "http://smithers.test", cookie: cookie(cookies) },
+      headers: { origin: "http://smithers.test", cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId },
     })
 
     expect(again.status).toBe(204)
@@ -554,7 +555,7 @@ describe("signing out", () => {
     const { cookies } = await h.signInAs()
     const sent: ReadonlyArray<Record<string, string>> = [{ origin: "https://evil.test" }, {}, { "sec-fetch-site": "cross-site" }]
     for (const headers of sent) {
-      const response = await h.fetch("/api/auth/sign-out", { method: "POST", headers: { ...headers, cookie: cookie(cookies) } })
+      const response = await h.fetch("/api/auth/sign-out", { method: "POST", headers: { ...headers, cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId } })
       expect(response.status).toBe(403)
     }
     expect((await sessionRows())[0]!.revokedAt).toBeNull()
@@ -567,7 +568,7 @@ describe("signing out", () => {
     const down = await signInHarness(runtime, { github: h.github, database: unreachable })
     const response = await down.fetch("/api/auth/sign-out", {
       method: "POST",
-      headers: { origin: "http://smithers.test", cookie: cookie(cookies) },
+      headers: { origin: "http://smithers.test", cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId },
     })
     expect(response.status).toBe(503)
     expect(down.count({ route: "sign_out", outcome: "failed" })).toBe(1)
@@ -598,7 +599,7 @@ describe("sessions", () => {
     const h = await signInHarness(runtime)
     const { cookies } = await h.signInAs()
     const down = await signInHarness(runtime, { github: h.github, database: unreachable })
-    expect((await down.fetch("/api/auth/session", { headers: { cookie: cookie(cookies) } })).status).toBe(503)
+    expect((await down.fetch("/api/auth/session", { headers: { cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId } })).status).toBe(503)
     expect(down.line("auth.session")[0]!.annotations).toMatchObject({ outcome: "error" })
   })
 
@@ -623,7 +624,7 @@ describe("sessions", () => {
       config: {},
       fallback: { actor: localDeveloper, login: "local-developer" },
     })
-    expect(await dev.session()).toEqual({ signedIn: true, login: "local-developer", role: "admin" })
+    expect(await dev.session()).toEqual({ signedIn: true, personId: expect.any(String), login: "local-developer", role: "admin" })
   })
 
   test("local development's developer signs out and back in with a cookie, never reaching GitHub", async () => {
@@ -654,7 +655,7 @@ describe("sessions", () => {
     expect(back.status).toBe(303)
     expect(back.headers.get("location")).toBe("/app?tab=1")
     expect(setCookies(back)["smithers_dev_signed_out"]!.line).toMatch(/Max-Age=0|Expires=Thu, 01 Jan 1970/)
-    expect(await dev.session()).toEqual({ signedIn: true, login: "local-developer", role: "admin" })
+    expect(await dev.session()).toEqual({ signedIn: true, personId: expect.any(String), login: "local-developer", role: "admin" })
     expect(dev.github.calls).toEqual([])
     expect(dev.revocations).toEqual([])
     expect(dev.count({ route: "sign_out", outcome: "signed_out", reason: "local_developer" })).toBe(1)
@@ -681,12 +682,14 @@ describe("sessions", () => {
     })
     expect(await dev.session({ smithers_dev_person: "teammate" })).toEqual({
       signedIn: true,
+      personId: expect.any(String),
       login: "local-teammate",
       role: "member",
     })
     for (const person of ["nobody", "toString"]) {
       expect(await dev.session({ smithers_dev_person: person })).toEqual({
         signedIn: true,
+        personId: expect.any(String),
         login: "local-developer",
         role: "admin",
       })
@@ -740,14 +743,14 @@ describe("asking Smithers", () => {
     const signedIn = await chat.fetch("/api/model/agent", {
       method: "POST",
       body: modelRequest,
-      headers: { cookie: cookie(cookies) },
+      headers: { cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId },
     })
     expect(signedIn.status).toBe(200)
     expect(await signedIn.text()).toContain("hi")
     expect(chat.requests).toHaveLength(1)
     // After signing out, the same cookie is refused again.
-    await h.fetch("/api/auth/sign-out", { method: "POST", headers: { origin: "http://smithers.test", cookie: cookie(cookies) } })
-    const after = await chat.fetch("/api/model/agent", { method: "POST", body: modelRequest, headers: { cookie: cookie(cookies) } })
+    await h.fetch("/api/auth/sign-out", { method: "POST", headers: { origin: "http://smithers.test", cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId } })
+    const after = await chat.fetch("/api/model/agent", { method: "POST", body: modelRequest, headers: { cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId } })
     expect(after.status).toBe(401)
   })
 
@@ -759,7 +762,7 @@ describe("asking Smithers", () => {
     const response = await chat.fetch("/api/model/agent", {
       method: "POST",
       body: modelRequest,
-      headers: { cookie: cookie(cookies) },
+      headers: { cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId },
     })
     expect(response.status).toBe(503)
     expect(((await response.json()) as { readonly code: string }).code).toBe("provider_internal")
@@ -807,7 +810,7 @@ describe("telemetry", () => {
     await h.session(cookies)
     await h.fetch("/api/auth/sign-out", {
       method: "POST",
-      headers: { origin: "https://smithers.test", cookie: cookie(cookies) },
+      headers: { origin: "https://smithers.test", cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: (await sessionRows())[0]!.personId },
     })
     await h.callback({ code, state }, {})
     const tokens = h.github.issued.flatMap((issued) => [issued.accessToken, issued.refreshToken!]).map(Redacted.value)
@@ -830,4 +833,62 @@ describe("telemetry", () => {
     expect(h.line("auth.callback").length).toBeGreaterThan(0)
     expect(h.span("auth.callback").length).toBeGreaterThan(0)
   })
+})
+
+
+test("an old account's bound sign-out cannot revoke a new account or clear its cookie; identity reads remain unbound", async () => {
+  const h = await signInHarness(runtime)
+  const alice = await h.signInAs()
+  const first = await h.session(alice.cookies) as SessionState
+  expect(first.signedIn).toBe(true)
+  if (!first.signedIn) throw new Error("expected Alice")
+  h.github.person = { id: 900002, login: "bob" }
+  const bob = await h.signInAs()
+  const headers = { origin: "http://smithers.test", cookie: cookie(bob.cookies), [DEVICE_PERSON_HEADER]: first.personId! }
+  const refused = await h.fetch("/api/auth/sign-out", { method: "POST", headers })
+  expect(refused.status).toBe(403)
+  expect(refused.headers.get("set-cookie")).toBeNull()
+  expect(h.revocations).toEqual([])
+  expect((await sessionRows()).every((row) => row.revokedAt === null)).toBe(true)
+  const read = await h.fetch("/api/auth/session", { headers })
+  expect(await read.json()).toMatchObject({ signedIn: true, login: "bob" })
+  const actual = await h.session(bob.cookies) as SessionState
+  if (!actual.signedIn) throw new Error("expected Bob")
+  expect((await h.fetch("/api/auth/sign-out", { method: "POST", headers: { ...headers, [DEVICE_PERSON_HEADER]: actual.personId! } })).status).toBe(204)
+})
+
+test("local development's old bound sign-out cannot change the next person's session", async () => {
+  const teammate = { actor: { subject: { kind: "person" as const, id: "local-teammate" }, role: "member" as const }, login: "local-teammate" }
+  const dev = await signInHarness(runtime, { config: {}, fallback: { actor: localDeveloper, login: "local-developer" }, teammates: { teammate } })
+  const refused = await dev.fetch("/api/auth/sign-out", { method: "POST", headers: { origin: "http://smithers.test", cookie: "smithers_dev_person=teammate", [DEVICE_PERSON_HEADER]: "local-developer" } })
+  expect(refused.status).toBe(403)
+  expect(refused.headers.get("set-cookie")).toBeNull()
+  expect(await dev.session({ smithers_dev_person: "teammate" })).toMatchObject({ signedIn: true, personId: "local-teammate" })
+})
+
+
+test("a legacy headerless queued write cannot commit with the next person's cookie; an explicit binding and verified bearer still work", async () => {
+  const auth = await signInHarness(runtime)
+  auth.github.person = { id: 900003, login: "bob" }
+  const bob = await auth.signInAs()
+  const identity = await auth.session(bob.cookies) as SessionState
+  if (!identity.signedIn) throw new Error("expected Bob")
+  const legacyHeaders = { cookie: cookie(bob.cookies) }
+  const app = await harness(runtime, answers("Unused"), { sessions: auth.sessions })
+  const question = { id: crypto.randomUUID(), answerId: crypto.randomUUID(), text: "Alice private queued question" }
+  expect((await app.ask(question, legacyHeaders)).status).toBe(401)
+  expect(await query((sql) => sql`SELECT id FROM messages WHERE id = ${question.id}::uuid`)).toEqual([])
+  const bound = { ...legacyHeaders, [DEVICE_PERSON_HEADER]: identity.personId! }
+  expect((await app.ask(question, bound)).status).toBe(202)
+  expect(await query((sql) => sql`SELECT asked_by AS "askedBy" FROM messages WHERE id = ${question.id}::uuid`)).toEqual([{ askedBy: identity.personId }])
+  const proof = await app.fetch(credentialRoute("cookie-bound-root"), { method: "POST", headers: bound, body: JSON.stringify({ flow: "watch/set" }) })
+  expect(proof.status).toBe(200)
+  const { token } = await proof.json() as { token: string }
+  const nested = await app.fetch(credentialRoute("cookie-bound-child"), { method: "POST", headers: { ...legacyHeaders, authorization: `Bearer ${token}` }, body: JSON.stringify({ flow: "watch/set" }) })
+  expect(nested.status).toBe(200)
+  const signout = await auth.fetch("/api/auth/sign-out", { method: "POST", headers: { ...legacyHeaders, origin: "http://smithers.test" } })
+  expect(signout.status).toBe(403)
+  expect(signout.headers.get("set-cookie")).toBeNull()
+  expect(auth.revocations).toEqual([])
+  expect(await auth.session(bob.cookies)).toMatchObject({ signedIn: true, personId: identity.personId })
 })

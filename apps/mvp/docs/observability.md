@@ -563,6 +563,8 @@ The stack's route, its one writer, its shapes and the browser's TODO steps and s
 |---|---|---|---|
 | `stack.request` | log, span | ChatApi | `op`, `via` (from the session), `opId`, `outcome` (`committed`, `dropped`, `repeated`, or the refusal's code), `number`, `status`, `bytes`, `durationMs`, `errorCode` |
 | `stack.apply` | log, span | ChatApi, inside `stack.request` | `repoId`, `opId`, `op`, `via`, `outcome` (`committed`, `dropped`, `stack_full`, `merged`, `not_found`, `repeated`, `conflict`), `number`, `version`, `durationMs` |
+| `stack.report`; `smithers_todo_reports` | log, span; counter | TODO execution | attempt and TODO ids, kind, outcome (`applied`, `repeated`, `stale`), successor count; metric labels are kind and outcome |
+| `todo.start`; `smithers_todo_admissions` | log, span; counter | TODO execution | flow, execution id, outcome (`started`, `not_started`), error code; metric labels are flow and outcome. Admission acknowledgment is distinct from execution completion |
 | `smithers_stack_requests` | counter | ChatApi | `op`, `outcome` |
 | `smithers_stack_ops`, `smithers_todo_transitions` | counters | ChatApi | `op`, `outcome`; `from` (`new` for a commit), `to` |
 | `stack.shape.todos`, `stack.shape.todo_requests`; `smithers_todo_shape_requests`, `smithers_todo_request_shape_requests` | log, span; counters | ChatApi | `status`, `live` |

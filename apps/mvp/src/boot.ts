@@ -13,7 +13,7 @@ import { Clipboard } from "./clipboard"
 import { AuthClient } from "./features/auth/api"
 import { Attention, type AttentionView } from "./features/attention/attention"
 import { AttentionNavigation, AttentionStore } from "./features/attention/store"
-import { Auth, type AuthView } from "./features/auth/auth"
+import { Auth, bindSessionConnectivity, type AuthView } from "./features/auth/auth"
 import { Branch, type BranchView } from "./features/branch/branch"
 import { DeviceWipe } from "./features/auth/device"
 import { AuthStore } from "./features/auth/store"
@@ -159,7 +159,7 @@ export const appLayer = <S = never>(
   services: Layer.Layer<ChatClient | AuthClient | S, never, HttpClient.HttpClient | ClientEngine>,
 ) => {
   const { origin, reload, host, fetch: _fetch, answerWithin: _answerWithin, ...chat } = options
-  const auth = Auth.layer.pipe(Layer.provide(DeviceWipe.layer(host.wipe)))
+  const auth = Auth.layer.pipe(Layer.provideMerge(DeviceWipe.layer(host.wipe)))
   return Layer.mergeAll(
     Chat.layer,
     auth,
@@ -381,6 +381,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const todos = yield* Todos
     const codeIntel = yield* CodeIntel
     const store = yield* ChatStore
+    yield* bindSessionConnectivity(options.target)
     yield* Effect.sync(() =>
       options.render(
         chat,

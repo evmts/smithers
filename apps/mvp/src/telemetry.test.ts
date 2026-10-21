@@ -1,10 +1,18 @@
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
+import { Persistence } from "@smthrs/effect-tanstack-db"
+import { FetchHttpClient } from "effect/http"
+import { signInHarness } from "../worker/test/signIn"
+import { AuthClient } from "./features/auth/api"
+import { DeviceWipe } from "./features/auth/device"
 import { Otlp } from "@smthrs/observability"
-import { Effect, Exit, Stream } from "effect"
+import { Effect, Exit, Fiber, Layer, ManagedRuntime, Metric, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { stop, testFile, usage } from "../worker/test/harness.ts"
+import { Auth, bindSessionConnectivity } from "./features/auth/auth"
+import { sessionRefreshes } from "./features/auth/metrics"
+import { AuthStore } from "./features/auth/store"
 import { Answer } from "./features/agent/flows"
 import { TELEMETRY_ROUTE } from "./features/chat/contract"
 import { Chat } from "./features/chat/chat"
@@ -12,7 +20,7 @@ import { ChatStore } from "./features/chat/store"
 import { engineTelemetry } from "./flows/engine"
 import { BROWSER_TELEMETRY, ENGINE_SERVICE, EXPORTED_SPANS, RELAY_FIELDS, WEB_SERVICE, WITHHELD } from "./telemetry"
 import { cell, openAgent } from "./test/agent"
-import { openFaultyApp, TestChatApi } from "./test/chatApi"
+import { nodeDevice, openFaultyApp, TestChatApi } from "./test/chatApi"
 import { openDevice } from "./test/device"
 import { QuestionFaults } from "./test/faults"
 import { captured, type Dropped, type Export, ORIGIN, relayed } from "./test/relay"
@@ -147,6 +155,53 @@ describe("the relay keeps everything the browser exports", () => {
       expect.arrayContaining(["question asked", "question stored", "question not sent", "outbox.send", "flow.dispatch"]),
     )
   })
+})
+
+test("the relay retains real session lifecycle diagnostics and counters without identity", async () => {
+  const privateLogin = "auth-relay-private-login-sentinel"
+  const signIn = await signInHarness(runtime)
+  signIn.github.person = { ...signIn.github.person, login: privateLogin }
+  const { cookies } = await signIn.signInAs()
+  const fetch: typeof globalThis.fetch = (input, init) => {
+    const request = new Request(input, init)
+    const url = new URL(request.url)
+    return signIn.fetch(`${url.pathname}${url.search}`, {
+      method: request.method,
+      headers: { cookie: Object.entries(cookies).map(([name, value]) => `${name}=${value}`).join("; ") },
+    })
+  }
+  const client = AuthClient.layer({ origin: ORIGIN, within: "5 seconds" }).pipe(
+    Layer.provide(FetchHttpClient.layer),
+    Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
+  )
+  const exported = captured(Otlp.layerFetch({ baseUrl: `${ORIGIN}${TELEMETRY_ROUTE}`, serviceName: WEB_SERVICE }))
+  const app = ManagedRuntime.make(Auth.layer.pipe(
+    Layer.provideMerge(AuthStore.layer),
+    Layer.provideMerge(Persistence.memory),
+    Layer.provideMerge(DeviceWipe.layer(nodeDevice().wipe)),
+    // Auth and OTLP intentionally have different real HTTP destinations; isolate the SDK client layer's memo.
+    Layer.provideMerge(Layer.fresh(client)),
+    Layer.provideMerge(exported.layer),
+    Layer.provideMerge(Layer.succeed(Metric.MetricRegistry, new Map())),
+  ))
+  closing.push(() => app.dispose())
+  const auth = await app.runPromise(Effect.service(AuthStore))
+  auth.sessionState.tanstack.startSyncImmediate()
+  const target = new EventTarget()
+  const fiber = app.runFork(Effect.scoped(Effect.andThen(bindSessionConnectivity(target), Effect.never)))
+  await until(() => expect(auth.sessionState.tanstack.get("session")?.status).toBe("signed_in"))
+  target.dispatchEvent(new Event("online"))
+  await until(() => expect(app.runSync(Metric.value(Metric.withAttributes(sessionRefreshes, { via: "online" }))).count).toBe(1))
+  await app.runPromise(Fiber.interrupt(fiber))
+  await closing.pop()!()
+  const fromTab = await relay(exported.exports)
+  const diagnostics = fromTab.kept.filter((line) => ["auth.session_subscription", "auth.session_refresh", "smithers_auth_session_refreshes"].includes(line.name))
+  expect(diagnostics.filter((line) => line.name === "auth.session_subscription").map((line) => line.fields.stage)).toEqual(["listening", "stopped"])
+  expect(diagnostics.filter((line) => line.name === "auth.session_refresh").map((line) => line.fields.via)).toEqual(["startup", "online"])
+  expect(diagnostics.filter((line) => line.name === "smithers_auth_session_refreshes").map((line) => ({ via: line.fields.via, value: line.fields["otlp.value"] }))).toEqual(expect.arrayContaining([{ via: "startup", value: 1 }, { via: "online", value: 1 }]))
+  expect(drift(fromTab.dropped)).toEqual({ records: [], fields: [] })
+  expect(JSON.stringify(fromTab.kept)).not.toContain(privateLogin)
+  for (const line of diagnostics) for (const forbidden of ["login", "personId", "token", "cookie"]) expect(line.fields).not.toHaveProperty(forbidden)
 })
 
 describe("the contract", () => {

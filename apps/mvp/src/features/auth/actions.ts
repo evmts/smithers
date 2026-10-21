@@ -52,12 +52,21 @@ export const load = Effect.gen(function* () {
     )
   }
   const state = answer.success
+  // Expiry keeps the last owner. A different account must finish the coordinated wipe before its state is shown.
+  const { confirmed } = yield* AuthStore
+  yield* Effect.ignore(confirmed.restored)
+  const owner = yield* confirmed.get(SESSION)
+  if (state.signedIn && Option.isSome(owner) && (owner.value.personId !== undefined && state.personId !== undefined ? owner.value.personId !== state.personId : owner.value.login.toLowerCase() !== state.login.toLowerCase())) {
+    yield* change({ status: "loading", login: null, role: null })
+    yield* wipeDevice
+    return
+  }
   yield* change(
     state.signedIn
       ? { status: "signed_in", login: state.login, role: state.role, available: true }
       : { status: "signed_out", login: null, role: null, available: state.available },
   )
-  yield* confirm(state.signedIn ? { login: state.login, role: state.role } : null)
+  if (state.signedIn) yield* confirm({ login: state.login, role: state.role, ...(state.personId === undefined ? {} : { personId: state.personId }) })
   yield* Effect.logInfo("session loaded").pipe(Effect.annotateLogs({ signedIn: state.signedIn }))
 }).pipe(Effect.annotateLogs({ feature: "auth" }))
 

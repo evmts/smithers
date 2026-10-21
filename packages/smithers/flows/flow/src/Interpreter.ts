@@ -1882,7 +1882,7 @@ export const layer = <
   Error extends Schema.Top
 >(
   flow: Flow<Tag, Payload, Success, Error, any>,
-  options: Graph.BuildOptions = {}
+  options: ExecutionOptions = {}
 ) => makeLayer(flow, options).pipe(Layer.provide(systemActions))
 
 // These layers only register handlers at construction. Crypto is supplied by
@@ -1908,6 +1908,18 @@ const systemActions = Layer.fromBuild((currentMemoMap, scope) =>
   })
 )
 
+/** Host hooks around an interpreter registration. Heartbeat receipts are ephemeral,
+ * reinstalled on every resume, and never sealed or copied to reachable child flows.
+ * The durable driver invokes the hook with this run's FlowInstance after renewing
+ * ownership, independently of model output. A receipt must be idempotent; it can
+ * be interrupted or time out when the run ends. No receipt runs while parked.
+ * @category models
+ * @since 1.0.0
+ */
+export interface ExecutionOptions extends Graph.BuildOptions {
+  readonly onHeartbeat?: ((executionId: string) => Effect.Effect<void>) | undefined
+}
+
 /** Registers the interpreter and reachable child flows under one policy. @private */
 const makeLayer = <
   Tag extends string,
@@ -1916,7 +1928,7 @@ const makeLayer = <
   Error extends Schema.Top
 >(
   flow: Flow<Tag, Payload, Success, Error, any>,
-  options: Graph.BuildOptions,
+  options: ExecutionOptions,
   reachable?: Set<AnyWithProps>,
   ifAbsent = false
 ): Layer.Layer<
@@ -1949,7 +1961,7 @@ const makeLayer = <
       Layer.buildWithScope(
         makeLayer(
           declaration as Flow<string, AnyStructSchema, Schema.Top, Schema.Top, any>,
-          options,
+          { ...options, onHeartbeat: undefined },
           registered,
           true
         ),
@@ -1969,9 +1981,15 @@ const makeLayer = <
         // Registration owns action resolution. A caller may supply a different
         // table when entering this flow as a child; retain dynamic execution
         // services while restoring this flow's registered implementations.
-        return (middleware === undefined ? body : middleware.wrap(payload, body)).pipe(
-          Effect.provideService(Implementations, implementations)
-        )
+        const interpreted = middleware === undefined ? body : middleware.wrap(payload, body)
+        const hosted = options.onHeartbeat === undefined ? interpreted : Effect.gen(function*() {
+          const instance = yield* FlowInstance
+          instance.heartbeat = options.onHeartbeat!(instance.executionId)
+          return yield* interpreted.pipe(Effect.ensuring(Effect.sync(() => {
+            instance.heartbeat = undefined
+          })))
+        })
+        return hosted.pipe(Effect.provideService(Implementations, implementations))
       }) as (payload: Payload["Type"], executionId: string) => Effect.Effect<
         Success["Type"],
         Error["Type"],
@@ -2022,7 +2040,7 @@ export const layerWithImplementations = <
       [NoInfer<Requires>] extends [Provided] ? unknown
         : { readonly missingActionImplementations: Exclude<Requires, Provided> }
     ),
-  options: Graph.BuildOptions = {}
+  options: ExecutionOptions = {}
 ) =>
   Layer.merge(
     implementations,

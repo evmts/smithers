@@ -1,3 +1,4 @@
+import { OWNER_KEY } from "./device/identity"
 import type { StorageAdapter } from "@tanstack/offline-transactions"
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import type { Host } from "./boot"
@@ -107,6 +108,7 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
     const engines = await root.getDirectoryHandle(ENGINES_DIRECTORY).catch(() => undefined)
     if (engines !== undefined) await removeEntry(engines, targets.engine)
     await deleteDatabase(host.indexedDB, targets.outbox)
+    host.marks.removeItem(OWNER_KEY)
     host.marks.removeItem(WIPE)
   }
 

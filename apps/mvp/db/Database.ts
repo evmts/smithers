@@ -1,6 +1,7 @@
 import timelineSummaryRole from "./migrations/0030_timeline_summary_role.ts"
 import pulls from "./migrations/0031_pulls.ts"
 import pullWrites from "./migrations/0033_pull_writes.ts"
+import todoReportReceipts from "./migrations/0035_todo_report_receipts.ts"
 import issueCommitment from "./migrations/0032_issue_commitment.ts"
 import { PgClient } from "@effect/sql-pg"
 import { Config, Effect, Layer, Redacted } from "effect"
@@ -103,6 +104,7 @@ export const migrations = {
   "0030_timeline_summary_role": timelineSummaryRole,
   "0031_pulls": pulls,
   "0033_pull_writes": pullWrites,
+  "0035_todo_report_receipts": todoReportReceipts,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

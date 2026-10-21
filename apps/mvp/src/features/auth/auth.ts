@@ -1,7 +1,8 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Deferred, Effect, Layer, Metric, Queue, Stream } from "effect"
 import { load, pressSignIn, restore, signOut } from "./actions"
 import type { AuthClient } from "./api"
 import type { DeviceWipe } from "./device"
+import { sessionRefreshes } from "./metrics"
 import { AuthStore } from "./store"
 
 // Sign-in as a frontend sees it: a live query to read and plain functions to act, with no Effect in sight. React
@@ -31,8 +32,8 @@ export class Auth extends Context.Service<Auth, { readonly queries: AuthQueries;
   "@smthrs/mvp/auth/Auth",
 ) {
   /**
-   * Binds the store's queries and actions for frontends, reads the device's confirmed session, and asks ChatApi who is
-   * signed in as the app opens. Each action runs its Effect with the services this layer was built with
+   * Binds the store's queries and actions for frontends and restores the device's confirmed session. The scoped
+   * session lifecycle subscribes before its initial server read. Each action runs with this layer's services
    * (`Effect.runSyncWith`). A sign-out ChatApi takes wipes the device through `DeviceWipe`.
    */
   static readonly layer = Layer.effect(
@@ -42,7 +43,6 @@ export class Auth extends Context.Service<Auth, { readonly queries: AuthQueries;
       const run = Effect.runSyncWith(yield* Effect.context<AuthStore | AuthClient | DeviceWipe>())
       const reload = Effect.asVoid(Effect.forkIn(load, store.scope, { startImmediately: true }))
       yield* Effect.forkIn(restore, store.scope, { startImmediately: true })
-      yield* reload
       return Auth.of({
         queries: { session: store.sessionState.tanstack, confirmed: store.confirmedState.tanstack },
         actions: {
@@ -57,3 +57,24 @@ export class Auth extends Context.Service<Auth, { readonly queries: AuthQueries;
 
 /** The sign-in layer's value: what frontends get. */
 export type AuthView = Auth["Service"]
+
+/** Refresh identity on reconnect within the application's scope; the host can reauthorize an unverified boot. */
+export const bindSessionConnectivity = (target: EventTarget) => Effect.gen(function* () {
+  const listening = yield* Deferred.make<void>()
+  const source = Stream.callback<"startup" | "online">((queue) => Effect.gen(function* () {
+    const online = () => { Queue.offerUnsafe(queue, "online") }
+    yield* Effect.acquireRelease(
+      Effect.sync(() => target.addEventListener("online", online)),
+      () => Effect.sync(() => target.removeEventListener("online", online)),
+    )
+    // Subscribe before admitting the initial read, so an earlier network transition needs no second event.
+    yield* Queue.offer(queue, "startup")
+    yield* Deferred.succeed(listening, undefined)
+  }))
+  yield* source.pipe(Stream.runForEach((via) => Metric.update(Metric.withAttributes(sessionRefreshes, { via }), 1).pipe(
+    Effect.andThen(Effect.logInfo("auth.session_refresh").pipe(Effect.annotateLogs({ via }))),
+    Effect.andThen(load),
+  )), Effect.ensuring(Effect.logInfo("auth.session_subscription").pipe(Effect.annotateLogs({ stage: "stopped" }))), Effect.forkScoped({ startImmediately: true }))
+  yield* Deferred.await(listening)
+  yield* Effect.logInfo("auth.session_subscription").pipe(Effect.annotateLogs({ stage: "listening" }))
+})

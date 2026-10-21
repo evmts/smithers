@@ -239,23 +239,26 @@ describe("app/agent/ask", { timeout: ENGINE_WITHIN }, () => {
 
 describe("chat/Answer's own reports", { timeout: ENGINE_WITHIN }, () => {
   test("an answer that waits for its turn reports waiting once, then working, then how it settled", async () => {
-    // Only the first question asks; the second just answers once its turn comes. "Second" is matched as a word, since
-    // the agent's catalog spells `timeoutSeconds`.
-    const model = asking(`{ kind: "question", prompt: "Which branch?" }`, `ctx.done("Done.")`, (text) => /\bSecond\b/.test(text))
+    // Select the complete question: matching "Second" also matches the real
+    // catalog's timeoutSeconds field and incorrectly finishes First at once.
+    const secondQuestion = "Second queued question for status ordering"
+    const model = asking(`{ kind: "question", prompt: "Which branch?" }`, `ctx.done("Done.")`, (text) => text.includes(secondQuestion))
     const agent = await openAgent(runtime, model.script)
     const engine = await agent.engine()
     engines.push(engine)
     const first = await agent.ask("First")
-    const second = await agent.ask("Second")
+    const second = await agent.ask(secondQuestion)
     const one = agent.start(engine, first)
-    await eventually(async () => (await statusOf(first)) === "needs_you", 60_000)
+    await expect.poll(() => statusOf(first), { timeout: 60_000 }).toBe("needs_you")
+    expect((await answerRow(runtime, first)).status).toBe("streaming")
+    expect(model.seen).toHaveLength(1)
     const two = agent.start(engine, second)
-    await eventually(async () => (await statusOf(second)) === "waiting", 60_000)
+    await expect.poll(() => statusOf(second), { timeout: 60_000 }).toBe("waiting")
     expect((await runRow(second))!.waiting).toBe("turn")
     // It keeps asking for its turn, and reports waiting once.
     const refusedTurns = () =>
       agent.h.line("chat.answer.turn").filter((line) => line.annotations.answerId === second && line.annotations.status === 409)
-    await eventually(() => refusedTurns().length >= 3, 60_000)
+    await expect.poll(() => refusedTurns().length, { timeout: 60_000 }).toBeGreaterThanOrEqual(3)
     const waits = agent.h.line("agent.status.report").filter((line) =>
       line.annotations.runId === second && line.annotations.report === "waiting"
     )

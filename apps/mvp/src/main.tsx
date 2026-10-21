@@ -27,7 +27,8 @@ import { TodosProvider } from "./features/todos/components/TodosContext"
 import { ViewsProvider } from "./features/views/components/ViewsContext"
 import { WebProvider } from "./features/web/components/WebContext"
 import { router } from "./router"
-import { pageWipe, unwiped } from "./wipe"
+import { activationGate, boundFetch, DeviceIdentityRefused, IDENTITY_MESSAGE, OWNER_KEY, readOwner, readSession, type DeviceOwner } from "./device/identity"
+import { memoryStorage, pageWipe, unwiped } from "./wipe"
 import "./styles/fonts.css"
 
 // The page: `start` runs the app's one program, and React renders the chat, sign-in, theme, repository and slash-command
@@ -60,15 +61,70 @@ const wipe = pageWipe(
 // The device store: the app's shared SQLite database in the engine worker's OPFS pool (@smthrs/platform-browser's
 // `SharedSqlite`), one per origin, reached by every tab through the leading tab's worker. The outbox: IndexedDB,
 // sending when the browser says it can, led by one tab through @smthrs/platform-browser's Web Lock service.
+let deviceOwner: DeviceOwner | undefined
+try { deviceOwner = readOwner(localStorage.getItem(OWNER_KEY)) } catch {}
+let identityWorker: Worker | undefined
+const activation = activationGate(30_000, (reason) => {
+  // A leader from an earlier build cannot report ownership. End this tab's engine as well as selecting memory.
+  identityWorker?.terminate()
+  identityWorker?.dispatchEvent(new ErrorEvent("error", { error: new DeviceIdentityRefused({ reason: `activation_${reason}` }) }))
+})
+const identityKnown = activation.ready
+const memoryOutbox = memoryStorage()
+let retainedOutbox: IndexedDBAdapter | undefined
+const outboxStorage = async () => {
+  await identityKnown
+  return activation.state() === "retained" ? (retainedOutbox ??= new IndexedDBAdapter(OUTBOX_DATABASE, "transactions")) : memoryOutbox
+}
+let identityChecking = false
+const acceptIdentity = async (snapshot: { owner?: DeviceOwner; outcome: string }) => {
+  if (identityChecking || activation.state() !== "pending") return
+  identityChecking = true
+  deviceOwner = snapshot.owner
+  if (snapshot.outcome === "changed") { await wipe.wipe(); return }
+  let signedOut = snapshot.outcome === "signed_out"
+  try {
+    const response = await window.fetch(`${window.location.origin}/api/auth/session`, { cache: "no-store", signal: AbortSignal.timeout(10_000) })
+    if (response.ok) {
+      const session = readSession(await response.json())
+      if (session === undefined) signedOut = true
+      else if (session.signedIn && session.personId !== deviceOwner?.personId) { await wipe.wipe(); return }
+      signedOut ||= session !== undefined && !session.signedIn && deviceOwner !== undefined
+    }
+  } catch {}
+  if (activation.state() !== "pending") return
+  if (signedOut) activation.refuse()
+  else activation.allow()
+  if (deviceOwner !== undefined) {
+    try { localStorage.setItem(OWNER_KEY, JSON.stringify(deviceOwner)) } catch {}
+  }
+}
+const identityChannel = new BroadcastChannel(IDENTITY_MESSAGE)
+identityChannel.onmessage = (event) => {
+  if (event.data?._tag === IDENTITY_MESSAGE) void acceptIdentity(event.data)
+}
+const identityFailed = () => {
+  if (!identityChecking) activation.refuse()
+}
 const host: Host = {
   persistence: {
-    open: () => SharedSqlite.open({ name: ENGINE_NAME }),
+    open: async () => {
+      await identityKnown
+      if (activation.state() !== "retained") throw new DeviceIdentityRefused({ reason: "signed_out" })
+      return SharedSqlite.open({ name: ENGINE_NAME })
+    },
     make: (database, coordinator) => createBrowserWASQLitePersistence({ database, ...(coordinator ? { coordinator } : {}) }),
     coordinator: () => new BrowserCollectionCoordinator({ dbName: "smithers" }),
   },
   outbox: {
     start: startOfflineExecutor,
-    storage: new IndexedDBAdapter(OUTBOX_DATABASE, "transactions"),
+    storage: {
+      get: async (key) => (await outboxStorage()).get(key),
+      set: async (key, value) => (await outboxStorage()).set(key, value),
+      delete: async (key) => (await outboxStorage()).delete(key),
+      keys: async () => (await outboxStorage()).keys(),
+      clear: async () => (await outboxStorage()).clear(),
+    },
     online: new WebOnlineDetector(),
   },
   lock: WebLock.make(navigator.locks),
@@ -116,14 +172,26 @@ const host: Host = {
   // the dev server, `?agent=<script>` names a scripted model for the end-to-end tests (src/test/scriptedAgent.ts); the
   // worker reads it from its name, and a production build drops the branch.
   engineName: ENGINE_NAME,
-  engineWorker: () =>
+  engineWorker: () => {
+    // Refusal may precede worker creation (a slow wipe/preflight). Never attach a real client afterward.
+    if (activation.state() === "memory") return unwiped(host).engineWorker()
     // Vite reads the worker's `type` statically, so it comes after the spread.
-    new Worker(new URL("./flows/engine.worker.ts", import.meta.url), {
+    const worker = new Worker(new URL("./flows/engine.worker.ts", import.meta.url), {
       ...(import.meta.env.DEV && new URLSearchParams(window.location.search).has("agent")
         ? { name: `agent:${new URLSearchParams(window.location.search).get("agent")}` }
         : {}),
       type: "module",
-    }),
+    })
+    identityWorker = worker
+    worker.addEventListener("error", identityFailed)
+    worker.addEventListener("message", (event) => {
+      if (event.data?._tag === "@smthrs/platform-browser/EngineStopped") identityFailed()
+      if (event.data?._tag === IDENTITY_MESSAGE) void acceptIdentity(event.data)
+    })
+    identityChannel.postMessage({ request: true })
+    worker.postMessage({ _tag: IDENTITY_MESSAGE, owner: deviceOwner })
+    return worker
+  },
   // The tab's title, which counts the agent's open questions (decision 0015).
   title: { read: () => document.title, write: (title) => void (document.title = title) },
   // Sign-out's wipe: mark it and tell every page, this one included; each stops and loads again (src/wipe.ts).
@@ -201,7 +269,10 @@ const render: BootOptions["render"] = (
 
 const page = {
   origin: window.location.origin,
-  fetch: (input: RequestInfo | URL, init?: RequestInit) => window.fetch(input, init),
+  fetch: boundFetch(window.fetch.bind(window), () => deviceOwner, window.location.origin, identityKnown, async () => {
+    console.info("auth.device_identity", { outcome: "reauthorizing" })
+    await wipe.wipe()
+  }),
   reload: () => window.location.reload(),
   host,
   target: window,
@@ -213,8 +284,27 @@ const page = {
 // (src/test/e2e.ts). A production build drops this branch, and the test module with it. Either way, a wipe a sign-out
 // marked finishes first, and a page whose wipe couldn't delete starts on stores that aren't the device's
 // (src/wipe.ts `unwiped`). Leaving on a wipe drops the view, then stops the program.
-void wipe.open().then((wiped) => {
-  const opened = wiped ? page : { ...page, host: unwiped(host) }
+void wipe.open().then(async (wiped) => {
+  try { deviceOwner = readOwner(localStorage.getItem(OWNER_KEY)) } catch {}
+  // Verify a known owner before opening any collection, even when this tab follows an already-running engine.
+  // The worker performs the same check on the SQLite upgrade source when no mirror exists yet.
+  let retainedSession = false
+  if (deviceOwner !== undefined) {
+    try {
+      const response = await window.fetch(`${page.origin}/api/auth/session`, { cache: "no-store", signal: AbortSignal.timeout(10_000) })
+      if (response.ok) {
+        const session = readSession(await response.json())
+        if (session === undefined) retainedSession = true
+        else if (session.signedIn && session.personId !== deviceOwner.personId) {
+          await wipe.wipe()
+          return
+        }
+        retainedSession ||= session !== undefined && !session.signedIn
+      }
+    } catch {}
+  }
+  if (!wiped || retainedSession) activation.refuse()
+  const opened = wiped && !retainedSession ? page : { ...page, host: unwiped(host) }
   const leaving = (stop: () => Promise<void>) =>
     wipe.started(() => {
       root.unmount()

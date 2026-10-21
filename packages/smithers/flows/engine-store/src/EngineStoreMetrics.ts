@@ -343,3 +343,13 @@ export const claim = byOutcome(
   {},
   ["Activated", "Terminal", "HeartbeatFresh", "StealRefusedOwnerAlive", "ClaimLost", "ActivationLost"] as const
 )
+
+/** Confirmed ownership heartbeat receipts, by outcome (completed, skipped, failed).
+ * External receipts are bounded and never block the ownership writer.
+ * @category metrics
+ * @since 1.0.0
+ */
+export const heartbeatReceipts = Metric.counter("flows_engine_heartbeat_receipts", {
+  description: "External run heartbeat receipts by outcome",
+  incremental: true
+})

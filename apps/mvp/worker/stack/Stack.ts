@@ -290,9 +290,9 @@ export type RunEvent =
     readonly mergeSha?: string | undefined
   }
 
-/** How a report went: `applied`, with any attempts an ending started, or `stale` (another attempt, or a dropped TODO). */
+/** A terminal report replays its persisted starts; unrelated attempts and conflicting reports remain stale. */
 export type Reported =
-  | { readonly outcome: "applied"; readonly starts: ReadonlyArray<AttemptStart> }
+  | { readonly outcome: "applied" | "repeated"; readonly starts: ReadonlyArray<AttemptStart> }
   | { readonly outcome: "stale"; readonly starts: ReadonlyArray<AttemptStart> }
 
 /** Reports a `todo` run made, by `kind` and `outcome`. */
@@ -305,7 +305,8 @@ export const reports = Metric.counter("smithers_todo_reports", {
  * Applies `event`, reported by `attempt`'s run, in one transaction that locks the repository's `stacks` row like
  * `apply`. A report from an attempt that no longer holds its TODO's lane (a dropped TODO, an earlier attempt) is `stale`
  * and changes nothing, so a dropped TODO's run stops at its next report. An ending starts the next Queued TODO when the
- * host runs TODOs (`runs`). Logs `stack.report` with ids only.
+ * host runs TODOs (`runs`). Its exact event and starts are stored on the attempt in the same transaction: a retry
+ * after commit, including after a process restart, answers that receipt before checking lane ownership. Logs ids only.
  */
 export const report = (attempt: RunAttempt, event: RunEvent, options: { readonly runs: boolean }) =>
   Effect.gen(function* () {
@@ -314,11 +315,20 @@ export const report = (attempt: RunAttempt, event: RunEvent, options: { readonly
       const [locked] = yield* sql<{ readonly nextNumber: number; readonly lanes: number; readonly maxOpen: number }>`
         SELECT next_number AS "nextNumber", lanes, max_open AS "maxOpen" FROM stacks
         WHERE repo_id = ${attempt.repoId} FOR UPDATE`
+      const [recorded] = yield* sql<{ readonly finishedReport: { readonly starts: ReadonlyArray<AttemptStart> } | null; readonly matches: boolean }>`
+        SELECT finished_report AS "finishedReport", finished_report->'event' = ${JSON.stringify(event)}::jsonb AS matches
+        FROM todo_attempts WHERE id = ${attempt.attemptId}::uuid AND todo_id = ${attempt.todoId}::uuid
+          AND repo_id = ${attempt.repoId} AND ordinal = ${attempt.ordinal}`
+      if (event.kind === "finished" && recorded?.finishedReport !== null && recorded?.finishedReport !== undefined) {
+        return recorded.matches
+          ? { outcome: "repeated", starts: Schema.decodeUnknownSync(Schema.Array(AttemptStart))(recorded.finishedReport.starts) } satisfies Reported
+          : { outcome: "stale", starts: [] } satisfies Reported
+      }
       const rows = yield* sql<Row>`
         SELECT id, number, state, position, attempt, revision FROM todos
         WHERE repo_id = ${attempt.repoId} AND (position IS NOT NULL OR id = ${attempt.todoId}::uuid)`
       const todo = rows.find((row) => row.id === attempt.todoId)
-      const holds = locked !== undefined && todo !== undefined && todo.attempt === attempt.ordinal &&
+      const holds = recorded !== undefined && locked !== undefined && todo !== undefined && todo.attempt === attempt.ordinal &&
         (todo.state === "working" || todo.state === "in_review")
       if (!holds) return { outcome: "stale", starts: [] } satisfies Reported
       if (event.kind === "step") {
@@ -387,7 +397,8 @@ export const report = (attempt: RunAttempt, event: RunEvent, options: { readonly
           merge_sha = ${event.mergeSha ?? null}
         WHERE id = ${attempt.todoId}::uuid`
       yield* sql`
-        UPDATE todo_attempts SET status = ${event.state === "failed" ? "failed" : "settled"}, settled_at = now()
+        UPDATE todo_attempts SET status = ${event.state === "failed" ? "failed" : "settled"}, settled_at = now(),
+          finished_report = ${JSON.stringify({ event, starts })}::jsonb
         WHERE id = ${attempt.attemptId}::uuid`
       for (const start of starts) {
         yield* sql`

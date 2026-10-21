@@ -93,7 +93,8 @@ Only the person who asked the question may call them for its answer, and only wh
 |---|---|
 | `GET /api/answers/<id>` | `200 { question, history }`: the finished exchanges before it, oldest first (at most 19, 24,000 characters). `409 { code: "not_your_turn", waitedMs }` while an earlier live answer streams, with how long its turn has waited ([turn by turn](#turn-by-turn)); `409 { code: "settled" }` |
 | `POST /api/answers/<id>` | `200 { txid }`; `200 { txid: null }` for a settle that already landed; `409 { code: "settled" }` for any other write to a settled answer; `400` for a body that isn't an answer write; `413` over 256 KiB |
-| both | `401` signed out; `403 { code: "forbidden" }` for a Guest, a person with no role, or anyone but the asker (logged `not_asker`), whatever the answer's state; `404` for an id that isn't an answer; `405` for another method; `503 { code: "unavailable" }` when Postgres can't be reached |
+| `PATCH /api/answers/<id>` | `200 {}` renews the host lease without content; `409 { code: "settled" }` after terminal settlement |
+| all | `401` signed out; `403 { code: "forbidden" }` for a Guest, a person with no role, or anyone but the asker (logged `not_asker`), whatever the answer's state; `404` for an id that isn't an answer; `405` for another method; `503 { code: "unavailable" }` when Postgres can't be reached |
 
 ## Turn by turn
 
@@ -101,17 +102,11 @@ Answers come in order, one question at a time (decision 0002). `chat/LoadTurn` a
 
 Before 2026-10-20 the wait counted from the run's first start (a sealed `chat/TurnDeadline` step), so a long enough burst settled its tail `unfinished` while the queue was still moving. At the worst observed pace (8 frames of 3 s, and up to 4 s from one answer settling to the next turn request), that was from about the 23rd queued question; at a typical one or two frames, past the 75th.
 
-An earlier answer holds up a turn only while it is live: written in the last `ANSWER_TURN_LIVE_SECONDS` (30 by default). That is the `agent` role's liveness bound, read with Effect `Config` beside the role (`agentLiveSeconds`, `src/features/model/contract.ts`): how long a live run of the role may go without writing. A running agent writes about once a second while its text and steps change, and a `409 not_your_turn` marks the waiting answer itself as written once a third of the bound has passed since its last write, so a queue of waiting answers stays in order. Every write reaches every device through Electric; asked at most every 4 s, a waiting answer stays live with one write per 10 s at the default bound, where it once wrote on every request.
+An earlier answer holds up a turn while its host lease is fresh: `ANSWER_TURN_LIVE_SECONDS` defaults to 30 and accepts integers of at least 5 seconds. This measures host connectivity, independently of model reasoning, text projection or tool output. `@smthrs/flow`'s public `Interpreter.ExecutionOptions.onHeartbeat` installs the receipt around every interpretation, including resumed runs whose sealed `chat/LoadTurn` is replayed. The durable engine renews its ownership every second, then dispatches one bounded receipt without blocking that writer. A pending receipt prevents overlapping requests. Completion, cancellation, suspension and ownership loss interrupt the receipt; the next drive reinstalls it.
 
-The default comes from ChatApi's dev logs of 2026-10-20 (`.alchemy/log/dev_williamcory/ChatApi`, 09:57 to 10:30 UTC, `qwen-3.8-27b` on Cerebras):
+`PATCH /api/answers/<id>` renews the answer's timestamp at most once a third of the lease window. It applies the same asker, role, branch-access and run-binding checks as writes, and contains no question, reasoning, answer text or tool payload. A queued turn request also renews its own lease. Reasoning-only calls and quiet tools therefore keep later answers waiting as long as the host stays connected.
 
-| Measured | n | p50 | p95 | max |
-|---|---|---|---|---|
-| `model.proxy.serve` for role `agent`, first event | 47 | 655 ms | 2,060 ms | 2,841 ms |
-| the same calls, whole | 47 | 690 ms | 2,090 ms | 3,031 ms |
-| the `202` or `200` that tells the device its question was taken, to its run's first `GET /api/answers/<id>` | 46 | 520 ms | 4.5 s | 16.4 s |
-
-The model isn't the slow part: nothing writes an answer until its device's engine starts the run, in the background. A start plus one model call is about 19.4 s at worst, and 30 s is that with half again as margin. The trade-off runs both ways. A live run silent longer than the bound only lets a later answer start beside it, without the earlier exchange in its history. An answer whose device is gone holds up later answers no longer than the bound, and `chat/Expire` settles it later ([settling](#settling)). The routes themselves only read liveness: they never run, retry or settle an answer.
+Turn admission, heartbeat and content writes serialize on the conversation's row. Before granting a turn, the route changes expired earlier answers to `failed`, `abandoned`, updates their runs and folds notifications in the same transaction. An explicit `needs_you` wait is exempt: decision0015 lets a later question start beside it after thirty seconds while its original card remains answerable. A transition back to `working` supplies first-pulse grace through its fresh run timestamp, under the same lock. Their old hosts cannot resume writing after a successor starts: terminal answers refuse heartbeats and writes with `409 settled`. Another conversation has its own lock. A disconnected host releases the queue after the configured lease window; `chat/Expire` remains the durable fallback for an abandoned answer with no later question.
 
 ## Durability
 
@@ -176,3 +171,9 @@ The Durable Object's own `cloudflare.execution.start` and `cloudflare.execution.
 Run them with the compose Postgres up (`pnpm db:up`): `pnpm exec vitest run src/features/agent src/flows/engine.test.ts worker/Answers.test.ts worker/flows/Expire.test.ts`.
 
 What the agent does when asked, with the real model rather than a scripted one, is the [agent evals](agent-evals.md)' job: `pnpm eval`.
+
+### Host lease records
+
+`chat.answer.heartbeat` records `answerId`, HTTP `status`, `durationMs` and `renewed` (whether this request changed the lease timestamp); `smithers_answer_requests` counts route `heartbeat`. Turn admission records `abandonedPredecessors`. A transport failure on the device records `chat.answer.heartbeat.failed` with answer id and status only. The SDK counts `flows_engine_heartbeat_receipts` by `completed`, `skipped` (one already pending) and `failed`, and warns `run heartbeat receipt failed` with run id when a callback fails or times out. Records never contain model reasoning, user text, credentials or tool payloads.
+
+The regression `e2e/answer-ordering.spec.ts` drives the real browser engine and answer routes with the dev-only faulty model service: forty seconds of private reasoning leaves visible progress unchanged, and the follow-up must receive the first completed exchange. Unit route tests prove abandoned-host release, authorization, open-question preservation, unblocked heartbeats during a stalled write body, and stale-writer fencing; the real durable host suite holds a child tool with no new output and additionally kills and resumes a model call after the sealed turn read, and verifies heartbeat renewal on the new incarnation. Injected browser transport failures (offline, `503`, then terminal `409`) leave ownership responsive, and a later successful receipt renews the still-running answer before it settles. The crash fixture permanently gates the old engine’s SQL transport and terminates every connection tagged with that incarnation’s unique application name, including an idle reserved transaction; the old engine cannot reconnect or keep a writer lock while its replacement resumes.

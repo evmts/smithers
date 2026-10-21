@@ -31,6 +31,30 @@ afterEach(async () => {
   for (const engine of engines.splice(0)) await engine.kill()
 })
 
+/** Prove a held run renewed after the exact backdated stamp, independent of polling delay. */
+const backdateAndAwaitHeartbeat = async (
+  agent: Awaited<ReturnType<typeof openAgent>>,
+  answerId: string,
+  within: number,
+) => {
+  const [before] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ stamp: number }>`
+    UPDATE messages SET updated_at = now() - interval '35 seconds' WHERE id = ${answerId}
+    RETURNING extract(epoch FROM updated_at)::float8 AS stamp`))
+  let sampled: { renewed: boolean; ageMs: number; status: string; failure: string | null } | undefined
+  await eventually(async () => {
+    const [stamp] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<NonNullable<typeof sampled>>`
+      SELECT extract(epoch FROM updated_at)::float8 > ${before!.stamp} AS renewed,
+        extract(epoch FROM now() - updated_at)::float8 * 1000 AS "ageMs", status, failure
+      FROM messages WHERE id = ${answerId}`))
+    sampled = stamp
+    return stamp!.renewed
+  }, within).catch((cause) => {
+    const heartbeats = agent.h.line("chat.answer.heartbeat").filter((line) => line.annotations.answerId === answerId)
+      .map((line) => ({ status: line.annotations.status, renewed: line.annotations.renewed, errorCode: line.annotations.errorCode }))
+    throw new Error(`Answer lease did not renew: ${JSON.stringify({ answerId, sampled, heartbeats })}`, { cause })
+  })
+}
+
 /** A model that answers every call with the next of `cells`, the last one repeating. */
 const answering = (...cells: ReadonlyArray<string>) => {
   const calls: Array<number> = []
@@ -121,6 +145,8 @@ describe("chat/Answer", () => {
 
   test("resumes after the tab is killed mid-answer, without calling the model or the theme again for sealed steps", async () => {
     const reached = Effect.runSync(Deferred.make<void>())
+    const resumed = Effect.runSync(Deferred.make<void>())
+    const releaseResumed = Effect.runSync(Deferred.make<void>())
     let calls = 0
     const agent = await openAgent(runtime, () => {
       calls++
@@ -135,13 +161,14 @@ describe("chat/Answer", () => {
       if (calls === 2) {
         return Stream.fromEffect(Deferred.succeed(reached, undefined)).pipe(Stream.flatMap(() => Stream.never))
       }
-      return Stream.make(
-        { type: "text-delta" as const, id: "t", text: cell(`ctx.done("Dark mode is on.")`) },
-        usage,
-        stop,
+      return Stream.fromEffect(Deferred.succeed(resumed, undefined).pipe(Effect.andThen(Deferred.await(releaseResumed)))).pipe(
+        Stream.flatMap(() => Stream.make(
+          { type: "text-delta" as const, id: "t", text: cell(`ctx.done("Dark mode is on.")`) }, usage, stop,
+        )),
       )
     })
     const first = await agent.engine()
+    engines.push(first)
     const answerId = await agent.ask("Dark mode")
     const running = agent.start(first, answerId)
     await Effect.runPromise(Deferred.await(reached))
@@ -151,7 +178,13 @@ describe("chat/Answer", () => {
     await first.crash()
     const second = await agent.engine(first.schema)
     engines.push(second)
-    const exit = await agent.resume(second, answerId)
+    const resumedRun = agent.resume(second, answerId)
+    await Effect.runPromise(Deferred.await(resumed))
+    await backdateAndAwaitHeartbeat(agent, answerId, 10_000)
+    // The sealed LoadTurn was replayed, yet the new incarnation renewed liveness.
+    expect(agent.h.line("chat.answer.turn")).toHaveLength(1)
+    Effect.runSync(Deferred.succeed(releaseResumed, undefined))
+    const exit = await resumedRun
     await running.stop()
     await first.kill()
 
@@ -164,7 +197,115 @@ describe("chat/Answer", () => {
       text: "Dark mode is on.",
       parts: [{ id: "0.0", kind: "step", flow: "app/theme/set", status: "done" }],
     })
-  })
+  }, 90_000)
+
+  test("a silent reasoning model keeps its turn through confirmed host pulses, then releases history", async () => {
+    const release = Effect.runSync(Deferred.make<void>())
+    const reached = Effect.runSync(Deferred.make<void>())
+    let calls = 0
+    const prompts: Array<string> = []
+    const agent = await openAgent(runtime, (request) => {
+      prompts.push([...request.system.map((part) => part.text), ...contents(request)].join("\n"))
+      calls++
+      const reply = calls === 1 ? "First answer." : "Second answer."
+      if (calls !== 1) return Stream.make({ type: "text-delta" as const, id: "t", text: cell(`ctx.done(${JSON.stringify(reply)})`) }, usage, stop)
+      return Stream.concat(
+        Stream.make({ type: "thinking-delta" as const, id: "r", text: "Private reasoning" }),
+        Stream.fromEffect(Deferred.succeed(reached, undefined).pipe(Effect.andThen(Deferred.await(release)))).pipe(
+          Stream.flatMap(() => Stream.make({ type: "text-delta" as const, id: "t", text: cell(`ctx.done("First answer.")`) }, usage, stop)),
+        ),
+      )
+    })
+    const engine = await agent.engine()
+    engines.push(engine)
+    const first = await agent.ask("First question")
+    const running = agent.start(engine, first)
+    await Effect.runPromise(Deferred.await(reached))
+    const second = await agent.ask("Second question")
+    // Advance only the old last-write stamp: no model text or parts arrive.
+    // The real driver's next confirmed pulse must renew it before admission.
+    await backdateAndAwaitHeartbeat(agent, first, 10_000)
+    expect(await row(runtime, first)).toMatchObject({ status: "streaming", text: "", parts: [] })
+    expect((await agent.h.fetch(`/api/answers/${second}`)).status).toBe(409)
+    expect(calls).toBe(1)
+    Effect.runSync(Deferred.succeed(release, undefined))
+    expect(await running.done).toEqual(Exit.succeed({ status: "done" }))
+    expect(await agent.answer(engine, second)).toEqual(Exit.succeed({ status: "done" }))
+    expect(prompts[1]).toContain("Smithers: First answer.")
+    const heartbeatCount = agent.h.line("chat.answer.heartbeat").length
+    await new Promise((resolve) => setTimeout(resolve, 1_200))
+    expect(agent.h.line("chat.answer.heartbeat")).toHaveLength(heartbeatCount)
+  }, 90_000)
+
+  test("heartbeat outages and terminal refusals leave ownership available for the next confirmed receipt", async () => {
+    const reached = Effect.runSync(Deferred.make<void>())
+    const release = Effect.runSync(Deferred.make<void>())
+    const agent = await openAgent(runtime, () => Stream.fromEffect(
+      Deferred.succeed(reached, undefined).pipe(Effect.andThen(Deferred.await(release))),
+    ).pipe(Stream.flatMap(() => Stream.make(
+      { type: "text-delta" as const, id: "t", text: cell(`ctx.done("Recovered.")`) }, usage, stop,
+    ))))
+    let pulses = 0
+    // Inject only failures into the browser's transport service. The driver,
+    // ownership writes, credentials and successful routes remain real.
+    const engine = await agent.engine(undefined, { fetch: async (input, init) => {
+      const request = new Request(input, init)
+      if (request.method === "PATCH" && new URL(request.url).pathname.startsWith("/api/answers/")) {
+        pulses++
+        if (pulses === 1) throw new TypeError("offline")
+        if (pulses === 2) return new Response("{}", { status: 503 })
+        if (pulses === 3) return new Response('{"code":"settled"}', { status: 409 })
+      }
+      return agent.fetch(request)
+    } })
+    engines.push(engine)
+    const answerId = await agent.ask("Recover the connection")
+    const running = agent.start(engine, answerId)
+    try {
+      await Effect.runPromise(Deferred.await(reached))
+      await eventually(async () => pulses >= 4, 10_000)
+      // A real later receipt still renews a silent answer after every refusal.
+      await backdateAndAwaitHeartbeat(agent, answerId, 10_000)
+      expect(await row(runtime, answerId)).toMatchObject({ status: "streaming", text: "" })
+    } finally {
+      Effect.runSync(Deferred.succeed(release, undefined))
+    }
+    expect(await running.done).toEqual(Exit.succeed({ status: "done" }))
+    expect(await row(runtime, answerId)).toMatchObject({ status: "done", text: "Recovered." })
+  }, 60_000)
+
+  test("a held child tool renews its answer lease without new model or visible output", async () => {
+    const reached = Effect.runSync(Deferred.make<void>())
+    const release = Effect.runSync(Deferred.make<void>())
+    const model = answering(
+      `await ctx.call("app/web/open", { url: "https://held-tool.example/article" })`,
+      `ctx.done("Opened the page.")`,
+    )
+    // A faulty outside-page service stalls before headers; all app handlers,
+    // child execution, durable stores and authenticated HTTP stay real.
+    const agent = await openAgent(runtime, model.script, { fetch: async () => {
+      Effect.runSync(Deferred.succeed(reached, undefined))
+      await Effect.runPromise(Deferred.await(release))
+      return new Response("<!doctype html><title>Page</title>", { headers: { "content-type": "text/html" } })
+    } })
+    const engine = await agent.engine()
+    engines.push(engine)
+    const first = await agent.ask("Open the page")
+    const running = agent.start(engine, first)
+    try {
+      await Effect.runPromise(Deferred.await(reached))
+      await eventually(async () => (await row(runtime, first)).parts.some((part) => part.flow === "app/web/open" && part.status === "running"), 5_000)
+      await backdateAndAwaitHeartbeat(agent, first, 5_000)
+      expect(model.calls).toHaveLength(1)
+      expect((await row(runtime, first)).status).toBe("streaming")
+      const second = await agent.ask("Next question")
+      expect((await agent.h.fetch(`/api/answers/${second}`)).status).toBe(409)
+    } finally {
+      Effect.runSync(Deferred.succeed(release, undefined))
+    }
+    expect(await running.done).toEqual(Exit.succeed({ status: "done" }))
+    expect((await row(runtime, first)).parts).toContainEqual(expect.objectContaining({ flow: "app/web/open", status: "done" }))
+  }, 90_000)
 
   test("answers a settled answer's run again from its record, without calling the model", async () => {
     const model = answering(`ctx.done("Once.")`)
@@ -419,6 +560,7 @@ describe("chat/Answer", () => {
     const model = answering(`ctx.done("Never.")`)
     const agent = await openAgent(runtime, model.script)
     const first = await agent.engine()
+    engines.push(first)
     await agent.ask("Asked on a device that went away")
     const answerId = await agent.ask("Asked here")
     const running = agent.start(first, answerId)

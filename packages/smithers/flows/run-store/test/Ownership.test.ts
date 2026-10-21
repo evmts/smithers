@@ -952,3 +952,33 @@ describe("heartbeatLoop lease reconfirm", () => {
       }))
   }
 })
+
+// Receipts are emitted only for confirmed fenced writes, never failed pulses.
+it.effect("onPulse follows confirmed heartbeats and stops at a lost fence", () =>
+  Effect.gen(function*() {
+    let writes = 0
+    let receipts = 0
+    const loop = yield* heartbeatLoop("receipts", ownerA, {
+      onPulse: () =>
+        Effect.sync(() => {
+          receipts++
+        })
+    }).pipe(
+      Effect.provide(RunStoreLive.layerNoop({
+        heartbeat: (_runId, _owner, atMs) =>
+          Effect.sync(() => {
+            writes++
+            return writes < 3 ? { _tag: "Updated" as const, heartbeatAtMs: atMs } : { _tag: "FenceLost" as const }
+          })
+      })),
+      Effect.forkChild({ startImmediately: true })
+    )
+    yield* TestClock.adjust(heartbeatInterval)
+    yield* TestClock.adjust(heartbeatInterval)
+    expect(receipts).toBe(2)
+    yield* TestClock.adjust(heartbeatInterval)
+    expect(loop.pollUnsafe()).toBeDefined()
+    yield* TestClock.adjust(heartbeatInterval)
+    expect(receipts).toBe(2)
+    expect(writes).toBe(3)
+  }))

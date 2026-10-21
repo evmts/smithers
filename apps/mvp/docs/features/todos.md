@@ -130,6 +130,7 @@ todo/Fail       any step that gave up ─▶ writer: failed with its code (imple
 
 - **States** (decision 0016's factory simplified): Queued, Working, In review, Merged, Dropped, Failed. Steps: implement, publish, await.
 - **Every writer call is fenced** by the TODO and the attempt (`Stack.report`): a dropped TODO's run, or an earlier attempt's, is stale and stops.
+- **Terminal reports keep their receipt.** The attempt stores the exact terminal event and successor attempt ids in the same Postgres transaction as the lane change. Replaying that event returns `repeated` with those same starts; another event or attempt stays stale. `todo/Settle` and `todo/Fail` retry admission through the durable engine without expiring. The host propagates a refused or lost admission acknowledgment, including when the successor already accepted its intent, so a restart can admit that same execution again. No retry allocates another successor.
 - **Every GitHub write adopts its own earlier attempt** after a lost answer: the branch by its head, the commit by its parent and message, the pull request by its head and the attempt's marker. Nothing here merges, approves or forces a ref: a person merges ([pull requests](pulls.md#merge)).
 - **The machine** is the attempt's own branch machine, `todo-<attempt id>`, checking out the attempt's branch, its tools running as the person who committed the TODO (`worker/flows/TodoMachine.ts`).
 - **Switched off** (`TODO_RUNS`) until the agent's QuickJS build runs on workerd under Alchemy's bundle and the live end-to-end run passes ([TODOs and the stack](../work/todos-and-stack.md)).
@@ -138,19 +139,20 @@ todo/Fail       any step that gave up ─▶ writer: failed with its code (imple
 |---|---|
 | `worker/flows/Todo.test.ts` | on the Node host's engine with the scripted GitHub, a test machine and a scripted agent: a TODO from an issue to a squash-merged pull request with "Fixes #n" and the next TODO started; closed on GitHub; an empty change; an agent that never answers; no App; dropped before and while waiting; a name taken; a lost commit and a lost pull request adopted; each step's refusals and retries |
 | `worker/flows/TodoHost.test.ts` | the Durable Object's handlers with `withTodos`: `checks/Run` driven to the end |
+| `worker/flows/TodoRecovery.test.ts` | merged, dropped and failed reports recover from admission failure in the same process and after a Durable Object host restart; report committed before launch; target accepted before acknowledgment lost; repeated execution stays singular |
 | `worker/stack/Stack.test.ts` | the writer's reports: step, branch, published, finished; stale reports; the next TODO started |
 | `src/features/todos/stack.test.ts` | the rules' `finish`: merged and dropped leave the stack, failed keeps its place, a stale finish changes nothing |
 
 ## Postgres
 
-Migrations `0022_todos` and `0027_todo_issue`. Synced tables are `REPLICA IDENTITY FULL`.
+Migrations `0022_todos`, `0027_todo_issue` and `0035_todo_report_receipts`. Synced tables are `REPLICA IDENTITY FULL`.
 
 | Table | | |
 |---|---|---|
 | `stacks` | `repo_id`, `next_number`, `version`, `lanes` (1), `max_open` (50), `updated_at` | never synced; the row the writer locks |
 | `todos` | `id`, `repo_id`, `number`, `title`, `state`, `step`, `position`, `revision`, `attempt`, `branch`, SHAs, `pr_number`, `pr_draft`, `failure`, `note`, `created_by`, `created_login`, `settled_by`, times, `issue_number` (`0027_todo_issue`) | `(repo_id, number)` unique; `(repo_id, position)` unique at each statement's end; settled exactly when merged or dropped, and then unplaced |
 | `todo_requests` | `todo_id`, `revision`, `repo_id`, `prompt`, `acceptance`, `by_login`, `created_at` | each revision of a prompt, never changed |
-| `todo_attempts` | `id` (the run's id), `todo_id`, `ordinal`, `revision`, `base_sha`, `status` (`running`, `published`, `settled`, `failed`) | the run's; written only when a host runs TODOs |
+| `todo_attempts` | `id` (the run's id), `todo_id`, `ordinal`, `revision`, `base_sha`, `status` (`running`, `published`, `settled`, `failed`), `finished_report` (terminal event and starts) | the run's; written only when a host runs TODOs; terminal receipt never synced |
 | `stack_ops` | `id` (the op id), `repo_id`, `actor_id`, `via` (from the session), `op`, `payload_hash`, `outcome`, `result` | never synced: the receipt a repeated op answers from |
 
 ## Observability
@@ -161,6 +163,8 @@ No record carries a title, a prompt, a criterion or a login ([observability.md](
 |---|---|---|
 | `stack.request` | log, span | `op`, `via`, `opId`, `outcome` (the change's outcome, `repeated`, or the refusal's code), `number`, `status`, `bytes`, `durationMs`, `errorCode` |
 | `stack.apply` | log, span | `repoId`, `opId`, `op`, `via`, `outcome`, `number`, `version`, `durationMs` |
+| `stack.report`; `smithers_todo_reports{kind,outcome}` | log, span, counter | attempt and TODO ids, kind, `applied` / `repeated` / `stale`, successor count; a repeated report counts no state transition |
+| `todo.start`; `smithers_todo_admissions{flow,outcome}` | log, span, counter | flow, execution id, `started` / `not_started`, error code; records admission acknowledgment, not execution completion |
 | `stack.shape.todos`, `stack.shape.todo_requests` | log, span | Electric's request records |
 | `smithers_stack_requests{op,outcome}`, `smithers_stack_ops{op,outcome}`, `smithers_todo_transitions{from,to}`, `smithers_todo_shape_requests`, `smithers_todo_request_shape_requests` | counters | |
 | `todos.draft`, `todos.queue`, `todos.send`, `todos.pending`; `smithers_todo_drafts`, `smithers_todo_queued`, `smithers_todo_sends`, `smithers_todo_pending_actions` | browser logs, spans, counters | `op`, `door`, `via`, `outcome` (a draft's `issue_not_found` too), `fromIssue`, `status`, `code`, `opId`, `draftId`, `action` |

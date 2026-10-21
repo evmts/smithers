@@ -16,6 +16,7 @@ import * as RepoClone from "./flows/RepoClone.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
 import * as SpendAlert from "./flows/SpendAlert.ts"
 import * as SessionKeys from "./SessionKeys.ts"
+import { DEVICE_PERSON_HEADER, type SessionState } from "../src/features/auth/contract.ts"
 import { cloneExecutionId } from "../src/features/repo/contract.ts"
 import * as Repos from "./Repos.ts"
 import { scripted } from "./test/codeStorage.ts"
@@ -341,6 +342,16 @@ describe("ExecutionHost over the compose Postgres", () => {
     const executionId = Expire.executionId(last)
     const services = await appServices("10 seconds")
     const router = recording()
+    const timing: Array<{ readonly stage: string; readonly serverNowMs: number; readonly renewedAtMs: number; readonly deadlineMs: number }> = []
+    let renewedAtMs = 0
+    const sample = (stage: string) => Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly serverNowMs: number }>`SELECT extract(epoch FROM clock_timestamp())::float8 * 1000 AS "serverNowMs"`).pipe(
+        Effect.provide(services.database),
+        Effect.orDie,
+        Effect.tap(([clock]) => Effect.sync(() => {
+          timing.push({ stage, serverNowMs: clock!.serverNowMs, renewedAtMs, deadlineMs: renewedAtMs + 10_000 })
+        })),
+      )
     await withSchema(({ name, url }) =>
       Effect.gen(function* () {
         const object = memory()
@@ -353,18 +364,25 @@ describe("ExecutionHost over the compose Postgres", () => {
         yield* host.start(yield* ExecutionHost.intent(Expire.Expire, { executionId, payload: { answerId: last } }))
         const parked = yield* host.alarm()
         expect(parked._tag).toBe("Parked")
-        // The answer ahead of it settles while it waits: the queue moved, so its turn began then.
-        yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
-          sql`UPDATE messages SET status = 'done', text = 'Answered.', updated_at = now() WHERE id = ${ahead}`).pipe(
+        yield* Effect.sleep(Math.max(0, (parked._tag === "Parked" ? parked.wakeAtMs ?? 0 : 0) - Date.now()))
+        // Renew immediately before delivering the original due alarm. Renewing
+        // just after Parked leaves only startup time between the two deadlines;
+        // a late alarm can then correctly abandon the renewed queue instead.
+        const [moved] = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql<{ readonly renewedAtMs: number }>`
+            UPDATE messages SET status = 'done', text = 'Answered.', updated_at = now() WHERE id = ${ahead}
+            RETURNING extract(epoch FROM updated_at)::float8 * 1000 AS "renewedAtMs"`).pipe(
           Effect.provide(services.database),
           Effect.orDie,
         )
-        yield* Effect.sleep(Math.max(0, (parked._tag === "Parked" ? parked.wakeAtMs ?? 0 : 0) - Date.now()))
+        renewedAtMs = moved!.renewedAtMs
+        yield* sample("before_alarm")
         yield* host.alarm()
+        yield* sample("after_alarm")
       })
     )
     // This round ended without settling the answer, and its object handed the next round to that round's own object.
-    expect(await row(app, last)).toMatchObject({ status: "streaming" })
+    expect(await row(app, last), JSON.stringify({ answerId: last, timing })).toMatchObject({ status: "streaming" })
     expect(router.routed).toEqual([expect.stringMatching(/^start /)])
     expect(router.routed[0]).not.toBe(`start ${executionId}`)
   }, 60_000)
@@ -407,11 +425,13 @@ describe("ExecutionHost over the compose Postgres", () => {
         expect(yield* status(sql, name, executionId)).toBe("completed")
       })
     )
-    expect(await signIn.session(cookies)).toMatchObject({ role: "admin" })
+    const identity = await signIn.session(cookies) as SessionState
+    expect(identity).toMatchObject({ role: "admin" })
+    if (!identity.signedIn) throw new Error("expected a signed-in person")
     // Signing out starts the revocation, which the same deployed flows run.
     await signIn.fetch("/api/auth/sign-out", {
       method: "POST",
-      headers: { origin: "http://smithers.test", cookie: cookie(cookies) },
+      headers: { origin: "http://smithers.test", cookie: cookie(cookies), [DEVICE_PERSON_HEADER]: identity.personId! },
     })
     expect(signIn.revocations).toEqual([sessionId])
     const [issued] = signIn.github.issued

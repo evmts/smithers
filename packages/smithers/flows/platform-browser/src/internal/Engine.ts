@@ -50,6 +50,7 @@ export interface HostOptions extends Options {
   readonly sqlite: BrowserSqlite.Build
   /** What the leader runs on the app's database before serving it; its flow is registered here. */
   readonly prepare?: Prepare.Prepare | undefined
+  readonly authorize?: ((database: import("../SharedSqlite.ts").Service) => Effect.Effect<void, unknown>) | undefined
 }
 
 /**
@@ -110,13 +111,22 @@ export const layerHost = <Registered, RegistrationError, RegistrationRequirement
   options: HostOptions,
   registerFlows: Layer.Layer<Registered, RegistrationError, RegistrationRequirements>
 ) =>
-  layer(
-    options,
-    // The preparation's flow runs over the leader's connection to the app's database.
-    options.prepare === undefined
-      ? registerFlows
-      : Layer.merge(registerFlows, Prepare.declare(options.prepare).registration)
-  ).pipe(
+  Layer.unwrap(Effect.gen(function*() {
+    if (options.authorize !== undefined) {
+      const connection = yield* SqlConnection.SqlConnection
+      yield* options.authorize({
+        execute: (sql, params = []) =>
+          connection.run("@authorize", sql, params, false).pipe(Effect.map((result) => result.rows), Effect.orDie)
+      }).pipe(Effect.ensuring(connection.abandon("@authorize")))
+    }
+    return layer(
+      options,
+      // The preparation's flow runs over the leader's connection to the app's database.
+      options.prepare === undefined
+        ? registerFlows
+        : Layer.merge(registerFlows, Prepare.declare(options.prepare).registration)
+    )
+  })).pipe(
     Layer.provide(BrowserSqlite.layer({ filename: "engine.db" })),
     Layer.provideMerge(SqlConnection.layer({ filename })),
     Layer.provide(BrowserSqlite.layerSqlite({ build: options.sqlite, directory: `smithers/${options.name}` }))

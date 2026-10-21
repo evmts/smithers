@@ -47,6 +47,7 @@ export default defineConfig({
         "worker/GitHubAuth.ts",
         "worker/SessionKeys.ts",
         "worker/SessionStore.ts",
+        "worker/RunCredentials.ts",
         "worker/SignIn.ts",
         "db/migrations/0005_sign_in.ts",
         // Remote flow starts and the browser agent's answer routes (docs/features/remote-flows.md and agent.md).
@@ -113,6 +114,7 @@ export default defineConfig({
         // TODOs and the stack: its one writer, its route and shapes (docs/features/todos.md).
         "worker/stack/*.ts",
         "db/migrations/0022_todos.ts",
+        "db/migrations/0035_todo_report_receipts.ts",
         // The branch workspace: branches, their conversations and terminals (docs/features/branch-workspace.md).
         // worker/BranchSandboxes.ts and worker/BranchRooms.ts, the Cloudflare Durable Objects, run only under Alchemy's
         // bundle; e2e/branch-workspace.spec.ts and e2e/branch-sharing.spec.ts drive them, and

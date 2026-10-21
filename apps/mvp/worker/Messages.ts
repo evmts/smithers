@@ -88,3 +88,14 @@ export const history = (answerId: string) =>
       WHERE characters <= ${MAX_HISTORY_CHARACTERS}
       ORDER BY position`
   })
+
+/** Serialize admission, heartbeat, terminal writes and durable expiry in one
+ * conversation. The row is locked before taking the statement's liveness
+ * snapshot, so an expiry cannot abandon an answer renewed while it waited.
+ * Missing ids lock nothing and remain the caller's ordinary not-found path. */
+export const withAnswerConversation = <A, E, R>(answerId: string, use: Effect.Effect<A, E, R>) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+    yield* sql`SELECT c.id FROM conversations c JOIN messages a ON a.conversation_id = c.id
+      WHERE a.id = ${answerId} FOR UPDATE OF c`
+    return yield* use
+  })))

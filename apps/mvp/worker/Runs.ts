@@ -8,6 +8,7 @@ import { type Report, Report as ReportSchema, type RunAnswer, RunAnswer as RunAn
 import { type Actor, boundTo, canAsk, refusesPersonOnly, Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
+import { withAnswerConversation } from "./Messages.ts"
 import * as Notifications from "./Notifications.ts"
 import * as RunCredentials from "./RunCredentials.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
@@ -174,12 +175,9 @@ const applyAnswer = (runId: string, launchedBy: string, answer: RunAnswer) =>
  * row and its recipients' rows land together or not at all.
  */
 const withFold = <E, R>(write: Effect.Effect<number | undefined, E, R>, runId: string, login: string | undefined) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    return yield* sql.withTransaction(
-      Effect.tap(write, (txid) => (txid === undefined ? Effect.void : Notifications.foldRun(runId, login))),
-    )
-  })
+  withAnswerConversation(runId,
+    Effect.tap(write, (txid) => (txid === undefined ? Effect.void : Notifications.foldRun(runId, login))),
+  )
 
 /**
  * Reads Electric's connection (`ShapeProxy.config`) and returns the runs routes: `route(rest)` for
@@ -321,7 +319,18 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         }
         const decoded = yield* decodeMint(body.success).pipe(Effect.option)
         if (Option.isNone(decoded)) return refusal(400, "invalid")
-        const { flow } = decoded.value
+        const { flow, renew } = decoded.value
+        if (renew !== undefined) {
+          const service = yield* RunCredentials.RunCredentials
+          const renewed = yield* service.renew(renew, actor, runId)
+          const outcome = Option.isSome(renewed) ? "renewed" : "renewal_refused"
+          yield* Metric.update(Metric.withAttributes(RunCredentials.credentials, { op: "renew", outcome, act: Option.isSome(renewed) ? renewed.value.act : "none" }), 1)
+          if (Option.isNone(renewed)) return refusal(403, "renewal_refused")
+          fields.flow = renewed.value.chain.at(-1)!
+          fields.act = renewed.value.act
+          fields.depth = renewed.value.chain.length
+          return HttpServerResponse.jsonUnsafe({ token: yield* service.sign(renewed.value), act: renewed.value.act, expiresAt: renewed.value.exp }, { headers: noStore })
+        }
         fields.flow = flow
         fields.by = actor.act?.kind ?? "person"
         if (actor.act === undefined && flow === AGENT_RUN_FLOW) {

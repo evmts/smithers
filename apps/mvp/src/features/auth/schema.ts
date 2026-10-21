@@ -7,7 +7,7 @@ import { ROLES } from "./contract"
 /** What `GET /api/auth/session` answers (contract.ts `SessionState`), checked as it arrives. */
 export const SessionState = Schema.Union([
   Schema.Struct({ signedIn: Schema.Literal(false), available: Schema.Boolean }),
-  Schema.Struct({ signedIn: Schema.Literal(true), login: Schema.String, role: Schema.NullOr(Schema.Literals(ROLES)) }),
+  Schema.Struct({ signedIn: Schema.Literal(true), personId: Schema.optional(Schema.String), login: Schema.String, role: Schema.NullOr(Schema.Literals(ROLES)) }),
 ])
 
 /**
@@ -30,11 +30,12 @@ export type Session = typeof Session.Type
 
 /**
  * The last session ChatApi confirmed signed in on this device, kept on the device so a reload offline still knows who
- * asks: at most one row, deleted when ChatApi says signed out and wiped with the device at sign-out.
+ * asks: at most one row, retained through expiry and wiped with the device at explicit sign-out.
  */
 export const Confirmed = Schema.Struct({
   id: Schema.Literal("session"),
   login: Schema.String,
+  personId: Schema.optional(Schema.String),
   role: Schema.NullOr(Schema.Literals(ROLES)),
 })
 export type Confirmed = typeof Confirmed.Type

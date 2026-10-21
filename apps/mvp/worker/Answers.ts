@@ -17,9 +17,9 @@ import * as Messages from "./Messages.ts"
 // they asked), and only while they may still ask (Member or above, decision 0007) and edit the conversation's branch
 // (worker/branch/Access.ts), like the model endpoint: another Member, or an asker whose access to the branch was taken
 // away, can't read the turn, write, settle or learn whether a settle landed. An answer changes only while it is
-// `streaming`; a settle sent again after it landed is answered as landed, so a replayed step is harmless. How long an earlier answer holds up later turns is the `agent` role's
-// liveness bound (`agentLiveSeconds`, src/features/model/contract.ts): a live run writes within it, and an answer
-// waiting its turn is touched by its turn requests, at most once a third of the bound.
+// `streaming`; a settle sent again after it landed is answered as landed. Confirmed durable-engine heartbeats renew
+// liveness independently of visible text. A later turn fences expired predecessors as abandoned before reading history.
+
 
 /** Answer route requests, by `route` (`turn`, `write`) and `status`. */
 export const requests = Metric.counter("smithers_answer_requests", {
@@ -47,8 +47,7 @@ const notAsker = (fields: Fields) => {
  * The answer's row, who asked its question (`null` for a question asked before askers were recorded), and whether it
  * must wait: an earlier answer in its own conversation still streams and was written in the last `liveSeconds`. Two
  * conversations' turns never wait for each other (decision 0013 §1). An earlier answer whose device went away keeps streaming but stops holding up later turns once it
- * is that old. This only reads liveness: nothing here runs, retries or settles that answer; `chat/Expire` settles it
- * (worker/flows/Expire.ts). `waitedMs` is how long its turn has waited since the queue before it last moved: since the
+ * is that old. Before admission the route fences expired predecessors; `chat/Expire` also settles answers without a later turn. `waitedMs` is how long its turn has waited since the queue before it last moved: since the
  * latest earlier answer settled, or since it was asked if that is later, on Postgres' clock.
  */
 const target = (answerId: string, liveSeconds: number) =>
@@ -67,7 +66,9 @@ const target = (answerId: string, liveSeconds: number) =>
         EXISTS (
           SELECT 1 FROM messages e
           WHERE e.conversation_id = a.conversation_id AND e.role = 'assistant' AND e.status = 'streaming'
-            AND e.position < a.position AND e.updated_at > now() - make_interval(secs => ${liveSeconds})
+            AND e.position < a.position
+            AND GREATEST(e.updated_at, (SELECT r.updated_at FROM runs r WHERE r.id = e.id AND r.status = 'working'))
+              > now() - make_interval(secs => ${liveSeconds})
         ) AS waiting,
         GREATEST(0, floor(extract(epoch FROM now() - GREATEST(a.created_at, (
           SELECT e.updated_at FROM messages e
@@ -80,6 +81,25 @@ const target = (answerId: string, liveSeconds: number) =>
     return row
   })
 
+/** Fence silent predecessors before a later answer receives its history. */
+const abandonEarlier = (answerId: string, liveSeconds: number) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const rows = yield* sql<{ readonly id: string }>`UPDATE messages e
+    SET status = 'failed', failure = 'abandoned', updated_at = now()
+    FROM messages a WHERE a.id = ${answerId} AND e.conversation_id = a.conversation_id
+      AND e.role = 'assistant' AND e.position < a.position AND e.status = 'streaming'
+      AND GREATEST(e.updated_at, (SELECT r.updated_at FROM runs r WHERE r.id = e.id AND r.status = 'working'))
+        <= now() - make_interval(secs => ${liveSeconds})
+      AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.id = e.id AND r.status = 'needs_you')
+    RETURNING e.id`
+  for (const row of rows) {
+    yield* sql`UPDATE runs SET status = 'failed', waiting = NULL, updated_at = now()
+      WHERE id = ${row.id} AND status NOT IN ('done', 'failed')`
+    yield* Notifications.foldRun(row.id, undefined)
+  }
+  return rows.length
+})
+
 /**
  * Marks a streaming answer that is waiting its turn as live, so it keeps the answers after it in order: only once a
  * third of `liveSeconds` has passed since its last write. Every write reaches every device through Electric, and an
@@ -90,7 +110,8 @@ const touch = (answerId: string, liveSeconds: number) =>
     SqlClient.SqlClient,
     (sql) =>
       sql`UPDATE messages SET updated_at = now()
-        WHERE id = ${answerId} AND status = 'streaming' AND updated_at < now() - make_interval(secs => ${liveSeconds / 3})`,
+        WHERE id = ${answerId} AND status = 'streaming' AND updated_at < now() - make_interval(secs => ${liveSeconds / 3})
+        RETURNING id`.pipe(Effect.map((rows) => rows.length > 0)),
   )
 
 /**
@@ -177,36 +198,51 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
             { status: 409, headers: { "cache-control": "no-store" } },
           )
         }
+        fields.abandonedPredecessors = yield* abandonEarlier(answerId, liveSeconds)
+        yield* touch(answerId, liveSeconds)
         const history = yield* Messages.history(answerId)
         fields.historyExchanges = history.length
         return ok({ question: row.question, history } satisfies Turn)
       })
 
-    /** `POST /api/answers/<id>`: the answer's parts while it streams, then how it settled. */
-    const write = (request: HttpServerRequest.HttpServerRequest, answerId: string, actorId: string, fields: Fields) =>
+    /** A confirmed engine lease pulse; never reads or changes content. */
+    const heartbeat = (answerId: string, actorId: string, fields: Fields) => Effect.gen(function* () {
+      const row = yield* target(answerId, liveSeconds)
+      if (row === undefined) return refusal(404, "not_found")
+      if (row.askedBy !== actorId) return notAsker(fields)
+      if (row.status !== "streaming") return refusal(409, "settled")
+      fields.renewed = yield* touch(answerId, liveSeconds)
+      return ok({})
+    })
+
+    /** Read and decode the bounded HTTP body before holding a conversation lock. */
+    const prepareWrite = (request: HttpServerRequest.HttpServerRequest, fields: Fields) => Effect.gen(function* () {
+      const body = yield* readBounded(request, MAX_ANSWER_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(Effect.result)
+      if (body._tag === "Failure") return yield* Effect.fail(
+        body.failure.reason === "too_large" ? refusal(413, "too_large") : refusal(400, "invalid"),
+      )
+      const decoded = yield* decodeWrite(body.success).pipe(Effect.option)
+      if (Option.isNone(decoded)) return yield* Effect.fail(refusal(400, "invalid"))
+      fields.write = decoded.value.status
+      fields.parts = decoded.value.parts?.length ?? -1
+      return decoded.value
+    })
+
+    /** Apply only prepared content, after acquiring the shared conversation lock. */
+    const write = (decoded: AnswerWrite, answerId: string, actorId: string, fields: Fields) =>
       Effect.gen(function* () {
-        const body = yield* readBounded(request, MAX_ANSWER_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
-          Effect.result,
-        )
-        if (body._tag === "Failure") {
-          return body.failure.reason === "too_large" ? refusal(413, "too_large") : refusal(400, "invalid")
-        }
-        const decoded = yield* decodeWrite(body.success).pipe(Effect.option)
-        if (Option.isNone(decoded)) return refusal(400, "invalid")
-        fields.write = decoded.value.status
-        fields.parts = decoded.value.parts?.length ?? -1
         // A settle folds into the feed in its own transaction (worker/Notifications.ts): the answer's status is its
         // run's.
-        const settles = decoded.value.status !== "streaming"
+        const settles = decoded.status !== "streaming"
         const txid = yield* (yield* SqlClient.SqlClient).withTransaction(
-          Effect.tap(apply(answerId, actorId, decoded.value), (landed) =>
+          Effect.tap(apply(answerId, actorId, decoded), (landed) =>
             landed !== undefined && settles ? Notifications.foldRun(answerId, undefined) : Effect.void),
         )
         if (txid !== undefined) return ok({ txid })
         const row = yield* target(answerId, liveSeconds)
         if (row === undefined) return refusal(404, "not_found")
         if (row.askedBy !== actorId) return notAsker(fields)
-        if (landed(row, decoded.value)) {
+        if (landed(row, decoded)) {
           fields.existing = true
           return ok({ txid: null })
         }
@@ -216,12 +252,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
     return (answerId: string) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const route = request.method === "GET" ? "turn" : "write"
+        const route = request.method === "GET" ? "turn" : request.method === "PATCH" ? "heartbeat" : "write"
         const startedAt = yield* Clock.currentTimeMillis
         const fields: Fields = { answerId }
         const response = yield* Effect.gen(function* () {
-          if (request.method !== "GET" && request.method !== "POST") {
-            return HttpServerResponse.empty({ status: 405, headers: { allow: "GET, POST" } })
+          if (request.method !== "GET" && request.method !== "POST" && request.method !== "PATCH") {
+            return HttpServerResponse.empty({ status: 405, headers: { allow: "GET, POST, PATCH" } })
           }
           if (!Schema.is(Schema.String.check(Schema.isUUID()))(answerId)) return refusal(404, "not_found")
           const actor = yield* (yield* Sessions).resolve
@@ -236,8 +272,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           }
           // Only the asker, or an agent acting for them, writes their answer.
           const actorId = actor.value.subject.id
-          const handled = route === "turn" ? turn(answerId, actorId, fields) : write(request, answerId, actorId, fields)
-          return yield* handled.pipe(Effect.provide(database))
+          if (route === "write") {
+            const prepared = yield* prepareWrite(request, fields).pipe(Effect.result)
+            if (prepared._tag === "Failure") return prepared.failure
+            return yield* Messages.withAnswerConversation(answerId, write(prepared.success, answerId, actorId, fields))
+              .pipe(Effect.provide(database))
+          }
+          const handled = route === "turn" ? turn(answerId, actorId, fields) : heartbeat(answerId, actorId, fields)
+          return yield* Messages.withAnswerConversation(answerId, handled).pipe(Effect.provide(database))
         }).pipe(
           Effect.catchCause((cause) =>
             Effect.sync(() => {

@@ -304,6 +304,60 @@ describe("a run's reports", () => {
       .toMatchObject({ outcome: "stale" })
   })
 
+  test.each(["merged", "dropped", "failed"] as const)("a %s report replays exactly its committed successor receipt", async (state) => {
+    const attempt = await started(3)
+    const event: Stack.RunEvent = { kind: "finished", state, ...(state === "failed" ? { failure: "implement" as const } : {}) }
+    const first = await reportOn(attempt, event)
+    const before = await todos()
+    const version = await stack()
+    const observed = observe()
+    // Connections are fresh per report; replay depends only on the persisted receipt.
+    const repeated = await reportOn(attempt, event, true, observed)
+    expect(first.outcome).toBe("applied")
+    expect(repeated).toEqual({ outcome: "repeated", starts: first.starts })
+    expect(first.starts).toHaveLength(1)
+    expect(await todos()).toEqual(before)
+    expect(await stack()).toEqual(version)
+    expect(await sql(`SELECT id FROM todo_attempts`)).toHaveLength(2)
+    expect(observed.count(Stack.reports, { kind: "finished", outcome: "repeated" })).toBe(1)
+    expect(observed.lines.at(-1)).toMatchObject({ message: "stack.report", annotations: { outcome: "repeated", starts: 1 } })
+    for (const unrelated of [
+      { ...attempt, attemptId: uuid() },
+      { ...attempt, ordinal: 2 },
+      { ...attempt, repoId: "github/another/repo" },
+      { ...attempt, todoId: first.starts[0]!.todoId },
+    ]) expect(await reportOn(unrelated, event)).toEqual({ outcome: "stale", starts: [] })
+    expect(await reportOn(attempt, { ...event, mergeSha: MERGE })).toEqual({ outcome: "stale", starts: [] })
+    expect(await todos()).toEqual(before)
+  })
+
+  test("a different attempt id cannot report for a TODO that still owns its lane", async () => {
+    const attempt = await started(2)
+    const before = await todos()
+    expect(await reportOn({ ...attempt, attemptId: uuid() }, { kind: "finished", state: "merged" }))
+      .toEqual({ outcome: "stale", starts: [] })
+    expect(await todos()).toEqual(before)
+  })
+
+  test("racing terminal reports allocate one successor and replay its receipt", async () => {
+    const attempt = await started(3)
+    const event: Stack.RunEvent = { kind: "finished", state: "merged", mergeSha: MERGE }
+    const receipts = await Promise.all([reportOn(attempt, event), reportOn(attempt, event)])
+    expect(receipts.map((receipt) => receipt.outcome).sort()).toEqual(["applied", "repeated"])
+    expect(receipts[0]!.starts).toEqual(receipts[1]!.starts)
+    expect(receipts[0]!.starts).toHaveLength(1)
+    expect(await sql(`SELECT id FROM todo_attempts`)).toHaveLength(2)
+    expect(await stack()).toMatchObject({ version: 4 })
+  })
+
+  test("a terminal report with no successor still replays its empty receipt", async () => {
+    const attempt = await started()
+    const event: Stack.RunEvent = { kind: "finished", state: "failed", failure: "implement" }
+    expect(await reportOn(attempt, event)).toEqual({ outcome: "applied", starts: [] })
+    expect(await reportOn(attempt, event)).toEqual({ outcome: "repeated", starts: [] })
+    expect(await sql(`SELECT id FROM todo_attempts`)).toHaveLength(1)
+  })
+
   test("an ending moves only what it must: failed leaves the rest in place, merged closes the gap behind it", async () => {
     const attempt = await started(4)
     const failed = await reportOn(attempt, { kind: "finished", state: "failed", failure: "implement" })

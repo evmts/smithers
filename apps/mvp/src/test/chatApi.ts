@@ -58,6 +58,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import { type AppOptions, appLayer, type Host, realServices } from "../boot"
+import { bindSessionConnectivity } from "../features/auth/auth"
 import { faultyServices } from "./faults"
 import { LOCAL_ELECTRIC_URL, MESSAGES_TABLE, QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "../features/chat/contract"
 import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE, REPOSITORIES_TABLE } from "../features/repo/contract"
@@ -194,6 +195,17 @@ const codeStorageKey = async () => {
   return `-----BEGIN PRIVATE KEY-----\n${btoa(String.fromCharCode(...der)).replace(/(.{64})/g, "$1\n")}\n-----END PRIVATE KEY-----\n`
 }
 
+/** Content-free evidence for an answer that did not settle in a test. */
+export interface AnswerDiagnostics {
+  readonly answer: { readonly status: string; readonly failure: string | null } | null
+  readonly report: { readonly status: string; readonly waiting: string | null } | null
+  readonly engines: ReadonlyArray<{
+    readonly status: string
+    readonly attempts: ReadonlyArray<{ readonly state: string; readonly count: number }>
+    readonly records: ReadonlyArray<{ readonly type: string; readonly count: number }>
+  }>
+}
+
 export class TestChatApi extends Context.Service<
   TestChatApi,
   {
@@ -208,6 +220,8 @@ export class TestChatApi extends Context.Service<
     readonly answerTo: (question: string, nth?: number) => Effect.Effect<Reply>
     /** How many model requests the agent made whose prompt includes `question`. */
     readonly modelRequests: (question: string) => number
+    /** Reads status and journal stage counts only: no payloads, result text or credentials. */
+    readonly answerDiagnostics: (answerId: string) => Effect.Effect<AnswerDiagnostics>
     /** The status of every answer to `POST /api/questions` the browser got, in order. */
     readonly questionStatuses: () => ReadonlyArray<number>
     /** Asks as another device would, through ChatApi. */
@@ -537,6 +551,26 @@ export class TestChatApi extends Context.Service<
           fetch,
           answerTo,
           modelRequests: (question) => requests.filter((request) => request.question.includes(question)).length,
+          answerDiagnostics: (answerId) => Effect.gen(function* () {
+            const [answer] = yield* sql<{ readonly status: string; readonly failure: string | null }>`
+              SELECT status, failure FROM messages WHERE id = ${answerId}`
+            const [report] = yield* sql<{ readonly status: string; readonly waiting: string | null }>`
+              SELECT status, waiting FROM runs WHERE id = ${answerId}`
+            const engines: Array<AnswerDiagnostics["engines"][number]> = []
+            for (const store of stores) {
+              const [run] = yield* sql<{ readonly status: string }>`
+                SELECT status FROM ${sql(`${store}.flows_runs`)} WHERE run_id = ${answerId}`
+              if (run === undefined) continue
+              const attempts = yield* sql<{ readonly state: string; readonly count: number }>`
+                SELECT state, count(*)::int AS count FROM ${sql(`${store}.flows_attempts`)}
+                WHERE run_id = ${answerId} GROUP BY state ORDER BY state`
+              const records = yield* sql<{ readonly type: string; readonly count: number }>`
+                SELECT event_type AS type, count(*)::int AS count FROM ${sql(`${store}.flows_journal_events`)}
+                WHERE run_id = ${answerId} GROUP BY event_type ORDER BY event_type`
+              engines.push({ status: run.status, attempts, records })
+            }
+            return { answer: answer ?? null, report: report ?? null, engines }
+          }).pipe(Effect.orDie),
           questionStatuses: () => [...statuses],
           askElsewhere: (text) =>
             Effect.promise(async () => {
@@ -841,6 +875,8 @@ const sqliteFile = (path: string, turn: ReturnType<typeof deviceTurn>) => {
  */
 export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">> & {
   readonly answers?: boolean
+  /** View-only fixtures start sign-in here; boot-program fixtures bind it on their actual event target instead. */
+  readonly sessionLifecycle?: boolean
   /** The WebSocket a tab's rooms dial, in place of the global one: a room host on loopback (src/test/rooms.ts). */
   readonly webSocket?: Socket.WebSocketConstructor["Service"]
   /**
@@ -858,7 +894,7 @@ export type StartFaults = (switches: ShapeSource.Switches) => Effect.Effect<void
 
 const app = (
   api: TestChatApi["Service"],
-  { answers, host, replace: _replace, webSocket: _webSocket, ...options }: TabOptions,
+  { answers, host, replace: _replace, webSocket: _webSocket, sessionLifecycle: _sessionLifecycle, ...options }: TabOptions,
 ): AppOptions => ({
   ...options,
   origin: api.origin,
@@ -871,18 +907,24 @@ const app = (
 export const tabLayer = (api: TestChatApi["Service"], options: TabOptions = {}) => {
   const tab = app(api, options)
   const layer = appLayer(tab, Layer.merge(realServices(tab), options.replace ?? Layer.empty))
-  return options.webSocket === undefined
+  const started = options.sessionLifecycle === false
     ? layer
-    : layer.pipe(Layer.provide(Layer.succeed(Socket.WebSocketConstructor, options.webSocket)))
+    : Layer.effectDiscard(bindSessionConnectivity(new EventTarget())).pipe(Layer.provideMerge(layer))
+  return options.webSocket === undefined
+    ? started
+    : started.pipe(Layer.provide(Layer.succeed(Socket.WebSocketConstructor, options.webSocket)))
 }
 
 /** The browser app on `api` with the faulty services and their switches (src/test/faults.ts). */
 export const faultyTabLayer = (api: TestChatApi["Service"], options: TabOptions = {}, start?: StartFaults) => {
   const tab = app(api, options)
   const layer = appLayer(tab, faultyServices(tab, start))
-  return options.webSocket === undefined
+  const started = options.sessionLifecycle === false
     ? layer
-    : layer.pipe(Layer.provide(Layer.succeed(Socket.WebSocketConstructor, options.webSocket)))
+    : Layer.effectDiscard(bindSessionConnectivity(new EventTarget())).pipe(Layer.provideMerge(layer))
+  return options.webSocket === undefined
+    ? started
+    : started.pipe(Layer.provide(Layer.succeed(Socket.WebSocketConstructor, options.webSocket)))
 }
 
 const withChatApi = <A, E>(tab: (api: TestChatApi["Service"]) => Layer.Layer<A, E>, chatApi: ChatApiOptions) =>

@@ -200,7 +200,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
         ...write,
         repoId: repoIdOf(write.repo),
         queuedAt: yield* Clock.currentTimeMillis,
-        v: 2,
+        v: 3,
       }
       const admitted = yield* chat.outbox
         .transact(ISSUE_WRITE, { idempotencyKey: write.id }, Effect.asVoid(sending.insert(row)))

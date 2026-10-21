@@ -1,5 +1,5 @@
 import { Model, type ModelEvent, type ModelRequest } from "@smthrs/model"
-import { Stream } from "effect"
+import { Effect, Stream } from "effect"
 
 // The scripted agents the end-to-end tests run on the browser's engine under the dev server (src/flows/engine.worker.ts,
 // `?agent=<script>`), so a needs-you path and a sandbox tool's resume run the same every time: the model is the only
@@ -93,10 +93,36 @@ const todoDraft = Model.make({
   },
 })
 
+/**
+ * A deliberately slow reasoning service for the ordering regression. It emits private thinking for forty seconds
+ * without visible answer progress. A follow-up can say it saw the earlier reply only when ChatApi included that
+ * completed exchange in its turn. Everything except this slow model is the real browser/Worker/engine path.
+ */
+const reasoningOrder = Model.make({
+  stream: (request) => {
+    const text = [...request.system.map((part) => part.text), textOf(request)].join("\n")
+    const asked = [...text.matchAll(/(Think quietly, then say ready|Use the previous answer): ([a-z0-9-]+)/g)].at(-1)
+    const word = asked?.[2] ?? "missing"
+    if (asked?.[1] === "Use the previous answer") {
+      const included = text.includes(`Smithers: Ready ${word}.`)
+      return turn(`ctx.done(${JSON.stringify(`${included ? "Earlier answer included" : "Earlier answer missing"}: ${word}.`)})`)
+    }
+    const thinking = Stream.fromIterable(Array.from({ length: 40 }, (_, index) => index)).pipe(
+      Stream.mapEffect(() =>
+        Effect.as(Effect.sleep("1 second"), {
+          type: "thinking-delta", id: "reasoning-order", text: "Still considering the question. ",
+        } satisfies ModelEvent.ModelEvent)
+      ),
+    )
+    return Stream.concat(thinking, turn(`ctx.done(${JSON.stringify(`Ready ${word}.`)})`))
+  },
+})
+
 /** The scripted model named `name`, or `undefined` for a name no script has. */
 export const scriptedModel = (name: string): Model.Model | undefined => {
   if (name === "sandbox-once") return sandboxOnce
   if (name === "todo-draft") return todoDraft
+  if (name === "reasoning-order") return reasoningOrder
   const script = scripts[name]
   if (script === undefined) return undefined
   return Model.make({

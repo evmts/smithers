@@ -36,6 +36,8 @@ export class AnswerApi extends Context.Service<
   {
     /** The question and its history, once every earlier answer has settled. */
     readonly turn: (answerId: string) => Effect.Effect<Turn, NotYourTurn | AnswerSettled | AnswersUnavailable>
+    /** Renews this owned run independently of answer text or tool progress. */
+    readonly heartbeat: (answerId: string) => Effect.Effect<void, AnswerSettled | AnswersUnavailable>
     /** Writes the answer's parts, or settles it. A settle that already landed succeeds. */
     readonly write: (answerId: string, write: AnswerWrite) => Effect.Effect<void, AnswerSettled | AnswersUnavailable>
   }
@@ -59,6 +61,12 @@ export class AnswerApi extends Context.Service<
                 Effect.mapError(() => new AnswersUnavailable({ status: response.status })),
               )
             }),
+          heartbeat: (answerId) => Effect.gen(function* () {
+            const response = yield* send(HttpClientRequest.patch(url(answerId)))
+            if (response.status !== 200) return yield* refused(response).pipe(
+              Effect.catchTag("@smthrs/mvp/agent/NotYourTurn", () => new AnswersUnavailable({ status: 409 })),
+            )
+          }),
           write: (answerId, write) =>
             Effect.gen(function* () {
               const body = Schema.encodeSync(AnswerWriteSchema)(write)

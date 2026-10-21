@@ -4,6 +4,7 @@ import { Config, Duration, Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { ANSWER_SETTLE_WITHIN, ANSWER_TURN_WAIT } from "../../src/features/agent/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
+import { withAnswerConversation } from "../Messages.ts"
 import * as Notifications from "../Notifications.ts"
 
 // `chat/Expire { answerId }` (docs/features/remote-flows.md, docs/features/agent.md#settling): settles an answer whose
@@ -196,7 +197,7 @@ export const abandon = (answerId: string, after: Duration.Duration) =>
       ? "waiting"
       : "settled"
     return { outcome } satisfies Expired
-  }).pipe((effect) => Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(effect)))
+  }).pipe((effect) => withAnswerConversation(answerId, effect))
 
 /**
  * One step over `database`, with its records: a `chat.answer.expire` log line and span when it fails, and when it

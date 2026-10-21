@@ -167,3 +167,152 @@ const outboxSize = (page: Page) =>
         open.onerror = () => resolve(-1)
       }),
   )
+
+test("session expiry retains Alice's draft for Alice; a different account wipes every tab before opening it", { annotation: { type: "summary", description: "An expired session keeps the person's offline draft; another account never sees it in either tab." } }, async ({ devices }) => {
+  test.setTimeout(180_000)
+  const [alice] = await devices.open("Alice")
+  const draft = `Private draft ${devices.word}`
+  await alice.openComposer()
+  await alice.composer.fill(draft)
+  await expect(alice.composer, "the private draft is durably saved before expiry").toHaveAttribute("data-draft", "saved")
+  const origin = new URL(alice.page.url()).origin
+  const secure = origin.startsWith("https:")
+  const prefix = secure ? "__Host-" : ""
+  // Change the real development session without invoking the app's sign-out/wipe action.
+  await alice.device.context.addCookies([{ name: `${prefix}smithers_dev_signed_out`, value: "1", url: origin, secure }])
+  await alice.reload()
+  await expect(alice.page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 30_000 })
+  await alice.device.context.clearCookies({ name: `${prefix}smithers_dev_signed_out` })
+  await alice.reload()
+  await alice.openComposer()
+  await expect(alice.composer).toHaveValue(draft)
+  await alice.device.offline()
+  await alice.reload()
+  await alice.openComposer()
+  await expect(alice.composer).toHaveValue(draft)
+  await alice.device.online()
+  await alice.device.context.addCookies([{ name: `${prefix}smithers_dev_person`, value: "teammate", url: origin, secure }])
+  const bob = await devices.tab(alice.device, "Bob")
+  for (const tab of [alice, bob]) {
+    await expect(tab.page.getByRole("button", { name: SIGN_OUT })).toBeVisible({ timeout: 60_000 })
+    await tab.openComposer()
+    await expect(tab.composer).toHaveValue("")
+    expect(await outboxSize(tab.page)).toBe(0)
+  }
+})
+
+test("an old tab's pending person write cannot use a different account's cookie", { annotation: { type: "summary", description: "A question queued offline remains bound to its author while the browser changes accounts." } }, async ({ devices }) => {
+  test.setTimeout(180_000)
+  const [alice] = await devices.open("Alice")
+  await alice.device.offline()
+  const pending = `Private pending ${devices.word}`
+  await alice.ask(pending)
+  await expect.poll(() => outboxSize(alice.page)).toBeGreaterThan(0)
+  const origin = new URL(alice.page.url()).origin
+  const secure = origin.startsWith("https:")
+  await alice.device.context.addCookies([{ name: `${secure ? "__Host-" : ""}smithers_dev_person`, value: "teammate", url: origin, secure }])
+  const accepted: number[] = []
+  alice.page.on("response", (response) => {
+    if (new URL(response.url()).pathname === QUESTIONS_ROUTE && response.request().postDataJSON()?.text === pending) accepted.push(response.status())
+  })
+  await alice.device.online()
+  const bob = await devices.tab(alice.device, "Bob")
+  for (const tab of [alice, bob]) await expect(tab.question(pending)).toHaveCount(0, { timeout: 60_000 })
+  expect(accepted.filter((status) => status === 200 || status === 202)).toEqual([])
+  expect(await outboxSize(bob.page)).toBe(0)
+})
+
+test("expired session without an ownership mirror renders sign-in while its private outbox stays closed", { annotation: { type: "summary", description: "A missing mirror cannot expose retained private drafts or queued questions while signed out." } }, async ({ devices }) => {
+  test.setTimeout(180_000)
+  const [alice] = await devices.open("Alice")
+  const pending = `Private outbox ${devices.word}`
+  await alice.device.offline()
+  await alice.ask(pending)
+  await alice.composer.fill(`Private draft ${devices.word}`)
+  await expect(alice.composer).toHaveAttribute("data-draft", "saved")
+  await expect.poll(() => outboxSize(alice.page)).toBeGreaterThan(0)
+  await alice.page.evaluate(() => localStorage.removeItem("smithers-device-owner-v1"))
+  const origin = new URL(alice.page.url()).origin
+  const secure = origin.startsWith("https:")
+  const prefix = secure ? "__Host-" : ""
+  await alice.device.context.addCookies([{ name: `${prefix}smithers_dev_signed_out`, value: "1", url: origin, secure }])
+  // Close the writer before reconnecting: only the freshly opened page could restore the old IndexedDB outbox.
+  await alice.page.close()
+  await alice.device.online()
+  const expired = await devices.tab(alice.device, "Expired")
+  await expect(expired.page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 45_000 })
+  await expect(expired.question(pending)).toHaveCount(0)
+  expect(await outboxSize(expired.page), "expiry preserves the sealed old outbox instead of loading it").toBeGreaterThan(0)
+  await alice.device.context.clearCookies({ name: `${prefix}smithers_dev_signed_out` })
+  await alice.device.context.addCookies([{ name: `${prefix}smithers_dev_person`, value: "teammate", url: origin, secure }])
+  await expired.reload()
+  await expect(expired.page.getByRole("button", { name: SIGN_OUT })).toBeVisible({ timeout: 60_000 })
+  await expect(expired.question(pending)).toHaveCount(0)
+  expect(await outboxSize(expired.page)).toBe(0)
+})
+
+test("a signed-out follower without a mirror cannot read the live owner's engine", { annotation: { type: "summary", description: "While the owner's engine remains live, a signed-out tab cannot list its runs or inspect their contents." } }, async ({ devices }) => {
+  test.setTimeout(180_000)
+  const [alice] = await devices.open("Live owner")
+  await alice.page.getByRole("link", { name: "Runs", exact: true }).click()
+  const runs = alice.page.getByRole("table", { name: "Runs" })
+  await expect(runs).toBeVisible({ timeout: 30_000 })
+  await expect(runs).toContainText("watch/set", { timeout: 30_000 })
+  await alice.page.evaluate(() => localStorage.removeItem("smithers-device-owner-v1"))
+  const origin = new URL(alice.page.url()).origin
+  const secure = origin.startsWith("https:")
+  await alice.device.context.addCookies([{ name: `${secure ? "__Host-" : ""}smithers_dev_signed_out`, value: "1", url: origin, secure }])
+  // Keep Alice's page and leader alive throughout the follower's client-side navigation.
+  const expired = await devices.tab(alice.device, "Signed out")
+  await expect(expired.page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 45_000 })
+  await expired.page.getByRole("link", { name: "Runs", exact: true }).click()
+  await expect(expired.page.getByText("No runs yet")).toBeVisible({ timeout: 30_000 })
+  await expect(expired.page.getByRole("table", { name: "Runs" })).toHaveCount(0)
+  await expect(alice.page.getByRole("table", { name: "Runs" })).toContainText("watch/set")
+})
+
+test("an ownerless offline activation reopens under verified authority when the network returns", { annotation: { type: "summary", description: "After device storage is evicted offline, reconnecting verifies the account and asking succeeds without a manual reload." } }, async ({ devices }) => {
+  test.setTimeout(180_000)
+  const [tab] = await devices.open("Recovered device")
+  await tab.page.addInitScript(() => {
+    const record = (stage: string) => console.info("e2e.identity_network", { stage, online: navigator.onLine })
+    record("load")
+    addEventListener("online", () => record("window_online"))
+    addEventListener("offline", () => record("window_offline"))
+    document.addEventListener("online", () => record("document_online"), true)
+  })
+  // Keep the cached app shell and real session cookie while evicting OPFS, as a browser may under storage pressure.
+  // Leave the app first so no worker or collection holds the old files open.
+  await tab.page.goto("/api/auth/session")
+  await tab.page.evaluate(async () => {
+    await navigator.locks.request("smithers-data", { mode: "exclusive" }, () =>
+      navigator.locks.request("smithers", { mode: "exclusive" }, async () => {
+        const directory = await navigator.storage.getDirectory()
+        await directory.removeEntry("smithers", { recursive: true })
+        localStorage.removeItem("smithers-device-owner-v1")
+      }))
+  })
+  await tab.device.offline()
+  await tab.page.goto("/app")
+  // Chromium keeps context-level HTTP emulation across this cached navigation but initializes the new renderer's
+  // navigator.onLine to true. Correct only its connection state; context.setOffline owns the HTTP fault.
+  const network = await tab.device.context.newCDPSession(tab.page)
+  await network.send("Network.overrideNetworkState", { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+  await tab.ready()
+  expect(await tab.page.evaluate(() => navigator.onLine), "the evicted device activates offline").toBe(false)
+  expect(await tab.page.evaluate(() => localStorage.getItem("smithers-device-owner-v1"))).toBeNull()
+  await tab.device.online()
+  await network.send("Network.overrideNetworkState", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+  expect(await tab.page.evaluate(() => navigator.onLine), "the browser reports connectivity restored").toBe(true)
+  await expect.poll(() => tab.log.some((line) => line.includes("e2e.identity_network") && line.includes("window_online")), { message: "the browser delivered its real online event" }).toBe(true)
+  // The online session proof must cause a fresh authorized boot, never a new principal on the existing runtime.
+  await expect.poll(() => tab.page.evaluate(() => {
+    const owner = localStorage.getItem("smithers-device-owner-v1")
+    return owner === null ? undefined : JSON.parse(owner).personId
+  }), { timeout: 60_000 }).toBe("local-developer")
+  await expect(tab.page.getByRole("button", { name: SIGN_OUT })).toBeVisible({ timeout: 30_000 })
+  const text = `Recovered authority ${devices.word}`
+  const accepted = tab.page.waitForResponse((response) => new URL(response.url()).pathname === QUESTIONS_ROUTE && response.request().postDataJSON()?.text === text)
+  await tab.ask(text)
+  expect((await accepted).status()).toBe(202)
+})

@@ -128,7 +128,7 @@ export const settlement = (
  */
 export const registration = (turnWait: Duration.Input = ANSWER_TURN_WAIT) => {
   const turnWaitMs = Duration.toMillis(Duration.fromInputUnsafe(turnWait))
-  return Interpreter.layerWithImplementations(
+  return Layer.unwrap(Effect.map(AnswerApi, (api) => Interpreter.layerWithImplementations(
     Answer,
     Layer.mergeAll(
       // A turn whose queue hasn't moved for the turn wait: the wait is over.
@@ -163,7 +163,13 @@ export const registration = (turnWait: Duration.Input = ANSWER_TURN_WAIT) => {
         })
       ),
     ),
-  )
+    { onHeartbeat: (answerId) => api.heartbeat(answerId).pipe(
+      // Lost server authority ends the receipt. Subsequent writes remain
+      // fenced by the settled answer; transient outages do not renew liveness.
+      Effect.catchTag("@smthrs/mvp/agent/AnswerSettled", () => Effect.void),
+      Effect.catchTag("@smthrs/mvp/agent/AnswersUnavailable", (error) => Effect.logWarning("chat.answer.heartbeat.failed").pipe(Effect.annotateLogs({ answerId, status: error.status ?? 0 }))),
+    ) },
+  )))
 }
 
 /**

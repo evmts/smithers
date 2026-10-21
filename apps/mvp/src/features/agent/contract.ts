@@ -4,6 +4,7 @@
 /**
  * The answer routes, the server's write path for answers the browser's agent gives:
  * - `GET <route>/<answerId>`: the question and the history before it, once every earlier answer has settled;
+ * - `PATCH <route>/<answerId>`: renew the owned host lease independently of visible progress;
  * - `POST <route>/<answerId>`: the answer's text and parts while it streams, then how it settled.
  */
 export const ANSWERS_ROUTE = "/api/answers"
@@ -34,6 +35,7 @@ export const ANSWER_SETTLE_WITHIN = "10 minutes"
  */
 export const AGENT_TELEMETRY = {
   records: [
+    "chat.answer.heartbeat.failed",
     "invoke_agent",
     "chat agent",
     "ModelStep",
@@ -53,6 +55,8 @@ export const AGENT_TELEMETRY = {
     "flows_agent_structured_output_exhausted",
   ],
   fields: [
+    "answerId",
+    "status",
     "gen_ai.operation.name",
     "gen_ai.request.model",
     "gen_ai.provider.name",

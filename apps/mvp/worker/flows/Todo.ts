@@ -4,7 +4,7 @@ import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { GitHub } from "@smthrs/integrations"
 import { Node, type Planned } from "@smthrs/plan"
 import { SandboxTools } from "@smthrs/sandbox"
-import { Config, Effect, Layer, Option, Schema } from "effect"
+import { Cause, Config, Effect, Layer, Metric, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { agentAttribution } from "../../src/features/issues/contract.ts"
@@ -175,7 +175,8 @@ export const Settle = Action.make("todo/Settle", {
   payload: { request: TodoRequest, awaited: Awaited },
   success: Ran,
   error: TodoUnavailable,
-  retryPolicy: STEP_RETRY,
+  // Once the terminal report commits, admission must keep retrying its receipt rather than fall through to Fail.
+  retryPolicy: RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000 }),
 })
 
 /** What `todo/Fail` reads: a step's own failure, or the agent's. */
@@ -256,9 +257,38 @@ export interface Services<E, R> {
   readonly apiBaseUrl: string
   /**
    * Starts a remote execution on its own host: the next TODO's run, a head's checks. The same start again changes
-   * nothing. A failure is logged by the host and never fails the step: the outbox and the next report start it again.
+   * nothing. Admission failures reach the step's durable retry policy, which replays the writer's persisted receipt.
    */
-  readonly start: (flow: Flow.Any, options: { readonly executionId: string; readonly payload: unknown }) => Effect.Effect<void>
+  readonly start: (flow: Flow.Any, options: { readonly executionId: string; readonly payload: unknown }) => Effect.Effect<void, Stack.RunsUnavailable>
+}
+
+/** Admissions requested by TODO steps, by flow and outcome; ids are confined to logs and spans. */
+export const admissions = Metric.counter("smithers_todo_admissions", {
+  description: "Remote execution admissions requested by TODO steps, by flow and outcome",
+  incremental: true,
+})
+
+/** The production admission adapter: a lost or refused acknowledgment fails the durable action for replay. */
+export const admission = (
+  start: (flow: Flow.Any, options: { readonly executionId: string; readonly payload: unknown }) => Effect.Effect<void, unknown>,
+): Services<never, never>["start"] => (flow, options) => {
+  const record = (outcome: "started" | "not_started", errorCode?: string) =>
+    Effect.gen(function* () {
+      yield* Metric.update(Metric.withAttributes(admissions, { flow: flow._tag, outcome }), 1)
+      yield* Effect.logWithLevel(outcome === "started" ? "Info" : "Warn")("todo.start").pipe(
+        Effect.annotateLogs({ flow: flow._tag, executionId: options.executionId, outcome, ...(errorCode === undefined ? {} : { errorCode }) }),
+      )
+    })
+  return start(flow, options).pipe(
+    Effect.tap(() => record("started")),
+    Effect.catchCause((cause) => {
+      if (Cause.hasInterrupts(cause)) return Effect.interrupt
+      const failure = Cause.squash(cause)
+      const errorCode = failure instanceof Stack.RunsUnavailable ? failure.errorCode : codeOf(failure)
+      return record("not_started", errorCode).pipe(Effect.andThen(Effect.fail(new Stack.RunsUnavailable({ errorCode }))))
+    }),
+    Effect.withSpan("todo.start", { attributes: { "smithers.execution.id": options.executionId, "smithers.flow": flow._tag } }),
+  )
 }
 
 /** The branch a TODO's attempt works on: `smithers/t<n>-<slug of its title>`, at most 60 characters. */
@@ -317,10 +347,11 @@ export const steps = <E, R>(services: Services<E, R>) => {
   /** Reports to the writer; a stale report (a dropped TODO, another attempt) ends the run. */
   // Postgres failing fails the step for its retry policy (`step`'s `failureIn`).
   const report = (request: TodoRequest, event: Stack.RunEvent) =>
-    Effect.flatMap(Stack.report(attemptOf(request), event, { runs: true }), (reported) =>
-      reported.outcome === "stale"
-        ? Effect.fail(new TodoFailed({ failure: "ended" }))
-        : Effect.forEach(reported.starts, startTodo, { discard: true }))
+    Effect.gen(function* () {
+      const reported = yield* Stack.report(attemptOf(request), event, { runs: true })
+      if (reported.outcome === "stale") return yield* new TodoFailed({ failure: "ended" })
+      yield* Effect.forEach(reported.starts, startTodo, { discard: true })
+    })
 
   /** A failure of step `step` as the run reads it: its own, GitHub's refusal as `refused`, anything else retried. */
   const failureIn = (step: Step, refused: StepFailure) => (error: unknown): TodoFailed | TodoUnavailable => {

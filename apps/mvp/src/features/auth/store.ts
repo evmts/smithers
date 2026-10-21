@@ -53,7 +53,7 @@ export class AuthStore extends Context.Service<
         id: "auth-confirmed",
         schema: Confirmed,
         getKey: (row) => row.id,
-        schemaVersion: 1,
+        schemaVersion: 2,
       })
       return {
         session,

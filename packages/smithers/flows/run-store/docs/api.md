@@ -969,3 +969,5 @@ scope. See [Test against the real stores](./guides/testing.md).
 - [Durable values](./concepts/durable-values.md) for the admission boundary.
 - [`@smthrs/journal`](/api/journal) for the history half of durability, and
   [`@smthrs/engine-store`](/api/engine-store) for the composed storage ladder.
+
+`Ownership.heartbeatLoop` accepts `onPulse`, called only after a successful fenced heartbeat or reconfirmation. It must return promptly: a host dispatching external receipts forks them under its owned round, bounds their duration and prevents overlap. Lost fences and failed writes never emit this receipt.

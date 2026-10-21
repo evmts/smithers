@@ -117,7 +117,7 @@ const WriteText = {
 /**
  * A write as a step asks the tab to queue it: its text, and the run credential of the run that wrote it unless that run
  * is the person's own press (decision 0017 slice 0). The tab sends it with that credential and without the session
- * cookie, so the agent's write goes as the agent; it never keeps the credential past the send.
+ * cookie, so the agent's write goes as the agent. The outbox retains the signed proof until delivery and renews the exact authority before sending.
  */
 export const QueuedWrite = Schema.Struct({ ...WriteText, credential: Schema.optional(Schema.String) })
 export type QueuedWrite = typeof QueuedWrite.Type
@@ -130,7 +130,7 @@ export const Sending = Schema.Struct({
   ...QueuedWrite.fields,
   repoId: Schema.String,
   queuedAt: Schema.Number,
-  v: Schema.Literal(2),
+  v: Schema.Literal(3),
 })
 export type Sending = typeof Sending.Type
 

@@ -4,6 +4,7 @@ import { type HttpClient, HttpServerRequest, HttpServerResponse } from "effect/h
 import type { SqlClient } from "effect/sql"
 import {
   CALLBACK_ROUTE,
+  DEVICE_PERSON_HEADER,
   SESSION_ROUTE,
   type SessionState,
   SIGN_IN_FAILED_PARAM,
@@ -456,6 +457,19 @@ export const make = <E, R>(
         yield* record("sign_out", { outcome: "refused", reason: "cross_site" })
         return HttpServerResponse.empty({ status: 403, headers: noStore })
       }
+      const expected = request.headers[DEVICE_PERSON_HEADER]
+      if (expected !== undefined || request.headers.cookie !== undefined) {
+        const owner = Option.isNone(setup)
+          ? Option.map(yield* current, (signed) => signed.actor.subject.id)
+          : yield* Effect.gen(function* () {
+            const token = yield* setup.value.keys.verify("session", request.cookies[names.session])
+            return Option.isNone(token) ? Option.none<string>() : yield* SessionStore.ownerOf(SessionKeys.digest(token.value)).pipe(Effect.provide(database))
+          })
+        if (Option.isSome(owner) && (expected === undefined || owner.value !== expected)) {
+          yield* record("sign_out", { outcome: "refused", reason: expected === undefined ? "unbound" : "other_person" })
+          return HttpServerResponse.empty({ status: 403, headers: noStore })
+        }
+      }
       const signedOut = HttpServerResponse.empty({ status: 204, headers: noStore }).pipe(
         HttpServerResponse.expireCookieUnsafe(names.session, cookieOptions(secure, Duration.zero)),
       )
@@ -507,7 +521,7 @@ export const make = <E, R>(
       if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
       const signed = yield* current
       const state: SessionState = Option.isSome(signed)
-        ? { signedIn: true, login: signed.value.login, role: signed.value.actor.role }
+        ? { signedIn: true, personId: signed.value.actor.subject.id, login: signed.value.login, role: signed.value.actor.role }
         : { signedIn: false, available: Option.isSome(setup) || options.fallback !== undefined }
       return HttpServerResponse.jsonUnsafe(state, { status: 200, headers: noStore })
     }).pipe(

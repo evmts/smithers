@@ -43,6 +43,26 @@ The product rules are mvp.md §3, §4, §6.6, §6.10, Appendices A and B, M-05, 
 - **The old app proved the doors:** the draft's Place menu (`apps/app/src/mainview/cards/views/DraftView.tsx:61-70`), the Order menu (`cards/views/HomeView.tsx:26`), the TODO card's controls (`cards/TodoCard.tsx:45-107`), and `todo.new` with the agent rule `confirm` and a Commit form (`flows/entries/todo.ts:39-42`). Its route never served Amend as a placement (`mythical_file_todo.go:443`), so Amend stays its own operation.
 - **One lane first.** Restacks, drafts and removals are the hard half. Slice 1 needs none of them, and its first merged TODO still crosses every layer.
 
+## Terminal admission recovery (2026-10-21)
+
+The writer keeps a terminal report's event and successor starts on its originating `todo_attempts` row, atomically
+with finishing the TODO and allocating those starts (`0035_todo_report_receipts`). Only the same event under the
+same attempt id, TODO, repository and ordinal replays that receipt. Conflicting or unrelated reports stay stale.
+The run host propagates admission failures, and Settle and Fail use the engine's unbounded retry policy to admit
+the recorded execution ids after a lost acknowledgment or restart. This closes the Postgres-to-host gap without
+adding an app retry loop, queue or sweep. `TODO_RUNS` remains off by default.
+
+The terminal event is persisted data with an upgrade contract. `Settle` derives it from the recorded `Await` result;
+`Fail` derives it from its recorded typed failure. PostgreSQL `jsonb` equality ignores object-key order. A future
+change to those derivations must preserve the event for outstanding attempts, or explicitly migrate their receipts
+along with the action contract. The engine's [schema and plan checks](../../../../packages/smithers/flows/flow/docs/concepts/bodies-and-plans.md)
+do not inspect silent edits inside an imported action handler. Comparing only terminal state would accept conflicting
+merge SHAs or failure codes, so it is not a receipt migration.
+
+Library catalog entries used: `@smthrs/flow` actions and retry policies, `@smthrs/platform-cloudflare` execution
+admission, and the existing Effect SQL Postgres layer. The regression tests use real Postgres and ExecutionHost;
+only admission failure is injected at its service boundary.
+
 ## Consequences
 
 - **SDK work, each with its first consumer here:**

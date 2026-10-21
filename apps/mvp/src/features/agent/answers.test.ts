@@ -89,3 +89,23 @@ describe("write", () => {
     expect(failure(await write(answering(401, "{}")))).toEqual(new AnswersUnavailable({ status: 401 }))
   })
 })
+
+// A heartbeat uses the answer's authenticated write route with no message body.
+test("heartbeat renews with PATCH and respects terminal/server failures", async () => {
+  const seen: Array<string> = []
+  const exit = await over(async (input, init) => {
+    const request = new Request(input, init)
+    seen.push(`${request.method} ${await request.text()}`)
+    return answering(200, "{}")()
+  }, (api) => api.heartbeat("a"))
+  expect(exit).toEqual(Exit.void)
+  expect(seen).toEqual(["PATCH "])
+  expect(failure(await over(answering(409, '{"code":"settled"}'), (api) => api.heartbeat("a"))))
+    .toEqual(new AnswerSettled())
+  expect(failure(await over(answering(503, '{}'), (api) => api.heartbeat("a"))))
+    .toEqual(new AnswersUnavailable({ status: 503 }))
+  expect(failure(await over(answering(409, '{"code":"not_your_turn"}'), (api) => api.heartbeat("a"))))
+    .toEqual(new AnswersUnavailable({ status: 409 }))
+  expect(failure(await over(() => Promise.reject(new TypeError("offline")), (api) => api.heartbeat("a"))))
+    .toEqual(new AnswersUnavailable({}))
+})

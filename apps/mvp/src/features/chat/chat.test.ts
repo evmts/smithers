@@ -330,6 +330,12 @@ describe("the agent", () => {
     ["a Guest", { ...member, role: "guest" as const }, 403],
   ] as const)("asking %s stays on the device, Not sent, and is never sent again", async (_, actor, status) => {
     const tab = await openChat({}, { actor })
+    // This case exercises the server's refusal. Before the outbox takes leadership, asking instead exercises the
+    // separately tested not-admitted path and never reaches the server (observable under coverage instrumentation).
+    await until(async () => {
+      const state = Option.getOrThrow(await tab.runtime.runPromise(Stream.runHead(tab.store.outbox.status)))
+      expect(state.leader).toBe(true)
+    })
     const { questionId } = asked(tab.actions.ask("hello"))
     await until(() => expect(tab.shown()).toEqual(["user unsent hello"]))
     expect(tab.queries.conversation.toArray[0]).toMatchObject({ id: questionId, sendAgain: false })

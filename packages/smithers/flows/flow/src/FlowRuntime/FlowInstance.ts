@@ -8,6 +8,7 @@
 
 import type * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
+import type * as Effect from "effect/Effect"
 import type * as Latch from "effect/Latch"
 import type * as Scope from "effect/Scope"
 import type * as Flow from "../Flow/index.ts"
@@ -68,6 +69,10 @@ export class FlowInstance extends Context.Service<
      * Whether the flow has requested to be suspended.
      */
     suspended: boolean
+
+    /** Host receipt renewed only by the durable driver after an ownership heartbeat.
+     * Cleared when this interpreter round ends; never an application timer. */
+    heartbeat?: Effect.Effect<void> | undefined
 
     /**
      * Whether the flow has requested to be interrupted.

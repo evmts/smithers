@@ -117,6 +117,13 @@ const findLiveBy = (which: (sql: SqlClient.SqlClient) => Statement.Fragment) =>
 /** The live session whose token has `tokenDigest`: not signed out, not revoked and not past its end. */
 export const findLive = (tokenDigest: string) => findLiveBy((sql) => sql`s.token_digest = ${tokenDigest}`)
 
+/** A verified cookie's stable person, including an ended session whose GitHub revocation still needs delivery. */
+export const ownerOf = (tokenDigest: string) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const [row] = yield* sql<{ readonly personId: string }>`SELECT person_id::text AS "personId" FROM sessions WHERE token_digest = ${tokenDigest}`
+  return Option.map(Option.fromNullishOr(row), (found) => found.personId)
+})
+
 /** The live session `id`, as a run credential minted under it names it: none once it ended. */
 export const findLiveById = (id: string) => findLiveBy((sql) => sql`s.id = ${id}`)
 

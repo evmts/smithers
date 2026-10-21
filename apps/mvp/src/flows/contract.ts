@@ -40,6 +40,8 @@ export const FLOWS_TELEMETRY = {
     "flow.dispatch",
     "smithers_flow_dispatches",
     // Run credentials on the device (src/flows/credentials.ts).
+    "auth.device_identity",
+    "smithers_device_identity_checks",
     "auth.run_credential",
     "smithers_run_credential_mints",
     // The tab's side of the engine (@smthrs/platform-browser BrowserEngine, StoragePersistence).
@@ -67,6 +69,8 @@ export const FLOWS_TELEMETRY = {
     "action attempt interrupted: the engine store is unavailable",
     "run lease lapsed; interrupting owned work",
     "run heartbeat write failed",
+    "run heartbeat receipt failed",
+    "flows_engine_heartbeat_receipts",
     "flows_engine_dispatches",
     "flows_engine_dispatch_duration",
     "flows_engine_claims",

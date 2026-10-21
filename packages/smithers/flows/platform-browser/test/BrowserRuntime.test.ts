@@ -39,6 +39,41 @@ describe("BrowserRuntime over OPFS", () => {
   })
   afterEach(() => remove())
 
+  it.effect("authorization runs before registration or resume, fails closed, and is checked on each activation", () =>
+    Effect.gen(function*() {
+      let authorized = 0
+      let registered = 0
+      const host = (allowed: boolean) =>
+        BrowserRuntime.layerHost(
+          {
+            name: "identity-gate",
+            sqlite: MemorySqlite.build,
+            authorize: (database) =>
+              Effect.gen(function*() {
+                yield* database.execute("SELECT 1")
+                authorized++
+                if (!allowed) return yield* Effect.fail("identity refused")
+                expect(yield* database.execute("SELECT name FROM sqlite_master WHERE name = 'authorization_left_open'"))
+                  .toEqual([])
+                yield* database.execute("BEGIN")
+                yield* database.execute("CREATE TABLE authorization_left_open (value TEXT)")
+                // The host rolls a check's unfinished transaction back before it builds anything else.
+              })
+          },
+          Layer.merge(
+            registration(Effect.succeed),
+            Layer.effectDiscard(Effect.sync(() => {
+              registered++
+            }))
+          )
+        )
+      expect(yield* Effect.exit(Layer.build(host(false)).pipe(Effect.scoped))).toEqual(Exit.fail("identity refused"))
+      expect(registered).toBe(0)
+      for (let index = 0; index < 2; index++) yield* Layer.build(host(true)).pipe(Effect.scoped)
+      expect(authorized).toBe(3)
+      expect(registered).toBe(2)
+    }))
+
   it.effect("layerHost keeps a run's result in OPFS across engines", () =>
     Effect.gen(function*() {
       const host = BrowserRuntime.layerHost({ name: "opfs", sqlite: MemorySqlite.build }, registration(Effect.succeed))

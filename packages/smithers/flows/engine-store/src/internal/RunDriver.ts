@@ -2341,6 +2341,49 @@ export const make = (
           )
           round = { flow: registration.flow, instance }
           const flowEngine = yield* dependencies.engine
+          // One bounded external receipt at a time. Fork under the round's race
+          // scope so terminal/cancel/lease loss interrupts it; never await HTTP
+          // in the ownership writer. Dynamic execution identity reaches clients.
+          let heartbeatPending = false
+          const receipt = (scope: Scope.Scope) =>
+            Effect.suspend(() => {
+              if (instance.heartbeat === undefined) return Effect.void
+              if (heartbeatPending) {
+                return Metric.update(
+                  Metric.withAttributes(EngineStoreMetrics.heartbeatReceipts, { outcome: "skipped" }),
+                  1
+                )
+              }
+              heartbeatPending = true
+              return instance.heartbeat.pipe(
+                Effect.provideService(FlowRuntime.FlowInstance, instance),
+                Effect.timeout(Ownership.heartbeatWriteTolerance),
+                Effect.tap(() =>
+                  Metric.update(
+                    Metric.withAttributes(EngineStoreMetrics.heartbeatReceipts, { outcome: "completed" }),
+                    1
+                  )
+                ),
+                Effect.catchCause((cause) =>
+                  Cause.hasInterruptsOnly(cause)
+                    ? Effect.failCause(cause as Cause.Cause<never>)
+                    : Effect.andThen(
+                      Metric.update(
+                        Metric.withAttributes(EngineStoreMetrics.heartbeatReceipts, { outcome: "failed" }),
+                        1
+                      ),
+                      Effect.logWarning("run heartbeat receipt failed").pipe(
+                        Effect.annotateLogs({ runId: executionId })
+                      )
+                    )
+                ),
+                Effect.ensuring(Effect.sync(() => {
+                  heartbeatPending = false
+                })),
+                Effect.forkIn(scope),
+                Effect.asVoid
+              )
+            })
           // ONE cleanup region, registered before the race starts and spanning
           // everything that can retain a scope or make its park durable: the
           // suspension surfacing, the retention insertion in the race's exit,
@@ -2370,7 +2413,7 @@ export const make = (
             // the driver's lifetime — a slow leak, and a stale instance for
             // `interrupt` to mark interrupted.
             liveInstances.set(executionId, instance)
-            const result = yield* Effect.scoped(
+            const result = yield* Effect.scoped(Effect.flatMap(Effect.scope, (receiptScope) =>
               Effect.raceFirst(
                 Effect.raceFirst(
                   Effect.suspend(() =>
@@ -2391,6 +2434,7 @@ export const make = (
                   // reclaims a crashed incarnation, and every fenced write of a
                   // superseded one changes nothing.
                   hosted ? Effect.never : Ownership.heartbeatLoop(executionId, dependencies.owner, {
+                    onPulse: () => receipt(receiptScope),
                     onReconfirm: (unconfirmedMs) => {
                       const record = decisionRecord(executionId, {
                         decision: "lease-reconfirmed",
@@ -2407,28 +2451,27 @@ export const make = (
                   )
                 ),
                 cancelPollLoop(executionId)
+              ))).pipe(
+                Effect.ensuring(Effect.sync(() => liveInstances.delete(executionId))),
+                // A suspension is the ONE settlement `Flow.intoResult` leaves the
+                // flow scope open for, so from the instant it surfaces the scope
+                // needs an owner. Retention is taken HERE, inside the race's own
+                // exit processing — `Effect.onExit` finalizers run uninterruptibly —
+                // because taking it any later crosses an interruptible boundary: an
+                // interrupt landing there would end the drive with the scope never
+                // retained, unreachable, and its finalizers never run at all. The
+                // entry is inserted into a cleanup region that was registered before
+                // this race started, so it is owned from this instant on: every
+                // ending, including an interrupt observed at the boundary between
+                // this finalizer and the settlement below, releases it there.
+                Effect.onExit((exit) =>
+                  Effect.suspend(() => {
+                    if (!(Exit.isSuccess(exit) && exit.value._tag === "Suspended")) return Effect.void
+                    retainedScopes.set(executionId, instance.scope)
+                    return dependencies.unsafeOnScopeRetained?.(executionId) ?? Effect.void
+                  })
+                )
               )
-            ).pipe(
-              Effect.ensuring(Effect.sync(() => liveInstances.delete(executionId))),
-              // A suspension is the ONE settlement `Flow.intoResult` leaves the
-              // flow scope open for, so from the instant it surfaces the scope
-              // needs an owner. Retention is taken HERE, inside the race's own
-              // exit processing — `Effect.onExit` finalizers run uninterruptibly —
-              // because taking it any later crosses an interruptible boundary: an
-              // interrupt landing there would end the drive with the scope never
-              // retained, unreachable, and its finalizers never run at all. The
-              // entry is inserted into a cleanup region that was registered before
-              // this race started, so it is owned from this instant on: every
-              // ending, including an interrupt observed at the boundary between
-              // this finalizer and the settlement below, releases it there.
-              Effect.onExit((exit) =>
-                Effect.suspend(() => {
-                  if (!(Exit.isSuccess(exit) && exit.value._tag === "Suspended")) return Effect.void
-                  retainedScopes.set(executionId, instance.scope)
-                  return dependencies.unsafeOnScopeRetained?.(executionId) ?? Effect.void
-                })
-              )
-            )
             /**
              * Settles this round durably.
              *

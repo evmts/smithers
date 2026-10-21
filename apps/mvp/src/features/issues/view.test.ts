@@ -189,7 +189,7 @@ describe("keeping a write on the device", () => {
       number: 7,
       body: "Hi",
       queuedAt: 1,
-      v: 2,
+      v: 3,
     }
     const rows = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const requested = yield* Collection.local<Requested, string>({

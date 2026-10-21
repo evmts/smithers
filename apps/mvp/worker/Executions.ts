@@ -2,7 +2,6 @@ import { Logger } from "@smthrs/observability"
 import { EdgeCache, type ExecutionObject } from "@smthrs/platform-cloudflare"
 import { RuntimeContext } from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
-import type { Flow } from "@smthrs/flow"
 import { Cause, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import * as Database from "../db/Database.ts"
@@ -13,6 +12,7 @@ import * as AgentSandbox from "./AgentSandbox.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as TodoAgent from "./flows/TodoAgent.ts"
+import * as Todo from "./flows/Todo.ts"
 import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
 import * as GitHubHost from "./github/Host.ts"
@@ -163,16 +163,12 @@ export const live = <E, R>(
             const built = yield* githubServices(ready)
             return {
               ...built,
-              start: (flow: Flow.Any, options: { readonly executionId: string; readonly payload: unknown }) =>
+              start: Todo.admission((flow, options) =>
                 ExecutionHost.intent(flow, { executionId: options.executionId, payload: options.payload as never }).pipe(
                   Effect.flatMap((intent) => executions.getByName(options.executionId).start(intent)),
                   Effect.provideService(RuntimeContext, runtime),
-                  Effect.catchCause((cause) =>
-                    Effect.logWarning("todo.start").pipe(
-                      Effect.annotateLogs({ flow: flow._tag, outcome: "not_started", errorCode: codeOf(Cause.squash(cause)) }),
-                    )
-                  ),
                 ),
+              ),
             }
           })
         const withGitHub = <ROut, FE, FR>(flows: ExecutionHost.Flows<ROut, FE, FR>) =>

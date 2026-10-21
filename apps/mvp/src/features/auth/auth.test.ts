@@ -1,6 +1,6 @@
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Effect, Layer, Logger, ManagedRuntime, Metric, Redacted } from "effect"
+import { Deferred, Effect, Layer, Logger, ManagedRuntime, Metric, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
@@ -8,11 +8,11 @@ import * as Database from "../../../db/Database"
 import { testFile } from "../../../worker/test/harness"
 import { signInHarness } from "../../../worker/test/signIn"
 import { type NodeDevice, nodeDevice } from "../../test/chatApi"
-import { Auth } from "./auth"
+import { Auth, bindSessionConnectivity } from "./auth"
 import { AuthClient, AuthUnreachable } from "./api"
-import { type ComposerAccess, composerAccess, signInHref } from "./contract"
+import { type ComposerAccess, composerAccess, DEVICE_PERSON_HEADER, signInHref } from "./contract"
 import { DeviceWipe } from "./device"
-import { deviceWipes, signInPresses, signOuts } from "./metrics"
+import { deviceWipes, sessionRefreshes, signInPresses, signOuts } from "./metrics"
 import { AuthStore } from "./store"
 
 // Sign-in's state machine, driven as React drives it: through the auth layer's plain actions, reading its live query,
@@ -39,10 +39,14 @@ afterEach(async () => {
 
 /** A browser on `h`'s routes: a cookie jar, and `Origin` on every POST, as a browser sends from the page. */
 const browser = (h: Awaited<ReturnType<typeof signInHarness>>, jar = new Map<string, string>()) => {
+  let expectedPerson: string | undefined
+  let sessionRequests = 0
   const fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input, init)
     const url = new URL(request.url)
+    if (url.pathname === "/api/auth/session") sessionRequests++
     const headers = new Headers(request.headers)
+    if (expectedPerson !== undefined) headers.set(DEVICE_PERSON_HEADER, expectedPerson)
     if (jar.size > 0) headers.set("cookie", [...jar].map(([name, value]) => `${name}=${value}`).join("; "))
     if (request.method !== "GET") headers.set("origin", ORIGIN)
     const response = await h.fetch(`${url.pathname}${url.search}`, {
@@ -50,6 +54,10 @@ const browser = (h: Awaited<ReturnType<typeof signInHarness>>, jar = new Map<str
       headers,
       ...(request.method === "GET" ? {} : { body: await request.text() }),
     })
+    if (url.pathname === "/api/auth/session" && expectedPerson === undefined && response.ok) {
+      const identity = await response.clone().json() as { signedIn: boolean; personId?: string }
+      if (identity.signedIn) expectedPerson = identity.personId
+    }
     for (const line of response.headers.getSetCookie()) {
       const [pair] = line.split(";")
       const at = pair!.indexOf("=")
@@ -61,6 +69,7 @@ const browser = (h: Awaited<ReturnType<typeof signInHarness>>, jar = new Map<str
   return {
     fetch: fetch as typeof globalThis.fetch,
     jar,
+    sessionRequests: () => sessionRequests,
     /** Follows "Sign in with GitHub" from `returnTo` and approves on GitHub: where the browser lands. */
     signIn: async (returnTo = "/app") => {
       const toGitHub = await fetch(`${ORIGIN}${signInHref(returnTo)}`)
@@ -74,7 +83,7 @@ const browser = (h: Awaited<ReturnType<typeof signInHarness>>, jar = new Map<str
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>
 
 /** A tab: the auth layer over `client`, recording its log lines and metrics. */
-const openTab = async (client: Layer.Layer<AuthClient>, device: NodeDevice = nodeDevice(), wipe = device.wipe) => {
+const openTab = async (client: Layer.Layer<AuthClient>, device: NodeDevice = nodeDevice(), wipe = device.wipe, target: EventTarget | false = new EventTarget()) => {
   const logs: Array<StructuredLog> = []
   const registry: Metric.MetricRegistry = new Map()
   const runtime = ManagedRuntime.make(
@@ -93,12 +102,15 @@ const openTab = async (client: Layer.Layer<AuthClient>, device: NodeDevice = nod
   const { queries, actions } = await runtime.runPromise(Effect.service(Auth))
   queries.session.startSyncImmediate()
   queries.confirmed.startSyncImmediate()
+  const listen = (target: EventTarget) => runtime.runFork(Effect.scoped(Effect.andThen(bindSessionConnectivity(target), Effect.never)))
+  if (target !== false) listen(target)
   const count = (metric: Metric.Metric<number, Metric.CounterState<number>>, attributes: Record<string, string> = {}) =>
     runtime.runSync(
       Metric.value(Metric.withAttributes(metric, attributes)).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
     ).count
   return {
     actions,
+    listen,
     session: () => queries.session.toArray[0]!,
     /** What ComposerGate shows on this tab now. */
     access: (): ComposerAccess => composerAccess(queries.session.toArray[0]!, queries.confirmed.toArray[0]),
@@ -244,8 +256,9 @@ describe("sign-in on a tab", () => {
     tab.actions.signOut()
     await tab.settled("signed_out")
     await vi.waitFor(() => expect(tab.count(deviceWipes, { outcome: "wiped" })).toBe(1), { interval: 10 })
-    expect(tab.logs.map((log) => log.message)).toEqual(["session loaded", "sign in pressed", "signed out", "device wiped"])
-    expect(tab.logs[0]!.annotations).toMatchObject({ signedIn: true, feature: "auth" })
+    const actions = tab.logs.filter((log) => typeof log.message !== "string" || !log.message.startsWith("auth.session_"))
+    expect(actions.map((log) => log.message)).toEqual(["session loaded", "sign in pressed", "signed out", "device wiped"])
+    expect(actions[0]!.annotations).toMatchObject({ signedIn: true, feature: "auth" })
     expect(JSON.stringify(tab.logs)).not.toContain("octocat")
   })
 })
@@ -344,7 +357,7 @@ describe("the composer", () => {
     }
   })
 
-  test("ChatApi saying signed out forgets the confirmed session, so the device offline shows the prompt", async () => {
+  test("session expiry retains the device owner; this online tab gates asks and offline recovery keeps the same person", async () => {
     const h = await signInHarness(server)
     const b = browser(h)
     await b.signIn()
@@ -357,12 +370,33 @@ describe("the composer", () => {
     tab.actions.reload()
     await tab.settled("signed_out")
     expect(tab.access()).toBe("sign_in")
-    await confirmedOn(device, 0)
+    await confirmedOn(device, 1)
     const offline = await openTab(offlineClient, device)
     await offline.settled("unreachable")
     await restored(offline)
-    expect(offline.access()).toBe("sign_in")
+    expect(offline.access()).toBe("ask")
   })
+})
+
+test("expiry keeps the owner; another GitHub person with the same login triggers a wipe before becoming visible", async () => {
+  const h = await signInHarness(server)
+  const b = browser(h)
+  await b.signIn()
+  const device = nodeDevice()
+  const tab = await openTab(realClient(b), device)
+  await tab.settled("signed_in")
+  await confirmedOn(device, 1)
+  await b.fetch(`${ORIGIN}/api/auth/sign-out`, { method: "POST" })
+  tab.actions.reload()
+  await tab.settled("signed_out")
+  await confirmedOn(device, 1)
+  // GitHub can reassign a login; immutable person identity, not that name, decides device ownership.
+  h.github.person = { id: 900001, login: "octocat" }
+  await b.signIn()
+  tab.actions.reload()
+  await vi.waitFor(() => expect(tab.count(deviceWipes, { outcome: "wiped" })).toBe(1))
+  expect(tab.session()).toMatchObject({ status: "loading", login: null })
+  await confirmedOn(device, 0)
 })
 
 describe("signing out wipes the device", () => {
@@ -416,4 +450,87 @@ describe("signing out wipes the device", () => {
     expect(JSON.stringify(tab.logs)).not.toContain("storage blocked")
     expect(JSON.stringify(tab.logs)).not.toContain("octocat")
   })
+})
+
+
+test("reconnecting refreshes the real session through the auth lifecycle", async () => {
+  const h = await signInHarness(server)
+  const b = browser(h)
+  const target = new EventTarget()
+  const device = nodeDevice()
+  const tab = await openTab(realClient(b), device, device.wipe, target)
+  await tab.settled("signed_out")
+  await b.signIn()
+  target.dispatchEvent(new Event("online"))
+  await tab.settled("signed_in")
+  expect(tab.access()).toBe("ask")
+  expect(tab.session().login).toBe("octocat")
+  expect(tab.count(sessionRefreshes, { via: "online" })).toBe(1)
+  expect(tab.count(sessionRefreshes, { via: "startup" })).toBe(1)
+  expect(tab.logs.filter((log) => log.message === "auth.session_refresh").map((log) => log.annotations)).toEqual([{ via: "startup" }, { via: "online" }])
+  await tab.dispose()
+  expect(tab.logs.filter((log) => log.message === "auth.session_subscription").map((log) => log.annotations.stage)).toEqual(["listening", "stopped"])
+  expect(JSON.stringify(tab.logs)).not.toContain("octocat")
+})
+
+
+test("a network transition before subscription needs no second event: one initial check reads the current real session", async () => {
+  const h = await signInHarness(server)
+  const b = browser(h)
+  const device = nodeDevice()
+  const tab = await openTab(realClient(b), device, device.wipe, false)
+  expect(tab.session().status).toBe("loading")
+  expect(b.sessionRequests()).toBe(0)
+  const target = new EventTarget()
+  await b.signIn()
+  target.dispatchEvent(new Event("online"))
+  tab.listen(target)
+  await tab.settled("signed_in")
+  expect(tab.access()).toBe("ask")
+  expect(b.sessionRequests()).toBe(1)
+  expect(tab.count(sessionRefreshes, { via: "startup" })).toBe(1)
+  expect(tab.count(sessionRefreshes, { via: "online" })).toBe(0)
+})
+
+
+test("an online check waits for the unresolved startup check instead of overlapping it", async () => {
+  const h = await signInHarness(server)
+  const b = browser(h)
+  await b.signIn()
+  const entered = Effect.runSync(Deferred.make<void>())
+  const release = Effect.runSync(Deferred.make<void>())
+  let calls = 0
+  let active = 0
+  let maximum = 0
+  const client = Layer.effect(AuthClient, Effect.map(AuthClient, (real) => AuthClient.of({
+    ...real,
+    session: Effect.gen(function* () {
+      calls++
+      active++
+      maximum = Math.max(maximum, active)
+      if (calls === 1) {
+        yield* Deferred.succeed(entered, undefined)
+        yield* Deferred.await(release)
+        return yield* new AuthUnreachable({})
+      }
+      return yield* real.session
+    }).pipe(Effect.ensuring(Effect.sync(() => { active-- }))),
+  }))).pipe(Layer.provide(realClient(b)))
+  const target = new EventTarget()
+  const device = nodeDevice()
+  const tab = await openTab(client, device, device.wipe, target)
+  await Effect.runPromise(Deferred.await(entered))
+  expect(tab.session().status).toBe("loading")
+  target.dispatchEvent(new Event("online"))
+  // Let the actual event consumer run while the first check remains unresolved.
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  expect(calls).toBe(1)
+  expect(tab.count(sessionRefreshes, { via: "online" })).toBe(0)
+  await Effect.runPromise(Deferred.succeed(release, undefined))
+  await tab.settled("signed_in")
+  expect(calls).toBe(2)
+  expect(maximum).toBe(1)
+  expect(b.sessionRequests()).toBe(1)
+  expect(tab.count(sessionRefreshes, { via: "startup" })).toBe(1)
+  expect(tab.count(sessionRefreshes, { via: "online" })).toBe(1)
 })

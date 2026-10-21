@@ -8,6 +8,7 @@ import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node, Planned } from "@smthrs/plan"
 import { Context, Effect, Exit, Layer, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
+import { ExecutionMiddleware } from "../src/internal/ExecutionMiddleware.ts"
 import { withCrypto } from "./Crypto.ts"
 import { layerMemory, layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 
@@ -1145,3 +1146,45 @@ describe("Interpreter concurrency", () => {
       expect(value.value).toBe(2)
     }))
 })
+
+it.effect("installs a host heartbeat around interpretation without inheriting it into child registrations", () =>
+  Effect.gen(function*() {
+    const receipts: Array<string> = []
+    let parent: FlowRuntime.FlowInstance["Service"] | undefined
+    const observe = (isParent: boolean): ExecutionMiddleware => ({
+      wrap: (_payload, body) =>
+        Effect.gen(function*() {
+          const instance = yield* FlowRuntime.FlowInstance
+          if (isParent) {
+            parent = instance
+            expect(instance.heartbeat).toBeDefined()
+            yield* instance.heartbeat!
+          } else expect(instance.heartbeat).toBeUndefined()
+          return yield* body
+        })
+    })
+    const ChildHeartbeat = Flow.make("interpreter/heartbeat/child", {
+      payload: {},
+      success: Schema.String,
+      body: Node.capture({}, () => Node.succeed("observed"))
+    }).annotate(ExecutionMiddleware, observe(false))
+    const ParentHeartbeat = Flow.make("interpreter/heartbeat/parent", {
+      payload: {},
+      success: Schema.String,
+      body: Node.capture({ child: ChildHeartbeat._tag }, () => ChildHeartbeat.child({}))
+    }).annotate(ExecutionMiddleware, observe(true))
+    const registration = Interpreter.layer(ParentHeartbeat, {
+      onHeartbeat: (executionId) =>
+        Effect.sync(() => {
+          receipts.push(executionId)
+        })
+    })
+    const value = yield* withCrypto(
+      ParentHeartbeat.execute({}, { executionId: "heartbeat-parent" }).pipe(
+        Effect.provide(layerWired(registration))
+      )
+    )
+    expect(value).toBe("observed")
+    expect(receipts).toEqual(["heartbeat-parent"])
+    expect(parent!.heartbeat).toBeUndefined()
+  }))

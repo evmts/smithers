@@ -138,7 +138,7 @@ describe("AnswerProgress", () => {
         Effect.map(
           Layer.build(
             AnswerProgress.layer("10 millis").pipe(
-              Layer.provide(Layer.succeed(AnswerApi, AnswerApi.of({ turn: () => Effect.die("unused"), write }))),
+              Layer.provide(Layer.succeed(AnswerApi, AnswerApi.of({ heartbeat: () => Effect.void, turn: () => Effect.die("unused"), write }))),
             ),
           ),
           (context) => Context.get(context, AnswerProgress),

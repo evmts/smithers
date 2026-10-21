@@ -105,9 +105,19 @@ export const openAgent = async (
    */
   const engine = async (
     schema?: string,
-    engineOptions: { readonly turnWait?: Duration.Input } = {},
+    engineOptions: {
+      readonly turnWait?: Duration.Input
+      /** A faulty transport for the browser's HTTP service; real handler transport unless set. */
+      readonly fetch?: typeof globalThis.fetch
+    } = {},
   ): Promise<Engine> => {
     const scope = Effect.runSync(Scope.make())
+    let disconnected = false
+    const connectionName = `test-agent-${crypto.randomUUID()}`
+    // A killed tab cannot reconnect its old engine. singleIncarnationLiveness
+    // assumes that host promise; merely terminating a Pg backend lets two live
+    // Node engines steal ownership back and forth while their pools reconnect.
+    const databaseGate = Effect.suspend(() => disconnected ? Effect.interruptible(Effect.never) : Effect.void)
     const doors = `agent-${crypto.randomUUID()}`
     const registration = Layer.merge(
       registrations({
@@ -134,13 +144,15 @@ export const openAgent = async (
       Layer.provideMerge(EngineStore.RunInspection.layer),
       Layer.provideMerge(device),
       Layer.provide(FetchHttpClient.layer),
-      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, engineOptions.fetch ?? fetch)),
     )
     const built = await Effect.runPromise(
       Scope.provide(scope)(
         // The browser's liveness: an owner under this host id that isn't this incarnation died with its tab.
         build(registration, {
           hostId: "device",
+          databaseGate,
+          connectionName,
           isAlive: RunStore.Ownership.singleIncarnationLiveness,
           ...(schema === undefined ? {} : { schema }),
         }),
@@ -153,12 +165,14 @@ export const openAgent = async (
       inspection: Context.get(built.context, EngineStore.RunInspection.RunInspection),
       theme: Context.get(built.context, ThemeStore),
       kill: () => Effect.runPromise(Scope.close(scope, Exit.void)),
-      crash: () =>
-        runtime.runPromise(
+      crash: () => {
+        disconnected = true
+        return runtime.runPromise(
           Effect.flatMap(SqlClient.SqlClient, (sql) =>
             sql`SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-              WHERE pid <> pg_backend_pid() AND query LIKE ${`%${built.engine.schema}%`}`),
-        ).then(() => undefined),
+              WHERE pid <> pg_backend_pid() AND application_name = ${connectionName}`),
+        ).then(() => undefined)
+      },
     }
   }
 
