@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
+import * as Option from "effect/Option"
 import * as Scope from "effect/Scope"
 import { WebLock } from "../src/index.ts"
 
@@ -123,5 +124,59 @@ describe("WebLock over navigator.locks", () => {
       yield* recording.hold("asked").pipe(Effect.scoped)
       expect(asked[0]).toEqual({ steal: true })
       expect(asked[1]).toEqual({ signal: expect.any(AbortSignal) })
+    }))
+
+  it.live("tryHold takes a free lock and holds it until the scope closes; a held one it answers none, at once, and waits for nothing", () =>
+    Effect.gen(function*() {
+      const lock = yield* WebLock.WebLock
+      const lockName = name()
+      const scope = yield* Scope.make()
+      const taken = yield* lock.tryHold(lockName).pipe(Scope.provide(scope))
+      expect(Option.isSome(taken)).toBe(true)
+      expect(yield* holders(lockName)).toEqual({ held: 1, pending: 0 })
+      const refused = yield* lock.tryHold(lockName).pipe(Effect.scoped)
+      expect(refused).toEqual(Option.none())
+      expect(yield* holders(lockName)).toEqual({ held: 1, pending: 0 })
+      // A waiting request makes the lock taken too, even once its holder lets go.
+      const waiting = yield* Effect.forkChild(hold(lock, lockName))
+      yield* Effect.sleep("20 millis")
+      yield* Scope.close(scope, Exit.void)
+      const next = yield* Fiber.join(waiting)
+      expect(yield* lock.tryHold(lockName).pipe(Effect.scoped)).toEqual(Option.none())
+      yield* Scope.close(next, Exit.void)
+      yield* Effect.sleep("20 millis")
+      expect(yield* holders(lockName)).toEqual({ held: 0, pending: 0 })
+    }).pipe(Effect.provide(WebLock.layer)))
+
+  it.live("a lock tryHold took can be stolen, and its holder learns so", () =>
+    Effect.gen(function*() {
+      const lock = yield* WebLock.WebLock
+      const lockName = name()
+      const scope = yield* Scope.make()
+      const taken = Option.getOrThrow(yield* lock.tryHold(lockName).pipe(Scope.provide(scope)))
+      const lost = yield* Effect.forkChild(taken.lost)
+      const thief = yield* hold(lock, lockName, { steal: true })
+      yield* Fiber.join(lost)
+      yield* Scope.close(scope, Exit.void)
+      expect(yield* holders(lockName)).toEqual({ held: 1, pending: 0 })
+      yield* Scope.close(thief, Exit.void)
+    }).pipe(Effect.provide(WebLock.layer)))
+
+  it.effect("asks tryHold with ifAvailable and no signal, and dies when the lock manager refuses it", () =>
+    Effect.gen(function*() {
+      const asked: Array<unknown> = []
+      const recording = WebLock.make({
+        request: (_name, options, callback) => {
+          asked.push(options)
+          return callback(undefined)
+        }
+      })
+      expect(Option.isSome(yield* recording.tryHold("asked").pipe(Effect.scoped))).toBe(true)
+      expect(asked).toEqual([{ ifAvailable: true }])
+      const refusing = WebLock.make({
+        request: () => Promise.reject(new DOMException("reserved", "NotSupportedError"))
+      })
+      const exit = yield* refusing.tryHold("-reserved").pipe(Effect.scoped, Effect.exit)
+      expect(Exit.isFailure(exit) && Exit.hasDies(exit)).toBe(true)
     }))
 })

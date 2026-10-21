@@ -489,12 +489,14 @@ interface Lock {
     name: string,
     options?: { readonly steal?: boolean }
   ) => Effect.Effect<{ readonly lost: Effect.Effect<void> }, never, Scope.Scope>
+  readonly tryHold: (
+    name: string
+  ) => Effect.Effect<Option.Option<{ readonly lost: Effect.Effect<void> }>, never, Scope.Scope>
 }
 
 const lockLeader: (options: {
   readonly lock: Lock
   readonly name: string
-  readonly grantWithin?: Duration.Input
 }) => Effect.Effect<
   Leader & { readonly take: Effect.Effect<void>; readonly dispose: () => void },
   never,
@@ -505,12 +507,20 @@ const lockLeader: (options: {
 A leader for the outbox over a lock service, so the outbox shares the host's one
 election mechanism: `hold(name)` waits until this program holds the exclusive
 lock `name` and holds it until the scope closes, or with `steal` takes it at
-once from whichever program holds it; `lost` completes when another program
-steals it. `@smthrs/platform-browser`'s `WebLock` is one. Unlike the library's
-`WebLocksLeader`, a program that doesn't get the lock waits for it, so when the
-leader closes, the next one leads and restores the writes it stored.
-`requestLeadership` answers within `grantWithin` (default 100 ms); a lock
-granted later is reported through `onLeadershipChange`.
+once from whichever program holds it; `tryHold(name)` takes it only when no
+program holds it or waits for it, and answers none otherwise; `lost` completes
+when another program steals it. `@smthrs/platform-browser`'s `WebLock` is one.
+Unlike the library's `WebLocksLeader`, a program that doesn't get the lock
+waits for it, so when the leader closes, the next one leads and restores the
+writes it stored.
+
+`requestLeadership` answers what the lock says, however long the lock manager
+takes to say it: `true` when the lock was free and this program now holds it,
+`false` when another program holds it or waits for it. The outbox starts only
+after that answer, so a program alone admits its first write, never refusing it
+as a follower's. A program that answered `false` waits in line, and a lock
+granted later is reported through `onLeadershipChange`. Released before the
+lock manager answers, it answers `false`.
 
 `take` makes this program lead at once, as the tab a person is using should: it
 steals the lock unless this program leads already, and completes once the

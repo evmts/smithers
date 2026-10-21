@@ -44,7 +44,6 @@ import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Data from "effect/Data"
 import * as Deferred from "effect/Deferred"
-import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import type * as Fiber from "effect/Fiber"
@@ -743,8 +742,10 @@ export const Online = {
 /**
  * A lock service: `hold(name)` waits until this program holds the exclusive
  * lock `name`, and holds it until the scope closes; with `steal`, it takes the
- * lock at once from whichever program holds it. `lost` completes when another
- * program steals it. `@smthrs/platform-browser`'s `WebLock` is one.
+ * lock at once from whichever program holds it. `tryHold(name)` takes it only
+ * when no program holds it or waits for it, and answers none otherwise. `lost`
+ * completes when another program steals it. `@smthrs/platform-browser`'s
+ * `WebLock` is one.
  *
  * @category models
  * @since 0.2.0
@@ -754,6 +755,9 @@ export interface Lock {
     name: string,
     options?: { readonly steal?: boolean }
   ) => Effect.Effect<{ readonly lost: Effect.Effect<void> }, never, Scope.Scope>
+  readonly tryHold: (
+    name: string
+  ) => Effect.Effect<Option.Option<{ readonly lost: Effect.Effect<void> }>, never, Scope.Scope>
 }
 
 /**
@@ -761,8 +765,10 @@ export interface Lock {
  * host's one election mechanism. Unlike the library's `WebLocksLeader`, a
  * program that doesn't get the lock waits for it, so when the leader closes,
  * the next one leads and restores the writes it stored. `requestLeadership`
- * answers within `grantWithin` (default 100 ms); a lock granted later is
- * reported through `onLeadershipChange`.
+ * answers what the lock says, however long it takes to say it: `true` when the
+ * lock was free and this program now holds it, `false` when another program
+ * holds it or waits for it. A lock granted later is reported through
+ * `onLeadershipChange`.
  *
  * `take` makes this program lead at once, as the tab a person is using should:
  * it steals the lock unless this program leads already, and completes once it
@@ -776,7 +782,6 @@ export interface Lock {
 export const lockLeader = (options: {
   readonly lock: Lock
   readonly name: string
-  readonly grantWithin?: Duration.Input
 }): Effect.Effect<
   Leader & { readonly take: Effect.Effect<void>; readonly dispose: () => void },
   never,
@@ -788,31 +793,44 @@ export const lockLeader = (options: {
     const listeners = new Set<(leader: boolean) => void>()
     let leader = false
     let holding: Fiber.Fiber<void> | undefined
-    // Whoever waits for this program to lead: `requestLeadership`'s answer and `take`.
-    const waiting = new Set<() => void>()
+    // Whoever waits for this program to lead, told whether it does: `requestLeadership`'s answer and `take`.
+    const waiting = new Set<(led: boolean) => void>()
+    const tell = (led: boolean) => {
+      const told = [...waiting]
+      waiting.clear()
+      for (const hear of told) hear(led)
+    }
     const set = (next: boolean) => {
       if (next === leader) return
       leader = next
       for (const listener of listeners) listener(next)
       // After the outbox heard: whoever waited may write at once.
-      if (!next) return
-      const led = [...waiting]
-      waiting.clear()
-      for (const lead of led) lead()
+      if (next) tell(true)
     }
-    // Holds the lock, by waiting for it or stealing it, until the scope closes; stolen, it waits for it again. It
-    // starts once `holding` names it.
-    const hold = (steal: boolean) => {
+    // Takes the lock and holds it until the scope closes; stolen, it waits for it again. `wait` waits in line, `steal`
+    // takes it at once, and `try` takes it only if it is free: held elsewhere, `taken` hears so, and it waits in line.
+    // It starts once `holding` names it.
+    const take = (how: "wait" | "steal" | { readonly taken: () => void }) =>
+      typeof how === "object"
+        ? Effect.flatMap(
+          options.lock.tryHold(options.name),
+          Option.match({
+            onSome: Effect.succeed,
+            onNone: () => Effect.andThen(Effect.sync(how.taken), options.lock.hold(options.name))
+          })
+        )
+        : options.lock.hold(options.name, how === "steal" ? { steal: true } : undefined)
+    const hold = (how: "wait" | "steal" | { readonly taken: () => void }) => {
       holding = fork(
         Effect.scoped(
           Effect.yieldNow.pipe(
-            Effect.andThen(options.lock.hold(options.name, steal ? { steal: true } : undefined)),
+            Effect.andThen(take(how)),
             Effect.tap(() => Effect.sync(() => set(true))),
             Effect.flatMap((held) => held.lost)
           )
         ).pipe(Effect.andThen(Effect.sync(() => {
           set(false)
-          hold(false)
+          hold("wait")
         })))
       )
     }
@@ -821,22 +839,26 @@ export const lockLeader = (options: {
       holding?.interruptUnsafe()
       holding = undefined
     }
+    // Let go, nobody waits any more: a `requestLeadership` not yet answered answers that this program doesn't lead.
     const release = () => {
       letGo()
       set(false)
+      tell(false)
     }
     yield* Effect.addFinalizer(() => Effect.sync(release))
     return {
       requestLeadership: () =>
-        new Promise<boolean>((granted) => {
-          if (leader) return granted(true)
-          waiting.add(() => granted(true))
-          if (holding === undefined) hold(false)
-          fork(
-            Effect.sleep(Duration.fromInputUnsafe(options.grantWithin ?? "100 millis")).pipe(
-              Effect.andThen(Effect.sync(() => granted(false)))
-            )
-          )
+        new Promise<boolean>((answer) => {
+          if (leader) return answer(true)
+          // A hold already in line, or a take under way, reports its grant through `onLeadershipChange`.
+          if (holding !== undefined) return answer(false)
+          waiting.add(answer)
+          hold({
+            taken: () => {
+              waiting.delete(answer)
+              answer(false)
+            }
+          })
         }),
       releaseLeadership: release,
       isLeader: () => leader,
@@ -846,11 +868,14 @@ export const lockLeader = (options: {
       },
       take: Effect.callback<void>((resume) => {
         if (leader) return resume(Effect.void)
-        const led = () => resume(Effect.void)
+        // It completes only once this program leads: a release before then leaves it to be interrupted.
+        const led = (now: boolean) => {
+          if (now) resume(Effect.void)
+        }
         waiting.add(led)
         // The wait in line is withdrawn: the steal replaces it.
         letGo()
-        hold(true)
+        hold("steal")
         return Effect.sync(() => waiting.delete(led))
       }),
       dispose: () => {

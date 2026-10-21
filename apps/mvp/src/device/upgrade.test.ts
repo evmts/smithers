@@ -83,7 +83,7 @@ test("a follower restores a newer payload as Not sent while another tab holds th
   transaction.metadata = { ...transaction.metadata, versions: { asking: 99 } }
   const { outbox, path } = await deviceFrom({ ...future, outbox: { [key]: JSON.stringify(transaction) } })
   await prepare(path, deviceRegistry)
-  const host = nodeDevice({ agent: api, file: path, outboxEntries: outbox, lock: { hold: () => Effect.never } })
+  const host = nodeDevice({ agent: api, file: path, outboxEntries: outbox, lock: { hold: () => Effect.never, tryHold: () => Effect.succeed(Option.none()) } })
   const runtime = openTab(api, { host })
   runtimes.push(runtime)
   const store = await runtime.runPromise(Effect.service(ChatStore))

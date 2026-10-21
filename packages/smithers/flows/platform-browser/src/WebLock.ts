@@ -8,7 +8,9 @@
  *
  * A context can also take a lock with `steal`, so the tab a person focuses
  * leads at once (decision 0002's focused tab). The context that held it loses
- * it without ending, and learns so from {@link Held.lost}.
+ * it without ending, and learns so from {@link Held.lost}. `tryHold` takes a
+ * lock only when it is free, so a context learns at once whether another one
+ * holds it.
  *
  * @since 1.0.0
  */
@@ -18,6 +20,7 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import type * as Scope from "effect/Scope"
 
 /**
@@ -29,7 +32,7 @@ import type * as Scope from "effect/Scope"
 export interface LockManagerLike {
   readonly request: (
     name: string,
-    options: { readonly signal: AbortSignal } | { readonly steal: true },
+    options: { readonly signal: AbortSignal } | { readonly steal: true } | { readonly ifAvailable: true },
     callback: (lock: unknown) => Promise<void>
   ) => Promise<unknown>
 }
@@ -78,6 +81,12 @@ export interface Service {
    * is a defect.
    */
   readonly hold: (name: string, options?: HoldOptions) => Effect.Effect<Held, never, Scope.Scope>
+  /**
+   * Takes the exclusive lock `name` only when no context holds it or waits
+   * for it, and holds it until the scope closes; none otherwise, at once. A
+   * lock manager that refuses the request is a defect.
+   */
+  readonly tryHold: (name: string) => Effect.Effect<Option.Option<Held>, never, Scope.Scope>
 }
 
 /**
@@ -94,34 +103,47 @@ export class WebLock extends Context.Service<WebLock, Service>()("@smthrs/platfo
  * @category constructors
  * @since 1.0.0
  */
-export const make = (locks: LockManagerLike): Service =>
-  WebLock.of({
-    hold: (name, options) =>
-      Effect.gen(function*() {
-        const lost = yield* Deferred.make<void>()
-        yield* Effect.acquireRelease(
-          // Interrupting the wait aborts `signal`, which withdraws the request.
-          // A steal is granted at once and takes no signal.
-          Effect.callback<() => void>((resume, signal) => {
-            let granted = false
-            locks.request(name, options?.steal === true ? { steal: true } : { signal }, () => {
-              // Granted in the moment the wait was interrupted: give it back.
-              if (signal.aborted) return Promise.resolve()
-              granted = true
-              return new Promise<void>((release) => resume(Effect.succeed(release)))
-            }).catch((cause: unknown) => {
-              // A held lock's request rejects when another context steals it.
-              if (granted) Deferred.doneUnsafe(lost, Exit.void)
-              // A withdrawn request rejects after the wait was interrupted, and
-              // nothing is listening for it any more.
-              else if (!signal.aborted) resume(Effect.die(cause))
-            })
-          }).pipe(Effect.interruptible),
-          (release) => Effect.sync(release)
-        )
-        return { lost: Deferred.await(lost) }
-      })
+export const make = (locks: LockManagerLike): Service => {
+  // Asks for the lock: a wait (`signal`), a steal or an `ifAvailable` request, the last two granted or refused at
+  // once. Held, the lock is released when the scope closes; none when an `ifAvailable` request found it taken.
+  const request = (name: string, how: "wait" | "steal" | "ifAvailable") =>
+    Effect.gen(function*() {
+      const lost = yield* Deferred.make<void>()
+      const release = yield* Effect.acquireRelease(
+        // Interrupting the wait aborts `signal`, which withdraws the request.
+        Effect.callback<(() => void) | undefined>((resume, signal) => {
+          let granted = false
+          const options = how === "steal" ? { steal: true as const } : how === "ifAvailable"
+            ? { ifAvailable: true as const }
+            : { signal }
+          locks.request(name, options, (lock) => {
+            // Taken by another context: an `ifAvailable` request gets no lock.
+            if (lock === null) {
+              resume(Effect.succeed(undefined))
+              return Promise.resolve()
+            }
+            // Granted in the moment the wait was interrupted: give it back.
+            if (signal.aborted) return Promise.resolve()
+            granted = true
+            return new Promise<void>((release) => resume(Effect.succeed(release)))
+          }).catch((cause: unknown) => {
+            // A held lock's request rejects when another context steals it.
+            if (granted) Deferred.doneUnsafe(lost, Exit.void)
+            // A withdrawn request rejects after the wait was interrupted, and
+            // nothing is listening for it any more.
+            else if (!signal.aborted) resume(Effect.die(cause))
+          })
+        }).pipe(Effect.interruptible),
+        (release) => Effect.sync(() => release?.())
+      )
+      return release === undefined ? Option.none<Held>() : Option.some<Held>({ lost: Deferred.await(lost) })
+    })
+  return WebLock.of({
+    // A wait or a steal always ends holding the lock.
+    hold: (name, options) => Effect.map(request(name, options?.steal === true ? "steal" : "wait"), Option.getOrThrow),
+    tryHold: (name) => request(name, "ifAvailable")
   })
+}
 
 /**
  * Provides the service over `navigator.locks`.

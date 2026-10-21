@@ -1,5 +1,6 @@
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import type { Outbox } from "@smthrs/effect-tanstack-db"
+import { WebLock } from "@smthrs/platform-browser"
 import { Effect, Exit, Fiber, ManagedRuntime, Metric, Option, Scope, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { dispatches } from "../../flows/dispatch"
@@ -484,9 +485,25 @@ describe("admission", () => {
     expect(tab.count(Metric.withAttributes(unsentActions, { action: "retry" }))).toBe(1)
   })
 
+  test("a tab alone whose browser grants the outbox's lock late still shows its first question queued, never unsent", async () => {
+    // A busy browser: the lock manager answers each request 300 ms after it is made.
+    const device = nodeDevice()
+    const browser = crypto.randomUUID()
+    const late = WebLock.make({
+      request: (name, options, callback) =>
+        new Promise((resolve, reject) =>
+          setTimeout(() => navigator.locks.request(`${browser}/${name}`, options, callback).then(resolve, reject), 300)
+        ),
+    })
+    const tab = await openChat({ host: { ...device, lock: late } })
+    asked(tab.actions.ask("hello"))
+    expect(tab.shown()).toEqual(["user queued hello"])
+    expect(tab.count(Metric.withAttributes(askFailures, { reason: "not_admitted" }))).toBe(0)
+  })
+
   test("a tab that can't take the outbox's lead keeps its question unsent, and Retry keeps it while it still can't", async () => {
     // Another tab holds the outbox's lock and never lets it go, even to a steal.
-    const heldElsewhere: Outbox.Lock = { hold: () => Effect.never }
+    const heldElsewhere: Outbox.Lock = { hold: () => Effect.never, tryHold: () => Effect.succeed(Option.none()) }
     const tab = await openChat({ host: nodeDevice({ lock: heldElsewhere }) })
     const { questionId } = asked(tab.actions.ask("hello"))
     expect(tab.shown()).toEqual(["user unsent hello"])

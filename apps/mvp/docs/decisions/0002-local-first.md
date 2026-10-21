@@ -104,6 +104,7 @@ The connection pill sits in the header, in an `aria-live="polite"` region, and a
 
 **Admission.**
 - `transact` succeeds only when this tab leads and the outbox storage is durable. Steal-on-focus makes the composer's tab the leader before anyone can type. An ask that still finds another tab leading is kept `unsent` (`not_admitted`) for the moment the steal takes, then sent from this tab.
+- A tab learns whether it leads from the lock, never from a timer (2026-10-21): the outbox starts once a Web Locks `ifAvailable` request has answered, so a tab alone leads before its first ask, however slowly the browser grants the lock. Before, `lockLeader` answered "follower" after 100 ms, and a lone tab's first question showed `Not sent` until the grant arrived.
 - In 1.1.3, a follower falls back to an online-only transaction, with no outbox and no retry. The wrapper never takes that path.
 - If the IndexedDB write fails, the commit rejects, `asking` rolls back, and the wrapper writes an `unsent` row with reason `not_admitted`.
 

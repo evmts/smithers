@@ -24,6 +24,8 @@ import { id, memoryStorage, Note, note, withLogs } from "./fixtures.ts"
 
 type Outcome = "ok" | Outbox.Refused | Outbox.Retry | "defect"
 
+type LockOptions = { readonly steal?: boolean; readonly ifAvailable?: boolean }
+
 // One program alone: it always leads, so tests never wait on an election. Tests of the election pass `leader: undefined`.
 const single: Outbox.Leader = {
   requestLeadership: () => Promise.resolve(true),
@@ -724,29 +726,44 @@ describe("Online.always and leadership", () => {
 
 describe("lockLeader", () => {
   // A lock service over Node's own Web Locks, shaped as @smthrs/platform-browser's WebLock: `hold` waits for the lock,
-  // or takes it at once with `steal`, and holds it until the scope closes; `lost` completes when another program steals
-  // it. Interrupting the wait withdraws the request.
-  const lock: Outbox.Lock = {
-    hold: (name, options) =>
+  // or takes it at once with `steal`, and holds it until the scope closes; `tryHold` takes it only if it is free;
+  // `lost` completes when another program steals it. Interrupting the wait withdraws the request. With `answerAfter`,
+  // the lock manager answers each request that much later, as a busy browser does.
+  const locks = (answerAfter = 0): Outbox.Lock => {
+    const request = (name: string, options: LockOptions) =>
       Effect.gen(function*() {
         const lost = yield* Deferred.make<void>()
-        yield* Effect.acquireRelease(
-          Effect.callback<() => void>((resume, signal) => {
+        const release = yield* Effect.acquireRelease(
+          Effect.callback<(() => void) | undefined>((resume, signal) => {
             let granted = false
-            navigator.locks.request(name, options?.steal === true ? { steal: true } : { signal }, () => {
-              if (signal.aborted) return Promise.resolve()
-              granted = true
-              return new Promise<void>((release) => resume(Effect.succeed(release)))
-            })
-              .catch(() => {
+            const ask = () =>
+              navigator.locks.request(
+                name,
+                options.steal === true ? { steal: true } : options.ifAvailable === true ? { ifAvailable: true } : {
+                  signal
+                },
+                (held) => {
+                  if (held === null) return void resume(Effect.succeed(undefined))
+                  if (signal.aborted) return Promise.resolve()
+                  granted = true
+                  return new Promise<void>((release) => resume(Effect.succeed(release)))
+                }
+              ).catch(() => {
                 if (granted) Deferred.doneUnsafe(lost, Exit.void)
               })
+            if (answerAfter === 0) ask()
+            else setTimeout(ask, answerAfter)
           }).pipe(Effect.interruptible),
-          (release) => Effect.sync(release)
+          (release) => Effect.sync(() => release?.())
         )
-        return { lost: Deferred.await(lost) }
+        return release === undefined ? Option.none() : Option.some({ lost: Deferred.await(lost) })
       })
+    return {
+      hold: (name, options) => Effect.map(request(name, options ?? {}), Option.getOrThrow),
+      tryHold: (name) => request(name, { ifAvailable: true })
+    }
   }
+  const lock = locks()
 
   test("the first program leads; the next waits, and when the first closes it leads and sends what was stored", async () => {
     const world = await setup([new Outbox.Retry({}), "ok"])
@@ -760,7 +777,7 @@ describe("lockLeader", () => {
       const write = yield* save(first.outbox, first.notes, note("a", 1))
       yield* write.admitted
       yield* Effect.promise(() => until(() => expect(world.sent).toHaveLength(1)))
-      const leader = yield* Outbox.lockLeader({ lock, name, grantWithin: "20 millis" })
+      const leader = yield* Outbox.lockLeader({ lock, name })
       const second = yield* start({ ...world, leader })
       const waited = (yield* Stream.runHead(second.outbox.status)).pipe(Option.map(({ leader }) => leader))
       yield* Scope.close(firstScope, Exit.void)
@@ -797,7 +814,7 @@ describe("lockLeader", () => {
       const first = yield* start({ ...world, leader: firstLeader, notes })
       const secondScope = yield* Scope.make()
       const secondLeader = yield* Scope.provide(
-        Outbox.lockLeader({ lock, name, grantWithin: "20 millis" }),
+        Outbox.lockLeader({ lock, name }),
         secondScope
       )
       const second = yield* Scope.provide(start({ ...world, leader: secondLeader, notes }), secondScope)
@@ -834,7 +851,7 @@ describe("lockLeader", () => {
       // The second takes the lead, sends the write and deletes it, then closes.
       const secondScope = yield* Scope.make()
       const secondLeader = yield* Scope.provide(
-        Outbox.lockLeader({ lock, name, grantWithin: "20 millis" }),
+        Outbox.lockLeader({ lock, name }),
         secondScope
       )
       yield* Scope.provide(start({ ...world, leader: secondLeader, notes }), secondScope)
@@ -883,14 +900,65 @@ describe("lockLeader", () => {
 
   test("a take the lock never grants leaves the program following, and can be interrupted", async () => {
     const name = id("outbox")
-    const never: Outbox.Lock = { hold: () => Effect.never }
+    const never: Outbox.Lock = { hold: () => Effect.never, tryHold: () => Effect.never }
     await scoped(Effect.gen(function*() {
-      const leader = yield* Outbox.lockLeader({ lock: never, name, grantWithin: "20 millis" })
+      const leader = yield* Outbox.lockLeader({ lock: never, name })
       const taking = yield* Effect.forkChild(leader.take, { startImmediately: true })
       // The take's hold is in line: asking to lead adds no second one, and isn't granted.
       expect(yield* Effect.promise(() => leader.requestLeadership())).toBe(false)
+      // Let go, the program doesn't lead, so the take doesn't complete: it waits to be interrupted.
+      leader.releaseLeadership()
+      yield* Effect.yieldNow
+      expect(taking.pollUnsafe()).toBeUndefined()
       yield* Fiber.interrupt(taking)
       expect(leader.isLeader()).toBe(false)
     }))
+  })
+
+  test("a program alone leads before requestLeadership answers, however late its lock manager answers", async () => {
+    const world = await setup(["ok"])
+    const name = id("outbox")
+    const seen = await scoped(Effect.gen(function*() {
+      const leader = yield* Outbox.lockLeader({ lock: locks(300), name })
+      const { notes, outbox } = yield* start({ ...world, leader })
+      // The outbox has started: its first write is admitted at once, never refused as a follower's.
+      const write = yield* Effect.exit(save(outbox, notes, note("a", 1)))
+      if (Exit.isSuccess(write)) yield* write.value.settled
+      return { write: Exit.isSuccess(write), leads: leader.isLeader() }
+    }))
+    expect(seen).toEqual({ write: true, leads: true })
+    expect(world.sent.map(({ idempotencyKey }) => idempotencyKey)).toEqual(["a"])
+  })
+
+  test("a program whose lock another holds is told at once, waits in line, and leads once the other closes", async () => {
+    const name = id("outbox")
+    const seen = await scoped(Effect.gen(function*() {
+      const firstScope = yield* Scope.make()
+      const first = yield* Scope.provide(Outbox.lockLeader({ lock, name }), firstScope)
+      const firstLeads = yield* Effect.promise(() => first.requestLeadership())
+      const second = yield* Outbox.lockLeader({ lock, name })
+      const changes: Array<boolean> = []
+      second.onLeadershipChange((now) => changes.push(now))
+      const secondLeads = yield* Effect.promise(() => second.requestLeadership())
+      // Asking again while its hold waits in line adds no second one.
+      const again = yield* Effect.promise(() => second.requestLeadership())
+      yield* Scope.close(firstScope, Exit.void)
+      yield* Effect.promise(() => until(() => expect(changes).toEqual([true])))
+      return { firstLeads, secondLeads, again }
+    }))
+    expect(seen).toEqual({ firstLeads: true, secondLeads: false, again: false })
+  })
+
+  test("a program let go before its lock manager answers answers that it doesn't lead", async () => {
+    const name = id("outbox")
+    const silent: Outbox.Lock = { hold: () => Effect.never, tryHold: () => Effect.never }
+    const seen = await scoped(Effect.gen(function*() {
+      const leader = yield* Outbox.lockLeader({ lock: silent, name })
+      const asked = leader.requestLeadership()
+      yield* Effect.yieldNow
+      leader.releaseLeadership()
+      return yield* Effect.promise(() => asked)
+    }))
+    expect(seen).toBe(false)
   })
 })
