@@ -928,6 +928,7 @@ describe("HumanTask gives up", () => {
       const instance = makeInstance(Host, executionId)
       return drive(
         Effect.gen(function*() {
+          yield* TestClock.adjust(1)
           const result = yield* Flow.intoResult(
             Interpreter.interpret(
               HumanTask.action.call({ name: "release", kind: "confirm", prompt: "Ship it?", timeoutMs })
@@ -968,6 +969,7 @@ describe("HumanTask gives up", () => {
       refused(-5, "human-deadline-negative"),
       // A durable store records the timeout clock's due time as a safe integer.
       refused(2 ** 53, "human-deadline-past-safe"),
+      refused(Number.MAX_SAFE_INTEGER, "human-deadline-due-overflow"),
       refused(Number.MAX_VALUE, "human-deadline-max-value")
     ], { discard: true })
   })

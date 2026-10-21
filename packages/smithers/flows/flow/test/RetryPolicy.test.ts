@@ -651,14 +651,21 @@ describe("nextDelay numeric boundaries", () => {
     )
   })
 
-  it("a fractional factor still never dips below the initial interval", () => {
-    const decaying = RetryPolicy.make({ initialMs: 100, factor: 0.5, maxMs: 1000 })
-    expect(RetryPolicy.nextDelay(decaying, 1)).toEqual(some(100))
-    // attempt 2 computes 50ms, which is below initialMs, so the policy gives up
-    expect(RetryPolicy.nextDelay(decaying, 2)).toEqual(none)
-    expect(RetryPolicy.decide(decaying, { attempt: 2, error: "e" })).toEqual(
-      RetryPolicy.giveUp("exhausted")
-    )
+  it("accepted fractional factors keep retrying with decreasing intervals", () => {
+    const policy = RetryPolicy.make({ initialMs: 100, factor: 0.5, maxMs: 1000, maxAttempts: 4 })
+    for (const [attempt, delay] of [[1, 100], [2, 50], [3, 25]]) {
+      expect(RetryPolicy.nextDelay(policy, attempt)).toEqual(some(delay))
+      expect(RetryPolicy.decide(policy, { attempt, error: "e" })).toEqual(RetryPolicy.retryAfter(delay))
+    }
+    expect(RetryPolicy.nextDelay(policy, 4)).toEqual(none)
+  })
+
+  it("malformed elapsed time is exhaustion without evidence of expiration", () => {
+    const policy = RetryPolicy.make({ initialMs: 100, factor: 2, maxMs: 1000, expirationMs: 1000 })
+    for (const elapsedMs of [NaN, Infinity, -Infinity, -1]) {
+      expect(RetryPolicy.decide(policy, { attempt: 1, error: "e", elapsedMs }))
+        .toEqual(RetryPolicy.giveUp("exhausted"))
+    }
   })
 
   it("maxAttempts of 1 refuses to retry the very first failure", () => {

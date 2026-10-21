@@ -288,8 +288,8 @@ export class RetryAttemptsExhausted extends Schema.TaggedError<RetryAttemptsExha
  * a cap below the initial interval, or — when the policy declares
  * `expirationMs` and the caller supplies `elapsedMs` — an elapsed duration
  * past the expiration bound. Otherwise the delay is capped to the remaining
- * expiration window, expiring only when that window cannot fit one more
- * full-value (`initialMs`) attempt.
+ * expiration window, expiring only when that window cannot fit the smaller of the
+ * initial interval and the computed interval.
  *
  * Jitter is deterministic-friendly: `options.random` is a `[0, 1]` sample
  * supplied by the caller and defaults to `1`, which leaves the delay at its
@@ -338,11 +338,11 @@ export const nextDelay = (
   let delay = Math.min(raw, policy.maxMs)
   // Temporal caps the delay to the remaining expiration window rather than
   // refusing outright; the below-initial check then expires sequences whose
-  // remaining window cannot fit one more full-value attempt.
+  // remaining window cannot fit the smaller of the initial and computed intervals.
   if (policy.expirationMs !== undefined && options?.elapsedMs !== undefined) {
     delay = Math.min(delay, Math.max(0, policy.expirationMs - options.elapsedMs))
   }
-  if (delay < policy.initialMs) {
+  if (delay < Math.min(raw, policy.initialMs)) {
     return Option.none()
   }
   // `validationIssue` established finite `maxMs`, so `Math.min` made the
@@ -509,10 +509,10 @@ export const decide = (
       onNone: () =>
         // A policy can report `expired` only when it declares an expiration
         // bound and dropping elapsed time would have allowed another attempt.
-        // A malformed elapsed value still gives up because the sequence cannot
-        // continue without a trustworthy clock reading; without an expiration
-        // bound, the public terminal reason for that refusal is `exhausted`.
+        // A malformed elapsed value gives up as exhausted: it supplies no
+        // trustworthy evidence that the expiration bound elapsed.
         policy.expirationMs !== undefined &&
+          options.elapsedMs !== undefined && Number.isFinite(options.elapsedMs) && options.elapsedMs >= 0 &&
           Option.isSome(nextDelay(policy, options.attempt, { random: options.random }))
           ? giveUp("expired")
           : giveUp("exhausted"),

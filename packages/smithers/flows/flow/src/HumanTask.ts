@@ -46,6 +46,7 @@ import * as Exit from "effect/Exit"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as Action from "./Action/index.ts"
+import * as Clock from "effect/Clock"
 import * as DurableClock from "./DurableClock.ts"
 import * as DurableDeferred from "./DurableDeferred.ts"
 import { FlowInstance } from "./FlowRuntime/FlowInstance.ts"
@@ -677,25 +678,26 @@ const budgetOf = (payload: Payload): Effect.Effect<number, HumanTaskFailed> => {
  *
  * @private
  */
-const deadlineOf = (payload: Payload): Effect.Effect<Duration.Duration | undefined, HumanTaskFailed> => {
-  const timeoutMs = payload.timeoutMs
-  if (timeoutMs === undefined) return Effect.succeed(undefined)
-  // The timeout clock is due at its start plus the deadline, and a durable
-  // store records that due time as a safe integer.
-  return Number.isFinite(timeoutMs) && timeoutMs >= 0 && timeoutMs <= Number.MAX_SAFE_INTEGER
-    ? Effect.succeed(Duration.millis(timeoutMs))
-    : Effect.fail(
+const deadlineOf = (payload: Payload): Effect.Effect<Duration.Duration | undefined, HumanTaskFailed> =>
+  Effect.gen(function*() {
+    const timeoutMs = payload.timeoutMs
+    if (timeoutMs === undefined) return undefined
+    const now = yield* Clock.currentTimeMillis
+    // Validate the absolute due time, as DurableClock.sleep does before parking.
+    if (Number.isFinite(timeoutMs) && timeoutMs >= 0 && now + timeoutMs <= Number.MAX_SAFE_INTEGER) {
+      return Duration.millis(timeoutMs)
+    }
+    return yield* Effect.fail(
       failed(
         payload,
         "request_invalid",
         0,
         [],
-        `${tag} was called with timeoutMs ${timeoutMs}. A deadline is a number of milliseconds ` +
-          `from 0 to ${Number.MAX_SAFE_INTEGER}; the question would be over before it was asked, or ` +
-          "never over at all."
+        `${tag} was called with timeoutMs ${timeoutMs}. A deadline must be non-negative and finite, ` +
+          `with an absolute due time at most ${Number.MAX_SAFE_INTEGER}.`
       )
     )
-}
+  })
 
 /**
  * Refuses a question nobody could answer correctly, before anyone is asked.

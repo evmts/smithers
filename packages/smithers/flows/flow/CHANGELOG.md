@@ -29,6 +29,12 @@
   before persisting the cancellation snapshot.
 - Reject enumerable symbol payload keys instead of dropping data, and copy
   array lengths from inert descriptors without invoking proxy getters.
+- Accepted shrinking retry factors continue until exhaustion or expiry. Invalid
+  elapsed readings report exhaustion rather than claiming expiration.
+- Deadline diagnostics support starts outside the JavaScript Date range.
+- Human-task timeouts whose absolute due time exceeds the durable timer range
+  fail as `request_invalid` before parking. Uses the catalog’s `@smthrs/flow`
+  retry, durable sleep, and human-wait primitives.
 
 - Breaking: `RetryPolicy.decide` reads a failure's Retry-After hint from
   `retryAfterMillis`, the field `@smthrs/model`'s `ModelError` carries a
