@@ -218,6 +218,31 @@ describe("a run on Cloudflare", () => {
     ])
   })
 
+  test("a read that can't reach a run already shown keeps its page; an answer about the run replaces it", async () => {
+    const answers: Array<Effect.Effect<Inspection, RemoteReadFailed>> = [
+      Effect.succeed(inspection(RUN, [event(0)], false)),
+      Effect.fail(new RemoteReadFailed({})),
+      Effect.fail(new RemoteReadFailed({ status: 503, code: "unavailable" })),
+      Effect.fail(new RemoteReadFailed({ status: 404, code: "not_found" })),
+    ]
+    let asked = 0
+    const t = open({
+      inspect: () => Effect.die("unused"),
+      list: () => Effect.succeed({ runs: [], cursor: null }),
+      remote: () => answers[asked++]!,
+    })
+    await t.run(t.store.readRun(RUN))
+    const shown = t.page(RUN)
+    expect(shown?.state).toBe("read")
+    // No network, then ChatApi unavailable: what the page last read stays.
+    await t.run(t.store.readRun(RUN))
+    await t.run(t.store.readRun(RUN))
+    expect(t.page(RUN)).toEqual(shown)
+    // The run itself is gone: the page says so.
+    await t.run(t.store.readRun(RUN))
+    expect(t.page(RUN)).toMatchObject({ state: "not_found", inspection: null })
+  })
+
   test("a page's state from a failure: the engine's not-found, ChatApi's, and anything else", () => {
     expect(stateOf(new BrowserEngine.RequestRefused({ request: "Inspect", error: "@smthrs/engine-store/RunNotFound" })))
       .toBe("not_found")

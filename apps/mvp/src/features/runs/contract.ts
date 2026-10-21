@@ -162,11 +162,9 @@ export const RUNS_TELEMETRY = {
     "run.inspect",
     "run.act",
     "run.read",
-    "run.steer",
     "run.steer.send",
     "smithers_run_acts",
     "smithers_run_reads",
-    "smithers_run_steers",
     "smithers_run_steer_sends",
   ],
   fields: [

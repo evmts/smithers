@@ -210,7 +210,12 @@ export class RunsStore extends Context.Service<
             return yield* recordRead("run", "read", startedAt, inspection.journal.events.length)
           }
           const state = stateOf(read.failure)
-          yield* put(pages, { id: runId, state, inspection: null, more: [], hasMore: false })
+          // A read that couldn't reach the run leaves a page that has read it as it was: the next change reads it
+          // again. Only an answer about the run itself (not found, not started) replaces what the page shows.
+          const shown = yield* pages.get(runId)
+          if (state !== "unavailable" || Option.isNone(shown) || shown.value.state !== "read") {
+            yield* put(pages, { id: runId, state, inspection: null, more: [], hasMore: false })
+          }
           yield* recordRead("run", state, startedAt)
         }).pipe(Effect.orDie)
 
