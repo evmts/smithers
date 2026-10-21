@@ -20,11 +20,12 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import { checkExecutionId, todoExecutionId } from "../../src/features/pulls/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { REPOSITORY, reset, services as githubServices, sql } from "../github/test/fixtures.ts"
-import { BOT_LOGIN, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
+import { BOT_LOGIN, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import * as ModelEndpoint from "../ModelEndpoint.ts"
 import * as Stack from "../stack/Stack.ts"
 import { build, runFlow } from "../test/flowHost.ts"
+import { machines } from "../test/todoMachines.ts"
 import { testFile } from "../test/harness.ts"
 import { ChecksRun } from "./Checks.ts"
 import * as Todo from "./Todo.ts"
@@ -64,78 +65,6 @@ const todo = async (number = 1) =>
     `SELECT state, step, branch, base_sha AS "baseSha", head_sha AS "headSha", pr_number AS "prNumber", failure, note,
       merge_sha AS "mergeSha", position FROM todos WHERE repo_id = '${REPOSITORY.id}' AND number = ${number}`,
   )) as unknown as Array<Record<string, unknown>>)[0]!
-
-/** The machine: one in-memory working copy per branch machine, cloned from the branch's head on GitHub on first use. */
-const machines = (github: ScriptedGitHub, run: (command: string) => number = () => 0) => {
-  const copies = new Map<string, { readonly initial: Map<string, string>; readonly files: Map<string, string> }>()
-  const calls: Array<{ readonly branchId: string; readonly branch: string; readonly ownerId: string; readonly callId: string; readonly tool: string }> = []
-  const service = Machines.of({
-    tool: (branch, ownerId, callId, call) =>
-      Effect.suspend(() => {
-        calls.push({ branchId: branch.branchId, branch: branch.branch, ownerId, callId, tool: call.tool })
-        let copy = copies.get(branch.branchId)
-        if (copy === undefined) {
-          const files = new Map(github.tree(branch.branch))
-          copy = { initial: new Map(files), files }
-          copies.set(branch.branchId, copy)
-        }
-        const { initial, files } = copy
-        const done = (result: SandboxTools.Result) => Effect.succeed({ result, generation: 1 })
-        switch (call.tool) {
-          case "write":
-            files.set(call.path, call.content)
-            return done({ tool: "write", path: call.path, bytes: call.content.length })
-          case "read": {
-            const content = files.get(call.path)
-            if (content === undefined) {
-              return Effect.fail({ _tag: "@smthrs/sandbox/SandboxTools/ToolRefused", reason: "not_found" } as never)
-            }
-            return done({ tool: "read", path: call.path, content, bytes: content.length, truncated: false })
-          }
-          case "status": {
-            const paths = [...new Set([...initial.keys(), ...files.keys()])].sort()
-            const entries = paths.flatMap((path) => {
-              const before = initial.get(path)
-              const after = files.get(path)
-              if (before === after) return []
-              if (before === undefined) return [{ path, index: "?", worktree: "?" }]
-              if (after === undefined) return [{ path, index: " ", worktree: "D" }]
-              return [{ path, index: " ", worktree: "M" }]
-            })
-            return done({ tool: "status", branch: branch.branch, entries })
-          }
-          case "list": {
-            const prefix = call.path === undefined ? "" : `${call.path}/`
-            const names = [...files.keys()].filter((path) => path.startsWith(prefix)).map((path) => path.slice(prefix.length))
-              .filter((name) => !name.includes("/"))
-            return done({
-              tool: "list",
-              path: call.path ?? ".",
-              entries: names.map((name) => ({ name, kind: "file" as const, bytes: files.get(`${prefix}${name}`)!.length })),
-              truncated: false,
-            })
-          }
-          case "run": {
-            const exitCode = run(call.command)
-            return done({
-              tool: "run",
-              exitCode,
-              timedOut: false,
-              stdout: "",
-              stderr: "",
-              stdoutBytes: 0,
-              stderrBytes: 0,
-              truncated: false,
-            })
-          }
-          case "diff":
-            return done({ tool: "diff", diff: "", bytes: 0, truncated: false })
-        }
-      }),
-    sleepIfIdle: () => Effect.die("the todo run never puts a machine to sleep"),
-  })
-  return { calls, copies, layer: Layer.succeed(Machines, service) }
-}
 
 /** A model that answers each turn with the next cell, then the last one again. */
 const cells = (...sources: ReadonlyArray<string>) => {

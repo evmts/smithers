@@ -1,0 +1,36 @@
+{
+  "eval": "todo-steer",
+  "model": "qwen-3.8-27b",
+  "trials": [
+    {
+      "word": "wmvioaz40",
+      "exit": "merged",
+      "asked": 7,
+      "todoLine": true,
+      "steeredLine": true,
+      "delivered": true,
+      "readme": "# Widgets\nwmvioaz40\nsteered wmvioaz40\n",
+      "ms": 52062
+    },
+    {
+      "word": "wmvioc3h7",
+      "exit": "merged",
+      "asked": 9,
+      "todoLine": true,
+      "steeredLine": true,
+      "delivered": true,
+      "readme": "# Widgets\nwmvioc3h7\nsteered wmvioc3h7\n",
+      "ms": 175863
+    },
+    {
+      "word": "wmviofv9m",
+      "exit": "merged",
+      "asked": 8,
+      "todoLine": true,
+      "steeredLine": true,
+      "delivered": true,
+      "readme": "# Widgets\nwmviofv9m\nsteered wmviofv9m\n",
+      "ms": 93538
+    }
+  ]
+}

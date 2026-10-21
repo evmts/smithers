@@ -14,6 +14,10 @@ the running execution's agent at its next turn boundary.
   each drain by the agent session draining. Outside a flow execution it fails
   `engine_failed`. `Steering.BoundaryInput` gains an optional `session`, which
   `CellTurn` fills at every boundary it drains.
+- `@smthrs/harness`: a person's message (a steer or a follow-up) reaches the
+  model framed as a newer instruction that wins where it conflicts with
+  earlier ones, the task's included (`Notifications.precedence`, between the
+  `[notification …]` header and the words). A system event is unchanged.
 - `@smthrs/agent`: `Agent.layerSandbox` and `Agent.layerSandboxWithVariant`
   provide the QuickJS sandbox without the empty steering source of
   `layerDefaults`, so a host supplies its own.

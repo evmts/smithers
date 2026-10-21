@@ -48,9 +48,19 @@ const render = (notification: Notification): ModelRequest.Message => {
     : ` attribution ${JSON.stringify(notification.provenance.attribution)}`
   return ModelRequest.Message.user(
     `[notification ${notification.id} from ${notification.provenance.sourceActor} ` +
-      `at ${notification.provenance.sourceLineageId} turn ${notification.provenance.sourceTurn}${attribution}]\n${body}`
+      `at ${notification.provenance.sourceLineageId} turn ${notification.provenance.sourceTurn}${attribution}]\n` +
+      (notification._tag === "system-event" ? "" : precedence) + body
   )
 }
+
+/**
+ * How a person's message reads to the model: what they said while the run worked is newer than the task the run was
+ * given, so where the two conflict the model follows the message. Without it a model weighs a steer like any earlier
+ * line and keeps to the task's "change nothing else". A system event is a fact, not an instruction, and gets none.
+ */
+export const precedence =
+  "A newer instruction from this person, sent while you work: do what it asks before you finish. Where it conflicts " +
+  "with earlier instructions, your task's included, it wins.\n"
 
 /**
  * The steering item one notification carries, or nothing when it carries none.

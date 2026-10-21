@@ -50,7 +50,7 @@ interface RunRow {
  * calls go through `fetch`: on Node, the host's HTTP/1.1 provider fetch, since Node's own fetch wedges on an HTTP/2
  * session the provider tore down (`EgressHttpClient.providerFetch`).
  */
-const defaultModel = (fetch: typeof globalThis.fetch) =>
+export const defaultModel = (fetch: typeof globalThis.fetch) =>
   Effect.gen(function* () {
     return yield* HostModel
   }).pipe(Effect.provide(HostModel.layerConfig("CHAT_MODEL", DEFAULT_CHAT_MODEL, { fetch })))

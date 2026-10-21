@@ -59,7 +59,10 @@ const systemEvent = (
   ...(coalescingKey === undefined ? {} : { coalescingKey })
 })
 
-/** The exact text the adapter renders for one delivered notification. */
+/**
+ * The exact text the adapter renders for one delivered notification: a person's message is framed as a newer
+ * instruction (`Notifications.precedence`); a machine's system event is a fact and isn't.
+ */
 const rendered = (
   id: string,
   body: string,
@@ -67,7 +70,9 @@ const rendered = (
   lineage = "operator/root",
   turn = 7
 ): ModelRequest.Message =>
-  ModelRequest.Message.user(`[notification ${id} from ${actor} at ${lineage} turn ${turn}]\n${body}`)
+  ModelRequest.Message.user(
+    `[notification ${id} from ${actor} at ${lineage} turn ${turn}]\n${actor.startsWith("machine:") ? "" : Notifications.precedence}${body}`
+  )
 
 describe("harness notification adapter", () => {
   it("carries attribution into the model message without replacing its authenticated source", async () => {
@@ -93,7 +98,8 @@ describe("harness notification adapter", () => {
       }).pipe(Effect.provide(notificationLayer()), Effect.scoped)
     )
     expect(result.first.inserts).toEqual([ModelRequest.Message.user(
-      "[notification member-feedback from bearer:product-backend at operator/root turn 7 attribution {\"person\":\"ben\",\"session\":\"[REDACTED]\",\"via\":\"codex\"}]\nKeep the question open.\nCheck cancellation."
+      "[notification member-feedback from bearer:product-backend at operator/root turn 7 attribution {\"person\":\"ben\",\"session\":\"[REDACTED]\",\"via\":\"codex\"}]\n" +
+        Notifications.precedence + "Keep the question open.\nCheck cancellation."
     )])
     expect(result.replay.inserts).toEqual(result.first.inserts)
     expect(result.replay.duplicate).toBe(true)
@@ -121,7 +127,7 @@ describe("harness notification adapter", () => {
       role: "user",
       content: [{
         text: expect.stringContaining(
-          "[notification steer from human:operator at operator/root turn 7]\nbody:steer"
+          "[notification steer from human:operator at operator/root turn 7]\n" + Notifications.precedence + "body:steer"
         )
       }]
     })

@@ -154,8 +154,10 @@ describe("steering a running AgentAction", () => {
     expect(out.requests).toHaveLength(2)
     expect(textOf(out.requests[0]!)).not.toContain("Use tabs, not spaces")
     const second = textOf(out.requests[1]!)
+    // The person's words, framed as a newer instruction that wins over the task where they conflict.
     expect(second).toContain(
-      "[notification steer-1 from person:ben at todo:steered turn 0 attribution {\"login\":\"ben\"}]\nUse tabs, not spaces"
+      "[notification steer-1 from person:ben at todo:steered turn 0 attribution {\"login\":\"ben\"}]\n" +
+        Notifications.precedence + "Use tabs, not spaces"
     )
     expect(second.split("Use tabs, not spaces")).toHaveLength(2)
     expect(out.pending).toEqual([])
