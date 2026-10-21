@@ -1009,32 +1009,45 @@ export const make: Effect.Effect<
         Effect.annotateCurrentSpan({ staleBeforeMs }).pipe(Effect.andThen(
           writer.write(
             Effect.gen(function*() {
+              const nowMs = yield* Clock.currentTimeMillis
+              yield* sql`
+                UPDATE flows_time_travel_fork_intents SET reclaimed_at_ms =
+                  CASE WHEN reclaimed_at_ms >= ${nowMs} THEN reclaimed_at_ms + 1 ELSE ${nowMs} END
+                WHERE forgotten_at_ms IS NULL
+                  AND (reclaimed_at_ms IS NOT NULL OR reserved_at_ms < ${staleBeforeMs})
+              `
               const rows = yield* sql<{
                 readonly child_run_id: string
                 readonly parent_run_id: string
                 readonly parent_seq: number
                 readonly reserved_at_ms: number
+                readonly reclaimed_at_ms: number
               }>`
-                SELECT child_run_id, parent_run_id, parent_seq, reserved_at_ms
+                SELECT child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms
                 FROM flows_time_travel_fork_intents
-                WHERE reserved_at_ms < ${staleBeforeMs} AND reclaimed_at_ms IS NULL
+                WHERE reclaimed_at_ms IS NOT NULL AND forgotten_at_ms IS NULL
                 ORDER BY reserved_at_ms ASC, child_run_id ASC
               `
+              return rows.map((row) => ({
+                childRunId: row.child_run_id,
+                parentRunId: row.parent_run_id,
+                parentSeq: Number(row.parent_seq),
+                reservedAtMs: Number(row.reserved_at_ms),
+                reclaimedAtMs: Number(row.reclaimed_at_ms)
+              }))
+            }).pipe(Effect.mapError(mapError))
+          ).pipe(Effect.mapError(mapError))
+        ))
+      ),
+      forgetForkIntent: Effect.fn("TimeTravelStore.forgetForkIntent")((childRunId, reclaimedAtMs) =>
+        Effect.annotateCurrentSpan({ childRunId, reclaimedAtMs }).pipe(Effect.andThen(
+          writer.write(
+            Effect.gen(function*() {
               const nowMs = yield* Clock.currentTimeMillis
-              const intents: Array<TimeTravelStore.ForkIntent> = []
-              for (const row of rows) {
-                yield* sql`
-                  UPDATE flows_time_travel_fork_intents SET reclaimed_at_ms = ${nowMs}
-                  WHERE child_run_id = ${row.child_run_id}
-                `
-                intents.push({
-                  childRunId: row.child_run_id,
-                  parentRunId: row.parent_run_id,
-                  parentSeq: Number(row.parent_seq),
-                  reservedAtMs: Number(row.reserved_at_ms)
-                })
-              }
-              return intents
+              yield* sql`
+                UPDATE flows_time_travel_fork_intents SET forgotten_at_ms = ${nowMs}
+                WHERE child_run_id = ${childRunId} AND reclaimed_at_ms = ${reclaimedAtMs} AND forgotten_at_ms IS NULL
+              `
             }).pipe(Effect.mapError(mapError))
           ).pipe(Effect.mapError(mapError))
         ))
@@ -1043,6 +1056,19 @@ export const make: Effect.Effect<
         Effect.annotateCurrentSpan({ parentRunId, lineageId: frame.lineageId, seq: frame.seq }).pipe(Effect.andThen(
           writer.write(
             Effect.gen(function*() {
+              if (childRunId !== undefined) {
+                const nowMs = yield* Clock.currentTimeMillis
+                // Commit the reopen before any validation. Its fresh stamp
+                // fences acknowledgments from sweeps that preceded late provisioning.
+                const reopened = yield* sql<{ readonly child_run_id: string }>`
+                  UPDATE flows_time_travel_fork_intents SET forgotten_at_ms = NULL,
+                    reclaimed_at_ms = CASE WHEN reclaimed_at_ms >= ${nowMs}
+                      THEN reclaimed_at_ms + 1 ELSE ${nowMs} END
+                  WHERE child_run_id = ${childRunId} AND reclaimed_at_ms IS NOT NULL
+                  RETURNING child_run_id
+                `
+                if (reopened.length > 0) return { _tag: "Reclaimed" as const, runId: childRunId }
+              }
               yield* refuseLiveAncestry(parentRunId)
               /**
                * THE FRAME MUST ADDRESS A RECORD.
@@ -1424,6 +1450,7 @@ export const make: Effect.Effect<
             )
           `
               return {
+                _tag: "Created" as const,
                 runId,
                 edge: {
                   parentRunId,
@@ -1434,7 +1461,17 @@ export const make: Effect.Effect<
                 }
               }
             }).pipe(Effect.mapError(mapError))
-          ).pipe(Effect.mapError(mapError))
+          ).pipe(
+            Effect.mapError(mapError),
+            Effect.flatMap((result) =>
+              result._tag === "Reclaimed"
+                ? Effect.fail(error(
+                  "fence_lost",
+                  `fork reservation ${result.runId} was reclaimed before the fork committed`
+                ))
+                : Effect.succeed({ runId: result.runId, edge: result.edge })
+            )
+          )
         ))
       ),
       recordReceipt: Effect.fn("TimeTravelStore.recordReceipt")((receipt) =>

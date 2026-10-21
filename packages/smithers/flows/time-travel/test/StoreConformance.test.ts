@@ -8,6 +8,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
+import { TestClock } from "effect/testing"
 import { forkCreatedEventType, type LineageEdge } from "../src/Frame.ts"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
@@ -775,9 +776,71 @@ describe("TimeTravelStore conformance", () => {
 
 /**
  * A fork id is a durable reservation on both stores: consumed by the fork
- * that commits it, handed back once when abandoned, never reused.
+ * that commits it, handed back until forgotten when abandoned, never reused.
  */
 describe("TimeTravelStore fork intents", () => {
+  it.effect("returns every pending lane in reservation order, breaking ties by child id", () =>
+    Effect.gen(function*() {
+      const exercise = (store: TimeTravelStore.Service) =>
+        Effect.gen(function*() {
+          const laterId = yield* store.nextForkId("z", frame)
+          const earlierId = yield* store.nextForkId("a", frame)
+          yield* TestClock.adjust(1)
+          const latest = yield* store.nextForkId("0", frame)
+          const pending = yield* store.abandonForkIntents(Number.MAX_SAFE_INTEGER)
+          expect(pending.map((intent) => intent.childRunId)).toEqual([earlierId, laterId, latest])
+          expect(yield* store.abandonForkIntents(0)).toEqual(pending.map((intent) => ({
+            ...intent,
+            reclaimedAtMs: intent.reclaimedAtMs! + 1
+          })))
+        })
+      yield* exercise(MemoryTimeTravelStore.make())
+      yield* withSql((store) => exercise(store))
+    }))
+
+  for (const forgotten of [false, true]) {
+    it.effect(`refuses a reclaimed reservation with forgotten=${forgotten} without writing fork records`, () =>
+      Effect.gen(function*() {
+        const exercise = (store: TimeTravelStore.Service) =>
+          Effect.gen(function*() {
+            const childRunId = yield* store.nextForkId("run", frame)
+            const peer = yield* store.nextForkId("other", frame)
+            const claimed = yield* store.abandonForkIntents(1)
+            const stamp = (id: string) => claimed.find((intent) => intent.childRunId === id)!.reclaimedAtMs!
+            if (forgotten) yield* store.forgetForkIntent(childRunId, stamp(childRunId))
+            yield* store.forgetForkIntent(peer, stamp(peer))
+            const refusal = yield* Effect.flip(store.createFork("run", frame, childRunId))
+            expect(refusal).toMatchObject({
+              code: "fence_lost",
+              message: `fork reservation ${childRunId} was reclaimed before the fork committed`
+            })
+            // Only the refused fork returns to reclaiming; another forgotten
+            // reservation must stay forgotten.
+            expect((yield* store.abandonForkIntents(0)).map((intent) => intent.childRunId)).toEqual([childRunId])
+            expect(yield* store.nextForkId("run", frame)).toBe("run:fork:1:2")
+          })
+        const memory = memorySeed()
+        const before = memory.state()
+        yield* exercise(memory)
+        const after = memory.state()
+        expect({ ...after, forkIntents: [] }).toEqual(before)
+        yield* withSql((store, sql) =>
+          Effect.gen(function*() {
+            yield* seedSql(sql)
+            yield* sql`UPDATE flows_runs SET status = 'suspended', owner_host_id = NULL,
+            owner_pid = NULL, owner_nonce = NULL, heartbeat_at_ms = NULL WHERE run_id = 'run'`
+            yield* exercise(store)
+            for (
+              const table of ["flows_runs", "flows_journal_events", "flows_attempts", "flows_time_travel_snapshots"]
+            ) {
+              expect(yield* sql`SELECT * FROM ${sql(table)} WHERE run_id = 'run:fork:1:1'`).toEqual([])
+            }
+            expect(yield* sql`SELECT * FROM flows_time_travel_edges WHERE child_run_id = 'run:fork:1:1'`).toEqual([])
+          })
+        )
+      }))
+  }
+
   it.effect("reserves, consumes, and reclaims fork intents identically", () =>
     Effect.gen(function*() {
       const at = { lineageId: "run/root", seq: 0 } as const
@@ -786,10 +849,17 @@ describe("TimeTravelStore fork intents", () => {
           const abandoned = yield* store.nextForkId("run", at)
           const fresh = yield* store.abandonForkIntents(0)
           const stale = yield* store.abandonForkIntents(1)
-          const again = yield* store.abandonForkIntents(1)
+          const again = yield* store.abandonForkIntents(0)
+          yield* store.forgetForkIntent("unknown", 0)
+          const reserved = yield* store.nextForkId("run", at)
+          yield* store.forgetForkIntent(reserved, 0)
+          yield* store.forgetForkIntent(abandoned, again[0]!.reclaimedAtMs!)
+          yield* store.forgetForkIntent(abandoned, again[0]!.reclaimedAtMs!)
+          const forgotten = yield* store.abandonForkIntents(0)
           const minted = yield* store.nextForkId("run", at)
           const fork = yield* store.createFork("run", at, minted)
           const consumed = yield* store.abandonForkIntents(Number.MAX_SAFE_INTEGER)
+          expect(consumed.map((intent) => intent.childRunId)).toEqual([reserved])
           return {
             ids: [abandoned, minted],
             distinct: abandoned !== minted,
@@ -800,9 +870,10 @@ describe("TimeTravelStore fork intents", () => {
               parentSeq: intent.parentSeq,
               reservedAtMs: intent.reservedAtMs
             })),
-            again,
+            again: again.map((intent) => intent.childRunId),
+            forgotten,
             committed: fork.runId === minted,
-            consumed
+            consumed: consumed.map((intent) => intent.childRunId)
           }
         })
 
@@ -829,13 +900,14 @@ describe("TimeTravelStore fork intents", () => {
 
       expect(memory).toEqual(sqlite)
       expect(memory).toEqual({
-        ids: ["run:fork:0:1", "run:fork:0:2"],
+        ids: ["run:fork:0:1", "run:fork:0:3"],
         distinct: true,
         fresh: [],
         stale: [{ reclaimsAbandoned: true, parentRunId: "run", parentSeq: 0, reservedAtMs: 0 }],
-        again: [],
+        again: ["run:fork:0:1"],
+        forgotten: [],
         committed: true,
-        consumed: []
+        consumed: ["run:fork:0:2"]
       })
     }))
 })

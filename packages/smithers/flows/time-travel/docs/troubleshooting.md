@@ -231,8 +231,16 @@ Three log lines come from this package's own recovery paths:
   restores no pointer rather than a wrong one.
 - `time-travel: could not forget an abandoned fork workspace` names a lane left
   behind by a fork that reserved an id and never committed. The reserved
-  ordinal is never handed out again, so the lane blocks nothing; remove it by
-  hand if the disk space matters.
+  ordinal is never handed out again. A failed lane removal or completion write
+  leaves the intent reclaiming, and the next service build retries it. The log
+  carries `childRunId` and `workspaceName`. Repeated removal of a missing
+  workspace is safe. A provisioning fork whose reservation was reclaimed
+  resets even a forgotten intent to reclaiming in the refusal transaction,
+  then raises `fence_lost` after commit. Startup retries removal if the fork's
+  own cleanup fails; successful cleanup makes that later forget a no-op.
+  Retry the fork to mint a fresh id. If it crashes after a late `workspaceAdd`
+  but before `createFork` resets an already forgotten intent, the lane stays
+  registered: nothing durable says it exists.
 
 ## An audit stays in_progress across restarts
 

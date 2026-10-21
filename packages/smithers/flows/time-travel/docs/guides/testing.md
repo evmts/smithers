@@ -89,10 +89,17 @@ const store = MemoryTimeTravelStore.make({ records, failAt: "archiveAndTruncate:
 ```
 
 The steps are `writeAudit`, `updateAudit`, `recordSnapshot`, `recordReceipt`,
-`nextForkId`, `abandonForkIntents`, `createFork:start`, `createFork:copy`,
+`nextForkId`, `abandonForkIntents`, `forgetForkIntent`, `createFork:start`, `createFork:copy`,
 `createFork:commit`, `archiveAndTruncate:start`,
 `archiveAndTruncate:before-archive`, `archiveAndTruncate:before-truncate`, and
 `archiveAndTruncate:commit`.
+
+`ForkIntentReclamation.test.ts` also wraps the real stores and jj service to
+exercise a reservation swept before provisioning. A late `createFork` resets
+the forgotten intent to reclaiming in its refusal transaction, then raises
+`fence_lost` after commit. An injected cleanup failure must leave that intent
+available for the next startup sweep to forget its real lane; successful cleanup
+makes the later forget a no-op.
 
 Where the failure lands decides what the audit row looks like afterwards. A
 failure at `writeAudit` leaves no row at all; one at `updateAudit` leaves it

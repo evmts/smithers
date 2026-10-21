@@ -554,12 +554,15 @@ describe("SqlTimeTravelStore audits", () => {
           `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-payload', 'source', 0, 0, 'type', '{', '{}', 0)`,
           `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-meta', 'source', 0, 0, 'type', '{}', '{', 0)`,
           `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-archived', 'source', 0, 0, 'type', '{}', '{}', -1)`,
-          `INSERT INTO flows_time_travel_fork_intents VALUES ('', 'parent', 0, 0, NULL)`,
-          `INSERT INTO flows_time_travel_fork_intents VALUES ('intent-parent', '', 0, 0, NULL)`,
-          `INSERT INTO flows_time_travel_fork_intents VALUES ('intent-seq', 'parent', -1, 0, NULL)`,
-          `INSERT INTO flows_time_travel_fork_intents VALUES ('intent-seq-fractional', 'parent', 0.5, 0, NULL)`,
-          `INSERT INTO flows_time_travel_fork_intents VALUES ('intent-reserved', 'parent', 0, -1, NULL)`,
-          `INSERT INTO flows_time_travel_fork_intents VALUES ('intent-reclaimed', 'parent', 0, 0, -1)`
+          `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('', 'parent', 0, 0, NULL)`,
+          `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('intent-parent', '', 0, 0, NULL)`,
+          `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('intent-seq', 'parent', -1, 0, NULL)`,
+          `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('intent-seq-fractional', 'parent', 0.5, 0, NULL)`,
+          `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('intent-reserved', 'parent', 0, -1, NULL)`,
+          `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('intent-reclaimed', 'parent', 0, 0, -1)`,
+          ...[-1, 0.5, 9007199254740992].map((timestamp) =>
+            `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, forgotten_at_ms) VALUES ('intent-forgotten', 'parent', 0, 0, ${timestamp})`
+          )
         ] as const
         return Effect.forEach(invalidStatements, (statement) => Effect.exit(sql.unsafe(statement)))
       })
@@ -643,6 +646,11 @@ describe("SqlTimeTravelStore persistence fault matrix", () => {
         method: "abandonForkIntents",
         table: "flows_time_travel_fork_intents",
         invoke: (store: TimeTravelStore.Service) => store.abandonForkIntents(1)
+      },
+      {
+        method: "forgetForkIntent",
+        table: "flows_time_travel_fork_intents",
+        invoke: (store: TimeTravelStore.Service) => store.forgetForkIntent("child", 0)
       },
       {
         method: "recordReceipt",
@@ -1145,7 +1153,7 @@ describe("SqlTimeTravelStore.nextForkId", () => {
       })
     ))
 
-  it.effect("hands a stale reservation back exactly once and keeps its ordinal taken", () =>
+  it.effect("hands a stale reservation back until forgotten and keeps its ordinal taken", () =>
     run((store, sql) =>
       Effect.gen(function*() {
         yield* seedParent(sql)
@@ -1155,20 +1163,29 @@ describe("SqlTimeTravelStore.nextForkId", () => {
         // "before 1" names it.
         const fresh = yield* store.abandonForkIntents(0)
         const stale = yield* store.abandonForkIntents(1)
-        const again = yield* store.abandonForkIntents(1)
+        const again = yield* store.abandonForkIntents(0)
+        yield* store.forgetForkIntent(minted, again[0]!.reclaimedAtMs!)
+        const forgotten = yield* store.abandonForkIntents(1)
         const next = yield* store.nextForkId("mint", frame)
         const rows = yield* sql<{ readonly child_run_id: string; readonly reclaimed_at_ms: number | null }>`
           SELECT child_run_id, reclaimed_at_ms FROM flows_time_travel_fork_intents ORDER BY child_run_id
         `
 
         expect(fresh).toEqual([])
-        expect(stale).toEqual([{ childRunId: minted, parentRunId: "mint", parentSeq: 0, reservedAtMs: 0 }])
-        expect(again).toEqual([])
+        expect(stale).toEqual([{
+          childRunId: minted,
+          parentRunId: "mint",
+          parentSeq: 0,
+          reservedAtMs: 0,
+          reclaimedAtMs: 0
+        }])
+        expect(again).toEqual(stale.map((intent) => ({ ...intent, reclaimedAtMs: intent.reclaimedAtMs! + 1 })))
+        expect(forgotten).toEqual([])
         // The reclaimed lane may still exist on disk, so its number is never
         // handed to a fresh lane.
         expect(next).toBe("mint:fork:0:2")
         expect(rows).toEqual([
-          { child_run_id: "mint:fork:0:1", reclaimed_at_ms: 0 },
+          { child_run_id: "mint:fork:0:1", reclaimed_at_ms: 1 },
           { child_run_id: "mint:fork:0:2", reclaimed_at_ms: null }
         ])
       })

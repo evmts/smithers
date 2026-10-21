@@ -23,6 +23,33 @@ const withDatabase = <A>(
 ) => Effect.scoped(effect.pipe(Effect.provide(database(filename))))
 
 describe("time-travel migrations", () => {
+  it.effect("upgrades an old reclaimed intent to pending lane removal without losing its ordinal", () =>
+    Effect.gen(function*() {
+      yield* EngineMigrations.run
+      yield* DatabaseMigrations.run([{
+        ...Migrations.set,
+        migrations: Object.fromEntries(Object.entries(Migrations.set.migrations).filter(([key]) => key < "0006"))
+      }])
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`INSERT INTO flows_time_travel_fork_intents VALUES ('legacy', 'parent', 0, 0, 1)`
+      yield* Migrations.run
+      const store = yield* SqlTimeTravelStore.make
+      expect(yield* sql`SELECT forgotten_at_ms FROM flows_time_travel_fork_intents`).toEqual([{
+        forgotten_at_ms: null
+      }])
+      const intents = yield* store.abandonForkIntents(0)
+      expect(intents).toEqual([{
+        childRunId: "legacy",
+        parentRunId: "parent",
+        parentSeq: 0,
+        reservedAtMs: 0,
+        reclaimedAtMs: 2
+      }])
+      yield* store.forgetForkIntent("legacy", intents[0]!.reclaimedAtMs!)
+      expect(yield* store.abandonForkIntents(1)).toEqual([])
+      expect(yield* store.nextForkId("parent", { lineageId: "parent/root", seq: 0 })).toBe("parent:fork:0:2")
+    }).pipe(Effect.provide(TestDatabase.layer)))
+
   it.effect("keeps the initial rung independent of later schema changes", () =>
     Effect.gen(function*() {
       yield* EngineMigrations.run
@@ -44,7 +71,7 @@ describe("time-travel migrations", () => {
       const sql = yield* SqlClient.SqlClient
       const rows = yield* sql<{ readonly migration_id: number }>`SELECT migration_id
         FROM flows_migrations WHERE migration_id >= 5000 ORDER BY migration_id`
-      expect(rows.map((row) => row.migration_id)).toEqual([5001, 5002, 5003, 5004, 5005])
+      expect(rows.map((row) => row.migration_id)).toEqual([5001, 5002, 5003, 5004, 5005, 5006])
       // A completed rung is not a schema repair hook on each store build.
       yield* sql`DROP INDEX flows_journal_events_child_spawn_idx`
       yield* SqlTimeTravelStore.make
@@ -143,7 +170,7 @@ describe("time-travel migrations", () => {
       }])
       const rows = yield* sql<{ readonly migration_id: number }>`SELECT migration_id FROM flows_migrations
         WHERE migration_id >= 5000 ORDER BY migration_id`
-      expect(rows.map((row) => row.migration_id)).toEqual([5001, 5002, 5003, 5004, 5005])
+      expect(rows.map((row) => row.migration_id)).toEqual([5001, 5002, 5003, 5004, 5005, 5006])
     }).pipe(Effect.provide(TestDatabase.layer)))
 
   it.effect("widens a legacy snapshots table that predates plan_digest", () =>
@@ -250,7 +277,7 @@ describe("time-travel migrations", () => {
           )
         )
 
-        expect(rows).toEqual([5001, 5002, 5003, 5004, 5005].map((migration_id) => ({ migration_id })))
+        expect(rows).toEqual([5001, 5002, 5003, 5004, 5005, 5006].map((migration_id) => ({ migration_id })))
       } finally {
         yield* Effect.promise(() => rm(directory, { recursive: true, force: true }))
       }

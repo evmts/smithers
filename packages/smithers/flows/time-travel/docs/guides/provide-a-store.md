@@ -125,7 +125,7 @@ Hold a new backend to the same answers the two shipped ones give. The reads
 reconstruct a frame's past, the audit trio makes an in-flight rewind
 recoverable, and `archiveAndTruncate` and `createFork` change the lineage tree.
 `recordReceipt` writes one compensation receipt against an open audit row and
-touches no lineage. Two behaviours are easy to get wrong and are worth
+touches no lineage. These behaviours are easy to get wrong and are worth
 stating:
 
 - `archiveAndTruncate` is **fenced**. It re-checks the run's recorded owner and
@@ -133,7 +133,26 @@ stating:
   and refuses the whole mutation with `fence_lost` on a mismatch.
 - `nextForkId` **reserves** the id it mints. The reservation is what makes a
   crashed fork retryable under a fresh lane name instead of colliding with the
-  leftover on disk.
+  leftover on disk. Intent rows stay counted even after reclamation.
+- `abandonForkIntents` claims stale reserved intents and returns **all**
+  reclaiming intents, including earlier sweeps, until `forgetForkIntent`
+  records that their lane is gone. Claiming and listing share one transaction.
+  Every returned intent carries `reclaimedAtMs`. Every claim and reopen advances
+  that stamp strictly, using `max(now, previous + 1)` for an existing stamp.
+  `forgetForkIntent(childRunId, reclaimedAtMs)` is a compare-and-set: it records
+  completion only for that exact current stamp and an unforgotten intent.
+  A late refused `createFork` resets even a forgotten intent to reclaiming, so
+  the next sweep retries removal if the fork's own cleanup failed; a successful
+  cleanup makes that later forget a no-op.
+  `forgetForkIntent` ignores unknown or unreclaimed ids and never deletes a row.
+- `createFork` resets a reclaiming or forgotten reservation to reclaiming in
+  the same transaction deciding refusal, before any other validation: clear
+  `forgotten_at_ms`, advance `reclaimed_at_ms`, then raise `fence_lost`
+  **after that write commits**.
+  No fork records are written. Failing inside the SQL transaction would roll
+  back the reset and strand a late-provisioned lane if cleanup also failed.
+  Caller-supplied ids without reservations and ids minted during commit keep
+  their existing behaviour. Only a committing fork deletes its intent.
 
 ## Where to go next
 

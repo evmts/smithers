@@ -105,8 +105,11 @@ export type ForkStep = "provision-workspace" | "commit-fork"
  * Provisioning a workspace is one `jj workspace add`, seconds even on a large
  * repository, so five minutes separates a crash from a slow checkout by a
  * wide margin. An intent reclaimed while its fork was still in flight costs
- * that fork its lane registration and nothing else: the ordinal is never
- * reused, and the commit still lands.
+ * that fork its commit: the store refuses it with `fence_lost`, and the
+ * refused-commit path forgets its lane. The refusal transaction first resets
+ * even a forgotten intent to reclaiming, so startup retries if that cleanup
+ * fails; a successful cleanup makes the later forget a no-op. The ordinal is
+ * never reused.
  *
  * @since 0.1.0
  * @category constants
@@ -405,7 +408,11 @@ export const fork = (
        * between the two steps below retries under a fresh id instead of
        * asking jj for the lane name its own leftover still holds. Startup
        * hands the stale reservation back through `abandonForkIntents` and
-       * forgets the lane it named.
+       * forgets the lane it named, retrying until removal is recorded. A
+       * reclaiming or forgotten reservation is reset to reclaiming in the
+       * refusal transaction, which commits before `fence_lost` is raised.
+       * The refused-commit path below forgets its lane; if cleanup fails,
+       * startup still retries. If it succeeds, later forgetting is a no-op.
        *
        * The store commit is the fork's finalization step, the way Temporal
        * finalizes a workflow record only after what it names exists

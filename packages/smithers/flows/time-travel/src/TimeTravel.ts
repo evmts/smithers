@@ -542,10 +542,21 @@ export const makeWith = (
      * A fork reserves its child id, provisions the lane, then commits; a
      * process that dies between the last two steps leaves a registered lane
      * behind and a reservation every later mint has already counted past. The
-     * reservation is what says which lanes are abandoned, and the staleness
-     * window is what keeps a fork still in flight elsewhere out of the sweep.
-     * A lane that cannot be forgotten is reported and left: its name is never
-     * handed out again, so it blocks nothing.
+     * sweep claims stale reservations before forgetting their lanes. A claimed
+     * reservation refuses a concurrent fork commit with `fence_lost`. The sweep
+     * records completion only after jj succeeds, comparing the claim stamp so
+     * a delayed acknowledgment cannot erase a newer claim or reopen; a failed forget, failed
+     * completion write, or crash leaves the intent reclaiming for the next
+     * startup. Every intent keeps its ordinal taken, even once forgotten.
+     * A late fork's createFork resets a reclaiming or forgotten intent to
+     * reclaiming before refusing, so another startup retries lane removal
+     * even if refused-commit cleanup fails. A successful cleanup makes that
+     * later forget a no-op: jj warns about a missing workspace and exits 0.
+     *
+     * One window remains: a process that stalls past the stale window before
+     * workspaceAdd, then crashes after adding its lane but before createFork,
+     * leaves the lane registered if the sweep already recorded it forgotten.
+     * Nothing durable says that late lane exists.
      */
     const reclaimForkLanes = Effect.gen(function*() {
       const store = yield* TimeTravelStore
@@ -559,6 +570,7 @@ export const makeWith = (
         (intent) => {
           const workspaceName = ForkOperation.workspaceNameFor(intent.childRunId)
           return jj.workspaceForget(workspaceName).pipe(
+            Effect.andThen(store.forgetForkIntent(intent.childRunId, intent.reclaimedAtMs!)),
             Effect.catchCause((cause) =>
               Effect.logWarning("time-travel: could not forget an abandoned fork workspace", cause).pipe(
                 Effect.annotateLogs({ childRunId: intent.childRunId, workspaceName })

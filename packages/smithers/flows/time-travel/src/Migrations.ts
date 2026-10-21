@@ -18,6 +18,7 @@ import { archiveGeneration } from "./migrations/0002_archive_generation.ts"
 import { lineageProbes } from "./migrations/0003_lineage_probes.ts"
 import { planDigest } from "./migrations/0004_plan_digest.ts"
 import { operationId } from "./migrations/0005_operation_id.ts"
+import { forkIntentForgotten } from "./migrations/0006_fork_intent_forgotten.ts"
 
 /**
  * Time travel's namespaced migration set.
@@ -36,7 +37,8 @@ export const set: DatabaseMigrations.MigrationSet = {
     "0002_archive_generation": archiveGeneration,
     "0003_lineage_probes": lineageProbes,
     "0004_plan_digest": planDigest,
-    "0005_operation_id": operationId
+    "0005_operation_id": operationId,
+    "0006_fork_intent_forgotten": forkIntentForgotten
   }
 }
 

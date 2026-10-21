@@ -134,8 +134,22 @@ and a reservation every later mint has already counted past.
 The same layer build forgets the lane of every reservation older than five
 minutes whose fork never committed. The reserved ordinal is never handed out
 again, so a retry lands under a fresh lane name rather than asking Jujutsu for
-the one the leftover on disk still holds. A lane that cannot be forgotten is
-reported and left, and because its name is never reused it blocks nothing.
+the one the leftover on disk still holds. The sweep first claims each stale
+reservation as reclaiming, then forgets the lane, then records it forgotten.
+Every build returns reclaiming intents again until that last write succeeds,
+including rows reclaimed by older releases. A failed forget or completion write
+is logged and retried on the next build. A reclaiming or forgotten reservation
+refuses a fork still provisioning elsewhere with `fence_lost`. The refusal
+transaction first resets it to reclaiming (clearing `forgotten_at_ms`, keeping
+`reclaimed_at_ms`), then the error is raised after commit. Its refused-commit
+path attempts to forget the lane; startup retries if cleanup fails, and a
+successful cleanup makes that later forget a no-op. A committed fork consumes
+its reservation in the same transaction, so a later sweep cannot claim it.
+
+If a process stalls past the stale window before `workspaceAdd` and crashes
+after adding its lane but before `createFork`, a sweep that already recorded
+the intent forgotten cannot discover the late lane. It remains registered;
+nothing durable says it exists.
 
 ## Where to go next
 

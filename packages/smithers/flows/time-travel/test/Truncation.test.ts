@@ -197,6 +197,19 @@ describe("truncation", () => {
       expect(store.state()).toEqual(before)
     }))
 
+  it.effect("keeps a reclaimed intent retryable when recording its forgotten lane fails", () =>
+    Effect.gen(function*() {
+      const store = Memory.make({ records, edges, failAt: "forgetForkIntent" })
+      const childRunId = yield* store.nextForkId("parent", { lineageId: "parent/root", seq: 0 })
+      const pending = yield* store.abandonForkIntents(1)
+      const failure = yield* Effect.flip(store.forgetForkIntent(childRunId, pending[0]!.reclaimedAtMs!))
+      expect(failure).toMatchObject({ code: "unknown", message: "injected failure at forgetForkIntent" })
+      expect(yield* store.abandonForkIntents(0)).toEqual(pending.map((intent) => ({
+        ...intent,
+        reclaimedAtMs: intent.reclaimedAtMs! + 1
+      })))
+    }))
+
   it.effect("rolls back a failed intent reclaim and leaves every intent outstanding", () =>
     Effect.gen(function*() {
       const store = Memory.make({ records, edges, failAt: "abandonForkIntents" })

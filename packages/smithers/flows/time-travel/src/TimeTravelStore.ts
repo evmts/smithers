@@ -363,6 +363,8 @@ export type Fork = typeof Fork.Type
  * died between provisioning and commit, is what
  * {@link Service.abandonForkIntents} hands back, so the lane it named can be
  * forgotten and the ordinal it took is never reused for a fresh lane.
+ * `reclaimedAtMs` is optional so older encodings decode; every intent returned
+ * by `abandonForkIntents` carries its current claim stamp for acknowledgment.
  *
  * @since 0.1.0
  * @category schemas
@@ -371,7 +373,8 @@ export const ForkIntent = Schema.Struct({
   childRunId: Schema.NonEmptyString,
   parentRunId: Schema.NonEmptyString,
   parentSeq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-  reservedAtMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+  reservedAtMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  reclaimedAtMs: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
 })
 /**
  * The value form of {@link ForkIntent}.
@@ -502,14 +505,28 @@ export interface Service {
    */
   readonly nextForkId: (parentRunId: string, frame: Frame) => Effect.Effect<string, TimeTravelError>
   /**
-   * Hands back every {@link ForkIntent} reserved before `staleBeforeMs` whose
-   * fork never committed, marking each so it is handed back exactly once.
-   *
-   * The intents stay counted for minting: the lane each one named may still
-   * exist on disk, so its ordinal must never name a fresh lane. Startup
-   * reclamation forgets the jj workspace each returned intent named.
+   * In one write transaction, marks every reserved {@link ForkIntent} with
+   * `reservedAtMs < staleBeforeMs` as reclaiming, then returns every reclaiming
+   * intent, including those claimed by an earlier sweep, ordered by reservation
+   * time and child id. Returns an intent on every call until its lane is
+   * recorded forgotten through {@link Service.forgetForkIntent}. Every returned
+   * intent carries a fresh `reclaimedAtMs` claim stamp. Every claim and reopen
+   * strictly advances it with `max(now, previous + 1)`, even in one millisecond.
+   * A late {@link Service.createFork} refused after reclamation resets even a
+   * forgotten intent to reclaiming, so the next sweep retries its lane removal
+   * if the fork's own cleanup failed. Forgetting a missing lane is a no-op.
+   * The intents stay counted for minting, so their ordinals are never reused.
    */
   readonly abandonForkIntents: (staleBeforeMs: number) => Effect.Effect<ReadonlyArray<ForkIntent>, TimeTravelError>
+  /**
+   * Records that the lane a reclaimed intent named is gone, so later sweeps
+   * stop handing it back. The intent stays counted for minting. A call for an
+   * unknown or unreclaimed intent changes nothing. This is a compare-and-set:
+   * only an unforgotten intent whose current `reclaimedAtMs` equals the supplied
+   * claim stamp is acknowledged. A delayed sweep cannot erase a newer claim
+   * or a reopen performed by a refused fork.
+   */
+  readonly forgetForkIntent: (childRunId: string, reclaimedAtMs: number) => Effect.Effect<void, TimeTravelError>
   /**
    * Branches a new run off `parentRunId` at a frame, copying the journal
    * prefix and the attempts that existed there, and recording the `fork`
@@ -517,7 +534,12 @@ export interface Service {
    *
    * `childRunId` is the id {@link Service.nextForkId} minted for this fork.
    * Omitting it mints one inside the same transaction, which is what a caller
-   * that provisions nothing beforehand wants.
+   * that provisions nothing beforehand wants. A reclaiming or forgotten
+   * reservation is reset to reclaiming before any other validation in the
+   * transaction deciding refusal: clear `forgotten_at_ms`, strictly advance
+   * `reclaimed_at_ms` with `max(now, previous + 1)`, then fail `fence_lost`
+   * after that write commits. No fork records are written. The next startup
+   * sweep retries lane removal even if the fork's own cleanup fails.
    *
    * `override` replaces one copied step result in the same transaction. A step
    * with no successful attempt finished at the frame, on the child or on a
@@ -595,6 +617,7 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service =>
     archivedAt: () => unavailable("archivedAt"),
     nextForkId: () => unavailable("nextForkId"),
     abandonForkIntents: () => unavailable("abandonForkIntents"),
+    forgetForkIntent: () => unavailable("forgetForkIntent"),
     createFork: () => unavailable("createFork"),
     recordReceipt: () => unavailable("recordReceipt"),
     ...overrides

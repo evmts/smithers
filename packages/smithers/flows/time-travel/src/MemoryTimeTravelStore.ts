@@ -198,7 +198,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
    * back. A consumed intent is removed; a reclaimed one stays so the mint
    * count never reuses its ordinal, exactly as the SQL store keeps the row.
    */
-  let forkIntents: Array<TimeTravelStore.ForkIntent & { readonly reclaimed: boolean }> = []
+  let forkIntents: Array<TimeTravelStore.ForkIntent & { readonly forgotten: boolean }> = []
   /**
    * The id the next fork off `(parentRunId, frame.seq)` carries, minted as
    * `SqlTimeTravelStore` mints it: the ordinal counts the fork edges already
@@ -230,8 +230,8 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
     runOwners: clone(runOwners, "owners"),
     runStatuses: new Map(runStatuses),
     forkIntents: forkIntents
-      .filter((intent) => !intent.reclaimed)
-      .map(({ reclaimed: _, ...intent }) => intent)
+      .filter((intent) => intent.reclaimedAtMs === undefined)
+      .map(({ forgotten: _, ...intent }) => intent)
   })
   /**
    * The lineage-filtered prefix of one record type, mirroring the SQL store.
@@ -284,6 +284,8 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
           ? cause
           : error("unknown", "memory transaction failed", cause)
     })
+  const atomicWithTime = <A>(body: (nowMs: number) => A): Effect.Effect<A, TimeTravelError> =>
+    Clock.currentTimeMillis.pipe(Effect.flatMap((nowMs) => atomic(() => body(nowMs))))
   /** Replaces the anchors at each batch member's frame, later members winning. */
   const upsertSnapshots = (batch: ReadonlyArray<TimeTravelStore.Snapshot>): void => {
     for (const recorded of batch) {
@@ -486,7 +488,13 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
             // id differs from every mint before it whether or not that mint
             // committed; it is the durable half the SQL store keeps in a table.
             const childRunId = mintForkId(parentRunId, frame)
-            forkIntents.push({ childRunId, parentRunId, parentSeq: frame.seq, reservedAtMs: nowMs, reclaimed: false })
+            forkIntents.push({
+              childRunId,
+              parentRunId,
+              parentSeq: frame.seq,
+              reservedAtMs: nowMs,
+              forgotten: false
+            })
             return childRunId
           })
         )
@@ -494,17 +502,48 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
     ),
     abandonForkIntents: Effect.fn("TimeTravelStore.abandonForkIntents")((staleBeforeMs) =>
       Effect.annotateCurrentSpan({ staleBeforeMs }).pipe(
-        Effect.andThen(atomic(() => {
+        Effect.andThen(atomicWithTime((nowMs) => {
           fail("abandonForkIntents")
-          const stale = forkIntents.filter((intent) => !intent.reclaimed && intent.reservedAtMs < staleBeforeMs)
-          forkIntents = forkIntents.map((intent) => stale.includes(intent) ? { ...intent, reclaimed: true } : intent)
-          return stale.map(({ reclaimed: _, ...intent }) => intent)
+          forkIntents = forkIntents.map((intent) =>
+            !intent.forgotten && (intent.reclaimedAtMs !== undefined || intent.reservedAtMs < staleBeforeMs)
+              ? { ...intent, reclaimedAtMs: Math.max(nowMs, (intent.reclaimedAtMs ?? -1) + 1) }
+              : intent
+          )
+          return forkIntents
+            .filter((intent) => intent.reclaimedAtMs !== undefined && !intent.forgotten)
+            .sort((left, right) =>
+              left.reservedAtMs - right.reservedAtMs || left.childRunId.localeCompare(right.childRunId)
+            )
+            .map(({ forgotten: _, ...intent }) => intent)
+        }))
+      )
+    ),
+    forgetForkIntent: Effect.fn("TimeTravelStore.forgetForkIntent")((childRunId, reclaimedAtMs) =>
+      Effect.annotateCurrentSpan({ childRunId, reclaimedAtMs }).pipe(
+        Effect.andThen(atomic(() => {
+          fail("forgetForkIntent")
+          forkIntents = forkIntents.map((intent) =>
+            intent.childRunId === childRunId && intent.reclaimedAtMs === reclaimedAtMs && !intent.forgotten
+              ? { ...intent, forgotten: true }
+              : intent
+          )
         }))
       )
     ),
     createFork: Effect.fn("TimeTravelStore.createFork")((parentRunId, frame, childRunId, override, rebinding) =>
       Effect.annotateCurrentSpan({ parentRunId, lineageId: frame.lineageId, seq: frame.seq }).pipe(
-        Effect.andThen(atomic(() => {
+        Effect.andThen(atomicWithTime((nowMs) => {
+          const reclaimed = forkIntents.find((intent) => intent.childRunId === childRunId)
+          if (reclaimed?.reclaimedAtMs !== undefined) {
+            // Commit the reopen before any validation and before returning the
+            // refusal. Advancing the stamp fences a delayed sweep acknowledgment.
+            forkIntents = forkIntents.map((intent) =>
+              intent === reclaimed
+                ? { ...intent, reclaimedAtMs: Math.max(nowMs, reclaimed.reclaimedAtMs! + 1), forgotten: false }
+                : intent
+            )
+            return { _tag: "Reclaimed" as const, runId: reclaimed.childRunId }
+          }
           fail("createFork:start")
           // This store keeps journal records and no attempt rows, so it holds
           // no step result a fork could replace.
@@ -607,8 +646,16 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
           }
           edges.push(edge)
           fail("createFork:commit")
-          return { runId, edge }
-        }))
+          return { _tag: "Created" as const, runId, edge }
+        })),
+        Effect.flatMap((result) =>
+          result._tag === "Reclaimed"
+            ? Effect.fail(error(
+              "fence_lost",
+              `fork reservation ${result.runId} was reclaimed before the fork committed`
+            ))
+            : Effect.succeed({ runId: result.runId, edge: result.edge })
+        )
       )
     ),
     recordReceipt: Effect.fn("TimeTravelStore.recordReceipt")((receipt) =>

@@ -21,6 +21,7 @@ describe("TimeTravelStore.makeNoop", () => {
         ["archivedAt", store.archivedAt("run", 1)],
         ["nextForkId", store.nextForkId("run", frame)],
         ["abandonForkIntents", store.abandonForkIntents(0)],
+        ["forgetForkIntent", store.forgetForkIntent("child", 0)],
         ["createFork", store.createFork("run", frame)],
         ["recordReceipt", store.recordReceipt({ id: "r", auditId: "a", effectId: "e", receipt: {} })]
       ] as const
@@ -96,5 +97,17 @@ describe("TimeTravelStore.Fork", () => {
       runId: "child",
       edge: { parentRunId: "run", parentSeq: 1, childRunId: "child", kind: "fork", attached: false }
     })
+  })
+})
+
+describe("TimeTravelStore.ForkIntent", () => {
+  it("decodes older reservations without a claim and preserves current claim stamps", () => {
+    const intent = { childRunId: "child", parentRunId: "parent", parentSeq: 0, reservedAtMs: 0 }
+    const decode = Schema.decodeUnknownSync(TimeTravelStore.ForkIntent)
+    expect(decode(intent)).toEqual(intent)
+    expect(decode({ ...intent, reclaimedAtMs: 1 })).toEqual({ ...intent, reclaimedAtMs: 1 })
+    for (const reclaimedAtMs of [-1, 0.5]) {
+      expect(() => decode({ ...intent, reclaimedAtMs })).toThrow()
+    }
   })
 })
