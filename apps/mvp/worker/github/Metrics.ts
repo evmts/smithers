@@ -51,7 +51,7 @@ export const reconcileChanged = Metric.counter("github_reconcile_changed", {
   incremental: true,
 })
 
-/** Reconcile walks, by `outcome` (`complete`, `partial`, `not_installed`, `refused`). */
+/** Reconcile walks, by `outcome` (`complete`, `partial`, `not_installed`, `refused`, `superseded`). */
 export const reconciles = Metric.counter("github_reconciles", {
   description: "Reconcile walks, by outcome",
   incremental: true,

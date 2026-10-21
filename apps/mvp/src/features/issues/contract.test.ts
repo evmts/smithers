@@ -20,6 +20,7 @@ import {
   ACCEPTED_LABEL,
   labelOf,
   NOT_ACCEPTED_LABEL,
+  reconcileBucketStart,
   reconcileExecutionId,
   refusalOf,
   rejectionComment,
@@ -69,6 +70,8 @@ describe("ids and keys", () => {
     expect(reconcileExecutionId("r", start)).toBe(reconcileExecutionId("r", start + SYNC_STALE_MS - 1))
     expect(reconcileExecutionId("r", start)).not.toBe(reconcileExecutionId("r", start + SYNC_STALE_MS))
     expect(reconcileExecutionId("r", start)).toBe("github-reconcile:r:10")
+    expect(reconcileBucketStart(start + SYNC_STALE_MS - 1)).toBe(start)
+    expect(reconcileBucketStart(start + SYNC_STALE_MS)).toBe(start + SYNC_STALE_MS)
   })
 })
 

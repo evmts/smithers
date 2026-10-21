@@ -72,7 +72,7 @@ describe.skipIf(appMissing.length > 0 || refused)("the real GitHub, as the App",
   test("reconciles the scratch repository, opens an issue as the App, and a webhook-style re-read finds it", async () => {
     const repository = repositoryOf(scratch)
     const services = await live()
-    const reconciled = await runFlow(Reconcile.Reconcile, { repo: scratch }, Reconcile.registration(services), { maxConnections: 3 })
+    const reconciled = await runFlow(Reconcile.Reconcile, { repo: scratch, requestedAtMs: Date.now() }, Reconcile.registration(services), { maxConnections: 3 })
     expect(reconciled.exit._tag).toBe("Success")
     expect(await sql(runtime, `SELECT private FROM github_repositories`)).toEqual([{ private: expect.any(Boolean) }])
     const writeId = crypto.randomUUID()

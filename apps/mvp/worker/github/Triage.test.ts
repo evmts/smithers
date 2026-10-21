@@ -108,7 +108,7 @@ const triage = async (value: Triage.Services, number: number, key = crypto.rando
 
 /** Projects every issue GitHub has into `items`, as a reconcile walk does. */
 const project = (value: Triage.Services) =>
-  runFlow(Reconcile.Reconcile, { repo: REPO }, Reconcile.registration(value), { maxConnections: 2 })
+  runFlow(Reconcile.Reconcile, { repo: REPO, requestedAtMs: Date.now() }, Reconcile.registration(value), { maxConnections: 2 })
 
 /** The services over `github` with a judge that answers `answer`. */
 const judged = async (github: ReturnType<typeof repository>, answer: JudgeAnswer, config?: Record<string, string>) => {

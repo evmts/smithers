@@ -153,7 +153,14 @@ for (const target of Postgres.targets) {
           .filter((entry) => entry.id === "flows_runs_settled")
           .map((entry) => entry.attributes)
         expect(counted).toEqual(expect.arrayContaining([
-          { flow: Answer._tag, door: "api", actor: "person", placement: "cloudflare", outcome: "succeeded", code: "none" },
+          {
+            flow: Answer._tag,
+            door: "api",
+            actor: "person",
+            placement: "cloudflare",
+            outcome: "succeeded",
+            code: "none"
+          },
           {
             flow: Answer._tag,
             door: "unknown",
@@ -480,14 +487,16 @@ describe("ExecutionObject without a database", () => {
         _tag: "Retrying",
         attempt: 1,
         retryAtMs: 1_000,
-        failure: "AskFailed"
+        failure: "AskFailed",
+        detail: {}
       })
       expect(memory.alarm()).toBe(1_000)
       expect(yield* ExecutionObject.alarm(memory.storage, options)).toEqual({
         _tag: "Retrying",
         attempt: 2,
         retryAtMs: 2_000,
-        failure: "AskFailed"
+        failure: "AskFailed",
+        detail: {}
       })
       expect(memory.values.get(ExecutionObject.failuresKey)).toBe(2)
     }))
@@ -527,7 +536,8 @@ describe("ExecutionObject without a database", () => {
         _tag: "Retrying",
         attempt: 2,
         retryAtMs: 3_000,
-        failure: "AskFailed"
+        failure: "AskFailed",
+        detail: {}
       })
     }))
 
@@ -579,6 +589,14 @@ describe("ExecutionObject without a database", () => {
       expect(conflict).toBeInstanceOf(ExecutionObject.IntentConflict)
       expect(ran).toBe(false)
       expect(memory.values.get(ExecutionObject.intentKey)).toBe("not an intent")
+    }))
+
+  it.effect("an alarm over a stored intent that isn't one retries it, its span and log carrying no execution ids", () =>
+    Effect.gen(function*() {
+      const o = object()
+      yield* o.memory.storage.put(ExecutionObject.intentKey, "not an intent")
+      expect(yield* o.alarm()).toMatchObject({ _tag: "Retrying", attempt: 1 })
+      expect(o.steps).toEqual([])
     }))
 
   it.effect("intent encodes the payload with the flow's codec and refuses one the schema rejects", () =>

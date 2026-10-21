@@ -1,9 +1,9 @@
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
-import { Effect, Layer, Metric, Option, Schema } from "effect"
+import { Clock, Effect, Layer, Metric, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
-import { ISSUES_STREAM } from "../../src/features/issues/contract.ts"
+import { ISSUES_STREAM, SYNC_STALE_MS } from "../../src/features/issues/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import type { Services } from "./Apply.ts"
 import { classify, withToken } from "./Calls.ts"
@@ -16,8 +16,9 @@ import * as Store from "./Store.ts"
 // under the newer-than guard. Webhooks are hints: GitHub doesn't redeliver a failed delivery, so this is what makes the
 // projection whole. Each page commits its cursor in `github_sync` before the next, so a run that dies resumes where it
 // stopped. A walk that runs out of its page budget is recorded `partial`, never complete. A read that finds the sync
-// older than 5 minutes starts it (worker/github/Shapes.ts); a cron replaces that trigger once `@smthrs/triggers` runs
-// on the Cloudflare host (decision 0012 W9).
+// older than 5 minutes starts it (worker/github/Api.ts); a cron replaces that trigger once `@smthrs/triggers` runs
+// on the Cloudflare host (decision 0012 W9). A walk that comes due after the window after its read's has also passed is
+// `superseded`: a newer read starts its own, so a backlog an outage left ends instead of walking all at once.
 
 /** GitHub or Postgres couldn't answer. Retried, after `retryAfterMillis`; the next attempt resumes from the cursor. */
 export class ReconcileUnavailable extends Schema.TaggedError<ReconcileUnavailable>()(
@@ -31,11 +32,18 @@ export const RECONCILE_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, m
 /** Pages one walk reads before it stops `partial`; the next stale read continues from the cursor. */
 export const PAGES_PER_WALK = 50
 
-const ReconcileRequest = { repo: Schema.String }
+const ReconcileRequest = {
+  repo: Schema.String,
+  /**
+   * When the 5-minute bucket of the read that asked for the walk began (`reconcileBucketStart`). Requests started
+   * before 2026-10-21 carry none and are superseded: they are the backlog the flow engine's outage left.
+   */
+  requestedAtMs: Schema.optional(Schema.Number),
+}
 
 /** How the walk ended, and what it changed. */
 export const Reconciled = Schema.Struct({
-  outcome: Schema.Literals(["complete", "partial", "not_installed", "refused", "unavailable"]),
+  outcome: Schema.Literals(["complete", "partial", "not_installed", "refused", "unavailable", "superseded"]),
   pages: Schema.Number,
   issues: Schema.Number,
   comments: Schema.Number,
@@ -45,6 +53,7 @@ export const Reconciled = Schema.Struct({
 export type Reconciled = typeof Reconciled.Type
 
 const UNAVAILABLE: Reconciled = { outcome: "unavailable", pages: 0, issues: 0, comments: 0, skipped: 0 }
+const SUPERSEDED: Reconciled = { outcome: "superseded", pages: 0, issues: 0, comments: 0, skipped: 0 }
 
 /** The step: walk the listing from the cursor. */
 export const Walk = Action.make("github/Reconcile/walk", {
@@ -88,6 +97,12 @@ export const walk = <E, R>(services: Services<E, R>, pagesPerWalk: number = PAGE
 (request: typeof Walk.payloadSchema.Type) =>
   Effect.gen(function* () {
     const repository = repositoryOf(request.repo)
+    const now = yield* Clock.currentTimeMillis
+    if (request.requestedAtMs === undefined || now - request.requestedAtMs >= 2 * SYNC_STALE_MS) {
+      yield* Metric.update(Metric.withAttributes(Metrics.reconciles, { outcome: SUPERSEDED.outcome }), 1)
+      yield* Effect.logInfo("github.reconcile").pipe(Effect.annotateLogs({ repoId: repository.id, ...SUPERSEDED }))
+      return SUPERSEDED
+    }
     const finished = (reconciled: Reconciled, failure: string | null) =>
       Effect.gen(function* () {
         yield* Store.finishSync(repository.id, ISSUES_STREAM, { complete: reconciled.outcome === "complete", failure })

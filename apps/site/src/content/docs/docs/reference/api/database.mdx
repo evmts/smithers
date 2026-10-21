@@ -620,7 +620,10 @@ transaction-pooling proxy such as Cloudflare Hyperdrive or PgBouncer with
 | any, on a `readOnly` client      | `REPEATABLE READ READ ONLY`, never the writer lock                                                            |
 
 A statement outside a transaction therefore costs `BEGIN`, the schema and
-`COMMIT` around it. PostgreSQL answers `COMMIT` in a transaction a caught
+`COMMIT` around it. A statement prepared by name is session state too, so
+every statement goes out unnamed. Cloudflare Hyperdrive drops a connection
+that closes a named statement, which `@effect/sql-pg` does once its
+100-statement cache is full. PostgreSQL answers `COMMIT` in a transaction a caught
 statement failure aborted with `ROLLBACK`; the client fails that transaction
 with `SqlError` instead of reporting it committed.
 
@@ -631,18 +634,20 @@ interface PostgresDatabaseOptions {
   readonly url: string
   readonly driver: Driver
   readonly schema?: string | undefined
-  readonly postgres?: Omit<Pg.PgClient.PgPoolConfig, "url" | "types"> | undefined
+  readonly postgres?:
+    | Omit<Pg.PgClient.PgPoolConfig, "url" | "types" | "prepare" | "preparedStatementCacheSize">
+    | undefined
   readonly readOnly?: boolean | undefined
 }
 ```
 
-| Field      | Meaning                                                                                                                                |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`      | The connection URL. It reaches the driver as a `Redacted` value. For Hyperdrive, pass the binding's `connectionString`.                |
-| `driver`   | The `@effect/sql-pg` module: `import * as Pg from "@effect/sql-pg"`, then `driver: Pg`.                                                |
-| `schema`   | Defaults to `smithers_flows`. It must be 1 to 63 UTF-8 bytes without NUL.                                                              |
-| `postgres` | Effect PostgreSQL pool and connection options. Smithers owns the type registry, which reads integers back as exact JavaScript numbers. |
-| `readOnly` | Reads an existing schema without creating it or taking the writer lock; every transaction is `READ ONLY`.                              |
+| Field      | Meaning                                                                                                                                                                         |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`      | The connection URL. It reaches the driver as a `Redacted` value. For Hyperdrive, pass the binding's `connectionString`.                                                         |
+| `driver`   | The `@effect/sql-pg` module: `import * as Pg from "@effect/sql-pg"`, then `driver: Pg`.                                                                                         |
+| `schema`   | Defaults to `smithers_flows`. It must be 1 to 63 UTF-8 bytes without NUL.                                                                                                       |
+| `postgres` | Effect PostgreSQL pool and connection options. Smithers owns the type registry, which reads integers back as exact JavaScript numbers, and turns named prepared statements off. |
+| `readOnly` | Reads an existing schema without creating it or taking the writer lock; every transaction is `READ ONLY`.                                                                       |
 
 ### Driver
 

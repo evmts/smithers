@@ -14,6 +14,7 @@ import {
   ITEMS_SHAPE_ROUTE,
   MAX_WEBHOOK_BYTES,
   MAX_WRITE_BYTES,
+  reconcileBucketStart,
   reconcileExecutionId,
   SYNC_SHAPE_ROUTE,
   writeExecutionId,
@@ -420,6 +421,11 @@ describe("the shapes", () => {
     expect(h.starts.map((start) => start.flow)).toEqual(["github/Reconcile", "github/Reconcile"])
     expect(new Set(h.starts.map((start) => start.executionId)).size).toBe(1)
     expect(h.starts[0]!.executionId).toBe(reconcileExecutionId(REPOSITORY.id, Date.now()))
+    // Every read in the bucket asks with the bucket's start, so their starts are one intent.
+    expect(h.starts.map((start) => start.payload)).toEqual([0, 1].map(() => ({
+      repo: `${REPOSITORY.owner}/${REPOSITORY.name}`,
+      requestedAtMs: reconcileBucketStart(Date.now()),
+    })))
     await sql(runtime, `INSERT INTO github_sync (repo_id, stream, synced_at, complete) VALUES ('${REPOSITORY.id}', 'issues', now(), true)`)
     await shape(h, ITEMS_SHAPE_ROUTE)
     expect(h.starts).toHaveLength(2)

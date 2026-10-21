@@ -244,5 +244,21 @@ for (const endpoint of endpoints) {
         expect(open).toEqual([{ count: 0 }])
         expect(yield* schemaOf(sql)).toBe(name)
       }))
+
+    // Hyperdrive drops a connection that closes a statement prepared by name,
+    // which `@effect/sql-pg` does when its 100-statement cache evicts one: the
+    // flow engine's schema, about 110 statements in one transaction, never
+    // installed behind it (2026-10-21).
+    it.live("prepares no statement by name, past the hundred a connection's statement cache keeps", () =>
+      Effect.gen(function*() {
+        const sql = yield* client(schema())
+        const marker = `prepared_${randomUUID().replaceAll("-", "")}`
+        const held = yield* sql.withTransaction(Effect.gen(function*() {
+          for (let index = 0; index < 150; index++) yield* sql.unsafe(`SELECT ${index} AS ${marker}`)
+          return yield* sql<{ readonly count: number }>`SELECT count(*)::int AS count FROM pg_prepared_statements
+            WHERE statement LIKE ${`%${marker}%`}`
+        }))
+        expect(held).toEqual([{ count: 0 }])
+      }))
   })
 }

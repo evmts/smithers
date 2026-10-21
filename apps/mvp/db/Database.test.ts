@@ -64,6 +64,21 @@ const migrated = async (schema: string) => {
   return found
 }
 
+describe("layer", () => {
+  test("prepares no statement by name, past the hundred a connection's statement cache keeps", async () => {
+    const marker = `prepared_${crypto.randomUUID().replaceAll("-", "")}`
+    const held = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        for (let index = 0; index < 150; index++) yield* sql.unsafe(`SELECT ${index} AS ${marker}`)
+        return yield* sql<{ readonly count: number }>`SELECT count(*)::int AS count FROM pg_prepared_statements
+          WHERE statement LIKE ${`%${marker}%`}`
+      }).pipe(Effect.provide(Database.layer(Effect.succeed(Redacted.make(Database.LOCAL_URL))))),
+    )
+    expect(held).toEqual([{ count: 0 }])
+  })
+})
+
 describe("migrateAndReport", () => {
   test("applies what hasn't run and logs which, then logs that the database is up to date", () =>
     emptySchema(async (url) => {

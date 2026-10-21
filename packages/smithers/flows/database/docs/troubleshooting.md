@@ -292,6 +292,20 @@ per connection does not.
 **Fix:** use `PostgresDatabase.layer`, and set anything else a transaction
 needs with `SET LOCAL` inside it.
 
+### `Connection closed` behind Hyperdrive after about 100 statements
+
+**Symptom:** behind Cloudflare Hyperdrive, a client fails with
+`PgConnection: Connection closed` on the 101st distinct statement it runs on
+one connection, such as partway through a long migration. The same work
+succeeds against PostgreSQL directly and behind PgBouncer.
+
+**Cause:** `@effect/sql-pg` prepares statements by name and keeps 100 per
+connection. Past that it closes the oldest with a protocol `Close` message,
+and Hyperdrive drops the connection when it receives one.
+
+**Fix:** use `PostgresDatabase.layer`, which sends every statement unnamed. A
+hand-built `PgClient` behind Hyperdrive needs `prepare: false`.
+
 Migrate the full composed set before starting stores. Independently racing
 package ladders can install a higher block before a lower package exists; the
 migration validator correctly refuses that gap. See

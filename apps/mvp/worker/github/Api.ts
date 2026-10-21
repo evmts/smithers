@@ -23,6 +23,7 @@ import {
   MAX_WEBHOOK_BYTES,
   MAX_WRITE_BYTES,
   DEFAULT_TRIAGE_DAILY_TOKENS,
+  reconcileBucketStart,
   reconcileExecutionId,
   SYNC_COLUMNS,
   SYNC_SHAPE_ROUTE,
@@ -545,7 +546,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       if (state.syncedAt !== null && now - state.syncedAt < SYNC_STALE_MS) return
       yield* (yield* FlowStarter).start(Reconcile, {
         executionId: reconcileExecutionId(repository.id, now),
-        payload: { repo: `${repository.owner}/${repository.name}` },
+        payload: { repo: `${repository.owner}/${repository.name}`, requestedAtMs: reconcileBucketStart(now) },
       })
     }).pipe(
       Effect.catchCause((cause) =>

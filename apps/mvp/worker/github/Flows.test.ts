@@ -9,7 +9,7 @@ import { Cause, Effect, Exit, Layer, Logger, Metric, Option, Redacted } from "ef
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
-import { reconcileExecutionId, writeExecutionId } from "../../src/features/issues/contract.ts"
+import { reconcileExecutionId, SYNC_STALE_MS, writeExecutionId } from "../../src/features/issues/contract.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as Apply from "./Apply.ts"
@@ -453,7 +453,7 @@ describe("github/Write", () => {
     ]) expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(new Write.WriteUnavailable({}))
     const apply = await Effect.runPromiseExit(Apply.read(value)({ deliveryId: "d", repo: REPO, number: 1, event: "issues" }))
     expect(Exit.isFailure(apply) && Cause.squash(apply.cause)).toEqual(new Apply.ApplyUnavailable({}))
-    const walk = await Effect.runPromiseExit(Reconcile.walk(value)({ repo: REPO }))
+    const walk = await Effect.runPromiseExit(Reconcile.walk(value)({ repo: REPO, requestedAtMs: Date.now() }))
     expect(Exit.isFailure(walk) && Cause.squash(walk.cause)).toEqual(new Reconcile.ReconcileUnavailable({}))
   })
 
@@ -596,7 +596,7 @@ describe("github/Apply", () => {
 describe("github/Reconcile", () => {
   const reconcile = async (value: Awaited<ReturnType<typeof services>>["services"], pages?: number) => {
     const metrics = counting(Reconcile.registration(value, pages))
-    const ran = await runFlow(Reconcile.Reconcile, { repo: REPO }, metrics.registration, {
+    const ran = await runFlow(Reconcile.Reconcile, { repo: REPO, requestedAtMs: Date.now() }, metrics.registration, {
       executionId: reconcileExecutionId(REPOSITORY.id, Date.now()) + crypto.randomUUID(),
       maxConnections: 3,
     })
@@ -678,21 +678,44 @@ describe("github/Reconcile", () => {
     expect(await syncRow()).toMatchObject({ complete: false, failure: "github_403" })
   })
 
+  test("a walk due after the window after its read's, or asked for without a time, is superseded: no call, no sync", async () => {
+    const github = scriptedGitHub()
+    // Any call to GitHub would fail the walk.
+    github.faults.push({ match: () => true, status: 500 })
+    const { services: value } = await services(runtime, github)
+    const metrics = counting(Reconcile.registration(value))
+    const superseded = { outcome: "superseded", pages: 0, issues: 0, comments: 0, skipped: 0 }
+    for (const request of [{ repo: REPO, requestedAtMs: Date.now() - 2 * SYNC_STALE_MS }, { repo: REPO }]) {
+      const ran = await runFlow(Reconcile.Reconcile, request, metrics.registration, {
+        executionId: reconcileExecutionId(REPOSITORY.id, Date.now()) + crypto.randomUUID(),
+        maxConnections: 3,
+      })
+      expect(ran.exit).toEqual(Exit.succeed(superseded))
+    }
+    expect(metrics.count(Metrics.reconciles, { outcome: "superseded" })).toBe(2)
+    expect(await syncRow()).toBeUndefined()
+    // Within the window after its read's, it walks.
+    const walking = await Effect.runPromiseExit(
+      Reconcile.walk(value)({ repo: REPO, requestedAtMs: Date.now() - 2 * SYNC_STALE_MS + 60_000 }),
+    )
+    expect(Exit.isFailure(walking) && Cause.squash(walking.cause)).toEqual(new Reconcile.ReconcileUnavailable({}))
+  })
+
   test("GitHub or Postgres failing fails the step for its retry policy, with GitHub's wait", async () => {
     const github = scriptedGitHub()
     const { services: value } = await services(runtime, github)
     const walk = Reconcile.walk(value)
     github.faults.push({ match: (method, path) => method === "GET" && path === "/repos/acme/widgets", status: 429, headers: { "retry-after": "4" } })
-    const limited = await Effect.runPromiseExit(walk({ repo: REPO }))
+    const limited = await Effect.runPromiseExit(walk({ repo: REPO, requestedAtMs: Date.now() }))
     expect(Exit.isFailure(limited) && Cause.squash(limited.cause)).toEqual(new Reconcile.ReconcileUnavailable({ retryAfterMillis: 4_000 }))
     github.faults.push({ match: (_, path) => path.endsWith("/access_tokens"), status: 429, headers: { "retry-after": "1" } })
-    const minting = await Effect.runPromiseExit(walk({ repo: REPO }))
+    const minting = await Effect.runPromiseExit(walk({ repo: REPO, requestedAtMs: Date.now() }))
     expect(Exit.isFailure(minting) && Cause.squash(minting.cause)).toEqual(new Reconcile.ReconcileUnavailable({ retryAfterMillis: 1_000 }))
     github.faults.push({ match: (method, path) => method === "GET" && path === "/repos/acme/widgets", status: 502 })
-    const down = await Effect.runPromiseExit(walk({ repo: REPO }))
+    const down = await Effect.runPromiseExit(walk({ repo: REPO, requestedAtMs: Date.now() }))
     expect(Exit.isFailure(down) && Cause.squash(down.cause)).toEqual(new Reconcile.ReconcileUnavailable({}))
     const { services: offline } = await services(runtime, github, { database: unreachable })
-    const noDatabase = await Effect.runPromiseExit(Reconcile.walk(offline)({ repo: REPO }))
+    const noDatabase = await Effect.runPromiseExit(Reconcile.walk(offline)({ repo: REPO, requestedAtMs: Date.now() }))
     expect(Exit.isFailure(noDatabase) && Cause.squash(noDatabase.cause)).toEqual(new Reconcile.ReconcileUnavailable({}))
   })
 })

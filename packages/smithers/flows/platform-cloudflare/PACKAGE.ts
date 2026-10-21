@@ -115,15 +115,17 @@ const securityReview = Smithers.SecurityReview({
     },
     {
       id: "no-content-in-telemetry",
-      title: "Start and alarm telemetry carries ids, outcomes and error tags only",
+      title:
+        "Start and alarm telemetry carries ids, outcomes, error tags and SQL error codes, and a failed migration's cause only",
       threat:
         "A question, a prompt or a provider error that echoes one reaches logs, spans or metrics, which are retained and readable far more widely than the conversation.",
       lookFor: [
-        "A log annotation, span attribute or metric attribute built from the intent's payload or a failure's message.",
+        "A log annotation, span attribute or metric attribute built from the intent's payload or a failure's message, outside a MigrationError's detail.",
+        "FailureDetail.detail keeping a message or statement for a failure that is not a MigrationError, or a database message whose SQLSTATE is a data exception (class 22), which quotes the rejected value.",
         "The start span ending with the caller's exit, whose failure becomes an exported exception.",
         "failureType reading anything but an error's tag."
       ],
-      paths: ["src/ExecutionObject.ts"]
+      paths: ["src/ExecutionObject.ts", "src/internal/FailureDetail.ts"]
     },
     {
       id: "fail-closed-refusals",

@@ -9,6 +9,19 @@ The `cloudflare.execution.alarm` line and span carry the failure's tag as
 `error.type`, and the attempt count as `smithers.execution.attempt`. The alarm
 backs off from one second, doubling, to five minutes, and never gives up.
 
+A failure that reached the database adds the SQL error's kind as `db.error`
+(`ConnectionError`, `SqlSyntaxError`, ...) and its SQLSTATE code as
+`db.response.status_code`. A failed schema migration (`MigrationError`) adds
+its cause:
+
+| Field               | Value                                                                                         |
+| ------------------- | --------------------------------------------------------------------------------------------- |
+| `db.migration`      | The migration that failed, as `<id>_<name>`, such as `3006_engine-store_execution_listing`.   |
+| `db.migration.kind` | `Failed`, `BadState`, `ImportError` or `Duplicates`.                                          |
+| `error.message`     | The migration error's own text.                                                               |
+| `db.query.text`     | The statement that failed.                                                                    |
+| `db.error.message`  | The database's message, except for a data exception (SQLSTATE class `22`), which quotes data. |
+
 | `error.type`                              | Cause                                                                                                | Resolution                                                                                                                                                                                                                    |
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@smthrs/platform-cloudflare/UnknownFlow` | The stored intent names a flow that is not in `alarm`'s `flows`.                                     | Add the flow to `flows`. A child or next round runs on an object of the same class, so list every flow an execution may start or hand off to. A deploy that removed one leaves its executions retrying until one restores it. |
@@ -16,6 +29,7 @@ backs off from one second, doubling, to five minutes, and never gives up.
 | `@smthrs/platform-cloudflare/Undriven`    | The runtime would not claim the execution, or what it waits on came due during the drive.            | Build the runtime with `executionId: intent.executionId`. A wait that came due resolves on the next alarm.                                                                                                                    |
 | `SchemaError`                             | The stored payload no longer decodes with the flow's payload schema, or the intent is not an intent. | Keep the payload schema able to decode payloads already stored, or settle those executions before the change ships.                                                                                                           |
 | `SqlError` or another database tag        | The database was unreachable or refused a statement while the runtime was built.                     | Check the Hyperdrive origin and the schema's privileges. The alarm resumes the run once the database answers.                                                                                                                 |
+| `MigrationError`                          | The engine's schema could not be installed or upgraded. `db.migration` names the migration.          | Read `db.query.text` and `db.error.message`. `Connection closed` behind Hyperdrive is a client that prepares statements by name; build the database with `PostgresDatabase.layer`.                                            |
 | The router's own error tag                | A `router.start` or `router.wake` call failed: the other object refused it or could not be reached.  | Check the router reaches the class's own namespace by execution id. The next alarm routes the same executions again.                                                                                                          |
 
 ## The flow settled as failed after a database outage

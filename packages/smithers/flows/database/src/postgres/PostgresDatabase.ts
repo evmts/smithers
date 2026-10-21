@@ -8,6 +8,14 @@
  * session state: every statement runs inside a transaction that sets the
  * schema for itself alone.
  *
+ * A named prepared statement is session state too, so every statement goes
+ * out unnamed. `@effect/sql-pg` otherwise keeps up to 100 statements prepared
+ * by name per connection and, past that, closes the oldest with a protocol
+ * `Close` message. Cloudflare Hyperdrive drops the connection on that
+ * message, so the 101st distinct statement on one connection failed with
+ * `Connection closed`: the flow engine's schema, about 110 statements in one
+ * transaction, never installed behind Hyperdrive (2026-10-21).
+ *
  * The socket driver is injected. `@effect/sql-pg` connects through `node:net`
  * and `node:tls`, which Node, Bun and Workers with `nodejs_compat` supply and
  * a browser does not, so the composition root passes the driver in and this
@@ -49,7 +57,13 @@ export interface PostgresDatabaseOptions {
   /** The `@effect/sql-pg` driver; see {@link Driver}. */
   readonly driver: Driver
   readonly schema?: string | undefined
-  readonly postgres?: Omit<Pg.PgClient.PgPoolConfig, "url" | "types"> | undefined
+  /**
+   * Pool settings. Statements always go out unnamed (see the module
+   * description), so the prepared-statement settings are not among them.
+   */
+  readonly postgres?:
+    | Omit<Pg.PgClient.PgPoolConfig, "url" | "types" | "prepare" | "preparedStatementCacheSize">
+    | undefined
   /**
    * Reads an existing schema only: no schema creation, no writer lock, and
    * every transaction is `READ ONLY`.
@@ -182,7 +196,7 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
   return Layer.effect(
     SqlClient.SqlClient,
     Effect.gen(function*() {
-      const pg = yield* PgClient.make({ ...options.postgres, url: Redacted.make(options.url), types })
+      const pg = yield* PgClient.make({ ...options.postgres, url: Redacted.make(options.url), types, prepare: false })
       const baseCompiler = PgClient.makeCompiler()
       const compiler: Compiler = {
         dialect: "pg",

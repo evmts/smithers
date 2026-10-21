@@ -6,6 +6,7 @@ import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
+import * as SqlClient from "effect/sql/SqlClient"
 import * as Tracer from "effect/Tracer"
 import { randomUUID } from "node:crypto"
 import { ExecutionObject } from "../src/index.ts"
@@ -149,16 +150,29 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
           "forgotten"
         ])
         expect(alarms[2]!.attributes.get("smithers.execution.id")).toBe(executionId)
+        // Every alarm line names its execution and flow, the forgotten one included.
+        const ids = { "smithers.execution.id": executionId, "smithers.flow": Answer._tag }
         expect(t.lines("cloudflare.execution.alarm").map((line) => line.annotations)).toEqual([
           expect.objectContaining({
             trace_id: alarms[0]!.traceId,
             span_id: alarms[0]!.spanId,
             outcome: "retrying",
             "error.type": "Leaky",
-            "smithers.execution.attempt": 1
+            "smithers.execution.attempt": 1,
+            ...ids
           }),
-          expect.objectContaining({ trace_id: alarms[1]!.traceId, span_id: alarms[1]!.spanId, outcome: "settled" }),
-          expect.objectContaining({ trace_id: alarms[2]!.traceId, span_id: alarms[2]!.spanId, outcome: "forgotten" })
+          expect.objectContaining({
+            trace_id: alarms[1]!.traceId,
+            span_id: alarms[1]!.spanId,
+            outcome: "settled",
+            ...ids
+          }),
+          expect.objectContaining({
+            trace_id: alarms[2]!.traceId,
+            span_id: alarms[2]!.spanId,
+            outcome: "forgotten",
+            ...ids
+          })
         ])
 
         // No content anywhere: not in a line, an attribute, an event, a failed
@@ -226,4 +240,110 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
       }))
     )
   })
+
+  /**
+   * One alarm of an `Answer` execution whose question is the sentinel, over
+   * `schema` after `prepare` ran on it, at `databaseUrl`. Answers the
+   * alarm's outcome and the annotations of its log line.
+   */
+  const failedAlarm = (
+    prepare: (sql: SqlClient.SqlClient, schema: string) => Effect.Effect<unknown, unknown>,
+    databaseUrl = Postgres.url
+  ) => {
+    const t = telemetry()
+    const schema = Postgres.freshSchema()
+    const executionId = `answer-${randomUUID()}`
+    const memory = MemoryStorage.make()
+    return t.observed(Effect.gen(function*() {
+      yield* Effect.promise(() => Postgres.admin(Effect.flatMap(SqlClient.SqlClient, (sql) => prepare(sql, schema))))
+      const value = yield* ExecutionObject.intent(Answer, { executionId, payload: { question: sentinel, pauseMs: 0 } })
+      yield* ExecutionObject.start(memory.storage, value, Effect.void)
+      return yield* ExecutionObject.alarm(memory.storage, {
+        flows: [Answer],
+        runtime: runtime({
+          hostId: executionId,
+          database: Postgres.database(schema, databaseUrl),
+          record: Effect.succeed
+        }),
+        router: Objects.unrouted
+      })
+    })).pipe(
+      Effect.ensuring(Effect.promise(() => Postgres.dropSchema(schema))),
+      Effect.map((outcome) => {
+        const lines = t.lines("cloudflare.execution.alarm")
+        expect(lines).toHaveLength(1)
+        expect(json(t.logs)).not.toContain(sentinel)
+        for (const span of t.spans) expect(json([...span.attributes])).not.toContain(sentinel)
+        return { outcome, annotations: lines[0]!.annotations as Record<string, unknown> }
+      })
+    )
+  }
+
+  it.live("a failed migration's alarm logs the migration, its statement and the database's code and message", () =>
+    Effect.gen(function*() {
+      // A table in the way of the journal's first migration.
+      const { annotations, outcome } = yield* failedAlarm((sql, schema) =>
+        Effect.andThen(
+          sql`CREATE SCHEMA ${sql(schema)}`,
+          sql`CREATE TABLE ${sql(schema)}.flows_journal_events (id INTEGER)`
+        )
+      )
+      const detail = {
+        "db.error": "SqlSyntaxError",
+        "db.response.status_code": "42P07",
+        "error.message": "Migration \"1_journal_initial\" failed",
+        "db.migration": "1_journal_initial",
+        "db.migration.kind": "Failed",
+        "db.error.message": "relation \"flows_journal_events\" already exists",
+        "db.query.text": expect.stringMatching(/^CREATE TABLE flows_journal_events \(/)
+      }
+      expect(outcome).toEqual({
+        _tag: "Retrying",
+        attempt: 1,
+        retryAtMs: expect.any(Number),
+        failure: "MigrationError",
+        detail
+      })
+      expect(annotations).toMatchObject({
+        outcome: "retrying",
+        "error.type": "MigrationError",
+        "smithers.flow": Answer._tag,
+        "smithers.execution.id": expect.stringMatching(/^answer-/),
+        ...detail
+      })
+    }))
+
+  it.live("a migration the ledger contradicts logs the migration error's own text, and no database detail", () =>
+    Effect.gen(function*() {
+      const { annotations, outcome } = yield* failedAlarm((sql, schema) =>
+        Effect.gen(function*() {
+          yield* sql`CREATE SCHEMA ${sql(schema)}`
+          yield* sql`CREATE TABLE ${sql(schema)}.flows_migrations (
+            migration_id INTEGER PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), name TEXT NOT NULL
+          )`
+          yield* sql`INSERT INTO ${sql(schema)}.flows_migrations (migration_id, name) VALUES (1, 'journal_renamed')`
+        })
+      )
+      const detail = {
+        "error.message": "Migration 1 was recorded as journal_renamed, but this package declares journal_initial",
+        "db.migration.kind": "BadState"
+      }
+      expect(outcome).toMatchObject({ _tag: "Retrying", failure: "MigrationError", detail })
+      expect(Object.keys((outcome as { detail: object }).detail).sort()).toEqual(Object.keys(detail).sort())
+      expect(annotations).toMatchObject(detail)
+    }))
+
+  it.live("an unreachable database's alarm logs the SQL error's kind and nothing else", () =>
+    Effect.gen(function*() {
+      const closed = new URL(Postgres.url)
+      closed.port = "1"
+      const { annotations, outcome } = yield* failedAlarm(() => Effect.void, closed.toString())
+      expect(outcome).toMatchObject({
+        _tag: "Retrying",
+        failure: "SqlError",
+        detail: { "db.error": "ConnectionError" }
+      })
+      expect(Object.keys((outcome as { detail: object }).detail)).toEqual(["db.error"])
+      expect(annotations).toMatchObject({ "error.type": "SqlError", "db.error": "ConnectionError" })
+    }))
 })

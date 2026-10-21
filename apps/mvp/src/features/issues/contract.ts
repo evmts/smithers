@@ -175,6 +175,9 @@ export const SYNC_STALE_MS = 5 * 60 * 1000
 export const reconcileExecutionId = (repoId: string, nowMs: number): string =>
   `github-reconcile:${repoId}:${Math.floor(nowMs / SYNC_STALE_MS)}`
 
+/** When the 5-minute bucket of a read at `nowMs` began: the same for every read in it, so their starts are one intent. */
+export const reconcileBucketStart = (nowMs: number): number => Math.floor(nowMs / SYNC_STALE_MS) * SYNC_STALE_MS
+
 /** A webhook delivery's run: one per `X-GitHub-Delivery`. */
 export const applyExecutionId = (deliveryId: string): string => `github-apply:${deliveryId}`
 

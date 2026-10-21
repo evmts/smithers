@@ -32,6 +32,7 @@ import type * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import * as FailureDetail from "./internal/FailureDetail.ts"
 import * as Routing from "./internal/Routing.ts"
 
 /**
@@ -115,7 +116,10 @@ export class IntentConflict extends Schema.TaggedError<IntentConflict>()(
  * - `Retrying`: building the runtime or driving the execution failed; the
  *   alarm is armed at `retryAtMs`. `attempt` counts consecutive alarms that
  *   made no progress, those that died included, and `failure` is the tag of
- *   what failed, never its message.
+ *   what failed, never its message. `detail` names a failed schema
+ *   migration's cause (the migration, its failed statement, the SQL error's
+ *   kind, SQLSTATE code and the database's message) and, for any other
+ *   failure that reached the database, only the SQL error's kind and code.
  * - `Forgotten`: the execution settled and its retention window has passed;
  *   the object deleted its intent, its count and its settlement, and the
  *   alarm is deleted. The object is empty, as one that never held an
@@ -133,6 +137,8 @@ export type Outcome =
     readonly attempt: number
     readonly retryAtMs: number
     readonly failure: string
+    /** What the alarm's log adds to `failure`: a failed migration's cause, never a flow's content. */
+    readonly detail: Readonly<Record<string, string>>
   }
   | { readonly _tag: "Forgotten" }
 
@@ -299,9 +305,16 @@ const storedIdentity = (raw: string): string => {
   }
 }
 
-/** The ids an alarm's span carries: the execution and its flow, never the payload. */
-const annotateIntent = (value: Intent) =>
-  Effect.annotateCurrentSpan({ "smithers.execution.id": value.executionId, "smithers.flow": value.flow })
+/**
+ * The ids an alarm's span and log line carry: the execution and its flow,
+ * never the payload. None when nothing is stored or the stored value is not an
+ * intent.
+ */
+const idsOf = (raw: string | undefined): Effect.Effect<Readonly<Record<string, string>>> =>
+  raw === undefined ? Effect.succeed({}) : decodeIntent(raw).pipe(
+    Effect.map((value) => ({ "smithers.execution.id": value.executionId, "smithers.flow": value.flow })),
+    Effect.orElseSucceed(() => ({}))
+  )
 
 /**
  * Builds an intent, encoding the payload with the flow's own JSON codec.
@@ -551,7 +564,8 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  *
  * Any failure, a router call's included, re-arms the alarm with the backoff
  * and returns `Retrying`, so the alarm never fails and Cloudflare's own retry
- * limit never drops an execution. The failure is logged by its tag only.
+ * limit never drops an execution. The failure is logged by its tag, and a
+ * failed schema migration by its cause as well (`Outcome`'s `detail`).
  *
  * `flows` lists the declarations this object may run; an intent naming
  * another flow is a failure like any other. Every object routes executions
@@ -575,6 +589,33 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
 ): Effect.Effect<Outcome, never, R | RS | RR> =>
   Effect.gen(function*() {
     const raw = yield* storage.get<string>(intentKey)
+    const ids = yield* idsOf(raw)
+    yield* Effect.annotateCurrentSpan(ids)
+    const outcome = yield* settleOrDrive(storage, raw, options)
+    const tag = outcome._tag.toLowerCase()
+    const failure = outcome._tag === "Retrying"
+      ? { "error.type": outcome.failure, "smithers.execution.attempt": outcome.attempt, ...outcome.detail }
+      : {}
+    yield* Effect.annotateCurrentSpan({ "smithers.execution.alarm": tag, ...failure })
+    yield* Metric.update(Metric.withAttributes(alarms, { outcome: tag }), 1)
+    yield* (outcome._tag === "Retrying" ? Effect.logWarning : Effect.logInfo)("cloudflare.execution.alarm").pipe(
+      Effect.annotateLogs({ outcome: tag, ...ids, ...failure })
+    )
+    return outcome
+  }).pipe(Effect.withSpan("cloudflare.execution.alarm"))
+
+/** What one {@link alarm} does with the stored intent `raw`, before it records the outcome. */
+const settleOrDrive = <E, R, RS, RE, RR>(
+  storage: Storage<RS>,
+  raw: string | undefined,
+  options: {
+    readonly flows: ReadonlyArray<Flow.Any>
+    readonly runtime: (intent: Intent) => Layer.Layer<Services, E, R>
+    readonly router: Router<RE, RR>
+    readonly settledRetentionMs?: number | undefined
+  }
+): Effect.Effect<Outcome, never, R | RS | RR> =>
+  Effect.gen(function*() {
     if (raw === undefined) {
       yield* storage.deleteAlarm()
       return { _tag: "Idle" } as const
@@ -582,7 +623,6 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
     const retain = options.settledRetentionMs ?? settledRetentionMs
     const settledAt = yield* storage.get<number>(settledKey)
     if (settledAt !== undefined) {
-      yield* decodeIntent(raw).pipe(Effect.flatMap(annotateIntent), Effect.ignore)
       const forgetAtMs = settledAt + retain
       if ((yield* Clock.currentTimeMillis) < forgetAtMs) {
         yield* storage.setAlarm(forgetAtMs)
@@ -597,9 +637,8 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
     const attempt = ((yield* storage.get<number>(failuresKey)) ?? 0) + 1
     yield* storage.put(failuresKey, attempt)
     yield* storage.setAlarm((yield* Clock.currentTimeMillis) + backoff(attempt))
-    const outcome = yield* Effect.exit(Effect.gen(function*() {
+    const [outcome, failedStatement] = yield* FailureDetail.withFailedStatement(Effect.gen(function*() {
       const value = yield* decodeIntent(raw)
-      yield* annotateIntent(value)
       const flow = options.flows.find((candidate) => candidate._tag === value.flow)
       if (flow === undefined) return yield* new UnknownFlow({ flow: value.flow })
       return yield* Effect.gen(function*() {
@@ -620,20 +659,11 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
     }
     const retryAtMs = (yield* Clock.currentTimeMillis) + backoff(attempt)
     yield* storage.setAlarm(retryAtMs)
-    return { _tag: "Retrying", attempt, retryAtMs, failure: RetryPolicy.failureType(outcome.cause) } as const
-  }).pipe(
-    Effect.tap((outcome) =>
-      Effect.gen(function*() {
-        const tag = outcome._tag.toLowerCase()
-        const failure = outcome._tag === "Retrying"
-          ? { "error.type": outcome.failure, "smithers.execution.attempt": outcome.attempt }
-          : {}
-        yield* Effect.annotateCurrentSpan({ "smithers.execution.alarm": tag, ...failure })
-        yield* Metric.update(Metric.withAttributes(alarms, { outcome: tag }), 1)
-        yield* (outcome._tag === "Retrying" ? Effect.logWarning : Effect.logInfo)("cloudflare.execution.alarm").pipe(
-          Effect.annotateLogs({ outcome: tag, ...failure })
-        )
-      })
-    ),
-    Effect.withSpan("cloudflare.execution.alarm")
-  )
+    return {
+      _tag: "Retrying",
+      attempt,
+      retryAtMs,
+      failure: RetryPolicy.failureType(outcome.cause),
+      detail: FailureDetail.detail(outcome.cause, failedStatement)
+    } as const
+  })
