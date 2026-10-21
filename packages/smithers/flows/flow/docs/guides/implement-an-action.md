@@ -108,6 +108,58 @@ under one cache key, so a conflict is resolved first-writer-wins instead of bein
 reported as a hermeticity violation. The flag is key material, so a tolerant
 declaration never consumes a strict declaration's recorded row.
 
+## Write to another service once
+
+A step that creates something outside the journal, such as a commit, a pull
+request, a comment or an email, can lose the answer: the provider made the
+object, then the process died or the connection dropped before the step's
+outcome was recorded. The engine runs the step again, and the step has to tell
+its own object from everyone else's. Never decide that from what the object
+looks like: a title, a message, a branch name, a time window or "the latest"
+adopts objects that only look alike and misses your own.
+
+Write through `Action.once` instead. It derives the write's key from the
+execution and the dispatch (`Action.effectKey`), so every run of the step
+derives the same key and no other step does. The adapter puts the key on the
+object in the request that creates it and finds the object by that key alone:
+
+```ts
+import { Action } from "@smthrs/flow"
+import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
+
+declare const outbox: Map<string, string>
+
+export const notify = Notify.toLayer(({ text }) =>
+  Action.once(
+    "notify",
+    Action.keyed({
+      find: (key) => Effect.sync(() => Option.fromUndefinedOr(outbox.get(key))),
+      perform: (key) =>
+        Effect.sync(() => {
+          outbox.set(key, text)
+          return text
+        })
+    })
+  )
+)
+```
+
+`once` calls `find` first and adopts what it answers. Only when `find` answers
+none does it call `perform`, and when `perform` fails it calls `find` again, so
+a write whose answer was lost is adopted rather than repeated. A `find` that
+cannot tell, such as a search cut short by a page budget, must fail; `once`
+never reads a failed lookup as "not made".
+
+Declare such a step `tier: "irreversible"` with an `idempotencyKey`: its repeat
+is safe, so a durable engine re-runs an attempt that died mid-write. A write
+that can carry no key and has no lookup, such as a Telegram message, runs alone
+in an `irreversible` step. Without an `idempotencyKey` the durable engine runs
+it at most once; with one it accepts a repeat.
+
+Provider adapters ship with their packages, such as `@smthrs/integrations`'
+`GitHub.Once`.
+
 ## Compose the layers
 
 Three rules, in the order they bite:
