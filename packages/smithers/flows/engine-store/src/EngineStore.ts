@@ -365,6 +365,688 @@ const encodeEngineError = (error: unknown): Option.Option<unknown> =>
     () => Option.flatMap(Schema.decodeUnknownOption(EngineError)(error), Schema.encodeUnknownOption(EngineError))
   )
 
+type Instance = FlowRuntime.FlowInstance["Service"]
+
+// Run instances bound cache lifetime; each producer has independent provenance.
+type PlanProvenance = { readonly lineageId: string; readonly sourceRevision: string | undefined }
+/** A plan row this run already holds: its provenance and what it says. */
+type RecordedPlan = { readonly provenance: PlanProvenance; readonly payload: Readonly<Record<string, unknown>> }
+
+/**
+ * Opens one engine store: the services it captures at composition, the
+ * in-process tables its dispatches share, its run driver, and its deferred
+ * persistence.
+ */
+const openStore = Effect.fnUntraced(function*(options: Options) {
+  const host = yield* CapabilitySet.current
+  const ownerIdentity = yield* OwnerIdentity.OwnerIdentity
+  const owner = yield* ownerIdentity.ownerId(options.owner.hostId)
+  const attemptStore = yield* AttemptStore.AttemptStore
+  const cacheStore = yield* CacheStore.CacheStore
+  const journal = yield* Journal.Journal
+  const actionJj = yield* Jj.Jj
+  const engineJj = yield* EngineJj.EngineJj
+  const runStore = yield* RunStore.RunStore
+  const stepBoundary = yield* StepBoundary.StepBoundary
+  /**
+   * Both halves of the isolated-execution lane are OPTIONAL and resolved
+   * here, at composition time, for the same reason every service above is:
+   * `actionExecute` runs on the engine's fiber, which does not carry the
+   * store's layer context, so anything the dispatch needs has to be captured
+   * now and re-provided below. A composition without a sandbox keeps the
+   * pre-existing behaviour — the body runs against the host directly — and
+   * one without a dispatcher journals what a transaction queued without
+   * sending it.
+   */
+  const workspaceSandbox = yield* Effect.serviceOption(WorkspaceSandbox.WorkspaceSandbox)
+  const stepSandbox = yield* Effect.serviceOption(StepSandbox.StepSandbox)
+  const effectDispatcher = yield* Effect.serviceOption(WorkspaceSandbox.EffectDispatcher)
+  // Resolved at composition like the sandboxes: a verifier composes an
+  // engine that replays and executes nothing (`ReplayOnly`).
+  const replayOnly = Option.getOrUndefined(yield* Effect.serviceOption(ReplayOnly.ReplayOnly))
+  const engineState = yield* DurableEngineState.DurableEngineState
+  /**
+   * Resolved like the sandbox lane above: OPTIONAL, at composition time. A
+   * host that provides `WakeBus.layer` shares one bus between this engine
+   * and its own wake sources; a composition given none builds a private
+   * bus, which is complete for the in-process seam because every wake
+   * source below (driver, deferred persistence) publishes through it.
+   */
+  const providedWakeBus = yield* Effect.serviceOption(WakeBus.WakeBus)
+  const wakeBus = Option.getOrElse(providedWakeBus, WakeBus.makeUnsafe)
+
+  const engine = yield* Deferred.make<FlowRuntime.FlowRuntime["Service"]>()
+  const driver = yield* RunDriver.make({
+    owner,
+    journalSource: options.journalSource,
+    isAlive: options.isAlive,
+    canExecute: options.canExecute,
+    canActivate: options.canActivate,
+    requestResume: options.requestResume,
+    engine: Deferred.await(engine),
+    wakeBus,
+    sweep: options.sweep,
+    placement: options.placement
+  })
+  const deferred = yield* DeferredPersistence.make({
+    owner,
+    journalSource: options.journalSource,
+    scheduleResume: (flowName, executionId, reason, sourceId) =>
+      driver.scheduleResume(flowName, executionId, reason, sourceId),
+    fireRetryPolicy: options.clockFireRetryPolicy
+  })
+  return {
+    options,
+    host,
+    owner,
+    // One admission mutex per incarnation, shared by every dispatch this
+    // store drives: `ActionPersistence.make` runs per dispatch below, so a
+    // per-make default would never contend and the same-key exclusion the
+    // adoption evidence rests on (issues #102, #103) would silently vanish.
+    admission: AttemptAdmission.makeUnsafe(),
+    // Run instances own the projection's lifetime, including nested actions.
+    // A resumed instance rebuilds it without retaining completed runs here.
+    ageVerdicts: new WeakMap<Instance, ReturnType<typeof CacheAgeVerdicts.make>>(),
+    attemptStore,
+    cacheStore,
+    journal,
+    declarationRoot: NodeJournal.hostRoot(options.declarationRoot),
+    /*
+     * Stated by the host or not at all; nothing here derives a revision. A
+     * reader is asked where the record is written rather than here, because a
+     * host that learns its revision after this layer builds would otherwise
+     * be captured before it knows the answer.
+     */
+    declaredRevision: options.sourceRevision,
+    actionJj,
+    engineJj,
+    runStore,
+    forkOrigins: new WeakMap<Instance, ReadonlyArray<string>>(),
+    recordedPlans: new WeakMap<Instance, Map<string, Effect.Effect<RecordedPlan | undefined>>>(),
+    /*
+     * Plans a resume found recorded by an earlier build: the same plan, read
+     * from other declaration sites. The first build's pages stand whole, so
+     * the rebuilt pages, whose sites and layout may differ, are not appended.
+     */
+    recordedByEarlierBuild: new WeakMap<Instance, Set<string>>(),
+    stepBoundary,
+    workspaceSandbox,
+    stepSandbox,
+    effectDispatcher,
+    replayOnly,
+    engineState,
+    attemptSurvivors: engineState.attemptSurvivors,
+    wakeBus,
+    engine,
+    driver,
+    // The one execution a hosted store's registration recovers, if any.
+    hostedExecution: typeof options.sweep === "object" ? options.sweep.host : undefined,
+    deferred
+  }
+})
+
+/** Everything one engine store holds; {@link openStore} builds it. */
+type Store = Effect.Success<ReturnType<typeof openStore>>
+
+/** The source revision the host states now, if it states one. */
+const sourceRevision = (store: Store): string | undefined => {
+  const answer = typeof store.declaredRevision === "function" ? store.declaredRevision() : store.declaredRevision
+  return typeof answer === "string" && answer.length > 0 ? answer : undefined
+}
+
+/** The runs a forked run's action keys may have been recorded under, read once per instance. */
+const keyOrigins = Effect.fnUntraced(function*(store: Store, instance: Instance) {
+  const cached = store.forkOrigins.get(instance)
+  if (cached !== undefined) return cached
+  const row = yield* store.runStore.get(instance.executionId).pipe(Effect.orDie)
+  const state = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(RunState))(row.stateJson).pipe(Effect.orDie)
+  const origins = state.forkKeyRunIds ?? []
+  store.forkOrigins.set(instance, origins)
+  return origins
+})
+
+/** Every page of one plan shares the source id before its page index. */
+const planOf = (sourceId: string) => sourceId.slice(0, sourceId.lastIndexOf("/"))
+
+/** The plan row a run holds under `sourceId`, looked up once per instance and producer. */
+const recordedPlan = Effect.fnUntraced(function*(store: Store, instance: Instance, sourceId: string) {
+  let producers = store.recordedPlans.get(instance)
+  if (producers === undefined) {
+    producers = new Map()
+    store.recordedPlans.set(instance, producers)
+  }
+  let lookup = producers.get(sourceId)
+  if (lookup === undefined) {
+    lookup = yield* Effect.cached(findRecordedPlan(store, instance, sourceId))
+    producers.set(sourceId, lookup)
+  }
+  return yield* lookup
+})
+
+/** Pages the run's plan records for the one `sourceId` wrote. */
+const findRecordedPlan = (store: Store, instance: Instance, sourceId: string) =>
+  Effect.gen(function*() {
+    const origins = yield* keyOrigins(store, instance)
+    let after: JournalEvent.Seq | undefined
+    while (true) {
+      const page = yield* store.journal.entries({
+        runId: instance.executionId as JournalEvent.RunId,
+        eventTypes: ["flows.engine.plan-recorded"],
+        limit: 256,
+        ...(after === undefined ? {} : { after })
+      }).pipe(Effect.orDie)
+      const inherited = page.entries.find((entry) => entry.sourceId === sourceId && entry.sourceSeq === 0)
+      if (inherited !== undefined) return inheritedPlan(instance, origins, inherited)
+      if (!page.hasMore) return undefined
+      after = page.entries[page.entries.length - 1]!.seq
+    }
+  })
+
+/**
+ * A recorded plan row this run may resume under: its own lineage's, or one
+ * of its fork origins'.
+ */
+const inheritedPlan = (
+  instance: Instance,
+  origins: ReadonlyArray<string>,
+  inherited: JournalEvent.Entry
+): RecordedPlan | undefined => {
+  const root = FlowEngine.Lineage.root(instance.executionId)
+  const meta = Schema.decodeUnknownOption(Schema.Struct({ lineageId: Schema.String }))(inherited.meta)
+  const payload = Schema.decodeUnknownOption(
+    Schema.Struct({ graph: Schema.Struct({ sourceRevision: Schema.optional(Schema.String) }) })
+  )(inherited.payload)
+  // Legacy or malformed rows still reach content deduplication and
+  // its typed plan_changed refusal, rather than dying in the decoder.
+  if (Option.isNone(meta) || Option.isNone(payload)) return undefined
+  const { lineageId } = meta.value
+  if (
+    lineageId !== root && !origins.some((origin) => FlowEngine.Lineage.root(origin) === lineageId)
+  ) return undefined
+  return {
+    provenance: { lineageId, sourceRevision: payload.value.graph.sourceRevision },
+    // The decode above proved it an object; the raw row keeps every member.
+    payload: inherited.payload as Readonly<Record<string, unknown>>
+  }
+}
+
+// A resumed or copied plan keeps its original source revision, even when
+// coding changes the workspace.
+const planProvenance = Effect.fnUntraced(function*(
+  store: Store,
+  instance: Instance,
+  record: FlowRuntime.NodeRecord
+) {
+  const current = { lineageId: FlowEngine.Lineage.root(instance.executionId), sourceRevision: sourceRevision(store) }
+  if (record._tag !== "PlanRecorded") return current
+  // A missing row does not pin the revision of a size measurement. The
+  // successful first write below replaces this cached absence.
+  return (yield* recordedPlan(store, instance, `${store.options.journalSource}/${record.sourceId}`))?.provenance ??
+    current
+})
+
+/*
+ * The journal refused a plan record because its slot holds other bytes.
+ * Only the plan's identity decides what that means (NodeJournal.planIdentity):
+ * the same plan from a build whose declarations moved resumes under the
+ * row already written, and anything else is a changed plan.
+ */
+const rebuiltPlan = (
+  store: Store,
+  instance: Instance,
+  record: FlowRuntime.PlanRecorded,
+  rebuilt: Readonly<Record<string, unknown>>
+) => {
+  const sourceId = `${store.options.journalSource}/${record.sourceId}`
+  return Effect.flatMap(recordedPlan(store, instance, sourceId), (recorded) => {
+    if (recorded === undefined || !NodeJournal.samePlan(recorded.payload, rebuilt)) {
+      return Effect.fail(
+        new Interpreter.InterpreterError({
+          code: "plan_changed",
+          flow: record.flow,
+          node: "root",
+          message: "The rebuilt plan differs from the recorded plan; start a new execution"
+        })
+      )
+    }
+    let plans = store.recordedByEarlierBuild.get(instance)
+    if (plans === undefined) {
+      plans = new Set()
+      store.recordedByEarlierBuild.set(instance, plans)
+    }
+    plans.add(planOf(sourceId))
+    return Effect.logDebug("engine-store: resuming under a plan an earlier build recorded", {
+      runId: instance.executionId,
+      flow: record.flow,
+      sourceId
+    })
+  })
+}
+
+// Verification observes current code over copied history. Its plan is a
+// separate producer's immutable observation, never a replacement of the
+// executing producer's approved plan. ReplayOnly still refuses every new action.
+const observation = (store: Store, record: FlowRuntime.NodeRecord): FlowRuntime.NodeRecord =>
+  store.replayOnly === undefined ? record : { ...record, sourceId: `replay-only/${record.sourceId}` }
+
+/** The cache-age verdicts of a parent instance's run, shared by its dispatches. */
+const ageVerdictOf = (store: Store, parent: Instance): ReturnType<typeof CacheAgeVerdicts.make> => {
+  let cacheAgeVerdict = store.ageVerdicts.get(parent)
+  if (cacheAgeVerdict === undefined) {
+    cacheAgeVerdict = CacheAgeVerdicts.make(parent.executionId)
+    store.ageVerdicts.set(parent, cacheAgeVerdict)
+  }
+  return cacheAgeVerdict
+}
+
+const actionExecute = Effect.fn("FlowEngine.actionExecute")(
+  function*(store: Store, input: FlowEngine.ActionExecuteOptions) {
+    const parent = yield* FlowRuntime.FlowInstance
+    const cacheAgeVerdict = ageVerdictOf(store, parent)
+    yield* Effect.annotateCurrentSpan({
+      runId: parent.executionId,
+      action: input.action.name,
+      // `stepKey`, never `key`. `@smthrs/journal`'s redaction replaces the
+      // value of any field whose name is a standalone trailing `key` word,
+      // and `RedactedLogger` applies that rule to every log line this
+      // package emits under a real host. A field named `key` reached the
+      // operator as `[REDACTED]`, destroying the one field that says which
+      // dispatch the line describes. The span carries the same name so the
+      // trace and the log agree.
+      stepKey: input.key,
+      attempt: input.attempt,
+      tier: input.tier
+    })
+    const instance = FlowEngine.makeInstance(
+      parent.flow,
+      parent.executionId
+    )
+    store.ageVerdicts.set(instance, cacheAgeVerdict)
+    const flowEngine = yield* Deferred.await(store.engine)
+    instance.interrupted = parent.interrupted
+    // DECIDED (2026-08-11, pending review): the waiting classification is
+    // threaded through the dispatch's instance and back, because the dispatch
+    // runs under an instance of its own while `annotateWaiting` is documented
+    // to reach the parked row. An implementation that declares one — `Sleep`
+    // under `timer`, `WaitFor` under `event` with its wake token — writes it
+    // here, so without the thread-back `RunDriver` would park on the derived
+    // default and an action's declaration would be inert. It is seeded as
+    // well as copied back so a body that annotated before dispatching keeps
+    // its own declaration, and so the consumption `deferredResult` performs
+    // on a settled wait travels out the same way (issue #42).
+    const waitingBefore = parent.waiting
+    instance.waiting = waitingBefore
+    const logContext = {
+      runId: parent.executionId,
+      action: input.action.name,
+      stepKey: input.key,
+      attempt: input.attempt,
+      tier: input.tier
+    }
+    yield* Effect.logTrace("action dispatch started", logContext)
+    // The boundary preparation runs under the dispatching parent, not the
+    // action's own instance, exactly as the engine would run it itself.
+    const snapshot = input.snapshot === undefined
+      ? undefined
+      : Effect.provideContext(input.snapshot, yield* Effect.context<FlowRuntime.FlowInstance | Crypto.Crypto>())
+    const result = yield* persistAction(store, input, parent, cacheAgeVerdict, snapshot, logContext).pipe(
+      Flow.intoResult,
+      Effect.provideService(FlowRuntime.FlowInstance, instance),
+      Effect.provideService(
+        FlowRuntime.FlowRuntime,
+        flowEngine
+      ),
+      Effect.provideService(AttemptStore.AttemptStore, store.attemptStore),
+      Effect.provideService(CacheStore.CacheStore, store.cacheStore),
+      Effect.provideService(Journal.Journal, store.journal),
+      Effect.provideService(Jj.Jj, store.actionJj),
+      Effect.provideService(RunStore.RunStore, store.runStore),
+      Effect.provideService(StepBoundary.StepBoundary, store.stepBoundary),
+      (dispatch) =>
+        Option.isNone(store.stepSandbox)
+          ? dispatch
+          : Effect.provideService(dispatch, StepSandbox.StepSandbox, store.stepSandbox.value),
+      (dispatch) =>
+        Option.isNone(store.workspaceSandbox)
+          ? dispatch
+          : Effect.provideService(dispatch, WorkspaceSandbox.WorkspaceSandbox, store.workspaceSandbox.value),
+      (dispatch) =>
+        Option.isNone(store.effectDispatcher)
+          ? dispatch
+          : Effect.provideService(dispatch, WorkspaceSandbox.EffectDispatcher, store.effectDispatcher.value),
+      Effect.ensuring(Effect.sync(() => {
+        if (parent.waiting === waitingBefore) parent.waiting = instance.waiting
+      }))
+    )
+    const outcome = result._tag === "Complete"
+      ? result.exit._tag === "Success" ? "success" : "failure"
+      : result._tag.toLowerCase()
+    yield* Effect.annotateCurrentSpan({ outcome })
+    yield* Effect.logTrace("action dispatch settled", { ...logContext, outcome })
+    return result
+  }
+)
+
+/**
+ * Persists one action dispatch through `ActionPersistence`, keeping the
+ * engine's own refusals and a lost store off the action's error channel.
+ */
+const persistAction = (
+  store: Store,
+  input: FlowEngine.ActionExecuteOptions,
+  parent: Instance,
+  cacheAgeVerdict: ReturnType<typeof CacheAgeVerdicts.make>,
+  snapshot: ActionPersistence.ActionInput["snapshot"],
+  logContext: Readonly<Record<string, unknown>>
+) =>
+  ActionPersistence.make({
+    runId: parent.executionId,
+    owner: store.owner,
+    sourceId: store.options.journalSource,
+    isAlive: store.options.isAlive,
+    engineJj: store.engineJj,
+    execute: (actionInput) => (actionInput.action as Action.Any).executeEncoded as Effect.Effect<unknown, unknown>,
+    idempotencyKey: input.action.idempotencyKey === undefined
+      ? undefined
+      : input.key,
+    admission: store.admission,
+    cacheAgeVerdict,
+    replayOnly: store.replayOnly
+  })({
+    action: input.action,
+    attempt: input.attempt,
+    key: input.key,
+    tier: input.tier,
+    ...(input.nondeterministic === undefined ? {} : { nondeterministic: input.nondeterministic }),
+    ...(isBoundaryMetadata(input.metadata)
+      ? { metadata: input.metadata }
+      : {}),
+    ...(snapshot === undefined ? {} : { snapshot })
+  }).pipe(
+    // This is an engine safety refusal, not a failure declared by the
+    // action. Keep it on the defect channel like the numbered-retry
+    // guard in FlowEngine, before the action's error codec can mask it.
+    Effect.catchIf(
+      (cause): cause is Action.IrreversibleRetryRequiresIdempotencyKey =>
+        cause instanceof Action.IrreversibleRetryRequiresIdempotencyKey,
+      // Encode the tagged fields before the generic defect codec reduces
+      // an Error instance to just its name and message.
+      (cause) => Effect.die(Schema.encodeSync(Action.IrreversibleRetryRequiresIdempotencyKey)(cause))
+    ),
+    // A boundary refusal is the engine's verdict on the step, not the
+    // action's error, so it takes the same defect channel. Decoded through
+    // the action's error schema it became "SchemaError: Expected never"
+    // and lost the refused paths.
+    Effect.catchFilter(boundaryRefusal, Effect.die),
+    // The store went away while this attempt was admitted, run or
+    // recorded. Its outcome is not the action's: whatever did not commit
+    // left the attempt row running, so the dispatch interrupts itself, as
+    // it does on a lost fence, and the run is released for a later drive
+    // that adopts the attempt and records its result.
+    Effect.catchIf(storageUnavailable, (error) =>
+      Effect.annotateCurrentSpan({ outcome: "storage_unavailable" }).pipe(
+        Effect.andThen(Effect.logWarning("action attempt interrupted: the engine store is unavailable")),
+        Effect.annotateLogs({ ...logContext, error: error._tag, code: error.code }),
+        Effect.andThen(Metric.update(EngineStoreMetrics.storageUnavailable, 1)),
+        Effect.andThen(Effect.interrupt)
+      ))
+  )
+
+/**
+ * The graph a walk drove, and how each of its nodes settled.
+ *
+ * Addressed by the record's own `sourceId` rather than a minted one, so
+ * a resumed walk writes the identities the first walk used and the
+ * journal's `(run, source, sequence)` uniqueness holds one row per node
+ * instead of one per observation. A `Duplicate` receipt is that
+ * collapse happening, and it is the expected answer on a resume.
+ *
+ * A plan record is the exception to byte equality: a resume compares it
+ * by identity, without declaration sites or page layout, so a rebuilt
+ * bundle resumes and a changed plan fails with `plan_changed`.
+ *
+ * On the durable, owner-fenced channel, like every other engine record:
+ * a writer that lost the run self-interrupts rather than narrating a
+ * walk it no longer owns.
+ */
+const recordNode = (store: Store, input: FlowRuntime.NodeRecord) => {
+  const record = observation(store, input)
+  return Effect.flatMap(FlowRuntime.FlowInstance, (parent) => {
+    if (
+      record._tag === "SubgraphAppended" &&
+      store.recordedByEarlierBuild.get(parent)?.has(planOf(`${store.options.journalSource}/${record.sourceId}`))
+    ) {
+      return Effect.void
+    }
+    return Effect.flatMap(
+      planProvenance(store, parent, record),
+      (provenance) => emitNode(store, parent, record, provenance)
+    )
+  })
+}
+
+/** Writes one node record, remembering a plan it records and resolving a plan its slot refuses. */
+const emitNode = (store: Store, parent: Instance, record: FlowRuntime.NodeRecord, provenance: PlanProvenance) => {
+  const entry = NodeJournal.entry({
+    runId: parent.executionId,
+    sourceId: store.options.journalSource,
+    ...provenance,
+    root: store.declarationRoot
+  }, record)
+  // Every node record is built as an object, so its payload is one.
+  const payload = entry.payload as Readonly<Record<string, unknown>>
+  return store.journal.emitDurable(entry, store.owner).pipe(
+    Effect.tap(() =>
+      Effect.sync(() => {
+        if (record._tag === "PlanRecorded") {
+          store.recordedPlans.get(parent)?.set(
+            `${store.options.journalSource}/${record.sourceId}`,
+            Effect.succeed({ provenance, payload })
+          )
+        }
+      })
+    ),
+    Effect.catch((error) =>
+      error.code === "fence_lost" ?
+        Effect.interrupt :
+        error.code === "idempotency_conflict" && record._tag === "PlanRecorded"
+        ? rebuiltPlan(store, parent, record, payload)
+        : Effect.die(error)
+    ),
+    Effect.asVoid
+  )
+}
+
+/**
+ * The key a forked run's action replays under: prefer this child's own work
+ * on resume, then only ancestor keys backed by attempts copied into this
+ * child. Never read parent rows.
+ */
+const actionReplayKey = Effect.fnUntraced(function*(
+  store: Store,
+  derive: Parameters<NonNullable<FlowEngine.Encoded["actionReplayKey"]>>[0]
+) {
+  const instance = yield* FlowRuntime.FlowInstance
+  const origins = yield* keyOrigins(store, instance)
+  if (origins.length === 0) {
+    return yield* derive(instance.executionId, false)
+  }
+  const probed = new Set<string>()
+  for (const runId of [instance.executionId, ...origins]) {
+    for (const runScoped of [true, false]) {
+      const key = yield* derive(runId, runScoped)
+      if (probed.has(key)) continue
+      probed.add(key)
+      if (yield* hasAttempts(store, instance, key)) return key
+    }
+  }
+  return yield* derive(instance.executionId, true)
+})
+
+/** Whether this run holds attempts, its own or copied, under `key`. */
+const hasAttempts = (store: Store, instance: Instance, key: string) =>
+  Effect.gen(function*() {
+    const digest = yield* Schema.decodeUnknownEffect(Sha256)(key).pipe(Effect.orDie)
+    const found = yield* AttemptProbe.probeAttempts(
+      store.attemptStore,
+      store.attemptSurvivors,
+      instance.executionId,
+      digest
+    )
+    return Option.isSome(found)
+  })
+
+/** The surviving attempts of the dispatching run under `key`. */
+const survivingAttempts = (store: Store, key: string) =>
+  Effect.gen(function*() {
+    const parent = yield* FlowRuntime.FlowInstance
+    return yield* AttemptProbe.probeAttempts(
+      store.attemptStore,
+      store.attemptSurvivors,
+      parent.executionId,
+      yield* Schema.decodeUnknownEffect(Sha256)(key).pipe(Effect.orDie)
+    )
+  })
+
+/**
+ * The engine operations this store answers: the run driver's, deferred
+ * persistence's, and the action and node records it writes itself.
+ */
+const adapter = (store: Store): FlowEngine.Encoded => ({
+  encodeEngineError,
+
+  // Unspanned here: `driver.register` already opens the
+  // `FlowEngine.register` span, and a second identical wrapper would nest
+  // two same-name spans around one operation.
+  register: (flow, execute) =>
+    store.driver.register(flow, execute).pipe(
+      Effect.tap(() => store.deferred.sweepDue(flow._tag, store.hostedExecution))
+    ),
+  execute: store.driver.execute,
+  poll: store.driver.poll,
+  interrupt: store.driver.interrupt,
+  // The driver's refusal, forwarded rather than re-implemented: the
+  // durable engine has one cancellation path, so `interruptUnsafe` fails
+  // with `unsafe_interrupt_unsupported` here too (the release policy).
+  interruptUnsafe: store.driver.interruptUnsafe,
+  resume: store.driver.resume,
+  actionExecute: (input) => actionExecute(store, input),
+  nodeRecordBytes: (input) => {
+    const record = observation(store, input)
+    return Effect.flatMap(
+      FlowRuntime.FlowInstance,
+      (parent) =>
+        Effect.map(planProvenance(store, parent, record), (provenance) =>
+          NodeJournal.encodedBytes({
+            runId: parent.executionId,
+            sourceId: store.options.journalSource,
+            ...provenance,
+            root: store.declarationRoot
+          }, record))
+    )
+  },
+  recordNode: (input) => recordNode(store, input),
+  actionReplayKey: (derive) => actionReplayKey(store, derive),
+  // The durable schedule-to-close origin (issue #45): the first
+  // attempt's persisted `startedAtMs` for the action key. It lives in
+  // the same `flows_attempts` rows that already restore the attempt
+  // sequence across park/resume and process death, so the engine's
+  // `expirationMs` budget is measured from the true first attempt
+  // instead of restarting on every process.
+  actionRetryOrigin: (input: { readonly key: string }) =>
+    Effect.map(
+      survivingAttempts(store, input.key),
+      (survivors) => Option.map(survivors, ({ earliestStartedAtMs }) => earliestStartedAtMs)
+    ),
+  // The durable attempt counter (issue #59): the highest contiguous
+  // persisted attempt for the key, so a resumed run replays failed
+  // attempts under their original numbers instead of restarting at 1 —
+  // the persisted failure is rethrown by `ActionPersistence`, the
+  // retry decision sees the true attempt count, and the backoff ladder
+  // is not re-slept.
+  actionLatestAttempt: (input: { readonly key: string }) =>
+    Effect.map(survivingAttempts(store, input.key), (survivors) => Option.map(survivors, ({ latest }) => latest)),
+  // The durable restore-before-retry handle (issue #1805): the earliest
+  // boundary snapshot persisted in the key's surviving attempt rows, so a
+  // restarted process restores the original pre-image before a retry.
+  actionSnapshot: (input: { readonly key: string }) => actionSnapshot(store, input.key),
+  deferredResult: store.deferred.deferredResult,
+  deferredDone: store.deferred.deferredDone,
+  deferredDoneIfWaiting: store.deferred.deferredDoneIfWaiting,
+  scheduleClock: store.deferred.scheduleClock,
+  // The engine races this against its suspension backoff sleep, so an
+  // IN-PROCESS wake — deferred completed, clock fired, operator resume,
+  // run settled — resumes the waiting caller immediately, with the
+  // polling schedule as the bounded fallback. The bus is edge-triggered
+  // and miss-tolerant (`WakeBus.ts`); a wake published before the caller
+  // re-subscribes only costs one poll interval. Cross-process wakes ride
+  // the polling schedule and the heartbeat sweeps: the bus is in-process,
+  // and the journal offers no committed cross-process subscription.
+  resumeSignal: (_flow, executionId) => store.wakeBus.awaitWake(executionId)
+})
+
+/** The earliest boundary snapshot the dispatching run's surviving attempts under `key` persisted. */
+const actionSnapshot = Effect.fnUntraced(function*(store: Store, key: string) {
+  const parent = yield* FlowRuntime.FlowInstance
+  const stepKeyDigest = yield* Schema.decodeUnknownEffect(Sha256)(key).pipe(Effect.orDie)
+  const survivors = yield* AttemptProbe.probeAttempts(
+    store.attemptStore,
+    store.attemptSurvivors,
+    parent.executionId,
+    stepKeyDigest
+  )
+  if (Option.isNone(survivors)) {
+    return Option.none()
+  }
+  return yield* ActionPersistence.earliestBoundarySnapshot(store.attemptStore, parent.executionId, stepKeyDigest, {
+    earliest: survivors.value.earliestAttempt,
+    latest: survivors.value.latest
+  })
+})
+
+/** What the store says the execution is now, for its host. */
+const driven = (store: Store, executionId: string) =>
+  Effect.gen(function*() {
+    const row = yield* store.runStore.get(executionId)
+    if (RunStore.isTerminalRunStatus(row.status)) {
+      return { _tag: "Settled", status: row.status } as const
+    }
+    const wake = yield* nextWake(executionId).pipe(
+      Effect.provideService(RunStore.RunStore, store.runStore),
+      Effect.provideService(DurableEngineState.DurableEngineState, store.engineState)
+    )
+    const nowMs = Math.floor(yield* Clock.currentTimeMillis)
+    return Option.isSome(wake) && wake.value <= nowMs
+      ? { _tag: "Unfinished" } as const
+      : { _tag: "Parked", wakeAtMs: Option.getOrUndefined(wake) } as const
+  })
+
+/** The store's host-facing driver: one drive of one execution, and what it left. */
+const hostDriver = (store: Store) =>
+  Driver.of({
+    // Compared under the host ceiling, as every call of the typed service is.
+    drive: Effect.fn("EngineStore.drive")(function*(flow, input) {
+      yield* Effect.annotateCurrentSpan({ executionId: input.executionId, flow: flow._tag })
+      const admitted = yield* store.runStore.get(input.executionId).pipe(
+        Effect.as(true),
+        Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeed(false))
+      )
+      // A drive that ends on a lost fence or an unavailable store interrupts
+      // itself and releases the run; the store, read below, says what is
+      // left. Any other failure is the caller's.
+      const exit = yield* Effect.exit(
+        admitted
+          ? store.driver.resume(flow, input.executionId, { poll: true })
+          : store.driver.execute(flow, { executionId: input.executionId, payload: input.payload, discard: false })
+      )
+      if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) return yield* Effect.failCause(exit.cause)
+      const outcome = yield* driven(store, input.executionId)
+      if (outcome._tag === "Settled") yield* store.driver.reannounce(input.executionId)
+      yield* Effect.annotateCurrentSpan({ outcome: outcome._tag })
+      return outcome
+    }, CapabilitySet.attenuateGroups(store.host.groups))
+  })
+
 /**
  * Constructs the production encoded composition.
  *
@@ -387,593 +1069,13 @@ const makeWithEngineJj = (
   Requirements
 > =>
   Effect.gen(function*() {
-    const host = yield* CapabilitySet.current
-    const ownerIdentity = yield* OwnerIdentity.OwnerIdentity
-    const owner = yield* ownerIdentity.ownerId(options.owner.hostId)
-    // One admission mutex per incarnation, shared by every dispatch this
-    // store drives: `ActionPersistence.make` runs per dispatch below, so a
-    // per-make default would never contend and the same-key exclusion the
-    // adoption evidence rests on (issues #102, #103) would silently vanish.
-    const admission = AttemptAdmission.makeUnsafe()
-    // Run instances own the projection's lifetime, including nested actions.
-    // A resumed instance rebuilds it without retaining completed runs here.
-    const ageVerdicts = new WeakMap<FlowRuntime.FlowInstance["Service"], ReturnType<typeof CacheAgeVerdicts.make>>()
-    const attemptStore = yield* AttemptStore.AttemptStore
-    const cacheStore = yield* CacheStore.CacheStore
-    const journal = yield* Journal.Journal
-    const declarationRoot = NodeJournal.hostRoot(options.declarationRoot)
-    /*
-     * Stated by the host or not at all; nothing here derives a revision. A
-     * reader is asked where the record is written rather than here, because a
-     * host that learns its revision after this layer builds would otherwise
-     * be captured before it knows the answer.
-     */
-    const declaredRevision = options.sourceRevision
-    const sourceRevision = (): string | undefined => {
-      const answer = typeof declaredRevision === "function" ? declaredRevision() : declaredRevision
-      return typeof answer === "string" && answer.length > 0 ? answer : undefined
-    }
-    const actionJj = yield* Jj.Jj
-    const engineJj = yield* EngineJj.EngineJj
-    const runStore = yield* RunStore.RunStore
-    const forkOrigins = new WeakMap<FlowRuntime.FlowInstance["Service"], ReadonlyArray<string>>()
-    const keyOrigins = Effect.fnUntraced(function*(instance: FlowRuntime.FlowInstance["Service"]) {
-      const cached = forkOrigins.get(instance)
-      if (cached !== undefined) return cached
-      const row = yield* runStore.get(instance.executionId).pipe(Effect.orDie)
-      const state = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(RunState))(row.stateJson).pipe(Effect.orDie)
-      const origins = state.forkKeyRunIds ?? []
-      forkOrigins.set(instance, origins)
-      return origins
-    })
-    // Run instances bound cache lifetime; each producer has independent provenance.
-    type PlanProvenance = { readonly lineageId: string; readonly sourceRevision: string | undefined }
-    /** A plan row this run already holds: its provenance and what it says. */
-    type RecordedPlan = { readonly provenance: PlanProvenance; readonly payload: Readonly<Record<string, unknown>> }
-    const recordedPlans = new WeakMap<
-      FlowRuntime.FlowInstance["Service"],
-      Map<string, Effect.Effect<RecordedPlan | undefined>>
-    >()
-    /*
-     * Plans a resume found recorded by an earlier build: the same plan, read
-     * from other declaration sites. The first build's pages stand whole, so
-     * the rebuilt pages, whose sites and layout may differ, are not appended.
-     */
-    const recordedByEarlierBuild = new WeakMap<FlowRuntime.FlowInstance["Service"], Set<string>>()
-    /** Every page of one plan shares the source id before its page index. */
-    const planOf = (sourceId: string) => sourceId.slice(0, sourceId.lastIndexOf("/"))
-    const recordedPlan = Effect.fnUntraced(function*(
-      instance: FlowRuntime.FlowInstance["Service"],
-      sourceId: string
-    ) {
-      const root = FlowEngine.Lineage.root(instance.executionId)
-      let producers = recordedPlans.get(instance)
-      if (producers === undefined) {
-        producers = new Map()
-        recordedPlans.set(instance, producers)
-      }
-      let lookup = producers.get(sourceId)
-      if (lookup === undefined) {
-        lookup = yield* Effect.cached(Effect.gen(function*() {
-          const origins = yield* keyOrigins(instance)
-          let after: JournalEvent.Seq | undefined
-          while (true) {
-            const page = yield* journal.entries({
-              runId: instance.executionId as JournalEvent.RunId,
-              eventTypes: ["flows.engine.plan-recorded"],
-              limit: 256,
-              ...(after === undefined ? {} : { after })
-            }).pipe(Effect.orDie)
-            const inherited = page.entries.find((entry) => entry.sourceId === sourceId && entry.sourceSeq === 0)
-            if (inherited !== undefined) {
-              const meta = Schema.decodeUnknownOption(Schema.Struct({ lineageId: Schema.String }))(inherited.meta)
-              const payload = Schema.decodeUnknownOption(
-                Schema.Struct({ graph: Schema.Struct({ sourceRevision: Schema.optional(Schema.String) }) })
-              )(inherited.payload)
-              // Legacy or malformed rows still reach content deduplication and
-              // its typed plan_changed refusal, rather than dying in the decoder.
-              if (Option.isNone(meta) || Option.isNone(payload)) return undefined
-              const { lineageId } = meta.value
-              if (
-                lineageId !== root && !origins.some((origin) => FlowEngine.Lineage.root(origin) === lineageId)
-              ) return undefined
-              return {
-                provenance: { lineageId, sourceRevision: payload.value.graph.sourceRevision },
-                // The decode above proved it an object; the raw row keeps every member.
-                payload: inherited.payload as Readonly<Record<string, unknown>>
-              }
-            }
-            if (!page.hasMore) return undefined
-            after = page.entries[page.entries.length - 1]!.seq
-          }
-        }))
-        producers.set(sourceId, lookup)
-      }
-      return yield* lookup
-    })
-    // A resumed or copied plan keeps its original source revision, even when
-    // coding changes the workspace.
-    const planProvenance = Effect.fnUntraced(function*(
-      instance: FlowRuntime.FlowInstance["Service"],
-      record: FlowRuntime.NodeRecord
-    ) {
-      const current = { lineageId: FlowEngine.Lineage.root(instance.executionId), sourceRevision: sourceRevision() }
-      if (record._tag !== "PlanRecorded") return current
-      // A missing row does not pin the revision of a size measurement. The
-      // successful first write below replaces this cached absence.
-      return (yield* recordedPlan(instance, `${options.journalSource}/${record.sourceId}`))?.provenance ?? current
-    })
-    /*
-     * The journal refused a plan record because its slot holds other bytes.
-     * Only the plan's identity decides what that means (NodeJournal.planIdentity):
-     * the same plan from a build whose declarations moved resumes under the
-     * row already written, and anything else is a changed plan.
-     */
-    const rebuiltPlan = (
-      instance: FlowRuntime.FlowInstance["Service"],
-      record: FlowRuntime.PlanRecorded,
-      rebuilt: Readonly<Record<string, unknown>>
-    ) => {
-      const sourceId = `${options.journalSource}/${record.sourceId}`
-      return Effect.flatMap(recordedPlan(instance, sourceId), (recorded) => {
-        if (recorded === undefined || !NodeJournal.samePlan(recorded.payload, rebuilt)) {
-          return Effect.fail(
-            new Interpreter.InterpreterError({
-              code: "plan_changed",
-              flow: record.flow,
-              node: "root",
-              message: "The rebuilt plan differs from the recorded plan; start a new execution"
-            })
-          )
-        }
-        let plans = recordedByEarlierBuild.get(instance)
-        if (plans === undefined) {
-          plans = new Set()
-          recordedByEarlierBuild.set(instance, plans)
-        }
-        plans.add(planOf(sourceId))
-        return Effect.logDebug("engine-store: resuming under a plan an earlier build recorded", {
-          runId: instance.executionId,
-          flow: record.flow,
-          sourceId
-        })
-      })
-    }
-    const stepBoundary = yield* StepBoundary.StepBoundary
-    /**
-     * Both halves of the isolated-execution lane are OPTIONAL and resolved
-     * here, at composition time, for the same reason every service above is:
-     * `actionExecute` runs on the engine's fiber, which does not carry the
-     * store's layer context, so anything the dispatch needs has to be captured
-     * now and re-provided below. A composition without a sandbox keeps the
-     * pre-existing behaviour — the body runs against the host directly — and
-     * one without a dispatcher journals what a transaction queued without
-     * sending it.
-     */
-    const workspaceSandbox = yield* Effect.serviceOption(WorkspaceSandbox.WorkspaceSandbox)
-    const stepSandbox = yield* Effect.serviceOption(StepSandbox.StepSandbox)
-    const effectDispatcher = yield* Effect.serviceOption(WorkspaceSandbox.EffectDispatcher)
-    // Resolved at composition like the sandboxes: a verifier composes an
-    // engine that replays and executes nothing (`ReplayOnly`).
-    const replayOnly = Option.getOrUndefined(yield* Effect.serviceOption(ReplayOnly.ReplayOnly))
-    // Verification observes current code over copied history. Its plan is a
-    // separate producer's immutable observation, never a replacement of the
-    // executing producer's approved plan. ReplayOnly still refuses every new action.
-    const observation = (record: FlowRuntime.NodeRecord): FlowRuntime.NodeRecord =>
-      replayOnly === undefined ? record : { ...record, sourceId: `replay-only/${record.sourceId}` }
-    const engineState = yield* DurableEngineState.DurableEngineState
-    const attemptSurvivors = engineState.attemptSurvivors
-    /**
-     * Resolved like the sandbox lane above: OPTIONAL, at composition time. A
-     * host that provides `WakeBus.layer` shares one bus between this engine
-     * and its own wake sources; a composition given none builds a private
-     * bus, which is complete for the in-process seam because every wake
-     * source below (driver, deferred persistence) publishes through it.
-     */
-    const providedWakeBus = yield* Effect.serviceOption(WakeBus.WakeBus)
-    const wakeBus = Option.getOrElse(providedWakeBus, WakeBus.makeUnsafe)
-
-    const engine = yield* Deferred.make<FlowRuntime.FlowRuntime["Service"]>()
-    const driver = yield* RunDriver.make({
-      owner,
-      journalSource: options.journalSource,
-      isAlive: options.isAlive,
-      canExecute: options.canExecute,
-      canActivate: options.canActivate,
-      requestResume: options.requestResume,
-      engine: Deferred.await(engine),
-      wakeBus,
-      sweep: options.sweep,
-      placement: options.placement
-    })
-    // The one execution a hosted store's registration recovers, if any.
-    const hostedExecution = typeof options.sweep === "object" ? options.sweep.host : undefined
-    const deferred = yield* DeferredPersistence.make({
-      owner,
-      journalSource: options.journalSource,
-      scheduleResume: (flowName, executionId, reason, sourceId) =>
-        driver.scheduleResume(flowName, executionId, reason, sourceId),
-      fireRetryPolicy: options.clockFireRetryPolicy
-    })
-
-    const actionExecute = Effect.fn("FlowEngine.actionExecute")(function*(input: FlowEngine.ActionExecuteOptions) {
-      const parent = yield* FlowRuntime.FlowInstance
-      let cacheAgeVerdict = ageVerdicts.get(parent)
-      if (cacheAgeVerdict === undefined) {
-        cacheAgeVerdict = CacheAgeVerdicts.make(parent.executionId)
-        ageVerdicts.set(parent, cacheAgeVerdict)
-      }
-      yield* Effect.annotateCurrentSpan({
-        runId: parent.executionId,
-        action: input.action.name,
-        // `stepKey`, never `key`. `@smthrs/journal`'s redaction replaces the
-        // value of any field whose name is a standalone trailing `key` word,
-        // and `RedactedLogger` applies that rule to every log line this
-        // package emits under a real host. A field named `key` reached the
-        // operator as `[REDACTED]`, destroying the one field that says which
-        // dispatch the line describes. The span carries the same name so the
-        // trace and the log agree.
-        stepKey: input.key,
-        attempt: input.attempt,
-        tier: input.tier
-      })
-      const instance = FlowEngine.makeInstance(
-        parent.flow,
-        parent.executionId
-      )
-      ageVerdicts.set(instance, cacheAgeVerdict)
-      const flowEngine = yield* Deferred.await(engine)
-      instance.interrupted = parent.interrupted
-      // DECIDED (2026-08-11, pending review): the waiting classification is
-      // threaded through the dispatch's instance and back, because the dispatch
-      // runs under an instance of its own while `annotateWaiting` is documented
-      // to reach the parked row. An implementation that declares one — `Sleep`
-      // under `timer`, `WaitFor` under `event` with its wake token — writes it
-      // here, so without the thread-back `RunDriver` would park on the derived
-      // default and an action's declaration would be inert. It is seeded as
-      // well as copied back so a body that annotated before dispatching keeps
-      // its own declaration, and so the consumption `deferredResult` performs
-      // on a settled wait travels out the same way (issue #42).
-      const waitingBefore = parent.waiting
-      instance.waiting = waitingBefore
-      const logContext = {
-        runId: parent.executionId,
-        action: input.action.name,
-        stepKey: input.key,
-        attempt: input.attempt,
-        tier: input.tier
-      }
-      yield* Effect.logTrace("action dispatch started", logContext)
-      // The boundary preparation runs under the dispatching parent, not the
-      // action's own instance, exactly as the engine would run it itself.
-      const snapshot = input.snapshot === undefined
-        ? undefined
-        : Effect.provideContext(input.snapshot, yield* Effect.context<FlowRuntime.FlowInstance | Crypto.Crypto>())
-      const result = yield* ActionPersistence.make({
-        runId: parent.executionId,
-        owner,
-        sourceId: options.journalSource,
-        isAlive: options.isAlive,
-        engineJj,
-        execute: (actionInput) => (actionInput.action as Action.Any).executeEncoded as Effect.Effect<unknown, unknown>,
-        idempotencyKey: input.action.idempotencyKey === undefined
-          ? undefined
-          : input.key,
-        admission,
-        cacheAgeVerdict,
-        replayOnly
-      })({
-        action: input.action,
-        attempt: input.attempt,
-        key: input.key,
-        tier: input.tier,
-        ...(input.nondeterministic === undefined ? {} : { nondeterministic: input.nondeterministic }),
-        ...(isBoundaryMetadata(input.metadata)
-          ? { metadata: input.metadata }
-          : {}),
-        ...(snapshot === undefined ? {} : { snapshot })
-      }).pipe(
-        // This is an engine safety refusal, not a failure declared by the
-        // action. Keep it on the defect channel like the numbered-retry
-        // guard in FlowEngine, before the action's error codec can mask it.
-        Effect.catchIf(
-          (cause): cause is Action.IrreversibleRetryRequiresIdempotencyKey =>
-            cause instanceof Action.IrreversibleRetryRequiresIdempotencyKey,
-          // Encode the tagged fields before the generic defect codec reduces
-          // an Error instance to just its name and message.
-          (cause) => Effect.die(Schema.encodeSync(Action.IrreversibleRetryRequiresIdempotencyKey)(cause))
-        ),
-        // A boundary refusal is the engine's verdict on the step, not the
-        // action's error, so it takes the same defect channel. Decoded through
-        // the action's error schema it became "SchemaError: Expected never"
-        // and lost the refused paths.
-        Effect.catchFilter(boundaryRefusal, Effect.die),
-        // The store went away while this attempt was admitted, run or
-        // recorded. Its outcome is not the action's: whatever did not commit
-        // left the attempt row running, so the dispatch interrupts itself, as
-        // it does on a lost fence, and the run is released for a later drive
-        // that adopts the attempt and records its result.
-        Effect.catchIf(storageUnavailable, (error) =>
-          Effect.annotateCurrentSpan({ outcome: "storage_unavailable" }).pipe(
-            Effect.andThen(Effect.logWarning("action attempt interrupted: the engine store is unavailable")),
-            Effect.annotateLogs({ ...logContext, error: error._tag, code: error.code }),
-            Effect.andThen(Metric.update(EngineStoreMetrics.storageUnavailable, 1)),
-            Effect.andThen(Effect.interrupt)
-          )),
-        Flow.intoResult,
-        Effect.provideService(FlowRuntime.FlowInstance, instance),
-        Effect.provideService(
-          FlowRuntime.FlowRuntime,
-          flowEngine
-        ),
-        Effect.provideService(AttemptStore.AttemptStore, attemptStore),
-        Effect.provideService(CacheStore.CacheStore, cacheStore),
-        Effect.provideService(Journal.Journal, journal),
-        Effect.provideService(Jj.Jj, actionJj),
-        Effect.provideService(RunStore.RunStore, runStore),
-        Effect.provideService(StepBoundary.StepBoundary, stepBoundary),
-        (dispatch) =>
-          Option.isNone(stepSandbox)
-            ? dispatch
-            : Effect.provideService(dispatch, StepSandbox.StepSandbox, stepSandbox.value),
-        (dispatch) =>
-          Option.isNone(workspaceSandbox)
-            ? dispatch
-            : Effect.provideService(dispatch, WorkspaceSandbox.WorkspaceSandbox, workspaceSandbox.value),
-        (dispatch) =>
-          Option.isNone(effectDispatcher)
-            ? dispatch
-            : Effect.provideService(dispatch, WorkspaceSandbox.EffectDispatcher, effectDispatcher.value),
-        Effect.ensuring(Effect.sync(() => {
-          if (parent.waiting === waitingBefore) parent.waiting = instance.waiting
-        }))
-      )
-      const outcome = result._tag === "Complete"
-        ? result.exit._tag === "Success" ? "success" : "failure"
-        : result._tag.toLowerCase()
-      yield* Effect.annotateCurrentSpan({ outcome })
-      yield* Effect.logTrace("action dispatch settled", { ...logContext, outcome })
-      return result
-    })
-
-    const encoded: FlowEngine.Encoded = {
-      encodeEngineError,
-
-      // Unspanned here: `driver.register` already opens the
-      // `FlowEngine.register` span, and a second identical wrapper would nest
-      // two same-name spans around one operation.
-      register: (flow, execute) =>
-        driver.register(flow, execute).pipe(
-          Effect.tap(() => deferred.sweepDue(flow._tag, hostedExecution))
-        ),
-      execute: driver.execute,
-      poll: driver.poll,
-      interrupt: driver.interrupt,
-      // The driver's refusal, forwarded rather than re-implemented: the
-      // durable engine has one cancellation path, so `interruptUnsafe` fails
-      // with `unsafe_interrupt_unsupported` here too (the release policy).
-      interruptUnsafe: driver.interruptUnsafe,
-      resume: driver.resume,
-      actionExecute,
-      /**
-       * The graph a walk drove, and how each of its nodes settled.
-       *
-       * Addressed by the record's own `sourceId` rather than a minted one, so
-       * a resumed walk writes the identities the first walk used and the
-       * journal's `(run, source, sequence)` uniqueness holds one row per node
-       * instead of one per observation. A `Duplicate` receipt is that
-       * collapse happening, and it is the expected answer on a resume.
-       *
-       * A plan record is the exception to byte equality: a resume compares it
-       * by identity, without declaration sites or page layout, so a rebuilt
-       * bundle resumes and a changed plan fails with `plan_changed`.
-       *
-       * On the durable, owner-fenced channel, like every other engine record:
-       * a writer that lost the run self-interrupts rather than narrating a
-       * walk it no longer owns.
-       */
-      nodeRecordBytes: (input) => {
-        const record = observation(input)
-        return Effect.flatMap(FlowRuntime.FlowInstance, (parent) =>
-          Effect.map(planProvenance(parent, record), (provenance) =>
-            NodeJournal.encodedBytes({
-              runId: parent.executionId,
-              sourceId: options.journalSource,
-              ...provenance,
-              root: declarationRoot
-            }, record)))
-      },
-      recordNode: (input) => {
-        const record = observation(input)
-        return Effect.flatMap(FlowRuntime.FlowInstance, (parent) => {
-          if (
-            record._tag === "SubgraphAppended" &&
-            recordedByEarlierBuild.get(parent)?.has(planOf(`${options.journalSource}/${record.sourceId}`))
-          ) {
-            return Effect.void
-          }
-          return Effect.flatMap(planProvenance(parent, record), (provenance) => {
-            const entry = NodeJournal.entry({
-              runId: parent.executionId,
-              sourceId: options.journalSource,
-              ...provenance,
-              root: declarationRoot
-            }, record)
-            // Every node record is built as an object, so its payload is one.
-            const payload = entry.payload as Readonly<Record<string, unknown>>
-            return journal.emitDurable(entry, owner).pipe(
-              Effect.tap(() =>
-                Effect.sync(() => {
-                  if (record._tag === "PlanRecorded") {
-                    recordedPlans.get(parent)?.set(
-                      `${options.journalSource}/${record.sourceId}`,
-                      Effect.succeed({ provenance, payload })
-                    )
-                  }
-                })
-              ),
-              Effect.catch((error) =>
-                error.code === "fence_lost" ?
-                  Effect.interrupt :
-                  error.code === "idempotency_conflict" && record._tag === "PlanRecorded"
-                  ? rebuiltPlan(parent, record, payload)
-                  : Effect.die(error)
-              ),
-              Effect.asVoid
-            )
-          })
-        })
-      },
-      actionReplayKey: Effect.fnUntraced(function*(derive) {
-        const instance = yield* FlowRuntime.FlowInstance
-        const origins = yield* keyOrigins(instance)
-        if (origins.length === 0) {
-          return yield* derive(instance.executionId, false)
-        }
-        // Prefer this child's own work on resume, then only ancestor keys
-        // backed by attempts copied into this child. Never read parent rows.
-        const probed = new Set<string>()
-        for (const runId of [instance.executionId, ...origins]) {
-          for (const runScoped of [true, false]) {
-            const key = yield* derive(runId, runScoped)
-            if (probed.has(key)) {
-              continue
-            }
-            probed.add(key)
-            const digest = yield* Schema.decodeUnknownEffect(Sha256)(key).pipe(Effect.orDie)
-            const found = yield* AttemptProbe.probeAttempts(
-              attemptStore,
-              attemptSurvivors,
-              instance.executionId,
-              digest
-            )
-            if (Option.isSome(found)) {
-              return key
-            }
-          }
-        }
-        return yield* derive(instance.executionId, true)
-      }),
-      // The durable schedule-to-close origin (issue #45): the first
-      // attempt's persisted `startedAtMs` for the action key. It lives in
-      // the same `flows_attempts` rows that already restore the attempt
-      // sequence across park/resume and process death, so the engine's
-      // `expirationMs` budget is measured from the true first attempt
-      // instead of restarting on every process.
-      actionRetryOrigin: Effect.fnUntraced(function*(input: {
-        readonly key: string
-      }) {
-        const parent = yield* FlowRuntime.FlowInstance
-        const survivors = yield* AttemptProbe.probeAttempts(
-          attemptStore,
-          attemptSurvivors,
-          parent.executionId,
-          yield* Schema.decodeUnknownEffect(Sha256)(input.key).pipe(Effect.orDie)
-        )
-        return Option.map(survivors, ({ earliestStartedAtMs }) =>
-          earliestStartedAtMs)
-      }),
-      // The durable attempt counter (issue #59): the highest contiguous
-      // persisted attempt for the key, so a resumed run replays failed
-      // attempts under their original numbers instead of restarting at 1 —
-      // the persisted failure is rethrown by `ActionPersistence`, the
-      // retry decision sees the true attempt count, and the backoff ladder
-      // is not re-slept.
-      actionLatestAttempt: Effect.fnUntraced(function*(input: {
-        readonly key: string
-      }) {
-        const parent = yield* FlowRuntime.FlowInstance
-        const survivors = yield* AttemptProbe.probeAttempts(
-          attemptStore,
-          attemptSurvivors,
-          parent.executionId,
-          yield* Schema.decodeUnknownEffect(Sha256)(input.key).pipe(Effect.orDie)
-        )
-        return Option.map(survivors, ({ latest }) =>
-          latest)
-      }),
-      // The durable restore-before-retry handle (issue #1805): the earliest
-      // boundary snapshot persisted in the key's surviving attempt rows, so a
-      // restarted process restores the original pre-image before a retry.
-      actionSnapshot: Effect.fnUntraced(function*(input: {
-        readonly key: string
-      }) {
-        const parent = yield* FlowRuntime.FlowInstance
-        const stepKeyDigest = yield* Schema.decodeUnknownEffect(Sha256)(input.key).pipe(Effect.orDie)
-        const survivors = yield* AttemptProbe.probeAttempts(
-          attemptStore,
-          attemptSurvivors,
-          parent.executionId,
-          stepKeyDigest
-        )
-        if (Option.isNone(survivors)) {
-          return Option.none()
-        }
-        return yield* ActionPersistence.earliestBoundarySnapshot(attemptStore, parent.executionId, stepKeyDigest, {
-          earliest: survivors.value.earliestAttempt,
-          latest: survivors.value.latest
-        })
-      }),
-      deferredResult: deferred.deferredResult,
-      deferredDone: deferred.deferredDone,
-      deferredDoneIfWaiting: deferred.deferredDoneIfWaiting,
-      scheduleClock: deferred.scheduleClock,
-      // The engine races this against its suspension backoff sleep, so an
-      // IN-PROCESS wake — deferred completed, clock fired, operator resume,
-      // run settled — resumes the waiting caller immediately, with the
-      // polling schedule as the bounded fallback. The bus is edge-triggered
-      // and miss-tolerant (`WakeBus.ts`); a wake published before the caller
-      // re-subscribes only costs one poll interval. Cross-process wakes ride
-      // the polling schedule and the heartbeat sweeps: the bus is in-process,
-      // and the journal offers no committed cross-process subscription.
-      resumeSignal: (_flow, executionId) => wakeBus.awaitWake(executionId)
-    }
+    const store = yield* openStore(options)
     const service = {
-      ...FlowEngine.bindHostCeiling(host, FlowEngine.makeUnsafe(encoded)),
+      ...FlowEngine.bindHostCeiling(store.host, FlowEngine.makeUnsafe(adapter(store))),
       durability: "durable" as const
     }
-    yield* Deferred.succeed(engine, service)
-
-    /** What the store says the execution is now, for its host. */
-    const driven = (executionId: string) =>
-      Effect.gen(function*() {
-        const row = yield* runStore.get(executionId)
-        if (RunStore.isTerminalRunStatus(row.status)) {
-          return { _tag: "Settled", status: row.status } as const
-        }
-        const wake = yield* nextWake(executionId).pipe(
-          Effect.provideService(RunStore.RunStore, runStore),
-          Effect.provideService(DurableEngineState.DurableEngineState, engineState)
-        )
-        const nowMs = Math.floor(yield* Clock.currentTimeMillis)
-        return Option.isSome(wake) && wake.value <= nowMs
-          ? { _tag: "Unfinished" } as const
-          : { _tag: "Parked", wakeAtMs: Option.getOrUndefined(wake) } as const
-      })
-    const hostDriver = Driver.of({
-      // Compared under the host ceiling, as every call of the typed service is.
-      drive: Effect.fn("EngineStore.drive")(function*(flow, input) {
-        yield* Effect.annotateCurrentSpan({ executionId: input.executionId, flow: flow._tag })
-        const admitted = yield* runStore.get(input.executionId).pipe(
-          Effect.as(true),
-          Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeed(false))
-        )
-        // A drive that ends on a lost fence or an unavailable store interrupts
-        // itself and releases the run; the store, read below, says what is
-        // left. Any other failure is the caller's.
-        const exit = yield* Effect.exit(
-          admitted
-            ? driver.resume(flow, input.executionId, { poll: true })
-            : driver.execute(flow, { executionId: input.executionId, payload: input.payload, discard: false })
-        )
-        if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) return yield* Effect.failCause(exit.cause)
-        const outcome = yield* driven(input.executionId)
-        if (outcome._tag === "Settled") yield* driver.reannounce(input.executionId)
-        yield* Effect.annotateCurrentSpan({ outcome: outcome._tag })
-        return outcome
-      }, CapabilitySet.attenuateGroups(host.groups))
-    })
-    return { runtime: service, driver: hostDriver }
+    yield* Deferred.succeed(store.engine, service)
+    return { runtime: service, driver: hostDriver(store) }
   })
 
 /**
