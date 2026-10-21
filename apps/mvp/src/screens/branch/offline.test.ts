@@ -20,6 +20,7 @@ import { Issues } from "../../features/issues/issues"
 import { Pulls } from "../../features/pulls/pulls"
 import { Repo } from "../../features/repo/repo"
 import { Runs } from "../../features/runs/runs"
+import { Spend } from "../../features/spend/spend"
 import { Status } from "../../features/status/status"
 import { Terminal } from "../../features/terminal/terminal"
 import { TerminalStore } from "../../features/terminal/store"
@@ -45,13 +46,13 @@ const open = async (reopenRoute?: () => void) => {
     ...(reopenRoute === undefined ? {} : { reopenRoute }),
   })
   disposables.push(() => runtime.dispose())
-  const [repo, home, views, branch, terminal, issues, pulls, todos, runs, flows, chat, attention, auth, intel, fault, api, status, commands, theme] =
+  const [repo, home, views, branch, terminal, issues, pulls, todos, runs, flows, chat, attention, auth, intel, fault, api, status, commands, theme, spend] =
     await runtime.runPromise(Effect.all([
       Effect.service(Repo), Effect.service(Home), Effect.service(Views), Effect.service(Branch),
       Effect.service(Terminal), Effect.service(Issues), Effect.service(Pulls), Effect.service(Todos),
       Effect.service(Runs), Effect.service(FlowsUi), Effect.service(Chat), Effect.service(Attention),
       Effect.service(Auth), Effect.service(CodeIntel), Effect.service(EngineFaults), Effect.service(TestChatApi),
-      Effect.service(Status), Effect.service(Commands), Effect.service(Theme),
+      Effect.service(Status), Effect.service(Commands), Effect.service(Theme), Effect.service(Spend),
     ]))
   await runtime.runPromise(fault.holdStarts)
   const terminalStore = await runtime.runPromise(Effect.service(TerminalStore))
@@ -84,7 +85,7 @@ const open = async (reopenRoute?: () => void) => {
     /** The browser's `offline` and `online` events, as chat's connectivity binding runs them. */
     offline: () => runtime.runPromise(wentOffline),
     online: () => runtime.runPromise(retry("online")),
-    render: branchRenderer({ chat, auth, repo, branch, intel, status, commands, theme, terminal, attention }),
+    render: branchRenderer({ chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend }),
   }
 }
 

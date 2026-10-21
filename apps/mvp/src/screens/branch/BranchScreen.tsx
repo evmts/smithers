@@ -13,6 +13,7 @@ import { selfAccessOf } from "../../features/presence/view"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { RepoPage } from "../../features/repo/components/RepoPage"
 import { TerminalPanel } from "../../features/terminal/components/TerminalPanel"
+import { Toasts } from "../app/Toasts"
 import "./branch-screen.css"
 
 // /$owner/$repo/tree/$ref/$: the repository at a branch, and the branch's workspace once the app tracks it and this
@@ -38,6 +39,7 @@ export function BranchScreen() {
       <RepoHeader />
       {/* Offline before tracking answered: the pending view's public chrome until the route opens again online. */}
       {open ? <BranchHeader access={access} /> : current?.status === "offline" ? <BranchHeader access={undefined} pending /> : null}
+      <div className="branch-screen-notices"><Toasts /></div>
       <div className="branch-screen-view">
         {open && search.terminal !== undefined
           ? <TerminalPanel canOpen={writes(access) && current?.mode === "open"} />

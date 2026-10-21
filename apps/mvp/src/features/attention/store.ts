@@ -1,6 +1,6 @@
 import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
-import { Clock, Context, Duration, Effect, FiberHandle, Layer, Metric, Option, Queue, type Scope, Stream } from "effect"
+import { Clock, Context, Duration, Effect, Exit, FiberHandle, Layer, Metric, Option, Queue, type Scope, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { AuthStore } from "../auth/store"
 import { ChatStore } from "../chat/store"
@@ -173,11 +173,16 @@ export class AttentionStore extends Context.Service<
           const session = (yield* auth.session.toArray)[0]!
           const shown = (yield* place.toArray)[0]!
           const key = `${session.login ?? ""}:${shown.conversationId ?? "home"}`
-          yield* Effect.sync(() => watched.add(key)).pipe(
-            Effect.andThen(flows.dispatch("watch/set", { conversationId: shown.conversationId }, { door: "view" })),
+          if (!follows(session) || watched.has(key)) return
+          // Reserve before forking: another emission must see this launch while its child is still scheduled.
+          watched.add(key)
+          yield* flows.dispatch("watch/set", { conversationId: shown.conversationId }, { door: "view" }).pipe(
+            Effect.onExit((exit) => Effect.sync(() => {
+              // A refused dispatch or failed flow is not a watch. A later place/session change may ask again.
+              if (Exit.isFailure(exit) || exit.value._tag === "Failed") watched.delete(key)
+            })),
             Effect.ignore,
             Effect.forkIn(scope),
-            Effect.when(Effect.sync(() => follows(session) && !watched.has(key))),
           )
         })
         yield* Stream.merge(auth.session.changes({ initial: true }), place.changes({ initial: true })).pipe(
@@ -226,8 +231,25 @@ export class AttentionStore extends Context.Service<
           // Local collections refuse only rows their own schema rejects, which `detailOf` never makes: a bug, not a state.
           Effect.orDie,
         )
+        // Switch the subscription with the expanded entry. A branch answer can change without its notification,
+        // run row, or the home conversation changing; opening that branch later also makes its messages available.
+        const branchAnswers = Stream.mergeAll([
+          Stream.map(panel.changes({ initial: true }), () => undefined),
+          Stream.map(entries.changes(), () => undefined),
+          Stream.map(place.changes(), () => undefined),
+        ], { concurrency: "unbounded" }).pipe(
+          Stream.mapEffect(() => Effect.gen(function* () {
+            const { expanded } = (yield* panel.toArray)[0]!
+            const entry = expanded === null ? Option.none() : yield* entries.get(expanded)
+            const conversationId = Option.isSome(entry) ? entry.value.conversationId : null
+            return conversationId === null ? undefined : chat.opened(conversationId)
+          })),
+          Stream.changes,
+          Stream.switchMap((branch) => branch === undefined ? Stream.empty : branch.messages.changes({ initial: true })),
+        )
         yield* Stream.mergeAll(
           [
+            Stream.map(branchAnswers, () => undefined),
             Stream.map(panel.changes({ initial: true }), () => undefined),
             Stream.map(entries.changes(), () => undefined),
             Stream.map(chat.messages.changes(), () => undefined),

@@ -34,7 +34,7 @@ notifications ─▶ Electric (/api/shapes/notifications, your rows) ─▶ ever
 | someone else's run | `◌ Working · <who> · <question>`, then 4 s after it settles | none |
 | `main`, a release | 4 s | 7 days; expanded, who pushed or published |
 
-- **Over a conversation**, its own runs show in it instead of as toasts, unless they need you. `/app` places the stack under its header beside the spend alerts (`src/screens/app/Toasts.tsx`); every other page floats it at the bottom-left (`src/screens/root/Root.tsx`, `PageNotices`); a branch's page doesn't show it yet.
+- **Over a conversation**, its own runs show in it instead of as toasts, unless they need you. `/app` and branch pages place the same stack under their headers beside the spend alerts (`src/screens/app/Toasts.tsx`), above their composers; every other page floats it at the bottom-left (`src/screens/root/Root.tsx`, `PageNotices`).
 - **Order:** needs you, failed, live, done, updates; the newest first within each. Three toasts show; `+N` counts the rest and your list, and opens the panel.
 - **Clicking a toast** opens what it is about: a run's conversation at its answer (`<href>#<run id>`, which the router scrolls into view), or your question's card, which takes focus; `main`, the repository; a release, its tag.
 - **×** hides a toast (the entry stays in your list); in the panel, × dismisses a settled entry and hides a live one.
@@ -100,7 +100,7 @@ The run report and answer routes (`worker/Runs.ts`) fold in their own transactio
 
 ## Flows
 
-`src/features/attention/flows.ts` (declarations) and `steps.ts`. Each step is one ChatApi request through `AttentionClient`, tried again for a day while ChatApi can't be reached (an act taken offline lands once the device is back); a 4xx is final.
+`src/features/attention/flows.ts` (declarations) and `steps.ts`. Each step is one ChatApi request through `AttentionClient`, tried again for a day while ChatApi can't be reached (an act taken offline lands once the device is back); a 4xx other than 408 or 429 is final. Transport failures preserve `reason: unreachable | timeout` without a status. A 200 took the write even when its receipt is malformed; the client logs `notifications.malformed` rather than retrying that write.
 
 | Flow | Door | |
 |---|---|---|
@@ -118,11 +118,11 @@ The run report and answer routes (`worker/Runs.ts`) fold in their own transactio
 | `attention-entries` | what the views read, worked out by `feedOf` (`entries.ts`, pure) from the rows, the pending acts, the clock and the conversation the tab shows; again when a toast is due to hide |
 | `stack`, `stackHere`, `list`, `listHere` | the toasts and the rest of your list, which `+N` counts, on a page and over a conversation |
 | `attention-panel` | the panel on this tab: open, the entry expanded, the entry to focus, A's focus requests |
-| `attention-details` | the expanded entry's detail (`detailOf`), worked out again when the entry, its answer, its run row or the tab's draft changes |
+| `attention-details` | the expanded entry's detail (`detailOf`), worked out again when the entry, its answer, its run row or the tab's draft changes, including changes to the expanded entry's branch conversation |
 | `feed`, `unread`, `needs`, `panel`, `detail` | the panel's entries newest first, the bell's counts, the panel, the detail |
 | `open(subject, surface)`, `hide`, `dismiss`, `read`, `answer` | a toast's click or Answer, its ×, the panel's ×, R, A |
 | `openPanel(via, subject?)`, `togglePanel`, `closePanel`, `expand`, `retry` | the panel |
-| followers | the feed (above), and the watch: `watch/set` for each conversation the tab shows, once per person, for a Member (or while sign-in can't say) |
+| followers | the feed (above), and the watch: `watch/set` for each conversation the tab shows, once per person after success, for a Member (or while sign-in can't say); a failed launch or failed flow releases its watch for the next place or sign-in change |
 
 The views are `@smthrs/ui`'s `ToastStack` (`onMore`, `moreCount`), `Toast` (`tone="update"`, `word`, `unread`, `hideLabel`, `onOpen`, `onExpand`, `onAnswer`, `onRead`), `NotificationPanel`, `NotificationEntry`, `NotificationBell` and `NeedsYouCard`, with `noticeDismissDelay`, `workNoticeVisible` and `NOTICE_KEYS`. Agent status keeps the header's pill, the card and the tab's title; its toast is the feed's.
 
@@ -135,16 +135,17 @@ The views are `@smthrs/ui`'s `ToastStack` (`onMore`, `moreCount`), `Toast` (`ton
 | `notifications.repo_event` | log and span, ChatApi | `kind`, `repoId`, `watchers`, `written` |
 | `notifications.watch`, `notifications.ack` | log, ChatApi | `conversationId` or `subject`, `act`, `version`, `status`, `existing`, `errorCode` |
 | `notifications.request`; `smithers_notification_requests`, `smithers_notification_shape_requests` | span; counters, ChatApi | `route`, `status`; `status`, `live` |
-| `notifications.watch`, `notifications.ack`; `smithers_notification_watches`, `smithers_notification_acks` | log and span; counters, engine | `outcome` (`sent`, `refused`, `unsent`), `act` |
+| `notifications.watch`, `notifications.ack`; `smithers_notification_watches`, `smithers_notification_acks` | log and span; counters, engine | `outcome` (`sent`, `refused`, `unsent`), `act`, `status` or transport `reason` |
 | `notifications.shown`, `smithers_notifications_shown` | log and counter, tab | `subject`, `version`, `state`, `kind` |
-| `notifications.panel`, `smithers_notifications_panel` | log and counter, tab | `act` (`open`, `expand`, `retry`), `via` (`bell`, `toast`, `more`, `key`) on open, `subject` |
+| `notifications.panel`, `smithers_notifications_panel` | log and counter, tab | `act` (`open`, `expand`, `retry`), `via` (`bell`, `toast`, `more`, `key`) on open, `subject`, clone Retry `outcome` (`started`, `failed`) after admission |
+| `notifications.malformed`, `agent.status.malformed` | warning, client | `status` (200); no response body |
 
 No record carries a title, a question, a commit message or who pushed (the tests search the logs for them).
 
 ## Not built in this slice
 
 - Live work of runs other than agents' answers (flows, Cloudflare, attached machines), `JournalPush`, `run_commands`, Stop and Retry from a toast, and the engine facts (`retry-scheduled`, beats, `Progress.report`) of 0009 §2.
-- Unwatch and levels from the app; a branch's page placing the stack or the bell; a run's steps when this device doesn't hold its conversation; the left edges for live work scrolled out of view; browser notifications; `notifications/Prune` (rows past 7 days are hidden, not deleted); repository policy (M-47).
+- Unwatch and levels from the app; a run's steps when this device doesn't hold its conversation; the left edges for live work scrolled out of view; browser notifications; `notifications/Prune` (rows past 7 days are hidden, not deleted); repository policy (M-47).
 - Repository events locally: GitHub's deliveries need the GitHub App and its webhook secret, which `alchemy dev` doesn't have unless you configure them.
 
 ## Tests
@@ -154,7 +155,8 @@ No record carries a title, a question, a commit message or who pushed (the tests
 | `worker/Notifications.test.ts` | On the real ChatApi and Postgres: routing to the launcher and the branch's watchers (quiet, `all`, muted, access), versions, a question answered, a second question, a settled run, an answer settled before its run reports, a run with no scope; every watch and ack answer; greatest() from two devices in either order; the shape's filter; signed GitHub `push` and `release` deliveries: newer, older, replayed, other branches and repositories; no record carries a title |
 | `src/features/attention/entries.test.ts` | `feedOf`: every toast and list rule, pending acts, words, order, the panel's time; `timeOf`, `landed`, `follows` |
 | `src/features/attention/detail.test.ts` | `detailOf`: steps, notes, questions and Retry for every state; `surfaceOf` |
-| `src/features/attention/attention.test.ts` | Two people on Node devices: Ann's run on both her devices and Ben's; Read, Hide and Dismiss across her devices; done hiding after 4 s; an act a device can't send; watching per conversation and per sign-in. The panel: newest first, the unread count, expanding reads, answering in place, Open at the answer, Retry, a branch's question answered from home |
+| `src/features/attention/attention.test.ts` | Two people on Node devices: Ann's run on both her devices and Ben's; Read, Hide and Dismiss across her devices; done hiding after 4 s; an act a device can't send; watching per conversation and per sign-in. The panel: newest first, unread count, reads, answers, Open and Retry; an isolated branch-message update refreshes its expanded detail; close watch emissions launch once, failed launches and flows release the watch; clone Retry returns before admission and records its real outcome |
+| `src/features/attention/branch-page.test.ts` | The real branch screen and shared inline stack, rendered over real app queries and a synced clone failure |
 | `src/features/attention/api.test.ts` | `AttentionClient`'s answers and the steps' outcomes |
 | `worker/flows/Expire.test.ts` | An abandoned answer's run fails, and its launcher's row says so |
 | `@smthrs/notifications` `test/Inbox.test.ts`, `@smthrs/ui` `tests/agent-status-notices.test.tsx`, `tests/notification-panel.test.tsx` | `Inbox`; the notices, `Toast`, `ToastStack`, the panel, its entries, the bell and every key |

@@ -9,6 +9,7 @@ import { BranchHeader } from "../../features/branch/components/BranchHeader"
 import { CodeIntelProvider } from "../../features/code-intel/components/CodeIntelContext"
 import { CommandsProvider } from "../../features/commands/components/CommandsContext"
 import { RepoProvider } from "../../features/repo/components/RepoContext"
+import { SpendProvider } from "../../features/spend/components/SpendContext"
 import { StatusProvider } from "../../features/status/components/StatusContext"
 import { TerminalProvider } from "../../features/terminal/components/TerminalContext"
 import { ThemeProvider } from "../../features/theme/components/ThemeButton"
@@ -23,8 +24,9 @@ type Services = {
   theme: ComponentProps<typeof ThemeProvider>["value"]
   terminal: ComponentProps<typeof TerminalProvider>["value"]
   attention: ComponentProps<typeof AttentionProvider>["value"]
+  spend: ComponentProps<typeof SpendProvider>["value"]
 }
-export const wrapBranch = ({ chat, auth, repo, branch, intel, status, commands, theme, terminal, attention }: Services) => (child: ReactNode) => createElement(ChatProvider, { value: chat },
+export const wrapBranch = ({ chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend }: Services) => (child: ReactNode) => createElement(ChatProvider, { value: chat },
     createElement(AuthProvider, { value: auth },
       createElement(RepoProvider, { value: repo },
         createElement(BranchProvider, { value: branch },
@@ -33,7 +35,8 @@ export const wrapBranch = ({ chat, auth, repo, branch, intel, status, commands, 
               createElement(CommandsProvider, { value: commands },
                 createElement(ThemeProvider, { value: theme },
                   createElement(TerminalProvider, { value: terminal },
-                    createElement(AttentionProvider, { value: attention }, child))))))))))
+                    createElement(AttentionProvider, { value: attention },
+                      createElement(SpendProvider, { value: spend }, child)))))))))))
 
 export const branchRenderer = (services: Services) => (router: ComponentProps<typeof RouterProvider>["router"]) =>
   renderToStaticMarkup(wrapBranch(services)(createElement(RouterProvider, { router })))

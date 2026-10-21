@@ -4,12 +4,13 @@
 // is scripted. Proves decision 0009's first slice: a tab follows the conversation it shows; Ann's run reaches her feed
 // on both her devices and Ben's as a quiet toast, because he is on its branch; Read, Hide and Dismiss on one of Ann's
 // devices reach the other; a finished toast hides by itself.
-import { Effect, type ManagedRuntime, Metric } from "effect"
+import { Deferred, Effect, Exit, Layer, Logger, ManagedRuntime, Metric } from "effect"
 import { SqlClient } from "effect/sql"
+import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
-import { dispatches } from "../../flows/dispatch"
-import { asPerson, nodeDevice, type NodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { DispatchFailed, FlowDispatch, dispatches } from "../../flows/dispatch"
+import { asPerson, nodeDevice, type NodeDevice, openTab, openTestApp, tabLayer, TestChatApi } from "../../test/chatApi"
 import { SESSION } from "../auth/store"
 import { AuthStore } from "../auth/store"
 import { show } from "../chat/actions"
@@ -19,6 +20,8 @@ import { Status } from "../status/status"
 import { StatusStore } from "../status/store"
 import { dropped } from "./actions"
 import { Attention } from "./attention"
+import { retry } from "./actions"
+import { ActRefused } from "./flows"
 import { panel as panelActs, shown } from "./metrics"
 import { AttentionStore } from "./store"
 
@@ -68,7 +71,7 @@ const openDevice = async (api: TestChatApi["Service"], options: { readonly answe
     chat,
     attention,
     status,
-    run: <A, E>(effect: Effect.Effect<A, E, AuthStore | ChatStore>) => runtime.runPromise(effect),
+    run: <A, E>(effect: Effect.Effect<A, E, AuthStore | ChatStore | AttentionStore>) => runtime.runPromise(effect.pipe(Effect.provideService(FetchHttpClient.Fetch, api.fetch))),
     entry: (subject: string) => store.entries.tanstack.toArray.find((row) => row.id === subject),
     stack: () => store.stack.tanstack.toArray.map((row) => row.id),
     stackHere: () => store.stackHere.tanstack.toArray.map((row) => row.id),
@@ -388,13 +391,19 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     await until(() =>
       expect(ann.detail()).toMatchObject({ id: subject, question: { kind: "approval", prompt: "Rename feature to feature-2?" } })
     )
+    // Open from another page or conversation navigates to the branch before focusing its question.
+    for (const surface of ["page", "conversation"] as const) {
+      ann.attention.actions.open(subject, surface)
+      expect(ann.host.navigated.at(-1)).toBe("/acme/widgets/tree/feature")
+      ann.attention.actions.openPanel("more", subject)
+    }
     ann.status.actions.answer(answerId, true)
     await until(() => expect(ann.detail()!.question).toBeNull())
     ;(await Effect.runPromise(api.answerTo("Rename the feature branch", 1))).cell(`ctx.done("Renamed.")`)
     await until(() => expect(ann.entry(subject)).toMatchObject({ state: "done" }))
     // Open takes the person to the branch, at the answer.
     ann.attention.actions.open(subject, "conversation")
-    expect(ann.host.navigated).toEqual([`/acme/widgets/tree/feature#${answerId}`])
+    expect(ann.host.navigated).toEqual(["/acme/widgets/tree/feature", "/acme/widgets/tree/feature", `/acme/widgets/tree/feature#${answerId}`])
     // Answering what isn't open, or a run this device has no row of, does nothing.
     ann.status.actions.answer(answerId, false)
     ann.status.actions.setDraft(crypto.randomUUID(), "x")
@@ -463,7 +472,7 @@ describe("a clone in the feed", { timeout: ENGINE_WITHIN }, () => {
     await until(() =>
       expect(ann.count(Metric.withAttributes(dispatches, { flow: "repo/clone", door: "button", outcome: "failed" }))).toBe(1)
     )
-    expect(ann.count(Metric.withAttributes(panelActs, { act: "retry" }))).toBe(1)
+    expect(ann.count(Metric.withAttributes(panelActs, { act: "retry", outcome: "started" }))).toBe(1)
     // Open goes to the repository.
     ann.attention.actions.open(subject, "page")
     expect(ann.host.navigated).toEqual(["/acme/widgets"])
@@ -487,5 +496,140 @@ describe("a clone in the feed", { timeout: ENGINE_WITHIN }, () => {
     await until(() => expect(pending.tanstack.toArray).toEqual([]))
     const refused = { act: "hide", reason: "@smthrs/mvp/attention/ActRefused" }
     await until(() => expect(reopened.runSync(Metric.value(Metric.withAttributes(dropped, refused))).count).toBe(1))
+  })
+})
+
+// The real store over the real app and collections. Only dispatch is faulted: it can stall, refuse to start, or end
+// Failed, as the engine can. The companion app store remains isolated; assertions read this store's own rows.
+describe("watch launch ownership", { timeout: ENGINE_WITHIN }, () => {
+  const watchDevice = async (answer: (attempt: number) => Effect.Effect<unknown, DispatchFailed>) => {
+    const api = await openApi()
+    let attempts = 0
+    const faulty = Layer.effect(FlowDispatch, Effect.map(FlowDispatch, (real) => FlowDispatch.of({
+      dispatch: ((name, payload, options) => name === "watch/set"
+        ? Effect.suspend(() => answer(++attempts))
+        : real.dispatch(name, payload, options)) as FlowDispatch["Service"]["dispatch"],
+    })))
+    const runtime = ManagedRuntime.make(AttentionStore.layer({ origin: api.origin }).pipe(
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, api.fetch)),
+      Layer.provideMerge(faulty),
+      Layer.provideMerge(tabLayer(api)),
+    ))
+    runtimes.push(runtime)
+    const store = await runtime.runPromise(Effect.service(AttentionStore))
+    const chat = await runtime.runPromise(Effect.service(ChatStore))
+    // Sign-in may answer or be unreachable; both allow watch/set, whose server checks access. Wait for that first
+    // dispatch before emitting more place changes, without depending on an unrelated sign-in outcome.
+    await until(() => expect(attempts).toBeGreaterThanOrEqual(1), 5_000)
+    await runtime.runPromise(Effect.yieldNow)
+    const change = () => runtime.runPromise(chat.place.update("place", (row) => { row.shared = !row.shared }))
+    return { runtime, store, chat, attempts: () => attempts, change }
+  }
+
+  test("two close place emissions reserve one watch before its child starts", async () => {
+    const device = await watchDevice(() => Effect.never)
+    expect(device.attempts()).toBe(1)
+    // Both changes are emitted in a single parent turn, before forked dispatch has a turn.
+    const conversationId = crypto.randomUUID()
+    await device.runtime.runPromise(Effect.gen(function* () {
+      yield* device.chat.place.update("place", (row) => { row.conversationId = conversationId })
+      yield* device.chat.place.update("place", (row) => { row.shared = !row.shared })
+    }))
+    await until(() => expect(device.attempts()).toBe(2), 5_000)
+    await device.runtime.runPromise(Effect.yieldNow)
+    expect(device.attempts()).toBe(2)
+  })
+
+  test.each(["dispatch", "flow"] as const)("a failed %s releases the watch for the next place change", async (failure) => {
+    let failing = true
+    const device = await watchDevice(() => !failing ? Effect.never : failure === "dispatch"
+      ? Effect.fail(new DispatchFailed({ flow: "watch/set", reason: "unavailable" }))
+      : Effect.succeed({ _tag: "Failed", error: new ActRefused({ status: 403 }) }))
+    const before = device.attempts()
+    failing = false
+    await device.change()
+    await until(() => expect(device.attempts()).toBe(before + 1), 5_000)
+    await device.change()
+    await device.runtime.runPromise(Effect.yieldNow)
+    expect(device.attempts()).toBe(before + 1)
+  })
+})
+
+describe("clone retry admission", { timeout: ENGINE_WITHIN }, () => {
+  test.each(["started", "failed"] as const)("returns before admission and records %s only after its receipt", async (outcome) => {
+    const api = await openApi()
+    const ann = await openDevice(api, { answers: false })
+    const subject = "clone:github/acme/widgets"
+    await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`INSERT INTO notifications (recipient, subject, kind, state, mine, repo_id, title, ref, href)
+        VALUES ('person-member', ${subject}, 'clone', 'failed', true, 'github/acme/widgets', 'private title',
+          'failed:not_found', '/acme/widgets')`)))
+    await until(() => expect(ann.entry(subject)).toMatchObject({ action: "retry" }))
+    const admission = Effect.runSync(Deferred.make<void, DispatchFailed>())
+    const entered = Effect.runSync(Deferred.make<void>())
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const logger = Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))
+    const faulty = FlowDispatch.of({ dispatch: ((_name, _payload, options) => Effect.gen(function* () {
+      yield* Deferred.succeed(entered, undefined)
+      const admitted = yield* Effect.exit(Deferred.await(admission))
+      if (options.admitted !== undefined) yield* Deferred.done(options.admitted, admitted)
+      if (Exit.isFailure(admitted)) return yield* Effect.failCause(admitted.cause)
+      // The admitted run remains in flight: Started must not wait for its final result.
+      return yield* Effect.never
+    })) as FlowDispatch["Service"]["dispatch"] })
+    await ann.run(retry(subject).pipe(
+      Effect.provideService(FlowDispatch, faulty),
+      Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
+    ))
+    await Effect.runPromise(Deferred.await(entered))
+    expect(logs).toEqual([])
+    expect(ann.count(Metric.withAttributes(panelActs, { act: "retry", outcome }))).toBe(0)
+    if (outcome === "started") Effect.runSync(Deferred.succeed(admission, undefined))
+    else Effect.runSync(Deferred.fail(admission, new DispatchFailed({ flow: "repo/clone", reason: "unavailable" })))
+    await until(() => expect(ann.count(Metric.withAttributes(panelActs, { act: "retry", outcome }))).toBe(1))
+    expect(logs).toContainEqual(expect.objectContaining({ message: "notifications.panel", annotations: expect.objectContaining({ act: "retry", subject, outcome }) }))
+    expect(JSON.stringify(logs)).not.toContain("private title")
+  })
+})
+
+
+describe("expanded branch detail", { timeout: ENGINE_WITHIN }, () => {
+  test("an expanded branch detail follows only that conversation's messages", async () => {
+    const api = await openApi()
+    // The engine is deliberately paused: no run heartbeat, ack receipt or unrelated row can refresh this detail.
+    const ann = await openDevice(api, { answers: false })
+    const branchId = crypto.randomUUID()
+    const conversationId = crypto.randomUUID()
+    const questionId = crypto.randomUUID()
+    const answerId = crypto.randomUUID()
+    const subject = `run:${answerId}`
+    await Effect.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.gen(function* () {
+      yield* sql`INSERT INTO branches (id, repo_id, name, mode) VALUES (${branchId}, 'github/acme/widgets', 'details', 'open')`
+      yield* sql`INSERT INTO conversations (id, repo_id, branch_id) VALUES (${conversationId}, 'github/acme/widgets', ${branchId})`
+      yield* sql`INSERT INTO branch_shares (branch_id, grantee, access) VALUES (${branchId}, 'repository', 'edit')`
+      yield* sql`INSERT INTO messages (id, role, text, status, conversation_id)
+        VALUES (${questionId}, 'user', 'Summarize the branch', 'done', ${conversationId})`
+      yield* sql`INSERT INTO messages (id, role, text, status, question_id, conversation_id)
+        VALUES (${answerId}, 'assistant', 'First answer.', 'done', ${questionId}, ${conversationId})`
+      // Already past the toast deadline, so its timer cannot accidentally refresh the detail on the old code.
+      yield* sql`INSERT INTO notifications (recipient, subject, kind, state, mine, run_id, repo_id, conversation_id, href, updated_at, occurred_at)
+        VALUES ('person-member', ${subject}, 'run', 'done', true, ${answerId}, 'github/acme/widgets', ${conversationId},
+          '/acme/widgets/tree/details', now() - interval '10 seconds', now() - interval '10 seconds')`
+    }))))
+    await ann.run(show(conversationId))
+    const text = () => ann.run(Effect.flatMap(ChatStore, (chat) => Effect.map(chat.opened(conversationId)!.messages.toArray,
+      (messages) => messages.find((message) => message.id === answerId)?.text)))
+    await until(async () => expect(await text()).toBe("First answer."))
+    await ann.run(show(null))
+    await until(() => expect(ann.entry(subject)).toMatchObject({ state: "done", here: false, stack: false }))
+    ann.attention.actions.openPanel("more", subject)
+    await until(() => expect(ann.entry(subject)).toMatchObject({ unread: false }))
+    await until(() => expect(ann.detail()).toMatchObject({ id: subject, note: "First answer." }))
+    await Effect.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE messages SET text = 'Updated branch answer.', updated_at = now() WHERE id = ${answerId}`)))
+    await until(async () => expect(await text()).toBe("Updated branch answer."))
+    await until(() => expect(ann.detail()).toMatchObject({ id: subject, note: "Updated branch answer." }), 5_000)
+    ann.attention.actions.expand(subject)
+    await until(() => expect(ann.detail()).toBeUndefined())
   })
 })

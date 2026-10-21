@@ -11,6 +11,7 @@ import { type AckRequest, Refusal, Written } from "./schema"
  * (`status`, with ChatApi's `code` when its body had one).
  */
 export class AttentionRefused extends Data.TaggedError("AttentionRefused")<{
+  readonly reason?: "unreachable" | "timeout"
   readonly status?: number
   readonly code?: string
 }> {}
@@ -35,29 +36,34 @@ export class AttentionClient extends Context.Service<
       Effect.gen(function* () {
         const client = yield* HttpClient.HttpClient
         const post = (path: string, body: unknown) =>
-          Effect.gen(function* () {
-            const response = yield* client.execute(
-              HttpClientRequest.post(`${options.origin}${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
-            ).pipe(Effect.mapError(() => new AttentionRefused({})))
-            yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-            if (response.status !== 200) {
-              const refusal = yield* response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option)
-              return yield* new AttentionRefused({
-                status: response.status,
-                ...Option.match(refusal, { onNone: () => ({}), onSome: ({ code }) => ({ code }) }),
+          Effect.suspend(() => {
+            let written = false
+            const malformed = Effect.logWarning("notifications.malformed").pipe(Effect.annotateLogs({ status: 200 }))
+            return Effect.gen(function* () {
+              const response = yield* client.execute(
+                HttpClientRequest.post(`${options.origin}${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
+              ).pipe(Effect.mapError(() => new AttentionRefused({ reason: "unreachable" })))
+              written = response.status === 200
+              yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+              if (response.status !== 200) {
+                const refusal = yield* response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option)
+                return yield* new AttentionRefused({
+                  status: response.status,
+                  ...Option.match(refusal, { onNone: () => ({}), onSome: ({ code }) => ({ code }) }),
+                })
+              }
+              yield* response.json.pipe(
+                Effect.flatMap(decodeWritten),
+                Effect.catch(() => malformed),
+              )
+            }).pipe((effect) =>
+              // Interrupting the request aborts its fetch, so a stalled body stops too.
+              Effect.timeoutOrElse(effect, {
+                duration: options.within ?? ATTENTION_WITHIN,
+                orElse: () => written ? malformed : Effect.fail(new AttentionRefused({ reason: "timeout" })),
               })
-            }
-            yield* response.json.pipe(
-              Effect.flatMap(decodeWritten),
-              Effect.mapError(() => new AttentionRefused({ status: response.status })),
             )
-          }).pipe((effect) =>
-            // Interrupting the request aborts its fetch, so a stalled body stops too.
-            Effect.timeoutOrElse(effect, {
-              duration: options.within ?? ATTENTION_WITHIN,
-              orElse: () => Effect.fail(new AttentionRefused({})),
-            })
-          )
+          })
         return AttentionClient.of({
           watch: (conversationId) =>
             post(WATCHES_ROUTE, { conversationId }).pipe(Effect.withSpan("notifications.watch", { kind: "client" })),

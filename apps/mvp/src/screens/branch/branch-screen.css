@@ -12,16 +12,18 @@
   padding: 1rem;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(18rem, 26rem);
-  grid-template-rows: auto auto minmax(0, 1fr);
-  grid-template-areas: "repo repo" "branch branch" "view side";
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-areas: "repo repo" "branch branch" "notices notices" "view side";
   gap: 0.75rem 1rem;
 }
 .branch-screen[data-workspace="false"] {
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "repo" "branch" "view";
+  grid-template-areas: "repo" "branch" "notices" "view";
 }
 .branch-screen > .repo-header { grid-area: repo; }
 .branch-screen > .branch-header { grid-area: branch; }
+.branch-screen-notices { grid-area: notices; }
+.branch-screen-notices:empty { display: none; }
 
 /* The branch's chrome: its name and access, the people on it and Share, then the Code and Terminal tabs. */
 .branch-header { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; min-height: 2.25rem; }
@@ -68,7 +70,7 @@
     min-height: 100dvh;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto;
-    grid-template-areas: "repo" "branch" "view" "side";
+    grid-template-areas: "repo" "branch" "notices" "view" "side";
     align-content: start;
   }
   .branch-screen-view { overflow-y: visible; }

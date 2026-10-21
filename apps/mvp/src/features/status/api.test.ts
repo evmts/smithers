@@ -1,6 +1,6 @@
 // `RunsClient` against every answer ChatApi's runs routes give (worker/Runs.ts), through the host's `fetch`: the
 // browser's own capability, given here as a function answering the request it is handed.
-import { Cause, Effect, Exit, Layer } from "effect"
+import { Cause, Effect, Exit, Layer, Logger } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { RunsClient, type RunsRefused } from "./api"
@@ -17,9 +17,11 @@ const client = (respond: (request: Request) => Promise<Response>, within?: `${nu
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
   )
+  const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+  const logger = Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))
   const run = <A, E>(effect: (client: RunsClient["Service"]) => Effect.Effect<A, E>) =>
-    Effect.runPromise(Effect.exit(Effect.flatMap(RunsClient, effect).pipe(Effect.provide(layer))))
-  return { run, seen }
+    Effect.runPromise(Effect.exit(Effect.flatMap(RunsClient, effect).pipe(Effect.provide(layer), Effect.provideService(Logger.CurrentLoggers, new Set([logger])))))
+  return { run, seen, logs }
 }
 
 /** What a failed call failed with, as plain fields. */
@@ -46,12 +48,27 @@ describe("RunsClient", () => {
       .toEqual({ _tag: "RunsRefused", status: 503 })
   })
 
-  test("no network, a body that isn't the route's, and no answer within the deadline are refusals without a code", async () => {
-    expect(refusalOf(await client(() => Promise.reject(new TypeError("offline"))).run((c) => c.report("r", { status: "done" }))))
-      .toEqual({ _tag: "RunsRefused" })
-    expect(refusalOf(await client(() => json({ nope: 1 })).run((c) => c.report("r", { status: "done" }))))
-      .toEqual({ _tag: "RunsRefused", status: 200 })
-    expect(refusalOf(await client(() => new Promise<Response>(() => {}), "50 millis").run((c) => c.report("r", { status: "done" }))))
-      .toEqual({ _tag: "RunsRefused" })
+  test("an unreachable transport preserves its reason without a status or payload", async () => {
+    expect(refusalOf(await client(() => Promise.reject(new TypeError("private transport message"))).run((c) => c.report("r", { status: "done" }))))
+      .toEqual({ _tag: "RunsRefused", reason: "unreachable" })
   })
+
+  test("a deadline preserves timeout without a status or payload", async () => {
+    expect(refusalOf(await client(() => new Promise<Response>(() => {}), "50 millis").run((c) => c.report("r", { status: "done" }))))
+      .toEqual({ _tag: "RunsRefused", reason: "timeout" })
+  })
+
+  test("a 200 whose receipt stalls still took the write, within the same deadline", async () => {
+    const c = client(() => Promise.resolve(new Response(new ReadableStream())), "50 millis")
+    expect(await c.run((c) => c.report("r", { status: "done" }))).toEqual(Exit.void)
+    expect(c.logs).toContainEqual(expect.objectContaining({ level: "WARN", message: "agent.status.malformed" }))
+  })
+
+  test.each(["invalid JSON", { nope: "private body" }])("a malformed 200 is written and warns without its body: %s", async (body) => {
+    const c = client(() => typeof body === "string" ? Promise.resolve(new Response(body)) : json(body))
+    expect(await c.run((c) => c.report("r", { status: "done" }))).toEqual(Exit.void)
+    expect(c.logs).toContainEqual(expect.objectContaining({ level: "WARN", message: "agent.status.malformed" }))
+    expect(JSON.stringify(c.logs)).not.toContain("private body")
+  })
+
 })

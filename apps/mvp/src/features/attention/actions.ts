@@ -1,6 +1,6 @@
 import type { Inbox } from "@smthrs/notifications"
-import { Effect, Metric, Option } from "effect"
-import { FlowDispatch } from "../../flows/dispatch"
+import { Deferred, Effect, Exit, Metric, Option } from "effect"
+import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { retryAnswer } from "../chat/actions"
 import { focus } from "../status/actions"
 import type { PanelVia, Surface } from "./contract"
@@ -117,9 +117,13 @@ const setPanel = (change: Partial<Omit<Panel, "id">>) =>
   )
 
 /** Records what the person did in the panel: a log line and a count, with the entry's subject and never its words. */
-const recorded = (act: "open" | "expand" | "retry", fields: { readonly via?: PanelVia; readonly subject?: string }) =>
+const recorded = (act: "open" | "expand" | "retry", fields: { readonly via?: PanelVia; readonly subject?: string; readonly outcome?: "started" | "failed" }) =>
   Effect.gen(function* () {
-    yield* Metric.update(Metric.withAttributes(panelActs, fields.via === undefined ? { act } : { act, via: fields.via }), 1)
+    yield* Metric.update(Metric.withAttributes(panelActs, {
+      act,
+      ...(fields.via === undefined ? {} : { via: fields.via }),
+      ...(fields.outcome === undefined ? {} : { outcome: fields.outcome }),
+    }), 1)
     yield* Effect.logInfo("notifications.panel").pipe(Effect.annotateLogs({ act, ...fields }))
   })
 
@@ -207,11 +211,17 @@ export const retry = (subject: string) =>
     if (Option.isSome(entry) && entry.value.action === "retry") {
       // The clone's new attempt raises the entry again once RepoApi takes it; the press returns at once.
       const flows = yield* FlowDispatch
-      yield* flows.dispatch("repo/clone", { repo: entry.value.href.slice(1) }, { door: "button" }).pipe(
-        Effect.ignore,
-        Effect.forkIn(scope),
-      )
-      yield* recorded("retry", { subject })
+      yield* Effect.gen(function* () {
+        const admitted = yield* Deferred.make<void, DispatchFailed>()
+        yield* flows.dispatch("repo/clone", { repo: entry.value.href.slice(1) }, { door: "button", admitted }).pipe(
+          // Also release the admission waiter if dispatch fails before it can return a start receipt.
+          Effect.onExit((exit) => Exit.isFailure(exit) ? Deferred.failCause(admitted, exit.cause) : Effect.void),
+          Effect.ignore,
+          Effect.forkIn(scope),
+        )
+        const started = yield* Effect.result(Deferred.await(admitted))
+        yield* recorded("retry", { subject, outcome: started._tag === "Success" ? "started" : "failed" })
+      }).pipe(Effect.forkIn(scope))
       return
     }
     const detail = yield* details.get(subject)

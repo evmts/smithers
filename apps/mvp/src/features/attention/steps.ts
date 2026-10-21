@@ -8,9 +8,9 @@ import { acks, watches } from "./metrics"
 // The feed's steps (docs/features/notifications.md#flows): one ChatApi request each, through `AttentionClient`. A
 // person's button, a tab showing a conversation and the agent's call run these steps on this device's engine.
 
-/** What ChatApi's refusal means to the flow: a 4xx is final, anything else is tried again. */
+/** What ChatApi's refusal means to the flow: a 4xx other than 408 or 429 is final; anything else is tried again. */
 export const failureOf = (refused: AttentionRefused): ActFailure =>
-  refused.status !== undefined && refused.status >= 400 && refused.status < 500
+  refused.status !== undefined && refused.status >= 400 && refused.status < 500 && refused.status !== 408 && refused.status !== 429
     ? new ActRefused({ status: refused.status })
     : new ActUnsent()
 
@@ -18,7 +18,10 @@ export const failureOf = (refused: AttentionRefused): ActFailure =>
 const outcomeOf = (failure: ActFailure) => (failure._tag === "@smthrs/mvp/attention/ActRefused" ? "refused" : "unsent")
 
 /** The fields a failed request's log line adds: ChatApi's status, when it answered. */
-const statusOf = (refused: AttentionRefused) => (refused.status === undefined ? {} : { status: refused.status })
+const statusOf = (refused: AttentionRefused) => ({
+  ...(refused.status === undefined ? {} : { status: refused.status }),
+  ...(refused.reason === undefined ? {} : { reason: refused.reason }),
+})
 
 /**
  * `watch/set/request`: one `POST /api/watches`. A log line `notifications.watch` and a count of `watches` by outcome;

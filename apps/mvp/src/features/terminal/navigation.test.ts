@@ -25,6 +25,7 @@ import { PresenceStore } from "../presence/store"
 import { Repo } from "../repo/repo"
 import { RepoStore } from "../repo/store"
 import { Runs } from "../runs/runs"
+import { Spend } from "../spend/spend"
 import { Status } from "../status/status"
 import { Theme } from "../theme/theme"
 import { Todos } from "../todos/todos"
@@ -53,7 +54,10 @@ test.each(["empty", "mine", "watching"] as const)(
     }))
     const theme = await runtime.runPromise(Effect.service(Theme))
     const views = await runtime.runPromise(Effect.gen(function* () {
-      return { chat: yield* Chat, auth: yield* Auth, attention: yield* Attention, status: yield* Status, commands: yield* Commands }
+      return {
+        chat: yield* Chat, auth: yield* Auth, attention: yield* Attention, status: yield* Status, commands: yield* Commands,
+        spend: yield* Spend,
+      }
     }))
     const api = await runtime.runPromise(Effect.service(TestChatApi))
     api.branches.github.publish("octo", "hello", {

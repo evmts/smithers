@@ -66,6 +66,8 @@ export type PanelVia = "bell" | "toast" | "more" | "key"
  */
 export const ATTENTION_TELEMETRY = {
   records: [
+    "notifications.malformed",
+    "agent.status.malformed",
     "notifications.watch",
     "notifications.ack",
     "notifications.shown",
@@ -75,5 +77,5 @@ export const ATTENTION_TELEMETRY = {
     "notifications.panel",
     "smithers_notifications_panel",
   ],
-  fields: ["subject", "act", "outcome", "status", "surface", "state", "kind", "version", "errorCode", "via"],
+  fields: ["subject", "act", "outcome", "status", "surface", "state", "kind", "version", "errorCode", "reason", "via"],
 } as const

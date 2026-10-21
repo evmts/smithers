@@ -8,12 +8,14 @@ import type { AttentionView } from "../features/attention/attention"
 import type { StatusView } from "../features/status/status"
 import type { CommandsView } from "../features/commands/commands"
 import type { ThemeView } from "../features/theme/theme"
+import type { SpendView } from "../features/spend/spend"
 import { ChatProvider } from "../AppContext"
 import { AttentionProvider } from "../features/attention/components/AttentionContext"
 import { AuthProvider } from "../features/auth/components/AuthContext"
 import { BranchProvider } from "../features/branch/components/BranchContext"
 import { CommandsProvider } from "../features/commands/components/CommandsContext"
 import { RepoProvider } from "../features/repo/components/RepoContext"
+import { SpendProvider } from "../features/spend/components/SpendContext"
 import { StatusProvider } from "../features/status/components/StatusContext"
 import { ThemeProvider } from "../features/theme/components/ThemeButton"
 import { TerminalProvider } from "../features/terminal/components/TerminalContext"
@@ -21,7 +23,14 @@ import { TerminalProvider } from "../features/terminal/components/TerminalContex
 export const renderTerminalScreen = (
   appRouter: typeof router,
   context: RouterContext,
-  views: { readonly chat: ChatView; readonly auth: AuthView; readonly attention: AttentionView; readonly status: StatusView; readonly commands: CommandsView },
+  views: {
+    readonly chat: ChatView
+    readonly auth: AuthView
+    readonly attention: AttentionView
+    readonly status: StatusView
+    readonly commands: CommandsView
+    readonly spend: SpendView
+  },
   theme: ThemeView,
 ): string => {
   return renderToStaticMarkup(
@@ -29,19 +38,21 @@ export const renderTerminalScreen = (
       <ChatProvider value={views.chat}>
         <AuthProvider value={views.auth}>
           <AttentionProvider value={views.attention}>
-            <StatusProvider value={views.status}>
-              <CommandsProvider value={views.commands}>
-                <RepoProvider value={context.repo}>
-                  <BranchProvider value={context.branch}>
-                    <ThemeProvider value={theme}>
-                      <TerminalProvider value={context.terminal}>
-                        <Match routeId="/$owner/$repo/tree/$ref/$" />
-                      </TerminalProvider>
-                    </ThemeProvider>
-                  </BranchProvider>
-                </RepoProvider>
-              </CommandsProvider>
-            </StatusProvider>
+            <SpendProvider value={views.spend}>
+              <StatusProvider value={views.status}>
+                <CommandsProvider value={views.commands}>
+                  <RepoProvider value={context.repo}>
+                    <BranchProvider value={context.branch}>
+                      <ThemeProvider value={theme}>
+                        <TerminalProvider value={context.terminal}>
+                          <Match routeId="/$owner/$repo/tree/$ref/$" />
+                        </TerminalProvider>
+                      </ThemeProvider>
+                    </BranchProvider>
+                  </RepoProvider>
+                </CommandsProvider>
+              </StatusProvider>
+            </SpendProvider>
           </AttentionProvider>
         </AuthProvider>
       </ChatProvider>

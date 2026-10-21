@@ -10,7 +10,11 @@ import { Refusal, type Report, type RunAnswer, Written } from "./schema"
  * ChatApi didn't take the write: no whole answer within the deadline, or no network (`status` absent), or a refusal
  * (`status`, with ChatApi's `code` when its body had one).
  */
-export class RunsRefused extends Data.TaggedError("RunsRefused")<{ readonly status?: number; readonly code?: string }> {}
+export class RunsRefused extends Data.TaggedError("RunsRefused")<{
+  readonly reason?: "unreachable" | "timeout"
+  readonly status?: number
+  readonly code?: string
+}> {}
 
 const decodeRefusal = Schema.decodeUnknownEffect(Refusal)
 const decodeWritten = Schema.decodeUnknownEffect(Written)
@@ -32,29 +36,34 @@ export class RunsClient extends Context.Service<
       Effect.gen(function* () {
         const client = yield* HttpClient.HttpClient
         const post = (path: string, body: unknown) =>
-          Effect.gen(function* () {
-            const response = yield* client.execute(
-              HttpClientRequest.post(`${options.origin}${RUNS_ROUTE}/${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
-            ).pipe(Effect.mapError(() => new RunsRefused({})))
-            yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-            if (response.status !== 200) {
-              const refusal = yield* response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option)
-              return yield* new RunsRefused({
-                status: response.status,
-                ...Option.match(refusal, { onNone: () => ({}), onSome: ({ code }) => ({ code }) }),
+          Effect.suspend(() => {
+            let written = false
+            const malformed = Effect.logWarning("agent.status.malformed").pipe(Effect.annotateLogs({ status: 200 }))
+            return Effect.gen(function* () {
+              const response = yield* client.execute(
+                HttpClientRequest.post(`${options.origin}${RUNS_ROUTE}/${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
+              ).pipe(Effect.mapError(() => new RunsRefused({ reason: "unreachable" })))
+              written = response.status === 200
+              yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+              if (response.status !== 200) {
+                const refusal = yield* response.json.pipe(Effect.flatMap(decodeRefusal), Effect.option)
+                return yield* new RunsRefused({
+                  status: response.status,
+                  ...Option.match(refusal, { onNone: () => ({}), onSome: ({ code }) => ({ code }) }),
+                })
+              }
+              yield* response.json.pipe(
+                Effect.flatMap(decodeWritten),
+                Effect.catch(() => malformed),
+              )
+            }).pipe((effect) =>
+              // Interrupting the request aborts its fetch, so a stalled body stops too.
+              Effect.timeoutOrElse(effect, {
+                duration: options.within ?? RUNS_WITHIN,
+                orElse: () => written ? malformed : Effect.fail(new RunsRefused({ reason: "timeout" })),
               })
-            }
-            yield* response.json.pipe(
-              Effect.flatMap(decodeWritten),
-              Effect.mapError(() => new RunsRefused({ status: response.status })),
             )
-          }).pipe((effect) =>
-            // Interrupting the request aborts its fetch, so a stalled body stops too.
-            Effect.timeoutOrElse(effect, {
-              duration: options.within ?? RUNS_WITHIN,
-              orElse: () => Effect.fail(new RunsRefused({})),
-            })
-          )
+          })
         return RunsClient.of({
           report: (runId, report) =>
             post(runId, report).pipe(
