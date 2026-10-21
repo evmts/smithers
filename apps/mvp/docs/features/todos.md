@@ -113,27 +113,51 @@ Make TODO drafts a TODO from an issue, linked to it (Will, 2026-10-20). Everythi
 `todo` (`worker/flows/Todo.ts`, decision 0016's factory simplified): one durable run per attempt, on the `FlowExecution` Durable Object.
 
 ```
-todo/Begin      the TODO and its prompt; its branch smithers/t<n>-<slug> made on GitHub at the default branch's head, as
-                the App; a name someone else holds takes -2 to -5 ─▶ writer: branch, step implement
+todo/Begin      the TODO and its prompt; its branch smithers/t<n>-<slug> made on GitHub, as the App, at the head of the
+                TODO in review before it (stacked), else of the default branch; a name someone else holds takes -2 to
+                -5 ─▶ writer: branch and its base, step implement
 todo/Implement  the agent (AgentAction, the `agent` role) writes the change on the attempt's branch machine with the sandbox
                 tools (worker/flows/TodoAgent.ts), and runs the repository's checks there
 todo/Collect    the files it changed, read whole from the machine (50 files, 1 MiB at most); none ─▶ failed empty_change
 todo/Publish    one commit, createCommitOnBranch fenced by the base ("T<n>: <title>", "Smithers for @maya"); the pull
-                request into the default branch, its body the prompt, "Fixes #n" for a TODO from an issue, and whom the
-                App acted for ─▶ writer: in review; the head's checks start (checks/Run, docs/features/pulls.md)
+                request into its base (a draft while that is another TODO's branch), its body the prompt, "Fixes #n" for
+                a TODO from an issue, and whom the App acted for ─▶ writer: in review, which frees the lane for the
+                next TODO; the head's checks start (checks/Run, docs/features/pulls.md)
 todo/Await      re-reads the pull request, 5 s doubling to a minute, until a person merges or closes it; a TODO dropped
-                in Smithers meanwhile closes the pull request its run opened
+                in Smithers meanwhile closes the pull request its run opened. Stacked: see below
 todo/Settle     writer: merged, or dropped (closed_on_github); the next Queued TODO starts
 todo/Fail       any step that gave up ─▶ writer: failed with its code (implement, empty_change, publish_refused,
-                pr_refused, app_not_installed); the next TODO starts
+                pr_refused, app_not_installed, base_closed); a Working TODO's lane frees for the next
 ```
 
-- **States** (decision 0016's factory simplified): Queued, Working, In review, Merged, Dropped, Failed. Steps: implement, publish, await.
+- **States** (decision 0016's factory simplified): Queued, Working, In review, Merged, Dropped, Failed. Steps: implement, publish, await. Only Working holds one of the stack's lanes (`stacks.lanes`, 1): a TODO in review frees it, so the next one starts.
+- **Published reports keep their receipt.** The first `published` report stores the attempts it started (`todo_attempts.published_report`), so a retried `todo/Publish`, or a new head after a restack, starts the same ones and never another. A run that finds its TODO dropped starts them again before it ends, in case it stopped after its publish committed and before they were admitted.
 - **Every writer call is fenced** by the TODO and the attempt (`Stack.report`): a dropped TODO's run, or an earlier attempt's, is stale and stops.
 - **Terminal reports keep their receipt.** The attempt stores the exact terminal event and successor attempt ids in the same Postgres transaction as the lane change. Replaying that event returns `repeated` with those same starts; another event or attempt stays stale. `todo/Settle` and `todo/Fail` retry admission through the durable engine without expiring. The host propagates a refused or lost admission acknowledgment, including when the successor already accepted its intent, so a restart can admit that same execution again. No retry allocates another successor.
-- **Every GitHub write adopts its own earlier attempt** after a lost answer: the branch by its head, the commit by its parent and message, the pull request by its head and the attempt's marker. Nothing here merges, approves or forces a ref: a person merges ([pull requests](pulls.md#merge)).
+- **Every GitHub write adopts its own earlier attempt** after a lost answer: the branch by its head, the commit by its parent and message, the pull request by its head and the attempt's marker. Nothing here approves, forces a ref or merges a pull request: a person merges ([pull requests](pulls.md#merge)). The one merge a run makes is the TODO below's merge commit into its own branch, when it restacks.
 - **The machine** is the attempt's own branch machine, `todo-<attempt id>`, checking out the attempt's branch, its tools running as the person who committed the TODO (`worker/flows/TodoMachine.ts`).
 - **The agent's sandbox on Cloudflare** (`worker/AgentSandbox.ts`): `Agent.layerDefaultsWithVariant` over QuickJS's separate-`.wasm` build. workerd compiles no WebAssembly from bytes, so the single-file build `Agent.layerDefaults` uses fails there ("Wasm code generation disallowed by embedder"). The `.wasm` file arrives as `#quickjs.wasm`, a package.json `imports` name ending in `.wasm`, which Alchemy's bundler uploads as a CompiledWasm module and hands the Worker as a `WebAssembly.Module`. The import is dynamic, inside the layer: `alchemy dev` imports the stack in Node, where a static `.wasm` import fails ("Cannot find package 'a'").
+
+### Stacked pull requests
+
+Will, 2026-10-21: "produce a stacked diff". The stack's TODOs become stacked pull requests: each TODO's branch starts on the branch of the TODO in review before it, and merges forward, never by a rebase, as each one below merges (decision 0016 §Decision 6, slice 2).
+
+```
+main ── T1 smithers/t1-… ── T2 smithers/t2-… ── T3 …       T1 In review: the lane frees, T2 starts on T1's head
+         PR #1 → main         PR #2 → t1 (draft)            T2 In review: T3 starts on T2's head, PR #3 → t2 (draft)
+a person squash-merges #1 ─▶ T1 Merged; T2's await:
+  POST /merges  T1's merge commit into smithers/t2-…  "Merge T1 from main into T2"  ─▶ writer: T2's new head
+  checks/Run    on the new head, its review reading from T1's merge: T2's change alone
+  PATCH base: main, then markPullRequestReadyForReview  ─▶ #2 is into main, ready, and shows only T2
+```
+
+- **The base.** `todo/Begin` takes the nearest TODO before it in the stack that is In review, at its branch's head on GitHub; with none, or its branch gone, the default branch. The TODO keeps it as `todos.base_ref` (migration `0039_stacked_todos`) and its pull request is into it.
+- **Draft while stacked.** A pull request into another TODO's branch opens as a draft, so nobody merges it there; GitHub and the Merge route refuse a draft. It is marked ready when it moves onto the default branch.
+- **The TODO below merged.** The waiting run merges that TODO's merge commit into its own branch (`GitHub.Commits.mergeInto`, 204 when it holds it already), reports the new head, starts its checks, moves the pull request onto the default branch and only then marks it ready, so it is never a ready pull request into the old branch. A step cut short does it all again, each part a no-op once done; one stopped between the move and the mark is marked ready by the next await. Under squash merge the TODO below's changes appear on both sides and merge once. A merge GitHub can't make (a conflict) closes the pull request as the App and fails `pr_refused`.
+- **The TODO below won't merge** (dropped in Smithers, closed on GitHub, or failed, `base_closed` included, so the failure climbs the stack): this branch holds a change that won't merge, so the run closes its pull request as the App and fails `base_closed`. It checks this before reading its own pull request's state, so a close whose answer was lost still ends `base_closed`, never as closed on GitHub.
+- **One issue, many TODOs.** A pull request with an open TODO above it from the same issue says `Part of #n`; the top one says `Fixes #n`, so merging the bottom of the stack doesn't close the issue the rest still work on.
+- **A run from before stacking** carries no `baseRef` and no `begun` at its await: its base is the default branch, and it never restacks.
+- **Order.** People merge from the bottom: only the lowest pull request is ready and into the default branch.
 
 ### Watching the run
 
@@ -152,27 +176,27 @@ A TODO starts the work through to a mergeable pull request; while it runs, it sh
 
 | Test | Proves |
 |---|---|
-| `worker/flows/Todo.test.ts` | on the Node host's engine with the scripted GitHub, a test machine and a scripted agent: a TODO from an issue to a squash-merged pull request with "Fixes #n" and the next TODO started; closed on GitHub; an empty change; an agent that never answers; no App; dropped before and while waiting; a name taken; a lost commit and a lost pull request adopted; each step's refusals and retries |
+| `worker/flows/Todo.test.ts` | on the Node host's engine with the scripted GitHub, a test machine and a scripted agent: a TODO from an issue to a squash-merged pull request with "Fixes #n" and the next TODO started when it published; closed on GitHub; an empty change; an agent that never answers; no App; dropped before and while waiting; a name taken; a lost commit and a lost pull request adopted; each step's refusals and retries. Stacked: T2 on T1's branch, its pull request a draft into it and its review reading its change alone; T1 merged, T2 merges it in, its new head's checks start, it moves onto main, ready, and merges; a restack cut short by a lost merge and a failed retarget done once, and one stopped before the mark finished; T1 closed fails T2 `base_closed` and closes its pull request, a lost close included; a failed T2 fails T3 above it; a conflict closes the pull request and fails `pr_refused`; one a person took out of draft isn't marked again; one closed on GitHub drops; `Part of #n` below, `Fixes #n` on top; a dropped run's publish starts replayed; a run from before stacking just waits; the branch below gone, T2 starts from main |
 | `worker/flows/TodoHost.test.ts` | the Durable Object's handlers with `withTodos`: `checks/Run` driven to the end |
 | `worker/flows/TodoRecovery.test.ts` | merged, dropped and failed reports recover from admission failure in the same process and after a Durable Object host restart; report committed before launch; target accepted before acknowledgment lost; repeated execution stays singular |
 | `worker/AgentSandbox.workerd.test.ts` | in local workerd, bundled with Alchemy's own bundler and Cloudflare plugins as ChatApi is: the bundle carries QuickJS as one compiled WebAssembly module, and an agent's cell lists, reads and writes the checkout through the run's sandbox tools as the TODO's committer. Fails on `Agent.layerDefaults` with workerd's refusal |
 | `e2e/factory.spec.ts` | live: against an instance with the GitHub App on a scratch repository the test account administers (`E2E_FACTORY_REPOSITORY`, `E2E_SESSION_COOKIE`, `BASE_URL`; it skips without them), a person asks Smithers for a TODO and commits it; the run branches on GitHub, the agent writes the change on the branch's machine with the deployment's model, and the TODO reaches In review with an open, mergeable pull request on its `smithers/t<n>-` branch. On the way: the Working TODO blinks, Watch opens its run read from Cloudflare (`Cloud`, `todo/Implement`), and the pull request's page shows Squash and merge with `Merging into main deploys it.`, its checks and the README line in Files. It never merges. Over HTTPS (`https://localhost:1445` for a live dev instance): over plain HTTP/1.1 the browser's six connections fill with Electric's long polls |
-| `worker/stack/Stack.test.ts` | the writer's reports: step, branch, published, finished; stale reports; the next TODO started; each attempt's run recorded on its TODO |
+| `worker/stack/Stack.test.ts` | the writer's reports: step, branch and its base, published (the next TODO started, its receipt replayed, a new head taken), finished; stale reports; each attempt's run recorded on its TODO |
 | `src/features/todos/view.test.ts` | a Working TODO's icon live; Watch on a Working or In review TODO's row and page, and none on any other |
 | `src/features/runs/remote.test.ts`, `worker/RemoteRuns.test.ts` | watching a TODO's run ([a run on Cloudflare](runs.md#a-run-on-cloudflare)), and steering its agent ([steering](runs.md#steering)) |
 | `worker/flows/Todo.test.ts` "steer" | a person's message admitted while the agent's first turn is in flight reaches its second turn, once, and is in the merged change |
-| `src/features/todos/stack.test.ts` | the rules' `finish`: merged and dropped leave the stack, failed keeps its place, a stale finish changes nothing |
+| `src/features/todos/stack.test.ts` | the rules' `publish` and `finish`: publishing frees the lane and starts the next, again changes nothing, a stale one is refused; merged and dropped leave the stack, failed keeps its place, a dropped TODO in review stops its run; random histories with publishes keep every rule |
 
 ## Postgres
 
-Migrations `0022_todos`, `0027_todo_issue`, `0035_todo_report_receipts` and `0036_todo_run`. Synced tables are `REPLICA IDENTITY FULL`.
+Migrations `0022_todos`, `0027_todo_issue`, `0035_todo_report_receipts`, `0036_todo_run` and `0039_stacked_todos`. Synced tables are `REPLICA IDENTITY FULL`.
 
 | Table | | |
 |---|---|---|
 | `stacks` | `repo_id`, `next_number`, `version`, `lanes` (1), `max_open` (50), `updated_at` | never synced; the row the writer locks |
-| `todos` | `id`, `repo_id`, `number`, `title`, `state`, `step`, `position`, `revision`, `attempt`, `branch`, SHAs, `pr_number`, `pr_draft`, `failure`, `note`, `created_by`, `created_login`, `settled_by`, times, `issue_number` (`0027_todo_issue`), `run_id` (`0036_todo_run`: its latest attempt's run, `todo:<attempt id>`) | `(repo_id, number)` unique; `(repo_id, position)` unique at each statement's end; settled exactly when merged or dropped, and then unplaced |
+| `todos` | `id`, `repo_id`, `number`, `title`, `state`, `step`, `position`, `revision`, `attempt`, `branch`, SHAs, `pr_number`, `pr_draft`, `failure`, `note`, `created_by`, `created_login`, `settled_by`, times, `issue_number` (`0027_todo_issue`), `run_id` (`0036_todo_run`: its latest attempt's run, `todo:<attempt id>`), `base_ref` (`0039_stacked_todos`: the branch its branch was made from, never synced) | `(repo_id, number)` unique; `(repo_id, position)` unique at each statement's end; settled exactly when merged or dropped, and then unplaced |
 | `todo_requests` | `todo_id`, `revision`, `repo_id`, `prompt`, `acceptance`, `by_login`, `created_at` | each revision of a prompt, never changed |
-| `todo_attempts` | `id` (the run's id), `todo_id`, `ordinal`, `revision`, `base_sha`, `status` (`running`, `published`, `settled`, `failed`), `finished_report` (terminal event and starts) | the run's; written only when a host runs TODOs; terminal receipt never synced |
+| `todo_attempts` | `id` (the run's id), `todo_id`, `ordinal`, `revision`, `base_sha`, `status` (`running`, `published`, `settled`, `failed`), `published_report` (the starts its first publish made, `0039_stacked_todos`), `finished_report` (terminal event and starts) | the run's; written only when a host runs TODOs; receipts never synced |
 | `stack_ops` | `id` (the op id), `repo_id`, `actor_id`, `via` (from the session), `op`, `payload_hash`, `outcome`, `result` | never synced: the receipt a repeated op answers from |
 
 ## Observability
@@ -185,6 +209,7 @@ No record carries a title, a prompt, a criterion or a login ([observability.md](
 | `stack.apply` | log, span | `repoId`, `opId`, `op`, `via`, `outcome`, `number`, `version`, `durationMs` |
 | `stack.report`; `smithers_todo_reports{kind,outcome}` | log, span, counter | attempt and TODO ids, kind, `applied` / `repeated` / `stale`, successor count; a repeated report counts no state transition |
 | `todo.start`; `smithers_todo_admissions{flow,outcome}` | log, span, counter | flow, execution id, `started` / `not_started`, error code; records admission acknowledgment, not execution completion |
+| `todo.restack` | log | attempt and TODO ids, the TODO below's number, the pull request's number: a stacked TODO took in the one below it and moved onto the default branch |
 | `stack.shape.todos`, `stack.shape.todo_requests` | log, span | Electric's request records |
 | `smithers_stack_requests{op,outcome}`, `smithers_stack_ops{op,outcome}`, `smithers_todo_transitions{from,to}`, `smithers_todo_shape_requests`, `smithers_todo_request_shape_requests` | counters | |
 | `todos.draft`, `todos.queue`, `todos.send`, `todos.pending`; `smithers_todo_drafts`, `smithers_todo_queued`, `smithers_todo_sends`, `smithers_todo_pending_actions` | browser logs, spans, counters | `op`, `door`, `via`, `outcome` (a draft's `issue_not_found` too), `fromIssue`, `status`, `code`, `opId`, `draftId`, `action` |
@@ -208,7 +233,7 @@ Run with the compose Postgres and Electric up (`pnpm db:up`).
 ## Not built yet
 
 - The run's step strip on a TODO's page.
-- Slice 2: Before Tn and Amend, Move, two lanes, forward updates, out-of-order merges.
+- Slice 2's rest: Before Tn and Amend, Move, two lanes, forward updates while the TODO below is still in review, out-of-order merges, and redoing a TODO whose base closed instead of failing it.
 
 
 ### Boundary regression guarantees

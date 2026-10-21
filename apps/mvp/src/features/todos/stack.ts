@@ -1,4 +1,4 @@
-import { LANE_STATES, SETTLED_STATES, type TodoState } from "./contract"
+import { ACTIVE_STATES, LANE_STATES, SETTLED_STATES, type TodoState } from "./contract"
 
 // The stack's rules (decision 0016 §1), as a pure function: what one change does to one repository's stack. The writer
 // (worker/stack/Stack.ts) loads the stack inside its transaction, applies a change here, and writes back what changed,
@@ -8,8 +8,9 @@ import { LANE_STATES, SETTLED_STATES, type TodoState } from "./contract"
 // - The stack is the open TODOs (neither merged nor dropped) in `position` order; positions are always 1 to n.
 // - A settled TODO has no position.
 // - Dropping a dropped TODO changes nothing; a merged one can't be dropped.
-// - At most `lanes` TODOs hold a lane (started, and neither settled nor failed). When one frees, the first Queued TODO
-//   in order starts. A host that runs no TODOs passes `lanes: 0`, and nothing starts.
+// - At most `lanes` TODOs hold a lane (Working). When one frees, because its run published its pull request (In review)
+//   or ended, the first Queued TODO in order starts, on the branch of the TODO in review before it: the stack becomes
+//   stacked pull requests. A host that runs no TODOs passes `lanes: 0`, and nothing starts.
 
 /** A TODO as the rules see it. */
 export interface Row {
@@ -36,12 +37,13 @@ export interface Stack {
 }
 
 /**
- * A change: append TODO `id`, drop TODO `number`, or finish TODO `id`'s attempt `ordinal` as its run ended it (merged,
- * closed on GitHub as dropped, or failed).
+ * A change: append TODO `id`, drop TODO `number`, publish TODO `id`'s attempt `ordinal` (its pull request is open, In
+ * review), or finish it as its run ended it (merged, closed on GitHub as dropped, or failed).
  */
 export type Op =
   | { readonly kind: "commit"; readonly id: string }
   | { readonly kind: "drop"; readonly number: number }
+  | { readonly kind: "publish"; readonly id: string; readonly ordinal: number }
   | { readonly kind: "finish"; readonly id: string; readonly ordinal: number; readonly state: FinishedState }
 
 /** How a run ends its TODO. */
@@ -74,6 +76,11 @@ export type Result =
     readonly starts: ReadonlyArray<Start>
   }
   | {
+    readonly kind: "published"
+    readonly number: number
+    readonly starts: ReadonlyArray<Start>
+  }
+  | {
     readonly kind: "finished"
     readonly number: number
     readonly state: FinishedState
@@ -83,6 +90,7 @@ export type Result =
 
 const settled = (state: TodoState): boolean => (SETTLED_STATES as ReadonlyArray<TodoState>).includes(state)
 const inLane = (state: TodoState): boolean => (LANE_STATES as ReadonlyArray<TodoState>).includes(state)
+const active = (state: TodoState): boolean => (ACTIVE_STATES as ReadonlyArray<TodoState>).includes(state)
 
 /** The open TODOs, in stack order. */
 export const openOf = (stack: Stack): ReadonlyArray<Row> => byPosition(stack.todos)
@@ -126,6 +134,7 @@ export const apply = (stack: Stack, op: Op): { readonly stack: Stack; readonly r
     }
   }
   if (op.kind === "finish") return finish(stack, op)
+  if (op.kind === "publish") return publish(stack, op)
   const target = stack.todos.find((todo) => todo.number === op.number)
   if (target === undefined) return { stack, result: { kind: "refused", code: "not_found" } }
   if (target.state === "merged") return { stack, result: { kind: "refused", code: "merged" } }
@@ -147,21 +156,41 @@ export const apply = (stack: Stack, op: Op): { readonly stack: Stack; readonly r
       kind: "dropped",
       number: op.number,
       changed: true,
-      stopped: inLane(target.state) ? { todoId: target.id, ordinal: target.attempt } : undefined,
+      stopped: active(target.state) ? { todoId: target.id, ordinal: target.attempt } : undefined,
       starts: filled.starts,
     },
   }
 }
 
+/** Whether `op` names a TODO whose live attempt is `op.ordinal`: else a dropped TODO's run, or an earlier attempt's. */
+const liveTarget = (stack: Stack, op: { readonly id: string; readonly ordinal: number }): Row | undefined => {
+  const target = stack.todos.find((todo) => todo.id === op.id)
+  return target === undefined || !active(target.state) || target.attempt !== op.ordinal ? undefined : target
+}
+
 /**
- * A run ends TODO `op.id`'s attempt: only while that attempt holds a lane (a dropped TODO's run, or an earlier attempt's,
- * is `stale`). Merged and dropped leave the stack and close the gap; failed keeps its place. The lane frees either way.
+ * A run published TODO `op.id`'s pull request: In review, its lane free for the next Queued TODO, which starts on its
+ * branch. Published again (a new head after it took in the TODO below it) changes nothing. A stale attempt is refused.
+ */
+const publish = (stack: Stack, op: Extract<Op, { readonly kind: "publish" }>): { readonly stack: Stack; readonly result: Result } => {
+  const target = liveTarget(stack, op)
+  if (target === undefined) return { stack, result: { kind: "refused", code: "stale" } }
+  const changed = stack.todos.map((todo): Row => (todo.id === target.id ? { ...todo, state: "in_review" } : todo))
+  const filled = fill(changed, stack.lanes)
+  return {
+    stack: { ...stack, todos: filled.todos },
+    result: { kind: "published", number: target.number, starts: filled.starts },
+  }
+}
+
+/**
+ * A run ends TODO `op.id`'s attempt: only while that attempt is live, Working or In review (a dropped TODO's run, or an
+ * earlier attempt's, is `stale`). Merged and dropped leave the stack and close the gap; failed keeps its place. A
+ * Working TODO's lane frees.
  */
 const finish = (stack: Stack, op: Extract<Op, { readonly kind: "finish" }>): { readonly stack: Stack; readonly result: Result } => {
-  const target = stack.todos.find((todo) => todo.id === op.id)
-  if (target === undefined || !inLane(target.state) || target.attempt !== op.ordinal) {
-    return { stack, result: { kind: "refused", code: "stale" } }
-  }
+  const target = liveTarget(stack, op)
+  if (target === undefined) return { stack, result: { kind: "refused", code: "stale" } }
   const from = target.position!
   const leaves = op.state !== "failed"
   const changed = stack.todos.map((todo): Row =>

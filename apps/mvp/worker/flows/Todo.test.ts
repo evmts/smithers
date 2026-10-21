@@ -40,6 +40,20 @@ beforeEach(async () => {
 
 const maya = { id: "person-maya", login: "maya" }
 
+/** What `todo/Begin` answers for a TODO on `branch` made from main. */
+const onMain = (branch: string): Todo.Begun => ({
+  branch,
+  baseSha: "0".repeat(40),
+  baseRef: "main",
+  defaultBranch: "main",
+  title: "Step",
+  prompt: "Do it.",
+  acceptance: [],
+  issueNumber: null,
+  ownerId: maya.id,
+  ownerLogin: maya.login,
+})
+
 const database = () => runtime.runPromise(Effect.map(Effect.service(TestDatabase.Scratch), (scratch) => scratch.database))
 
 /** Commits a TODO on a host that runs TODOs, as a person's press does; answers its first attempt's start. */
@@ -185,8 +199,9 @@ describe("the todo run", { timeout: 120_000 }, () => {
       failure: null,
     })
     expect(await todo(2)).toMatchObject({ state: "working", position: 1 })
-    expect(ctx.starts.map(({ flow }) => flow)).toEqual([ChecksRun._tag, Todo.Todo._tag])
-    expect(ctx.starts[0]!.executionId).toBe(checkExecutionId(REPOSITORY.id, branchCommit.sha, "all"))
+    // T1's pull request opening freed the lane: T2 started then, to stack on T1's branch, and T1's checks started.
+    expect(ctx.starts.map(({ flow }) => flow)).toEqual([Todo.Todo._tag, ChecksRun._tag])
+    expect(ctx.starts[1]!.executionId).toBe(checkExecutionId(REPOSITORY.id, branchCommit.sha, "all"))
     // The agent's tools ran on the attempt's own machine, on its branch, as the person who committed the TODO.
     const tools = ctx.machine.calls.filter((call) => call.callId.length === 36)
     expect(new Set(tools.map((call) => `${call.branchId} ${call.branch} ${call.ownerId}`))).toEqual(
@@ -469,7 +484,7 @@ describe("the run's steps", () => {
       op: { kind: "drop", number: 1 },
     }, { runs: true }))
     const awaited = await runtime.runPromise(
-      Todo.steps(ctx.services).await({ request: start, published: { headSha: "a".repeat(40), prNumber: issue.number } }).pipe(
+      Todo.steps(ctx.services).await({ request: start, begun: onMain("feature"), published: { headSha: "a".repeat(40), prNumber: issue.number } }).pipe(
         Effect.provide(ctx.machine.layer),
       ),
     )
@@ -483,7 +498,9 @@ describe("the run's steps", () => {
     ctx.github.push("feature", { "A.md": "a\n" })
     const issue = ctx.github.openPull("feature")
     const exit = await runtime.runPromise(
-      Effect.exit(Todo.steps(ctx.services).await({ request: start, published: { headSha: "a".repeat(40), prNumber: issue.number } })),
+      Effect.exit(
+        Todo.steps(ctx.services).await({ request: start, begun: onMain("feature"), published: { headSha: "a".repeat(40), prNumber: issue.number } }),
+      ),
     )
     expect(exit._tag === "Failure" && String(exit.cause)).toContain("StillOpen")
   })
@@ -517,6 +534,7 @@ describe("the run's steps", () => {
     const begun = {
       branch: "b",
       baseSha: "a".repeat(40),
+      baseRef: "main",
       defaultBranch: "main",
       title: "t",
       prompt: "Do it.",
@@ -598,6 +616,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
   const begun = (ctx: Awaited<ReturnType<typeof setup>>, branch: string): Todo.Begun => ({
     branch,
     baseSha: ctx.github.refs.get("main")!,
+    baseRef: "main",
     defaultBranch: "main",
     title: "Step",
     prompt: "Do it.",
@@ -737,7 +756,11 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     ctx.github.push("feature", { "G.md": "g\n" })
     const pull = ctx.github.openPull("feature")
     const gone = await step(ctx, (steps) =>
-      steps.await({ request: { ...start, attemptId: crypto.randomUUID() }, published: { headSha: BASE(), prNumber: pull.number } })
+      steps.await({
+        request: { ...start, attemptId: crypto.randomUUID() },
+        begun: begun(ctx, "feature"),
+        published: { headSha: BASE(), prNumber: pull.number },
+      })
     )
     expect(gone._tag === "Success" && gone.value).toEqual({ state: "ended", mergeSha: null })
     expect(ctx.github.issues.get(pull.number)!.state).toBe("closed")
@@ -791,11 +814,278 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     ctx.github.push("feature", { "F.md": "f\n" })
     const pull = ctx.github.openPull("feature")
     ctx.github.close(pull.number)
-    const closed = await step(ctx, (steps) => steps.await({ request: start, published: { headSha: BASE(), prNumber: pull.number } }))
+    const closed = await step(ctx, (steps) => steps.await({ request: start, begun: begun(ctx, "feature"), published: { headSha: BASE(), prNumber: pull.number } }))
     expect(closed._tag === "Success" ? closed.value : failure(closed)).toEqual({ state: "closed", mergeSha: null })
     ctx.github.remove(pull.number)
-    const gone = await step(ctx, (steps) => steps.await({ request: start, published: { headSha: BASE(), prNumber: pull.number } }))
+    const gone = await step(ctx, (steps) => steps.await({ request: start, begun: begun(ctx, "feature"), published: { headSha: BASE(), prNumber: pull.number } }))
     expect(gone._tag === "Success" ? gone.value : failure(gone)).toEqual({ state: "closed", mergeSha: null })
+  })
+
+  /**
+   * Two TODOs stacked: T1 committed and started, its branch with one commit and its pull request into main reported
+   * published, which starts T2; then T2's `todo/Begin` and `todo/Publish` with `t2Files` as its change.
+   */
+  const stacked = async (
+    ctx: Awaited<ReturnType<typeof setup>>,
+    t2Files: Record<string, string> = { "TWO.md": "2\n" },
+    issue?: number,
+  ) => {
+    const start1 = (await commit("One", "First.", issue))!
+    await commit("Two", "Then this.", issue)
+    const attempt1 = { attemptId: start1.attemptId, todoId: start1.todoId, repoId: REPOSITORY.id, ordinal: start1.ordinal }
+    const t1 = "smithers/t1-one"
+    const t1Head = ctx.github.push(t1, { "ONE.md": "1\n" })
+    const pull1 = ctx.github.openPull(t1, "T1: One", BOT_LOGIN)
+    await runtime.runPromise(Stack.report(attempt1, { kind: "branch", branch: t1, baseSha: ctx.github.refs.get("main")!, baseRef: "main" }, {
+      runs: true,
+    }))
+    const published1 = await runtime.runPromise(
+      Stack.report(attempt1, { kind: "published", headSha: t1Head, prNumber: pull1.number, draft: false }, { runs: true }),
+    )
+    const start2 = published1.starts[0]!
+    const begun2 = await dispatched(ctx, (steps) => steps.begin({ request: start2 })) as Exit.Exit<Todo.Begun>
+    if (begun2._tag !== "Success") throw new Error("begin failed")
+    const collected = {
+      additions: Object.entries(t2Files).map(([path, text]) => ({ path, contents: btoa(text) })),
+      deletions: [],
+    }
+    const published2 = await dispatched(ctx, (steps) => steps.publish({ request: start2, begun: begun2.value, collected })) as Exit.Exit<
+      Todo.Published
+    >
+    if (published2._tag !== "Success") throw new Error("publish failed")
+    return { start1, attempt1, t1, t1Head, pull1, start2, begun: begun2.value, published: published2.value }
+  }
+
+  test("stacked: T2 starts on T1's branch, its pull request a draft into T1's branch, its review reading only its change", async () => {
+    const ctx = await setup()
+    const { t1, t1Head, begun, published } = await stacked(ctx)
+    expect(begun).toMatchObject({ baseRef: t1, baseSha: t1Head, defaultBranch: "main" })
+    expect(begun.branch).toMatch(/^smithers\/t2-two-[0-9a-f]{12}$/)
+    const pull2 = ctx.github.pulls.get(published.prNumber)!
+    expect([pull2.head, pull2.base, pull2.draft]).toEqual([begun.branch, t1, true])
+    expect(ctx.github.commits.get(published.headSha)!.parents).toEqual([t1Head])
+    expect(await todo(2)).toMatchObject({ state: "in_review", branch: begun.branch, baseSha: t1Head, headSha: published.headSha })
+    expect(await sql(runtime, `SELECT base_ref AS "baseRef", pr_draft AS "draft" FROM todos WHERE number = 2`))
+      .toEqual([{ baseRef: t1, draft: true }])
+    const checks = ctx.starts.find((start) => start.flow === ChecksRun._tag)!
+    expect(checks.payload).toMatchObject({ sha: published.headSha, baseSha: t1Head, prNumber: published.prNumber })
+  })
+
+  test("stacked: T1 merged, T2 takes the merge in, its new head's checks start, and it moves onto main, ready", async () => {
+    const ctx = await setup()
+    const { attempt1, pull1, start2, begun, published } = await stacked(ctx)
+    // Waiting while T1 is in review: nothing moves.
+    const waiting = await step(ctx, (steps) => steps.await({ request: start2, begun, published }))
+    expect(failure(waiting)).toMatchObject({ _tag: "@smthrs/mvp/todo/StillOpen" })
+    expect(ctx.github.seen("POST", /\/merges$/)).toHaveLength(0)
+    // A person squash-merges T1; its run settles it.
+    const squash = ctx.github.merge(pull1.number, "maya")
+    await runtime.runPromise(Stack.report(attempt1, { kind: "finished", state: "merged", mergeSha: squash }, { runs: true }))
+    const restacked = await step(ctx, (steps) => steps.await({ request: start2, begun, published }))
+    expect(failure(restacked)).toMatchObject({ _tag: "@smthrs/mvp/todo/StillOpen" })
+    const pull2 = ctx.github.pulls.get(published.prNumber)!
+    const head = ctx.github.refs.get(begun.branch)!
+    expect([pull2.base, pull2.draft]).toEqual(["main", false])
+    // Merged forward, never rebased: T2's own commit, then the merge of T1's squash.
+    expect(ctx.github.commits.get(head)!.parents).toEqual([published.headSha, squash])
+    expect(ctx.github.commits.get(head)!.message).toBe("Merge T1 from main into T2")
+    expect([...ctx.github.tree(begun.branch).keys()].sort()).toEqual(["ONE.md", "README.md", "TWO.md"])
+    expect(await todo(2)).toMatchObject({ state: "in_review", headSha: head })
+    expect(await sql(runtime, `SELECT pr_draft AS "draft" FROM todos WHERE number = 2`)).toEqual([{ draft: false }])
+    // The new head's checks start, the review reading from T1's merge: T2's change alone.
+    const checks = ctx.starts.filter((start) => start.flow === ChecksRun._tag).at(-1)!
+    expect(checks.payload).toMatchObject({ sha: head, baseSha: squash })
+    // Asked again: on main, nothing to take in.
+    await step(ctx, (steps) => steps.await({ request: start2, begun, published }))
+    expect(ctx.github.seen("POST", /\/merges$/)).toHaveLength(1)
+    // A person merges T2 into main.
+    ctx.github.merge(published.prNumber, "maya")
+    const merged = await step(ctx, (steps) => steps.await({ request: start2, begun, published }))
+    expect(merged._tag === "Success" && merged.value).toMatchObject({ state: "merged" })
+    expect([...ctx.github.tree("main").keys()].sort()).toEqual(["ONE.md", "README.md", "TWO.md"])
+  })
+
+  test("stacked: a restack cut short does the rest again, each part once", async () => {
+    const ctx = await setup()
+    const { attempt1, pull1, start2, begun, published } = await stacked(ctx)
+    const squash = ctx.github.merge(pull1.number, "maya")
+    await runtime.runPromise(Stack.report(attempt1, { kind: "finished", state: "merged", mergeSha: squash }, { runs: true }))
+    // The merge lands but its answer is lost; then moving the base fails once.
+    ctx.github.faults.push(
+      { match: (method, path) => method === "POST" && path.endsWith("/merges"), lost: true },
+      { match: (method, path) => method === "PATCH" && /\/pulls\/\d+$/.test(path), status: 502 },
+    )
+    expect(failure(await step(ctx, (steps) => steps.await({ request: start2, begun, published })))).toMatchObject({ step: "await" })
+    expect(failure(await step(ctx, (steps) => steps.await({ request: start2, begun, published })))).toMatchObject({ step: "await" })
+    expect(failure(await step(ctx, (steps) => steps.await({ request: start2, begun, published }))))
+      .toMatchObject({ _tag: "@smthrs/mvp/todo/StillOpen" })
+    const pull2 = ctx.github.pulls.get(published.prNumber)!
+    expect([pull2.base, pull2.draft]).toEqual(["main", false])
+    const merges = [...ctx.github.commits.values()].filter((found) => found.message === "Merge T1 from main into T2")
+    expect(merges).toHaveLength(1)
+    expect(await todo(2)).toMatchObject({ headSha: merges[0]!.sha })
+  })
+
+  test("stacked: T1 closed unmerged closes T2's pull request and fails it base_closed", async () => {
+    const ctx = await setup()
+    const { attempt1, pull1, start2, begun, published } = await stacked(ctx)
+    ctx.github.close(pull1.number)
+    await runtime.runPromise(Stack.report(attempt1, { kind: "finished", state: "dropped", note: "closed_on_github" }, { runs: true }))
+    const closed = await step(ctx, (steps) => steps.await({ request: start2, begun, published }))
+    expect(failure(closed)).toMatchObject({ failure: "base_closed" })
+    expect(ctx.github.issues.get(published.prNumber)!.state).toBe("closed")
+    const failed = await step(ctx, (steps) => steps.fail({ request: start2, error: new Todo.TodoFailed({ failure: "base_closed" }) }))
+    expect(failed._tag === "Success" && failed.value).toEqual({ state: "failed" })
+    expect(await todo(2)).toMatchObject({ state: "failed", failure: "base_closed" })
+  })
+
+  test("stacked: T2 changing what T1 merged conflicts, and the run gives up pr_refused", async () => {
+    const ctx = await setup()
+    const { attempt1, pull1, start2, begun, published } = await stacked(ctx, { "ONE.md": "2\n" })
+    // T1's squash adds ONE.md to main, which T2's branch changed since: an add on each side, so GitHub can't merge them.
+    const squash = ctx.github.merge(pull1.number, "maya")
+    await runtime.runPromise(Stack.report(attempt1, { kind: "finished", state: "merged", mergeSha: squash }, { runs: true }))
+    const conflicted = await step(ctx, (steps) => steps.await({ request: start2, begun, published }))
+    expect(failure(conflicted)).toMatchObject({ failure: "pr_refused" })
+    // Its pull request is closed as the App, never left a draft into a branch that merged.
+    expect(ctx.github.pulls.get(published.prNumber)!.base).toBe("smithers/t1-one")
+    expect(ctx.github.issues.get(published.prNumber)!.state).toBe("closed")
+  })
+
+  test("stacked: a close whose answer was lost still ends base_closed, never as closed on GitHub", async () => {
+    const ctx = await setup()
+    const { attempt1, pull1, start2, begun, published } = await stacked(ctx)
+    ctx.github.close(pull1.number)
+    await runtime.runPromise(Stack.report(attempt1, { kind: "finished", state: "dropped", note: "closed_on_github" }, { runs: true }))
+    // The run closed T2's pull request, and the answer never came back.
+    ctx.github.close(published.prNumber)
+    const again = await step(ctx, (steps) => steps.await({ request: start2, begun, published }))
+    expect(failure(again)).toMatchObject({ failure: "base_closed" })
+    expect(ctx.github.seen("PATCH", new RegExp(`/pulls/${published.prNumber}$`))).toHaveLength(0)
+  })
+
+  test("stacked three high: T2 failed base_closed, T3 on T2's branch closes its own and fails base_closed too", async () => {
+    const ctx = await setup()
+    const { start2, begun, published } = await stacked(ctx)
+    // T2 failed, its pull request closed: nothing will merge or restack it.
+    await runtime.runPromise(Stack.report(
+      { attemptId: start2.attemptId, todoId: start2.todoId, repoId: REPOSITORY.id, ordinal: start2.ordinal },
+      { kind: "finished", state: "failed", failure: "base_closed" },
+      { runs: true },
+    ))
+    ctx.github.close(published.prNumber)
+    // T3, stacked on T2's branch.
+    const t3 = ctx.github.push("smithers/t3-three", { "THREE.md": "3\n" })
+    ctx.github.refs.set("smithers/t3-three", t3)
+    const pull3 = ctx.github.openPull("smithers/t3-three", "T3: Three", BOT_LOGIN)
+    pull3.base = begun.branch
+    pull3.draft = true
+    // T1 in review and T2 failed hold no lane, so T3 starts at once.
+    const start3 = (await commit("Three", "Last."))!
+    expect(start3).toBeDefined()
+    const begun3 = { ...begun, branch: "smithers/t3-three", baseRef: begun.branch }
+    const closed = await step(ctx, (steps) =>
+      steps.await({ request: start3, begun: begun3, published: { headSha: t3, prNumber: pull3.number } })
+    )
+    expect(failure(closed)).toMatchObject({ failure: "base_closed" })
+    expect(ctx.github.issues.get(pull3.number)!.state).toBe("closed")
+  })
+
+  test("stacked: moved onto main but stopped before it was marked ready, the next await marks it ready", async () => {
+    const ctx = await setup()
+    const { attempt1, pull1, start2, begun, published } = await stacked(ctx)
+    const squash = ctx.github.merge(pull1.number, "maya")
+    await runtime.runPromise(Stack.report(attempt1, { kind: "finished", state: "merged", mergeSha: squash }, { runs: true }))
+    // GraphQL refuses the mark once: the base already moved, the pull request still a draft.
+    ctx.github.faults.push({ match: (method, path) => method === "POST" && path === "/graphql", status: 502 })
+    expect(failure(await step(ctx, (steps) => steps.await({ request: start2, begun, published })))).toMatchObject({ step: "await" })
+    expect([ctx.github.pulls.get(published.prNumber)!.base, ctx.github.pulls.get(published.prNumber)!.draft]).toEqual(["main", true])
+    expect(failure(await step(ctx, (steps) => steps.await({ request: start2, begun, published }))))
+      .toMatchObject({ _tag: "@smthrs/mvp/todo/StillOpen" })
+    expect(ctx.github.pulls.get(published.prNumber)!.draft).toBe(false)
+    expect(await sql(runtime, `SELECT pr_draft AS "draft" FROM todos WHERE number = 2`)).toEqual([{ draft: false }])
+    expect(ctx.github.seen("POST", /\/merges$/)).toHaveLength(1)
+  })
+
+  test("stacked: a pull request a person took out of draft is moved onto main and not marked again", async () => {
+    const ctx = await setup()
+    const { attempt1, pull1, start2, begun, published } = await stacked(ctx)
+    ctx.github.pulls.get(published.prNumber)!.draft = false
+    const squash = ctx.github.merge(pull1.number, "maya")
+    await runtime.runPromise(Stack.report(attempt1, { kind: "finished", state: "merged", mergeSha: squash }, { runs: true }))
+    expect(failure(await step(ctx, (steps) => steps.await({ request: start2, begun, published }))))
+      .toMatchObject({ _tag: "@smthrs/mvp/todo/StillOpen" })
+    expect(ctx.github.pulls.get(published.prNumber)!.base).toBe("main")
+    expect(ctx.github.seen("POST", /^\/graphql$/).length).toBe(1)
+  })
+
+  test("stacked: a person closing the stacked pull request on GitHub drops the TODO, its base still in review", async () => {
+    const ctx = await setup()
+    const { start2, begun, published } = await stacked(ctx)
+    ctx.github.close(published.prNumber)
+    const closed = await step(ctx, (steps) => steps.await({ request: start2, begun, published }))
+    expect(closed._tag === "Success" && closed.value).toEqual({ state: "closed", mergeSha: null })
+  })
+
+  test("stacked from one issue: the bottom pull request says Part of #n, the top one Fixes #n", async () => {
+    const ctx = await setup()
+    const issue = ctx.github.open("Two things", "Both.")
+    const { start1, begun, published } = await stacked(ctx, { "TWO.md": "2\n" }, issue.number)
+    expect(ctx.github.issues.get(published.prNumber)!.body).toContain(`Fixes #${issue.number}`)
+    // T1, published below T2 from the same issue, says Part of.
+    const t1Begun = { ...begun, branch: "smithers/t1-own", baseRef: "main", baseSha: ctx.github.refs.get("main")!, issueNumber: issue.number }
+    ctx.github.refs.set("smithers/t1-own", ctx.github.refs.get("main")!)
+    const collected = { additions: [{ path: "OWN.md", contents: btoa("own\n") }], deletions: [] }
+    const own = await dispatched(ctx, (steps) => steps.publish({ request: start1, begun: t1Begun, collected })) as Exit.Exit<
+      Todo.Published
+    >
+    expect(own._tag === "Success" && ctx.github.issues.get(own.value.prNumber)!.body).toContain(`Part of #${issue.number}`)
+    expect(Todo.pullBodyOf({ ...begun, issueNumber: 3 }, false)).toContain("Part of #3")
+  })
+
+  test("a run stopped after its publish committed and before the next TODO's start, then dropped, still starts it", async () => {
+    const ctx = await setup()
+    const start1 = (await commit("One", "First."))!
+    await commit("Two", "Then this.")
+    const attempt1 = { attemptId: start1.attemptId, todoId: start1.todoId, repoId: REPOSITORY.id, ordinal: start1.ordinal }
+    const { starts } = await runtime.runPromise(
+      Stack.report(attempt1, { kind: "published", headSha: BASE(), prNumber: 1, draft: false }, { runs: true }),
+    )
+    expect(starts).toHaveLength(1)
+    await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya, via: "person", op: { kind: "drop", number: 1 } }, {
+      runs: true,
+    }))
+    const collected = { additions: [{ path: "A.md", contents: btoa("a\n") }], deletions: [] }
+    const replayed = await step(ctx, (steps) => steps.publish({ request: start1, begun: begun(ctx, "main"), collected }))
+    expect(failure(replayed)).toMatchObject({ failure: "ended" })
+    expect(ctx.starts.filter((start) => start.flow === Todo.Todo._tag).map((start) => start.executionId))
+      .toEqual([todoExecutionId(starts[0]!.attemptId)])
+    expect(await runtime.runPromise(Stack.publishedStarts({ ...attempt1, attemptId: crypto.randomUUID() }))).toEqual([])
+  })
+
+  test("a run that reached its await before stacking carries no begun: never stacked, it just waits", async () => {
+    const ctx = await setup()
+    const start = (await commit("Old", "Do it."))!
+    ctx.github.push("feature", { "O.md": "o\n" })
+    const pull = ctx.github.openPull("feature")
+    const waiting = await step(ctx, (steps) => steps.await({ request: start, published: { headSha: BASE(), prNumber: pull.number } }))
+    expect(failure(waiting)).toMatchObject({ _tag: "@smthrs/mvp/todo/StillOpen" })
+    expect(Todo.baseOf({ ...begun(ctx, "feature"), baseRef: undefined })).toBe("main")
+  })
+
+  test("begin: the TODO below's branch gone from GitHub, the TODO starts from main", async () => {
+    const ctx = await setup()
+    const start1 = (await commit("One", "First."))!
+    await commit("Two", "Then this.")
+    const attempt1 = { attemptId: start1.attemptId, todoId: start1.todoId, repoId: REPOSITORY.id, ordinal: start1.ordinal }
+    await runtime.runPromise(Stack.report(attempt1, { kind: "branch", branch: "smithers/t1-gone", baseSha: BASE(), baseRef: "main" }, {
+      runs: true,
+    }))
+    const { starts } = await runtime.runPromise(
+      Stack.report(attempt1, { kind: "published", headSha: BASE(), prNumber: 1, draft: false }, { runs: true }),
+    )
+    const begun2 = await dispatched(ctx, (steps) => steps.begin({ request: starts[0]! }))
+    expect(begun2._tag === "Success" && begun2.value).toMatchObject({ baseRef: "main", baseSha: ctx.github.refs.get("main") })
   })
 
   test("settle and fail: an ended run changes nothing, a stale report ends it, and Postgres down is retried", async () => {
@@ -815,7 +1105,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
       .toMatchObject({ step: "settle" })
     expect(failure(await step(down, (steps) => steps.fail({ request: start, error: new Todo.StillOpen() }))))
       .toMatchObject({ step: "settle" })
-    expect(failure(await step(down, (steps) => steps.await({ request: start, published: { headSha: BASE(), prNumber: 1 } }))))
+    expect(failure(await step(down, (steps) => steps.await({ request: start, begun: begun(ctx, "feature"), published: { headSha: BASE(), prNumber: 1 } }))))
       .toMatchObject({ step: "await" })
   })
 })

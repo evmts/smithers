@@ -1,13 +1,17 @@
 // The stack's rules (src/features/todos/stack.ts, decision 0016 §1 and §7): property tests over random sequences of
-// commits, drops and run failures on stacks of random size limits and lanes, against a model that is only a list of ids
-// in order; and the rules one case at a time.
+// commits, drops, runs publishing their pull requests and runs failing, on stacks of random size limits and lanes,
+// against a model that is only a list of ids in order; and the rules one case at a time.
 import { Arbitrary, Effect, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { apply, openOf, type Op, type Row, type Stack, violations } from "./stack"
 
-/** One step of a random history: a person's commit or drop, or the run failing a started TODO (Track B's writer op). */
+/**
+ * One step of a random history: a person's commit or drop, or a run publishing or failing its started TODO (Track B's
+ * writer ops).
+ */
 const Step = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("commit") }),
+  Schema.Struct({ kind: Schema.Literal("publish"), pick: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 24 })) }),
   Schema.Struct({ kind: Schema.Literal("drop"), pick: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 24 })) }),
   Schema.Struct({ kind: Schema.Literal("again"), pick: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 24 })) }),
   Schema.Struct({ kind: Schema.Literal("fail"), pick: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 24 })) }),
@@ -52,9 +56,17 @@ const play = (
     // Picks among every TODO ever made, settled ones included, so drops of dropped TODOs come up.
     const picked = before.todos[step.kind === "commit" ? 0 : step.pick % Math.max(before.todos.length, 1)]
     if (step.kind === "fail") {
-      if (picked === undefined || picked.state !== "working") continue
+      if (picked === undefined || !["working", "in_review"].includes(picked.state)) continue
       stack = apply(before, { kind: "finish", id: picked.id, ordinal: picked.attempt, state: "failed" }).stack
       if (!each({ before, after: stack, op: undefined, result: undefined, model })) return false
+      continue
+    }
+    if (step.kind === "publish") {
+      if (picked === undefined || picked.state !== "working") continue
+      const op: Op = { kind: "publish", id: picked.id, ordinal: picked.attempt }
+      const published = apply(before, op)
+      stack = published.stack
+      if (!each({ before, after: stack, op, result: published.result, model })) return false
       continue
     }
     const op: Op = step.kind === "commit"
@@ -114,7 +126,7 @@ describe("the stack's invariants, over random histories", () => {
     check(History, (history) =>
       play(history, ({ after, op, result }) => {
         if (op === undefined || result?.kind === "refused" || (result?.kind === "dropped" && !result.changed)) return true
-        const held = after.todos.filter((todo) => ["working", "in_review"].includes(todo.state))
+        const held = after.todos.filter((todo) => todo.state === "working")
         return held.length >= after.lanes || openOf(after).every((todo) => todo.state !== "queued")
       })))
 
@@ -208,6 +220,45 @@ describe("apply, case by case", () => {
     const stack: Stack = { nextNumber: 2, lanes: 1, maxOpen: 5, todos: [merged] }
     expect(apply(stack, { kind: "drop", number: 1 }).result).toEqual({ kind: "refused", code: "merged" })
     expect(apply(stack, { kind: "drop", number: 9 }).result).toEqual({ kind: "refused", code: "not_found" })
+  })
+
+  test("publishing frees the lane: the TODO goes In review and the next Queued one starts, to stack on it", () => {
+    const working: Row = { id: "a", number: 1, state: "working", position: 1, attempt: 1, revision: 1 }
+    const { stack, result } = apply(
+      { nextNumber: 4, lanes: 1, maxOpen: 5, todos: [working, queued("b", 2, 2), queued("c", 3, 3)] },
+      { kind: "publish", id: "a", ordinal: 1 },
+    )
+    expect(result).toEqual({ kind: "published", number: 1, starts: [{ todoId: "b", number: 2, ordinal: 1, revision: 1 }] })
+    expect(stack.todos.map((todo) => [todo.id, todo.state, todo.position])).toEqual([
+      ["a", "in_review", 1],
+      ["b", "working", 2],
+      ["c", "queued", 3],
+    ])
+    // Published again with a new head, nothing changes; the next lane frees when b publishes.
+    expect(apply(stack, { kind: "publish", id: "a", ordinal: 1 }).result).toEqual({ kind: "published", number: 1, starts: [] })
+    const next = apply(stack, { kind: "publish", id: "b", ordinal: 1 })
+    expect(next.result).toMatchObject({ kind: "published", number: 2, starts: [{ todoId: "c" }] })
+    expect(violations(next.stack)).toEqual([])
+  })
+
+  test("a stale publish changes nothing: another attempt, a dropped TODO, a Queued one, an unknown one", () => {
+    const working: Row = { id: "a", number: 1, state: "working", position: 1, attempt: 2, revision: 1 }
+    const dropped: Row = { id: "b", number: 2, state: "dropped", position: null, attempt: 1, revision: 1 }
+    const stack: Stack = { nextNumber: 4, lanes: 1, maxOpen: 5, todos: [working, dropped, queued("c", 3, 2)] }
+    for (const op of [
+      { kind: "publish", id: "a", ordinal: 1 },
+      { kind: "publish", id: "b", ordinal: 1 },
+      { kind: "publish", id: "c", ordinal: 0 },
+      { kind: "publish", id: "z", ordinal: 1 },
+    ] as const) {
+      expect(apply(stack, op)).toEqual({ stack, result: { kind: "refused", code: "stale" } })
+    }
+  })
+
+  test("dropping a TODO in review stops its attempt, whose run closes its pull request", () => {
+    const review: Row = { id: "a", number: 1, state: "in_review", position: 1, attempt: 1, revision: 1 }
+    const { result } = apply({ nextNumber: 2, lanes: 1, maxOpen: 5, todos: [review] }, { kind: "drop", number: 1 })
+    expect(result).toMatchObject({ kind: "dropped", stopped: { todoId: "a", ordinal: 1 }, starts: [] })
   })
 
   test("a failed TODO holds its place but not a lane", () => {

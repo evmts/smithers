@@ -381,6 +381,83 @@ export const closePull = (
   }).pipe(Effect.withSpan("GitHub.Pulls.closePull", { attributes: spanAttributes(owner, repo, number) }))
 
 /**
+ * Moves pull request `number` onto base branch `base`:
+ * `PATCH /repos/{owner}/{repo}/pulls/{number}` with `base`. A stacked pull
+ * request retargets onto the default branch this way once the one below it
+ * merged. Setting the base it has changes nothing, so a lost answer fails
+ * `retryable`. GitHub answers 422 when `base` doesn't exist or the pull
+ * request is closed.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const setBase = (
+  owner: string,
+  repo: string,
+  number: number,
+  base: string
+): Effect.Effect<PullRequest, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const pull = yield* requireNumber(number)
+    const branch = yield* requireBranch(base)
+    return yield* client.request("PATCH", `/repos/${repository}/pulls/${pull}`, { base: branch }, {
+      schema: PullRequest,
+      retryUnsafeWrites: true
+    })
+  }).pipe(Effect.withSpan("GitHub.Pulls.setBase", { attributes: spanAttributes(owner, repo, number) }))
+
+const ReadyAnswer = Schema.Struct({
+  data: Schema.optionalKey(Schema.NullOr(Schema.Struct({
+    markPullRequestReadyForReview: Schema.NullOr(Schema.Struct({
+      pullRequest: Schema.Struct({ isDraft: Schema.Boolean })
+    }))
+  }))),
+  errors: Schema.optionalKey(Schema.Array(Schema.Struct({ message: Schema.String })))
+})
+
+/**
+ * Marks draft pull request `nodeId` (its `node_id`) ready for review, through
+ * GraphQL `markPullRequestReadyForReview`: `POST /graphql`. REST can't take a
+ * pull request out of draft. Marking a ready pull request ready changes
+ * nothing, so a lost answer fails `retryable`; a GraphQL error fails
+ * `status: 422`, not retryable.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const markReady = (
+  owner: string,
+  repo: string,
+  nodeId: string
+): Effect.Effect<void, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    yield* requireRepositoryPath(owner, repo)
+    if (typeof nodeId !== "string" || !/^[A-Za-z0-9_=-]{1,100}$/.test(nodeId)) {
+      return yield* Effect.fail(
+        invalid("nodeId", "A pull request's node id is 1 to 100 letters, digits, - and _.", nodeId)
+      )
+    }
+    const answer = yield* client.request("POST", "/graphql", {
+      query: "mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) " +
+        "{ pullRequest { isDraft } } }",
+      variables: { id: nodeId }
+    }, { schema: ReadyAnswer, retryUnsafeWrites: true })
+    if ((answer.errors !== undefined && answer.errors.length > 0) || !answer.data?.markPullRequestReadyForReview) {
+      return yield* Effect.fail(
+        new IntegrationError("delivery-failed", "GitHub refused to mark the pull request ready.", {
+          status: 422,
+          graphql: true,
+          retryable: false,
+          outcomeUnknown: false
+        })
+      )
+    }
+  }).pipe(Effect.withSpan("GitHub.Pulls.markReady", { attributes: spanAttributes(owner, repo) }))
+
+/**
  * Merges pull request `number` at exactly `sha`, its head as the person saw
  * it: `PUT /repos/{owner}/{repo}/pulls/{number}/merge`. Squash is what most
  * repositories allow; `commitTitle` and `commitMessage` name the commit.

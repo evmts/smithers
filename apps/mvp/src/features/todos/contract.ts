@@ -62,14 +62,24 @@ export type TodoState = (typeof TODO_STATES)[number]
 /** The states that leave the stack: their TODO has no position. */
 export const SETTLED_STATES = ["merged", "dropped"] as const satisfies ReadonlyArray<TodoState>
 
-/** The states that hold one of the stack's lanes: started and not yet settled or failed. */
-export const LANE_STATES = ["working", "in_review"] as const satisfies ReadonlyArray<TodoState>
+/**
+ * The state that holds one of the stack's lanes: Working, while the agent writes the change. A TODO in review frees its
+ * lane, so the next one starts on its branch: the stack becomes stacked pull requests (Will, 2026-10-21, "produce a
+ * stacked diff").
+ */
+export const LANE_STATES = ["working"] as const satisfies ReadonlyArray<TodoState>
 
 /**
- * The states whose run a TODO links to (ruling TODO-3): its lane's, while the run works (Working) or waits for a
+ * The states with a live attempt: started and not yet settled or failed. Its run reports, and a Drop stops it (closing
+ * its pull request).
+ */
+export const ACTIVE_STATES = ["working", "in_review"] as const satisfies ReadonlyArray<TodoState>
+
+/**
+ * The states whose run a TODO links to (ruling TODO-3): its attempt's, while the run works (Working) or waits for a
  * person's merge (In review).
  */
-export const RUNNING_STATES = LANE_STATES
+export const RUNNING_STATES = ACTIVE_STATES
 
 /**
  * The state whose icon blinks (ruling TODO-3): Working, while the agent writes and publishes the change. In review
@@ -93,6 +103,7 @@ export const TODO_FAILURES = [
   "pr_refused",
   "app_not_installed",
   "budget",
+  "base_closed",
 ] as const
 export type TodoFailure = (typeof TODO_FAILURES)[number]
 

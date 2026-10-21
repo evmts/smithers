@@ -272,26 +272,36 @@ describe("a run's reports", () => {
   const HEAD = "b".repeat(40)
   const MERGE = "c".repeat(40)
 
-  test("step, branch and published change the row; merged settles it, frees the lane and starts the next", async () => {
+  test("step, branch and published change the row; published frees the lane for the next, and merged settles it", async () => {
     const attempt = await started(2)
     expect(await reportOn(attempt, { kind: "step", step: "implement" })).toEqual({ outcome: "applied", starts: [] })
-    expect(await reportOn(attempt, { kind: "branch", branch: "smithers/t1-retry", baseSha: BASE }))
+    expect(await reportOn(attempt, { kind: "branch", branch: "smithers/t1-retry", baseSha: BASE, baseRef: "main" }))
       .toEqual({ outcome: "applied", starts: [] })
     expect(await row()).toMatchObject({ state: "working", step: "implement", branch: "smithers/t1-retry", baseSha: BASE })
+    expect(await sql(`SELECT base_ref AS "baseRef" FROM todos WHERE number = 1`)).toEqual([{ baseRef: "main" }])
     const observed = observe()
-    await reportOn(attempt, { kind: "published", headSha: HEAD, prNumber: 7 }, true, observed)
+    const published = await reportOn(attempt, { kind: "published", headSha: HEAD, prNumber: 7, draft: false }, true, observed)
+    // In review frees the lane: the next TODO starts now, to stack on this one's branch.
+    expect(published).toMatchObject({ outcome: "applied", starts: [{ number: 2, ordinal: 1, repoId: REPO }] })
     expect(await row()).toMatchObject({ state: "in_review", step: "await", headSha: HEAD, prNumber: 7 })
+    expect((await todos()).map(({ state }) => state)).toEqual(["in_review", "working"])
     expect(observed.count(Stack.transitions, { from: "working", to: "in_review" })).toBe(1)
-    // Published again, as a retried step does: the row stands, and nothing counts twice.
+    expect(observed.count(Stack.transitions, { from: "queued", to: "working" })).toBe(1)
+    // Published again, as a retried step does: the same starts from the receipt, and nothing counts twice.
     const again = observe()
-    await reportOn(attempt, { kind: "published", headSha: HEAD, prNumber: 7 }, true, again)
+    expect(await reportOn(attempt, { kind: "published", headSha: HEAD, prNumber: 7, draft: false }, true, again))
+      .toEqual({ outcome: "repeated", starts: published.starts })
     expect(again.count(Stack.transitions, { from: "working", to: "in_review" })).toBe(0)
+    expect(await sql(`SELECT id FROM todo_attempts`)).toHaveLength(2)
+    // A new head, as after taking in the TODO below: the row takes it.
+    await reportOn(attempt, { kind: "published", headSha: MERGE, prNumber: 7, draft: false })
+    expect(await row()).toMatchObject({ state: "in_review", headSha: MERGE })
     const merged = await reportOn(attempt, { kind: "finished", state: "merged", note: "merged_on_github", mergeSha: MERGE })
-    expect(merged).toMatchObject({ outcome: "applied", starts: [{ number: 2, ordinal: 1, repoId: REPO }] })
+    expect(merged).toEqual({ outcome: "applied", starts: [] })
     // The next TODO's start records its run; the merged one keeps the run that took it to its merge.
     expect(await sql(`SELECT number, run_id AS "runId" FROM todos ORDER BY number`)).toEqual([
       { number: 1, runId: `todo:${attempt.attemptId}` },
-      { number: 2, runId: `todo:${merged.starts[0]!.attemptId}` },
+      { number: 2, runId: `todo:${published.starts[0]!.attemptId}` },
     ])
     expect(await row()).toMatchObject({
       state: "merged",

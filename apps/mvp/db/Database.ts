@@ -6,6 +6,7 @@ import todoRun from "./migrations/0036_todo_run.ts"
 import issueCommitment from "./migrations/0032_issue_commitment.ts"
 import pullDefaultBranch from "./migrations/0037_pull_default_branch.ts"
 import sandboxCallStartTimeout from "./migrations/0038_sandbox_call_start_timeout.ts"
+import stackedTodos from "./migrations/0039_stacked_todos.ts"
 import { PgClient } from "@effect/sql-pg"
 import { Config, Effect, Layer, Redacted } from "effect"
 import { Migrator } from "effect/sql"
@@ -113,6 +114,7 @@ export const migrations = {
   "0036_todo_run": todoRun,
   "0037_pull_default_branch": pullDefaultBranch,
   "0038_sandbox_call_start_timeout": sandboxCallStartTimeout,
+  "0039_stacked_todos": stackedTodos,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

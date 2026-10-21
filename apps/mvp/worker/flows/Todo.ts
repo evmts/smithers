@@ -24,13 +24,18 @@ import { machineOf } from "./TodoMachine.ts"
 // The `todo` run (decision 0016, the factory simplified): one durable run per attempt, on Cloudflare, started by the
 // stack's writer through `TodoRuns`. It takes one TODO to a merged pull request:
 //
-//   todo/Begin      the TODO and its prompt; its branch `smithers/t<n>-<slug>` made on GitHub at the default branch's
-//                   head, as the App, so its machine can check it out ─▶ writer: branch, step implement
+//   todo/Begin      the TODO and its prompt; its branch `smithers/t<n>-<slug>` made on GitHub, as the App, so its machine
+//                   can check it out: at the head of the TODO in review before it (stacked), else of the default branch
+//                   ─▶ writer: branch and its base, step implement
 //   todo/Implement  the agent writes the change on the attempt's machine with the sandbox tools (worker/flows/TodoAgent.ts)
 //   todo/Collect    the files it changed, read whole from the machine; none ─▶ failed empty_change
-//   todo/Publish    one commit, `createCommitOnBranch` fenced by the base; the pull request into the default branch,
-//                   its body ending "Fixes #n" for a TODO from issue n ─▶ writer: in review; the head's checks start
-//   todo/Await      re-reads the pull request until a person merges or closes it (the engine's retries, a minute apart)
+//   todo/Publish    one commit, `createCommitOnBranch` fenced by the base; the pull request into its base (a draft while
+//                   that is another TODO's branch), its body ending "Fixes #n" for a TODO from issue n ─▶ writer: in
+//                   review, which frees the lane for the next TODO; the head's checks start
+//   todo/Await      re-reads the pull request until a person merges or closes it (the engine's retries, a minute apart).
+//                   Stacked, once the TODO below merges, it merges that merge in, its new head's checks start, and the
+//                   pull request is marked ready and moves onto the default branch; once the TODO below closes unmerged,
+//                   it closes its own and fails `base_closed`
 //   todo/Settle     writer: merged, or dropped when it was closed; the next Queued TODO starts
 //   todo/Fail       any step that gave up ─▶ writer: failed with the step's code; the next TODO starts. A TODO a person
 //                   dropped (`ended`) closes the pull request its run opened, and changes nothing else
@@ -107,6 +112,11 @@ export const AWAIT_RETRY = RetryPolicy.make({
 export const Begun = Schema.Struct({
   branch: Schema.String,
   baseSha: Schema.String,
+  /**
+   * The branch its branch was made from and its pull request is into: the default branch, or the TODO below's. Absent
+   * in a run begun before stacking, whose base is the default branch (`baseOf`).
+   */
+  baseRef: Schema.optional(Schema.String),
   defaultBranch: Schema.String,
   title: Schema.String,
   prompt: Schema.String,
@@ -186,7 +196,8 @@ export const Publish = Action.make("todo/Publish", {
 })
 
 export const Await = Action.make("todo/Await", {
-  payload: { request: TodoRequest, published: Published },
+  // `begun` is absent in a run that reached its await before stacking: never stacked, so nothing to restack.
+  payload: { request: TodoRequest, begun: Schema.optional(Begun), published: Published },
   success: Awaited,
   error: Schema.Union([TodoFailed, TodoUnavailable, StillOpen]),
   retryPolicy: AWAIT_RETRY,
@@ -258,7 +269,7 @@ export const Todo = Flow.make("todo", {
             Node.bindPlanned(Node.capture({ publish: Publish.name }, (collected: Planned.Planned<Collected>) =>
               Publish.call({ request, begun, collected }))),
             Node.bindPlanned(Node.capture({ await: Await.name }, (published: Planned.Planned<Published>) =>
-              Await.call({ request, published }))),
+              Await.call({ request, begun, published }))),
             Node.bindPlanned(Node.capture({ settle: Settle.name }, (awaited: Planned.Planned<Awaited>) =>
               Settle.call({ request, awaited }))),
           ))),
@@ -331,11 +342,18 @@ export const commitMessageOf = (number: number, title: string, login: string) =>
   body: agentAttribution(login),
 })
 
-/** The pull request's body: the prompt, "Fixes #n" for a TODO from issue n, and whom the App acted for. */
-export const pullBodyOf = (begun: Begun): string =>
+/** The branch a begun TODO's branch was made from and its pull request is into. */
+export const baseOf = (begun: Begun): string => begun.baseRef ?? begun.defaultBranch
+
+/**
+ * The pull request's body: the prompt, then for a TODO from issue n "Fixes #n", or "Part of #n" while a TODO above it
+ * in the stack comes from the same issue (`closes` false), so merging the bottom of a stack doesn't close the issue the
+ * rest still work on; then whom the App acted for.
+ */
+export const pullBodyOf = (begun: Begun, closes = true): string =>
   [
     begun.prompt,
-    ...(begun.issueNumber === null ? [] : [`Fixes #${begun.issueNumber}`]),
+    ...(begun.issueNumber === null ? [] : [`${closes ? "Fixes" : "Part of"} #${begun.issueNumber}`]),
     agentAttribution(begun.ownerLogin),
   ].join("\n\n")
 
@@ -369,12 +387,35 @@ export const steps = <E, R>(services: Services<E, R>) => {
   const startTodo = (start: Stack.AttemptStart) =>
     services.start(Todo, { executionId: todoExecutionId(start.attemptId), payload: start })
 
+  /**
+   * Starts the checks of head `headSha` of pull request `prNumber`: Smithers runs on the TODO's machine, recorded in
+   * `runs` with the head (decision 0012 decision 12), the review reading the diff from `baseSha`. Once per head.
+   */
+  const startChecks = (request: TodoRequest, begun: Begun, prNumber: number, headSha: string, baseSha: string) =>
+    services.start(ChecksRun, {
+      executionId: checkExecutionId(request.repoId, headSha, "all"),
+      payload: {
+        repoId: request.repoId,
+        sha: headSha,
+        prNumber,
+        baseSha,
+        attemptId: request.attemptId,
+        branch: begun.branch,
+        ownerId: begun.ownerId,
+      },
+    })
+
   /** Reports to the writer; a stale report (a dropped TODO, another attempt) ends the run. */
   // Postgres failing fails the step for its retry policy (`step`'s `failureIn`).
+  // A stale attempt first starts again what its publish started: a run that stopped between its publish committing and
+  // the next TODO's start being admitted, then saw its TODO dropped, would otherwise leave the next one Working forever.
   const report = (request: TodoRequest, event: Stack.RunEvent) =>
     Effect.gen(function* () {
       const reported = yield* Stack.report(attemptOf(request), event, { runs: true })
-      if (reported.outcome === "stale") return yield* new TodoFailed({ failure: "ended" })
+      if (reported.outcome === "stale") {
+        yield* Effect.forEach(yield* Stack.publishedStarts(attemptOf(request)), startTodo, { discard: true })
+        return yield* new TodoFailed({ failure: "ended" })
+      }
       yield* Effect.forEach(reported.starts, startTodo, { discard: true })
     })
 
@@ -454,22 +495,29 @@ export const steps = <E, R>(services: Services<E, R>) => {
           { schema: Schema.Struct({ default_branch: Schema.String }) },
         )
         const defaultBranch = facts.default_branch
-        // The branch, made once at the default branch's head and named with this step's key; a step that runs again
-        // finds it by the key, at the commit it was made at, even after the default branch moved.
+        // Its base: the one a run of this step recorded already, else the nearest TODO in review before it, by its
+        // branch's head on GitHub (stacked), else the default branch.
+        const below = todo.baseRef !== null ? Option.none() : yield* Stack.belowOf(attemptOf(request))
+        const belowHead = Option.isSome(below)
+          ? yield* GitHub.Refs.getBranch(repository.owner, repository.name, below.value.branch)
+          : Option.none()
+        const baseRef = todo.baseRef ?? (Option.isSome(belowHead) ? belowHead.value.name : defaultBranch)
+        // The branch, made once at its base's head and named with this step's key; a step that runs again finds it by
+        // the key, at the commit it was made at, even after its base moved.
         const made = yield* Action.once(
           "branch",
           GitHub.Once.branch(repository.owner, repository.name, {
             prefix: branchPrefixOf(todo.number),
             label: slugOf(todo.title),
             at: Effect.flatMap(
-              GitHub.Refs.getBranch(repository.owner, repository.name, defaultBranch),
+              GitHub.Refs.getBranch(repository.owner, repository.name, baseRef),
               (head) => Option.isNone(head) ? new TodoFailed({ failure: "publish_refused" }) : Effect.succeed(head.value.sha),
             ),
           }),
         )
-        return { branch: made.name, baseSha: made.sha, defaultBranch }
+        return { branch: made.name, baseSha: made.sha, baseRef, defaultBranch }
       }).pipe(withToken(token, services.apiBaseUrl))
-      yield* report(request, { kind: "branch", branch: made.branch, baseSha: made.baseSha })
+      yield* report(request, { kind: "branch", branch: made.branch, baseSha: made.baseSha, baseRef: made.baseRef })
       yield* report(request, { kind: "step", step: "implement" })
       return {
         ...made,
@@ -526,6 +574,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const repository = repositoryOfRequest(request)
       const token = yield* tokenFor("publish", request, "publish")
       const message = commitMessageOf(request.number, begun.title, begun.ownerLogin)
+      const closes = begun.issueNumber === null || (yield* Stack.openAboveFromIssue(attemptOf(request))) === 0
       const published = yield* Effect.gen(function* () {
         // The commit, appended once at the base and found again only by this step's trailer. A head someone else
         // moved is refused (409, stale), never adopted because its parent and message look like ours.
@@ -540,38 +589,90 @@ export const steps = <E, R>(services: Services<E, R>) => {
             deletions: collected.deletions,
           }),
         )
-        // The pull request, found among the branch's by this step's marker, or opened once.
+        // The pull request, found among the branch's by this step's marker, or opened once. Stacked on another TODO's
+        // branch, it opens as a draft, so nobody merges it into that branch by mistake.
         const pull = yield* Action.once(
           "pull",
           GitHub.Once.pull(repository.owner, repository.name, {
             head: begun.branch,
-            base: begun.defaultBranch,
+            base: baseOf(begun),
             title: `T${request.number}: ${begun.title}`.slice(0, 256),
-            body: pullBodyOf(begun),
+            body: pullBodyOf(begun, closes),
+            draft: baseOf(begun) !== begun.defaultBranch,
           }),
         ).pipe(Effect.mapError(failureIn("publish", "pr_refused")))
         // Read it back into the projection, so every device sees it before the webhook rings.
         yield* projectPull(repository, pull.number, yield* fetchPull(repository, pull.number))
         return { headSha, prNumber: pull.number } satisfies Published
       }).pipe(withToken(token, services.apiBaseUrl))
-      yield* report(request, { kind: "published", headSha: published.headSha, prNumber: published.prNumber })
-      // The head's checks: Smithers runs on its machine, recorded in `runs` with the head (decision 0012 decision 12).
-      yield* services.start(ChecksRun, {
-        executionId: checkExecutionId(request.repoId, published.headSha, "all"),
-        payload: {
-          repoId: request.repoId,
-          sha: published.headSha,
-          prNumber: published.prNumber,
-          baseSha: begun.baseSha,
-          attemptId: request.attemptId,
-          branch: begun.branch,
-          ownerId: begun.ownerId,
-        },
+      yield* report(request, {
+        kind: "published",
+        headSha: published.headSha,
+        prNumber: published.prNumber,
+        draft: baseOf(begun) !== begun.defaultBranch,
       })
+      yield* startChecks(request, begun, published.prNumber, published.headSha, begun.baseSha)
       return published
     }))
 
-  const await_ = ({ request, published }: typeof Await.payloadSchema.Type) =>
+  /**
+   * The TODO below merged: its merge commit `mergeSha` merged into this TODO's branch (never a rebase), the new head
+   * reported and its checks started, then the pull request moved onto the default branch, and only then marked ready,
+   * so it is never a ready pull request into the old branch. A step that stops part way does it all again, each part a
+   * no-op once done; one stopped between the move and the mark is finished by `ready`. A merge GitHub can't make (a
+   * conflict) closes the pull request and fails the TODO `pr_refused`.
+   */
+  const restack = (
+    request: TodoRequest,
+    begun: Begun,
+    pull: GitHub.Pulls.PullRequest,
+    below: Stack.BaseTodo & { readonly mergeSha: string },
+  ) =>
+    Effect.gen(function* () {
+      const repository = repositoryOfRequest(request)
+      const token = yield* tokenFor("await", request, "publish")
+      const merged = yield* GitHub.Commits.mergeInto(repository.owner, repository.name, {
+        base: begun.branch,
+        head: below.mergeSha,
+        commitMessage: `Merge T${below.number} from ${begun.defaultBranch} into T${request.number}`,
+      }).pipe(Effect.result, withToken(token, services.apiBaseUrl))
+      if (merged._tag === "Failure") {
+        if (classify(merged.failure).kind !== "refused") return yield* Effect.fail(merged.failure)
+        yield* GitHub.Pulls.closePull(repository.owner, repository.name, pull.number).pipe(withToken(token, services.apiBaseUrl))
+        return yield* new TodoFailed({ failure: "pr_refused" })
+      }
+      // Up to date: the head this step read already holds the merge, as after an answer that was lost.
+      const headSha = merged.success.kind === "merged" ? merged.success.sha : pull.head.sha
+      yield* report(request, { kind: "published", headSha, prNumber: pull.number, draft: pull.draft })
+      yield* startChecks(request, begun, pull.number, headSha, below.mergeSha)
+      yield* GitHub.Pulls.setBase(repository.owner, repository.name, pull.number, begun.defaultBranch).pipe(
+        withToken(token, services.apiBaseUrl),
+      )
+      yield* ready(request, pull, headSha)
+      yield* Effect.logInfo("todo.restack").pipe(
+        Effect.annotateLogs({ attemptId: request.attemptId, todoId: request.todoId, below: below.number, prNumber: pull.number }),
+      )
+    })
+
+  /**
+   * A stacked pull request now into the default branch, at head `headSha`: out of draft unless a person took it out
+   * already, and the writer told. The next await's read projects it.
+   */
+  const ready = (request: TodoRequest, pull: GitHub.Pulls.PullRequest, headSha: string) =>
+    Effect.gen(function* () {
+      if (pull.draft) {
+        const repository = repositoryOfRequest(request)
+        const token = yield* tokenFor("await", request, "publish")
+        yield* GitHub.Pulls.markReady(repository.owner, repository.name, pull.node_id).pipe(withToken(token, services.apiBaseUrl))
+      }
+      yield* report(request, { kind: "published", headSha, prNumber: pull.number, draft: false })
+    })
+
+  /** Whether the TODO below won't merge: dropped, closed on GitHub, or failed, so nothing will merge or restack it. */
+  const belowClosed = (below: Option.Option<Stack.BaseTodo>) =>
+    Option.isSome(below) && (below.value.state === "dropped" || below.value.state === "failed")
+
+  const await_ = ({ request, begun, published }: typeof Await.payloadSchema.Type) =>
     Effect.gen(function* () {
       const repository = repositoryOfRequest(request)
       const found = yield* Stack.attemptTodo(attemptOf(request))
@@ -580,7 +681,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
         onSome: (todo) => todo.attempt !== request.ordinal || todo.state === "dropped",
       })
       const token = yield* tokenFor("await", request, dropped ? "publish" : "pulls")
-      return yield* Effect.gen(function* () {
+      const read = yield* Effect.gen(function* () {
         // Dropped in Smithers while its pull request is open: the run closes what it opened, as the App.
         if (dropped) {
           yield* GitHub.Pulls.closePull(repository.owner, repository.name, published.prNumber)
@@ -590,9 +691,36 @@ export const steps = <E, R>(services: Services<E, R>) => {
         yield* projectPull(repository, published.prNumber, fetched)
         if (fetched.kind === "gone") return { state: "closed", mergeSha: null } satisfies Awaited
         if (fetched.pull.merged) return { state: "merged", mergeSha: fetched.pull.merge_commit_sha } satisfies Awaited
-        if (fetched.pull.state === "closed") return { state: "closed", mergeSha: null } satisfies Awaited
-        return yield* new StillOpen()
+        return fetched.pull
       }).pipe(withToken(token, services.apiBaseUrl))
+      if (!("node_id" in read)) return read
+      // A run from before stacking carries no `begun`: its pull request is into the default branch.
+      const stacked = begun !== undefined && baseOf(begun) !== begun.defaultBranch
+      if (stacked && read.base.ref !== begun.defaultBranch) {
+        // Stacked on another TODO's branch. That TODO closed unmerged, or failed: this branch holds a change that
+        // won't merge, so close this pull request too, and fail `base_closed`, whichever came first: a close whose
+        // answer was lost still ends here, never as closed on GitHub.
+        const below = yield* Stack.baseTodoOf(request.repoId, read.base.ref)
+        if (belowClosed(below)) {
+          if (read.state === "open") {
+            const closing = yield* tokenFor("await", request, "publish")
+            yield* GitHub.Pulls.closePull(repository.owner, repository.name, read.number).pipe(
+              withToken(closing, services.apiBaseUrl),
+            )
+          }
+          return yield* new TodoFailed({ failure: "base_closed" })
+        }
+        if (read.state === "closed") return { state: "closed", mergeSha: null } satisfies Awaited
+        // That TODO merged: take its merge in and move onto the default branch.
+        if (Option.isSome(below) && below.value.state === "merged" && below.value.mergeSha !== null) {
+          yield* restack(request, begun, read, { ...below.value, mergeSha: below.value.mergeSha })
+        }
+        return yield* new StillOpen()
+      }
+      if (read.state === "closed") return { state: "closed", mergeSha: null } satisfies Awaited
+      // Moved onto the default branch, but stopped before it was marked ready: finish that.
+      if (stacked && read.draft) yield* ready(request, read, read.head.sha)
+      return yield* new StillOpen()
     }).pipe(
       Effect.provideService(HttpClient.HttpClient, services.http),
       Effect.provide(services.database),

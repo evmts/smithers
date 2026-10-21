@@ -72,8 +72,10 @@ export interface ScriptedCommit {
 export interface ScriptedPull {
   readonly number: number
   readonly head: string
-  readonly base: string
-  readonly draft: boolean
+  /** Its base branch: a stacked pull request moves onto another (`PATCH` with `base`). */
+  base: string
+  /** A draft until marked ready (GraphQL `markPullRequestReadyForReview`). */
+  draft: boolean
   merged: boolean
   mergeSha: string | null
   mergedBy: string | null
@@ -490,6 +492,17 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
   const refJson = (name: string) => ({ ref: `refs/heads/${name}`, object: { sha: github.refs.get(name)!, type: "commit" } })
 
   const graphql = (body: unknown, login: string): { readonly response: Response; readonly apply?: () => void } => {
+    if ((body as { readonly query: string }).query.includes("markPullRequestReadyForReview")) {
+      const id = (body as { readonly variables: { readonly id: string } }).variables.id
+      const pull = [...github.pulls.values()].find((candidate) => `PR_${candidate.number}` === id)
+      if (pull === undefined) {
+        return { response: json({ data: { markPullRequestReadyForReview: null }, errors: [{ message: "Could not resolve to a node" }] }) }
+      }
+      return {
+        response: json({ data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } } }),
+        apply: () => void (pull.draft = false),
+      }
+    }
     const input = (body as { readonly variables: { readonly input: unknown } }).variables.input as {
       readonly branch: { readonly repositoryNameWithOwner: string; readonly branchName: string }
       readonly expectedHeadOid: string
@@ -570,6 +583,58 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     issue.closedAt = tick()
     issue.updatedAt = github.now
     return sha
+  }
+
+  /** Every ancestor of commit `sha`, itself included. */
+  const ancestors = (sha: string): Set<string> => {
+    const seen = new Set<string>()
+    const walk = [sha]
+    while (walk.length > 0) {
+      const at = walk.pop()!
+      if (seen.has(at)) continue
+      seen.add(at)
+      walk.push(...(github.commits.get(at)?.parents ?? []))
+    }
+    return seen
+  }
+
+  interface MergeInput {
+    readonly base: string
+    readonly head: string
+    readonly commit_message?: string
+  }
+
+  /**
+   * `POST /merges`, as GitHub merges a branch or commit into a branch: 204 when the branch holds it already, 409 for a
+   * conflict, else a merge commit whose files are a three-way merge from the nearest common ancestor.
+   */
+  const mergeInto = (input: MergeInput, login: string): { readonly response: Response; readonly apply?: () => void } => {
+    const ours = github.refs.get(input.base)
+    const theirs = /^[0-9a-f]{40}$/.test(input.head) && github.commits.has(input.head) ? input.head : github.refs.get(input.head)
+    if (ours === undefined || theirs === undefined) return { response: json({ message: "Base or head does not exist" }, 404) }
+    const held = ancestors(ours)
+    if (held.has(theirs)) return { response: new Response(null, { status: 204 }) }
+    const theirsAncestors = ancestors(theirs)
+    const common = [...held].filter((sha) => theirsAncestors.has(sha))
+      .sort((a, b) => github.commits.get(b)!.at - github.commits.get(a)!.at)[0]
+    const base = common === undefined ? new Map<string, string>() : github.commits.get(common)!.files
+    const mine = github.commits.get(ours)!.files
+    const other = github.commits.get(theirs)!.files
+    const files = new Map<string, string>()
+    for (const path of new Set([...base.keys(), ...mine.keys(), ...other.keys()])) {
+      const [b, o, t] = [base.get(path), mine.get(path), other.get(path)]
+      const merged = o === t ? o : o === b ? t : t === b ? o : null
+      if (merged === null) return { response: json({ message: "Merge conflict" }, 409) }
+      if (merged !== undefined) files.set(path, merged)
+    }
+    const sha = (commitIds + 1).toString(16).padStart(40, "c")
+    return {
+      response: json({ sha, commit: { message: input.commit_message ?? "Merge" } }, 201),
+      apply: () => {
+        commit(input.commit_message ?? `Merge ${input.head} into ${input.base}`, [ours, theirs], files, login)
+        github.refs.set(input.base, sha)
+      },
+    }
   }
 
   /** The pull request, branch, commit and comparison endpoints, or `undefined` for any other path. */
@@ -680,6 +745,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
         },
       }
     }
+    if (rest === "/merges" && method === "POST") return mergeInto(body as MergeInput, login)
     const one = /^\/pulls\/(\d+)(\/[a-z]+)?$/.exec(rest)
     if (one === null) return undefined
     const pull = github.pulls.get(Number(one[1]))
@@ -687,6 +753,13 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     const issue = github.issues.get(pull.number)!
     const tail = one[2]
     if (tail === undefined && method === "GET") return { response: json(pullJson(pull)) }
+    if (tail === undefined && method === "PATCH" && (body as { readonly base?: string }).base !== undefined) {
+      const base = (body as { readonly base: string }).base
+      if (!github.refs.has(base) || issue.state === "closed") {
+        return { response: json({ message: "Validation Failed", errors: [{ field: "base" }] }, 422) }
+      }
+      return { response: json({ ...pullJson(pull), base: { ...pullJson(pull).base, ref: base } }), apply: () => void (pull.base = base) }
+    }
     if (tail === undefined && method === "PATCH") {
       return {
         response: json({ ...pullJson(pull), state: "closed" }),
@@ -794,6 +867,8 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
         const bearer = request.headers["authorization"]!.slice("Bearer ".length)
         const rest = url.pathname.slice(apiPath.length)
         const scope = url.pathname === "/graphql" || rest.startsWith("/git/")
+          ? "contents"
+          : rest === "/merges"
           ? "contents"
           : rest.startsWith("/pulls")
           ? "pull_requests"

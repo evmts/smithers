@@ -81,8 +81,16 @@ const rawPull = (number: number, input: Raw): Raw => {
 
 // A listing omits the merge and size fields, as GitHub's does.
 const listed = (pull: Raw): Raw => {
-  const { merged: _m, merged_by: _b, mergeable_state: _s, commits: _c, additions: _a, deletions: _d, changed_files: _f, ...rest } =
-    pull
+  const {
+    merged: _m,
+    merged_by: _b,
+    mergeable_state: _s,
+    commits: _c,
+    additions: _a,
+    deletions: _d,
+    changed_files: _f,
+    ...rest
+  } = pull
   return rest
 }
 
@@ -107,6 +115,48 @@ const startGitHub = async (): Promise<FakeGitHub> => {
     const url = new URL(request.url, "http://github.test")
     const path = url.pathname
     const body = request.body.length > 0 ? JSON.parse(request.body) : undefined
+    if (path === "/graphql" && (body.query as string).includes("markPullRequestReadyForReview")) {
+      if (state.graphqlAnswer !== undefined) {
+        const answer = state.graphqlAnswer
+        state.graphqlAnswer = undefined
+        return json(response, 200, answer)
+      }
+      const pull = state.pulls.find((candidate) => candidate["node_id"] === body.variables.id)
+      if (pull === undefined) {
+        return json(response, 200, {
+          data: { markPullRequestReadyForReview: null },
+          errors: [{ message: "Could not resolve to a node" }]
+        })
+      }
+      pull["draft"] = false
+      return write(response, 200, { data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } } })
+    }
+    if (path === "/repos/o/r/merges" && request.method === "POST") {
+      const into = state.refs.get(body.base)
+      const from = state.refs.get(body.head) ?? (state.commits.has(body.head) ? body.head : undefined)
+      if (into === undefined || from === undefined) {
+        return json(response, 404, { message: "Base or head does not exist" })
+      }
+      if (body.head === "conflicting") return json(response, 409, { message: "Merge conflict" })
+      // Already holds it: GitHub's 204, no body.
+      const holds = (sha: string): boolean =>
+        sha === from ||
+        ((state.commits.get(sha)?.["parents"] ?? []) as Array<Raw>).some((parent) => holds(parent["sha"] as string))
+      if (holds(into)) {
+        response.writeHead(204)
+        response.end()
+        return
+      }
+      const merged = sha(nextCommit++)
+      state.commits.set(merged, {
+        sha: merged,
+        message: body.commit_message ?? `Merge ${body.head} into ${body.base}`,
+        tree: { sha: `tree-${merged}` },
+        parents: [{ sha: into }, { sha: from }]
+      })
+      state.refs.set(body.base, merged)
+      return write(response, 201, { sha: merged, commit: { message: "merge" } })
+    }
     if (path === "/graphql") {
       const input = body.variables.input
       if (state.graphqlAnswer !== undefined) {
@@ -118,7 +168,10 @@ const startGitHub = async (): Promise<FakeGitHub> => {
       if (head !== input.expectedHeadOid) {
         return json(response, 200, {
           data: { createCommitOnBranch: null },
-          errors: [{ type: "STALE_DATA", message: `Expected branch to point to "${input.expectedHeadOid}" but it did not.` }]
+          errors: [{
+            type: "STALE_DATA",
+            message: `Expected branch to point to "${input.expectedHeadOid}" but it did not.`
+          }]
         })
       }
       const oid = sha(nextCommit++)
@@ -173,17 +226,22 @@ const startGitHub = async (): Promise<FakeGitHub> => {
         return write(response, 201, pull)
       }
       const head = url.searchParams.get("head")
-      const matching = state.pulls.filter((pull) =>
-        head === null || `o:${(pull["head"] as Raw)["ref"]}` === head
-      )
+      const matching = state.pulls.filter((pull) => head === null || `o:${(pull["head"] as Raw)["ref"]}` === head)
       return json(response, 200, [...state.junk, ...matching.map(listed)])
     }
     const pullOf = /^\/repos\/o\/r\/pulls\/(\d+)(\/[a-z]+)?$/.exec(path)
-    const pull = pullOf === null ? undefined : state.pulls.find((candidate) => candidate["number"] === Number(pullOf[1]))
+    const pull = pullOf === null
+      ? undefined
+      : state.pulls.find((candidate) => candidate["number"] === Number(pullOf[1]))
     if (pullOf !== null && pull === undefined) return json(response, 404, { message: "Not Found" })
     if (pull !== undefined) {
       const number = pull["number"] as number
       const tail = pullOf![2]
+      if (tail === undefined && request.method === "PATCH" && body.base !== undefined) {
+        if (!state.refs.has(body.base)) return json(response, 422, { message: "Proposed base branch was not found" })
+        Object.assign(pull, { base: { ref: body.base, sha: state.refs.get(body.base) }, updated_at: stamp() })
+        return write(response, 200, pull)
+      }
       if (tail === undefined && request.method === "PATCH") {
         Object.assign(pull, { state: body.state, closed_at: stamp(), updated_at: stamp() })
         return write(response, 200, pull)
@@ -195,7 +253,13 @@ const startGitHub = async (): Promise<FakeGitHub> => {
           return json(response, 409, { message: "Head branch was modified. Review and try the merge again." })
         }
         const merged = sha(nextCommit++)
-        Object.assign(pull, { state: "closed", merged: true, merge_commit_sha: merged, merged_at: stamp(), merged_by: USER })
+        Object.assign(pull, {
+          state: "closed",
+          merged: true,
+          merge_commit_sha: merged,
+          merged_at: stamp(),
+          merged_by: USER
+        })
         state.refs.set("main", merged)
         return write(response, 200, { sha: merged, merged: true, message: "Pull Request successfully merged" })
       }
@@ -294,7 +358,7 @@ describe("Refs", () => {
     expect(Refs.isBranch("smithers/t12-fix_it.v2")).toBe(true)
     expect((await failure(Refs.createBranch("o", "r", { name: "ok", sha: "nope" }))).details?.["field"]).toBe("sha")
     expect((await failure(Refs.createBranch("o", "r", { name: "ok", sha: 7 as unknown as string }))).reason).toBe(
-      "invalid-config",
+      "invalid-config"
     )
     expect((await failure(Refs.requireBranch(7 as unknown as string))).details?.["branch"]).toBe("number")
     expect((await failure(Refs.getBranch("bad owner", "r", "main"))).reason).toBe("invalid-config")
@@ -424,6 +488,58 @@ describe("Commits", () => {
   })
 })
 
+describe("Commits.mergeInto", () => {
+  it("merges what the branch below merged into a stacked branch, then answers up to date; a lost answer is retryable", async () => {
+    await startGitHub()
+    const t1 = await branchWithCommit("t1")
+    await run(Refs.createBranch("o", "r", { name: "t2", sha: t1 }))
+    const t2 = await run(Commits.createOnBranch("o", "r", {
+      branch: "t2",
+      expectedHeadOid: t1,
+      headline: "T2: Another line",
+      additions: [{ path: "B.md", contents: README }],
+      deletions: []
+    }))
+    // T1 squash-merged as S on main; T2 takes S in by a merge, never a rebase.
+    const squash = sha(nextCommit++)
+    github!.commits.set(squash, { sha: squash, message: "T1 (#1)", tree: { sha: "ts" }, parents: [{ sha: BASE }] })
+    github!.refs.set("main", squash)
+    const merged = await run(
+      Commits.mergeInto("o", "r", { base: "t2", head: squash, commitMessage: "Merge main into t2" })
+    )
+    expect(merged).toEqual({ kind: "merged", sha: github!.refs.get("t2") })
+    const commit = await run(Commits.getCommit("o", "r", github!.refs.get("t2")!))
+    expect(commit.parents.map((parent) => parent.sha)).toEqual([t2, squash])
+    expect(commit.message).toBe("Merge main into t2")
+    expect(await run(Commits.mergeInto("o", "r", { base: "t2", head: squash }))).toEqual({ kind: "upToDate" })
+    expect(await run(Commits.mergeInto("o", "r", { base: "t2", head: "main" }))).toEqual({ kind: "upToDate" })
+    github!.lose = true
+    const other = sha(nextCommit++)
+    github!.commits.set(other, { sha: other, message: "X", tree: { sha: "tx" }, parents: [{ sha: squash }] })
+    const lost = await failure(Commits.mergeInto("o", "r", { base: "t2", head: other }))
+    expect(lost.details).toMatchObject({ status: 502, retryable: true })
+    expect(await run(Commits.mergeInto("o", "r", { base: "t2", head: other }))).toEqual({ kind: "upToDate" })
+  })
+
+  it("refuses a conflict (409) and a branch or head GitHub doesn't have (404), unretried; validates before any request", async () => {
+    await startGitHub()
+    await branchWithCommit("t1")
+    github!.refs.set("conflicting", BASE)
+    expect((await failure(Commits.mergeInto("o", "r", { base: "t1", head: "conflicting" }))).details).toMatchObject({
+      status: 409,
+      retryable: false
+    })
+    expect((await failure(Commits.mergeInto("o", "r", { base: "gone", head: "main" }))).details).toMatchObject({
+      status: 404,
+      retryable: false
+    })
+    const before = github!.fixture.requests.length
+    expect((await failure(Commits.mergeInto("o", "r", { base: "../t1", head: "main" }))).reason).toBe("invalid-config")
+    expect((await failure(Commits.mergeInto("o", "r", { base: "t1", head: "a..b" }))).reason).toBe("invalid-config")
+    expect(github!.fixture.requests.length).toBe(before)
+  })
+})
+
 describe("Pulls", () => {
   it("opens a pull request from a branch, reads it, lists it and finds it by head and marker", async () => {
     await startGitHub()
@@ -443,9 +559,13 @@ describe("Pulls", () => {
     expect(read.base.repo).toEqual({ default_branch: "main" })
     const all = await run(Pulls.listPulls("o", "r"))
     expect([all.items.length, all.truncated, all.items[0]!.merged, all.items[0]!.commits]).toEqual([1, false, false, 0])
-    expect(github!.fixture.requests.at(-1)!.url).toBe("/repos/o/r/pulls?state=all&sort=updated&direction=desc&per_page=100")
-    expect(Option.getOrThrow(await run(Pulls.findPullByHead("o", "r", { head: "smithers/t1-add", writeId: "write-1" })))
-      .number).toBe(1)
+    expect(github!.fixture.requests.at(-1)!.url).toBe(
+      "/repos/o/r/pulls?state=all&sort=updated&direction=desc&per_page=100"
+    )
+    expect(
+      Option.getOrThrow(await run(Pulls.findPullByHead("o", "r", { head: "smithers/t1-add", writeId: "write-1" })))
+        .number
+    ).toBe(1)
     expect(Option.getOrThrow(await run(Pulls.findPullByHead("o", "r", { head: "smithers/t1-add" }))).number).toBe(1)
     expect(Option.isNone(await run(Pulls.findPullByHead("o", "r", { head: "smithers/t1-add", writeId: "other" }))))
       .toBe(true)
@@ -488,9 +608,11 @@ describe("Pulls", () => {
   it("opens a draft, refuses a branch with no commits, and leaves a lost answer unknown", async () => {
     await startGitHub()
     await run(Refs.createBranch("o", "r", { name: "empty", sha: BASE }))
-    expect((await failure(Pulls.createPull("o", "r", { head: "empty", base: "main", title: "x", body: "" }))).details?.[
-      "status"
-    ]).toBe(422)
+    expect(
+      (await failure(Pulls.createPull("o", "r", { head: "empty", base: "main", title: "x", body: "" }))).details?.[
+        "status"
+      ]
+    ).toBe(422)
     await branchWithCommit("t1")
     const draft = await run(Pulls.createPull("o", "r", { head: "t1", base: "main", title: "x", body: "", draft: true }))
     expect(draft.draft).toBe(true)
@@ -505,7 +627,9 @@ describe("Pulls", () => {
     await startGitHub()
     const head = await branchWithCommit("t1")
     await run(Pulls.createPull("o", "r", { head: "t1", base: "main", title: "T1", body: "" }))
-    expect((await failure(Pulls.mergePull("o", "r", 1, { sha: OTHER, method: "squash" }))).details?.["status"]).toBe(409)
+    expect((await failure(Pulls.mergePull("o", "r", 1, { sha: OTHER, method: "squash" }))).details?.["status"]).toBe(
+      409
+    )
     const merged = await run(Pulls.mergePull("o", "r", 1, {
       sha: head,
       method: "squash",
@@ -538,6 +662,53 @@ describe("Pulls", () => {
     expect((await failure(Pulls.closePull("o", "r", 1))).details?.["retryable"]).toBe(true)
     expect((await run(Pulls.closePull("o", "r", 1))).state).toBe("closed")
     expect((await failure(Pulls.closePull("o", "r", 9))).details?.["status"]).toBe(404)
+  })
+
+  it("moves a stacked pull request onto main, idempotently; a lost answer is retryable; a missing base is 422", async () => {
+    await startGitHub()
+    await branchWithCommit("t1")
+    await run(Refs.createBranch("o", "r", { name: "t2", sha: github!.refs.get("t1")! }))
+    await run(Commits.createOnBranch("o", "r", {
+      branch: "t2",
+      expectedHeadOid: github!.refs.get("t1")!,
+      headline: "T2: Another line",
+      additions: [{ path: "B.md", contents: README }],
+      deletions: []
+    }))
+    const opened = await run(Pulls.createPull("o", "r", { head: "t2", base: "t1", title: "T2", body: "", draft: true }))
+    expect(opened.base.ref).toBe("t1")
+    expect((await run(Pulls.setBase("o", "r", opened.number, "main"))).base.ref).toBe("main")
+    expect((await run(Pulls.setBase("o", "r", opened.number, "main"))).base.ref).toBe("main")
+    github!.lose = true
+    const lost = await failure(Pulls.setBase("o", "r", opened.number, "t1"))
+    expect(lost.details).toMatchObject({ status: 502, retryable: true })
+    expect((await run(Pulls.getPull("o", "r", opened.number))).base.ref).toBe("t1")
+    const missing = await failure(Pulls.setBase("o", "r", opened.number, "gone"))
+    expect(missing.details).toMatchObject({ status: 422, retryable: false })
+    expect((await failure(Pulls.setBase("o", "r", opened.number, "../main"))).reason).toBe("invalid-config")
+  })
+
+  it("marks a draft ready for review; a lost answer is retryable; GraphQL's refusal is 422", async () => {
+    await startGitHub()
+    await branchWithCommit("t1")
+    const opened = await run(
+      Pulls.createPull("o", "r", { head: "t1", base: "main", title: "T1", body: "", draft: true })
+    )
+    expect(opened.draft).toBe(true)
+    await run(Pulls.markReady("o", "r", opened.node_id))
+    expect((await run(Pulls.getPull("o", "r", opened.number))).draft).toBe(false)
+    await run(Pulls.markReady("o", "r", opened.node_id))
+    github!.lose = true
+    expect((await failure(Pulls.markReady("o", "r", opened.node_id))).details).toMatchObject({
+      status: 502,
+      retryable: true
+    })
+    const unknown = await failure(Pulls.markReady("o", "r", "PR_404"))
+    expect(unknown.details).toMatchObject({ status: 422, graphql: true, retryable: false })
+    github!.graphqlAnswer = { data: null }
+    expect((await failure(Pulls.markReady("o", "r", opened.node_id))).details).toMatchObject({ status: 422 })
+    expect((await failure(Pulls.markReady("o", "r", "not a node id"))).reason).toBe("invalid-config")
+    expect(github!.fixture.requests.filter((request) => request.url === "/graphql").length).toBe(6)
   })
 
   it("lists commits, and submits a comment review that a lost answer finds by its marker", async () => {

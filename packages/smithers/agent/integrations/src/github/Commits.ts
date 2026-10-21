@@ -237,6 +237,51 @@ export const createOnBranch = (
   }).pipe(Effect.withSpan("GitHub.Commits.createOnBranch", { attributes: spanAttributes(owner, repo) }))
 
 /**
+ * What {@link mergeInto} did: made merge commit `sha` on the branch, or found
+ * the branch already held `head` (`upToDate`).
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type MergedInto =
+  | { readonly kind: "merged"; readonly sha: string }
+  | { readonly kind: "upToDate" }
+
+const MergeIntoAnswer = Schema.NullOr(Schema.Struct({ sha: Schema.String }))
+
+/**
+ * Merges `head` (a branch or a commit SHA) into branch `base`, as the token's
+ * account: `POST /repos/{owner}/{repo}/merges`. A stacked branch takes in what
+ * the branch below it merged this way, never by a rebase, so nothing is
+ * forced and a person's pushed commit survives.
+ *
+ * Answers `merged` with the merge commit, or `upToDate` when `base` already
+ * holds `head` (GitHub's 204). Merging again what was merged is `upToDate`,
+ * so a lost answer fails `retryable`. GitHub answers 409 for a conflict and
+ * 404 when `base` or `head` doesn't exist: neither retryable.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const mergeInto = (
+  owner: string,
+  repo: string,
+  input: { readonly base: string; readonly head: string; readonly commitMessage?: string | undefined }
+): Effect.Effect<MergedInto, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const base = yield* requireBranch(input.base)
+    const head = typeof input.head === "string" && SHA.test(input.head) ? input.head : yield* requireBranch(input.head)
+    const answer = yield* client.request("POST", `/repos/${repository}/merges`, {
+      base,
+      head,
+      ...(input.commitMessage === undefined ? {} : { commit_message: input.commitMessage })
+    }, { schema: MergeIntoAnswer, retryUnsafeWrites: true })
+    return answer === null ? { kind: "upToDate" } as const : { kind: "merged", sha: answer.sha } as const
+  }).pipe(Effect.withSpan("GitHub.Commits.mergeInto", { attributes: spanAttributes(owner, repo) }))
+
+/**
  * Commit `sha`'s tree, parents and message:
  * `GET /repos/{owner}/{repo}/git/commits/{sha}`.
  *
