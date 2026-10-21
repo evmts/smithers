@@ -3,9 +3,93 @@ title: Version and migrate device data across deploys
 status: in-progress
 area: sdk
 owner: Device migration designer and builder assigned by lead
-updated: 2026-10-21 00:06 PDT
-links: [local-first-migrations.md, ../decisions/0021-local-first-migrations.md, local-first.md, durable-browser-engine.md, plan-identity-across-deploys.md, device-data-recovery.md, land-and-deploy-mvp.md, ../rulings.md]
+updated: 2026-10-21 01:54 PDT
+links: [device-ownership-and-queued-authority.md, local-first-migrations.md, ../decisions/0021-local-first-migrations.md, local-first.md, durable-browser-engine.md, plan-identity-across-deploys.md, device-data-recovery.md, land-and-deploy-mvp.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 01:54 PDT
+
+**What:** Version and migrate device data across deployments.
+
+**Why:** Preserve drafts, messages and queued writes.
+
+**Current state:** Slice 1 landed in c6940ac5 at 01:49 after the exact combined-tree upgrade test passed. Production deploy remains running. Slice 2 still needs old-tab epoch coordination, minimum server epoch, retained export rows and the next real-build fixture. Unsafe ownership activation remains excluded.
+
+**Next step:** Obtain production smoke evidence, then implement slice 2 and the safe ownership migration separately.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies, session 6253ecf2, 23:53–01:53 PDT; current rulings and queue answers through 01:19 PDT; shared briefs and designs, decisions, proposals, TODOs and rules. Completion and test receipts are reported evidence; this tracker validates only the site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 01:05 PDT
+
+**What:** Version and migrate retained device data and outbox writes.
+
+**Why:** Deploys must preserve drafts, conversations and pending writes.
+
+**Current state:** At 01:00 the lead confirms the migration builder finished and is standing by. Landing waits on the new lander’s upgrade test against the combined tree, which excludes device identity. Earlier proof does not validate that exact tree; production receipt remains absent.
+
+**Next step:** Complete exact-tree upgrade proof, landing and production smoke checks. Keep old-tab coordination and excluded ownership repair separate.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 01:04 PDT; current rulings, queue answers, shared briefs/designs, decisions, proposals, TODOs and rules. Product checks are lead-reported, not executed by this tracker. Execution owners retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:53 PDT
+
+**What:** Preserve device stores and pending writes across deployment.
+
+**Why:** Deploying must not erase conversations, drafts or offline writes.
+
+**Current state:** At 00:48 PDT the lead reports that the deployed-build upgrade test caught a new device-identity check, added at 00:44, classifying every upgrading device as another owner and wiping its data. The check is excluded from tonight’s landing. Earlier migration proofs do not validate the final combined snapshot. No final push or production upgrade receipt is reported.
+
+**Next step:** The lander reruns the old-production-build upgrade test on the final combined result before pushing. Track the excluded ownership fix separately in device-ownership-and-queued-authority.md; preserve queued writes and drafts.
+
+**Open questions for Will:** None; implementation and regression proof belong to the owners.
+
+Evidence: script-filtered user-typed messages and lead text replies, session 6253ecf2, 22:53–00:53 PDT; rulings and queue answers through 00:17:42 PDT; shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Automated notifications and tool blocks excluded. Product receipts are lead-reported; this tracker validates the site build only. Execution ownership and prior history retained.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 00:34 PDT
+
+**What:** Preserve device stores and pending writes through deployment.
+
+**Why:** Deploys must preserve conversations, drafts and offline work.
+
+**Current state:** The 00:31 lead recap confirms device-data migration proofs are complete and handed to the lander. Combined 4c/4d landing is still in progress; no production upgrade receipt exists. Will’s earlier deployed-build upgrade recording approval remains valid.
+
+**Next step:** Collect combined landing and deployment receipts and production upgrade smoke proof; keep old-tab coordination as its separate remaining slice.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 00:33 PDT; current rulings and queue answers through 00:17:42 PDT, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are lead-reported receipts; this tracker runs the maintainer-site build. Execution owners and all prior history retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:14 PDT
+
+**What:** Preserve device data and pending writes across deploys.
+
+**Why:** Deploys must not lose messages, drafts or queued work.
+
+**Current state:** The deployed-build upgrade proof and Will’s recording approval remain valid. At 00:10 the lead says 4c cannot land independently without weakening its tests and combines it with 4d. No new landing or deployment receipt. Old-tab coordination remains a slice-2 gap.
+
+**Next step:** Land and validate the combined snapshot, deploy and smoke-test; retain exactly-once/in-order question and draft-reload proof.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user text and lead replies through 00:13 PDT; queue answers through 00:10 PDT, current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are reported receipts; tracker validation is the site build. Execution ownership retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 00:06 PDT
 

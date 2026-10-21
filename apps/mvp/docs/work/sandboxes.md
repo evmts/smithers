@@ -3,9 +3,26 @@ title: Branch sandboxes (feature 5)
 status: in-progress
 area: infra
 owner: agent-in-the-sandbox builder (from 13:43:30 on 2026-10-20) keeps a sandbox awake while something runs; the per-branch `SandboxObject` and container shipped with the branch slice (13:42:00). Until 13:46: unassigned; from 13:21:12 on 2026-10-20 it waits for the [branch terminal](branch-terminal.md) slice. Until 13:21: Panel S (Opus lead, Sol)
-updated: 2026-10-20
+updated: 2026-10-21 09:24 PDT
 links: [branch-terminal.md, branch-sharing.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../todo.md, sandbox-budgets.md, ../decisions/0007-roles-and-tags.md, ../decisions/0002-local-first.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, connect-agents-sandboxes-forge.md, model-endpoint.md, token-spend-alerts.md, secrets-proxy.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 09:24 PDT
+
+**What:** Run a durable sandbox per branch, shared by the terminal and agent tools.
+
+**Why:** Will explicitly prioritizes production sandboxes and requires a four-model investigation followed by implementation.
+
+**Current state:** Local terminal, keep-awake, 15-minute idle sleep and working-copy restore reportedly passed on 10-20. Production does not work: the image has not been published or verified, and the lead reports remote-flow MigrationError. Sol, Astra, Opus and Fable are investigating; no merged report or production success receipt exists. Cloudflare is preferred; Freestyle is the fallback. Secrets remain switched off.
+
+**Next step:** Merge the four reports, compare the Cloudflare Sandbox SDK with the existing provider, and have Opus implement the agreed repair. Prove terminal commands, agent tools in the same branch box, no sleep during work, idle sleep and restored work after wake against production, with a GIF. Coordinate the separate remote-host repair; do not assume its fix alone publishes an image.
+
+**Open questions for Will:** None. The provider preference and investigation/implementation direction are explicit; engineering validation remains with the builders.
+
+Evidence: session 6253ecf2, script-filtered user text and lead replies in the last approximately two hours through 09:23:49 PDT; automated notifications, compacted summaries and tool results excluded. Rulings (including ARCH-14), Will’s queue answers, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules were reconciled. Product results are lead-reported; this tracker verifies the site build only. Existing feature execution ownership is retained.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 16:35 PDT
 

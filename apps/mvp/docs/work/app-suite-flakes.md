@@ -1,11 +1,71 @@
 ---
 title: App suite flakes left after the round 4 burn-down
-status: todo
+status: in-progress
 area: app
-owner: unassigned (found by the green-bar agent, 2026-10-20)
-updated: 2026-10-20
+owner: Codex Sol simple-fixes builder; Opus conflict-test builder for notification failure
+updated: 2026-10-21 04:44 PDT
 links: [effect-tanstack-db-and-effect-electric.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 04:44 PDT
+
+**What:** Repair the app-suite failures left after round 4.
+
+**Why:** A missing notification on another device prevents confirming needs-you delivery.
+
+**Current state:** At 04:24 PDT the lead reports passing recordings for the bell name, header locator and late-joiner fixes, in a five-commit batch with the lander. The previous unassigned owner is stale. The separate status test still fails: one device receives no notifications; data takes about 38 seconds to load. The lead routed this finding to the active Opus conflict-test builder. A common cause with the four conflict failures is suspected, not established. No completed landing receipt appears through 04:43.
+
+**Next step:** Retain targeted recordings and the landing receipt. Have the conflict-test builder establish and fix the notification root cause, retain the cross-device regression, and verify production delivery.
+
+**Open questions for Will:** None new.
+
+Evidence: script-extracted user-typed text and lead text replies from session 6253ecf2, approximately 02:43–04:43 PDT; no user-typed messages in that window. Current rulings and queue answers take precedence over shared briefs, panel designs, decisions, proposals, TODOs and rules. Execution ownership is recorded above; Codex curates documentation only. Product checks are lead-reported; this tracker runs only the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 04:24 PDT
+
+**Current state:** At 04:24 PDT the lead reports passing recordings for the bell name, header locator and late-joiner fixes; the five-commit batch is being landed. The separate status test still fails: one device receives no notifications, and notification data takes about 38 seconds to load. Root cause is unknown.
+
+**Next step:** Retain the targeted recordings and landing receipt; coordinate the unresolved notification failure with the conflict-test builder.
+
+**Open questions for Will:** None new. Existing unresolved questions remain in the retained history.
+
+Evidence: lead text reply at 04:24 PDT, extracted by script from the latest approximately two session hours; no human-typed message in that window. Automated notifications and tool content excluded. Current rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; the tracker runs only the maintainer-site build. Execution owner retained; documentation curator: Codex.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 04:15 PDT
+
+**What:** Repair the bell, header and late-joiner journeys while retaining separate recovery failures.
+
+**Why:** Targeted successes must not hide a failing notification or recovery path.
+
+**Current state:** The small-fixes report records unpushed commits 2955fe61d169 (bell assertion), b193895188a2 (header) and dc0b473cdeed (real-API pagination setup). Both model-free navigation journeys pass; the late joiner runs unskipped and passes with recordings and GIF checks. Status e2e still fails twice before the bell assertion because its notification toast never arrives. Separate crash/recovery and conflict investigations remain open.
+
+**Next step:** Land the validated fixes, investigate the missing toast and retain passing real-dependency journeys for the remaining recovery failures.
+
+**Open questions for Will:** None new.
+
+Evidence: script-filtered human text and assistant text replies from the latest approximately two hours of session 6253ecf2 through 04:13 PDT; automated notifications, tool results and teammate messages excluded. Current rulings and queue answers override historical briefs, panel designs, decisions, proposals, TODOs and rules. Builder reports in scratchpad/final supply validation receipts; the tracker independently runs only the maintainer-site build. Execution owners and earlier history retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 03:04 PDT
+
+**Current state:** At 02:56 PDT the lead started the Codex Sol small-fixes job for the bell accessible count, scoped repository-header locator and real-API long-conversation setup for the skipped late-joiner test. This does not resolve the separate crash/recovery flakes retained below.
+
+**Next step:** Validate each repaired end-to-end test with real dependencies; preserve and separately investigate the remaining crash and takeover failures.
+
+**Open questions for Will:** None new; existing unresolved questions remain in the retained history.
+
+Evidence: lead text replies through 03:03 PDT, extracted by script from the latest approximately two session hours; automated notifications and tool blocks excluded. Current rulings and queue answers take precedence over briefs and designs. Execution ownership retained; documentation reconciled by Codex tracker curator. Product receipts are reported, not independently rerun here.
+
+## Earlier tracker history (retained)
+
 
 ## Landing in round 4
 

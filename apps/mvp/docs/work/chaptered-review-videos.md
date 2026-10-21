@@ -3,9 +3,26 @@ title: Chaptered feature videos and review player
 status: in-progress
 area: process
 owner: recording builder and queue curator
-updated: 2026-10-20
+updated: 2026-10-21 00:34 PDT
 links: [../rulings.md, will-decision-queue.md, e2e-suite-and-gifs.md, repository-declared-home.md, branch-terminal.md, flow-authoring.md, branch-workspace-clarity.md, effect-repository-home.md, todos-draft-commit-drop.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 00:34 PDT
+
+**What:** Produce readable, passing chaptered feature walkthroughs.
+
+**Why:** Will reviews product quality using verified recordings.
+
+**Current state:** At 00:32 the lead reports 82 passing chaptered walkthroughs, including all 17 local-first and all four agent walkthroughs. Notifications now has a working GIF. Status, navigate and late-joiner test corrections remain; issue-triage recording still needs the test account to have Maintain access.
+
+**Next step:** Finish remaining recordings after their product/test fixes, retain failed evidence, and queue only quality-gated media.
+
+**Open questions for Will:** Raise codeplanesmithers to Maintain on roninjin10/smithers-github-tests for the issue-triage recording; no completion receipt yet.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 00:33 PDT; current rulings and queue answers through 00:17:42 PDT, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are lead-reported receipts; this tracker runs the maintainer-site build. Execution owners and all prior history retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-20, 22:24 PDT
 

@@ -3,9 +3,73 @@ title: Agent status (working, needs you, waiting, failed, done)
 status: in-progress
 area: design
 owner: agent-status feature owner; replacement video ready for review
-updated: 2026-10-20
+updated: 2026-10-21 04:24 PDT
 links: [cerebras-rate-limits.md, dev-stack-hygiene.md, ../decisions/0015-agent-status.md, ../design/agent-status/agent-status.html, notifications-and-live-work.md, flow-debugging.md, chat-message-controls.md, durable-answering.md, local-first.md, agent-ui-rendering.md, observability.md, e2e-suite-and-gifs.md, ../decisions/0009-notifications-and-live-work.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../features/agent.md, ../features/chat.md, ../rules.md, fable-review-2-fixes.md, roles-and-labels.md, model-step.md, code-reviews.md, land-to-main.md, cerebras-rate-limits.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 04:24 PDT
+
+**Current state:** At 04:24 PDT the lead explicitly cannot confirm needs-you notifications work in production: one device receives none in the failing status test. The roughly 38-second notification-data load is an observation, not an established root cause. The conflict-test builder now has the finding.
+
+**Next step:** Fix and retain the failing cross-device status regression, then obtain real-dependency and production delivery receipts.
+
+**Open questions for Will:** None new. Existing unresolved questions remain in the retained history.
+
+Evidence: lead text reply at 04:24 PDT, extracted by script from the latest approximately two session hours; no human-typed message in that window. Automated notifications and tool content excluded. Current rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; the tracker runs only the maintainer-site build. Execution owner retained; documentation curator: Codex.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 01:24 PDT
+
+**What:** Deliver working and needs-you status across devices.
+
+**Why:** People must receive waits they can answer.
+
+**Current state:** Will approved the replacement needs-you recording at 01:17:49 PDT. This closes that review request, but the separate isolated sync investigation remains unresolved in the lead’s latest evidence, after its capacity-related restart at 01:04.
+
+**Next step:** Finish the reproduction and regression, and tell the lander whether reliable delivery needs a product fix.
+
+**Open questions for Will:** None; approval of a recording does not resolve the separate failing test.
+
+Evidence: script-filtered human messages and lead text replies from session 6253ecf2, approximately 23:24–01:24 PDT; current rulings and queue answers through 01:19 PDT; shared briefs/designs, decisions, proposals, TODOs and rules. Product results are reported receipts. Execution owners retained; Codex curates tracker documentation only. Later rulings supersede earlier history.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 01:14 PDT
+
+**What:** Deliver working and needs-you status reliably across devices.
+
+**Why:** A waiting agent must reach the person who can answer.
+
+**Current state:** At 01:04 the lead reports the isolated Codex status-sync investigation stopped with model-at-capacity and was relaunched from its workspace. No passing fix is reported through 01:13. The earlier bell-label mismatch remains distinct from a possible delivery failure.
+
+**Next step:** Complete the isolated reproduction, distinguish locator drift from sync failure, retain the regression and tell the lander whether deployment needs the fix.
+
+**Open questions for Will:** None; tests establish correctness before quality review.
+
+Evidence: script-filtered user text and lead replies, session 6253ecf2, 23:14–01:14 PDT; rulings, queue answers, decisions, proposals, TODOs, rules and shared briefs/designs. Product receipts are lead-reported; tracker validation is the maintainer-site build. Prior history and execution owners retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:34 PDT
+
+**What:** Show reliable working and needs-you status across devices.
+
+**Why:** A waiting agent must reach the person who can answer.
+
+**Current state:** At 00:32 the lead reports one device no longer receives notifications in the status test, although that step passed at 23:31. Codex Sol is reproducing it on the mini in isolation and comparing the changed lanes. The later 00:32 recording report also names a bell-label locator mismatch; neither report establishes the root cause or a passing fix.
+
+**Next step:** Separate delivery failure from locator drift; obtain the isolated regression and fix receipt, then tell the lander whether needs-you requires it before deployment.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 00:33 PDT; current rulings and queue answers through 00:17:42 PDT, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are lead-reported receipts; this tracker runs the maintainer-site build. Execution owners and all prior history retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 18:26 PDT
 

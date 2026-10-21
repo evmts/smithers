@@ -3,9 +3,26 @@ title: Smithers Playground (try every API in every package)
 status: todo
 area: sdk
 owner: paused at 14:24 on 2026-10-20 to free an agent slot; production comes first. Design accepted in part (choices 1 and 2). Until 14:24: playground agent (Claude Opus), started 13:32:34, building the flows playground's host and server; stopped by the usage limit at 14:17 and resumed at 14:19. Until 14:30: playground agent (Claude Opus), started by the lead at 13:32:34 on 2026-10-20; design relayed to Will at 13:54; building the flows playground's host and server since 13:52; no e2e by 14:08. Until 13:54: playground agent (Claude Opus), started by the lead at 13:32:34 on 2026-10-20; design mock and design doc on disk 13:49 to 13:51; unreported by 13:52. Until 13:49: playground agent; `apps/playground/catalog/extract.ts` on disk from 13:34
-updated: 2026-10-20
+updated: 2026-10-21 00:14 PDT
 links: [will-decision-queue.md, flow-authoring.md, flow-debugging.md, library-catalog.md, model-step.md, model-endpoint.md, effect-tanstack-db-and-effect-electric.md, agent-ui-rendering.md, e2e-suite-and-gifs.md, maintainer-site.md, decisions-for-will.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, ../../../../docs/libraries.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 00:14 PDT
+
+**What:** Provide API playgrounds connected by a shelf of saved typed artifacts.
+
+**Why:** Let a person author, run and inspect the public Smithers APIs.
+
+**Current state:** Will approved the shelf at 00:09:55 and all three designs at 00:10 (flows, catalog/API, agent/search). At 00:10 the lead confirms it remains paused behind production. These are design approvals, not a completed implementation.
+
+**Next step:** Resume after production priority permits; prove flows author/run/inspect and recovery, then the catalog and cross-playground artifact handoff.
+
+**Open questions for Will:** None for the shelf or these three designs; prior questions below are historical.
+
+Evidence: script-filtered user text and lead replies through 00:13 PDT; queue answers through 00:10 PDT, current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are reported receipts; tracker validation is the site build. Execution ownership retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
 
 ## What
 

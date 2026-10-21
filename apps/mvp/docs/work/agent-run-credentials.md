@@ -1,11 +1,27 @@
 ---
 title: Agent-run credentials and server-enforced person-only actions
-status: in-progress
+status: done
 area: app
 owner: slice 0 credential builder, started by lead at 17:56 PDT
-updated: 2026-10-20 22:35 PDT
-links: [auth.md, todos-and-stack.md, pr-review-and-merge.md, ../rulings.md]
+updated: 2026-10-21 00:53 PDT
+links: [device-ownership-and-queued-authority.md, auth.md, todos-and-stack.md, pr-review-and-merge.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 00:53 PDT
+
+**What:** Enforce run-bound credentials and server-side person-only actions.
+
+**Why:** An agent must never answer or approve as the person.
+
+**Current state:** The 00:25 lead update and builder’s retained 00:30 record establish the credential half works end to end: agent credentials are refused for the person’s answer and the person’s press succeeds. Dev-reload forgery, parentless child-run and sandbox-answer refusals were fixed; Needs you questions return. The earlier top-of-note suspicion is superseded. Confirmation receipts remain a separate unfinished slice.
+
+**Next step:** Land the proven credential files in the combined round and verify production after deployment. Track legacy ownership/queued authority remediation separately; finish confirmation dialogs as follow-up.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies, session 6253ecf2, 22:53–00:53 PDT; rulings and queue answers through 00:17:42 PDT; shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Automated notifications and tool blocks excluded. Product receipts are lead-reported; this tracker validates the site build only. Execution ownership and prior history retained.
+
+## Earlier tracker history (retained)
 
 ## Tracker reconciliation — 2026-10-20, 22:35 PDT
 
@@ -24,16 +40,15 @@ Evidence: script-filtered human text and lead text replies from session 6253ecf2
 ## Earlier tracker history (retained)
 
 
-## Current specification — 2026-10-20, 22:30 PDT
+## Current specification — 2026-10-21, 00:30 PDT
 
 **What:** Run credentials (decision 0017 slice 0) are built: server-minted, run-bound bearer tokens whose `act` the server sets from the registry's `acts` mark; one person-only list derived from the registry (`worker/Actor.ts`); authority narrowed at each nested call (`Flow.intersectCeilings`, `Flow.ceilingWithin` in `@smthrs/flow`); the engine sends every non-person run's requests with its credential and no cookie; the git writes route reads `via` from the request, never the body. Docs: [sign-in.md](../features/sign-in.md#run-credentials).
 
-**Current state:** Unit and integration suites pass (worker credential, person-only, runs, answers, git writes, stack, secrets, notifications, shares, terminals, sandbox calls, sign-in, personal flows, chat, model endpoint; the engine's credential client; flow ceilings). Landing goes through the round 4 lander.
+**Current state:** Done for the credential half of slice 0. `e2e/run-credentials.spec.ts` passes on the mini (GIF `~/Desktop/smithers-mvp/gifs/run-credentials-…gif`); the worker, engine and flow suites pass; `pnpm docs:sync` and `docs:check` pass. Fixed during the burn-down: a credential no longer reads as forged after the dev server reloads (dev credentials sign with `SESSION_SECRET`), the engine asks again once when a credential comes back `401`, and a run with no recorded parent nests in the run it is named after (`requesterOf`), so the agent's question reports for its answer.
 
 **Follow-ups (status: todo):**
-- Run `e2e/run-credentials.spec.ts` and its GIF once the test pause lifts; then the full app suite with coverage.
-- `pnpm docs:sync` and `pnpm docs:check` fail here with "Cannot load flow docs-sync: Operation not permitted" (environment); run them where the docs-sync flow loads, for `@smthrs/flow`'s reference page.
-- Not built: confirmation receipts and the host's confirm dialog for protected acts (0017 slice 0's second half); a remote host minting its own runs' credentials; a plugin installation as a credential's subject (slice 2).
+- Confirmation receipts and the host's confirm dialog for protected acts (0017 slice 0's second half).
+- A remote host minting its own runs' credentials; a plugin installation as a credential's subject (slice 2).
 
 **Open questions for Will:** None.
 

@@ -1,11 +1,45 @@
 ---
 title: Repo view extras (branch picker, branch count, raw, copy file, clone menu)
-status: in-progress
+status: done
 area: app
 owner: repo browsing builder (lead's brief, 2026-10-20 18:22); the first-arrival page, clone in the feed, reclaim mark, Markdown and HTML views, generated files
-updated: 2026-10-20
+updated: 2026-10-21 01:05 PDT
 links: [repo-clone-reclaim.md, generated-file-provenance.md, review-round-4.md, old-app-feature-gaps.md, repo-clone-and-view.md, repo-open-states.md, repo-view-package-split.md, navigate-flow.md, pull-request-list-and-tabs.md, sandboxes.md, command-palette.md, land-to-main.md, e2e-suite-and-gifs.md, ../decisions/0006-repo-clone-and-view.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../features/repo.md, slash-commands.md, fable-review-2-fixes.md, flows-and-agent.md, agent-jev.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 01:05 PDT
+
+**What:** Finish clone and repository browsing controls.
+
+**Why:** Clone progress and header actions must be reliable.
+
+**Current state:** The 00:58 lead completion supersedes the earlier unresolved defects: 14/14 repository e2e tests pass with GIFs, the header overlap is fixed, and Not cloned came from the test helper. Files are with the lander and verification is queued at 960; deployment remains pending.
+
+**Next step:** Land alongside notification header changes and verify production. Keep clone reclaiming as its own todo.
+
+**Open questions for Will:** Review the queued recordings.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 01:04 PDT; current rulings, queue answers, shared briefs/designs, decisions, proposals, TODOs and rules. Product checks are lead-reported, not executed by this tracker. Execution owners retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:44 PDT
+
+**What:** Make clone progress, Retry and repository arrival state reliable.
+
+**Why:** The repository must report its real state and keep header controls usable.
+
+**Current state:** At 00:32 the lead assigns three remaining bugs to the repository-browsing builder before landing: Retry runs async work in a synchronous callback; a successful clone still says Not cloned; the notification bell overlaps Clone. No passing fix receipt is present through 00:44.
+
+**Next step:** Fix and prove all three user-facing paths, then hand the final files to the combined lander and refresh recordings.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead text replies from session 6253ecf2, approximately 22:44–00:44 PDT; rulings, queue answers through 00:17:42 PDT, current decisions, proposals, TODOs, rules and shared briefs/designs. Automated notifications and teammate messages are excluded as human evidence. Product checks are lead-reported receipts; this tracker validates the site build only. Existing execution owners and all history are retained.
+
+## Earlier tracker history (retained)
+
 
 ## Built — 2026-10-20, 21:02 PDT
 
@@ -16,9 +50,9 @@ links: [repo-clone-reclaim.md, generated-file-provenance.md, review-round-4.md, 
 - **Tests:** unit and UI tests listed in [repo.md](../features/repo.md#tests); `e2e/repo-browse.spec.ts`.
 - **Generated files, 22:05:** the manifest nearest the file (`.smithers/generated.json` in its folder or one above), so a project's own manifest, such as `docs/generate`'s, marks its files; the manifest's `source`, hashed inputs and `version` read as `docs/generate` writes them.
 
-**Next step (22:05):** run the repo e2e specs and re-record them once the burn-down's test pause lifts; the handover agent owns it.
+**Proof (2026-10-21, 00:56):** the four repository specs pass 14 of 14 on the MacBook against the shared dev server with Code Storage, and their videos and GIFs pass the check; the bell now sits in the header's last slot (with the notifications agent's `BELL_ROUTES`).
 
-**Follow-ups:** reclaiming copies and clearing the mark on a later install ([repo-clone-reclaim.md](repo-clone-reclaim.md), todo); an e2e for the Generated chip, which needs a small public repository that carries a manifest or a header marker.
+**Follow-ups:** reclaiming copies and clearing the mark on a later install ([repo-clone-reclaim.md](repo-clone-reclaim.md), todo); an e2e for the Generated chip, which needs a small public repository that carries a manifest or a header marker; Install's link comes with GitHub's about answer, so a rate-limited GitHub shows the reclaim note without Install; a dev server without `GITHUB_TOKEN` shares 60 GitHub calls an hour, which the about read (eleven calls a repository an hour) can use up.
 
 ## Current specification — 2026-10-20, 18:26 PDT
 

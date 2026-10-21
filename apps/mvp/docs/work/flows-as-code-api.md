@@ -1,11 +1,79 @@
 ---
 title: Effect-native workflows-as-code authoring API
-status: designing
+status: todo
 area: design
 owner: Opus, Fable, Codex Sol and Codex Astra design panel; merger combines, Will reviews
-updated: 2026-10-20 23:55 PDT
+updated: 2026-10-21 01:24 PDT
 links: [../rulings.md, flow-authoring.md, ci-cd-parity.md, vibelang-generated-docs.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 01:24 PDT
+
+**What:** Implement the approved Effect-native workflows-as-code API.
+
+**Why:** FLOW-10 approves the four-model proposal.
+
+**Current state:** Will chose the recommended option at 01:14:46 PDT. PACKAGE.ts stays data, FACTORY.ts declares the repository plugin, targets are durable actions and flow steps are Effects. Implementation has not started in the available evidence.
+
+**Next step:** After deployment, begin the proposal’s first migration phase, then VibeLang docs targets, Tevm Nx removal and CI parity.
+
+**Open questions for Will:** None; the five design choices are approved.
+
+Evidence: script-filtered human messages and lead text replies from session 6253ecf2, approximately 23:24–01:24 PDT; current rulings and queue answers through 01:19 PDT; shared briefs/designs, decisions, proposals, TODOs and rules. Product results are reported receipts. Execution owners retained; Codex curates tracker documentation only. Later rulings supersede earlier history.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 01:05 PDT
+
+**What:** Merge the four-model workflows-as-code design for review.
+
+**Why:** FLOW-9 requires an extensive Effect-native design before implementation.
+
+**Current state:** At 00:56–00:57 the lead reports the merged proposal complete and queued at 994. PACKAGE.ts stays data; FACTORY.ts becomes a plugin; targets become durable actions over sandbox Layers; Node becomes an Effect and flow bodies use Effect.gen. These are proposals, not approved or built behavior.
+
+**Next step:** Will reviews the merged proposal before implementation; retain its disagreement table and verified code claims.
+
+**Open questions for Will:** Flow body model (75%), PACKAGE.ts stays data (85%), FACTORY.ts as plugin (80%), executor consolidation behind benchmarks (70%), and per-step status names (60%).
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 01:04 PDT; current rulings, queue answers, shared briefs/designs, decisions, proposals, TODOs and rules. Product checks are lead-reported, not executed by this tracker. Execution owners retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:34 PDT
+
+**What:** Merge the four independent Effect-native workflows-as-code designs.
+
+**Why:** FLOW-9 requires a substantial reviewable design before implementation.
+
+**Current state:** At 00:28 the lead confirms all four designs finished and a merger is combining them, choosing each point explicitly and verifying code claims. Folding build execution into the durable engine and sharing its cache are proposals; no merged-design completion or Will approval is reported.
+
+**Next step:** Finish the synthesis, disagreements table and confidence scores; queue the complete design for Will before building.
+
+**Open questions for Will:** Review the merged design when ready.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 00:33 PDT; current rulings and queue answers through 00:17:42 PDT, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are lead-reported receipts; this tracker runs the maintainer-site build. Execution owners and all prior history retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:24 PDT
+
+**What:** Design Effect-native workflows and PACKAGE.ts with explicit file dependencies and hermetic execution.
+
+**Why:** FLOW-9 requires a substantial four-model design before implementation.
+
+**Current state:** At 00:21 the lead reports Fable, Sol and Astra finished, with Opus nearly done. All four draft files now exist; file presence alone does not establish the final Opus handoff or synthesis. Panelists differ on making Node Effectable and replacing the build scheduler/cache; these remain proposals.
+
+**Next step:** Finish and merge all four designs, explain disagreements and confidence scores, and queue the complete design for Will before building.
+
+**Open questions for Will:** Review the merged API and defaults when ready.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 00:23 PDT; queue answers through 00:17 PDT; rulings, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Product receipts are reported evidence, not new tracker-run tests. Execution owners retained; documentation reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-20 23:55 PDT
 

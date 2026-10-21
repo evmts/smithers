@@ -1,11 +1,28 @@
 ---
 title: Sign-in for the new app
-status: done
+status: in-progress
 area: app
 owner: sign-in builder and live GitHub test builder
-updated: 2026-10-20
+updated: 2026-10-21 09:24 PDT
 links: [review-round-4.md, pull-request-list-and-tabs.md, dev-stack-hygiene.md, app-wiring.md, integrations-effect-httpclient.md, integrations-durable-retries.md, ../todo.md, ../decisions/0008-auth.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, roles-and-labels.md, decisions-for-will.md, auth.md, durable-answering.md, code-reviews.md, ../features/sign-in.md, fable-review-2-fixes.md, local-first.md, issues.md, self-hosted-grafana.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 09:24 PDT
+
+**What:** Sign in reliably and revoke GitHub access on sign-out.
+
+**Why:** Identity recovery and sign-out must work on the hosted app as well as in local recordings.
+
+**Current state:** Reopened from done: the 09:22 lead update reports production token revocation broken by remote flows and a local first-device sign-in check failure that leaves Sign in visible until reload. No fixes or production receipts are reported.
+
+**Next step:** Panel the two paths, then have Opus repair and retain regressions: transient initial identity-check failure must recover without reload, and production sign-out must actually revoke the token. Keep earlier passing sign-in receipts as history; do not treat them as proof of these paths.
+
+**Open questions for Will:** None. The provider preference and investigation/implementation direction are explicit; engineering validation remains with the builders.
+
+Evidence: session 6253ecf2, script-filtered user text and lead replies in the last approximately two hours through 09:23:49 PDT; automated notifications, compacted summaries and tool results excluded. Rulings (including ARCH-14), Will’s queue answers, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules were reconciled. Product results are lead-reported; this tracker verifies the site build only. Existing feature execution ownership is retained.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 18:26 PDT
 

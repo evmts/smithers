@@ -3,9 +3,43 @@ title: Decisions for Will
 status: blocked
 area: process
 owner: Will through curated queue; lead routes answered work
-updated: 2026-10-20
+updated: 2026-10-21 01:44 PDT
 links: [will-decision-queue.md, dev-stack-hygiene.md, review-round-4.md, issues.md, site-deployment-test.md, ../decisions/0012-git-end-to-end.md, ../decisions/0013-branch-workspace.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, ../decisions/0015-agent-status.md, repo-view-package-split.md, repo-follow-ups.md, app-wiring.md, sdk-test-reds.md, platform-cloudflare-edge-cache.md, integrations-durable-retries.md, design-questions.md, flows-and-agent.md, host-agnostic-flows.md, durable-answering.md, model-host-effect-boundary.md, repo-clone-and-view.md, infrastructure-as-code.md, code-storage-spend-caps.md, land-and-deploy-mvp.md, mvp-scope-cut.md, legacy-smithers-sh.md, move-effectscript-repos.md, vibelang-0-0-2-publish.md, electric-client-bug-report.md, sign-in.md, token-spend-alerts.md, deep-import-migration.md, import-rules-and-jev-lint.md, observability.md, cerebras-rate-limits.md, clone-token-scope-bug.md, effect-tanstack-db-and-effect-electric.md, local-first.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md, pwa.md, agent-ui-rendering.md, sandboxes.md, sandbox-budgets.md, roles-and-labels.md, pr-review-and-merge.md, web-standard-globals-rule.md, code-reviews.md, flows-root-platform-neutral.md, b1-follow-ups.md, auth.md, slash-commands.md, plan-identity-across-deploys.md, navigate-flow.md, web-page-flow.md, plan-identity-minified-builds.md, agent-repo-navigation.md, maintainer-site.md, fable-review-2-fixes.md, self-host-install.md, old-app-feature-gaps.md, land-to-main.md, pull-request-list-and-tabs.md, issue-triage.md, conversations-and-history.md, branch-terminal.md, branch-sharing.md, flow-authoring.md, flow-debugging.md, repository-declared-home.md, agent-status.md, github-source-of-truth.md, no-github-actions.md, second-build-machine.md, agent-evals.md, secrets-proxy.md, notifications-and-live-work.md, todos-and-stack.md, smithers-playground.md, ../decisions/0016-todos-and-the-stack.md, chat-message-controls.md, docs-truth-pass.md, prompt-flows-are-code-flows.md, self-hosted-grafana.md, disk-space.md, ../rulings.md, everything-is-a-plugin.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 01:44 PDT
+
+**What:** Track the remaining review-policy decision.
+
+**Why:** Will’s earlier request to review every file remains in force until he changes it.
+
+**Current state:** The 01:37–01:43 lead updates supersede the earlier 70% proposal: confidence is 55%, queue priority 945. Options include agent-first flagged-only review, a reviewed summary for every slice with full code one key away, and keeping full slices. No answer is present in the available queue receipts.
+
+**Next step:** Keep approved designs and the completed App install out of pending decisions; route this question through the existing queue.
+
+**Open questions for Will:** Which code-review presentation should replace or retain the current full-slice review?
+
+Evidence: script-filtered user-typed text and lead replies, session 6253ecf2, 23:43–01:43 PDT; rulings, queue answers through 01:19 PDT, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Product receipts are reported evidence; this tracker runs only the site build. Existing execution ownership and status retained; documentation reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 01:33 PDT
+
+**What:** Keep genuine open choices visible without blocking work already authorized.
+
+**Why:** Recent rulings settle questions still listed in the older tracker specification.
+
+**Current state:** FLOW-10 approves the workflows-as-code panel; PLUGIN-6 approves the review queue with heavy evaluation. The VibeLang App installation and four feature recordings are answered. Spend-alert channels are built, with email awaiting account setup; the Playground shelf was approved but remains paused. These supersede the earlier pending-question list. No final combined-round push or deployment receipt appears through 01:33 PDT.
+
+**Next step:** Route approved work to its existing owners after deployment. Keep operational setup and engineering investigations in their own notes; do not ask Will to prove features work.
+
+**Open questions for Will:** Should routine code review move to Astra then Fable, with only flagged/security/data/public-API slices shown to Will? The lead asks at 01:22, confidence 70%; no subsequent queue answer settles it.
+
+Evidence: script-extracted user text and lead replies, 23:33–01:33 PDT; rulings and queue answers through 01:19 PDT; shared briefs and panel designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported. Existing execution owners and statuses retained; Codex tracker curator updates documentation only. Later rulings supersede retained history.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 18:26 PDT
 

@@ -3,9 +3,26 @@ title: Docs truth pass (every doc, AGENTS.md, .specs and memory match Will's rul
 status: in-progress
 area: process
 owner: lead and docs/memory owners
-updated: 2026-10-20
+updated: 2026-10-21 09:11 PDT
 links: [ops-vault-history-repair.md, will-decision-queue.md, decisions-for-will.md, self-host-install.md, todos-and-stack.md, no-github-actions.md, prompt-flows-are-code-flows.md, mvp-scope-cut.md, web-first-desktop-later.md, ../rules.md, ../todo.md, ../../../../AGENTS.md, ../../../../.specs/product/mvp.md, ../decisions/0010-web-first-desktop-later.md, ../decisions/0016-todos-and-the-stack.md, ../rulings.md, everything-is-a-plugin.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 09:11 PDT
+
+**What:** Reconcile current instructions and documentation with Will’s rulings; retain older decisions as history.
+
+**Why:** Stale open questions and rules can send builders back to decisions Will already settled.
+
+**Current state:** This audit confirms remaining contradictions in the requested source documents. Rulings §18 still lists first deploy, private hosted infrastructure and tracker authority as open despite the later HOST/SCOPE and PROC-9 rulings. todo.md still calls sign-in not deployed and leaves callback setup as a first-deploy prerequisite; the retained deployment workstream already records round 4 deployed. rules.md still describes a seven-day dependency rule despite SDK-15’s one-day rule, and bans commit statuses despite GH-10’s write-only smithers/<flow> exception. GH-9 retains npm/JSR provenance publishing on GitHub. These are documentation reconciliation gaps, not fresh questions for Will. This pass changes tracker notes only.
+
+**Next step:** The owning docs lane reconciles §18, todo.md and rules.md with the specific later rulings, preserving historical text as superseded. Coordinate enforceable rule changes with import-rules-and-jev-lint.md; retain separate validation requirements for production callbacks and webhook delivery.
+
+**Open questions for Will:** None newly required by these contradictions.
+
+Evidence: current rulings (SDK-15, GH-9/GH-10, PROC-9 and PLUGIN-5), queue answers, requested source documents and script-filtered transcript window. Generated summaries, tool results and automated messages are excluded from human evidence. No product tests or version-control operations run; Codex is the documentation curator, and execution ownership is retained.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 17:34 PDT
 

@@ -1,11 +1,187 @@
 ---
 title: Free disk on the MacBook for the agent fleet
-status: done
+status: in-progress
 area: infra
 owner: cleanup coordinator; lead owns deferred maintenance
-updated: 2026-10-20
+updated: 2026-10-21 04:44 PDT
 links: [dev-stack-hygiene.md, flows-root-platform-neutral.md, cloudflare-flow-host.md, integrations-effect-httpclient.md, flows-and-agent.md, agent-ui-rendering.md, sdk-test-reds.md, b1-follow-ups.md, second-build-machine.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 04:44 PDT
+
+**What:** Keep enough disk space for active builders.
+
+**Why:** Workspace installs repeatedly consume recovered space.
+
+**Current state:** At 04:43 PDT the lead reports 16 GB free, after the 04:33 report of 18 GB. The already-landed engine-readability, flow-readability and deploy workspaces were retired at 04:28. The old lander checkout still had a running process and was preserved; the alert threshold remains 9 GB. These are reported snapshots, not new measurements.
+
+**Next step:** Keep the alert active, reclaim only verified idle outputs and move heavy work to Latitude. Preserve the busy lander checkout until its process finishes.
+
+**Open questions for Will:** None new.
+
+Evidence: script-extracted user-typed text and lead text replies from session 6253ecf2, approximately 02:43–04:43 PDT; no user-typed messages in that window. Current rulings and queue answers take precedence over shared briefs, panel designs, decisions, proposals, TODOs and rules. Execution ownership is recorded above; Codex curates documentation only. Product checks are lead-reported; this tracker runs only the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 04:34 PDT
+
+**What:** Keep sufficient MacBook disk space for active work.
+
+**Why:** Concurrent workspace installs keep consuming recovered space.
+
+**Current state:** At 04:28 PDT the lead retired the already-landed engine-readability, flow-readability and round-4 deploy workspaces after free space fell below 10 GB. This recovered space to 16 GB; at 04:33 it reports 18 GB free. The old lander checkout remains in use by a long-running process and was preserved. The alert was reset to 9 GB. These are lead-reported point-in-time figures, not measurements by this tracker.
+
+**Next step:** Keep the 9 GB alert active, preserve the busy lander checkout until its process finishes, and reclaim only verified idle outputs. Continue moving heavy work to Latitude.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead text replies in session 6253ecf2, 02:33–04:33 PDT, especially 04:28 and 04:33. No user-typed message appears in this window. Rulings and queue answers take precedence over older briefs and designs. Execution ownership retained; Codex curates this note. Product receipts are lead-reported; tracker validation is the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 04:24 PDT
+
+**Current state:** At 04:24 PDT the lead reports 11 GB free, down from the earlier 14 GB. This is a reported point-in-time figure. Monitoring and cleanup remain in-progress.
+
+**Next step:** Keep the below-10-GB alert active; reclaim only verified idle outputs and dependencies, preserving unfinished work and moving heavy work to Latitude.
+
+**Open questions for Will:** None new. Existing unresolved questions remain in the retained history.
+
+Evidence: lead text reply at 04:24 PDT, extracted by script from the latest approximately two session hours; no human-typed message in that window. Automated notifications and tool content excluded. Current rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; the tracker runs only the maintainer-site build. Execution owner retained; documentation curator: Codex.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 04:04 PDT
+
+**What:** Keep enough MacBook disk space for active work.
+
+**Why:** Concurrent installs and checks continue consuming recovered capacity.
+
+**Current state:** At 04:03 PDT the lead reports 14 GB free, after 16 GB at 03:53 and the earlier recovery to 18 GB. These are reported point-in-time figures, not measurements by this tracker. Monitoring remains in-progress.
+
+**Next step:** Keep the below-10-GB alert active. Reclaim only verified idle dependencies and test outputs, preserve active work and move heavy work to Latitude.
+
+**Open questions for Will:** None new.
+
+Evidence: script-filtered user-typed text and lead replies in session 6253ecf2, 02:03–04:03 PDT; automated notifications, teammate messages and tools excluded. No new user-typed direction appears in this window. Current rulings and queue answers through 01:19 PDT take precedence over shared briefs, panel designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker runs only the site build. Execution ownership retained; documentation reconciled by Codex.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 03:54 PDT
+
+**What:** Keep sufficient MacBook disk space for active work.
+
+**Why:** Concurrent installs and checks continue consuming the space recovered by cleanup.
+
+**Current state:** The lead reports 16 GB free at 03:53 PDT, after the earlier recovery to 18 GB. Monitoring remains active; this is a reported point-in-time figure, not a fresh measurement by this tracker.
+
+**Next step:** Keep the below-10-GB alert active; reclaim only verified idle dependencies and test outputs, preserving active sources. Move heavy work to remote hosts.
+
+**Open questions for Will:** None new.
+
+Evidence: lead text replies extracted by script from session 6253ecf2, 01:53–03:53 PDT; no user-typed messages in this window. Automated notifications and tools excluded. Current rulings and queue answers through 01:19 PDT take precedence over historical briefs, panels, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this pass only rebuilds the maintainer site. Execution ownership retained; Codex curates the notes.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 03:44 PDT
+
+**What:** Keep sufficient MacBook disk capacity while moving heavy work to remote hosts.
+
+**Why:** Concurrent workspace installs and tests continue to consume local storage.
+
+**Current state:** At 03:36 PDT the lead reported recovery from approximately 12 GB to 18 GB free after deleting a 6 GB VibeLang README validation copy containing package caches and two old test-result folders. Drafts and landed docs were preserved. The earlier 15 GB and subsequent 13/11 GB reports are historical; ongoing capacity monitoring remains active.
+
+**Next step:** Maintain the below-10-GB alert, reclaim only verified idle dependencies and test outputs, and move heavy work to the Mac mini or Latitude. Preserve active work and existing archive receipts.
+
+**Open questions for Will:** None new.
+
+Evidence: lead text replies at 03:36 and 03:44 PDT, extracted by script from session 6253ecf2 for 01:44–03:44 PDT. This window contains no user-typed messages; synthetic notifications, command output and tools are excluded. Current rulings and queue answers through 01:19 PDT override historical briefs, panel designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker runs only the maintainer-site build. Execution ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 03:24 PDT
+
+**What:** Keep enough MacBook disk space for active work while safely reclaiming finished workspaces.
+
+**Why:** Prevent the concurrent builds and installs from exhausting local storage.
+
+**Current state:** The completed cleanup and its verified archives remain historical evidence. New workspaces reduced free space from 22 GB to 17 GB, then to 15 GB in the lead’s 03:13 PDT update. The lead has an alert below 10 GB. No later reclamation receipt is present; status remains in-progress.
+
+**Next step:** Monitor the existing alert, safely reclaim completed workspace dependencies and move heavy work to the available remote hosts. Preserve active sources and work.
+
+**Open questions for Will:** None new.
+
+Evidence: lead text replies through 03:23 PDT, script-extracted from the latest approximately two session hours; synthetic user messages, teammate reports and tool content are excluded as human evidence. Current rulings and queue answers supersede historical briefs, designs, decisions, proposals, TODOs and rules. Product checks are lead-reported; this tracker verifies the site build. Execution ownership retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 03:04 PDT
+
+**Current state:** The earlier cleanup completed and its verified archives remain valid. Fresh workspaces reduced free space to 22 GB at 02:56 and 17 GB at 03:03 PDT. The lead is monitoring with an alert below 10 GB; capacity pressure has reopened.
+
+**Next step:** Monitor the alert and reclaim completed workspace dependencies safely; preserve sources, active work and archive verification receipts.
+
+**Open questions for Will:** None new; existing unresolved questions remain in the retained history.
+
+Evidence: lead text replies through 03:03 PDT, extracted by script from the latest approximately two session hours; automated notifications and tool blocks excluded. Current rulings and queue answers take precedence over briefs and designs. Execution ownership retained; documentation reconciled by Codex tracker curator. Product receipts are reported, not independently rerun here.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:53 PDT
+
+**What:** Recover safe MacBook disk capacity and archive inactive evidence.
+
+**Why:** Low disk capacity interrupts the agent fleet.
+
+**Current state:** At 00:51 the lead reports cleanup complete: capacity rose from 14 GB to 31 GB and then 32 GB. Old microsandbox data, Plue dependencies/stale lane scratch and 288 old-workspace node_modules directories were removed while sources were kept. Two inactive evidence folders were archived to nyc-01; file counts, bytes and checksums matched before local deletion. Recently changed Go cache, uncertain temporary owners and recent Docker volumes were skipped.
+
+**Next step:** Retain archive verification receipts and monitor capacity. Agent/auth relocation remains separate follow-up work; do not delete skipped data without fresh evidence.
+
+**Open questions for Will:** None; Will delegated safe choices in his 00:09 queue answer.
+
+Evidence: script-filtered user-typed messages and lead text replies, session 6253ecf2, 22:53–00:53 PDT; rulings and queue answers through 00:17:42 PDT; shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Automated notifications and tool blocks excluded. Product receipts are lead-reported; this tracker validates the site build only. Execution ownership and prior history retained.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 00:24 PDT
+
+**What:** Recover safe disk capacity and archive inactive evidence.
+
+**Why:** Low capacity interrupts the agent fleet.
+
+**Current state:** The 00:23 lead update reports 30 GB free, up from 19 GB at 00:13. Cleanup remains running; neither planned deletions nor recovered capacity proves all cleanup/archive work complete. Will delegated safe choices in his 00:09 queue answer.
+
+**Next step:** Collect completion and verified archive receipts; preserve active work, personal/account data and unchanged-for-24-hours safeguards. Plan agent/auth relocation after deployment.
+
+**Open questions for Will:** None; safe cleanup choices are delegated.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 00:23 PDT; queue answers through 00:17 PDT; rulings, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Product receipts are reported evidence, not new tracker-run tests. Execution owners retained; documentation reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:14 PDT
+
+**What:** Recover safe local disk capacity and archive inactive evidence to Latitude.
+
+**Why:** Capacity fell again after the earlier completed cleanup.
+
+**Current state:** Will delegated safe cleanup at 00:09. At 00:10 the lead reports a Codex Sol job running; at 00:13 free space is 19 GB. Planned rebuildable-cache cleanup is not a completion receipt. Old evidence must be copied and verified on nyc-01 before local deletion.
+
+**Next step:** Collect completion and verified archive receipts. Require idle, unchanged for 24 hours, rebuildable or archived, and nonpersonal for deletions; preserve protected personal/account folders.
+
+**Open questions for Will:** None; Will delegated choices. Agent/auth relocation planning follows deployment.
+
+Evidence: script-filtered user text and lead replies through 00:13 PDT; queue answers through 00:10 PDT, current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are reported receipts; tracker validation is the site build. Execution ownership retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 16:24 PDT
 

@@ -3,9 +3,26 @@ title: Code Storage spend caps (fail gracefully at capacity)
 status: done
 area: infra
 owner: spend caps agent (finished 22:06); enforcement ships with R3 of repo clone and view
-updated: 2026-10-20
+updated: 2026-10-21 00:14 PDT
 links: [repo-follow-ups.md, ../decisions/0006-repo-clone-and-view.md, ../todo.md, ../rules.md, ../../../../docs/libraries.md, repo-clone-and-view.md, token-spend-alerts.md, platform-cloudflare-edge-cache.md, integrations-browser-safe-root.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 00:14 PDT
+
+**What:** Keep graceful Code Storage admission and align Config caps with the purchased plan.
+
+**Why:** Will wants the larger git-hosting plan rather than the old small limits.
+
+**Current state:** ARCH-13 and the 00:09 queue answer request an upgrade around $200. At 00:10 the lead explains existing 3 GB/40 GB caps belong to the $20 plan; Will owns billing. No upgrade or new limit receipt exists. Existing enforcement remains completed; the new configuration follow-up is pending.
+
+**Next step:** After Will upgrades, obtain actual plan limits and raise the storage, read, repository and budget Config values consistently; retain graceful capacity behavior.
+
+**Open questions for Will:** Confirm upgraded plan and included limits when available; no credential values.
+
+Evidence: script-filtered user text and lead replies through 00:13 PDT; queue answers through 00:10 PDT, current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are reported receipts; tracker validation is the site build. Execution ownership retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
 
 ## What
 

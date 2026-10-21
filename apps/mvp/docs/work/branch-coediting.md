@@ -3,9 +3,26 @@ title: Shared branch prompt and file co-editing
 status: in-progress
 area: app
 owner: co-editing builder (Opus, lead session 6253ecf2)
-updated: 2026-10-20
+updated: 2026-10-21 02:06 PDT
 links: [../features/coedit.md, branch-sharing.md, branch-terminal.md, branch-workspace-clarity.md, ../decisions/0013-branch-workspace.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 02:06 PDT
+
+**What:** Shared branch prompt and file co-editing.
+
+**Why:** The requested multiplayer editing must retain private personal drafts.
+
+**Current state:** The lead reports co-editing landed in c6940ac5 at 01:49 PDT. The latest builder record reports coedit.spec.ts passing on the mini with sharing restricted to shared branches. Production deployment is still running in the latest lead update. Markdown carets and update compaction remain follow-ups; the landing alone does not prove those complete.
+
+**Next step:** Smoke-test two-person editing and private drafts on production, then finish Markdown carets and update compaction.
+
+**Open questions for Will:** None.
+
+Evidence: session 6253ecf2 user-typed text and lead replies extracted by script for the latest two hours through 2026-10-21 09:03:39 UTC; current rulings, queue answers, shared briefs/designs and retained builder receipts. Product tests are reported evidence; tracker validation is the site build. Execution owner retained.
+
+## Earlier tracker history (retained)
+
 
 ## Which prompts are shared — 2026-10-20, 23:50 PDT
 

@@ -3,9 +3,26 @@ title: A repository's own home view (M-45)
 status: in-progress
 area: app
 owner: home builder; Opus designs Effect example
-updated: 2026-10-20
+updated: 2026-10-21 02:06 PDT
 links: [land-to-main.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, old-app-feature-gaps.md, flow-authoring.md, flow-debugging.md, repo-clone-and-view.md, repo-view-branches-raw-clone.md, agent-ui-rendering.md, roles-and-labels.md, decisions-for-will.md, ../decisions/0004-agent-ui-codemode-and-rendering.md, ../decisions/0006-repo-clone-and-view.md, ../proposals/mvp-gaps.md, ../rulings.md, chaptered-review-videos.md, everything-is-a-plugin.md, effect-repository-home.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 02:06 PDT
+
+**What:** Repository home views for visitors, contributors and maintainers.
+
+**Why:** The production VibeLang factory needs a usable repository front page.
+
+**Current state:** Repository homes landed in c6940ac5 according to the 01:49 PDT lead update. Production completion is unreported. The highest authorized audience remains the default; the requested downward audience switcher is a separate unfinished follow-up. VibeLang App coverage was confirmed by GitHub at 01:38, but its production import is still unproven.
+
+**Next step:** Smoke-test the deployed repository homes and VibeLang import; finish the audience switcher under server authorization.
+
+**Open questions for Will:** None.
+
+Evidence: session 6253ecf2 user-typed text and lead replies extracted by script for the latest two hours through 2026-10-21 09:03:39 UTC; current rulings, queue answers, shared briefs/designs and retained builder receipts. Product tests are reported evidence; tracker validation is the site build. Execution owner retained.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 19:50 PDT
 

@@ -1,11 +1,62 @@
 ---
 title: Token-spend alerts
-status: in-progress
+status: blocked
 area: infra
 owner: spend alert channels builder (Claude Opus)
-updated: 2026-10-20
+updated: 2026-10-21 09:24 PDT
 links: [repo-follow-ups.md, ../todo.md, sandbox-budgets.md, ../observability.md, ../decisions/0008-auth.md, code-storage-spend-caps.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, sandboxes.md, notifications-and-live-work.md, dev-stack-hygiene.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 09:24 PDT
+
+**What:** Deliver configured model-spend alerts through durable flows.
+
+**Why:** Will needs reliable spend visibility before public use.
+
+**Current state:** Reopened from done: the 09:22 lead update lists production spend alerts among the features broken by remote-flow migration failure. Existing email/Telegram implementation receipts remain, but no successful production delivery after repair is reported.
+
+**Next step:** After the host fix, trigger a real production alert and retain delivery and deduplication receipts through the configured channels. Include it in the four-model investigation and Opus fixes; never expose credentials or user content in diagnostics.
+
+**Open questions for Will:** None. The provider preference and investigation/implementation direction are explicit; engineering validation remains with the builders.
+
+Evidence: session 6253ecf2, script-filtered user text and lead replies in the last approximately two hours through 09:23:49 PDT; automated notifications, compacted summaries and tool results excluded. Rulings (including ARCH-14), Will’s queue answers, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules were reconciled. Product results are lead-reported; this tracker verifies the site build only. Existing feature execution ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 02:06 PDT
+
+**What:** Configurable model-spend alerts by email and Telegram.
+
+**Why:** Admins need real channel delivery when model spend occurs.
+
+**Current state:** The lead reports spend-alert channels landed in c6940ac5 at 01:49 PDT. Existing end-to-end and docs receipts stand. Production delivery has no completion receipt; email remains disabled pending a Resend account. App installation on VibeLang does not provision alert destinations.
+
+**Next step:** Smoke-test configured channels after deployment. Keep email disabled until provisioning and preserve opaque credentials.
+
+**Open questions for Will:** Create a Resend account when email is wanted; enter destinations personally in Settings, never in tracker notes.
+
+Evidence: session 6253ecf2 user-typed text and lead replies extracted by script for the latest two hours through 2026-10-21 09:03:39 UTC; current rulings, queue answers, shared briefs/designs and retained builder receipts. Product tests are reported evidence; tracker validation is the site build. Execution owner retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:44 PDT
+
+**What:** Deliver configurable model-spend alerts by email and Telegram.
+
+**Why:** Admins need the requested spend notifications.
+
+**Current state:** At 00:40 the lead reports the end-to-end test and docs:check passing and the slice ready for deployment. The deploy will provision the Telegram bot token from Keychain. Email stays disabled until a Resend account exists; no production channel-delivery receipt is claimed.
+
+**Next step:** Include the tested slice in the combined deploy and smoke-test configured delivery; retain email disabled until provisioning.
+
+**Open questions for Will:** Create a Resend account when email is wanted, then personally enter the email address and Telegram chat ID in Settings; never put values in this note.
+
+Evidence: script-filtered user-typed text and lead text replies from session 6253ecf2, approximately 22:44–00:44 PDT; rulings, queue answers through 00:17:42 PDT, current decisions, proposals, TODOs, rules and shared briefs/designs. Automated notifications and teammate messages are excluded as human evidence. Product checks are lead-reported receipts; this tracker validates the site build only. Existing execution owners and all history are retained.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-20, 22:15 PDT
 
@@ -31,6 +82,8 @@ Evidence: script-filtered user-typed text and lead text replies from session 625
 **Why:** AUTH-4 requires alerts while there are no users. Will, 2026-10-20, to "Where should spend alerts reach you?": "configurable but atm i think alerts to email make sense but telegram too would be useful".
 
 **Current state:** Channels built ([spend-alerts.md](../features/spend-alerts.md#channels)): `@smthrs/notifications` `Channels` (Resend email, Telegram Bot API), an Admin's Settings with email addresses and a Telegram chat (`alert/channel`, `POST /api/alert-channels`, migration `0029_alert_channels`), and `ops/DeliverSpendAlert`, one durable step per channel with an `alert_deliveries` receipt. Deployments need `ALERT_EMAIL_API_KEY` and `ALERT_TELEGRAM_BOT_TOKEN`.
+
+**Proof:** `e2e/alert-channels.spec.ts` passed on the Mac mini at 00:23 on 2026-10-21 (GIF `~/Desktop/smithers-mvp/gifs/alert-channels-channels.gif`).
 
 **Next step:** Set the two keys on the deployment and an Admin's address and chat in Settings; deliver the Code Storage alert through the same channels.
 

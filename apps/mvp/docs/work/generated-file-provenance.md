@@ -1,8 +1,8 @@
 ---
 title: Generated files link to their source and generating flow
-status: in-progress
+status: todo
 area: app
-owner: Generated-file repository-view builder assigned by lead
+owner: unassigned (built by the repo-browse slice; the e2e is left)
 updated: 2026-10-20
 links: [repo-view-branches-raw-clone.md, vibelang-generated-docs.md, ../rulings.md]
 ---

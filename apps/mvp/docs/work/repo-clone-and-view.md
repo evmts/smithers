@@ -1,11 +1,62 @@
 ---
 title: Clone and view a repo (feature 2)
-status: in-progress
+status: blocked
 area: app
 owner: repo viewer builder and recording builder
-updated: 2026-10-20
+updated: 2026-10-21 09:24 PDT
 links: [review-round-4.md, repo-follow-ups.md, repo-view-package-split.md, agent-root-browser-safe.md, dev-stack-hygiene.md, app-wiring.md, sign-in.md, one-sqlite-one-leader.md, ../decisions/0006-repo-clone-and-view.md, code-storage-spend-caps.md, platform-cloudflare-edge-cache.md, integrations-browser-safe-root.md, ../proposals/mvp-gaps.md, ../../../../docs/libraries.md, repo-open-states.md, deep-import-migration.md, durable-answering.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, cloudflare-flow-host.md, code-reviews.md, gitremote-unicode-branches.md, web-standard-globals-rule.md, integrations-effect-httpclient.md, flows-root-platform-neutral.md, local-first.md, navigate-flow.md, agent-repo-navigation.md, fable-review-2-fixes.md, repo-view-branches-raw-clone.md, ../rulings.md, chaptered-review-videos.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 09:24 PDT
+
+**What:** Clone/import repositories and browse their code through durable flows.
+
+**Why:** A working local viewer does not establish that hosted repository import succeeds.
+
+**Current state:** Reopened from done: the 09:22 lead update says production clone/import is broken by the remote-flow migration failure. Earlier local and live-provider proofs are retained; no production recovery receipt exists.
+
+**Next step:** After the Cloudflare host repair, rerun a signed-in production clone/import through notification completion and browse the resulting repository. Retain the failing case and passing revision/GIF; include this path in Will’s four-model investigation and Opus repair request.
+
+**Open questions for Will:** None. The provider preference and investigation/implementation direction are explicit; engineering validation remains with the builders.
+
+Evidence: session 6253ecf2, script-filtered user text and lead replies in the last approximately two hours through 09:23:49 PDT; automated notifications, compacted summaries and tool results excluded. Rulings (including ARCH-14), Will’s queue answers, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules were reconciled. Product results are lead-reported; this tracker verifies the site build only. Existing feature execution ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 01:05 PDT
+
+**What:** Finish repository arrival, cloning and browsing.
+
+**Why:** Show actual clone state and usable file/header controls.
+
+**Current state:** At 00:58–00:59 the lead reports the overhaul done and with the lander: four repository e2e specs pass 14/14 with GIFs, and verification is queued at 960. The Not cloned report was a test-helper bug. The bell no longer covers Clone. This is completion of the builder’s scope, not production deployment. Unused-clone reclamation remains separate and unbuilt.
+
+**Next step:** Land the combined files, obtain Will’s queued verification and smoke-test the deployed revision; track reclaiming separately.
+
+**Open questions for Will:** Verify the updated browsing recordings at 960.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 01:04 PDT; current rulings, queue answers, shared briefs/designs, decisions, proposals, TODOs and rules. Product checks are lead-reported, not executed by this tracker. Execution owners retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:34 PDT
+
+**What:** Finish repository browsing and cloning without stale state or overlapping controls.
+
+**Why:** Successful cloning must be visible and Retry must work.
+
+**Current state:** At 00:32 the lead assigns the browsing agent three remaining defects: Retry runs async work through a synchronous callback, a completed clone still says Not cloned, and the notification bell overlaps Clone. The agent is fixing these before combined landing; no completed regression receipt is reported.
+
+**Next step:** Fix all three with user-boundary regressions, rerun clone and browsing recordings, and hand proven files to the lander.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 00:33 PDT; current rulings and queue answers through 00:17:42 PDT, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are lead-reported receipts; this tracker runs the maintainer-site build. Execution owners and all prior history retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 21:54 PDT
 

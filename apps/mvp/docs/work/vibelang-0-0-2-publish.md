@@ -1,11 +1,28 @@
 ---
 title: Publish VibeLang 0.0.2
-status: in-progress
+status: done
 area: process
 owner: VibeLang migration owner; release deferred
-updated: 2026-10-20
+updated: 2026-10-21 00:44 PDT
 links: [../rulings.md, effect-code-conversion.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 00:44 PDT
+
+**What:** Publish VibeLang 0.0.2 with usable public packages.
+
+**Why:** The SDK migration must install without a local language checkout.
+
+**Current state:** At 00:40 the lead reports VibeLang 0.0.2 on npm and the fs migration passing every gate without a local checkout. This supersedes the earlier 0.0.1-only report. Smithers integration remains pending after deployment.
+
+**Next step:** Retain the release/install receipts; track fs integration in vibelang-package-migration.md.
+
+**Open questions for Will:** None for the published release.
+
+Evidence: script-filtered user-typed text and lead text replies from session 6253ecf2, approximately 22:44–00:44 PDT; rulings, queue answers through 00:17:42 PDT, current decisions, proposals, TODOs, rules and shared briefs/designs. Automated notifications and teammate messages are excluded as human evidence. Product checks are lead-reported receipts; this tracker validates the site build only. Existing execution owners and all history are retained.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-20, 22:15 PDT
 

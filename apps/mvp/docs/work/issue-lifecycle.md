@@ -3,9 +3,26 @@ title: Issue lifecycle — reproduction, commitment and playable POCs
 status: in-progress
 area: app
 owner: Codex issue-lifecycle burn-down
-updated: 2026-10-20
+updated: 2026-10-21 02:06 PDT
 links: [../decisions/0018-issue-lifecycle.md, issue-triage.md, issues-to-todos.md, vibelang-coding-factory.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 02:06 PDT
+
+**What:** Issue reproduction, maintainer commitment and playable POCs.
+
+**Why:** VibeLang’s coding factory needs a clear acceptance and reproduction policy.
+
+**Current state:** The lead reports the reduced issue-lifecycle slice landed in c6940ac5 at 01:49 PDT. The retained burn-down receipt reports 74 tests passing with Triage.ts and lifecycle.ts at full coverage. Sandbox reproduction verification, automatic POCs, playable previews and their budgets/expiry remain unbuilt; no live lifecycle GIF or production completion is established.
+
+**Next step:** Smoke-test the landed slice after deployment; confirm the real test account’s Maintain access before recording. Build the deferred POC/reproduction slice with its own safe sandbox and migration proof.
+
+**Open questions for Will:** The test account’s Maintain grant still needs a completion receipt; do not infer it from App installation.
+
+Evidence: session 6253ecf2 user-typed text and lead replies extracted by script for the latest two hours through 2026-10-21 09:03:39 UTC; current rulings, queue answers, shared briefs/designs and retained builder receipts. Product tests are reported evidence; tracker validation is the site build. Execution owner retained.
+
+## Earlier tracker history (retained)
+
 
 Will's 19:40 request and lead's 19:42 brief. Implement three vertical slices in the shared checkout without commits. Existing triage and issue-to-TODO work retain their owners. The POC hands a draft to Make TODO; it never starts the factory or commits the draft. Design is proposed; no implementation or passing e2e receipt yet.
 

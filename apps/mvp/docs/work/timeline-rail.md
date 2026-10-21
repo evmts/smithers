@@ -1,11 +1,28 @@
 ---
 title: Timeline rail beside the conversation
-status: designing
+status: in-progress
 area: app
 owner: Opus timeline designer assigned by lead; prior codex-timeline-zoom implementation stopped
-updated: 2026-10-20 23:34 PDT
+updated: 2026-10-21 01:54 PDT
 links: [old-app-feature-gaps.md, conversations-and-history.md, notifications-and-live-work.md, model-endpoint.md, ../decisions/0009-notifications-and-live-work.md, everything-is-a-plugin.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 01:54 PDT
+
+**What:** Provide a quiet conversation timeline with progressive detail.
+
+**Why:** Navigate long conversations without overwhelming chat.
+
+**Current state:** The 01:49 lead update explicitly includes the timeline rail in c6940ac5. This supersedes the prior mock-only state. The summary does not establish that the requested progressive levels and durable group summaries are complete; production smoke is pending.
+
+**Next step:** Inspect the landed rail against the approved progressive-zoom design, smoke-test production and retain any missing behavior as follow-up.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies, session 6253ecf2, 23:53–01:53 PDT; current rulings and queue answers through 01:19 PDT; shared briefs and designs, decisions, proposals, TODOs and rules. Completion and test receipts are reported evidence; this tracker validates only the site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-20 23:34 PDT
 

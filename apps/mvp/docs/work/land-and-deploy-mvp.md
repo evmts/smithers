@@ -1,11 +1,214 @@
 ---
 title: Land and deploy the new app
-status: in-progress
+status: done
 area: process
-owner: deploy agent; retrying after pushed Neon fix bbe0b0e9
-updated: 2026-10-21 00:06 PDT
-links: [site-deployment-test.md, land-to-main.md, app-wiring.md, ../infrastructure.md, ../../../../AGENTS.md, infrastructure-as-code.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md, sign-in.md, integrations-browser-safe-root.md, gitremote-unicode-branches.md, integrations-effect-httpclient.md, flows-root-platform-neutral.md, flows-and-agent.md, cloudflare-flow-host.md, repo-checks-green.md, local-first.md, pwa.md, agent-ui-rendering.md, repo-clone-and-view.md, code-reviews.md, will-decision-queue.md, cloudflare-electric-service-binding.md, private-hosted-infrastructure.md, device-data-migrations.md]
+owner: lead; deployment complete, operations follow-up tracked separately
+updated: 2026-10-21 04:15 PDT
+links: [device-ownership-and-queued-authority.md, site-deployment-test.md, land-to-main.md, app-wiring.md, ../infrastructure.md, ../../../../AGENTS.md, infrastructure-as-code.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md, sign-in.md, integrations-browser-safe-root.md, gitremote-unicode-branches.md, integrations-effect-httpclient.md, flows-root-platform-neutral.md, flows-and-agent.md, cloudflare-flow-host.md, repo-checks-green.md, local-first.md, pwa.md, agent-ui-rendering.md, repo-clone-and-view.md, code-reviews.md, will-decision-queue.md, cloudflare-electric-service-binding.md, private-hosted-infrastructure.md, device-data-migrations.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 04:15 PDT
+
+**What:** Keep the successful round-4 deploy receipt and close its operations follow-up.
+
+**Why:** Separate a live deployment from unfinished documentation and workspace cleanup.
+
+**Current state:** At 04:13 PDT the lead stopped the deploy agent after two hours without activity. Deployment succeeded at 01:54 and the lead’s basic smoke checks passed. The missing infrastructure-doc entry and workspace removal now have their own todo note, deploy-receipt-and-workspace-cleanup.md. No full live feature-suite receipt is added by this update.
+
+**Next step:** Record the deploy and remove its finished workspace through the separate follow-up; retain broader production feature evidence in the owning workstreams.
+
+**Open questions for Will:** None new.
+
+Evidence: script-filtered human text and assistant text replies from the latest approximately two hours of session 6253ecf2 through 04:13 PDT; automated notifications, tool results and teammate messages excluded. Current rulings and queue answers override historical briefs, panel designs, decisions, proposals, TODOs and rules. Builder reports in scratchpad/final supply validation receipts; the tracker independently runs only the maintainer-site build. Execution owners and earlier history retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 02:55 PDT
+
+**What:** Finish the round 4 production deployment and smoke checks.
+
+**Why:** Establish that the pushed app is live before starting the next batch.
+
+**Current state:** The 02:54 PDT lead reply confirms round 4 live since 01:54 and reports passing checks: /app returns 200, sign-in redirects to GitHub with the production callback, the session API answers, and unsigned webhooks are rejected. This supersedes the earlier guessed sign-in 404 and pending basic smoke checks. Migrations 0018–0033 and seven updated resources were previously reported. These are lead receipts; the deploy agent’s separate full report and production retained-device/VibeLang import evidence are still absent.
+
+**Next step:** Retain the deploy agent’s detailed report when available; verify production VibeLang import in its prelaunch workstream. The app coverage gap and held-out security work remain separate unfinished work.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest approximately two hours through 02:54 PDT. Automated notifications and teammate messages excluded. Current rulings and queue answers override historical briefs, panel designs, decisions, proposals, TODOs and rules. Product checks are lead-reported; this tracker runs the site build only. Execution ownership retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 02:44 PDT
+
+**What:** Finish production verification after the combined deployment.
+
+**Why:** Confirm the hosted app and its dependencies work after landing.
+
+**Current state:** At 02:33 PDT the lead reports production deployment succeeded at 01:54 on its first attempt: migrations 0018–0033 applied and all seven resources updated. The app path returned 200 and an unsigned webhook returned 400. A guessed sign-in path returned 404; it does not establish a sign-in defect or successful sign-in. At 02:43 the lead says the deploy agent has been quiet since 02:11 and asks it to stop any stuck smoke step and finish reporting. Deployment completion supersedes the earlier running reports; full smoke verification remains outstanding.
+
+**Next step:** Obtain the real sign-in, API, webhook and retained-device smoke receipts, confirm VibeLang import, and record any failing check. Keep status in-progress until these checks finish.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, approximately 00:43–02:43 PDT; synthetic notifications, agent messages and tool content excluded from human evidence. Current rulings and queue answers through 01:19 PDT take precedence over shared briefs/designs, decisions, proposals, TODOs and rules. Product checks are lead-reported; this tracker verifies the maintainer-site build. Execution ownership retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 02:34 PDT
+
+**What:** Finish the combined production deployment and verify the hosted app.
+
+**Why:** Applied database migrations alone do not establish a working deployment.
+
+**Current state:** The lead still reports deployment running at 02:32 PDT. The 02:23 receipt says migrations 0018–0033 were applied in one transaction and Workers were still deploying. Combined rounds 4c/4d are reported pushed at c6940ac5; no deployment completion or production smoke receipt is present. Status remains in-progress.
+
+**Next step:** Obtain Worker completion and production smoke receipts, including app/API health, sign-in, webhook delivery, retained device data and VibeLang import. Keep after-deploy work gated on those receipts.
+
+**Open questions for Will:** None.
+
+Evidence: script-extracted user-typed text and lead text replies from session 6253ecf2, 00:32–02:32 PDT; automated notifications and tool content excluded. Rulings and queue answers take precedence over shared briefs, panel designs, decisions, proposals, TODOs and rules. Checks above are lead-reported; Codex curates these notes and verifies the site build. Execution owner and prior history retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 02:24 PDT
+
+**What:** Deploy the pushed combined round and verify production.
+
+**Why:** Local upgrade proof must be followed by live service and device checks.
+
+**Current state:** Combined rounds 4c/4d are reported on main at c6940ac5. At 02:23 the lead reports migrations 0018–0033 applied in one transaction, with Workers still deploying. No completed deployment or production smoke-test receipt exists. The device-ownership check remains held out; the app coverage gap is tracked separately.
+
+**Next step:** Wait for actual Worker deployment completion, then record app/API health, sign-in, sync, retained device data, webhook and log checks; confirm the production VibeLang import. After the deploy, land the validated readability rounds.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies through 02:23 PDT in session 6253ecf2, extracted by script from the latest two hours with automated notifications and tool content excluded; current rulings and queue answers through 01:19 PDT, shared briefs/designs, decisions, proposals, TODOs and rules. Product checks are reported receipts; this tracker runs only the maintainer-site build. Execution ownership and earlier history retained. Documentation curator: Codex.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 02:14 PDT
+
+**What:** Deploy the pushed combined round and verify production.
+
+**Why:** Local upgrade evidence must be followed by live service and device checks.
+
+**Current state:** The combined round landed as c6940ac5 at 01:49. At 02:13 the lead still reports the deploy agent working; there is no completed deployment or smoke-test receipt in the extracted window. The unsafe device-ownership check remains held out.
+
+**Next step:** Record the actual deploy result and production app/API, sign-in, sync, device-upgrade, webhook and log checks; then verify VibeLang import with the confirmed App installation.
+
+**Open questions for Will:** None.
+
+Evidence: user-typed text and lead replies extracted by script from the last two session hours through 02:13 PDT; automated notifications and tool content excluded. Current rulings and queue answers through 01:19 PDT override historical briefs, panels, decisions and proposals. Product checks are lead-reported receipts; this tracker runs the site build only. Execution ownership and earlier history retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 01:54 PDT
+
+**What:** Deploy pushed c6940ac5 and smoke-test production.
+
+**Why:** Validate the real hosted upgrade and service health.
+
+**Current state:** The 01:49 lead update reports the combined round on main and production deployment running; the 01:53 update still reports running. No completion or production smoke receipt exists. Exact-tree device upgrade passed before push; the unsafe identity check stayed out.
+
+**Next step:** Wait for the real deploy receipt, then record app/API health, sign-in, sync, retained device data, webhooks and logs. Verify VibeLang import using the installed App.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies, session 6253ecf2, 23:53–01:53 PDT; current rulings and queue answers through 01:19 PDT; shared briefs and designs, decisions, proposals, TODOs and rules. Completion and test receipts are reported evidence; this tracker validates only the site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 01:24 PDT
+
+**What:** Land the combined round, deploy its pushed revision and smoke-test.
+
+**Why:** Ship without losing upgraded devices’ drafts or queued writes.
+
+**Current state:** At 01:00 a replacement lander holds the combined 939-file tree; all four app typechecks pass. The unsafe device-identity change is excluded. SDK agent-suite failure, remaining suites/docs/secret scan and exact-tree device-upgrade validation remain before push and deploy. No later completion receipt appears.
+
+**Next step:** Finish those gates, push the validated revision, deploy and smoke-test; then verify the now-installed VibeLang App through a real production import.
+
+**Open questions for Will:** None; existing deployment authorization stands.
+
+Evidence: script-filtered human messages and lead text replies from session 6253ecf2, approximately 23:24–01:24 PDT; current rulings and queue answers through 01:19 PDT; shared briefs/designs, decisions, proposals, TODOs and rules. Product results are reported receipts. Execution owners retained; Codex curates tracker documentation only. Later rulings supersede earlier history.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 01:05 PDT
+
+**What:** Finish combined rounds 4c/4d and deploy the pushed revision.
+
+**Why:** Ship the completed work without losing device data.
+
+**Current state:** At 01:00 a fresh lander takes over a 939-file combined commit above main, with device identity excluded. All four app typechecks pass. An agent SDK failure on the mini remains unexplained; suites, docs, secret scan and exact-tree device upgrade remain pending. No combined push or deployment receipt exists.
+
+**Next step:** Resolve the SDK failure; finish checks and the upgrade test, split by area and push, then deploy with Alchemy and smoke-test production.
+
+**Open questions for Will:** Production GitHub App setup completion is still unconfirmed; no repeated approval needed.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 01:04 PDT; current rulings, queue answers, shared briefs/designs, decisions, proposals, TODOs and rules. Product checks are lead-reported, not executed by this tracker. Execution owners retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:53 PDT
+
+**What:** Land combined rounds 4c/4d, deploy the pushed revision and smoke-test production.
+
+**Why:** Ship finished work while preserving existing device data.
+
+**Current state:** No combined push or deployment completion appears through 00:53. At 00:48 the lead reports an upgrade-blocking device-ownership check and excludes it from tonight’s landing. The lander must rerun the production-build upgrade test on the final result before push. Rounds 4a/4b and the API baseline were previously reported on main at 80b1220e.
+
+**Next step:** Obtain the final passing upgrade receipt and pushed revision, deploy with Alchemy, then smoke-test app load, API health, device upgrade, sign-in, webhooks and logs. Keep ownership remediation in its later round.
+
+**Open questions for Will:** Production GitHub App setup completion is still unconfirmed; do not repeat an approval request.
+
+Evidence: script-filtered user-typed messages and lead text replies, session 6253ecf2, 22:53–00:53 PDT; rulings and queue answers through 00:17:42 PDT; shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Automated notifications and tool blocks excluded. Product receipts are lead-reported; this tracker validates the site build only. Execution ownership and prior history retained.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 00:34 PDT
+
+**What:** Land combined rounds 4c/4d, deploy and smoke-test production.
+
+**Why:** Ship the finished lanes together while preserving device data and pending writes.
+
+**Current state:** At 00:31 the lead reports the lander mid-way through combined landing as the Claude usage limit is reached. Rounds 4a/4b remain on main at 80b1220e; migrations are proven and handed off. No combined push, deployment or production smoke-test completion is reported. At 00:32 browsing fixes are still requested before landing.
+
+**Next step:** Confirm actual lander state and outstanding fixes, obtain the pushed combined revision, deploy via Alchemy, then smoke-test app load, API health, device upgrade, sign-in, webhooks and logs.
+
+**Open questions for Will:** Production GitHub App setup completion remains unconfirmed; no repeated approval request.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 00:33 PDT; current rulings and queue answers through 00:17:42 PDT, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are lead-reported receipts; this tracker runs the maintainer-site build. Execution owners and all prior history retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:24 PDT
+
+**What:** Deploy the pushed combined round and smoke-test production.
+
+**Why:** Protect persisted work while shipping the completed lanes.
+
+**Current state:** At 00:10 the lead combines 4c and 4d because migrations cannot land independently without weakening tests; at 00:17 the overnight plan still awaits that landing. Earlier separate-4c deployment instructions are superseded. The approximately 02:30 deploy time is an estimate; no new push, deploy or smoke receipt exists.
+
+**Next step:** Obtain the combined pushed revision, deploy with Alchemy, then check app load, API health, device upgrade, sign-in, webhooks and logs.
+
+**Open questions for Will:** Production GitHub App completion remains unconfirmed; no repeated approval ask.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 00:23 PDT; queue answers through 00:17 PDT; rulings, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Product receipts are reported evidence, not new tracker-run tests. Execution owners retained; documentation reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 00:06 PDT
 

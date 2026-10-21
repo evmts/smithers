@@ -3,9 +3,43 @@ title: Flow usage metrics and Grafana dashboard
 status: in-progress
 area: sdk
 owner: flow metrics builder assigned by lead
-updated: 2026-10-21 00:06 PDT
+updated: 2026-10-21 01:54 PDT
 links: [observability.md, self-hosted-grafana.md, flow-debugging.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 01:54 PDT
+
+**What:** Measure flows and expose expandable run details.
+
+**Why:** Make Smithers runs inspectable.
+
+**Current state:** Flow metrics landed in c6940ac5 (lead 01:49). Earlier reported e2e/GIF proves per-run metrics, Grafana dashboard and flow totals. The requested GitHub-Actions-style Smithers run list and expandable steps remain after-deploy work.
+
+**Next step:** Verify production metrics and build the requested flow/status/branch/trigger/duration rows and expandable details.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies, session 6253ecf2, 23:53–01:53 PDT; current rulings and queue answers through 01:19 PDT; shared briefs and designs, decisions, proposals, TODOs and rules. Completion and test receipts are reported evidence; this tracker validates only the site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:24 PDT
+
+**What:** Measure flow usage and show expandable run details.
+
+**Why:** Will wants familiar run navigation and inspectable steps.
+
+**Current state:** At 00:16 the lead reports per-run metrics, Grafana dashboard and Runs totals complete and with the lander, with passing e2e/GIF and a browser-run-start visibility regression fixed. The requested GitHub-Actions-style list and expandable rows remain after-deploy work, so the full workstream stays open.
+
+**Next step:** Land metrics; after deploy add flow, status, branch, trigger, duration and expandable steps/details for Smithers runs.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 00:23 PDT; queue answers through 00:17 PDT; rulings, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Product receipts are reported evidence, not new tracker-run tests. Execution owners retained; documentation reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 00:06 PDT
 

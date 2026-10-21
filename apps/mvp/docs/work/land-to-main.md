@@ -3,9 +3,93 @@ title: Land finished work on main (the lander)
 status: in-progress
 area: process
 owner: lander; finished app round reported on main
-updated: 2026-10-20 23:44 PDT
-links: [land-and-deploy-mvp.md, code-reviews.md, decisions-for-will.md, app-wiring.md, repo-checks-green.md, old-app-feature-gaps.md, fable-review-2-fixes.md, plan-identity-minified-builds.md, slash-commands.md, navigate-flow.md, web-page-flow.md, agent-jev.md, agent-status.md, repo-view-branches-raw-clone.md, ../../../../AGENTS.md, site-deployment-test.md, api-baseline-rerecord.md, dev-stack-hygiene.md, plan-identity-minified-builds.md, review-round-4.md, docs-check-flow-outcome.md, model-step.md, cloudflare-flow-host.md, effect-tanstack-db-and-effect-electric.md, library-catalog.md, issues.md, chat-message-controls.md, flow-authoring.md, model-endpoint.md, plan-identity-across-deploys.md, second-build-machine.md, device-data-migrations.md]
+updated: 2026-10-21 09:17 PDT
+links: [queue-recorded-revision-source.md, land-and-deploy-mvp.md, code-reviews.md, decisions-for-will.md, app-wiring.md, repo-checks-green.md, old-app-feature-gaps.md, fable-review-2-fixes.md, plan-identity-minified-builds.md, slash-commands.md, navigate-flow.md, web-page-flow.md, agent-jev.md, agent-status.md, repo-view-branches-raw-clone.md, ../../../../AGENTS.md, site-deployment-test.md, api-baseline-rerecord.md, dev-stack-hygiene.md, plan-identity-minified-builds.md, review-round-4.md, docs-check-flow-outcome.md, model-step.md, cloudflare-flow-host.md, effect-tanstack-db-and-effect-electric.md, library-catalog.md, issues.md, chat-message-controls.md, flow-authoring.md, model-endpoint.md, plan-identity-across-deploys.md, second-build-machine.md, device-data-migrations.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 09:17 PDT
+
+**What:** Land finished workspace commits and reconcile the shared checkout on append-only main.
+
+**Why:** Will explicitly requested committing, rebasing onto origin/main and pushing; finished work must not sit in separate workspaces.
+
+**Current state:** At 09:15 PDT the lead reports two active landers and main still at cf6bd457, unchanged since 03:19. One lander handles finished workspace batches: five small fixes, fixed-commit queue source, Jev memory, engine-store refactors, conflict fixes, running-TODO view and device identity. The other classifies 933 shared-checkout changes as finished work, stale copies or excluded artifacts. No new push receipt exists.
+
+**Next step:** Record each validated pushed commit and the new main revision; preserve in-flight work, exclude old benchmark logs and reconcile stale copies without undoing main. Coordinate both landers against the latest main.
+
+**Open questions for Will:** None new; engineering validation and landing do not need another decision.
+
+Evidence: script-filtered session 6253ecf2 human text and lead replies through 09:15 PDT, including Will’s human-origin queued request at 09:10:54. Rulings and queue answers take precedence over the shared briefs/designs, decisions, proposals, TODOs and rules reviewed for this pass. Product validation is lead-reported; this tracker runs the site build only. Execution ownership retained; documentation curator: Codex.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 03:34 PDT
+
+**What:** Land validated work on append-only main while preserving unfinished edits.
+
+**Why:** Ship finished work without losing concurrent changes.
+
+**Current state:** At 03:28 PDT the lead reports the engine and flow readability rewrites plus the flow lint/formatting fix landed at cf6bd457. The same update reports a shared-checkout rebase and 21,779-file checksum, but at 03:31 the lead clarifies that the queue still reads old source for eight rewritten files in a checkout with 916 changes. Another rebase is deliberately deferred because an unlanded Interpreter edit conflicts. Do not infer that the checkout now matches the landed files.
+
+**Next step:** Keep unfinished edits intact; fix revision-pinned queue reads, refresh the API baseline and continue landing independently validated work.
+
+**Open questions for Will:** None new.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, 01:33–03:33 PDT; synthetic notifications, teammate messages and tool content excluded. Rulings and queue answers through 01:19 PDT supersede historical briefs, panel designs, decisions, proposals, TODOs and rules. Product validation and landing are lead-reported; Codex curates this documentation and runs only the site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 03:14 PDT
+
+**What:** Land validated changes continuously on append-only main.
+
+**Why:** Keep production current while preserving independent unfinished work.
+
+**Current state:** At 03:05 PDT the lead reports shared-checkout cleanup finished after the rebase; at 03:09 the lander is waiting for engine suites before pushing the readability commits. Round 4 remains live; neither engine round has a push receipt.
+
+**Next step:** Obtain passing engine suite receipts, then land both rounds and record the pushed revisions.
+
+**Open questions for Will:** None new. The existing review-format question remains pending; the every-file review ruling still applies.
+
+Evidence: script-extracted user text and lead replies, 08:13–10:13 UTC on 2026-10-21 (01:13–03:13 PDT); current rulings and queue answers take precedence over briefs and designs. Execution owners and status retained. Product receipts are lead-reported; this tracker validates only the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 01:54 PDT
+
+**What:** Land the validated combined round 4c/4d.
+
+**Why:** Ship the completed lanes while preserving device data.
+
+**Current state:** At 01:49 the lead reports rounds 4c/4d pushed to main as c6940ac5. Exact-tree device upgrade, four typechecks, import rules, docs, secret scan and 15 SDK packages pass. Remaining test reds also reproduce on old main. App coverage is 99.76%, below the required 100%; this is an unresolved gap, not a relaxed gate. Device ownership, VibeLang fs, Playground and two unfinished migrations were excluded.
+
+**Next step:** Track deployment separately; land the isolated memory and engine refactors only after their own validation. Restore app coverage in app-coverage-gap.md.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies, session 6253ecf2, 23:53–01:53 PDT; current rulings and queue answers through 01:19 PDT; shared briefs and designs, decisions, proposals, TODOs and rules. Completion and test receipts are reported evidence; this tracker validates only the site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:14 PDT
+
+**What:** Land the validated combined 4c/4d snapshot and deploy from the pushed revision.
+
+**Why:** Migration tests depend on the other handed-off work; splitting it would weaken validation.
+
+**Current state:** At 00:10 the lead changed the plan to one combined 4c/4d landing, full suite and push, estimating deployment around 02:30. Queue controls may join once proven (browser proof reported 00:13). Memory and engine refactors stay separate; VibeLang fs, Playground and SWE-bench are excluded. No combined landing or deployment receipt yet.
+
+**Next step:** Complete the combined build and full checks, push, then deploy and smoke-test. Keep unproven TODO execution switched off.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user text and lead replies through 00:13 PDT; queue answers through 00:10 PDT, current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are reported receipts; tracker validation is the site build. Execution ownership retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-20 23:44 PDT
 

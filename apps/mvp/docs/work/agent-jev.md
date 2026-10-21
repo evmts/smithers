@@ -1,11 +1,28 @@
 ---
 title: Jev for the agent (app/jev/classify, app/jev/evaluate)
-status: in-progress
+status: todo
 area: app
-owner: Jev walkthrough rework agent (started about 20:00 on 2026-10-20, from Will's 19:52 review). Until then: Jev agent; reported done 07:49:53 on 2026-10-20 (9 of 9 unit tests at 100% coverage, e2e with one judge call and its GIF, `ModelStep.model` added to `@smthrs/agent` with a changeset); nothing committed, so it lands in round 2 of the landing. Until 07:49: Jev agent (started 06:42:25 on 2026-10-20); by 07:12 unit tests, a passing e2e with its GIF and `docs/features/jev.md`; unreported. Until 07:01: Jev agent, started 06:42:25 on 2026-10-20 by the lead; writing `src/features/jev/**` and its registry entries since about 06:53; unreported
-updated: 2026-10-20 22:44 PDT
+owner: unassigned; left: re-record the eval baseline (Next). Until 00:20 on 2026-10-21: Jev walkthrough rework agent, handed to the round 4 lander (started about 20:00 on 2026-10-20, from Will's 19:52 review). Until then: Jev agent; reported done 07:49:53 on 2026-10-20 (9 of 9 unit tests at 100% coverage, e2e with one judge call and its GIF, `ModelStep.model` added to `@smthrs/agent` with a changeset); nothing committed, so it lands in round 2 of the landing. Until 07:49: Jev agent (started 06:42:25 on 2026-10-20); by 07:12 unit tests, a passing e2e with its GIF and `docs/features/jev.md`; unreported. Until 07:01: Jev agent, started 06:42:25 on 2026-10-20 by the lead; writing `src/features/jev/**` and its registry entries since about 06:53; unreported
+updated: 2026-10-21 00:24 PDT
 links: [model-endpoint.md, model-step.md, flows-and-agent.md, slash-commands.md, issue-triage.md, agent-evals.md, import-rules-and-jev-lint.md, observability.md, e2e-suite-and-gifs.md, land-to-main.md, ../decisions/0003-flows-and-the-agent.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../features/agent.md, ../features/model-endpoint.md, ../features/jev.md, repo-view-branches-raw-clone.md, docs-check-flow-outcome.md, library-catalog.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 00:24 PDT
+
+**What:** Let the agent choose Jev implicitly and show its judge step.
+
+**Why:** Jev behavior needs real-model evidence and a reproducible eval baseline.
+
+**Current state:** At 00:14 the lead reports 4/4 e2e runs and 7/7 eval trials choosing Jev without prompting, with a chaptered recording and fixes for raw verdict objects and an overly strict brevity judge. At 00:18 it confirms Will already approved the merged check. The full eval baseline remains unre-recorded because three ask cases stall.
+
+**Next step:** Resolve the ask-case stalls and re-record the complete eval baseline after deployment; retain implicit-selection and verdict-format regressions.
+
+**Open questions for Will:** None; do not ask Will to establish whether it works.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 00:23 PDT; queue answers through 00:17 PDT; rulings, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Product receipts are reported evidence, not new tracker-run tests. Execution owners retained; documentation reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-20, 22:44 PDT
 
@@ -119,7 +136,7 @@ The library catalog's row "Decide inside a flow: classify, filter, rank, yes or 
 - **21:55 to 22:01:** two more e2e attempts failed before asking: the dev server went down, then came back with GitHub App sign-in, so the composer was hidden (signed out). Local-developer sign-in was back at 22:05, when the lead's test pause began.
 - **22:25: `src/features/jev/jev.test.ts` in the shared tree:** 2 of 10 pass; every test that makes a model call times out (30 s, and 240 s for the agent's), the six that only judge included, whose code this rework didn't touch. `evals/cases.test.ts` passes 26 of 26 (19:56).
 
-- **23:26 to 00:15 on 2026-10-21, after the pause:** `src/features/jev/jev.test.ts` 10 of 10 (the fetch fix landed), `evals/cases.test.ts` 27 of 27, `evals/judge.test.ts` 7 of 7, `e2e/frames.test.ts` 26 of 26. `e2e/jev.spec.ts` passed four times (23:26 to 23:50); the last run's video and GIF pass the frame check: `~/Desktop/smithers-mvp/videos/jev/jev.mp4` (7 chapters) and `gifs/jev-jev.gif`.
+- **23:26 to 00:15 on 2026-10-21, after the pause:** `src/features/jev/jev.test.ts` 10 of 10 (the fetch fix landed), `evals/cases.test.ts` 26 of 26, `evals/judge.test.ts` 7 of 7, `e2e/frames.test.ts` 26 of 26. `e2e/jev.spec.ts` passed four times (23:26 to 23:50); the last run's video and GIF pass the frame check: `~/Desktop/smithers-mvp/videos/jev/jev.mp4` (7 chapters) and `gifs/jev-jev.gif`.
   - The recording first skipped the flow view: the page was on screen for a fraction of a second. The test now moves the highlight to the Jev step with Down, inspects it with Enter, and scrolls its nine verdicts, so the highlighted step shows. Captions named `/app/runs/…` "the home conversation"; `e2e/frames.ts` `placeOfPath` now names it "a run", with its test.
   - **Evals:** `jev-sort` called Jev in every trial, 7 of 7. One full run's trial pasted each verdict whole ("— [object Object]"): the description now gives the shape, `{ verdicts: [{ verdict, confidence }] }`, and `jev-sort` checks `readValues`; 3 of 3 since. The judge's `brief` question failed a nine-line sorted list in 1 of 3; it now counts a list as brief when the person gave a list.
   - **The baseline isn't re-recorded:** the `ask-*` cases stall `unanswered` in the shared tree, with or without this change (source-swapped at 00:08), so a full run can't reach 100% ([agent evals](../features/agent-evals.md#baseline)).

@@ -3,9 +3,26 @@ title: Maintainer tracker and notes as a future wiki plugin
 status: idea
 area: app
 owner: plugin builders after slice 0
-updated: 2026-10-21 00:06 PDT
+updated: 2026-10-21 01:33 PDT
 links: [../rulings.md, everything-is-a-plugin.md, will-decision-queue.md, maintainer-site.md, chaptered-review-videos.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 01:33 PDT
+
+**What:** Retain tracker and notes as a deferred future wiki plugin.
+
+**Why:** PLUGIN-5 separates deferred tracker/wiki migration from the product queue approved by PLUGIN-6.
+
+**Current state:** The product review queue is now approved with evaluation changes, not merely an active design. Tracker and notes migration remain unscheduled; existing maintainer-site curation continues.
+
+**Next step:** Keep this stream deferred and implement the approved queue under product-review-queue.md after its deployment prerequisites.
+
+**Open questions for Will:** None for this deferred stream.
+
+Evidence: script-extracted user text and lead replies, 23:33–01:33 PDT; rulings and queue answers through 01:19 PDT; shared briefs and panel designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported. Existing execution owners and statuses retained; Codex tracker curator updates documentation only. Later rulings supersede retained history.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 00:06 PDT
 

@@ -1,11 +1,28 @@
 ---
 title: Issues list, view, create and comment (0012 slice G0)
-status: done
+status: blocked
 area: app
 owner: issues builder and live GitHub test builder
-updated: 2026-10-20
+updated: 2026-10-21 09:24 PDT
 links: [review-round-4.md, ../decisions/0012-git-end-to-end.md, github-source-of-truth.md, pull-request-list-and-tabs.md, issue-triage.md, pr-review-and-merge.md, decisions-for-will.md, local-first.md, sign-in.md, roles-and-labels.md, old-app-feature-gaps.md, land-to-main.md, dev-stack-hygiene.md, ../features/issues.md, land-and-deploy-mvp.md, self-hosted-grafana.md, will-decision-queue.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 09:24 PDT
+
+**What:** Keep GitHub issues current through durable webhook ingest and personal writes.
+
+**Why:** GitHub is authoritative, so stored webhook delivery alone is not successful sync.
+
+**Current state:** Reopened from done: at 09:22 PDT the lead reports 191 production webhook deliveries stored and none synced because remote flows fail. Earlier issue-create/comment local/live GitHub passes do not establish deployed ingest recovery.
+
+**Next step:** Repair the remote host, verify idempotent processing and recovery of stored deliveries, and prove a new real GitHub issue event appears in the production UI. Keep personal writes attributed to the person. Include this path in the expanded panel and Opus implementation.
+
+**Open questions for Will:** None. The provider preference and investigation/implementation direction are explicit; engineering validation remains with the builders.
+
+Evidence: session 6253ecf2, script-filtered user text and lead replies in the last approximately two hours through 09:23:49 PDT; automated notifications, compacted summaries and tool results excluded. Rulings (including ARCH-14), Will’s queue answers, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules were reconciled. Product results are lead-reported; this tracker verifies the site build only. Existing feature execution ownership is retained.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 16:35 PDT
 

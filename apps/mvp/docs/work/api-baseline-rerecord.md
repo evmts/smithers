@@ -1,11 +1,75 @@
 ---
 title: Record the API baseline again after the SDK agents land
-status: done
+status: in-progress
 area: sdk
-owner: lander and public API record owner
-updated: 2026-10-20
+owner: Codex Sol paired API-baseline and queue-source builder assigned by lead
+updated: 2026-10-21 04:24 PDT
 links: [repo-checks-green.md, agent-root-browser-safe.md, code-reviews.md, one-sqlite-one-leader.md, app-wiring.md, flows-root-platform-neutral.md, land-and-deploy-mvp.md, observability.md, plan-identity-minified-builds.md, land-to-main.md, review-round-4.md, model-step.md, repo-clone-and-view.md, model-endpoint.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 04:24 PDT
+
+**Current state:** At 04:24 PDT the lead confirms the 12-package baseline re-record and changeset audit are complete; no API change lacks a changeset. A lander is putting the finished jobs on main; no finished landing receipt is reported.
+
+**Next step:** Obtain the landing receipt and verify the baseline on the landed revision.
+
+**Open questions for Will:** None new. Existing unresolved questions remain in the retained history.
+
+Evidence: lead text reply at 04:24 PDT, extracted by script from the latest approximately two session hours; no human-typed message in that window. Automated notifications and tool content excluded. Current rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; the tracker runs only the maintainer-site build. Execution owner retained; documentation curator: Codex.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 04:15 PDT
+
+**What:** Refresh the round-4 public API baseline.
+
+**Why:** Keep the declared SDK surface aligned with the shipped packages.
+
+**Current state:** The paired builder report records commit 590eeb2677e3524f843bedb6dbbce884909af827, not pushed. All 51 public-package baseline checks pass after re-recording 12 packages; the audit found no API change missing a changeset. This supersedes the earlier absence of validation, but is not a landing receipt.
+
+**Next step:** Land the validated commit, retain the declaration audit and rerun the baseline on the landed revision.
+
+**Open questions for Will:** None new.
+
+Evidence: script-filtered human text and assistant text replies from the latest approximately two hours of session 6253ecf2 through 04:13 PDT; automated notifications, tool results and teammate messages excluded. Current rulings and queue answers override historical briefs, panel designs, decisions, proposals, TODOs and rules. Builder reports in scratchpad/final supply validation receipts; the tracker independently runs only the maintainer-site build. Execution owners and earlier history retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 03:44 PDT
+
+**What:** Refresh the public API baseline for the 12 packages changed in round 4.
+
+**Why:** The recorded public surface must match the shipped SDK.
+
+**Current state:** At 03:44 PDT the lead explicitly started one Codex Sol job for this refresh and the queue-source fix. No completed baseline, validation or landing receipt is reported. The earlier todo status is superseded by this builder start.
+
+**Next step:** Review declaration diffs and consumer checks; re-record through the existing release flow and list every API change lacking a changeset.
+
+**Open questions for Will:** None new.
+
+Evidence: lead text replies at 03:36 and 03:44 PDT, extracted by script from session 6253ecf2 for 01:44–03:44 PDT. This window contains no user-typed messages; synthetic notifications, command output and tools are excluded. Current rulings and queue answers through 01:19 PDT override historical briefs, panel designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker runs only the maintainer-site build. Execution ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 03:34 PDT
+
+**What:** Refresh the public API baseline for the 12 packages changed in round 4.
+
+**Why:** The recorded surface must match the shipped SDK.
+
+**Current state:** Reopened: the 03:28 PDT lead update explicitly leaves this refresh for Codex after cf6bd457 landed. The earlier done status describes the previous baseline round. The readability rewrites themselves retain unchanged public types; this new refresh concerns round-4 package changes. No builder start or new baseline receipt is reported.
+
+**Next step:** Review declaration diffs, consumer type checks and release notes for the 12 packages; record the baseline through the existing release flow and retain its result.
+
+**Open questions for Will:** None new.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, 01:33–03:33 PDT; synthetic notifications, teammate messages and tool content excluded. Rulings and queue answers through 01:19 PDT supersede historical briefs, panel designs, decisions, proposals, TODOs and rules. Product validation and landing are lead-reported; Codex curates this documentation and runs only the site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 18:04 PDT
 

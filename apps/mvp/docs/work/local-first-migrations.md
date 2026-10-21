@@ -3,9 +3,59 @@ title: Migrate local-first device data on every deploy
 status: in-progress
 area: app
 owner: local-first migrations builder assigned by lead (started 2026-10-20 20:20 PDT)
-updated: 2026-10-21 00:06 PDT
+updated: 2026-10-21 01:54 PDT
 links: [../decisions/0021-local-first-migrations.md, ../decisions/0002-local-first.md, ../decisions/0011-the-agent-runs-in-the-browser.md, local-first.md, plan-identity-across-deploys.md, device-data-recovery.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 01:54 PDT
+
+**What:** Track device migration rollout and remaining coordination.
+
+**Why:** A deploy must preserve local work.
+
+**Current state:** Canonical slice 1 landed in c6940ac5 with exact-tree upgrade proof (lead 01:49). Production completion is unreported; old-tab coordination remains unfinished. See device-data-migrations.md for execution evidence.
+
+**Next step:** Confirm production upgrade, then complete the second coordination slice.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies, session 6253ecf2, 23:53–01:53 PDT; current rulings and queue answers through 01:19 PDT; shared briefs and designs, decisions, proposals, TODOs and rules. Completion and test receipts are reported evidence; this tracker validates only the site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 01:05 PDT
+
+**What:** Keep the migration landing gate and follow-ups explicit.
+
+**Why:** Preserve local work on deploy.
+
+**Current state:** The 01:00 lead update says the migration builder is finished; the combined-tree upgrade test still gates landing. Canonical execution evidence stays in device-data-migrations.md. Old-tab coordination remains todo.
+
+**Next step:** Follow the canonical note for upgrade, push and production receipts, then complete the second coordination slice.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 01:04 PDT; current rulings, queue answers, shared briefs/designs, decisions, proposals, TODOs and rules. Product checks are lead-reported, not executed by this tracker. Execution owners retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:53 PDT
+
+**What:** Keep the device migration and upgrade gate current.
+
+**Why:** The final deployed revision must preserve local work.
+
+**Current state:** The 00:48 lead update supersedes the earlier statement that the deploy gate was cleared: a newly added ownership check wipes upgrading devices. It is excluded from tonight’s landing, and the final combined result still needs the upgrade rerun. Canonical execution evidence is in device-data-migrations.md.
+
+**Next step:** Follow the canonical migration note for the final upgrade, push and production receipts. Retain the separately unfinished old-tab coordination slice.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies, session 6253ecf2, 22:53–00:53 PDT; rulings and queue answers through 00:17:42 PDT; shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Automated notifications and tool blocks excluded. Product receipts are lead-reported; this tracker validates the site build only. Execution ownership and prior history retained.
+
+## Earlier tracker history (retained)
 
 ## Tracker reconciliation — 2026-10-21 00:06 PDT
 

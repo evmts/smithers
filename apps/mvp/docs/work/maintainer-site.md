@@ -3,9 +3,59 @@ title: Maintainer site and work board
 status: done
 area: process
 owner: maintainer site builder and tracker curator
-updated: 2026-10-20
+updated: 2026-10-21 09:17 PDT
 links: [will-decision-queue.md, dev-stack-hygiene.md, ../todo.md, ../../../../README.md, design-questions.md, decisions-for-will.md, old-app-feature-gaps.md, fable-review-2-fixes.md, self-host-install.md, web-page-flow.md, model-endpoint.md, docs-truth-pass.md, ../rulings.md, everything-is-a-plugin.md, chaptered-review-videos.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 09:17 PDT
+
+**What:** Keep one evidence-based note per workstream and rebuild the existing maintainer site.
+
+**Why:** The current tracker stays useful while its future wiki migration remains deferred under PLUGIN-5.
+
+**Current state:** This refresh extracts approximately 07:15–09:15 PDT of human messages, including human-origin queued commands, and lead text replies. Will says keep going and requests committing, rebasing and pushing. Lead updates resume two landers, report the device-upgrade test passing, place conflict fixes and the running-TODO view with the lander, and retain factory/docs work in progress. Generated continuation summaries, automated notifications and tool records are excluded as human evidence.
+
+**Next step:** Run the maintainer-site build for this refresh; subsequent ticks should record actual push and validation receipts before marking those product workstreams done.
+
+**Open questions for Will:** None new; engineering validation and landing do not need another decision.
+
+Evidence: script-filtered session 6253ecf2 human text and lead replies through 09:15 PDT, including Will’s human-origin queued request at 09:10:54. Rulings and queue answers take precedence over the shared briefs/designs, decisions, proposals, TODOs and rules reviewed for this pass. Product validation is lead-reported; this tracker runs the site build only. Execution ownership retained; documentation curator: Codex.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 09:11 PDT
+
+**What:** Keep one evidence-based work note per workstream and rebuild the existing maintainer site.
+
+**Why:** The active tracker must remain current while its future wiki migration stays deferred under PLUGIN-5.
+
+**Current state:** The latest approximately two transcript hours, 2026-10-21 14:09–16:09 UTC, contain repeated “Prompt is too long” assistant replies and local commands, with no substantive user-typed request or lead progress reply. The generated continuation summary is excluded from user evidence. Shared feature/host/panel briefs and designs, decisions, proposals, TODOs, rules, rulings and queue answers were reconciled with the existing workstream inventory. No missing workstream or new completion receipt was established; execution statuses and owners are preserved. Concrete stale policy documentation is now recorded in docs-truth-pass.md and import-rules-and-jev-lint.md.
+
+**Next step:** Continue curation when substantive progress arrives; have the owning docs/rules lanes resolve the recorded contradictions. Build the site after this note update.
+
+**Open questions for Will:** None new.
+
+Evidence: current rulings (SDK-15, GH-9/GH-10, PROC-9 and PLUGIN-5), queue answers, requested source documents and script-filtered transcript window. Generated summaries, tool results and automated messages are excluded from human evidence. No product tests or version-control operations run; Codex is the documentation curator, and execution ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 02:44 PDT
+
+**What:** Maintain the existing work board and its history.
+
+**Why:** Keep current work visible while the review queue becomes a product feature.
+
+**Current state:** The standalone maintainer site is built and remains the active tracker. PLUGIN-4 raises the product review queue; PLUGIN-5 explicitly defers the tracker/notes migration to the future wiki and its memory integration. Earlier instructions below to migrate all maintainer features at P2 are superseded. This refresh changes documentation only.
+
+**Next step:** Continue evidence-based note reconciliation and site rebuilds. Track the product queue separately; leave tracker/wiki implementation deferred.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, approximately 00:43–02:43 PDT; synthetic notifications, agent messages and tool content excluded from human evidence. Current rulings and queue answers through 01:19 PDT take precedence over shared briefs/designs, decisions, proposals, TODOs and rules. Product checks are lead-reported; this tracker verifies the maintainer-site build. Execution ownership retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 18:18 PDT
 

@@ -3,9 +3,26 @@ title: ImportRules and Jev lint rules
 status: in-progress
 area: process
 owner: rules agent; the lead refreshes at session end
-updated: 2026-10-20
+updated: 2026-10-21 09:11 PDT
 links: [review-round-4.md, repo-view-package-split.md, repo-checks-green.md, ../rules.md, ../../AGENTS.md, ../../../../docs/libraries.md, model-host-effect-boundary.md, sync-service-di-test-seam.md, route-ban-any-receiver.md, code-storage-spend-caps.md, host-agnostic-flows.md, ../decisions/0011-the-agent-runs-in-the-browser.md, no-github-actions.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 09:11 PDT
+
+**What:** Align the rule catalog and its enforcement with the latest dependency and GitHub rulings.
+
+**Why:** Checks must enforce Will’s current policy before builders implement the approved CI parity work.
+
+**Current state:** rules.md’s deps.seven-day-rule still states seven days, while SDK-15 permits dependency versions at least one day old without approval. Its github.no-actions section and described PACKAGE.test.ts/Jev checks prohibit all commit statuses; GH-10 now permits write-only smithers/<flow> statuses. GH-9 leaves npm/JSR provenance publishing on GitHub; it does not authorize a GitHub Actions product view. This tracker inspected the catalog, not the actual check implementations, so an enforcement mismatch needs verification rather than an asserted test failure. Existing implementation and validation history below remains unchanged.
+
+**Next step:** Inspect the declared config and checks, update only the superseded policy boundaries, and retain regressions for allowed write-only Smithers statuses and still-forbidden Actions reads/views. Reconcile the catalog in the same change. Keep this within the existing rules workstream.
+
+**Open questions for Will:** None; SDK-15, GH-9 and GH-10 settle these policy choices.
+
+Evidence: current rulings (SDK-15, GH-9/GH-10, PROC-9 and PLUGIN-5), queue answers, requested source documents and script-filtered transcript window. Generated summaries, tool results and automated messages are excluded from human evidence. No product tests or version-control operations run; Codex is the documentation curator, and execution ownership is retained.
+
+## Earlier tracker history (retained)
+
 
 ## What
 
@@ -57,4 +74,4 @@ Until 11:07 on 2026-10-20 the next steps were:
 
 ## Questions for Will
 
-- `effect.boundary-only`: `apps/mvp/AGENTS.md` lets any callback a layer registers bridge with `Effect.runSyncWith` or `runPromiseWith`. Your "where necessary" is narrower: a listener whose events could be a `Stream` doesn't need one. `rules.md` follows your words until you rule. Keep the narrow reading? Recommended: yes.
+- None. `effect.boundary-only` is decided by SDK-7 ("only where necessary"): `apps/mvp/AGENTS.md` already says a listener whose events could be a `Stream` is a `Stream`, and `rules.md` keeps the narrow reading (lead, 2026-10-21 09:20).

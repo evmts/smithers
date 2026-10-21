@@ -1,13 +1,13 @@
 ---
 title: Clear branch workspace and understandable walkthrough
-status: in-progress
+status: done
 area: app
 owner: branch page and recording agent assigned by the lead
-updated: 2026-10-20
+updated: 2026-10-21
 links: [branch-terminal.md, branch-sharing.md, chaptered-review-videos.md, ../decisions/0013-branch-workspace.md]
 ---
 
-## Current specification — 2026-10-20, 22:20 PDT
+## Current specification — 2026-10-21, 00:25 PDT
 
 **What:** Make the branch, conversation, terminal, views and people immediately recognizable, and make every recording say what it shows.
 
@@ -21,6 +21,11 @@ links: [branch-terminal.md, branch-sharing.md, chaptered-review-videos.md, ../de
 - The terminal panel shows a terminal that turns up after it found none, so a reload on a loaded machine no longer leaves the view blank (`terminal/actions.ts` `show`).
 - Recordings: a 2 s title card (feature, test name, one line from a `summary` annotation or the title), captions in product words, harder cuts of idle waits, 1280×800 windows at 1:1, about half in dark mode by a hash of spec and title, and `status` and `theme` in `<test>.chapters.json`.
 
-**Todo (after the test pause lifts):** re-record `e2e/branch-workspace.spec.ts` and `e2e/branch-sharing.spec.ts` on the mini (`-e BASE_URL=http://localhost:1337` until the HTTPS default works there), review the videos frame by frame, and hand the media paths to the lead. The last mini runs proved branch-workspace 4/4 before the theme and viewport change and 3/4 after (the terminal reload failure is the bug fixed above). Branch-sharing was blocked by the mini's stale `text_updates` table (repaired), then by the lockfile and AgentSandbox breakages (fixed by their owners), then by the pause.
+**Proof (2026-10-21 00:16, Mac mini, HTTPS dev default):** `pnpm e2e branch-workspace.spec.ts branch-sharing.spec.ts`: 6 passed. `pnpm e2e:gifs`: 6 videos and GIFs, 0 fail the check. Every frame was reviewed. The videos are at `~/Desktop/smithers-mvp/videos/branch-workspace/{branch-conversation,branch-terminal,branch-views,second-branch-terminal}.mp4` and `~/Desktop/smithers-mvp/videos/branch-sharing/branch-sharing-{shared-to-view-ben-watches-maya-s-terminal-an,anyone-in-the-repository-with-the-link-reache}.mp4`, each with its `.chapters.json`.
+
+**Follow-ups (todo, other owners):**
+- A branch conversation stays blank for seconds until its shape first syncs (decision 0002: blank, never the empty state). On the mini it was 5 to 10 s.
+- The full-screen view page shows only "Back to chat" until the framed page loads.
+- The notifications pill sits over the repository header's Stack and Clone buttons at 1280 px.
 
 **Open questions for Will:** None.

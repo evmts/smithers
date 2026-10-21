@@ -1,11 +1,45 @@
 ---
 title: Current-slice burn-down to the next production deploy
-status: in-progress
+status: done
 area: process
 owner: lead coordinates builders and round 4 lander; Codex tracker curator records evidence
-updated: 2026-10-20 23:44 PDT
+updated: 2026-10-21 02:55 PDT
 links: [land-to-main.md, land-and-deploy-mvp.md, local-first-migrations.md, test-runner-background-errors.md, exposed-credentials-rotation.md, will-decision-queue.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 02:55 PDT
+
+**What:** Complete the combined round 4c/4d landing, deployment and basic production smoke checks.
+
+**Why:** Close this bounded deployment batch and let the next feature work proceed.
+
+**Current state:** The combined round is reported pushed as c6940ac5; at 02:54 PDT the lead confirms production live and passing app, sign-in redirect, session API and unsigned-webhook checks. The lead has begun after-deploy work. This does not close the separate 99.76% app coverage gap, device ownership, held-out migrations or unproven production factory execution. The App installation is already confirmed; it is no longer an open question.
+
+**Next step:** Continue the after-deploy work in the existing feature notes; obtain the detailed deploy report and production factory receipts without reopening installation approval.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest approximately two hours through 02:54 PDT. Automated notifications and teammate messages excluded. Current rulings and queue answers override historical briefs, panel designs, decisions, proposals, TODOs and rules. Product checks are lead-reported; this tracker runs the site build only. Execution ownership retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:44 PDT
+
+**What:** Land combined rounds 4c/4d, deploy and verify production before the next feature batch.
+
+**Why:** Migrations depend on the current snapshot, so splitting the handoff would weaken validation.
+
+**Current state:** The 00:10 combined-landing decision supersedes separate 4c then 4d deploys. At 00:31 the lander is still mid-landing; through 00:44 no combined push or production smoke-test completion is reported. Later handoffs include credentials, loading, notifications, spend channels and code intelligence. Conflict tests have explicit failures.
+
+**Next step:** Confirm lander receipts and outstanding browsing fixes, then deploy the pushed revision and smoke-test app/API, device upgrade, sign-in, webhooks and logs. Afterwards prioritize the production VibeLang factory under SCOPE-13.
+
+**Open questions for Will:** Production GitHub App setup and VibeLang App install remain person-owned; no repeated approval request. Credential rotation remains Will’s responsibility.
+
+Evidence: script-filtered user-typed text and lead text replies from session 6253ecf2, approximately 22:44–00:44 PDT; rulings, queue answers through 00:17:42 PDT, current decisions, proposals, TODOs, rules and shared briefs/designs. Automated notifications and teammate messages are excluded as human evidence. Product checks are lead-reported receipts; this tracker validates the site build only. Existing execution owners and all history are retained.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-20 23:44 PDT
 

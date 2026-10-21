@@ -3,9 +3,43 @@ title: Local-first conflict coverage and multi-device walkthroughs
 status: in-progress
 area: app
 owner: conflict-coverage builder assigned by lead
-updated: 2026-10-20 23:44 PDT
+updated: 2026-10-21 03:14 PDT
 links: [local-first.md, branch-coediting.md, chaptered-review-videos.md, ../decisions/0002-local-first.md, ../rules.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 03:14 PDT
+
+**What:** Prove every real device-conflict class with end-to-end tests and clear recordings.
+
+**Why:** Will requested all conflict types; unexplained real-model failures remain product evidence to resolve.
+
+**Current state:** At 02:56 PDT the lead started an Opus job in its own workspace to reproduce the four unexplained failures, bisect round-4 changes and fix the causes. The earlier eleven-case outcome accounting remains incomplete; no new passing full-suite receipt is reported.
+
+**Next step:** Follow local-first-conflicts.md for the detailed inventory, reconcile all eleven results and retain a real-model regression for every repaired cause.
+
+**Open questions for Will:** None.
+
+Evidence: script-extracted user text and lead replies, 08:13–10:13 UTC on 2026-10-21 (01:13–03:13 PDT); current rulings and queue answers take precedence over briefs and designs. Execution owners and status retained. Product receipts are lead-reported; this tracker validates only the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:44 PDT
+
+**What:** Prove device-conflict behavior with the real model and preserve failing cases.
+
+**Why:** Passing scripted-agent journeys do not establish real-model behavior.
+
+**Current state:** At 00:41 the lead reports 5 of 11 passing, 1 failing where already marked broken, and 4 other unexplained failures after the real-model switch. These counts account for only 10 cases; the eleventh outcome is unreported. Earlier 6-of-11 scripted-agent evidence does not settle the current suite. The lead plans committed known-broken cases for landing.
+
+**Next step:** Reconcile all eleven outcomes and investigate the failures first after deployment; retain each broken test and fix its cause. Do not present this suite as passing.
+
+**Open questions for Will:** None; debugging and test accounting belong to the owners.
+
+Evidence: script-filtered user-typed text and lead text replies from session 6253ecf2, approximately 22:44–00:44 PDT; rulings, queue answers through 00:17:42 PDT, current decisions, proposals, TODOs, rules and shared briefs/designs. Automated notifications and teammate messages are excluded as human evidence. Product checks are lead-reported receipts; this tracker validates the site build only. Existing execution owners and all history are retained.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-20 23:44 PDT
 

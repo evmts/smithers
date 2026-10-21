@@ -3,9 +3,26 @@ title: Complete production GitHub App setup
 status: in-progress
 area: infra
 owner: Will configures the App; lead validates production
-updated: 2026-10-20 23:14 PDT
+updated: 2026-10-21 02:34 PDT
 links: [land-and-deploy-mvp.md, sign-in.md, github-source-of-truth.md, will-decision-queue.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 02:34 PDT
+
+**What:** Verify production GitHub sign-in and webhook setup.
+
+**Why:** Installation coverage, callback configuration and event delivery need distinct evidence.
+
+**Current state:** Will selected Installed for smithersai/vibelang at 01:16 PDT. At 01:38 the lead independently confirmed, using the App's credentials, installation across the smithersai organization and all repositories. Installation is settled. No successful production callback or webhook smoke receipt appears in the latest two-hour window; deployment is still running at 02:32. Status remains in-progress.
+
+**Next step:** After deployment completes, validate production sign-in, webhook delivery and VibeLang import. Resolve this workstream from those receipts; do not repeat the installation request.
+
+**Open questions for Will:** None now; validate the configured service before asking for further setup.
+
+Evidence: queue answer question:vibelang-app-install at 2026-10-21T08:16:40.579Z; script-filtered lead replies at 01:38 and 02:32 PDT. Current rulings override historical briefs and proposals. Codex curates documentation only; execution ownership and all earlier history retained.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-20 23:14 PDT
 

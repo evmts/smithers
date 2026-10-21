@@ -3,9 +3,60 @@ title: Will's decision queue (full-screen, keyboard-only, in the maintainer app)
 status: in-progress
 area: process
 owner: queue curator and lead
-updated: 2026-10-21 00:06 PDT
+updated: 2026-10-21 01:44 PDT
 links: [maintainer-site.md, decisions-for-will.md, code-reviews.md, e2e-suite-and-gifs.md, smithers-playground.md, todos-and-stack.md, self-host-install.md, second-build-machine.md, dev-stack-hygiene.md, review-round-4-p3-cleanup.md, docs-truth-pass.md, prompt-flows-are-code-flows.md, self-hosted-grafana.md, chat-message-controls.md, repository-declared-home.md, issues.md, ../rulings.md, chaptered-review-videos.md, everything-is-a-plugin.md, maintainer-app-plugins.md, code-review-guides.md, queue-general-feedback.md, queue-before-after-review.md, queue-review-quality-gate.md, native-app-di-plan.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 01:44 PDT
+
+**What:** Keep the live queue and its unresolved choices current.
+
+**Why:** An unanswered proposal must not silently replace Will’s review policy.
+
+**Current state:** Through 01:43 the code-review routing question is the only reported open decision. It is queued at 945 with corrected 55% confidence; the previous 70% recommendation is superseded. The batch of 80 guides remains held. Approved designs and App installation stay answered.
+
+**Next step:** Continue curation and measurement; await the review-policy answer before changing which files reach Will.
+
+**Open questions for Will:** Flagged-only agent-reviewed slices, reviewed summaries for every slice, or full code slices?
+
+Evidence: script-filtered user-typed text and lead replies, session 6253ecf2, 23:43–01:43 PDT; rulings, queue answers through 01:19 PDT, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Product receipts are reported evidence; this tracker runs only the site build. Existing execution ownership and status retained; documentation reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 01:33 PDT
+
+**What:** Keep the live review queue current and evaluate the quality of its recommendations.
+
+**Why:** Will approved the product queue with evaluation requirements (PLUGIN-6); answered choices must leave the pending list.
+
+**Current state:** At 01:14 PDT Will approved decision 0022 with changes and the four-model workflows-as-code recommendation. At 01:16 he confirmed the VibeLang App install. At 01:17–01:18 he approved repo browsing, agent status, branch workspace and code intelligence recordings. The lead reports two code items remaining at 01:22 and holds the next 80 guides through 01:31. First metrics over 177 answers and a gentle rubber-stamp flag are live; real curator evals remain required.
+
+**Next step:** Continue curation, dispatch approved designs after deploy, and retain completed guides while the review-routing question is pending. Keep measurements in queue-review-quality-gate.md.
+
+**Open questions for Will:** Whether agents should review every code slice and show Will only flagged or high-risk changes; the 01:22 proposal (70% confidence) has no answer.
+
+Evidence: script-extracted user text and lead replies, 23:33–01:33 PDT; rulings and queue answers through 01:19 PDT; shared briefs and panel designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported. Existing execution owners and statuses retained; Codex tracker curator updates documentation only. Later rulings supersede retained history.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:44 PDT
+
+**What:** Keep guided artifact reviews current and reserve Will’s attention for quality and decisions.
+
+**Why:** Tests establish whether behavior works before review.
+
+**Current state:** Code-view controls remain done on browser tests. Decision 0022 is queued once at priority 995 after duplicate consolidation; the merged workflows-as-code proposal still awaits completion. At 00:42 the VibeLang GitHub App install is queued at 990. Latest queue answers remain 00:17:42. The curator now withholds unreadable slices; last reported simplify-first count is 87.
+
+**Next step:** Continue curation and exact-revision guides; ingest answers and queue the merged authoring design only when ready. Do not ask Will to determine whether buttons or features work.
+
+**Open questions for Will:** Review decision 0022 and the eventual merged authoring design; install the GitHub App on smithersai/vibelang.
+
+Evidence: script-filtered user-typed text and lead text replies from session 6253ecf2, approximately 22:44–00:44 PDT; rulings, queue answers through 00:17:42 PDT, current decisions, proposals, TODOs, rules and shared briefs/designs. Automated notifications and teammate messages are excluded as human evidence. Product checks are lead-reported receipts; this tracker validates the site build only. Existing execution owners and all history are retained.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 00:06 PDT
 

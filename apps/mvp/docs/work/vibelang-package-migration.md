@@ -3,9 +3,60 @@ title: Migrate Smithers Effect code to VibeLang, one package at a time
 status: in-progress
 area: sdk
 owner: VibeLang migration session; lander excludes unpublished links
-updated: 2026-10-20
+updated: 2026-10-21 03:14 PDT
 links: [../rulings.md, vibelang-0-0-2-publish.md, second-build-machine.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 03:14 PDT
+
+**What:** Integrate the reviewed @smthrs/fs migration using published VibeLang dependencies.
+
+**Why:** Remove local compiler links while keeping package-by-package review and behavioral proof.
+
+**Current state:** At 03:05 PDT the lead reports smithers-53 completed shared-checkout cleanup after the rebase: its old fs changes are removed there and the regenerated lockfile has no local VibeLang repository link. Remaining lockfile changes belong to other unfinished packages. This is a cleanup receipt, not a migration push or publication receipt.
+
+**Next step:** Record the migration push revision; have the next lander reconcile or regenerate the remaining lockfile from its selected package changes, and retain package validation before expanding migration.
+
+**Open questions for Will:** None.
+
+Evidence: script-extracted user text and lead replies, 08:13–10:13 UTC on 2026-10-21 (01:13–03:13 PDT); current rulings and queue answers take precedence over briefs and designs. Execution owners and status retained. Product receipts are lead-reported; this tracker validates only the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 02:55 PDT
+
+**What:** Land the validated VibeLang @smthrs/fs migration, then continue package-by-package review.
+
+**Why:** Replace local compiler links with the published compiler while preserving the reviewed migration.
+
+**Current state:** At 02:54 PDT the lead confirms production live and explicitly gives smithers-53 the go-ahead to push the fs migration. The deployment hold is cleared. No actual migration push receipt appears yet; authorization is not completion. Earlier published-compiler and passing-gate receipts remain owner-reported.
+
+**Next step:** Obtain the migration push receipt, reconcile the shared checkout without reverting the migrated files, and retain the package review gate before broadening the migration.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest approximately two hours through 02:54 PDT. Automated notifications and teammate messages excluded. Current rulings and queue answers override historical briefs, panel designs, decisions, proposals, TODOs and rules. Product checks are lead-reported; this tracker runs the site build only. Execution ownership retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:44 PDT
+
+**What:** Integrate the idiomatic VibeLang fs migration without reverting files or destabilizing deployment.
+
+**Why:** The published compiler removes local checkout dependencies; landing must preserve the reviewed code.
+
+**Current state:** At 00:40 the lead reports fs ready for main with VibeLang 0.0.2 published and every gate passing. Its 1,295-line lockfile cleanup and build changes are deliberately held until the combined landing and deploy finish. No migration push receipt is reported.
+
+**Next step:** After deployment the migration owner pushes; the lander rebases the shared checkout and removes the old local migration copy in the same operation so files never revert.
+
+**Open questions for Will:** None; do not repeat settled syntax questions.
+
+Evidence: script-filtered user-typed text and lead text replies from session 6253ecf2, approximately 22:44–00:44 PDT; rulings, queue answers through 00:17:42 PDT, current decisions, proposals, TODOs, rules and shared briefs/designs. Automated notifications and teammate messages are excluded as human evidence. Product checks are lead-reported receipts; this tracker validates the site build only. Existing execution owners and all history are retained.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 21:34 PDT
 

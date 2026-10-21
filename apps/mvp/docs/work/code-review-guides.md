@@ -3,9 +3,109 @@ title: Code review guides and package architecture context
 status: in-progress
 area: process
 owner: code-guide writers and queue curator assigned by lead
-updated: 2026-10-20 23:55 PDT
-links: [code-reviews.md, will-decision-queue.md, ../rulings.md]
+updated: 2026-10-21 04:04 PDT
+links: [queue-recorded-revision-source.md, code-reviews.md, will-decision-queue.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 04:04 PDT
+
+**What:** Keep code guides tied to the reviewed source.
+
+**Why:** Avoid stale source while preserving completed guides.
+
+**Current state:** At 03:57 PDT the lead reports 21 slices from the eight rewritten engine/flow files cut from main and ready for guides after Will answers question 945. Overall, 5,325 of 5,401 slices now carry source commits; 76 already-guided legacy slices keep checkout text. Guide writing remains paused. Recorded-commit server reads still await the paired Codex job; metadata alone does not close that work.
+
+**Next step:** Preserve existing guides and all slices. Complete recorded-commit serving, then resume the held guide batch after the existing review-format answer.
+
+**Open questions for Will:** Answer existing review-format question 945; no new question.
+
+Evidence: script-filtered user-typed text and lead replies in session 6253ecf2, 02:03–04:03 PDT; automated notifications, teammate messages and tools excluded. No new user-typed direction appears in this window. Current rulings and queue answers through 01:19 PDT take precedence over shared briefs, panel designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker runs only the site build. Execution ownership retained; documentation reconciled by Codex.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 03:34 PDT
+
+**What:** Keep code guides tied to the exact reviewed source revision.
+
+**Why:** A guide for landed code must not display stale working-copy text.
+
+**Current state:** At 03:28 PDT the lead reports eight engine/flow rewrites landed at cf6bd457. At 03:31 it says the queue server still serves their old source from the shared checkout. New slices are held until recorded-revision serving is fixed; guide writing also remains paused on unanswered queue question 945. No queue answer authorizes skipping routine slices.
+
+**Next step:** Retain all slices and existing guides. Fix recorded-revision source reads, then regenerate guides when Will answers the existing review-format question.
+
+**Open questions for Will:** Existing review-format question 945 remains unanswered; no new question.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, 01:33–03:33 PDT; synthetic notifications, teammate messages and tool content excluded. Rulings and queue answers through 01:19 PDT supersede historical briefs, panel designs, decisions, proposals, TODOs and rules. Product validation and landing are lead-reported; Codex curates this documentation and runs only the site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 01:44 PDT
+
+**What:** Keep code guides accurate while Will decides the review format.
+
+**Why:** Will previously required review of every file; the newer routing proposal is still a question.
+
+**Current state:** At 01:37 the curator corrected the routing recommendation from 70% to 55% confidence after recovering Will’s earlier every-file instruction. The question is queued at priority 945. The next 80 guides remain held; no answer authorizes skipping routine slices.
+
+**Next step:** Preserve completed guides and hold the next batch. Re-guide the simplified engine files after their landing.
+
+**Open questions for Will:** Choose flagged-only review, a one-screen reviewed summary for every slice with full code available, or the existing full-slice approach.
+
+Evidence: script-filtered user-typed text and lead replies, session 6253ecf2, 23:43–01:43 PDT; rulings, queue answers through 01:19 PDT, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Product receipts are reported evidence; this tracker runs only the site build. Existing execution ownership and status retained; documentation reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 01:24 PDT
+
+**What:** Keep code guides matched to readable, current revisions.
+
+**Why:** Review time should focus on decisions and material risk.
+
+**Current state:** At 01:22 the lead reports only two code items left, 40 approvals in about 40 seconds, and the next batch of 80 guides held pending a policy decision. Simplified engine files still return to Will as requested.
+
+**Next step:** Hold the next batch, preserve completed guides and re-guide the engine rewrite after landing.
+
+**Open questions for Will:** Whether to use Astra then Fable review for every slice, showing Will only flagged, security, data and public API slices.
+
+Evidence: script-filtered human messages and lead text replies from session 6253ecf2, approximately 23:24–01:24 PDT; current rulings and queue answers through 01:19 PDT; shared briefs/designs, decisions, proposals, TODOs and rules. Product results are reported receipts. Execution owners retained; Codex curates tracker documentation only. Later rulings supersede earlier history.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:53 PDT
+
+**What:** Keep code guides accurate to the reviewed revision and hold unreadable slices.
+
+**Why:** Will reviews quality and decisions after tests establish behavior.
+
+**Current state:** Four writers were assigned 80 further slices at 00:22. The 00:28 lead update raises the simplify-first count to 87, superseding the earlier 69. Decision 0022 is queued once; workflows-as-code synthesis still awaits completion. Will’s 00:15 queue answer rejects asking him whether a feature works.
+
+**Next step:** Finish guides, hold stale or unreadable slices, and re-guide simplified revisions. Ask Will about quality or intent with evidence already attached.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies, session 6253ecf2, 22:53–00:53 PDT; rulings and queue answers through 00:17:42 PDT; shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Automated notifications and tool blocks excluded. Product receipts are lead-reported; this tracker validates the site build only. Execution ownership and prior history retained.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 00:24 PDT
+
+**What:** Keep revision-specific guides and architecture context readable.
+
+**Why:** Will reviews quality after evidence and readability gates pass.
+
+**Current state:** At 00:22 four writers cover the next 80 slices: 48 flow, 20 engine and 12 app. The lead reports 34 approvals from the first 80 and a total of 69 slices held for simplification, superseding the earlier 27-slice count.
+
+**Next step:** Finish current guides, hold unreadable or stale slices and re-guide each simplified revision. Track the broader cleanup in code-readability-burn-down.md.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 00:23 PDT; queue answers through 00:17 PDT; rulings, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Product receipts are reported evidence, not new tracker-run tests. Execution owners retained; documentation reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-20 23:55 PDT
 

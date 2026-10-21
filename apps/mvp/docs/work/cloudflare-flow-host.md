@@ -1,11 +1,28 @@
 ---
 title: Cloudflare flow host in the Worker (remote flows)
-status: done
+status: in-progress
 area: infra
 owner: none open from Fable review 2: the engine and hosts agent reported P3-1 and P3-7 fixed at 07:07:38 on 2026-10-20. Until 07:07: Fable fix agent: engine and hosts (since 06:09:22 on 2026-10-20): P3-1, settled Durable Objects keep their intent forever, and P3-7, the remote door with nothing to start; tracked in `fable-review-2-fixes`. Until 06:09: W5 (a)+(c) agent (started 22:59, reported done 23:39 on 2026-10-19), the Worker wiring, W5 (c) of durable answering; Cloudflare child-flow agent (started by 23:12 on 2026-10-19, reported done 00:21 on 2026-10-20), review 2's P1 fix in `platform-cloudflare`
-updated: 2026-10-20
+updated: 2026-10-21 09:24 PDT
 links: [../decisions/0011-the-agent-runs-in-the-browser.md, ../decisions/0006-repo-clone-and-view.md, ../decisions/0003-flows-and-the-agent.md, durable-answering.md, model-endpoint.md, repo-clone-and-view.md, host-agnostic-flows.md, infrastructure-as-code.md, code-reviews.md, everything-is-a-durable-flow.md, flows-root-platform-neutral.md, b1-follow-ups.md, platform-cloudflare-edge-cache.md, sdk-test-reds.md, disk-space.md, plan-identity-across-deploys.md, fable-review-2-fixes.md, flows-and-agent.md, land-to-main.md, second-build-machine.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 09:24 PDT
+
+**What:** Execute remote durable flows reliably on the hosted Cloudflare runtime.
+
+**Why:** The production host failure blocks multiple major features despite earlier local completion.
+
+**Current state:** Reopened from done. At 09:18–09:22 PDT the lead reports every production remote flow failing since first deploy with MigrationError. The sandbox brief says smithers_flows contains only an empty flows_migrations table. A repair agent is running; no repaired deployment or passing production receipt is reported. Prior local/workerd receipts remain historical evidence.
+
+**Next step:** Diagnose and fix engine migration initialization through the SDK host, deploy the tested revision and prove real remote execution and recovery. Recheck issue ingest, cloning, TODO runs, alerts, role checks, expiry and token revocation individually. Will’s 09:23 request extends the four-model investigation to these failures, then Opus implementation.
+
+**Open questions for Will:** None. The provider preference and investigation/implementation direction are explicit; engineering validation remains with the builders.
+
+Evidence: session 6253ecf2, script-filtered user text and lead replies in the last approximately two hours through 09:23:49 PDT; automated notifications, compacted summaries and tool results excluded. Rulings (including ARCH-14), Will’s queue answers, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules were reconciled. Product results are lead-reported; this tracker verifies the site build only. Existing feature execution ownership is retained.
+
+## Earlier tracker history (retained)
+
 
 ## What
 

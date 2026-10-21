@@ -3,9 +3,43 @@ title: End-to-end suite and flow GIFs
 status: in-progress
 area: app
 owner: recording pipeline builder and feature builders
-updated: 2026-10-20
+updated: 2026-10-21 09:24 PDT
 links: [../features/chat.md, ../rules.md, ../observability.md, sync-service-di-test-seam.md, route-ban-any-receiver.md, land-and-deploy-mvp.md, app-wiring.md, local-first.md, slash-commands.md, navigate-flow.md, web-page-flow.md, agent-jev.md, ../rulings.md, chaptered-review-videos.md, device-data-migrations.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 09:24 PDT
+
+**What:** Maintain a feature-by-feature end-to-end evidence matrix with usable recordings.
+
+**Why:** Will asks which major features actually fail and wants all of them derisked.
+
+**Current state:** At 09:22 PDT the lead reports a Codex Sol sweep of all 37 specs against one fixed main revision on the Mac mini. No completed matrix is reported. Production has no end-to-end test coverage yet; historical local suite passes do not prove hosted behavior.
+
+**Next step:** Collect the sweep revision and per-feature pass/fail/flaky/needs-live results, distinguish environment failures and untested features, then add and run production proofs with GIFs. The brief requires a retry of each failure and forbids counting closed-port model/live-service requirements as product failures. Route confirmed gaps into the four-model/Opus repair effort.
+
+**Open questions for Will:** None. The provider preference and investigation/implementation direction are explicit; engineering validation remains with the builders.
+
+Evidence: session 6253ecf2, script-filtered user text and lead replies in the last approximately two hours through 09:23:49 PDT; automated notifications, compacted summaries and tool results excluded. Rulings (including ARCH-14), Will’s queue answers, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules were reconciled. Product results are lead-reported; this tracker verifies the site build only. Existing feature execution ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:44 PDT
+
+**What:** Maintain passing, chaptered recordings for actual feature behavior.
+
+**Why:** Will reviews product quality after tests establish functionality.
+
+**Current state:** At 00:32 the lead reports 82 passing chaptered walkthroughs, including all 17 local-first and all 4 agent walkthroughs. That recording snapshot does not override the later 00:41 conflict-suite failures. Issue triage remains unrecordable without the scratch-account permission. Clone state and bell overlap are being fixed before landing.
+
+**Next step:** Refresh affected recordings after fixes and deployment; retain real-model conflict failures. Fix the status bell locator, navigate header locator and long-conversation late-joiner fixture after landing.
+
+**Open questions for Will:** Grant codeplanesmithers Maintain on roninjin10/smithers-github-tests for issue-triage recording; this remains person-owned.
+
+Evidence: script-filtered user-typed text and lead text replies from session 6253ecf2, approximately 22:44–00:44 PDT; rulings, queue answers through 00:17:42 PDT, current decisions, proposals, TODOs, rules and shared briefs/designs. Automated notifications and teammate messages are excluded as human evidence. Product checks are lead-reported receipts; this tracker validates the site build only. Existing execution owners and all history are retained.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 20:14 PDT
 

@@ -3,9 +3,39 @@ title: Notifications and live work (MVP 4 and 6, early feature 8b)
 status: in-progress
 area: design
 owner: notifications builder; live GitHub webhook follow-up
-updated: 2026-10-20
+updated: 2026-10-21 04:24 PDT
 links: [agent-status.md, flow-debugging.md, ../decisions/0009-notifications-and-live-work.md, mvp-scope-cut.md, ../proposals/early-features.md, ../proposals/mvp-gaps.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, durable-browser-engine.md, ../decisions/0002-local-first.md, local-first.md, durable-answering.md, ../decisions/0015-agent-status.md, token-spend-alerts.md, branch-terminal.md, issue-triage.md, local-dev-sync-connections.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 04:24 PDT
+
+**Current state:** At 04:24 PDT the lead says the status test remains broken: one device never receives its notifications. Notification data takes about 38 seconds to load; the cause is unknown. Earlier passing recordings do not establish that needs-you notifications work in production. The finding has been sent to the Opus conflict-test builder.
+
+**Next step:** Investigate the loading delay with the conflict-test builder, retain a regression, and prove cross-device needs-you delivery against real dependencies and production.
+
+**Open questions for Will:** None new. Existing unresolved questions remain in the retained history.
+
+Evidence: lead text reply at 04:24 PDT, extracted by script from the latest approximately two session hours; no human-typed message in that window. Automated notifications and tool content excluded. Current rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; the tracker runs only the maintainer-site build. Execution owner retained; documentation curator: Codex.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 00:34 PDT
+
+**What:** Restore and prove the shared notification entry point on every page.
+
+**Why:** People must receive and act on notifications wherever they are in the app.
+
+**Current state:** At 00:32 the lead reports both notification e2e tests pass on the Mac mini and the blank GIF is replaced. The loading-pattern change had removed the bell outside home; it is restored. Tests now select their own runs rather than 411 leftover database runs. This does not resolve the separate status-device delivery failure or the bell overlapping Clone.
+
+**Next step:** Land the proved fixes in combined 4c/4d, fix header overlap, and retain production webhook and multi-device delivery proofs.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, latest two hours through 00:33 PDT; current rulings and queue answers through 00:17:42 PDT, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are lead-reported receipts; this tracker runs the maintainer-site build. Execution owners and all prior history retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 18:26 PDT
 
