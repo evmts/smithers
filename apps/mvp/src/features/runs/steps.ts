@@ -144,9 +144,16 @@ export const retry = ({ runId, version }: { readonly runId: string; readonly ver
 export const list = () =>
   Effect.gen(function* () {
     // A store that can't be read fails the read: the agent hears it failed, never an empty list.
-    const page = yield* Effect.orDie((yield* EngineStore.RunInspection.RunInspection).list({ limit: RUN_LIST_LIMIT }))
+    const inspection = yield* EngineStore.RunInspection.RunInspection
+    const runs: Array<EngineStore.RunInspection.RunList["runs"][number]> = []
+    let cursor: string | undefined
+    do {
+      const page = yield* Effect.orDie(inspection.list({ limit: RUN_LIST_LIMIT, ...(cursor === undefined ? {} : { cursor }) }))
+      runs.push(...page.runs.filter((run) => listed(run.flowName)))
+      cursor = page.cursor ?? undefined
+    } while (runs.length < RUN_LIST_LIMIT && cursor !== undefined)
     return {
-      runs: page.runs.filter((run) => listed(run.flowName)).map((run) => ({
+      runs: runs.slice(0, RUN_LIST_LIMIT).map((run) => ({
         runId: run.runId,
         flow: run.flowName,
         status: run.status,
