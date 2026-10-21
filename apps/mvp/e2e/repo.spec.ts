@@ -1,4 +1,4 @@
-import { expect, recordActions, test } from "./fixtures"
+import { expect, recordActions, test, visibleText } from "./fixtures"
 import { requires } from "./target"
 
 // Clone a public GitHub repository and browse it (docs/features/repo.md, decision 0006), against the real app,
@@ -49,10 +49,10 @@ test("browse: a file from the listing, its lines, a reload, and the permalink at
   await openReady(page)
   await page.getByRole("link", { name: "index.html" }).first().click()
   await expect(page).toHaveURL(/\/octocat\/Spoon-Knife\/blob\/main\/index\.html$/)
-  await expect(page.getByText("<!DOCTYPE html>", { exact: false })).toBeVisible({ timeout: 30_000 })
+  await expect(visibleText(page.getByRole("article", { name: "index.html", exact: true }), "<!DOCTYPE html>")).toBeVisible({ timeout: 30_000 })
   // A line anchor survives a reload: the URL is the view's location.
   await page.goto(`${REPO}/blob/main/index.html?L=3`)
-  await expect(page.getByText("<!DOCTYPE html>", { exact: false })).toBeVisible({ timeout: 30_000 })
+  await expect(visibleText(page.getByRole("article", { name: "index.html", exact: true }), "<!DOCTYPE html>")).toBeVisible({ timeout: 30_000 })
   // Copy permalink runs `repo/copy` on this browser's engine, which then writes this tab's clipboard.
   await page.getByRole("button", { name: "Copy permalink" }).click()
   await expect
@@ -60,7 +60,7 @@ test("browse: a file from the listing, its lines, a reload, and the permalink at
     .toMatch(/\/octocat\/Spoon-Knife\/blob\/[0-9a-f]{40}\/index\.html\?L=3$/)
   const permalink = await page.evaluate(() => navigator.clipboard.readText())
   await page.goto(new URL(permalink).pathname + new URL(permalink).search)
-  await expect(page.getByText("<!DOCTYPE html>", { exact: false })).toBeVisible({ timeout: 30_000 })
+  await expect(visibleText(page.getByRole("article", { name: "index.html", exact: true }), "<!DOCTYPE html>")).toBeVisible({ timeout: 30_000 })
   // Up the path trail, back to the README.
   await page.getByRole("link", { name: "Spoon-Knife" }).first().click()
   await expect(page.getByText("Well hello there!")).toBeVisible({ timeout: 30_000 })

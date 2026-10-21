@@ -11,6 +11,10 @@ import { meets, target } from "./target"
 // contract, which the app and these tests share.
 export { COULDNT_ANSWER, NOT_SENT, OFFLINE, PAGE_SIZE, QUEUED, SYNC_FAILED } from "../src/features/chat/contract"
 
+/** Matching text on the visible surface, excluding code viewers’ retained plain-text fallbacks. */
+export const visibleText = (scope: Page | Locator, text: string | RegExp): Locator =>
+  scope.getByText(text, { exact: false }).filter({ visible: true })
+
 /**
  * The no-spinner observer (0002 §7), an init script: it records every loading marker the page ever shows, `aria-busy`
  * true or a progress bar, on `window.__busy`. Shows means paints: @smthrs/ui's loading pattern stays invisible for its

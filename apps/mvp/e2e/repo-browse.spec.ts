@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures"
+import { expect, test, visibleText } from "./fixtures"
 import { requires } from "./target"
 
 // Browsing a repository as Will reviewed it (docs/features/repo.md#the-page), against the real app, Worker, Postgres,
@@ -163,7 +163,7 @@ test.describe("cloned repositories", () => {
       await openSpoon(page)
       await page.goto(`${SPOON}/blob/main/index.html`)
       const file = page.locator('article[aria-label="index.html"]')
-      await expect(file.getByText("<!DOCTYPE html>", { exact: false }).first()).toBeVisible({ timeout: 30_000 })
+      await expect(visibleText(file, "<!DOCTYPE html>")).toBeVisible({ timeout: 30_000 })
       await file.getByRole("button", { name: "Preview", exact: true }).click()
       const frame = file.locator('iframe[title="Preview of index.html"]')
       await expect(frame).toHaveAttribute("sandbox", "allow-scripts")

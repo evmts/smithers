@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { expect, test } from "./fixtures"
+import { expect, test, visibleText } from "./fixtures"
 import { requires } from "./target"
 
 // The repository view's extras (docs/features/repo.md#the-browser), against the real app, Worker, engine, Postgres,
@@ -54,7 +54,7 @@ test("switch branch: the picker lists the branches, filters, and opens one, keep
 test("raw: Raw opens the file as plain text in a new tab, and GitHub's raw path loads the same", { annotation: { type: "summary", description: "Raw opens a file as plain text, and GitHub's raw path opens the same." } }, async ({ page, context }) => {
   await openReady(page)
   await page.goto(`${REPO}/blob/test-branch/index.html`)
-  await expect(page.getByText("<!DOCTYPE html>", { exact: false }).first()).toBeVisible({ timeout: 30_000 })
+  await expect(visibleText(page.getByRole("article", { name: "index.html", exact: true }), "<!DOCTYPE html>")).toBeVisible({ timeout: 30_000 })
   const [raw] = await Promise.all([context.waitForEvent("page"), page.getByRole("link", { name: "Raw" }).click()])
   await raw.waitForLoadState()
   expect(raw.url()).toMatch(/\/api\/repos\/octocat\/Spoon-Knife\/raw\/[0-9a-f]{40}\/index\.html$/)
