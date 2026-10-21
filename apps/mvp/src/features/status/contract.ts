@@ -53,5 +53,5 @@ export const STATUS_TELEMETRY = {
     "smithers_agent_status_answers",
     "smithers_agent_status_shown",
   ],
-  fields: ["runId", "status", "outcome", "delivered", "version", "surface", "errorCode", "smithers.run.id"],
+  fields: ["runId", "status", "outcome", "delivered", "version", "surface", "errorCode", "reason", "smithers.run.id"],
 } as const

@@ -114,7 +114,7 @@ The run report and answer routes (`worker/Runs.ts`) fold in their own transactio
 | Piece | What it is |
 |---|---|
 | `notifications` | your rows, an Electric collection kept on the device (`persist: { schemaVersion: 1 }`) |
-| `attention-pending` | acts this device took that the rows don't show yet, kept on the device until they do |
+| `attention-pending` | Read, Dismiss and Hide held until the synced rows show them; an act that cannot land is removed |
 | `attention-entries` | what the views read, worked out by `feedOf` (`entries.ts`, pure) from the rows, the pending acts, the clock and the conversation the tab shows; again when a toast is due to hide |
 | `stack`, `stackHere`, `list`, `listHere` | the toasts and the rest of your list, which `+N` counts, on a page and over a conversation |
 | `attention-panel` | the panel on this tab: open, the entry expanded, the entry to focus, A's focus requests |
@@ -123,6 +123,8 @@ The run report and answer routes (`worker/Runs.ts`) fold in their own transactio
 | `open(subject, surface)`, `hide`, `dismiss`, `read`, `answer` | a toast's click or Answer, its ×, the panel's ×, R, A |
 | `openPanel(via, subject?)`, `togglePanel`, `closePanel`, `expand`, `retry` | the panel |
 | followers | the feed (above), and the watch: `watch/set` for each conversation the tab shows, once per person after success, for a Member (or while sign-in can't say); a failed launch or failed flow releases its watch for the next place or sign-in change |
+
+A Read, Dismiss or Hide that cannot land leaves the device, so its entry shows the synced state and the person can act again. The device records `notifications.pending` and increments `smithers_notification_acts_dropped`, by `act` and `reason` (the failure tag). Acts the device still holds are sent again when the app opens, with the same execution id, so they land once.
 
 The views are `@smthrs/ui`'s `ToastStack` (`onMore`, `moreCount`), `Toast` (`tone="update"`, `word`, `unread`, `hideLabel`, `onOpen`, `onExpand`, `onAnswer`, `onRead`), `NotificationPanel`, `NotificationEntry`, `NotificationBell` and `NeedsYouCard`, with `noticeDismissDelay`, `workNoticeVisible` and `NOTICE_KEYS`. Agent status keeps the header's pill, the card and the tab's title; its toast is the feed's.
 
@@ -136,6 +138,7 @@ The views are `@smthrs/ui`'s `ToastStack` (`onMore`, `moreCount`), `Toast` (`ton
 | `notifications.watch`, `notifications.ack` | log, ChatApi | `conversationId` or `subject`, `act`, `version`, `status`, `existing`, `errorCode` |
 | `notifications.request`; `smithers_notification_requests`, `smithers_notification_shape_requests` | span; counters, ChatApi | `route`, `status`; `status`, `live` |
 | `notifications.watch`, `notifications.ack`; `smithers_notification_watches`, `smithers_notification_acks` | log and span; counters, engine | `outcome` (`sent`, `refused`, `unsent`), `act`, `status` or transport `reason` |
+| `notifications.pending`; `smithers_notification_acts_dropped` | warning, tab; counter, tab | `subject`, `version`, `act`, `outcome` (`dropped`), `reason`; counter by `act`, `reason` |
 | `notifications.shown`, `smithers_notifications_shown` | log and counter, tab | `subject`, `version`, `state`, `kind` |
 | `notifications.panel`, `smithers_notifications_panel` | log and counter, tab | `act` (`open`, `expand`, `retry`), `via` (`bell`, `toast`, `more`, `key`) on open, `subject`, clone Retry `outcome` (`started`, `failed`) after admission |
 | `notifications.malformed`, `agent.status.malformed` | warning, client | `status` (200); no response body |

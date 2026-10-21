@@ -1,6 +1,7 @@
 import { test as base, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
 import { DEV_URL } from "../dev/https"
+import { describeCrashes, watchCrashes } from "./crashes"
 import { devReload } from "./devReload"
 import { faultyApp, faults } from "./faults"
 import { allServerRows, type Row } from "./shape"
@@ -171,6 +172,7 @@ export class Tab {
   readonly pill: Locator
   readonly loadEarlier: Locator
   readonly log: Array<string> = []
+  readonly crashes: ReturnType<typeof watchCrashes>
   // Every question this tab posted to ChatApi, in order.
   readonly asked: Array<Asked> = []
   // Each time the dev server reloaded this tab, once it had opened, because a file it serves changed: when, and which.
@@ -193,6 +195,7 @@ export class Tab {
     this.pill = page.locator('[aria-label="Connection"]')
     this.loadEarlier = page.getByRole("button", { name: "Load earlier" })
     this.openedAt = (Date.now() - startedAt) / 1000
+    this.crashes = watchCrashes(page, name, this.log)
     const at = () => `${((Date.now() - startedAt) / 1000).toFixed(2)}s`
     page.on("console", (message) => this.log.push(`${at()} ${message.type()}: ${message.text()}`))
     page.on("pageerror", (error) => this.log.push(`${at()} pageerror: ${error.message}`))
@@ -502,8 +505,12 @@ class Devices {
 
   async teardown() {
     const tabs = this.all.flatMap((device) => device.tabs)
+    await Promise.all(tabs.map((tab) => tab.crashes.stop()))
+    const crashes = tabs.flatMap((tab) => tab.crashes.failure === undefined ? [] : [tab.crashes.failure])
+    describeCrashes(this.testInfo, crashes)
+    expect.soft(crashes, crashes.join("\n") || "no page crashed").toEqual([])
     for (const tab of tabs) {
-      if (tab.page.isClosed()) continue
+      if (tab.page.isClosed() || tab.crashes.failure !== undefined) continue
       expect.soft(await spinnersSeen(tab.page), `${tab.name} never showed a loading state`).toEqual([])
     }
     for (const tab of tabs) {
@@ -522,7 +529,7 @@ class Devices {
       for (const tab of tabs) {
         const slug = tab.name.replace(/\W+/g, "-")
         await save(`${slug}-browser.log`, tab.log.join("\n"), "text/plain")
-        if (tab.page.isClosed()) continue
+        if (tab.page.isClosed() || tab.crashes.failure !== undefined) continue
         const shot = await tab.page.screenshot({ timeout: 5_000 }).catch(() => undefined)
         if (shot) await save(`${slug}.png`, shot, "image/png")
         const thread = await tab.thread(this.word).catch((error: unknown) => ({ error: String(error) }))

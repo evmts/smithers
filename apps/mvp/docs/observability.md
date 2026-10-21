@@ -308,7 +308,7 @@ Spans: `auth.sign_in`, `auth.callback`, `auth.sign_out`, `auth.session` and `aut
 | `smithers_person_only_refusals` | counter | ChatApi | `act`, `by` |
 | `auth.resolve`'s `smithers.actor.act` | span attribute | ChatApi, every request | `person`, an `act` kind, or `none` |
 | `auth.run_credential` | span | engine worker, each credential asked for | `smithers.execution.id` |
-| `auth.run_credential` | log | engine worker | `flow`, `outcome` (`minted` at Debug; `anonymous`, `refused`, `unavailable`, and `stale` when a credential came back `401`, at Warn), `act`, `principal` (`session`, `credential`), `status`, `code` |
+| `auth.run_credential` | log | engine worker | `flow`, `outcome` (`minted` at Debug; `anonymous`, `refused`, `unavailable`, `door_timeout` when the starting tab is silent, and `stale` when a credential came back `401`, at Warn), `act`, `principal` (`session`, `credential`), `status`, `code` |
 | `smithers_run_credential_mints` | counter | engine worker | `outcome`, `act` |
 
 ### Remote flow executions
@@ -453,7 +453,7 @@ What the agent's runs report, and what the person does about a question ([agent-
 
 | Record | Kind | Where | Fields |
 |---|---|---|---|
-| `agent.status.report`, `agent.status.answer` | log | ChatApi | `runId`, `report` or `version`, `status`, `durationMs`, `bytes`, `existing`, `errorCode` |
+| `agent.status.report`, `agent.status.answer` | log | ChatApi | `runId`, `report` or `version`, `status`, `durationMs`, `bytes`, `existing`, `errorCode`, report `reason` (`settled`, `other_launcher`, `no_row`) |
 | `agent.status.request` | span | ChatApi | `smithers.run.id`, `http.response.status_code` |
 | `smithers_run_requests` | counter | ChatApi | `route` (`report`, `answer`), `status` |
 | `smithers_run_shape_requests` | counter | ChatApi | `status`, `live` |
@@ -465,6 +465,13 @@ What the agent's runs report, and what the person does about a question ([agent-
 | `agent.status.shown` | log | tab | `runId`, `version`, `surface` |
 | `smithers_agent_status_shown` | counter | tab | `surface` |
 
+### Conversation timeline
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `timeline.summary`; `smithers_timeline_summary_calls` | log, span; counter | engine worker | `role`, `outcome` (`ready`), `replayed`; counter without labels |
+| `timeline.summary.unavailable`, `timeline.summary.unconfigured` | warning | tab | none; kept by `TIMELINE_TELEMETRY` |
+
 ### Notifications
 
 The personal feed: a run's state routed to its people, GitHub's `main` and release deliveries, and what each person does with their entries ([notifications.md](features/notifications.md#observability)). Records carry run ids, subjects and counts, never a title, a question, a commit message or who pushed.
@@ -474,6 +481,8 @@ The personal feed: a run's state routed to its people, GitHub's `main` and relea
 | `runs.fold` | span | ChatApi | `smithers.run.id`, `smithers.notifications.written` |
 | `smithers_notifications_routed` | counter | ChatApi and the clone's steps | `kind` (`run`, `clone`, `main`, `release`), `state` |
 | `notifications.repo_event` | log, span | ChatApi | `kind`, `repoId`, `watchers`, `written` |
+| `notifications.pending` | warning | tab | `subject`, `version`, `act`, `outcome` (`dropped`), `reason` (failure tag) |
+| `smithers_notification_acts_dropped` | counter | tab | `act`, `reason` |
 | `notifications.watch`, `notifications.ack` | log | ChatApi | `conversationId` or `subject`, `act`, `version`, `status`, `durationMs`, `bytes`, `existing`, `errorCode` |
 | `notifications.request` | span | ChatApi | `smithers.route`, `http.response.status_code` |
 | `smithers_notification_requests` | counter | ChatApi | `route` (`watch`, `ack`), `status` |
@@ -663,6 +672,7 @@ The relay doesn't check the values: a caller picks its records' `service.name`, 
 | `packages/effect-electric/test/ShapeProxy.test.ts` | the shape proxy's log line, span, count and 405, a subset request's parameters dropped and never forwarded, and the Electric secret in no log or span |
 | `src/telemetry.test.ts` "the relay keeps everything the browser exports" | the tab's and the engine worker's exports, as `src/boot.ts` and `src/flows/engine.worker.ts` install their exporters, through the real relay with `BROWSER_TELEMETRY`: an answer whose agent calls a flow, asking, a refused ask, sync failing and retried. Nothing is dropped that `WITHHELD` doesn't name, the end-to-end tests' fields arrive, and no engine export comes near 128 KiB |
 | `src/telemetry.test.ts` "the contract" | no field that can carry what someone wrote; every record name is a string literal in the app or the SDK packages it names, or one a library forms (`GET`, `chat agent`, `execute_tool <flow>`) |
+| `src/telemetry-privacy.test.ts` | the real exporter and relay preserve `notifications.pending`, `smithers_notification_acts_dropped` by `act` and `reason`, `auth.run_credential` with `door_timeout`, and every report refusal's `reason`; sensitive URL fields stay removed |
 | `packages/smithers/flows/observability/test/Otlp.test.ts` "exports only the spans `spans` names" | an exporter's `spans` list: only the named spans are sent, a dropped span's children keep its trace and parent id, and logs are sent as before |
 | `packages/smithers/flows/platform-browser/test/BrowserRuntime.test.ts` "run sends the worker's logs, spans and metrics to its telemetry" | `BrowserRuntime.run`'s `telemetry` receives the leader's log, spans and counts |
 | `worker/ExecutionHost.test.ts` "every start and alarm is one log line and one count by outcome, never the payload" | `cloudflare.execution.start` (`accepted`, `duplicate`) and `cloudflare.execution.alarm` (`settled`) lines and their counters, with a sentinel payload absent from every line |

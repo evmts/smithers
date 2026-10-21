@@ -88,20 +88,61 @@ test("needs you: the agent asks, every surface on every device shows it, and an 
   }
 })
 
-test("needs you, live: the real model asks with app/agent/ask, and the person's answer reaches it", { annotation: { type: "summary", description: "The real model asks a question, and the person's answer reaches it." } }, async ({ devices }) => {
-  test.setTimeout(420_000)
+test("needs you, live: two devices show the question, Hide reaches both, and an answer resumes the real model", { annotation: { type: "summary", description: "The real model asks on both devices; Hide reaches both, and teal from B resumes A's run." } }, async ({ devices }) => {
+  requires("member", "ownConversation")
+  test.setTimeout(540_000)
   const word = devices.word
-  const [a] = await devices.open("A")
+  const [a, b] = await test.step("Open both devices", () => devices.open("A", "B"))
   const question =
     `Use app/agent/ask to ask me which colour I want, as a question. Then reply with the colour I chose and the word ${word}.`
-  await a.askAndWaitTaken(question)
-  const answerId = a.asked.find((asked) => asked.text === question)!.answerId
-  const { card } = surfaces(a, answerId)
-  // The model endpoint takes up to a minute on a loaded machine.
-  await expect(card, "the live agent asked").toBeVisible({ timeout: 180_000 })
-  const field = card.getByRole("textbox", { name: "Your answer" })
-  await field.fill("teal")
-  await field.press("Enter")
-  await a.expectAnswered(question, word, 180_000)
-  await expect(a.answerTo(question)).toContainText(/teal/i)
+  const answerId = await test.step("Ask Smithers", async () => {
+    await a.askAndWaitTaken(question)
+    return a.asked.find((asked) => asked.text === question)!.answerId
+  })
+
+  await test.step("Both devices need you", () => Promise.all([a, b].map(async (tab) => {
+    const { card, toast, header } = surfaces(tab, answerId)
+    await Promise.all([
+      expect(card, `${tab.name}: the live agent asked here`).toBeVisible({ timeout: 180_000 }),
+      expect(toast, `${tab.name}: the question toasts`).toBeVisible({ timeout: 180_000 }),
+      expect(toast.getByRole("button", { name: "Answer" })).toBeVisible({ timeout: 180_000 }),
+      expect(header, `${tab.name}: the bell needs you`).toContainText("Needs you", { timeout: 180_000 }),
+      expect(tab.page, `${tab.name}: the title counts open questions`).toHaveTitle(/^\([1-9]\d*\) /, { timeout: 180_000 }),
+    ])
+  })))
+  const open = new Map([[a, await titleCount(a.page)], [b, await titleCount(b.page)]])
+
+  await test.step("Hide on both devices", async () => {
+    await b.page.keyboard.press("Alt+KeyT")
+    await expect(surfaces(b, answerId).toast.locator('[data-slot="toast-open"]')).toBeFocused()
+    await b.page.keyboard.press("h")
+    await Promise.all([a, b].map((tab) =>
+      expect(surfaces(tab, answerId).toast, `${tab.name}: Hide reaches this device`).toHaveCount(0, { timeout: 15_000 })
+    ))
+    for (const tab of [a, b]) {
+      const { header, entry } = surfaces(tab, answerId)
+      await header.click()
+      await expect(entry, `${tab.name}: the hidden toast stays in notifications`).toBeVisible({ timeout: 15_000 })
+      await expect(entry).toContainText("Needs you")
+      await tab.page.keyboard.press("Escape")
+    }
+  })
+
+  await test.step("B answers teal", async () => {
+    const field = surfaces(b, answerId).card.getByRole("textbox", { name: "Your answer" })
+    await field.fill("teal")
+    await field.press("Enter")
+  })
+
+  await test.step("Both devices show the answer", () => Promise.all([a, b].map(async (tab) => {
+    const { card } = surfaces(tab, answerId)
+    await Promise.all([
+      expect(card, `${tab.name}: the question is answered`).toHaveAttribute("data-state", "answered", { timeout: 180_000 }),
+      expect(card).toContainText("teal", { timeout: 180_000 }),
+      tab.expectAnswered(question, word, 180_000),
+      expect(tab.answerTo(question)).toContainText(/teal/i, { timeout: 180_000 }),
+      expect.poll(() => titleCount(tab.page), { message: `${tab.name}: the title stops counting it`, timeout: 180_000 })
+        .toBeLessThan(open.get(tab)!),
+    ])
+  })))
 })

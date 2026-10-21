@@ -89,7 +89,17 @@ test("live work: Ann's run toasts for Ben on her branch, and her notifications f
   await press(a2, "Alt+KeyT", "focus the toast")
   await expect(entry(a2, subject).locator('[data-slot="toast-open"]')).toBeFocused()
   await press(a2, "h", "hide it")
-  for (const tab of [a1, a2]) await expect(entry(tab, subject), `${tab.name}: hidden`).toHaveCount(0, { timeout: SYNCED_WITHIN })
+  try {
+    await Promise.all([a1, a2].map((tab) =>
+      expect(entry(tab, subject), `${tab.name}: hidden`).toHaveCount(0, { timeout: SYNCED_WITHIN })
+    ))
+  } catch (error) {
+    const receipts = [a1, a2].map((tab) => {
+      const lines = tab.log.filter((line) => /notifications\.(ack|pending)/.test(line)).slice(-30)
+      return `${tab.name}: ${lines.length === 0 ? "no notifications.ack or notifications.pending records" : lines.join("\n")}`
+    }).join("\n")
+    throw new Error(`Hide did not reach both devices within 15 seconds.\n${receipts}\n${String(error)}`, { cause: error })
+  }
 
   // Ann's top bar says a run waits on her. One click on it opens her notifications at that run, expanded with its
   // question; clicking the entry collapses it and again expands it; A focuses the field, and she answers there.

@@ -1,6 +1,7 @@
 import { type APIRequestContext, test as base, expect, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { readdir, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
+import { describeCrashes, watchCrashes } from "./crashes"
 import { themeFor } from "./frames.ts"
 import { redactRequestErrors } from "./redact"
 import { allServerRows } from "./shape"
@@ -285,10 +286,15 @@ export const test = base.extend<{ browserLog: Array<string>; spendGuard: void },
       const log: Array<string> = []
       page.on("console", (message) => log.push(`${message.type()}: ${message.text()}`))
       page.on("pageerror", (error) => log.push(`pageerror: ${error.message}`))
+      const crashes = watchCrashes(page, "default", log)
       await use(log)
+      await crashes.stop()
       // A test that skipped from its body, by `requires` (e2e/target.ts), recorded nothing to keep.
       if (testInfo.status === "skipped") return
-      if (!page.isClosed()) expect(await spinnersSeen(page), "the page never showed a loading state").toEqual([])
+      const failures = crashes.failure === undefined ? [] : [crashes.failure]
+      describeCrashes(testInfo, failures)
+      expect.soft(failures, failures.join("\n") || "no page crashed").toEqual([])
+      if (!page.isClosed() && crashes.failure === undefined) expect(await spinnersSeen(page), "the page never showed a loading state").toEqual([])
       if (testInfo.status !== testInfo.expectedStatus) {
         await testInfo.attach("browser-log", { path: await writeLog(testInfo.outputPath("browser.log"), log), contentType: "text/plain" })
       }

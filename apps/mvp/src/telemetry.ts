@@ -25,6 +25,7 @@ import { RUNS_TELEMETRY } from "./features/runs/contract"
 import { SPEND_TELEMETRY } from "./features/spend/contract"
 import { STATUS_TELEMETRY } from "./features/status/contract"
 import { TERMINAL_TELEMETRY } from "./features/terminal/contract"
+import { TIMELINE_TELEMETRY } from "./features/timeline/contract"
 import { PRESENCE_TELEMETRY } from "./features/presence/contract"
 import { COEDIT_TELEMETRY } from "./features/coedit/contract"
 import { SHARING_TELEMETRY } from "./features/sharing/contract"
@@ -138,6 +139,7 @@ const features: ReadonlyArray<Telemetry> = [
   SPEND_TELEMETRY,
   HOME_TELEMETRY,
   ATTENTION_TELEMETRY,
+  TIMELINE_TELEMETRY,
 ]
 
 /**
