@@ -53,3 +53,46 @@ describe("Round identity validation", () => {
       }
     })))
 })
+
+describe("Round.next refusals", () => {
+  const roundOf = (rootExecutionId: string, ordinal: number): FlowEngine.Round.Round => ({
+    rootExecutionId: rootExecutionId as FlowEngine.Round.RootExecutionId,
+    ordinal
+  })
+  const refusal = (round: FlowEngine.Round.Round, maxRounds: number | undefined) =>
+    withCrypto(Round.next(round, { flowName: "engine/Round", maxRounds }).pipe(Effect.flip))
+
+  it.effect("checks the round first, then the budget, then overflow", () =>
+    Effect.gen(function*() {
+      expect((yield* refusal(roundOf("", 0), 0)).message).toBe(
+        "Round rootExecutionId must be non-empty well-formed text"
+      )
+      expect((yield* refusal(roundOf("run", Number.MAX_SAFE_INTEGER), 0)).message).toBe(
+        "Round maxRounds must be a positive safe integer when supplied"
+      )
+      expect((yield* refusal(roundOf("run", Number.MAX_SAFE_INTEGER), undefined)).message).toBe(
+        "Round ordinal cannot be advanced beyond Number.MAX_SAFE_INTEGER"
+      )
+    }))
+
+  it.effect("names the lineage, flow, budget, and refused round of a spent budget", () =>
+    Effect.gen(function*() {
+      const error = yield* refusal(roundOf("run-a", 4), 3)
+      expect(error).toBeInstanceOf(Flow.MaxRoundsExceeded)
+      const exceeded = error as Flow.MaxRoundsExceeded
+      expect({
+        flowName: exceeded.flowName,
+        lineageId: exceeded.lineageId,
+        maxRounds: exceeded.maxRounds,
+        roundOrdinal: exceeded.roundOrdinal,
+        message: exceeded.message
+      }).toEqual({
+        flowName: "engine/Round",
+        lineageId: "run-a",
+        maxRounds: 3,
+        roundOrdinal: 5,
+        message: `Lineage run-a asked for round 5 of "engine/Round", which is past its declared maxRounds of 3. ` +
+          "Raise the budget, or make the body's branch settle with Flow.done sooner."
+      })
+    }))
+})

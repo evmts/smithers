@@ -127,6 +127,24 @@ export const executionId = (round: Round): Effect.Effect<string, InvalidRound, C
     ).pipe(Effect.orDie)
   })
 
+/** The refusal of a lineage that asked for a round past its budget. */
+const roundsExceeded = (flowName: string, round: Round, maxRounds: number) =>
+  new Flow.MaxRoundsExceeded({
+    flowName,
+    lineageId: round.rootExecutionId,
+    maxRounds,
+    roundOrdinal: round.ordinal,
+    message: `Lineage ${round.rootExecutionId} asked for round ${round.ordinal} of "${flowName}", ` +
+      `which is past its declared maxRounds of ${maxRounds}. Raise the budget, or make the body's branch settle ` +
+      "with Flow.done sooner."
+  })
+
+/** A budget must be a positive safe integer when supplied, whatever the round. */
+const budgetRefusal = (maxRounds: number | undefined): InvalidRound | undefined =>
+  maxRounds !== undefined && (!Number.isSafeInteger(maxRounds) || maxRounds < 1)
+    ? invalid("Round maxRounds must be a positive safe integer when supplied")
+    : undefined
+
 /**
  * The round that follows this one, and the execution id it runs under.
  *
@@ -152,29 +170,15 @@ export const next = (round: Round, options: {
   Crypto.Crypto
 > =>
   Effect.gen(function*() {
-    const refusal = validate(round)
-    if (refusal !== undefined) return yield* Effect.fail(refusal)
     const budget = options.maxRounds
-    if (budget !== undefined && (!Number.isSafeInteger(budget) || budget < 1)) {
-      return yield* Effect.fail(invalid("Round maxRounds must be a positive safe integer when supplied"))
-    }
+    const refusal = validate(round) ?? budgetRefusal(budget)
+    if (refusal !== undefined) return yield* Effect.fail(refusal)
     if (round.ordinal === Number.MAX_SAFE_INTEGER) {
       return yield* Effect.fail(invalid("Round ordinal cannot be advanced beyond Number.MAX_SAFE_INTEGER"))
     }
     const advanced: Round = { rootExecutionId: round.rootExecutionId, ordinal: round.ordinal + 1 }
     if (budget !== undefined && advanced.ordinal >= budget) {
-      return yield* Effect.fail(
-        new Flow.MaxRoundsExceeded({
-          flowName: options.flowName,
-          lineageId: advanced.rootExecutionId,
-          maxRounds: budget,
-          roundOrdinal: advanced.ordinal,
-          message:
-            `Lineage ${advanced.rootExecutionId} asked for round ${advanced.ordinal} of "${options.flowName}", ` +
-            `which is past its declared maxRounds of ${budget}. Raise the budget, or make the body's branch settle ` +
-            "with Flow.done sooner."
-        })
-      )
+      return yield* Effect.fail(roundsExceeded(options.flowName, advanced, budget))
     }
     return { round: advanced, executionId: yield* executionId(advanced) }
   })
