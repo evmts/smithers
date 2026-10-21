@@ -1,17 +1,16 @@
 import type { Page } from "@playwright/test"
 import { expect, test } from "./fixtures"
+import { broken, requires } from "./target"
 
 // The repository view's extras (docs/features/repo.md#the-browser), against the real app, Worker, engine, Postgres,
 // Electric and Code Storage: the branch picker, raw files by the app's link and by GitHub's raw path, Copy permalink and
 // the clone URL. The fixture is the tiny public `octocat/Spoon-Knife`, whose `test-branch` adds `test.md`; nothing is
-// created on GitHub. Locally the run needs the Code Storage organization in the dev server's environment; against a
-// deployment (`BASE_URL`), the deployment holds it.
+// created on GitHub. Locally the run needs the Code Storage organization in the dev server's environment; a deployment
+// holds it. Every test opens the clone, asking for it if no run has, a Member's request (worker/RepoApi.ts
+// `canClone`), and waits on the `repo/clone` remote flow (worker/RepoApi.ts `start`, worker/flows/RepoClone.ts).
 
-const missing = ["CODE_STORAGE_ORG", "CODE_STORAGE_KEY"].filter((name) => process.env[name] === undefined)
-test.skip(
-  process.env.BASE_URL === undefined && missing.length > 0,
-  `The repository tests need Code Storage: ${missing.join(" and ")} unset.`,
-)
+requires("codeStorage", "member")
+broken("remoteFlows")
 
 const REPO = "/octocat/Spoon-Knife"
 

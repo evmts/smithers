@@ -1,13 +1,16 @@
 import type { Page } from "@playwright/test"
 import { expect, test } from "./devices"
 import { step } from "./fixtures"
+import { requires, scriptedAgent } from "./target"
 
 // Run credentials, end to end (decision 0017 slice 0, docs/features/sign-in.md#run-credentials): the server tells the
 // person from the agent. The agent asks the person a question (`app/agent/ask`, the scripted agent in the asking
 // browser's engine worker, `/app?agent=needs-you`, src/test/scriptedAgent.ts). Then the agent's own credential, minted
 // for its run exactly as the engine mints it, tries to answer for the person: the server refuses it, both directly and as
 // a nested call's credential, and the question stays open. The person's own press answers it, and the agent goes on.
-// Everything is real: the engine, ChatApi, the runs routes, Postgres and Electric.
+// Everything is real: the engine, ChatApi, the runs routes, Postgres and Electric. The scripted model is a dev build's,
+// and asking needs a Member or above.
+requires("scriptedAgent", "member")
 
 const PROMPT = "Which branch should I deploy?"
 
@@ -30,7 +33,7 @@ const send = (page: Page, path: string, body: unknown, token?: string) =>
 test("the agent's credential can't answer for the person; the person's own press does", async ({ devices }) => {
   test.setTimeout(240_000)
   const [a] = await devices.open("A")
-  await a.page.goto("/app?agent=needs-you")
+  await a.page.goto(scriptedAgent("needs-you"))
   await a.ready()
   const question = `Deploy the docs preview, ${devices.word}`
   await a.askAndWaitTaken(question)

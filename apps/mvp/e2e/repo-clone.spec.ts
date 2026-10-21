@@ -1,17 +1,16 @@
 import { allServerRows, expect, type Row, test } from "./devices"
 import { field, type LogRecord, LogTail } from "./logs"
-import { partly } from "./target"
+import { broken, partly, requires } from "./target"
 
 // `repo/clone` end to end (docs/features/repo.md#flows): a person's `/clone owner/name` and the agent asked to clone run
 // the same flow on the browser's engine, whose step asks RepoApi (`POST /api/repos`); RepoApi admits it and starts the
 // durable `repo/Clone`. Real app, engine worker, Worker, Postgres, Electric, model, GitHub and Code Storage. Cloning is
-// idempotent, so a repository a run already cloned answers `existing` and opens as before; the first run clones.
+// idempotent, so a repository a run already cloned answers `existing` and opens as before; the first run clones. A
+// clone is a Member's request (worker/RepoApi.ts `canClone`), and opening ready waits on the remote flow
+// (worker/RepoApi.ts `start`, worker/flows/RepoClone.ts).
 
-const missing = ["CODE_STORAGE_ORG", "CODE_STORAGE_KEY"].filter((name) => process.env[name] === undefined)
-test.skip(
-  process.env.BASE_URL === undefined && missing.length > 0,
-  `The repository tests need Code Storage: ${missing.join(" and ")} unset.`,
-)
+requires("codeStorage", "member")
+broken("remoteFlows")
 
 /** Typing a person can follow in the video. */
 const typing = { delay: 60 }

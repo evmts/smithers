@@ -7,6 +7,7 @@ import { certificate } from "../dev/https.ts"
 import { VIEWS_ROUTE } from "../src/features/views/contract"
 import { CANT_OPEN } from "../src/features/web/contract"
 import { expect, test } from "./devices"
+import { meets, requires } from "./target"
 
 // Web pages, end to end (docs/features/web-pages.md): the real app, its engine worker, ChatApi, Electric and, for the
 // agent's cases, the real model. Before a page is framed, ChatApi requests it from the server and reads its framing
@@ -17,7 +18,8 @@ import { expect, test } from "./devices"
 //
 // The pages are this test's own, never an outside site: an HTTPS server on 127.0.0.1, another site than the app's
 // `localhost`, over the dev certificate the dev Worker trusts (docs/infrastructure.md#https-and-http2), and an HTTP
-// server on `localhost` for new tabs, which `alchemy dev` alone opens.
+// server on `localhost` for new tabs, which `alchemy dev` alone opens. A deployment can't reach either, so the tests that
+// use them run locally only (`requires("localServer")`, e2e/target.ts); the rest run everywhere.
 
 /** The dev certificate, made by the dev server's first start (dev/https.ts). */
 const DEV_CERTIFICATE = join(import.meta.dirname, "..", "node_modules", ".dev-https")
@@ -39,6 +41,7 @@ let pages: string
 let tabs: Server
 let local: string
 test.beforeAll(async () => {
+  if (!meets("localServer")) return
   const { cert, key } = certificate(DEV_CERTIFICATE)
   framed = createHttpsServer({ cert, key }, (request, response) => {
     const path = new URL(request.url ?? "/", "https://127.0.0.1").pathname
@@ -68,6 +71,7 @@ test.beforeAll(async () => {
   local = `http://localhost:${(tabs.address() as AddressInfo).port}`
 })
 test.afterAll(async () => {
+  if (!meets("localServer")) return
   await new Promise<void>((resolve) => framed.close(() => resolve()))
   await new Promise<void>((resolve) => tabs.close(() => resolve()))
 })
@@ -87,6 +91,7 @@ const SANDBOX = "allow-scripts allow-same-origin allow-forms allow-popups allow-
 const typing = { delay: 30 }
 
 test("a page that allows framing shows in the chat, on every device and at full size", { annotation: { type: "summary", description: "ChatApi checks the page first; it allows frames, so it shows in the chat" } }, async ({ devices }) => {
+  requires("localServer")
   const [a, b] = await devices.open("A", "B")
   const added = viewsAdded(a.device.context)
   const url = `${pages}/allows`
@@ -130,6 +135,7 @@ test("a page that allows framing shows in the chat, on every device and at full 
 })
 
 test("a page that refuses framing shows as a card: title, description, domain, icon and Open in new tab, with Enter", { annotation: { type: "summary", description: "The page sends X-Frame-Options: DENY, so a card shows instead of a broken frame" } }, async ({ devices }) => {
+  requires("localServer")
   const [a] = await devices.open("A")
   const added = viewsAdded(a.device.context)
   const url = `${pages}/refuses`
@@ -171,6 +177,7 @@ test("a page that refuses framing shows as a card: title, description, domain, i
 })
 
 test("the agent asked to embed a page that refuses framing adds the card instead", { annotation: { type: "summary", description: "The agent's call checks the page too, and never claims an embed" } }, async ({ devices }) => {
+  requires("localServer")
   const word = devices.word
   const [a] = await devices.open("A")
   const added = viewsAdded(a.device.context)
@@ -183,6 +190,7 @@ test("the agent asked to embed a page that refuses framing adds the card instead
 })
 
 test("the agent's tab card shows the page's domain, and its Open in new tab opens the page", async ({ devices }) => {
+  requires("localServer")
   const word = devices.word
   const [a] = await devices.open("A")
   const added = viewsAdded(a.device.context)
@@ -205,6 +213,7 @@ test("the agent's tab card shows the page's domain, and its Open in new tab open
 })
 
 test("a person's /web <url> tab opens the page straight from their Enter, and adds nothing to the chat", async ({ devices }) => {
+  requires("localServer")
   const [a] = await devices.open("A")
   const added = viewsAdded(a.device.context)
   await a.openComposer()
@@ -220,6 +229,7 @@ test("a person's /web <url> tab opens the page straight from their Enter, and ad
 })
 
 test("refusals: a javascript: page, and the app's own origin, stay in the composer saying why; nothing runs", async ({ devices }) => {
+  requires("member")
   const [a] = await devices.open("A")
   const added = viewsAdded(a.device.context)
   const dialogs: Array<string> = []

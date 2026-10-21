@@ -1,17 +1,18 @@
-import { existsSync, statSync } from "node:fs"
-import { homedir } from "node:os"
+import { statSync } from "node:fs"
 import { join } from "node:path"
 import { OWNER_KEY } from "../src/device/identity"
 import { serveBuilds } from "./builds"
 import { serverRows } from "./devices"
 import { expect, QUEUED, step, test } from "./fixtures"
+import { oldBuildDir, requires } from "./target"
 
 // A deploy from a login-only legacy device (decisions 0021 and 0023): server-backed messages return, but the old
 // local queue and draft cannot be assigned to a stable person and are cleared online. Once this build establishes
 // the owner, its new queued question and draft survive a same-owner reload. Both builds use the real dev ChatApi,
-// Electric and Postgres on one origin. Service workers are blocked so the reload selects the build served now.
+// Electric and Postgres on one origin. Service workers are blocked so the reload selects the build served now. It
+// serves both builds from this machine (e2e/builds.ts), so it runs locally only, and the old build must be on disk.
 
-const OLD_BUILD = process.env.OLD_BUILD_DIR ?? join(homedir(), "Desktop", "smithers-mvp", "builds", "c6940ac53e5a")
+const OLD_BUILD = oldBuildDir(process.env)
 
 test.use({ serviceWorkers: "block" })
 
@@ -24,7 +25,7 @@ test(
     }
   },
   async ({ page, context, request }) => {
-    test.skip(!existsSync(join(OLD_BUILD, "index.html")), `No deployed build at ${OLD_BUILD} (OLD_BUILD_DIR)`)
+    requires("localServer", "oldBuild", "member")
     // A mirror that saved the site's redirect for /index.html has an empty page (docs/infrastructure.md).
     expect(statSync(join(OLD_BUILD, "index.html")).size, "the deployed build's index.html is empty").toBeGreaterThan(0)
     const builds = await serveBuilds({ old: OLD_BUILD })

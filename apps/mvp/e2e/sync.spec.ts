@@ -1,5 +1,9 @@
 import { expect, expectSameThread, test } from "./devices"
 import { step } from "./fixtures"
+import { requires, scriptedAgent } from "./target"
+
+// Both tests ask, which needs a Member or above.
+requires("member")
 
 // Two separate browsers hold the conversation Electric syncs from Postgres; the asking browser's agent answers.
 test("sync: a message and Smithers' answer sent in one browser appear in another", { annotation: { type: "summary", description: "A question and its answer from one browser show in another." } }, async ({ devices }) => {
@@ -21,10 +25,11 @@ const SYNCED_WITHIN = 10_000
 
 // Model-free: A's agent is the scripted one (`/app?agent=needs-you`, src/test/scriptedAgent.ts), which asks every time.
 test("sync over HTTP/2: every shape waits at once, so another device shows a write within seconds", async ({ devices }) => {
+  requires("scriptedAgent")
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
   await step("A runs the scripted agent", async () => {
-    await a.page.goto("/app?agent=needs-you")
+    await a.page.goto(scriptedAgent("needs-you"))
     await a.ready()
   })
 

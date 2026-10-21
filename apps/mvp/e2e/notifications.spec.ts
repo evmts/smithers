@@ -1,5 +1,6 @@
 import { createHmac, randomBytes } from "node:crypto"
 import { expect, type Tab, test } from "./devices"
+import { requires, scriptedAgent } from "./target"
 
 // Notifications and live work, end to end (decision 0009, docs/features/notifications.md): two people, Ann on two
 // devices and Ben on one, in real browsers against the real app, ChatApi, Postgres and Electric. Ann's agent is the
@@ -47,6 +48,7 @@ const inPanel = (tab: Tab, check: () => Promise<void>, timeout = SYNCED_WITHIN) 
   }).toPass({ timeout, intervals: [250, 500, 1_000] })
 
 test("live work: Ann's run toasts for Ben on her branch, and her notifications follow her across devices", async ({ devices }) => {
+  requires("scriptedAgent", "devPeople")
   test.setTimeout(480_000)
   const word = devices.word
   const [a1, a2] = await devices.open("Ann", "Ann 2")
@@ -54,7 +56,7 @@ test("live work: Ann's run toasts for Ben on her branch, and her notifications f
   // Ben leaves the conversation for the Runs page: Ann's work on `main` reaches him there.
   await b.page.getByRole("navigation", { name: "Pages" }).getByRole("link", { name: "Runs" }).click()
   await expect(b.page.getByRole("main", { name: "Runs" })).toBeVisible()
-  await a1.page.goto("/app?agent=needs-you")
+  await a1.page.goto(scriptedAgent("needs-you"))
   await a1.ready()
 
   const question = `Deploy the docs preview, ${word}`
@@ -146,13 +148,12 @@ test("live work: Ann's run toasts for Ben on her branch, and her notifications f
 })
 
 // GitHub's deliveries need the deployment's webhook secret, which only a deployment with the GitHub App configured
-// has: this test signs them as GitHub does. It writes a `main` entry for everyone watching the repository, so it runs
-// only against local development.
+// has: this test signs them as GitHub does, with E2E_GITHUB_WEBHOOK_SECRET, the dev server's GITHUB_WEBHOOK_SECRET.
+// It writes a `main` entry for everyone watching the repository, so it runs only against local development.
 const secret = process.env.E2E_GITHUB_WEBHOOK_SECRET
-const local = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(process.env.BASE_URL ?? "http://localhost:1337")
 
 test("repository events: `main` moving and a new release reach both people as entries", async ({ devices }) => {
-  test.skip(secret === undefined || !local, "needs E2E_GITHUB_WEBHOOK_SECRET, the dev server's GITHUB_WEBHOOK_SECRET with the GitHub App configured")
+  requires("webhookSecret", "devPeople")
   test.setTimeout(180_000)
   const repository = process.env.GITHUB_REPOSITORY ?? "smithersai/smithers"
   const [a] = await devices.open("Ann")

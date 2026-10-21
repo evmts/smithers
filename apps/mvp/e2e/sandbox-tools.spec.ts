@@ -1,12 +1,18 @@
 import type { BrowserContext, Page } from "@playwright/test"
 import { expect, type Tab, test } from "./devices"
+import { broken, requires, scriptedAgent } from "./target"
 
 // The sandbox tools, end to end (docs/features/sandbox-tools.md, decision 0005 §5): the browser's agent calls typed
 // tools that run on the branch's own machine, a real container under `alchemy dev` (local workerd and Docker), as the
 // person who asked; each call is a durable remote flow whose result is recorded once. The fixture is the public
 // `octocat/Spoon-Knife`'s `test-branch`; nothing is written to GitHub. The first test asks the real model; the second
 // scripts the agent's model in the asking browser's engine worker (`?agent=sandbox-once`, src/test/scriptedAgent.ts),
-// so the tab closes at the same point every time. Everything else is real.
+// so the tab closes at the same point every time. Everything else is real. Both track the branch and ask, a Member's
+// (worker/branch/Branches.ts, worker/Chat.ts `canAsk`), and every tool call runs as the remote flow `sandbox/Call`
+// (worker/flows/SandboxCall.ts).
+
+requires("member")
+broken("remoteFlows")
 
 const BRANCH = "/octocat/Spoon-Knife/tree/test-branch"
 
@@ -77,11 +83,12 @@ test("agent tools: the agent writes a file on the branch's machine, runs a test 
 })
 
 test("closed tab: a command whose tab closed mid-run is recorded once, and the reopened tab reads its result", async ({ devices }) => {
+  requires("scriptedAgent")
   test.setTimeout(8 * 60_000)
   const word = devices.word
   const [a] = await devices.open("A")
   const tools = toolCalls(a.device.context)
-  await openBranch(a, "?agent=sandbox-once")
+  await openBranch(a, scriptedAgent("sandbox-once", ""))
 
   // The scripted agent runs `sleep 15; echo ran >> runs-<word>.log; wc -l < runs-<word>.log` on the machine. Once
   // ChatApi has taken the call, the machine is running the command: close the tab, as a crash or a person would.
@@ -96,7 +103,7 @@ test("closed tab: a command whose tab closed mid-run is recorded once, and the r
   // The same browser opens the branch again: its engine resumes the answer's run from its journal, names the same
   // call, and reads the result the machine recorded, without running the command again.
   const b = await devices.tab(a.device, "A, reopened")
-  await openBranch(b, "?agent=sandbox-once")
+  await openBranch(b, scriptedAgent("sandbox-once", ""))
   await expect(conversationOf(b.page).getByText(`Counted 1; the log has 1 line(s) for ${word}.`)).toBeVisible({ timeout: MACHINE })
   // Every request for the command named one call: the reopened tab's resend found the call the closed tab started.
   const runs = tools.filter((call) => call.tool === "run")

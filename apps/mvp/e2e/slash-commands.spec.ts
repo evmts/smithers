@@ -3,10 +3,13 @@ import { SIGN_IN_TO_ASK, SIGN_OUT } from "../src/features/auth/contract"
 import { COMMANDS } from "../src/features/commands/contract"
 import { THEME_ATTRIBUTE } from "../src/features/theme/contract"
 import { expect, test } from "./devices"
+import { requires } from "./target"
 
 // Slash commands, end to end (docs/features/slash-commands.md): the real app, its engine worker and ChatApi. Typing
 // `/` in the composer lists the commands this person may run; the keyboard completes and runs one, which dispatches
-// the same flow the theme button runs. No mocks. Under `alchemy dev` the page is the local developer, an Admin.
+// the same flow the theme button runs. No mocks. Under `alchemy dev` the page is the local developer, an Admin; in a
+// deployment, the test account. The composer is a Member's or above's.
+requires("member")
 
 /** The mode the page paints: `<html data-theme>`. */
 const painted = (page: Page) => page.evaluate((attribute) => document.documentElement.getAttribute(attribute), THEME_ATTRIBUTE)
@@ -104,10 +107,8 @@ test("escape: Escape closes the list and keeps the draft, and a second Escape hi
   await expect(a.composer).toHaveValue("/t")
 })
 
-const local = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(process.env.BASE_URL ?? "http://localhost:1337")
-
 test("roles: a member-only command is offered to an Admin, never to a signed-out person, and typing one does nothing", { annotation: { type: "summary", description: "A member-only command is offered to an Admin, never to a signed-out person." } }, async ({ devices }) => {
-  test.skip(!local, "signing out on a deployment goes through GitHub; this runs against alchemy dev's local developer")
+  requires("devSignIn")
   const [a] = await devices.open("A")
   const page = a.page
   await expect(a.chatButton).toBeVisible({ timeout: 30_000 })

@@ -1,17 +1,19 @@
-import { SIGN_IN, SIGN_IN_TO_ASK, SIGN_OUT } from "../src/features/auth/contract"
+import { CALLBACK_ROUTE, SIGN_IN, SIGN_IN_TO_ASK, SIGN_OUT } from "../src/features/auth/contract"
 import { QUESTIONS_ROUTE, SHAPE_ROUTE } from "../src/features/chat/contract"
 import type { Dialog, Page } from "@playwright/test"
 import { faults } from "./faults"
 import { expect, type Tab, test } from "./devices"
+import { step, test as pageTest } from "./fixtures"
+import { baseURL, me, requires, sessionFiles, signedOut } from "./target"
 
 // Sign-in, end to end (docs/features/sign-in.md): the real app, ChatApi and Postgres. Under `alchemy dev` without the
 // GitHub App, a local developer is signed in as an Admin until they sign out, and "Sign in with GitHub" signs them in
-// again without GitHub (`worker/DevChatApi.ts`). A deployment signs in through GitHub, which this suite can't drive.
-
-const local = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(process.env.BASE_URL ?? "http://localhost:1337")
-test.skip(!local, "signing in on a deployment goes through GitHub; these run against alchemy dev's local developer")
+// again without GitHub (`worker/DevChatApi.ts`): those tests run locally (`requires("devSignIn")`, e2e/target.ts). A
+// deployment signs the test account in through GitHub once per run (e2e/deployment/sign-in.setup.ts), and every test
+// shares that session, so none here signs out of it; "github" checks the deployment's half of signing in instead.
 
 test("signed out: the composer is gated, ChatApi refuses an ask, and signing in brings the composer back", { annotation: { type: "summary", description: "Signed out, a person can't ask, the server refuses an ask, and signing in brings the composer back." } }, async ({ devices }) => {
+  requires("devSignIn")
   const [a] = await devices.open("A")
   const page = a.page
   await expect(a.chatButton).toBeVisible({ timeout: 30_000 })
@@ -36,6 +38,7 @@ test("signed out: the composer is gated, ChatApi refuses an ask, and signing in 
 })
 
 test("sign out wipes the device: its unsent questions go, and the conversation syncs again from scratch", { annotation: { type: "summary", description: "Signing out deletes the device's unsent questions, and the conversation syncs again from scratch." } }, async ({ devices }) => {
+  requires("devSignIn", "faults")
   const word = devices.word
   const [a] = await devices.openFaulty("A")
   const page = a.page
@@ -69,6 +72,7 @@ test("sign out wipes the device: its unsent questions go, and the conversation s
 })
 
 test("sign out wipes the device for every tab: a tab still holding the data holds the wipe off, and no tab opens on the session's data", { annotation: { type: "summary", description: "Signing out wipes the device only once no tab holds its data, and no tab reopens on it." } }, async ({ devices }) => {
+  requires("devSignIn", "faults")
   test.setTimeout(240_000)
   const word = devices.word
   const [one] = await devices.openFaulty("Tab 1")
@@ -169,6 +173,7 @@ const outboxSize = (page: Page) =>
   )
 
 test("session expiry retains Alice's draft for Alice; a different account wipes every tab before opening it", { annotation: { type: "summary", description: "An expired session keeps the person's offline draft; another account never sees it in either tab." } }, async ({ devices }) => {
+  requires("devSignIn", "devPeople")
   test.setTimeout(180_000)
   const [alice] = await devices.open("Alice")
   const draft = `Private draft ${devices.word}`
@@ -202,6 +207,7 @@ test("session expiry retains Alice's draft for Alice; a different account wipes 
 })
 
 test("an old tab's pending person write cannot use a different account's cookie", { annotation: { type: "summary", description: "A question queued offline remains bound to its author while the browser changes accounts." } }, async ({ devices }) => {
+  requires("devPeople")
   test.setTimeout(180_000)
   const [alice] = await devices.open("Alice")
   await alice.device.offline()
@@ -223,6 +229,7 @@ test("an old tab's pending person write cannot use a different account's cookie"
 })
 
 test("expired session without an ownership mirror renders sign-in while its private outbox stays closed", { annotation: { type: "summary", description: "A missing mirror cannot expose retained private drafts or queued questions while signed out." } }, async ({ devices }) => {
+  requires("devSignIn", "devPeople")
   test.setTimeout(180_000)
   const [alice] = await devices.open("Alice")
   const pending = `Private outbox ${devices.word}`
@@ -252,6 +259,7 @@ test("expired session without an ownership mirror renders sign-in while its priv
 })
 
 test("a signed-out follower without a mirror cannot read the live owner's engine", { annotation: { type: "summary", description: "While the owner's engine remains live, a signed-out tab cannot list its runs or inspect their contents." } }, async ({ devices }) => {
+  requires("devSignIn")
   test.setTimeout(180_000)
   const [alice] = await devices.open("Live owner")
   await alice.page.getByRole("link", { name: "Runs", exact: true }).click()
@@ -272,6 +280,7 @@ test("a signed-out follower without a mirror cannot read the live owner's engine
 })
 
 test("an ownerless offline activation reopens under verified authority when the network returns", { annotation: { type: "summary", description: "After device storage is evicted offline, reconnecting verifies the account and asking succeeds without a manual reload." } }, async ({ devices }) => {
+  requires("member")
   test.setTimeout(180_000)
   const [tab] = await devices.open("Recovered device")
   await tab.page.addInitScript(() => {
@@ -309,10 +318,52 @@ test("an ownerless offline activation reopens under verified authority when the 
   await expect.poll(() => tab.page.evaluate(() => {
     const owner = localStorage.getItem("smithers-device-owner-v1")
     return owner === null ? undefined : JSON.parse(owner).personId
-  }), { timeout: 60_000 }).toBe("local-developer")
+  }), { timeout: 60_000 }).toBe(me().personId)
   await expect(tab.page.getByRole("button", { name: SIGN_OUT })).toBeVisible({ timeout: 30_000 })
   const text = `Recovered authority ${devices.word}`
   const accepted = tab.page.waitForResponse((response) => new URL(response.url()).pathname === QUESTIONS_ROUTE && response.request().postDataJSON()?.text === text)
   await tab.ask(text)
   expect((await accepted).status()).toBe(202)
+})
+
+pageTest.describe("github", () => {
+  requires("githubSignIn")
+  // A browser of its own, signed out: the run's stored session stays out of it, and nothing here follows GitHub.
+  pageTest.use({ ...signedOut })
+
+  pageTest("github: Sign in with GitHub sends a signed-out visitor to GitHub to authorize, and the run's session is the test account", {
+    annotation: {
+      type: "summary",
+      description: "A visitor's Sign in with GitHub goes to GitHub's authorize page for this deployment; the test account's session is signed in with its role.",
+    },
+  }, async ({ page, playwright }) => {
+    const origin = new URL(baseURL).origin
+    await step("Open Smithers signed out: Sign in with GitHub", async () => {
+      await page.goto("/app")
+      await expect(page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByRole("link", { name: SIGN_IN }).first()).toBeVisible()
+    })
+    await step("Sign in with GitHub goes to GitHub's authorize page, coming back to this deployment", async () => {
+      // The request alone, never followed: GitHub's page is the account's to answer, and the setup already did.
+      const response = await page.request.get("/api/auth/sign-in?return=/app", { maxRedirects: 0 })
+      expect(response.status()).toBe(302)
+      const authorize = new URL(response.headers().location!)
+      expect(`${authorize.origin}${authorize.pathname}`).toBe("https://github.com/login/oauth/authorize")
+      expect(authorize.searchParams.get("redirect_uri")).toBe(`${origin}${CALLBACK_ROUTE}`)
+      expect(authorize.searchParams.get("state")).toMatch(/.+/)
+      expect(authorize.searchParams.get("code_challenge")).toMatch(/.+/)
+    })
+    await step("The run's session is the test account, with its role", async () => {
+      const signedIn = await playwright.request.newContext({ baseURL: origin, storageState: sessionFiles(baseURL).session })
+      try {
+        const response = await signedIn.get("/api/auth/session")
+        expect(response.status()).toBe(200)
+        expect(await response.json()).toMatchObject({ signedIn: true, login: me().login, personId: me().personId, role: me().role })
+      } finally {
+        await signedIn.dispose()
+      }
+      // This browser is still a visitor: the session never reached it.
+      expect(await (await page.request.get("/api/auth/session")).json()).toMatchObject({ signedIn: false })
+    })
+  })
 })

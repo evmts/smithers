@@ -1,7 +1,10 @@
 import { expect, test } from "./devices"
+import { requires, scriptedAgent } from "./target"
 
 // Real durable browser run, model as the existing injected needs-you service. No request interception.
-// The graph reads the startup steps too: provider or run-credential refusal remains inspectable.
+// The graph reads the startup steps too: provider or run-credential refusal remains inspectable. The scripted model is
+// a dev build's, and asking needs a Member or above.
+requires("scriptedAgent", "member")
 test("run graph: follow a multi-step run, replay its journal and inspect a step", {
   annotation: { type: "summary", description: "Live graph, journal replay and step detail share one recorded run." },
 }, async ({ devices }) => {
@@ -9,7 +12,7 @@ test("run graph: follow a multi-step run, replay its journal and inspect a step"
   const [device] = await devices.open("Graph")
   const page = device.page
   await test.step("Start a flow", async () => {
-    await page.goto("/app?agent=needs-you")
+    await page.goto(scriptedAgent("needs-you"))
     await device.ready()
     await device.askAndWaitTaken(`Deploy the docs preview, ${devices.word}`)
   })

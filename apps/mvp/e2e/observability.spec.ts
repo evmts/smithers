@@ -8,8 +8,9 @@ import { requires } from "./target"
 // back from the records ChatApi writes. Locally `alchemy dev` writes each Worker's log under
 // `.alchemy/log/dev_<user>/<Worker>/`, and ChatApi's log also holds the browser's OTLP records it relayed
 // (`otlp.signal`). A deployment's logs are in Workers Logs, which this suite can't read, so these tests run locally only.
+// Both ask, a Member's (worker/Chat.ts `canAsk`).
 
-requires("localLogs")
+requires("localLogs", "member")
 
 const openChat = async (page: Page, path = "/app") => {
   await page.goto(path)
@@ -80,6 +81,7 @@ test("correlation: the browser's ask, its agent's dispatch and ChatApi's chat.qu
 })
 
 test("redaction: a sentinel word in questions never appears in ChatApi's log or the browser's relayed records", { annotation: { type: "summary", description: "A word from a question never appears in the server's log or the browser's relayed records." } }, async ({ page }) => {
+  requires("faults")
   const logs = await LogTail.start()
   // The app on its faulty services (e2e/faults.ts): the real ones until the lost question below.
   const { composer, conversation } = await openChat(page, faultyApp())

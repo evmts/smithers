@@ -1,16 +1,16 @@
 import { expect, recordActions, test } from "./fixtures"
+import { broken, requires } from "./target"
 
 // Clone a public GitHub repository and browse it (docs/features/repo.md, decision 0006), against the real app,
 // Worker, Durable Object, Postgres, Electric, GitHub and Code Storage. The fixture is the tiny public
 // `octocat/Spoon-Knife` (README.md, index.html, styles.css); nothing is created on GitHub. Cloning it is idempotent, so
 // a second run finds it ready and browses it. Locally the run needs the Code Storage organization in the dev server's
-// environment; against a deployment (`BASE_URL`), the deployment holds it.
+// environment; a deployment holds it. Every test asks for a clone, a Member's request (worker/RepoApi.ts `canClone`),
+// and waits on the `repo/clone` remote flow (worker/RepoApi.ts `start`, worker/flows/RepoClone.ts), which decides
+// both ready and Not found.
 
-const missing = ["CODE_STORAGE_ORG", "CODE_STORAGE_KEY"].filter((name) => process.env[name] === undefined)
-test.skip(
-  process.env.BASE_URL === undefined && missing.length > 0,
-  `The repository tests need Code Storage: ${missing.join(" and ")} unset.`,
-)
+requires("codeStorage", "member")
+broken("remoteFlows")
 
 const REPO = "/octocat/Spoon-Knife"
 

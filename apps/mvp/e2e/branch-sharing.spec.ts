@@ -1,11 +1,15 @@
 import type { Page } from "@playwright/test"
 import { expect, type Tab, test } from "./devices"
+import { requires } from "./target"
 
 // Sharing a branch, Google Docs style, end to end (decision 0013 §2, §4 and §5, docs/features/branch-workspace.md#sharing):
 // real browsers on separate devices against the real app, ChatApi, the branch's room, its machine, Postgres and
 // Electric. Maya is local development's developer and owns the fixture branch; Ben is its second person, a Member
 // (`smithers_dev_person=teammate`), and Gus its Guest (`smithers_dev_person=guest`, worker/DevChatApi.ts). The fixture
 // is the public `octocat/Hello-World`'s `test` branch, which no other suite opens; nothing is written to GitHub.
+
+// Three people on one laptop exist only in local development; a deployment needs more real test accounts.
+requires("devPeople")
 
 const REPO = { owner: "octocat", name: "Hello-World", ref: "test" }
 const BRANCH = `/${REPO.owner}/${REPO.name}/tree/${REPO.ref}`

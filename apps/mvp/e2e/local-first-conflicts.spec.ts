@@ -2,6 +2,7 @@ import type { APIRequestContext } from "@playwright/test"
 import { COULDNT_ANSWER, expect, expectSameThread, NOT_SENT, pairs, serverRows, type Tab, test } from "./devices"
 import { faults, faultyApp } from "./faults"
 import { step } from "./fixtures"
+import { requires } from "./target"
 
 // Every kind of conflict the device store and the outbox resolve (docs/decisions/0002-local-first.md §2, §3 and §5;
 // docs/decisions/0016-todos-and-the-stack.md), one test each, on separate devices (browser contexts) or two tabs of one
@@ -51,6 +52,9 @@ const posts = (tabs: ReadonlyArray<Tab>, text: string) =>
 test.describe("Local-first conflicts", () => {
   // Two devices, a sync of each change and an answer per question: more than the default 90 s.
   test.describe.configure({ timeout: 180_000 })
+  // Every test asks, which needs a Member or above. A test on the app's faulty services or with local development's
+  // second person also declares that (e2e/target.ts).
+  requires("member")
 
   test("same question id: another writer stores a different question under the id a device queued offline; the device keeps its own, Not sent, and Edit asks it again", {
     annotation: {
@@ -112,6 +116,7 @@ test.describe("Local-first conflicts", () => {
       description: "Two people drop the same TODO while offline: the first drop to arrive wins, the second changes nothing, and both see it Dropped once.",
     },
   }, async ({ devices }) => {
+    requires("devPeople")
     test.setTimeout(240_000)
     const word = devices.word
     const [ann] = await devices.open("Ann")
@@ -195,6 +200,7 @@ test.describe("Local-first conflicts", () => {
       description: "A's question reaches ChatApi but the reply is lost, so A sends it again: ChatApi says it has it, and everyone sees it once.",
     },
   }, async ({ devices, request }) => {
+    requires("faults")
     test.fail(true, BROKEN_DUPLICATE)
     const word = devices.word
     const [[a], [b]] = await Promise.all([devices.openFaulty("A"), devices.open("B")])
@@ -366,6 +372,7 @@ test.describe("Local-first conflicts", () => {
       },
     ],
   }, async ({ devices, request }) => {
+    requires("faults")
     test.fail(true, BROKEN_TAKEN_AFTER)
     const word = devices.word
     const [[a], [b]] = await Promise.all([devices.openFaulty("A"), devices.open("B")])
@@ -410,6 +417,7 @@ test.describe("Local-first conflicts", () => {
       description: "A's answer was parked when a new build shipped that can't resume it: it ends Couldn't answer on both devices, and Retry answers.",
     },
   }, async ({ devices, request }) => {
+    requires("faults")
     const word = devices.word
     const [[a], [b]] = await Promise.all([devices.openFaulty("A"), devices.open("B")])
     const asked = question(`build-${word}`)

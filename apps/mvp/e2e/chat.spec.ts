@@ -1,6 +1,9 @@
 import { answerTo, expect, test } from "./fixtures"
+import { requires } from "./target"
 
-// Real browser, Workers, Postgres, Electric and model: no mocks. Runs locally, or against a deployment with BASE_URL.
+// Real browser, Workers, Postgres, Electric and model: no mocks. Runs locally, or against a deployment (e2e/target.ts).
+// Every test opens chat and asks, which needs a Member or above.
+requires("member")
 
 test("shortcut: ⌘K opens and hides chat, and Esc and the Hide button hide it too", { annotation: { type: "summary", description: "⌘K opens and hides chat; Esc and Hide hide it too." } }, async ({ page }) => {
   await page.goto("/app")

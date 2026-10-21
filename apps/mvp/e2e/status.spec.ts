@@ -1,12 +1,14 @@
 import type { Page } from "@playwright/test"
 import { expect, type Tab, test } from "./devices"
+import { requires, scriptedAgent } from "./target"
 
 // Agent status, end to end (decision 0015, docs/features/agent-status.md): the agent asks the person with
 // `app/agent/ask`, and the question shows in the conversation, the header, a toast and the tab's title, on every device
 // the person has open; the person answers, and the agent's durable run in the asking browser goes on. The first test
 // scripts the agent's model in the asking browser's engine worker (`/app?agent=needs-you`, src/test/scriptedAgent.ts),
 // so it runs the same every time; the second asks the real model. Everything else is real: the engine, ChatApi, the runs
-// routes, Postgres and Electric.
+// routes, Postgres and Electric. Both ask, which needs a Member or above.
+requires("member")
 
 const PROMPT = "Which branch should I deploy?"
 
@@ -25,11 +27,12 @@ const surfaces = (tab: Tab, answerId: string) => ({
 })
 
 test("needs you: the agent asks, every surface on every device shows it, and an answer from another device resumes the run", { annotation: { type: "summary", description: "When the agent asks a question, every device shows it, and an answer from any device lets the run go on." } }, async ({ devices }) => {
+  requires("scriptedAgent")
   test.setTimeout(120_000)
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
   // A's engine worker answers with the scripted agent.
-  await a.page.goto("/app?agent=needs-you")
+  await a.page.goto(scriptedAgent("needs-you"))
   await a.ready()
   const question = `Deploy the docs preview, ${word}`
   await a.askAndWaitTaken(question)

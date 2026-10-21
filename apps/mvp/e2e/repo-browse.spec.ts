@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures"
+import { broken, requires } from "./target"
 
 // Browsing a repository as Will reviewed it (docs/features/repo.md#the-page), against the real app, Worker, Postgres,
 // Electric, GitHub and Code Storage:
@@ -7,12 +8,10 @@ import { expect, test } from "./fixtures"
 // - a cloned copy without the Smithers app says it may be reclaimed, with Install;
 // - a Markdown file opens as a document, its source one press away;
 // - an HTML file shows as CodePen does, its page in a sandboxed frame that reaches neither the app nor the network.
-// The first runs anywhere: it reads only GitHub. The rest need Code Storage, which a local run has only when the dev
-// server's environment holds the organization; against a deployment (`BASE_URL`), the deployment holds it.
-
-const missing = ["CODE_STORAGE_ORG", "CODE_STORAGE_KEY"].filter((name) => process.env[name] === undefined)
-const noCodeStorage = process.env.BASE_URL === undefined && missing.length > 0
-const needsCodeStorage = `Needs Code Storage: ${missing.join(" and ")} unset.`
+// The first two run anywhere: they read only GitHub. The rest need Code Storage, which a local run has only when the
+// dev server's environment holds the organization, and a deployment holds; each asks for a clone, a Member's request
+// (worker/RepoApi.ts `canClone`), and waits on the `repo/clone` remote flow (worker/RepoApi.ts `start`,
+// worker/flows/RepoClone.ts), which decides both ready and Not found.
 
 const SPOON = "/octocat/Spoon-Knife"
 
@@ -88,7 +87,8 @@ test(
 )
 
 test.describe("cloned repositories", () => {
-  test.skip(noCodeStorage, needsCodeStorage)
+  requires("codeStorage", "member")
+  broken("remoteFlows")
 
   test(
     "the clone in the feed: a toast says how far it came, then why it stopped, with Try again",

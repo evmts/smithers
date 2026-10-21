@@ -1,25 +1,26 @@
 import type { Page } from "@playwright/test"
-import { DEV_URL } from "../dev/https"
 import { expect, step, test } from "./fixtures"
+import { baseURL, requires, target } from "./target"
 
 // Effect's home (docs/features/home.md#curated-homes): Smithers' curated home for `Effect-TS/effect`, which declares
 // none, against the real app, ChatApi, Postgres and Electric. Who sees which section is ChatApi's to decide
 // (`GET /api/repos/<owner>/<name>/home`), so each test signs in as local development's person for its audience
-// (worker/DevChatApi.ts): signed out, a Member (a contributor) and a Maintainer. Nothing here needs Code Storage, so it
-// runs wherever the app runs. "new branch" makes a branch on Code Storage's mirror of Effect, cloning it first when this
-// deployment hasn't, so it needs the Code Storage organization and skips naming what it lacks.
+// (worker/DevChatApi.ts): signed out, a Member (a contributor) and a Maintainer. The visitor runs wherever the app runs,
+// signed out of this browser only; the others need local development's people. "new branch" makes a branch on Code
+// Storage's mirror of Effect, cloning it first when this deployment hasn't, so it also needs Code Storage.
 
 const REPO = "/Effect-TS/effect"
-const BASE = process.env.BASE_URL ?? DEV_URL
 
 /**
  * Who opens the page: signed out, or one of local development's people. Over https the Worker reads the `__Host-`
- * names (worker/SignIn.ts `cookieNames`), which a browser keeps only with `Secure`.
+ * names (worker/SignIn.ts `cookieNames`), which a browser keeps only with `Secure`. Against a deployment this browser
+ * drops the run's session cookie to be signed out; the session itself stays signed in for every other test.
  */
 const as = async (page: Page, who: "signed out" | "teammate" | "maintainer") => {
-  const secure = BASE.startsWith("https:")
+  if (target === "deployment" && who === "signed out") return page.context().clearCookies()
+  const secure = baseURL.startsWith("https:")
   const name = `${secure ? "__Host-" : ""}${who === "signed out" ? "smithers_dev_signed_out" : "smithers_dev_person"}`
-  await page.context().addCookies([{ name, value: who === "signed out" ? "1" : who, url: BASE, secure }])
+  await page.context().addCookies([{ name, value: who === "signed out" ? "1" : who, url: baseURL, secure }])
 }
 
 const homeOf = (page: Page) => page.getByRole("region", { name: "Home", exact: true })
@@ -75,6 +76,7 @@ test.describe("Effect-TS/effect's home", () => {
     "contributor: their work above the landing page, and nothing of the maintainers'",
     { annotation: { type: "summary", description: "A Member sees Your work (ask, the stack, New TODO) above Effect's landing page." } },
     async ({ page }) => {
+      requires("devPeople")
       await step("Open Effect-TS/effect as a Member", async () => {
         await as(page, "teammate")
         await openHome(page, "contributor")
@@ -99,6 +101,7 @@ test.describe("Effect-TS/effect's home", () => {
     "maintainer: the day first, with New branch, then their work and the landing page",
     { annotation: { type: "summary", description: "A Maintainer sees Today first: New branch (B), triage and runs; then Your work and the landing page." } },
     async ({ page }) => {
+      requires("devPeople")
       await step("Open Effect-TS/effect as a Maintainer", async () => {
         await as(page, "maintainer")
         await openHome(page, "maintainer")
@@ -121,13 +124,8 @@ test.describe("Effect-TS/effect's home", () => {
   )
 })
 
-const missing = ["CODE_STORAGE_ORG", "CODE_STORAGE_KEY"].filter((name) => process.env[name] === undefined)
-
 test.describe("Effect-TS/effect's home, New branch", () => {
-  test.skip(
-    process.env.BASE_URL === undefined && missing.length > 0,
-    `New branch needs Code Storage: ${missing.join(" and ")} unset.`,
-  )
+  requires("devPeople", "codeStorage")
 
   test(
     "new branch: B makes a branch at main and opens its workspace",

@@ -1,12 +1,16 @@
 import type { Page } from "@playwright/test"
 import { expect, step, test } from "./fixtures"
+import { broken, me, requires } from "./target"
 
 // The branch workspace's first slice (decision 0013 §9, docs/features/branch-workspace.md), end to end against the
 // real app, Worker, Durable Objects, Postgres, Electric and a real container: open a public repository's existing
 // branch, ask in that branch's conversation, open its terminal (our xterm in an opaque-origin frame) and run `git log`
 // in the branch's machine, which cloned the branch through the forge proxy; a reload keeps the same shell; another
 // branch has its own conversation and its own terminal. The fixture is the public `octocat/Spoon-Knife`, whose
-// `test-branch` and `change-the-title` branches GitHub already has; nothing is written to GitHub.
+// `test-branch` and `change-the-title` branches GitHub already has; nothing is written to GitHub. Opening a branch's
+// page tracks it, which only a Member or above may (worker/branch/Branches.ts), and asking needs one too.
+
+requires("member")
 
 const REPO = "/octocat/Spoon-Knife"
 
@@ -35,7 +39,7 @@ const expectWorkspace = (page: Page, branch: string) =>
     const chrome = page.getByRole("navigation", { name: "Branch" })
     await expect(chrome).toContainText(branch)
     await expect(chrome).toContainText(/Owner|Can edit/)
-    await expect(chrome.getByRole("list", { name: "People here" }).getByRole("button", { name: "local-developer" })).toBeVisible({
+    await expect(chrome.getByRole("list", { name: "People here" }).getByRole("button", { name: me().login })).toBeVisible({
       timeout: 30_000,
     })
     await expect(page.locator(".repo-page").or(page.getByText("Not cloned", { exact: true }))).toBeVisible({ timeout: 30_000 })
@@ -122,6 +126,8 @@ test("branch conversation: a question asked on a branch is stored in that branch
 test("branch terminal: Open terminal runs git log on the branch's machine in a frame, and a reload keeps the shell", {
   annotation: { type: "summary", description: "A branch's terminal runs on its own machine, checked out at the branch, and a reload keeps the same shell." },
 }, async ({ page }) => {
+  // The terminal opens through the remote flow `terminal/Open` (worker/branch/Terminals.ts, worker/flows/TerminalOpen.ts).
+  broken("remoteFlows")
   test.setTimeout(5 * 60_000)
   const word = `shell-${Date.now()}`
   await openBranch(page, "test-branch")
@@ -161,6 +167,8 @@ test("branch terminal: Open terminal runs git log on the branch's machine in a f
 test("second branch terminal: another branch has its own machine, checkout and shell", {
   annotation: { type: "summary", description: "Another branch has its own machine: its shell is checked out at that branch and shares nothing with the first." },
 }, async ({ page }) => {
+  // The terminal opens through the remote flow `terminal/Open` (worker/branch/Terminals.ts, worker/flows/TerminalOpen.ts).
+  broken("remoteFlows")
   test.setTimeout(5 * 60_000)
   await openBranch(page, "change-the-title", "?terminal=me")
   await openTerminal(page)

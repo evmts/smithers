@@ -338,6 +338,14 @@ Every feature has e2e tests that run locally and against a live deployment.
 - **Enforced:** Jev for e2e code tied to one environment. That every feature has a test is a cross-file fact: process, until a check pairs `docs/features/*.md` with e2e specs.
 - **Jev asks:** Is this end-to-end code tied to one environment, such as a hard-coded localhost URL or port, local-only file paths, or a dev-only fixture, so the tests cannot run against a live deployment?
 
+### test.e2e-declared-needs
+
+Every e2e test runs against every target or declares, with `requires(...)` from `e2e/target.ts`, the need its target lacks; it skips there with that need's reason. A test known to fail on a target is marked `broken(...)`. Nothing else skips, and only `e2e/target.ts` tells a local target from a deployment.
+
+- **Will:** "All tests should run in multiple modes. So we should be able to run them locally against a dev server or against the production deployment" (2026-10-19 12:26). "ANything that is known to be broken should have a broken test marked as broken committed in the repo" (12:26).
+- **Scope:** `apps/mvp/e2e/**`.
+- **Enforced:** `e2e/target.test.ts` scans the specs for `test.skip(`, a localhost check and `E2E_SESSION_COOKIE`. The deployment run's summary (`e2e/summary.ts`) fails on a skip that names no declared need. A helper that needs a dev build or local people throws `UndeclaredNeed` where its need is unmet.
+
 ### test.gif-per-flow
 
 Every e2e test records video, so every user flow has a GIF on request (`pnpm e2e:gifs`).

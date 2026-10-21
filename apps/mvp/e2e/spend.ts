@@ -61,12 +61,16 @@ export type SpendGuardOptions = {
   readonly budget: () => number
   readonly since: () => number
   readonly rows: () => Promise<ReadonlyArray<Row>>
+  /** A read that failed, such as Electric answering 503 while it starts: the guard keeps its last total. */
+  readonly unread: (error: unknown) => void
   readonly now?: () => number
 }
 
 /**
  * The guard a worker runs before each test: it fails the test once the run's answers spent the budget. It reads the
- * conversation at most once a `REREAD_MS`, so a run of many short tests reads it a few times a minute.
+ * conversation at most once a `REREAD_MS`, so a run of many short tests reads it a few times a minute. A read that
+ * fails is reported through `unread` and tried again before the next test; it never fails the test itself, which
+ * reads the same conversation through the app.
  */
 export const spendGuard = (options: SpendGuardOptions) => {
   const now = options.now ?? Date.now
@@ -74,7 +78,13 @@ export const spendGuard = (options: SpendGuardOptions) => {
   return async () => {
     if (!options.applies()) return
     const budget = options.budget()
-    if (last === undefined || now() - last.at >= REREAD_MS) last = { at: now(), spent: spentSince(await options.rows(), options.since()) }
-    if (last.spent >= budget) throw new SpendBudgetSpent(last.spent, budget)
+    if (last === undefined || now() - last.at >= REREAD_MS) {
+      const spent = await options.rows().then((rows) => spentSince(rows, options.since()), (error: unknown) => {
+        options.unread(error)
+        return undefined
+      })
+      if (spent !== undefined) last = { at: now(), spent }
+    }
+    if (last !== undefined && last.spent >= budget) throw new SpendBudgetSpent(last.spent, budget)
   }
 }

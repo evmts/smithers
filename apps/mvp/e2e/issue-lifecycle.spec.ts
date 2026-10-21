@@ -1,22 +1,28 @@
 import { test, expect, type Page, type TestInfo } from "@playwright/test"
 import { recordActions, step, themeOf, writeManifest } from "./fixtures"
 import { NEEDS_REPRO_COMMENT, NEEDS_REPRO_LABEL, COMMITMENTS, COMMITMENT_COPY } from "../src/features/issues/lifecycle"
+import { broken, requires, scratchRepository } from "./target"
 
-// Real GitHub, the isolated live instance, Postgres, Electric and the browser; no model is needed for these slices.
+// Real GitHub, a deployment, Postgres, Electric and the browser; no model is needed for these slices. The test account
+// is a Maintainer on the scratch repository (E2E_ISSUES_REPOSITORY), signed in by the deployment's setup.
+requires("githubScratch", "maintainer")
+// Every write reaches GitHub through the remote flow `github/Write`, and its labels come back through `github/Apply`
+// (worker/github/Write.ts, worker/github/Apply.ts).
+broken("remoteFlows")
+
 const started = new WeakMap<TestInfo, number>()
-const repo = "roninjin10/smithers-github-tests"
+/** The scratch repository, `owner/name`, read once each test has declared its needs. */
+let repo = ""
 
 test.beforeEach(async ({ context, page }, info) => {
   started.set(info, Date.now())
-  const raw = process.env.E2E_SESSION_COOKIE
-  test.skip(!raw || process.env.E2E_ISSUES_REPOSITORY !== repo, "Needs the scratch repository and a real Maintainer session")
+  repo = scratchRepository()
   await page.emulateMedia({ colorScheme: themeOf(info) })
-  await context.addCookies([{ name: raw!.slice(0, raw!.indexOf("=")), value: raw!.slice(raw!.indexOf("=") + 1), url: process.env.BASE_URL! }])
   await recordActions(page, info, "Maintainer")
   const response = await context.request.get("/api/auth/session")
   expect(response.status()).toBe(200)
   const session = await response.json() as { signedIn: boolean; role?: string }
-  expect(session.signedIn, "The live Maintainer session must be renewed before running this spec").toBe(true)
+  expect(session.signedIn, "the run's stored session is signed in (the deployment's setup)").toBe(true)
   expect(["admin", "maintainer"]).toContain(session.role)
 })
 

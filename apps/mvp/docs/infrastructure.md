@@ -204,6 +204,53 @@ Not checked: signing in, a model call and the GitHub webhook, which wait for the
 - Webhook URL: `https://smithers-mvp-smithers-mvp-prod-hb7tjo4elntcmy75.willcory10.workers.dev/api/github/webhook`, content type `application/json`, and the secret that `security find-generic-password -s smithers-mvp-prod -a GITHUB_WEBHOOK_SECRET -w` prints on Will's MacBook, the value bound to the deploy. The App has one webhook URL, which now points at `https://api.jjhub.tech/webhooks/github`; changing it stops jjhub's deliveries.
 - The App already has Issues read and write, Contents and Metadata, subscribes to Issues and Issue comment, and is installed on every `smithersai` repository.
 
+### Against a deployment
+
+`pnpm e2e:prod` runs the e2e suite against production. Each test passes, fails or skips with a declared reason, and each recorded test gets a GIF (rulings TEST-1, TEST-3, TEST-4):
+
+```sh
+E2E_PROD_URL=<the production URL> pnpm e2e:prod [spec…] [playwright options…]
+```
+
+**Sign-in.**
+- The setup project (`e2e/deployment/sign-in.setup.ts`) signs the test account `codeplanesmithers` in the way a person does: through GitHub, from the account's own browser profile (`~/.multi-e2e-profile`, or `E2E_GITHUB_PROFILE`).
+- It keeps the app's session cookie and nothing else, in `~/.smithers-e2e/<host>/session.json` (mode 0600; `E2E_SESSION_DIR` moves it). The account's login, person id and role go in `identity.json` beside it.
+- Every test in the `deployment` project starts from that session, including contexts a test opens itself. `signedOut` from `e2e/target.ts` opens one without it.
+- No test context holds a GitHub cookie, and the setup records no video or trace.
+- Later runs reuse the session until 3 days before it expires.
+- When GitHub asks for a password or a device code, the setup fails and says so. Open the profile once in a visible browser and sign in.
+- A role is read at sign-in. While the account is below Member, the setup signs in again at most every 6 hours; `E2E_FRESH_SIGN_IN=1` forces a new sign-in.
+- There is no test-only sign-in route ([decision 0024](decisions/0024-e2e-sign-in-to-a-deployment.md)).
+
+**Needs.**
+- A test declares what it needs from its target with `requires(...)` from `e2e/target.ts`. Where the run doesn't meet a need, the test skips with that need's reason.
+- Dev builds only: the faulty services (`faults`), the scripted model (`scriptedAgent`), local development's second and third people (`devPeople`) and its sign-out (`devSignIn`).
+- This machine only: local Worker logs (`localLogs`), local fixtures (`localServer`) and dev-server settings (`devConfig`).
+- A deployment only: GitHub sign-in (`githubSignIn`), and GitHub writes to a scratch repository (`githubScratch`, with `E2E_ISSUES_REPOSITORY`).
+- Code Storage (`codeStorage`), which locally needs its organization and key.
+- The account's role (`member`, `maintainer`). A role need is **blocked** rather than skipped: the run lacks a prerequisite, and the run fails until it has it.
+- A test that checks logs only where it can uses `partly("localLogs")`, and the summary lists it.
+- A deployment test never signs out: that would end the run's shared session.
+
+**Broken.** A test known to fail on a target is marked `broken(...)` (TEST-5); for example, `remoteFlows` covers production's remote flows. It is expected to fail there. If it passes, the run fails until the mark is removed.
+
+**Summary.** The run ends with a table: each spec's passed, failed, broken, skipped and blocked counts, then each skip reason with its count. It writes `test-results-deployment/summary.json`. The command exits 1 on any of these:
+- a failure;
+- a skip that names no need;
+- a blocked need;
+- a broken test that passes.
+
+**Spend.** Before each test that can ask, a guard adds up the tokens the run's answers used (`e2e/spend.ts`). From `E2E_TOKEN_BUDGET` (600,000 by default) on, later tests fail with `SpendBudgetSpent`. Every run alerts the Admins on spend (AUTH-4).
+
+**Fixtures.** For a Member or above, the setup requests a clone of `octocat/Spoon-Knife` (`POST /api/repos`, idempotent).
+
+**Results.**
+- Playwright's results go to `test-results-deployment/`, apart from a local run's.
+- Videos and GIFs go to `~/Desktop/smithers-mvp/prod/`.
+- Two workers, no retries and no traces: a trace holds the session cookie.
+
+**Rehearsal.** A local stack that signs in through GitHub runs as a deployment: `E2E_TARGET=deployment BASE_URL=http://localhost:1338 pnpm exec playwright test`.
+
 ### Limits
 
 - **Answers run in browsers.** ChatApi answers nothing itself: each answer is a run on the asking browser's engine ([agent.md](features/agent.md)), so an answer pauses while that browser has no tab of the app open and resumes when one opens. An answer whose browser never comes back stops holding up later answers once it has gone `ANSWER_TURN_LIVE_SECONDS` without a write, and the remote flow `chat/Expire`, which ChatApi starts for every question it takes, settles it `failed` (`abandoned`) once its queue (it, and the earlier answers in its conversation) has been still for `ANSWER_EXPIRY` (25 minutes) ([agent.md](features/agent.md#settling)).

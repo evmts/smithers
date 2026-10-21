@@ -3,6 +3,7 @@ import { writeFile } from "node:fs/promises"
 import { DEV_URL } from "../dev/https"
 import { faultyApp, faults } from "./faults"
 import { allServerRows, type Row } from "./shape"
+import { guard } from "./target"
 import {
   COULDNT_ANSWER,
   expect,
@@ -415,6 +416,9 @@ class Devices {
   }
 
   private openOn(faulty: boolean, names: Array<string>, cookie?: { readonly name: string; readonly value: string }) {
+    // A dev build's faulty services and local development's people: `requires("faults")`, `requires("devPeople")`.
+    if (faulty) guard("faults")
+    if (cookie !== undefined) guard("devPeople")
     const how = faulty ? " on faulty services" : cookie !== undefined ? ` as the ${cookie.value}` : ""
     return step(`Open ${names.join(", ")}${how}`, () => this.openEach(faulty, names, cookie))
   }

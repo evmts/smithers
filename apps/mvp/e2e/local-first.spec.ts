@@ -1,5 +1,7 @@
 import { allServerRows, expect, expectSameThread, NOT_SENT, PAGE_SIZE, pairs, serverRows, test } from "./devices"
-import { faults } from "./faults"
+import { faultyApp, faults } from "./faults"
+import { step } from "./fixtures"
+import { requires } from "./target"
 
 // Local-first guarantees across real devices (docs/decisions/0002-local-first.md §7): separate browser contexts, each
 // keeping the conversation on the device (SQLite on OPFS) and every question in its outbox (IndexedDB) until Postgres
@@ -9,7 +11,9 @@ import { faults } from "./faults"
 // flow, and every page runs the no-spinner observer (e2e/fixtures.ts). The conversation is shared and keeps earlier
 // runs, so every assertion is scoped to the test's own word (`devices.word`), and answers are matched on a word they
 // contain, never exact wording. One-word answers keep the model's token use low; the few long answers are what make
-// "mid-answer" possible.
+// "mid-answer" possible. Every test asks, which needs a Member or above; a test that throws a switch of the app's
+// faulty services runs only on a dev build (`requires("faults")`).
+requires("member")
 
 // A long answer that ends in a word of its own, so "complete" means its last line arrived.
 const longQuestion = (start: string, end: string) =>
@@ -67,6 +71,7 @@ test("restart offline: a question asked offline survives closing the app, and a 
 })
 
 test("closed before its run started: a question ChatApi took, whose tab closed before its engine recorded the run, is answered when the app opens again", { annotation: { type: "summary", description: "A question whose tab closed before it was answered is answered when the app opens again." } }, async ({ devices, request }) => {
+  requires("faults")
   const word = devices.word
   const [a] = await devices.openFaulty("A")
   // This tab's engine takes its time, as a worker still loading wa-sqlite: the run that answers isn't recorded yet.
@@ -86,6 +91,18 @@ test("closed before its run started: a question ChatApi took, whose tab closed b
 
 test("late joiner: a device that opens later shows the same latest messages, and Load earlier pages back through Postgres' order", { annotation: { type: "summary", description: "A device that opens later shows the same conversation, and Load earlier pages back in order." } }, async ({ devices, request }) => {
   const word = devices.word
+  // Load earlier needs more than one page. A conversation holding less, as on a fresh database, first gets answered
+  // questions of its own from another real API client, as timeline.spec.ts records them, with a tag that isn't `word`.
+  await step("Fill the conversation past one page", async () => {
+    const tag = `fill${Date.now().toString(36)}`
+    const missing = PAGE_SIZE + 1 - (await allServerRows(request)).length
+    for (let n = 0; n < Math.ceil(missing / 2); n++) {
+      const id = crypto.randomUUID()
+      const answerId = crypto.randomUUID()
+      expect((await request.post("/api/questions", { data: { id, answerId, text: `Earlier question ${n + 1}, ${tag}` } })).status()).toBe(202)
+      expect((await request.post(`/api/answers/${answerId}`, { data: { status: "done", text: `Earlier answer ${n + 1}, ${tag}` } })).status()).toBe(200)
+    }
+  })
   const [a] = await devices.open("A")
   const asked = [`Reply with exactly the word: first-${word}`, `Reply with exactly the word: second-${word}`]
   for (const [index, question] of asked.entries()) {
@@ -107,7 +124,7 @@ test("late joiner: a device that opens later shows the same latest messages, and
   }).toPass({ timeout: 30_000 })
 
   // Load earlier pages back: the late device then shows the latest two pages, questions in Postgres' order.
-  test.skip(total <= PAGE_SIZE, `the conversation has ${total} messages, one page: nothing earlier to load`)
+  expect(total, "the conversation holds more than one page").toBeGreaterThan(PAGE_SIZE)
   await expect(late.loadEarlier).toBeVisible()
   await late.loadEarlier.click()
   await expect(async () => {
@@ -291,6 +308,7 @@ test("flapping network: a question asked during each drop queues, and every one 
 })
 
 test("sync down while asking: a question ChatApi took stays queued until the device sees it, then shows once, answered", { annotation: { type: "summary", description: "A question the server took stays queued on the device until sync shows it, then shows once, answered." } }, async ({ devices }) => {
+  requires("faults")
   test.setTimeout(180_000)
   const word = devices.word
   const [[a], [b]] = await Promise.all([devices.openFaulty("A"), devices.open("B")])
@@ -315,6 +333,7 @@ test("sync down while asking: a question ChatApi took stays queued until the dev
 })
 
 test("Retry: syncs at once instead of waiting out the backoff", { annotation: { type: "summary", description: "Retry syncs at once instead of waiting out the backoff." } }, async ({ devices }) => {
+  requires("faults")
   test.setTimeout(120_000)
   const [[a]] = await Promise.all([devices.openFaulty("A")])
   await a.device.syncDown()
@@ -348,6 +367,7 @@ test("offline mid-answer: the text so far stays, and the whole answer arrives on
 })
 
 test("Electric down at boot: after one visit, the conversation shows from the device, and the pill says so", { annotation: { type: "summary", description: "With sync down at boot, the conversation still shows from the device, and the pill says so." } }, async ({ devices }) => {
+  requires("faults")
   test.setTimeout(120_000)
   const word = devices.word
   const [a] = await devices.open("A")
@@ -355,7 +375,7 @@ test("Electric down at boot: after one visit, the conversation shows from the de
   await a.ask(asked)
   await a.expectAnswered(asked, `stored-${word}`)
   // The app opens again on its faulty services with the sync service already down.
-  await a.page.goto("/app?faults=down")
+  await a.page.goto(faultyApp("down"))
   await a.ready()
   await a.expectAnswered(asked, `stored-${word}`, 5_000)
   await expect(a.pill.getByRole("button", { name: "Retry" })).toBeVisible({ timeout: 60_000 })

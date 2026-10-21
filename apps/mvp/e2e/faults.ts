@@ -3,6 +3,7 @@ import type { ShapeSource } from "@smthrs/effect-electric"
 import type { Question } from "../src/features/chat/api"
 import type { Switches } from "../src/test/e2e"
 import type { QuestionFault } from "../src/test/faults"
+import { guard } from "./target"
 
 // The only way an e2e test makes ChatApi or Electric fail (docs/rules.md, test.faults-by-injection): it opens the app
 // on its faulty services and throws their switches (src/test/e2e.ts). Nothing intercepts a request. A page at
@@ -10,13 +11,17 @@ import type { QuestionFault } from "../src/test/faults"
 // opens it with sync already down. Happy paths open `/app`, on the real services alone.
 
 /** The app on its faulty services, healthy, or opened with a shape switch already thrown. */
-export const faultyApp = (opening?: "down" | "refuse" | `refuse-${number}` | "stall" | "corrupt") =>
-  opening === undefined ? "/app?faults" : `/app?faults=${opening}`
+export const faultyApp = (opening?: "down" | "refuse" | `refuse-${number}` | "stall" | "corrupt") => {
+  // A dev build only: `requires("faults")`.
+  guard("faults")
+  return opening === undefined ? "/app?faults" : `/app?faults=${opening}`
+}
 
 type OnWindow = { readonly faults: Switches }
 
 /** The switches of the app on `page`, which a test opened at `faultyApp()`. Each waits until the app has built them. */
 export const faults = (page: Page) => {
+  guard("faults")
   const built = async () => {
     await page.waitForFunction(() => "faults" in window, undefined, { timeout: 30_000 })
   }

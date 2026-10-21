@@ -1,21 +1,22 @@
 import { expect, step, test } from "./fixtures"
+import { broken, requires } from "./target"
 
 // A repository's own home (docs/features/home.md, decision 0014 §4, F5), against the real app, Worker, Postgres,
 // Electric, GitHub and Code Storage. The fixture is the small public `smithersai/home-fixture`, whose
 // `.smithers/home.json` declares a prompt, text, a link, a Markdown file, two app blocks (one for a command the app has,
 // one for a flow it hasn't) and a block of a kind the app doesn't know. Cloning it is idempotent, so a second run finds
-// it ready. Locally the run needs the Code Storage organization in the dev server's environment; against a deployment
-// (`BASE_URL`), the deployment holds it.
+// it ready. Locally the run needs the Code Storage organization in the dev server's environment; a deployment holds it.
+// The declared home is drawn from the clone, a Member's request (worker/RepoApi.ts `canClone`) that the `repo/clone`
+// remote flow finishes (worker/RepoApi.ts `start`, worker/flows/RepoClone.ts); a repository without one shows GitHub's
+// preview of its README before any clone.
 
-const missing = ["CODE_STORAGE_ORG", "CODE_STORAGE_KEY"].filter((name) => process.env[name] === undefined)
-test.skip(
-  process.env.BASE_URL === undefined && missing.length > 0,
-  `The home tests need Code Storage: ${missing.join(" and ")} unset.`,
-)
+requires("codeStorage")
 
 const REPO = "/smithersai/home-fixture"
 
 test("declared: a repository's own home draws its blocks, Code opens its tree, a file opens by its URL, and Home comes back", async ({ page }) => {
+  requires("member")
+  broken("remoteFlows")
   test.setTimeout(240_000)
   const header = page.locator('header[aria-label="Repository"]')
   const home = page.getByRole("region", { name: "Home" })

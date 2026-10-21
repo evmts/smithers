@@ -1,6 +1,7 @@
 import type { Locator, Page } from "@playwright/test"
 import { expect, type Tab, test } from "./devices"
 import { step } from "./fixtures"
+import { me, requires, scriptedAgent } from "./target"
 
 // Co-editing, end to end (docs/features/coedit.md, decision 0013 §4): real browsers on separate devices against the
 // real app, ChatApi, the texts' rooms, the branch's machine, Postgres and Electric. Maya is local development's
@@ -56,6 +57,7 @@ test("co-editing: Maya and Ben type in one prompt and one file at once, see each
     description: "Two people type the same prompt and the same file at once, each sees the other's caret, Ben sends the prompt and Maya saves the file.",
   },
 }, async ({ devices }) => {
+  requires("devPeople")
   test.setTimeout(10 * 60_000)
   const word = devices.word
   const [maya] = await devices.open("Maya")
@@ -142,10 +144,11 @@ test("co-editing: two devices type one answer box of a run that needs the person
     description: "The agent asks; two of the person's devices type the answer together, see each other's caret, and either sends it.",
   },
 }, async ({ devices }) => {
+  requires("scriptedAgent")
   test.setTimeout(300_000)
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
-  await a!.page.goto("/app?agent=needs-you")
+  await a!.page.goto(scriptedAgent("needs-you"))
   await a!.ready()
   const question = `Deploy the docs preview, ${word}`
   await a!.askAndWaitTaken(question)
@@ -158,12 +161,12 @@ test("co-editing: two devices type one answer box of a run that needs the person
     await field(a!).click()
     await a!.page.keyboard.type("docs")
     await expect(field(b!), "B sees what A typed").toHaveValue("docs", { timeout: SYNC })
-    await expect(caret(card(b!), MAYA), "B sees A's caret").toBeVisible({ timeout: SYNC })
+    await expect(caret(card(b!), me().login), "B sees A's caret").toBeVisible({ timeout: SYNC })
     await field(b!).click()
     await field(b!).press("End")
     await b!.page.keyboard.type("-v2")
     await expect(field(a!), "A sees what B typed").toHaveValue("docs-v2", { timeout: SYNC })
-    await expect(caret(card(a!), MAYA), "A sees B's caret").toBeVisible({ timeout: SYNC })
+    await expect(caret(card(a!), me().login), "A sees B's caret").toBeVisible({ timeout: SYNC })
   })
 
   await step("B answers; the run in A's browser goes on", async () => {

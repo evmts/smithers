@@ -1,6 +1,7 @@
 import type { BrowserContext } from "@playwright/test"
 import { allServerRows, expect, type Row, test } from "./devices"
 import { step } from "./fixtures"
+import { requires } from "./target"
 
 // Jev in the agent's hands, end to end (docs/features/jev.md): a real browser asks Smithers to sort issue titles and
 // never names Jev. The agent picks `app/jev/classify` on its own, from the flow's description in its catalog, and the
@@ -50,6 +51,7 @@ const sortTitles = (milestone: string) =>
 test("jev: asked to sort issue titles, the agent uses Jev unasked, and debug info shows its step", {
   annotation: { type: "summary", description: "The agent picks Jev on its own; debug info shows the Jev step, its output and its input." },
 }, async ({ devices, request }) => {
+  requires("member")
   test.setTimeout(240_000)
   const [a] = await devices.open("A")
   const calls = modelCalls(a.device.context)

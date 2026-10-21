@@ -1,5 +1,5 @@
 import { test as base, type BrowserContextOptions } from "@playwright/test"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { DEV_URL } from "../dev/https"
@@ -82,8 +82,10 @@ export const signedOut: Pick<BrowserContextOptions, "storageState"> = { storageS
 const MEMBER_OR_ABOVE: ReadonlySet<Role | null> = new Set<Role | null>(["admin", "maintainer", "member"])
 const MAINTAINER_OR_ABOVE: ReadonlySet<Role | null> = new Set<Role | null>(["admin", "maintainer"])
 
-/** What a run offers a test: its target and who it is signed in as (read only when a need asks). */
-export type Run = { readonly target: Target; readonly role: () => Role | null }
+/** What a run offers a test: its target, who it is signed in as (read only when a need asks), and its environment. */
+export type Run = { readonly target: Target; readonly role: () => Role | null; readonly env: Readonly<Record<string, string | undefined>> }
+
+const set = (run: Run, ...names: ReadonlyArray<string>) => names.every((name) => (run.env[name] ?? "") !== "")
 
 /**
  * A need: when a run meets it, and why a test that has it skips otherwise. A `blocked` need is a prerequisite the run
@@ -93,15 +95,52 @@ export type Need = { readonly met: (run: Run) => boolean; readonly reason: strin
 
 const localOnly = (reason: string): Need => ({ met: (run) => run.target === "local", reason })
 
+/** Where the deployed build device-upgrade.spec.ts upgrades from sits: `OLD_BUILD_DIR`, or the round-4 build's copy. */
+export const oldBuildDir = (env: Run["env"]) => env.OLD_BUILD_DIR ?? join(homedir(), "Desktop", "smithers-mvp", "builds", "c6940ac53e5a")
+
+/** Whether the local dev server signs people in through GitHub instead of as local development's people. */
+const githubAppLocally = (run: Run) => set(run, "GITHUB_APP_CLIENT_ID")
+
 const needs = {
   faults: localOnly("the app's faulty services (`/app?faults`, e2e/faults.ts) are in dev builds only"),
   scriptedAgent: localOnly("the scripted model (`/app?agent=<script>`) is in dev builds only"),
-  devPeople: localOnly("local development's second and third people (the smithers_dev_person cookie) exist only without GitHub sign-in; a deployment needs another real test account"),
-  devSignIn: localOnly("it signs out and in as local development's person; in a deployment that would end the run's shared session"),
+  devPeople: {
+    met: (run) => run.target === "local" && !githubAppLocally(run),
+    reason: "local development's second and third people (the smithers_dev_person cookie) exist only without GitHub sign-in; a deployment needs another real test account",
+  },
+  devSignIn: {
+    met: (run) => run.target === "local" && !githubAppLocally(run),
+    reason: "it signs out and in as local development's person, who exists only without GitHub sign-in; in a deployment that would end the run's shared session",
+  },
   localLogs: localOnly("it reads the Workers' logs from local .alchemy/log files; a deployment's are in Workers Logs"),
   localServer: localOnly("it serves fixtures or builds from this machine, which a deployment can't reach"),
-  devConfig: localOnly("it starts the dev server with settings of its own (provider URLs or a webhook secret)"),
+  noGitHubApp: {
+    met: (run) => run.target === "local" && !set(run, "GITHUB_APP_ID") && !set(run, "E2E_ISSUES_REPOSITORY"),
+    reason: "it needs a repository GitHub hasn't said is public: a dev server without the GitHub App (GITHUB_APP_ID and E2E_ISSUES_REPOSITORY unset)",
+  },
+  webhookSecret: {
+    met: (run) => run.target === "local" && set(run, "E2E_GITHUB_WEBHOOK_SECRET"),
+    reason: "it signs GitHub's deliveries as GitHub does: set E2E_GITHUB_WEBHOOK_SECRET to the dev server's GITHUB_WEBHOOK_SECRET, with the GitHub App configured",
+  },
+  alertProviders: {
+    met: (run) =>
+      run.target === "local" && set(run, "ALERT_TELEGRAM_API_URL") && run.env.ALERT_TELEGRAM_API_URL === run.env.ALERT_EMAIL_API_URL &&
+      run.env.MODEL_SPEND_ALERTS === "true",
+    reason: "it reads alerts from the local stand-in providers: start the dev server with ALERT_TELEGRAM_API_URL and ALERT_EMAIL_API_URL both at them and MODEL_SPEND_ALERTS=true",
+  },
+  oldBuild: {
+    met: (run) => run.target === "local" && existsSync(join(oldBuildDir(run.env), "index.html")),
+    reason: "it upgrades from a deployed build kept on this machine: put one at OLD_BUILD_DIR",
+  },
   githubSignIn: { met: (run) => run.target === "deployment", reason: "it signs in through GitHub; local development signs its person in without GitHub" },
+  codeStorage: {
+    met: (run) => run.target === "deployment" || set(run, "CODE_STORAGE_ORG", "CODE_STORAGE_KEY"),
+    reason: "it clones into Code Storage, which the local dev server reaches only with CODE_STORAGE_ORG and CODE_STORAGE_KEY set",
+  },
+  githubScratch: {
+    met: (run) => run.target === "deployment" && set(run, "E2E_ISSUES_REPOSITORY") && !/^smithersai\//i.test(run.env.E2E_ISSUES_REPOSITORY!),
+    reason: "it writes issues to GitHub as a real person: run against a deployment with E2E_ISSUES_REPOSITORY set to a scratch repository it syncs, never a smithersai one",
+  },
   member: {
     met: (run) => MEMBER_OR_ABOVE.has(run.role()),
     reason: "it asks, clones or tracks, which needs a Member or above; the test account's role on the deployment's repository is below that",
@@ -142,7 +181,7 @@ export const parseDescription = (description: string | undefined): { kind: "need
   return known ? { kind, name } : undefined
 }
 
-const thisRun: Run = { target, role: () => me().role }
+const thisRun: Run = { target, role: () => me().role, env: process.env }
 
 /** Whether this run meets `name`. */
 export const meets = (name: NeedName, run: Run = thisRun) => NEEDS[name].met(run)
@@ -195,4 +234,19 @@ export class UndeclaredNeed extends Error {
 /** Called by a helper that only works where `name` is met, so a test that forgot `requires` fails fast and says why. */
 export const guard = (name: NeedName, run: Run = thisRun) => {
   if (!NEEDS[name].met(run)) throw new UndeclaredNeed(name)
+}
+
+/**
+ * The app's address with its agent's model scripted (src/test/scriptedAgent.ts): `/app?agent=echo`, or `?agent=echo`
+ * after `path` "" for a page that adds it to its own. A dev build only: `requires("scriptedAgent")`.
+ */
+export const scriptedAgent = (script: string, path = "/app", run: Run = thisRun) => {
+  guard("scriptedAgent", run)
+  return `${path}?agent=${script}`
+}
+
+/** The scratch repository issue specs write to, `owner/name` (the `githubScratch` need). */
+export const scratchRepository = () => {
+  guard("githubScratch")
+  return process.env.E2E_ISSUES_REPOSITORY!
 }

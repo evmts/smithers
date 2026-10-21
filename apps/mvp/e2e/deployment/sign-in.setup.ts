@@ -133,7 +133,8 @@ setup("fixture repositories are requested", async () => {
   const api = await requests.newContext({ baseURL: origin, storageState: files.session })
   try {
     for (const repository of FIXTURE_REPOSITORIES) {
-      const response = await api.post("/api/repos", { data: repository, headers: { origin } })
+      // A cookie's write names the person it expects (decision 0023), as the app's own requests do.
+      const response = await api.post("/api/repos", { data: repository, headers: { origin, [DEVICE_PERSON_HEADER]: identity.personId } })
       // 202 started a clone; 200 one is running or done. Either way the fixture is the deployment's from now on.
       expect([200, 202], `the deployment takes the clone of ${repository.owner}/${repository.name}`).toContain(response.status())
       setup.info().annotations.push({ type: "fixtures", description: `${repository.owner}/${repository.name}: ${response.status()}` })

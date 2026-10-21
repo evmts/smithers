@@ -234,6 +234,8 @@ export const guardSpend = (() => {
     applies: () => target === "deployment" && meets("member"),
     budget: () => tokenBudget(process.env),
     since: () => runStartedAt(process.env),
+    // Shown on the test, never failing it: the test reads the same conversation through the app.
+    unread: (error) => base.info().annotations.push({ type: "spend unread", description: String(error).split("\n")[0]!.slice(0, 200) }),
     rows: async () => {
       const request = await open()
       try {
@@ -263,6 +265,8 @@ export const test = base.extend<{ browserLog: Array<string>; spendGuard: void }>
       page.on("console", (message) => log.push(`${message.type()}: ${message.text()}`))
       page.on("pageerror", (error) => log.push(`pageerror: ${error.message}`))
       await use(log)
+      // A test that skipped from its body, by `requires` (e2e/target.ts), recorded nothing to keep.
+      if (testInfo.status === "skipped") return
       if (!page.isClosed()) expect(await spinnersSeen(page), "the page never showed a loading state").toEqual([])
       if (testInfo.status !== testInfo.expectedStatus) {
         await testInfo.attach("browser-log", { path: await writeLog(testInfo.outputPath("browser.log"), log), contentType: "text/plain" })

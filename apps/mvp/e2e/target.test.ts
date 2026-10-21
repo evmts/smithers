@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { readdir, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
@@ -10,17 +11,19 @@ import {
   KNOWN_BROKEN,
   NEEDS,
   type NeedName,
+  oldBuildDir,
   onThisMachine,
   parseDescription,
   readIdentity,
   type Run,
+  scriptedAgent,
   sessionFiles,
   targetOf,
   UndeclaredNeed,
 } from "./target"
 
-const local: Run = { target: "local", role: () => "admin" }
-const deployedAs = (role: ReturnType<Run["role"]>): Run => ({ target: "deployment", role: () => role })
+const local: Run = { target: "local", role: () => "admin", env: { CODE_STORAGE_ORG: "o", CODE_STORAGE_KEY: "k" } }
+const deployedAs = (role: ReturnType<Run["role"]>, env: Run["env"] = {}): Run => ({ target: "deployment", role: () => role, env })
 
 describe("the target", () => {
   it("is local without BASE_URL, and for this machine's dev server on any port, over https or http", () => {
@@ -58,20 +61,63 @@ describe("the target", () => {
 describe("needs", () => {
   it("are all met locally, where local development's Admin is signed in, but GitHub sign-in", () => {
     const unmet = (Object.keys(NEEDS) as Array<NeedName>).filter((name) => !NEEDS[name].met(local))
-    expect(unmet).toEqual(["githubSignIn"])
+    expect(unmet).toEqual(["webhookSecret", "alertProviders", "oldBuild", "githubSignIn", "githubScratch"])
   })
 
   it("in a deployment, leave out every dev-only need, and meet a role need by the account's role", () => {
     const met = (role: ReturnType<Run["role"]>) => (Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].met(deployedAs(role)))
-    expect(met("guest")).toEqual(["githubSignIn"])
-    expect(met(null)).toEqual(["githubSignIn"])
-    expect(met("member")).toEqual(["githubSignIn", "member"])
-    expect(met("maintainer")).toEqual(["githubSignIn", "member", "maintainer"])
-    expect(met("admin")).toEqual(["githubSignIn", "member", "maintainer"])
+    expect(met("guest")).toEqual(["githubSignIn", "codeStorage"])
+    expect(met(null)).toEqual(["githubSignIn", "codeStorage"])
+    expect(met("member")).toEqual(["githubSignIn", "codeStorage", "member"])
+    expect(met("maintainer")).toEqual(["githubSignIn", "codeStorage", "member", "maintainer"])
+    expect(met("admin")).toEqual(["githubSignIn", "codeStorage", "member", "maintainer"])
+  })
+
+  it("for local development's people and sign-out, are unmet once the dev server signs in through GitHub", () => {
+    const withApp: Run = { ...local, env: { GITHUB_APP_CLIENT_ID: "Iv1.x" } }
+    expect(NEEDS.devPeople.met(withApp)).toBe(false)
+    expect(NEEDS.devSignIn.met(withApp)).toBe(false)
+    expect(NEEDS.noGitHubApp.met(local)).toBe(true)
+    expect(NEEDS.noGitHubApp.met({ ...local, env: { GITHUB_APP_ID: "1" } })).toBe(false)
+    expect(NEEDS.noGitHubApp.met({ ...local, env: { E2E_ISSUES_REPOSITORY: "a/b" } })).toBe(false)
+  })
+
+  it("for the dev server's own settings, are met only locally with those settings", () => {
+    expect(NEEDS.webhookSecret.met({ ...local, env: { E2E_GITHUB_WEBHOOK_SECRET: "s" } })).toBe(true)
+    expect(NEEDS.webhookSecret.met(deployedAs("admin", { E2E_GITHUB_WEBHOOK_SECRET: "s" }))).toBe(false)
+    const providers = { ALERT_TELEGRAM_API_URL: "http://localhost:9", ALERT_EMAIL_API_URL: "http://localhost:9", MODEL_SPEND_ALERTS: "true" }
+    expect(NEEDS.alertProviders.met({ ...local, env: providers })).toBe(true)
+    expect(NEEDS.alertProviders.met({ ...local, env: { ...providers, ALERT_EMAIL_API_URL: "http://localhost:8" } })).toBe(false)
+    expect(NEEDS.alertProviders.met({ ...local, env: { ...providers, MODEL_SPEND_ALERTS: "false" } })).toBe(false)
+  })
+
+  it("for the old build, are met only where its index.html is on disk", () => {
+    const dir = mkdtempSync(join(tmpdir(), "e2e-old-build-"))
+    try {
+      expect(NEEDS.oldBuild.met({ ...local, env: { OLD_BUILD_DIR: dir } })).toBe(false)
+      writeFileSync(join(dir, "index.html"), "<!doctype html>")
+      expect(NEEDS.oldBuild.met({ ...local, env: { OLD_BUILD_DIR: dir } })).toBe(true)
+      expect(NEEDS.oldBuild.met(deployedAs("admin", { OLD_BUILD_DIR: dir }))).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+    expect(oldBuildDir({})).toMatch(/Desktop\/smithers-mvp\/builds\/c6940ac53e5a$/)
+  })
+
+  it("for Code Storage, are met locally only with its organization and key set", () => {
+    expect(NEEDS.codeStorage.met({ ...local, env: { CODE_STORAGE_ORG: "o" } })).toBe(false)
+    expect(NEEDS.codeStorage.met({ ...local, env: { CODE_STORAGE_ORG: "o", CODE_STORAGE_KEY: "" } })).toBe(false)
+  })
+
+  it("for GitHub writes, are met only in a deployment with a scratch repository that isn't smithersai's", () => {
+    expect(NEEDS.githubScratch.met(deployedAs("member", { E2E_ISSUES_REPOSITORY: "roninjin10/smithers-github-tests" }))).toBe(true)
+    expect(NEEDS.githubScratch.met(deployedAs("member", { E2E_ISSUES_REPOSITORY: "SmithersAI/smithers" }))).toBe(false)
+    expect(NEEDS.githubScratch.met(deployedAs("member"))).toBe(false)
+    expect(NEEDS.githubScratch.met({ ...local, env: { E2E_ISSUES_REPOSITORY: "roninjin10/smithers-github-tests" } })).toBe(false)
   })
 
   it("read the role only when a role need asks, so a dev-only need never needs the setup", () => {
-    const run: Run = { target: "deployment", role: () => { throw new Error("no identity") } }
+    const run: Run = { target: "deployment", role: () => { throw new Error("no identity") }, env: {} }
     expect(NEEDS.faults.met(run)).toBe(false)
     expect(() => NEEDS.member.met(run)).toThrow("no identity")
   })
@@ -125,6 +171,17 @@ describe("guard", () => {
   })
 })
 
+describe("the scripted agent's address", () => {
+  it("opens the app, or adds to a page's own address, with the script named", () => {
+    expect(scriptedAgent("echo", "/app", local)).toBe("/app?agent=echo")
+    expect(scriptedAgent("sandbox-once", "", local)).toBe("?agent=sandbox-once")
+  })
+
+  it("can't be opened against a deployment's build", () => {
+    expect(() => scriptedAgent("echo", "/app", deployedAs("admin"))).toThrow(UndeclaredNeed)
+  })
+})
+
 describe("the stored session's files", () => {
   const root = mkdtempSync(join(tmpdir(), "e2e-target-"))
   afterAll(() => rmSync(root, { recursive: true, force: true }))
@@ -155,5 +212,25 @@ describe("the stored session's files", () => {
       writeFileSync(path, JSON.stringify(bad))
       expect(() => readIdentity(path)).toThrow("is not an identity the e2e setup wrote")
     }
+  })
+})
+
+// The suite's one way to tell targets apart and skip (docs/rules.md, test.e2e-declared-needs): every spec skips only by
+// `requires`, and none decides for itself whether its target is local.
+describe("the specs", () => {
+  const specs = async () => {
+    const dir = new URL(".", import.meta.url).pathname
+    const names = (await readdir(dir)).filter((name) => name.endsWith(".spec.ts"))
+    return Promise.all(names.map(async (name) => ({ name, source: await readFile(join(dir, name), "utf8") })))
+  }
+
+  it("skip only by declaring a need", async () => {
+    const offenders = (await specs()).filter(({ source }) => /\btest\.skip\(/.test(source)).map(({ name }) => name)
+    expect(offenders, "use requires(...) from e2e/target.ts instead of test.skip").toEqual([])
+  })
+
+  it("never tell local from deployed by the URL themselves", async () => {
+    const offenders = (await specs()).filter(({ source }) => /localhost\|127|process\.env\.BASE_URL|E2E_SESSION_COOKIE|\bDEV_URL\b/.test(source)).map(({ name }) => name)
+    expect(offenders, "use target, requires and the stored session from e2e/target.ts").toEqual([])
   })
 })

@@ -1,5 +1,6 @@
 import { type AlertProviders, startAlertProviders } from "../worker/test/alertProviders.ts"
 import { expect, test } from "./devices"
+import { requires, target } from "./target"
 
 // Spend alerts by email and Telegram, end to end (docs/features/spend-alerts.md#channels): the real app, ChatApi, the
 // `ops/SpendAlert` flow on its Durable Object, Postgres and Electric. An Admin (under `alchemy dev`, the local
@@ -10,11 +11,12 @@ import { expect, test } from "./devices"
 //   MODEL_SPEND_ALERTS=true MODEL_SPEND_ALERT_WINDOW='3 seconds' ALERT_EMAIL_API_URL=http://127.0.0.1:1339 \
 //   ALERT_TELEGRAM_API_URL=http://127.0.0.1:1339 pnpm dev
 //
-// The spec reads the same variables; without them, or against a deployment, it is skipped. The question must be
-// admitted to spend, so the dev database's daily model budget needs room (`429 quota_exceeded` spends nothing).
+// The spec reads the same variables (`requires("alertProviders")`, e2e/target.ts), so it runs only against local development.
+// The question must be admitted to spend, so the dev database's daily model budget needs room (`429 quota_exceeded`
+// spends nothing).
 
 const providersUrl = process.env.ALERT_TELEGRAM_API_URL
-const ready = process.env.BASE_URL === undefined && providersUrl !== undefined &&
+const ready = target === "local" && providersUrl !== undefined &&
   providersUrl === process.env.ALERT_EMAIL_API_URL && process.env.MODEL_SPEND_ALERTS === "true"
 
 const ADDRESS = "will@example.com"
@@ -37,7 +39,7 @@ test("channels: an Admin sets email and Telegram, and each spend alert's deliver
     description: "An Admin sets where spend alerts go; the next alert reaches the email address and the Telegram chat.",
   },
 }, async ({ devices }) => {
-  test.skip(!ready, "Needs the dev server started with the alert providers' URLs and MODEL_SPEND_ALERTS=true")
+  requires("alertProviders")
   test.setTimeout(240_000)
   const [a] = await devices.open("Admin")
   const page = a.page

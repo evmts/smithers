@@ -1,11 +1,15 @@
 import { expect, test } from "./devices"
+import { requires, scriptedAgent } from "./target"
+
+// The scripted agent's model (a dev build) answers, and the test records questions and answers, which needs a Member.
+requires("scriptedAgent", "member")
 
 test("Conversation timeline: scroll, jump by key and receive durable summaries", {
   annotation: { type: "summary", description: "A long conversation stays in sync with its rail; keys jump and summaries arrive without moving rows." },
 }, async ({ devices, request }) => {
   test.setTimeout(180_000)
   const [a] = await devices.open("Timeline")
-  await a.page.goto("/app?agent=echo")
+  await a.page.goto(scriptedAgent("echo"))
   await a.ready()
   const word = `rail-${Date.now()}`
   await test.step("Build a long conversation", async () => {

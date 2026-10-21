@@ -1,11 +1,15 @@
 import type { Page } from "@playwright/test"
 import { expect, test } from "./devices"
+import { requires } from "./target"
 
 // Your own flows and their runs, end to end (docs/features/flows.md#your-own-flows, docs/features/runs.md, decision
 // 0014's F1 and F7): a real browser, its own durable engine and the real model. A person drafts a flow from a prompt on
 // the Flows page, saves it, runs it, watches its run page to its answer, then stops a live run and retries it; and opens
 // a flow's code, runs it, relabels its step and sees Run refused until a sandbox can run that code. No mocks. Each run
-// is a few model calls: Cerebras rate-limits concurrent calls, so the steps go one after another.
+// is a few model calls: Cerebras rate-limits concurrent calls, so the steps go one after another. Drafting asks the
+// agent, a Member's (worker/PersonalFlows.ts `canAsk`).
+
+requires("member")
 
 /** The run page's state word, in the header's live region. */
 const runState = (page: Page) => page.locator('[data-slot="run-header"] [role="status"]')

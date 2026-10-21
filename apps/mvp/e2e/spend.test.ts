@@ -85,18 +85,22 @@ describe("the guard", () => {
   const setup = (rows: Array<Row>, applies = true) => {
     let clock = START + 1_000
     let reads = 0
+    let failing: Error | undefined
+    const unread: Array<unknown> = []
     const guard = spendGuard({
       applies: () => applies,
       budget: () => 2_000,
       since: () => START,
       rows: async () => {
         reads++
+        if (failing !== undefined) throw failing
         return rows
       },
+      unread: (error) => unread.push(error),
       // The real clock where nothing applies: the guard never asks it.
       ...(applies ? { now: () => clock } : {}),
     })
-    return { guard, reads: () => reads, tick: (ms: number) => (clock += ms) }
+    return { guard, reads: () => reads, tick: (ms: number) => (clock += ms), fail: (error?: Error) => (failing = error), unread }
   }
 
   it("lets tests start while the run's answers are under budget, reading the conversation once a minute", async () => {
@@ -118,6 +122,23 @@ describe("the guard", () => {
     const { guard } = setup([row({ input_tokens: "1800" })])
     await expect(guard()).rejects.toMatchObject({ spent: 2_000, budget: 2_000 })
     await expect(guard()).rejects.toThrow("this test doesn't start")
+  })
+
+  it("lets a test start when a read fails, reports it, keeps its last total and reads again before the next test", async () => {
+    const rows = [row({ input_tokens: "1800" })]
+    const { guard, reads, fail, unread, tick } = setup(rows)
+    const down = new Error("ChatApi serves the messages shape: 503")
+    fail(down)
+    await guard()
+    await guard()
+    expect(reads()).toBe(2)
+    expect(unread).toEqual([down, down])
+    fail(undefined)
+    await expect(guard()).rejects.toThrow(SpendBudgetSpent)
+    fail(down)
+    tick(REREAD_MS)
+    await expect(guard(), "the last total stands while a read fails").rejects.toThrow(SpendBudgetSpent)
+    expect(unread).toHaveLength(3)
   })
 
   it("reads nothing where it doesn't apply: locally, or for a person who can't ask", async () => {

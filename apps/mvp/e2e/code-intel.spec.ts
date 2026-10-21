@@ -1,16 +1,16 @@
 import { expect, step, test } from "./fixtures"
+import { broken, requires } from "./target"
 
 // Code intelligence in the code view (docs/features/code-intelligence.md), against the real app, Worker, Postgres,
 // Electric, GitHub and Code Storage, with TypeScript's language service in the tab's own worker. The fixture is the
 // small public `vercel/ms` at a fixed commit, whose `src/format.test.ts` imports `format` from `src/index.ts`; nothing
 // is created on GitHub. Cloning it is idempotent, so a second run finds it ready. Locally the run needs the Code
-// Storage organization in the dev server's environment; against a deployment (`BASE_URL`), the deployment holds it.
+// Storage organization in the dev server's environment; a deployment holds it. Opening the file clones `vercel/ms` if
+// no run has, a Member's request (worker/RepoApi.ts `canClone`), and the code view is ready only once the `repo/clone`
+// remote flow finished (worker/RepoApi.ts `start`, worker/flows/RepoClone.ts).
 
-const missing = ["CODE_STORAGE_ORG", "CODE_STORAGE_KEY"].filter((name) => process.env[name] === undefined)
-test.skip(
-  process.env.BASE_URL === undefined && missing.length > 0,
-  `The code intelligence tests need Code Storage: ${missing.join(" and ")} unset.`,
-)
+requires("codeStorage", "member")
+broken("remoteFlows")
 
 const REPO = "/vercel/ms"
 const SHA = "4ff48cec099f0514c3e9bbca18706c9c21122bfb"

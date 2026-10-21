@@ -1,11 +1,13 @@
 import type { Locator, Page } from "@playwright/test"
 import { expect, serverRows, test } from "./devices"
+import { requires } from "./target"
 
 // Message controls in a real browser (docs/features/chat.md#message-controls): Copy on an answer puts its text on the
 // clipboard through `chat/copy`, every message shows when it was written, Edit takes a question queued offline back to
 // the composer before the outbox sends it (`chat/edit`), and the composer's draft survives a reload. A message's time,
 // Copy and Edit show only while the pointer is over it. Real app, Worker, Postgres, Electric and model; no mocks.
-// `pnpm e2e:gifs` makes this flow's GIF from its video.
+// `pnpm e2e:gifs` makes this flow's GIF from its video. Both tests ask, which needs a Member or above.
+requires("member")
 
 // A message's time and controls (`@smthrs/ui`'s ChatMessage actions): in the page, keeping their space, but unseen.
 const controls = (message: Locator) => message.locator(".sui-chat-message-actions")
