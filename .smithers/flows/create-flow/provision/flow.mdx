@@ -39,8 +39,9 @@ starting point. Note each candidate and why it is a good template.
 ### 3. Inventory the patterns already available
 
 `@smthrs/patterns` ships `Loop`, `ReviewLoop`, `MapReduce`, `Escalation`,
-`Saga`, `Trellis`, `Quarantine`, `WithApproval`, `WithRetry`, `WithCache`, and
-`TryCatchFinally`, among others. List the ones that match a stage in the
+`Saga`, `Trellis`, `Quarantine`, `WithApproval`, `WithCache`, and
+`TryCatchFinally`, among others. A retry is an action's `retryPolicy`, not a
+pattern. List the ones that match a stage in the
 specification. Composing one of these is always preferable to hand-rolling the
 same topology.
 

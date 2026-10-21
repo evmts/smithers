@@ -7,9 +7,9 @@ import * as Debate from "../src/Debate.ts"
 import * as Loop from "../src/Loop.ts"
 import * as MergeQueue from "../src/MergeQueue.ts"
 import * as Optimizer from "../src/Optimizer.ts"
+import * as Pattern from "../src/Pattern.ts"
 import * as ReviewLoop from "../src/ReviewLoop.ts"
 import * as TryCatchFinally from "../src/TryCatchFinally.ts"
-import * as WithRetry from "../src/WithRetry.ts"
 
 // Every pattern member is a `@smthrs/flow` flow, and a pattern's declared name
 // is the flow TAG, which is where `Compose.label`'s answer lands.
@@ -36,9 +36,9 @@ const stage = runtimeStage
 
 // A pattern flow used to be anonymous: no MakeOptions carried a name, so a
 // plan listed it as `name: undefined` and a decorator over it read
-// `withRetry(anonymous, attempts=2)`. Every make now labels its Flow after the
-// pattern kind and its declared bounds, the way the decorators name theirs,
-// and honors a caller's `name` and `description` instead.
+// `decorate(anonymous)`. Every make now labels its Flow after the pattern kind
+// and its declared bounds, the way the decorators name theirs, and honors a
+// caller's `name` and `description` instead.
 describe("pattern flow names", () => {
   it("names an unnamed pattern after its kind and declared bounds", () => {
     expect(
@@ -87,8 +87,10 @@ describe("pattern flow names", () => {
   it("reaches the decorators", () => {
     const loop = ReviewLoop.make({ produce: stage, review: stage, revise: stage, maxRounds: 3 })
 
-    expect((WithRetry.withRetry(loop, { attempts: 2 }) as typeof loop)._tag).toBe(
-      "withRetry(reviewLoop(maxRounds=3), attempts=2)"
-    )
+    const audited: Pattern.Decorator = function audited(inner) {
+      return inner
+    }
+
+    expect(Pattern.decorate(loop, audited)._tag).toBe("audited(reviewLoop(maxRounds=3))")
   })
 })

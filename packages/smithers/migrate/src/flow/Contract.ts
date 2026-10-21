@@ -87,9 +87,10 @@ A workflow is a \`Flow\`. A step is an \`Action\`. A model-backed step is an
 - \`Sleep.action\` and \`DurableClock\` from \`@smthrs/flow\` are durable
   timers. \`WaitFor.action\` over \`DurableDeferred\` is a durable wait.
 - \`WithApproval.withApproval\`, \`ReviewLoop.run\`, \`MapReduce.make\`,
-  \`Panel.make\`, \`Debate.run\`, \`Escalation.run\`, \`Recursion.recurse\`,
-  \`WithRetry.retryEffect\` from \`@smthrs/patterns\` are the higher-order
-  patterns. \`RetryPolicy.make\` from \`@smthrs/flow\` is a retry policy.
+  \`Panel.make\`, \`Debate.run\`, \`Escalation.run\`, \`Recursion.recurse\`
+  from \`@smthrs/patterns\` are the higher-order patterns.
+  \`RetryPolicy.make\` from \`@smthrs/flow\` is a retry policy, declared as
+  the \`retryPolicy\` of the action that can fail.
 - \`@smthrs/std\` flows (\`Read\`, \`Write\`, \`Edit\`, \`ApplyPatch\`, \`Ls\`,
   \`Glob\`, \`Grep\`, \`Bash\`) are the host capabilities an agent step calls.
   They are bound by the host, never constructed by application code.
@@ -218,13 +219,15 @@ const SequenceFlow = Flow.make("audit/Sequence", {
   if (attempts < 3) throw new Error("retry")
   return { value: "ok" }
 }}</Task>`,
-    new: `import * as WithRetry from "@smthrs/patterns/WithRetry"
-import * as Effect from "effect/Effect"
-
-await Effect.runPromise(WithRetry.retryEffect(
-  Effect.suspend(() => ++attempts < 3 ? Effect.fail("retry") : Effect.succeed("ok")),
-  { attempts: 3 }
-))`
+    new: `const Flaky = Action.make("audit/Flaky", {
+  payload: {},
+  success: Schema.Struct({ value: Schema.String }),
+  error: Schema.String,
+  retryPolicy: RetryPolicy.make({ initialMs: 100, factor: 2, maxMs: 1_000, maxAttempts: 3 })
+})
+const FlakyLayer = Flaky.toLayer(() =>
+  Effect.suspend(() => ++attempts < 3 ? Effect.fail("retry") : Effect.succeed({ value: "ok" }))
+)`
   },
   {
     title: "Review loop",

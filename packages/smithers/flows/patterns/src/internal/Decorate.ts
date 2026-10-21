@@ -8,8 +8,7 @@
  * ceiling and effect envelope as literal fields, so reading them was a property
  * access; `@smthrs/flow` carries both in the annotation bag, under the keys
  * `Graph.build` itself consults. This module is where that difference lives, so
- * `Pattern`, `WithApproval`, `WithCache` and `WithRetry` state a wrapper the
- * same way.
+ * `Pattern`, `WithApproval` and `WithCache` state a wrapper the same way.
  *
  * The envelope algebra it narrows with is `Compose`'s, which is
  * `@smthrs/plan/Effects`: a decorator that narrows a wrapped flow's authority
@@ -72,7 +71,7 @@ export const envelopeOf = (flow: Flow.Any): Effects.Declaration | undefined =>
  *
  * A tag is required of every `@smthrs/flow` declaration, so the empty string is
  * the one remaining way to have no name, and a flow called "" would compose
- * into `withRetry(, attempts=2)`.
+ * into `decorate()`.
  *
  * @since 1.0.0
  * @private

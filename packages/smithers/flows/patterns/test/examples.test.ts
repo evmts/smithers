@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import { checkRepositories, fetchWithRetry, rankedChecks, reviewTitle } from "../examples/runtime.ts"
+import { checkRepositories, rankedChecks, reviewTitle } from "../examples/runtime.ts"
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(Effect.result(effect))
 
@@ -39,14 +39,5 @@ describe("examples/runtime", () => {
         ]
       }
     })
-  })
-
-  it("retries a flaky call until it answers within the attempt budget", async () => {
-    expect(await Effect.runPromise(fetchWithRetry(2))).toBe(3)
-  })
-
-  it("fails with the last error once the attempt budget is spent", async () => {
-    const result = await run(fetchWithRetry(3))
-    expect(result).toMatchObject({ _tag: "Failure", failure: "attempt 3 failed" })
   })
 })

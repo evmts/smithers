@@ -82,9 +82,8 @@ returned. The deferred body that core runs when the graph builds reads that
 snapshot and never the caller's option object again. `run` snapshots its
 options when it is called, before the `Effect` is returned, so an edit
 between the call and the execution does not reach the effect. The decorator
-factories `WithRetry.make`, `WithCache.make`, and `WithApproval.make`
-snapshot when `make` is called, not when the decorator is applied, and
-`WithRetry.retryEffect` snapshots when it is called. `Pattern.slot` returns a
+factories `WithCache.make` and `WithApproval.make` snapshot when `make` is
+called, not when the decorator is applied. `Pattern.slot` returns a
 frozen copy of its declaration, which is what `Pattern.bind` reads.
 
 ### What is copied
@@ -92,7 +91,7 @@ frozen copy of its declaration, which is what `Pattern.bind` reads.
 Copies are shallow and field by field. A pattern copies every array it
 interprets and the interpreted fields of every record in it: an id, a name, a
 priority, a risk, a flow, a callback. Nested bounds are copied the same way:
-`WithRetry` `backoff`, `Trellis` `envelope`, `DelegationChain` `budget`. A
+`Trellis` `envelope` and `DelegationChain` `budget`. A
 record of flows or callbacks (`Panel` `panelists`, `CheckSuite` `checks`,
 `Supervisor` `workers`, `DelegationChain` `execute`, and the members handed
 to `Bounded` and `Quarantine`) is copied as its own entries, so a
@@ -183,10 +182,10 @@ chain climbs its tier ladder and what a repair looks like.
 
 | Code             | Path     | Cause                                                                                                     | Raised when                                                                                                                                  |
 | ---------------- | -------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `invalid_bounds` | `root`   | none                                                                                                      | `maxDepth`, `maxDeriskRounds`, or `maxAttempts` is not a positive safe integer, `concurrency` is set and is not one, or `tierOrder` is empty |
+| `invalid_bounds` | `root`   | none                                                                                                      | `maxDepth` or `maxDeriskRounds` is not a positive safe integer, `concurrency` is set and is not one, or `tierOrder` is empty                 |
 | `missing_tier`   | `root`   | none                                                                                                      | `tierOrder` names a tier that `execute` has no flow or callback for                                                                          |
 | `derisk_failed`  | `root`   | none                                                                                                      | A `PatternError` was raised inside the derisk loop; the message is that error's                                                              |
-| `leaf_failed`    | the leaf | The per-tier attempts, `{ tier, error }` or `{ tier, rejected }`, or the `PatternError` the ladder raised | No tier settled the leaf within `maxAttempts` attempts each                                                                                  |
+| `leaf_failed`    | the leaf | The per-tier attempts, `{ tier, error }` or `{ tier, rejected }`, or the `PatternError` the ladder raised | No tier settled the leaf                                                                                                                     |
 
 ## `Pattern`
 
@@ -208,31 +207,11 @@ list left to right, which puts the last decorator outermost.
 supplied flow: the capabilities, reads, writes, mode, and tier that the
 re-declaration removes.
 
-The three `With*` modules are this combinator with a policy attached.
+The two `With*` modules are this combinator with a policy attached.
 
-## `WithRetry`
-
-`WithRetry.withRetry(flow, { attempts, backoff?, nonRetryable? })` wraps a flow
-in a retry, and `WithRetry.make(options)` is the same thing as a decorator you
-can pass to `Pattern.decorateAll`. The wrapper declares one call of the wrapped
-flow per attempt the budget allows. Every attempt but the last is a
-`Node.catch` whose failure arm runs the next attempt, so a success settles
-without running the rest and the last attempt's failure is the wrapper's. A
-declared `backoff` is a durable `Sleep.action` wait between attempts, so a host
-that executes a backoff retry provides `Sleep.layer`. The policy is also
-declaration identity, so two plans that differ only in an attempt budget are
-different declarations. A budget whose nested attempts would pass the plan
-depth limit is refused `invalid_decorator`. `WithRetry.retryEffect(effect,
-options)` performs the same policy on a hand-written Effect.
-
-`attempts` is the total attempt count and must be a positive safe integer.
-`backoff` is `{ initialMs, factor, maxMs }`, and the delay before attempt
-`n + 1` is `min(initialMs * factor^(n - 1), maxMs)`. There is no jitter,
-because a plan built twice has to describe the same waits. `nonRetryable` lists
-error `_tag` values that end the sequence the first time one appears, whatever
-the budget says. Fiber interruption is never retried, so a cancelled run stays
-cancelled. The option names mirror `@smthrs/flow` `RetryPolicy`, so a pattern
-policy and an engine policy translate one to one. See
+A retry is not a decorator. Declare it as the `retryPolicy` of the action that
+can fail: the engine records every attempt and the wait before the next one,
+so a crash resumes the ladder where it stopped. See
 [Retries](/docs/concepts/retries/).
 
 ## `WithApproval`
@@ -608,7 +587,7 @@ obeys `Node.maximumArmDepth`: `Loop.ralph` accepts at most 512 iterations,
 or 256 with a stall breaker. Constructors using these bounds
 refuse oversized options at declaration with an `invalid_decorator`
 `PatternError` naming the option and limit. This includes `Loop.make`,
-`Optimizer.make`, and `WithRetry.make`; see the boundary assertions in
+and `Optimizer.make`; see the boundary assertions in
 `Loop.test.ts` and `Optimizer.test.ts`. Other topology, including deeper
 member flows or an enclosing unrolled pattern, spends the same depth budget:
 even a declaration within its constructor's limit can fail at `Graph.build`
@@ -618,7 +597,7 @@ with a `graph_too_deep` `GraphBuildError` naming the node.
 
 The root exports each module as a namespace, and every module is also
 importable as `@smthrs/patterns/<Module>`. The `internal/*` and nested
-`*/index` subpaths are private. The [module index](./modules.md) lists all 29
+`*/index` subpaths are private. The [module index](./modules.md) lists all 28
 modules with their specifiers.
 
 [`@smthrs/flow`](/api/flow) supplies `Flow` and `Graph`, and

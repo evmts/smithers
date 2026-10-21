@@ -477,8 +477,7 @@ describe("ported pattern declaration execution", () => {
           settle,
           tierOrder: ["weak"],
           maxDepth: 1,
-          maxDeriskRounds: 1,
-          maxAttempts: 1
+          maxDeriskRounds: 1
         }),
         { input: "prompt" },
         "delegationchain"

@@ -128,8 +128,10 @@ a caller that already holds a validated plan.
 
 `DelegationChain` is the fixed chain: refine, plan, derisk, execute, review,
 settle. It adds no new machinery. `ReviewLoop` runs the derisk rounds,
-`Trellis` admits and executes the derisked plan, `Escalation` walks the tier
-ladder weakest first, and `WithRetry` spends the per-tier attempts. The module
+`Trellis` admits and executes the derisked plan, and `Escalation` walks the
+tier ladder weakest first. A tier retries through the `retryPolicy` of the
+actions it calls, so the engine spends those attempts durably; the chain
+escalates only once a tier has failed or its output was rejected. The module
 owns the order those parts run in and the bounds they run under.
 
 `make` declares what `run` executes. Every tier call it declares carries the
@@ -141,22 +143,16 @@ the goal and the round in both.
 
 ### Bounds
 
-Every chain declares `tierOrder` (weakest tier first), `maxDepth`,
-`maxDeriskRounds`, and `maxAttempts`. `execute` supplies one flow per tier named
+Every chain declares `tierOrder` (weakest tier first), `maxDepth`, and
+`maxDeriskRounds`. `execute` supplies one flow per tier named
 in `tierOrder`. A bound that is not a positive safe integer, an empty
 `tierOrder`, or a tier with no flow is refused with `DelegationError` carrying
 code `invalid_bounds` or `missing_tier`.
 
-Two optional bounds shape the attempts a tier spends. `backoff` is the
-`WithRetry.Backoff` ladder waited between one tier's attempts; the default is
-immediate retry, so without it a tier spends `maxAttempts` back to back.
-`nonRetryable` lists error `_tag` values that end a tier at their first
-occurrence, whatever `maxAttempts` allows; the ladder still admits the next
-tier. The default retries every failure. A backoff whose `initialMs` is not
-positive, whose `factor` is below 1, or whose `maxMs` is below `initialMs` is
-refused `invalid_bounds` before any callback runs. `make` declares the same
-policy it spends: the retry decorator around each slot's tier ladder is named
-`withRetry(delegationTiers(...), attempts=N, backoff=..., nonRetryable=...)`.
+The chain declares no attempt budget. Give the action a tier calls a
+`retryPolicy` (`maxAttempts`, the backoff ladder, `nonRetryable` tags): the
+engine retries it inside the one declared tier call, records each attempt, and
+the ladder admits the next tier only after that policy is spent.
 
 `maxDepth` is the whole plan envelope, not the nesting bound alone: a derisked
 plan may hold at most `maxDepth` leaves, nest `maxDepth` levels, and put
@@ -174,10 +170,8 @@ bound is refused `fanout_exceeded`. Raise `maxDepth` to widen all three at once.
    `settle` receives `deriskExhausted: true`.
 3. The derisked plan is validated against the envelope `{ fuel: maxDepth, depth:
    maxDepth, fanout: maxDepth }`.
-4. Each leaf climbs the tier ladder weakest first. A tier spends `maxAttempts`
-   retries, waiting the declared `backoff` between them and stopping at the
-   first `nonRetryable` tag, before the next tier is admitted, and a tier whose
-   result `review` rejects escalates exactly the way a tier that failed does. The runtime
+4. Each leaf climbs the tier ladder weakest first. Each tier is called once;
+   a tier that fails, or whose result `review` rejects, admits the next. The runtime
    consumes `Escalation.run`'s `Reached` and `Exhausted` results directly and
    branches on their `exhausted` field: only a reached attempt contributes its
    output, and exhaustion becomes `leaf_failed` before the leaf can reach
@@ -203,14 +197,13 @@ and settle. `DelegationChain.bound(bounds)` is the flow-call count that
 declaration contains:
 
 ```text
-4 + 2 * maxDeriskRounds + maxDepth * (2 + maxAttempts * (1 + 2 * tierOrder.length))
+4 + 2 * maxDeriskRounds + maxDepth * 2 * tierOrder.length
 ```
 
 Four calls are fixed (refine, the derisk loop, the chain review, settle). Each
-depth slot contributes a retry decorator and a retry declaration, and each of
-the `maxAttempts` attempts that declaration makes contributes a tier ladder and
-one execute plus one review call per tier. A supplied flow whose own body
-calls other flows adds those on top.
+depth slot contributes one execute plus one review call per tier. A supplied
+flow whose own body calls other flows adds those on top; an action's retries
+are attempts of one call, not more calls.
 
 Every declared call carries the payload `run` sends. Two values a declaration
 cannot know stand in for themselves: the authored plan stands in for the leaf

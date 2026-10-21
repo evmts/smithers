@@ -903,7 +903,7 @@ const delegationScript = {
   settle: ({ leaves }: { readonly leaves: unknown }) => ({ settled: leaves })
 }
 
-const delegationBounds = { tierOrder: ["weak"], maxDepth: 1, maxDeriskRounds: 1, maxAttempts: 1 }
+const delegationBounds = { tierOrder: ["weak"], maxDepth: 1, maxDeriskRounds: 1 }
 
 const delegationChain: Pattern<Record<string, never>> = {
   make: (m) =>

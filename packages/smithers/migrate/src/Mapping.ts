@@ -1374,11 +1374,10 @@ export const snippet = (hit: InventoryEntry, parse: typeof Ts.parse = Ts.parse):
         "})",
         `export const ${name}Layer = ${name}.toLayer(${body})`
       ]
-      // `retries` is not printed here. `WithRetry.retryEffect` wraps the
-      // effect the layer runs, and that effect is the body above, which this
-      // function has as text and not as a binding. A line naming a variable
-      // that does not exist is not a rewrite; the retry count reaches the agent
-      // through the mapping row's rule instead.
+      // `retries` is not printed here. It becomes the action's
+      // `retryPolicy`, whose backoff ladder the source never states, so a
+      // printed policy would be a ladder this tool invented. The retry count
+      // reaches the agent through the mapping row's rule instead.
       return lines.join("\n")
     }
     case "Workflow": {

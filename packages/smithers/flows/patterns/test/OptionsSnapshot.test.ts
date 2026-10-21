@@ -3,9 +3,7 @@ import { Flow, Graph } from "@smthrs/flow"
 import * as PlanNode from "@smthrs/plan/Node"
 import type * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
-import * as Fiber from "effect/Fiber"
 import * as Schema from "effect/Schema"
-import * as TestClock from "effect/testing/TestClock"
 import { expect } from "vitest"
 import * as Bounded from "../src/Bounded.ts"
 import * as CheckSuite from "../src/CheckSuite.ts"
@@ -28,7 +26,6 @@ import * as Trellis from "../src/Trellis.ts"
 import * as TryCatchFinally from "../src/TryCatchFinally.ts"
 import * as WithApproval from "../src/WithApproval.ts"
 import * as WithCache from "../src/WithCache.ts"
-import * as WithRetry from "../src/WithRetry.ts"
 
 // Every field any pattern here hands a member, as the one struct a
 // `@smthrs/flow` flow states. Two flows a plan can tell apart: a flow's tag
@@ -454,7 +451,6 @@ const declarations: ReadonlyArray<Declaration> = [
       tierOrder: ["weak", "strong"],
       maxDepth: 1,
       maxDeriskRounds: 1,
-      maxAttempts: 1,
       budget: { maxMinutes: 5 } as { maxMinutes?: number | undefined }
     }),
     (options) => DelegationChain.make(options),
@@ -468,7 +464,6 @@ const declarations: ReadonlyArray<Declaration> = [
       options.tierOrder.reverse()
       options.maxDepth = 2
       options.maxDeriskRounds = 2
-      options.maxAttempts = 2
       options.budget.maxMinutes = 9
     }
   )
@@ -498,62 +493,6 @@ describe("options are snapshotted at the call", () => {
       expect(entry.edited()).not.toEqual(before)
     })
   }
-
-  it("WithRetry.make snapshots its options before the decorator is applied", () => {
-    const options = { attempts: 2, backoff: { initialMs: 10, factor: 2, maxMs: 100 }, nonRetryable: ["Boom"] }
-    const decorator = WithRetry.make(options)
-    options.attempts = 5
-    options.backoff.maxMs = 1000
-    options.nonRetryable.push("Other")
-
-    const inner = sealed("search")
-    const decorated = decorator(inner)
-    const reference = WithRetry.make({
-      attempts: 2,
-      backoff: { initialMs: 10, factor: 2, maxMs: 100 },
-      nonRetryable: ["Boom"]
-    })(inner)
-    expect((decorated as { readonly _tag?: string })._tag).toBe(
-      "withRetry(search, attempts=2, backoff=10x2<=100, nonRetryable=Boom)"
-    )
-    expect(shape(decorated, { input: "query" })).toEqual(shape(reference, { input: "query" }))
-    // The edit is one the decorator reacts to, so the label above is not
-    // vacuous.
-    expect((WithRetry.make(options)(inner) as { readonly _tag?: string })._tag).toBe(
-      "withRetry(search, attempts=5, backoff=10x2<=1000, nonRetryable=Boom|Other)"
-    )
-  })
-
-  it("WithRetry.retryEffect waits the backoff it was called with", () =>
-    Effect.gen(function*() {
-      let attempts = 0
-      const backoff = { initialMs: 100, factor: 2, maxMs: 250 }
-      const retried = WithRetry.retryEffect(
-        Effect.suspend(() => {
-          attempts = attempts + 1
-          return Effect.fail("retry")
-        }),
-        { attempts: 3, backoff }
-      )
-      // Cap the ladder below its first rung after the call. A ladder that
-      // read the cap live would wait one millisecond instead of a hundred.
-      backoff.maxMs = 1
-      backoff.initialMs = 1
-      const fiber = yield* retried.pipe(Effect.forkChild({ startImmediately: true }))
-
-      expect(attempts).toBe(1)
-      yield* TestClock.adjust("99 millis")
-      expect(attempts).toBe(1)
-      yield* TestClock.adjust("1 millis")
-      expect(attempts).toBe(2)
-      yield* TestClock.adjust("199 millis")
-      expect(attempts).toBe(2)
-      yield* TestClock.adjust("1 millis")
-      expect(attempts).toBe(3)
-
-      const exit = yield* Fiber.await(fiber)
-      expect(exit._tag).toBe("Failure")
-    }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise))
 
   it("WithCache.make snapshots its policy before the decorator is applied", () => {
     const options = { ttlMs: 1000, scope: "run" as WithCache.Scope, version: "v1" }
@@ -1011,7 +950,6 @@ describe("options are snapshotted at the call", () => {
         tierOrder: ["weak"],
         maxDepth: 1,
         maxDeriskRounds: 1,
-        maxAttempts: 1,
         budget: { maxMinutes: 1 } as { maxMinutes?: number | undefined },
         concurrency: 1
       }
@@ -1026,7 +964,6 @@ describe("options are snapshotted at the call", () => {
       options.tierOrder[0] = "missing"
       options.maxDepth = 0
       options.maxDeriskRounds = 0
-      options.maxAttempts = 0
       options.budget.maxMinutes = 9
       options.concurrency = 0
 

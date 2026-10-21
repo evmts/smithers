@@ -1,5 +1,5 @@
 /**
- * The Effect forms of four patterns, run without a flow engine.
+ * The Effect forms of three patterns, run without a flow engine.
  *
  * Each pattern's `run` takes plain Effects as members, so a script or a test
  * can use the same contract its declared form puts in a plan.
@@ -7,7 +7,6 @@
 import * as Bounded from "@smthrs/patterns/Bounded"
 import * as Quarantine from "@smthrs/patterns/Quarantine"
 import * as ReviewLoop from "@smthrs/patterns/ReviewLoop"
-import * as WithRetry from "@smthrs/patterns/WithRetry"
 import * as Effect from "effect/Effect"
 import * as Ref from "effect/Ref"
 
@@ -50,16 +49,3 @@ export const checkRepositories = (broken: ReadonlyArray<string>) => {
     { policy: "quarantine", concurrency: 2 }
   ).pipe(Effect.flatMap(Quarantine.settle))
 }
-
-/**
- * Calls a member that fails `failures` times before it answers, with three
- * attempts in total.
- */
-export const fetchWithRetry = (failures: number) =>
-  Effect.gen(function*() {
-    const calls = yield* Ref.make(0)
-    const flaky = Ref.updateAndGet(calls, (count) => count + 1).pipe(
-      Effect.flatMap((count) => count <= failures ? Effect.fail(`attempt ${count} failed`) : Effect.succeed(count))
-    )
-    return yield* WithRetry.retryEffect(flaky, { attempts: 3 })
-  })

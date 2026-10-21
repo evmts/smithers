@@ -22,7 +22,6 @@ import * as Decorate from "../src/internal/Decorate.ts"
 import * as Pattern from "../src/Pattern.ts"
 import { PatternError } from "../src/PatternError.ts"
 import * as WithCache from "../src/WithCache.ts"
-import * as WithRetry from "../src/WithRetry.ts"
 
 /** The one step a cached flow wraps: an action, which is opaque work. */
 const read = Action.make("withCache/read", {
@@ -212,16 +211,9 @@ describe("WithCache policy annotation", () => {
     expect(CacheEnvironment.cachePolicyOf(annotationsOf(cached))).toEqual({ ttlMs: 1000, scope: "run" })
   })
 
-  it("preserves an inner policy through an outer retry", () => {
-    const cached = WithCache.withCache(sealedRead(), { ttlMs: 1000, scope: "run" })
-    const retried = WithRetry.withRetry(cached, { attempts: 3 })
-    expect(CacheEnvironment.cachePolicyOf(annotationsOf(retried))).toEqual({ ttlMs: 1000, scope: "run" })
-  })
-
   it("preserves the policy through Pattern.decorateAll", () => {
     const decorated = Pattern.decorateAll(sealedRead(), [
-      WithCache.make({ ttlMs: 1000, scope: "run" }),
-      WithRetry.make({ attempts: 3 })
+      WithCache.make({ ttlMs: 1000, scope: "run" })
     ])
     expect(CacheEnvironment.cachePolicyOf(annotationsOf(decorated))).toEqual({ ttlMs: 1000, scope: "run" })
   })

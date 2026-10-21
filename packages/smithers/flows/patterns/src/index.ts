@@ -22,12 +22,6 @@ export * as Pattern from "./Pattern.ts"
  * @category decorators
  * @since 0.1.0
  */
-export * as WithRetry from "./WithRetry.ts"
-
-/**
- * @category decorators
- * @since 0.1.0
- */
 export * as WithCache from "./WithCache.ts"
 
 /**

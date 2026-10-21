@@ -1642,6 +1642,11 @@
       "name": "@smthrs/std",
       "subpath": "./NodeLanguageServer",
       "reason": "The Node language-server client moved to the @smthrs/platform-node root so the @smthrs/std root imports and runs in a browser and a Worker (the browser agent, apps/mvp decision 0011); consumers import only root entries."
+    },
+    {
+      "name": "@smthrs/patterns",
+      "subpath": "./WithRetry",
+      "reason": "Deleted under the approved flows-as-code design (FLOW-10, section 7.5): it restated the engine's RetryPolicy, and its retryEffect retried without durable attempt state (DUR-2). A retry is an action's retryPolicy; DelegationChain's tiers retry through their actions' policies."
     }
   ],
   "packages": [

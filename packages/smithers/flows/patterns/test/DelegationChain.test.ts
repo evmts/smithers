@@ -2,8 +2,9 @@
  * `DelegationChain` on `@smthrs/flow`'s `Graph.build`.
  *
  * Every assertion is the one it was: how many calls a chain declares, what
- * each declared call is handed, which retry decorator the tier ladder carries,
- * and every refusal. Three readings moved: a call's declared payload is
+ * each declared call is handed, and every refusal. The chain declares no retry
+ * of its own: a tier retries through its actions' `RetryPolicy`, which the
+ * last suite spends on the real engine. Three readings moved: a call's declared payload is
  * `node.payload` rather than the first `Literal` of `keyMaterial.inputs`, a
  * `Succeed` node's value is its payload too, and a member call is found by the
  * flow tag it names rather than by a capability planted on it.
@@ -12,12 +13,10 @@
  * so the plan carries the settled arm and the next tier before anything runs.
  */
 import { describe, it } from "@effect/vitest"
-import { Action, Flow, Graph } from "@smthrs/flow"
+import { Action, Flow, Graph, RetryPolicy } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
-import * as Fiber from "effect/Fiber"
 import * as Schema from "effect/Schema"
-import * as TestClock from "effect/testing/TestClock"
 import { expect } from "vitest"
 import * as DelegationChain from "../src/DelegationChain.ts"
 import { PatternError } from "../src/PatternError.ts"
@@ -60,8 +59,7 @@ const makeOptions: DelegationChain.MakeOptions = {
   settle: stub("settle"),
   tierOrder: ["weak", "strong"],
   maxDepth: 2,
-  maxDeriskRounds: 2,
-  maxAttempts: 3
+  maxDeriskRounds: 2
 }
 
 const plan: Trellis.Plan = {
@@ -71,7 +69,7 @@ const plan: Trellis.Plan = {
   ]
 }
 
-const bounds = { tierOrder: ["weak", "strong"], maxDepth: 3, maxDeriskRounds: 2, maxAttempts: 2 } as const
+const bounds = { tierOrder: ["weak", "strong"], maxDepth: 3, maxDeriskRounds: 2 } as const
 
 const budget: DelegationChain.Budget = { maxMinutes: 5 }
 // A USD ceiling is the model boundary's `Budget.make({ usd })`; the chain carries none (#1842).
@@ -80,20 +78,9 @@ void ({ maxUsd: 5 } satisfies DelegationChain.Budget)
 
 const keys = (value: Record<string, unknown>): ReadonlyArray<string> => Object.keys(value).sort()
 
-class Unauthorized extends Schema.TaggedError<Unauthorized>()("Unauthorized", { tier: Schema.String }) {}
-
 /** Every member call a chain declares, which excludes the entry call itself. */
 const memberCalls = (graph: Graph.Graph): ReadonlyArray<Graph.GraphNode> =>
   Graph.nodes(graph).filter((node) => node.kind === "FlowCall" && node.id !== "root")
-
-// The declared retry decorator names the policy it carries, so the declaration
-// says what a run spends. `@smthrs/flow` keeps a `Succeed`'s value on the
-// node's payload, where `@smthrs/core` kept it inside `keyMaterial.body`.
-const decorators = (graph: Graph.Graph): ReadonlyArray<string> =>
-  Graph.nodes(graph).flatMap((node) => {
-    const value = node.payload as { readonly _tag?: string; readonly name?: string } | undefined
-    return value?._tag === "Decorator" && typeof value.name === "string" ? [value.name] : []
-  })
 
 describe("DelegationChain", () => {
   it.effect("reports every plan refusal before executing any leaf", () =>
@@ -180,7 +167,8 @@ describe("DelegationChain", () => {
         settle: ({ leaves }) => Effect.succeed(leaves)
       })
 
-      expect(attempted).toEqual(["weak:root", "weak:root", "strong:root"])
+      // One call per tier: the chain never retries a tier itself.
+      expect(attempted).toEqual(["weak:root", "strong:root"])
       expect(settled).toEqual(["strong result"])
     }))
 
@@ -205,7 +193,7 @@ describe("DelegationChain", () => {
       expect(settled).toEqual(["thorough"])
     }))
 
-  it.effect("fails with the leaf path once every tier has spent maxAttempts", () =>
+  it.effect("fails with the leaf path once every tier has failed", () =>
     Effect.gen(function*() {
       let attempts = 0
       const failure = yield* DelegationChain.run("ship it", {
@@ -225,13 +213,13 @@ describe("DelegationChain", () => {
       expect((failure as DelegationChain.DelegationError).code).toBe("leaf_failed")
       expect((failure as DelegationChain.DelegationError).path).toBe("root.sequence[0]")
       expect((failure as DelegationChain.DelegationError).message).toBe(
-        "No tier settled the leaf at root.sequence[0] within 2 attempts each"
+        "No tier settled the leaf at root.sequence[0]"
       )
       expect((failure as DelegationChain.DelegationError & { readonly cause?: unknown }).cause).toEqual([
         { tier: "weak", error: "weak failed" },
         { tier: "strong", error: "strong failed" }
       ])
-      expect(attempts).toBe(bounds.tierOrder.length * bounds.maxAttempts)
+      expect(attempts).toBe(bounds.tierOrder.length)
     }))
 
   it.effect("fails an exhausted rejected ladder without settling its leaf", () =>
@@ -246,17 +234,9 @@ describe("DelegationChain", () => {
         derisk: () => Effect.succeed({ approved: true }),
         execute: {
           weak: ({ tier }) =>
-            Effect.suspend(() => {
-              const attempt = (attempts.get(tier) ?? 0) + 1
-              attempts.set(tier, attempt)
-              return attempt === bounds.maxAttempts ? Effect.succeed(`${tier}-candidate`) : Effect.fail("retry")
-            }),
+            Effect.sync(() => (attempts.set(tier, (attempts.get(tier) ?? 0) + 1), `${tier}-candidate`)),
           strong: ({ tier }) =>
-            Effect.suspend(() => {
-              const attempt = (attempts.get(tier) ?? 0) + 1
-              attempts.set(tier, attempt)
-              return attempt === bounds.maxAttempts ? Effect.succeed(`${tier}-candidate`) : Effect.fail("retry")
-            })
+            Effect.sync(() => (attempts.set(tier, (attempts.get(tier) ?? 0) + 1), `${tier}-candidate`))
         },
         review: (request) =>
           Effect.sync(() => {
@@ -270,13 +250,13 @@ describe("DelegationChain", () => {
       expect((failure as DelegationChain.DelegationError).code).toBe("leaf_failed")
       expect((failure as DelegationChain.DelegationError).path).toBe("root.sequence[0]")
       expect((failure as DelegationChain.DelegationError).message).toBe(
-        "No tier settled the leaf at root.sequence[0] within 2 attempts each"
+        "No tier settled the leaf at root.sequence[0]"
       )
       expect((failure as DelegationChain.DelegationError & { readonly cause?: unknown }).cause).toEqual([
         { tier: "weak", rejected: true },
         { tier: "strong", rejected: true }
       ])
-      expect(attempts).toEqual(new Map([["weak", bounds.maxAttempts], ["strong", bounds.maxAttempts]]))
+      expect(attempts).toEqual(new Map([["weak", 1], ["strong", 1]]))
       expect(reviewed).toEqual(["weak", "strong"])
       expect(settled).toBe(false)
     }))
@@ -389,7 +369,7 @@ describe("DelegationChain", () => {
       expect((failure as DelegationChain.DelegationError).code).toBe("leaf_failed")
       expect((failure as DelegationChain.DelegationError).path).toBe("root")
       expect((failure as DelegationChain.DelegationError).message).toBe(
-        "No tier settled the leaf at root within 2 attempts each"
+        "No tier settled the leaf at root"
       )
       expect((failure as DelegationChain.DelegationError & { readonly cause?: unknown }).cause).toBe(reviewFailure)
     }))
@@ -399,9 +379,9 @@ describe("DelegationChain", () => {
     const graph = Graph.build(chain, { input: "ship it" })
     expect(Flow.isFlow(chain)).toBe(true)
     expect(memberCalls(graph)).toHaveLength(DelegationChain.bound(makeOptions))
-    // 4 fixed calls + 2 per derisk round + one retried escalation ladder per
-    // depth slot: 2 + maxAttempts * (1 + 2 * tiers).
-    expect(DelegationChain.bound(makeOptions)).toBe(42)
+    // 4 fixed calls + 2 per derisk round + one escalation ladder per depth
+    // slot: an execute and a review call per tier.
+    expect(DelegationChain.bound(makeOptions)).toBe(16)
   })
 
   it.effect("settles with deriskExhausted when derisk never approves", () =>
@@ -447,14 +427,9 @@ describe("DelegationChain", () => {
       const declaredReviews = callsTo(graph, "review").map(payloadOf)
       const declaredSettle = payloadOf(callsTo(graph, "settle")[0] as Graph.GraphNode)
 
-      // One tier call per slot per declared attempt, each carrying the tier it
-      // is and the run budget.
-      const attempts = makeOptions.maxAttempts
-      const perSlot = <A>(slot0: A, slot1: A): ReadonlyArray<A> => [
-        ...Array.from({ length: attempts }, () => slot0),
-        ...Array.from({ length: attempts }, () => slot1)
-      ]
-      expect(declaredWork).toHaveLength(makeOptions.maxDepth * attempts)
+      // One weakest-tier call per slot, each carrying the tier it is and the
+      // run budget.
+      expect(declaredWork).toHaveLength(makeOptions.maxDepth)
       expect(declaredWork.map(keys)).toEqual(declaredWork.map(() => executed[0]))
       expect(declaredWork.map((work) => work.tier)).toEqual(declaredWork.map(() => "weak"))
       expect(declaredWork.map((work) => work.budget)).toEqual(declaredWork.map(() => budget))
@@ -462,157 +437,16 @@ describe("DelegationChain", () => {
         declaredWork.map(() => ["goal", "path"])
       )
       expect(declaredWork.map((work) => (work.leaf as { readonly path: string }).path)).toEqual(
-        perSlot("slot-0", "slot-1")
+        ["slot-0", "slot-1"]
       )
       // The leaf review names the tier that produced the output, as run does.
       const leafReviews = declaredReviews.filter((request) => request.stage === "leaf")
       expect(leafReviews.map(keys)).toEqual(leafReviews.map(() => reviewed[0]))
       expect(leafReviews.map((request) => request.tier)).toEqual(
-        Array.from({ length: makeOptions.maxDepth * attempts }, () => ["weak", "strong"]).flat()
+        Array.from({ length: makeOptions.maxDepth }, () => ["weak", "strong"]).flat()
       )
       // Settle is declared with the keys run settles with.
       expect(keys(declaredSettle)).toEqual(settlement)
-    }))
-
-  it.effect("ends a tier at a non-retryable failure and admits the next one", () =>
-    Effect.gen(function*() {
-      const attempted: Array<string> = []
-      const failure = yield* DelegationChain.run("ship it", {
-        ...bounds,
-        nonRetryable: ["Unauthorized"],
-        refine: () => Effect.succeed("goal"),
-        plan: () => Effect.succeed({ sequence: [{ agent: { goal: "a" } }] }),
-        derisk: () => Effect.succeed({ approved: true }),
-        execute: {
-          weak: ({ tier }) => Effect.suspend(() => (attempted.push(tier), Effect.fail(new Unauthorized({ tier })))),
-          strong: ({ tier }) => Effect.suspend(() => (attempted.push(tier), Effect.fail(new Unauthorized({ tier }))))
-        },
-        review: () => Effect.succeed({ approved: true }),
-        settle: ({ leaves }) => Effect.succeed(leaves)
-      }).pipe(Effect.flip)
-
-      // One call per tier, not maxAttempts per tier: the tag can never succeed.
-      expect(attempted).toEqual(["weak", "strong"])
-      expect(failure).toBeInstanceOf(DelegationChain.DelegationError)
-      expect((failure as DelegationChain.DelegationError).code).toBe("leaf_failed")
-      expect((failure as DelegationChain.DelegationError).path).toBe("root.sequence[0]")
-    }))
-
-  it.effect("still spends every attempt on a failure the tags do not name", () =>
-    Effect.gen(function*() {
-      const attempted: Array<string> = []
-      yield* DelegationChain.run("ship it", {
-        ...bounds,
-        nonRetryable: ["Unauthorized"],
-        refine: () => Effect.succeed("goal"),
-        plan: () => Effect.succeed({ sequence: [{ agent: { goal: "a" } }] }),
-        derisk: () => Effect.succeed({ approved: true }),
-        execute: {
-          weak: ({ tier }) => Effect.suspend(() => (attempted.push(tier), Effect.fail("throttled"))),
-          strong: ({ tier }) => Effect.suspend(() => (attempted.push(tier), Effect.fail("throttled")))
-        },
-        review: () => Effect.succeed({ approved: true }),
-        settle: ({ leaves }) => Effect.succeed(leaves)
-      }).pipe(Effect.flip)
-
-      expect(attempted).toEqual(["weak", "weak", "strong", "strong"])
-    }))
-
-  it("spaces a tier's attempts by the declared backoff", () =>
-    Effect.gen(function*() {
-      const attempted: Array<string> = []
-      const fiber = yield* DelegationChain.run("ship it", {
-        ...bounds,
-        maxAttempts: 3,
-        backoff: { initialMs: 100, factor: 2, maxMs: 150 },
-        refine: () => Effect.succeed("goal"),
-        plan: () => Effect.succeed({ agent: { goal: "a" } }),
-        derisk: () => Effect.succeed({ approved: true }),
-        execute: {
-          weak: ({ tier }) => Effect.suspend(() => (attempted.push(tier), Effect.fail("throttled"))),
-          strong: ({ tier }) => Effect.suspend(() => (attempted.push(tier), Effect.fail("throttled")))
-        },
-        review: () => Effect.succeed({ approved: true }),
-        settle: ({ leaves }) => Effect.succeed(leaves)
-      }).pipe(Effect.forkChild({ startImmediately: true }))
-
-      expect(attempted).toEqual(["weak"])
-      yield* TestClock.adjust("99 millis")
-      expect(attempted).toEqual(["weak"])
-      yield* TestClock.adjust("1 millis")
-      expect(attempted).toEqual(["weak", "weak"])
-      // The third wait is the capped 150 ms, and the next tier's first attempt
-      // is admitted as soon as the weak tier gives up, without a wait of its own.
-      yield* TestClock.adjust("150 millis")
-      expect(attempted).toEqual(["weak", "weak", "weak", "strong"])
-      yield* TestClock.adjust("99 millis")
-      expect(attempted).toEqual(["weak", "weak", "weak", "strong"])
-      yield* TestClock.adjust("1 millis")
-      expect(attempted).toEqual(["weak", "weak", "weak", "strong", "strong"])
-      yield* TestClock.adjust("150 millis")
-      expect(attempted).toEqual(["weak", "weak", "weak", "strong", "strong", "strong"])
-
-      const exit = yield* Fiber.await(fiber)
-      expect(exit._tag).toBe("Failure")
-    }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise))
-
-  it("declares the tier ladder with the retry policy run spends", () => {
-    const policy = {
-      maxAttempts: 3,
-      backoff: { initialMs: 100, factor: 2, maxMs: 400 },
-      nonRetryable: ["Unauthorized", "Invalid"]
-    }
-    const graph = Graph.build(DelegationChain.make({ ...makeOptions, maxDepth: 1, ...policy }), { input: "ship it" })
-
-    expect(decorators(graph)).toEqual([
-      "withRetry(delegationTiers(weak -> strong), attempts=3, backoff=100x2<=400, nonRetryable=Invalid|Unauthorized)"
-    ])
-    // A chain that declares no policy still declares the plain attempt budget.
-    expect(decorators(Graph.build(DelegationChain.make({ ...makeOptions, maxDepth: 1 }), { input: "ship it" })))
-      .toEqual([
-        "withRetry(delegationTiers(weak -> strong), attempts=3)"
-      ])
-  })
-
-  it.effect("refuses an invalid backoff before any callback runs", () =>
-    Effect.gen(function*() {
-      const invalid = [
-        { initialMs: 0, factor: 2, maxMs: 10 },
-        { initialMs: 10, factor: 0.5, maxMs: 10 },
-        { initialMs: 10, factor: 2, maxMs: 5 },
-        { initialMs: Number.NaN, factor: 2, maxMs: 10 }
-      ]
-      for (const backoff of invalid) {
-        let callbacks = 0
-        const called = <A>(value: A) => Effect.sync(() => (callbacks += 1, value))
-        const failure = yield* Effect.flip(
-          DelegationChain.run("ship it", {
-            ...bounds,
-            backoff,
-            refine: () => called("goal"),
-            plan: () => called({ agent: { goal: "a" } }),
-            derisk: () => called({ approved: true }),
-            execute: { weak: () => called("ok"), strong: () => called("ok") },
-            review: () => called({ approved: true }),
-            settle: ({ leaves }) => called(leaves)
-          })
-        )
-
-        expect(failure).toBeInstanceOf(DelegationChain.DelegationError)
-        expect((failure as DelegationChain.DelegationError).code).toBe("invalid_bounds")
-        expect((failure as DelegationChain.DelegationError).message).toBe(
-          "backoff must declare a positive initialMs, a factor of at least 1, and a maxMs of at least initialMs"
-        )
-        expect(callbacks).toBe(0)
-      }
-      expect(() => DelegationChain.make({ ...makeOptions, backoff: { initialMs: 10, factor: 2, maxMs: 5 } })).toThrow(
-        expect.objectContaining({
-          code: "invalid_bounds",
-          path: "root",
-          message:
-            "backoff must declare a positive initialMs, a factor of at least 1, and a maxMs of at least initialMs"
-        })
-      )
     }))
 
   it("refuses bounds and tiers it cannot honour", () => {
@@ -620,7 +454,7 @@ describe("DelegationChain", () => {
       expect.objectContaining({
         code: "invalid_bounds",
         path: "root",
-        message: "maxDepth, maxDeriskRounds, and maxAttempts must be positive safe integers"
+        message: "maxDepth and maxDeriskRounds must be positive safe integers"
       })
     )
     expect(() => DelegationChain.make({ ...makeOptions, tierOrder: [] })).toThrow(
@@ -725,8 +559,7 @@ const scriptedChain = (): DelegationChain.DelegationChainFlow =>
     }),
     tierOrder: ["weak", "strong"],
     maxDepth: 1,
-    maxDeriskRounds: 1,
-    maxAttempts: 1
+    maxDeriskRounds: 1
   })
 
 /** Runs one declared chain to settlement against the scripted stages. */
@@ -774,6 +607,66 @@ describe("DelegationChain declaration execution", () => {
     ])
     expect(chainCalls.filter((call) => call.role === "review").map((call) => (call.payload as { tier?: string }).tier))
       .toEqual(["weak", "strong", undefined])
+  })
+
+  it("retries a tier through its own action's RetryPolicy inside one declared rung", async () => {
+    chainCalls.length = 0
+    approvesTier = "weak"
+    let flakyAttempts = 0
+    // The tier's action owns its retries. The engine spends them as attempts
+    // of one durable step, so the chain neither re-declares the tier nor
+    // escalates to the next one while the policy still has attempts left.
+    const flaky = Action.make("delegation/flaky-tier", {
+      payload: { goal: Schema.Unknown },
+      success: Schema.String,
+      error: Schema.String,
+      retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 2 })
+    })
+    const flakyLayer = flaky.toLayer(() =>
+      Effect.suspend(() => {
+        flakyAttempts += 1
+        return flakyAttempts === 1 ? Effect.fail("throttled") : Effect.succeed("weak result")
+      })
+    )
+    const weak = Flow.make("delegation/weak-retried", {
+      payload: { leaf: opaque, tier: opaque, goal: opaque, budget: opaque },
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      body: ({ goal }: { readonly goal?: unknown }) => flaky.call({ goal })
+    }) as unknown as Scripted
+    const chain = DelegationChain.make({
+      refine: roleFlow("refine", { prompt: opaque }),
+      plan: roleFlow("plan", { input: opaque, output: opaque, review: opaque, round: opaque }),
+      derisk: roleFlow("derisk", { output: opaque }),
+      execute: { weak, strong: roleFlow("strong", { leaf: opaque, tier: opaque, goal: opaque, budget: opaque }) },
+      review: roleFlow("review", {
+        stage: opaque,
+        leaf: opaque,
+        tier: opaque,
+        output: opaque,
+        goal: opaque,
+        plan: opaque,
+        leaves: opaque
+      }),
+      settle: roleFlow("settle", {
+        prompt: opaque,
+        goal: opaque,
+        plan: opaque,
+        leaves: opaque,
+        review: opaque,
+        deriskExhausted: opaque
+      }),
+      tierOrder: ["weak", "strong"],
+      maxDepth: 1,
+      maxDeriskRounds: 1
+    })
+
+    expect(await execute(chain as never, { input: "ship it" }, "delegation-tier-retry-policy", chainLayer, flakyLayer))
+      .toBe("settled")
+    expect(flakyAttempts).toBe(2)
+    expect(chainCalls.map((call) => call.role)).toEqual(["refine", "plan", "derisk", "review", "review", "settle"])
+    expect(chainCalls.filter((call) => call.role === "review").map((call) => (call.payload as { tier?: string }).tier))
+      .toEqual(["weak", undefined])
   })
 
   it("declares both arms of every rung, so a plan carries the topology a run may take", () => {

@@ -3,9 +3,11 @@
  *
  * Nothing here is new machinery. The chain is assembled from the patterns that
  * already exist: {@link ReviewLoop} runs the derisk rounds, {@link Trellis}
- * admits and executes the derisked plan, {@link Escalation} walks the tier
- * ladder weakest first, and {@link WithRetry} spends the per-tier attempts.
- * This module owns the order those parts run in and the bounds they run under.
+ * admits and executes the derisked plan, and {@link Escalation} walks the tier
+ * ladder weakest first. A tier retries through the `RetryPolicy` its own
+ * actions declare, so the engine spends those attempts durably and the chain
+ * escalates only once a tier has failed or its output was rejected. This
+ * module owns the order those parts run in and the bounds they run under.
  *
  * {@link make} declares what {@link run} executes: every tier call it declares
  * carries the same `Work` a tier is run with, every leaf review carries the
@@ -27,14 +29,12 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Escalation from "./Escalation.ts"
 import * as Compose from "./internal/Compose.ts"
-import * as Decorate from "./internal/Decorate.ts"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
 import * as ReviewLoop from "./ReviewLoop.ts"
 import * as Trellis from "./Trellis.ts"
-import * as WithRetry from "./WithRetry.ts"
 
 /**
  * Stable delegation-chain failure codes.
@@ -90,8 +90,12 @@ export interface Budget {
 }
 
 /**
- * The bounds every chain declares: the tier ladder, the depth of the plan, the
- * derisk rounds, and the attempts one tier may spend on one leaf.
+ * The bounds every chain declares: the tier ladder, the depth of the plan, and
+ * the derisk rounds.
+ *
+ * The chain declares no attempt budget of its own. A tier's retries are the
+ * `RetryPolicy` its actions declare, which the engine spends with durable
+ * attempt state.
  *
  * @category models
  * @since 0.1.0
@@ -105,18 +109,6 @@ export interface Bounds {
    */
   readonly maxDepth: number
   readonly maxDeriskRounds: number
-  readonly maxAttempts: number
-  /**
-   * The wait ladder between one tier's attempts. The default is immediate
-   * retry: without a backoff a tier spends every attempt back to back.
-   */
-  readonly backoff?: WithRetry.Backoff | undefined
-  /**
-   * Error `_tag` values that end one tier's attempts at their first
-   * occurrence, whatever `maxAttempts` allows. The ladder still admits the
-   * next tier. The default retries every failure.
-   */
-  readonly nonRetryable?: ReadonlyArray<string> | undefined
 }
 
 /**
@@ -239,22 +231,7 @@ const positive = (value: number): boolean => Number.isSafeInteger(value) && valu
 const copiedBounds = (bounds: Bounds): Bounds => ({
   tierOrder: [...bounds.tierOrder],
   maxDepth: bounds.maxDepth,
-  maxDeriskRounds: bounds.maxDeriskRounds,
-  maxAttempts: bounds.maxAttempts,
-  backoff: bounds.backoff === undefined ? undefined : {
-    initialMs: bounds.backoff.initialMs,
-    factor: bounds.backoff.factor,
-    maxMs: bounds.backoff.maxMs
-  },
-  nonRetryable: bounds.nonRetryable === undefined ? undefined : [...bounds.nonRetryable]
-})
-
-// The one retry policy the declared ladder and the running tier both spend, so
-// a chain never declares a wait it does not take or a tag it does not honour.
-const retryPolicy = (bounds: Bounds): WithRetry.Options => ({
-  attempts: bounds.maxAttempts,
-  backoff: bounds.backoff,
-  nonRetryable: bounds.nonRetryable
+  maxDeriskRounds: bounds.maxDeriskRounds
 })
 
 const copiedBudget = (budget: Budget | undefined): Budget | undefined =>
@@ -269,25 +246,13 @@ const checkBounds = (
   bounds: Bounds & { readonly concurrency?: number | undefined },
   tiers: ReadonlyArray<string>
 ): DelegationError | undefined => {
-  if (!positive(bounds.maxDepth) || !positive(bounds.maxDeriskRounds) || !positive(bounds.maxAttempts)) {
-    return refuse("invalid_bounds", "maxDepth, maxDeriskRounds, and maxAttempts must be positive safe integers")
+  if (!positive(bounds.maxDepth) || !positive(bounds.maxDeriskRounds)) {
+    return refuse("invalid_bounds", "maxDepth and maxDeriskRounds must be positive safe integers")
   }
   if (bounds.concurrency !== undefined && !positive(bounds.concurrency)) {
     return refuse(
       "invalid_bounds",
       `Delegation concurrency must be a positive safe integer, received ${bounds.concurrency}`
-    )
-  }
-  const backoff = bounds.backoff
-  if (
-    backoff !== undefined &&
-    (!Number.isFinite(backoff.initialMs) || backoff.initialMs <= 0 ||
-      !Number.isFinite(backoff.factor) || backoff.factor < 1 ||
-      !Number.isFinite(backoff.maxMs) || backoff.maxMs < backoff.initialMs)
-  ) {
-    return refuse(
-      "invalid_bounds",
-      "backoff must declare a positive initialMs, a factor of at least 1, and a maxMs of at least initialMs"
     )
   }
   if (bounds.tierOrder.length === 0) {
@@ -315,16 +280,16 @@ export const accepted = Compose.accepted
  *
  * Four calls are fixed: refine, the derisk loop, the chain review, and settle.
  * The derisk loop adds two calls per round minus the revision the last round
- * never makes, and each of the `maxDepth` leaf slots adds a retry decorator and
- * a retry declaration, then, for each of the `maxAttempts` attempts the retry
- * declares, a tier ladder and one execute plus one review call per tier. A
- * supplied flow whose own body calls other flows adds those on top.
+ * never makes, and each of the `maxDepth` leaf slots adds one execute plus one
+ * review call per tier. A supplied flow whose own body calls other flows adds
+ * those on top, and the engine's retries of a tier's actions are attempts of
+ * the same calls, not more of them.
  *
  * @category introspection
  * @since 0.1.0
  */
 export const bound = (options: Bounds): number =>
-  4 + 2 * options.maxDeriskRounds + options.maxDepth * (2 + options.maxAttempts * (1 + 2 * options.tierOrder.length))
+  4 + 2 * options.maxDeriskRounds + options.maxDepth * 2 * options.tierOrder.length
 
 /**
  * The declared form of a delegation chain.
@@ -387,41 +352,6 @@ const rung = <R>(
 }
 
 /**
- * The payload one declared tier ladder takes: the leaf slot it settles.
- *
- * @since 0.1.0
- * @private
- */
-const LadderPayload = Schema.Struct({ goal: Schema.Unknown, path: Schema.String })
-
-/**
- * One slot's retried tier ladder.
- *
- * The ladder is declared here rather than with `Escalation.make` because that
- * constructor asks one shared `accept` flow about every rung, and the review
- * `run` performs carries the tier that produced the output. The topology is the
- * same: one call per rung, one review per rung, weakest first.
- */
-const ladder = <R>(
-  options: MakeOptions<R>,
-  slot: number,
-  leaf: { readonly goal: unknown; readonly path: string },
-  goal: unknown
-): Flow.Any =>
-  WithRetry.withRetry(
-    Flow.make(`delegationTiers(${options.tierOrder.join(" -> ")})`, {
-      payload: LadderPayload,
-      success: Schema.Unknown,
-      error: Schema.Unknown,
-      body: Node.capture(
-        { slot, tierOrder: [...options.tierOrder] },
-        () => rung(options, slot, leaf, goal, 0)
-      )
-    }),
-    retryPolicy(options)
-  )
-
-/**
  * Declares the conservative chain topology.
  *
  * The declaration is what the plan can never exceed: the derisk loop is
@@ -462,7 +392,6 @@ export const make = <R = never>(caller: MakeOptions<R>): DelegationChainFlow<R> 
     tierOrder: [...options.tierOrder],
     maxDepth: options.maxDepth,
     maxDeriskRounds: options.maxDeriskRounds,
-    maxAttempts: options.maxAttempts,
     budget: options.budget ?? null
   }
   const { name, description } = Compose.label("delegationChain", {
@@ -478,8 +407,10 @@ export const make = <R = never>(caller: MakeOptions<R>): DelegationChainFlow<R> 
           // planner it wraps is still handed `{ goal, round }` unchanged.
           callMember(derisk, { input: { goal, round: 1 } }),
           Node.capture(captured, (plan: Planned.Planned<unknown>) => {
+            // One escalation ladder per slot, weakest tier first. A tier's
+            // retries are its actions' `RetryPolicy`, spent inside the call.
             const call = (index: number): Node.Node<unknown, unknown, R> =>
-              Decorate.call<R>(ladder(options, index, slotLeaf(index, plan), goal), slotLeaf(index, plan))
+              rung(options, index, slotLeaf(index, plan), goal, 0)
             let slots: Node.Node<unknown, unknown, R> = call(0)
             for (let index = 1; index < options.maxDepth; index++) {
               slots = Node.andThen(slots, call(index))
@@ -543,11 +474,10 @@ const attemptCause = (attempts: ReadonlyArray<Attempt>): ReadonlyArray<Readonly<
  * every leaf through the tier ladder, review the assembled outputs, settle.
  *
  * The derisk loop stops at the first approved round. Each leaf climbs the tier
- * ladder weakest first, spending `maxAttempts` retries on a tier before the
- * next one is admitted; a tier whose result the review rejects escalates the
- * same way a tier that failed does. Those attempts are immediate unless
- * `backoff` declares the waits between them, and a failure whose `_tag` is
- * listed in `nonRetryable` ends that tier at once and admits the next. Only a reached rung contributes its
+ * ladder weakest first, calling each tier once: a tier that fails, or whose
+ * result the review rejects, admits the next one. Retrying a tier is the job
+ * of its own effect here and of its actions' `RetryPolicy` in a declared
+ * chain, never of the chain. Only a reached rung contributes its
  * `result.output`; an exhausted ladder fails `leaf_failed` naming the leaf's
  * plan path, and no later stage runs.
  *
@@ -580,7 +510,6 @@ export const run = <Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>(
     budget: copiedBudget(caller.budget),
     concurrency: caller.concurrency
   }
-  const retry = retryPolicy(options)
   return Effect.gen(function*() {
     const refusal = checkBounds(options, Object.keys(options.execute))
     if (refusal !== undefined) return yield* Effect.fail(refusal)
@@ -624,15 +553,12 @@ export const run = <Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>(
         return Escalation.run<Trellis.Leaf, Attempt, E5, R4 | R5, never, never>(leaf, {
           rungs: options.tierOrder.map((tier) => (work: Trellis.Leaf) =>
             Effect.matchEffect(
-              WithRetry.retryEffect(
-                (options.execute[tier] as (work: Work) => Effect.Effect<unknown, E4, R4>)({
-                  leaf: work,
-                  tier,
-                  goal,
-                  ...(options.budget === undefined ? {} : { budget: options.budget })
-                }),
-                retry
-              ),
+              (options.execute[tier] as (work: Work) => Effect.Effect<unknown, E4, R4>)({
+                leaf: work,
+                tier,
+                goal,
+                ...(options.budget === undefined ? {} : { budget: options.budget })
+              }),
               {
                 onFailure: (error) => Effect.succeed<Attempt>({ tier, failed: true, error }),
                 onSuccess: (output) =>
@@ -653,7 +579,7 @@ export const run = <Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>(
                 new DelegationError({
                   code: "leaf_failed",
                   path: leaf.path,
-                  message: `No tier settled the leaf at ${leaf.path} within ${options.maxAttempts} attempts each`,
+                  message: `No tier settled the leaf at ${leaf.path}`,
                   cause: attemptCause(attempts)
                 })
               )
@@ -673,7 +599,7 @@ export const run = <Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>(
                 new DelegationError({
                   code: "leaf_failed",
                   path: leaf.path,
-                  message: `No tier settled the leaf at ${leaf.path} within ${options.maxAttempts} attempts each`,
+                  message: `No tier settled the leaf at ${leaf.path}`,
                   cause: error
                 })
               )

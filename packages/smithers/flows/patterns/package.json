@@ -65,7 +65,7 @@
     "./TryCatchFinally": "./src/TryCatchFinally.ts",
     "./WithApproval": "./src/WithApproval.ts",
     "./WithCache": "./src/WithCache.ts",
-    "./WithRetry": "./src/WithRetry.ts",
+    "./WithRetry": null,
     "./index": "./src/index.ts"
   },
   "files": [
@@ -378,16 +378,7 @@
           "default": "./dist/cjs/WithCache.js"
         }
       },
-      "./WithRetry": {
-        "import": {
-          "types": "./dist/esm/WithRetry.d.ts",
-          "default": "./dist/esm/WithRetry.js"
-        },
-        "require": {
-          "types": "./dist/cjs/WithRetry.d.ts",
-          "default": "./dist/cjs/WithRetry.js"
-        }
-      },
+      "./WithRetry": null,
       "./index": {
         "import": {
           "types": "./dist/esm/index.d.ts",

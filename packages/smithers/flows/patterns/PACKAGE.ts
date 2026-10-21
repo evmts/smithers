@@ -82,14 +82,13 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A flow author wraps a privileged flow (or adds an approval/cache member) so the composite's declared capabilities and effect envelope hide what actually runs, bypassing policy checks keyed on those declarations.",
       lookFor: [
-        "Decorate or a decorator (WithApproval, WithRetry, WithCache) copying only the inner flow's capabilities while its body also calls a separately supplied flow such as the approval flow.",
+        "Decorate or a decorator (WithApproval, WithCache) copying only the inner flow's capabilities while its body also calls a separately supplied flow such as the approval flow.",
         "Compose.intersectCapabilities or intersectEffects used where a union of called members is required, or an envelope_conflict check that can be skipped when the template declares none."
       ],
       paths: [
         "src/internal/Decorate.ts",
         "src/internal/Compose.ts",
         "src/WithApproval.ts",
-        "src/WithRetry.ts",
         "src/WithCache.ts"
       ]
     },
