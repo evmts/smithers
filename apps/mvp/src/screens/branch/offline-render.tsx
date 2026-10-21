@@ -1,0 +1,40 @@
+import { createElement, type ComponentProps, type ReactNode } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
+import { RouterProvider } from "@tanstack/react-router"
+import { ChatProvider } from "../../AppContext"
+import { AttentionProvider } from "../../features/attention/components/AttentionContext"
+import { AuthProvider } from "../../features/auth/components/AuthContext"
+import { BranchProvider } from "../../features/branch/components/BranchContext"
+import { BranchHeader } from "../../features/branch/components/BranchHeader"
+import { CodeIntelProvider } from "../../features/code-intel/components/CodeIntelContext"
+import { CommandsProvider } from "../../features/commands/components/CommandsContext"
+import { RepoProvider } from "../../features/repo/components/RepoContext"
+import { StatusProvider } from "../../features/status/components/StatusContext"
+import { TerminalProvider } from "../../features/terminal/components/TerminalContext"
+import { ThemeProvider } from "../../features/theme/components/ThemeButton"
+type Services = {
+  chat: ComponentProps<typeof ChatProvider>["value"]
+  auth: ComponentProps<typeof AuthProvider>["value"]
+  repo: ComponentProps<typeof RepoProvider>["value"]
+  branch: ComponentProps<typeof BranchProvider>["value"]
+  intel: ComponentProps<typeof CodeIntelProvider>["value"]
+  status: ComponentProps<typeof StatusProvider>["value"]
+  commands: ComponentProps<typeof CommandsProvider>["value"]
+  theme: ComponentProps<typeof ThemeProvider>["value"]
+  terminal: ComponentProps<typeof TerminalProvider>["value"]
+  attention: ComponentProps<typeof AttentionProvider>["value"]
+}
+export const wrapBranch = ({ chat, auth, repo, branch, intel, status, commands, theme, terminal, attention }: Services) => (child: ReactNode) => createElement(ChatProvider, { value: chat },
+    createElement(AuthProvider, { value: auth },
+      createElement(RepoProvider, { value: repo },
+        createElement(BranchProvider, { value: branch },
+          createElement(CodeIntelProvider, { value: intel },
+            createElement(StatusProvider, { value: status },
+              createElement(CommandsProvider, { value: commands },
+                createElement(ThemeProvider, { value: theme },
+                  createElement(TerminalProvider, { value: terminal },
+                    createElement(AttentionProvider, { value: attention }, child))))))))))
+
+export const branchRenderer = (services: Services) => (router: ComponentProps<typeof RouterProvider>["router"]) =>
+  renderToStaticMarkup(wrapBranch(services)(createElement(RouterProvider, { router })))
+export const DeniedBranchHeader = () => createElement(BranchHeader, { access: "none" })

@@ -16,6 +16,7 @@ import type { TerminalView } from "./features/terminal/terminal"
 import type { ViewsView } from "./features/views/views"
 import { AppScreen } from "./screens/app/AppScreen"
 import { BranchScreen } from "./screens/branch/BranchScreen"
+import { BranchPendingScreen } from "./screens/branch/BranchPendingScreen"
 import { CodeScreen } from "./screens/flows/CodeScreen"
 import { DraftScreen } from "./screens/flows/DraftScreen"
 import { FlowsScreen } from "./screens/flows/FlowsScreen"
@@ -219,6 +220,7 @@ const treeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/tree/$ref/$",
   component: BranchScreen,
+  pendingComponent: BranchPendingScreen,
   validateSearch: branchSearch,
   beforeLoad: ({ context, params, search, ...load }) =>
     enter(load, () => context.repo.actions.warmRoute("tree", params, { L: search.L }), () =>

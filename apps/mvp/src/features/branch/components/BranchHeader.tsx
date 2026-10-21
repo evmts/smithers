@@ -9,24 +9,23 @@ import { useBranch } from "./BranchContext"
 
 // The branch's chrome (decision 0013 §5): the branch's name and what this person may do on it (`Owner`, `Can edit`,
 // `Can view`), everyone on it (this person first), Share for its owner, and its two views, Code and Terminal, as tabs
-// that keep the location in the URL (`?terminal` opens the terminal). Nothing shows for a ref that isn't a tracked
-// branch.
-export function BranchHeader({ access }: { readonly access: Access | "none" | undefined }) {
+// that keep the location in the URL (`?terminal` opens the terminal). Tracking can wait offline: the name and links
+// remain, with access and presence only once verified. Missing or refused branches have no chrome.
+export function BranchHeader({ access, pending = false }: { readonly access: Access | "none" | undefined; readonly pending?: boolean }) {
   const { queries } = useBranch()
   const { data: current } = useLiveQuery(queries.current)
   const params = useParams({ strict: false })
   const search = useSearch({ strict: false }) as { readonly terminal?: string }
-  if (current === undefined || current.status !== "ready") return null
+  if (!pending && (current === undefined || current.status !== "ready" || access === "none")) return null
   const to = "/$owner/$repo/tree/$ref/$"
   const routeParams = { owner: params.owner ?? "", repo: params.repo ?? "", ref: params.ref ?? "", _splat: params._splat ?? "" }
-  const status = statusOf(access)
+  const status = statusOf(pending ? undefined : access)
   return (
     <nav className="branch-header" aria-label="Branch">
-      <span className="branch-header-name">{current.name}</span>
+      <span className="branch-header-name">{pending ? params.ref : current?.name}</span>
       {status === undefined ? null : <Badge variant="muted">{status}</Badge>}
       <span className="branch-header-presence">
-        <PresenceAvatars />
-        <ShareButton />
+        {!pending && access !== undefined ? <><PresenceAvatars /><ShareButton /></> : null}
       </span>
       <span className="branch-header-views">
         {/* Exact, so the router marks only the view that shows: Code's empty search is part of any terminal's. */}

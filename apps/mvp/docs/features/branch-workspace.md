@@ -10,6 +10,12 @@ The repository header shows the same connection status as `/app`: `Offline`,
 `Offline · <queued in this conversation>`, or a sync or engine failure with its existing recovery action.
 Its own polite live region announces changes without repeating the rest of the header.
 
+While route entry waits for tracking or live data, its pending view shows the
+destination repository, branch name, connection status and Code/Terminal links,
+even after device storage is evicted. Conversation, sharing, presence, editing
+and terminal actions wait for verified access and the existing route loader.
+Previous branch data never supplies the pending view's identity or controls.
+
 `/$owner/$repo/tree/$ref` opens the repository at `$ref` and, when `$ref` is a branch GitHub has, its workspace:
 
 ```
@@ -177,6 +183,9 @@ Everyone on a branch's page is in its room: one hibernating `RoomObject` Durable
 
 Content-free: ids, outcomes, statuses, close codes, byte counts by direction and durations; never a terminal's bytes, a branch's name, a token or anything asked.
 
+`branch.open` logs `outcome: tracking` inside its span before dispatch, so a page
+waiting offline has a correlated progress record before the final outcome is counted.
+
 | Where | Records |
 |---|---|
 | ChatApi | `branch.track` (log, span, `smithers_branch_tracks{outcome}`); `terminal.open` and `terminal.connect` (logs, spans, `smithers_terminal_requests{route,outcome}`); `terminal.shape` (`smithers_terminal_shape_requests`); `branch.share` (log, span, `smithers_branch_shares{change,outcome}`, `smithers_branch_terminal_revocations`); `branch.shares.shape` (`smithers_branch_share_shape_requests`); `branch.room` (log, span, `smithers_branch_room_joins{outcome}`) |
@@ -191,6 +200,7 @@ No record carries a login, a person's place or a path; a share's records name it
 
 | Kind | Where |
 |---|---|
+| Component | `src/screens/branch/connection.test.ts` (offline queue and reconnection), `src/screens/branch/offline.test.ts` (evicted storage, pending route identity, verified recovery and terminal preload), with real app services and injected faults |
 | Unit | `worker/branch/*.test.ts` (sharing: `Access`, `Shares`, `Presence`), `worker/flows/TerminalOpen.test.ts` and `worker/ExecutionHost.test.ts` (`terminal/Open` on the remote host), conversations in `worker/Chat.test.ts`, `worker/Views.test.ts` and `worker/ShapeProxy.test.ts`, `src/features/branch/*.test.ts`, `src/features/sharing/*.test.ts`, `src/features/presence/*.test.ts`, `src/features/terminal/*.test.ts`; `@smthrs/sync` (`PresenceProtocol`, `PresenceRoom`, `PresenceSocket`), `@smthrs/ui` (`AvatarStack`, `ShareDialog`); `@smthrs/effect-code-storage` (`GitProxy`, `GitRemote.ref`, `gitRemote`), `@smthrs/crypto` (`Uuid`), `@smthrs/sandbox` (`TerminalProtocol`), `@smthrs/platform-browser` (`TerminalSocket`), `@smthrs/ui` (`TerminalFrame`) |
 | Real container | `@smthrs/platform-cloudflare`'s `test/ContainerTerminal.workerd.test.ts`: local workerd and Docker with this image |
 | End to end | `e2e/branch-workspace.spec.ts` and `e2e/branch-sharing.spec.ts` (two and three people on separate devices: share to view and edit, a viewer's input refused by the server, revoke, general access and a Guest) against `alchemy dev` (`pnpm e2e e2e/branch-sharing.spec.ts`, `pnpm e2e:gifs`) |

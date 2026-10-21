@@ -58,6 +58,7 @@ export const open = (owner: string, repo: string, ref: string) =>
       return undefined
     }
     yield* setCurrent({ owner, repo, name: ref, status: "tracking", ...empty })
+    yield* Effect.logInfo("branch.open").pipe(Effect.annotateLogs({ outcome: "tracking" }))
     const dispatched = yield* Effect.result(
       (yield* FlowDispatch).dispatch("branch/track", { repo: `${owner}/${repo}`, branch: ref }, { door: "view" }),
     )
