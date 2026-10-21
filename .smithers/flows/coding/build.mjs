@@ -1,5 +1,6 @@
 /** Private deployment artifact; the existing Plue provisioner stages one executable. */
 import { build } from "esbuild"
+import vibelang from "vibelang-unplugin/esbuild"
 import { chmod, mkdir, writeFile, readFile, readdir } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { dirname, resolve } from "node:path"
@@ -95,19 +96,24 @@ export const bundle = async (entryPoint, outfile) => {
   // A repository's file flows share the host's own modules (host-modules.ts).
   // The probe learns which modules the host runs; the build then serves
   // exactly those, so sharing adds no module of its own.
-  const probe = await build({ ...options, metafile: true, plugins: [lazyBunSqlite] })
+  // vibelang-unplugin compiles the `.vibe` modules of the workspace packages
+  // the host bundles from source, each with its own package's tsconfig.
+  const vibe = () => vibelang({ root: fileURLToPath(new URL(".", import.meta.url)) })
+  const probe = await build({ ...options, metafile: true, plugins: [vibe(), lazyBunSqlite] })
   // Only modules the host evaluates at start: sharing a module the host only
   // imports dynamically (Bun's platform layers) would evaluate it eagerly.
   const graph = probe.metafile.inputs, inputs = new Set()
   const pending = Object.keys(graph).filter(path => resolve(root, path) === resolve(entryPoint))
   for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
-    if (path.includes(":") || inputs.has(resolve(root, path))) continue
-    inputs.add(resolve(root, path))
+    // A `.vibe` module is a file the plugin loads in its own namespace.
+    const file = path.startsWith("vibelang:") ? path.slice("vibelang:".length) : path
+    if (file.includes(":") || inputs.has(resolve(root, file))) continue
+    inputs.add(resolve(root, file))
     for (const edge of graph[path]?.imports ?? []) if (!edge.external && edge.kind !== "dynamic-import") pending.push(edge.path)
   }
   const result = await build({
     ...options,
-    plugins: [{
+    plugins: [vibe(), {
       name: "host-modules",
       setup(build) {
         build.onLoad({ filter: /[\\/]flows[\\/]coding[\\/]host-modules\.ts$/ }, async ({ path }) => ({

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import * as Input from "../src/Input.ts"
 import * as Target from "../src/Target.ts"
-import { Attrs, outputPaths, TsBuild } from "../src/TsBuild.ts"
+import { Attrs, distributionLayout, outputPaths, TsBuild } from "../src/TsBuild.ts"
 import { packageManager } from "./toolchain.ts"
 
 const base = {
@@ -52,5 +52,15 @@ describe("TsBuild program tool", () => {
   it("rejects a bare string where the program declaration belongs", () => {
     expect(() => TsBuild({ ...base, tool: { name: "program", entry: "scripts/build.mjs" }, format: "dual" } as never))
       .toThrow()
+  })
+})
+
+describe("TsBuild with VibeLang sources", () => {
+  it("names a .vibe entry's emitted JavaScript and declaration, as vibelang writes them", () => {
+    const attrs = Attrs.make({ ...base, entries: [Input.file("src/index.vibe")], tool: program, format: "dual" })
+    expect(distributionLayout(attrs)).toEqual([
+      { format: "esm", directory: "dist/esm", entry: "dist/esm/index.js", declaration: "dist/esm/index.d.ts" },
+      { format: "cjs", directory: "dist/cjs", entry: "dist/cjs/index.js", declaration: null }
+    ])
   })
 })

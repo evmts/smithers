@@ -22,15 +22,25 @@ const hasTopLevelAwait = (file) => {
   return visit(source)
 }
 
-/** Keeps executable-only top-level-await modules as thin ESM delegates. */
+/**
+ * Keeps executable-only top-level-await modules as thin ESM delegates.
+ *
+ * esbuild cannot read `.vibe`, so a package with VibeLang sources converts the
+ * ESM branch vibelang emitted, which holds every module the sources compiled
+ * to; a TypeScript package converts its sources.
+ */
 export const compileCommonJs = async (src, cjs, esm) => {
   const sourceFiles = files(src)
-  const tsFiles = sourceFiles.filter((file) => file.endsWith(".ts") && !file.endsWith(".d.ts"))
-  const jsFiles = sourceFiles.filter((file) => file.endsWith(".js") && !existsSync(file.replace(/\.js$/, ".ts")))
+  const vibe = sourceFiles.some((file) => file.endsWith(".vibe"))
+  const input = vibe ? esm : src
+  const tsFiles = vibe ? [] : sourceFiles.filter((file) => file.endsWith(".ts") && !file.endsWith(".d.ts"))
+  const jsFiles = vibe
+    ? files(esm).filter((file) => file.endsWith(".js"))
+    : sourceFiles.filter((file) => file.endsWith(".js") && !existsSync(file.replace(/\.js$/, ".ts")))
   const executableEntries = [...tsFiles, ...jsFiles].filter(hasTopLevelAwait)
   await build({
     entryPoints: [...tsFiles, ...jsFiles].filter((file) => !executableEntries.includes(file)),
-    outbase: src,
+    outbase: input,
     outdir: cjs,
     format: "cjs",
     bundle: false,
@@ -56,8 +66,8 @@ export const compileCommonJs = async (src, cjs, esm) => {
   mkdirSync(cjs, { recursive: true })
   writeFileSync(join(cjs, "package.json"), "{\"type\":\"commonjs\"}\n")
   for (const file of executableEntries) {
-    const target = join(cjs, relative(src, file).replace(/\.(?:ts|js)$/, ".js"))
-    const executable = join(esm, relative(src, file).replace(/\.(?:ts|js)$/, ".js"))
+    const target = join(cjs, relative(input, file).replace(/\.(?:ts|js)$/, ".js"))
+    const executable = join(esm, relative(input, file).replace(/\.(?:ts|js)$/, ".js"))
     mkdirSync(dirname(target), { recursive: true })
     writeFileSync(
       target,

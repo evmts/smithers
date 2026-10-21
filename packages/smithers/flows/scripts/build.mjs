@@ -1,18 +1,19 @@
-import { spawnSync } from "node:child_process"
 import { rmSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { compilePackage } from "../../../repo-targets/scripts/build-library.mjs"
 import { compileCommonJs } from "../../scripts/compile-commonjs.mjs"
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
-const tsc = resolve(packageRoot, "node_modules/typescript/bin/tsc")
 
 rmSync(resolve(packageRoot, "dist"), { recursive: true, force: true })
-const declarationResult = spawnSync(process.execPath, [tsc, "-p", "tsconfig.json"], {
-  cwd: packageRoot,
-  stdio: "inherit"
-})
-if (declarationResult.status !== 0) process.exit(declarationResult.status ?? 1)
+// tsc, or vibelang when VibeLang sources are in reach; it prints its diagnostics.
+try {
+  compilePackage(packageRoot, { timeoutMs: 600_000 })
+} catch (error) {
+  console.error(error.message)
+  process.exit(1)
+}
 
 await compileCommonJs(
   resolve(packageRoot, "src"),

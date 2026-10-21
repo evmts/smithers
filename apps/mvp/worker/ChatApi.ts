@@ -1,6 +1,7 @@
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
 import type { ProgramOptions } from "./ChatApiProgram.ts"
+import { workerBuild } from "../infra/WorkerBuild.ts"
 
 // ChatApi's Worker: its settings and its program. The program, and every module it reaches, lives in
 // worker/ChatApiProgram.ts and is imported when the Worker first builds it: Cloudflare refuses a deploy whose Worker
@@ -25,6 +26,8 @@ export const props = {
   limits: { cpuMs: 300_000 },
   // Browsers reach it only through the site, so locally it takes any free port and the site keeps 1337.
   dev: { port: 0 },
+  // The workspace packages it bundles from source can hold `.vibe` modules.
+  build: workerBuild,
 }
 
 /**

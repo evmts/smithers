@@ -1,6 +1,7 @@
 import { join } from "node:path"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
+import vibelang from "vibelang-vite"
 import { VitePWA } from "vite-plugin-pwa"
 import { devHttps } from "./dev/https.ts"
 import { DOCS_SITE, FRAME_POLICY, PAGE_HEADERS, shellCaches } from "./src/pwa.ts"
@@ -14,6 +15,9 @@ const API = /^\/api\//
 // Alchemy injects the Cloudflare plugin, which runs worker/index.ts beside the app in dev and build.
 export default defineConfig({
   plugins: [
+    // A workspace package exports its source, so the app and worker/index.ts can import `.vibe` modules; each compiles
+    // with its own package's tsconfig.
+    vibelang(),
     // The app's pages refuse to be framed under the dev server too, as public/_headers has Cloudflare serve them
     // (src/pwa.ts PAGE_HEADERS). Cloudflare's Vite plugin skips _headers in dev, so this sets them on every response
     // before any other middleware answers.

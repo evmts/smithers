@@ -296,6 +296,24 @@ const hostProcessSampler = Smithers.NodeTest({
 })
 
 /**
+ * The CommonJS half of the hand-written dual builds (`compile-commonjs.mjs`):
+ * `import.meta` paths, top-level-await delegates, JSON beside the modules, and
+ * a VibeLang package's CommonJS converted from the ESM vibelang emitted.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const commonJsBuild = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/smithers/scripts/compile-commonjs.test.mjs")]),
+  srcs: [
+    Smithers.file("//packages/smithers/scripts/compile-commonjs.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/build-library.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs")
+  ],
+  deps: []
+})
+
+/**
  * The CLI's release installer: `install-cli.mjs` installs a packed release
  * closure with relocatable installation receipts, and `build-cli.mjs` packs
  * and installs the CLI for the distribution and offline boxes. They build
@@ -504,6 +522,7 @@ export const Package = Smithers.Package({
     faults,
     fmt,
     hostProcessSampler,
+    commonJsBuild,
     cliInstall,
     lib,
     lint,

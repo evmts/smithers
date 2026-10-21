@@ -4,9 +4,10 @@
  * installation.
  *
  * Workspace `@smthrs/*` sources and pure JavaScript dependencies are inlined:
- * the checkout's TypeScript sources do not run on plain Node. Every package
- * the CLI declares as a dependency stays external so the installed copy is
- * the one that loads (effect and react must be single instances, and
+ * the checkout's TypeScript and VibeLang sources do not run on plain Node, and
+ * vibelang-unplugin compiles each `.vibe` module with its package's project.
+ * Every package the CLI declares as a dependency stays external so the
+ * installed copy is the one that loads (effect and react must be single instances, and
  * `@opentui/core` carries native libraries). The build fails when the bundle
  * imports a package the CLI does not declare. Code splitting keeps Bun-only
  * modules that load through a dynamic `import()` out of the entry chunk.
@@ -19,6 +20,7 @@
  * Run it alone with `node scripts/build-tui.mjs`.
  */
 import { build } from "esbuild"
+import vibelang from "vibelang-unplugin/esbuild"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { builtinModules } from "node:module"
 import { dirname, resolve } from "node:path"
@@ -45,8 +47,9 @@ export const buildTui = async () => {
   const builtin = (specifier) =>
     specifier.startsWith("node:") || specifier.startsWith("bun:") || builtinModules.includes(specifier)
   const outdir = resolve(packageRoot, "dist/tui")
+  const app = resolve(packageRoot, "../../apps/tui")
   const result = await build({
-    entryPoints: { main: resolve(packageRoot, "../../apps/tui/src/main.tsx") },
+    entryPoints: { main: resolve(app, "src/main.tsx") },
     outdir,
     bundle: true,
     splitting: true,
@@ -64,7 +67,9 @@ export const buildTui = async () => {
     metafile: true,
     write: false,
     logLevel: "warning",
-    plugins: [{
+    // `.vibe` modules of the workspace packages the TUI imports compile with
+    // their own package's tsconfig.
+    plugins: [vibelang({ root: app }), {
       name: "declared-dependencies-external",
       setup(context) {
         context.onResolve({ filter: /^[^./]/ }, ({ path }) => {

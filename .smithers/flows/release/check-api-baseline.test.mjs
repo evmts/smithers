@@ -104,6 +104,24 @@ it("emits the build-cli release declaration surface with its package compiler an
   }
 })
 
+it("emits a VibeLang package's release declarations with vibelang", async () => {
+  const root = mkdtempSync(join(tmpdir(), "smithers-api-vibe-"))
+  try {
+    writeFileSync(join(root, "pnpm-workspace.yaml"), "packages:\n  - \"packages/*\"\n")
+    mkdirSync(join(root, "packages"))
+    // @smthrs/errors holds SmithersError.vibe, which tsc cannot read.
+    symlinkSync(join(repoRoot, "packages/errors"), join(root, "packages/errors"), "dir")
+    await withDeclarationBuild(root, async (emittedRoot) => {
+      const surface = apiSurface(root, emittedRoot)["@smthrs/errors"]
+      assert.ok(surface.declarations["SmithersError.d.ts"], Object.keys(surface.declarations).join(", "))
+      const text = readFileSync(join(emittedRoot, "packages/errors/dist/esm/SmithersError.d.ts"), "utf8")
+      assert.match(text, /export declare class SmithersError/)
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 /** Emits one in-memory program's declarations with the real TypeScript emitter. */
 const emitDeclarations = (files) => {
   const options = {

@@ -57,3 +57,31 @@ test("CJS output includes nested JSON required by the public catalog export", as
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test("CJS output of a package with VibeLang sources comes from the ESM vibelang emitted", async () => {
+  const root = mkdtempSync(join(tmpdir(), "smithers-vibe-commonjs-"))
+  try {
+    const src = join(root, "src"), esm = join(root, "dist/esm"), cjs = join(root, "dist/cjs")
+    mkdirSync(join(src, "internal"), { recursive: true })
+    mkdirSync(join(esm, "internal"), { recursive: true })
+    writeFileSync(join(root, "package.json"), "{\"type\":\"module\"}\n")
+    // esbuild cannot read the sources; the ESM branch is what vibelang wrote for them.
+    writeFileSync(join(src, "Greeting.vibe"), "export function greeting(name: string): string {\n  return `hi ${name}`\n}\n")
+    writeFileSync(join(src, "index.ts"), "export { greeting } from \"./Greeting.vibe\"\nexport const url = import.meta.url\n")
+    writeFileSync(join(src, "bin.ts"), "await Promise.resolve()\nconsole.log(\"esm-runtime\")\n")
+    writeFileSync(join(src, "internal/data.json"), "{\"answer\":42}\n")
+    writeFileSync(join(esm, "Greeting.js"), "export function greeting(name) {\n    return `hi ${name}`;\n}\n")
+    writeFileSync(join(esm, "index.js"), "export { greeting } from \"./Greeting.js\";\nexport const url = import.meta.url;\n")
+    writeFileSync(join(esm, "bin.js"), "await Promise.resolve();\nconsole.log(\"esm-runtime\");\n")
+    writeFileSync(join(esm, "index.d.ts"), "export declare const url: string;\n")
+    await compileCommonJs(src, cjs, esm)
+    const loaded = spawnSync(process.execPath, ["-e", `const m = require(${JSON.stringify(join(cjs, "index.js"))}); console.log(m.greeting("ada"), m.url.endsWith("/dist/cjs/index.js"))`], { encoding: "utf8" })
+    assert.equal(loaded.status, 0, loaded.stderr)
+    assert.equal(loaded.stdout.trim(), "hi ada true")
+    assert.match(readFileSync(join(cjs, "bin.js"), "utf8"), /void import\("..\/esm\/bin.js"\)/)
+    assert.equal(readFileSync(join(cjs, "internal/data.json"), "utf8"), "{\"answer\":42}\n")
+    assert.equal(readFileSync(join(cjs, "index.d.ts"), "utf8"), "export declare const url: string;\n")
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

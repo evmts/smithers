@@ -23,6 +23,9 @@
     "vitest": "5.0.0",
     "@smthrs/plan": "workspace:*",
     "@vitest/coverage-v8": "5.0.0",
-    "fast-check": "4.9.0"
+    "fast-check": "4.9.0",
+    "vibelang": "0.0.3",
+    "vibelang-runtime": "0.0.3",
+    "vibelang-unplugin": "0.0.3"
   }
 }

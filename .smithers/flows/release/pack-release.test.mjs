@@ -685,6 +685,27 @@ test("every published package packs the markdown inside the source tree it ships
   assert.deepEqual(unpacked, [], "these markdown files sit in a packed source tree and no files glob packs them")
 })
 
+test("every published package packs the VibeLang sources beside the TypeScript it ships", () => {
+  // A package's declaration maps and source maps name its src files, and a
+  // package that ships `src/**/*.ts` ships its source as the thing a reader
+  // reads, so a `.vibe` module there belongs in the same tarball.
+  const manifests = readWorkspaceManifests()
+  const unpacked = []
+  for (const directory of packedWorkspaces) {
+    const source = join(repoRoot, directory, "src")
+    if (!existsSync(source)) continue
+    const files = manifests.get(directory).files ?? []
+    if (!files.some((pattern) => packsPath(pattern, "src/index.ts"))) continue
+    for (const entry of readdirSync(source, { recursive: true })) {
+      const relative = `src/${String(entry).split(sep).join("/")}`
+      if (!relative.endsWith(".vibe")) continue
+      if (!files.some((pattern) => packsPath(pattern, relative))) unpacked.push(`${directory}/${relative}`)
+    }
+  }
+
+  assert.deepEqual(unpacked, [], "these VibeLang modules sit in a packed source tree and no files glob packs them")
+})
+
 test("the CLI install line uses the published prerelease", () => {
   const source = readFileSync(join(repoRoot, "README.md"), "utf8")
   const project = JSON.parse(readFileSync(join(repoRoot, "apps/site/src/data/project.json"), "utf8"))
@@ -783,15 +804,19 @@ test("no published source module default-imports a sibling or exports a default"
   assert.equal(manifests.size, publishedPackages.length)
   const sites = []
   let modules = 0
+  let vibe = 0
   for (const directory of manifests.keys()) {
     const source = join(repoRoot, directory, "src")
     if (!existsSync(source)) continue
     for (const entry of readdirSync(source, { recursive: true })) {
       const relative = `src/${String(entry).split(sep).join("/")}`
-      if (!relative.endsWith(".ts")) continue
+      // A VibeLang package's CommonJS comes from the ESM vibelang emits, and
+      // esbuild rewrites a default import there the same way.
+      if (!relative.endsWith(".ts") && !relative.endsWith(".vibe")) continue
       const path = join(source, String(entry))
       if (!statSync(path).isFile()) continue
       modules += 1
+      if (relative.endsWith(".vibe")) vibe += 1
       for (const site of defaultBindings(readFileSync(path, "utf8"))) {
         sites.push(`${directory}/${relative}:${site.line}  ${site.text}`)
       }
@@ -799,6 +824,7 @@ test("no published source module default-imports a sibling or exports a default"
   }
 
   assert.ok(modules > 100, `the walk read ${modules} modules, too few to be the published set`)
+  assert.ok(vibe > 0, "the walk read no VibeLang module, though @smthrs/errors publishes one")
   assert.deepEqual(
     sites,
     [],
@@ -1089,6 +1115,22 @@ test("pack boundary rebuilds complete stale artifacts from current source", () =
   for (const file of ["esm/index.js", "esm/index.d.ts", "cjs/index.js"]) {
     assert.equal(readFileSync(join(directory, "dist", file), "utf8"), readFileSync(join(directory, "src/index.ts"), "utf8"))
   }
+}))
+
+test("pack boundary requires the ESM, declarations and CommonJS of every VibeLang module", () => staleBuildFixture(async (directory, manifest) => {
+  await writeFile(join(directory, "src/Lookup.vibe"), "export function lookup(key: string): string {\n  return key\n}\n")
+  const build = (outputs) => [
+    'import { mkdirSync, writeFileSync } from "node:fs"',
+    'mkdirSync("dist/esm", { recursive: true })',
+    'mkdirSync("dist/cjs", { recursive: true })',
+    `for (const file of ${JSON.stringify(outputs)}) writeFileSync("dist/" + file, "")`
+  ].join("\n")
+  await writeFile(join(directory, "build.mjs"), build(["esm/index.js", "esm/index.d.ts", "cjs/index.js"]))
+  await assert.rejects(assertBuilt(directory, manifest), /Lookup\.js/)
+  await writeFile(join(directory, "build.mjs"), build(["esm/index.js", "esm/index.d.ts", "cjs/index.js", "esm/Lookup.js", "esm/Lookup.d.ts"]))
+  await assert.rejects(assertBuilt(directory, manifest), /cjs[\\/]Lookup\.js/)
+  await writeFile(join(directory, "build.mjs"), build(["esm/index.js", "esm/index.d.ts", "cjs/index.js", "esm/Lookup.js", "esm/Lookup.d.ts", "cjs/Lookup.js"]))
+  await assertBuilt(directory, manifest)
 }))
 
 test("pack boundary refuses stale artifacts without a build script", () => staleBuildFixture(async (directory, manifest) => {

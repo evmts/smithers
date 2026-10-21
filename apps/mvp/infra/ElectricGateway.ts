@@ -11,6 +11,7 @@ import { ELECTRIC_POOL_SIZE } from "./Connections.ts"
 import { ElectricSecret } from "./Electric.ts"
 import { admit } from "./ElectricAccess.ts"
 import { awake, type Host } from "./ElectricAwake.ts"
+import { workerBuild } from "./WorkerBuild.ts"
 
 /** The Electric release the app is built against; docker-compose.yml runs the same one. */
 const IMAGE = "electricsql/electric:1.8.1"
@@ -87,6 +88,7 @@ export default class ElectricGateway extends Cloudflare.Worker<ElectricGateway>(
     compatibility: { date: "2026-10-01", flags: ["nodejs_compat"] },
     // Only the stable workers.dev URL, which ChatApi calls; no per-version preview URLs.
     workersDev: { enabled: true, previewsEnabled: false },
+    build: workerBuild,
     observability: {
       enabled: true,
       logs: { enabled: true, invocationLogs: true, persist: true },

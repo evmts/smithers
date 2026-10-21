@@ -15,6 +15,7 @@
  */
 import { Presentation } from "@smthrs/views";
 import { build } from "esbuild";
+import vibelang from "vibelang-unplugin/esbuild";
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -35,6 +36,9 @@ const common = {
   charset: "utf8",
   absWorkingDir: root,
   logLevel: "silent",
+  // `.vibe` modules of the workspace packages bundled from source compile with
+  // their own package's tsconfig.
+  plugins: [vibelang({ root })],
   define: { "process.env.NODE_ENV": "\"production\"" },
 };
 
@@ -56,7 +60,7 @@ const presentation = async () => {
           loader: "js",
         }));
       },
-    }],
+    }, ...common.plugins],
   });
   return result.outputFiles[0].text;
 };

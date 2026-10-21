@@ -18,6 +18,7 @@
  * builds the host platform only. Cross targets need every
  * `@opentui/core-<platform>` native package installed.
  */
+import vibelang from "vibelang-unplugin/bun"
 import { spawnSync } from "node:child_process"
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
@@ -87,7 +88,9 @@ for (const target of selected) {
   console.log(`building ${name}`)
   const helper = helpers.get(target)
   const result = await Bun.build({
-    plugins: [nativeEditorPlugin(packageRoot)],
+    // `.vibe` modules of the workspace packages the TUI imports compile with
+    // their own package's tsconfig.
+    plugins: [vibelang({ root: app }), nativeEditorPlugin(packageRoot)],
     entrypoints: [entryName, workerName],
     files: {
       [entryName]: `${runtime}\n${nativeHelperBootstrap(helper, packageRoot)}\nawait import(${JSON.stringify(join(app, "src/main.tsx"))});`,

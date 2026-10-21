@@ -265,7 +265,7 @@ const sourceFiles = async (directory) => {
     const path = join(directory, entry.name)
     return entry.isDirectory()
       ? sourceFiles(path)
-      : entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts") || entry.name.endsWith(".js") ? [path]
+      : entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts") || entry.name.endsWith(".js") || entry.name.endsWith(".vibe") ? [path]
       : []
   }))
   return nested.flat()
@@ -468,7 +468,7 @@ export const assertBuilt = async (packageRoot, manifest) => {
   const sourceRoot = join(packageRoot, "src")
   const esmOnly = esmOnlyModules(manifest)
   for (const source of await sourceFiles(sourceRoot)) {
-    const modulePath = relative(sourceRoot, source).slice(0, -3)
+    const modulePath = relative(sourceRoot, source).replace(/\.(?:ts|js|vibe)$/, "")
     await Promise.all([
       access(join(packageRoot, "dist", "esm", `${modulePath}.js`)),
       access(join(packageRoot, "dist", "esm", `${modulePath}.d.ts`)),

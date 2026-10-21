@@ -415,6 +415,16 @@ const tscBuild = S.TsBuild({
   format: "esm",
   outDir: "dist/tsc"
 })
+// A `.vibe` entry builds like a `.ts` one: the tsc tool runs vibelang.
+const vibeBuild = S.TsBuild({
+  srcs: [S.glob("src/**/*.{ts,vibe}")],
+  entries: [S.file("src/index.vibe")],
+  deps: [],
+  tsconfig: tsconfigFile,
+  tool: { name: "tsc" },
+  format: "esm",
+  outDir: "dist/vibe"
+})
 const customProgramBuild = S.TsBuild({
   srcs: [sources],
   entries: [entry],
@@ -432,6 +442,14 @@ const dts = S.DtsBuild({
   tsconfig: tsconfigFile,
   tool: { name: "tsc", declarationMap: true },
   outDir: "dist"
+})
+const vibeDts = S.DtsBuild({
+  srcs: [S.glob("src/**/*.{ts,vibe}")],
+  entries: [S.file("src/index.vibe")],
+  deps: [vibeBuild],
+  tsconfig: tsconfigFile,
+  tool: { name: "tsc", declarationMap: true },
+  outDir: "dist/vibe"
 })
 const dtsWithTsup = S.DtsBuild({
   srcs: [sources],
@@ -585,6 +603,8 @@ const sizeBudgets = S.Size.Budgets({
 
 `TsBuild.distributionLayout` owns the output directories and publish entry paths.
 The `tsc` and `program` tools use format subdirectories under `outDir`.
+A `.vibe` entry publishes the same `<name>.js` and `<name>.d.ts` a `.ts` entry does.
+The `tsc` tool runs vibelang, which takes tsc's flags and compiles `.vibe` and `.ts` sources together, as `Typecheck` does; a workspace that declares it installs vibelang.
 Dual builds use declarations beside ESM; CJS-only builds use declarations beside CJS.
 `PackageJson.publishFields` derives entry points from this layout during declaration expansion.
 The tsup tool declares one flat output tree and does not request declarations, so it cannot serve as a `PackageJson` publish entry.

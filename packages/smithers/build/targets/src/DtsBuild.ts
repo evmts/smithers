@@ -15,6 +15,10 @@ import { BuildError, captureOutputs, Outputs } from "./ToolBuild.ts"
 /**
  * Schema for declarations emitted by the TypeScript compiler.
  *
+ * The executable is `vibelang`, VibeLang's compiler, which takes `tsc`'s
+ * flags: on TypeScript it is TypeScript 7's compiler, and it also emits
+ * declarations for the `.vibe` sources a program reaches.
+ *
  * @category schemas
  * @since 0.1.0
  */
@@ -113,13 +117,13 @@ export type Attrs = typeof Attrs.Type
  * Builds the declaration-emit argv from decoded attrs at plan time.
  *
  * Tools resolve through `pnpm exec`, matching the pnpm workspace install
- * target. For `tsc` the tsconfig owns the destination and `outDir` stays the
+ * target. For the `tsc` tool the tsconfig owns the destination and `outDir` stays the
  * declared capture path.
  */
 const declarationArgv = (attrs: Attrs): ReadonlyArray<string> =>
   attrs.tool.name === "tsc"
     ? PackageManager.exec(attrs.packageManager, [
-      "tsc",
+      "vibelang",
       "-p",
       Input.rootRelative(attrs.cwd, attrs.tsconfig.path),
       "--declaration",
@@ -136,8 +140,8 @@ const declarationArgv = (attrs: Attrs): ReadonlyArray<string> =>
     ])
 
 /**
- * Emits type declarations with `tsc --emitDeclarationOnly` or
- * `tsup --dts-only`.
+ * Emits type declarations with `vibelang --emitDeclarationOnly`, which takes
+ * `tsc`'s flags, or `tsup --dts-only`.
  *
  * The plan runs the selected tool in `cwd` through the shared
  * {@link Exec.runTool}, then the shared output-capture step that digests

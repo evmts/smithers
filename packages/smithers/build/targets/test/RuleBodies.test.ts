@@ -177,12 +177,13 @@ describe("DtsBuild", () => {
     cwd: "packages/example"
   }
 
-  it("forces the declaration-map policy onto tsc rather than trusting the tsconfig", () => {
+  it("forces the declaration-map policy onto the compiler rather than trusting the tsconfig", () => {
+    // The tsc tool runs vibelang, which takes tsc's flags and also reads .vibe sources.
     expect(plannedArgv(DtsBuild.DtsBuild({ ...base, tool: { name: "tsc", declarationMap: true } })))
       .toEqual([
         "pnpm",
         "exec",
-        "tsc",
+        "vibelang",
         "-p",
         "tsconfig.build.json",
         "--declaration",
@@ -211,7 +212,7 @@ describe("DtsBuild", () => {
       tsconfig: Input.file("//tsconfig.build.json")
     }
     expect(plannedArgv(DtsBuild.DtsBuild({ ...rooted, tool: { name: "tsc", declarationMap: true } })).slice(2, 5))
-      .toEqual(["tsc", "-p", "../../tsconfig.build.json"])
+      .toEqual(["vibelang", "-p", "../../tsconfig.build.json"])
     expect(plannedArgv(DtsBuild.DtsBuild({ ...rooted, tool: { name: "tsup" } })).slice(2, 4))
       .toEqual(["tsup", "src/index.ts"])
   })

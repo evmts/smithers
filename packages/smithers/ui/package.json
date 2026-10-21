@@ -177,6 +177,8 @@
     "fast-check": "4.9.0",
     "playwright": "1.62.1",
     "quickjs-emscripten-core": "0.32.0",
-    "happy-dom": "20.13.2"
+    "happy-dom": "20.13.2",
+    "vibelang": "0.0.3",
+    "vibelang-unplugin": "0.0.3"
   }
 }

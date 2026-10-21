@@ -289,7 +289,8 @@ describe("TsBuild", () => {
 
   it("derives a single output directory for a single format", () => {
     const target = TsBuild({ ...base, tool: { name: "tsc" }, format: "esm" })
-    expect(plannedArgv(target)).toEqual(["pnpm", "exec", "tsc", "-p", "tsconfig.build.json"])
+    // The tsc tool runs vibelang, which takes tsc's flags and also compiles .vibe sources.
+    expect(plannedArgv(target)).toEqual(["pnpm", "exec", "vibelang", "-p", "tsconfig.build.json"])
     expect(Target.metadata(target).outputs?.paths).toEqual(["dist/esm"])
   })
 
@@ -333,7 +334,7 @@ describe("TsBuild", () => {
       tsconfig: Input.file("//tsconfig.build.json")
     }
     expect(plannedArgv(TsBuild({ ...rooted, tool: { name: "tsc" }, format: "esm" })))
-      .toEqual(["pnpm", "exec", "tsc", "-p", "../../tsconfig.build.json"])
+      .toEqual(["pnpm", "exec", "vibelang", "-p", "../../tsconfig.build.json"])
     expect(plannedArgv(TsBuild({ ...rooted, tool: { name: "tsup", external: [] }, format: "esm" })).slice(2, 4))
       .toEqual(["tsup", "src/index.ts"])
   })

@@ -218,7 +218,7 @@ test('declaration build matches normal TypeScript release emit and cleans isolat
       include: ['src/**/*.ts'],
     }))
     await write(root, 'packages/example/src/index.ts', 'export const broken: = 1;\n')
-    await assert.rejects(withDeclarationBuild(root, () => { throw new Error('callback must not run') }), /declaration emit failed/)
+    await assert.rejects(withDeclarationBuild(root, () => { throw new Error('callback must not run') }), /declaration emit with tsc failed/)
     assert.deepEqual(await scratchOutputs(), before)
   } finally {
     for (const [key, value] of [['TMPDIR', previousTmpdir], ['TEMP', previousTemp], ['TMP', previousTmp]]) {

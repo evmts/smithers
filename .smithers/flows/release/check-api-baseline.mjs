@@ -2,11 +2,10 @@
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { join } from "node:path"
 import ts from "typescript"
-import { copyInputDeclarations } from "../../../packages/repo-targets/scripts/build-library.mjs"
+import { copyInputDeclarations, packageCompiler } from "../../../packages/repo-targets/scripts/build-library.mjs"
 import {
   buildPrivateEffectAdapters,
   privateEffectAdapters
@@ -119,12 +118,12 @@ export const withDeclarationBuild = async (root, check) => {
       if (manifest.private) continue
       const packageRoot = join(root, dir)
       const directory = join(output, dir, "dist/esm")
-      const require = createRequire(join(packageRoot, "package.json"))
-      const compiler = join(dirname(require.resolve("typescript/package.json")), "bin/tsc")
       // Packages may pin different TypeScript versions; use the release
-      // compiler and its own configuration.
+      // compiler and its own configuration: the package's tsc, or vibelang
+      // when VibeLang sources are in reach, as its build does.
+      const compiler = packageCompiler(packageRoot)
       const result = spawnSync(process.execPath, [
-        compiler,
+        compiler.path,
         "-p",
         "tsconfig.json",
         "--outDir",
@@ -144,7 +143,7 @@ export const withDeclarationBuild = async (root, check) => {
         encoding: "utf8"
       })
       if (result.error || result.status !== 0) {
-        throw new Error(`${name}: declaration emit failed: ${result.error?.message ?? result.signal ?? result.status}
+        throw new Error(`${name}: declaration emit with ${compiler.name} failed: ${result.error?.message ?? result.signal ?? result.status}
 ${result.stderr ?? ""}
 ${result.stdout ?? ""}`)
       }

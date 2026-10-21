@@ -2,6 +2,7 @@
 import react from "@astrojs/react"
 import starlight from "@astrojs/starlight"
 import { defineConfig, fontProviders } from "astro/config"
+import vibelang from "vibelang-vite"
 import { appDocsAssets } from "./scripts/app-docs-integration.mjs"
 import sidebar from "./src/data/docs-sidebar.json" with { type: "json" }
 import project from "./src/data/project.json" with { type: "json" }
@@ -49,6 +50,9 @@ export default defineConfig({
     }
   ],
   vite: {
+    // A workspace package exports its source, so a page can import `.vibe` modules; each compiles with its own
+    // package's tsconfig.
+    plugins: [vibelang()],
     build: {
       // The home page's stylesheet is about 7.5 kB, over Vite's 4 kB default;
       // raising the limit lets `build.inlineStylesheets: "auto"` inline it and

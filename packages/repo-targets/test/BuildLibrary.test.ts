@@ -1,10 +1,16 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { afterEach, expect, it } from "vitest"
-import { buildLibrary, copyCommonJsDeclarations, copyInputDeclarations } from "../scripts/build-library.mjs"
+import {
+  buildLibrary,
+  copyCommonJsDeclarations,
+  copyInputDeclarations,
+  packageCompiler,
+  vibeSourcePackages
+} from "../scripts/build-library.mjs"
 
 const roots: Array<string> = []
 const scratch = () => {
@@ -120,4 +126,137 @@ it("removes a stale dist and reports a failing declaration compile", async () =>
   write(join(root, "src/broken.ts"), "export const broken: number = \"no\"\n")
   await expect(buildLibrary(root, { esmOnly: ["esm-only.ts"] })).rejects.toThrow(/^package compiler exited 2$/)
   expect(existsSync(join(root, "dist/stale.txt"))).toBe(false)
+})
+
+// A VibeLang package: an `error` declaration and an Effect function, which
+// compile to code that imports vibelang-runtime and effect.
+const tools = ["esbuild", "typescript", "vibelang", "effect", "vibelang-runtime"]
+// vibelang-runtime exports no ./package.json, so its directory is found from its entry.
+const packageDirectory = (name: string) => {
+  const require = createRequire(import.meta.url)
+  try {
+    return dirname(require.resolve(`${name}/package.json`))
+  } catch {
+    let directory = dirname(require.resolve(name))
+    while (!existsSync(join(directory, "package.json")) || JSON.parse(read(join(directory, "package.json"))).name !== name) {
+      directory = dirname(directory)
+    }
+    return directory
+  }
+}
+const link = (root: string) => {
+  mkdirSync(join(root, "node_modules"), { recursive: true })
+  for (const name of tools) symlinkSync(packageDirectory(name), join(root, "node_modules", name), "dir")
+}
+const tsconfig = JSON.stringify({
+  compilerOptions: {
+    module: "NodeNext",
+    moduleResolution: "NodeNext",
+    target: "ES2022",
+    strict: true,
+    declaration: true,
+    declarationMap: true,
+    sourceMap: true,
+    allowImportingTsExtensions: true,
+    rewriteRelativeImportExtensions: true,
+    outDir: "dist/esm",
+    rootDir: "src",
+    skipLibCheck: true
+  },
+  include: ["src"]
+})
+const vibePackage = (root: string, name: string) => {
+  link(root)
+  write(join(root, "package.json"), JSON.stringify({ name, type: "module", exports: { ".": "./src/index.ts" } }))
+  write(join(root, "tsconfig.json"), tsconfig)
+  write(
+    join(root, "src/Lookup.vibe"),
+    [
+      "export error Missing { key: string }",
+      "",
+      "export function lookup(key: string): string!Missing {",
+      "  if (key === \"\") throw new Missing({ key })",
+      "  return key.toUpperCase()",
+      "}",
+      ""
+    ].join("\n")
+  )
+  write(join(root, "src/index.ts"), "export { lookup, Missing } from \"./Lookup.vibe\"\n")
+  return root
+}
+
+it("builds a VibeLang package's ESM, declarations, maps and CommonJS with vibelang", async () => {
+  const root = vibePackage(scratch(), "vibe-fixture")
+  expect(packageCompiler(root).name).toBe("vibelang")
+  await buildLibrary(root)
+  for (const file of ["Lookup.js", "Lookup.js.map", "Lookup.d.ts", "Lookup.d.ts.map", "index.js", "index.d.ts"]) {
+    expect(existsSync(join(root, "dist/esm", file)), `dist/esm/${file}`).toBe(true)
+    expect(existsSync(join(root, "dist/cjs", file)), `dist/cjs/${file}`).toBe(true)
+  }
+  expect(read(join(root, "dist/esm/index.js"))).toContain("from \"./Lookup.js\"")
+  expect(read(join(root, "dist/esm/Lookup.d.ts"))).toContain("export declare function lookup(key: string)")
+  // Both branches map back to the .vibe source, CommonJS through the ESM it was built from.
+  expect(JSON.parse(read(join(root, "dist/esm/Lookup.js.map"))).sources).toEqual(["../../src/Lookup.vibe"])
+  expect(JSON.parse(read(join(root, "dist/cjs/Lookup.js.map"))).sources).toEqual(["../../src/Lookup.vibe"])
+  const cjs = read(join(root, "dist/cjs/Lookup.js"))
+  expect(cjs).toContain("require(\"vibelang-runtime\")")
+  expect(cjs).not.toMatch(/\.vibe["']/)
+  const { Effect } = await import("effect")
+  const loaded = createRequire(join(root, "dist/cjs/index.js"))("./index.js")
+  expect(Effect.runSync(loaded.lookup("ok"))).toBe("OK")
+  const esm: { readonly lookup: (key: string) => import("effect").Effect.Effect<string, { readonly _tag: string }> } =
+    await import(pathToFileURL(join(root, "dist/esm/index.js")).href)
+  expect(Effect.runSync(Effect.flip(esm.lookup("")))._tag).toBe("Missing")
+})
+
+it("compiles a TypeScript package with vibelang when a linked dependency has VibeLang sources", async () => {
+  const workspace = scratch()
+  const dependency = vibePackage(join(workspace, "dependency"), "vibe-dependency")
+  const root = join(workspace, "consumer")
+  link(root)
+  symlinkSync(dependency, join(root, "node_modules", "vibe-dependency"), "dir")
+  write(
+    join(root, "package.json"),
+    JSON.stringify({ name: "consumer", type: "module", dependencies: { "vibe-dependency": "workspace:*" } })
+  )
+  write(join(root, "tsconfig.json"), tsconfig)
+  write(
+    join(root, "src/index.ts"),
+    "import { lookup } from \"vibe-dependency\"\nexport const shout = (key: string) => lookup(key)\n"
+  )
+  expect(vibeSourcePackages(root)).toEqual([{ name: "vibe-dependency", root: realpathSync(dependency) }])
+  expect(packageCompiler(root).name).toBe("vibelang")
+  await buildLibrary(root)
+  expect(read(join(root, "dist/esm/index.d.ts"))).toContain("Effect<string, ")
+  // Its own sources are TypeScript, so its CommonJS still comes from them.
+  expect(JSON.parse(read(join(root, "dist/cjs/index.js.map"))).sources).toEqual(["../../src/index.ts"])
+})
+
+it("keeps tsc for a package with no VibeLang in reach, and does not follow installed packages", () => {
+  const workspace = scratch()
+  const root = fixture()
+  // An installed package ships JavaScript: .vibe files inside node_modules are not sources.
+  const installed = join(root, "node_modules/installed")
+  write(join(installed, "package.json"), JSON.stringify({ name: "installed" }))
+  write(join(installed, "src/Stray.vibe"), "export const stray = 1\n")
+  write(join(root, "package.json"), JSON.stringify({ name: "fixture", type: "module", dependencies: { installed: "1.0.0" } }))
+  expect(vibeSourcePackages(root)).toEqual([])
+  expect(packageCompiler(root).name).toBe("tsc")
+  // A linked package's development dependencies are not followed.
+  const dependency = vibePackage(join(workspace, "dev-only"), "dev-only")
+  const middle = join(workspace, "middle")
+  write(join(middle, "package.json"), JSON.stringify({ name: "middle", devDependencies: { "dev-only": "workspace:*" } }))
+  mkdirSync(join(middle, "node_modules"), { recursive: true })
+  symlinkSync(dependency, join(middle, "node_modules/dev-only"), "dir")
+  symlinkSync(middle, join(root, "node_modules/middle"), "dir")
+  write(join(root, "package.json"), JSON.stringify({ name: "fixture", type: "module", dependencies: { middle: "workspace:*" } }))
+  expect(vibeSourcePackages(root)).toEqual([])
+  expect(vibeSourcePackages(middle).map((entry) => entry.name)).toEqual(["dev-only"])
+})
+
+it("fails the build on a type error in a .vibe module", async () => {
+  const root = vibePackage(scratch(), "vibe-broken")
+  write(join(root, "src/Broken.vibe"), "export function count(): number!! {\n  return \"none\"\n}\n")
+  await expect(buildLibrary(root)).rejects.toThrow(/^package compiler exited 2$/)
+  expect(existsSync(join(root, "dist/cjs"))).toBe(false)
 })

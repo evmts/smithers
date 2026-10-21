@@ -14,6 +14,7 @@ import { createRequire } from "node:module"
 import { existsSync, mkdirSync, readdirSync, readFileSync, watch, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import vibelang from "vibelang-unplugin/esbuild"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, "../../..")
@@ -109,6 +110,8 @@ const bundle = async () => {
     nodePaths: [join(APP, "node_modules"), join(ROOT, "node_modules")],
     alias: { "@smthrs/ui": join(UI, "index.ts") },
     loader: { ".css": "text" },
+    // The workspace packages bundled from source can hold `.vibe` modules; each compiles with its own tsconfig.
+    plugins: [vibelang({ root: HERE })],
     define: { "process.env.NODE_ENV": '"production"', __SITE__: JSON.stringify(SITE ?? "") },
     logLevel: "warning"
   })

@@ -37,9 +37,9 @@
  *
  * Run it with `pnpm run browser` from the repository root.
  */
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, relative, resolve } from "node:path"
+import { dirname, join, relative, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { Worker } from "node:worker_threads"
 
@@ -52,6 +52,20 @@ const esbuild = await import("esbuild").catch((cause) => {
   console.error(cause)
   process.exit(1)
 })
+// A workspace package's exports name its source, so an entry point can reach
+// `.vibe` modules, which only vibelang compiles.
+const { default: vibelang } = await import("vibelang-unplugin/esbuild").catch((cause) => {
+  console.error("browser-check needs vibelang-unplugin from the workspace toolchain — run `pnpm install` first.")
+  console.error(cause)
+  process.exit(1)
+})
+
+/** The directory of the package that holds `file`: its nearest package.json. */
+const packageDirectory = (file) => {
+  for (let directory = dirname(file); ; directory = dirname(directory)) {
+    if (existsSync(join(directory, "package.json")) || dirname(directory) === directory) return directory
+  }
+}
 
 /** The two resolutions a browser entry point must survive: a browser's, and a Worker's as wrangler builds it. */
 const targets = [
@@ -72,6 +86,9 @@ const bundle = (entry, conditions = [], treeShaking = true) =>
   esbuild.build({
     entryPoints: [resolve(repoRoot, entry)],
     absWorkingDir: repoRoot,
+    // The entry's package is the plugin's root: a `.vibe` module of another
+    // package compiles with that package's own tsconfig.
+    plugins: [vibelang({ root: packageDirectory(resolve(repoRoot, entry)) })],
     bundle: true,
     write: false,
     platform: "browser",

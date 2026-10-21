@@ -21,6 +21,9 @@ import { BuildError, captureOutputs, Outputs } from "./ToolBuild.ts"
  * own. It carries no `external` in particular: `tsc` resolves imports through
  * the tsconfig and has no bundle to exclude a package from, so an external list
  * declared beside it would be text that changes the key and nothing else.
+ * The executable is `vibelang`, VibeLang's compiler, which takes `tsc`'s
+ * flags: on TypeScript it is TypeScript 7's compiler, and it also compiles the
+ * `.vibe` sources a program reaches, as `Typecheck` checks them.
  *
  * @category schemas
  * @since 0.1.0
@@ -158,7 +161,8 @@ export type Attrs = typeof Attrs.Type
  * Builds the distribution argv from decoded attrs at plan time.
  *
  * Installed tools resolve through the declared package manager, matching the
- * workspace install target. For `tsc` the tsconfig owns every emit option, so
+ * workspace install target. For the `tsc` tool, which runs `vibelang`, the
+ * tsconfig owns every emit option, so
  * `entries` and `outDir` stay declared key material. For `tsup` those attrs
  * map to their CLI flags. A `program` tool is the package's own build program,
  * run under the manager's runtime; the tsconfig it compiles through and the
@@ -168,7 +172,7 @@ const buildArgv = (attrs: Attrs): ReadonlyArray<string> => {
   switch (attrs.tool.name) {
     case "tsc":
       return PackageManager.exec(attrs.packageManager, [
-        "tsc",
+        "vibelang",
         "-p",
         Input.rootRelative(attrs.cwd, attrs.tsconfig.path)
       ])
@@ -218,7 +222,8 @@ export interface DistributionLayout {
 export const distributionLayout = (attrs: Attrs): ReadonlyArray<DistributionLayout> => {
   const formats: ReadonlyArray<"esm" | "cjs"> = attrs.format === "dual" ? ["esm", "cjs"] : [attrs.format]
   const source = attrs.entries[0]
-  const base = source === undefined ? undefined : NodePath.basename(source.path).replace(/\.(?:m|c)?tsx?$/, "")
+  // A `.vibe` entry compiles to the same `<name>.js` and `<name>.d.ts`.
+  const base = source === undefined ? undefined : NodePath.basename(source.path).replace(/\.(?:(?:m|c)?tsx?|vibe)$/, "")
   return formats.map((format) => {
     const directory = attrs.tool.name === "tsup" ? attrs.outDir : `${attrs.outDir}/${format}`
     const entry = attrs.tool.name === "tsup" || base === undefined ? null : `${directory}/${base}.js`
@@ -252,8 +257,8 @@ export const outputPaths = (
 ): ReadonlyArray<string> => [...new Set(distributionLayout(attrs).map((layout) => layout.directory))]
 
 /**
- * Builds a JavaScript distribution with `tsc -p <tsconfig>`, `tsup`, or the
- * package's own build program.
+ * Builds a JavaScript distribution with `vibelang -p <tsconfig>` (the `tsc`
+ * tool), `tsup`, or the package's own build program.
  *
  * The plan runs the selected tool in `cwd` through the shared
  * {@link Exec.runTool}, then the shared output-capture step that digests
