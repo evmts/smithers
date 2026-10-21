@@ -35,7 +35,8 @@ import type { State } from "alchemy/State"
 import { Effect, Layer } from "effect"
 import { ChatDatabase } from "./infra/ChatDatabase.ts"
 import * as Electric from "./infra/Electric.ts"
-import ElectricGateway from "./infra/ElectricGateway.ts"
+import ElectricGateway, { DatabaseUrl as ElectricDatabaseUrl } from "./infra/ElectricGateway.ts"
+import { directUrl, Postgres } from "./infra/Postgres.ts"
 import * as Secrets from "./infra/Secrets.ts"
 import * as SignIn from "./infra/SignIn.ts"
 import ChatApi from "./worker/ChatApi.ts"
@@ -51,7 +52,9 @@ const state = Layer.unwrap(Effect.gen(function* () {
 /** Production: Electric's gateway URL and secret, for ChatApi to bind. `undefined` under `alchemy dev`. */
 const electric = Effect.gen(function* () {
   if (yield* Alchemy.ALCHEMY_DEV) return undefined
-  const gateway = yield* ElectricGateway
+  // Postgres' direct URL reaches Electric as the gateway's secret binding, never as container configuration.
+  const databaseUrl = ElectricDatabaseUrl.of({ value: directUrl(yield* Postgres) })
+  const gateway = yield* ElectricGateway.pipe(Effect.provideService(ElectricDatabaseUrl, databaseUrl))
   const secret = yield* Electric.ElectricSecret
   return Electric.Endpoint.of({ url: gateway.url, secret: secret.text })
 })

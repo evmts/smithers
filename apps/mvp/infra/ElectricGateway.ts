@@ -3,11 +3,11 @@
 // container starts (infra/ElectricAccess.ts). alchemy.run.ts declares it in production only; ChatApi reaches it at its
 // workers.dev URL (infra/Electric.ts).
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect } from "effect"
+import * as Output from "alchemy/Output"
+import { Config, Context, Effect, Option, Redacted } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ElectricSecret } from "./Electric.ts"
 import { admit } from "./ElectricAccess.ts"
-import { directUrl, Postgres } from "./Postgres.ts"
 
 /** The Electric release the app is built against; docker-compose.yml runs the same one. */
 const IMAGE = "electricsql/electric:1.8.1"
@@ -19,41 +19,50 @@ const PORT = 3000
 const INSTANCE = "electric"
 
 /**
+ * The Worker binding that holds Postgres' direct URL, password included, as a secret: the gateway's object hands it to
+ * Electric's container when it starts it, so the URL is never in the container's configuration, which the Cloudflare
+ * API returns in plain text to anyone who can read the account's containers (2026-10-21).
+ */
+export const DATABASE_URL_BINDING = "ELECTRIC_DATABASE_URL"
+
+/** Postgres' direct URL for the gateway being declared. alchemy.run.ts provides it while it declares the gateway. */
+export class DatabaseUrl extends Context.Service<
+  DatabaseUrl,
+  { readonly value: Output.Output<Redacted.Redacted<string>> }
+>()("@smthrs/mvp/infra/ElectricGateway/DatabaseUrl") {}
+
+/**
  * Electric itself, on Postgres' direct host. Its storage directory is the container's disk, which a restart empties:
  * Electric then rebuilds its shapes and clients refetch (docs/infrastructure.md#limits).
  *
  * It runs without a secret of its own (`ELECTRIC_INSECURE`): a container has no way in but its Durable Object, and the
  * gateway checks the secret before the object is reached. Electric takes its secret only as a URL parameter, and
  * Workers Traces records a subrequest's URL, so a secret on the hop to the container would land in the traces.
+ * `DATABASE_URL` isn't here: the object passes it when it starts the container (`DATABASE_URL_BINDING`).
  */
-class Electric extends Cloudflare.Container<Electric>()(
-  "Electric",
-  Effect.gen(function* () {
-    const postgres = yield* Postgres
-    return {
-      image: IMAGE,
-      // 1/4 vCPU, 1 GiB of memory and 4 GB of disk; the default `lite` (256 MiB) is too small for Electric.
-      instanceType: "basic",
-      maxInstances: 1,
-      env: {
-        DATABASE_URL: directUrl(postgres),
-        ELECTRIC_INSECURE: "true",
-      },
-    }
-  }),
-) {}
+class Electric extends Cloudflare.Container<Electric>()("Electric", {
+  image: IMAGE,
+  // 1/4 vCPU, 1 GiB of memory and 4 GB of disk; the default `lite` (256 MiB) is too small for Electric.
+  instanceType: "basic",
+  maxInstances: 1,
+  env: { ELECTRIC_INSECURE: "true" },
+}) {}
 
-/** Starts Electric's container when a request needs it, and forwards the request to its port. */
+/**
+ * Starts Electric's container when a request needs it, with Postgres' direct URL from the Worker's secret binding as
+ * its `DATABASE_URL`, and forwards the request to its port.
+ */
 class ElectricObject extends Cloudflare.DurableObject<ElectricObject>()(
   "ElectricObject",
   Effect.gen(function* () {
     const electric = yield* Electric
     return Effect.gen(function* () {
       const port = yield* electric.getTcpPort(PORT)
+      const databaseUrl = yield* Config.Redacted(DATABASE_URL_BINDING).pipe(Effect.orDie)
       return {
         fetch: Effect.gen(function* () {
           // Electric reaches Postgres over the internet.
-          yield* electric.start({ enableInternet: true })
+          yield* electric.start({ enableInternet: true, env: { DATABASE_URL: Redacted.value(databaseUrl) } })
           return yield* port.fetch(yield* HttpServerRequest.HttpServerRequest)
         }),
       }
@@ -76,6 +85,9 @@ export default class ElectricGateway extends Cloudflare.Worker<ElectricGateway>(
     },
   },
   Effect.gen(function* () {
+    // Binds Postgres' direct URL as a secret while Alchemy plans the gateway; at runtime the binding is there.
+    const databaseUrl = yield* Effect.serviceOption(DatabaseUrl)
+    if (Option.isSome(databaseUrl)) yield* Output.named(databaseUrl.value.value, DATABASE_URL_BINDING)
     const objects = yield* ElectricObject
     const secret = yield* (yield* ElectricSecret).text
     return {
