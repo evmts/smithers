@@ -49,6 +49,9 @@ test("needs you: the agent asks, every surface on every device shows it, and an 
     await expect(toast, `${tab.name}: a toast says so, with Answer`).toContainText(`Needs you · ${PROMPT}`, { timeout: 30_000 })
     // The top bar's bell reads the same feed.
     await expect(header, `${tab.name}: the top bar says the agent needs you`).toContainText("Needs you", { timeout: 15_000 })
+    await expect(header, `${tab.name}: screen readers hear the count waiting on them`)
+      .toHaveAccessibleName(/^Notifications: [1-9]\d* needs? you(?:, [1-9]\d* unread)?$/)
+
     // Nothing covers it, the open composer included: a trial click finds the button takes the pointer.
     await toast.getByRole("button", { name: "Answer" }).click({ trial: true })
     // One click on the bell opens the panel at the newest run waiting on the person: this one, with its question.
