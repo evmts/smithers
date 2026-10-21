@@ -151,6 +151,11 @@ a write whose answer was lost is adopted rather than repeated. A `find` that
 cannot tell, such as a search cut short by a page budget, must fail; `once`
 never reads a failed lookup as "not made".
 
+When the write's identity was chosen and recorded before the step ran, such as
+a write id a device picked and stored with its request, pass it as
+`Action.once(name, effect, { key })` so the object carries the id other code
+already knows it by. Never build that key from what is written.
+
 Declare such a step `tier: "irreversible"` with an `idempotencyKey`: its repeat
 is safe, so a durable engine re-runs an attempt that died mid-write. A write
 that can carry no key and has no lookup, such as a Telegram message, runs alone

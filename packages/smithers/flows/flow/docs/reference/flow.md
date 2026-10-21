@@ -184,10 +184,10 @@ The key of write `name` in the running dispatch: 64 lowercase hex of SHA-256 ove
 
 ### `Action.once`
 
-- **Signature:** `once<A, E, R>(name: string, effect: Keyed<A, E, R>): Effect.Effect<A, E, R>`
+- **Signature:** `once<A, E, R>(name: string, effect: Keyed<A, E, R>, options?: { readonly key?: string }): Effect.Effect<A, E, R>`
 - **Since:** `1.0.0`
 
-Finds write `name`'s object, or makes it once. It calls `find(key)` and adopts what it answers; on `None` it calls `perform(key)`; when `perform` fails it calls `find(key)` again and adopts what landed, else fails with `perform`'s failure. A failing first `find` fails without writing. Each write runs in a span `Action.once` with `smithers.effect.name` and `smithers.effect.outcome`, and counts in `flows_effects` by outcome (`performed`, `adopted`, `adopted_after_failure`, `failed`); the key is never logged. Name each write of one step differently.
+Finds write `name`'s object, or makes it once. It calls `find(key)` and adopts what it answers; on `None` it calls `perform(key)`; when `perform` fails it calls `find(key)` again and adopts what landed, else fails with `perform`'s failure. A failing first `find` fails without writing. Each write runs in a span `Action.once` with `smithers.effect.name` and `smithers.effect.outcome`, and counts in `flows_effects` by outcome (`performed`, `adopted`, `adopted_after_failure`, `failed`); the key is never logged. Name each write of one step differently. `options.key` replaces the derived key when the write's identity was chosen and recorded before the step ran, such as a write id stored with the request that started the execution; `once` then needs no dispatch. Never derive it from what is written.
 
 ### `Action.EffectKeyUnavailable`
 

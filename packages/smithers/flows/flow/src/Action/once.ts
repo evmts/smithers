@@ -136,6 +136,22 @@ export const effectKey = (name: string): Effect.Effect<string> =>
     return digestSync(`${PREIMAGE}\n${instance.value.executionId}\n${invocation}\n${name}`)
   })
 
+/**
+ * How {@link once} keys a write.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface OnceOptions {
+  /**
+   * The write's key, when its identity was chosen and recorded before the step ran: a write id a device picked and
+   * stored with the request that started this execution, or a domain id one execution owns, such as a decision's.
+   * Never derive it from what is written. Without it, `once` derives the key from the dispatch
+   * ({@link effectKey}), and runs only inside one.
+   */
+  readonly key?: string | undefined
+}
+
 const record = (name: string, outcome: EffectOutcome) =>
   Effect.andThen(
     Metric.update(Metric.withAttributes(effects, { outcome }), 1),
@@ -162,6 +178,10 @@ const record = (name: string, outcome: EffectOutcome) =>
  * Name each write of one step differently. A step that writes in a loop names
  * each write by a stable id from its payload, such as `comment/${path}`.
  *
+ * Pass `options.key` when the write's identity was chosen and recorded before
+ * the step ran, such as a write id stored with the request; `once` then uses
+ * it as is and needs no dispatch.
+ *
  * Declare a step whose writes all go through `once` `tier: "irreversible"`
  * with an `idempotencyKey`: repeating it is safe, so a durable engine re-runs
  * an attempt that died mid-write, and `once` finds what it made.
@@ -186,9 +206,13 @@ const record = (name: string, outcome: EffectOutcome) =>
  * @category idempotency
  * @since 1.0.0
  */
-export const once = <A, E, R>(name: string, effect: Keyed<A, E, R>): Effect.Effect<A, E, R> =>
+export const once = <A, E, R>(
+  name: string,
+  effect: Keyed<A, E, R>,
+  options?: OnceOptions
+): Effect.Effect<A, E, R> =>
   Effect.gen(function*() {
-    const key = yield* effectKey(name)
+    const key = options?.key ?? (yield* effectKey(name))
     const earlier = yield* effect.find(key)
     if (Option.isSome(earlier)) {
       yield* record(name, "adopted")

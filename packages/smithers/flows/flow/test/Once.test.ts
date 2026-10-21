@@ -263,4 +263,15 @@ describe("Action.once", () => {
       expect(p.calls).toEqual(["find", "find", "find"])
       expect(counts).toEqual({ performed: 0, adopted: 0, adopted_after_failure: 0, failed: 0 })
     }))
+
+  it.effect("uses a key recorded before the step as is, with no dispatch", () =>
+    Effect.gen(function*() {
+      const p = provider()
+      p.faults.push({ on: "perform", landed: true })
+      const written = yield* Action.once("w", write(p, "made"), { key: "write-1" })
+      expect(written).toBe("made")
+      expect([...p.made.keys()]).toEqual(["write-1"])
+      expect(p.calls).toEqual(["find", "perform", "find"])
+      expect(yield* Action.once("w", write(p, "again"), { key: "write-1" })).toBe("made")
+    }))
 })
