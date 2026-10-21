@@ -6,13 +6,13 @@
   "type": "module",
   "scripts": {
     "test": "bun test tests",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "vibelang -p tsconfig.json --noEmit",
     "plan": "alchemy deploy --dry-run --stage prod",
     "deploy": "node ../../.smithers/flows/rollout/refuse-unqualified.mjs",
     "destroy": "alchemy destroy --stage prod"
   },
   "dependencies": {
-    "zod": "4.5.4"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@smthrs/control": "workspace:*",

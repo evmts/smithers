@@ -2507,7 +2507,13 @@ const visit = async (
         argv = [
           context.managerBinary,
           "exec",
-          "tsc",
+          // vibelang, because a block that imports a workspace package
+          // compiles that package's sources, and those may be VibeLang.
+          "vibelang",
+          // The blocks are explicit roots compiled from the workspace root;
+          // TypeScript 7 refuses command-line files beside a tsconfig.json
+          // (TS5112) unless told to ignore it.
+          "--ignoreConfig",
           "--noEmit",
           "--strict",
           "--skipLibCheck",

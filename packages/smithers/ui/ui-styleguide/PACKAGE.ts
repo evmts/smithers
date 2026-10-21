@@ -20,7 +20,7 @@ import { Smithers } from "@smthrs/targets"
 const cwd = "packages/smithers/ui/ui-styleguide"
 
 /**
- * `tsc --noEmit` over the sources and tests.
+ * `vibelang --noEmit` over the sources and tests.
  *
  * The suites import `bun:test`, and `tests/bunTest.d.ts` supplies the local
  * ambient declaration that stands in for `bun-types`. Runtime sources remain

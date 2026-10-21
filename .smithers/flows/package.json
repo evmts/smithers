@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "tsc -p tsconfig.json --noEmit",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "vibelang -p tsconfig.json --noEmit",
+    "typecheck": "vibelang -p tsconfig.json --noEmit",
     "test": "node --experimental-strip-types --test test/*.test.ts test/canary-coding-setup.test.mjs",
     "lint": "eslint '**/*.ts' --max-warnings=0 && dprint check"
   },

@@ -114,7 +114,7 @@ describe("a filled attr produces the argv the declaration used to spell", () => 
 
   it("Typecheck runs through the workspace manager", () => {
     expect(plannedArgv(Typecheck({ ...typecheckAttrs, packageManager })))
-      .toEqual(["pnpm", "exec", "tsc", "-p", "tsconfig.json", "--noEmit"])
+      .toEqual(["pnpm", "exec", "vibelang", "-p", "tsconfig.json", "--noEmit"])
   })
 
   it("NodeTest runs under the workspace runtime", () => {

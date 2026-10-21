@@ -8,9 +8,6 @@ const cwd = "packages/errors"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
   sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
-  tests: Input.glob("test/**/*.test.{ts,vibe}"),
-  testSources: Input.glob("test/**/*.{ts,vibe}"),
-  compiler: "vibelang",
   cwd
 })
 

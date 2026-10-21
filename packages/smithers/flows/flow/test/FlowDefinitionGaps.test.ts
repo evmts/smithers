@@ -103,12 +103,10 @@ describe("Flow.make requires a body", () => {
   })
 
   it("rejects a body whose settled value contradicts its success schema", () => {
+    // One line, because TypeScript 5 reports the mismatch at the call and
+    // TypeScript 7 at the `body` property; the directive covers only its next line.
     // @ts-expect-error -- a Number body cannot satisfy a String success contract.
-    Flow.make("Definition/wrong-success", {
-      payload: {},
-      success: Schema.String,
-      body: () => Node.succeed(42)
-    })
+    Flow.make("Definition/wrong-success", { payload: {}, success: Schema.String, body: () => Node.succeed(42) })
 
     const valid = Flow.make("Definition/right-success", {
       payload: {},

@@ -38,19 +38,12 @@ export interface Options {
   readonly deps?: ReadonlyArray<Target.AnyTarget> | undefined
   readonly cwd: string
   /**
-   * The checker `check` runs: `vibelang` for a package with VibeLang
-   * sources, which `sources` then names alongside its TypeScript.
+   * The package's TypeScript and VibeLang sources. It feeds every target that
+   * reads them: `lib`, `check`, `test`, `lint`, `fmt`, and `circular`. It does
+   * not name the published entry point, which is `entry`, so a package that
+   * relocates its sources overrides both.
    *
-   * @default tsc
-   */
-  readonly compiler?: "tsc" | "vibelang" | undefined
-  /**
-   * The package's TypeScript sources. It feeds every target that reads them:
-   * `lib`, `check`, `test`, `lint`, `fmt`, and `circular`. It does not name
-   * the published entry point, which is `entry`, so a package that relocates
-   * its sources overrides both.
-   *
-   * @default src/**\/*.ts
+   * @default src/**\/*.{ts,vibe}
    */
   readonly sources?: Input.Glob | undefined
   /**
@@ -69,16 +62,16 @@ export interface Options {
    * what `check` typechecks, what `fmt` keys on, or the helpers `test` is
    * keyed on, so those read `testSources` instead.
    *
-   * @default test/**\/*.test.ts
+   * @default test/**\/*.test.{ts,vibe}
    */
   readonly tests?: Input.Glob | undefined
   /**
-   * Every TypeScript file in the package's test tree, including helpers and
-   * fixtures no suite collects. It feeds `check` and `fmt`, and it keys
-   * `test`, so an edit to a helper a case imports re-runs the suite. A
+   * Every TypeScript and VibeLang file in the package's test tree, including
+   * helpers and fixtures no suite collects. It feeds `check` and `fmt`, and it
+   * keys `test`, so an edit to a helper a case imports re-runs the suite. A
    * package that keeps its tests outside `test/` overrides it beside `tests`.
    *
-   * @default test/**\/*.ts
+   * @default test/**\/*.{ts,vibe}
    */
   readonly testSources?: Input.Glob | undefined
   /** Package-relative globs for data read by tests, included in the test cache inputs. */
@@ -145,10 +138,10 @@ export interface PackageTargets {
  * Expands one conventional package into `lib`, `check`, `test`, `lint`,
  * `fmt`, `docs`, `circular`, and `docsFiles` targets.
  *
- * Defaults follow the Smithers repository layout: sources in `src`, tests in
- * `test`, the package `build` program over the package `tsconfig.json`, the
- * test half of the package `check` script as `tsc -p tsconfig.test.json
- * --noEmit`, Vitest with
+ * Defaults follow the Smithers repository layout: TypeScript and VibeLang
+ * sources in `src`, tests in `test`, the package `build` program over the
+ * package `tsconfig.json`, the test half of the package `check` script as
+ * `vibelang -p tsconfig.test.json --noEmit`, Vitest with
  * the package `vitest.config.ts`, ESLint with the package flat
  * `eslint.config.js` plus the root `eslint.jsdoc.js`, and dprint with the
  * package `dprint.json`. Together `lib` + `check` cover what the repository's
@@ -180,9 +173,9 @@ export interface PackageTargets {
 export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets => {
   const cwd = options.cwd
   const deps = options.deps ?? []
-  const sources = options.sources ?? Input.glob("src/**/*.ts")
-  const tests = options.tests ?? Input.glob("test/**/*.test.ts")
-  const testSources = options.testSources ?? Input.glob("test/**/*.ts")
+  const sources = options.sources ?? Input.glob("src/**/*.{ts,vibe}")
+  const tests = options.tests ?? Input.glob("test/**/*.test.{ts,vibe}")
+  const testSources = options.testSources ?? Input.glob("test/**/*.{ts,vibe}")
   const entry = options.entry ?? Input.file("src/index.ts")
   const tsconfig = options.tsconfig ?? Input.file("tsconfig.json")
   const testTsconfig = options.testTsconfig ?? Input.file("tsconfig.test.json")
@@ -222,10 +215,11 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
   // The test tsconfig extends the package tsconfig, and `Typecheck` keys only
   // the file it names, so `check` declares the base as its own input. A
   // loosened compiler option in the base then re-keys `check` directly
-  // instead of relying on the `lib` dependency key to carry it.
+  // instead of relying on the `lib` dependency key to carry it. `Typecheck`
+  // runs `vibelang`, which also reads the `.vibe` source of the workspace
+  // packages this one imports.
   const check = Typecheck({
     ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
-    ...(options.compiler === undefined ? {} : { compiler: options.compiler }),
     srcs: [
       sources,
       testSources,

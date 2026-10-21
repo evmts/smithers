@@ -187,7 +187,7 @@ export const Package = S.Package({ targets: { markdown, tutorial } })
   for (
     const [name, body] of [
       [
-        "tsc",
+        "vibelang",
         // The block file is the last argument. A block that names the nested
         // package (`docs-fixture`) has to sit below `docs/`, every other block
         // below the root package, or the compiler could not resolve a bare
@@ -197,7 +197,8 @@ export const Package = S.Package({ targets: { markdown, tutorial } })
 const fs = require("node:fs"); const path = require("node:path");
 const args = process.argv.slice(2); const last = args.at(-1) ?? "";
 const normalized = last.split(path.sep).join("/");
-const fail = message => { console.error("fake tsc: " + message); process.exit(1) };
+const fail = message => { console.error("fake vibelang: " + message); process.exit(1) };
+if (args[0] !== "--ignoreConfig") fail("the root tsconfig.json is not ignored: " + args.join(" "));
 if (args.some(arg => arg.includes("engine.ts"))) fail("context file compiled as a block: " + args.join(" "));
 if (/^docs\\/node_modules\\/\\.cache\\/smithers-build\\/markdown-[^/]+\\/src\\/run\\.ts$/.test(normalized)) {
   const directory = path.dirname(path.dirname(last));
@@ -281,7 +282,7 @@ describe("Node lane package execution", () => {
   it("concatenates titled Markdown fences into files, writes context pages beside them, and skips fragments", async () => {
     const root = await markdownFixture()
     const result = await serve(root, ["//docs:tutorial"])
-    expect(result.logs).not.toContain("fake tsc")
+    expect(result.logs).not.toContain("fake vibelang")
     expect(result.exitCode).toBe(0)
     expect(result.logs).toContain("checked 4 fenced code block(s): 0 standalone, 2 file(s), 1 fragment(s) skipped")
   })
@@ -302,7 +303,7 @@ describe("Node lane package execution", () => {
   it("removes Markdown scratch trees when the compiler fails", async () => {
     const root = await markdownFixture()
     await writeExecutable(
-      NodePath.join(root, "node_modules/.bin/tsc"),
+      NodePath.join(root, "node_modules/.bin/vibelang"),
       "#!/usr/bin/env node\nconsole.error(\"compiler-failed\"); process.exit(1)\n"
     )
     const result = await serve(root, ["//:markdown"])

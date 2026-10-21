@@ -90,7 +90,7 @@ const docsSources = Smithers.Filegroup({
   cwd
 })
 
-/** Every `ts` fence on the page compiles under strict tsc. */
+/** Every `ts` fence on the page compiles under strict vibelang. */
 const codeBlocks = Smithers.Markdown.CodeBlocks({
   file: Smithers.file(page),
   lang: ["ts"]

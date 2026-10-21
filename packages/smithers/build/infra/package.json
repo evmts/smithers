@@ -13,7 +13,7 @@
     "node": ">=26.4.0"
   },
   "scripts": {
-    "check": "tsc -b tsconfig.json --force",
+    "check": "vibelang -b tsconfig.json --force",
     "deploy": "node scripts/deploy.ts --stage prod",
     "deploy:dev": "node scripts/deploy.ts",
     "plan": "node scripts/deploy.ts --stage prod --dry-run",

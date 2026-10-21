@@ -65,22 +65,23 @@ describe("BuildAndCheckTypeScriptPackage leaves the manager to the workspace", (
     expect(plannedArgv(standard.check)).toEqual([
       "pnpm",
       "exec",
-      "tsc",
+      "vibelang",
       "-p",
       "tsconfig.test.json",
       "--noEmit"
     ])
   })
+})
 
-  it("checks a package with VibeLang sources with vibelang and changes no other target", () => {
-    const standard = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/example" })
-    const vibe = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/example", compiler: "vibelang" })
-    expect(plannedArgv(vibe.check)).toEqual(["pnpm", "exec", "vibelang", "-p", "tsconfig.test.json", "--noEmit"])
-    expect(Target.metadata(vibe.check).attrs).toEqual({
-      ...attrsOf<Typecheck.Attrs>(standard.check),
-      compiler: "vibelang"
-    })
-    expect(Target.metadata(vibe.lib).attrs).toEqual(Target.metadata(standard.lib).attrs)
+describe("BuildAndCheckTypeScriptPackage reads VibeLang sources by default", () => {
+  const standard = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/example" })
+
+  it("keys check and test on the package's .vibe sources and tests beside its TypeScript", () => {
+    expect(attrsOf<Typecheck.Attrs>(standard.check).srcs.slice(0, 2)).toEqual([
+      Input.glob("src/**/*.{ts,vibe}"),
+      Input.glob("test/**/*.{ts,vibe}")
+    ])
+    expect(attrsOf<Vitest.Attrs>(standard.test).tests).toEqual([Input.glob("test/**/*.test.{ts,vibe}")])
   })
 })
 
@@ -308,7 +309,7 @@ describe("BuildAndCheckTypeScriptPackage lint and fmt gates", () => {
       "eslint.config.js",
       "--max-warnings",
       "0",
-      "src/**/*.ts"
+      "src/**/*.{ts,vibe}"
     ])
     const attrs = attrsOf<EsLint.Attrs>(targets.lint)
     expect(attrs.maxWarnings).toBe(0)
@@ -323,7 +324,7 @@ describe("BuildAndCheckTypeScriptPackage lint and fmt gates", () => {
     expect(plannedArgv(targets.fmt)).toEqual(["pnpm", "exec", "dprint", "check", "--config", "dprint.json"])
     const attrs = attrsOf<Dprint.Attrs>(targets.fmt)
     expect(attrs.fix).toBe(false)
-    expect(attrs.sources).toEqual([Input.glob("src/**/*.ts"), Input.glob("test/**/*.ts")])
+    expect(attrs.sources).toEqual([Input.glob("src/**/*.{ts,vibe}"), Input.glob("test/**/*.{ts,vibe}")])
   })
 
   it("keeps both gates strict under caller-selected sources and configs", () => {
@@ -394,7 +395,7 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
     // Vitest digests only the declared tests and sources. A helper such as
     // `test/toolchain.ts` matches no `*.test.ts` glob, so without
     // `testSources` an edit to it reused a cached green run.
-    expect(Target.metadata(standard.test).inputs).toContainEqual(Input.glob("test/**/*.ts"))
+    expect(Target.metadata(standard.test).inputs).toContainEqual(Input.glob("test/**/*.{ts,vibe}"))
     const relocated = BuildAndCheckTypeScriptPackage({
       packageManager,
       cwd: "packages/example",
@@ -402,7 +403,7 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
       testSources: Input.glob("spec/**/*.ts")
     })
     expect(Target.metadata(relocated.test).inputs).toContainEqual(Input.glob("spec/**/*.ts"))
-    expect(Target.metadata(relocated.test).inputs).not.toContainEqual(Input.glob("test/**/*.ts"))
+    expect(Target.metadata(relocated.test).inputs).not.toContainEqual(Input.glob("test/**/*.{ts,vibe}"))
   })
 
   it("moves the typechecked and formatted test tree with testSources", () => {
@@ -413,7 +414,7 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
       testSources: Input.glob("spec/**/*.ts")
     })
     expect(attrsOf<Typecheck.Attrs>(relocated.check).srcs).toEqual([
-      Input.glob("src/**/*.ts"),
+      Input.glob("src/**/*.{ts,vibe}"),
       Input.glob("spec/**/*.ts"),
       Input.file("tsconfig.json"),
       Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
@@ -421,7 +422,7 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
       Input.file("//packages/repo-targets/test-utils/vitest-root-temp.d.mts")
     ])
     expect(attrsOf<Dprint.Attrs>(relocated.fmt).sources).toEqual([
-      Input.glob("src/**/*.ts"),
+      Input.glob("src/**/*.{ts,vibe}"),
       Input.glob("spec/**/*.ts")
     ])
     expect(attrsOf<Vitest.Attrs>(relocated.test).tests).toEqual([Input.glob("spec/**/*.test.ts")])
@@ -444,7 +445,7 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
     ])
     expect(attrsOf<Typecheck.Attrs>(relocated.check).srcs).toEqual([
       moved,
-      Input.glob("test/**/*.ts"),
+      Input.glob("test/**/*.{ts,vibe}"),
       Input.file("tsconfig.json"),
       Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
       Input.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
@@ -452,7 +453,7 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
     ])
     expect(attrsOf<Vitest.Attrs>(relocated.test).sources).toEqual([
       moved,
-      Input.glob("test/**/*.ts"),
+      Input.glob("test/**/*.{ts,vibe}"),
       Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
       Input.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
       Input.file("//packages/repo-targets/test-utils/test-process-environment.mjs"),
@@ -460,7 +461,7 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
       Input.file("//packages/repo-targets/test-utils/effect-property.d.mts")
     ])
     expect(attrsOf<EsLint.Attrs>(relocated.lint).sources).toEqual([moved])
-    expect(attrsOf<Dprint.Attrs>(relocated.fmt).sources).toEqual([moved, Input.glob("test/**/*.ts")])
+    expect(attrsOf<Dprint.Attrs>(relocated.fmt).sources).toEqual([moved, Input.glob("test/**/*.{ts,vibe}")])
     expect(attrsOf<NodeTest.Attrs>(relocated.circular).srcs).toEqual([moved, Input.file("tsconfig.json")])
     // The published entry is one file, not the glob, so it stays where the
     // caller left it until `entry` moves it.
@@ -507,7 +508,7 @@ it("runs a package-owned test matrix with the same source and dependency boundar
   expect(Target.metadata(targets.test).dependencies).toEqual([targets.lib])
   expect(attrs.srcs).toContainEqual(Input.glob("docs/**/*.md"))
   expect(attrs.srcs).toContainEqual(Input.file("vitest.config.ts"))
-  expect(attrs.srcs).toContainEqual(Input.glob("test/**/*.ts"))
+  expect(attrs.srcs).toContainEqual(Input.glob("test/**/*.{ts,vibe}"))
   expect(attrs.srcs).toContainEqual(Input.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"))
   expect(attrs.srcs).toContainEqual(Input.file("//packages/repo-targets/test-utils/test-process-environment.mjs"))
   expect(attrs.srcs).toContainEqual(Input.file("//packages/repo-targets/test-utils/vitest-root-temp.mjs"))

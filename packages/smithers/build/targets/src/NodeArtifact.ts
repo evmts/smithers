@@ -100,7 +100,9 @@ const codeBlocksDefinition = Target.make("Markdown.CodeBlocks", {
 /** Extracts and validates fenced source blocks from one Markdown file.
  *
  * Every fence in one of `lang` becomes a scratch file under the declaring
- * package and compiles with `tsc --strict`. The fence's info string steers
+ * package and compiles with `vibelang --strict`, TypeScript 7's checker, which
+ * also reads the VibeLang source of a workspace package a block imports. The
+ * fence's info string steers
  * how:
  *
  * - `title="<path>"` (Expressive Code syntax) names the file the fence is or

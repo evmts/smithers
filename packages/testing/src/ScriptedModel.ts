@@ -21,6 +21,7 @@
 
 import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
+import type { ModelEvent } from "@smthrs/model/ModelEvent"
 import type { ModelRequest } from "@smthrs/model/ModelRequest"
 import { Effect, Stream } from "effect"
 import { UnscriptedModelError } from "./TestingError.ts"
@@ -139,7 +140,10 @@ export interface Options {
   readonly usage?: { readonly inputTokens: number; readonly outputTokens: number } | undefined
 }
 
-const answer = (text: string, usage: NonNullable<Options["usage"]>) =>
+// Typed as the events it streams: unannotated, TypeScript 7 gives `make`'s
+// generator a union of this literal-typed Stream and the fallback's, which
+// Stream.unwrap rejects (TS2379).
+const answer = (text: string, usage: NonNullable<Options["usage"]>): Stream.Stream<ModelEvent> =>
   Stream.fromIterable([
     { type: "text-start" as const, id: "scripted" },
     { type: "text-delta" as const, id: "scripted", text },

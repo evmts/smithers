@@ -222,10 +222,13 @@ export const evaluateAll = (
     ? Effect.succeed<ReadonlyArray<Evaluated>>([])
     : Effect.scoped(Effect.gen(function*() {
       const dir = yield* parentWorkspace(root)
-      return yield* Effect.forEach(
+      // Typed as the empty branch is, so the two branches share one success
+      // type: TypeScript 7 cannot pipe a union of differently typed Effects.
+      const evaluated: ReadonlyArray<Evaluated> = yield* Effect.forEach(
         commits,
         (landed) => Effect.andThen(run("jj", ["new", landed.parent], dir), evaluate(dir, landed, options))
       )
+      return evaluated
     }))
 
 /**

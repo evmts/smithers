@@ -6,15 +6,11 @@ import * as Input from "@smthrs/targets/Input"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
   sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
-  tests: Input.glob("test/**/*.test.{ts,vibe}"),
-  testSources: Input.glob("test/**/*.{ts,vibe}"),
-  compiler: "vibelang",
   cwd: "packages/smithers/agent/fs"
 })
 
 // The manifest augments Route's types, so it needs its own compilation.
 const checkTypes = Smithers.Typecheck({
-  compiler: "vibelang",
   srcs: [
     Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("type-tests/**/*.ts"),

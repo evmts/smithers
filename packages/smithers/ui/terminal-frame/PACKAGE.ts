@@ -6,7 +6,7 @@
  * `@types/bun` and tests with `bun test`, so it declares the gates it can
  * honor instead of taking the synthesized `BuildAndCheckTypeScriptPackage`
  * (`PackageDefaults` skips a directory holding a `PACKAGE.ts`): a
- * `tsc --noEmit` typecheck, the Bun suite at 100% line and function coverage
+ * `vibelang --noEmit` typecheck, the Bun suite at 100% line and function coverage
  * (`bunfig.toml`), and browser probes in real Chromium.
  */
 import { SdkRules } from "@smthrs/repo-targets"

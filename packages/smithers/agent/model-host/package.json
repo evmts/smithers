@@ -26,7 +26,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
     "test": "vitest",
     "lint": "TSESTREE_SINGLE_RUN=true eslint src --max-warnings=0 && dprint check",
     "coverage": "vitest --coverage"
@@ -37,7 +37,7 @@
     "@smthrs/model": "workspace:*",
     "@smthrs/rpc": "workspace:*",
     "effect": "4.0.5",
-    "zod": "4.5.4",
+    "zod": "4.6.7",
     "@smthrs/cli": "workspace:*",
     "@smthrs/crypto": "workspace:*"
   },

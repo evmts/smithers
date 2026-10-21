@@ -12,7 +12,7 @@
   },
   "scripts": {
     "test": "vitest run",
-    "check": "tsc --noEmit"
+    "check": "vibelang --noEmit"
   },
   "dependencies": {
     "@smthrs/targets": "workspace:*",

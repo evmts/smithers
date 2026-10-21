@@ -14,7 +14,7 @@
  * its real gates in the graph instead of targets that cannot pass.
  *
  * Two of the four standard gates are honored here: the `bun test` suite and a
- * `tsc --noEmit` typecheck over `src/`. The eslint and dprint halves are NOT
+ * `vibelang --noEmit` typecheck over `src/`. The eslint and dprint halves are NOT
  * declared, because this package carries neither an `eslint.config.js` nor a
  * `dprint.json` and both tools are per-package devDependencies elsewhere in the
  * workspace; wiring them requires package tooling that this target does not

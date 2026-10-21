@@ -11,7 +11,7 @@
     "start": "bun src/main.tsx",
     "ask": "bun src/ask.ts",
     "test": "bun test ./test",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "vibelang -p tsconfig.json --noEmit",
     "test:e2e": "bun test ./e2e",
     "lint": "eslint src --max-warnings=0 && dprint check"
   },

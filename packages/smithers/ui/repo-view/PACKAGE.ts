@@ -5,7 +5,7 @@
  * sources directly, types against `@types/bun` and tests with `bun test`, so
  * it declares the gates it can honor instead of taking the synthesized
  * `BuildAndCheckTypeScriptPackage` (`PackageDefaults` skips a directory
- * holding a `PACKAGE.ts`): a `tsc --noEmit` typecheck and the Bun suite, which
+ * holding a `PACKAGE.ts`): a `vibelang --noEmit` typecheck and the Bun suite, which
  * fails below 100% line and function coverage (`bunfig.toml`).
  */
 import { SdkRules } from "@smthrs/repo-targets"

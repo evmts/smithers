@@ -111,7 +111,7 @@ describe.skipIf(process.platform === "win32")("target toolchain enforcement", ()
     expect(exit).toMatchObject({ _tag: "Success", value: { exitCode: 0, stdout: "TOOL_EXECUTED\n" } })
     expect((await f.invocations()).map((entry) => entry.args)).toEqual([
       ["--version"],
-      ["exec", "tsc", "-p", "tsconfig.json", "--noEmit"]
+      ["exec", "vibelang", "-p", "tsconfig.json", "--noEmit"]
     ])
   })
 
@@ -191,7 +191,7 @@ describe.skipIf(process.platform === "win32")("target toolchain enforcement", ()
     const observed = await f.invocations()
     expect(observed.map((entry) => entry.args)).toEqual([
       ["--version"],
-      ["exec", "tsc", "-p", "tsconfig.json", "--noEmit"]
+      ["exec", "vibelang", "-p", "tsconfig.json", "--noEmit"]
     ])
     expect(observed.map((entry) => entry.cwd)).toEqual([Path.join(f.root, "project"), Path.join(f.root, "project")])
   })

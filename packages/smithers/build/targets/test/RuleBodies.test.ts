@@ -89,25 +89,16 @@ describe("Typecheck", () => {
 
   it("checks without emitting, and asks for an incremental check only when declared", () => {
     expect(plannedArgv(Typecheck.Typecheck({ ...base, buildMode: false, incremental: false })))
-      .toEqual(["pnpm", "exec", "tsc", "-p", "tsconfig.json", "--noEmit"])
+      .toEqual(["pnpm", "exec", "vibelang", "-p", "tsconfig.json", "--noEmit"])
     expect(plannedArgv(Typecheck.Typecheck({ ...base, buildMode: false, incremental: true })))
-      .toEqual(["pnpm", "exec", "tsc", "-p", "tsconfig.json", "--noEmit", "--incremental"])
+      .toEqual(["pnpm", "exec", "vibelang", "-p", "tsconfig.json", "--noEmit", "--incremental"])
   })
 
   it("forces build mode to distrust stale build info unless the declaration is incremental", () => {
     expect(plannedArgv(Typecheck.Typecheck({ ...base, buildMode: true, incremental: false })))
-      .toEqual(["pnpm", "exec", "tsc", "-b", "tsconfig.json", "--force"])
-    expect(plannedArgv(Typecheck.Typecheck({ ...base, buildMode: true, incremental: true })))
-      .toEqual(["pnpm", "exec", "tsc", "-b", "tsconfig.json"])
-  })
-
-  it("checks VibeLang sources with vibelang in both modes, and leaves an omitted compiler as tsc", () => {
-    expect(plannedArgv(Typecheck.Typecheck({ ...base, compiler: "vibelang", buildMode: false, incremental: false })))
-      .toEqual(["pnpm", "exec", "vibelang", "-p", "tsconfig.json", "--noEmit"])
-    expect(plannedArgv(Typecheck.Typecheck({ ...base, compiler: "vibelang", buildMode: true, incremental: false })))
       .toEqual(["pnpm", "exec", "vibelang", "-b", "tsconfig.json", "--force"])
-    const omitted = Target.metadata(Typecheck.Typecheck({ ...base, buildMode: false, incremental: false }))
-    expect(omitted.attrs).not.toHaveProperty("compiler")
+    expect(plannedArgv(Typecheck.Typecheck({ ...base, buildMode: true, incremental: true })))
+      .toEqual(["pnpm", "exec", "vibelang", "-b", "tsconfig.json"])
   })
 
   it("renders a workspace-rooted tsconfig against its own cwd in both modes", () => {

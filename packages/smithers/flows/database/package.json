@@ -195,7 +195,7 @@
     "lint": "eslint src examples --max-warnings=0 && dprint check",
     "format": "dprint fmt",
     "build": "node ../../../repo-targets/scripts/build.mjs",
-    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
     "circular": "node ../../../repo-targets/scripts/circular.mjs",
     "test": "vitest",
     "coverage": "node scripts/test-matrix.mjs",

@@ -12,7 +12,7 @@
     "plan": "alchemy plan --stage prod",
     "deploy": "alchemy deploy --stage prod",
     "destroy": "alchemy destroy --stage prod",
-    "typecheck": "tsc -p tsconfig.json && tsc -p worker/tsconfig.json && tsc -p infra/tsconfig.json && tsc -p evals/tsconfig.json",
+    "typecheck": "vibelang -p tsconfig.json && vibelang -p worker/tsconfig.json && vibelang -p infra/tsconfig.json && vibelang -p evals/tsconfig.json",
     "e2e": "playwright test",
     "e2e:prod": "node e2e/prod.mjs",
     "e2e:gifs": "node e2e/gifs.mjs",

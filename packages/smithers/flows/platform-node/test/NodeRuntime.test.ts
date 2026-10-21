@@ -249,7 +249,10 @@ describe("the supported Node SQLite composition", () => {
     ["null", { owner: null }]
   ])("refuses a host owner that is %s before constructing the default liveness probe", (_, owner) => {
     const root = join(directory, "absent-host-owner")
-    expect(() =>
+    // Each thunk that expect receives here is annotated: TypeScript 7 infers
+    // layerHost's registry types from expect's generic parameter and then
+    // requires the registry argument, where the annotation keeps their defaults.
+    expect((): unknown =>
       NodeRuntime.layerHost(
         { filename: join(root, "engine.db"), workspaceRoot: root, ...owner } as never,
         Layer.empty
@@ -1019,7 +1022,7 @@ describe("the Node host composition", () => {
   it("rejects uncatchable or unknown signals and invalid shutdown timers before installing listeners", () => {
     const before = process.listenerCount("SIGUSR2")
     for (const signal of ["SIGKILL", "SIGSTOP", "SIGNOTASIGNAL"] as Array<NodeJS.Signals>) {
-      expect(() =>
+      expect((): unknown =>
         NodeRuntime.layerHost(
           {
             filename: hostFile,
@@ -1040,7 +1043,7 @@ describe("the Node host composition", () => {
         NodeRuntime.maximumShutdownTimeoutMs + 1
       ]
     ) {
-      expect(() =>
+      expect((): unknown =>
         NodeRuntime.layerHost(
           {
             filename: hostFile,
@@ -1063,7 +1066,7 @@ describe("the Node host composition", () => {
     // non-array would install nonsense policy instead of refusing it. Each
     // case names the collection it got wrong.
     const before = process.listenerCount("SIGUSR2")
-    expect(() =>
+    expect((): unknown =>
       NodeRuntime.layerHost(
         {
           filename: hostFile,
@@ -1074,7 +1077,7 @@ describe("the Node host composition", () => {
         Layer.empty
       )
     ).toThrow(/signals must be an array/)
-    expect(() =>
+    expect((): unknown =>
       NodeRuntime.layerHost(
         {
           filename: hostFile,
@@ -1089,7 +1092,7 @@ describe("the Node host composition", () => {
     // A ruleset list is recognized by its first member, so the refusal has to
     // reach every later member too: this one is a policy list whose second
     // ruleset is not a list.
-    expect(() =>
+    expect((): unknown =>
       NodeRuntime.layerHost(
         {
           filename: hostFile,

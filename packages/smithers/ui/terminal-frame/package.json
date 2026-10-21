@@ -31,7 +31,7 @@
     "README.md"
   ],
   "scripts": {
-    "check": "tsc -p tsconfig.json --noEmit",
+    "check": "vibelang -p tsconfig.json --noEmit",
     "test": "bun test --isolate test",
     "generate": "node scripts/build-runtime.mjs"
   },

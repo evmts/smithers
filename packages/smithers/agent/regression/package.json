@@ -8,7 +8,7 @@
   "version": "0.0.0",
   "description": "Offline flows-agent evaluation suite, gated on the committed baseline, and the character runner for agent profiles",
   "scripts": {
-    "check": "tsc -p tsconfig.json --noEmit",
+    "check": "vibelang -p tsconfig.json --noEmit",
     "test": "bun run.ts",
     "character": "bun character/run.ts",
     "test:character": "bun test character"

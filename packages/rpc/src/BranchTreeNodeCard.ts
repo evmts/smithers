@@ -23,7 +23,9 @@ export const BranchTreeNodeCardSchema = z.object({
   present: z.array(ActorSchema),
   archive_count: z.number().int().nonnegative().optional(),
   action: ActionSchema.optional(),
-  get children() {
+  // Annotated, as zod documents for recursive getters: TypeScript 7 cannot
+  // write this schema's declaration otherwise (TS5088).
+  get children(): z.ZodArray<typeof BranchTreeNodeCardSchema> {
     return z.array(BranchTreeNodeCardSchema)
   }
 })

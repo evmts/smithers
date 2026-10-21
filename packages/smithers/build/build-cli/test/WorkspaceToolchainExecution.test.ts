@@ -76,7 +76,7 @@ const args = process.argv.slice(2)
 fs.appendFileSync(${JSON.stringify(Path.join(root, "manager-invocations.jsonl"))}, JSON.stringify(args) + "\\n")
 if (args.length === 1 && args[0] === "--version") {
   process.stdout.write("11.25.0\\n")
-} else if (JSON.stringify(args.filter((arg) => arg !== "--config.verifyDepsBeforeRun=false")) === JSON.stringify(["exec", "tsc", "-p", "tsconfig.json", "--noEmit"])) {
+} else if (JSON.stringify(args.filter((arg) => arg !== "--config.verifyDepsBeforeRun=false")) === JSON.stringify(["exec", "vibelang", "-p", "tsconfig.json", "--noEmit"])) {
   process.stdout.write("WORKSPACE_TYPECHECK_EXECUTED\\n")
 } else {
   process.stderr.write("unexpected manager invocation: " + JSON.stringify(args) + "\\n")
@@ -135,9 +135,9 @@ describe("manifest toolchain execution", () => {
       .trim().split("\n").map((line) => JSON.parse(line) as ReadonlyArray<string>)
     const versionProbe = invocations.findIndex((args) => args.length === 1 && args[0] === "--version")
     expect(versionProbe).toBeGreaterThanOrEqual(0)
-    expect(invocations.findIndex((args) => args.includes("tsc"))).toBeGreaterThan(versionProbe)
-    expect(invocations.filter((args) => args.includes("tsc"))).toEqual([
-      ["exec", "tsc", "-p", "tsconfig.json", "--noEmit"]
+    expect(invocations.findIndex((args) => args.includes("vibelang"))).toBeGreaterThan(versionProbe)
+    expect(invocations.filter((args) => args.includes("vibelang"))).toEqual([
+      ["exec", "vibelang", "-p", "tsconfig.json", "--noEmit"]
     ])
   })
 
@@ -214,7 +214,7 @@ require("node:fs").writeFileSync(${
       root,
       "PACKAGE.ts",
       `import { Smithers as S } from "@smthrs/targets"
-const check = S.Shell.Test({ bin: S.PackageManager.bin, args: ["exec", "tsc", "-p", "tsconfig.json", "--noEmit"] })
+const check = S.Shell.Test({ bin: S.PackageManager.bin, args: ["exec", "vibelang", "-p", "tsconfig.json", "--noEmit"] })
 export const Package = S.Package({ targets: { check } })
 `
     )
@@ -222,8 +222,8 @@ export const Package = S.Package({ targets: { check } })
     expect(result.code, result.output).toBe(0)
     const invocations = (await Fs.readFile(Path.join(root, "manager-invocations.jsonl"), "utf8"))
       .trim().split("\n").map((line) => JSON.parse(line) as ReadonlyArray<string>)
-    expect(invocations.filter((args) => args.includes("tsc"))).toEqual([
-      ["--config.verifyDepsBeforeRun=false", "exec", "tsc", "-p", "tsconfig.json", "--noEmit"]
+    expect(invocations.filter((args) => args.includes("vibelang"))).toEqual([
+      ["--config.verifyDepsBeforeRun=false", "exec", "vibelang", "-p", "tsconfig.json", "--noEmit"]
     ])
   })
 })

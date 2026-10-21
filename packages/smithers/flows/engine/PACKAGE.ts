@@ -70,7 +70,7 @@ const docsSources = Smithers.Filegroup({
 /** The committed reference pages, as a set other packages depend on. */
 const referencePages = Smithers.Filegroup({ srcs: [Smithers.glob("docs/reference/*.md")], cwd: engineCwd })
 
-/** Every `ts` fence in the page compiles under strict tsc. */
+/** Every `ts` fence in the page compiles under strict vibelang. */
 const referenceCodeBlocks = Smithers.Markdown.CodeBlocks({
   file: Smithers.file("docs/reference/engine.md"),
   lang: ["ts"]
