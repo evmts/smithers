@@ -126,6 +126,29 @@ describe("POST /api/web/preview", () => {
     expect(brief.asked).toEqual([ALLOWS, ALLOWS])
   })
 
+  test("a zero cache duration asks the real page on every request", async () => {
+    let served = 0
+    const server = createServer((_request, response) => {
+      served++
+      response.writeHead(200, { "content-type": "text/html" })
+      response.end(`<title>Version ${served}</title>`)
+    })
+    await new Promise<void>((resolve) => server.listen(0, "localhost", resolve))
+    try {
+      const url = `http://localhost:${(server.address() as AddressInfo).port}/`
+      const { h, check } = await open({ config: { WEB_PAGES_LOCAL_HTTP: "true", WEB_PAGE_CHECK_KEPT: "0 millis" } })
+      for (let version = 1; version <= 3; version++) {
+        const response = await check({ url, mode: "tab" })
+        expect(response.status).toBe(200)
+        expect(await response.json()).toMatchObject({ title: `Version ${version}` })
+      }
+      expect(served).toBe(3)
+      expect(h.line("chat.web.preview").map((line) => line.annotations.cached)).toEqual([false, false, false])
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
   test("never asks a private or local host, and reads this machine's pages only under development", async () => {
     let served = 0
     const server: Server = createServer((_request, response) => {

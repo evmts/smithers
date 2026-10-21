@@ -453,6 +453,23 @@ describe("roles", () => {
     expect(h.requests).toHaveLength(2)
   })
 
+  test("replaying an older setting preserves the newer setting and its audit history", async () => {
+    const first = { role: "judge" as const, model: rowModel("https://models.example", "judge-old") }
+    const second = { role: "judge" as const, model: rowModel("https://models.example", "judge-new") }
+    const by = { actorId: "person-admin", invocationKey: crypto.randomUUID() }
+    await runtime.runPromise(ModelRoles.set(first, by))
+    await runtime.runPromise(ModelRoles.set(second, { ...by, invocationKey: crypto.randomUUID() }))
+    const read = () => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      SELECT model, updated_by, updated_at FROM model_roles WHERE role = 'judge'`))
+    const before = await read()
+    await runtime.runPromise(ModelRoles.set(first, by))
+    expect(await read()).toEqual(before)
+    expect(before[0]!.model).toEqual(second.model)
+    const audit = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      SELECT model FROM model_role_changes ORDER BY id`))
+    expect(audit.map((row) => row.model)).toEqual([first.model, second.model])
+  })
+
   test("admin/SetModel records who changed what, once per step", async () => {
     const ran = await setModel(admin, { role: "judge", model: rowModel("https://models.example", "judge-1") })
 

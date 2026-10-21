@@ -86,15 +86,18 @@ export const make = (options: { readonly localHttp?: boolean } = {}) =>
         }
         const appOrigin = new URL(policy.appOrigin).origin
         let asked = false
-        const window = Math.floor(startedAt / kept)
-        const entry = yield* ImmutableCache.readThrough(
-          ImmutableCache.key("web.preview", page.page.href, appOrigin, String(window)),
-          Effect.gen(function* () {
-            asked = true
-            const checked = yield* WebPage.check(page.page.href, { ancestors: [appOrigin], privateHosts })
-            return { bytes: encoder.encode(JSON.stringify(checked)), metadata: {} }
-          }),
-        )
+        const load = Effect.gen(function* () {
+          asked = true
+          const checked = yield* WebPage.check(page.page.href, { ancestors: [appOrigin], privateHosts })
+          return { bytes: encoder.encode(JSON.stringify(checked)), metadata: {} }
+        })
+        // Zero disables caching: dividing by zero otherwise gives every request the same Infinity bucket.
+        const entry = yield* kept > 0
+          ? ImmutableCache.readThrough(
+            ImmutableCache.key("web.preview", page.page.href, appOrigin, String(Math.floor(startedAt / kept))),
+            load,
+          )
+          : load
         const checked = yield* decodeChecked(decoder.decode(entry.bytes))
         fields.cached = !asked
         fields.framing = checked.framing

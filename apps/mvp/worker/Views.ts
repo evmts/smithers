@@ -182,24 +182,33 @@ export const make = <E, R>(
           : write.conversationId === undefined
           ? yield* Conversations.home.pipe(Effect.provide(database))
           : write.conversationId.toLowerCase()
-        const found = named === undefined
-          ? undefined
-          : yield* branchAccess(actor, named, "conversation").pipe(Effect.provide(database))
-        if (found === undefined) return refusal(404, "conversation_not_found")
-        // Only someone who may edit the branch adds to its conversation (worker/branch/Access.ts).
-        if (!canEdit(found.access)) return refusal(403, "forbidden")
-        const conversationId = found.conversationId
-        fields.conversationId = conversationId
-        // The page's own title, description and https icon, as the flow's check read them (ViewWrite bounds each).
-        const { url: _url, ...preview } = write.props
-        const stored = { id: write.id, template: write.template, props: { url: page.page.href, ...preview } }
-        const txid = yield* insert(stored, conversationId).pipe(Effect.provide(database))
-        if (txid !== undefined) return HttpServerResponse.jsonUnsafe({ txid }, { status: 202, headers: noStore })
-        if (yield* landed(stored, conversationId).pipe(Effect.provide(database))) {
-          fields.existing = true
-          return HttpServerResponse.jsonUnsafe({ txid: null }, { status: 200, headers: noStore })
-        }
-        return refusal(409, "id_taken")
+        return yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient
+          return yield* sql.withTransaction(Effect.gen(function* () {
+            // Shares.write holds this same row lock. Read policy only after acquiring it, and keep it through insert.
+            if (named !== undefined) yield* sql`
+              SELECT b.id FROM branches b JOIN conversations c ON c.branch_id = b.id
+              WHERE c.id = ${named} FOR UPDATE OF b`
+            const found = named === undefined
+              ? undefined
+              : yield* branchAccess(actor, named, "conversation")
+            if (found === undefined) return refusal(404, "conversation_not_found")
+            // Only someone who may edit the branch adds to its conversation (worker/branch/Access.ts).
+            if (!canEdit(found.access)) return refusal(403, "forbidden")
+            const conversationId = found.conversationId
+            fields.conversationId = conversationId
+            // The page's own title, description and https icon, as the flow's check read them (ViewWrite bounds each).
+            const { url: _url, ...preview } = write.props
+            const stored = { id: write.id, template: write.template, props: { url: page.page.href, ...preview } }
+            const txid = yield* insert(stored, conversationId)
+            if (txid !== undefined) return HttpServerResponse.jsonUnsafe({ txid }, { status: 202, headers: noStore })
+            if (yield* landed(stored, conversationId)) {
+              fields.existing = true
+              return HttpServerResponse.jsonUnsafe({ txid: null }, { status: 200, headers: noStore })
+            }
+            return refusal(409, "id_taken")
+          }))
+        }).pipe(Effect.provide(database))
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.sync(() => {

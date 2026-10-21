@@ -1,7 +1,7 @@
 // The views routes (worker/Views.ts, docs/features/web-pages.md#the-views-table), through ChatApi's real handler on this
 // file's schema of the compose Postgres (`pnpm db:up`). The route is the server's half of `app/web/open`: the flow on the
 // device checks a page first, and the route checks it again before it keeps it.
-import { ConfigProvider, Effect, Redacted, Stream } from "effect"
+import { ConfigProvider, Deferred, Effect, Redacted, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
@@ -9,7 +9,7 @@ import { MAX_VIEW_BODY_BYTES } from "../src/features/views/contract.ts"
 import type { Actor } from "./Actor.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { shared, tracked } from "./test/branch.ts"
-import { harness, recorded, testFile } from "./test/harness.ts"
+import { eventually, harness, recorded, testFile } from "./test/harness.ts"
 import * as Views from "./Views.ts"
 
 const runtime = testFile("views")
@@ -217,6 +217,46 @@ describe("a view's conversation", () => {
     expect(await rows()).toEqual([])
     await shared(runtime, theirs.branchId, member.subject.id, "edit")
     expect((await add(h, named())).status).toBe(202)
+  })
+
+  test("a view waiting on a share revocation rechecks edit access before inserting", async () => {
+    const h = await open()
+    const branch = await tracked(runtime, REPO, `revoke-${crypto.randomUUID().slice(0, 8)}`, "open", "person-owner")
+    await shared(runtime, branch.branchId, member.subject.id, "edit")
+    const locked = Deferred.makeUnsafe<void>()
+    const release = Deferred.makeUnsafe<void>()
+    const revoke = runtime.runPromise(Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql.withTransaction(Effect.gen(function* () {
+        yield* sql`SELECT id FROM branches WHERE id = ${branch.branchId} FOR UPDATE`
+        yield* sql`LOCK TABLE views IN SHARE MODE`
+        yield* sql`DELETE FROM branch_shares WHERE branch_id = ${branch.branchId} AND grantee = ${member.subject.id}`
+        yield* Deferred.succeed(locked, undefined)
+        yield* Deferred.await(release)
+      }))
+    }))
+    await runtime.runPromise(Deferred.await(locked))
+    let completed = false
+    const response = add(h, { ...page("https://example.com/"), conversationId: branch.conversationId })
+      .then((value) => { completed = true; return value })
+    try {
+      // The old insert waits on the views table until revocation commits; corrected code waits before reading access.
+      await eventually(async () => completed || await runtime.runPromise(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        const [row] = yield* sql<{ waiting: boolean }>`SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock'
+            AND ((query LIKE '%branches%' AND query LIKE '%FOR UPDATE%') OR query LIKE '%INSERT INTO views%')
+        ) AS waiting`
+        return row!.waiting
+      })))
+    } finally {
+      await runtime.runPromise(Deferred.succeed(release, undefined))
+      await revoke
+    }
+    expect((await response).status).toBe(403)
+    expect(await rows()).toEqual([])
+    expect(h.line("chat.view.add").at(-1)?.annotations.status).toBe(403)
+    expect(h.count(Views.requests, { status: "403" })).toBe(1)
   })
 
   test("a conversation that doesn't exist is 404, and nothing is kept", async () => {

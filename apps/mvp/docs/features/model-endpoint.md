@@ -62,7 +62,7 @@ Each model call names its role: `agent`, `renderer` or `judge`. A role is answer
 An admin changes a role with the flow `admin/SetModel { role, model }`. `model` is a configured-model record (`@smthrs/rpc` ConfiguredModel) without its name: `protocol`, `baseUrl`, `path`, `modelId` and `credential`. `credential` names a key the Worker already holds, such as `CEREBRAS_API_KEY`; the key itself never enters the record.
 
 - **Who may run it:** only a person with the Admin role acting in person. An agent, flow or sandbox acting for an Admin is refused (`NotAllowed`, reason `delegated`), and so is anyone else (`not_admin`). The step decides before it writes.
-- **What it writes:** the `model_roles` row and a `model_role_changes` row naming who changed it, in one transaction. A replayed step finds its change by its invocation key and records it once.
+- **What it writes:** the `model_roles` row and a `model_role_changes` row naming who changed it, in one transaction. A replayed step finds its change by its invocation key and leaves both the current setting and audit history unchanged, including after a newer setting.
 - **Where it runs:** on any host; the host that starts it provides `CurrentActor`, never the payload. Its tests run it on the Node host. Starting it from the CLI or an admin view comes with sign-in.
 - **A row the Worker can't use,** such as one naming a credential the Worker doesn't hold or one that isn't a record, makes that role's calls fail with `409` and code `no_route`. The `model.endpoint` log line names the reason (`unusable:<reason>`). It is a `409`, not a `503`, because waiting doesn't change a setting: a model step seals it as the call's answer, where a `503` was a capacity refusal the engine retried six times.
 
