@@ -6,6 +6,9 @@ import * as Neon from "alchemy/Neon"
 import * as Output from "alchemy/Output"
 import { Config, Effect, Option, Redacted } from "effect"
 
+/** The most restore history Neon's Free plan allows, in seconds: six hours. */
+export const HISTORY_RETENTION_SECONDS = 21_600
+
 /**
  * The production database: Postgres 17 with logical replication on, which Electric's replication needs. Its region and
  * Postgres version can't change after creation, so they are fixed here rather than configured. It is created in the
@@ -20,6 +23,9 @@ export const Postgres = Neon.Project(
       region: "aws-us-east-1" as const,
       pgVersion: 17 as const,
       enableLogicalReplication: true,
+      // Six hours of restore history. Alchemy's default is a day, which Neon's Free plan refuses
+      // ("requested history retention seconds exceeds allowed maximum", max 21600). Raise it with the plan.
+      historyRetentionSeconds: HISTORY_RETENTION_SECONDS,
       ...(Option.isSome(orgId) ? { orgId: orgId.value } : {}),
     }
   }).pipe(Effect.orDie),
