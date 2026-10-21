@@ -2,10 +2,57 @@
 title: Cerebras rate-limit plan
 status: blocked
 area: infra
-owner: lead coordinates capacity follow-up; Will sends provider request
-updated: 2026-10-20 23:44 PDT
+owner: codex-fast-inference-20261021; capacity campaign #4429
+updated: 2026-10-21 12:40 PDT
 links: [cerebras-load.md, h2-model-transport.md, ../features/chat.md, ../benchmarks.md, agent-status.md, chat-message-controls.md, model-step.md, model-endpoint.md, dev-stack-hygiene.md]
 ---
+
+## Capacity ownership receipt — 2026-10-21 12:40 PDT
+
+**Current state:** The approved Cerebras capacity request **was sent** on 2026-10-21 as a reply to the existing June sales conversation. Sending is no longer blocked on Arc. The sender holds the Gmail SENT receipt privately. A capacity increase has not been granted. Track execution in [#4429](https://github.com/smithersai/smithers/issues/4429).
+
+Will delegated channel choice, provider selection and routine test budgeting to this operator. The selected cap is **$5 per candidate, at most three candidates / $15 total**, including load, real evals and role/e2e proof. New campaign inference spend is **$0**; no backup load test, agent eval or role swap has run. The brief's explicit restriction on paid signup and terms acceptance remains the account-access gate.
+
+**Transport correction:** The owner brief predates the completed HTTP/1.1 repair and rerun. Existing receipt `bench/cerebras-load/results/2026-10-21T02-34-41.059Z`: 60.45 s at concurrency 10, 542 requests, 199 successes, 343 HTTP 429, zero other errors; successful-call p95 TTFT 1294.6 ms / total 1605.3 ms; 371,265 charged tokens / $0.39302 estimated. No 25/50 escalation. This is shared-account, one-Mac evidence on synthetic 1.5k/7k prompts, not proof of our 9–10k-token agent workload or production capacity. Do not rerun merely to rediscover the transport fix.
+
+**Cerebras request:** Quotes for 100/300/1,000 DAU planning scenarios: 42/125/417 RPM and 0.42/1.26/4.18M peak tokens/minute; confirm uncached/total limits, 100–200-stream bursts, latency/throughput commitments, regions, caching, pricing, minimum contract and onboarding. Those DAU figures are assumptions, not current customers. Next follow-up is due 2026-10-26 if unanswered. This date is recorded, **not an active scheduled monitor**: no native scheduler is exposed in the operator session, and the installed Smithers CLI requires a browser session. The attempted read-only dispatch returned no start receipt and was cancelled; no worker completion is claimed.
+
+### Backup decision, from primary sources checked 2026-10-21
+
+Recommendation: **DeepInfra first, Groq second**. Confidence **70% in the test order**, a judgment based on model match, documented limits, caching and price; no provider is production-qualified yet. Keep Fireworks as reserve until account suspension is resolved.
+
+- **DeepInfra:** same `Qwen/Qwen3.8-27B`, tools/JSON and 256k context. [Current model price](https://deepinfra.com/Qwen/Qwen3.8-27B), USD/M input/cached/output: promotional $0.15/$0.038/$1.875, list $0.20/$0.05/$2.50. [Default 200 concurrent requests per model](https://docs.deepinfra.com/account/rate-limits), with possible 429 under shared load even below that ceiling; increases through dashboard. [Open-model data policy](https://docs.deepinfra.com/account/data-privacy): no content disk storage/training; metadata retained. No comparable measured speed yet. No configured key; browser is signed out.
+- **Groq:** [same Qwen model is preview](https://console.groq.com/docs/models), advertised 450 tok/s; Developer 250k TPM / 1k RPM, $0.80 input / $4 output per M. These are provider claims, not our workload measurements. Qwen is absent from the [supported prompt-cache list](https://console.groq.com/docs/prompt-caching); do not assume cache discounts. [ZDR can be enabled](https://console.groq.com/docs/your-data); otherwise reliability/abuse exceptions permit up to 30-day content retention. No configured key; browser is signed out and continuing accepts the Services Agreement. Developer needs a payment method and charges usage.
+- **Fireworks:** [Qwen3.8 27B supports dedicated deployment, not serverless](https://fireworks.ai/models/fireworks/qwen3p8-27b). [H100/H200 $8 per GPU-hour](https://fireworks.ai/pricing). Serverless alternatives have [adaptive limits](https://docs.fireworks.ai/serverless/rate-limits), not a capacity guarantee. [Open-model ZDR by default](https://docs.fireworks.ai/guides/security_compliance/data_handling); Responses API storage differs. Existing configured key returned HTTP 412 on read-only metadata endpoints: account suspended, possibly billing or monthly spend limit. Actual cause remains unconfirmed; no billing change or inference call.
+- **Together:** same 27B not in the [current serverless catalog](https://docs.together.ai/docs/serverless/models). GPT-OSS-120B alternative $0.15 input / $0.60 output per M; Qwen3.8 Flash and 2.4T are different models. [Best-effort serverless](https://docs.together.ai/docs/serverless/rate-limits); negotiated provisioned throughput for guarantees. [Prompt storage defaults on; organization ZDR is opt-in](https://docs.together.ai/docs/zero-data-retention). No configured key.
+- **SambaNova:** [no same Qwen in current catalog](https://docs.sambanova.ai/docs/en/models/sambacloud-models); GPT-OSS-120B alternative [costs $0.22/$0.59 per M input/output](https://cloud.sambanova.ai/plans/pricing). [Developer 60 RPM / 12k RPD for that model, 20M tokens/day across models](https://docs.sambanova.ai/docs/en/models/rate-limits). [Official support says no prompt retention/training by default](https://community.sambanova.ai/t/data-handling-and-retention/1314/2), but verify current contract before customer traffic. No comparable Qwen speed or configured key.
+- **Baseten:** [same model on a single H100 dedicated deployment](https://www.baseten.co/library/qwen38-27b/), not a verified shared token-priced endpoint. [H100 $0.10833/min, approximately $6.50/hour](https://www.baseten.co/pricing/); scaling/deployment compute billable. [Synchronous inference ZDR](https://docs.baseten.co/observability/security); KV retention engine-dependent. No configured key, capacity or measured speed.
+- **GPU self-hosting:** [official Apache-2.0 Qwen weights support vLLM/SGLang](https://huggingface.co/Qwen/Qwen3.8-27B). [Latitude H100 starts at $1.68/hour](https://www.latitude.sh/pricing), subject to location/quote; [Runpod H100 PCIe lists $2.89/hour](https://www.runpod.io/pricing). Storage, idle capacity and operations are extra. We own serving logs and cache retention; infrastructure terms still apply. No rental, GPU availability check or performance proof. Fitting weights on one GPU does not establish 100–200-stream capacity.
+
+Standard API signup is expected to have less sales friction than negotiated enterprise capacity; this is an inference from self-service offerings, not an approval promise. Cerebras higher-capacity approval is uncertain given its earlier rejection. Dedicated GPU options add quota, availability and operations work.
+
+### Test preparation and remaining proof
+
+The existing load harness hardcodes the Cerebras route and $0.99/$1.49 prices and rejects `CHAT_MODEL`; overriding it is not a valid capped alternate-provider run. Before live tests, parameterize its route/pricing and use a cumulative campaign allowance that survives restart. Reserve before each dispatch at list prices, keep unknown usage charged, and fail closed when pricing/access/cap is missing. Reuse catalog entries `@smthrs/model-host`, `@smthrs/model`, `@smthrs/flow`, `@smthrs/platform-node`, `@smthrs/agent` and `@smthrs/evals`; no new provider runtime.
+
+Per-provider allocation: $2 load, $2 real evals, $1 role/e2e; all attempts, warm-ups and judges count. Deposits also count against approved cash expenditure. Matched baseline corpus first, then separately labelled 9–10k-token prompts; cold and warm prefix cases; concurrency 1/10/25/50 up to 60s per level, stop escalation above 20% errors or the cap. Record latency distributions, useful output throughput, error classes, cache usage and spend. Tiny sample tails and provider marketing are not SLO evidence.
+
+Run real `pnpm eval` without changing its baseline/safety gates. Its per-trial token check is not a per-call dollar cap; hard admission must be established first. Inspect/fix its provider-refusal setup, which currently uses a Cerebras-specific configuration. Then prove the winner via a configured dev role and `/api/model/<role>`, with actual agent/chat and e2e receipts. Judge, renderer and summary need explicit checks; an agent-suite pass does not prove all roles. No production role change is authorized by a benchmark result alone.
+
+### Failover proposal — not implemented
+
+Extend `@smthrs/agent`'s existing `ModelStep`; `@smthrs/model-host` resolves routes/secrets and `@smthrs/flow` owns attempts, waits, recovery and deadlines. Snapshot an approved role policy and ordered candidates at logical-call admission. Persist the selected route per attempt, while retaining the canonical actual provider/model/body identity for each attempt. Credentials resolve after preparation and never enter keys or logs. A role edit affects new calls, not a replay.
+
+Only provider-origin capacity refusals and eligible transient outage errors advance the chain. Local budget refusals, permission failures, invalid requests and safety failures do not. Honor Retry-After within the deadline through engine retry policy. Reserve every attempt; unknown billed work retains its reservation. No speculative parallel provider call or handwritten retry loop.
+
+Preserve exact provider-specific prompt prefixes, stable tool ordering, history, settings and cache keys; keep conversations on a healthy provider. **KV caches do not transfer between providers**: the first backup request may be cold. Explicit cache-retention writes are separately priced. Partial output resets with the existing retry event; never concatenate two providers' answers or execute partial tool calls. Sealed replay makes no HTTP request; unsealed recovery remains at-least-once and can rebill.
+
+Required regressions: provider 429 switches but local budget 429 and 401 do not; Retry-After survives restart; partial output resets; cancellation stops transport; sealed replay makes zero provider calls; crashes preserve spend and selected route; role edits cannot alter replay; cache-prefix equality and provider isolation; no duplicate tool side effect; all providers exhausted produces one honest failure. Diagnostics contain correlation/attempt/role/policy/provider/model/error-origin, latency/cache/cost and switch reason only.
+
+**Remaining approval:** DeepInfra standard API and Groq Developer login/signup and service terms, at most $5 total billed usage or prepaid credit each, no auto-reload or contract. Stop if a checkout minimum exceeds the cap. Links: [DeepInfra terms](https://deepinfra.com/terms), [Groq Services Agreement](https://console.groq.com/docs/legal/services-agreement). The operator owns the provider choice and execution; this is the owner's explicitly retained account/terms exception.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-20 23:44 PDT
 
