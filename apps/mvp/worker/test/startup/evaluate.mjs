@@ -1,0 +1,11 @@
+// Loads the Worker bundle at argv[2] as workerd does at startup, in this fresh Node process, and prints how long its
+// module evaluation took: `cloudflare:*` resolves to ./cloudflare-workers.mjs, everything else as Node resolves it.
+import { registerHooks } from "node:module"
+const stub = new URL("./cloudflare-workers.mjs", import.meta.url).href
+registerHooks({
+  resolve: (specifier, context, next) =>
+    specifier.startsWith("cloudflare:") ? { url: stub, shortCircuit: true } : next(specifier, context),
+})
+const started = performance.now()
+await import(process.argv[2])
+console.log(JSON.stringify({ evaluationMs: performance.now() - started }))

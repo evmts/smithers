@@ -179,14 +179,14 @@ export const importRules: ReadonlyArray<ImportRule> = [
     files: [
       "src/**",
       "db/**",
-      "worker/!(ChatApi|DevChatApi|index|Executions|ExecutionHost|BranchSandboxes|BranchRooms).ts",
+      "worker/!(ChatApi|ChatApiProgram|DevChatApi|index|Executions|ExecutionHost|BranchSandboxes|BranchRooms).ts",
       "worker/*/**",
       "e2e/**",
       "bench/**"
     ],
     modules: ["alchemy", "alchemy/**", "cloudflare:*", "@cloudflare/**", "@smthrs/platform-cloudflare"],
     because: "sdk.host-agnostic-flows: the agent and every flow run on Cloudflare, in the native app or in a sandbox, " +
-      "so Cloudflare reaches them only as injected layers wired in the Worker entries (worker/ChatApi.ts, " +
+      "so Cloudflare reaches them only as injected layers wired in the Worker entries (worker/ChatApi.ts with the program it imports, worker/ChatApiProgram.ts, " +
       "worker/DevChatApi.ts, worker/index.ts, worker/Executions.ts with worker/ExecutionHost.ts for remote flows, and " +
       "worker/BranchSandboxes.ts for the branches' machines and worker/BranchRooms.ts for their rooms), " +
       "alchemy.run.ts and " +
