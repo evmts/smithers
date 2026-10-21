@@ -1,0 +1,418 @@
+/**
+ * `GitHub.Once`: each write carries its key, and each lookup finds the object
+ * by that key alone, against a stateful fake GitHub on a real socket.
+ *
+ * The cases put a foreign object beside ours that matches everything but the
+ * key (the same branch prefix and label, the same commit message and parent,
+ * the same pull request head, the same body text) and assert the lookup never
+ * answers it. A listing longer than the page budget fails instead of reading
+ * as "not written".
+ */
+import { Effect, Option } from "effect"
+import { afterEach, describe, expect, it } from "vitest"
+import type { IntegrationError } from "../src/core/IntegrationError.ts"
+import { RECONCILE_PAGES } from "../src/github/Actions.ts"
+import type { GitHubClient } from "../src/github/GitHubClient.ts"
+import * as Issues from "../src/github/Issues.ts"
+import * as Once from "../src/github/Once.ts"
+import * as Pulls from "../src/github/Pulls.ts"
+import * as Refs from "../src/github/Refs.ts"
+import { type Fixture, json, startFixture } from "./Fixture.ts"
+import { gitHubLayer } from "./Http.ts"
+
+type Raw = Record<string, unknown>
+
+const USER = { id: 1, login: "octocat", type: "User", site_admin: false }
+const BASE = "a".repeat(40)
+const KEY = "0123456789abcdef".repeat(4)
+const OTHER_KEY = "fedcba9876543210".repeat(4)
+const SINCE = "2026-10-20T00:00:00Z"
+
+let clock = Date.parse("2026-10-20T10:00:00Z")
+const stamp = () => new Date(clock += 1000).toISOString()
+let nextSha = 1
+const sha = () => (nextSha++).toString(16).padStart(40, "c")
+
+interface FakeGitHub {
+  readonly fixture: Fixture
+  readonly refs: Map<string, string>
+  readonly commits: Map<string, Raw>
+  readonly pulls: Array<Raw>
+  readonly issues: Array<Raw>
+  readonly comments: Array<Raw>
+  readonly reviews: Array<Raw>
+  /** Items each listing page holds at most. */
+  pageSize: number
+  /** Raw items every ref listing starts with. */
+  refJunk: Array<unknown>
+}
+
+let github: FakeGitHub | undefined
+
+afterEach(async () => {
+  await github?.fixture.close()
+  github = undefined
+})
+
+const at = (extra: Raw): Raw => {
+  const time = stamp()
+  return { created_at: time, updated_at: time, ...extra }
+}
+
+const startGitHub = async (): Promise<FakeGitHub> => {
+  const state = {
+    refs: new Map<string, string>([["main", BASE]]),
+    commits: new Map<string, Raw>([[BASE, { sha: BASE, message: "Initial", tree: { sha: "t0" }, parents: [] }]]),
+    pulls: [] as Array<Raw>,
+    issues: [] as Array<Raw>,
+    comments: [] as Array<Raw>,
+    reviews: [] as Array<Raw>,
+    pageSize: 100,
+    refJunk: [] as Array<unknown>
+  }
+  const fixture: Fixture = await startFixture((request, response) => {
+    const url = new URL(request.url, "http://github.test")
+    const path = url.pathname
+    const body = request.body.length > 0 ? JSON.parse(request.body) : undefined
+    const listing = (items: ReadonlyArray<unknown>) => {
+      const perPage = Math.min(Number(url.searchParams.get("per_page") ?? 30), state.pageSize)
+      const page = Number(url.searchParams.get("page") ?? 1)
+      const next = new URL(url.pathname + url.search, fixture.origin)
+      next.searchParams.set("page", String(page + 1))
+      const headers = page * perPage < items.length ? { link: `<${next}>; rel="next"` } : {}
+      return json(response, 200, items.slice((page - 1) * perPage, page * perPage), headers)
+    }
+    if (path === "/graphql") {
+      const input = body.variables.input
+      const head = state.refs.get(input.branch.branchName)
+      if (head !== input.expectedHeadOid) {
+        return json(response, 200, {
+          data: { createCommitOnBranch: null },
+          errors: [{ type: "STALE_DATA", message: "Expected branch to point to another commit." }]
+        })
+      }
+      const oid = sha()
+      state.commits.set(oid, {
+        sha: oid,
+        message: `${input.message.headline}${input.message.body === undefined ? "" : `\n\n${input.message.body}`}`,
+        tree: { sha: `tree-${oid}` },
+        parents: [{ sha: head }]
+      })
+      state.refs.set(input.branch.branchName, oid)
+      return json(response, 200, { data: { createCommitOnBranch: { commit: { oid } } } })
+    }
+    const matching = /^\/repos\/o\/r\/git\/matching-refs\/heads\/(.+)$/.exec(path)
+    if (matching !== null) {
+      return listing([
+        ...state.refJunk,
+        ...[...state.refs].filter(([name]) => name.startsWith(matching[1]!)).map(([name, head]) => ({
+          ref: `refs/heads/${name}`,
+          object: { sha: head, type: "commit" }
+        }))
+      ])
+    }
+    if (path === "/repos/o/r/git/refs" && request.method === "POST") {
+      const name = (body.ref as string).replace(/^refs\/heads\//, "")
+      if (state.refs.has(name)) return json(response, 422, { message: "Reference already exists" })
+      state.refs.set(name, body.sha)
+      return json(response, 201, { ref: body.ref, object: { sha: body.sha, type: "commit" } })
+    }
+    const ref = /^\/repos\/o\/r\/git\/ref\/heads\/(.+)$/.exec(path)
+    if (ref !== null) {
+      const head = state.refs.get(ref[1]!)
+      if (head === undefined) return json(response, 404, { message: "Not Found" })
+      return json(response, 200, { ref: `refs/heads/${ref[1]}`, object: { sha: head, type: "commit" } })
+    }
+    const commit = /^\/repos\/o\/r\/git\/commits\/([0-9a-f]{40})$/.exec(path)
+    if (commit !== null) return json(response, 200, state.commits.get(commit[1]!))
+    if (path === "/repos/o/r/pulls" && request.method === "POST") {
+      const number = state.pulls.length + 1
+      const pull = at({
+        id: 7000 + number,
+        node_id: `PR_${number}`,
+        number,
+        title: body.title,
+        body: body.body,
+        state: "open",
+        draft: false,
+        user: USER,
+        head: { ref: body.head, sha: state.refs.get(body.head) },
+        base: { ref: body.base, sha: state.refs.get(body.base) },
+        closed_at: null,
+        merged_at: null,
+        merge_commit_sha: null
+      })
+      state.pulls.push(pull)
+      return json(response, 201, pull)
+    }
+    if (path === "/repos/o/r/pulls") {
+      const head = url.searchParams.get("head")
+      return listing(state.pulls.filter((pull) => `o:${(pull["head"] as Raw)["ref"]}` === head))
+    }
+    if (path === "/repos/o/r/issues" && request.method === "POST") {
+      const number = 100 + state.issues.length
+      const issue = at({
+        id: 1000 + number,
+        node_id: `I_${number}`,
+        number,
+        title: body.title,
+        body: body.body,
+        state: "open",
+        state_reason: null,
+        user: USER,
+        labels: [],
+        comments: 0,
+        closed_at: null,
+        html_url: `https://github.test/o/r/issues/${number}`
+      })
+      state.issues.push(issue)
+      return json(response, 201, issue)
+    }
+    if (path === "/repos/o/r/issues") return listing([...state.issues].reverse())
+    if (path === "/repos/o/r/issues/7/comments") {
+      if (request.method === "GET") return listing(state.comments)
+      const comment = at({
+        id: 5000 + state.comments.length,
+        node_id: `IC_${state.comments.length}`,
+        body: body.body,
+        user: USER,
+        html_url: "https://github.test/o/r/issues/7#c",
+        issue_url: "https://api.github.test/repos/o/r/issues/7",
+        author_association: "OWNER"
+      })
+      state.comments.push(comment)
+      return json(response, 201, comment)
+    }
+    if (path === "/repos/o/r/pulls/7/reviews") {
+      if (request.method === "GET") return listing(state.reviews)
+      const review = {
+        id: 9000 + state.reviews.length,
+        node_id: `PRR_${state.reviews.length}`,
+        body: body.body,
+        state: "COMMENTED",
+        user: USER,
+        commit_id: body.commit_id,
+        submitted_at: stamp(),
+        html_url: "https://github.test/o/r/pull/7#r"
+      }
+      state.reviews.push(review)
+      return json(response, 200, review)
+    }
+    return json(response, 404, { message: `Not Found: ${request.method} ${path}` })
+  })
+  const fake = {
+    fixture,
+    get pageSize() {
+      return state.pageSize
+    },
+    set pageSize(value: number) {
+      state.pageSize = value
+    },
+    get refJunk() {
+      return state.refJunk
+    },
+    set refJunk(value: Array<unknown>) {
+      state.refJunk = value
+    },
+    refs: state.refs,
+    commits: state.commits,
+    pulls: state.pulls,
+    issues: state.issues,
+    comments: state.comments,
+    reviews: state.reviews
+  }
+  return fake
+}
+
+const layer = () => gitHubLayer({ token: "t", apiBaseUrl: (github as FakeGitHub).fixture.origin }, {})
+
+const run = <A>(effect: Effect.Effect<A, IntegrationError, GitHubClient>): Promise<A> =>
+  Effect.runPromise(effect.pipe(Effect.provide(layer())))
+
+const failure = <A>(effect: Effect.Effect<A, IntegrationError, GitHubClient>): Promise<IntegrationError> =>
+  Effect.runPromise(Effect.flip(effect).pipe(Effect.provide(layer())))
+
+const writes = () => (github as FakeGitHub).fixture.requests.filter((request) => request.method !== "GET").length
+
+describe("trailers and branch names", () => {
+  it("put the key in a trailer after a blank line, and read the last one back", () => {
+    expect(Once.withTrailer("T1: Fix\n\nSmithers for @maya", KEY)).toBe(
+      `T1: Fix\n\nSmithers for @maya\n\nSmithers-Write: ${KEY}`
+    )
+    expect(Once.withTrailer("", KEY)).toBe(`Smithers-Write: ${KEY}`)
+    expect(Once.trailerKeyOf(`a\n\nSmithers-Write: ${OTHER_KEY}\nSmithers-Write: ${KEY}`)).toBe(KEY)
+    expect(Once.trailerKeyOf(`a\n\nSmithers-Write: ${KEY.slice(1)}`)).toBeUndefined()
+    expect(Once.trailerKeyOf("T1: Fix\n\nSmithers for @maya")).toBeUndefined()
+  })
+
+  it("end a branch name in the key's first 12 hex digits", () => {
+    expect(Once.branchName("smithers/t1-", "fix-login", KEY)).toBe("smithers/t1-fix-login-0123456789ab")
+    expect(Once.branchName("smithers/t1-", "", KEY)).toBe("smithers/t1-0123456789ab")
+  })
+})
+
+describe("branch", () => {
+  const made = (label: string, read: Array<string>) =>
+    Once.branch("o", "r", {
+      prefix: "smithers/t1-",
+      label,
+      at: Effect.sync(() => {
+        read.push("at")
+        return BASE
+      })
+    })
+
+  it("makes the branch at `at`, and finds it by its key whatever its label, never a look-alike", async () => {
+    github = await startGitHub()
+    const read: Array<string> = []
+    // Someone else's branch with the same prefix and label, at the same base.
+    github.refs.set(`smithers/t1-fix-login-${OTHER_KEY.slice(0, 12)}`, BASE)
+    github.refs.set("smithers/t1-fix-login", BASE)
+    expect(Option.isNone(await run(made("fix-login", read).find(KEY)))).toBe(true)
+    expect(read).toEqual([])
+    const branch = await run(made("fix-login", read).perform(KEY))
+    expect(branch).toEqual({ name: "smithers/t1-fix-login-0123456789ab", sha: BASE })
+    expect(read).toEqual(["at"])
+    // A later run with another label, after the default branch moved: the same branch.
+    github.refs.set("main", "d".repeat(40))
+    expect(await run(made("renamed", read).find(KEY))).toEqual(Option.some(branch))
+    expect(read).toEqual(["at"])
+  })
+
+  it("finds an unlabeled branch, and fails when the listing runs out of pages", async () => {
+    github = await startGitHub()
+    github.refs.set("smithers/t1-0123456789ab", BASE)
+    expect(Option.getOrThrow(await run(made("", []).find(KEY))).name).toBe("smithers/t1-0123456789ab")
+    github.refs.delete("smithers/t1-0123456789ab")
+    for (let n = 0; n <= RECONCILE_PAGES; n++) github.refs.set(`smithers/t1-other-${n}`, BASE)
+    github.pageSize = 1
+    expect(await failure(made("", []).find(KEY))).toMatchObject({ reason: "poll-failed" })
+  })
+
+  it("lists only branches, fails on a ref it cannot read, and refuses a prefix that is not a branch name", async () => {
+    github = await startGitHub()
+    github.refs.set("smithers/t1-a", BASE)
+    github.refJunk = [{ ref: "refs/tags/smithers/t1-v1", object: { sha: BASE, type: "commit" } }]
+    expect(await run(Refs.listBranches("o", "r", "smithers/"))).toEqual({
+      items: [{ name: "smithers/t1-a", sha: BASE }],
+      truncated: false
+    })
+    github.refJunk = [{ ref: 5 }]
+    expect(await failure(Refs.listBranches("o", "r", "smithers/"))).toMatchObject({ reason: "decode-failed" })
+    expect(await failure(Refs.listBranches("o", "r", "../x"))).toMatchObject({ reason: "invalid-config" })
+    expect(github.fixture.requests).toHaveLength(2)
+  })
+})
+
+describe("commitOnBranch", () => {
+  const change = {
+    branch: "smithers/t1-fix",
+    expectedHeadOid: BASE,
+    headline: "T1: Fix",
+    body: "Smithers for @maya",
+    additions: [{ path: "A.md", contents: btoa("a\n") }],
+    deletions: []
+  }
+
+  it("writes the trailer, finds the commit by it, and finds nothing while the branch is at the base", async () => {
+    github = await startGitHub()
+    github.refs.set("smithers/t1-fix", BASE)
+    const keyed = Once.commitOnBranch("o", "r", change)
+    expect(Option.isNone(await run(keyed.find(KEY)))).toBe(true)
+    const made = await run(keyed.perform(KEY))
+    expect(github.commits.get(made)!["message"]).toBe(`T1: Fix\n\nSmithers for @maya\n\nSmithers-Write: ${KEY}`)
+    expect(await run(keyed.find(KEY))).toEqual(Option.some(made))
+    expect(Option.isNone(await run(Once.commitOnBranch("o", "r", { ...change, branch: "gone" }).find(KEY)))).toBe(true)
+    const bare = await run(
+      Once.commitOnBranch("o", "r", { ...change, body: undefined, expectedHeadOid: made }).perform(
+        OTHER_KEY
+      )
+    )
+    expect(github.commits.get(bare)!["message"]).toBe(`T1: Fix\n\nSmithers-Write: ${OTHER_KEY}`)
+  })
+
+  it("never adopts a foreign commit with the same headline, body and parent: it fails stale", async () => {
+    github = await startGitHub()
+    const foreign = sha()
+    github.commits.set(foreign, {
+      sha: foreign,
+      message: "T1: Fix\n\nSmithers for @maya",
+      tree: { sha: "t" },
+      parents: [{ sha: BASE }]
+    })
+    github.refs.set("smithers/t1-fix", foreign)
+    const keyed = Once.commitOnBranch("o", "r", change)
+    expect(await failure(keyed.find(KEY))).toMatchObject({ details: { status: 409, stale: true, retryable: false } })
+    // Another write's commit is not this one's either.
+    expect(await failure(keyed.perform(KEY))).toMatchObject({ details: { status: 409, stale: true } })
+    expect(github.refs.get("smithers/t1-fix")).toBe(foreign)
+  })
+})
+
+describe("pull, issue, comment and review", () => {
+  it("open one pull request per key, and never answer one from the same head without it", async () => {
+    github = await startGitHub()
+    github.refs.set("smithers/t1-fix", "e".repeat(40))
+    const keyed = Once.pull("o", "r", { head: "smithers/t1-fix", base: "main", title: "T1: Fix", body: "Do it." })
+    await run(Pulls.createPull("o", "r", { head: "smithers/t1-fix", base: "main", title: "T1: Fix", body: "Do it." }))
+    expect(Option.isNone(await run(keyed.find(KEY)))).toBe(true)
+    const pull = await run(keyed.perform(KEY))
+    expect(pull.body).toBe(Issues.withWriteMarker("Do it.", KEY))
+    expect(Option.getOrThrow(await run(keyed.find(KEY))).number).toBe(pull.number)
+  })
+
+  it("make an issue, a comment and a review carrying the key, found by it alone", async () => {
+    github = await startGitHub()
+    const issue = Once.issue("o", "r", { title: "Bug", body: "Broken.", since: SINCE })
+    const comment = Once.comment("o", "r", 7, "Thanks.")
+    const review = Once.review("o", "r", 7, { commitId: BASE, event: "COMMENT", body: "Looks off." })
+    // The same text without the key, made by someone else first.
+    await run(Issues.createIssue("o", "r", { title: "Bug", body: "Broken." }))
+    await run(Issues.createComment("o", "r", 7, "Thanks."))
+    await run(Pulls.createReview("o", "r", 7, { commitId: BASE, event: "COMMENT", body: "Looks off." }))
+    const finds: ReadonlyArray<(key: string) => Effect.Effect<Option.Option<unknown>, IntegrationError, GitHubClient>> =
+      [
+        issue.find,
+        comment.find,
+        review.find
+      ]
+    for (const find of finds) expect(Option.isNone(await run(find(KEY)))).toBe(true)
+    const madeIssue = await run(issue.perform(KEY))
+    const madeComment = await run(comment.perform(KEY))
+    const madeReview = await run(review.perform(KEY))
+    expect([madeIssue.body, madeComment.body, madeReview.body]).toEqual([
+      Issues.withWriteMarker("Broken.", KEY),
+      Issues.withWriteMarker("Thanks.", KEY),
+      Issues.withWriteMarker("Looks off.", KEY)
+    ])
+    expect(Option.getOrThrow(await run(issue.find(KEY))).number).toBe(madeIssue.number)
+    expect(Option.getOrThrow(await run(comment.find(KEY))).id).toBe(madeComment.id)
+    expect(Option.getOrThrow(await run(review.find(KEY))).id).toBe(madeReview.id)
+    expect(writes()).toBe(6)
+  })
+
+  it("fail rather than answer none when a listing runs out of pages", async () => {
+    github = await startGitHub()
+    github.refs.set("smithers/t1-fix", "e".repeat(40))
+    for (let n = 0; n <= RECONCILE_PAGES; n++) {
+      await run(Issues.createIssue("o", "r", { title: `t${n}`, body: "x" }))
+      await run(Issues.createComment("o", "r", 7, "x"))
+      await run(Pulls.createReview("o", "r", 7, { commitId: BASE, event: "COMMENT", body: "x" }))
+      await run(Pulls.createPull("o", "r", { head: "smithers/t1-fix", base: "main", title: "t", body: "x" }))
+    }
+    github.pageSize = 1
+    const finds: ReadonlyArray<(key: string) => Effect.Effect<Option.Option<unknown>, IntegrationError, GitHubClient>> =
+      [
+        Once.issue("o", "r", { title: "t", body: "b", since: SINCE }).find,
+        Once.comment("o", "r", 7, "b").find,
+        Once.review("o", "r", 7, { commitId: BASE, event: "COMMENT", body: "b" }).find,
+        Once.pull("o", "r", { head: "smithers/t1-fix", base: "main", title: "t", body: "b" }).find
+      ]
+    for (const find of finds) {
+      expect(await failure(find(KEY))).toMatchObject({
+        reason: "poll-failed",
+        details: { incomplete: true, retryable: false }
+      })
+    }
+  })
+})

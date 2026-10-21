@@ -19,6 +19,7 @@ describe("integration product scope", () => {
       "Contents",
       "GitHubClient",
       "Issues",
+      "Once",
       "Payload",
       "Proxy",
       "Pulls",

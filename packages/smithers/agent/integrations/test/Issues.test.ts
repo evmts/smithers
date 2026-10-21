@@ -486,13 +486,15 @@ describe("findIssueByWrite", () => {
     expect(Option.isNone(await run(Issues.findIssueByWrite("o", "r", { writeId: "w-1", since: SINCE })))).toBe(true)
   })
 
-  it(`finds nothing beyond ${RECONCILE_PAGES} pages`, async () => {
+  it(`fails rather than answer none when the marker is beyond ${RECONCILE_PAGES} pages`, async () => {
     github = await startGitHub()
     github.issues.push(rawIssue(1, Issues.withWriteMarker("too old", "w-1")))
     for (let number = 2; number <= RECONCILE_PAGES + 2; number++) github.issues.push(rawIssue(number, "newer"))
     github.pageSize = 1
-    const found = await run(Issues.findIssueByWrite("o", "r", { writeId: "w-1", since: SINCE }))
-    expect(Option.isNone(found)).toBe(true)
+    expect(await failure(Issues.findIssueByWrite("o", "r", { writeId: "w-1", since: SINCE }))).toMatchObject({
+      reason: "poll-failed",
+      details: { incomplete: true, retryable: false }
+    })
     expect(github.fixture.requests).toHaveLength(RECONCILE_PAGES)
   })
 
@@ -533,11 +535,23 @@ describe("findCommentByWrite", () => {
     expect(github.fixture.requests.length).toBeGreaterThanOrEqual(2)
   })
 
-  it("finds nothing when no comment carries the marker", async () => {
+  it("finds nothing when no comment carries the marker, reading the whole thread without `since`", async () => {
     github = await startGitHub()
     github.comments.set(7, [rawComment(1, 7, Issues.withWriteMarker("other write", "w-2"))])
     expect(Option.isNone(await run(Issues.findCommentByWrite("o", "r", 7, { writeId: "w-1", since: SINCE }))))
       .toBe(true)
+    expect(Option.isNone(await run(Issues.findCommentByWrite("o", "r", 7, { writeId: "w-1" })))).toBe(true)
+    expect(query(1).get("since")).toBeNull()
+  })
+
+  it(`fails rather than answer none when the thread is longer than ${RECONCILE_PAGES} pages`, async () => {
+    github = await startGitHub()
+    github.comments.set(7, Array.from({ length: RECONCILE_PAGES + 1 }, (_, i) => rawComment(i + 1, 7, "other")))
+    github.pageSize = 1
+    expect(await failure(Issues.findCommentByWrite("o", "r", 7, { writeId: "w-1" }))).toMatchObject({
+      reason: "poll-failed",
+      details: { incomplete: true }
+    })
   })
 
   it("refuses invalid input before any request", async () => {

@@ -197,6 +197,14 @@ const requireSha = (field: string, sha: string): Effect.Effect<string, Integrati
     ? Effect.succeed(sha)
     : Effect.fail(invalid(field, "A commit SHA must be 40 lowercase hex digits.", sha))
 
+// A finder that ran out of pages without a match cannot say the write was never made; see `Issues`.
+const incomplete = (operation: string): IntegrationError =>
+  new IntegrationError(
+    "poll-failed",
+    `${operation}: the search ran out of its ${RECONCILE_PAGES}-page budget before it could rule the write out.`,
+    { operation, incomplete: true, retryable: false }
+  )
+
 const requireWriteId = (writeId: string): Effect.Effect<string, IntegrationError> =>
   typeof writeId === "string" && WRITE_ID_PATTERN.test(writeId)
     ? Effect.succeed(writeId)
@@ -287,7 +295,9 @@ export const listPulls = (
 /**
  * The pull request from branch `head` of the repository itself, open or
  * closed, whose body carries `writeId`'s marker when one is given; the
- * earliest opened wins. `Option.none()` when there is none.
+ * earliest opened wins. `Option.none()` when there is none; a listing that
+ * runs out of pages without a match fails `poll-failed` with
+ * `incomplete: true`.
  *
  * @category getters
  * @since 1.0.0
@@ -302,6 +312,7 @@ export const findPullByHead = (
     const listed = yield* listPulls(owner, repo, { state: "all", head: options.head, maxPages: RECONCILE_PAGES })
     const matches = listed.items.filter((pull) => writeId === undefined || writeIdOf(pull.body) === writeId)
     const earliest = [...matches].sort((a, b) => a.number - b.number)[0]
+    if (earliest === undefined && listed.truncated) return yield* Effect.fail(incomplete("findPullByHead"))
     return Option.fromUndefinedOr(earliest)
   }).pipe(Effect.withSpan("GitHub.Pulls.findPullByHead", { attributes: spanAttributes(owner, repo) }))
 
@@ -496,7 +507,9 @@ export const createReview = (
 
 /**
  * The review on pull request `number` whose body carries `writeId`'s marker;
- * the earliest submitted wins. `Option.none()` when there is none.
+ * the earliest submitted wins. `Option.none()` when there is none; a listing
+ * that runs out of pages without a match fails `poll-failed` with
+ * `incomplete: true`.
  *
  * @category getters
  * @since 1.0.0
@@ -510,5 +523,7 @@ export const findReviewByWrite = (
   Effect.gen(function*() {
     const writeId = yield* requireWriteId(options.writeId)
     const reviews = yield* listReviews(owner, repo, number, { maxPages: RECONCILE_PAGES })
-    return Option.fromUndefinedOr(reviews.items.find((review) => writeIdOf(review.body) === writeId))
+    const found = reviews.items.find((review) => writeIdOf(review.body) === writeId)
+    if (found === undefined && reviews.truncated) return yield* Effect.fail(incomplete("findReviewByWrite"))
+    return Option.fromUndefinedOr(found)
   }).pipe(Effect.withSpan("GitHub.Pulls.findReviewByWrite", { attributes: spanAttributes(owner, repo, number) }))

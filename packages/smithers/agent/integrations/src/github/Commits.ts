@@ -12,10 +12,11 @@
  * it adds replace what the branch had at those paths, so build them from the
  * branch's own head.
  *
- * **Writing once.** A lost answer fails `outcomeUnknown`: read the branch back
- * (`Refs.getBranch`), and adopt its head when {@link getCommit} shows it is
- * the commit this step meant (its parent is the expected head and its
- * message carries the step's marker).
+ * **Writing once.** A lost answer fails `outcomeUnknown`. Never adopt a head
+ * because its parent and message look like yours: another attempt's or a
+ * person's commit can match both. Write through `GitHub.Once.commitOnBranch`
+ * and `Action.once` from `@smthrs/flow`, which put the step's key in a
+ * `Smithers-Write` trailer and adopt only the commit that carries it.
  *
  * @since 1.0.0
  */

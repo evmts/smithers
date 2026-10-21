@@ -20,11 +20,14 @@
  *    little before the first attempt started. Adopt what it finds.
  * 3. Only when nothing carries the marker, POST again.
  *
- * A write id should be unguessable, such as a UUID. The finders return the
+ * A write id should be unguessable and come from the step that writes, such
+ * as `Action.effectKey` from `@smthrs/flow`; `GitHub.Once` does all three
+ * steps for you through `Action.once`. The finders return the
  * earliest-created match, so a copy someone posts after seeing the marker
- * never wins over the original. They read at most
- * {@link RECONCILE_PAGES} pages; an item beyond that budget is not found, so
- * keep `since` close to the first attempt.
+ * never wins over the original. They read at most {@link RECONCILE_PAGES}
+ * pages, and a search that runs out of pages without a match fails
+ * (`poll-failed`, `incomplete: true`) rather than answer none: none would let
+ * the caller write a second time.
  *
  * **Labels.** {@link addLabels}, {@link removeLabel} and {@link createLabel}
  * are idempotent at GitHub: adding a label the issue has, removing one it
@@ -231,6 +234,15 @@ const requireSince = (since: string | undefined): Effect.Effect<string | undefin
         retryable: false
       })
     )
+
+// A finder that ran out of pages without a match cannot say the write was never made: answering none would let the
+// caller write again. It fails instead, and the step stops rather than duplicate.
+const incomplete = (operation: string): IntegrationError =>
+  new IntegrationError(
+    "poll-failed",
+    `${operation}: the search ran out of its ${RECONCILE_PAGES}-page budget before it could rule the write out.`,
+    { operation, incomplete: true, retryable: false }
+  )
 
 const requireLabelName = (name: unknown): Effect.Effect<string, IntegrationError> =>
   Schema.is(LabelName)(name) ? Effect.succeed(name) : Effect.fail(
@@ -463,8 +475,8 @@ export const createComment = (
  * `GET /repos/{owner}/{repo}/issues?state=all&sort=created&direction=desc&since=…`.
  * Pull requests are skipped.
  *
- * With more than one match, the earliest created wins. An issue beyond the
- * page budget is not found.
+ * With more than one match, the earliest created wins. A search that runs out
+ * of pages without a match fails `poll-failed` with `incomplete: true`.
  *
  * @category getters
  * @since 1.0.0
@@ -487,16 +499,17 @@ export const findIssueByWrite = (
     // Newest first, so the last match is the earliest created.
     let found: unknown
     for (const item of page.items) if (markedWith(item, writeId) && !isPullRequest(item)) found = item
+    if (found === undefined && page.truncated) return yield* Effect.fail(incomplete("findIssueByWrite"))
     return found === undefined ? Option.none() : Option.some(yield* decodeOne(Issue, found, path))
   }).pipe(Effect.withSpan("GitHub.Issues.findIssueByWrite", { attributes: spanAttributes(owner, repo) }))
 
 /**
  * The comment on issue `number` whose body carries `writeId`'s marker, among
- * comments updated since `since` (ISO 8601), walking at most
+ * all its comments or those updated since `since` (ISO 8601), walking at most
  * {@link RECONCILE_PAGES} pages.
  *
- * With more than one match, the earliest created wins. A comment beyond the
- * page budget is not found.
+ * With more than one match, the earliest created wins. A search that runs out
+ * of pages without a match fails `poll-failed` with `incomplete: true`.
  *
  * @category getters
  * @since 1.0.0
@@ -505,7 +518,7 @@ export const findCommentByWrite = (
   owner: string,
   repo: string,
   number: number,
-  options: { readonly writeId: string; readonly since: string }
+  options: { readonly writeId: string; readonly since?: string | undefined }
 ): Effect.Effect<Option.Option<IssueComment>, IntegrationError, GitHubClient> =>
   Effect.gen(function*() {
     const client = yield* GitHubClient
@@ -517,6 +530,7 @@ export const findCommentByWrite = (
     const page = yield* client.paginate(`${path}${query({ since })}`, { maxPages: RECONCILE_PAGES })
     // Oldest first, so the first match is the earliest created.
     const found = page.items.find((item) => markedWith(item, writeId))
+    if (found === undefined && page.truncated) return yield* Effect.fail(incomplete("findCommentByWrite"))
     return found === undefined ? Option.none() : Option.some(yield* decodeOne(IssueComment, found, path))
   }).pipe(Effect.withSpan("GitHub.Issues.findCommentByWrite", { attributes: spanAttributes(owner, repo, number) }))
 

@@ -59,6 +59,12 @@ export * as GitHubClient from "./github/GitHubClient.ts"
 export * as Issues from "./github/Issues.ts"
 
 /**
+ * @category constructors
+ * @since 1.0.0
+ */
+export * as Once from "./github/Once.ts"
+
+/**
  * @category schemas
  * @since 1.0.0
  */
