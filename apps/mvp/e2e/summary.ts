@@ -24,6 +24,8 @@ export type Ended = {
   readonly title: string
   readonly outcome: "skipped" | "expected" | "unexpected" | "flaky"
   readonly expectedStatus: string
+  /** How its last run ended (`passed`, `failed`, `timedOut`, …), or `skipped` when it never ran. */
+  readonly status: string
   readonly annotations: ReadonlyArray<Annotation>
 }
 
@@ -45,9 +47,13 @@ export const outcomeOf = (test: Ended): Outcome => {
     const said = test.annotations.find((annotation) => annotation.type === "skip")?.description
     return { kind: "undeclared", reason: said ?? "no reason given" }
   }
-  const mark = declared("fail")
-  if (test.expectedStatus === "failed" && mark?.kind === "broken") {
-    return test.outcome === "expected" ? { kind: "broken", name: mark.name } : { kind: "fixed", name: mark.name }
+  if (test.expectedStatus === "failed") {
+    // Marked broken (TEST-5): by `broken` (e2e/target.ts), or by a spec's own `test.fail`, named by its description.
+    const mark = declared("fail")
+    const name = mark?.kind === "broken" ? mark.name : (test.annotations.find((annotation) => annotation.type === "fail")?.description ?? "marked broken")
+    if (test.outcome === "expected") return { kind: "broken", name }
+    // Only a pass means the mark is stale; a timeout or another failure is a failure.
+    return test.status === "passed" ? { kind: "fixed", name } : { kind: "failed" }
   }
   return test.outcome === "unexpected" ? { kind: "failed" } : { kind: "passed" }
 }

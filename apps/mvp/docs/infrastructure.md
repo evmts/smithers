@@ -221,7 +221,7 @@ E2E_PROD_URL=<the production URL> pnpm e2e:prod [spec…] [playwright options…
 - Later runs reuse the session until 3 days before it expires.
 - When GitHub asks for a password or a device code, the setup fails and says so. Open the profile once in a visible browser and sign in.
 - A role is read at sign-in. While the account is below Member, the setup signs in again at most every 6 hours; `E2E_FRESH_SIGN_IN=1` forces a new sign-in.
-- There is no test-only sign-in route ([decision 0024](decisions/0024-e2e-sign-in-to-a-deployment.md)).
+- There is no test-only sign-in route (the decision record "How e2e tests sign in to a deployment").
 
 **Needs.**
 - A test declares what it needs from its target with `requires(...)` from `e2e/target.ts`. Where the run doesn't meet a need, the test skips with that need's reason.
@@ -230,6 +230,10 @@ E2E_PROD_URL=<the production URL> pnpm e2e:prod [spec…] [playwright options…
 - A deployment only: GitHub sign-in (`githubSignIn`), and GitHub writes to a scratch repository (`githubScratch`, with `E2E_ISSUES_REPOSITORY`).
 - Code Storage (`codeStorage`), which locally needs its organization and key.
 - The account's role (`member`, `maintainer`). A role need is **blocked** rather than skipped: the run lacks a prerequisite, and the run fails until it has it.
+- The run's own conversation (`ownConversation`, also blocked), for every test that asks:
+  - A deployment run never asks in the team's home conversation, which every Member reads.
+  - The setup tracks the test account's own branch, `roninjin10/smithers-github-tests` `smithers-e2e`, and a test that asks opens it (`home()` in `e2e/target.ts`). `Tab.send` declares the need too.
+  - Tracking reads the branch from the deployment's Code Storage mirror, so it waits until the deployment can clone that repository.
 - A test that checks logs only where it can uses `partly("localLogs")`, and the summary lists it.
 - A deployment test never signs out: that would end the run's shared session.
 
@@ -243,7 +247,7 @@ E2E_PROD_URL=<the production URL> pnpm e2e:prod [spec…] [playwright options…
 
 **Spend.** Before each test that can ask, a guard adds up the tokens the run's answers used (`e2e/spend.ts`). From `E2E_TOKEN_BUDGET` (600,000 by default) on, later tests fail with `SpendBudgetSpent`. Every run alerts the Admins on spend (AUTH-4).
 
-**Fixtures.** For a Member or above, the setup requests a clone of `octocat/Spoon-Knife` (`POST /api/repos`, idempotent).
+**Fixtures.** For a Member or above, the setup requests clones of `octocat/Spoon-Knife` and of the own branch's repository (`POST /api/repos`, idempotent), then tracks the own branch (`POST /api/branches`). It records the branch only when the branch is the account's own and unshared.
 
 **Results.**
 - Playwright's results go to `test-results-deployment/`, apart from a local run's.

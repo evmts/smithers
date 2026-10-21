@@ -2,7 +2,7 @@ import type { APIRequestContext } from "@playwright/test"
 import { COULDNT_ANSWER, expect, expectSameThread, NOT_SENT, pairs, serverRows, type Tab, test } from "./devices"
 import { faults, faultyApp } from "./faults"
 import { step } from "./fixtures"
-import { requires } from "./target"
+import { appHome, questionPost, requires, writeHeaders } from "./target"
 
 // Every kind of conflict the device store and the outbox resolve (docs/decisions/0002-local-first.md §2, §3 and §5;
 // docs/decisions/0016-todos-and-the-stack.md), one test each, on separate devices (browser contexts) or two tabs of one
@@ -35,7 +35,7 @@ const HOUR = 60 * 60 * 1000
 /** Opens the app again on `tab`, on its device's services, faulty or real, unless `faulty` says which. */
 const reopen = (tab: Tab, faulty = tab.device.faulty) =>
   step(`${tab.name} opens the app again`, async () => {
-    await tab.page.goto(faulty ? faultyApp() : "/app")
+    await tab.page.goto(faulty ? faultyApp() : appHome())
     await tab.ready()
   })
 
@@ -52,9 +52,9 @@ const posts = (tabs: ReadonlyArray<Tab>, text: string) =>
 test.describe("Local-first conflicts", () => {
   // Two devices, a sync of each change and an answer per question: more than the default 90 s.
   test.describe.configure({ timeout: 180_000 })
-  // Every test asks, which needs a Member or above. A test on the app's faulty services or with local development's
-  // second person also declares that (e2e/target.ts).
-  requires("member")
+  // Every test asks, which needs a Member or above, and in a deployment the test account's own conversation. A test on
+  // the app's faulty services or with local development's second person also declares that (e2e/target.ts).
+  requires("member", "ownConversation")
 
   test("same question id: another writer stores a different question under the id a device queued offline; the device keeps its own, Not sent, and Edit asks it again", {
     annotation: {
@@ -80,9 +80,9 @@ test.describe("Local-first conflicts", () => {
     // routes, as an asking device's agent does.
     await step("Another writer stores a different question under the same id; B shows it", async () => {
       const answerId = crypto.randomUUID()
-      const asked = await request.post("/api/questions", { data: { id, answerId, text: theirs } })
+      const asked = await request.post("/api/questions", questionPost({ id, answerId, text: theirs }))
       expect(asked.status(), await asked.text()).toBe(202)
-      const answered = await request.post(`/api/answers/${answerId}`, { data: { status: "done", text: `theirs-${word}` } })
+      const answered = await request.post(`/api/answers/${answerId}`, { data: { status: "done", text: `theirs-${word}` }, headers: writeHeaders() })
       expect(answered.status(), await answered.text()).toBe(200)
       await b.expectAnswered(theirs, `theirs-${word}`)
     })
@@ -219,13 +219,13 @@ test.describe("Local-first conflicts", () => {
 
     const [first] = posts([a], asked)
     await step("The same question through the API again, ids and all: 200, and nothing new", async () => {
-      const again = await request.post("/api/questions", { data: { id: first!.questionId, answerId: first!.answerId, text: asked } })
+      const again = await request.post("/api/questions", questionPost({ id: first!.questionId, answerId: first!.answerId, text: asked }))
       expect(again.status()).toBe(200)
       expect(await again.json()).toEqual({ txid: null, existing: true })
     })
 
     await step("The same id with another answer id: refused (409), and nothing is written", async () => {
-      const other = await request.post("/api/questions", { data: { id: first!.questionId, answerId: crypto.randomUUID(), text: asked } })
+      const other = await request.post("/api/questions", questionPost({ id: first!.questionId, answerId: crypto.randomUUID(), text: asked }))
       expect(other.status()).toBe(409)
     })
 

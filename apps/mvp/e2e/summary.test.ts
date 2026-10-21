@@ -7,6 +7,7 @@ const ended = (fields: Partial<Ended>): Ended => ({
   title: "ask",
   outcome: "expected",
   expectedStatus: "passed",
+  status: "passed",
   annotations: [],
   ...fields,
 })
@@ -43,15 +44,18 @@ describe("a test's outcome", () => {
     expect(outcomeOf(ended({ outcome: "skipped", annotations: [skip("no"), skip(describeNeed("localLogs"))] }))).toMatchObject({ name: "localLogs" })
   })
 
-  it("is broken when a test marked broken fails, and fixed when it passes", () => {
+  it("is broken when a test marked broken fails, fixed only when it passes, and failed when it fails otherwise", () => {
     const fail = { type: "fail", description: describeBroken("remoteFlows") }
-    expect(outcomeOf(ended({ expectedStatus: "failed", annotations: [fail] }))).toEqual({ kind: "broken", name: "remoteFlows" })
+    expect(outcomeOf(ended({ expectedStatus: "failed", status: "failed", annotations: [fail] }))).toEqual({ kind: "broken", name: "remoteFlows" })
     expect(outcomeOf(ended({ expectedStatus: "failed", outcome: "unexpected", annotations: [fail] }))).toEqual({ kind: "fixed", name: "remoteFlows" })
+    expect(outcomeOf(ended({ expectedStatus: "failed", outcome: "unexpected", status: "timedOut", annotations: [fail] }))).toEqual({ kind: "failed" })
   })
 
-  it("is a plain result when a test expected to fail has no broken mark the summary knows", () => {
-    expect(outcomeOf(ended({ expectedStatus: "failed", annotations: [{ type: "fail", description: "the clock bug" }] }))).toEqual({ kind: "passed" })
-    expect(outcomeOf(ended({ expectedStatus: "failed", outcome: "unexpected", annotations: [] }))).toEqual({ kind: "failed" })
+  it("is broken by a spec's own test.fail too, named by its description", () => {
+    const own = { type: "fail", description: "Broken, cause not found: the clock" }
+    expect(outcomeOf(ended({ expectedStatus: "failed", status: "failed", annotations: [own] }))).toEqual({ kind: "broken", name: own.description })
+    expect(outcomeOf(ended({ expectedStatus: "failed", status: "failed", annotations: [] }))).toEqual({ kind: "broken", name: "marked broken" })
+    expect(outcomeOf(ended({ expectedStatus: "failed", outcome: "unexpected", annotations: [own] }))).toEqual({ kind: "fixed", name: own.description })
   })
 })
 

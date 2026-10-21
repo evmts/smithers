@@ -10,7 +10,10 @@ import { broken, me, requires } from "./target"
 // `test-branch` and `change-the-title` branches GitHub already has; nothing is written to GitHub. Opening a branch's
 // page tracks it, which only a Member or above may (worker/branch/Branches.ts), and asking needs one too.
 
-requires("member")
+requires("member", "ownConversation")
+// A deployment reads a branch from its repository's Code Storage mirror (worker/branch/Forge.ts), which the remote flow
+// `repo/Clone` makes, and opens its terminal through the remote flow `terminal/Open` (worker/flows/TerminalOpen.ts).
+broken("remoteFlows")
 
 const REPO = "/octocat/Spoon-Knife"
 
@@ -126,8 +129,6 @@ test("branch conversation: a question asked on a branch is stored in that branch
 test("branch terminal: Open terminal runs git log on the branch's machine in a frame, and a reload keeps the shell", {
   annotation: { type: "summary", description: "A branch's terminal runs on its own machine, checked out at the branch, and a reload keeps the same shell." },
 }, async ({ page }) => {
-  // The terminal opens through the remote flow `terminal/Open` (worker/branch/Terminals.ts, worker/flows/TerminalOpen.ts).
-  broken("remoteFlows")
   test.setTimeout(5 * 60_000)
   const word = `shell-${Date.now()}`
   await openBranch(page, "test-branch")
@@ -167,8 +168,6 @@ test("branch terminal: Open terminal runs git log on the branch's machine in a f
 test("second branch terminal: another branch has its own machine, checkout and shell", {
   annotation: { type: "summary", description: "Another branch has its own machine: its shell is checked out at that branch and shares nothing with the first." },
 }, async ({ page }) => {
-  // The terminal opens through the remote flow `terminal/Open` (worker/branch/Terminals.ts, worker/flows/TerminalOpen.ts).
-  broken("remoteFlows")
   test.setTimeout(5 * 60_000)
   await openBranch(page, "change-the-title", "?terminal=me")
   await openTerminal(page)

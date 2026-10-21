@@ -280,7 +280,7 @@ test("a signed-out follower without a mirror cannot read the live owner's engine
 })
 
 test("an ownerless offline activation reopens under verified authority when the network returns", { annotation: { type: "summary", description: "After device storage is evicted offline, reconnecting verifies the account and asking succeeds without a manual reload." } }, async ({ devices }) => {
-  requires("member")
+  requires("member", "ownConversation")
   test.setTimeout(180_000)
   const [tab] = await devices.open("Recovered device")
   await tab.page.addInitScript(() => {

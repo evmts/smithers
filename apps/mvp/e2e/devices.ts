@@ -3,11 +3,12 @@ import { writeFile } from "node:fs/promises"
 import { DEV_URL } from "../dev/https"
 import { faultyApp, faults } from "./faults"
 import { allServerRows, type Row } from "./shape"
-import { guard } from "./target"
+import { appHome, guard, ownPlace, requires } from "./target"
 import {
   COULDNT_ANSWER,
   expect,
   guardSpend,
+  redactedRequests,
   NOT_SENT,
   OFFLINE,
   PAGE_SIZE,
@@ -216,8 +217,10 @@ export class Tab {
   }
 
   // The app has opened the conversation: the shell renders only once its first snapshot loaded.
+  // The app's home, or a deployment run's own branch (e2e/target.ts `home`), whose chrome names the branch.
   async ready() {
-    await expect(this.page.getByRole("main", { name: "App" }), `${this.name}: the app opens`).toBeVisible({ timeout: 30_000 })
+    const opened = ownPlace() === undefined ? this.page.getByRole("main", { name: "App" }) : this.page.getByRole("navigation", { name: "Branch" })
+    await expect(opened, `${this.name}: the app opens`).toBeVisible({ timeout: 30_000 })
   }
 
   // A reload another navigation overtakes, such as the service worker's update reloading the page, still ends with
@@ -305,8 +308,10 @@ export class Tab {
     })
   }
 
-  // Types a question and presses Enter once the composer is ready to send.
+  // Types a question and presses Enter once the composer is ready to send. A deployment run asks only in its own
+  // conversation (e2e/target.ts `ownConversation`): without one the test stops here, blocked, before asking.
   send(text: string) {
+    requires("ownConversation")
     return step(`${this.name}: send "${text}"`, async () => {
       await this.openComposer()
       await expect(this.composerForm, `${this.name}: the composer is ready to send`).toHaveAttribute("data-status", "ready", { timeout: 30_000 })
@@ -462,7 +467,7 @@ class Devices {
     await recordActions(page, this.testInfo, name)
     const tab = new Tab(name, device, page, this.startedAt)
     device.tabs.push(tab)
-    await page.goto(device.faulty ? faultyApp() : "/app")
+    await page.goto(device.faulty ? faultyApp() : appHome())
     await tab.ready()
     if (first) {
       await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined))
@@ -507,7 +512,8 @@ class Devices {
 
 // Built on Playwright's own test, not fixtures.ts': a device test opens its own contexts and saves each tab's log,
 // so it needs no default page.
-export const test = base.extend<{ devices: Devices; spendGuard: void }>({
+export const test = base.extend<{ devices: Devices; spendGuard: void }, { redactedRequests: void }>({
+  redactedRequests: [...redactedRequests],
   // A deployment run stops asking once its answers spent the run's token budget (e2e/spend.ts).
   spendGuard: [async ({ playwright }, use) => use(await guardSpend(() => playwright.request.newContext())), { auto: true }],
   devices: async ({ browser }, use, testInfo) => {

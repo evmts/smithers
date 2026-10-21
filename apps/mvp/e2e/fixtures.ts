@@ -2,6 +2,7 @@ import { type APIRequestContext, test as base, expect, type Locator, type Page, 
 import { readdir, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { themeFor } from "./frames.ts"
+import { redactRequestErrors } from "./redact"
 import { allServerRows } from "./shape"
 import { runStartedAt, spendGuard, tokenBudget } from "./spend"
 import { meets, target } from "./target"
@@ -251,7 +252,22 @@ export const guardSpend = (() => {
   }
 })()
 
-export const test = base.extend<{ browserLog: Array<string>; spendGuard: void }>({
+/**
+ * A worker fixture every test uses: request errors never carry the session cookie (e2e/redact.ts). Patching the class
+ * once covers `page.request`, `request` and every context a test opens.
+ */
+export const redactedRequests = [
+  async ({ playwright }: { playwright: import("@playwright/test").PlaywrightWorkerArgs["playwright"] }, use: (value: void) => Promise<void>) => {
+    const probe = await playwright.request.newContext()
+    redactRequestErrors(probe)
+    await probe.dispose()
+    await use()
+  },
+  { scope: "worker", auto: true },
+] as const
+
+export const test = base.extend<{ browserLog: Array<string>; spendGuard: void }, { redactedRequests: void }>({
+  redactedRequests: [...redactedRequests],
   // A deployment run stops asking once its answers spent the run's token budget (e2e/spend.ts).
   spendGuard: [async ({ playwright }, use) => use(await guardSpend(() => playwright.request.newContext())), { auto: true }],
   // The default page's mode, from its first frame: `themeOf`.

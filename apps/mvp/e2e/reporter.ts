@@ -13,6 +13,7 @@ const endedOf = (test: TestCase): Ended => {
     title: test.titlePath().slice(3).join(" › "),
     outcome: test.outcome(),
     expectedStatus: test.expectedStatus,
+    status: result?.status ?? "skipped",
     annotations: [...test.annotations, ...(result?.annotations ?? [])],
   }
 }
@@ -28,10 +29,11 @@ export default class Summary implements Reporter {
   }
 
   async onEnd(result: FullResult): Promise<{ status: FullResult["status"] } | undefined> {
-    // `--list` and an interrupted run have nothing to sum up.
-    const ran = this.suite?.allTests().filter((test) => test.results.length > 0) ?? []
-    if (ran.length === 0 || result.status === "interrupted") return undefined
-    const summary = summarize(ran.map(endedOf))
+    // `--list` and an interrupted run have nothing to sum up. Otherwise every selected test counts, including those a
+    // failed setup kept from running, which have no result.
+    const tests = this.suite?.allTests() ?? []
+    if (!tests.some((test) => test.results.length > 0) || result.status === "interrupted") return undefined
+    const summary = summarize(tests.map(endedOf))
     console.log(`\n${render(summary)}\n`)
     mkdirSync(this.outputDir, { recursive: true })
     writeFileSync(join(this.outputDir, "summary.json"), JSON.stringify(summary, null, 2))

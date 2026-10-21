@@ -85,6 +85,9 @@ test("declared: a repository's own home draws its blocks, Code opens its tree, a
 })
 
 test("absent: a repository without a home opens on its tree, with no tabs", async ({ page }) => {
+  // In a deployment the setup asks for this fixture's clone, which runs as a remote flow: until those run, the page
+  // shows Cloning instead of the README or Clone.
+  broken("remoteFlows")
   const header = page.locator('header[aria-label="Repository"]')
   const readme = page.getByText("Well hello there!")
 

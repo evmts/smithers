@@ -39,6 +39,17 @@ export const spentSince = (rows: ReadonlyArray<Row>, since: number) => {
   return total
 }
 
+/** How many reads in a row may fail before the guard stops tests: past it, the run's spend is unknown. */
+export const MAX_UNREAD = 3
+
+/** The guard couldn't read the run's spend `reads` times in a row: no test that may spend starts. */
+export class SpendUnknown extends Error {
+  override readonly name = "SpendUnknown"
+  constructor(readonly reads: number) {
+    super(`The run's spend couldn't be read ${reads} times in a row (the messages shape): this test doesn't start.`)
+  }
+}
+
 /** The run's answers used its whole budget: the rest of the run asks nothing. */
 export class SpendBudgetSpent extends Error {
   override readonly name = "SpendBudgetSpent"
@@ -69,12 +80,13 @@ export type SpendGuardOptions = {
 /**
  * The guard a worker runs before each test: it fails the test once the run's answers spent the budget. It reads the
  * conversation at most once a `REREAD_MS`, so a run of many short tests reads it a few times a minute. A read that
- * fails is reported through `unread` and tried again before the next test; it never fails the test itself, which
- * reads the same conversation through the app.
+ * fails, such as Electric's 503 while it starts, is reported through `unread` and tried again before the next test;
+ * `MAX_UNREAD` failures in a row stop tests with `SpendUnknown`, since the spend can no longer be bounded.
  */
 export const spendGuard = (options: SpendGuardOptions) => {
   const now = options.now ?? Date.now
   let last: { readonly at: number; readonly spent: number } | undefined
+  let unread = 0
   return async () => {
     if (!options.applies()) return
     const budget = options.budget()
@@ -83,6 +95,8 @@ export const spendGuard = (options: SpendGuardOptions) => {
         options.unread(error)
         return undefined
       })
+      unread = spent === undefined ? unread + 1 : 0
+      if (unread >= MAX_UNREAD) throw new SpendUnknown(unread)
       if (spent !== undefined) last = { at: now(), spent }
     }
     if (last !== undefined && last.spent >= budget) throw new SpendBudgetSpent(last.spent, budget)

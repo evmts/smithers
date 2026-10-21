@@ -1,4 +1,5 @@
 import { type APIRequestContext, expect } from "@playwright/test"
+import { ownPlace } from "./target"
 
 // The `messages` rows a signed-in person reads, through ChatApi's shape proxy, as their devices read them
 // (worker/Chat.ts). The local-first tests compare them with what each device shows; the spend guard (e2e/spend.ts)
@@ -26,9 +27,12 @@ type ShapeMessage = {
 
 // Every row of Postgres `messages`, in `position` order, read the way devices read them: Electric's shape through
 // ChatApi's proxy, from the start of its log until it is up to date.
+// It reads the conversation the run asks in: the app's home, or a deployment run's own branch (e2e/target.ts `home`).
 export const allServerRows = async (request: APIRequestContext): Promise<Array<Row>> => {
   const rows = new Map<string, Row>()
-  let query = "offset=-1"
+  const place = ownPlace()
+  const conversation = place === undefined ? "" : `conversation=${place.conversationId}&`
+  let query = `${conversation}offset=-1`
   for (let page = 0; page < 1_000; page++) {
     const response = await request.get(`/api/shapes/messages?${query}`)
     expect(response.status(), "ChatApi serves the messages shape").toBe(200)
@@ -40,7 +44,7 @@ export const allServerRows = async (request: APIRequestContext): Promise<Array<R
     }
     const headers = response.headers()
     if ("electric-up-to-date" in headers) break
-    query = `offset=${headers["electric-offset"]}&handle=${headers["electric-handle"]}`
+    query = `${conversation}offset=${headers["electric-offset"]}&handle=${headers["electric-handle"]}`
   }
   return [...rows.values()].sort((left, right) => Number(left.position) - Number(right.position))
 }

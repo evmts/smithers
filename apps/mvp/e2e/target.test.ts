@@ -15,6 +15,7 @@ import {
   onThisMachine,
   parseDescription,
   readIdentity,
+  readPlace,
   type Run,
   scriptedAgent,
   sessionFiles,
@@ -61,7 +62,7 @@ describe("the target", () => {
 describe("needs", () => {
   it("are all met locally, where local development's Admin is signed in, but GitHub sign-in", () => {
     const unmet = (Object.keys(NEEDS) as Array<NeedName>).filter((name) => !NEEDS[name].met(local))
-    expect(unmet).toEqual(["webhookSecret", "alertProviders", "oldBuild", "githubSignIn", "githubScratch"])
+    expect(unmet).toEqual(["webhookSecret", "alertProviders", "oldBuild", "githubSignIn", "factoryRepository", "githubScratch"])
   })
 
   it("in a deployment, leave out every dev-only need, and meet a role need by the account's role", () => {
@@ -104,6 +105,26 @@ describe("needs", () => {
     expect(oldBuildDir({})).toMatch(/Desktop\/smithers-mvp\/builds\/c6940ac53e5a$/)
   })
 
+  it("for a dev build's switches, are met by alchemy dev on this machine even when it signs in through GitHub", () => {
+    expect(NEEDS.scriptedAgent.met({ ...deployedAs("member"), devBuild: true })).toBe(true)
+    expect(NEEDS.faults.met({ ...deployedAs("member"), devBuild: true })).toBe(true)
+    expect(NEEDS.scriptedAgent.met({ ...deployedAs("member"), devBuild: false })).toBe(false)
+  })
+
+  it("for the factory, are met only on a live instance whose repository is a scratch one", () => {
+    expect(NEEDS.factoryRepository.met(deployedAs("member", { E2E_FACTORY_REPOSITORY: "codeplanesmithers/factory" }))).toBe(true)
+    expect(NEEDS.factoryRepository.met(deployedAs("member", { E2E_FACTORY_REPOSITORY: "smithersai/smithers" }))).toBe(false)
+    expect(NEEDS.factoryRepository.met({ ...local, env: { E2E_FACTORY_REPOSITORY: "codeplanesmithers/factory" } })).toBe(false)
+  })
+
+  it("for asking, are met locally, and in a deployment only once it has its own conversation, else blocked", () => {
+    expect(NEEDS.ownConversation.met(local)).toBe(true)
+    expect(NEEDS.ownConversation.met(deployedAs("member"))).toBe(false)
+    expect(NEEDS.ownConversation.met({ ...deployedAs("member"), ownConversation: () => false })).toBe(false)
+    expect(NEEDS.ownConversation.met({ ...deployedAs("member"), ownConversation: () => true })).toBe(true)
+    expect(NEEDS.ownConversation.blocked).toBe(true)
+  })
+
   it("for Code Storage, are met locally only with its organization and key set", () => {
     expect(NEEDS.codeStorage.met({ ...local, env: { CODE_STORAGE_ORG: "o" } })).toBe(false)
     expect(NEEDS.codeStorage.met({ ...local, env: { CODE_STORAGE_ORG: "o", CODE_STORAGE_KEY: "" } })).toBe(false)
@@ -124,7 +145,7 @@ describe("needs", () => {
 
   it("each say why, and only a role need blocks the run", () => {
     for (const name of Object.keys(NEEDS) as Array<NeedName>) expect(NEEDS[name].reason.length, name).toBeGreaterThan(20)
-    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["member", "maintainer"])
+    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["member", "ownConversation", "maintainer"])
   })
 })
 
@@ -192,6 +213,7 @@ describe("the stored session's files", () => {
       dir: join(root, "smithers.example.workers.dev"),
       session: join(root, "smithers.example.workers.dev", "session.json"),
       identity: join(root, "smithers.example.workers.dev", "identity.json"),
+      conversation: join(root, "smithers.example.workers.dev", "conversation.json"),
     })
     expect(sessionFiles("http://localhost:1338", { E2E_SESSION_DIR: root }).dir).toBe(join(root, "localhost_1338"))
     expect(sessionFiles("https://smithers.example.workers.dev", {}).dir).toMatch(/\.smithers-e2e\/smithers\.example\.workers\.dev$/)
@@ -204,6 +226,15 @@ describe("the stored session's files", () => {
     expect(readIdentity(path)).toEqual({ origin: "https://a.dev", login: "codeplanesmithers", personId: "p1", role: "guest" })
     writeFileSync(path, JSON.stringify({ origin: "https://a.dev", login: "codeplanesmithers", personId: "p1" }))
     expect(readIdentity(path)?.role).toBeNull()
+  })
+
+  it("hold the place a deployment run asks in, or none until the setup could track one", () => {
+    const path = join(root, "conversation.json")
+    expect(readPlace(path)).toBeUndefined()
+    writeFileSync(path, JSON.stringify({ path: "/roninjin10/smithers-github-tests/tree/smithers-e2e", conversationId: "c1", extra: 1 }))
+    expect(readPlace(path)).toEqual({ path: "/roninjin10/smithers-github-tests/tree/smithers-e2e", conversationId: "c1" })
+    writeFileSync(path, JSON.stringify({ path: "/x" }))
+    expect(() => readPlace(path)).toThrow("is not a place the e2e setup wrote")
   })
 
   it("refuse an identity file the setup didn't write", () => {

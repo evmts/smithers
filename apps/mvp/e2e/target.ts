@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { DEV_URL } from "../dev/https"
-import { type Role, ROLES } from "../src/features/auth/contract"
+import { DEVICE_PERSON_HEADER, type Role, ROLES } from "../src/features/auth/contract"
 
 // What the e2e tests run against, and what each test needs from it (docs/rules.md, test.e2e-declared-needs). One suite
 // runs locally against `alchemy dev` and against a deployment (docs/rulings.md TEST-4). A test that needs something a
@@ -48,7 +48,31 @@ export const LOCAL_DEVELOPER: Identity = { origin: new URL(baseURL).origin, logi
  */
 export const sessionFiles = (url: string, env: { readonly E2E_SESSION_DIR?: string | undefined } = process.env) => {
   const dir = join(env.E2E_SESSION_DIR ?? join(homedir(), ".smithers-e2e"), new URL(url).host.replace(/[^a-z0-9.-]/gi, "_"))
-  return { dir, session: join(dir, "session.json"), identity: join(dir, "identity.json") }
+  return { dir, session: join(dir, "session.json"), identity: join(dir, "identity.json"), conversation: join(dir, "conversation.json") }
+}
+
+/** Where a deployment run asks: the test account's own branch, private to it, and that branch's conversation. */
+export type Place = { readonly path: string; readonly conversationId: string }
+
+/**
+ * The branch a deployment run asks in, so its questions never reach the team's home conversation that every Member
+ * reads: tracked first by the test account, it stays the account's own until shared (docs/features/branch-workspace.md).
+ */
+export const OWN_BRANCH = { owner: "roninjin10", name: "smithers-github-tests", ref: "smithers-e2e" } as const
+
+/** Reads the place the setup tracked; undefined when it couldn't track one (e2e/deployment/sign-in.setup.ts). */
+export const readPlace = (path: string): Place | undefined => {
+  let text: string
+  try {
+    text = readFileSync(path, "utf8")
+  } catch {
+    return undefined
+  }
+  const value = JSON.parse(text) as Partial<Place>
+  if (typeof value.path !== "string" || typeof value.conversationId !== "string") {
+    throw new Error(`${path} is not a place the e2e setup wrote; delete it and run the setup again`)
+  }
+  return { path: value.path, conversationId: value.conversationId }
 }
 
 /** Reads an identity file the setup wrote (e2e/deployment/sign-in.setup.ts); undefined when there is none yet. */
@@ -83,7 +107,15 @@ const MEMBER_OR_ABOVE: ReadonlySet<Role | null> = new Set<Role | null>(["admin",
 const MAINTAINER_OR_ABOVE: ReadonlySet<Role | null> = new Set<Role | null>(["admin", "maintainer"])
 
 /** What a run offers a test: its target, who it is signed in as (read only when a need asks), and its environment. */
-export type Run = { readonly target: Target; readonly role: () => Role | null; readonly env: Readonly<Record<string, string | undefined>> }
+export type Run = {
+  readonly target: Target
+  /** Whether the app under test is `alchemy dev` on this machine, a dev build, even when it signs in through GitHub. */
+  readonly devBuild?: boolean
+  readonly role: () => Role | null
+  readonly env: Readonly<Record<string, string | undefined>>
+  /** Whether a deployment run has its own conversation to ask in (read only when a need asks). */
+  readonly ownConversation?: () => boolean
+}
 
 const set = (run: Run, ...names: ReadonlyArray<string>) => names.every((name) => (run.env[name] ?? "") !== "")
 
@@ -95,6 +127,9 @@ export type Need = { readonly met: (run: Run) => boolean; readonly reason: strin
 
 const localOnly = (reason: string): Need => ({ met: (run) => run.target === "local", reason })
 
+/** A need a dev build meets, wherever it runs: locally, or a stack on this machine that signs in through GitHub. */
+const devBuildOnly = (reason: string): Need => ({ met: (run) => run.target === "local" || run.devBuild === true, reason })
+
 /** Where the deployed build device-upgrade.spec.ts upgrades from sits: `OLD_BUILD_DIR`, or the round-4 build's copy. */
 export const oldBuildDir = (env: Run["env"]) => env.OLD_BUILD_DIR ?? join(homedir(), "Desktop", "smithers-mvp", "builds", "c6940ac53e5a")
 
@@ -102,8 +137,8 @@ export const oldBuildDir = (env: Run["env"]) => env.OLD_BUILD_DIR ?? join(homedi
 const githubAppLocally = (run: Run) => set(run, "GITHUB_APP_CLIENT_ID")
 
 const needs = {
-  faults: localOnly("the app's faulty services (`/app?faults`, e2e/faults.ts) are in dev builds only"),
-  scriptedAgent: localOnly("the scripted model (`/app?agent=<script>`) is in dev builds only"),
+  faults: devBuildOnly("the app's faulty services (`/app?faults`, e2e/faults.ts) are in dev builds only"),
+  scriptedAgent: devBuildOnly("the scripted model (`/app?agent=<script>`) is in dev builds only"),
   devPeople: {
     met: (run) => run.target === "local" && !githubAppLocally(run),
     reason: "local development's second and third people (the smithers_dev_person cookie) exist only without GitHub sign-in; a deployment needs another real test account",
@@ -137,6 +172,10 @@ const needs = {
     met: (run) => run.target === "deployment" || set(run, "CODE_STORAGE_ORG", "CODE_STORAGE_KEY"),
     reason: "it clones into Code Storage, which the local dev server reaches only with CODE_STORAGE_ORG and CODE_STORAGE_KEY set",
   },
+  factoryRepository: {
+    met: (run) => run.target === "deployment" && set(run, "E2E_FACTORY_REPOSITORY") && !/^smithersai\//i.test(run.env.E2E_FACTORY_REPOSITORY!),
+    reason: "it runs TODOs to pull requests: run against a live instance whose GITHUB_REPOSITORY is a scratch repository, named in E2E_FACTORY_REPOSITORY, never a smithersai one",
+  },
   githubScratch: {
     met: (run) => run.target === "deployment" && set(run, "E2E_ISSUES_REPOSITORY") && !/^smithersai\//i.test(run.env.E2E_ISSUES_REPOSITORY!),
     reason: "it writes issues to GitHub as a real person: run against a deployment with E2E_ISSUES_REPOSITORY set to a scratch repository it syncs, never a smithersai one",
@@ -144,6 +183,11 @@ const needs = {
   member: {
     met: (run) => MEMBER_OR_ABOVE.has(run.role()),
     reason: "it asks, clones or tracks, which needs a Member or above; the test account's role on the deployment's repository is below that",
+    blocked: true,
+  },
+  ownConversation: {
+    met: (run) => run.target === "local" || (run.ownConversation?.() ?? false),
+    reason: "it asks Smithers, and a deployment run asks only in the test account's own branch conversation, never the team's home; the setup tracks that branch once the deployment can clone its repository",
     blocked: true,
   },
   maintainer: {
@@ -181,7 +225,16 @@ export const parseDescription = (description: string | undefined): { kind: "need
   return known ? { kind, name } : undefined
 }
 
-const thisRun: Run = { target, role: () => me().role, env: process.env }
+/** The place this deployment run asks in, if the setup tracked one; locally, the app's home. */
+export const ownPlace = (): Place | undefined => (target === "local" ? undefined : readPlace(sessionFiles(baseURL).conversation))
+
+const thisRun: Run = {
+  target,
+  devBuild: onThisMachine(baseURL),
+  role: () => me().role,
+  env: process.env,
+  ownConversation: () => ownPlace() !== undefined,
+}
 
 /** Whether this run meets `name`. */
 export const meets = (name: NeedName, run: Run = thisRun) => NEEDS[name].met(run)
@@ -244,6 +297,37 @@ export const scriptedAgent = (script: string, path = "/app", run: Run = thisRun)
   guard("scriptedAgent", run)
   return `${path}?agent=${script}`
 }
+
+/**
+ * Where a test that asks opens the app: `/app` locally, the test account's own branch in a deployment. Called in a
+ * test's body, it declares `ownConversation`, so a deployment run without one skips the test as blocked.
+ */
+export const home = () => {
+  requires("ownConversation")
+  return appHome()
+}
+
+/** Where the app opens for a run: its own branch in a deployment that has one, else `/app`. It declares nothing. */
+export const appHome = () => ownPlace()?.path ?? "/app"
+
+/** A page's URL ending at `appHome()`, for a tab that should still be where it opened. */
+export const atAppHome = () => new RegExp(`${appHome().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`)
+
+/**
+ * A question to post straight to ChatApi (`POST /api/questions`), as a second API client does: in a deployment, in the
+ * run's own conversation and bound to the run's person (decision 0023), never in the team's home.
+ */
+export const questionPost = (body: { readonly id: string; readonly answerId: string; readonly text: string }) => {
+  const place = ownPlace()
+  return {
+    data: place === undefined ? body : { ...body, conversationId: place.conversationId },
+    headers: writeHeaders(),
+  }
+}
+
+/** The headers a write to ChatApi carries: in a deployment, the person it expects (decision 0023). */
+export const writeHeaders = (): Record<string, string> =>
+  target === "deployment" ? { origin: new URL(baseURL).origin, [DEVICE_PERSON_HEADER]: me().personId } : {}
 
 /** The scratch repository issue specs write to, `owner/name` (the `githubScratch` need). */
 export const scratchRepository = () => {

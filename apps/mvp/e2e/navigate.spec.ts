@@ -2,7 +2,7 @@ import { allServerRows, expect, type Row, test } from "./devices"
 import { step } from "./fixtures"
 import { type Frame, framesOf, framesPass, recordFrames } from "./loading"
 import { field, type LogRecord, LogTail } from "./logs"
-import { partly, requires } from "./target"
+import { atAppHome, partly, requires } from "./target"
 
 // `app/navigate` end to end (docs/features/flows.md#navigation): a real browser, its own durable engine and the real
 // model. Asking the agent to open a repository takes the tab that asked there, through the router, and leaves the
@@ -50,7 +50,7 @@ const relayed = (records: Array<LogRecord>) =>
     .map((record) => [field(record, "door"), field(record, "outcome"), field(record, "reason")])
 
 test("navigate by the agent: asking to open octocat/Spoon-Knife takes the tab that asked there, and the other tab stays", async ({ devices, request }) => {
-  requires("member")
+  requires("member", "ownConversation")
   const logs = partly("localLogs") ? await LogTail.start() : undefined
   const word = devices.word
   const [a] = await devices.open("A")
@@ -66,7 +66,7 @@ test("navigate by the agent: asking to open octocat/Spoon-Knife takes the tab th
   await shown(a.page)
   neverBlank(await framesOf(a.page))
   // The device's other tab is where it was.
-  await expect(b.page).toHaveURL(/\/app$/)
+  await expect(b.page).toHaveURL(atAppHome())
   await expect(b.page.getByRole("main", { name: "App" })).toBeVisible()
   // The answer settles with the flow call as a step: `app/navigate`, done.
   await expect
@@ -92,7 +92,7 @@ const shown = (page: import("@playwright/test").Page) =>
   })
 
 test("navigate by a person: /navigate /octocat/Spoon-Knife in the composer takes the tab there", async ({ devices }) => {
-  requires("member")
+  requires("member", "ownConversation")
   const [a] = await devices.open("A")
   const b = await devices.tab(a.device, "B")
 
@@ -103,7 +103,7 @@ test("navigate by a person: /navigate /octocat/Spoon-Knife in the composer takes
   await expect(a.page.getByRole("main", { name: "Repository" })).toBeVisible()
   await shown(a.page)
   neverBlank(await framesOf(a.page))
-  await expect(b.page).toHaveURL(/\/app$/)
+  await expect(b.page).toHaveURL(atAppHome())
 })
 
 test("navigate by hover: Runs, hovered first, opens at the click with no loading frame", async ({ devices }) => {
@@ -132,7 +132,7 @@ test("navigate by hover: Runs, hovered first, opens at the click with no loading
 })
 
 test("navigate refused: asking the agent to open an outside site is refused, and the page stays put", async ({ devices, request }) => {
-  requires("member")
+  requires("member", "ownConversation")
   const logs = partly("localLogs") ? await LogTail.start() : undefined
   const word = devices.word
   const [a] = await devices.open("A")
@@ -141,7 +141,7 @@ test("navigate refused: asking the agent to open an outside site is refused, and
   await a.askAndWaitTaken(question)
   await a.expectAnswered(question, `refused-${word}`)
 
-  await expect(a.page).toHaveURL(/\/app$/)
+  await expect(a.page).toHaveURL(atAppHome())
   expect(steps(answerRow(await allServerRows(request), question), "app/navigate")).toEqual(["failed"])
   if (logs !== undefined) {
     await expect

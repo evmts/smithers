@@ -1,7 +1,7 @@
 import { allServerRows, expect, expectSameThread, NOT_SENT, PAGE_SIZE, pairs, serverRows, test } from "./devices"
 import { faultyApp, faults } from "./faults"
 import { step } from "./fixtures"
-import { requires } from "./target"
+import { questionPost, requires, writeHeaders } from "./target"
 
 // Local-first guarantees across real devices (docs/decisions/0002-local-first.md §7): separate browser contexts, each
 // keeping the conversation on the device (SQLite on OPFS) and every question in its outbox (IndexedDB) until Postgres
@@ -11,9 +11,10 @@ import { requires } from "./target"
 // flow, and every page runs the no-spinner observer (e2e/fixtures.ts). The conversation is shared and keeps earlier
 // runs, so every assertion is scoped to the test's own word (`devices.word`), and answers are matched on a word they
 // contain, never exact wording. One-word answers keep the model's token use low; the few long answers are what make
-// "mid-answer" possible. Every test asks, which needs a Member or above; a test that throws a switch of the app's
-// faulty services runs only on a dev build (`requires("faults")`).
-requires("member")
+// "mid-answer" possible. Every test asks, which needs a Member or above and, in a deployment, the test account's own
+// conversation (e2e/target.ts); a test that throws a switch of the app's faulty services runs only on a dev build
+// (`requires("faults")`).
+requires("member", "ownConversation")
 
 // A long answer that ends in a word of its own, so "complete" means its last line arrived.
 const longQuestion = (start: string, end: string) =>
@@ -99,8 +100,8 @@ test("late joiner: a device that opens later shows the same latest messages, and
     for (let n = 0; n < Math.ceil(missing / 2); n++) {
       const id = crypto.randomUUID()
       const answerId = crypto.randomUUID()
-      expect((await request.post("/api/questions", { data: { id, answerId, text: `Earlier question ${n + 1}, ${tag}` } })).status()).toBe(202)
-      expect((await request.post(`/api/answers/${answerId}`, { data: { status: "done", text: `Earlier answer ${n + 1}, ${tag}` } })).status()).toBe(200)
+      expect((await request.post("/api/questions", questionPost({ id, answerId, text: `Earlier question ${n + 1}, ${tag}` }))).status()).toBe(202)
+      expect((await request.post(`/api/answers/${answerId}`, { data: { status: "done", text: `Earlier answer ${n + 1}, ${tag}` }, headers: writeHeaders() })).status()).toBe(200)
     }
   })
   const [a] = await devices.open("A")

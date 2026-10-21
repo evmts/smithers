@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest"
 import type { Row } from "./shape"
-import { DEFAULT_TOKEN_BUDGET, parseTimestamp, REREAD_MS, runStartedAt, SpendBudgetSpent, spendGuard, spentSince, tokenBudget } from "./spend"
+import {
+  DEFAULT_TOKEN_BUDGET,
+  MAX_UNREAD,
+  parseTimestamp,
+  REREAD_MS,
+  runStartedAt,
+  SpendBudgetSpent,
+  spendGuard,
+  spentSince,
+  SpendUnknown,
+  tokenBudget,
+} from "./spend"
 
 const START = Date.UTC(2026, 9, 21, 17, 0, 0)
 
@@ -139,6 +150,18 @@ describe("the guard", () => {
     tick(REREAD_MS)
     await expect(guard(), "the last total stands while a read fails").rejects.toThrow(SpendBudgetSpent)
     expect(unread).toHaveLength(3)
+  })
+
+  it("stops tests once the spend can't be read MAX_UNREAD times in a row, and starts them again after a read", async () => {
+    const { guard, fail, unread } = setup([row({})])
+    const down = new Error("503")
+    fail(down)
+    for (let read = 1; read < MAX_UNREAD; read++) await guard()
+    await expect(guard()).rejects.toThrow(SpendUnknown)
+    await expect(guard()).rejects.toMatchObject({ reads: MAX_UNREAD + 1 })
+    expect(unread).toHaveLength(MAX_UNREAD + 1)
+    fail(undefined)
+    await guard()
   })
 
   it("reads nothing where it doesn't apply: locally, or for a person who can't ask", async () => {

@@ -8,7 +8,7 @@ import { requires, scriptedAgent } from "./target"
 // scripts the agent's model in the asking browser's engine worker (`/app?agent=needs-you`, src/test/scriptedAgent.ts),
 // so it runs the same every time; the second asks the real model. Everything else is real: the engine, ChatApi, the runs
 // routes, Postgres and Electric. Both ask, which needs a Member or above.
-requires("member")
+requires("member", "ownConversation")
 
 const PROMPT = "Which branch should I deploy?"
 
