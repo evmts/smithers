@@ -20,7 +20,7 @@ import * as ShapeAccess from "./ShapeAccess.ts"
 //   the person who asked its question may report for it (an agent acting for them is them), while they may still ask.
 //   A settled row (`done`, `failed`) never changes; a new question bumps `version` and clears the answer; a report
 //   that changes nothing writes nothing (`200 {txid: null}`). A report that can't be written says why:
-//   `409 not_writable` with `reason` `no_row` (the answer is in no conversation), `settled` or `other_launcher`.
+//   `409 not_writable` with `reason` `settled` or `other_launcher`.
 // - `POST /api/runs/<id>/answer`: the person answers the open question `version` names. The first accepted answer
 //   settles it; the same answer again is taken as landed; anything else is `409 not_open`. Only the person answers:
 //   anyone acting for them is `403 person_only`.
@@ -138,24 +138,23 @@ const applyReport = (runId: string, launchedBy: string, report: Report) =>
     return row === undefined ? undefined : Number(row.txid)
   })
 
-/** Why a report for `launchedBy` wrote nothing to run `runId`'s row: none of these is a report already landed. */
-export type NotWritable = "no_row" | "settled" | "other_launcher"
+/** Why a report for `launchedBy` wrote nothing to run `runId`'s row, when it isn't a report already landed. */
+export type NotWritable = "settled" | "other_launcher"
 
 /**
- * Why a report wrote nothing: `no_row` when the run has no row and none could be made (its answer is in no
- * conversation), `settled` or `other_launcher` for a row that can't take it, and `undefined` when the row already says
- * what the report says.
+ * Why a report wrote nothing: `settled` or `other_launcher` for a row that can't take it, and `undefined` when the row
+ * already says what the report says. A report always finds its row: an answer the route takes is in a conversation
+ * (`messages.conversation_id` is required), so the report made the row if there was none.
  */
 const unwrittenBecause = (runId: string, launchedBy: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<{ readonly reason: NotWritable | null }>`
       SELECT CASE
-          WHEN r.id IS NULL THEN 'no_row'
-          WHEN r.launched_by <> ${launchedBy} THEN 'other_launcher'
-          WHEN r.status IN ('done', 'failed') THEN 'settled'
+          WHEN launched_by <> ${launchedBy} THEN 'other_launcher'
+          WHEN status IN ('done', 'failed') THEN 'settled'
         END AS reason
-      FROM (SELECT 1) AS one LEFT JOIN runs r ON r.id = ${runId}`
+      FROM runs WHERE id = ${runId}`
     return row!.reason ?? undefined
   })
 

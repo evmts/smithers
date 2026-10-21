@@ -99,7 +99,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
       expect(device.needs()).toEqual([expect.objectContaining({ id: answerId, version: 1 })])
     }
     await until(() => expect(a.titles.at(-1)).toBe("(1) Smithers"))
-    expect(a.count(Metric.withAttributes(shown, { surface: "conversation" }))).toBe(1)
+    expect(a.count(Metric.withAttributes(shown, { surface: "title" }))).toBe(1)
 
     // This tab's own rows: a draft and Answer's focus, neither of which another tab or device sees.
     a.status.actions.setDraft(answerId, "docs")
@@ -154,7 +154,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
       await until(() => expect(device.needs()).toEqual([expect.objectContaining({ id: answerId, version: 1 })]))
     }
     await until(() => expect(a.titles.at(-1)).toBe("(1) Smithers"))
-    expect(a.count(Metric.withAttributes(shown, { surface: "conversation" }))).toBe(1)
+    expect(a.count(Metric.withAttributes(shown, { surface: "title" }))).toBe(1)
 
     // Answer twice while the first is still sending: one answer goes.
     b.status.actions.answer(answerId, "eu")

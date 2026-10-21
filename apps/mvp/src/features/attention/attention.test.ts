@@ -10,7 +10,8 @@ import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import { DispatchFailed, FlowDispatch, dispatches } from "../../flows/dispatch"
-import { asPerson, nodeDevice, type NodeDevice, openTab, openTestApp, tabLayer, TestChatApi } from "../../test/chatApi"
+import { asPerson, nodeDevice, type NodeDevice, openFaultyTab, openTab, openTestApp, tabLayer, TestChatApi } from "../../test/chatApi"
+import { EngineFaults } from "../../test/faults"
 import { SESSION } from "../auth/store"
 import { AuthStore } from "../auth/store"
 import { show } from "../chat/actions"
@@ -18,9 +19,8 @@ import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
 import { Status } from "../status/status"
 import { StatusStore } from "../status/store"
-import { dropped } from "./actions"
+import { dropped, retry } from "./actions"
 import { Attention } from "./attention"
-import { retry } from "./actions"
 import { ActRefused } from "./flows"
 import { panel as panelActs, shown } from "./metrics"
 import { AttentionStore } from "./store"
@@ -50,10 +50,13 @@ type Tab = ManagedRuntime.ManagedRuntime<
   unknown
 >
 
-/** A device with a tab on it, whose engine leads unless `answers` is false. */
-const openDevice = async (api: TestChatApi["Service"], options: { readonly answers?: boolean } = {}) => {
+/** A device with a tab on it, whose engine leads unless `answers` is false; a `faulty` tab's behind `EngineFaults`. */
+const openDevice = async (
+  api: TestChatApi["Service"],
+  options: { readonly answers?: boolean; readonly faulty?: boolean } = {},
+) => {
   const host: NodeDevice = nodeDevice(options.answers === false ? {} : { agent: api })
-  const runtime: Tab = openTab(api, { host })
+  const runtime: Tab = options.faulty === true ? openFaultyTab(api, { host }) : openTab(api, { host })
   runtimes.push(runtime)
   const chat = await runtime.runPromise(Effect.service(Chat))
   const attention = await runtime.runPromise(Effect.service(Attention))
@@ -84,6 +87,7 @@ const openDevice = async (api: TestChatApi["Service"], options: { readonly answe
     detail: () => store.details.tanstack.toArray[0],
     pending: () => store.pending.tanstack.toArray.map((row) => row.id),
     count: (metric: Metric.Metric<number, Metric.CounterState<number>>) => runtime.runSync(Metric.value(metric)).count,
+    faults: () => runtime.runPromise(Effect.service(EngineFaults) as Effect.Effect<EngineFaults["Service"], never, never>),
   }
 }
 
@@ -478,24 +482,26 @@ describe("a clone in the feed", { timeout: ENGINE_WITHIN }, () => {
     expect(ann.host.navigated).toEqual(["/acme/widgets"])
   })
 
-  test("an act the device still holds is sent again when the app opens; one that can't land leaves the device", async () => {
+  test("a Hide the engine can't take shows the toast again, and Hide again sends it again", async () => {
     const api = await openApi()
-    const host = nodeDevice({ agent: api })
-    const before: Tab = openTab(api, { host })
-    runtimes.push(before)
-    const store = await before.runPromise(Effect.service(AttentionStore))
-    await before.runPromise(store.pending.restored)
-    // A Hide the tab recorded but closed before its engine took it: here, of a notification ChatApi doesn't have.
-    const subject = `run:${crypto.randomUUID()}`
-    await before.runPromise(store.pending.insert({ id: `${subject}:hide`, subject, act: "hide", version: 1 }))
-    const reopened: Tab = openTab(api, { host })
-    runtimes.push(reopened)
-    const pending = (await reopened.runPromise(Effect.service(AttentionStore))).pending
-    await reopened.runPromise(Effect.service(Attention))
-    // Sent again, refused (ChatApi has no such notification), and taken back: the toast would show as it is.
-    await until(() => expect(pending.tanstack.toArray).toEqual([]))
-    const refused = { act: "hide", reason: "@smthrs/mvp/attention/ActRefused" }
-    await until(() => expect(reopened.runSync(Metric.value(Metric.withAttributes(dropped, refused))).count).toBe(1))
+    const ann = await openDevice(api, { faulty: true })
+    const subject = "clone:github/acme/hide-refused"
+    await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`INSERT INTO notifications (recipient, subject, kind, state, mine, repo_id, title, ref, href, version)
+        VALUES ('person-member', ${subject}, 'clone', 'working', true, 'github/acme/hide-refused', 'acme/hide-refused',
+          ${`fetching:${1024}`}, '/acme/hide-refused', 1)`)))
+    await until(() => expect(ann.entry(subject)).toMatchObject({ stack: true }))
+    await Effect.runPromise((await ann.faults()).refuseStarts("notification/ack"))
+    const refused = Metric.withAttributes(dispatches, { flow: "notification/ack", door: "button", outcome: "error" })
+    const dropping = Metric.withAttributes(dropped, { act: "hide", reason: "@smthrs/mvp/flows/DispatchFailed" })
+    for (const press of [1, 2]) {
+      ann.attention.actions.hide(subject)
+      // The engine refuses the act: it leaves the device, and the toast shows as it is.
+      await until(() => expect(ann.count(dropping)).toBe(press))
+      expect(ann.count(refused)).toBe(press)
+      expect(ann.pending()).toEqual([])
+      await until(() => expect(ann.entry(subject)).toMatchObject({ stack: true }))
+    }
   })
 })
 

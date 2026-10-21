@@ -148,6 +148,11 @@ export class ChatStore extends Context.Service<
     readonly open: (conversationId: string) => Effect.Effect<ConversationState>
     /** A branch conversation opened before, if any: what a frontend reads without waiting. */
     readonly opened: (conversationId: string) => ConversationState | undefined
+    /**
+     * Has `build` run for each branch conversation opened, those open now and each one `open` opens from now on, before
+     * `open` returns it: a feature keeps its own state per conversation beside chat's, whole by the time a tab shows it.
+     */
+    readonly forEachOpened: (build: (opened: ConversationState) => Effect.Effect<void>) => Effect.Effect<void>
     readonly scope: Scope.Scope
     readonly pageSize: number
     /** When this tab last queued a question: each takes a later `queuedAt`, so questions asked in one millisecond keep their order. */
@@ -413,6 +418,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   // --- Branch conversations (decision 0013 §1): one shape and one collection each, opened when a page needs one ---
 
   const branches = new Map<string, ConversationState>()
+  const builders: Array<(opened: ConversationState) => Effect.Effect<void>> = []
   const persistence = yield* Persistence.Persistence
   const openBranch = (conversationId: string) =>
     Effect.gen(function* () {
@@ -465,6 +471,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         Effect.ignore,
         Effect.forkIn(scope, { startImmediately: true }),
       )
+      yield* Effect.forEach(builders, (build) => build(opened), { discard: true })
       branches.set(conversationId, opened)
       yield* Effect.logInfo("chat conversation opened").pipe(Effect.annotateLogs({ conversationId }))
       return opened
@@ -611,6 +618,11 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     placeState: yield* placeQuery(place),
     open,
     opened: (conversationId) => branches.get(conversationId),
+    forEachOpened: (build) =>
+      Effect.suspend(() => {
+        builders.push(build)
+        return Effect.forEach([...branches.values()], build, { discard: true })
+      }),
     scope,
     pageSize,
     lastQueuedAt: yield* Ref.make(0),

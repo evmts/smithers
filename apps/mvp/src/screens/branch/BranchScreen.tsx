@@ -39,7 +39,7 @@ export function BranchScreen() {
       <RepoHeader />
       {/* Offline before tracking answered: the pending view's public chrome until the route opens again online. */}
       {open ? <BranchHeader access={access} /> : current?.status === "offline" ? <BranchHeader access={undefined} pending /> : null}
-      <div className="branch-screen-notices"><Toasts /></div>
+      <div className="branch-screen-notices"><Toasts surface={open ? "conversation" : "page"} /></div>
       <div className="branch-screen-view">
         {open && search.terminal !== undefined
           ? <TerminalPanel canOpen={writes(access) && current?.mode === "open"} />

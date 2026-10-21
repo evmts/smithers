@@ -17,7 +17,7 @@ import { Local, Run } from "./schema"
 // - the title: `(N) Smithers` while N questions need the person, through the host's `TabTitle`;
 // - the record: each question the person is shown is a log line and a count, with no question text.
 
-/** Questions that came to need the person, by `surface` (`conversation`): one per question, per tab. */
+/** Questions that came to need the person, by `surface` (`title`: the tab's title counts it): one per question, per tab. */
 export const shown = Metric.counter("smithers_agent_status_shown", {
   description: "Questions from the agent that came to need the person, per tab",
   incremental: true,
@@ -59,11 +59,8 @@ export class StatusStore extends Context.Service<
     readonly latest: Success<typeof latestQuery>
     /** The questions that need the person, in every conversation: the title counts these. */
     readonly needs: Success<typeof needsQuery>
-    /**
-     * A branch conversation's status, opening its conversation in chat first: built on first use, and kept for as long
-     * as the store lives. Two first uses at once may each build one; the later is kept.
-     */
-    readonly open: (conversationId: string) => Effect.Effect<ConversationStatus>
+    /** A branch conversation's status, once chat has opened it; kept for as long as the store lives. */
+    readonly opened: (conversationId: string) => ConversationStatus | undefined
     /** Where the background work an action starts runs. */
     readonly scope: Scope.Scope
   }
@@ -95,26 +92,19 @@ export class StatusStore extends Context.Service<
         const needs = yield* needsQuery(messages, runs)
         const deliveries = yield* deliveriesQuery(runs)
 
-        // A branch's status (decision 0013 §1): its own messages against the same runs, built on first use and kept;
-        // the views read it beside chat's window of the same conversation.
+        // A branch's status (decision 0013 §1): its own messages against the same runs, built as chat opens the
+        // conversation, so a tab that shows it finds it whole; the views read it beside chat's window of it.
         const branches = new Map<string, ConversationStatus>()
-        const openBranch = (conversationId: string) =>
+        yield* chat.forEachOpened((opened) =>
           Effect.gen(function* () {
-            const { messages: branchMessages } = yield* chat.open(conversationId)
-            const branchStatuses = yield* statusesQuery(branchMessages, runs, local)
-            const opened: ConversationStatus = { statuses: branchStatuses, latest: yield* latestQuery(branchStatuses) }
-            branches.set(conversationId, opened)
-            return opened
+            const branchStatuses = yield* statusesQuery(opened.messages, runs, local)
+            branches.set(opened.conversationId, { statuses: branchStatuses, latest: yield* latestQuery(branchStatuses) })
           }).pipe(
             Scope.provide(scope),
             // These queries' shape is fixed here; one TanStack DB can't build is a bug, as chat's own queries are.
             Effect.orDie,
           )
-        const open = (conversationId: string): Effect.Effect<ConversationStatus> =>
-          Effect.suspend(() => {
-            const known = branches.get(conversationId)
-            return known !== undefined ? Effect.succeed(known) : openBranch(conversationId)
-          })
+        )
 
         const background = <A>(stream: Stream.Stream<A>, each: (value: A) => Effect.Effect<void>) =>
           stream.pipe(Stream.runForEach(each), Effect.forkIn(scope, { startImmediately: true }))
@@ -138,9 +128,9 @@ export class StatusStore extends Context.Service<
             yield* Effect.sync(() => title.write(agentStatusTitle(base, rows.length)))
             for (const row of rows.filter((need) => !seen.has(`${need.id}:${need.version}`))) {
               seen.add(`${row.id}:${row.version}`)
-              yield* Metric.update(Metric.withAttributes(shown, { surface: "conversation" }), 1)
+              yield* Metric.update(Metric.withAttributes(shown, { surface: "title" }), 1)
               yield* Effect.logInfo("agent.status.shown").pipe(
-                Effect.annotateLogs({ runId: row.id, version: row.version!, surface: "conversation" }),
+                Effect.annotateLogs({ runId: row.id, version: row.version!, surface: "title" }),
               )
             }
           }))
@@ -151,7 +141,7 @@ export class StatusStore extends Context.Service<
           statuses,
           latest,
           needs,
-          open,
+          opened: (conversationId) => branches.get(conversationId),
           scope,
         })
       }),

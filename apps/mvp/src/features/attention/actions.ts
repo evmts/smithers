@@ -12,9 +12,9 @@ import { AttentionNavigation, AttentionStore } from "./store"
 // What a person does with the feed (decision 0009 decision 10): open an entry, hide a toast, dismiss an entry, mark one
 // read, and use the notifications panel: open it, expand an entry in it, answer or retry from it. Read, Hide and
 // Dismiss show on this device straight away, kept on the device until the synced row shows them, and run on as
-// `notification/ack` (door `button`), one execution per subject, act and version. An act that can't land (the engine
-// refused it, or ChatApi did) leaves the device too, so the entry shows as it is and the person can act again; one the
-// device still holds when the app opens again is sent again (`resendPending`). The panel is this tab's own.
+// `notification/ack` (door `button`), one run per press. An act that can't land (the engine refused it, or ChatApi did,
+// or it went unsent for a day) leaves the device too, so the entry shows as it is and the person can act again; ChatApi
+// merges an act with `greatest()`, so an act sent twice changes nothing. The panel is this tab's own.
 
 /** Acts this device took back because they couldn't land, by `act` and `reason`: the failure's tag. */
 export const dropped = Metric.counter("smithers_notification_acts_dropped", {
@@ -23,10 +23,10 @@ export const dropped = Metric.counter("smithers_notification_acts_dropped", {
 })
 
 /**
- * Runs `notification/ack` for the act this device holds as pending row `id`, at `version`, in the store's scope: once
- * per subject, act and version, however often it is sent (the same execution joins the run its start admitted). When it
- * can't land (the engine refused it, or ChatApi did, or it went unsent for a day), the pending row goes, unless a later
- * act replaced it; a log line `notifications.pending` and a count of `dropped` say so.
+ * Runs `notification/ack` for the act this device holds as pending row `id`, at `version`, in the store's scope, as a
+ * run of its own: a press after one that couldn't land runs again rather than joining the run that failed. When it
+ * can't land, the pending row goes, unless a later act replaced it; a log line `notifications.pending` and a count of
+ * `dropped` say so.
  */
 const send = (id: string, request: { readonly subject: string; readonly version: number; readonly act: Inbox.Act }) =>
   Effect.gen(function* () {
@@ -44,10 +44,7 @@ const send = (id: string, request: { readonly subject: string; readonly version:
             )
           }))
       }).pipe(Effect.orDie)
-    yield* flows.dispatch("notification/ack", request, {
-      door: "button",
-      executionId: `ack/${request.subject}/${request.act}/${request.version}`,
-    }).pipe(
+    yield* flows.dispatch("notification/ack", request, { door: "button" }).pipe(
       Effect.flatMap((done) => (done._tag === "Done" ? Effect.void : Effect.fail(done.error))),
       Effect.catch((error) => drop(error._tag)),
       Effect.forkIn(scope),
@@ -72,18 +69,6 @@ const record = (subject: string, act: Inbox.Act) =>
     // A local collection refuses only a row its own schema rejects, which these never are: a bug, not a state.
     Effect.orDie,
   )
-
-/**
- * Sends again every act this device holds that hasn't landed: what a tab closed or reloaded before its engine took it
- * left behind. Each joins its earlier run when the engine has one, so an act lands once however many tabs send it.
- */
-export const resendPending = Effect.gen(function* () {
-  const { pending } = yield* AttentionStore
-  yield* pending.restored.pipe(Effect.ignore)
-  for (const row of yield* pending.toArray) {
-    yield* send(row.id, { subject: row.subject, version: row.version, act: row.act })
-  }
-})
 
 /** Hides entry `subject`'s toast: on every device, and it stays in the person's list. */
 export const hide = (subject: string) => Effect.asVoid(record(subject, "hide"))

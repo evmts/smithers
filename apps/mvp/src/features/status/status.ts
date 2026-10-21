@@ -2,7 +2,6 @@ import { Context, Effect, Layer } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { answer, focus, setDraft } from "./actions"
 import type { AnswerValue } from "./schema"
-import { ChatStore } from "../chat/store"
 import { StatusStore } from "./store"
 
 // Agent status as a frontend sees it (decision 0015): live queries to read and plain functions to act, with no Effect
@@ -44,7 +43,6 @@ export class Status extends Context.Service<Status, { readonly queries: StatusQu
     Status,
     Effect.gen(function* () {
       const store = yield* StatusStore
-      const chat = yield* ChatStore
       const run = Effect.runSyncWith(yield* Effect.context<StatusStore | FlowDispatch>())
       const queriesOf = ({ statuses, latest }: { readonly statuses: Store["statuses"]; readonly latest: Store["latest"] }) => ({
         statuses: statuses.tanstack,
@@ -52,14 +50,9 @@ export class Status extends Context.Service<Status, { readonly queries: StatusQu
       })
       return Status.of({
         queries: {
-          // A branch chat has open: chat opens a conversation before a tab shows it (src/features/chat/actions.ts
-          // `show`), so the view that reads it finds it whole, built on its first read.
+          // A branch chat has open: its status is built as chat opens it, before a tab shows it.
           of: (conversationId) =>
-            queriesOf(
-              conversationId !== null && conversationId !== undefined && chat.opened(conversationId) !== undefined
-                ? run(store.open(conversationId))
-                : store,
-            ),
+            queriesOf((conversationId === null || conversationId === undefined ? undefined : store.opened(conversationId)) ?? store),
         },
         actions: {
           answer: (id, value) => run(answer(id, value)),
