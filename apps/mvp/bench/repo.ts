@@ -3,13 +3,16 @@
 // GET routes. The first read of a commit may go to Code Storage; every later one is the immutable cache's. Nothing is
 // cloned here: the suite reads `octocat/Spoon-Knife` once something has cloned it (e2e/repo.spec.ts does), and only
 // counts `repo.not_ready` otherwise.
-import { now } from "./chatapi.ts"
+import { apply, now, type Row, type ShapeMessage } from "./chatapi.ts"
 import type { Bench } from "./suites.ts"
 
 /** The fixture the e2e test clones: tiny, public, on GitHub since 2014. */
 export const FIXTURE = { owner: "octocat", name: "Spoon-Knife", id: "github/octocat/spoon-knife" }
 
-type ShapeMessage = { readonly key?: string; readonly value?: Record<string, unknown>; readonly headers: { readonly control?: string } }
+/** Replay one repositories shape response into the device's projection. */
+export const applyRepositories = (rows: Map<string, Record<string, unknown>>, messages: ReadonlyArray<ShapeMessage>) => {
+  apply(rows as Map<string, Row>, messages)
+}
 
 /** `GET /api/shapes/repositories` from offset -1 to up-to-date: how long it took, and every row it delivered. */
 export const repositoriesSync = async (baseUrl: string, timeoutMs = 30_000) => {
@@ -25,9 +28,7 @@ export const repositoriesSync = async (baseUrl: string, timeoutMs = 30_000) => {
     const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
     if (!response.ok) throw new Error(`GET /api/shapes/repositories answered ${response.status} at offset ${offset}`)
     const messages = (await response.json()) as Array<ShapeMessage>
-    for (const message of messages) {
-      if (message.key !== undefined && message.value !== undefined) rows.set(String(message.value.id), message.value)
-    }
+    applyRepositories(rows, messages)
     handle = response.headers.get("electric-handle") ?? handle
     offset = response.headers.get("electric-offset") ?? offset
     if (messages.some((message) => message.headers.control === "up-to-date")) {

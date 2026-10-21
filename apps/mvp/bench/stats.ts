@@ -1,7 +1,8 @@
 // Statistics, the baseline comparison and the terminal summary. No browser, no I/O.
 
 export type Summary = { n: number; p50: number; p95: number; min: number; max: number }
-export type Baseline = { p50: number; p95: number }
+export type BaselineOrigin = { source: string; commit: string | null; machine: unknown; server: string; n: number }
+export type Baseline = { p50: number; p95: number; origin?: BaselineOrigin }
 
 // Metric keys in display order, with their labels. Every value is milliseconds. The table shows a metric missing here
 // under its key, after these.
@@ -105,3 +106,20 @@ export const table = (
     })
   return [...header, ...rows].join("\n")
 }
+
+/** Metrics persisted when updating a target's baseline. */
+export const baselineMetrics = (
+  previous: Record<string, Baseline> | undefined,
+  metrics: Record<string, Summary>,
+  origins?: { previous?: BaselineOrigin; current: BaselineOrigin },
+): Record<string, Baseline> => ({
+  ...Object.fromEntries(Object.entries(previous ?? {}).map(([metric, value]) => [metric,
+    origins?.previous === undefined ? value : { ...value, origin: value.origin ?? {
+      source: origins.previous.source, commit: origins.previous.commit, machine: origins.previous.machine,
+      server: origins.previous.server, n: origins.previous.n,
+    } },
+  ])),
+  ...Object.fromEntries(Object.entries(metrics).map(([metric, { p50, p95 }]) => [metric,
+    { p50, p95, ...(origins === undefined ? {} : { origin: origins.current }) },
+  ])),
+})

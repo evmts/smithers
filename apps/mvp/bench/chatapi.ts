@@ -5,6 +5,18 @@
 // Times are epoch milliseconds with sub-millisecond precision (`performance.timeOrigin + performance.now()`), the
 // same clock the pages report on, since everything runs on one machine.
 
+import { Effect, Context, Metric } from "effect"
+
+export class FollowerHttp extends Context.Service<FollowerHttp, {
+  readonly request: (url: string, signal: AbortSignal) => Effect.Effect<Response, Error>
+}>()("bench/FollowerHttp") {}
+
+const followerRequests = Metric.counter("bench_follower_requests")
+
+const liveHttp = { request: (url: string, signal: AbortSignal) => Effect.tryPromise({
+  try: () => fetch(url, { signal }), catch: (cause) => new Error(String(cause)),
+}) }
+
 /** Now, comparable with a page's `performance.timeOrigin + performance.now()`. */
 export const now = () => performance.timeOrigin + performance.now()
 
@@ -107,57 +119,78 @@ export class Follower {
   readonly timelines = new Map<string, Timeline>()
   /** Electric answered 409 (`must-refetch`); the follower started again from `offset=now`. */
   refetches = 0
-  /** Requests that failed or answered another error; each is retried after a second. */
+  /** Terminal observation failures; an incomplete observation cannot produce a valid benchmark. */
   errors = 0
   readonly #baseUrl: string
   readonly #abort = new AbortController()
   readonly #waiters = new Set<() => void>()
   #loop: Promise<void> | undefined
+  #failure: Error | undefined
 
-  constructor(baseUrl: string) {
+  readonly options: { timeoutMs?: number; http?: FollowerHttp["Service"] }
+  constructor(baseUrl: string, options: { timeoutMs?: number; http?: FollowerHttp["Service"] } = {}) {
     this.#baseUrl = baseUrl
+    this.options = options
   }
 
   async #request(params: Record<string, string | undefined>) {
-    const response = await fetch(shapeUrl(this.#baseUrl, params), { signal: this.#abort.signal })
-    const messages = response.ok ? ((await response.json()) as Array<ShapeMessage>) : (await response.body?.cancel(), [])
-    return {
-      status: response.status,
-      at: now(),
-      messages,
-      handle: response.headers.get("electric-handle") ?? undefined,
-      offset: response.headers.get("electric-offset") ?? undefined,
-      cursor: response.headers.get("electric-cursor") ?? undefined,
-    }
+    const baseUrl = this.#baseUrl
+    const signal = AbortSignal.any([this.#abort.signal, AbortSignal.timeout(this.options.timeoutMs ?? (params.live === "true" ? 90_000 : 30_000))])
+    return Effect.runPromise(Effect.gen(function* () {
+      const http = yield* Effect.service(FollowerHttp)
+      const response = yield* http.request(shapeUrl(baseUrl, params), signal)
+      const messages = yield* Effect.tryPromise(async () => response.status === 204 ? [] : response.ok ? ((await response.json()) as Array<ShapeMessage>) : (await response.body?.cancel(), []))
+      return {
+        status: response.status,
+        at: now(),
+        messages,
+        handle: response.headers.get("electric-handle") ?? undefined,
+        offset: response.headers.get("electric-offset") ?? undefined,
+        cursor: response.headers.get("electric-cursor") ?? undefined,
+      }
+    }).pipe(
+      Effect.tap(() => Metric.update(followerRequests, 1)),
+      Effect.tapError(() => Effect.logError("bench.follower.request_failed")),
+      Effect.withSpan("bench.follower.request"),
+      Effect.provideService(FollowerHttp, this.options.http ?? liveHttp),
+    ), { signal })
   }
 
   /** Joins the shape at `offset=now`; fails when ChatApi's proxy or Electric doesn't answer. */
   async start() {
     const first = await this.#request({ offset: "now" })
-    if (first.status !== 200) throw new Error(`GET /api/shapes/messages?offset=now answered ${first.status}`)
-    this.#loop = this.#follow(first)
+    this.#validate(first)
+    this.#receive(first.messages, first.at)
+    this.#loop = this.#follow(first).catch((error: unknown) => {
+      if (this.#abort.signal.aborted) return
+      this.errors++
+      this.#failure = error instanceof Error ? error : new Error(String(error))
+      for (const waiter of this.#waiters) waiter()
+    })
+  }
+
+  #validate(response: { status: number; handle?: string; offset?: string }) {
+    if (response.status !== 200) throw new Error(`GET /api/shapes/messages?offset=now answered ${response.status}`)
+    if (!response.handle || !response.offset) throw new Error("Electric returned no valid shape cursor")
   }
 
   async #follow(start: { handle?: string; offset?: string; cursor?: string }) {
     let { handle, offset, cursor } = start
     while (!this.#abort.signal.aborted) {
-      try {
-        const response = await this.#request({ offset, handle, live: "true", cursor })
-        if (response.status === 409) {
-          this.refetches++
-          ;({ handle, offset, cursor } = await this.#request({ offset: "now" }))
-          continue
-        }
+      let response = await this.#request({ offset, handle, live: "true", cursor })
+      if (response.status === 409) {
+        this.refetches++
+        response = await this.#request({ offset: "now" })
+        this.#validate(response)
+        // A refetch replaces the cursor only after a successful, validated response.
+        ;({ handle, offset, cursor } = response)
+      } else {
         if (response.status !== 200 && response.status !== 204) throw new Error(`HTTP ${response.status}`)
-        this.#receive(response.messages, response.at)
         handle = response.handle ?? handle
         offset = response.offset ?? offset
         cursor = response.cursor ?? cursor
-      } catch {
-        if (this.#abort.signal.aborted) return
-        this.errors++
-        await sleep(1_000)
       }
+      this.#receive(response.messages, response.at)
     }
   }
 
@@ -174,10 +207,16 @@ export class Follower {
 
   /** Resolves with `read()` once it is defined, checked after every response; rejects after `timeoutMs`. */
   until<T>(read: () => T | undefined, timeoutMs: number, what: string): Promise<T> {
+    if (this.#failure !== undefined) return Promise.reject(this.#failure)
     const value = read()
     if (value !== undefined) return Promise.resolve(value)
     return new Promise((resolve, reject) => {
       const check = () => {
+        if (this.#failure !== undefined) {
+          done()
+          reject(this.#failure)
+          return
+        }
         const value = read()
         if (value === undefined) return
         done()

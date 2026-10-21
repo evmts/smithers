@@ -1,5 +1,7 @@
 // `pnpm bench`: performance benchmarks of the app in real Chromium, locally or against any deployment.
 // See docs/benchmarks.md for the method, options and how to read the results.
+import { Effect } from "effect"
+import { usingPair } from "./resources.ts"
 import { chromium } from "@playwright/test"
 import { execFileSync } from "node:child_process"
 import { existsSync } from "node:fs"
@@ -10,7 +12,7 @@ import { relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parseArgs } from "node:util"
 import { Follower } from "./chatapi.ts"
-import { regressions, summarize, table, type Baseline, type Summary } from "./stats.ts"
+import { baselineMetrics, regressions, summarize, table, type Baseline, type Summary } from "./stats.ts"
 import { seed, SUITES, type Bench, type Check, type SuiteName } from "./suites.ts"
 
 const HERE = fileURLToPath(new URL(".", import.meta.url))
@@ -79,7 +81,7 @@ const run = (command: string, commandArgs: Array<string>) => {
 const environment = (html: string, browserVersion: string, startedAt: Date) => {
   const darwin = process.platform === "darwin"
   return {
-    commit: run("jj", ["log", "-r", "@", "-T", "commit_id", "--no-graph"]),
+    commit: run("jj", ["--ignore-working-copy", "log", "-r", "@", "-T", "commit_id", "--no-graph"]),
     baseUrl,
     // Vite's dev client in the HTML means unbundled dev modules, not the production build.
     server: html.includes("/@vite/client") ? "vite-dev" : "built",
@@ -122,43 +124,49 @@ const main = async () => {
   const counts: Record<string, number> = {}
   // One more device for the whole run: it hears every row the run writes, and when Electric delivered it.
   const follower = new Follower(baseUrl)
-  await follower.start().catch((error: unknown) => fail(`can't follow ${baseUrl}/api/shapes/messages: ${String(error)}`))
-  const browser = await chromium.launch()
-  const bench: Bench = {
-    browser,
-    baseUrl,
-    n,
-    nAnswer,
-    concurrency,
-    bursts,
-    runId,
-    newestWord: `bench-${runId}-seed`,
-    follower,
-    record: {
-      sample: (metric, ms) => void (samples[metric] ??= []).push(ms),
-      check: (suite, iteration, name, ok, detail) => void checks.push({ suite, iteration, name, ok, ...(ok ? {} : { detail }) }),
-      detail: (suite, record) => void (details[suite] ??= []).push(record),
-      missing: (metric) => void (missing[metric] = (missing[metric] ?? 0) + 1),
-      count: (name) => void (counts[name] = (counts[name] ?? 0) + 1),
-    },
-  }
-  const env = environment(html, browser.version(), startedAt)
-  console.error(
-    `bench: ${baseUrl} (${env.server}), N=${n}, N (answering)=${nAnswer}, ${concurrency} at once × ${bursts}, suites ${suites.join(", ")}`,
-  )
+  const env = await Effect.runPromise(usingPair(
+    Effect.tryPromise(async () => { await follower.start(); return follower }),
+    (follower) => Effect.promise(() => follower.stop()),
+    Effect.tryPromise(() => chromium.launch()),
+    (browser) => Effect.promise(() => browser.close()),
+    (browser) => Effect.tryPromise(async () => {
+      const bench: Bench = {
+        browser,
+        baseUrl,
+        n,
+        nAnswer,
+        concurrency,
+        bursts,
+        runId,
+        newestWord: `bench-${runId}-seed`,
+        follower,
+        record: {
+          sample: (metric, ms) => void (samples[metric] ??= []).push(ms),
+          check: (suite, iteration, name, ok, detail) => void checks.push({ suite, iteration, name, ok, ...(ok ? {} : { detail }) }),
+          detail: (suite, record) => void (details[suite] ??= []).push(record),
+          missing: (metric) => void (missing[metric] = (missing[metric] ?? 0) + 1),
+          count: (name) => void (counts[name] = (counts[name] ?? 0) + 1),
+        },
+      }
+      const env = environment(html, browser.version(), startedAt)
+      console.error(
+        `bench: ${baseUrl} (${env.server}), N=${n}, N (answering)=${nAnswer}, ${concurrency} at once × ${bursts}, suites ${suites.join(", ")}`,
+      )
 
-  const step = async (name: string, body: () => Promise<unknown>) => {
-    console.error(`bench: ${name}`)
-    try {
-      await body()
-    } catch (error) {
-      bench.record.check(name, -1, "ran to completion", false, error instanceof Error ? error.message.split("\n")[0] : String(error))
-    }
-  }
-  await step("seed", () => seed(bench))
-  if (checks.every((check) => check.ok)) for (const name of suites) await step(name, () => SUITES[name](bench))
-  await browser.close()
-  await follower.stop()
+      const step = async (name: string, body: () => Promise<unknown>) => {
+        console.error(`bench: ${name}`)
+        try {
+          await body()
+        } catch (error) {
+          bench.record.check(name, -1, "ran to completion", false, error instanceof Error ? error.message.split("\n")[0] : String(error))
+        }
+      }
+      await step("seed", () => seed(bench))
+      if (checks.every((check) => check.ok)) for (const name of suites) await step(name, () => SUITES[name](bench))
+      bench.record.check("follower", -1, "observed without transport errors", follower.errors === 0, `${follower.errors} request failures`)
+      return env
+    }),
+  ))
 
   const metrics: Record<string, Summary> = Object.fromEntries(Object.entries(samples).map(([metric, values]) => [metric, summarize(values)]))
   const failed = checks.filter((check) => !check.ok)
@@ -217,8 +225,9 @@ const main = async () => {
   if (failed.length > 0) lines.push("Not compared with the baseline: the run failed a check.")
   else if (!baseline) lines.push(args["update-baseline"] ? `No earlier baseline for ${baseUrl}.` : `No baseline for ${baseUrl}; run with --update-baseline to set this run as it.`)
   else {
-    if (JSON.stringify(baseline.machine) !== JSON.stringify(env.machine) || baseline.server !== env.server) {
-      lines.push(`Warning: the baseline ran on another machine or server build (${relative(APP_DIR, `${HERE}${baseline.source}`)}).`)
+    if (Object.values(baseline.metrics).some((metric) =>
+      JSON.stringify((metric.origin ?? baseline).machine) !== JSON.stringify(env.machine) || (metric.origin ?? baseline).server !== env.server)) {
+      lines.push("Warning: some baseline metrics ran on another machine or server build.")
     }
     lines.push(
       flagged.length === 0
@@ -232,13 +241,14 @@ const main = async () => {
 
   if (args["update-baseline"] && failed.length === 0) {
     const source = relative(HERE, resultPath)
+    const origin = { source, commit: env.commit, machine: env.machine, server: env.server, n }
     baselines.targets[baseUrl] = {
       source,
       commit: env.commit,
       machine: env.machine,
       server: env.server,
       n,
-      metrics: Object.fromEntries(Object.entries(metrics).map(([metric, { p50, p95 }]) => [metric, { p50, p95 }])),
+      metrics: baselineMetrics(baseline?.metrics, metrics, { previous: baseline, current: origin }),
     }
     await writeFile(BASELINE_PATH, `${JSON.stringify(baselines, null, 2)}\n`)
     // Runs are ignored by version control; the baseline's source run is kept.

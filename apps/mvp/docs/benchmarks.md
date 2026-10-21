@@ -242,3 +242,9 @@ These read the first results above, so they describe the app as it was then.
 - **The machine is unthrottled.** Local numbers come from an M3 Max on loopback.
 - **Small N makes p95 noisy.** At N=5, p95 is nearly the slowest sample.
 - **The `repo` suite reads one tiny repository.** `octocat/Spoon-Knife` has three files, so it measures RepoApi's and the cache's overhead, not a large tree. Decision 0006 also asks for trees of 1,000 and 50,000 paths and the first paint of a 500 KiB file, cold and warm; those need a fixture repository with that shape, which doesn't exist yet. Its "first" read is cold only on a deployment's first run after the clone: the immutable cache keeps a commit's answers. It has no baseline until a run records one.
+
+## Correctness and cleanup
+
+A concurrent ask passes only after its browser displays completion. Shape refetches validate their status and cursor and replay their messages; repository replay merges updates and removes deletes. A follower request times out after 30 seconds at startup or 90 seconds while live, including the response body. Transport failure fails observation instead of retrying across an unmeasured gap. Effect scopes close acquired resources on failure and cancellation.
+
+Selected-suite baseline updates retain omitted metrics. Each metric keeps its original run source and environment; mixed-machine baselines still warn. Run benchmark unit tests with `node --test bench/*.test.ts` from `apps/mvp`.
