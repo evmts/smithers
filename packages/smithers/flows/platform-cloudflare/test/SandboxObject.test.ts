@@ -5,6 +5,8 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
+import { TestClock } from "effect/testing"
 import { SandboxObject } from "../src/index.ts"
 import * as MemoryContainer from "./fixtures/MemoryContainer.ts"
 import * as Telemetry from "./fixtures/Telemetry.ts"
@@ -142,6 +144,26 @@ describe("SandboxObject.wake", () => {
           )
         )
         t.expectNoContent("start broke")
+      }))
+    )
+  })
+
+  it.effect("the log line says how long the wake took, and the span doesn't", () => {
+    const t = Telemetry.make()
+    const { machine } = MemoryContainer.machine(false)
+    const slow = { ...machine, running: Effect.andThen(Effect.sleep("312 seconds"), machine.running) }
+    return Effect.gen(function*() {
+      const woken = yield* Effect.forkChild(SandboxObject.wake(slow, { intercepts }))
+      yield* TestClock.adjust("312 seconds")
+      expect(yield* Fiber.join(woken)).toBe("started")
+    }).pipe(
+      t.observed,
+      Effect.andThen(Effect.sync(() => {
+        expect(t.lines("cloudflare.sandbox.wake")[0]!.annotations).toMatchObject({
+          outcome: "started",
+          durationMs: 312_000
+        })
+        expect(Object.keys(Object.fromEntries(t.named("sandbox.wake")[0]!.attributes))).not.toContain("durationMs")
       }))
     )
   })

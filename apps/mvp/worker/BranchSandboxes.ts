@@ -4,7 +4,7 @@ import { ContainerSession, ContainerTerminal, SandboxObject as SandboxHost } fro
 import { SandboxTools } from "@smthrs/sandbox"
 import { RuntimeContext } from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Cause, Config, Effect, Fiber, Layer, Schema, Scope } from "effect"
+import { Cause, Clock, Config, Effect, Fiber, Layer, Schema, Scope } from "effect"
 import { FetchHttpClient, Headers, HttpBody, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Database from "../db/Database.ts"
 import { BranchSandbox } from "../infra/BranchSandbox.ts"
@@ -250,15 +250,21 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           Effect.scoped(Effect.flatMap(box.exec(argv, options), (process) => process.exitCode)))
 
       // A wake's failure is logged with the step it failed in: the container's start, the checkout, the restore or
-      // the placeholders, so a failure only production shows says where it happened.
+      // the placeholders, so a failure only production shows says where it happened. A wake that works logs how long
+      // each step took, so a slow one says which step was slow.
       const wake = (branch: SandboxBranch) =>
         Effect.suspend(() => {
           let stage: WakeStage = "start"
+          const took: Partial<Record<`${WakeStage}Ms`, number>> = {}
+          const timed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+            Effect.flatMap(Clock.currentTimeMillis, (startedAt) =>
+              Effect.tap(effect, () =>
+                Effect.map(Clock.currentTimeMillis, (now) => void (took[`${stage}Ms`] = now - startedAt))))
           return Effect.gen(function* () {
             yield* state.storage.put("branch", branch)
-            const generation = yield* start
+            const generation = yield* timed(start)
             stage = "checkout"
-            const exit = yield* run(checkoutArgv(branch.branch, forgeRemote(branch.owner, branch.name)), SANDBOX_USER)
+            const exit = yield* timed(run(checkoutArgv(branch.branch, forgeRemote(branch.owner, branch.name)), SANDBOX_USER))
             if (exit !== 0) {
               yield* Effect.logWarning("sandbox.checkout").pipe(
                 Effect.annotateLogs({ branchId: branch.branchId, exitCode: exit, failure: CHECKOUT_FAILURES[exit] ?? "other" }),
@@ -268,9 +274,12 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
             // A fresh generation gets the working copy the last one saved (worker/branch/Machine.ts); once. A machine
             // that doesn't answer fails the wake, which is tried again, before anything can save over the checkpoint.
             stage = "restore"
-            yield* Machine.restore(machine, generation)
+            yield* timed(Machine.restore(machine, generation))
             stage = "placeholders"
-            if (secretsOn) yield* placeholders(branch, generation)
+            if (secretsOn) yield* timed(placeholders(branch, generation))
+            yield* Effect.logInfo("sandbox.wake").pipe(
+              Effect.annotateLogs({ branchId: branch.branchId, outcome: "woken", generation, ...took }),
+            )
             return { _tag: "Woken", generation } as const
           }).pipe(
             Effect.catchCause((cause) =>
