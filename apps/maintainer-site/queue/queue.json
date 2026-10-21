@@ -1,7 +1,355 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-21T07:08:12Z",
+  "generatedAt": "2026-10-21T16:24:14Z",
   "items": [
+    {
+      "id": "gif:factory@9a7e",
+      "kind": "gif",
+      "title": "Watch: the coding factory: TODO to pull request to a person's merge",
+      "priority": 970,
+      "why": "VibeLang release first (Will, 19:02): the coding factory",
+      "area": "github",
+      "addedAt": "2026-10-21T16:14:09Z",
+      "context": "**Scenario:** The coding factory on a repository: a TODO becomes a pull request on GitHub.\n- **Factory**: Commit a TODO; it blinks while Smithers works, you watch the agent, and its pull request is mergeable, with checks and a deploy warning. [0:02 Ask Smithers for a TODO] · [0:11 The agent writes the change and opens a pull re…] · [0:17 Its files: the README line the agent wrote]\n**Working:** the TODO's pull request appears, and it reaches main only when a person merges it.",
+      "revision": "9a7eaa05ede201aa85751c7f1c591244d4cf3bb75168532b7c36b656a26ee3f8",
+      "media": [
+        {
+          "path": "~/Desktop/smithers-mvp/videos/factory/factory.mp4",
+          "type": "video",
+          "chapters": [
+            {
+              "t": 0,
+              "label": "Factory"
+            },
+            {
+              "t": 2,
+              "label": "Ask Smithers for a TODO"
+            },
+            {
+              "t": 3,
+              "label": "Edit the draft and commit it"
+            },
+            {
+              "t": 6.8,
+              "label": "Smithers starts working on it: the TODO blinks"
+            },
+            {
+              "t": 9.4,
+              "label": "Watch the agent work on Cloudflare"
+            },
+            {
+              "t": 11.1,
+              "label": "The agent writes the change and opens a pull request"
+            },
+            {
+              "t": 12.8,
+              "label": "The pull request is open and mergeable on GitHub"
+            },
+            {
+              "t": 13.8,
+              "label": "Open the pull request: Merge warns that merging deploys"
+            },
+            {
+              "t": 15.4,
+              "label": "Its checks are Smithers runs"
+            },
+            {
+              "t": 16.7,
+              "label": "Its files: the README line the agent wrote"
+            }
+          ]
+        },
+        {
+          "path": "~/Desktop/smithers-mvp/gifs/factory-factory.gif",
+          "type": "gif"
+        }
+      ],
+      "links": [
+        {
+          "label": "TODOs and the stack",
+          "path": "apps/mvp/docs/work/todos-and-stack.md"
+        }
+      ]
+    },
+    {
+      "id": "decision:code-review-routing",
+      "kind": "decision",
+      "title": "Routine code review: Astra then Fable first, you see flagged slices?",
+      "priority": 945,
+      "why": "Changes how every code slice reaches you; your answers show code is mostly approved at a glance",
+      "area": "process",
+      "addedAt": "2026-10-21T08:37:31Z",
+      "confidence": {
+        "score": 55,
+        "why": "It runs against your 13:58 words about reviewing every file, though your own measures support it",
+        "raise": "Your word that a reviewed one-screen summary per slice counts as reviewing every file"
+      },
+      "context": "_Your last 18 approvals took about 0.4 s each._\n\n**Read first:** you said (13:58): \"we should include reviewing every file of code (usually reviewing a group of related files)\".\n\nYour answers since (PLUGIN-6 measures): **58 of 60** timed code approvals came in under a fifth of the reading time, and **40 slices in about 40 s** (01:18:32 to 01:19:04).\n\n| Option | You see | Reviews first |\n|---|---|---|\n| 1 | flagged, security, data and public-API slices; the rest are recorded in coverage as agent-reviewed | Astra, then Fable |\n| 2 | every slice, as one screen: what changed, Astra's and Fable's verdicts, risks; the full code one key away | Astra, then Fable |\n| 4 | every slice with its guide, as now | you |\n\nDecided by M-47: an agent's review never approves or merges; it only decides what reaches you.",
+      "options": [
+        {
+          "key": "1",
+          "label": "Agents review routine slices; show me flagged, security, data and public-API ones",
+          "recommended": true,
+          "detail": "55% confident: It runs against your 13:58 words about reviewing every file, though your own measures support it. Would rise with: Your word that a reviewed one-screen summary per slice counts as reviewing every file"
+        },
+        {
+          "key": "2",
+          "label": "Show me every slice as a one-screen reviewed summary, full code one key away"
+        },
+        {
+          "key": "3",
+          "label": "With changes (type which)"
+        },
+        {
+          "key": "4",
+          "label": "Keep showing me every slice as now"
+        }
+      ],
+      "links": [
+        {
+          "label": "Decisions for Will",
+          "path": "apps/mvp/docs/work/decisions-for-will.md"
+        }
+      ]
+    },
+    {
+      "id": "gif:slash-commands@7480",
+      "kind": "gif",
+      "title": "Watch: slash commands: complete, run, roles, escape",
+      "priority": 735,
+      "why": "Feature walkthrough; recorded 10-21 03:16; video with chapters",
+      "area": "chat",
+      "addedAt": "2026-10-21T10:26:02Z",
+      "context": "**Scenario:** Typing / in the composer, as different roles.\n- **Complete and run**: Typing / lists the commands, the keyboard completes one, and /theme dark runs it. [0:02 A: open the composer] · [0:08 A: Send]\n- **Roles**: A member-only command is offered to an Admin, never to a signed-out person. [0:04 A: Type a message] · [0:09 A: Press Enter]\n- **Escape**: Escape closes the command list and keeps the draft; a second Escape hides the composer. [0:04 A: Type a message] · [0:06 A: open the composer]\n**Working:** the list filters and completes; Escape steps back; others never see members-only commands.",
+      "revision": "74804de575b37edebc587b90d3205e01d37e7564ff1881329a68f03a2c800dfc",
+      "media": [
+        {
+          "path": "~/Desktop/smithers-mvp/videos/slash-commands/complete-and-run.mp4",
+          "type": "video",
+          "chapters": [
+            {
+              "t": 0,
+              "label": "Complete and run"
+            },
+            {
+              "t": 2,
+              "label": "A: open the composer"
+            },
+            {
+              "t": 3,
+              "label": "A: Type a message"
+            },
+            {
+              "t": 4,
+              "label": "A: Send"
+            },
+            {
+              "t": 5,
+              "label": "A: Type a message"
+            },
+            {
+              "t": 6,
+              "label": "A: Send"
+            },
+            {
+              "t": 7,
+              "label": "A: Type a message"
+            },
+            {
+              "t": 8,
+              "label": "A: Send"
+            }
+          ]
+        },
+        {
+          "path": "~/Desktop/smithers-mvp/gifs/slash-commands-complete-and-run.gif",
+          "type": "gif"
+        },
+        {
+          "path": "~/Desktop/smithers-mvp/videos/slash-commands/roles.mp4",
+          "type": "video",
+          "chapters": [
+            {
+              "t": 0,
+              "label": "Roles"
+            },
+            {
+              "t": 2,
+              "label": "Open A"
+            },
+            {
+              "t": 3.7,
+              "label": "A: Type a message"
+            },
+            {
+              "t": 4.7,
+              "label": "A: Press Escape in the composer"
+            },
+            {
+              "t": 5.7,
+              "label": "A: Press Meta+k"
+            },
+            {
+              "t": 8.7,
+              "label": "A: Press Enter"
+            }
+          ]
+        },
+        {
+          "path": "~/Desktop/smithers-mvp/gifs/slash-commands-roles.gif",
+          "type": "gif"
+        },
+        {
+          "path": "~/Desktop/smithers-mvp/videos/slash-commands/escape.mp4",
+          "type": "video",
+          "chapters": [
+            {
+              "t": 0,
+              "label": "Escape"
+            },
+            {
+              "t": 2,
+              "label": "Open A"
+            },
+            {
+              "t": 3.7,
+              "label": "A: Type a message"
+            },
+            {
+              "t": 5.7,
+              "label": "A: open the composer"
+            }
+          ]
+        },
+        {
+          "path": "~/Desktop/smithers-mvp/gifs/slash-commands-escape.gif",
+          "type": "gif"
+        }
+      ],
+      "links": [
+        {
+          "label": "Slash commands",
+          "path": "apps/mvp/docs/work/slash-commands.md"
+        }
+      ]
+    },
+    {
+      "id": "gif:sign-in@2cd1",
+      "kind": "gif",
+      "title": "Watch: signed out, and sign-out wiping the device",
+      "priority": 705,
+      "why": "Feature walkthrough; recorded 10-21 04:39; video with chapters",
+      "area": "chat",
+      "addedAt": "2026-10-21T11:47:30Z",
+      "context": "**Scenario:** Signed out, then signing out with data on the device.\n- **Signed out**: Signed out, a person can't ask, the server refuses an ask, and signing in brings the composer back. [0:02 A: Press Meta+k] · [0:03 A: Click Sign in with GitHub]\n- **Sign out wipes the device**: Signing out deletes the device's unsent questions, and the conversation syncs again from scratch. [0:05 A: Click Sign out]\n- **Sign out wipes the device for every tab**: Signing out wipes the device only once no tab holds its data, and no tab reopens on it. [0:04 Open tab Tab 2] · [0:16 Reload Tab 1]\n**Working:** signed out can't ask; signing out wipes the device in every tab.",
+      "revision": "2cd19b2f42a7860615fd30da78e22abe03927c369b8a71f695f06407dc0dd43e",
+      "media": [
+        {
+          "path": "~/Desktop/smithers-mvp/videos/sign-in/signed-out.mp4",
+          "type": "video",
+          "chapters": [
+            {
+              "t": 0,
+              "label": "Signed out"
+            },
+            {
+              "t": 2,
+              "label": "A: Press Meta+k"
+            },
+            {
+              "t": 3,
+              "label": "A: Click Sign in with GitHub"
+            },
+            {
+              "t": 4,
+              "label": "A: Open the home conversation"
+            }
+          ]
+        },
+        {
+          "path": "~/Desktop/smithers-mvp/gifs/sign-in-signed-out.gif",
+          "type": "gif"
+        },
+        {
+          "path": "~/Desktop/smithers-mvp/videos/sign-in/sign-out-wipes-the-device.mp4",
+          "type": "video",
+          "chapters": [
+            {
+              "t": 0,
+              "label": "Sign out wipes the device"
+            },
+            {
+              "t": 2,
+              "label": "Open A on faulty services"
+            },
+            {
+              "t": 3.6,
+              "label": "A: ask \"Never sent lfmvi1fq207ri2\""
+            },
+            {
+              "t": 4.6,
+              "label": "A: Click Sign out"
+            },
+            {
+              "t": 5.9,
+              "label": "A: Open the home conversation"
+            }
+          ]
+        },
+        {
+          "path": "~/Desktop/smithers-mvp/gifs/sign-in-sign-out-wipes-the-device.gif",
+          "type": "gif"
+        },
+        {
+          "path": "~/Desktop/smithers-mvp/videos/sign-in/sign-out-wipes-the-device-for-every-tab.mp4",
+          "type": "video",
+          "chapters": [
+            {
+              "t": 0,
+              "label": "Sign out wipes the device for every tab"
+            },
+            {
+              "t": 2,
+              "label": "Open Tab 1 on faulty services"
+            },
+            {
+              "t": 3.6,
+              "label": "Open tab Tab 2"
+            },
+            {
+              "t": 5.8,
+              "label": "Tab 1: ask \"Never sent in two tabs lfmvi1g3rjqo35\""
+            },
+            {
+              "t": 8.8,
+              "label": "Tab 2: Click \"Flows\" div"
+            },
+            {
+              "t": 9.8,
+              "label": "Tab 1: Click Sign out"
+            },
+            {
+              "t": 14.4,
+              "label": "Tab 2: Open the home conversation"
+            },
+            {
+              "t": 16.3,
+              "label": "Reload Tab 1"
+            }
+          ]
+        },
+        {
+          "path": "~/Desktop/smithers-mvp/gifs/sign-in-sign-out-wipes-the-device-for-every-tab.gif",
+          "type": "gif"
+        }
+      ],
+      "links": [
+        {
+          "label": "Sign-in",
+          "path": "apps/mvp/docs/work/sign-in.md"
+        }
+      ]
+    },
     {
       "id": "code:agent/src/internal/ModelStep#L0315@5d1c",
       "kind": "code",
@@ -25,8 +373,8 @@
       "id": "code:flow/src/Action/make#L0001@0db7",
       "kind": "code",
       "title": "Code: flows/flow/src/Action: make.ts L1-320",
-      "priority": 595,
-      "why": "@smthrs/flow, the flow core; read this first; landed recently; guide attached",
+      "priority": 584,
+      "why": "@smthrs/flow, the flow core; read this first; guide attached",
       "area": "flows",
       "addedAt": "2026-10-20T21:08:43Z",
       "context": "# Action construction: schemas and declarations\n\n## What\nThis builds the values that describe and execute one durable action. Named declarations can enter a flow plan before a host supplies their implementation.\n\n## Why\n[Decision 0003](apps/mvp/docs/decisions/0003-flows-and-the-agent.md) establishes shared flows for people and agents, and [decision 0011](apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md) §6 requires host-independent code. DUR-1 places effects inside durable steps; the library catalog names `Action.make` for that job.\n\n## How\n- Exit codecs are cached by success/error schema identity, so repeated dispatches reuse compiled parser ASTs.\n- Inline actions carry schemas, tier, identity, retry policy, file boundary and attempt bounds.\n- Execution encoding preserves cleanup failures beside interruption by turning typed cleanup reasons into defects.\n- Declared actions normalize the payload schema and lower capability/effect literals into annotations.\n- Annotated copies avoid lowering literals twice, so explicit annotation overrides survive.\n- Each named declaration mints a requirement service and `.call()` produces a planned action node.\n\n## Architecture diagram\n```text\nApp/plugin Flow body\n       | declared Action.call(payload)\n       v\n @smthrs/flow [THIS] Action.make\n       | node + schemas + capability/effect ceiling\n       v\n Graph -> Interpreter -> implementation layer\n                            | inline Action\n                            v\n                       FlowRuntime -> host journal\n browser / Worker / sandbox host supplies effects\n (this constructor opens no network or database connection)\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/Action/make.ts:51` — schema cache assumes schema identities are stable.\n- `packages/smithers/flows/flow/src/Action/make.ts:188` — timeout wrapper encloses infrastructure recovery.\n- `packages/smithers/flows/flow/src/Action/make.ts:233` — interruption cleanup failures must survive encoding.\n- `packages/smithers/flows/flow/src/Action/make.ts:275` — declaration lowering and annotation precedence.\n\n## Questions a reviewer should ask\n- Are codec cache entries safe if callers mutate schema objects?\n- Can annotation copies accidentally change authority or identity?\n- Why do the plan deep imports at lines 9–10 still violate SDK-5?",
@@ -39,394 +387,6 @@
         }
       ],
       "revision": "0db76fe54652dcb4efdef4bb5a53ea609678ef5a188e2ede840b15ff2cd6d6ed"
-    },
-    {
-      "id": "code:flow/test/Interpreter.test#L0321@9b8e",
-      "kind": "code",
-      "title": "Code: flows/flow/test: Interpreter.test.ts L321-640",
-      "priority": 555,
-      "why": "@smthrs/flow, the flow core; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:08:43Z",
-      "context": "## What\nThese tests separate recoverable action failures from interpreter refusals.\nThey also test joined results, unresolved references and ambiguous graph identities.\n\n## Why\nOne flow model needs predictable execution and useful failures before effects escape.\nSee `apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md`\ndecision 1 and `packages/smithers/flows/flow/docs/testing.md`. Catalog: `@smthrs/flow`.\nThese are authoring-package fixture tests, not production engine conformance evidence.\n\n## How\n- A detached inline call must remain an interpreter refusal even inside an unfiltered catch.\n- Schema-matched failures enter recovery; unmatched errors keep their original values.\n- Constant failures use the same catch rules as action failures, including empty strings.\n- Nested catches preserve failed-node bookkeeping and skipped recovery arms.\n- Node.all joins by member name and preserves own __proto__ values without prototype mutation.\n- Unknown reference targets, missing implementations and duplicate node ids are refused explicitly.\n\n## Architecture diagram\n```text\nTest-built catch / join / reference graph\n                    |\n [THIS: recovery + join + identity assertions]\n                    | Interpreter.interpret\n                    v\n       graph validation -> interpreter walk -> fixture action dispatch\n             |                    |                    |\n             +-- typed refusal    +-- settled/failed/skipped maps\n                                      |\n                                 value assertions\nEntirely in-process; external storage and host boundaries are not exercised.\n```\n\n## Read this first\n- `packages/smithers/flows/flow/test/Interpreter.test.ts:321` — an interpreter refusal must bypass an ordinary recovery arm.\n- `packages/smithers/flows/flow/test/Interpreter.test.ts:419` — an empty-string failure must survive schema rejection.\n- `packages/smithers/flows/flow/test/Interpreter.test.ts:544` — a reference to an earlier graph cannot dispatch this graph.\n- `packages/smithers/flows/flow/test/Interpreter.test.ts:603` — dotted names can create duplicate durable node addresses.\n\n## Questions a reviewer should ask\n- Does refusing duplicate ids happen before every possible action effect?\n- Do nested catches preserve the original error when a schema does not match?\n- Where are join cancellation and concurrent failures tested beyond this range?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/test/Interpreter.test.ts",
-          "from": 321,
-          "to": 640,
-          "note": "Look at: behavior asserted through the public boundary; failure and ordering cases. Lines 321-640."
-        }
-      ],
-      "revision": "9b8e26e180116b8eeb3acd3715be24053412e330bdd2c0ac6a6c392983a004a7"
-    },
-    {
-      "id": "code:flow/test/Interpreter.test#L0641@06ce",
-      "kind": "code",
-      "title": "Code: flows/flow/test: Interpreter.test.ts L641-952",
-      "priority": 555,
-      "why": "@smthrs/flow, the flow core; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:08:43Z",
-      "context": "## What\nThis slice checks useful refusals for broken or detached flow bodies. It also pins the\nrule that a flow has one body, then sets up fixtures for concurrency tests that follow.\n\n## Why\nOne flow model needs predictable execution and useful failures before effects escape.\nSee `apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md`\ndecision 1 and `packages/smithers/flows/flow/docs/testing.md`. Catalog: `@smthrs/flow`.\nThese are authoring-package fixture tests, not production engine conformance evidence.\n\n## How\n- Thrown Errors and bare values become incomplete_graph errors with useful context.\n- Accessor-backed thrown data must not execute getters while formatting a refusal.\n- Missing implementations and detached maps are rejected before an earlier action can run.\n- Detached inline calls and handoffs cannot run without their required declarations.\n- Type and runtime assertions prohibit a flow toLayer handler, including after annotation.\n- The final section defines parking/release/failure services; its overlap assertions are outside this slice.\n\n## Architecture diagram\n```text\nThrowing / detached body         Public Flow declaration\n            |                            |\n            v                            v\n [THIS: refusal assertions]     [THIS: body-only surface assertions]\n            |                            |\n            +--------> real Interpreter <+\n                            |\n                  local runtime + action table\n                            |\n              typed errors / calls / annotation behavior\nConcurrency fixture: Parking waits <- Release; Failing returns a typed error.\nNo deployed host, external database, sandbox or provider is involved.\n```\n\n## Read this first\n- `packages/smithers/flows/flow/test/Interpreter.test.ts:686` — error formatting must leave accessor-backed thrown data inert.\n- `packages/smithers/flows/flow/test/Interpreter.test.ts:720` — half-wired graph must fail before the implemented Read runs.\n- `packages/smithers/flows/flow/test/Interpreter.test.ts:800` — body-only behavior is asserted in both types and JavaScript.\n- `packages/smithers/flows/flow/test/Interpreter.test.ts:901` — parking helper establishes a dependency; overlap tests follow after line 952.\n\n## Questions a reviewer should ask\n- Can hostile thrown objects still invoke traps during fallback formatting?\n- Do all annotation paths preserve the exact body while exposing no second handler?\n- Do the later concurrency tests have a deadline so a sequential regression fails promptly?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/test/Interpreter.test.ts",
-          "from": 641,
-          "to": 952,
-          "note": "Look at: behavior asserted through the public boundary; failure and ordering cases. Lines 641-952."
-        }
-      ],
-      "revision": "06ce307559e11231a2a70f51ac3f19725bc5be8160efc7f15631361b5a843741"
-    },
-    {
-      "id": "code:flow/src/internal/OutcomeMarker@1f54",
-      "kind": "code",
-      "title": "Code: flows/flow/src/internal: OutcomeMarker.ts, RecordedPlan.ts, SpanFailure.ts",
-      "priority": 549,
-      "why": "@smthrs/flow, the flow core; landed recently; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:06:34Z",
-      "context": "# Outcome markers, restart compatibility and safe span failures\n\n## What\nThese helpers distinguish authored flow outcomes, compare rebuilt plans after restart and withhold error text from tracing. They preserve the caller’s original failure while changing only the span’s copy.\n\n## Why\nRestart identity must tolerate harmless bundle renaming without weakening cache identity, and traces must exclude content. See `apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md` and `0011-the-agent-runs-in-the-browser.md`; catalog entries: `@smthrs/flow`, `@smthrs/plan`.\n\n## How\n- Two symbols distinguish outcome AST nodes from resolved outcome values.\n- RecordedPlan projects resumeDigest only in known callback slots.\n- Missing resume identity retains the original material and fails closed.\n- Approval digests and dispatch keys retain their stronger identity; this projection is resume-only.\n- SpanFailure replaces failure/defect text with tag or class and a restricted code; interruptions pass through.\n- Tracer wrappers are idempotent; effect, stream, function and one-span adapters preserve caller errors.\n\n## Architecture diagram\n```text\ndone / to / park -> [SLICE: OutcomeMarker] -> Graph / Interpreter\n                                             |\n rebuilt graph -> [SLICE: RecordedPlan] -> PlanRecorded digest comparison\n                                             | durable journal\n action / provider failure                    v\n          | original cause ------------> caller / typed recovery\n          |\n          +-> [SLICE: SpanFailure] -> stand-in exit -> tracer / OTLP exporter\n                   tag + restricted code; original message withheld\n Host: browser / Worker / sandbox; provider is outside this package\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/internal/RecordedPlan.ts:31`: only callback slots may use weaker resume identity; never application data.\n- `packages/smithers/flows/flow/src/internal/SpanFailure.ts:46`: tag is copied without validation; could an untrusted _tag carry private text?\n- `packages/smithers/flows/flow/src/internal/SpanFailure.ts:66`: failure replacement retains cause annotations; inspect their content policy.\n- `packages/smithers/flows/flow/src/internal/SpanFailure.ts:145`: withSpan sanitizes this span while nested spans keep the caller tracer.\n\n## Questions a reviewer should ask\n- Can weaker resume identity ever enter an approval digest or cache key?\n- Are tags and cause annotations trusted enough to export without text filtering?\n- Does wrapping a tracer leave every caller-visible failure unchanged?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/internal/OutcomeMarker.ts",
-          "from": 1,
-          "to": 19,
-          "note": "The two markers that let `Flow.isOutcome` tell an authored `done`/`to`/`park` from ordinary data. Exports `OutcomeNodeTypeId`, `OutcomeValueTypeId`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/internal/RecordedPlan.ts",
-          "from": 1,
-          "to": 60,
-          "note": "Resume compatibility is weaker than result reuse. Exports `recordedPlanDrafts`. Look at: deep import (root entries only)."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/internal/SpanFailure.ts",
-          "from": 1,
-          "to": 153,
-          "note": "Span failures with their text withheld. Exports `exit`, `tracer`, `effect`, `stream`, `fn` +1. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "1f5401f736d0d86be437e280e9589218a64bb64afb441fe857173d81f95c127d"
-    },
-    {
-      "id": "code:flow/src/Flow/Annotations@3261",
-      "kind": "code",
-      "title": "Code: flows/flow/src/Flow: Annotations.ts, CapabilityCeiling.ts, DeadlineExce...",
-      "priority": 540,
-      "why": "@smthrs/flow, the flow core; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-21T01:16:34Z",
-      "context": "# Flow policies and authority ceilings\n\n## What\nThese types describe where a flow runs, what it may touch, and how failures are represented. The helpers intersect permissions so a nested flow cannot gain authority from its caller.\n\n## Why\nDecision `apps/mvp/docs/decisions/0003-flows-and-the-agent.md` puts placement and authority on shared declarations. DUR-1 requires the engine to retain execution identity and deadlines. Catalog entry: `@smthrs/flow`; package docs: `docs/concepts/the-runtime-port.md`.\n\n## How\n- Annotations reuse the plan package’s effect and placement models rather than copying them.\n- An absent capability annotation inherits authority; an explicit empty pattern list denies everything.\n- Transported ceilings are groups: groups intersect, while patterns within one group offer alternatives.\n- Invalid patterns are dropped; an empty group therefore denies rather than opening authority.\n- `ceilingWithin` accepts only provable containment; defect capture and model visibility default to true.\n- `DeadlineExceeded` and `ExecutionIdRequired` define serializable defects; these files do not enforce timers or allocate identities.\n\n## Architecture diagram\n```text\nFlow declaration + parent authority (any host)\n                 | annotations / transported ceiling groups\n                 v\n     +---------------------------------------------+\n     | [THIS SLICE] policies + ceiling intersection |\n     | deadline / missing-identity defect schemas   |\n     +---------------------------------------------+\n            | narrower authority       | placement\n            v                          v\n     Interpreter / engine          host selection\n            | injected services        |\n            +------------+-------------+\n                         v\n       browser worker / Worker / sandbox host\n       storage and network effects happen downstream\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/Flow/CapabilityCeiling.ts:17` — Annotation presence distinguishes inheritance from denial.\n- `packages/smithers/flows/flow/src/Flow/CapabilityCeiling.ts:50` — Intersection must never widen either side.\n- `packages/smithers/flows/flow/src/Flow/Annotations.ts:127` — Model visibility defaults to yes; sensitive flows must opt out.\n\n## Questions a reviewer should ask\n- Do serialization and catalog projection preserve absent versus explicitly empty ceilings?\n- Are all sensitive declarations explicitly hidden from models?\n- Do the deep package imports satisfy the current root-entry rule?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/Flow/Annotations.ts",
-          "from": 1,
-          "to": 151,
-          "note": "Marked human-reviewed 2026-08-10; look at what changed since. Execution policies attached to flow definitions through Effect context. Exports `Effects`, `PlacementDirective`, `Capabilities`, `EffectsDeclaration`, `EffectEnvelope` +4. Look at: deep import (root entries only)."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/Flow/CapabilityCeiling.ts",
-          "from": 1,
-          "to": 67,
-          "note": "Declared capability ceilings shared by planning and execution. Exports `capabilityCeilings`, `parseCapabilityCeilings`, `attenuateCapabilities`, `intersectCeilings`, `ceilingWithin`. Look at: deep import (root entries only)."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/Flow/DeadlineExceeded.ts",
-          "from": 1,
-          "to": 40,
-          "note": "Defect recorded when an execution runs past its flow's declared deadline. Exports `DeadlineExceeded`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/Flow/ExecutionIdRequired.ts",
-          "from": 1,
-          "to": 36,
-          "note": "Marked human-reviewed 2026-08-10; look at what changed since. Failure raised when a flow execution has no explicit or derived identity. Exports `ExecutionIdRequired`. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "326190a5ed2865ee48c9dc0335310eb6b6aaccb142bd5ccd023d425e8275b178"
-    },
-    {
-      "id": "question:free-more-disk",
-      "kind": "question",
-      "title": "Free more disk: which of these may go?",
-      "priority": 500,
-      "why": "Not urgent: 43 GiB free; frees space under HOST-8",
-      "area": "infra",
-      "addedAt": "2026-10-20T22:23:24Z",
-      "confidence": {
-        "score": 85,
-        "why": "Everything recommended is rebuildable on demand; nothing personal is touched"
-      },
-      "context": "Disk is healthy (43 GiB free). These could go:\n\n| Item | Size |\n|---|---|\n| `~/go/pkg/mod` (rebuildable) | 14.5 GiB |\n| `~/.microsandbox` (Oct 10 test snapshots and a layer cache) | 11.7 GiB |\n| `~/Desktop/desktopold` | 11 GiB |\n| `~/workspaces/chat-hang-20261013` | 11 GiB |\n| `~/Smithers-Ops`: Research 3.8, dispatch receipts 2.6, burndown scratch 2.4 | 8.8 GiB |\n| `~/.smithers/accounts/codex-5` | 8.4 GiB |\n| Antigravity IDE support files | 7.7 GiB |\n| `~/.ollama` | 7.1 GiB |\n| Telegram | 4.7 GiB |\n| `~/multi/.smithers` | 3.9 GiB |\n| `~/plue/node_modules` | 3.8 GiB |\n| `~/smithers-lanes/issues/scratch` | 3.6 GiB |\n| `~/Desktop/smithers-repair-20261003` | 3.2 GiB |\n| `~/smithers-parked-evidence-20261002` | 2.9 GiB |\n| Docker volume `smithers-astra-file-mode-20261008` | 1.5 GB |\n\nAbout 380 GB more sits in protected personal folders (Trash, Mail, Messages, iCloud) that only you can check.",
-      "options": [
-        {
-          "key": "1",
-          "label": "Delete the rebuildable ones; keep the rest",
-          "detail": "85% confident: Everything recommended is rebuildable on demand; nothing personal is touched. go mod, the .microsandbox cache, plue node_modules, lanes scratch",
-          "recommended": true
-        },
-        {
-          "key": "2",
-          "label": "Delete everything listed except Telegram, Ollama and Antigravity"
-        },
-        {
-          "key": "3",
-          "label": "Keep everything for now"
-        },
-        {
-          "key": "4",
-          "label": "Type which ones"
-        }
-      ],
-      "links": [
-        {
-          "label": "Disk space",
-          "path": "apps/mvp/docs/work/disk-space.md"
-        }
-      ]
-    },
-    {
-      "id": "decision:code-storage-budgets",
-      "kind": "decision",
-      "title": "Code Storage budgets: 3 GB stored, 40 GB read a month?",
-      "priority": 420,
-      "why": "Built on the recommendation; worst-case month about $17",
-      "area": "infra",
-      "addedAt": "2026-10-20T21:03:39Z",
-      "confidence": {
-        "score": 70,
-        "why": "Sized from the plan's numbers (about $17 a month at worst); no ruling, and each limit is easy to change"
-      },
-      "context": "3 GB stored, 40 GB read a month, 1 GB per repository, 100 repositories, $20 alert base.",
-      "options": [
-        {
-          "key": "1",
-          "label": "Yes",
-          "recommended": true,
-          "detail": "70% confident: Sized from the plan's numbers (about $17 a month at worst); no ruling, and each limit is easy to change"
-        },
-        {
-          "key": "2",
-          "label": "Different limits (type them)"
-        }
-      ],
-      "links": [
-        {
-          "label": "Code Storage spend caps",
-          "path": "apps/mvp/docs/work/code-storage-spend-caps.md"
-        }
-      ]
-    },
-    {
-      "id": "code:mvp/worker/CloneFeed@aab5",
-      "kind": "code",
-      "title": "Code: mvp/worker: CloneFeed.ts, CloneFeed.test.ts, DevChatApi.ts +2",
-      "priority": 300,
-      "why": "the app's worker; landed today; guide attached",
-      "area": "infra",
-      "addedAt": "2026-10-21T04:39:50Z",
-      "context": "# Clone progress in the feed; development identity\n\nSlice: `code:mvp/worker/CloneFeed@aab5`\nCoverage revision: `aab51be3bc62f0613f580f031902660930986b9e1e7ab4c73b33ff45bea79559`\n\n## What\nCloneFeed turns a repository's clone state into one notification for the person who requested the current attempt. This regrouped slice also includes the development-only API identity adapter and a helper that keeps error messages out of logs.\n\n## Why\n[0009](apps/mvp/docs/decisions/0009-notifications-and-live-work.md) makes notifications and toasts views of real progress. [0008](apps/mvp/docs/decisions/0008-auth.md) defines sign-in; the development fallback must stay outside production. Catalog entry: `@smthrs/notifications`.\n\n## How\n- fold joins clone_requests on repository and current clone_id; missing rows or an unnamed requester produce no notification.\n- stateOf maps cloning stages to working and settled states to done or failed; old unstaged rows read as requested.\n- The existing notification is locked; unchanged state/ref writes nothing, while renewed attention advances its version.\n- The caller must include fold in the repository write transaction; the function itself does not open that transaction.\n- DevChatApi reuses ChatApi.program with local role fixtures, local HTTP enabled and spend alerts disabled by default.\n- codeOf emits SQL reason tags, other error tags or unknown; tests check messages are excluded and fold uses real Postgres.\n\n## Architecture diagram\n```text\nClone route / remote clone steps (Worker)\n       | repository write, same transaction\n       v\n Postgres repositories + clone_requests\n       | current attempt + requester\n       v\n [THIS: CloneFeed.fold] -> notifications -> Electric -> browser feed / toast\n       |\n       +--> state-only metric\nDevelopment entry (separate build)\n [THIS: DevChatApi] -> ChatApi.program -> same routes -> Postgres / model proxy\n       | local person fixtures\nProduction entry -> ChatApi (must never select DevChatApi)\nFailures -> [THIS: ErrorCode.codeOf] -> tag-only log fields\n```\n\n## Read this first\n- `apps/mvp/worker/CloneFeed.ts:57` — Only the current clone attempt determines the recipient.\n- `apps/mvp/worker/CloneFeed.ts:64` — Row lock protects existing entries; first insert still needs concurrency review.\n- `apps/mvp/worker/DevChatApi.ts:60` — The development entry grants fallback authority and must not ship as production.\n- `apps/mvp/worker/ErrorCode.ts:7` — Redaction trusts tags themselves to contain no user content.\n\n## Questions a reviewer should ask\n- Do all production fold callers share the repository write transaction, including failures?\n- Can concurrent first folds overwrite a newer notification with an older state?\n- What build check proves the development identity fallback cannot enter production?",
-      "files": [
-        {
-          "path": "apps/mvp/worker/CloneFeed.ts",
-          "from": 1,
-          "to": 77,
-          "note": "The row's columns the fold reads. Exports `fold`. Look at: SQL: parameters and row authorization."
-        },
-        {
-          "path": "apps/mvp/worker/CloneFeed.test.ts",
-          "from": 1,
-          "to": 45,
-          "note": "A clone in its asker's feed (worker/CloneFeed.ts), folded straight from rows written by hand over this file's schema of the compose Postgres: what the fold does with a… Look at: behavior asserted through the public boundary; failure and ordering cases."
-        },
-        {
-          "path": "apps/mvp/worker/DevChatApi.ts",
-          "from": 1,
-          "to": 64,
-          "note": "The local developer: a person with the Admin role. Exports `localDeveloper`, `localTeammate`, `localGuest`, `localMaintainer`, `DevChatApi`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "apps/mvp/worker/ErrorCode.ts",
-          "from": 1,
-          "to": 12,
-          "note": "A failure's code for a log line (docs/observability.md): `sql:<reason>` for a SQL failure, otherwise the failure's `_tag`, otherwise `unknown`. Exports `codeOf`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "apps/mvp/worker/ErrorCode.test.ts",
-          "from": 1,
-          "to": 22,
-          "note": "The error codes log lines carry (worker/ErrorCode.ts): a code, never a message. Look at: behavior asserted through the public boundary; failure and ordering cases."
-        }
-      ],
-      "revision": "aab51be3bc62f0613f580f031902660930986b9e1e7ab4c73b33ff45bea79559"
-    },
-    {
-      "id": "decision:playground-shelf",
-      "kind": "decision",
-      "title": "Playground: a shelf of saved artifacts joins the playgrounds",
-      "priority": 143,
-      "why": "Internal dev tool: ranks below the production app (Will, 14:20)",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:03:39Z",
-      "confidence": {
-        "score": 70,
-        "why": "The design panel's choice for an internal tool; easy to change"
-      },
-      "context": "`⌘S` saves the current flow, model role, view, collection, run or input as a named, typed artifact (`flow:triage-issue`, `role:fast`, `view:issue-card`) on the host. Any slot of the matching type takes it by drag, click or `⌘K`.",
-      "options": [
-        {
-          "key": "1",
-          "label": "Accept",
-          "recommended": true,
-          "detail": "70% confident: The design panel's choice for an internal tool; easy to change"
-        },
-        {
-          "key": "2",
-          "label": "No shelf; copy and paste between pages"
-        },
-        {
-          "key": "3",
-          "label": "Change it (type how)"
-        }
-      ],
-      "media": [
-        {
-          "path": "apps/playground/design/playground.html",
-          "type": "html"
-        },
-        {
-          "path": "apps/playground/design/06-agent-handoff-light.png",
-          "type": "png"
-        },
-        {
-          "path": "apps/playground/design/07-search-light.png",
-          "type": "png"
-        }
-      ],
-      "links": [
-        {
-          "label": "Playground design",
-          "path": "apps/playground/docs/design.md"
-        }
-      ]
-    },
-    {
-      "id": "design:playground-flows@e51e",
-      "kind": "design",
-      "title": "Design: Playground flows: author, run, inspect",
-      "priority": 142,
-      "why": "Design review; nobody has judged it yet",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:03:39Z",
-      "context": "Authoring and running a flow, the inspector while waiting, and retry and Kill host.",
-      "revision": "e51ebf6987918bae1f24657da179c11119c5312f48b1545928a50388c262c7ca",
-      "media": [
-        {
-          "path": "apps/playground/design/03-flows-author-run-light.png",
-          "type": "png"
-        },
-        {
-          "path": "apps/playground/design/03-flows-author-run-dark.png",
-          "type": "png"
-        },
-        {
-          "path": "apps/playground/design/04-flows-inspector-waiting-light.png",
-          "type": "png"
-        },
-        {
-          "path": "apps/playground/design/04-flows-inspector-waiting-dark.png",
-          "type": "png"
-        },
-        {
-          "path": "apps/playground/design/05-flows-inspector-retry-kill-light.png",
-          "type": "png"
-        },
-        {
-          "path": "apps/playground/design/05-flows-inspector-retry-kill-dark.png",
-          "type": "png"
-        }
-      ],
-      "links": [
-        {
-          "label": "Playground design",
-          "path": "apps/playground/docs/design.md"
-        }
-      ]
-    },
-    {
-      "id": "design:playground-catalog-api@8f5f",
-      "kind": "design",
-      "title": "Design: Playground catalog and an API page",
-      "priority": 141,
-      "why": "Design review; nobody has judged it yet",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:03:39Z",
-      "context": "The catalog of ~65 packages and one API page (`derivekey`) with its runner.",
-      "revision": "8f5fd16bdbaa689d4760cccd376d297e2785758a911e4925881573e97923a8d3",
-      "media": [
-        {
-          "path": "apps/playground/design/playground.html",
-          "type": "html"
-        },
-        {
-          "path": "apps/playground/design/01-catalog-light.png",
-          "type": "png"
-        },
-        {
-          "path": "apps/playground/design/01-catalog-dark.png",
-          "type": "png"
-        },
-        {
-          "path": "apps/playground/design/02-api-derivekey-light.png",
-          "type": "png"
-        },
-        {
-          "path": "apps/playground/design/02-api-derivekey-dark.png",
-          "type": "png"
-        }
-      ],
-      "links": [
-        {
-          "label": "Playground design",
-          "path": "apps/playground/docs/design.md"
-        }
-      ]
-    },
-    {
-      "id": "design:playground-agent-search@9951",
-      "kind": "design",
-      "title": "Design: Playground agent handoff and search",
-      "priority": 140,
-      "why": "Design review; nobody has judged it yet",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:03:39Z",
-      "context": "The agent playground's handoff and the search page.",
-      "revision": "9951bbe332f9e21a46095b69e12c7dc0400dd0ec2f1c4d425ac0f945c67bb062",
-      "media": [
-        {
-          "path": "apps/playground/design/06-agent-handoff-light.png",
-          "type": "png"
-        },
-        {
-          "path": "apps/playground/design/06-agent-handoff-dark.png",
-          "type": "png"
-        },
-        {
-          "path": "apps/playground/design/07-search-light.png",
-          "type": "png"
-        },
-        {
-          "path": "apps/playground/design/07-search-dark.png",
-          "type": "png"
-        }
-      ],
-      "links": [
-        {
-          "label": "Playground design",
-          "path": "apps/playground/docs/design.md"
-        }
-      ]
     }
   ]
 }
