@@ -456,10 +456,22 @@ describe("from an issue", () => {
     tab.actions.commit(tab.drafts()[0]!.id)
     await until(() => expect(other.stack().todos).toEqual([expect.objectContaining({ number: 1, issueNumber: 7 })]))
     expect(await sql(tab.api, `SELECT number, issue_number AS "issue" FROM todos`)).toEqual([{ number: 1, issue: 7 }])
-    // On the other device, the issue lists its TODO, still open, so Make TODO doesn't show there.
+    // On the other device, the issue lists its TODO.
     expect(todosByIssue(REPO_ID, other.stack().todos, OWNER, NAME).get(7)).toEqual({
       links: [{ label: "T1", href: `/${OWNER}/${NAME}/stack/1` }],
-      open: true,
+    })
+    // T1 still open, Make TODO makes a second TODO from the same issue: one issue, a stack of TODOs, newest first.
+    tab.actions.fromIssue(OWNER, NAME, 7)
+    await until(() => expect(draftsOfRepo(REPO_ID, tab.drafts())).toEqual([expect.objectContaining({ issue: 7 })]))
+    tab.actions.commit(tab.drafts()[0]!.id)
+    await until(() =>
+      expect([...other.stack().todos].sort((a, b) => a.number - b.number)).toEqual([
+        expect.objectContaining({ number: 1, issueNumber: 7, state: "queued" }),
+        expect.objectContaining({ number: 2, issueNumber: 7, state: "queued" }),
+      ])
+    )
+    expect(todosByIssue(REPO_ID, other.stack().todos, OWNER, NAME).get(7)).toEqual({
+      links: [{ label: "T2", href: `/${OWNER}/${NAME}/stack/2` }, { label: "T1", href: `/${OWNER}/${NAME}/stack/1` }],
     })
   }, WITHIN)
 

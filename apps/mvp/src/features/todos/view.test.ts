@@ -553,18 +553,14 @@ describe("TODOs made from issues", () => {
     expect([...made.keys()].sort()).toEqual([7, 9])
     expect(made.get(7)).toEqual({
       links: [{ label: "T3", href: "/octo/hello/stack/3" }, { label: "T1", href: "/octo/hello/stack/1" }],
-      open: true,
     })
-    expect(made.get(9)).toEqual({ links: [{ label: "T2", href: "/octo/hello/stack/2" }], open: false })
+    expect(made.get(9)).toEqual({ links: [{ label: "T2", href: "/octo/hello/stack/2" }] })
   })
 
-  test("Make TODO shows for a person who may change the stack, on an open issue none of whose TODOs is open", () => {
-    const open = { state: "open" }
-    expect(mayMakeTodo(true, open, undefined)).toBe(true)
-    expect(mayMakeTodo(true, open, { links: [], open: false })).toBe(true)
-    expect(mayMakeTodo(true, open, { links: [], open: true })).toBe(false)
-    expect(mayMakeTodo(false, open, undefined)).toBe(false)
-    expect(mayMakeTodo(true, { state: "closed" }, undefined)).toBe(false)
+  test("Make TODO shows for a person who may change the stack on any open issue, its TODOs open or not", () => {
+    expect(mayMakeTodo(true, { state: "open" })).toBe(true)
+    expect(mayMakeTodo(false, { state: "open" })).toBe(false)
+    expect(mayMakeTodo(true, { state: "closed" })).toBe(false)
   })
 
   test("the issues list: each issue's TODOs after its own links, and Make TODO in its menu when it may be made", () => {
@@ -581,14 +577,16 @@ describe("TODOs made from issues", () => {
       true,
       (number) => making.push(number),
     )
+    // Issue 7's TODO is open, and Make TODO still shows: one issue can become a stack of TODOs.
     expect(rows.map((row) => [row.links, row.menu?.map((item) => item.label)])).toEqual([
-      [[{ label: "T3", href: "/octo/hello/stack/3" }], undefined],
+      [[{ label: "T3", href: "/octo/hello/stack/3" }], ["Make TODO"]],
       [[{ label: "x", href: "/x" }], ["Make TODO"]],
       [undefined, undefined],
       [undefined, undefined],
     ])
+    rows[0]!.menu![0]!.onSelect()
     rows[1]!.menu![0]!.onSelect()
-    expect(making).toEqual([8])
+    expect(making).toEqual([7, 8])
     expect(withTodos([{ number: 8, title: "Eight", state: "open" }], made, false, () => {})[0]!.menu).toBeUndefined()
   })
 })

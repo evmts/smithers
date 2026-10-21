@@ -130,7 +130,7 @@ test("todo-new-keyboard: New TODO on the stack page, typed and committed with th
 // e2e/issues.spec.ts does: a deployment signed in as the test account, a Member or above on E2E_ISSUES_REPOSITORY, the
 // scratch repository with the Smithers GitHub App installed (`requires("githubScratch")`, e2e/target.ts).
 
-test("todo-from-issue: Make TODO from an issue's menu drafts it linked; the issue shows its TODO; t makes another", async ({ devices }) => {
+test("todo-from-issue: Make TODO from an issue's menu drafts it linked; the issue shows its TODO; t makes a second while the first is open", async ({ devices }) => {
   requires("githubScratch", "member")
   // GitHub's issues reach the projection through the remote flow `github/Apply` (worker/github/Apply.ts).
   broken("remoteFlows")
@@ -159,24 +159,28 @@ test("todo-from-issue: Make TODO from an issue's menu drafts it linked; the issu
   await expect(todoRow).toContainText(/T\d+/, { timeout: 60_000 })
   const todo = (await todoRow.locator(".sui-issues-number").textContent())!
 
-  // The issue shows its TODO, and no Make TODO while that TODO is open.
+  // The issue shows its TODO, and Make TODO stays while that TODO is open: one issue can become a stack of TODOs.
   await todoRow.getByRole("link", { name: `#${number}` }).click()
   await expect(page).toHaveURL(new RegExp(`/${repo}/issues/${number}$`))
   const side = page.getByRole("region", { name: "TODO" })
   await expect(side.getByRole("link", { name: todo })).toBeVisible({ timeout: 60_000 })
-  await expect(side.getByRole("button", { name: /Make TODO/ })).toHaveCount(0)
+  await expect(side.getByRole("button", { name: /Make TODO/ })).toBeVisible()
 
-  // Dropped, Make TODO comes back on the issue, and its key t presses it.
-  await side.getByRole("link", { name: todo }).click()
-  await page.getByRole("button", { name: "Drop", exact: true }).click()
-  await page.getByRole("dialog").getByRole("button", { name: "Drop", exact: true }).click()
-  await page.goBack()
-  await expect(page).toHaveURL(new RegExp(`/${repo}/issues/${number}$`))
-  await expect(side.getByRole("button", { name: /Make TODO/ })).toBeVisible({ timeout: 60_000 })
+  // Its key t makes a second draft from the same issue; discarded, it leaves the first TODO as it was.
   await page.keyboard.press("t")
   await expect(page).toHaveURL(new RegExp(`/${repo}/stack$`))
   const again = page.getByRole("form", { name: "TODO draft" }).filter({ hasText: `#${number}` })
   await expect(again).toBeVisible({ timeout: 30_000 })
   await again.getByRole("button", { name: "Discard" }).click()
   await expect(again).toHaveCount(0)
+
+  // Dropped, the issue still lists its TODO and still offers Make TODO.
+  await page.goto(`/${repo}/issues/${number}`)
+  await side.getByRole("link", { name: todo }).click()
+  await page.getByRole("button", { name: "Drop", exact: true }).click()
+  await page.getByRole("dialog").getByRole("button", { name: "Drop", exact: true }).click()
+  await page.goBack()
+  await expect(page).toHaveURL(new RegExp(`/${repo}/issues/${number}$`))
+  await expect(side.getByRole("link", { name: todo })).toBeVisible({ timeout: 60_000 })
+  await expect(side.getByRole("button", { name: /Make TODO/ })).toBeVisible({ timeout: 60_000 })
 })

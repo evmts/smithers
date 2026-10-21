@@ -57,7 +57,7 @@ export function IssueScreen() {
   }
   const shown = conversationProps(item, rows ?? [], { owner, name: repo })
   const made = todosByIssue(todosRepoId, todoRows, owner, repo).get(number)
-  const make = mayMakeTodo(session !== undefined && mayChange(session, confirmed), shown, made)
+  const make = mayMakeTodo(session !== undefined && mayChange(session, confirmed), shown)
   const control = triageControlOf(item, triagePending ?? [], {
     triage: session !== undefined && mayTriage(session, confirmed),
     flowOn: triage !== undefined && !triage.paused,

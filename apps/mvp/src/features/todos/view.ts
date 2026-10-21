@@ -395,12 +395,11 @@ export const todoScreenOf = (
 /** The TODOs made from one issue, as links to their pages, and whether one of them is still on the stack. */
 export interface IssueTodos {
   readonly links: ReadonlyArray<IssuesViewLink>
-  readonly open: boolean
 }
 
 /**
  * The TODOs of repository `repoId` made from each of its issues, by issue number, newest first
- * (docs/features/todos.md#from-an-issue): what an issue's row and page show, and whether Make TODO does.
+ * (docs/features/todos.md#from-an-issue): what an issue's row and page show.
  */
 export const todosByIssue = (
   repoId: string,
@@ -413,18 +412,19 @@ export const todosByIssue = (
     .filter((todo) => todo.repoId === repoId && todo.issueNumber !== null)
     .sort((a, b) => b.number - a.number)
   for (const todo of made) {
-    const was = found.get(todo.issueNumber!) ?? { links: [], open: false }
+    const was = found.get(todo.issueNumber!) ?? { links: [] }
     found.set(todo.issueNumber!, {
       links: [...was.links, { label: `T${todo.number}`, href: todoPath(owner, name, todo.number) }],
-      open: was.open || !isSettled(todo.state),
     })
   }
   return found
 }
 
-/** Whether Make TODO shows on an issue: for a person who may change the stack, on an open issue none of whose TODOs is open. */
-export const mayMakeTodo = (may: boolean, issue: { readonly state: string }, made: IssueTodos | undefined): boolean =>
-  may && issue.state === "open" && made?.open !== true
+/**
+ * Whether Make TODO shows on an issue: for a person who may change the stack, on an open issue, however many of its
+ * TODOs are open, so one issue can become a stack of TODOs (Will, 2026-10-21: "make todos from that issue").
+ */
+export const mayMakeTodo = (may: boolean, issue: { readonly state: string }): boolean => may && issue.state === "open"
 
 /**
  * The issues list's rows with each issue's TODOs as links in its meta line, and Make TODO in the menu of each issue it
@@ -443,6 +443,6 @@ export const withTodos = (
     return {
       ...issue,
       ...(todos === undefined ? {} : { links: [...(issue.links ?? []), ...todos.links] }),
-      ...(mayMakeTodo(may, issue, todos) ? { menu: [...(issue.menu ?? []), { label: MAKE_TODO, onSelect: () => make(number) }] } : {}),
+      ...(mayMakeTodo(may, issue) ? { menu: [...(issue.menu ?? []), { label: MAKE_TODO, onSelect: () => make(number) }] } : {}),
     }
   })
