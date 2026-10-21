@@ -12,7 +12,7 @@ import { checkExecutionId, todoExecutionId } from "../../src/features/pulls/cont
 import { TODO_FAILURES } from "../../src/features/todos/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { codeOf } from "../ErrorCode.ts"
-import { classify, statusOf, withToken } from "../github/Calls.ts"
+import { classify, withToken } from "../github/Calls.ts"
 import { repositoryOf } from "../github/Config.ts"
 import { fetchPull, projectPull } from "../github/Pulls.ts"
 import type { GitHubTokens } from "../github/Tokens.ts"
@@ -36,9 +36,11 @@ import { machineOf } from "./TodoMachine.ts"
 //                   dropped (`ended`) closes the pull request its run opened, and changes nothing else
 //
 // Every writer call is fenced by the TODO and the attempt (`Stack.report`), so a dropped TODO's run stops at its next
-// one. Every GitHub write adopts its own earlier attempt after a lost answer: the branch by its head, the commit by its
-// parent and message, the pull request by its head and marker. Nothing here merges, approves or forces a ref: a person
-// merges (decision 0012 decision 6). Records carry ids, numbers and outcomes, never a title, a prompt or a file.
+// one. Every GitHub write goes through `Action.once` with a `GitHub.Once` adapter: it carries the step's own key (the
+// branch's name suffix, the commit's `Smithers-Write` trailer, the pull request's marker), and a step that runs again
+// after a lost answer or a crash finds its write by that key, never by a name, a message or a parent that only look
+// alike (docs/proposals/durable-external-effects.md). Nothing here merges, approves or forces a ref: a person merges
+// (decision 0012 decision 6). Records carry ids, numbers and outcomes, never a title, a prompt or a file.
 
 /**
  * `TODO_RUNS`: whether this deployment runs TODOs: on unless set to `false`. Off, every TODO stays Queued, as before
@@ -143,10 +145,26 @@ export const MAX_FILES = 50
 /** The most bytes one TODO's commit adds. */
 export const MAX_CHANGE_BYTES = 1024 * 1024
 
+/**
+ * A step whose GitHub writes all go through `Action.once` repeats safely, so it declares the attempt as its key: a
+ * durable engine then re-runs an attempt that died mid-write instead of stopping it, and `once` finds the write.
+ */
+const byAttempt = ({ request }: { readonly request: TodoRequest }) => ({ attempt: request.attemptId })
+
+/**
+ * Begin's and Publish's implementation versions. v2 (2026-10-21) writes through `Action.once` and finds its writes by
+ * key; a run parked on a v1 plan stops with `plan_changed` rather than resume under different recovery.
+ */
+export const BEGIN_VERSION = "todo/begin/v2"
+export const PUBLISH_VERSION = "todo/publish/v2"
+
 export const Begin = Action.make("todo/Begin", {
   payload: { request: TodoRequest },
   success: Begun,
   error: StepError,
+  implementationVersion: BEGIN_VERSION,
+  tier: "irreversible",
+  idempotencyKey: byAttempt,
   retryPolicy: STEP_RETRY,
 })
 
@@ -161,6 +179,9 @@ export const Publish = Action.make("todo/Publish", {
   payload: { request: TodoRequest, begun: Begun, collected: Collected },
   success: Published,
   error: StepError,
+  implementationVersion: PUBLISH_VERSION,
+  tier: "irreversible",
+  idempotencyKey: byAttempt,
   retryPolicy: STEP_RETRY,
 })
 
@@ -291,16 +312,20 @@ export const admission = (
   )
 }
 
-/** The branch a TODO's attempt works on: `smithers/t<n>-<slug of its title>`, at most 60 characters. */
-export const branchNameOf = (number: number, title: string, suffix = ""): string => {
-  // Accents come off their letters (NFKD, then the combining marks go); anything else not a letter or digit is a dash.
-  const slug = title.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-")
+/** The part of a TODO's branch name every attempt shares: `smithers/t<n>-`. */
+export const branchPrefixOf = (number: number): string => `smithers/t${number}-`
+
+/**
+ * A TODO's title as a branch name's label, at most 40 characters: accents come off their letters (NFKD, then the
+ * combining marks go), and anything else not a letter or digit is a dash. A label is for people; the branch is found
+ * by the key `GitHub.Once.branch` ends its name with.
+ */
+export const slugOf = (title: string): string =>
+  title.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "").slice(0, 40)
     .replace(/-+$/, "")
-  return `smithers/t${number}${slug === "" ? "" : `-${slug}`}${suffix}`
-}
 
-/** A commit's headline and body as the run writes them, which is also how it knows its own commit again. */
+/** A commit's headline and body as the run writes them; `GitHub.Once.commitOnBranch` adds the step's trailer. */
 export const commitMessageOf = (number: number, title: string, login: string) => ({
   headline: `T${number}: ${title}`.slice(0, 200),
   body: agentAttribution(login),
@@ -429,27 +454,20 @@ export const steps = <E, R>(services: Services<E, R>) => {
           { schema: Schema.Struct({ default_branch: Schema.String }) },
         )
         const defaultBranch = facts.default_branch
-        // A step that ran before recorded its branch and base: the same again.
-        if (todo.branch !== null && todo.baseSha !== null) return { branch: todo.branch, baseSha: todo.baseSha, defaultBranch }
-        const head = yield* GitHub.Refs.getBranch(repository.owner, repository.name, defaultBranch)
-        if (Option.isNone(head)) return yield* new TodoFailed({ failure: "publish_refused" })
-        const baseSha = head.value.sha
-        // A branch of that name that isn't at the base is someone else's: a suffix, never written over.
-        for (const suffix of ["", "-2", "-3", "-4", "-5"]) {
-          const branch = branchNameOf(todo.number, todo.title, suffix)
-          const existing = yield* GitHub.Refs.getBranch(repository.owner, repository.name, branch)
-          if (Option.isSome(existing)) {
-            if (existing.value.sha === baseSha) return { branch, baseSha, defaultBranch }
-            continue
-          }
-          const created = yield* GitHub.Refs.createBranch(repository.owner, repository.name, { name: branch, sha: baseSha })
-            .pipe(Effect.result)
-          if (created._tag === "Success") return { branch, baseSha, defaultBranch }
-          // Made by someone else between the read and the write: the next name.
-          if (statusOf(created.failure) === 422) continue
-          return yield* Effect.fail(created.failure)
-        }
-        return yield* new TodoFailed({ failure: "publish_refused" })
+        // The branch, made once at the default branch's head and named with this step's key; a step that runs again
+        // finds it by the key, at the commit it was made at, even after the default branch moved.
+        const made = yield* Action.once(
+          "branch",
+          GitHub.Once.branch(repository.owner, repository.name, {
+            prefix: branchPrefixOf(todo.number),
+            label: slugOf(todo.title),
+            at: Effect.flatMap(
+              GitHub.Refs.getBranch(repository.owner, repository.name, defaultBranch),
+              (head) => Option.isNone(head) ? new TodoFailed({ failure: "publish_refused" }) : Effect.succeed(head.value.sha),
+            ),
+          }),
+        )
+        return { branch: made.name, baseSha: made.sha, defaultBranch }
       }).pipe(withToken(token, services.apiBaseUrl))
       yield* report(request, { kind: "branch", branch: made.branch, baseSha: made.baseSha })
       yield* report(request, { kind: "step", step: "implement" })
@@ -509,36 +527,29 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const token = yield* tokenFor("publish", request, "publish")
       const message = commitMessageOf(request.number, begun.title, begun.ownerLogin)
       const published = yield* Effect.gen(function* () {
-        // The commit, made once: a head past the base is ours when its parent is the base and its message ours.
-        const head = yield* GitHub.Refs.getBranch(repository.owner, repository.name, begun.branch)
-        if (Option.isNone(head)) return yield* new TodoFailed({ failure: "publish_refused" })
-        let headSha = head.value.sha
-        if (headSha === begun.baseSha) {
-          headSha = yield* GitHub.Commits.createOnBranch(repository.owner, repository.name, {
+        // The commit, appended once at the base and found again only by this step's trailer. A head someone else
+        // moved is refused (409, stale), never adopted because its parent and message look like ours.
+        const headSha = yield* Action.once(
+          "commit",
+          GitHub.Once.commitOnBranch(repository.owner, repository.name, {
             branch: begun.branch,
             expectedHeadOid: begun.baseSha,
             headline: message.headline,
             body: message.body,
             additions: collected.additions,
             deletions: collected.deletions,
-          })
-        } else {
-          const commit = yield* GitHub.Commits.getCommit(repository.owner, repository.name, headSha)
-          const ours = commit.parents.length === 1 && commit.parents[0]!.sha === begun.baseSha &&
-            commit.message === `${message.headline}\n\n${message.body}`
-          if (!ours) return yield* new TodoFailed({ failure: "publish_refused" })
-        }
-        // The pull request, found by its head and our marker, or opened once.
-        const found = yield* GitHub.Pulls.findPullByHead(repository.owner, repository.name, {
-          head: begun.branch,
-          writeId: request.attemptId,
-        })
-        const pull = Option.isSome(found) ? found.value : yield* GitHub.Pulls.createPull(repository.owner, repository.name, {
-          head: begun.branch,
-          base: begun.defaultBranch,
-          title: `T${request.number}: ${begun.title}`.slice(0, 256),
-          body: GitHub.Issues.withWriteMarker(pullBodyOf(begun), request.attemptId),
-        }).pipe(Effect.mapError(failureIn("publish", "pr_refused")))
+          }),
+        )
+        // The pull request, found among the branch's by this step's marker, or opened once.
+        const pull = yield* Action.once(
+          "pull",
+          GitHub.Once.pull(repository.owner, repository.name, {
+            head: begun.branch,
+            base: begun.defaultBranch,
+            title: `T${request.number}: ${begun.title}`.slice(0, 256),
+            body: pullBodyOf(begun),
+          }),
+        ).pipe(Effect.mapError(failureIn("publish", "pr_refused")))
         // Read it back into the projection, so every device sees it before the webhook rings.
         yield* projectPull(repository, pull.number, yield* fetchPull(repository, pull.number))
         return { headSha, prNumber: pull.number } satisfies Published
@@ -643,9 +654,9 @@ export const registration = <E, R, IE, IR>(
   return Interpreter.layerWithImplementations(
     Todo,
     Layer.mergeAll(
-      Begin.toLayer(implementation.begin),
+      Begin.toLayer(implementation.begin, { implementationVersion: BEGIN_VERSION }),
       Collect.toLayer(implementation.collect),
-      Publish.toLayer(implementation.publish),
+      Publish.toLayer(implementation.publish, { implementationVersion: PUBLISH_VERSION }),
       Await.toLayer(implementation.await),
       Settle.toLayer(implementation.settle),
       Fail.toLayer(implementation.fail),

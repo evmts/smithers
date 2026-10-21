@@ -5,12 +5,13 @@
 // metering are the model endpoint's own (`ModelEndpoint.local`). The writer, the engine, the GitHub client, the tokens
 // and the projection are the real ones.
 import { Agent } from "@smthrs/agent"
-import { FlowRuntime } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { RunStore } from "@smthrs/flows"
+import { Node } from "@smthrs/plan"
 import { Model, type ModelEvent } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
 import type { SandboxTools } from "@smthrs/sandbox"
-import { Cause, ConfigProvider, Context, Effect, Exit, Fiber, Layer, Option, Redacted, Scope, Stream } from "effect"
+import { Cause, ConfigProvider, Context, Effect, Exit, Fiber, Layer, Option, Redacted, Schema, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
@@ -214,20 +215,25 @@ describe("the todo run", { timeout: 120_000 }, () => {
 
     expect(ran.exit).toEqual(Exit.succeed({ state: "merged" }))
     expect(ran.status).toBe("completed")
-    const branch = "smithers/t1-add-a-line-to-readme"
+    // The branch: the TODO's number and title, then the first 12 hex of the begin step's key.
     const pull = [...ctx.github.pulls.values()][0]!
-    expect([pull.head, pull.base, pull.merged]).toEqual([branch, "main", true])
+    const branch = pull.head
+    expect(branch).toMatch(/^smithers\/t1-add-a-line-to-readme-[0-9a-f]{12}$/)
+    expect([pull.base, pull.merged]).toEqual(["main", true])
     const body = ctx.github.issues.get(pull.number)!.body!
     expect(body).toContain("Add a line to the README.")
     expect(body).toContain(`Fixes #${issue.number}`)
     expect(body).toContain("Smithers for @maya")
-    expect(body).toContain(`<!-- smithers:write=${start.attemptId} -->`)
+    // The pull request carries the publish step's key, never the attempt's id.
+    expect(body).toMatch(/\n\n<!-- smithers:write=[0-9a-f]{64} -->$/)
+    expect(body).not.toContain(start.attemptId)
     // The commit: one, on the base, written as the App with whom it acted for; main has the squash.
     const head = ctx.github.commits.get(pull.mergeSha!)!
     expect(ctx.github.tree("main").get("README.md")).toBe("# Widgets\n\nA line\n")
     expect(head.parents).toHaveLength(1)
     const branchCommit = [...ctx.github.commits.values()].find((found) => found.message.startsWith("T1: "))!
-    expect([branchCommit.message, branchCommit.login]).toEqual(["T1: Add a line to README\n\nSmithers for @maya", BOT_LOGIN])
+    expect(branchCommit.login).toBe(BOT_LOGIN)
+    expect(branchCommit.message).toMatch(/^T1: Add a line to README\n\nSmithers for @maya\n\nSmithers-Write: [0-9a-f]{64}$/)
     // The TODO settled merged, and the next one started.
     expect(await todo(1)).toMatchObject({
       state: "merged",
@@ -306,21 +312,31 @@ describe("the todo run", { timeout: 120_000 }, () => {
     expect(await todo()).toMatchObject({ state: "dropped" })
   })
 
-  test("a branch name someone else holds takes the next suffix; a lost commit and a lost PR are adopted, not repeated", async () => {
+  test("a branch someone else holds under the TODO's name is left alone; a lost branch, commit and PR are adopted by key, not repeated", async () => {
     const ctx = await setup()
     ctx.github.push("smithers/t1-adopt", { "OTHER.md": "theirs\n" })
+    ctx.github.refs.set("smithers/t1-adopt-0123456789ab", ctx.github.refs.get("main")!)
     const start = (await commit("Adopt", "Anything."))!
     ctx.github.faults.push(
+      { match: (method, path) => method === "POST" && path.endsWith("/git/refs"), lost: true },
       { match: (method, path) => method === "POST" && path === "/graphql", lost: true },
       { match: (method, path) => method === "POST" && path.endsWith("/pulls"), lost: true },
     )
     ctx.github.onPullOpened = (number) => void ctx.github.merge(number)
     const ran = await ctx.run(start)
     expect(ran.exit).toEqual(Exit.succeed({ state: "merged" }))
-    expect(await todo()).toMatchObject({ branch: "smithers/t1-adopt-2", state: "merged" })
+    const row = await todo()
+    expect(row).toMatchObject({ state: "merged" })
+    expect(row["branch"]).toMatch(/^smithers\/t1-adopt-[0-9a-f]{12}$/)
+    expect(row["branch"]).not.toBe("smithers/t1-adopt-0123456789ab")
+    expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(1)
     expect(ctx.github.seen("POST", /^\/graphql$/)).toHaveLength(1)
     expect(ctx.github.seen("POST", /\/pulls$/)).toHaveLength(1)
     expect(ctx.github.pulls.size).toBe(1)
+    // The commit carries the step's key, and the pull request the same kind of marker: nothing else identifies them.
+    const head = ctx.github.commits.get(row["headSha"] as string)!
+    expect(head.message).toMatch(/^T1: Adopt\n\nSmithers for @maya\n\nSmithers-Write: [0-9a-f]{64}$/)
+    expect(ctx.github.issues.get([...ctx.github.pulls.keys()][0]!)!.body).toMatch(/<!-- smithers:write=[0-9a-f]{64} -->$/)
   })
 })
 
@@ -479,10 +495,11 @@ describe("the run's steps", () => {
   })
 
   test("the branch, the commit's message, the PR's body and base64", () => {
-    expect(Todo.branchNameOf(4, "Retry webhook delivery!")).toBe("smithers/t4-retry-webhook-delivery")
-    expect(Todo.branchNameOf(4, "!!!")).toBe("smithers/t4")
-    expect(Todo.branchNameOf(4, "x".repeat(80), "-2")).toBe(`smithers/t4-${"x".repeat(40)}-2`)
-    expect(Todo.branchNameOf(4, "Ünïcode tïtle")).toBe("smithers/t4-unicode-title")
+    expect(Todo.branchPrefixOf(4)).toBe("smithers/t4-")
+    expect(Todo.slugOf("Retry webhook delivery!")).toBe("retry-webhook-delivery")
+    expect(Todo.slugOf("!!!")).toBe("")
+    expect(Todo.slugOf("x".repeat(80))).toBe("x".repeat(40))
+    expect(Todo.slugOf("Ünïcode tïtle")).toBe("unicode-title")
     expect(Todo.commitMessageOf(2, "Fix it", "maya")).toEqual({ headline: "T2: Fix it", body: "Smithers for @maya" })
     const begun = {
       branch: "b",
@@ -524,6 +541,20 @@ describe("the run's steps", () => {
   })
 })
 
+/** One step, run once inside a real dispatch with no retry policy: `dispatched` below. */
+const StepRun = Action.make("probe/todo/StepRun", {
+  payload: {},
+  success: Schema.Unknown,
+  error: Schema.Union([Todo.TodoFailed, Todo.TodoUnavailable]),
+  tier: "irreversible",
+})
+const StepProbe = Flow.make("probe/todo/Step", {
+  payload: Schema.Struct({}),
+  success: Schema.Unknown,
+  error: Schema.Union([Todo.TodoFailed, Todo.TodoUnavailable]),
+  body: Node.capture({ step: StepRun.name }, () => StepRun.call({})),
+})
+
 describe("the run's steps, case by case", { timeout: 60_000 }, () => {
   const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
   const BASE = () => "0".repeat(40)
@@ -532,6 +563,23 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     runtime.runPromise(
       Effect.exit((effect(Todo.steps(ctx.services)) as Effect.Effect<A, E, Machines>).pipe(Effect.provide(ctx.machine.layer))),
     )
+  /**
+   * Runs one step of `ctx`'s services inside a real dispatch of the Node host's engine: `Action.once` keys a write by
+   * the execution and the dispatch, so a step that writes to GitHub runs where the engine names both. The probe action
+   * declares no retry policy, so a failure answers at once instead of waiting out the step's own.
+   */
+  const dispatched = async <A, E, R>(
+    ctx: Awaited<ReturnType<typeof setup>>,
+    effect: (steps: ReturnType<typeof Todo.steps>) => Effect.Effect<A, E, R>,
+  ): Promise<Exit.Exit<unknown, unknown>> => {
+    const registration = Interpreter.layerWithImplementations(
+      StepProbe,
+      StepRun.toLayer(() =>
+        effect(Todo.steps(ctx.services)) as unknown as Effect.Effect<unknown, Todo.TodoFailed | Todo.TodoUnavailable, Machines>
+      ),
+    ).pipe(Layer.provideMerge(Action.layerImplementations), Layer.provide(ctx.machine.layer))
+    return (await runFlow(StepProbe, {}, registration)).exit
+  }
   const failure = (exit: Exit.Exit<unknown, unknown>) =>
     exit._tag === "Failure" ? JSON.parse(JSON.stringify(Cause.squash(exit.cause))) : undefined
   const begun = (ctx: Awaited<ReturnType<typeof setup>>, branch: string): Todo.Begun => ({
@@ -546,39 +594,53 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     ownerLogin: maya.login,
   })
 
-  test("begin: a step run again takes the branch it recorded; an attempt it doesn't know ends", async () => {
+  test("begin: run again in its dispatch, it finds its own branch by key, even after the default branch moved; an attempt it doesn't know ends", async () => {
     const ctx = await setup()
     const start = (await commit("Step", "Do it."))!
-    await sql(runtime, `UPDATE todos SET branch = 'smithers/t1-recorded', base_sha = '${ctx.github.refs.get("main")}'`)
-    const again = await step(ctx, (steps) => steps.begin({ request: start }))
-    expect(again._tag === "Success" && again.value.branch).toBe("smithers/t1-recorded")
-    expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(0)
+    const base = ctx.github.refs.get("main")!
+    const again = await dispatched(ctx, (steps) =>
+      Effect.gen(function* () {
+        const first = yield* steps.begin({ request: start })
+        ctx.github.push("main", { "MOVED.md": "moved\n" })
+        const second = yield* steps.begin({ request: start })
+        return [first, second]
+      }))
+    const [first, second] = (again as Exit.Success<ReadonlyArray<Todo.Begun>>).value
+    expect(first!.branch).toMatch(/^smithers\/t1-step-[0-9a-f]{12}$/)
+    expect(second).toEqual(first)
+    expect(first!.baseSha).toBe(base)
+    expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(1)
     const unknown = await step(ctx, (steps) => steps.begin({ request: { ...start, attemptId: crypto.randomUUID() } }))
     expect(failure(unknown)).toMatchObject({ failure: "ended" })
   })
 
-  test("begin: five names taken, or no default branch, is publish_refused; a lost race takes the next name", async () => {
+  test("begin: a branch under the TODO's name that isn't its own is never taken; no default branch is publish_refused", async () => {
     const ctx = await setup()
     const start = (await commit("Taken", "Do it."))!
-    for (const suffix of ["", "-2", "-3", "-4", "-5"]) ctx.github.push(`smithers/t1-taken${suffix}`, { "X.md": "x\n" })
-    expect(failure(await step(ctx, (steps) => steps.begin({ request: start })))).toMatchObject({ failure: "publish_refused" })
-    const raced = await setup()
+    // Someone else's branches: the same name, the same name at the base, and the same label with another key.
+    ctx.github.push("smithers/t1-taken", { "X.md": "x\n" })
+    ctx.github.refs.set("smithers/t1-taken-2", ctx.github.refs.get("main")!)
+    ctx.github.refs.set("smithers/t1-taken-ffffffffffff", ctx.github.refs.get("main")!)
+    const made = await dispatched(ctx, (steps) => steps.begin({ request: start }))
+    const branch = (made as Exit.Success<Todo.Begun>).value.branch
+    expect(branch).toMatch(/^smithers\/t1-taken-[0-9a-f]{12}$/)
+    expect(["smithers/t1-taken", "smithers/t1-taken-2", "smithers/t1-taken-ffffffffffff"]).not.toContain(branch)
+    const gone = await setup()
     await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks")
-    const second = (await commit("Raced", "Do it."))!
-    raced.github.faults.push({ match: (method, path) => method === "POST" && path.endsWith("/git/refs"), status: 422 })
-    const exit = await step(raced, (steps) => steps.begin({ request: second }))
-    expect(exit._tag === "Success" && exit.value.branch).toBe("smithers/t1-raced-2")
+    const second = (await commit("Gone", "Do it."))!
+    gone.github.refs.delete("main")
+    expect(failure(await dispatched(gone, (steps) => steps.begin({ request: second })))).toMatchObject({
+      failure: "publish_refused",
+    })
   })
 
   test("begin: a branch GitHub fails to create, or a token it fails to mint, is tried again", async () => {
     const ctx = await setup()
     const start = (await commit("Down", "Do it."))!
     ctx.github.faults.push({ match: (method, path) => method === "POST" && path.endsWith("/git/refs"), status: 500 })
-    expect(failure(await step(ctx, (steps) => steps.begin({ request: start })))).toMatchObject({ step: "begin" })
+    expect(failure(await dispatched(ctx, (steps) => steps.begin({ request: start })))).toMatchObject({ step: "begin" })
     ctx.github.faults.push({ match: (method, path) => method === "POST" && path.endsWith("/access_tokens"), status: 500 })
     expect(failure(await step(ctx, (steps) => steps.begin({ request: start })))).toMatchObject({ step: "begin" })
-    ctx.github.refs.delete("main")
-    expect(failure(await step(ctx, (steps) => steps.begin({ request: start })))).toMatchObject({ failure: "publish_refused" })
   })
 
   test("collect: deletions, too many files, a cut read or a refused tool fail implement; a machine down is retried", async () => {
@@ -633,7 +695,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     expect(failure(await collect(cut))).toMatchObject({ failure: "implement" })
   })
 
-  test("begin: GitHub's or the token's wait is kept for the retry; a branch already at the base is taken, not made again", async () => {
+  test("begin: GitHub's or the token's wait is kept for the retry", async () => {
     const ctx = await setup()
     const start = (await commit("Wait", "Do it."))!
     const repository = `/repos/${REPOSITORY.owner}/${REPOSITORY.name}`
@@ -645,10 +707,6 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     expect(failure(await step(ctx, (steps) => steps.begin({ request: start })))).toMatchObject({ step: "begin", retryAfterMillis: 7_000 })
     ctx.github.faults.push({ match: (_method, path) => path.endsWith("/access_tokens"), status: 429, headers: { "retry-after": "5" } })
     expect(failure(await step(ctx, (steps) => steps.begin({ request: start })))).toMatchObject({ step: "begin", retryAfterMillis: 5_000 })
-    ctx.github.refs.set("smithers/t1-wait", ctx.github.refs.get("main")!)
-    const taken = await step(ctx, (steps) => steps.begin({ request: start }))
-    expect(taken._tag === "Success" && taken.value.branch).toBe("smithers/t1-wait")
-    expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(0)
   })
 
   test("publish: a report the writer finds stale ends the run before anything is written", async () => {
@@ -676,16 +734,42 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     const ctx = await setup()
     const start = (await commit("Publish", "Do it."))!
     const collected = { additions: [{ path: "A.md", contents: btoa("a\n") }], deletions: [] }
-    expect(failure(await step(ctx, (steps) => steps.publish({ request: start, begun: begun(ctx, "smithers/gone"), collected }))))
+    expect(failure(await dispatched(ctx, (steps) => steps.publish({ request: start, begun: begun(ctx, "smithers/gone"), collected }))))
       .toMatchObject({ failure: "publish_refused" })
     ctx.github.push("smithers/theirs", { "T.md": "t\n" })
-    expect(failure(await step(ctx, (steps) => steps.publish({ request: start, begun: begun(ctx, "smithers/theirs"), collected }))))
+    expect(failure(await dispatched(ctx, (steps) => steps.publish({ request: start, begun: begun(ctx, "smithers/theirs"), collected }))))
       .toMatchObject({ failure: "publish_refused" })
     ctx.github.push("smithers/refused", {})
     ctx.github.refs.set("smithers/refused", ctx.github.refs.get("main")!)
     ctx.github.faults.push({ match: (method, path) => method === "POST" && path.endsWith("/pulls"), status: 422 })
-    expect(failure(await step(ctx, (steps) => steps.publish({ request: start, begun: begun(ctx, "smithers/refused"), collected }))))
+    expect(failure(await dispatched(ctx, (steps) => steps.publish({ request: start, begun: begun(ctx, "smithers/refused"), collected }))))
       .toMatchObject({ failure: "pr_refused" })
+  })
+
+  // The bug Codex Astra and Claude Fable found (2026-10-21): a commit on the TODO's branch whose parent is the base and
+  // whose message is the run's own `T<n>: <title>` and `Smithers for @<login>` was adopted as the run's commit, and its
+  // change published as the TODO's. Only the step's own key identifies its commit.
+  test("publish: a foreign commit with the same number, title and login on the TODO's branch is never adopted", async () => {
+    const ctx = await setup()
+    const start = (await commit("Same", "Do it."))!
+    const begin = await dispatched(ctx, (steps) => steps.begin({ request: start }))
+    const made = (begin as Exit.Success<Todo.Begun>).value
+    const base = made.baseSha
+    const foreign = "f".repeat(40)
+    ctx.github.commits.set(foreign, {
+      sha: foreign,
+      message: "T1: Same\n\nSmithers for @maya",
+      parents: [base],
+      login: "maya",
+      at: Date.now(),
+      files: new Map([...ctx.github.commits.get(base)!.files, ["THEIRS.md", "not the TODO's change\n"]]),
+    })
+    ctx.github.refs.set(made.branch, foreign)
+    const collected = { additions: [{ path: "A.md", contents: btoa("a\n") }], deletions: [] }
+    const published = await dispatched(ctx, (steps) => steps.publish({ request: start, begun: made, collected }))
+    expect(failure(published)).toMatchObject({ failure: "publish_refused" })
+    expect(ctx.github.pulls.size).toBe(0)
+    expect(ctx.github.refs.get(made.branch)).toBe(foreign)
   })
 
   test("await: a pull request GitHub no longer has, or closed, ends closed", async () => {

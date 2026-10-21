@@ -541,6 +541,11 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     login: string,
     body: unknown,
   ): { readonly response: Response; readonly apply?: () => void } | undefined => {
+    const matching = /^\/git\/matching-refs\/heads\/(.+)$/.exec(rest)
+    if (matching !== null && method === "GET") {
+      const names = [...github.refs.keys()].filter((branch) => branch.startsWith(matching[1]!)).sort()
+      return { response: paged(url, names.map(refJson)) }
+    }
     const ref = /^\/git\/ref\/heads\/(.+)$/.exec(rest)
     if (ref !== null && method === "GET") {
       return { response: github.refs.has(ref[1]!) ? json(refJson(ref[1]!)) : json({ message: "Not Found" }, 404) }
