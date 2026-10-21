@@ -117,6 +117,26 @@ Every engineering rule becomes a lint rule, an `ImportRules` check or a Jev
 rubric in `PACKAGE.ts`, catalogued in [`apps/mvp/docs/rules.md`](apps/mvp/docs/rules.md)
 (PROC-4).
 
+## VibeLang is ours (Will, 2026-10-20 and 2026-10-21)
+
+Smithers' packages are being rewritten in VibeLang (`.vibe`), our language for
+Effect. We maintain it: github.com/smithersai/vibelang, checked out beside this
+repository as `../effectscript`, on npm as `vibelang` (OTHER-1).
+
+- Before writing or reviewing `.vibe`, read the skill,
+  `node_modules/vibelang/skills/vibelang/SKILL.md` (about 4,000 tokens). Write
+  idiomatic VibeLang, never Effect TypeScript in a `.vibe` file;
+  `vibelang --fix` rewrites TypeScript-style forms. Files with no Effect code
+  stay `.ts`.
+- Never work around a VibeLang bug, missing feature or tooling gap. Fix it in
+  VibeLang with a test, or record a minimal reproduction where the migration
+  tracks pain points, and say so in the change.
+- A change that breaks how existing VibeLang code compiles or behaves goes to
+  Will before it is made.
+- Migrating a package keeps its public API (its emitted declarations)
+  identical and every test passing at 100% coverage. Packages first; apps
+  later.
+
 ## Zero tech debt; one backend (Will, 2026-09-25)
 
 No tech debt and no dead code. Finish every migration in the same effort:
