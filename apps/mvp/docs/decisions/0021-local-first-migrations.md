@@ -2,6 +2,8 @@
 
 Status: proposed (2026-10-20). Will, about 20:05 on Telegram: "when we deploy to prod we will have a frontend migration to do and in fact need a generalized way of handling migrations of our local first data that should be robust and make messing up hard". Builds on [0002](0002-local-first.md) (the device store and the outbox) and [0011](0011-the-agent-runs-in-the-browser.md) (the browser engine). Work note: [local-first migrations](../work/local-first-migrations.md).
 
+The migration guarantees below apply after stable device ownership is verified. [Decision 0023](0023-device-ownership-and-queued-authority.md) takes precedence for a legacy login-only identity or nonempty unowned store: online activation clears that device before opening it under the verified person; offline opening preserves the legacy data without authorizing its sends. A matching login alone cannot transfer private drafts or queued writes to a stable identity. Server-backed rows can sync again after the wipe.
+
 ## The five rules
 
 1. **Every store a device keeps declares its history.** Each persisted collection, each outbox payload and the engine's journal has an append-only list of versions, each an Effect Schema, and a pure migration between neighbors. The build stamps its version on everything it writes.
@@ -102,6 +104,6 @@ Collection.persisted(RequestedStore)                    // the declaration is th
 
 ## 8. Slice 1
 
-Built: the declarations and the runner, `device/prepare` in the leader, the outbox's stamp, upgrade and park, the `device_kept` fallback, the lock check, and the migrations for every change since the deployed build (`7b96f878`). Tests: the fixture harness on that build's store, property tests that migrating then resyncing equals a fresh sync, a crash mid-migration that resumes, an old build's outbox write that applies after the upgrade, and the lock failing on a schema change without a version. End to end: `e2e/device-upgrade.spec.ts` opens the deployed build, makes synced rows, a queued offline question and a draft, then opens this build on the same device and finds all three.
+Built: the declarations and the runner, `device/prepare` in the leader, the outbox's stamp, upgrade and park, the `device_kept` fallback, the lock check, and the migrations for every change since the deployed build (`7b96f878`). Tests: the fixture harness on that build's store, property tests that migrating then resyncing equals a fresh sync, a crash mid-migration that resumes, an old build's outbox write that applies after the upgrade, and the lock failing on a schema change without a version. End to end: `e2e/device-upgrade.spec.ts` opens the deployed login-only build and creates a synced row, a queued offline question and a draft. Online activation of this build clears the ambiguous local queue and draft under decision 0023 while the server row returns. The verified owner then queues a new question and saves a draft offline; both survive reopening, the question reaches Postgres once, and the legacy queue remains absent. Fixture migration tests separately retain the schema-level preservation checks for both deployed builds under an already authorized owner.
 
 Slice 2: the epoch handshake with open tabs, the server's minimum epoch, and `device_kept` in the device's export.
