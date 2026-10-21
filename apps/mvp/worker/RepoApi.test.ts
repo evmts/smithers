@@ -638,6 +638,20 @@ describe("spend", () => {
 })
 
 describe("GET /api/repos/<owner>/<name>/about", () => {
+  test("a read the cache misses spends the deployment's token only for a Member; a visitor or a Guest reads anonymously", async () => {
+    // Before, every read went out with the deployment's token: anyone naming arbitrary repositories spent the GitHub
+    // App's quota, which the git loop needs too.
+    const read = async (actor: Actor.Actor | null, name: string) => {
+      const h = await repoHarness(runtime, { actor, config: { GITHUB_TOKEN: "ghp_deployment" } })
+      h.github.publish("octocat", name)
+      expect((await h.fetch(aboutRoute("octocat", name))).status).toBe(200)
+      return { authorizations: new Set(h.github.authorizations), token: h.only("repo.about").annotations.token }
+    }
+    expect(await read(null, "Visitor")).toEqual({ authorizations: new Set([null]), token: "anonymous" })
+    expect(await read({ subject: { kind: "person", id: "person-guest" }, role: "guest" }, "Guest")).toEqual({ authorizations: new Set([null]), token: "anonymous" })
+    expect(await read({ subject: { kind: "person", id: "person-member" }, role: "member" }, "Member")).toEqual({ authorizations: new Set(["Bearer ghp_deployment"]), token: "deployment" })
+  })
+
   test("what GitHub says, before any clone, cached for the window it was read in", async () => {
     const h = await repoHarness(runtime, { actor: null })
     h.github.publish("octocat", "Spoon-Knife")

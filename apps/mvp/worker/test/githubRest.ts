@@ -95,6 +95,7 @@ export const scriptedGitHub = () => {
   const faults = new Map<string, number | "rate_limited">()
   const answers = new Map<string, (url: URL) => Response>()
   const calls: Array<string> = []
+  const authorizations: Array<string | null> = []
 
   const answer = (repository: RestRepository, rest: string, url: URL): Response => {
     switch (rest) {
@@ -163,6 +164,7 @@ export const scriptedGitHub = () => {
     if (match === null) return notFound()
     const [, owner, name, rest = ""] = match
     calls.push(rest)
+    authorizations.push(request.headers.get("authorization"))
     const fault = faults.get(rest)
     if (fault === "rate_limited") {
       return json(403, { message: "API rate limit exceeded" }, {
@@ -181,6 +183,8 @@ export const scriptedGitHub = () => {
     fetch,
     /** Every path GitHub was asked for, after `/repos/<owner>/<name>`, in order. */
     calls,
+    /** Each request's `Authorization` header, or `null` for an anonymous one, in the order of `calls`. */
+    authorizations,
     publish: (owner: string, name: string, repository: RestRepository = spoonKnife()) =>
       void repositories.set(`${owner}/${name}`.toLowerCase(), repository),
     /** Arms a fault on every request for `/repos/<owner>/<name><rest>` until `clear`. */

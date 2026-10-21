@@ -322,7 +322,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     /**
      * `GET /api/repos/<owner>/<name>/about`: what GitHub says of a repository, cloned or not, from the immutable cache
      * under the window it was read in (`REPO_ABOUT_FRESH_MINUTES`), so GitHub is asked once a window; the browser keeps
-     * it until the window ends. Open to everyone, like the other reads.
+     * it until the window ends. Open to everyone, like the other reads. A read the cache misses goes out with the
+     * deployment's read token (worker/github/ReadToken.ts) only for a Member or above, the people a clone's spend is
+     * trusted to: the App's quota is the git loop's too, so a visitor naming arbitrary repositories reads anonymously
+     * and can't exhaust it.
      */
     const about = (target: { readonly owner: string; readonly name: string }) =>
       Effect.gen(function* () {
@@ -335,9 +338,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           const id = repoId(target.owner, target.name)
           fields.repoId = id
           const { bucket, maxAgeSeconds } = RepoAbout.window(startedAt, aboutSettings.freshFor)
-          const client = yield* RepoAbout.client(aboutSettings)
           let fresh = false
-          const read = RepoAbout.read(client, target.owner, target.name, aboutSettings.appSlug).pipe(
+          const read = Effect.gen(function* () {
+            const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+            const member = Option.isSome(actor) && Option.isSome(actor.value) && canClone(actor.value.value)
+            fields.token = member ? "deployment" : "anonymous"
+            const client = yield* RepoAbout.client(aboutSettings, { authenticated: member })
+            return yield* RepoAbout.read(client, target.owner, target.name, aboutSettings.appSlug)
+          }).pipe(
             Effect.map((answer) => {
               fresh = true
               return { bytes: encoder.encode(JSON.stringify(answer)), metadata: {} }

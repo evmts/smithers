@@ -230,9 +230,15 @@ export const read = (client: GitHub.GitHubClient.GitHubClient, owner: string, na
     } satisfies About
   }).pipe(Effect.withSpan("repo.about.github"))
 
-/** A GitHub client for the about read over the `HttpClient` in context, with `settings`' token and API URL. */
-export const client = (options: Settings): Effect.Effect<GitHub.GitHubClient.GitHubClient, never, HttpClient.HttpClient> =>
-  Effect.flatMap(options.token, (token) =>
+/**
+ * A GitHub client for the about read over the `HttpClient` in context, with `settings`' API URL, and its token when
+ * the read is `authenticated`; anonymous otherwise.
+ */
+export const client = (
+  options: Settings,
+  read: { readonly authenticated: boolean } = { authenticated: true },
+): Effect.Effect<GitHub.GitHubClient.GitHubClient, never, HttpClient.HttpClient> =>
+  Effect.flatMap(read.authenticated ? options.token : Effect.succeed(Option.none<Redacted.Redacted<string>>()), (token) =>
     GitHub.GitHubClient.make(
       {
         apiBaseUrl: options.apiBaseUrl,
