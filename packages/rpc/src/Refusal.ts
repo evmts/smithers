@@ -62,7 +62,7 @@ export type RefusalCode = PlueFailureCode | WorkerFailureCode | NativeFailureCod
  * - `plue` the platform itself, by a code this build knows.
  * - `worker` the Cloudflare Worker in front of it — its own auth, routing or
  *   envelope, or an upstream refusal it could not attribute.
- * - `local` the native host inside the desktop app (apps/app/src/bun): a real
+ * - `local` the native host inside the old desktop app: a real
  *   HTTP origin on 127.0.0.1 that serves the same `/api/cloud/*` routes the
  *   Worker does, in the Worker's own vocabulary, and its private routes in its
  *   own (NativeFailureCodes.ts). It is NOT the Worker, and in a desktop build
@@ -445,7 +445,7 @@ export const isCapacityRefusal = (refusal: Refusal): boolean => refusal.code ===
  * them apart — the route-family gate, `isFeatureGateRefusal` — has to read the
  * sentence as well as the code. Reading `refusal.message` at that call site is
  * a raw refusal-text read in a file that could print it, which the UI's
- * lexical guard counts (apps/app/src/mainview/RawErrorRender.test.ts) and
+ * lexical guard counts, and
  * which is the right thing to count: the next edit to such a line is one
  * character away from putting the wire's English on a screen. Asking here
  * keeps the read in the module that owns the shape, and hands the caller a

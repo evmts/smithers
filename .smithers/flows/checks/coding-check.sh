@@ -12,9 +12,6 @@ drift=0
 drift_gates="lint //...:fmt
 lint //:targetIndex
 lint //:factoryProjection
-lint //:backendAccessTests
-lint //:openapiBundle
-lint //:openapiClients
 lint //:docsDrift
 build //.smithers/flows:apiBaseline
 lint //packages/repo-targets:conflictMarkers

@@ -269,7 +269,7 @@ const webBundleContract = Smithers.NodeTest({
 /** Real-runner sentinels: a declared runner executes its suite and fails closed. */
 const runnerContract = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/runner-contract.test.mjs")]),
-  srcs: [...contracts, Smithers.file("//apps/app/scripts/run-pr-e2e.mjs")],
+  srcs: contracts,
   deps: []
 })
 
@@ -370,30 +370,6 @@ const publicExportMaps = Smithers.NodeTest({
 const barrels = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/barrels.test.mjs")]),
   srcs: contracts,
-  deps: []
-})
-
-/**
- * The apps/app required CI tier: selected once in its own job, a Playwright
- * wrapper that propagates failure, and a typecheck that propagates compiler
- * and security validation failures.
- *
- * @since 1.0.0
- * @category test
- */
-const uiCiTier = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/ui-ci-tier.test.mjs")]),
-  srcs: [
-    ...contracts,
-    Smithers.file("//.smithers/flows/release/release-rehearsal.mjs"),
-    Smithers.file("//.github/workflows/ci.yml"),
-    Smithers.file("//apps/app/PACKAGE.ts"),
-    Smithers.file("//apps/app/scripts/run-pr-e2e.mjs"),
-    Smithers.file("//apps/app/package.json"),
-    Smithers.file("//apps/app/tsconfig.json"),
-    Smithers.file("//package.json"),
-    Smithers.file("//pnpm-lock.yaml")
-  ],
   deps: []
 })
 
@@ -658,7 +634,7 @@ const securityReview = Smithers.SecurityReview({
     // The repository-contract suites carry their own review checks below.
     "contracts/barrels.test.mjs", "contracts/cli-verbs.test.mjs", "contracts/fault-skips.test.mjs", "contracts/fault-gaps.md",
     "contracts/machine-paths.test.mjs", "contracts/package-contract.test.mjs", "contracts/public-export-maps.test.mjs",
-    "contracts/reliability-workflow.test.mjs", "contracts/scratch-artifacts.test.mjs", "contracts/ui-ci-tier.test.mjs",
+    "contracts/reliability-workflow.test.mjs", "contracts/scratch-artifacts.test.mjs",
     "contracts/egress-http-client.test.mjs", "contracts/ci-inventory.test.mjs", "contracts/test-script-wiring.test.mjs"],
   checks: [
     {
@@ -767,7 +743,7 @@ const securityReview = Smithers.SecurityReview({
         "A child env built from `...process.env` that forwards cache tokens or credentials (SMITHERS_CACHE_TOKEN, NPM_TOKEN) to a stub it does not need them for.",
         "A PATH prefix pointing at a directory that is not a fresh mkdtemp owned by the test."
       ],
-      paths: ["contracts/public-export-maps.test.mjs", "contracts/ui-ci-tier.test.mjs", "contracts/machine-paths.test.mjs", "contracts/scratch-artifacts.test.mjs"]
+      paths: ["contracts/public-export-maps.test.mjs", "contracts/machine-paths.test.mjs", "contracts/scratch-artifacts.test.mjs"]
     },
     {
       id: "temp-file-safety",
@@ -779,7 +755,7 @@ const securityReview = Smithers.SecurityReview({
         "rmSync(..., { recursive: true, force: true }) on a path not returned by mkdtemp in the same test.",
         "symlinkSync into a fixture that points outside the fixture root."
       ],
-      paths: ["contracts/cli-verbs.test.mjs", "contracts/public-export-maps.test.mjs", "contracts/ui-ci-tier.test.mjs"]
+      paths: ["contracts/cli-verbs.test.mjs", "contracts/public-export-maps.test.mjs"]
     },
     {
       id: "publish-surface-gate",
@@ -803,7 +779,7 @@ const securityReview = Smithers.SecurityReview({
         "A test file excluded from every target in test-script-wiring without a stated reason.",
         "A skip or todo in the fault matrix accepted without a declared reason row in fault-gaps.md."
       ],
-      paths: ["contracts/ui-ci-tier.test.mjs", "contracts/reliability-workflow.test.mjs", "contracts/fault-skips.test.mjs", "contracts/fault-gaps.md"]
+      paths: ["contracts/reliability-workflow.test.mjs", "contracts/fault-skips.test.mjs", "contracts/fault-gaps.md"]
     },
     {
       id: "egress-gate-coverage",
@@ -882,4 +858,4 @@ const mvpDocs = Smithers.NodeTest({
   deps: [repositoryInputs]
 })
 
-export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, uiCiTier, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })
+export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })

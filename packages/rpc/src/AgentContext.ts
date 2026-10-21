@@ -55,7 +55,7 @@ export const AgentRuntimeConnectorSchema = z.object({
 export type AgentRuntimeConnector = z.infer<typeof AgentRuntimeConnectorSchema>
 
 /*
- * One open tab of the app (apps/app/docs/LOCAL-APP.md "Cards"), as the model
+ * One open tab of the app, as the model
  * sees it: Smithers is the first tab and knows every card pinned beside the
  * conversation. Optional on the context so a boundary built before tabs
  * existed still validates the payload.

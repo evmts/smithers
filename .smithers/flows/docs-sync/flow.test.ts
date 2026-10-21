@@ -38,7 +38,7 @@ const run = (payload: typeof Request.Type, executionId: string) =>
 const stub = `
 import fs from "node:fs"
 import { syncBuiltinESMExports } from "node:module"
-const generated = (path) => String(path).replaceAll("\\\\", "/").endsWith("apps/server/src/docsRedirectMap.ts")
+const generated = (path) => String(path).replaceAll("\\\\", "/").endsWith("apps/site/docs-redirect/src/docsRedirectMap.ts")
 const read = fs.readFileSync
 const write = fs.writeFileSync
 if (process.env.DOCS_SYNC_STUB === "stale") {

@@ -1,6 +1,6 @@
 /**
- * The native app host's OWN failure taxonomy — the refusals apps/app/src/bun
- * writes on the routes only it serves.
+ * The old native app host's OWN failure taxonomy — the refusals it wrote on
+ * the routes only it served.
  *
  * This is the THIRD vocabulary. plue's is generated and vendored
  * (PlueFailureCodes.ts); the Cloudflare Worker's is hand-written beside it
@@ -21,8 +21,8 @@
  * all mean the same thing: plue's `not_implemented` is a `bug` ("the route
  * exists but its implementation does not"), while this host's is a build that
  * does not carry a seam. Renaming the route names instead would break the
- * envelope this host's clients and its docs already read
- * (apps/app/docs/LOCAL-APP.md, `LspClient` matching `language_server_missing`).
+ * envelope this host's clients already read (`LspClient` matching
+ * `language_server_missing`).
  * So a route keeps its bare name inside `error.code`, and the CLASSIFIED code
  * beside it is that name in this namespace: `repo_not_found` is the route's,
  * `native_repo_not_found` is the refusal's.

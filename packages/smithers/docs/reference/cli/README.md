@@ -32,7 +32,7 @@ run-kind targets; `flow start` starts durable flows.
 | `cache status/prune/clear`, `clean [patterns...]`, `gc` | Maintain action results, declared cleanup targets, or terminal run history. |
 | `environment add/list/view/remove/exec/shell/forward` | Save an execution location and run commands there. |
 | `memory`, `credentials`, `triggers`, `integrations`, `eval` | Operate the persistent agent features described below. |
-| `open [dir]`, `.` | Open the checkout's `owner/repo` in the Smithers app (`smithers://open/<owner>/<repo>`), the dev build inside a smithers checkout whose remote is on github.com or smithers.sh, or print its smithers.sh page. |
+| `open [dir]`, `.` | Open the checkout's `owner/repo` in the Smithers app (`smithers://open/<owner>/<repo>`), or print its smithers.sh page. |
 | `host start [--bundle <dir>] [--bind <addr>] [--origin <url>]`, `host stop`, `host status` | Run a verified server bundle as an unprivileged macOS LaunchAgent, stop it, or inspect its health. |
 | `host backup`, `host upgrade`, `host restore <directory>` | Host maintenance commands. Currently refuse until capture, drain and owner authorization are composed; restore validates the backup before any state change. |
 | `serve`, `doctor`, `suggest`, `migrate`, `update`, `bug` | Host, diagnose, discover uses, migrate source, check versions, or submit a report. |
@@ -463,10 +463,9 @@ when a requested resource exceeds its configured cap.
 
 ## macOS host service
 
-The [host command reference](host.md) is generated from the source CLI schemas.
+The [host command reference](host.md) lists the host commands.
 
-Build the stage-1 server bundle with `smthrs build //apps/app:serverBundle`,
-then run `smthrs host start --bundle <output-directory>` in your macOS login
+Run `smthrs host start --bundle <bundle-directory>` in your macOS login
 session. Start verifies every manifest digest before registering the service.
 Without `--bundle`, it uses `/opt/homebrew/opt/smithers/libexec`.
 

@@ -1,5 +1,4 @@
-// Launch-spec fixture. system-flow-catalog.test.ts checks both fixture lists
-// against services.SystemFlows; production receives these names from Go.
+// Launch-spec fixture: the system flow names a coding host registers.
 export const systemFlows = [
   "stack",
   "stack.move",

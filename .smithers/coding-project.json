@@ -32,7 +32,6 @@
         "runtime",
         "agent",
         "build-graph",
-        "product-ui",
         "coding-request",
         "coding-direction"
       ]
@@ -120,8 +119,7 @@
       ],
       "related": [
         "flows",
-        "wiki-generation",
-        "product-ui"
+        "wiki-generation"
       ]
     },
     {
@@ -136,7 +134,6 @@
       "related": [
         "coding-planning",
         "coding-checks",
-        "cloud-wiki",
         "coding-host",
         "build-graph"
       ],
@@ -160,7 +157,6 @@
         ".smithers/flows/coding/design.md"
       ],
       "related": [
-        "product-ui",
         "coding-request",
         "coding-progression",
         "coding-experience"
@@ -234,8 +230,7 @@
         "coding-planning",
         "coding-poc",
         "coding-correction",
-        "coding-host",
-        "coding-ui"
+        "coding-host"
       ]
     },
     {
@@ -268,8 +263,7 @@
       ],
       "related": [
         "coding-request",
-        "coding-planning",
-        "coding-ui"
+        "coding-planning"
       ]
     },
     {
@@ -302,8 +296,7 @@
       "related": [
         "coding-progression",
         "coding-checks",
-        "coding-request",
-        "coding-ui"
+        "coding-request"
       ]
     },
     {
@@ -349,8 +342,7 @@
       "related": [
         "coding-request",
         "coding-progression",
-        "coding-checks",
-        "coding-ui"
+        "coding-checks"
       ],
       "excerpts": {
         ".smithers/flows/coding/finalization.md": [
@@ -360,24 +352,6 @@
           }
         ]
       }
-    },
-    {
-      "id": "coding-ui",
-      "title": "Coding evidence in recursive run cards",
-      "purpose": "Keep predicted work, recorded outcomes, retained prototypes and Vibe progress distinct in the run card.",
-      "kind": "current",
-      "document": ".smithers/wiki/pages/coding-ui.md",
-      "inputs": [
-        ".smithers/flows/coding/planning.md",
-        "apps/app/src/mainview/cards/CodingPlanCard.tsx"
-      ],
-      "related": [
-        "product-ui",
-        "native-engine-evidence",
-        "coding-request",
-        "coding-finalization",
-        "coding-experience"
-      ]
     },
     {
       "id": "coding-experience",
@@ -390,50 +364,7 @@
       ],
       "related": [
         "coding-direction",
-        "coding-ui",
-        "product-ui",
         "native-engine-evidence"
-      ]
-    },
-    {
-      "id": "product-ui",
-      "title": "Embedded UI and recursive inspection",
-      "purpose": "Follow the embed, three-door, collection-state and run-trace rules of the app.",
-      "kind": "current",
-      "document": ".smithers/wiki/pages/product-ui.md",
-      "inputs": [
-        "apps/app/README.md"
-      ],
-      "related": [
-        "app",
-        "coding-ui",
-        "cloud-wiki",
-        "native-engine-evidence"
-      ]
-    },
-    {
-      "id": "cloud-wiki",
-      "title": "Collaborative repository Wiki",
-      "purpose": "Separate local app revisions, remote page revisions and pending edits in the app Wiki.",
-      "kind": "current",
-      "document": ".smithers/wiki/pages/cloud-wiki.md",
-      "inputs": [
-        "apps/app/docs/workbench-lanes/wiki-collaboration.md",
-        "apps/app/src/mainview/wiki/CloudWikiState.ts",
-        "apps/app/src/mainview/flows/entries/wiki.ts"
-      ],
-      "excerpts": {
-        "apps/app/src/mainview/flows/entries/wiki.ts": [
-          {
-            "start": 20,
-            "end": 57
-          }
-        ]
-      },
-      "related": [
-        "wiki-generation",
-        "product-ui",
-        "app"
       ]
     },
     {
@@ -462,14 +393,11 @@
       "kind": "current",
       "document": ".smithers/wiki/pages/native-engine-evidence.md",
       "inputs": [
-        "packages/smithers/ENGINE-JOURNAL-PROJECTION.md",
-        "apps/app/src/mainview/cards/EngineTrace.ts"
+        "packages/smithers/ENGINE-JOURNAL-PROJECTION.md"
       ],
       "related": [
         "native-control",
-        "coding-ui",
-        "storage",
-        "product-ui"
+        "storage"
       ],
       "excerpts": {
         "packages/smithers/ENGINE-JOURNAL-PROJECTION.md": [
@@ -492,49 +420,6 @@
         "packages/smithers/agent/docs/concepts/agent-loop.md"
       ],
       "related": [
-        "app",
-        "server",
-        "repository-flows"
-      ]
-    },
-    {
-      "id": "app",
-      "title": "Smithers application",
-      "purpose": "Describe apps/app's React renderer, local HTTP host, and workspace coding interactions.",
-      "kind": "current",
-      "document": ".smithers/wiki/pages/app-workspace.md",
-      "inputs": [
-        "apps/app/README.md",
-        "apps/app/package.json",
-        "apps/app/docs/LOCAL-APP.md",
-        "apps/app/src/mainview/cards/CodingPlan.ts"
-      ],
-      "excerpts": {
-        "apps/app/docs/LOCAL-APP.md": [
-          {
-            "start": 1,
-            "end": 90
-          }
-        ]
-      },
-      "related": [
-        "packages",
-        "server",
-        "repository-flows"
-      ]
-    },
-    {
-      "id": "server",
-      "title": "Cloud Worker and gateway",
-      "purpose": "Explain apps/server's Cloudflare Worker entrypoint, Effect services, and gateway boundaries.",
-      "kind": "current",
-      "document": ".smithers/wiki/pages/worker-gateway.md",
-      "inputs": [
-        "apps/server/docs/EFFECT.md"
-      ],
-      "related": [
-        "app",
-        "packages",
         "repository-flows"
       ]
     },
@@ -574,8 +459,6 @@
       },
       "related": [
         "packages",
-        "app",
-        "server",
         "docs"
       ]
     },
@@ -616,7 +499,6 @@
       },
       "related": [
         "packages",
-        "app",
         "repository-flows"
       ]
     }

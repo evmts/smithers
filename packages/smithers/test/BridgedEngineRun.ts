@@ -91,11 +91,10 @@ import { makeAuthoringFixture, ScriptedAuthor } from "./AuthoringFixture.ts"
  * A node record carries where its action was written, and the writer strips
  * this prefix before it journals the path (`@smthrs/engine-store`
  * `NodeJournal.relativePath`). The default prefix is the process working
- * directory, and this stack is started from three of them: `packages/smithers`
- * under vitest, `apps/app` under `scripts/flow-graph-e2e-host.ts`, and the
- * repository root under a bare `node`. Taking the default would record a
- * different path per caller, and from `apps/app` no path at all, because this
- * file is not under it. The root is therefore this file's own: two directories
+ * directory, and this stack is started from more than one: `packages/smithers`
+ * under vitest and the repository root under a bare `node`. Taking the
+ * default would record a different path per caller, and from a directory
+ * this file is not under, no path at all. The root is therefore this file's own: two directories
  * up from `packages/smithers/test/`, which is the repository, so every host
  * records `packages/smithers/test/BridgedEngineRun.ts` and a reader can open
  * it.

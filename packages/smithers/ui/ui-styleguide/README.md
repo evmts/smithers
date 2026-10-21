@@ -6,8 +6,8 @@ Shared CSS tokens and layout primitives for Smithers browser UIs.
 
 Eight color palettes, each with a light and a dark variant, emitted as CSS
 custom properties plus the base element and component rules that consume them.
-`@smthrs/ui` builds its shadcn-anatomy components on these tokens; `apps/app` and
-`.smithers/flows/review` embed the sheets directly.
+`@smthrs/ui` builds its shadcn-anatomy components on these tokens;
+`.smithers/flows/review` embeds the sheets directly.
 
 Private: the package ships only inside the workspace, as TypeScript source with
 no build step and no dependencies. npm has only the earlier 0.35.0 release.

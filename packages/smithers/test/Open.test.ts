@@ -112,38 +112,15 @@ describe("open", () => {
     expect(launches).toEqual([])
   })
 
-  it("runs the dev build inside the smithers checkout, handed the same link", async () => {
-    const { host: h, launches } = host({
-      remote: "https://github.com/smithersai/smithers.git",
-      files: ["/work/checkout/apps/app/electrobun.config.ts"]
-    })
-    expect(await Open.open(h, "/work/checkout")).toEqual({
-      repo: "smithersai/smithers",
-      opened: "dev",
-      url: "smithers://open/smithersai/smithers"
-    })
-    expect(launches).toEqual([{
-      command: "pnpm",
-      args: ["--dir", "/work/checkout/apps/app", "dev"],
-      env: { SMITHERS_OPEN_URL: "smithers://open/smithersai/smithers" }
-    }])
-  })
-
-  it("never runs another checkout's scripts, even one shaped like smithers", async () => {
-    const { host: h, launches } = host({ files: ["/work/checkout/apps/app/electrobun.config.ts"] })
-    expect((await Open.open(h, "/work/checkout")).opened).toBe("web")
-    expect(launches).toEqual([])
-  })
-
-  it("never runs the dev build for smithersai/smithers on a foreign host", async () => {
+  it("never runs a checkout's scripts, even the smithers checkout's", async () => {
     for (
       const remote of [
+        "https://github.com/smithersai/smithers.git",
         "https://evil.example/smithersai/smithers.git",
-        "git@evil.example:smithersai/smithers.git",
-        "https://github.com@evil.example/smithersai/smithers.git"
+        "git@evil.example:smithersai/smithers.git"
       ]
     ) {
-      const { host: h, launches } = host({ remote, files: ["/work/checkout/apps/app/electrobun.config.ts"] })
+      const { host: h, launches } = host({ remote, files: ["/work/checkout/package.json"] })
       expect(await Open.open(h, "/work/checkout")).toEqual({
         repo: "smithersai/smithers",
         opened: "web",
@@ -153,10 +130,10 @@ describe("open", () => {
     }
   })
 
-  it("prefers the installed app inside the smithers checkout", async () => {
+  it("prefers the installed app for the smithers checkout", async () => {
     const { host: h, launches } = host({
       remote: "git@github.com:smithersai/smithers.git",
-      files: ["/Applications/Smithers.app", "/work/checkout/apps/app/electrobun.config.ts"]
+      files: ["/Applications/Smithers.app"]
     })
     expect((await Open.open(h, "/work/checkout")).opened).toBe("app")
     expect(launches.map((launch) => launch.command)).toEqual(["open"])
@@ -165,15 +142,6 @@ describe("open", () => {
   it("falls through when LaunchServices refuses", async () => {
     const { host: h } = host({ files: ["/Applications/Smithers.app"], launchStatus: 1 })
     expect((await Open.open(h, "/work/checkout")).opened).toBe("web")
-  })
-
-  it("reports a dev build that fails", async () => {
-    const { host: h } = host({
-      remote: "https://github.com/smithersai/smithers.git",
-      files: ["/work/checkout/apps/app/electrobun.config.ts"],
-      launchStatus: 7
-    })
-    await expect(Open.open(h, "/work/checkout")).rejects.toMatchObject({ message: expect.stringContaining("status 7") })
   })
 
   it("refuses a checkout without a usable remote", async () => {

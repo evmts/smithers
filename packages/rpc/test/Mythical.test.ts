@@ -78,7 +78,7 @@ const snapshot = {
       lane: 1,
       runs: { request: "run-9" },
       todo: { replans: 1, fault: { class: "factory", tag: "coding/Error/stalled" } },
-      integration: { conflict: { changeId: "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", paths: ["apps/app/src/a.ts"] } },
+      integration: { conflict: { changeId: "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", paths: ["apps/mvp/src/a.ts"] } },
       dependsOn: ["item-1"],
       updatedAt: "2026-09-25T12:00:00Z"
     }

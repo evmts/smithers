@@ -7,8 +7,7 @@
 import { z } from "zod"
 
 /*
- * The local-app wire model (apps/app/docs/LOCAL-APP.md "HTTP and WebSocket
- * API"): the harness, repository, and PTY session records the local server
+ * The local-app wire model: the harness, repository, and PTY session records the local server
  * answers and the SPA stores. Runtime-free zod, like Cards.ts, so the Bun
  * server, the SPA, and the Playwright doubles validate the same shapes.
  */

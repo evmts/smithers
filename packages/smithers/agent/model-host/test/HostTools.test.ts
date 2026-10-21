@@ -352,7 +352,7 @@ const HOST_COMMANDS = [
 const commandLines = (text: string): ReadonlyArray<string> => text.split("\n").filter((line) => line.startsWith("- /"))
 
 /**
- * The runtime context the browser sends with its turns (apps/app turns.ts):
+ * The runtime context the browser sends with its turns:
  * its capability and limitation lines, the tutorial, the Cloud session and the
  * repository check each name commands only the browser runs.
  */

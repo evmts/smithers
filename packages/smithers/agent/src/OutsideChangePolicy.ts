@@ -1,5 +1,5 @@
-// Generated from packages/backend/flowruntime/outside_change.json.
-// Regenerate: node packages/backend/flowruntime/generate-outside-change.mjs
+// This file is the switch's source. It was generated from the Go backend's
+// outside_change.json until that backend was removed on 2026-10-21.
 /**
  * The build-time outside-change switch the agent host shares with the backend.
  * While it is false, the host refuses outside_change signals. Enable it only

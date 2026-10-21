@@ -54,6 +54,7 @@ const unitTests = Smithers.Vitest({
   sources: [
     sources,
     Smithers.glob("test/**/*.{ts,json,snap}"),
+    Smithers.glob("testdata/**"),
     ...failureCodes,
     releasedContracts
   ],
@@ -228,7 +229,7 @@ const securityReview = Smithers.SecurityReview({
       id: "failure-codes-codegen",
       title: "The failure-code generator emits only data, never code, from its source document",
       threat:
-        "Whoever controls a --from URL or file, or the canonical failure-codes.json, injects TypeScript that runs in every app build and test.",
+        "Whoever controls a --from URL or file, or the vendored plue-failure-codes.json, injects TypeScript that runs in every app build and test.",
       lookFor: [
         "A document field (status, retry_after, fault, code, doc) interpolated into generated TypeScript without JSON.stringify or a numeric type check.",
         "A --from source fetched over plain http or trusted solely by a digest the same document supplies."

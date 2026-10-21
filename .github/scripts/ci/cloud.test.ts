@@ -422,7 +422,7 @@ describe("Local CI gate runner", () => {
     })
 
     test("bootstraps the union of the group's toolchains exactly once", () => {
-      const result = run("group", "workspace", "script-lint", "rust-test", "server")
+      const result = run("group", "workspace", "script-lint", "rust-test", "flows-repository")
       expect(result.error).toBeUndefined()
       expect(result.status).toBe(0)
       for (const tool of ["js", "jj", "foundry", "rust", "postgres"]) {
@@ -491,14 +491,14 @@ describe("Local CI gate runner", () => {
       }
     })
 
-    test("browser and backend gates execute locally even with the retired Cloud flag", () => {
-      const result = spawnSync("bash", [".github/scripts/ci/cloud.group-probe.tmp.sh", "group", "app-browser-1", "backend-go"], {
+    test("bundle and native gates execute locally even with the retired Cloud flag", () => {
+      const result = spawnSync("bash", [".github/scripts/ci/cloud.group-probe.tmp.sh", "group", "web-bundle", "native-ffi"], {
         cwd: root, encoding: "utf8", env: { ...process.env, SMITHERS_CLOUD_CI: "1" }
       })
       expect(result.status).toBe(0)
-      expect(result.stdout).toContain("RAN exec smthrs test //apps/app:browserE2e")
-      expect(result.stdout).toContain("RAN exec smthrs test //:backendGo")
-      expect(result.stdout).toContain("GROUP-OK app-browser-1 backend-go")
+      expect(result.stdout).toContain("RAN exec smthrs test //packages/repo-targets:webBundleContract")
+      expect(result.stdout).toContain("RAN exec smthrs build //:nativeFfi")
+      expect(result.stdout).toContain("GROUP-OK web-bundle native-ffi")
       expect(result.stdout).not.toContain("skipped")
     })
 
@@ -517,7 +517,7 @@ describe("Local CI gate runner", () => {
     // Squid forward proxy named by HTTP_PROXY/HTTPS_PROXY, and a connect that
     // bypasses it is dropped rather than refused. curl and npm read the
     // variables themselves; Node's own http/https clients do not unless
-    // NODE_USE_ENV_PROXY is set, which is why //apps/app:devkit reported
+    // NODE_USE_ENV_PROXY is set, which is why the old app's devkit gate reported
     // "Hutch artifact index timed out" on runs 11723 through 11736.
     const probe = new URL("cloud.proxy-probe.tmp.sh", import.meta.url)
     const marker = 'if [ "${1:-}" = group ]; then'

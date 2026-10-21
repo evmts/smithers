@@ -186,9 +186,9 @@ describe("ci conformance", () => {
     //
     // Moved, not widened (2026-10-16, #4089, #4090): `examples` is gone, its
     // programs colocated with the packages they teach, and the eval suites
-    // live beside what they measure: `recommend-eval` under the backend model
-    // host, the benchmark rigs under the agent harness, and the review
-    // seeded-bug suite under the review flow. All are private and unpublished;
+    // live beside what they measure: the benchmark rigs under the agent
+    // harness and the review seeded-bug suite under the review flow. All are
+    // private and unpublished;
     // the agent regression suite is the one nested member the universe
     // derivation names as a non-library.
     const workspace = readFileSync(join(packagesDir, "..", "pnpm-workspace.yaml"), "utf8")
@@ -198,7 +198,6 @@ describe("ci conformance", () => {
       [
         "packages:",
         "  - \"packages/*\"",
-        "  - \"packages/backend/modelhost/recommend-eval\"",
         "  - \"packages/smithers/*\"",
         "  - \"packages/smithers/agent/*\"",
         "  - \"packages/smithers/agent/harness/benchmarks/*\"",
@@ -296,17 +295,12 @@ describe("ci conformance", () => {
     // which is the only concession the network costs. The alias is pinned so
     // the roster stays exact, not because it is a second enforcement path.
     //
-    // `commit` invokes the repository's checked commit helper and `deploy`
-    // delegates to the server workspace. Both are operator aliases, outside
-    // the recursive check/test/lint fan-out pinned here.
+    // `commit` invokes the repository's checked commit helper. It is an
+    // operator alias, outside the recursive check/test/lint fan-out pinned here.
     //
-    // `docs:check` opens with the backend price generator's `-check` (#2462,
-    // 8d308dcf21): the public model price sheet in apps/site is generated from
-    // packages/backend/modelprice, so the documentation drift gate needs Go.
-    // The Drift job's ubuntu-latest image provides `go`, and go.mod's
-    // `go 1.26.8` line makes it fetch that release. `docs:sync` regenerates,
-    // and `docs:check` holds, apps/server/src/docsRedirectMap.ts: the retired
-    // docs sites' page map is built from the package docs/ folders (#3510).
+    // `docs:sync` regenerates, and `docs:check` holds,
+    // apps/site/docs-redirect/src/docsRedirectMap.ts: the retired docs sites'
+    // page map is built from the package docs/ folders (#3510).
     //
     // `release:*` are operator entry points into the `flows` workspace's
     // release-support program (release.yml and release-auth.yml call the same
@@ -319,18 +313,13 @@ describe("ci conformance", () => {
     assert.deepEqual(root.scripts, {
       browser: "node packages/repo-targets/browser/browser-check.mjs",
       check: "pnpm --recursive --if-present run check",
-      checklist: "pnpm --filter smithers-app run checklist",
       "check:npm-dedupe": "node .smithers/flows/release/check-npm-dedupe.mjs",
       circular: "pnpm --recursive --if-present run circular",
-      "deploy:dry": "pnpm --filter smithers-server run deploy:dry",
-      "docs:check":
-        "go run ./packages/backend/modelprice/cmd/generate -check && smthrs flow start docs-sync --data '{\"mode\":\"check\"}' --wait",
+      "docs:check": "smthrs flow start docs-sync --data '{\"mode\":\"check\"}' --wait",
       "docs:sync":
         "pnpm --filter @smithers/site run sync:docs && smthrs flow start docs-sync --data '{\"mode\":\"write\"}' --wait",
-      dev: "pnpm --filter smithers-app run start",
       commit: "node .smithers/flows/land/commit.mjs",
       "issue-claim": "node .smithers/flows/issue-claim/issue-claim.mjs",
-      deploy: "pnpm --filter smithers-server run deploy",
       lint: "pnpm --recursive --if-present run lint",
       "target-index": "pnpm exec smthrs target '//:targetIndex' --write",
       "lint:jsdoc":
@@ -341,7 +330,6 @@ describe("ci conformance", () => {
       "release:workflow": "node --experimental-strip-types .smithers/flows/release-support/main.ts release",
       test: "pnpm --recursive --if-present run test",
       tui: "bun apps/tui/src/main.tsx",
-      "test:e2e": "pnpm --filter smithers-app run test:e2e",
       "test:jsdoc": "node --test eslint.jsdoc.test.mjs"
     })
     const targets = readFileSync(join(packagesDir, "..", "PACKAGE.ts"), "utf8")

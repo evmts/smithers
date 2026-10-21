@@ -11,11 +11,6 @@
  * operator is offered, so each is pinned here against the same public
  * surface.
  */
-import { spawnSync } from "node:child_process"
-import { mkdtempSync, readFileSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as Checklist from "../src/suggest/Checklist.ts"
 
@@ -229,23 +224,6 @@ describe("machine evidence (§8.6.2)", () => {
     expect((result as Checklist.MachineRecipeError).class).toBe("user")
     expect((result as Checklist.MachineRecipeError).fix).toContain(file)
   })
-})
-
-it("ships exactly the compiled shared detector", () => {
-  const temporary = mkdtempSync(join(tmpdir(), "smithers-machine-evidence-"))
-  try {
-    const output = join(temporary, "machine_evidence.js")
-    const entry = fileURLToPath(new URL("../scripts/machine-evidence.ts", import.meta.url))
-    const built = spawnSync("bun", ["build", entry, "--target=node", "--minify", `--outfile=${output}`], {
-      encoding: "utf8"
-    })
-    expect(built.status, built.stderr).toBe(0)
-    expect(readFileSync(output, "utf8")).toBe(
-      readFileSync(new URL("../../backend/microsandbox/machine_evidence.js", import.meta.url), "utf8")
-    )
-  } finally {
-    rmSync(temporary, { recursive: true, force: true })
-  }
 })
 
 describe("shared detected check inventory", () => {

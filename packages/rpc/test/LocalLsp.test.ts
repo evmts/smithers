@@ -21,7 +21,7 @@ import {
 } from "../src/LocalLsp.ts"
 
 /*
- * Code intelligence on the local origin (apps/app/docs/code-intel/PLAN.md §3):
+ * Code intelligence on the local origin:
  * positions are 1-based on the wire, paths are repository-relative, and the
  * host's caps are the schemas' bounds, so an answer past them fails to parse
  * instead of rendering.

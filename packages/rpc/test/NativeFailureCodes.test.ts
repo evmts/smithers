@@ -25,7 +25,7 @@ import { WORKER_FAILURE_CODES, WORKER_FAILURES } from "../src/WorkerFailureCodes
 import { nativeRefusal } from "./refusalFixtures.ts"
 
 /*
- * The desktop app's own host (apps/app/src/bun) is the THIRD party that
+ * The old desktop app's own host is the THIRD party that
  * refuses. plue's registry is generated and vendored, the Worker's is written
  * by hand beside it, and this one is written for the routes only the native
  * host serves. These are the properties that keep the three from colliding,

@@ -137,7 +137,7 @@ export type StartAgentTurnResult =
  * A turn the boundary refused BEFORE it reached a model, stated by code so a
  * client can branch on what happened rather than on the sentence. Today the
  * codes are sign-in (`401 sign_in_required`) and the turn ceiling
- * (`429 turn_rate_limited`, apps/server turnLimit.ts): `message` is the refusal
+ * (`429 turn_rate_limited`): `message` is the refusal
  * sentence the server wrote for a person, and `retryAt` is its ISO reset time
  * when the body carried one.
  *
@@ -256,18 +256,18 @@ export const AgentTurnFrameSchema = z.discriminatedUnion("type", [
     reason: AgentTurnDoneReasonSchema.optional(),
     /*
      * Why the turn ended, when the producer knows a cause the sentence cannot
-     * be read for. `host_no_capacity` is the chat dispatcher's own deferral
-     * name (packages/backend/internal/chat/dispatcher.go): no sandbox host in
-     * the fleet had room, nothing of the turn ran, and the attempts are spent.
+     * be read for. `host_no_capacity` is the old Go chat dispatcher's deferral
+     * name: no sandbox host in the fleet had room, nothing of the turn ran,
+     * and the attempts are spent.
      * A client renders its own sentence for the code and never reads `error`
      * for the cause. The vocabulary fails closed, so a build that serves this
      * enum must reach people before a producer that emits a value it lacks,
      * and it has to name every code the producer already seals a turn with:
      * one it omits rejects the frame, the turn and the whole conversation the
-     * turn sits in, so a single outage blanks the transcript. The producers
-     * are `stopProducerWith` (packages/backend/internal/chat/store.go), which
-     * seals `credential_missing`, `credential_issuer_unavailable` and
-     * `host_no_capacity`, and `authorRevokedFrame` (author.go).
+     * turn sits in, so a single outage blanks the transcript. The old Go
+     * backend's producers sealed `credential_missing`,
+     * `credential_issuer_unavailable`, `host_no_capacity` and the author
+     * revocation codes, and recorded turns still carry them.
      * `chat_guests_busy` (the owner already has the most chats answering at
      * once) is accepted ahead of its producer, so the backend can seal it once
      * every client decodes it.

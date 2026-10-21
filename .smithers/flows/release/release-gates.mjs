@@ -69,7 +69,6 @@ export const releaseGates = [
   { name: "Mutation gate", verb: "test", target: "//.smithers/flows:mutationGate" },
   { name: "Campaign verifiers", verb: "test", target: "//.smithers/flows:campaignVerifiers" },
   { name: "Signal campaign verifier", verb: "test", target: "//.smithers/flows:signalCampaign" },
-  { name: "Performance and fault drivers", verb: "test", target: "//.smithers/flows:perfUnit" },
   { name: "Landing helper", verb: "test", target: "//.smithers/flows:land" },
   { name: "Landing helper end to end", verb: "test", target: "//.smithers/flows:landCommit" },
   { name: "GitHub triage publisher", verb: "test", target: "//.smithers/flows:triagePublish" },
@@ -108,21 +107,15 @@ export const releaseGates = [
   { name: "SWE-bench offline fixtures", verb: "test", target: "//packages/smithers/agent/harness/benchmarks/swebench:offline", jobs: 1 },
   { name: "SWE-bench rig typecheck", verb: "build", target: "//packages/smithers/agent/harness/benchmarks/swebench:check" },
   { name: "SWE-bench rig lint", verb: "lint", target: "//packages/smithers/agent/harness/benchmarks/swebench/..." },
-  { name: "UI typecheck", verb: "build", target: "//apps/app:check" },
-  { name: "UI unit tests", verb: "test", target: "//apps/app:unitTests" },
-  { name: "UI conformance lint", verb: "test", target: "//apps/app:conformance" },
   { name: "TUI typecheck, lint and tests", verb: "ci", target: "//apps/tui/..." },
   // Exclusive, so the wildcard above omits it; the explicit label opts in.
   { name: "TUI end-to-end suite", verb: "test", target: "//apps/tui:e2eTests" },
-  { name: "Server typecheck and tests", verb: "ci", target: "//apps/server/..." },
   { name: "Review flow", verb: "ci", target: "//.smithers/flows/review/..." },
   { name: "Bug worker", verb: "ci", target: "//apps/bug-worker/..." },
   { name: "Project copy drift", verb: "lint", target: "//:projectCopy" },
   { name: "Site", verb: "ci", target: "//apps/site/..." },
   { name: "Review eval suite (offline, baseline-gated)", verb: "test", target: "//.smithers/flows/review/seeded-bugs/..." },
   { name: "Review eval typecheck", verb: "build", target: "//.smithers/flows/review/seeded-bugs:check" },
-  { name: "Recommend eval suite (offline, baseline-gated)", verb: "test", target: "//packages/backend/modelhost/recommend-eval/..." },
-  { name: "Recommend eval typecheck", verb: "build", target: "//packages/backend/modelhost/recommend-eval:check" },
   { name: "Generated workflow drift", verb: "lint", target: "//:ci" },
   { name: "Factory projection drift", verb: "lint", target: "//:factoryProjection" },
   { name: "Target index drift", verb: "lint", target: "//:targetIndex" },
@@ -134,9 +127,7 @@ export const releaseGates = [
   { name: "Disaster-recovery script test", verb: "test", target: "//packages/smithers/flows/engine-store:disasterRecovery" },
   { name: "Build-script unit tests", verb: "test", target: "//packages/smithers/flows/jj-wasm:buildScript" },
   // The committed flows_jj.wasm is rebuilt and byte-compared before packing.
-  { name: "Rebuild and byte-compare flows_jj.wasm", verb: "test", target: "//packages/smithers/flows/jj-wasm:wasmReproducibility" },
-  { name: "Build and test shared backend", verb: "test", target: "//:backendGo" },
-  { name: "Backend access-control tests", verb: "test", target: "//:backendGoAccess" }
+  { name: "Rebuild and byte-compare flows_jj.wasm", verb: "test", target: "//packages/smithers/flows/jj-wasm:wasmReproducibility" }
 ]
 
 /**
@@ -182,7 +173,7 @@ export const releaseGateSetForHost = (host = process) => {
  * proves each is still a ci.yml gate, that the inventory does not run it (or
  * the reason would be false), and that every other CI gate is run by an
  * inventory gate. A job with no entry is mirrored whole: `test`, `repository`, `scripts`, `docs`
- * and `wasm-repro` step for step, `go-backend` and `go-backend-access` by command. Even omitted
+ * and `wasm-repro` step for step. Even omitted
  * jobs enumerate today's commands so future additions cannot hide behind a
  * whole-job waiver. `push` is an `on` trigger, not a job.
  *
@@ -190,29 +181,13 @@ export const releaseGateSetForHost = (host = process) => {
  */
 export const releaseGateExclusions = [
   {
-    job: "apps-browser-1",
-    commands: ["pnpm exec smthrs test '//apps/app:browserE2eShard1' --verbose"],
-    reason: "Browser shard 1 requires the Playwright browsers installed by its dedicated CI job; release retains UI typecheck, units and conformance."
-  },
-  {
-    job: "apps-browser-2",
-    commands: ["pnpm exec smthrs test '//apps/app:browserE2eShard2' --verbose"],
-    reason: "Browser shard 2 requires the Playwright browsers installed by its dedicated CI job; release retains UI typecheck, units and conformance."
-  },
-  {
-    job: "apps-browser-3",
-    commands: ["pnpm exec smthrs test '//apps/app:browserE2eShard3' --verbose"],
-    reason: "Browser shard 3 requires the Playwright browsers installed by its dedicated CI job; release retains UI typecheck, units and conformance."
-  },
-  {
     job: "rust",
     commands: [
       "pnpm exec smthrs lint '//packages/smithers/flows/jj-wasm/...' --verbose",
       "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:cargoTest' --verbose",
-      "pnpm exec smthrs test '//packages/smithers-machined:documentComponents' --verbose",
       "pnpm exec smthrs test '//packages/smithers/flows/jj:thirdPartyNotices' --verbose"
     ],
-    reason: "Native Rust lint and tests validate the native crates, which are not published release artifacts. The release verifies the shipped WASM with the pinned Rust toolchain instead. The daemon's document components and their Yjs interop exercise smithers-machined and smithers-ffi, which ship in the install bundle the distribution workflow builds. Third-party notices run under ci '//packages/...'."
+    reason: "Native Rust lint and tests validate the native crates, which are not published release artifacts. The release verifies the shipped WASM with the pinned Rust toolchain instead. Third-party notices run under ci '//packages/...'."
   },
   {
     job: "packages",

@@ -882,8 +882,8 @@ supplies no `contextWindowTokensFor` callback of its own.
 
 ## `Pricing`
 
-USD prices per million tokens, generated from the backend rate card
-(`packages/backend/modelprice`) so the two cannot drift. `inputTokens`
+USD prices per million tokens, from the one rate card in the tree
+(`src/internal/prices.generated.ts`). `inputTokens`
 includes cache reads and cache writes; each class is charged at its own rate.
 
 | Export                             | Kind     | Behavior                                                                                                                                                                                                    |

@@ -1,6 +1,6 @@
 /**
- * The Cloudflare Worker's OWN failure taxonomy — the refusals apps/server
- * writes itself rather than passing through from plue.
+ * The old Cloudflare Worker's OWN failure taxonomy — the refusals it wrote
+ * itself rather than passing through from plue.
  *
  * HAND-WRITTEN, and deliberately a separate file from PlueFailureCodes.ts:
  * that one is generated from plue's `docs/failure-codes.json` and must stay

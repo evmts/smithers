@@ -8,7 +8,7 @@
 import { z } from "zod"
 
 /*
- * Code intelligence on the local origin (apps/app/docs/code-intel/PLAN.md §3):
+ * Code intelligence on the local origin:
  * one language server per (repository, language), owned by the Bun host and
  * reached over POST routes the way PTYs are; the renderer never names a
  * binary, an argv, or a cwd. Positions are 1-based on the wire and in flows
@@ -39,9 +39,8 @@ export const LspLanguageIdSchema = z.enum(LSP_LANGUAGE_IDS)
  */
 export type LspLanguageId = z.infer<typeof LspLanguageIdSchema>
 /**
- * The file extensions each language's server handles. The host registry
- * (apps/app/src/bun/lsp/LanguageServers.ts) reads its rows from here, and the
- * renderer asks the same table which file cards code intelligence serves at
+ * The file extensions each language's server handles. A host registry reads
+ * its rows from here, and the renderer asks the same table which file cards code intelligence serves at
  * all, so a host without the `local.lsp` door can say so on exactly those.
  * @since 1.0.0
  * @category constants

@@ -110,13 +110,10 @@ story's model and mutate required fields, unknown keys and enums at nested
 paths enumerated with `z.toJSONSchema`; literal value lists check key enums
 independently of the schemas. Design's field review checks the field
 inventory; unit tests never read the product spec. Retained card schemas in
-`Cards` and `Changes` have committed JSON Schema snapshots. The app architecture
-and flow parity tests enforce the View and Container seam.
+`Cards` and `Changes` have committed JSON Schema snapshots.
 
 ```bash
 pnpm --filter @smthrs/rpc test
-bun test apps/app/src/mainview/Architecture.test.ts
-bun test apps/app/src/mainview/flows/cardActions.test.ts apps/app/src/mainview/flows/parity.test.ts
 ```
 
 ## File projection failures

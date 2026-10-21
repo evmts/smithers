@@ -1038,8 +1038,8 @@ by, and tooltips, the rest's names. Avatars overlap, each ringed in
 `--sui-avatar-ring` (default the page background, `--bg`); a host on a card
 surface sets it to `var(--surface)`.
 
-An avatar's color is a lane picked by hashing its `id`, the same FNV-1a hash
-apps/app's identity marks use, so one person has one color everywhere. Lanes
+An avatar's color is a lane picked by hashing its `id` with FNV-1a, so one
+person has one color everywhere. Lanes
 paint with the host's `--lane-0` to `--lane-5` and `--avatar-ink` when it
 defines them, and with the theme's danger, info, muted, warning, brand and
 success hues otherwise, which follow light and dark.

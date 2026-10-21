@@ -109,14 +109,13 @@ export const agentHosts: ReadonlyArray<string> = [
  * Toolchain state an agent writes lives inside the checkout, under paths the
  * repository ignores (rustup's proxies too: rustup refuses a CARGO_HOME it is
  * not installed in): Codex's workspace-write sandbox writes only there and in
- * /tmp, and the snapshot carries the prefetched modules and warm caches.
- * `.backend-go-modcache` is the module cache the backend test target reads.
+ * /tmp, and the snapshot carries the prefetched crates and warm caches.
  */
 export const toolchainEnv: Readonly<Record<string, string>> = {
   GOTOOLCHAIN: "local",
   GOMODCACHE: `${guestCheckout}/.backend-go-modcache`,
   GOCACHE: `${guestCheckout}/.cache/go-build`,
-  // The guest /tmp is too small for linking backend test binaries.
+  // The guest /tmp is too small for linking Go test binaries.
   GOTMPDIR: `${guestCheckout}/.cache/go-tmp`,
   RUSTUP_HOME: "/usr/local/rustup",
   CARGO_HOME: `${guestCheckout}/.cache/cargo`,
@@ -135,12 +134,11 @@ const goChecksum = "let s=\"\";process.stdin.on(\"data\",(d)=>s+=d).on(\"end\",(
 
 /**
  * The shell commands that turn `baseImage` into the Smithers image. Go is the
- * release go.mod names (its `toolchain` line, else its `go` line), checked
- * against go.dev's published SHA-256; Rust is the channel rust-toolchain.toml
- * pins, installed by a checksum-verified rustup. Modules and crates are
- * prefetched and the backend packages compiled, so an agent's first `go test`
- * or `cargo test` downloads nothing. Playwright's Chromium, with its system
- * libraries, is the version apps/app pins.
+ * release root PACKAGE.ts's `CiToolchain.Go` pins, checked against go.dev's
+ * published SHA-256; Rust is the channel rust-toolchain.toml pins, installed
+ * by a checksum-verified rustup. Crates are prefetched, so an agent's first
+ * `cargo test` downloads nothing. Playwright's Chromium, with its system
+ * libraries, is the version apps/mvp pins.
  */
 export const provisionScript = (revision: string): string =>
   `set -eux
@@ -157,8 +155,8 @@ cd ${guestCheckout}
 git checkout -q ${revision}
 ${Object.entries(toolchainEnv).map(([name, value]) => `export ${name}=${value}`).join("\n")}
 export PATH=${guestPath}
-go_version=$(sed -n 's/^toolchain go//p' go.mod)
-[ -n "$go_version" ] || go_version=$(sed -n 's/^go //p' go.mod)
+go_version=$(sed -n 's/.*CiToolchain\\.Go({ release: "\\([0-9.]*\\)" }).*/\\1/p' PACKAGE.ts)
+[ -n "$go_version" ]
 go_file=go$go_version.linux-arm64.tar.gz
 go_sha=$(curl -fsSL 'https://go.dev/dl/?mode=json&include=all' | node -e '${goChecksum}' "$go_file")
 curl -fsSL -o /tmp/go.tar.gz "https://go.dev/dl/$go_file"
@@ -173,10 +171,8 @@ rustup toolchain install
 jj git init --colocate
 CI=1 pnpm install --frozen-lockfile
 mkdir -p "$GOTMPDIR"
-go mod download
-go build ./packages/backend/...
 cargo fetch --locked
-pnpm --filter ./apps/app exec playwright install --with-deps chromium
+pnpm --filter ./apps/mvp exec playwright install --with-deps chromium
 go version
 cargo --version
 jj st >/dev/null
@@ -250,9 +246,8 @@ export interface Options {
   /** Virtual CPUs per microVM. Default 2. */
   readonly cpus?: number | undefined
   /**
-   * Memory per microVM in MiB. Default 4096: compiling the backend's
-   * internal/services tests peaks near 2.9 GiB, which 3072 killed, and the
-   * guest overlay cannot hold a swap file.
+   * Memory per microVM in MiB. Default 4096; the guest overlay cannot hold a
+   * swap file.
    */
   readonly memoryMib?: number | undefined
   /** Hard lifetime per microVM in seconds. Default 3 hours. */

@@ -340,13 +340,13 @@ describe("the service-log card", () => {
 })
 
 /*
- * Code intelligence (apps/app/docs/code-intel/PLAN.md §5): the file card's
+ * Code intelligence: the file card's
  * anchor, what the language server published, the hover answer, and the
  * server state live in the payload, all optional so a card persisted before
  * the lane parses unchanged and states none of them.
  */
 describe("the file card", () => {
-  const payload = { repo: "smithers", path: "apps/app/src/mainview/App.tsx", content: "export {}\n", truncated: false }
+  const payload = { repo: "smithers", path: "apps/mvp/src/App.tsx", content: "export {}\n", truncated: false }
   const diagnostic = {
     line: 317,
     character: 62,
@@ -693,7 +693,7 @@ describe("the run trace card's graph view", () => {
 
 /*
  * The persistence contract, kind by kind. Cards.ts states that "everything in
- * a card payload is written to disk", and apps/app's FrameSnapshotSchema reads
+ * a card payload is written to disk", and the old app's FrameSnapshotSchema read
  * a whole transcript back through `cards: z.array(CardSchema)` — so a field
  * that stops parsing rejects a snapshot, not one card. Dozens of fields are
  * marked "optional so cards persisted before the lane parse", which is a
@@ -2899,7 +2899,7 @@ describe("every persisted card kind", () => {
     expect(CardSchema.parse(rich)).toEqual(rich)
   })
 
-  test("a whole frame snapshot of one card per kind parses (apps/app FrameSnapshotSchema)", () => {
+  test("a whole frame snapshot of one card per kind parses (the old app's FrameSnapshotSchema)", () => {
     const snapshot = z.object({ cards: z.array(CardSchema) })
     const cards = kinds.map((kind, ordinal) => ({
       ...(card(kind, FIXTURES[kind].full) as Record<string, unknown>),

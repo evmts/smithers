@@ -109,9 +109,9 @@ test("every mapped page is a file in this checkout, or the folder its README int
   assert.ok(count >= 715, `${count} pages`)
 })
 
-test("apps/server/src/docsRedirectMap.ts is what this checkout generates", () => {
+test("apps/site/docs-redirect/src/docsRedirectMap.ts is what this checkout generates", () => {
   assert.equal(readFileSync(GENERATED_MODULE, "utf8"), renderModule(redirectMapOf(), pageMapOf()),
-    "apps/server/src/docsRedirectMap.ts is stale: pnpm docs:sync")
+    "apps/site/docs-redirect/src/docsRedirectMap.ts is stale: pnpm docs:sync")
 })
 
 /** A throwaway package with `files` under docs/, removed after `body`. */

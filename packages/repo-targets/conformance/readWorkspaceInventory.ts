@@ -46,9 +46,9 @@ export const readWorkspaceInventory = (root = resolve(import.meta.dirname, "../.
   // offline eval of the agent package, private and unpublished, nested beside
   // what it measures (#4090).
   const nestedNonLibraries = new Set(["smithers/build/infra", "smithers/agent/regression"])
-  // A fourth carve-out, for the private contract package the two apps share.
+  // A fourth carve-out, for the private contract package.
   // `@smthrs/rpc` is runtime-free zod schemas and route constants imported by
-  // `apps/app` and `apps/server`; it runs `bun test src` beside its sources,
+  // `apps/mvp`, `apps/tui` and other workspace packages; it runs its tests beside its sources,
   // ships no `src/index.ts` barrel and no publication exports, and is never
   // published. It is named rather than derived for the same reason the UI kits
   // are: a smaller universe, not a smaller assertion.

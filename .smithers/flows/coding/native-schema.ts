@@ -221,8 +221,6 @@ export class NativeCodingError extends Schema.TaggedError<NativeCodingError>()("
   message: Schema.String,
   recovery: Schema.optionalKey(FileRecovery)
 }) {}
-// Codes with a Go twin (`coding_<code>` or `<code>` in docs/api/failure-codes.json)
-// carry the registry's verdict; .smithers/flows/test/coding-fault.test.ts holds them equal.
 Fault.register(
   "coding/NativeCodingError",
   {

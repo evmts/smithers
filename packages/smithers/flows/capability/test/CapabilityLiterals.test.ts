@@ -45,10 +45,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", 
  * be free to write a literal that grants nothing, which is exactly what this
  * suite fails everywhere else.
  *
- * `apps` is out of scope too, and not by omission. `apps/app` stages its own
- * `capabilities:` vocabulary (`agent`, `local.repositories`, `app:act`,
- * `outbound:launch`), validated by that app's `RepositoryCapabilityPattern`
- * schema and not by this one, so reading it here would fail dozens of strings
+ * `apps` is out of scope too, and not by omission. An app may stage its own
+ * `capabilities:` vocabulary, validated by that app's own schema and not by
+ * this one, so reading it here would fail dozens of strings
  * that are correct where they live. An app's grants are built in code from
  * host values rather than written down, so the app half is a code-level case
  * against the composition, not a corpus walk.

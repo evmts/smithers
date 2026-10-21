@@ -288,6 +288,50 @@
       "flows": []
     },
     {
+      "id": "cerebras-load",
+      "description": "Record one capped provider load-test attempt; provider failures are benchmark observations.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/cerebras-load/flow.ts",
+      "capabilities": [
+        "net:post:https://api.cerebras.ai/**",
+        "net:post:https://api.deepinfra.com/**",
+        "net:post:https://api.groq.com/**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "Infinity",
+                    "-Infinity",
+                    "NaN"
+                  ]
+                }
+              ]
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
       "id": "checks/affected-lint",
       "description": "Lint every target the Change's written files affect; a known red does not fail it.",
       "summary": null,
@@ -1146,7 +1190,7 @@
       "path": ".smithers/flows/docs-sync/flow.ts",
       "capabilities": [
         "fs:read:**",
-        "fs:write:apps/server/src/docsRedirectMap.ts",
+        "fs:write:apps/site/docs-redirect/src/docsRedirectMap.ts",
         "proc:spawn:node *",
         "proc:spawn:npm *"
       ],
@@ -1287,7 +1331,6 @@
         "proc:spawn:bash *",
         "proc:spawn:git *",
         "proc:spawn:jj *",
-        "proc:spawn:go *",
         "proc:spawn:smthrs *",
         "net:get:**",
         "net:post:**"
@@ -1319,27 +1362,6 @@
         "proc:spawn:smthrs *",
         "net:get:**",
         "net:private:**"
-      ],
-      "model": null,
-      "modelInvocable": false,
-      "flows": []
-    },
-    {
-      "id": "land/renumber-migration",
-      "description": "Renumber an unlanded product migration after origin/main, regenerate sqlc and run the migration gate.",
-      "summary": null,
-      "featured": false,
-      "kind": "ts",
-      "path": ".smithers/flows/land/renumber-migration/flow.ts",
-      "capabilities": [
-        "fs:read:**",
-        "fs:write:packages/backend/db/**",
-        "fs:write:packages/backend/internal/db/**",
-        "proc:spawn:node *",
-        "proc:spawn:git *",
-        "proc:spawn:go *",
-        "proc:spawn:sqlc *",
-        "proc:spawn:/*/.backend-sqlc/sqlc *"
       ],
       "model": null,
       "modelInvocable": false,
@@ -1403,71 +1425,6 @@
       "kind": "ts",
       "path": ".smithers/flows/notification-policy/flow.ts",
       "capabilities": [],
-      "model": null,
-      "modelInvocable": false,
-      "flows": []
-    },
-    {
-      "id": "perf",
-      "description": "Measure installed-product latency budgets C-PERF-01 to C-PERF-06 and retain their evidence.",
-      "summary": null,
-      "featured": false,
-      "kind": "ts",
-      "path": ".smithers/flows/perf/flow.ts",
-      "capabilities": [
-        "fs:read:**",
-        "fs:write:**",
-        "proc:spawn:node *",
-        "proc:spawn:jj *",
-        "proc:spawn:/usr/bin/ssh *",
-        "proc:spawn:/usr/bin/ssh-keygen *",
-        "net:get:**",
-        "net:post:**",
-        "net:private:**"
-      ],
-      "model": null,
-      "modelInvocable": false,
-      "flows": []
-    },
-    {
-      "id": "perf/github-freshness",
-      "description": "Measure GitHub-to-install freshness on the canary repository, or compare two webhook phases.",
-      "summary": null,
-      "featured": false,
-      "kind": "ts",
-      "path": ".smithers/flows/perf/github-freshness/flow.ts",
-      "capabilities": [
-        "fs:read:**",
-        "fs:write:**",
-        "proc:spawn:node *",
-        "net:get:**",
-        "net:post:**",
-        "net:private:**"
-      ],
-      "model": null,
-      "modelInvocable": false,
-      "flows": []
-    },
-    {
-      "id": "perf/working-together",
-      "description": "Run the working-together fault campaign's component or boundary suites and retain C-DUR-04 evidence.",
-      "summary": null,
-      "featured": false,
-      "kind": "ts",
-      "path": ".smithers/flows/perf/working-together/flow.ts",
-      "capabilities": [
-        "fs:read:**",
-        "fs:write:.artifacts/**",
-        "proc:spawn:node *",
-        "proc:spawn:git *",
-        "proc:spawn:cargo *",
-        "proc:spawn:go *",
-        "proc:spawn:ssh *",
-        "proc:spawn:scp *",
-        "proc:spawn:rustc --version",
-        "proc:spawn:/usr/sbin/sysctl *",
-        "proc:spawn:/usr/bin/sw_vers *"
-      ],
       "model": null,
       "modelInvocable": false,
       "flows": []
@@ -1584,49 +1541,6 @@
         "proc:spawn:pnpm *",
         "proc:spawn:bun *",
         "net:get:registry.npmjs.org/**"
-      ],
-      "model": null,
-      "modelInvocable": false,
-      "flows": []
-    },
-    {
-      "id": "release/homebrew",
-      "description": "Prepare the Homebrew formula and bottle assets of a signed release, or require the receipts that qualify them.",
-      "summary": null,
-      "featured": false,
-      "kind": "ts",
-      "path": ".smithers/flows/release/homebrew/flow.ts",
-      "capabilities": [
-        "fs:read:**",
-        "fs:write:**",
-        "proc:spawn:node *",
-        "proc:spawn:git *",
-        "net:get:api.github.com/**",
-        "net:get:github.com/**",
-        "net:get:token.actions.githubusercontent.com/**"
-      ],
-      "model": null,
-      "modelInvocable": false,
-      "flows": []
-    },
-    {
-      "id": "release/homebrew-publish",
-      "description": "Publish qualified Homebrew release assets or open the tap formula bump.",
-      "summary": null,
-      "featured": false,
-      "kind": "ts",
-      "path": ".smithers/flows/release/homebrew-publish/flow.ts",
-      "capabilities": [
-        "fs:read:**",
-        "proc:spawn:node *",
-        "proc:spawn:git *",
-        "proc:spawn:cosign *",
-        "net:get:api.github.com/**",
-        "net:post:api.github.com/**",
-        "net:put:api.github.com/**",
-        "net:post:uploads.github.com/**",
-        "net:get:github.com/**",
-        "net:get:token.actions.githubusercontent.com/**"
       ],
       "model": null,
       "modelInvocable": false,

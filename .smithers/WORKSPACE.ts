@@ -76,8 +76,7 @@ export const Workspace = S.Workspace("smithers", {
     ),
     "fixture-steps-form": S.LocalRepository("packages/smithers/build/build-cli/test/fixtures/steps-form"),
     "fixture-target-body": S.LocalRepository("packages/smithers/build/build-cli/test/fixtures/target-body"),
-    "fixture-viem-node-spec": S.LocalRepository("packages/smithers/build/build-cli/test/fixtures/viem-node-spec"),
-    "ui-e2e-repo-plugin": S.LocalRepository("apps/app/e2e/fixtures/repo-plugin")
+    "fixture-viem-node-spec": S.LocalRepository("packages/smithers/build/build-cli/test/fixtures/viem-node-spec")
   },
   // Gitignored caches with no CACHEDIR.TAG: run evidence, the Go module
   // cache, the pnpm store, and scratch. Discovery is ignore-blind, so each one

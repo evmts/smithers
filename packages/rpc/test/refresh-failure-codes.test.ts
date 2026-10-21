@@ -1,5 +1,14 @@
 import { spawnSync } from "node:child_process"
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -11,18 +20,18 @@ const sourceScript = fileURLToPath(new URL("../scripts/refresh-failure-codes.mjs
 const fixture = () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "smithers rpc failure codes-")))
   const script = join(root, "packages", "rpc", "scripts", "refresh-failure-codes.mjs")
-  const canonical = join(root, "docs", "api", "failure-codes.json")
+  const source = join(root, "plue", "docs", "failure-codes.json")
   const vendored = join(root, "packages", "rpc", "src", "plue-failure-codes.json")
   const generated = join(root, "packages", "rpc", "src", "PlueFailureCodes.ts")
-  for (const path of [script, canonical, vendored]) mkdirSync(dirname(path), { recursive: true })
+  for (const path of [script, source, vendored]) mkdirSync(dirname(path), { recursive: true })
   copyFileSync(sourceScript, script)
   const codes = [{ code: "quota_exceeded", fault: "wait", status: 429, retry_after: 60, doc: "Account cap" }]
   const document = { schema_version: 1, digest: digestOf(codes), faults: ["wait"], codes }
   const text = `${JSON.stringify(document)}\n`
-  writeFileSync(canonical, text)
+  writeFileSync(source, text)
   const run = (...args: ReadonlyArray<string>) =>
     spawnSync(process.execPath, [script, ...args], { encoding: "utf8", timeout: 5_000 })
-  return { root, canonical, vendored, generated, text, document, run }
+  return { root, source, plue: join(root, "plue"), vendored, generated, text, document, run }
 }
 
 describe("failure-code refresh CLI", () => {
@@ -41,10 +50,23 @@ describe("failure-code refresh CLI", () => {
     }
   )
 
+  test("refuses to write without --from and writes nothing", () => {
+    const files = fixture()
+    try {
+      const refused = files.run()
+      expect(refused.status).toBe(1)
+      expect(refused.stderr).toContain("--from")
+      expect(existsSync(files.vendored)).toBe(false)
+      expect(existsSync(files.generated)).toBe(false)
+    } finally {
+      rmSync(files.root, { recursive: true, force: true })
+    }
+  })
+
   test("writes a faithful vendored document and checks both generated artifacts without modifying them", () => {
     const files = fixture()
     try {
-      const refresh = files.run()
+      const refresh = files.run("--from", files.plue)
       expect(refresh.status).toBe(0)
       expect(refresh.stdout).toContain("refresh-failure-codes: wrote")
       expect(readFileSync(files.vendored, "utf8")).toBe(files.text)
@@ -58,8 +80,10 @@ describe("failure-code refresh CLI", () => {
       expect(readFileSync(files.vendored, "utf8")).toBe(files.text)
       expect(readFileSync(files.generated, "utf8")).toBe(generated)
 
+      expect(files.run("--check", "--from", files.plue).status).toBe(0)
+
       writeFileSync(files.vendored, "stale vendored document")
-      const staleJson = files.run("--check")
+      const staleJson = files.run("--check", "--from", files.plue)
       expect(staleJson.status).toBe(1)
       expect(staleJson.stderr).toContain("plue-failure-codes.json")
       expect(readFileSync(files.vendored, "utf8")).toBe("stale vendored document")
@@ -80,11 +104,10 @@ describe("failure-code refresh CLI", () => {
     try {
       const external = join(files.root, "external.json")
       writeFileSync(external, files.text)
-      writeFileSync(files.canonical, "old canonical document")
+      writeFileSync(files.vendored, "old vendored document")
       const imported = files.run("--from", external)
       expect(imported.status).toBe(0)
       expect(imported.stdout).toContain("refresh-failure-codes: wrote")
-      expect(readFileSync(files.canonical, "utf8")).toBe(files.text)
       expect(readFileSync(files.vendored, "utf8")).toBe(files.text)
 
       const forged = { ...files.document, digest: `sha256:${"0".repeat(64)}` }
@@ -92,7 +115,6 @@ describe("failure-code refresh CLI", () => {
       const refused = files.run("--from", external)
       expect(refused.status).toBe(1)
       expect(refused.stderr).toContain("rows hash to")
-      expect(readFileSync(files.canonical, "utf8")).toBe(files.text)
       expect(readFileSync(files.vendored, "utf8")).toBe(files.text)
     } finally {
       rmSync(files.root, { recursive: true, force: true })
@@ -102,7 +124,7 @@ describe("failure-code refresh CLI", () => {
   test("refuses a row whose fields would render as code, even with a matching digest", () => {
     const files = fixture()
     try {
-      const generatedBefore = files.run()
+      const generatedBefore = files.run("--from", files.plue)
       expect(generatedBefore.status).toBe(0)
       const clean = readFileSync(files.generated, "utf8")
       const external = join(files.root, "external.json")
@@ -119,7 +141,7 @@ describe("failure-code refresh CLI", () => {
         expect(refused.status).toBe(1)
         expect(refused.stderr).toContain("is not a failure-code document")
         expect(readFileSync(files.generated, "utf8")).toBe(clean)
-        expect(readFileSync(files.canonical, "utf8")).toBe(files.text)
+        expect(readFileSync(files.vendored, "utf8")).toBe(files.text)
       }
       const schemaVersion = { ...files.document, schema_version: "1; globalThis.PWNED = 1" }
       writeFileSync(external, JSON.stringify(schemaVersion))
@@ -138,7 +160,7 @@ describe("failure-code refresh CLI", () => {
         expect(refused.status).not.toBe(0)
         expect(refused.stderr).toContain("only https:// URLs or local files are read")
       }
-      expect(readFileSync(files.canonical, "utf8")).toBe(files.text)
+      expect(existsSync(files.vendored)).toBe(false)
     } finally {
       rmSync(files.root, { recursive: true, force: true })
     }

@@ -1,8 +1,6 @@
 /** Repository flows, release workflows, and the retained migration fixtures. */
 import { Smithers } from "@smthrs/targets"
 import { existsSync, readdirSync } from "node:fs"
-import { Package as backendPackage } from "../../packages/backend/PACKAGE.ts"
-import { backendSQLC } from "../../packages/backend/sqlc.ts"
 import { Package as repoTargetsPackage } from "../../packages/repo-targets/PACKAGE.ts"
 import { libraryPackages, repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 import { Package as testingPackage } from "../../packages/testing/PACKAGE.ts"
@@ -36,7 +34,7 @@ const check = Smithers.Typecheck({
 const suite = Smithers.NodeTest({
   runner: Smithers.testRunner([
     Smithers.file("//.smithers/flows/test/content.test.ts"),
-    Smithers.file("//.smithers/flows/test/catalog-runtime.test.ts"),
+    Smithers.file("//.smithers/flows/test/host-registries.test.ts"),
     Smithers.file("//.smithers/flows/test/release-redaction.test.ts"),
     Smithers.file("//.smithers/flows/test/release-io.test.ts"),
     Smithers.file("//.smithers/flows/test/release-operations.test.ts"),
@@ -45,7 +43,6 @@ const suite = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/test/coding-wiki-relay.test.ts"),
     Smithers.file("//.smithers/flows/test/command-receipts.test.ts"),
     Smithers.file("//.smithers/flows/test/host-jev-routing.test.ts"),
-    Smithers.file("//.smithers/flows/test/system-flow-catalog.test.ts"),
     Smithers.file("//.smithers/flows/test/workflows.test.ts"),
     Smithers.file("//.smithers/flows/test/rollout.test.ts"),
     Smithers.file("//.smithers/flows/test/worker-rollout.test.ts"),
@@ -54,16 +51,8 @@ const suite = Smithers.NodeTest({
   srcs: [
     sources,
     Smithers.file("//.smithers/flows/review/flow.ts"),
-    Smithers.file("//packages/backend/internal/services/flow_catalog.go"),
-    Smithers.file("//packages/backend/internal/services/builtin_flows.json"),
-    Smithers.file("//packages/backend/flowdispatch/real_host_test.go"),
     Smithers.file("//pnpm-workspace.yaml"),
     Smithers.file("//.smithers/flows/rollout/refuse-unqualified.mjs"),
-    // The Appendix B catalog gate test/catalog-runtime.test.ts imports and spawns.
-    Smithers.file("//apps/app/scripts/catalog-allowlist.ts"),
-    Smithers.file("//apps/app/scripts/catalog-mvp.ts"),
-    Smithers.file("//apps/app/scripts/catalog-host.mts"),
-    Smithers.file("//apps/app/scripts/catalog-policy.mts"),
     Smithers.file("//apps/bug-worker/package.json")
   ],
   deps: [automationModules],
@@ -519,7 +508,7 @@ const packageDocs = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/docs-sync/package-docs.test.mjs"),
     Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     Smithers.file("//pnpm-workspace.yaml"),
-    Smithers.file("//apps/server/src/docsRedirectMap.ts"),
+    Smithers.file("//apps/site/docs-redirect/src/docsRedirectMap.ts"),
     ...packageDocInputs
   ],
   deps: [],
@@ -606,7 +595,6 @@ const fixtures = Smithers.NodeTest({
   // `decide-with-jev-docs` reads the guide.
   srcs: [
     ...codingSources,
-    Smithers.file("//docs/api/failure-codes.json"),
     Smithers.file("//packages/smithers/agent/model/docs/guides/decide-with-jev.md")
   ],
   deps: codingDependencies,
@@ -646,8 +634,8 @@ const triagePublish = Smithers.NodeTest({
   cwd
 })
 
-// Benchmarks, reliability campaign verifiers and installed-product performance
-// checks. Each runnable entry is a flow under `bench/` or `perf/`; the gates
+// Benchmarks and reliability campaign verifiers. Each runnable entry is a
+// flow under `bench/`; the gates
 // below run the same modules from the checkout root, where their evidence
 // directories resolve, and the suites run each flow's graph over its module.
 const runModuleSource = Smithers.file("//.smithers/flows/automation/run-module.ts")
@@ -656,13 +644,10 @@ const benchSources = [
   runModuleSource,
   Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs")
 ]
-const perfSources = [Smithers.glob("//.smithers/flows/perf/**/*"), runModuleSource]
 const gatewaySources = Smithers.Filegroup({
   cwd: "packages/smithers/gateway",
   srcs: [Smithers.glob("src/**/*.ts"), Smithers.glob("test/**/*.ts")]
 })
-const machineSources = Smithers.Filegroup({ cwd: "packages/smithers-machined", srcs: [Smithers.glob("**/*")] })
-const ffiSources = Smithers.Filegroup({ cwd: "packages/smithers-ffi", srcs: [Smithers.glob("src/**")] })
 
 /** Required fast behavioral mutation tier, including both exact-byte guards. */
 const mutationGate = Smithers.NodeTest({
@@ -718,78 +703,6 @@ const campaignVerifiers = Smithers.NodeTest({
   cwd
 })
 
-/** Installed-product measurements are opt-in; the library counter gate cannot serve. */
-const perf = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//.smithers/flows/perf/run.mjs")),
-  srcs: perfSources,
-  deps: [],
-  exclusive: true,
-  timeout: "24h"
-})
-
-/** Installed two-member keystroke workload; never substitutes for a receipt. */
-const perfKeystroke = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//.smithers/flows/perf/keystroke.mjs")),
-  srcs: perfSources,
-  deps: [],
-  exclusive: true,
-  timeout: "1h"
-})
-
-/** Persistent member SSH writes observed through the installed File card. */
-const perfDiskWrite = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//.smithers/flows/perf/disk-write.mjs")),
-  srcs: perfSources,
-  deps: [],
-  exclusive: true,
-  timeout: "1h"
-})
-
-/** Per-budget availability reports retain honest incomplete evidence. */
-const perfProjection = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//.smithers/flows/perf/run.mjs"), ["C-PERF-02"]),
-  srcs: perfSources,
-  deps: [],
-  exclusive: true,
-  timeout: "1h"
-})
-const perfWarmWake = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//.smithers/flows/perf/run.mjs"), ["C-PERF-05"]),
-  srcs: perfSources,
-  deps: [],
-  exclusive: true,
-  timeout: "1h"
-})
-const perfRebaseHold = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//.smithers/flows/perf/run.mjs"), ["C-PERF-06"]),
-  srcs: perfSources,
-  deps: [],
-  exclusive: true,
-  timeout: "1h"
-})
-
-/** Performance and working-together drivers, their verifiers, and each perf flow over its module. */
-const perfUnit = Smithers.NodeTest({
-  runner: Smithers.testRunner([
-    Smithers.file("//.smithers/flows/perf/working-together/faults.test.mjs"),
-    Smithers.file("//.smithers/flows/perf/working-together/flow.test.ts"),
-    Smithers.file("//.smithers/flows/perf/keystroke.test.mjs"),
-    Smithers.file("//.smithers/flows/perf/disk-write.test.mjs"),
-    Smithers.file("//.smithers/flows/perf/github-freshness/github-freshness.test.mjs"),
-    Smithers.file("//.smithers/flows/perf/github-freshness/flow.test.ts"),
-    Smithers.file("//.smithers/flows/perf/projection-delta.test.mjs"),
-    Smithers.file("//.smithers/flows/perf/questions.test.mjs"),
-    Smithers.file("//.smithers/flows/perf/warm-wake.test.mjs"),
-    Smithers.file("//.smithers/flows/perf/lib/ssh-member.test.mjs"),
-    Smithers.file("//.smithers/flows/perf/lib/stats.test.mjs"),
-    Smithers.file("//.smithers/flows/perf/lib/artifact.test.mjs"),
-    Smithers.file("//.smithers/flows/perf/flow.test.ts")
-  ]),
-  srcs: [sources, ...perfSources],
-  deps: [],
-  cwd
-})
-
 /** Offline quality definitions, GitHub page replay, fallback, and artifact rendering. */
 const quality = Smithers.NodeTest({
   runner: Smithers.testRunner([
@@ -806,45 +719,6 @@ const quality = Smithers.NodeTest({
   ],
   deps: [automationModules],
   cwd
-})
-
-/** K1–K8 campaign keeps component evidence distinct from integrated proof. */
-const workingTogetherFaults = Smithers.Shell.Test({
-  shell: "node .smithers/flows/perf/working-together/faults.mjs",
-  data: [...perfSources, machineSources, ffiSources, Smithers.file("//Cargo.toml"), Smithers.file("//Cargo.lock")],
-  exclusive: true,
-  timeout: "1h"
-})
-const workingTogetherComponents = Smithers.Shell.Test({
-  shell: "node .smithers/flows/perf/working-together/faults.mjs --components-only",
-  data: [...perfSources, machineSources, ffiSources, Smithers.file("//Cargo.toml"), Smithers.file("//Cargo.lock")],
-  exclusive: true,
-  timeout: "1h"
-})
-
-// The composed host suites build the backend; these are the inputs they read.
-const composedHostInputs = [
-  backendPackage.buildInputs,
-  Smithers.file("//go.mod"),
-  Smithers.file("//go.sum"),
-  Smithers.file("//apps/app/package.json"),
-  Smithers.file("//pnpm-lock.yaml")
-]
-
-/** K8 through the composed wiki host, real native state and PostgreSQL. */
-const workingTogetherWikiFaults = Smithers.Shell.Test({
-  shell: "node .smithers/flows/perf/working-together/faults.mjs --wiki-only",
-  data: [...perfSources, ...composedHostInputs],
-  exclusive: true,
-  timeout: "1h"
-})
-
-/** Code mirror recovery through composed HTTP/live with a scripted daemon peer. */
-const workingTogetherCodeFaults = Smithers.Shell.Test({
-  shell: "node .smithers/flows/perf/working-together/faults.mjs --code-only",
-  data: [...perfSources, ...composedHostInputs],
-  exclusive: true,
-  timeout: "1h"
 })
 
 /**
@@ -876,11 +750,9 @@ const automation = Smithers.NodeTest({
 })
 
 /**
- * The landing helper: the `land`, `land/renumber-migration` and
- * `land/lane-gates` flows over their modules, the lane gate and prerequisite
- * regressions, and the migration-landing suite, which drives the production
- * renumbering and push gates through real Go, the pinned sqlc and `smthrs`.
- * The gates read the checkout they land, so all of it is an input.
+ * The landing helper: the `land` and `land/lane-gates` flows over their
+ * modules and the lane gate and prerequisite regressions. The gates read the
+ * checkout they land, so all of it is an input.
  *
  * @since 1.0.0
  * @category test
@@ -889,14 +761,12 @@ const landSources = [Smithers.glob("//.smithers/flows/land/**/*"), runModuleSour
 const land = Smithers.NodeTest({
   runner: Smithers.testRunner([
     Smithers.file("//.smithers/flows/land/flow.test.ts"),
-    Smithers.file("//.smithers/flows/land/renumber-migration/flow.test.ts"),
     Smithers.file("//.smithers/flows/land/lane-gates/flow.test.ts"),
     Smithers.file("//.smithers/flows/land/lane-gates.test.mjs"),
-    Smithers.file("//.smithers/flows/land/lane-prerequisites.test.mjs"),
-    Smithers.file("//.smithers/flows/land/migration-landing.test.mjs")
+    Smithers.file("//.smithers/flows/land/lane-prerequisites.test.mjs")
   ]),
   srcs: [sources, ...landSources],
-  deps: [repoTargetsPackage.repositoryInputs, backendSQLC],
+  deps: [repoTargetsPackage.repositoryInputs],
   cwd
 })
 
@@ -906,7 +776,7 @@ const land = Smithers.NodeTest({
 const landCommit = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//.smithers/flows/land/commit.test.mjs")]),
   srcs: landSources,
-  deps: [backendSQLC],
+  deps: [],
   timeout: "30m",
   cwd
 })
@@ -1149,19 +1019,17 @@ const releaseIntegrity = Smithers.NodeTest({
 })
 
 /**
- * The documentation-lane checks a cut runs, the Homebrew formula, bottle and
- * publication refusals, and the C-REL-02/03/06 recorders' portable logic.
+ * The documentation-lane checks a cut runs and the C-REL-02/03/06 recorders'
+ * portable logic.
  */
 const releaseTools = Smithers.NodeTest({
   runner: Smithers.testRunner([
     Smithers.file("//.smithers/flows/release/lane-checks.test.mjs"),
-    Smithers.file("//.smithers/flows/release/homebrew-publish.test.mjs"),
-    Smithers.file("//.smithers/flows/release/homebrew-release.test.mjs"),
     Smithers.file("//.smithers/flows/release/journeys/release-install.test.mjs"),
     Smithers.file("//.smithers/flows/release/host/host-maintenance-evidence.test.mjs")
   ]),
   srcs: releaseSources,
-  deps: [repoTargetsPackage.repositoryInputs, backendSQLC]
+  deps: [repoTargetsPackage.repositoryInputs]
 })
 
 /**
@@ -1184,8 +1052,6 @@ const releaseSteps = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/release/restore/flow.test.ts"),
     Smithers.file("//.smithers/flows/release/publish/flow.test.ts"),
     Smithers.file("//.smithers/flows/release/installer/flow.test.ts"),
-    Smithers.file("//.smithers/flows/release/homebrew/flow.test.ts"),
-    Smithers.file("//.smithers/flows/release/homebrew-publish/flow.test.ts"),
     Smithers.file("//.smithers/flows/release/rehearsal/flow.test.ts"),
     Smithers.file("//.smithers/flows/release/npm-dedupe/flow.test.ts")
   ]),
@@ -1617,7 +1483,7 @@ const evidenceBindings = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/evidence/check-commands.json")
   ],
   // Bindings name argv files relative to the checkout root, so the suite runs there.
-  deps: [repoTargetsPackage.repositoryInputs, backendSQLC]
+  deps: [repoTargetsPackage.repositoryInputs]
 })
 
 /**
@@ -1736,19 +1602,8 @@ export const Package = Smithers.Package({
     benchmarkGate,
     signalCampaign,
     campaignVerifiers,
-    perf,
-    perfUnit,
     quality,
     checkRunner,
-    perfKeystroke,
-    perfDiskWrite,
-    perfProjection,
-    perfWarmWake,
-    perfRebaseHold,
-    workingTogetherFaults,
-    workingTogetherComponents,
-    workingTogetherWikiFaults,
-    workingTogetherCodeFaults,
     ...securityReview
   }
 })

@@ -529,7 +529,7 @@ const uiCommand = (row: CatalogDescriptor, command: UiInstruction.UiInstructionC
     })
 
 /**
- * A flow asked for with its form (THE FORM LAW, apps/app/AGENTS.md). The
+ * A flow asked for with its form (THE FORM LAW). The
  * request goes to its author's own screen as an instruction: the form opens
  * there with what the model named as its draft, and the person's Submit runs
  * the flow. Nothing is confirmed or run from here, so every field is

@@ -1,7 +1,6 @@
 /**
- * The overridable flows the install ships as packaged defaults
- * (`packages/backend/internal/services/builtin_flows.json`) and the files each
- * one carries: its entry and the source modules beside it.
+ * The overridable flows the install ships as packaged defaults and the files
+ * each one carries: its entry and the source modules beside it.
  *
  * `.smithers/flows/coding/build.mjs` compiles these bytes into the deployed host and
  * `provisionBuiltins` writes them under the host's policy root, so discovery

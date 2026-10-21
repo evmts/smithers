@@ -547,9 +547,9 @@ describe("the standard capability catalog", () => {
    * What each standard flow says a call to it does, on the descriptor a run
    * journals and a card reads.
    *
-   * These are the words the compatibility table in `apps/app` `RunTrace.ts`
-   * guesses for a journal recorded before a declaration could say anything, so
-   * a record with metadata and one without must read identically. `bash`
+   * A journal recorded before a declaration could say anything reads the same
+   * words from a compatibility table, so a record with metadata and one
+   * without must read identically. `bash`
    * declares no activity on purpose and is the one row that says so.
    */
   it("declares what a call to each standard flow does and how it reads", async () => {

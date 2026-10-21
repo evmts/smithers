@@ -214,7 +214,7 @@ for (const p of pages) {
       continue
     }
     if (target.startsWith(IMAGE_PREFIX)) {
-      if (!screenshots.has(target.slice(IMAGE_PREFIX.length))) err(p.path, `missing screenshot: ${target} (apps/app/src/docs/images)`)
+      if (!screenshots.has(target.slice(IMAGE_PREFIX.length))) err(p.path, `missing screenshot: ${target} (apps/site/docs/app/images)`)
       continue
     }
     if (/^\/(media|images|favicon|icon)/.test(target)) {

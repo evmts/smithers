@@ -230,8 +230,7 @@ export const MODEL_TEST_PATH = "/api/model/test"
 export const MODEL_TEST_RECEIPT_PATH = "/api/model/test/receipt"
 
 /*
- * The public catalog and its read-only companions (apps/server
- * publicRepoCatalog.ts): anonymous, credential-free reads about the curated
+ * The public catalog and its read-only companions: anonymous, credential-free reads about the curated
  * repositories anyone can explore signed out.
  */
 /**
@@ -301,7 +300,7 @@ export const ADMIN_RECOMMEND_LOG_PATH = "/api/admin/recommend/log"
 /*
  * The Jev relay: the browser holds no gateway key, so it posts one decision
  * (a state and the questions to answer about it) and reads Jev's typed
- * answers back (apps/server/src/jevRelay.ts).
+ * answers back.
  */
 /**
  * The Jev evaluation relay shared by server and client.
@@ -312,7 +311,7 @@ export const ADMIN_RECOMMEND_LOG_PATH = "/api/admin/recommend/log"
 export const JEV_PATH = "/api/jev"
 
 /*
- * The local app's own chat boundary (apps/app/docs/LOCAL-APP.md): the Bun
+ * The old local app's own chat boundary: the Bun
  * main process serves these on http://127.0.0.1:<port> and the SPA streams
  * the same NDJSON AgentTurnFrames the native bridge used to carry.
  */

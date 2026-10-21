@@ -19,8 +19,8 @@ nothing. The reference for every type is [api.md](api.md#externaltranscript).
 
 ## Machine side
 
-The bytes a decoder gets are one line of one file, framed in the member's
-machine by `smithers-machined` (spec §9.6.6). No decoder runs there.
+The bytes a decoder gets are one line of one file, framed on the member's
+machine by the caller's reader. No decoder runs there.
 
 ```
 member's terminal session        root broker                     daemon (uid 19998)
@@ -64,8 +64,8 @@ machine (member's uid)                 host                         PostgreSQL
                                      └──────────────────────┘
 ```
 
-The install-shipped caller is `apps/model-host/src/transcript.ts`, served at
-`POST /v1/transcript/normalize` behind the host bearer. The backend sends one
+A host serves the decoders at `POST /v1/transcript/normalize` behind its
+bearer. The backend sends one
 framed record, the profile the registry pinned, the registry's owner,
 participant and session, and the decoder state from the previous committed
 receipt. The host decodes that one record and returns drafts and the next

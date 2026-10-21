@@ -19,9 +19,8 @@ type Method = "snapshot" | "restore" | "diff"
  *
  * A cause record is read as a code, not only as prose:
  * `agent/src/internal/FailureSummary.ts` walks a rendered failure to the
- * INNERMOST record carrying a message and prefixes THAT record's `code`, and
- * `apps/app/src/mainview/state/RunCause.ts` picks the sentence a person reads
- * off that one line. `Jj.jjErrorCause` copies any string `code` off any object,
+ * INNERMOST record carrying a message and prefixes THAT record's `code`.
+ * `Jj.jjErrorCause` copies any string `code` off any object,
  * and the objects projected here come from outside this repo's vocabulary — a
  * helper's JSON envelope, the host's own errno. Such a word does not
  * land on the record: it is kept in the message, which is prose and is never

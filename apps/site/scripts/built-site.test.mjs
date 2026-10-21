@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import test from "node:test"
-import { ASSET_HEADERS, checkAssetHeaders, checkBuiltSite, checkLandingActions, checkRepositoryPages, releaseReferences } from "./check-built-site.mjs"
+import { ASSET_HEADERS, checkAssetHeaders, checkBuiltSite, checkLandingActions, releaseReferences } from "./check-built-site.mjs"
 
 function fixture(t, files) {
   const root = mkdtempSync(join(tmpdir(), "smithers-built-site-"))
@@ -125,19 +125,6 @@ test("a nested page resolves its own fragments and its sibling paths, and skips 
   ])
 })
 
-test("app-served paths are exempt only when named, and only at that exact path", (t) => {
-  const root = fixture(t, {
-    "index.html":
-      "<a href=\"https://smithers.sh/smithersai/smithers\">Open in Smithers</a><a href=\"/api/public/repos\">Catalog</a><a href=\"https://smithers.sh/smithersai/smithers/issues\">Issues</a>"
-  })
-  const unnamed = checkBuiltSite(root).failures
-  assert.equal(unnamed.length, 3)
-  assert.ok(unnamed.some((failure) => /missing https:\/\/smithers\.sh\/smithersai\/smithers /.test(failure)))
-  assert.deepEqual(checkBuiltSite(root, [], ["/api/public/repos", "/smithersai/smithers"]).failures, [
-    "index.html: missing https://smithers.sh/smithersai/smithers/issues (resolved to /smithersai/smithers/issues)"
-  ])
-})
-
 test("release URLs use the emitted removal table and exclude canonical verbs and prose punctuation", async (t) => {
   const root = fixture(t, {
     "packages/smithers/src/Unsupported.ts": `
@@ -180,92 +167,36 @@ test("social card images are required references, whether emitted by path or by 
   ])
 })
 
-/*
- * The app page is cross-origin isolated (COEP require-corp), and its OPFS
- * SQLite persistence starts a dedicated module worker from a /_astro chunk.
- * The browser refuses a worker script whose response lacks a matching embedder
- * policy, so the headers file the build ships must give every chunk one. Live
- * regression after the site and the app became one build: /_astro/opfs-worker-*.js
- * answered net::ERR_BLOCKED_BY_RESPONSE and the app fell back to localStorage.
- */
-test("the built _headers gives every /_astro chunk the embedder and resource policies the OPFS worker needs", (t) => {
+test("the built _headers gives every /_astro chunk a year-long immutable cache", (t) => {
   const root = fixture(t, {
-    "_headers": [
-      "# hashed chunks",
-      "/_astro/*",
-      "  Cache-Control: public, max-age=31536000, immutable",
-      "  Cross-Origin-Embedder-Policy: require-corp",
-      "  Cross-Origin-Resource-Policy: same-origin",
-      ""
-    ].join("\n")
+    "_headers": ["# hashed chunks", "/_astro/*", "  Cache-Control: public, max-age=31536000, immutable", ""].join("\n")
   })
   assert.deepEqual(checkAssetHeaders(root), [])
 })
 
-test("a _headers that only caches the chunks fails, naming each missing header", (t) => {
-  const root = fixture(t, { "_headers": "/_astro/*\n  Cache-Control: public, max-age=31536000, immutable\n" })
-  assert.deepEqual(checkAssetHeaders(root), [
-    "_headers: /_astro/* must set cross-origin-embedder-policy: require-corp (got nothing)",
-    "_headers: /_astro/* must set cross-origin-resource-policy: same-origin (got nothing)"
-  ])
+test("a _headers without the chunk rule or with a shorter cache fails, naming the header", (t) => {
   assert.deepEqual(checkAssetHeaders(fixture(t, {})), ["_headers: missing the /_astro/* rule"])
-  const cors = fixture(t, {
-    "_headers":
-      "/_astro/*\n  Cross-Origin-Embedder-Policy: require-corp\n  Cross-Origin-Resource-Policy: cross-origin\n"
-  })
-  assert.deepEqual(checkAssetHeaders(cors), [
-    "_headers: /_astro/* must set cross-origin-resource-policy: same-origin (got cross-origin)"
-  ])
-})
-
-test("a chunk rule that sets COOP fails: the opener policy is the app Worker's, on the document", (t) => {
-  const root = fixture(t, {
-    "_headers": [
-      "/_astro/*",
-      "  Cross-Origin-Opener-Policy: same-origin",
-      "  Cross-Origin-Embedder-Policy: require-corp",
-      "  Cross-Origin-Resource-Policy: same-origin",
-      ""
-    ].join("\n")
-  })
-  assert.deepEqual(checkAssetHeaders(root), [
-    "_headers: /_astro/* must not set cross-origin-opener-policy; the app Worker sets it on the document"
+  const short = fixture(t, { "_headers": "/_astro/*\n  Cache-Control: public, max-age=60\n" })
+  assert.deepEqual(checkAssetHeaders(short), [
+    "_headers: /_astro/* must set cache-control: public, max-age=31536000, immutable (got public, max-age=60)"
   ])
 })
 
 test("the source public/_headers the build copies into dist already passes, so the build check is not the first to see it", () => {
   const publicDir = resolve(import.meta.dirname, "../public")
   assert.deepEqual(checkAssetHeaders(publicDir), [])
-  assert.deepEqual(Object.keys(ASSET_HEADERS), ["cross-origin-embedder-policy", "cross-origin-resource-policy"])
+  assert.deepEqual(Object.keys(ASSET_HEADERS), ["cache-control"])
 })
 
-test("the landing has exactly one static install or open action and its three buttons", t => {
-  const buttons = '<nav aria-label="Start"><a class="landing-button landing-primary" href="/?tutorial">Start app</a><a class="landing-button" href="/docs/installation/">Docs</a><a class="landing-button" href="https://github.com/smithersai/smithers">Source</a></nav>'
+test("the landing carries the install command and its Docs and Source buttons", t => {
+  const buttons = '<nav aria-label="Start"><a class="landing-button" href="/docs/installation/">Docs</a><a class="landing-button" href="https://github.com/smithersai/smithers">Source</a></nav>'
   const run = '<div class="landing-command"><code><span aria-hidden="true">$ </span><span id="run-command">npx smthrs@next generate flow coding</span></code><button type="button" id="copy-install">Copy</button></div>'
   const install = '<h1>Smithers is a codebase maintainer agent.</h1>' + run + buttons
-  const open = '<h1>Coding agents</h1><form class="repository-launcher-open"><input name="repository"><button>Open</button></form>' + buttons
-  for (const html of [install, open]) assert.deepEqual(checkLandingActions(fixture(t, { "index.html": html })), [])
-  for (const html of [install + open, '<h1>Empty</h1>']) assert.ok(checkLandingActions(fixture(t, { "index.html": html })).length > 0)
-  assert.deepEqual(checkLandingActions(fixture(t, { "index.html": install.replace(' href="/?tutorial"', ' href="/"') })), ["index.html: missing the /?tutorial button"])
+  assert.deepEqual(checkLandingActions(fixture(t, { "index.html": install })), [])
+  assert.deepEqual(checkLandingActions(fixture(t, { "index.html": '<h1>Empty</h1>' })), ["index.html: missing the install command's Copy button"])
+  assert.deepEqual(checkLandingActions(fixture(t, { "index.html": install.replace(' href="/docs/installation/"', ' href="/"') })), ["index.html: missing the /docs/installation/ button"])
   assert.deepEqual(checkLandingActions(fixture(t, { "index.html": install.replace("npx smthrs@next", "npm i -g smthrs@next") })), ["index.html: missing the npx run command"])
-})
-
-/*
- * Every repository page the build emits is the APP page, curated row or not
- * (lane 95). A prerendered "Coming soon" page for a repository root was the
- * routing fence that kept a maintainer with a fresh GitHub App installation
- * out of the app's import path (mvp.md M-46), so a page that says it instead
- * of mounting the app is a build failure now.
- */
-test("the build requires an app page for every routed repository, curated or available", (t) => {
-  const repos = [{ name: "Effect-TS/effect" }, { name: "withastro/starlight" }]
-  const island = (name) => `<div id="root"><astro-island component-url="/_astro/AppIsland.js" client="only">${name}</astro-island></div>`
-  const missing = fixture(t, { "effect-ts/effect/index.html": island("Effect") })
-  assert.deepEqual(checkRepositoryPages(missing, repos), ["withastro/starlight/index.html: missing from the build"])
-  const marketing = fixture(t, { "effect-ts/effect/index.html": '<h1>Effect — Coming soon</h1><a href="/api/auth/github?return_to=%2Feffect-ts%2Feffect%2F">Sign in with GitHub</a>' })
-  assert.deepEqual(checkRepositoryPages(marketing, [repos[0]]), ["effect-ts/effect/index.html: expected the app page, got a page with no app island"])
-  const healthy = fixture(t, Object.fromEntries(repos.map((repo) => [`${repo.name.toLowerCase()}/index.html`, island(repo.name)])))
-  assert.deepEqual(checkRepositoryPages(healthy, repos), [])
+  assert.deepEqual(checkLandingActions(fixture(t, {})), ["index.html: missing from the build"])
 })
 
 test("built pages reject the retired GitHub App installation URL", (t) => {
@@ -274,22 +205,6 @@ test("built pages reject the retired GitHub App installation URL", (t) => {
     "index.html: retired GitHub App URL: https://github.com/apps/smithers/installations/new"
   ])
   assert.deepEqual(checkBuiltSite(fixture(t, { "index.html": page("team-install") })).failures, [])
-})
-
-/*
- * The sign-in door a curated page used to carry is the app's own now: the
- * route owns sign-in, admission, import and every refusal, and the page that
- * mounts it is checked for the island rather than for a marketing CTA.
- */
-test("a curated repository page that still ships marketing copy instead of the app fails the build", (t) => {
-  const repo = { name: "wevm/incur" }
-  for (const html of [
-    '<h1>Coming soon</h1><a href="/api/auth/github?return_to=%2Fwevm%2Fincur%2F">Sign in with GitHub</a>',
-    "<h1>incur</h1><p class=\"sub\">Coming soon</p>"
-  ]) {
-    const root = fixture(t, { "wevm/incur/index.html": html })
-    assert.deepEqual(checkRepositoryPages(root, [repo]), ["wevm/incur/index.html: expected the app page, got a page with no app island"])
-  }
 })
 
 test("retired docs URLs reach Install while live page anchors remain checked", (t) => {

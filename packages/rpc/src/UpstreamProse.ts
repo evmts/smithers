@@ -2,13 +2,12 @@
  * What of an upstream's error body may reach a person, and what a proxy says
  * instead when none of it may.
  *
- * Both hosts proxy the same upstreams — the Cloudflare Worker to Smithers
- * Cloud (apps/server/src/proxies.ts), the desktop app's native host to the
- * Worker and to Smithers Cloud (apps/app/src/bun/server.ts) — and both render
- * whatever comes back straight to the reader. An upstream's body is written
+ * The old stack's two hosts proxied the same upstreams — the Cloudflare Worker
+ * to Smithers Cloud, the desktop app's native host to the Worker and to
+ * Smithers Cloud — and both rendered whatever came back straight to the reader. An upstream's body is written
  * for its own callers: a Cloudflare HTML page, a Go router's
  * `404 page not found`, a provider's error envelope. Passing those through put
- * a debug string in front of a user (repro apps/app/canary-repros/honesty/24.3).
+ * a debug string in front of a user.
  *
  * The rule lives HERE rather than in either host so the two cannot drift into
  * two rules, which is the same mistake three refusal vocabularies were.
@@ -112,9 +111,8 @@ const CLOUD_SCOPE_REFUSAL = "insufficient token scope"
  * Whether a 403 body from Smithers Cloud is the scope refusal a degraded
  * session exists for.
  *
- * Both hosts ask Cloud the same question at sign-in — the Cloudflare Worker in
- * apps/server/src/cloudSession.ts, the desktop app's native host in
- * apps/app/src/bun/CloudAuth.ts — by probing GET /api/user/workspaces with the
+ * Both of the old stack's hosts asked Cloud the same question at sign-in, by
+ * probing GET /api/user/workspaces with the
  * caller's Cloud PAT. A 403 that means "this token's scopes are short" leaves
  * the person signed in with `scopes: "degraded"`; any other 403 must not.
  * Reading that answer is one rule, so it lives here rather than once per host.

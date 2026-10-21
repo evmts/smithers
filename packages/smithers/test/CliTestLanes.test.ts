@@ -38,7 +38,9 @@ it("schedules every CLI test file once without leaving the remainder on one work
     .map((match) => match[1]!.trim().split(/\s+/))
     .filter((args) => !args.some((arg) => arg.startsWith("--merge-reports=")))
     .map((args) => args.filter((arg) => !/^--(?:outputFile|reporter|coverage\.)/.test(arg)))
-  const all = list(["--exclude", "test/DelegatedLogin.integration.test.ts"])
+  // A CLI `--exclude` replaces the config's exclude list, as it does for the
+  // remainder shards, so the full selection is taken the same way.
+  const all = list(["--exclude", "**/node_modules/**"])
   const selections = commands.map(list)
   expect(selections.flat().sort()).toEqual(all.sort())
   expect(Math.max(...selections.map((files) => files.length))).toBeLessThanOrEqual(Math.ceil(all.length / 4))

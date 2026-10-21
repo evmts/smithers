@@ -608,11 +608,10 @@ describe("a live plan graph over a bridged real engine", () => {
         //
         // The path is the REPOSITORY's, not the caller's. `declarationRoot`
         // defaults to the process working directory, and this stack is run
-        // from three of them — `packages/smithers` under vitest, `apps/app`
-        // under the flow-graph host, the repository root under a bare node —
-        // so a stack that took the default would record a different path each
-        // time, and from `apps/app` no path at all, because the fixture is not
-        // under it. A reader who cannot spell the path cannot open the file.
+        // from more than one — `packages/smithers` under vitest, the
+        // repository root under a bare node — so a stack that took the default
+        // would record a different path each time, and from a directory the
+        // fixture is not under, no path at all. A reader who cannot spell the path cannot open the file.
         const declared = graph.nodes
           .map((node) => node["declaredAt"] as { readonly path: string; readonly line: number } | undefined)
           .filter((site) => site !== undefined)

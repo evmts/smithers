@@ -35,7 +35,7 @@ const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
  * Will's SDK-wide rules (apps/mvp/docs/rules.md). The library returns
  * Effects; only the program that serves it runs them. A host serves the
  * handler with `HttpEffect.toWebHandler` and runs a probe's Test at its own
- * boundary (`apps/model-host`). Run the deterministic half with
+ * boundary. Run the deterministic half with
  * `pnpm exec smithers-build test //packages/smithers/agent/model-host:importRules`;
  * `jevRules` is manual.
  */

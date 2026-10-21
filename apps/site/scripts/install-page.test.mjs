@@ -11,8 +11,8 @@ const site = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const root = resolve(site, "../..")
 const read = (path) => readFileSync(join(root, path), "utf8")
 const installation = read("apps/site/docs/installation.mdx")
-const toc = parseToc(read("apps/app/src/docs/toc.ts"))
-const appPages = readdirSync(join(root, "apps/app/src/docs/pages")).filter((name) => name.endsWith(".md")).sort()
+const toc = parseToc(read("apps/site/docs/app/toc.ts"))
+const appPages = readdirSync(join(root, "apps/site/docs/app/pages")).filter((name) => name.endsWith(".md")).sort()
 
 // In-app commands and released source schemas have no planned exceptions.
 const snippets = (text) => [...text.matchAll(/```(?:bash|sh|shell)\s*\n([\s\S]*?)```|`(smthrs [^`\n]+)`/g)].flatMap((match) => {
@@ -75,7 +75,7 @@ test("all documented CLI commands and arguments exist in the source CLI", async 
   const shipped = [...commands, { name: "--version" }]
   validateCommands(installation, shipped)
   assert.ok(appPages.length > 0, "the app docs must have pages")
-  for (const name of appPages) validateCommands(read(`apps/app/src/docs/pages/${name}`), shipped)
+  for (const name of appPages) validateCommands(read(`apps/site/docs/app/pages/${name}`), shipped)
 })
 
 test("command guard rejects invented commands, flags and invalid positional arguments", () => {
@@ -164,7 +164,7 @@ test("the published docs tree holds the app's pages, installation, the CLI refer
   assert.ok(existsSync(join(site, "public/docs/reference/cli.md")), "the CLI reference must publish its Markdown copy")
   assert.ok(projected.includes("index.md"), "the welcome page publishes at /docs/")
   for (const path of paths) assert.ok(path === "installation.mdx" || path === "reference/http-api.mdx" || path === "reference/cli.md" || path.startsWith("reference/api/") || projected.includes(path), `retired projection remains: ${path}`)
-  for (const path of projected) assert.ok(readFileSync(join(content, path), "utf8").includes(MARKER), `${path} must be projected from apps/app/src/docs`)
+  for (const path of projected) assert.ok(readFileSync(join(content, path), "utf8").includes(MARKER), `${path} must be projected from apps/site/docs/app`)
   const retired = JSON.parse(read("apps/site/docs/retired-projections.json"))
   for (const path of retired) assert.equal(existsSync(join(root, path)), false, `retired projection exists: ${path}`)
   const redirects = read("apps/site/public/_redirects")

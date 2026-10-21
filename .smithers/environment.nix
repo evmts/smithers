@@ -106,7 +106,7 @@ let
     '';
   };
 
-  # Bun runs `//apps/app:unitTests`, the app's e2e web server, and the
+  # Bun runs the TUI's suites and the
   # `cloud-contract` gate (`bun test .github/scripts/ci/cloud.test.ts`). The zip is the
   # release oven-sh publishes, which is what nixpkgs repackages too.
   bun = pkgs.stdenv.mkDerivation rec {
@@ -284,9 +284,7 @@ in
       pnpm
       rust
       go
-      # Storage matrix tests run initdb and pg_ctl in a task-local cluster;
-      # the shared Go backend suite (`//:backendGo`) takes the same programs
-      # from PATH for its backup, restore and upgrade-recovery tests.
+      # Storage matrix tests run initdb and pg_ctl in a task-local cluster.
       pkgs.postgresql_18
       foundry
       # `faults` and every confined target run under bubblewrap, which ci.yml

@@ -1,5 +1,5 @@
 /*
- * THE FORM LAW (apps/app/AGENTS.md; docs/workbench-lanes/flow-forms.md): a
+ * THE FORM LAW: a
  * flow invoked without its required input renders a form for the missing
  * fields, never a usage sentence. The form is DERIVED here from the flow's
  * own input schema (the `Schema.Struct` every declaration in Flows.ts
@@ -512,8 +512,7 @@ export interface AssembledLine {
  * These checks know the grammars' shared tokens, not every flow's grammar: a
  * value ending in an `owner/repo` token can still be read as a trailing
  * repository by that flow's grammar. A caller that re-runs the line as text
- * must compare the grammar's read of it with the named payload (apps/app
- * Commands.ts `carriesPayload`).
+ * must compare the grammar's read of it with the named payload.
  *
  * @category derivation
  */

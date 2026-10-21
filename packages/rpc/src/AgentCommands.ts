@@ -25,8 +25,7 @@ export interface AgentCommand {
 }
 
 /**
- * The catalog commands an install's model host runs itself, as the turn's author, in the order it lists them. The
- * GUI registers each with the same copy and agent rule (apps/app flows/agent-parity.test.ts holds them equal).
+ * The catalog commands an install's model host runs itself, as the turn's author, in the order it lists them.
  * @since 1.0.0
  * @category constants
  */

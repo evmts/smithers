@@ -89,29 +89,6 @@ test("coverage failure reaches Vitest and the real target runner despite passing
   } finally { removeFixture(directory) }
 })
 
-test("browser assertion failure travels through the PR entrypoint, Playwright and NodeTest", () => {
-  const directory = fixture("apps/app/node_modules")
-  try {
-    // The PR entrypoint runs its auth, probe and graph-lifecycle tiers before Playwright; keep
-    // this sentinel focused on propagation of a real browser assertion failure,
-    // so every tier the wrapper runs is stubbed as an immediate success.
-    write(directory, "package.json", JSON.stringify({ type: "module", packageManager: "pnpm@11.25.0", scripts: { "test:e2e:auth": "node -e 'process.exit(0)'", "test:e2e:probes": "node -e 'process.exit(0)'", "test:e2e:graph-lifecycle": "node -e 'process.exit(0)'" } }) + "\n")
-    declaration(directory, 'S.NodeTest({ runner: S.entrypoint(S.file("scripts/run-pr-e2e.mjs")), srcs: [S.glob("tests/**"), S.file("playwright.config.ts")], deps: [] })')
-    write(directory, "scripts/run-pr-e2e.mjs", readFileSync(join(root, "apps/app/scripts/run-pr-e2e.mjs")))
-    write(directory, "playwright.config.ts", 'export default { testDir: "tests", workers: 1, retries: 0, reporter: [["list"], ["json", { outputFile: "browser-results.json" }]], use: { headless: true } }\n')
-    write(directory, "tests/sentinel.spec.ts", 'import { test, expect } from "@playwright/test"; test("browser sentinel", async ({ page }) => { await page.setContent("<h1>actual page</h1>"); await expect(page.locator("h1")).toHaveText("wrong page", { timeout: 100 }); })\n')
-    const result = run(directory, "browser")
-    assert.equal(result.status, 1, result.text)
-    assert.match(result.text, /browser sentinel/)
-    const report = readFileSync(join(directory, "browser-results.json"), "utf8")
-    writeFileSync(join(tmpdir(), `smithers-runner-${process.pid}-browser.json`), report)
-    assert.equal(JSON.parse(report).stats.unexpected, 1)
-    assert.match(report, /actual page/)
-    assert.match(report, /wrong page/)
-    assert.match(result.text, /targets_failed/)
-  } finally { removeFixture(directory) }
-})
-
 test("warmed build-result cache invalidates helper, config and declared property seed inputs", () => {
   const directory = fixture()
   try {

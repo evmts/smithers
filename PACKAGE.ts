@@ -1,19 +1,9 @@
-import { nativeFfiInputs, nativeFfiLib, rehearsalNative } from "./packages/smithers-ffi/native-targets.ts"
-import { backendSQLC } from "./packages/backend/sqlc.ts"
+import { nativeFfiInputs, nativeFfiLib } from "./packages/smithers-ffi/native-targets.ts"
 import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
-import { Package as flowsJjPackage } from "./packages/smithers/flows/jj-wasm/PACKAGE.ts"
-import { Package as machinedPackage } from "./packages/smithers-machined/PACKAGE.ts"
-import { Package as backendPackage } from "./packages/backend/PACKAGE.ts"
-import { Package as appPackage } from "./apps/app/PACKAGE.ts"
-import { Package as modelHostAppPackage } from "./apps/model-host/PACKAGE.ts"
 import project from "./apps/site/src/data/project.json" with { type: "json" }
-import { Package as modelHostPackage } from "./packages/smithers/agent/model-host/PACKAGE.ts"
-import { Package as integrationsPackage } from "./packages/smithers/agent/integrations/PACKAGE.ts"
-import { Package as flowsPackage } from "./packages/smithers/flows/PACKAGE.ts"
-import { Package as testingPackage } from "./packages/testing/PACKAGE.ts"
 import { Package as codingFlowsPackage } from "./.smithers/flows/PACKAGE.ts"
 
 // Workspace selections cross package boundaries as explicit files. Expansion
@@ -70,7 +60,7 @@ const tsconfig = Smithers.Tsconfig({
     Smithers.glob("apps/*/PACKAGE.ts"),
     Smithers.glob("evals/*/PACKAGE.ts"),
     // Eval suites and benchmark rigs live in the package they measure; the
-    // depth globs below reach `regression` and `recommend-eval`.
+    // depth globs below reach `regression`.
     Smithers.glob("packages/smithers/agent/harness/benchmarks/*/PACKAGE.ts"),
     Smithers.file(".smithers/flows/review/seeded-bugs/PACKAGE.ts"),
     Smithers.file(".smithers/flows/PACKAGE.ts"),
@@ -334,21 +324,6 @@ const dockerImageStore = Smithers.CiToolchain.Docker({
 // cluster it starts with `initdb`/`pg_ctl`, and refuses when they are missing.
 const postgres = Smithers.CiToolchain.Postgres({ release: "18" })
 
-// Hosted Go adapters need a real database server; each test suite creates its
-// own database on it. This target runs only in the required Linux backend job,
-// not in the cross-platform package matrix.
-const backendPostgres = Smithers.Docker.Service({
-  image: "postgres@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
-  // Both backend targets share this server when selected together.
-  env: { POSTGRES_USER: "smithers", POSTGRES_PASSWORD: "smithers-backend-test", POSTGRES_INITDB_ARGS: "--set=max_connections=256" },
-  ports: { "5432": 55435 },
-  readiness: {
-    exec: ["pg_isready", "-h", "127.0.0.1", "-U", "smithers", "-d", "postgres"],
-    timeout: "120s"
-  },
-  stop: { signal: "SIGTERM", grace: "10s" }
-})
-
 // Clippy and the FFI tests, run by the rust-ffi CI job. Only a
 // trusted-process-binding build can import a source outside a guest, so its
 // source import CLI test runs as a second pass. It keeps its own rustup home
@@ -359,161 +334,6 @@ const nativeFfi = Smithers.Shell.Build({
   data: nativeFfiInputs,
   sandbox: { network: true },
   timeout: "30m"
-})
-
-const rehearsalNativeEnv = "export SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=\"$PWD/.rehearsal-native/smithers-jj-export\" SMITHERS_REHEARSAL_JJ_EXPORT_BINARY=\"$PWD/.rehearsal-native/smithers-jj-export\" SMITHERS_REHEARSAL_MACHINED_BINARY=\"$PWD/.rehearsal-native/rehearsal_daemon\"; "
-
-// Fill a declared module cache on a clean runner.
-const backendGoModules = Smithers.Go.ModDownload({
-  mod: Smithers.file("//go.mod"),
-  sum: Smithers.file("//go.sum"),
-  outDirs: ["//.backend-go-modcache"],
-  sandbox: { network: true },
-  destinations: ["proxy.golang.org", "sum.golang.org", "storage.googleapis.com"]
-})
-
-
-// C-COL-06: qualify the shared corpus and daemon refusals in both languages.
-const machinedWire = Smithers.Shell.Test({
-  shell: "go test -count=1 -p 4 -v ./packages/backend/internal/compose -run '^(TestMachinedWire.*|TestWireContentLimit|TestMachinedSkeletonDisabled)$' && cargo test --locked -p smithers-machined --test golden --test fake_host --test local",
-  data: [backendPackage.buildInputs, flowsJjPackage.nativeSources,
-    machinedPackage.buildInputs,
-    Smithers.file("//packages/smithers/flows/jj-wasm/Cargo.toml"),
-    Smithers.file("//Cargo.toml"), Smithers.file("//Cargo.lock"),
-    Smithers.file("//rust-toolchain.toml"), Smithers.file("//go.mod"), Smithers.file("//go.sum")],
-  env: { GOMAXPROCS: "8", GOFLAGS: "-buildvcs=false -mod=readonly", CARGO_BUILD_JOBS: "2" },
-  sandbox: "none",
-  exclusive: true,
-  timeout: "30m"
-})
-
-// `go test` streams megabytes of logs, so its failures rarely reach the
-// output tail a failed target reports; they are repeated on stderr. The
-// failure context is capped at 400 lines, which once hid half the packages,
-// so a per-package ok/FAIL and `--- FAIL` summary follows it: the failure
-// report keeps the last 64 KiB of stderr, so the summary goes last. It keeps
-// a timeout panic's "running tests:" block, which names a hung test (#3071).
-// The backup, restore and upgrade-recovery suites run the PostgreSQL programs
-// on PATH (`postgres` in the go-backend job, pkgs.postgresql_18 on the Cloud
-// machine); without them the suite fails instead of skipping them.
-const backendGo = Smithers.Shell.Test({
-  shell: rehearsalNativeEnv + "export PATH=\"$PWD/.backend-sqlc:$PATH\"; if [ -z \"${SMITHERS_POSTGRES_TEST_BIN:-}\" ]; then pg_ctl_path=$(command -v pg_ctl) || { echo 'PostgreSQL 18 programs (pg_ctl, initdb, pg_dump, psql) must be on PATH for the backend backup and restore tests' >&2; exit 1; }; export SMITHERS_POSTGRES_TEST_BIN=\"${pg_ctl_path%/*}\"; fi; export SMITHERS_FFI_LIBRARY_PATH=\"$PWD/.native-ffi/target/debug/libsmithers_ffi.so\"; export SMITHERS_WIKI_TEST_FFI=\"$SMITHERS_FFI_LIBRARY_PATH\"; export GOMODCACHE=\"$PWD/.backend-go-modcache\"; bash packages/backend/scripts/check-sqlc-drift.sh || exit $?; go test -run '^$' ./packages/backend/db/product || exit $?; python3 -B -m unittest packages/backend/scripts/test_check_go_boundaries.py packages/backend/db/product/test_adopt_unit.py || exit $?; bash packages/backend/scripts/check-public-backend-boundary.sh || exit $?; sh packages/backend/scripts/test-backend-consumer.sh || exit $?; unformatted=$(gofmt -l packages/backend apps/backend docs/api) || exit $?; test -z \"$unformatted\" || { printf 'gofmt -w needed:\\n%s\\n' \"$unformatted\"; exit 1; }; go build ./packages/backend/... ./apps/backend/... ./docs/api/... || exit $?; go vet ./packages/backend/... ./apps/backend/... ./docs/api/... || exit $?; log=$(mktemp) || exit $?; packages=$(go list ./packages/backend/... ./apps/backend/... ./docs/api/...) || exit $?; packages=$(printf '%s\\n' \"$packages\" | grep -v '/internal/compose$') || exit $?; go test -p 4 -count=1 -timeout 40m $packages >\"$log\" 2>&1; status=$?; node packages/backend/scripts/backend-compose-tests.mjs >>\"$log\" 2>&1 || status=1; cat \"$log\"; if [ $status -ne 0 ]; then printf 'go test failures:\\n' >&2; grep -E -A30 '^[[:space:]]*--- FAIL|^panic:|^FAIL' \"$log\" | head -n 400 >&2; printf 'go test summary:\\n' >&2; grep -E '^(ok|FAIL)[[:space:]]|^[[:space:]]*--- FAIL|^panic: test timed out|^[[:space:]]+running tests:|^[[:space:]]+Test[^[:space:]]+ \([0-9]' \"$log\" >&2; fi; rm -f \"$log\"; exit $status",
-  env: {
-    GOFLAGS: "-buildvcs=false -mod=readonly",
-    GOMAXPROCS: "2",
-    SMITHERS_REQUIRE_DATABASE_TESTS: "1",
-    GOPROXY: "off",
-    // Every suite creates and drops its own databases through this server.
-    SMITHERS_TEST_DATABASE_URL: "postgres://smithers:smithers-backend-test@127.0.0.1:55435/postgres?sslmode=disable"
-  },
-  data: [
-    backendGoModules,
-    backendSQLC,
-    rehearsalNative,
-    Smithers.file("//packages/backend/scripts/check-sqlc-drift.sh"),
-    Smithers.file("//packages/backend/scripts/check-go-boundaries.py"),
-    Smithers.file("//packages/backend/scripts/check-public-backend-boundary.sh"),
-    Smithers.file("//packages/backend/scripts/test-backend-consumer.sh"),
-    Smithers.file("//packages/backend/scripts/backend-compose-tests.mjs"),
-    Smithers.file("//packages/backend/scripts/test_check_go_boundaries.py"),
-    nativeFfiLib,
-    modelHostPackage.lib,
-    integrationsPackage.lib,
-    flowsPackage.lib,
-    // The bootstrap regression starts the production coding-host seat layers.
-    codingFlowsPackage.codingHostInputs,
-    workspace,
-    Smithers.file("//pnpm-lock.yaml"),
-    modelHostAppPackage.backendInputs,
-    // The composed code-document proof runs the shipped app clients in Bun.
-    appPackage.solidCodegenInputs,
-    Smithers.file("//apps/app/e2e/real/code-document-install.fixture.ts"),
-    Smithers.file("//apps/model-host/build.mjs"),
-    Smithers.file("//apps/model-host/package.json"),
-    Smithers.file("//go.mod"),
-    Smithers.file("//go.sum"),
-    Smithers.file("//packages/rpc/contracts/app-bootstrap-v1.schema.json"),
-    backendPackage.buildInputs,
-    Smithers.glob("//apps/backend/**/*"),
-    // The journey rehearsals' scripted coding model (smthrs-model-server --script builtin).
-    testingPackage.modelServer,
-    Smithers.glob("//docs/api/**/*")
-  ],
-  services: [backendPostgres],
-  sandbox: { network: "loopback" },
-  // Process-wide seams and environment forbid broad t.Parallel in compose.
-  // Four isolated file workers replace the observed 72-minute serial run.
-  // Other packages measured 26 minutes; leave headroom for CI and setup.
-  // Full concurrent elapsed time remains a post-landing CI measurement (#3775).
-  timeout: "100m"
-})
-
-// The access-control tests (member, admission, authorization, credential and
-// person-only files of compose, services, identity and middleware), on their own
-// budget so a hang elsewhere in backendGo cannot hide them (#3071). The list is
-// file-derived and committed in packages/backend/scripts/backend-access-tests.json; each file runs
-// as its own `go test` process, so a hang panics one file, not the package.
-// backendGo still runs these tests too.
-const backendAccessTestSources = [
-  Smithers.file("//packages/backend/scripts/backend-access-tests.mjs"),
-  Smithers.file("//packages/backend/scripts/backend-access-tests.json"),
-  Smithers.Filegroup({
-    cwd: "packages/backend",
-    srcs: ["compose", "services", "identity", "middleware"].map((directory) =>
-      Smithers.glob(`internal/${directory}/*_test.go`))
-  })
-]
-
-// Fails when a matching test file or Test func is missing from the committed list.
-const backendAccessTests = Smithers.Shell.Diff({
-  shell: "node packages/backend/scripts/backend-access-tests.mjs --check",
-  data: backendAccessTestSources,
-  changes: [],
-  timeout: "2m"
-})
-
-const backendGoAccess = Smithers.Shell.Test({
-  shell: rehearsalNativeEnv + "export PATH=\"$PWD/.backend-sqlc:$PATH\"; export SMITHERS_FFI_LIBRARY_PATH=\"$PWD/.native-ffi/target/debug/libsmithers_ffi.so\"; export SMITHERS_WIKI_TEST_FFI=\"$SMITHERS_FFI_LIBRARY_PATH\"; export GOMODCACHE=\"$PWD/.backend-go-modcache\"; runs=$(mktemp) || exit $?; log=$(mktemp) || exit $?; node packages/backend/scripts/backend-access-tests.mjs --runs >\"$runs\" || exit $?; status=0; while read -r pkg pattern; do go test -count=1 -timeout 30m -run \"$pattern\" \"./$pkg/\" >>\"$log\" 2>&1 || status=1; done <\"$runs\"; cat \"$log\"; if [ $status -ne 0 ]; then printf 'go test failures:\\n' >&2; grep -E -A30 '^[[:space:]]*--- FAIL|^panic:|^FAIL' \"$log\" | head -n 400 >&2; printf 'go test summary:\\n' >&2; grep -E '^(ok|FAIL)[[:space:]]|^[[:space:]]*--- FAIL|^panic: test timed out|^[[:space:]]+running tests:|^[[:space:]]+Test[^[:space:]]+ \([0-9]' \"$log\" >&2; fi; rm -f \"$runs\" \"$log\"; exit $status",
-  env: {
-    GOFLAGS: "-buildvcs=false -mod=readonly",
-    GOMAXPROCS: "2",
-    SMITHERS_REQUIRE_DATABASE_TESTS: "1",
-    GOPROXY: "off",
-    SMITHERS_TEST_DATABASE_URL: "postgres://smithers:smithers-backend-test@127.0.0.1:55435/postgres?sslmode=disable"
-  },
-  data: [
-    backendGoModules,
-    backendSQLC,
-    nativeFfiLib,
-    rehearsalNative,
-    ...backendAccessTestSources,
-    Smithers.file("//go.mod"),
-    Smithers.file("//go.sum"),
-    backendPackage.buildInputs
-  ],
-  services: [backendPostgres],
-  sandbox: { network: "loopback" },
-  // 78 files run one by one; a single 30m per-file hang still leaves room.
-  timeout: "75m"
-})
-
-// The product API spec is bundled from one source per tag, so changes under
-// different tags never edit the same file. `run` re-bundles; `lint` fails when
-// the committed docs/api/openapi.yaml is stale.
-const openapiBundle = Smithers.Generate({
-  summary: "Bundle docs/api/openapi.yaml from its per-tag sources and drift-check it.",
-  script: Smithers.file("//packages/backend/scripts/openapi-bundle.mjs"),
-  data: [Smithers.glob("//docs/api/openapi/*.yaml")],
-  changes: ["docs/api/openapi.yaml"]
-})
-
-// The Go and TypeScript product API clients are generated from the bundle.
-// `run` regenerates both; `lint` fails when either is stale.
-const openapiClients = Smithers.Generate({
-  summary: "Generate the Go and TypeScript product API clients from docs/api/openapi.yaml and drift-check them.",
-  script: Smithers.file("//packages/backend/scripts/openapi-clients.mjs"),
-  data: [Smithers.file("//docs/api/openapi.yaml")],
-  changes: ["packages/backend/apiclient/client.gen.go", "packages/smithers/src/internal/backend/ProductApi.ts"]
 })
 
 const nativeFilesystem = [{
@@ -538,9 +358,6 @@ const driftJob = {
     { name: "Target index drift", verb: Smithers.Verb.Lint, pattern: "//:targetIndex" },
     // factory.json drift used to surface only in the Release gates (#3770).
     { name: "Factory projection drift", verb: Smithers.Verb.Lint, pattern: "//:factoryProjection" },
-    { name: "Backend access test list drift", verb: Smithers.Verb.Lint, pattern: "//:backendAccessTests" },
-    { name: "OpenAPI bundle drift", verb: Smithers.Verb.Lint, pattern: "//:openapiBundle" },
-    { name: "OpenAPI client drift", verb: Smithers.Verb.Lint, pattern: "//:openapiClients" },
     { name: "Documentation drift", verb: Smithers.Verb.Lint, pattern: "//:docsDrift" },
     { name: "Declaration baseline", verb: Smithers.Verb.Build, pattern: "//.smithers/flows:apiBaseline" },
     { name: "Conflict markers", verb: Smithers.Verb.Lint, pattern: "//packages/repo-targets:conflictMarkers" },
@@ -593,8 +410,6 @@ const ci = Smithers.GithubCiGen({
   mode: "check",
   gates: [
     { name: "documentation parity", verb: Smithers.Verb.Docs, pattern: "//packages/...", job: "test" },
-    { name: "shared Go backend", verb: Smithers.Verb.Test, pattern: "//:backendGo", job: "go-backend" },
-    { name: "backend access-control tests", verb: Smithers.Verb.Test, pattern: "//:backendGoAccess", job: "go-backend-access" },
     { name: "native FFI compiler and tests", verb: Smithers.Verb.Build, pattern: "//:nativeFfi", job: "rust-ffi" },
     { name: "web bundle compatibility", verb: Smithers.Verb.Test, pattern: "//packages/repo-targets:webBundleContract" }
   ],
@@ -604,15 +419,10 @@ const ci = Smithers.GithubCiGen({
     "scripts",
     "docs",
     "apps-e2e",
-    "apps-browser-1",
-    "apps-browser-2",
-    "apps-browser-3",
     "rust",
     "wasm-repro",
     "browser",
     "packages",
-    "go-backend",
-    "go-backend-access",
     "rust-ffi"
   ],
   jobs: [
@@ -640,14 +450,11 @@ const ci = Smithers.GithubCiGen({
             ".github/workflows/release.yml",
             ".github/workflows/release-auth.yml",
             ".github/workflows/npm-dist-tag.yml",
-            ".github/workflows/apps-deploy.yml",
             ".github/workflows/distribution.yml",
-            ".github/workflows/canary.yml",
             ".github/workflows/reliability.yml",
             ".github/workflows/native-windows.yml",
             ".github/workflows/mirror-sync.yml",
             ".github/workflows/drift.yml",
-            ".github/workflows/reference-host.yml",
             ".github/workflows/trusted-drift.yml",
             ".github/workflows/trusted-setup-validation.yml"
           ]
@@ -733,7 +540,6 @@ const ci = Smithers.GithubCiGen({
         { name: "SWE-bench rig lint", verb: Smithers.Verb.Lint, pattern: "//packages/smithers/agent/harness/benchmarks/swebench/..." },
         // Apps and repository flows have separate source roots from packages.
         // Keep the review flow and its seeded-bug eval in the required gates.
-        { name: "Server typecheck and tests", verb: Smithers.Verb.Ci, pattern: "//apps/server/..." },
         { name: "Review flow", verb: Smithers.Verb.Ci, pattern: "//.smithers/flows/review/..." },
         { name: "Bug worker", verb: Smithers.Verb.Ci, pattern: "//apps/bug-worker/..." },
         { name: "Project copy drift", verb: Smithers.Verb.Lint, pattern: "//:projectCopy" },
@@ -749,19 +555,6 @@ const ci = Smithers.GithubCiGen({
           name: "Review eval typecheck",
           verb: Smithers.Verb.Build,
           pattern: "//.smithers/flows/review/seeded-bugs:check"
-        },
-        // The command-recommender scorer: hit@5, top-1, and coverage over the
-        // server's recommendation log. Offline: it scores a checked-in
-        // fixture and gates on its baseline; the live pull is operator-run.
-        {
-          name: "Recommend eval suite (offline, baseline-gated)",
-          verb: Smithers.Verb.Test,
-          pattern: "//packages/backend/modelhost/recommend-eval/..."
-        },
-        {
-          name: "Recommend eval typecheck",
-          verb: Smithers.Verb.Build,
-          pattern: "//packages/backend/modelhost/recommend-eval:check"
         },
         // The fault matrix no longer typechecks here. It used to need its own
         // step because it was its own workspace member with its own tsconfig;
@@ -818,14 +611,12 @@ const ci = Smithers.GithubCiGen({
         { name: "Release version suite", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:releaseVersion" },
         { name: "Command check runner", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:checkRunner" },
         // The benchmark, mutation and campaign gates live with their flows in
-        // .smithers/flows/bench and .smithers/flows/perf; the evidence collected above is theirs.
+        // .smithers/flows/bench; the evidence collected above is theirs.
         { name: "Benchmark cost gate", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:benchmarkGate" },
         { name: "Mutation gate", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:mutationGate" },
         { name: "Campaign verifiers", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:campaignVerifiers" },
         { name: "Signal campaign verifier", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:signalCampaign" },
-        { name: "Performance and fault drivers", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:perfUnit" },
-        // The landing helper (`pnpm commit`) and its flows, lane gates and
-        // migration renumbering, with the pinned sqlc the backendSQLC dep builds.
+        // The landing helper (`pnpm commit`) and its flows and lane gates.
         { name: "Landing helper", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:land" },
         { name: "Landing helper end to end", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:landCommit" },
         { name: "GitHub triage publisher", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:triagePublish" },
@@ -852,9 +643,8 @@ const ci = Smithers.GithubCiGen({
     },
     {
       id: "apps-e2e",
-      name: "apps e2e (Playwright T1)",
+      name: "apps e2e (TUI)",
       runsOn: ubuntu,
-      // UI units and conformance plus the TUI; browsers run in their own jobs.
       timeoutMinutes: 70,
       toolchain: Smithers.CiToolchain.Needs({
         cargoBinaries: nativeFilesystem,
@@ -866,20 +656,13 @@ const ci = Smithers.GithubCiGen({
           artifact: "apps-e2e-artifacts",
           sources: [
             { from: "/tmp/smithers-*.png" },
-            { from: "apps/reports", as: "reports" },
-            { from: "apps/app/test-results", as: "playwright-test-results" },
-            { from: "apps/app/playwright-report", as: "playwright-report" }
+            { from: "apps/reports", as: "reports" }
           ]
         })
       }),
-      // Fail the UI's Linux checks promptly, without waiting behind the
-      // workspace graph. Each tier remains a required, separate command.
+      // Fail the TUI's Linux checks promptly, without waiting behind the
+      // workspace graph.
       steps: [
-        { name: "UI typecheck", verb: Smithers.Verb.Build, pattern: "//apps/app:check" },
-        { name: "UI unit tests", verb: Smithers.Verb.Test, pattern: "//apps/app:unitTests" },
-        // The literal pin left the unit gate when `src/` became app source
-        // only; it is its own lint target over `apps/app/lint/conformance`.
-        { name: "UI conformance lint", verb: Smithers.Verb.Test, pattern: "//apps/app:conformance" },
         // The terminal UI's typecheck, lint, format check and Bun suite. Its
         // shell-change capture runs the native helper this job installs.
         { name: "TUI typecheck, lint and tests", verb: Smithers.Verb.Ci, pattern: "//apps/tui/..." },
@@ -887,84 +670,6 @@ const ci = Smithers.GithubCiGen({
         // them and each runs here by label.
         { name: "TUI end-to-end suite", verb: Smithers.Verb.Test, pattern: "//apps/tui:e2eTests" }
       ]
-    },
-    {
-      id: "apps-browser-1",
-      name: "UI browser end-to-end shard 1",
-      runsOn: ubuntu,
-      timeoutMinutes: 45,
-      toolchain: Smithers.CiToolchain.Needs({
-        cargoBinaries: nativeFilesystem,
-        runtimes: [node, bun],
-        jj,
-        ripgrep,
-        apt: bubblewrap,
-        artifacts: Smithers.CiToolchain.Artifacts({
-          artifact: "apps-browser-1-artifacts",
-          sources: [
-            { from: "/tmp/smithers-*.png" },
-            { from: "apps/reports", as: "reports" },
-            { from: "apps/app/test-results", as: "playwright-test-results" },
-            { from: "apps/app/playwright-report", as: "playwright-report" },
-            // What a red step kept before the next cleared test-results/, and
-            // this run's stages.json (apps/app/scripts/run-pr-e2e.mjs says why).
-            { from: "apps/app/stage-evidence", as: "stage-evidence" }
-          ]
-        })
-      }),
-      steps: [{ name: "UI browser end-to-end shard 1", verb: Smithers.Verb.Test, pattern: "//apps/app:browserE2eShard1" }]
-    },
-    {
-      id: "apps-browser-2",
-      name: "UI browser end-to-end shard 2",
-      runsOn: ubuntu,
-      timeoutMinutes: 45,
-      toolchain: Smithers.CiToolchain.Needs({
-        cargoBinaries: nativeFilesystem,
-        runtimes: [node, bun],
-        jj,
-        ripgrep,
-        apt: bubblewrap,
-        artifacts: Smithers.CiToolchain.Artifacts({
-          artifact: "apps-browser-2-artifacts",
-          sources: [
-            { from: "/tmp/smithers-*.png" },
-            { from: "apps/reports", as: "reports" },
-            { from: "apps/app/test-results", as: "playwright-test-results" },
-            { from: "apps/app/playwright-report", as: "playwright-report" },
-            // What a red step kept before the next cleared test-results/, and
-            // this run's stages.json (apps/app/scripts/run-pr-e2e.mjs says why).
-            { from: "apps/app/stage-evidence", as: "stage-evidence" }
-          ]
-        })
-      }),
-      steps: [{ name: "UI browser end-to-end shard 2", verb: Smithers.Verb.Test, pattern: "//apps/app:browserE2eShard2" }]
-    },
-    {
-      id: "apps-browser-3",
-      name: "UI browser end-to-end shard 3",
-      runsOn: ubuntu,
-      timeoutMinutes: 45,
-      toolchain: Smithers.CiToolchain.Needs({
-        cargoBinaries: nativeFilesystem,
-        runtimes: [node, bun],
-        jj,
-        ripgrep,
-        apt: bubblewrap,
-        artifacts: Smithers.CiToolchain.Artifacts({
-          artifact: "apps-browser-3-artifacts",
-          sources: [
-            { from: "/tmp/smithers-*.png" },
-            { from: "apps/reports", as: "reports" },
-            { from: "apps/app/test-results", as: "playwright-test-results" },
-            { from: "apps/app/playwright-report", as: "playwright-report" },
-            // What a red step kept before the next cleared test-results/, and
-            // this run's stages.json (apps/app/scripts/run-pr-e2e.mjs says why).
-            { from: "apps/app/stage-evidence", as: "stage-evidence" }
-          ]
-        })
-      }),
-      steps: [{ name: "UI browser end-to-end shard 3", verb: Smithers.Verb.Test, pattern: "//apps/app:browserE2eShard3" }]
     },
     {
       id: "rust",
@@ -978,8 +683,7 @@ const ci = Smithers.GithubCiGen({
       steps: [
         { name: "Cargo lint gates", verb: Smithers.Verb.Lint, pattern: "//packages/smithers/flows/jj-wasm/..." },
         { name: "Third-party notices", verb: Smithers.Verb.Test, pattern: "//packages/smithers/flows/jj:thirdPartyNotices" },
-        { name: "Cargo test suite", verb: Smithers.Verb.Test, pattern: "//packages/smithers/flows/jj-wasm:cargoTest" },
-        { name: "Daemon document component tests", verb: Smithers.Verb.Test, pattern: "//packages/smithers-machined:documentComponents" }
+        { name: "Cargo test suite", verb: Smithers.Verb.Test, pattern: "//packages/smithers/flows/jj-wasm:cargoTest" }
       ]
     },
     {
@@ -1077,43 +781,6 @@ const ci = Smithers.GithubCiGen({
       // Match the workspace gate's bound: each suite also runs Vitest workers,
       // so host-sized package concurrency multiplies process and memory load.
       steps: [{ name: "Package test targets", verb: Smithers.Verb.Test, pattern: "//packages/...", parallelism: 2 }]
-    },
-    {
-      id: "go-backend",
-      name: "shared Go backend (PostgreSQL)",
-      runsOn: ubuntu,
-      timeoutMinutes: 190,
-      toolchain: Smithers.CiToolchain.Needs({
-        // A box's coding host binds its checkout through smithers-jj-export (#2194).
-        cargoBinaries: nativeFilesystem,
-        runtimes: [node, bun],
-        jj,
-        ripgrep,
-        uv: { release: "0.8.22" },
-        apt: bubblewrap,
-        go,
-        postgres,
-        docker: dockerImageStore
-      }),
-      steps: [{ name: "Build and test shared backend", verb: Smithers.Verb.Test, pattern: "//:backendGo" }]
-    },
-    {
-      id: "go-backend-access",
-      name: "backend access-control tests (PostgreSQL)",
-      runsOn: ubuntu,
-      timeoutMinutes: 90,
-      toolchain: Smithers.CiToolchain.Needs({
-        // A box's coding host binds its checkout through smithers-jj-export (#2194).
-        cargoBinaries: nativeFilesystem,
-        runtimes: [node, bun],
-        jj,
-        ripgrep,
-        apt: bubblewrap,
-        go,
-        postgres,
-        docker: dockerImageStore
-      }),
-      steps: [{ name: "Backend access-control tests", verb: Smithers.Verb.Test, pattern: "//:backendGoAccess" }]
     }
   ]
 })
@@ -1416,15 +1083,8 @@ export const Package = Smithers.Package({
   targets: {
     docsDrift,
     ...securityReview,
-    backendGoModules,
-    backendSQLC,
-    backendGo,
-    machinedWire,
-    backendAccessTests,
-    backendGoAccess,
     nativeFfiLib,
     nativeFfi,
-    rehearsalNative,
     commit,
     changelog,
     ci,
@@ -1439,8 +1099,6 @@ export const Package = Smithers.Package({
     reviewJsdocAgainstCode,
     lockfile,
     nodeModules,
-    openapiBundle,
-    openapiClients,
     projectCopy,
     repoAbout,
     targetIndex,

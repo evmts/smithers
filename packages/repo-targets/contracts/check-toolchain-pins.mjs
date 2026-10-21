@@ -159,9 +159,10 @@ export const rustFindings = ({ toolchain, files }) => {
 /**
  * The disagreements between the index's one `Environment.Toolchain` row and
  * the files that pin the same releases: `.node-version`, WORKSPACE.ts (pnpm,
- * bun, jj), go.mod's `go` directive and rust-toolchain.toml.
+ * bun, jj), the Go release CI installs (`go-version` in ci.yml) and
+ * rust-toolchain.toml.
  */
-export const environmentFindings = ({ index, workspace, nodeVersion, goMod, toolchain }) => {
+export const environmentFindings = ({ index, workspace, nodeVersion, ci, toolchain }) => {
   const rows = JSON.parse(index).filter((row) => row.rule === "Environment.Toolchain")
   if (rows.length !== 1) return [`.smithers/target-index.json has ${rows.length} Environment.Toolchain rows; expected one`]
   const { label, toolchain: pins } = rows[0]
@@ -174,7 +175,7 @@ export const environmentFindings = ({ index, workspace, nodeVersion, goMod, tool
   expect("pnpm", workspace.packageManager.version, "WORKSPACE.ts")
   expect("bun", workspace.bunVersion, "WORKSPACE.ts")
   expect("jj", workspace.jjVersion, "WORKSPACE.ts")
-  expect("go", /^go (\S+)\s*$/m.exec(goMod)?.[1], "go.mod")
+  expect("go", /"go-version": "([^"]*)"/.exec(ci)?.[1], ".github/workflows/ci.yml")
   const channel = /^channel = "([^"]*)"/m.exec(toolchain)?.[1]
   if (pins?.rust?.channel !== channel) out.push(`${label} pins Rust ${pins?.rust?.channel}; rust-toolchain.toml pins ${channel}`)
   for (const key of ["components", "targets"]) {
@@ -207,7 +208,7 @@ export const check = async (root = repoRoot) => {
     index: readFileSync(resolve(root, ".smithers/target-index.json"), "utf8"),
     workspace,
     nodeVersion: readFileSync(resolve(root, nodeVersionFile), "utf8"),
-    goMod: readFileSync(resolve(root, "go.mod"), "utf8"),
+    ci: readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8"),
     toolchain: readFileSync(resolve(root, "rust-toolchain.toml"), "utf8")
   }))
 }

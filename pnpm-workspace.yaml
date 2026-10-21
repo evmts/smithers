@@ -17,7 +17,6 @@
 # and the identical line to `workspaces` in the root `package.json`.
 packages:
   - "packages/*"
-  - "packages/backend/modelhost/recommend-eval"
   - "packages/smithers/*"
   - "packages/smithers/agent/*"
   - "packages/smithers/agent/harness/benchmarks/*"
@@ -59,12 +58,6 @@ overrides:
   "@effect/sql-sqlite-node": "4.0.5"
   "@effect/vitest": "4.0.5"
 
-# Cloudflare releases published on 2026-10-19: apps/mvp pins wrangler 4.151.2
-# and @cloudflare/workers-types 5.20261019.1, and wrangler brings in workerd
-# and miniflare. pnpm 11 refuses a version younger than 24 hours, and the
-# 7-day dependency rule refuses one younger than 7 days. Will approved these
-# same-day versions for the MVP on 2026-10-19. Delete each entry once its
-# version is 7 days old (2026-10-26) or apps/mvp stops depending on it.
 minimumReleaseAgeExclude:
   # VibeLang is ours (smithersai/vibelang), so its releases need no waiting
   # period. Will approved exempting every vibelang package on 2026-10-21.
@@ -79,12 +72,3 @@ minimumReleaseAgeExclude:
   - 'vibelang-linux-x64'
   - 'vibelang-win32-arm64'
   - 'vibelang-win32-x64'
-  - '@cloudflare/workerd-darwin-64@1.20261019.1'
-  - '@cloudflare/workerd-darwin-arm64@1.20261019.1'
-  - '@cloudflare/workerd-linux-64@1.20261019.1'
-  - '@cloudflare/workerd-linux-arm64@1.20261019.1'
-  - '@cloudflare/workerd-windows-64@1.20261019.1'
-  - '@cloudflare/workers-types@5.20261019.1'
-  - miniflare@5.20261019.0-beta
-  - workerd@1.20261019.1
-  - wrangler@4.151.2

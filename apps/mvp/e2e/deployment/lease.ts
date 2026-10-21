@@ -21,8 +21,8 @@ const alive = (pid: unknown) => {
 }
 
 /**
- * Takes the test account's persistent browser profile for this process, as the old app's real-e2e harness did
- * (apps/app/e2e/real/auth-permissions/profile.ts), on the same lock file, so the two never share it. link(2) publishes
+ * Takes the test account's persistent browser profile for this process, on the lock file the old app's real-e2e
+ * harness also used, so two runners never share it. link(2) publishes
  * the lock atomically. A lock left by a dead process is not taken over: it fails closed and names the file.
  */
 export const leaseProfile = async (profile: string) => {

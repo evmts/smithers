@@ -67,7 +67,7 @@ const isE2ePath = (path: string): boolean => path.split("/").includes("e2e")
 
 /**
  * Whether `file` is one of `target`'s e2e inputs: it matches a declared input
- * whose path or pattern runs through an `e2e` directory (`apps/app/e2e/**`).
+ * whose path or pattern runs through an `e2e` directory (`apps/tui/e2e/**`).
  */
 const touchesE2eInput = (target: IndexedTarget, file: string): boolean =>
   (target.inputs ?? []).some((input) => {
@@ -81,8 +81,8 @@ const touchesE2eInput = (target: IndexedTarget, file: string): boolean =>
 /**
  * The test targets of the packages `files` touch, in label order.
  *
- * An exclusive target (a browser or end-to-end tier, about 22 minutes for
- * `//apps/app:browserE2e`) runs only when a changed file is one of its e2e
+ * An exclusive target (a browser or end-to-end tier, such as
+ * `//apps/tui:e2eTests`) runs only when a changed file is one of its e2e
  * inputs; CI runs every exclusive tier by label on `main`. Ordinary test
  * targets of a touched package always run.
  */

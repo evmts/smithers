@@ -101,9 +101,9 @@ const refresh = async (root: string, pages: ReadonlyArray<PageSpec>) => {
         }
       }))
   })
-  // Jev as the stand-in answers it (apps/app/e2e/real/support/model-provider.ts):
-  // the coding run's questions, the completion brake's among them, and the
-  // citation check come from the same script; the agent's own readings keep
+  // Jev as the stand-in answers it: the coding run's questions, the
+  // completion brake's among them, and the citation check come from the same
+  // script; the agent's own readings keep
   // the shared scripted answers.
   const judge = Evaluator.layerScripted((request) => {
     const ids = Object.keys(request.questions)

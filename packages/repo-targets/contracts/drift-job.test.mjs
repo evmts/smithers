@@ -19,10 +19,6 @@ const gateCommands = [
   "pnpm exec smthrs lint '//:targetIndex' --known-red '.github/ci-known-red.json' --verbose",
   // factory.json drift once surfaced only in the Release gates (#3770).
   "pnpm exec smthrs lint '//:factoryProjection' --known-red '.github/ci-known-red.json' --verbose",
-  // The access test list (7f2d5a8eee) cannot drift from the files it names.
-  "pnpm exec smthrs lint '//:backendAccessTests' --known-red '.github/ci-known-red.json' --verbose",
-  "pnpm exec smthrs lint '//:openapiBundle' --known-red '.github/ci-known-red.json' --verbose",
-  "pnpm exec smthrs lint '//:openapiClients' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//:docsDrift' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs build '//.smithers/flows:apiBaseline' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//packages/repo-targets:conflictMarkers' --known-red '.github/ci-known-red.json' --verbose",
@@ -86,19 +82,6 @@ test('drift job concurrency group includes github.sha and runs only drift gates'
   assert.equal(gateSteps[0].run.includes('//...:fmt'), true)
 })
 
-test('CI declares the retained document components using the moved native ABI adapter', async () => {
-  const { default: YAML } = await import('yaml')
-  const workflow = YAML.parse(await readFile(ciPath, 'utf8'))
-  const step = workflow.jobs.rust.steps.find((step) => step.name === 'Daemon document component tests')
-  assert.ok(step)
-  assert.match(step.run, /smthrs test '\/\/packages\/smithers-machined:documentComponents'/)
-  const source = await readFile(new URL('../../../packages/smithers-machined/PACKAGE.ts', import.meta.url), 'utf8')
-  assert.ok(source.includes('cargo test --locked -p smithers-machined --test documents'))
-  assert.ok(source.includes('cargo build --locked -p smithers-ffi --example live_document_interop'))
-  assert.ok(source.includes('node packages/smithers-ffi/tests/yjs-interop.ts'))
-  assert.ok(!step.run.includes('examples/document_interop'))
-})
-
 test('API baseline and docs drift targets are check-only and independent of release packing', async () => {
   const source = await readFile(flowsPackagePath, 'utf8')
   const api = source.match(/const apiBaseline\s*=\s*Smithers\.NodeBinary\(\{([\s\S]*?)\n\}\)/)?.[1]
@@ -115,7 +98,6 @@ test('API baseline and docs drift targets are check-only and independent of rele
   assert.match(docs, /changes:\s*\[\]/)
   assert.match(docs, /pnpm run docs:check/)
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-  assert.match(manifest.scripts['docs:check'], /modelprice\/cmd\/generate -check/)
   assert.match(manifest.scripts['docs:check'], /smthrs flow start docs-sync --data '\{"mode":"check"\}' --wait/)
   const packageCheck = await readFile(new URL('../../../.smithers/flows/docs-sync/package-docs.test.mjs', import.meta.url), 'utf8')
   assert.match(packageCheck, /"pack", "--dry-run"/)

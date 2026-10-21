@@ -1,8 +1,8 @@
 /**
  * The app agent's standing rules, shared by every door that writes its system prompt: its name, the honesty rules
  * every tool result is read by, the can't-yets it must never round up into an offer, and the line each offered
- * command is listed as. The GUI's prompt (apps/app state/Instructions.ts) and the model host's install turns
- * (model-host HostTools.ts) each add only what their own door runs.
+ * command is listed as. Each door's prompt, such as the model host's install turns (model-host HostTools.ts), adds
+ * only what that door runs.
  * @since 1.0.0
  */
 

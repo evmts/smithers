@@ -140,14 +140,10 @@ test("release workflow builds all four native archives before tag-bound signing 
   assert.equal(publish.permissions["id-token"], "write")
   const steps = publish.steps.map((step) => step.name ?? "")
   assert.ok(steps.indexOf("Require the exact tag-bound signing identity") < steps.indexOf("Sign and self-verify the complete archive set"))
-  // The signed archives leave this job as run evidence. The frontrun
-  // integration (263c41d3d8) replaced the bucket upload step with the Homebrew
-  // job, which downloads them under this artifact name.
+  // The signed archives leave this job as run evidence under this artifact name.
   assert.ok(steps.indexOf("Sign and self-verify the complete archive set") < steps.indexOf("Retain signed installer evidence"))
   const signed = "signed-installer-${{ github.run_id }}"
   assert.equal(publish.steps.find((step) => step.name === "Retain signed installer evidence").with.name, signed)
-  assert.deepEqual(release.jobs["homebrew-bottle"].needs, ["installer-publish", "server-bundle"])
-  assert.ok(release.jobs["homebrew-bottle"].steps.some((step) => step.with?.name === signed))
   assert.equal(steps.includes("Publish verified archives and update latest last"), false)
   assert.match(publish.steps.find((step) => step.name === "Require the exact tag-bound signing identity").run, /GITHUB_WORKFLOW_REF.*refs\/tags/)
   assert.equal(publish.steps.find((step) => step.name === "Install trusted Cosign v3").with["cosign-release"], "v3.0.2")

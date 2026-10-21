@@ -4,8 +4,6 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
-import { APPLICATION_SIGN_IN_PATH } from "../../../packages/rpc/src/ApplicationAuth.ts"
-
 const siteRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const origin = "https://smithers.sh"
 const decode = (value) => value.replaceAll("&amp;", "&").replaceAll("&#39;", "'").replaceAll("&quot;", "\"")
@@ -75,17 +73,11 @@ function readHeaders(root) {
 }
 
 /**
- * The headers every /_astro chunk must carry. The app page is served with COEP
- * require-corp (apps/server/src/index.ts, ISOLATION_HEADERS), and the OPFS
- * SQLite persistence starts a dedicated module worker from a chunk under
- * /_astro: a worker script whose response lacks an embedder policy at least as
- * strict as its owner document's is refused (net::ERR_BLOCKED_BY_RESPONSE),
- * and the app silently falls back to localStorage. COOP belongs on the
- * document only, so a chunk must not carry it.
+ * The headers every /_astro chunk must carry: each file name carries a
+ * content hash, so a browser may keep it for a year.
  */
 export const ASSET_HEADERS = Object.freeze({
-  "cross-origin-embedder-policy": "require-corp",
-  "cross-origin-resource-policy": "same-origin"
+  "cache-control": "public, max-age=31536000, immutable"
 })
 
 export function checkAssetHeaders(root) {
@@ -97,25 +89,20 @@ export function checkAssetHeaders(root) {
     const got = astro.get(name)
     if (got !== value) failures.push(`_headers: /_astro/* must set ${name}: ${value} (got ${got ?? "nothing"})`)
   }
-  if (astro.has("cross-origin-opener-policy")) {
-    failures.push("_headers: /_astro/* must not set cross-origin-opener-policy; the app Worker sets it on the document")
-  }
   return failures
 }
 
-/** The static landing carries exactly one action and its Start app, Docs and Source buttons. */
+/** The static landing carries the install command and its Docs and Source buttons. */
 export function checkLandingActions(root) {
   const landing = join(root, "index.html")
   if (!existsSync(landing)) return ["index.html: missing from the build"]
   const html = readFileSync(landing, "utf8")
-  const install = /<button\b[^>]*id="copy-install"/.test(html)
-  const open = /<form\b[^>]*class="repository-launcher-open"/.test(html)
-  if (install === open) return ["index.html: render exactly one install or open action"]
+  if (!/<button\b[^>]*id="copy-install"/.test(html)) return ["index.html: missing the install command's Copy button"]
   const failures = []
-  for (const href of ["/?tutorial", "/docs/installation/", "https://github.com/smithersai/smithers"]) {
+  for (const href of ["/docs/installation/", "https://github.com/smithersai/smithers"]) {
     if (!new RegExp(`<a class="landing-button[^"]*" href="${href.replace(/[?.]/g, "\\$&")}"`).test(html)) failures.push(`index.html: missing the ${href} button`)
   }
-  if (install && !/<span id="run-command">npx smthrs@next [^<]+<\/span>/.test(html)) failures.push("index.html: missing the npx run command")
+  if (!/<span id="run-command">npx smthrs@next [^<]+<\/span>/.test(html)) failures.push("index.html: missing the npx run command")
   return failures
 }
 
@@ -158,16 +145,12 @@ export async function releaseReferences(repoRoot) {
 }
 
 /**
- * `appPaths` are same-site paths the static build cannot contain: the edge
- * (apps/server/src/edge.ts) forwards /api/* to the backend before it looks at
- * this build's files, which is also why public/_redirects carries no /api/
- * rule: an asset-layer redirect under that prefix would never run, and the
- * pre-Starlight /api/<package> docs URLs it used to recover now belong to the
- * catalog and app endpoints. Each catalog repository's app at /<owner>/<name>
- * is a page of this build (src/pages/[owner]/[repo].astro), so they are checked like every other
- * page.
+ * Every same-site reference a built page, a docs Markdown copy, a required
+ * release URL or a literal `_redirects` source names must land on a file of
+ * this build, through at most the redirects `_redirects` declares, with its
+ * fragment present on the page.
  */
-export function checkBuiltSite(root, requiredReferences = [], appPaths = []) {
+export function checkBuiltSite(root, requiredReferences = []) {
   const pages = new Map()
   const failures = new Set()
   const redirects = readRedirects(root)
@@ -216,7 +199,6 @@ export function checkBuiltSite(root, requiredReferences = [], appPaths = []) {
       failures.add(`${source}: required URL leaves the site: ${reference}`)
       return
     }
-    if (appPaths.includes(url.pathname)) return
     const visited = new Set()
     while (true) {
       if (visited.has(url.pathname) || visited.size >= 32) {
@@ -266,57 +248,26 @@ export function checkBuiltSite(root, requiredReferences = [], appPaths = []) {
   return { pageCount: pages.size, requiredReferenceCount: requiredReferences.length, failures: [...failures] }
 }
 
-/**
- * The Worker can only serve repository documents actually emitted by Astro,
- * and every routed repository root is the APP page.
- *
- * A curated catalog row used to prerender a marketing "Coming soon" page
- * here, which the Worker then served INSTEAD of the app for the root and for
- * every subject below it. A maintainer who had just installed the Smithers
- * GitHub App on one of those repositories could not reach the app's import
- * path (mvp.md M-46) because a compiled page won first. Availability stays
- * curated — `/api/public/repos` and the Cloud mirror lookup are unchanged —
- * but it is not a routing fence, so a page with no app island is a failure.
- */
-export function checkRepositoryPages(root, repos) {
-  return repos.flatMap((repo) => {
-    const file = `${repo.name.toLowerCase()}/index.html`
-    if (!existsSync(join(root, file))) return [`${file}: missing from the build`]
-    const html = readFileSync(join(root, file), "utf8")
-    return /<astro-island[\s>]/i.test(html) ? [] : [`${file}: expected the app page, got a page with no app island`]
-  })
-}
-
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const root = join(siteRoot, "dist")
   // Keep links indexed by the former Mintlify site working after the cutover.
   // The captured sitemap is independent of _redirects, so deleting an alias
   // cannot silently remove the URL from this check as well.
   const legacy = JSON.parse(readFileSync(join(siteRoot, "src/data/mintlify-paths.json"), "utf8"))
-  // The landing page reads the catalog at the same origin; the app Worker
-  // (apps/server) answers it, not this build. Each catalog repository's app
-  // page is this build's, so its link is checked like any other.
-  const { AVAILABLE_REPOS, COMING_SOON_REPOS, PUBLIC_REPOS_PATH } = await import(
-    pathToFileURL(resolve(siteRoot, "../server/src/publicRepoCatalog.ts"))
-  )
   const result = checkBuiltSite(
     root,
     [
       ...await releaseReferences(resolve(siteRoot, "../..")),
       ...legacy.paths.flatMap((path) => path === "/" ? [path] : [path, path + "/"])
-    ],
-    [PUBLIC_REPOS_PATH, APPLICATION_SIGN_IN_PATH]
+    ]
   )
-  // The files the app Worker's assets need beyond the pages: one prerendered
-  // app page per routed repository, the 404 page the asset
-  // host serves for an unknown path, and the build stamp apps/server's canary
-  // build probe reads.
-  result.failures.push(...checkRepositoryPages(root, [...AVAILABLE_REPOS, ...COMING_SOON_REPOS]))
-  for (const file of ["404.html", "__build.json", "favicon.png", "apple-touch-icon.png", "robots.txt"]) {
+  // The files a static host needs beyond the pages: the 404 page it serves for
+  // an unknown path, the icons and robots.txt.
+  for (const file of ["404.html", "favicon.png", "apple-touch-icon.png", "robots.txt"]) {
     if (!existsSync(join(root, file))) result.failures.push(`${file}: missing from the build`)
   }
   result.failures.push(...checkAssetHeaders(root))
-  result.failures.push(...checkLandingActions(root, `/${AVAILABLE_REPOS[0].name}/`))
+  result.failures.push(...checkLandingActions(root))
   for (const name of ["llms.txt", "llms-full.txt"]) {
     if (
       !existsSync(join(root, name)) ||

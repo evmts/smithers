@@ -38,9 +38,9 @@ A suffixed version such as `1.0.0-rc.1` is a prerelease. It publishes under the 
 | Lane        | Runs                                                                       | A failure                                   |
 | ----------- | -------------------------------------------------------------------------- | ------------------------------------------- |
 | `candidate` | Version check, build, pack, installed-consumer smoke, archive, publication | Fails the run and stops publication         |
-| `gates`     | Every gate, including the changelog check and the mode matrix              | Shows red on the run; the run does not fail |
+| `gates`     | Every gate, including the changelog check                                  | Shows red on the run; the run does not fail |
 
-A rehearsal of a prerelease is green when the `candidate` lane, the native helpers, the server bundle and the four installer jobs pass. Read the `gates` and `backend` lanes for what is red on that commit; their results are in `release-gate-results-<run-id>-gates` and `release-gate-results-<run-id>-backend`. The backend lane starts with its own 290-minute budget, independently of the other gates. Installer signing and the Homebrew bottle do not run for a suffixed version, so a prerelease has no bottle; the darwin-arm64 server bundle is the run's `server-bundle-darwin-arm64` artifact.
+A rehearsal of a prerelease is green when the `candidate` lane, the native helpers and the installer jobs pass. Read the `gates` lane for what is red on that commit; its results are in `release-gate-results-<run-id>-gates`. Installer signing does not run for a suffixed version.
 
 A prerelease never moves `latest`. To point a dist-tag of one `@smthrs/*` package at a version already on npm, dispatch `.github/workflows/npm-dist-tag.yml`. It uses the `NPM_TOKEN` repository secret, refuses unscoped names and versions that are not on npm, and refuses to move a 0.x `latest` unless `replaceZeroLatest` is true:
 

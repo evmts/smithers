@@ -203,7 +203,7 @@ work, custom views, and Claude Code or Codex workers are in Ctrl+K.
 
 ## Look
 
-Night Owl dark surfaces from the Smithers app (`apps/app/.../tokens.css`),
+Paper dark surfaces from `@smthrs/ui-styleguide`,
 layered page, panel, element. Your messages keep the composer's shape, a
 brand bar on a filled panel. A cell shows one row per flow call (`→ read`,
 `✗ node check.mjs  exit 1`, `✓ node check.mjs  exit 0`, `✓ edited math.js +1 −1`), and an edit draws its diff; a

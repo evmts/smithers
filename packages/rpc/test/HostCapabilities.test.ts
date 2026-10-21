@@ -124,7 +124,7 @@ describe("localCapabilities (the Bun server, host local)", () => {
     expect(localCapabilities({ agent: true, identity: false, cloud: false })).toEqual(["agent", "model.turn"])
   })
 
-  test("no launch claims a local backend door: the local backend retired (apps/app/docs/LOCAL-BACKEND-RETIREMENT.md)", () => {
+  test("no launch claims a local backend door: the local backend retired", () => {
     for (const agent of booleans) {
       for (const identity of booleans) {
         for (const cloud of booleans) {

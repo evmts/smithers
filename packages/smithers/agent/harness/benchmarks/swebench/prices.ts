@@ -66,7 +66,7 @@ export const prices: Record<string, Price> = Object.fromEntries(
     cachedInput: price.cacheRead,
     cacheWrite: price.cacheWrite,
     output: price.output,
-    source: "modelprice Go rate card"
+    source: "@smthrs/model rate card"
   }])
 )
 for (const [id, price] of Object.entries(table)) {
@@ -109,5 +109,5 @@ export const usd = (
   const uncached = Math.max(0, tokens.inputTokens - tokens.cachedInputTokens)
   const metered = (uncached * rates.input + tokens.cachedInputTokens * rates.cacheRead
     + write * rates.cacheWrite + tokens.outputTokens * rates.output) / 1_000_000
-  return { usd: Math.round(metered * 10_000) / 10_000, source: "modelprice Go rate card" }
+  return { usd: Math.round(metered * 10_000) / 10_000, source: "@smthrs/model rate card" }
 }

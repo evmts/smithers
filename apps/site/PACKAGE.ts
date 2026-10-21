@@ -1,14 +1,13 @@
 /**
  * Targets for smithers.sh: the Astro site with the landing page, the /demo
- * request page, the Starlight documentation under /docs, the release
- * changelogs under /changelogs, and the product app prerendered at
- * /<owner>/<repo> for every catalog repository.
+ * request page, the Starlight documentation under /docs and the release
+ * changelogs under /changelogs; and the docs redirect Worker in
+ * docs-redirect/, which answers the retired `<slug>.smithers.sh` docs sites.
  *
  * The media the hero plays (public/media) is recorded, not built:
- * `scripts/record-tape.sh` runs real flows through vhs, and
- * `scripts/record-ui.mjs` drives the product UI under Playwright. Both need a
- * provider and a display, so neither is a target; the build ships whatever
- * recordings the tree carries.
+ * `scripts/record-tape.sh` runs real flows through vhs. It needs a provider
+ * and a display, so it is not a target; the build ships whatever recordings
+ * the tree carries.
  *
  * @since 1.0.0
  */
@@ -65,9 +64,14 @@ import { Package as notificationsPackage } from "../../packages/smithers/notific
 import { Package as cliPackage } from "../../packages/smithers/PACKAGE.ts"
 import { Package as testingPackage } from "../../packages/testing/PACKAGE.ts"
 import { workspacePackages } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
-import { Package as uiPackage } from "../app/PACKAGE.ts"
 
 const cwd = "apps/site"
+
+/** The product docs pages and toc.ts that sync-app-docs.mjs projects onto /docs. */
+const appDocsInputs = [Smithers.glob("docs/app/pages/*.md"), Smithers.file("docs/app/toc.ts")]
+
+/** The docs screenshots app-docs-integration.mjs publishes at /images/docs/. */
+const appDocsImages = Smithers.glob("docs/app/images/*")
 
 const supportDocs = Smithers.Generate({
   summary: "Project the RC support reference and entry pages from colocated docs.",
@@ -81,15 +85,15 @@ const supportDocs = Smithers.Generate({
 })
 
 /**
- * The app's docs (apps/app/src/docs, mvp.md M-35) on smithers.sh/docs: one
- * Starlight page per toc.ts page (`welcome` at /docs/), its Markdown copy at
+ * The product docs (docs/app, mvp.md M-35) on smithers.sh/docs: one Starlight
+ * page per toc.ts page (`welcome` at /docs/), its Markdown copy at
  * /docs/<slug>.md, and the sidebar astro.config.mjs reads. The screenshots are
- * not projected: the build serves them from the app's directory (`build`).
+ * not projected: the build copies them from docs/app/images (`build`).
  */
 const appDocs = Smithers.Generate({
-  summary: "Project the app's docs pages, their Markdown copies, and the docs sidebar from apps/app/src/docs; check drift under lint.",
+  summary: "Project the docs pages, their Markdown copies, and the docs sidebar from apps/site/docs/app; check drift under lint.",
   script: Smithers.file("scripts/sync-app-docs.mjs"),
-  data: [uiPackage.docsInputs, uiPackage.docsImages, Smithers.file("//apps/app/src/docs/toc.ts"), Smithers.file("scripts/docs-text.mjs")],
+  data: [...appDocsInputs, appDocsImages, Smithers.file("scripts/docs-text.mjs")],
   changes: ["src/content/docs/docs/*.md", "public/docs/*.md", "src/data/docs-sidebar.json"]
 })
 
@@ -98,18 +102,10 @@ const sources = [
   Smithers.glob("//apps/site/src/**/*"),
   Smithers.glob("//apps/site/scripts/**/*"),
   Smithers.glob("//apps/site/public/**/*"),
-  Smithers.file("//apps/server/src/publicRepoCatalog.ts"),
   Smithers.file("//apps/site/astro.config.mjs"),
   Smithers.file("//apps/site/package.json"),
   Smithers.file("//apps/site/tsconfig.json")
 ]
-
-/**
- * The app the /<owner>/<repo> page bundles as an island. A filegroup is a
- * dependency edge, not a declared input, and its digest reaches this
- * package's keys the same way, so the site rebuilds when the app changes.
- */
-const appSources = uiPackage.webSources
 
 /** Package metadata used by documentation projections. */
 const docsKit = Smithers.Filegroup({
@@ -122,20 +118,19 @@ const docsKit = Smithers.Filegroup({
   cwd
 })
 
-/** `astro check`: the pages, components and the island's app sources typecheck against the package tsconfig. */
+/** `astro check`: the pages, components and scripts typecheck against the package tsconfig. */
 const check = Smithers.ToolRun({
   command: "pnpm",
   args: ["run", "check"],
   inputs: sources,
-  deps: [appSources, docsKit],
+  deps: [docsKit],
   cwd
 })
 
 /**
  * Build the site and verify its links against the CLI and release changelog.
- * Vite transforms the browser app island under apps/app/tsconfig.json, and
  * scripts/app-docs-integration.mjs copies the docs screenshots from
- * apps/app/src/docs/images (the app's `docsInputs`) into dist/images/docs.
+ * docs/app/images into dist/images/docs.
  */
 const build = Smithers.ToolBuild({
   tool: "astro",
@@ -143,7 +138,7 @@ const build = Smithers.ToolBuild({
   args: ["run", "build"],
   inputs: [...sources, Smithers.file("//CHANGELOG.md")],
   outputs: ["dist"],
-  deps: [cliPackage.docsSources, appSources, docsKit, uiPackage.docsInputs, uiPackage.docsImages],
+  deps: [cliPackage.docsSources, docsKit],
   env: {},
   cache: true,
   cwd
@@ -367,16 +362,6 @@ const checkExitTest = Smithers.Shell.Test({
   ]
 })
 
-/** Fill repository cards from the public catalog: the parse, the count validation, the status fallback, and the landing grid. */
-const repoStatsTest = Smithers.Shell.Test({
-  shell: "node --test --test-concurrency=1 apps/site/scripts/repo-stats.test.mjs",
-  data: [
-    Smithers.file("scripts/repo-stats.test.mjs"),
-    Smithers.file("src/components/repoStats.ts"),
-    Smithers.file("src/components/AvailableRepos.astro")
-  ]
-})
-
 /**
  * The generated project copy matches its source and retires superseded pages.
  */
@@ -404,8 +389,7 @@ const installPageTest = Smithers.Shell.Test({
     Smithers.file("scripts/gen-cli-reference.mjs"),
     Smithers.file("scripts/docs-text.mjs"),
     Smithers.file("src/data/docs-sidebar.json"),
-    Smithers.file("//apps/app/src/docs/toc.ts"),
-    uiPackage.docsInputs,
+    ...appDocsInputs,
     Smithers.file("src/layouts/Base.astro"),
     Smithers.glob("src/pages/**/*.astro"),
     Smithers.glob("docs/**/*"),
@@ -426,7 +410,7 @@ const appDocsTest = Smithers.Shell.Test({
     Smithers.file("scripts/sync-app-docs.test.mjs"),
     Smithers.file("scripts/sync-app-docs.mjs"),
     Smithers.file("scripts/docs-text.mjs"),
-    Smithers.file("//apps/app/src/docs/toc.ts")
+    Smithers.file("docs/app/toc.ts")
   ]
 })
 
@@ -457,32 +441,6 @@ const catalogPublicationTest = Smithers.Shell.Test({
     // The roster is checked against what every member manifest declares, so a
     // manifest flipping `private` has to re-run this.
     ...workspacePackages().map(({ dir }) => Smithers.file(`//${dir}/package.json`))
-  ]
-})
-
-/** The home page imports the app's chunk and stylesheets only from its own origin; both layouts publish the hosted application target. */
-const sameOriginUrlTest = Smithers.Shell.Test({
-  shell: "node --test apps/site/scripts/same-origin-url.test.mjs apps/site/scripts/application-target.test.mjs",
-  data: [
-    Smithers.file("scripts/same-origin-url.test.mjs"),
-    Smithers.file("scripts/application-target.test.mjs"),
-    Smithers.file("src/lib/sameOriginUrl.ts"),
-    Smithers.file("src/lib/applicationTarget.ts"),
-    Smithers.file("src/layouts/Base.astro"),
-    Smithers.file("src/layouts/AppShell.astro"),
-    Smithers.file("src/pages/index.astro")
-  ]
-})
-
-/** Keep the imported native bridge in the site's TypeScript program and CI checks. */
-const siteTypecheckTest = Smithers.Shell.Test({
-  shell: "node --test apps/site/scripts/site-typecheck.test.mjs",
-  data: [
-    Smithers.file("scripts/site-typecheck.test.mjs"),
-    Smithers.file("tsconfig.json"),
-    Smithers.file("src/env.d.ts"),
-    ...sources,
-    appSources
   ]
 })
 
@@ -538,9 +496,9 @@ const docsRuntimeTests = Smithers.Shell.Test({
   data: [
     Smithers.file("scripts/deployment.test.mjs"),
     Smithers.file("package.json"),
-    Smithers.file("//apps/server/wrangler.jsonc"),
+    Smithers.file("docs-redirect/wrangler.jsonc"),
+    Smithers.file("//apps/patterns-site/wrangler.jsonc"),
     Smithers.file("//apps/bug-worker/alchemy.run.ts"),
-    Smithers.file("//apps/server/scripts/canary/workers-manifest.ts"),
     Smithers.file("//apps/bug-worker/README.md"),
     Smithers.file("//apps/bug-worker/package.json"),
     cliPackage.docsSources,
@@ -564,29 +522,76 @@ const docsLint = Smithers.Shell.Test({
     Smithers.file("//apps/site/scripts/sync-app-docs.mjs"),
     Smithers.file("//apps/site/scripts/docs-text.mjs"),
     Smithers.file("//.smithers/flows/release/pack-release.mjs"),
-    // The screenshots a page shows are checked against the app's directory.
-    uiPackage.docsInputs,
-    uiPackage.docsImages
+    // The screenshots a page shows are checked against docs/app/images.
+    ...appDocsInputs,
+    appDocsImages
   ]
 })
 
 /**
- * Security review for the public site: the /demo intake form, the GitHub
- * sign-in and app-install links, the catalog stats fetch, the app island's
- * page shell, the Cloudflare _headers/_redirects, the recording scripts that
- * run the CLI with provider credentials, and the install and tutorial pages
- * visitors copy into a shell. Nested apps (apps/app, apps/server) review
- * their own sources.
+ * The docs redirect Worker's sources and what its tests read: the slug roster
+ * from the docs-sync generator, which loads the workspace package list on
+ * import, and its wrangler config. The map's freshness against the docs is
+ * //.smithers/flows:packageDocs (`pnpm docs:check`).
+ */
+const docsRedirectSources = [
+  Smithers.glob("docs-redirect/src/**/*.ts"),
+  Smithers.file("docs-redirect/scripts/workerd.mjs"),
+  Smithers.file("docs-redirect/wrangler.jsonc"),
+  Smithers.file("//.smithers/flows/docs-sync/package-docs.mjs"),
+  Smithers.file("//.smithers/flows/docs-sync/package-docs.d.mts"),
+  Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
+  Smithers.file("//pnpm-workspace.yaml")
+]
+
+/**
+ * Checks the docs redirect Worker against its own tsconfig.
+ *
+ * @since 1.0.0
+ * @category build
+ */
+const docsRedirectCheck = Smithers.Typecheck({
+  srcs: docsRedirectSources,
+  deps: [],
+  tsconfig: Smithers.file("docs-redirect/tsconfig.json"),
+  buildMode: false,
+  incremental: false,
+  cwd
+})
+
+/**
+ * The docs redirect Worker's suite under Bun: the decision, pass-through and
+ * DNS cases, the config, and the bundle run in workerd.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+// Coverage policy: assertion-only for the Bun Worker suite. Bun's loaded-file
+// coverage does not establish the whole production denominator; no percentage
+// guarantee is claimed. See packages/repo-targets/contracts/README.md for the exception.
+const docsRedirectTests = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.testSuite(["docs-redirect/src"]),
+  srcs: docsRedirectSources,
+  deps: [],
+  cwd
+})
+
+/**
+ * Security review for the public site: the /demo intake form, the
+ * Cloudflare _headers/_redirects, the docs redirect Worker, the recording
+ * script that runs the CLI with provider credentials, and the install and
+ * tutorial pages visitors copy into a shell.
  */
 const securityReview = Smithers.SecurityReview({
   cwd,
   include: [
     "src/*.ts",
-    "src/*.tsx",
     "src/components/**",
     "src/layouts/**",
-    "src/lib/**",
     "src/pages/**",
+    "docs-redirect/src/**",
+    "docs-redirect/wrangler.jsonc",
     "scripts/**",
     "tapes/**",
     "public/_headers",
@@ -596,27 +601,6 @@ const securityReview = Smithers.SecurityReview({
     "src/content/docs/docs/installation.mdx"
   ],
   checks: [
-    {
-      id: "catalog-dom-injection",
-      title: "Catalog and route data reach the DOM only as text or escaped attributes",
-      threat: "Whoever controls the public repo catalog response or a catalog entry runs script in every smithers.sh visitor's origin, next to the app's session.",
-      lookFor: [
-        "A catalog field (stats.language, stats.license, repo name, url) written through innerHTML, set:html, or insertAdjacentHTML instead of textContent.",
-        "A catalog `url` rendered into an href without restricting the scheme to https, allowing a javascript: link.",
-        "A `data-repo` value interpolated into a querySelector string or a URL path without encoding."
-      ],
-      paths: ["src/components/**", "src/pages/**", "src/layouts/**"]
-    },
-    {
-      id: "sign-in-return-to",
-      title: "The GitHub sign-in link carries only a same-origin path as return_to",
-      threat: "An attacker crafts a smithers.sh link whose sign-in bounces the victim, after OAuth, to an attacker origin with the session or code.",
-      lookFor: [
-        "A return_to built from anything other than Astro.url.pathname, such as a query parameter or the full URL.",
-        "A return_to value that can start with `//` or a scheme and is not encodeURIComponent-encoded."
-      ],
-      paths: ["src/components/RegisterRepo.astro", "src/pages/**"]
-    },
     {
       id: "demo-intake-form",
       title: "The demo form sends only the typed fields to the fixed intake endpoint",
@@ -629,26 +613,14 @@ const securityReview = Smithers.SecurityReview({
       paths: ["src/pages/demo/**", "scripts/demo-form.test.mjs"]
     },
     {
-      id: "isolation-headers-and-redirects",
-      title: "Static headers keep the app's isolation and redirects stay on smithers.sh",
-      threat: "An attacker frames the app, reads its cross-origin resources, or uses a smithers.sh URL as an open redirect to a phishing origin.",
+      id: "redirects",
+      title: "Redirects stay on smithers.sh",
+      threat: "An attacker uses a smithers.sh URL, or a retired `<slug>.smithers.sh` docs host, as an open redirect to a phishing origin.",
       lookFor: [
         "A _redirects rule whose destination is an absolute off-site URL or a splat that forwards a user-controlled host.",
-        "A _headers rule that removes or weakens Cross-Origin-Embedder-Policy or Cross-Origin-Resource-Policy on /_astro/*.",
-        "The app shell's inline script reading localStorage into an attribute or DOM sink without the existing allowlist regex."
+        "A docs-redirect Location built from request text (host suffix, path, query or headers) instead of a value of the generated maps under https://github.com/smithersai/smithers/."
       ],
-      paths: ["public/_headers", "public/_redirects", "src/layouts/AppShell.astro", "scripts/check-built-site.mjs"]
-    },
-    {
-      id: "home-app-chunk-import",
-      title: "The home page imports app code only from same-origin URLs of the prerendered app page",
-      threat: "Whoever can alter the HTML served at the first catalog repo's path runs arbitrary script in every smithers.sh home-page visitor's origin through the dynamic import.",
-      lookFor: [
-        "importApp resolving component-url or before-hydration-url with new URL(..., start.href) and importing it without checking the result's origin equals location.origin.",
-        "Stylesheet hrefs or inline style text copied from the fetched page into document.head from a cross-origin source.",
-        "start.href or appHref built from a query parameter, hash, or catalog response instead of the build-time AVAILABLE_REPOS entry."
-      ],
-      paths: ["src/pages/index.astro", "src/lib/appHistory.ts", "src/lib/sameOriginUrl.ts"]
+      paths: ["public/_headers", "public/_redirects", "scripts/check-built-site.mjs", "docs-redirect/src/**", "docs-redirect/wrangler.jsonc"]
     },
     {
       id: "build-time-secret-exposure",
@@ -656,21 +628,21 @@ const securityReview = Smithers.SecurityReview({
       threat: "Anyone who loads smithers.sh reads a provider key, deploy token, or dev API origin baked into static HTML or JS.",
       lookFor: [
         "import.meta.env reads of a non-PUBLIC_ variable in a component or client script.",
-        "A vite `define` or build-stamp meta tag that embeds process.env values other than the commit sha.",
-        "A dev-only proxy (SMITHERS_DEV_API_ORIGIN) or fixture flag that stays active in a production build."
+        "A vite `define` that embeds process.env values other than the commit sha.",
+        "A fixture flag that stays active in a production build."
       ],
-      paths: ["astro.config.mjs", "scripts/build-stamp-integration.ts", "src/**"]
+      paths: ["astro.config.mjs", "src/**"]
     },
     {
       id: "recording-scripts-credentials",
-      title: "Recording scripts keep provider credentials and git state on the operator's machine",
-      threat: "Running record-tape or record-ui leaks the operator's ChatGPT or API key into a committed recording, or removes a worktree it does not own.",
+      title: "The recording script keeps provider credentials and git state on the operator's machine",
+      threat: "Running record-tape leaks the operator's ChatGPT or API key into a committed recording, or removes a worktree it does not own.",
       lookFor: [
         "A tape or script that echoes env, prints auth files, or types a key that lands in public/media output.",
         "A cleanup trap that runs `rm -rf` or `git worktree remove` on a path not created by mktemp in the same script.",
         "An unquoted variable in a shell command that splits or globs a path with spaces."
       ],
-      paths: ["scripts/record-tape.sh", "scripts/record-ui.mjs", "tapes/**"]
+      paths: ["scripts/record-tape.sh", "tapes/**"]
     },
     {
       id: "copyable-install-snippets",
@@ -737,7 +709,6 @@ export const Package = Smithers.Package({
     docsLint,
     docsTextTest,
     checkExitTest,
-    repoStatsTest,
     projectCopyTest,
     installPageTest,
     recordTapeTest,
@@ -745,9 +716,9 @@ export const Package = Smithers.Package({
     publishedLinksUnit,
     smithersLinks,
     catalogPublicationTest,
-    siteTypecheckTest,
-    sameOriginUrlTest,
     docsRuntimeTests,
+    docsRedirectCheck,
+    docsRedirectTests,
     llms,
     ...securityReview
   }

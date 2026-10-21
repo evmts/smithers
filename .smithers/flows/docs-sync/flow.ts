@@ -2,7 +2,7 @@
  * `docs-sync`: the retired library docs sites' redirect map and the published
  * package documentation, kept in step with each package's `docs/` folder.
  *
- * `write` regenerates `apps/server/src/docsRedirectMap.ts` from the docs
+ * `write` regenerates `apps/site/docs-redirect/src/docsRedirectMap.ts` from the docs
  * folders. `check` fails when that module drifted, then packs every published
  * package and fails when a tarball drops its README or `docs/`, says it is not
  * on npm, or links a retired `<slug>.smithers.sh` site. `print` prints the
@@ -73,13 +73,13 @@ export default Flow.make("docs-sync", {
     "Regenerate the retired docs sites' redirect map from the package docs folders, or check it and the published package tarballs.",
   capabilities: [
     "fs:read:**",
-    "fs:write:apps/server/src/docsRedirectMap.ts",
+    "fs:write:apps/site/docs-redirect/src/docsRedirectMap.ts",
     "proc:spawn:node *",
     "proc:spawn:npm *"
   ],
   effects: {
     reads: ["**"],
-    writes: ["apps/server/src/docsRedirectMap.ts"],
+    writes: ["apps/site/docs-redirect/src/docsRedirectMap.ts"],
     mode: "expected",
     onConflict: "serialize",
     tier: "irreversible"

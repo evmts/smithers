@@ -1,10 +1,6 @@
 import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
-import { nativeFfiLib, rehearsalNative } from "../smithers-ffi/native-targets.ts"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
-import { Package as machinedPackage } from "../../packages/smithers-machined/PACKAGE.ts"
-import { Package as flowsJjPackage } from "../../packages/smithers/flows/jj-wasm/PACKAGE.ts"
-import { Package as backendPackage } from "../backend/PACKAGE.ts"
 import { Package as repoTargetsPackage } from "../repo-targets/PACKAGE.ts"
 
 const tuiSources = Smithers.Filegroup({
@@ -93,16 +89,8 @@ const laneThree = [
   "test/DetachedHostResume.test.ts"
 ]
 
-/**
- * C-J6-02's composed-install file. Its Go cases need a backend database and
- * the Go modules, which `delegatedLogin` below declares; this suite has neither.
- */
-const delegatedLoginTest = "test/DelegatedLogin.integration.test.ts"
-
 /** The remaining files join four shards automatically, including newly added files. */
-const remainder = [...laneOne, ...laneTwo, ...laneThree, delegatedLoginTest].map((file) => `--exclude ${file}`).join(
-  " "
-)
+const remainder = [...laneOne, ...laneTwo, ...laneThree].map((file) => `--exclude ${file}`).join(" ")
 
 const test = Smithers.Shell.Test({
   // Keep the measured process-heavy groups separate, then share the remainder
@@ -129,14 +117,14 @@ const test = Smithers.Shell.Test({
   data: [
     lib,
     Smithers.glob("src/**/*.ts"),
-    Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**", delegatedLoginTest] }),
+    Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
     Smithers.file("vitest.config.ts"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.mjs"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
     // `EvaluationCli.test.ts` lists the repository's shipped suites.
     repoTargetsPackage.repositoryInputs,
-    // `ProductApi.test.ts` checks the generated client against the spec.
-    Smithers.file("//docs/api/openapi.yaml")
+    // `ProductApi.test.ts` checks the generated client against the operations it was generated from.
+    Smithers.file("test/fixtures/product-api-operations.json")
   ],
   timeout: "40m",
   hosts: ["linux"],
@@ -152,148 +140,6 @@ const test = Smithers.Shell.Test({
 })
 
 /**
- * The PostgreSQL server C-J6-02's composed-install cases run against; each Go
- * test creates and drops its own database on it, as under the root
- * `backendGo`.
- */
-const delegatedLoginPostgresDatabase = Smithers.Docker.Service({
-  image: "postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
-  env: { POSTGRES_USER: "smithers", POSTGRES_PASSWORD: "smithers-delegated-login-test" },
-  ports: { "5432": 55433 },
-  readiness: {
-    exec: ["pg_isready", "-h", "127.0.0.1", "-U", "smithers", "-d", "postgres"],
-    timeout: "120s"
-  },
-  stop: { signal: "SIGTERM", grace: "10s" }
-})
-
-/** The Go modules the composed backend tests compile against, on a clean runner. */
-const delegatedLoginGoModules = Smithers.Go.ModDownload({
-  mod: Smithers.file("//go.mod"),
-  sum: Smithers.file("//go.sum"),
-  outDirs: ["//.artifacts/delegated-login-go-modcache"],
-  sandbox: { network: true },
-  destinations: ["proxy.golang.org", "sum.golang.org", "storage.googleapis.com"]
-})
-
-/**
- * C-J6-02: a delegated laptop login requests a review_merge card and cannot
- * merge.
- *
- * `DelegatedLogin.integration.test.ts` runs the backend's composed-install Go
- * cases whenever `CI` is set, and those refuse to run without a PostgreSQL
- * server. Inside `test` it had neither that server nor the Go modules, so it
- * failed there with "PostgreSQL tests are required" behind that suite's
- * timeout. This target declares both. The file's reference-install case still
- * needs `SMITHERS_DELEGATED_LOGIN_TEST=1` and is not run here.
- */
-const delegatedLogin = Smithers.Shell.Test({
-  shell: "export GOMODCACHE=\"$PWD/.artifacts/delegated-login-go-modcache\"; cd packages/smithers && " +
-    `${vitest} --coverage.enabled=false ${delegatedLoginTest}`,
-  data: [
-    delegatedLoginGoModules,
-    lib,
-    Smithers.glob("src/**/*.ts"),
-    Smithers.file(delegatedLoginTest),
-    Smithers.file("test/setup.ts"),
-    Smithers.file("vitest.config.ts"),
-    Smithers.file("//go.mod"),
-    Smithers.file("//go.sum"),
-    backendPackage.buildInputs
-  ],
-  timeout: "20m",
-  hosts: ["linux"],
-  env: {
-    GOFLAGS: "-buildvcs=false -mod=readonly",
-    GOPROXY: "off",
-    SMITHERS_TEST_DATABASE_URL:
-      "postgres://smithers:smithers-delegated-login-test@127.0.0.1:55433/postgres?sslmode=disable"
-  },
-  services: [delegatedLoginPostgresDatabase],
-  sandbox: { network: "loopback" }
-})
-
-/**
- * The PostgreSQL server the Go-backed durability cases (C-DUR-01 to C-DUR-04)
- * and case40 run against; each Go suite creates and drops its own databases
- * on it, as under the root `backendGo`.
- */
-const faultPostgresDatabase = Smithers.Docker.Service({
-  image: "postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
-  env: { POSTGRES_USER: "smithers", POSTGRES_PASSWORD: "smithers-fault-test" },
-  ports: { "5432": 55439 },
-  readiness: {
-    exec: ["pg_isready", "-h", "127.0.0.1", "-U", "smithers", "-d", "postgres"],
-    timeout: "120s"
-  },
-  stop: { signal: "SIGTERM", grace: "10s" }
-})
-
-/**
- * PostgreSQL 18 programs for the private-cluster cases
- * (`postgres_kill_fault_test.go` and case40's K5 crossing), which start, kill
- * and restart their own server and never the shared one. Built from the checksum-pinned 18.0 source
- * with pgcrypto, which the product migrations create, as the harness user: no
- * system install. The 18.0 archive ships no generated parser, so the host
- * needs a C toolchain, bison, flex and OpenSSL headers, as hosted runners
- * have. The runner passes a case no host variable, so the directory a workflow
- * exported never reached the case (#3459); the fault target names this output.
- */
-const faultPostgresPrograms = Smithers.Shell.Build({
-  shell:
-    "prefix=\"$PWD/.artifacts/fault-postgres\"; src=\"$prefix/build\"; rm -rf \"$src\" && mkdir -p \"$src\" || exit $?; ssl=''; if [ \"$(uname -s)\" = Darwin ] && command -v brew >/dev/null; then openssl=$(brew --prefix openssl@3) && ssl=\"--with-includes=$openssl/include --with-libraries=$openssl/lib\"; fi; curl --fail --location --retry 3 --silent --show-error https://ftp.postgresql.org/pub/source/v18.0/postgresql-18.0.tar.bz2 --output \"$src/postgresql-18.0.tar.bz2\" && printf '%s  %s\\n' 0d5b903b1e5fe361bca7aa9507519933773eb34266b1357c4e7780fdee6d6078 \"$src/postgresql-18.0.tar.bz2\" | shasum -a 256 -c && tar -xjf \"$src/postgresql-18.0.tar.bz2\" -C \"$src\" && (cd \"$src/postgresql-18.0\" && ./configure --quiet --prefix=\"$prefix\" --without-icu --without-readline --without-zlib --with-ssl=openssl $ssl && make -s -j\"$(getconf _NPROCESSORS_ONLN)\" && make -s install && make -s -C contrib/pgcrypto install) && \"$prefix/bin/postgres\" --version; status=$?; rm -rf \"$src\"; exit $status",
-  outDirs: ["//.artifacts/fault-postgres"],
-  sandbox: { network: true },
-  timeout: "30m"
-})
-
-/**
- * Native programs the long tier's cases drive, built from this checkout: the
- * FFI library, the trusted-process `smithers-jj-export` the composed install
- * rehearsals bind a TODO's checkout with, machined's rehearsal daemon, and the
- * same daemon with its fault hooks (`--features killpoints`), which K7 kills
- * at its points. The hooks compile only into debug builds, never a release.
- * A workflow's exported paths never reached a case, and the CI-installed
- * `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` that does reach it lacks the
- * trusted-process binding, so the fault target names these outputs (#3459).
- */
-const faultNative = Smithers.Shell.Build({
-  shell:
-    "out=\"$PWD/.artifacts/fault-native\"; build=\"$out/build\"; debug=\"$build/target/debug\"; mkdir -p \"$build\" || exit $?; cp .rehearsal-native/smithers-jj-export .rehearsal-native/rehearsal_daemon \"$out/\" && { cp .native-ffi/target/debug/libsmithers_ffi.so \"$out/\" 2>/dev/null || cp .native-ffi/target/debug/libsmithers_ffi.dylib \"$out/\"; } || exit $?; export RUSTUP_HOME=\"$build/rustup\" CARGO_TARGET_DIR=\"$build/target\"; rustup toolchain install && cargo build --locked -p smithers-machined --example rehearsal_daemon --features killpoints && cp \"$debug/examples/rehearsal_daemon\" \"$out/machined-fault-daemon\"; status=$?; rm -rf \"$build\"; exit $status",
-  outDirs: ["//.artifacts/fault-native"],
-  data: [
-    nativeFfiLib,
-    rehearsalNative,
-    Smithers.file("//Cargo.toml"),
-    Smithers.file("//Cargo.lock"),
-    Smithers.file("//rust-toolchain.toml"),
-    Smithers.file("//packages/smithers/flows/jj-wasm/Cargo.toml"),
-    flowsJjPackage.nativeSources,
-    machinedPackage.ffiInputs,
-    machinedPackage.buildInputs,
-    backendPackage.machineContractInputs
-  ],
-  sandbox: { network: true },
-  timeout: "30m"
-})
-
-/**
- * What every Go-backed fault case reads. The runner passes a case only the
- * host bootstrap environment, so the database URL, the host class and the
- * programs a workflow exported never arrived and every Go-backed case failed
- * with "Real PostgreSQL is required" (#3459). The targets declare them. Program
- * paths are workspace-relative because a declaration holds a fixed string; the
- * harness makes them absolute before a case starts. `linux` is the host class
- * of the ordinary tiers; faultsReference names the approved Mac and bundle.
- */
-const faultEnv = {
-  SMITHERS_FAULT_HOST: "linux",
-  SMITHERS_FAULT_POSTGRES_BIN: ".artifacts/fault-postgres/bin",
-  SMITHERS_TEST_DATABASE_URL: "postgres://smithers:smithers-fault-test@127.0.0.1:55439/postgres?sslmode=disable",
-  SMITHERS_REQUIRE_DATABASE_TESTS: "1"
-}
-
-/**
  * The package's fault-injection cases.
  *
  * A package opts into the matrix by declaring this key, so
@@ -303,81 +149,15 @@ const faultEnv = {
  * the process table — so they run serially, without coverage, from
  * `vitest.faults.config.ts`, and unconfined.
  *
- * This is the release tier, the gate's "Exclusive fault matrix": everything
- * under `test/faults` except `test/faults/long/`. Its file cases took 945 s on
- * the release runner (2026-10-10) and its Go cases add a compile of the
- * compose tests and about two minutes of route kills, so it declares 40
- * minutes rather than the Vitest default 20; nightly reliability's 60-minute
- * job still fits its setup and the PostgreSQL build around it.
+ * This is the release gate's "Exclusive fault matrix": everything under
+ * `test/faults`. Its file cases took 945 s on the release runner
+ * (2026-10-10), so it declares 40 minutes rather than the Vitest default 20.
  */
 const faults = Smithers.FaultSuite({
   cwd: "packages/smithers",
-  tests: Smithers.glob("test/faults/**/*.test.ts", { exclude: ["test/faults/long/**"] }),
-  deps: [faultPostgresPrograms],
-  env: faultEnv,
-  services: [faultPostgresDatabase],
+  tests: Smithers.glob("test/faults/**/*.test.ts"),
   sandbox: "none",
   timeoutMs: 40 * 60_000
-})
-
-/**
- * The long fault tier: `test/faults/long/`, cases measured in tens of minutes
- * or budgeted in hours (the packaged pause/resume, GitHub outbound, machined
- * K4/K4b/K7, rebase and case40 host-kill cases). Scheduled reliability runs it
- * nightly; the release gate does not wait on it. `harness/goFaultCases.ts`
- * assigns each Go case a tier and `test/FaultTiers.test.ts` checks every case
- * is in exactly one. The budget sits under a hosted runner's six-hour job
- * ceiling; the reference-only cases budgeted beyond it refuse in seconds off
- * the reference host.
- */
-const faultsLong = Smithers.FaultSuite({
-  cwd: "packages/smithers",
-  tests: Smithers.glob("test/faults/long/**/*.test.ts"),
-  config: Smithers.file("vitest.faults-long.config.ts"),
-  // case40's K5 crossing kills its own private cluster, as the release
-  // tier's PostgreSQL case does.
-  deps: [faultNative, faultPostgresPrograms],
-  env: {
-    ...faultEnv,
-    SMITHERS_FFI_LIBRARY_PATH: ".artifacts/fault-native/libsmithers_ffi.so",
-    SMITHERS_REHEARSAL_JJ_EXPORT_BINARY: ".artifacts/fault-native/smithers-jj-export",
-    SMITHERS_REHEARSAL_MACHINED_BINARY: ".artifacts/fault-native/rehearsal_daemon",
-    SMITHERS_REHEARSAL_MACHINED_FAULT_BINARY: ".artifacts/fault-native/machined-fault-daemon"
-  },
-  services: [faultPostgresDatabase],
-  sandbox: "none",
-  timeoutMs: 345 * 60_000
-})
-
-/** The owner-provisioned reference bundle; refuse before any fault off that host. */
-const faultsReference = Smithers.Shell.Test({
-  exclusive: true,
-  shell:
-    "node packages/smithers/scripts/fault-reference-host.mjs && cd packages/smithers && pnpm exec vitest run --config vitest.faults.config.ts && pnpm exec vitest run --config vitest.faults-long.config.ts",
-  data: [
-    faultNative,
-    faultPostgresPrograms,
-    backendPackage.buildInputs,
-    Smithers.glob("src/**/*.ts"),
-    Smithers.glob("test/faults/**"),
-    Smithers.file("vitest.faults-long.config.ts"),
-    Smithers.file("vitest.faults.config.ts"),
-    Smithers.file("scripts/fault-reference-host.mjs"),
-    Smithers.file("//packages/smithers/test/support/reference-hosts.json")
-  ],
-  env: {
-    ...faultEnv,
-    SMITHERS_FAULT_HOST: "reference",
-    SMITHERS_FAULT_INSTALL_BUNDLE: ".artifacts/fault-install-bundle",
-    SMITHERS_CHECK_BUNDLE: ".artifacts/fault-install-bundle",
-    SMITHERS_FFI_LIBRARY_PATH: ".artifacts/fault-native/libsmithers_ffi.dylib",
-    SMITHERS_REHEARSAL_JJ_EXPORT_BINARY: ".artifacts/fault-native/smithers-jj-export",
-    SMITHERS_REHEARSAL_MACHINED_BINARY: ".artifacts/fault-native/rehearsal_daemon",
-    SMITHERS_REHEARSAL_MACHINED_FAULT_BINARY: ".artifacts/fault-native/machined-fault-daemon"
-  },
-  services: [faultPostgresDatabase],
-  sandbox: "none",
-  timeout: "390m"
 })
 
 /** The corrected native editor and its reproducible source used by the TUI. */
@@ -400,19 +180,6 @@ const docsSources = Smithers.Filegroup({
     Smithers.glob("docs/*.md")
   ],
   cwd: "packages/smithers"
-})
-
-/**
- * The reference-fault host guard admits only the approved reference Mac with
- * its installed bundle, and refuses a Linux host before a fault starts.
- *
- * @since 1.0.0
- * @category test
- */
-const faultReferenceHost = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//packages/smithers/scripts/fault-reference-host.test.mjs")]),
-  srcs: [Smithers.file("//packages/smithers/scripts/fault-reference-host.mjs")],
-  deps: []
 })
 
 /**
@@ -555,12 +322,12 @@ const securityReview = Smithers.SecurityReview({
     },
     {
       id: "open-runs-untrusted-checkout",
-      title: "`smthrs open` never runs package scripts from a checkout the operator does not trust",
+      title: "`smthrs open` never runs package scripts from a checkout",
       threat:
-        "An attacker repository whose remote merely names smithersai/smithers on any host gets `pnpm dev` executed on the operator's machine by `smthrs .`.",
+        "An attacker repository whose remote names any owner/repo gets one of its package scripts executed on the operator's machine by `smthrs .`.",
       lookFor: [
-        "smithersCheckout deciding on the owner/repo path of a remote without checking the remote host.",
-        "host.launch running pnpm, open, or another binary with arguments derived from the checkout's remote or files."
+        "host.launch running pnpm, a package script, or any binary other than `open -a <installed Smithers.app>`.",
+        "A launch argument derived from the checkout's files rather than its parsed owner/repo."
       ],
       paths: ["src/commands/Open.ts"]
     },
@@ -632,18 +399,9 @@ export const Package = Smithers.Package({
     tuiSources,
     check,
     circular,
-    delegatedLogin,
-    delegatedLoginGoModules,
-    delegatedLoginPostgresDatabase,
     docs,
     docsFiles,
-    faultNative,
-    faultPostgresDatabase,
-    faultPostgresPrograms,
     faults,
-    faultsLong,
-    faultsReference,
-    faultReferenceHost,
     fmt,
     hostProcessSampler,
     cliInstall,

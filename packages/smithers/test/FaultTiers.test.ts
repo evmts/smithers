@@ -1,20 +1,16 @@
 /**
- * Every fault case belongs to exactly one tier (#3459).
+ * Every fault case runs in the release gate's fault matrix (#3459).
  *
- * The release gate's "Exclusive fault matrix" runs `//packages/smithers:faults`
- * and scheduled reliability runs `//packages/smithers:faultsLong` nightly. A
- * case moved out of one and into neither would leave the matrix silently
- * smaller, and a case in both would run twice and cost the release gate an
- * hour. The two targets, the two Vitest configs that select files, and the Go
- * case table must agree on one tier per case.
+ * The release gate's "Exclusive fault matrix" runs `//packages/smithers:faults`.
+ * A case its Vitest config does not select, or a file its target does not key
+ * on, would leave the matrix silently smaller or let a cached run pass over a
+ * case it never ran.
  */
 import { readdirSync, readFileSync } from "node:fs"
 import { join, matchesGlob, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import long from "../vitest.faults-long.config.ts"
 import release from "../vitest.faults.config.ts"
-import { goFaultCases, goFaultCasesFor, requiredFaultSiblings } from "./faults/harness/goFaultCases.ts"
 
 const root = fileURLToPath(new URL("../../../", import.meta.url))
 const pkg = join(root, "packages/smithers")
@@ -27,9 +23,9 @@ const faultCases = walk(join(pkg, "test/faults"))
   .map((file) => relative(pkg, file))
   .filter((file) => file.endsWith(".test.ts"))
 
-const selects = (config: typeof release, file: string): boolean =>
-  (config.test?.include ?? []).some((pattern) => matchesGlob(file, pattern)) &&
-  !(config.test?.exclude ?? []).some((pattern) => matchesGlob(file, pattern))
+const selects = (file: string): boolean =>
+  (release.test?.include ?? []).some((pattern) => matchesGlob(file, pattern)) &&
+  !(release.test?.exclude ?? []).some((pattern) => matchesGlob(file, pattern))
 
 interface IndexedInput {
   readonly kind: string
@@ -42,7 +38,6 @@ interface IndexedTarget {
   readonly rule: string
   readonly exclusive?: boolean
   readonly inputs: ReadonlyArray<IndexedInput>
-  readonly dependencies: ReadonlyArray<string>
 }
 const index = JSON.parse(readFileSync(join(root, ".smithers/target-index.json"), "utf8")) as Array<IndexedTarget>
 const target = (label: string): IndexedTarget => {
@@ -56,111 +51,20 @@ const keys = (indexed: IndexedTarget, file: string): boolean =>
     !(input.exclude ?? []).some((pattern) => matchesGlob(file, pattern))
   )
 
-describe("fault tiers", () => {
+describe("fault matrix", () => {
   const faults = target("//packages/smithers:faults")
-  const faultsLong = target("//packages/smithers:faultsLong")
 
-  it("declares the long tier as its own exclusive target with its own config", () => {
-    for (const tier of [faults, faultsLong]) {
-      expect(tier.rule).toBe("Vitest")
-      expect(tier.exclusive).toBe(true)
-    }
+  it("declares the matrix as an exclusive Vitest target over its own config", () => {
+    expect(faults.rule).toBe("Vitest")
+    expect(faults.exclusive).toBe(true)
     expect(faults.inputs).toContainEqual({ kind: "file", path: "packages/smithers/vitest.faults.config.ts" })
-    expect(faultsLong.inputs).toContainEqual({ kind: "file", path: "packages/smithers/vitest.faults-long.config.ts" })
   })
 
-  it("runs every fault case file in exactly one tier", () => {
+  it("selects and keys every fault case file", () => {
     expect(faultCases.length).toBeGreaterThan(20)
     for (const file of faultCases) {
-      const tiers = [selects(release, file) && "release", selects(long, file) && "long"].filter(Boolean)
-      expect(tiers, `${file} must run in exactly one tier`).toHaveLength(1)
-      // The target keys on the files its config runs, so a cached tier never
-      // passes over a case it did not run.
-      const keyed = [
-        keys(faults, `packages/smithers/${file}`) && "release",
-        keys(faultsLong, `packages/smithers/${file}`) && "long"
-      ].filter(Boolean)
-      expect(keyed, `${file} is keyed by the wrong tier`).toEqual(tiers)
+      expect(selects(file), `${file} is not selected by vitest.faults.config.ts`).toBe(true)
+      expect(keys(faults, `packages/smithers/${file}`), `${file} is not an input of the faults target`).toBe(true)
     }
-  })
-
-  it("puts each required TypeScript sibling in its declared tier", () => {
-    for (const [file, tier] of Object.entries(requiredFaultSiblings)) {
-      expect(faultCases).toContain(`test/faults/${file}`)
-      expect(selects(tier === "long" ? long : release, `test/faults/${file}`), file).toBe(true)
-    }
-  })
-
-  it("runs every Go case in exactly one tier", () => {
-    const ids = goFaultCases.map((entry) => `${entry.file}#${entry.name ?? "*"}`)
-    expect(new Set(ids).size, "a Go case is listed twice").toBe(ids.length)
-    for (const host of ["linux", "reference"]) {
-      const inRelease = goFaultCasesFor("release", host)
-      const inLong = goFaultCasesFor("long", host)
-      expect(inRelease.filter((entry) => inLong.includes(entry))).toEqual([])
-      expect([...inRelease, ...inLong].length)
-        .toBe(goFaultCases.filter((entry) => entry.host === "any" || host === "reference").length)
-    }
-    // The tier files register exactly their tier, so a case's tier field is
-    // the only place it is assigned.
-    expect(readFileSync(join(pkg, "test/faults/durability-required.test.ts"), "utf8"))
-      .toMatch(/registerGoFaultCases\("release"\)/)
-    expect(readFileSync(join(pkg, "test/faults/long/durability-long.test.ts"), "utf8"))
-      .toMatch(/registerGoFaultCases\("long"\)/)
-  })
-
-  it("keeps the hour-scale cases out of the release gate", () => {
-    const tierOf = (file: string, name: string | null) =>
-      goFaultCases.find((entry) => entry.file === file && entry.name === name)?.tier
-    expect(tierOf("internal/compose/todo_live_pause_fault_test.go", "TestTodoStartPauseResumeCrashThroughRoutes"))
-      .toBe("long")
-    expect(tierOf("internal/compose/github_outbound_kill_test.go", null)).toBe("long")
-    expect(tierOf("internal/compose/rebase_fault_test.go", "TestRebaseCrashThroughDispatcher")).toBe("long")
-    expect(tierOf("internal/machined/fault_test.go", null)).toBe("long")
-    expect(requiredFaultSiblings["long/case40-host-kill-todo-run.test.ts"]).toBe("long")
-    // The reference-bundle case refuses in seconds off the reference host.
-    expect(tierOf("internal/compose/rebase_fault_test.go", "TestRebaseFaultRootInputsValidatedBeforeUse"))
-      .toBe("release")
-    const minutes = (go: string) => go.endsWith("h") ? Number(go.slice(0, -1)) * 60 : Number(go.slice(0, -1))
-    for (const entry of goFaultCasesFor("release", "linux")) {
-      if (entry.name === "TestRebaseFaultRootInputsValidatedBeforeUse") continue
-      expect(minutes(entry.budget.go), `${entry.name ?? entry.file} is budgeted beyond the release tier`)
-        .toBeLessThanOrEqual(5)
-    }
-  })
-
-  it("declares a guarded reference matrix and shares the native recipes", () => {
-    const reference = target("//packages/smithers:faultsReference")
-    expect(reference.exclusive).toBe(true)
-    const declarations = readFileSync(join(pkg, "PACKAGE.ts"), "utf8")
-    const referenceDeclaration = declarations.slice(
-      declarations.indexOf("const faultsReference"),
-      declarations.indexOf("/** The corrected native editor")
-    )
-    expect(referenceDeclaration).toContain("SMITHERS_FAULT_HOST: \"reference\"")
-    expect(referenceDeclaration).toContain("SMITHERS_FAULT_INSTALL_BUNDLE: \".artifacts/fault-install-bundle\"")
-    expect(referenceDeclaration).toContain("node packages/smithers/scripts/fault-reference-host.mjs &&")
-    expect(reference.inputs).toContainEqual({
-      kind: "file",
-      path: "packages/smithers/scripts/fault-reference-host.mjs"
-    })
-    expect(reference.inputs).toContainEqual({
-      kind: "file",
-      path: "packages/smithers/test/support/reference-hosts.json"
-    })
-    const native = target("//packages/smithers:faultNative")
-    expect(native.dependencies).toContain("//:nativeFfiLib")
-    expect(native.dependencies).toContain("//:rehearsalNative")
-  })
-
-  it("builds the programs each tier's cases start", () => {
-    // Both tiers kill a private PostgreSQL cluster (the route case and
-    // case40's K5); only the long tier drives installs and the K7 daemon.
-    for (const tier of [faults, faultsLong]) {
-      expect(tier.dependencies).toContain("//packages/smithers:faultPostgresDatabase")
-      expect(tier.dependencies).toContain("//packages/smithers:faultPostgresPrograms")
-    }
-    expect(faultsLong.dependencies).toContain("//packages/smithers:faultNative")
-    expect(faults.dependencies).not.toContain("//packages/smithers:faultNative")
   })
 })

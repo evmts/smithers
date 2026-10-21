@@ -7,8 +7,8 @@
 import { z } from "zod"
 
 /*
- * The target-graph contract between the local app's Bun backend
- * (`apps/app/src/bun`) and the chat UI (`apps/app/src/mainview`). It is the
+ * The target-graph contract between the old local app's Bun backend and its
+ * chat UI (both removed on 2026-10-21). It is the
  * product's API, not the CLI's: the backend maps `smithers-build graph --format json`,
  * `smithers-build <label> --plan --format json`, and a streamed `smithers-build <label>` run
  * onto these shapes; the UI renders only these shapes.

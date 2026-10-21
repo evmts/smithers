@@ -1,8 +1,7 @@
 /**
  * Targets for the private Smithers component kit.
  *
- * The product UI (`apps/app`) imports `@smthrs/ui`, which ships its sources
- * directly and uses Bun for its tests.
+ * `@smthrs/ui` ships its sources directly and uses Bun for its tests.
  *
  * Its presence here is what this file is for. The root `packageDefaults`
  * synthesizes `BuildAndCheckTypeScriptPackage` — a dual `dist/esm` and `dist/cjs` library
@@ -41,8 +40,7 @@ const generatedViewInputs = [Smithers.file("//packages/smithers/ui/scripts/build
 /**
  * The `@smthrs/views` sources the realm and the bridge come from, as that
  * package's `sourceFiles` label. A selector, not an import of its PACKAGE.ts:
- * that file reaches the root PACKAGE.ts, which imports this one through
- * `apps/app`.
+ * that file reaches the root PACKAGE.ts.
  */
 const viewsSources = Smithers.Target.subtree("//packages/smithers/ui/views/...", "sourceFiles")
 

@@ -17,8 +17,8 @@ smithers_lane_prerequisites() {
   if [[ -x "$helper" ]]; then
     capabilities=$("$helper" --capabilities 2>/dev/null) || capabilities=""
   fi
-  # J1's explicit trusted-process fixture needs this test-only binding. The
-  # shipped helper's default feature set and production microVM gate stay intact.
+  # Lanes use a helper built with the test-only trusted-process binding. The
+  # shipped helper's default feature set stays intact.
   if [[ "$capabilities" != *'"trusted-process-binding/v1"'* ]]; then
     echo 'Building test prerequisite smithers-jj-export' >&2
     (cd "$root" && cargo build --locked --release -p smithers-ffi --bin smithers-jj-export --features trusted-process-binding) || {

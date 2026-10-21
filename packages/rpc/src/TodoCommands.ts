@@ -52,7 +52,6 @@ export const TODO_NEW_COMMAND = {
 /**
  * `/todo.new`'s declared input. Without `cardId` it opens a Draft with the TODO's text, title, acceptance and place
  * (`before` a TODO, else appended); with a Draft's `cardId` it commits that Draft. `idempotencyKey` is the Commit's.
- * The GUI declares the same fields as its flow input (apps/app flows/entries/todo.ts); its parity test decodes both.
  * @since 1.0.0
  * @category schemas
  */

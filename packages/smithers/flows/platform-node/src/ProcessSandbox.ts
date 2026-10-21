@@ -763,9 +763,9 @@ const runtimeReads = (hostFacts: Host): ReadonlyArray<string> => {
     "/nix/store",
     "/opt/homebrew",
     // A Smithers machine's toolchain layer: the repository's Node, pnpm, Go,
-    // Rust and Python, which the machine's environment puts first on PATH
-    // (packages/backend/microsandbox layers.go toolchainRoot). Never all of
-    // /opt/smithers, which holds the machine's environment and helpers.
+    // Rust and Python, which the machine's environment puts first on PATH.
+    // Never all of /opt/smithers, which holds the machine's environment and
+    // helpers.
     "/opt/smithers/toolchain",
     "/opt/smithers/rust",
     "/System/Library",

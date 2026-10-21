@@ -11,9 +11,12 @@ below cites its ruling ID.
 
 - **The app is [`apps/mvp`](apps/mvp/AGENTS.md),** built from scratch one
   feature at a time (SCOPE-1). Read its `AGENTS.md` before touching it.
-  `apps/app` (the old app, "v4"), `apps/server`, `packages/backend` and Plue are
-  prior art: port the minimal proven code into the new architecture, never
-  extend them (SCOPE-3, ARCH-1).
+  The old app ("v4", `apps/app`), its edge Worker (`apps/server`), the Go
+  backend (`packages/backend`, `apps/backend`) and its microVM daemon
+  (`packages/smithers-machined`) were removed on 2026-10-21 (SCOPE-3
+  addendum). They are prior art: read them with
+  `jj file show -r 78407fce59dd <path>` and port the minimal proven code into
+  the new architecture (SCOPE-3, ARCH-1). Plue lives in its own repository.
 - **The work is Will's feature list** (rulings SCOPE-6 and SCOPE-7), not an MVP
   scope, a build stage or a journey suite. Don't raise MVP scope (SCOPE-5).
   `.specs/product/` is the product vision; where it disagrees with the rulings,
@@ -119,8 +122,7 @@ rubric in `PACKAGE.ts`, catalogued in [`apps/mvp/docs/rules.md`](apps/mvp/docs/r
 No tech debt and no dead code. Finish every migration in the same effort:
 delete the old path, never leave two implementations of one behavior (SDK-11).
 The backend is `apps/mvp`'s Effect-native Workers on Cloudflare (Will,
-2026-10-19, ARCH-1). `packages/backend` (Go) and Plue are the old stack; add no
-product code to either.
+2026-10-19, ARCH-1). Plue is the old stack; add no product code to it.
 
 ## TODOs reach `main` through a person (Will, 2026-09-25 and 2026-10-20)
 
@@ -297,8 +299,7 @@ Task-specific maintenance guidance lives in
 [the repository skill](.agents/skills/smithers-maintenance/SKILL.md): use it for
 workspace graph changes, generated docs, benchmarks, and flow authoring. Read
 [`apps/mvp/AGENTS.md`](apps/mvp/AGENTS.md) for the app and
-[`apps/tui/AGENTS.md`](apps/tui/AGENTS.md) for the TUI; `apps/app/AGENTS.md`
-and `apps/server/AGENTS.md` describe the old stack. Keep `AGENTS.md` rules to
+[`apps/tui/AGENTS.md`](apps/tui/AGENTS.md) for the TUI. Keep `AGENTS.md` rules to
 behavior that applies throughout their directory trees.
 
 ## Execution environments

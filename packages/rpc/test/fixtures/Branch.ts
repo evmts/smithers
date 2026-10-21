@@ -283,8 +283,8 @@ const states = {
       ],
       changed_files: [
         { path: "packages/rpc/src/TodoCard.ts", change: "added", authors: [agent] },
-        { path: "apps/app/src/mainview/cards/views/TodoView.tsx", change: "modified", authors: [person, claude_code] },
-        { path: "apps/app/src/mainview/cards/LegacyTodo.tsx", change: "deleted", authors: [outside] },
+        { path: "apps/mvp/src/features/todo/TodoView.tsx", change: "modified", authors: [person, claude_code] },
+        { path: "apps/mvp/src/features/todo/LegacyTodo.tsx", change: "deleted", authors: [outside] },
         {
           path: ".smithers/flows/todo/prompt.md",
           change: "renamed",

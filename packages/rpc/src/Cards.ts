@@ -52,7 +52,7 @@ import { type TodoCard, TodoCardSchema } from "./TodoCard.ts"
 import { HttpUrlSchema, RelativeUrlPathSchema } from "./WebUrl.ts"
 
 /*
- * The targets card's table state (apps/app cards/TargetsTable.ts): the filter
+ * The targets card's table state: the filter
  * the user set, the row they selected, and what the card has read about
  * individual targets. All optional: cards persisted before the table parse.
  */
@@ -175,7 +175,7 @@ export const CardPlanItemSchema = z.object({
  */
 export type CardPlanItem = z.infer<typeof CardPlanItemSchema>
 
-/** The seams a form field's select may draw its options from (apps/app flows/FlowForms.ts OPTION_PROVIDERS).
+/** The seams a form field's select may draw its options from.
  * @since 1.0.0
  * @category constants
  */
@@ -1860,7 +1860,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         seq: z.number().int().positive().nullable().optional()
       }).optional(),
       /*
-       * Code intelligence (apps/app/docs/code-intel/PLAN.md §5). Components
+       * Code intelligence. Components
        * project these; the seams write them through `card.updated`. All
        * optional so cards persisted before the lane parse and state none.
        */
@@ -2098,7 +2098,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
    * mainview owns the palette list, so the payload carries only the key.
    */
   /*
-   * The local app's repository cards (apps/app/docs/LOCAL-APP.md "Cards"):
+   * The local app's repository cards:
    * the opened repository, its trusted typed target list, and one streamed
    * target run.
    */
@@ -2203,8 +2203,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     ])
   }),
   /*
-   * THE FORM LAW (apps/app/AGENTS.md;
-   * repository flow forms): a flow invoked without its
+   * THE FORM LAW (repository flow forms): a flow invoked without its
    * required input renders this card for the missing fields. The fields derive
    * from the flow's input schema; the draft IS the payload (a field commit is
    * a card-payload update, never component state); `given` is what the slash

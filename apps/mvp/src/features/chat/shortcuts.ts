@@ -2,8 +2,8 @@ import { Effect } from "effect"
 import { closeComposer, toggleComposer } from "./actions"
 import type { ChatStore } from "./store"
 
-// ⌘K (Ctrl+K) toggles the composer and Esc hides it from anywhere on `target`, whatever has focus, as in the old app
-// (apps/app/src/mainview/state/controller/controlFocus.ts). The listeners are bound while the scope is open, and run
+// ⌘K (Ctrl+K) toggles the composer and Esc hides it from anywhere on `target`, whatever has focus, as in the old app's
+// controlFocus.ts (removed 2026-10-21). The listeners are bound while the scope is open, and run
 // each action with the services they were bound with. `preventDefault` runs in the listener, because ⌘K's browser
 // default can only be stopped inside the event, so ⌘K listens as the event goes down. Esc listens as it comes back up,
 // after the element it was pressed in: one that handled Esc itself, such as the command menu closing, prevented its

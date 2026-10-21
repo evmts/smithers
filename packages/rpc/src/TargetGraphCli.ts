@@ -16,14 +16,10 @@ import type { GraphNode, TargetGraphResponse } from "./TargetGraph.ts"
  * argv, refusal) onto the nodes it names. Fixtures captured from the real
  * CLI on the force workspace live in `packages/rpc/fixtures/force/`.
  *
- * Who reads this: the UI's dev fixture stream
- * (`apps/app/src/mainview/dev/fixtureRunStream.ts`). The local backend
- * (`apps/app/src/bun/TargetGraph.ts`) answers the same envelopes by parsing
- * the TEXT rendering instead, because it merges several envelopes, the
- * separate `query` listing's kinds, and the declaration sources into one
- * response. The two share {@link isPrivateLabel} so they cannot disagree
- * about which nodes a card hides; folding the rest of the backend onto
- * {@link targetGraphFromCli} is open work (finding rpc/maintainability/3).
+ * The old app's dev fixture stream read this, and its local backend answered
+ * the same envelopes by parsing the TEXT rendering; both were removed on
+ * 2026-10-21. {@link isPrivateLabel} is the shared rule for which nodes a
+ * card hides.
  */
 
 /**

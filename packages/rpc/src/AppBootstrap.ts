@@ -81,7 +81,7 @@ export const AppBootstrapSchema = z.object({
   /**
    * The API surface: `cloud` is every web origin the product serves — the
    * Worker, the hosted backend and a self-hosted backend alike — and `local`
-   * is the Bun host (`apps/app/src/bun/server.ts`). Which shell shows the page
+   * is the old app's Bun host. Which shell shows the page
    * is the `native.shell` capability, and which sign-in door the origin has is
    * `authFlow`; neither is read from this field.
    */

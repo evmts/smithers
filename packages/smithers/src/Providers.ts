@@ -229,7 +229,7 @@ export interface SeatDescription {
  * The description of every seat an alias in {@link seatAliases} names, plus
  * the key-backed seats of {@link defaultSeat}, keyed by `provider:modelId`.
  * The tiers come from the committed rate
- * card (`packages/backend/modelprice/prices.go`): `low` under $1 per million
+ * card (`@smthrs/model`'s `Pricing.table`): `low` under $1 per million
  * input tokens, `high` above $3, `mid` between; a seat with no committed
  * price (Kimi) is tiered from its provider's list price.
  *

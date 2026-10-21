@@ -104,39 +104,38 @@ there is no rollback or claim of append success.
 The private `VibeCleanup` receipt contains its admission, summary, refreshed Result
 and native head. It proves description cleanup and revalidation only. Admission
 already required original-source retention before any rewrite; `LandVibe`
-retains the cleaned source next and continues through Plue's existing landing
-policy. Cleanup never substitutes a newer main for the original source base.
+retains the cleaned source next and continues through the landing policy of the
+backend `SMITHERS_JJHUB_API_URL` names. Cleanup never substitutes a newer main for the original source base.
 
-Portable prompt, plan and implementation context in history still needs its
-Plue-owned notes/provenance integration. Current local operation receipts report
+Prompt, plan and implementation context in history is not published as notes
+or provenance. Current local operation receipts report
 cloud provenance as pending; finalization must not turn that into an
 acknowledged publication merely because an operation returned successfully.
 
 ## One appended commit through existing landing policy
 
-The new Plue public operation, landed at `fb56b0b53a08`, is:
+The landing backend's append operation is:
 
 ```http
 PUT /api/repos/{owner}/{repo}/landings/{number}/land/append
 Content-Type: application/json
 
 {
-  "commit_id": "<immutable final mythical tip>",
+  "commit_id": "<immutable final source tip>",
   "expected_commit_id": "<fenced main commit>",
   "source_base_commit_id": "<immutable source before this request>",
   "description": "✨ feat: describe the validated product change"
 }
 ```
 
-This is a new public API. The existing LandingService authenticates and pins the
-request, returning the existing 202 queued response. Its existing worker checks
-every ownership, human/agent review and required status gate before mutation;
-acceptance does not claim those gates passed. This keeps full-history inspection
+The backend authenticates and pins the request and answers 202 queued. Its
+worker checks every ownership, human/agent review and required status gate
+before mutation; acceptance does not claim those gates passed. This keeps full-history inspection
 inside the worker's existing budget. The matching native append creates exactly one commit whose sole
 parent is expected main and whose tree equals the immutable source tip. Before
 that write, the original source-base tree must equal the fenced main tree.
 A mismatch requires reconciliation; it must not overwrite newer main changes.
-The mythical source commits retain their native identities.
+The source commits retain their native identities.
 
 The landing stack must cover the entire request, including changes implemented
 before later steering. Compare the original source-base and final source's
@@ -251,19 +250,17 @@ The `VibeProposed` receipt carries the cleanup, cleaned-source retention,
 landing identity and the GitHub pull request. It is proposed work, not a
 changed main. Merging happens on GitHub.
 
-## Hand the result to the mythical stack
+## Hand the result to a stack
 
-A repository whose backend runs a mythical stack (`GET /api/repos/{o}/{r}/mythical`
+A repository whose landing backend runs a stack (`GET /api/repos/{o}/{r}/mythical`
 answers `state: "active"`) does not append or open its own pull request.
 After the cleaned-source retention receipt, `LandVibe` records `ReadStack` once
-and, for a stacked repository, `SubmitLane` hands the stack service
+and, for a stacked repository, `SubmitLane` hands the backend
 `{ workspaceId, base, source, requestRunId, summary }` with
 `PUT …/mythical/lanes`: `base` is the stack tip the request started from (the
-original source's parent) and `source` the retained cleaned tip. The service
-integrates it onto the current tip, verifies a rebased candidate with
-`coding/verify`, and proposes it; the `VibeSubmitted` receipt names the item
-that now carries the result. A repository without an active stack keeps the
-paths above.
+original source's parent) and `source` the retained cleaned tip. The
+`VibeSubmitted` receipt names the item that now carries the result. A
+repository without an active stack keeps the paths above.
 
 A stack request starts on the tip: `coding/request` with
 `base: { commitId, ref }` (the tip retained in this workspace's source ref)
@@ -273,8 +270,7 @@ imports that commit and creates an empty working change on it before planning
 its immutable export; it passes only when every required check passed. Its
 payload's `writes` are the paths the rebased candidate changes on the tip, so
 an affected check selects their targets; each receipt's input digest binds
-them. The stack service keeps the receipts of the run that measured the
-current candidate on its item, where the stack view shows them.
+them.
 
 ## Land without the backend
 

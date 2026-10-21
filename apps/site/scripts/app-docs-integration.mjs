@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url"
 import { appDocsImages } from "./sync-app-docs.mjs"
 
 /*
- * The docs screenshots publish at /images/docs/ from the one directory the app
- * bundles them from, apps/app/src/docs/images, so the site commits no copy.
+ * The docs screenshots publish at /images/docs/ from their one directory,
+ * apps/site/docs/app/images, beside the pages that show them.
  * `astro dev` answers them from that directory, and the static build copies
  * them in once it is on disk (`astro:build:done`). Only `<id>.light.webp` and
  * `<id>.dark.webp` publish: the capture manifest beside them stays private,

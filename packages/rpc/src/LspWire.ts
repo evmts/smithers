@@ -9,9 +9,8 @@
  * 3.17), and the one conversion of each into the typed answers of
  * `LocalLsp.ts`: 0-based, end-exclusive ranges become 1-based; a hover's
  * contents become one markdown string cut at the cap; a diagnostic's numeric
- * severity becomes its word. Two adapters speak the wire — the Bun host's
- * stdio session (`apps/app/src/bun/lsp/LspSession.ts`) and the renderer's
- * cloud client over plue's relay (`apps/app/src/mainview/state/CloudLspClient.ts`)
+ * severity becomes its word. Two adapters spoke the wire in the old app — the
+ * Bun host's stdio session and the renderer's cloud client over plue's relay
  * — and both convert HERE, so a hover reads the same whichever machine the
  * server runs on. Runtime-free: strings and numbers only.
  */

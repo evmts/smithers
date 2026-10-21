@@ -43,7 +43,7 @@ const app = createModelTurnHandler({
 const handler = HttpEffect.toWebHandler(app)
 ```
 
-`createModelTurnHandler` returns an `effect/http` handler, `Effect<HttpServerResponse, never, HttpServerRequest>`: every refusal is a response, and the package runs no Effect itself. `HttpEffect.toWebHandler` turns it into a `(request: Request) => Promise<Response>` that any server speaking Fetch serves (`apps/model-host` adapts `node:http`; a Worker or `Bun.serve` passes it as `fetch`), or a host mounts it on an `HttpRouter`. It runs in the host's fiber, so the host's services, logger, tracer and metrics reach every turn.
+`createModelTurnHandler` returns an `effect/http` handler, `Effect<HttpServerResponse, never, HttpServerRequest>`: every refusal is a response, and the package runs no Effect itself. `HttpEffect.toWebHandler` turns it into a `(request: Request) => Promise<Response>` that any server speaking Fetch serves (a Node host adapts `node:http`; a Worker or `Bun.serve` passes it as `fetch`), or a host mounts it on an `HttpRouter`. It runs in the host's fiber, so the host's services, logger, tracer and metrics reach every turn.
 
 A caller who goes away interrupts the body read and the model call however the handler is mounted, and the turn's outcome is still logged and counted.
 

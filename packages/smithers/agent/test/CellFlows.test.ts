@@ -1788,10 +1788,8 @@ describe("a retried model call says what the failed try took", () => {
  * words, a custom flow that takes a standard name and means something else,
  * and a flow that declares nothing at all.
  *
- * The produced trail is pinned as `fixtures/call-descriptor-trail.json` and
- * read back by `apps/app` `RunTraceDescriptor.test.ts`, which is the card half
- * of the same proof. Regenerate with `SMITHERS_UPDATE_FIXTURES=1`; a change
- * this test does not accept is a change the card is never shown.
+ * The produced trail is pinned as `fixtures/call-descriptor-trail.json`.
+ * Regenerate with `SMITHERS_UPDATE_FIXTURES=1`.
  */
 describe("a call carries what its declaration says it does", () => {
   /** A custom flow with words of its own: the declaration a host author writes. */

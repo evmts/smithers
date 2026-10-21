@@ -1,5 +1,5 @@
-// C-REL-02 diagnostic recorder; authenticated release qualification stays in
-// homebrew-release.mjs. Never treat this recording as a passing check receipt.
+// C-REL-02 diagnostic recorder. Never treat this recording as a passing check
+// receipt.
 import { spawn } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
 import { mkdir, readFile, writeFile, realpath } from 'node:fs/promises'

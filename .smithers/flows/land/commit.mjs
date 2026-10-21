@@ -14,7 +14,7 @@ const tests = []
 let noTest
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--help") {
-    console.log("Usage: pnpm commit [--message <message>] [--push] [--test <command> ... | --no-test <reason>]\nCommits ALL nonignored edits, including other contributors' work, on main.\nUses jj when available in this checkout, otherwise Git. --push publishes main to origin.\nPush always requires the DB-free migration gate, sqlc drift, and all five landing drift targets; --no-test does not skip them.\nAfter validation and pushing, use pnpm deploy to publish production.")
+    console.log("Usage: pnpm commit [--message <message>] [--push] [--test <command> ... | --no-test <reason>]\nCommits ALL nonignored edits, including other contributors' work, on main.\nUses jj when available in this checkout, otherwise Git. --push publishes main to origin.\nPush always requires all five landing drift targets; --no-test does not skip them.\nAfter validation and pushing, use pnpm deploy to publish production.")
     process.exit(0)
   } else if (args[i] === "--push") push = true
   else if (args[i] === "--test" && args[i + 1]?.trim()) tests.push(args[++i])
@@ -58,12 +58,6 @@ try {
   for (const command of tests) {
     const result = spawnSync("bash", ["-o", "pipefail", "-c", command], { cwd: root, stdio: "inherit", env: gateEnvironment })
     if (result.error || result.status !== 0) throw new Error(`Test command failed: ${command} (${result.error?.message ?? result.status})`)
-  }
-  if (push) {
-    // Mandatory even with --no-test; shared by both publication paths.
-    run("go", ["test", "-run", "TestMigrationGate|TestMigrationRegistry", "./packages/backend/db/product/"], false, gateEnvironment)
-    if (!existsSync(join(root, "packages/backend/scripts/check-sqlc-drift.sh"))) throw new Error("Required sqlc drift gate is unavailable")
-    run("bash", ["packages/backend/scripts/check-sqlc-drift.sh"], false, gateEnvironment)
   }
   run(process.execPath, ["packages/repo-targets/contracts/check-tracked-hygiene.mjs", "--include-untracked"], true, gateEnvironment)
   if (push) {

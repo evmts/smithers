@@ -308,16 +308,10 @@ describe("C-CAT-02 installed parser and descriptor dispatcher", () => {
       }
     }
   )
-  it("audits the actual install discovery tree against literal Appendix A and B.6 paths", async () => {
+  it("lists the actual install discovery tree as the literal Appendix A and B.6 paths", async () => {
     const { installCommandPaths } = await import("../src/internal/backend/InstallDiscovery.ts")
-    const { auditCliPaths } = await import("../../../apps/app/scripts/catalog-policy.mts")
     const paths = installCommandPaths(makeCli())
     expect(paths).toEqual([...fixtureCases.commands.map((row) => row.path), ...fixtureCases.b6].sort())
-    expect(auditCliPaths(paths)).toEqual([])
-    expect(auditCliPaths([...paths, "history todo", "host invented"])).toEqual([
-      { id: "history todo", reason: "unlisted" },
-      { id: "host invented", reason: "unlisted" }
-    ])
     expect(() => installCommandPaths({})).toThrow("CLI install discovery is unavailable")
   })
   it("B.6 host doors resolve through the installed parser without executing maintenance", async () => {
@@ -340,10 +334,8 @@ describe("C-CAT-02 installed parser and descriptor dispatcher", () => {
       await f.close()
     }
   })
-  it("the generated host reference is fresh and contains exactly the literal B.6 host paths", async () => {
-    const { generateHostReference } = await import("../../../apps/app/scripts/catalog-host.mts")
+  it("the host reference contains exactly the literal B.6 host paths", async () => {
     const reference = await readFile(new URL("../docs/reference/cli/host.md", import.meta.url), "utf8")
-    expect(reference).toBe(generateHostReference())
     expect([...reference.matchAll(/\| `smthrs (host [a-z]+)/g)].map((match) => match[1]).sort())
       .toEqual(fixtureCases.b6.filter((path) => path.startsWith("host ")).sort())
   })

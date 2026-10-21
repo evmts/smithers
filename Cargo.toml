@@ -2,12 +2,11 @@
 #
 # jj-lib comes from the smithersai/jj fork: jj-vcs/jj main plus the patch
 # stack its SMITHERS.md lists, pinned to one commit. Cargo.lock records that
-# commit, and the native bundle builds the jj CLI from the same commit
-# (apps/app/scripts/build-native.ts reads it from Cargo.lock).
+# commit.
 
 [workspace]
 resolver = "3"
-members = ["packages/smithers/flows/jj-wasm", "packages/smithers-ffi", "packages/smithers-machined"]
+members = ["packages/smithers/flows/jj-wasm", "packages/smithers-ffi"]
 
 [workspace.dependencies]
 # Both browser flows and the repository service use the same jj store format.

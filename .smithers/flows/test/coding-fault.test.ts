@@ -4,7 +4,6 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { NativeCode, NativeCodingError } from "../coding/native-schema.ts"
 import { CodingError } from "../coding/schema.ts"
 import { DocsImportError } from "../memory/deps.ts"
 
@@ -54,21 +53,4 @@ test("a decline closes the TODO and a stalled plan is replanned", () => {
   assert.equal(Fault.respond(checkInfra, state), "retry")
   assert.equal(Fault.of(new CodingError({ code: "fast_gate", message: "test failed" })).class, "factory")
   assert.equal(Fault.of(new CodingError({ code: "unavailable", message: "down" })).class, "dependency")
-})
-
-test("a native code with a Go twin carries the registry's verdict", () => {
-  const document = JSON.parse(
-    readFileSync(new URL("../../../docs/api/failure-codes.json", import.meta.url), "utf8")
-  ) as {
-    readonly codes: ReadonlyArray<{ readonly code: string; readonly fault: string }>
-  }
-  const go = new Map(document.codes.map((row) => [row.code, row.fault]))
-  const twins = NativeCode.literals.flatMap((code) => {
-    const fault = go.get(`coding_${code}`) ?? go.get(code)
-    return fault === undefined ? [] : [{ code, fault }]
-  })
-  assert.ok(twins.length >= 10)
-  for (const { code, fault } of twins) {
-    assert.equal(Fault.of(new NativeCodingError({ code, message: "m" })).class, fault, code)
-  }
 })

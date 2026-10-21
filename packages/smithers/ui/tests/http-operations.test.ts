@@ -1,10 +1,13 @@
 import { Schema } from "effect"
 import { expect, test } from "bun:test"
 import { httpProjections } from "../src/app-operations/http"
-import { generateCatalog } from "../../../../apps/app/scripts/catalog-mvp"
+import { pendingControls } from "../src/app-operations/controls"
 
-test("HTTP projections retain literal role and actor boundaries in the shipped catalog", () => {
-  const rows = generateCatalog()
+/** Every declared operation this package ships with an HTTP door. */
+const catalog = () => [...httpProjections, ...pendingControls]
+
+test("HTTP projections retain literal role and actor boundaries", () => {
+  const rows = catalog()
   for (const [name, minimumRole, agent, actors] of [
     ["install.read", "owner", "never", ["person"]],
     ["install.scorecard", "owner", "never", ["person"]],
@@ -17,12 +20,11 @@ test("HTTP projections retain literal role and actor boundaries in the shipped c
   }
   expect(rows.find(row => row.name === "todo.control")).toBeUndefined()
   expect(new Set(rows.map(row => row.name)).size).toBe(rows.length)
-  for (const projection of httpProjections) expect(rows.find(row => row.name === projection.name)?.http).toEqual(projection.http)
 })
 
 test("credential scopes are literal catalog inputs", () => {
-  const rows = generateCatalog()
-  for (const [name, credentialScope] of [["todo.new", "write:repository"], ["todo.read", "read:repository"], ["members.list", "read:repository"], ["self.read", "read:user"], ["agent.turn", "read:user"], ["telemetry.report", "read:user"]] as const) {
+  const rows = catalog()
+  for (const [name, credentialScope] of [["todo.read", "read:repository"], ["members.list", "read:repository"], ["self.read", "read:user"], ["agent.turn", "read:user"], ["telemetry.report", "read:user"]] as const) {
     expect(rows.find(row => row.name === name)).toMatchObject({ name, credentialScope })
   }
 })
@@ -42,7 +44,7 @@ test("Bring in requires the displayed wait and head on the shared branch route",
 test("Return and Keep share the numbered TODO door and retain person/agent policy", async () => {
   const { pendingControls } = await import("../src/app-operations/controls")
   const { Schema } = await import("effect")
-  const rows = generateCatalog()
+  const rows = catalog()
   for (const [name, op, agent, actors] of [["todo.return-to-item", "return-to-item", "run", ["person", "app_agent"]], ["todo.keep-moved", "keep-moved", "never", ["person"]]] as const) {
     const row = rows.find(row => row.name === name)!
     expect(row).toMatchObject({ agent, actors, minimumRole: "member", visibility: "in-card", cli: null, slash: null, http: { method: "POST", path: "/api/todos/{n}", defaults: { op } } })
@@ -73,31 +75,18 @@ test("source co-edit declares its batch and excludes general app-agent authority
   expect(() => decode({ changes: [{ path: "asset.bin", base_digest: "absent", content: "AA==", encoding: "unknown" }] })).toThrow()
 })
 
-test("both system rebase doors encode the typed branch POST without a caller-selected target", async () => {
+test("the system rebase door encodes the typed branch POST without a caller-selected target", async () => {
   const { catalogRequest } = await import("../../src/CatalogRequest")
-  const rows = generateCatalog()
-  for (const name of ["branch.rebase", "branch.rebase-now"]) {
-    const row = rows.find(row => row.name === name)!
-    expect(row.agent).toBe("run")
-    expect(row.minimumRole).toBe("member")
-    expect(catalogRequest(row, { branch: "scratch/ben/work" })).toEqual({
-      method: "POST", path: "/api/branches/scratch%2Fben%2Fwork", body: name === "branch.rebase" ? { op: "rebase" } : { rebase: true }
-    })
-  }
-})
-
-
-test("scratch Done preserves the retained binding through the catalog command", async () => {
-  const { catalogRequest } = await import("../../src/CatalogRequest")
-  const row = generateCatalog().find(row => row.name === "branch.rebase")!
-  expect(catalogRequest(row, { branch: "scratch/ben/work", conflict_change: "retained-change", onto_revision: "retained-onto" })).toEqual({
-    method: "POST", path: "/api/branches/scratch%2Fben%2Fwork",
-    body: { op: "rebase", conflict_change: "retained-change", onto_revision: "retained-onto" }
+  const row = catalog().find(row => row.name === "branch.rebase-now")!
+  expect(row.agent).toBe("run")
+  expect(row.minimumRole).toBe("member")
+  expect(catalogRequest(row, { branch: "scratch/ben/work" })).toEqual({
+    method: "POST", path: "/api/branches/scratch%2Fben%2Fwork", body: { rebase: true }
   })
 })
 
 test("system descriptors have no person or delegated doors",()=>{
- const rows=generateCatalog()
+ const rows=catalog()
  for (const [name,scope] of [
  ["stack.candidate","write:repository"],["stack.propose","write:repository"],
  ["workspace.head","write:repository"],["workspace.children.list","read:workspace"],
@@ -108,7 +97,7 @@ test("system descriptors have no person or delegated doors",()=>{
 })
 
 test("retained label writes keep their owner-only person HTTP doors", () => {
-  const rows = generateCatalog()
+  const rows = catalog()
   for (const [name, method, path] of [
     ["labels.create", "POST", "/api/repos/{owner}/{repo}/labels"],
     ["labels.update", "PATCH", "/api/repos/{owner}/{repo}/labels/{id}"],
@@ -122,14 +111,14 @@ test("retained label writes keep their owner-only person HTTP doors", () => {
 })
 
 test("external reads expose no raw transcript HTTP door", () => {
-  const row = generateCatalog().find(row => row.name === "external.read")!
+  const row = catalog().find(row => row.name === "external.read")!
   expect(row).toMatchObject({ agent: "never", minimumRole: "owner", actors: ["person"] })
   expect(row.http).toBeNull()
   expect(httpProjections.some(row => row.http?.path === "/api/external/sessions")).toBe(false)
 })
 
 test("bookmark protection configuration remains owner-only with no agent door", () => {
-  const rows = generateCatalog()
+  const rows = catalog()
   for (const [name, method, path, credentialScope] of [
     ["protected-bookmarks.read", "GET", "/api/repos/{owner}/{repo}/protected-bookmarks", "read:repository"],
     ["protected-bookmarks.upsert", "POST", "/api/repos/{owner}/{repo}/protected-bookmarks", "write:repository"],
@@ -144,7 +133,7 @@ test("bookmark protection configuration remains owner-only with no agent door", 
 
 
 test("variable values require an owner person and write scope even when reading", () => {
-  const rows = generateCatalog()
+  const rows = catalog()
   for (const [name, method, path] of [
     ["variables.read", "GET", "/api/repos/{owner}/{repo}/variables"],
     ["variables.set", "POST", "/api/repos/{owner}/{repo}/variables"],
@@ -159,7 +148,7 @@ test("variable values require an owner person and write scope even when reading"
 
 
 test("GitHub account metadata retains its owner person read boundary", () => {
-  expect(generateCatalog().find(row => row.name === "github.account-read")).toMatchObject({
+  expect(catalog().find(row => row.name === "github.account-read")).toMatchObject({
     minimumRole: "owner", agent: "never", actors: ["person"], credentialScope: "read:repository",
     visibility: "hidden", cli: null, slash: null,
     http: { method: "GET", path: "/api/user/github-repos" }
@@ -169,7 +158,7 @@ test("GitHub account metadata retains its owner person read boundary", () => {
 
 test("retained account writes use the user scope and an owner person", async () => {
   const { Schema } = await import("effect")
-  const rows = generateCatalog()
+  const rows = catalog()
   for (const [name, method, path] of [
     ["account.email.add", "POST", "/api/user/emails"],
     ["account.email.delete", "DELETE", "/api/user/emails/{id}"],
@@ -203,7 +192,7 @@ test("retained account writes use the user scope and an owner person", async () 
 })
 
 test("deploy key management keeps its owner person boundary", () => {
-  const rows = generateCatalog()
+  const rows = catalog()
   for (const [name, method, path, credentialScope] of [
     ["deploy-keys.read", "GET", "/api/repos/{owner}/{repo}/keys", "read:repository"],
     ["deploy-keys.create", "POST", "/api/repos/{owner}/{repo}/keys", "write:repository"],

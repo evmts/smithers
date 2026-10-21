@@ -9,13 +9,10 @@ import type { RuntimeCapability } from "./AppBootstrap.ts"
 /**
  * The one place each host's bootstrap capability list is spelled out.
  *
- * The Worker (`apps/server/src/index.ts`, host `cloud`) and the Bun server
- * (`apps/app/src/bun/server.ts`, host `local`) call these with what they have
- * configured, and the parity test builds its registries from the same two
- * functions, so the matrix cannot drift from production. Each table is the
- * emission order; a row is kept only when its flag is on. The Go backend
- * (`packages/backend/internal/compose/bootstrap.go`) is a `cloud` host too,
- * hosted or self-hosted, and keeps its own list.
+ * The old stack's Worker (host `cloud`) and Bun server (host `local`), both
+ * removed on 2026-10-21, called these with what they had configured, and the
+ * parity test builds its registries from the same two functions. Each table is the
+ * emission order; a row is kept only when its flag is on.
  */
 
 /** What the Worker has configured. `terminal` names the same-origin workspace terminal relay.

@@ -33,15 +33,15 @@ provisioned landing binding and reserved `SMITHERS_JJHUB_TOKEN` and
 does a project `landing` of `fast-forward` or `pull-request` on a host without
 that binding, landing with `jj`, `git` and `gh` from `PATH`
 (see [finalization.md](finalization.md)).
-With a project it also registers `factory/Todo`, which routes each stack request (a TODO) on Jev before it is planned (see [todo.ts](todo.ts)), and `coding/verify`, which the mythical stack runs
-on rebased candidates, and `coding/wiki` when the project enables its wiki: the stack
-runs it after every fold to refresh and review the declared pages.
+With a project it also registers `factory/Todo`, which routes each stack request (a TODO) on Jev before it is planned (see [todo.ts](todo.ts)), and `coding/verify`, which runs the required checks on a rebased stack
+candidate, and `coding/wiki` when the project enables its wiki, which refreshes
+and reviews the declared pages.
 These routes ship as host built-ins beside `coding` and `coding/implementation`,
 so a repository needs only its project file and never a `.smithers/flows/coding/` tree; a
 repository's own flow of the same name wins.
 See [project-config.md](project-config.md) for missing and invalid file behavior.
 
-`--help` and `--version` work before opening the repository or resolving provider credentials. The same `Serve.refuse` policy requires a credential and explicit `--listen` for a non-loopback bind. The Plue service owns its workspace lifetime lock and process scope.
+`--help` and `--version` work before opening the repository or resolving provider credentials. The same `Serve.refuse` policy requires a credential and explicit `--listen` for a non-loopback bind.
 
 ## Host state directory
 
@@ -72,13 +72,12 @@ still work under `--root`.
 
 Node model requests honor `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` (lowercase
 forms take precedence), including after a transport pool rebuild. An unconfigured
-host retains its direct Undici agent. Workspace deployments can therefore use
-Plue's existing proxy-bound repository secrets: the guest holds a named
-placeholder while the egress proxy substitutes the credential only for the
-configured host/header. For example, `SMITHERS_CODING_IMPLEMENT_MODEL=cerebras:qwen-3.8-27b`
+host retains its direct Undici agent. A workspace deployment can therefore keep
+model credentials behind an egress proxy: the guest holds a named placeholder
+and the proxy substitutes the credential only for the configured host and
+header. For example, `SMITHERS_CODING_IMPLEMENT_MODEL=cerebras:qwen-3.8-27b`
 uses `CEREBRAS_API_KEY`, bound to host `api.cerebras.ai` and header `authorization`.
-Assign that credential through the repository's agent-environment secret route;
-do not put its value in ordinary environment variables or the setup script.
+Do not put its value in ordinary environment variables or the setup script.
 
 `node .smithers/flows/test/canary-coding-setup.mjs /tmp/canary-coding-setup` prepares a
 self-contained setup script for the documented canary fixture. It registers the
@@ -137,9 +136,9 @@ The native acceptance fixture uses a scripted model behind the existing `SeatRes
 
 ## Deployment artifact
 
-`node .smithers/flows/coding/build.mjs /path/to/smithers-coding-host` uses the repository's existing esbuild dependency to emit one executable ESM file. It fits Plue's current gzip/base64 single-executable staging path. The Node shebang selects the default runtime; `bun smithers-coding-host ...` uses the Bun adapters in the same artifact. A build-only lazy wrapper keeps the Bun SQLite builtin behind the existing dynamic platform import, preventing an eager Node import of `bun:sqlite`. It changes no SQL or gateway protocol.
+`node .smithers/flows/coding/build.mjs /path/to/smithers-coding-host` uses the repository's existing esbuild dependency to emit one executable ESM file. `build.mjs` refuses an artifact over its staging limit of eight 16 MiB chunks. The Node shebang selects the default runtime; `bun smithers-coding-host ...` uses the Bun adapters in the same artifact. A build-only lazy wrapper keeps the Bun SQLite builtin behind the existing dynamic platform import, preventing an eager Node import of `bun:sqlite`. It changes no SQL or gateway protocol.
 
-QuickJS's existing single-file variant is bundled. SQLite remains the runtime's native builtin, and process containment programs remain their existing embedded source. Plue separately provisions JJ, the owning coding configuration and the packaged `smithers-jj-export` workspace helper. Declared repository modules resolve their own project dependencies as usual, except `effect` and the `@smthrs` packages the host runs: their public entry points resolve to the host's bundled instances (`host-modules.ts`, built by `host-modules-build.mjs` from the modules the host evaluates at start), because the host decodes a flow's schemas, graph and errors with its own copies. The coding package's TODO step flows are one of them: `@smthrs/coding` (`steps.ts`) exports `Request`, `TodoDelivery`, `Vibe` and their schemas, so a repository that copies only `.smithers/flows/todo/flow.ts` runs the host's steps and needs no `.smithers/flows/coding` tree. An entry point of such a package that the host does not run is refused, not loaded as a second copy. This artifact is private deployment composition.
+QuickJS's existing single-file variant is bundled. SQLite remains the runtime's native builtin, and process containment programs remain their existing embedded source. The deployment provisions JJ, the owning coding configuration and the packaged `smithers-jj-export` workspace helper separately. Declared repository modules resolve their own project dependencies as usual, except `effect` and the `@smthrs` packages the host runs: their public entry points resolve to the host's bundled instances (`host-modules.ts`, built by `host-modules-build.mjs` from the modules the host evaluates at start), because the host decodes a flow's schemas, graph and errors with its own copies. The coding package's TODO step flows are one of them: `@smthrs/coding` (`steps.ts`) exports `Request`, `TodoDelivery`, `Vibe` and their schemas, so a repository that copies only `.smithers/flows/todo/flow.ts` runs the host's steps and needs no `.smithers/flows/coding` tree. An entry point of such a package that the host does not run is refused, not loaded as a second copy. This artifact is private deployment composition.
 
 The coding host requires `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` to name the
 packaged helper by an absolute path. Both Node and Bun use that executable for
@@ -155,9 +154,7 @@ remain required; these providers alone do not enable candidate capture or PR
 publication.
 
 The configured executable is staged separately from the general Smithers CLI.
-Plue's existing `SMITHERS_WORKSPACE_CODING_HOST_BINARY` operator option selects
-that artifact; it is installed as `/usr/local/bin/smithers-coding-host`. General
-CLI pack setup and interactive commands retain their existing executable.
+General CLI pack setup and interactive commands retain their existing executable.
 
 Engine compensation uses the private `snapshots.ts` configuration of the existing
 Jj service. Its opaque preimage is an immutable full commit ID; snapshots never

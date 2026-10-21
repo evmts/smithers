@@ -194,7 +194,6 @@ describe("history rendering", () => {
     ) expect(accountLabel(account)).toBe(cardAccountLabel(account))
     expect(accountLabel({ provider: "constructor", count: 1 })).toBe("constructor")
   })
-  // `elapsedLabel` mirrors apps/app/src/mainview/Timestamps.ts, which sits outside this package's rootDir.
   it("words spend in dollars and a lane's running time as the History card does", () => {
     expect(spendLabel(420_000_000)).toBe("$0.42")
     expect(spendLabel(0)).toBe("$0.00")

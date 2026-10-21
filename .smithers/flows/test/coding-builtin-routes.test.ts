@@ -656,11 +656,9 @@ test("a repository copy of the TODO composition loads on the packaged host with 
 
 test("an admitted pin loads the packaged default TODO without a repository override", async (t) => {
   const { repositoryPath, stateRoot } = await workspace(t)
-  const { todo: digest } = JSON.parse(
-    await readFile(new URL("../../../packages/backend/internal/services/builtin_flows.json", import.meta.url), "utf8")
-  )
   await Effect.gen(function*() {
     const builtins = yield* provisionBuiltins(stateRoot, policy)
+    const digest = Descriptor.executionDigest(yield* builtins.registry.get("todo"))
     const project = yield* Registry.make({
       sources: [{
         root: join(repositoryPath, ".smithers", "flows"),
@@ -689,9 +687,6 @@ test("an admitted pin loads the packaged default TODO without a repository overr
 // value is the module the host compiled from them, its layer included.
 test("a repository without its own review runs the packaged default with its modules and layer", async (t) => {
   const { repositoryPath, stateRoot } = await workspace(t)
-  const { review: digest } = JSON.parse(
-    await readFile(new URL("../../../packages/backend/internal/services/builtin_flows.json", import.meta.url), "utf8")
-  )
   const subject = join(repositoryPath, "..", "subject")
   await mkdir(subject)
   const git = (...args: Array<string>) => execFileSync("git", args, { cwd: subject, stdio: "pipe" })
@@ -713,6 +708,7 @@ test("a repository without its own review runs the packaged default with its mod
   let asked = 0
   const result = await Effect.gen(function*() {
     const builtins = yield* provisionBuiltins(stateRoot, policy)
+    const digest = Descriptor.executionDigest(yield* builtins.registry.get("review"))
     const project = yield* Registry.make({
       sources: [{ root: join(repositoryPath, ".smithers", "flows"), source: "project", naming: "path" }]
     }).pipe(Effect.provide(Discovery.layer))

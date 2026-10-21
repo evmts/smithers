@@ -12,7 +12,6 @@ is never read (mvp.md M-49): flow entries left there load nothing and produce on
 
 ## Factory flow catalog
 
-The install's catalog is `packages/backend/internal/services/flow_catalog.go`.
 System flows cover stack operations (including `stack.propose`), merge, members,
 settings, secrets, sync, admission, setup, `flow-load`, and the summarizer. A
 repository declaration with an exact system name is refused with `reserved_name`

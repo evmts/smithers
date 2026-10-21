@@ -105,9 +105,9 @@ test("workspace discovery follows every pnpm-workspace package glob", () => {
   const directories = new Set(readManifests().map(({ directory }) => directory))
   assert.equal(directories.has("packages/smithers/build/infra"), true)
   assert.equal(directories.has(".smithers/flows/coding"), true)
-  assert.equal(directories.has("apps/server"), true)
+  assert.equal(directories.has("apps/site"), true)
   assert.equal(directories.has("packages/rpc"), true)
-  assert.equal(directories.has("apps/app"), true)
+  assert.equal(directories.has("apps/mvp"), true)
 })
 
 test("retargetSource rewrites the version literal and nothing else", () => {

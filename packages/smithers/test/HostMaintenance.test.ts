@@ -5,8 +5,7 @@ import * as Host from "../src/internal/backend/HostService.ts"
 
 afterEach(() => vi.restoreAllMocks())
 
-// CLI parsing/presentation coverage. Native dispatch and confinement are
-// separately exercised by apps/backend/maintenance_test.go without this mock.
+// CLI parsing/presentation coverage; the host service is mocked.
 it.each(
   [
     ["backup", undefined],

@@ -168,8 +168,6 @@ only.
 | `smithers`                    | `CloudSandbox live workspace lifecycle`                                                            | `it.skipIf(SMITHERS_CLOUD_SANDBOX_SMOKE !== "1")`           |
 | `smithers`                    | `PostgreSQL retains one native ancestry snapshot across a committed writer on a separate connection` | `it.skipIf(process.env.SMITHERS_TEST_PG_URL === undefined)` |
 | `smithers`                    | `observing host over PostgreSQL`                                                                   | `describe.skipIf(!postgres)`                               |
-| `smithers`                    | `delegated laptop login against the install`                                                       | `describe.skipIf(!process.env.SMITHERS_TEST_DATABASE_URL && !process.env.CI)` |
-| `smithers`                    | `C-J6-02 laptop login is delegated, attributed, and cannot merge without B's press`                | `it.skipIf(!enabled)`                                       |
 | `smithers`                    | `C-INS-06 / C-INS-03 real CLI, launchd, bundled launcher and public origin`                        | `it.skipIf(!enabled && !required)`                          |
 | `smithers/agent/harness`      | `ExternalTranscript with the installed CLIs`                                                       | `describe.skipIf(!enabled)`                                 |
 | `smithers/agent/std`          | `C-COL-01 production dispatcher ${available ? "installed batch/delete/move" : "unavailable provider"}` | `test.skipIf(available && !installed)`                      |
@@ -184,16 +182,6 @@ provider. `environment.test.ts` asserts the default run sees no provider key,
 so it steps aside when that opt-in hands the keys in. What breaks if it
 regresses: the examples a user copies first could stop reaching a real model.
 Workaround: run them with `SMITHERS_LIVE_EXAMPLES=1` and the provider set up.
-
-**`smithers`: delegated laptop login (C-J6-02).** `DelegatedLogin.integration.test.ts`
-drives the source CLI against the installed composition that
-`packages/backend`'s `TestDelegatedLoginCLIHarness` serves: real PostgreSQL,
-the native repository engine and the GitHub fake. The describe block runs
-wherever PostgreSQL is available (CI, or `SMITHERS_TEST_DATABASE_URL`); the
-login case also needs `SMITHERS_DELEGATED_LOGIN_TEST=1`, because it builds and
-runs the Go harness. What breaks if it regresses: a laptop login could mint a
-credential that merges without the member's press. Workaround: run it with
-both variables set.
 
 **`smithers`: host service on launchd (C-INS-06, C-INS-03).**
 `host-service.integration.test.ts` installs a real T-INS-01 bundle as a

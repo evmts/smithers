@@ -3,8 +3,7 @@ import * as LocalApp from "../src/LocalApp.ts"
 import { HarnessSchema, RepoSchema, splitLabel, TargetSchema } from "../src/LocalApp.ts"
 
 /*
- * The local-app wire model (apps/app/docs/LOCAL-APP.md "Targets: load and
- * run"): a repository carries its detected workspaces, and a target carries
+ * The local-app wire model (targets: load and run): a repository carries its detected workspaces, and a target carries
  * the workspace its loader ran in plus the presentation its declaration
  * stated. There is no repository manifest: a target's summary and featured
  * flag ride the PACKAGE.ts declaration and arrive through the loader listing.

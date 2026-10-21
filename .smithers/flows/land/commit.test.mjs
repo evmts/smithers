@@ -1,4 +1,3 @@
-import { installMigrationFixture } from './migration-fixture.mjs'
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
@@ -7,8 +6,9 @@ import { join, resolve } from "node:path"
 import { test } from "node:test"
 
 const script = resolve(import.meta.dirname, "commit.mjs")
+process.env.PATH = `${resolve(import.meta.dirname, "../../../node_modules/.bin")}:${process.env.PATH}`
 const copyHygiene = (directory) => {
-  installMigrationFixture(directory)
+  writeFileSync(join(directory, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\nimporters:\n  .: {}\n")
   // Exercise this checkout's production build CLI, rather than an installed release.
   const gateBin = join(directory, ".git/test-bin")
   mkdirSync(gateBin, { recursive: true })

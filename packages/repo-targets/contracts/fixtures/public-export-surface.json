@@ -909,7 +909,7 @@
           "default": "./dist/cjs/ExternalTranscript.js"
         }
       },
-      "reason": "Pure, read-only decoding of the Codex and Claude Code transcripts a person runs beside Smithers into ordered entries (mvp.md M-38, T-UI-07 S2); apps/model-host tails them. It reads only caller-supplied bytes and refuses unknown records with tagged errors."
+      "reason": "Pure, read-only decoding of the Codex and Claude Code transcripts a person runs beside Smithers into ordered entries (mvp.md M-38, T-UI-07 S2). It reads only caller-supplied bytes and refuses unknown records with tagged errors."
     },
     {
       "name": "@smthrs/model",

@@ -7,7 +7,7 @@ import { SMITHERS_UI_STYLE_ATTR } from "../src/index";
 
 /*
  * Send and Stop are rendered by this component, so a host that must name the
- * act behind them — apps/app stamps `data-flow` on every affordance — has no
+ * act behind them, such as with `data-flow` on every affordance, has no
  * element of its own to put the attribute on. `submitProps` and `stopProps`
  * are that seam, and they are typed `ComponentProps<"button"> &
  * DataAttributes` (the FileTree `nodeProps` convention): an object holding

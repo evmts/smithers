@@ -10,8 +10,8 @@
  * launched `create-workflow`, a name from the 0.x JSX runtime that no 1.0
  * composition has ever registered, and every attempt refused.
  *
- * `flows/` and `apps/app` both read the names from here, so a rename is one
- * edit and a test on either side is testing the id the other side uses.
+ * Every reader takes the names from here, so a rename is one edit and a test
+ * on either side is testing the id the other side uses.
  *
  * @since 1.0.0
  */

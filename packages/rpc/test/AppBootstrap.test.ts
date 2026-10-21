@@ -99,7 +99,7 @@ describe("runtime capabilities", () => {
   })
 
   test("native.shell is the desktop shell's row: a self-hosted web bootstrap never carries it", () => {
-    // The Go backend's self-host answer (packages/backend/internal/compose/bootstrap.go): a web origin with owner credentials.
+    // A self-hosted web origin's answer, with owner credentials.
     const selfHost = AppBootstrapSchema.parse({
       apiVersion: APP_API_VERSION,
       host: "cloud",

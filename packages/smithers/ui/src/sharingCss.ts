@@ -2,7 +2,7 @@ import { tokens as t } from "./tokens";
 
 /**
  * The six lanes a person's avatar paints with. A host that defines the lane
- * palette (`--lane-0` to `--lane-5`, as apps/app does for every identity mark)
+ * palette (`--lane-0` to `--lane-5`)
  * colors avatars with it; any other host gets the theme's own hues, which
  * follow light and dark. `--avatar-ink` is the initial's color, the theme's
  * inverse text by default, so the initial reads on every lane in both themes.

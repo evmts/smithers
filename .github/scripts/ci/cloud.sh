@@ -41,8 +41,9 @@ export GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-$JJ_EMAIL}"
 # refused, it is blackholed, and the only symptom is that program's own
 # timeout.
 #
-# That is `//apps/app:devkit` on runs 11723, 11727, 11734 and 11736: electrobun
-# fetches its Hutch artifact index with `https.get`, the SYN went nowhere, and
+# That was the old app's `devkit` gate (removed 2026-10-21) on runs 11723,
+# 11727, 11734 and 11736: electrobun fetched its Hutch artifact index with
+# `https.get`, the SYN went nowhere, and
 # the gate reported "Hutch artifact index timed out". Every host that path
 # needs is on the runner allowlist already (`github.com`,
 # `githubusercontent.com`), and the Hutch binary it installs reads the proxy
@@ -378,7 +379,6 @@ gate_tools() {
     flows-mutation-gate) echo 'js jj rust' ;;
     flows-campaign-verifiers) echo 'js jj rust' ;;
     flows-signal-campaign) echo 'js jj rust' ;;
-    flows-perf-unit) echo 'js jj rust' ;;
     flows-land) echo 'js jj rust' ;;
     flows-land-commit) echo 'js jj rust' ;;
     flows-triage-publish) echo 'js jj rust' ;;
@@ -392,11 +392,6 @@ gate_tools() {
     flows-npm-dedupe-unit) echo 'js jj rust' ;;
     flows-release-tools) echo 'js jj rust' ;;
     flows-release-steps) echo 'js jj rust' ;;
-    app-browser-1) echo 'js jj' ;;
-    app-browser-2) echo 'js jj' ;;
-    app-browser-3) echo 'js jj' ;;
-    machined-documents) echo 'js rust' ;;
-    backend-go-access) echo 'js' ;;
     flows) echo 'js' ;;
     flows-egress) echo 'js' ;;
     flows-repository) echo 'js jj' ;;
@@ -413,7 +408,6 @@ gate_tools() {
     authoring-check) echo 'js' ;;
     swebench) echo 'js jj' ;;
     swebench-check) echo 'js' ;;
-    server) echo 'js jj' ;;
     review-flow) echo 'js' ;;
     bug-worker) echo 'js' ;;
     project-copy) echo 'js' ;;
@@ -421,30 +415,21 @@ gate_tools() {
     docs) echo 'js' ;;
     review-eval) echo 'js' ;;
     review-check) echo 'js' ;;
-    recommend-eval) echo 'js' ;;
-    recommend-check) echo 'js' ;;
     workflow-drift) echo 'js' ;;
     factory-drift) echo 'js' ;;
     target-index) echo 'js' ;;
     fmt) echo 'js' ;;
-    backend-access-tests) echo 'js' ;;
-    openapi-bundle) echo 'js' ;;
-    openapi-clients) echo 'js' ;;
     docs-drift) echo 'js' ;;
     api-baseline) echo 'js' ;;
     conflict-markers) echo 'js' ;;
     tracked-hygiene) echo 'js' ;;
     drift-ci) echo 'js' ;;
-    ui-check) echo 'js jj' ;;
-    ui-tests) echo 'js jj' ;;
-    ui-conformance) echo 'js jj' ;;
     tui) echo 'js jj rust' ;;
     tui-e2e) echo 'js jj rust' ;;
     rust-lint) echo 'js rust' ;;
     third-party-notices) echo 'js rust' ;;
     rust-test) echo 'js rust' ;;
     native-ffi) echo 'js jj rust' ;;
-    backend-go) echo 'js' ;;
     wasm-build-script) echo 'js' ;;
     web-bundle) echo 'js' ;;
     cloud-contract) echo 'js' ;;
@@ -536,9 +521,6 @@ run_gate() {
     flows-signal-campaign)
       pnpm exec smthrs test '//.smithers/flows:signalCampaign' --known-red '.github/ci-known-red.json' --verbose
       ;;
-    flows-perf-unit)
-      pnpm exec smthrs test '//.smithers/flows:perfUnit' --known-red '.github/ci-known-red.json' --verbose
-      ;;
     flows-land)
       pnpm exec smthrs test '//.smithers/flows:land' --known-red '.github/ci-known-red.json' --verbose
       ;;
@@ -577,21 +559,6 @@ run_gate() {
       ;;
     flows-release-steps)
       pnpm exec smthrs test '//.smithers/flows:releaseSteps' --known-red '.github/ci-known-red.json' --verbose
-      ;;
-    app-browser-1)
-      pnpm exec smthrs test '//apps/app:browserE2eShard1' --known-red '.github/ci-known-red.json' --verbose
-      ;;
-    app-browser-2)
-      pnpm exec smthrs test '//apps/app:browserE2eShard2' --known-red '.github/ci-known-red.json' --verbose
-      ;;
-    app-browser-3)
-      pnpm exec smthrs test '//apps/app:browserE2eShard3' --known-red '.github/ci-known-red.json' --verbose
-      ;;
-    machined-documents)
-      pnpm exec smthrs test '//packages/smithers-machined:documentComponents' --known-red '.github/ci-known-red.json' --verbose
-      ;;
-    backend-go-access)
-      pnpm exec smthrs test '//:backendGoAccess' --known-red '.github/ci-known-red.json' --verbose
       ;;
     flows)
       pnpm exec smthrs test '//.smithers/flows:pack' --known-red '.github/ci-known-red.json' --verbose
@@ -641,9 +608,6 @@ run_gate() {
     swebench-check)
       pnpm exec smthrs build '//packages/smithers/agent/harness/benchmarks/swebench:check' --known-red '.github/ci-known-red.json' --verbose
       ;;
-    server)
-      pnpm exec smthrs ci '//apps/server/...' --known-red '.github/ci-known-red.json' --verbose
-      ;;
     review-flow)
       pnpm exec smthrs ci '//.smithers/flows/review/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
@@ -665,12 +629,6 @@ run_gate() {
     review-check)
       pnpm exec smthrs build '//.smithers/flows/review/seeded-bugs:check' --known-red '.github/ci-known-red.json' --verbose
       ;;
-    recommend-eval)
-      pnpm exec smthrs test '//packages/backend/modelhost/recommend-eval/...' --known-red '.github/ci-known-red.json' --verbose
-      ;;
-    recommend-check)
-      pnpm exec smthrs build '//packages/backend/modelhost/recommend-eval:check' --known-red '.github/ci-known-red.json' --verbose
-      ;;
     workflow-drift)
       pnpm exec smthrs lint '//:ci' --known-red '.github/ci-known-red.json' --verbose
       ;;
@@ -688,15 +646,6 @@ run_gate() {
     fmt)
       pnpm exec smthrs lint '//...:fmt' --known-red '.github/ci-known-red.json' --verbose
       ;;
-    backend-access-tests)
-      pnpm exec smthrs lint '//:backendAccessTests' --known-red '.github/ci-known-red.json' --verbose
-      ;;
-    openapi-bundle)
-      pnpm exec smthrs lint '//:openapiBundle' --known-red '.github/ci-known-red.json' --verbose
-      ;;
-    openapi-clients)
-      pnpm exec smthrs lint '//:openapiClients' --known-red '.github/ci-known-red.json' --verbose
-      ;;
     docs-drift)
       pnpm exec smthrs lint '//:docsDrift' --known-red '.github/ci-known-red.json' --verbose
       ;;
@@ -711,15 +660,6 @@ run_gate() {
       ;;
     drift-ci)
       pnpm exec smthrs lint '//:driftCi' --known-red '.github/ci-known-red.json' --verbose
-      ;;
-    ui-check)
-      pnpm exec smthrs build '//apps/app:check' --known-red '.github/ci-known-red.json' --verbose
-      ;;
-    ui-tests)
-      pnpm exec smthrs test '//apps/app:unitTests' --known-red '.github/ci-known-red.json' --verbose
-      ;;
-    ui-conformance)
-      pnpm exec smthrs test '//apps/app:conformance' --known-red '.github/ci-known-red.json' --verbose
       ;;
     tui)
       native_jj_export
@@ -741,9 +681,6 @@ run_gate() {
       ;;
     native-ffi)
       pnpm exec smthrs build '//:nativeFfi' --known-red '.github/ci-known-red.json' --verbose
-      ;;
-    backend-go)
-      pnpm exec smthrs test '//:backendGo' --known-red '.github/ci-known-red.json' --verbose
       ;;
     wasm-build-script)
       pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:buildScript' --known-red '.github/ci-known-red.json' --verbose

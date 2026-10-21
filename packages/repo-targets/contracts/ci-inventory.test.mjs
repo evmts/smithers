@@ -24,8 +24,8 @@ test("CI command discovery retains diagnostic options and refuses unknown select
       verb: "ci", pattern: "//packages/...", jobs: 2, verbose: true
     })
   }
-  assert.deepEqual(targetInvocation("pnpm exec smthrs build '//apps/app:check' --verbose"), {
-    verb: "build", pattern: "//apps/app:check", jobs: undefined, verbose: true
+  assert.deepEqual(targetInvocation("pnpm exec smthrs build '//apps/tui:check' --verbose"), {
+    verb: "build", pattern: "//apps/tui:check", jobs: undefined, verbose: true
   })
   assert.deepEqual(targetInvocation("pnpm exec smthrs ci '//apps/...' --known-red '.github/ci-known-red.json' --verbose"), {
     verb: "ci", pattern: "//apps/...", jobs: undefined, knownRed: ".github/ci-known-red.json", verbose: true
@@ -34,31 +34,6 @@ test("CI command discovery retains diagnostic options and refuses unknown select
   for (const options of ["--include-exclusive", "--jobs", "--jobs 0", "--jobs 2 --jobs 3", "--plan", "--known-red", "--known-red list.json"])
     assert.throws(() => targetInvocation(`pnpm exec smthrs test '//packages/...' ${options}`), /Unrecognized CI target/)
   assert.throws(() => targetInvocation("pnpm exec smthrs test //packages/..."), /Unrecognized CI target/)
-})
-
-test("browser typecheck plans its direct configuration without a native prerequisite", async () => {
-  const plan = planned("build", "//apps/app:check")
-  assert.deepEqual(plan.roots, ["//apps/app:check"])
-  assert.deepEqual(plan.targets.map((target) => target.label).sort(), [
-    "//apps/app:check", "//packages/testing:check", "//packages/testing:lib"
-  ])
-  const check = plan.targets.find((target) => target.label === "//apps/app:check")
-  assert.equal(check.rule, "Typecheck")
-  assert.deepEqual(check.dependencies, ["//packages/testing:check"])
-  assert.equal(check.cacheable, false, "a semantic check must run without an output restoration contract")
-  const index = await packageIndex()
-  const declaration = index.targets().find((target) => target.label === check.label)
-  assert.ok(declaration)
-  const metadata = Target.metadata(declaration.target)
-  assert.equal(metadata.target, "Typecheck")
-  assert.equal(metadata.attrs.cwd, "apps/app")
-  assert.equal(metadata.attrs.tsconfig.path, "tsconfig.json")
-  assert.equal(metadata.attrs.buildMode, false)
-  assert.equal(metadata.attrs.incremental, false)
-  const config = JSON.parse(readFileSync(join(root, "apps/app", metadata.attrs.tsconfig.path), "utf8"))
-  assert.equal(config.extends, undefined, "browser TypeScript configuration is independent of an ignored SDK projection")
-  assert.ok(config.include.includes("src"))
-  assert.ok(config.include.includes("e2e"))
 })
 
 test("CI inventory plans without building packages or the site", async () => {
@@ -188,11 +163,7 @@ test("required CI resolves package, app, script and evaluation suites to real ru
   assert.deepEqual(inventory.selectionErrors, [], "every required command must successfully plan")
   const selected = (label, job) => inventory.rows.filter((row) => row.label === label && row.job === job && row.required && row.selectedRoot)
   for (const [label, job] of [
-    ["//apps/app:check", "apps-e2e"], ["//apps/app:unitTests", "apps-e2e"],
-    ["//apps/app:browserE2eShard1", "apps-browser-1"], ["//apps/app:browserE2eShard2", "apps-browser-2"],
-    ["//apps/app:browserE2eShard3", "apps-browser-3"],
     ["//apps/tui:check", "apps-e2e"], ["//apps/tui:unitTests", "apps-e2e"], ["//apps/tui:e2eTests", "apps-e2e"],
-    ["//apps/server:check", "repository"], ["//apps/server:unitTests", "repository"],
     ["//.smithers/flows/review:unitTests", "repository"], ["//apps/bug-worker:unitTests", "repository"],
     ["//.smithers/flows/review:check", "repository"], ["//.smithers/flows/review:checkTests", "repository"],
     ["//apps/bug-worker:check", "repository"],
@@ -200,9 +171,8 @@ test("required CI resolves package, app, script and evaluation suites to real ru
     ["//packages/smithers/agent/regression:check", "repository"], ["//evals/authoring:check", "repository"], ["//packages/smithers/agent/harness/benchmarks/swebench:check", "repository"],
     ["//.smithers/flows/review/seeded-bugs:suite", "repository"], ["//.smithers/flows/review/seeded-bugs:test", "repository"],
     ["//.smithers/flows/review/seeded-bugs:check", "repository"],
-    ["//packages/backend/modelhost/recommend-eval:suite", "repository"], ["//packages/backend/modelhost/recommend-eval:test", "repository"], ["//packages/backend/modelhost/recommend-eval:check", "repository"],
     ["//packages/repo-targets:ciInventory", "test"], ["//.smithers/flows:mutationGate", "scripts"], ["//.smithers/flows:benchmarkGate", "scripts"],
-    ["//.smithers/flows:campaignVerifiers", "scripts"], ["//.smithers/flows:signalCampaign", "scripts"], ["//.smithers/flows:perfUnit", "scripts"],
+    ["//.smithers/flows:campaignVerifiers", "scripts"], ["//.smithers/flows:signalCampaign", "scripts"],
     ["//.smithers/flows:checkRunner", "scripts"],
     ["//packages/repo-targets:webBundleContract", "browser"],
     ["//packages/smithers/gateway:test", "test"], ["//packages/smithers/flows/jj:test", "packages"]
@@ -210,9 +180,6 @@ test("required CI resolves package, app, script and evaluation suites to real ru
   const inventoryRunner = selected("//packages/repo-targets:ciInventory", "test")[0].runner
   assert.equal(basename(inventoryRunner[0]), "node")
   assert.deepEqual(inventoryRunner.slice(1), ["--test", "packages/repo-targets/contracts/ci-inventory.test.mjs"])
-  const uiUnits = inventory.rows.filter((row) => row.label === "//apps/app:unitTests" && row.required && row.selectedRoot)
-  assert.equal(uiUnits.length, 1, "the UI unit tier runs once in required CI")
-  assert.deepEqual(uiUnits[0].runner, ["bun", "test", "--isolate", "src", "./proof", "e2e/contracts", "e2e/support", "e2e/real/coverage", "e2e/real/support", "e2e/real/auth-permissions/profile.test.ts", "e2e/real/chat-tools/shared-traffic.test.ts", "scripts"])
   const packageTests = inventory.rows.filter((row) => row.job === "packages" && row.required && row.selectedRoot)
   assert.ok(packageTests.length > 100, "the complete package test graph must resolve")
   for (const row of packageTests) assert.ok(selected(row.label, "test").length, `${row.label} must also be selected by ci //packages/...`)
@@ -231,22 +198,14 @@ test("required CI resolves package, app, script and evaluation suites to real ru
       assert.ok(row.runtimes.includes(`Node ${nodeRelease}`), row.job + " must report the pinned Node release")
     const name = row.label.split(":").at(-1)
     if (/^browser|^e2e|faults$/i.test(name)) {
-      assert.ok(/^browserE2eShard[1-3]$/.test(name) || name === "faults" || row.label === "//apps/tui:e2eTests",
+      assert.ok(name === "faults" || row.label === "//apps/tui:e2eTests",
         `${row.label}: classify and verify this suite's E2E runner`)
     }
     if (/unitTests$/.test(row.label)) {
-      // One required UI job owns the app's three tiers and the TUI suite; each
-      // unit step must still name and execute a unit runner, never claim
+      // Each unit step must name and execute a unit runner, never claim
       // browser coverage.
       assert.doesNotMatch(row.step, /e2e|end.to.end/i)
-      if (row.job === "apps-e2e") assert.ok(["//apps/app:unitTests", "//apps/tui:unitTests"].includes(row.label), row.label)
-    }
-    if (/browserE2eShard[1-3]$/.test(row.label)) {
-      assert.equal(row.rule, "NodeTest")
-      // Each shard job hands its own shard number to the Playwright entry.
-      assert.deepEqual(row.runner.slice(-2), ["scripts/run-pr-e2e.mjs", row.label.at(-1)])
-      const entry = readFileSync(join(root, row.cwd, "scripts/run-pr-e2e.mjs"), "utf8")
-      assert.match(entry, /\["exec", "playwright", "test", \.\.\.\(shard \? \[`--shard=\$\{shard\}\/3`\] : \[\]\)\]/)
+      if (row.job === "apps-e2e") assert.equal(row.label, "//apps/tui:unitTests")
     }
     if (row.label === "//apps/tui:e2eTests") {
       // The terminal tier types raw keys into the production entry inside a private tmux server.
@@ -262,7 +221,7 @@ test("required CI resolves package, app, script and evaluation suites to real ru
     // while the general NodeTest/Vitest runners always execute fresh work.
     if (["NodeTest", "Vitest"].includes(row.rule)) assert.equal(row.cacheable, false, `${row.label}: review all effective inputs before enabling result reuse`)
   }
-  for (const app of ["server", "app", "bug-worker"]) {
+  for (const app of ["bug-worker"]) {
     assert.match(readFileSync(join(root, `apps/${app}/PACKAGE.ts`), "utf8"), /Coverage policy: assertion-only/)
   }
   assert.match(readFileSync(join(root, ".smithers/flows/review/PACKAGE.ts"), "utf8"), /Coverage policy: assertion-only/)

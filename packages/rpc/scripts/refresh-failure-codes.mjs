@@ -1,20 +1,21 @@
 /*
- * Refresh the TypeScript copy of Smithers' failure-code registry.
+ * Refresh the TypeScript copy of plue's failure-code registry.
  *
- *   node scripts/refresh-failure-codes.mjs
- *   node scripts/refresh-failure-codes.mjs --check
+ *   node scripts/refresh-failure-codes.mjs --from <plue checkout | file.json | https://origin>
+ *   node scripts/refresh-failure-codes.mjs --check [--from <source>]
  *
- * Smithers Go owns the taxonomy in packages/backend/internal/pkg/errors.
- * Its checked-in document is docs/api/failure-codes.json, and
- * GET /api/meta/failure-codes serves the same bytes. This script copies the
- * document into src/plue-failure-codes.json UNCHANGED and regenerates
+ * plue owns the taxonomy: its checked-in document is docs/failure-codes.json,
+ * and GET /api/meta/failure-codes serves the same bytes. This script copies
+ * the document into src/plue-failure-codes.json UNCHANGED and regenerates
  * src/PlueFailureCodes.ts from them, which is where the codes become types.
+ * The repository keeps no other copy, so writing needs `--from`.
  *
- * Run it in the same change that edits the Go registry. Without the
+ * Run it in the change that picks up a plue registry edit. Without the
  * regeneration a new code has no row, and `satisfies Record<PlueFailureCode,
  * PlueFailureEntry>` in the generated file makes that a compile error rather
  * than a refusal the app renders as a shrug. `--check` fails instead of
- * writing, which is what the drift test and CI want.
+ * writing, which is what the drift test and CI want; without `--from` it
+ * checks the generated types against the vendored document.
  */
 import { readFileSync, writeFileSync } from "node:fs"
 import { createHash } from "node:crypto"
@@ -22,12 +23,11 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 const here = dirname(fileURLToPath(import.meta.url))
-const canonicalPath = join(here, "..", "..", "..", "docs", "api", "failure-codes.json")
 const jsonPath = join(here, "..", "src", "plue-failure-codes.json")
 const tsPath = join(here, "..", "src", "PlueFailureCodes.ts")
 
 /**
- * The digest Go computes: sha256 over `json.Marshal(records)` — Go's compact
+ * The digest the Go registry computed: sha256 over `json.Marshal(records)` — Go's compact
  * encoding of the code rows in the document's own order, with Go's default
  * HTML escaping. Reproducing it here rather than trusting the field is the
  * whole point of the drift test: a hand-edited row changes the payload and
@@ -97,10 +97,11 @@ const render = (document) => {
  *
  * GENERATED FILE — do not edit. Regenerate with:
  *
- *   node packages/rpc/scripts/refresh-failure-codes.mjs
+ *   node packages/rpc/scripts/refresh-failure-codes.mjs --from <plue checkout>
  *
- * Source: docs/api/failure-codes.json, rendered by Smithers Go and
- * served at GET /api/meta/failure-codes. WHICH revision is the digest below,
+ * Source: plue's docs/failure-codes.json, vendored as
+ * src/plue-failure-codes.json and served at GET /api/meta/failure-codes.
+ * WHICH revision is the digest below,
  * not a path — a local checkout's location is not provenance, and putting one
  * here would rewrite this file on every machine that regenerated it.
  *
@@ -225,8 +226,12 @@ const main = async () => {
   const check = args.includes("--check")
   const fromIndex = args.indexOf("--from")
   const from = fromIndex < 0 ? null : args[fromIndex + 1]
+  if (from === null && !check) {
+    console.error("refresh-failure-codes: --from <plue checkout, its docs/failure-codes.json, or an https:// origin> is required")
+    process.exit(1)
+  }
   const { text, source } = from === null
-    ? { text: readFileSync(canonicalPath, "utf8"), source: canonicalPath }
+    ? { text: readFileSync(jsonPath, "utf8"), source: "src/plue-failure-codes.json" }
     : await load(from)
   const document = JSON.parse(text)
   const invalid = validationErrors(document)
@@ -252,7 +257,6 @@ const main = async () => {
     console.log(`refresh-failure-codes: fresh against ${source} (${document.codes.length} codes, ${document.digest})`)
     return
   }
-  if (from !== null) writeFileSync(canonicalPath, text)
   writeFileSync(jsonPath, text)
   writeFileSync(tsPath, rendered)
   console.log(`refresh-failure-codes: wrote ${document.codes.length} codes from ${source} (${document.digest})`)

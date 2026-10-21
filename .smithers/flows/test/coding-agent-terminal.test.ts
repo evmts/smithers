@@ -1,9 +1,7 @@
 /**
  * The coding host's terminal port (T-TRM-05) against a stand-in for the
- * installed `smithers-machined client pty`. The real client, the local
- * socket and the broker are covered by packages/smithers-machined/tests
- * (local.rs, session_dispatch.rs, agent_run.rs); this proves the coding host
- * hands the planned call to that client and maps only its documented status.
+ * installed `smithers-machined client pty`. This proves the coding host hands
+ * the planned call to that client and maps only its documented status.
  */
 import { NodeServices } from "@effect/platform-node"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"

@@ -172,20 +172,27 @@ const stackHostnames = (stackPath) => {
   return claims
 }
 
-test("every hostname has one owning Worker, in this repository or in the canary manifest", async () => {
+test("every hostname has one owning Worker in this repository", async () => {
   // A zone route wins over a custom domain on the same hostname, so a second
   // claim is never a fallback: it is a Worker nobody can reach, deployed and
   // tested as if it were live.
   const owners = new Map()
   const claim = (host, worker) => owners.set(host, new Set([...(owners.get(host) ?? []), worker]))
   const apps = join(root, "apps")
-  for (const app of readdirSync(apps)) {
-    const wranglerPath = join(apps, app, "wrangler.jsonc")
+  // The site's docs redirect Worker (apps/site/docs-redirect) is the one
+  // Worker nested below an app directory.
+  const wranglerPaths = [
+    ...readdirSync(apps).map((app) => join(apps, app, "wrangler.jsonc")),
+    join(apps, "site", "docs-redirect", "wrangler.jsonc")
+  ]
+  for (const wranglerPath of wranglerPaths) {
     if (existsSync(wranglerPath)) {
       const { config, error } = ts.parseConfigFileTextToJson(wranglerPath, readFileSync(wranglerPath, "utf8"))
       assert.equal(error, undefined, wranglerPath)
       for (const route of config.routes ?? []) claim(route.pattern.split("/")[0], config.name)
     }
+  }
+  for (const app of readdirSync(apps)) {
     const stackPath = join(apps, app, "alchemy.run.ts")
     if (existsSync(stackPath)) {
       for (const { host, owner } of stackHostnames(stackPath)) claim(host, owner)
@@ -195,13 +202,8 @@ test("every hostname has one owning Worker, in this repository or in the canary 
   for (const host of ["bug.smithers.sh", "bugs.smithers.sh"]) {
     assert.deepEqual([...owners.get(host) ?? []], ["smithers-bug-worker-smithers-bug-worker-williamcory"], host)
   }
-  // Deployed from another repository and probed by the canary.
-  const { BACKING_WORKERS, RETIRED_WORKERS } = await import("../../server/scripts/canary/workers-manifest.ts")
-  for (const worker of [...BACKING_WORKERS, ...RETIRED_WORKERS]) {
-    for (const origin of [worker.origin, ...worker.alternateOrigins]) {
-      if (origin !== undefined) claim(new URL(origin).hostname, `${worker.name} (canary manifest)`)
-    }
-  }
+  // The docs redirect Worker's routes are read too: one retired docs site.
+  assert.deepEqual([...owners.get("flows.smithers.sh") ?? []], ["smithers-docs-redirect"])
   const contested = [...owners].filter(([, workers]) => workers.size > 1).map(([host, workers]) => `${host}: ${[...workers].join(", ")}`)
   assert.deepEqual(contested, [])
 })

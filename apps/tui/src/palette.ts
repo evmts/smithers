@@ -1,10 +1,9 @@
 /**
  * Ctrl+K: one search over commands, the actions that apply now, files, file
- * text, sessions, and worker tabs. The first token picks the mode, as in the app's Cmd+K palette
- * (`apps/app/src/mainview/flows/SearchQuery.ts`, `PREFIXES` and `parseQuery`).
- * `/`, `text:` (with `/re/`) and `?` keep the app's meaning; `conversation:` and
- * `tab:` are the terminal's own. The app's `@` is symbols there, but `@` is a
- * file here, so it is not a prefix.
+ * text, sessions, and worker tabs. The first token picks the mode: `/`,
+ * `text:` (with `/re/`) and `?` follow the old app's Cmd+K palette;
+ * `conversation:` and `tab:` are the terminal's own. `@` is a file here, so it
+ * is not a prefix.
  *
  * Pure: the caller passes the sources and acts on the chosen row's value.
  */

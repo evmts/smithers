@@ -280,9 +280,9 @@ test("every gate in ci.yml also runs in release.yml", () => {
   // silently landing outside the release's proof. The jobs release.yml
   // does not mirror: `browser` runs `//packages/repo-targets:webBundleContract`,
   // which `ci '//packages/...'` already covers; `packages` runs `test '//packages/...'`,
-  // which `ci '//packages/...'` already covers; `apps-browser-1/2/3` need their runners'
-  // Chrome; the native Rust crate remains in `rust`, while the shipped FFI
-  // and Go backend jobs are mirrored. Release mirrors `wasm-repro` so the
+  // which `ci '//packages/...'` already covers; the native Rust crate remains
+  // in `rust`, while the shipped FFI
+  // job is mirrored. Release mirrors `wasm-repro` so the
   // committed artifact is rebuilt and byte-compared before packing.
   const jobs = Object.keys(parse(ci).jobs)
   assert.deepEqual(jobs, [
@@ -291,41 +291,31 @@ test("every gate in ci.yml also runs in release.yml", () => {
     "scripts",
     "docs",
     "apps-e2e",
-    "apps-browser-1",
-    "apps-browser-2",
-    "apps-browser-3",
     "rust",
     "rust-ffi",
     "wasm-repro",
     "browser",
-    "packages",
-    "go-backend",
-    "go-backend-access"
+    "packages"
   ])
 
-  const mirrored = ["test", "repository", "scripts", "docs", "rust-ffi", "wasm-repro", "go-backend", "go-backend-access"]
+  const mirrored = ["test", "repository", "scripts", "docs", "rust-ffi", "wasm-repro"]
   const isGate = (step) => graphCommands([step]).length > 0
   // ci.yml passes the known-red list; the release does not, so every target a
   // release mirrors must be green there, including those main tolerates.
   const expected = mirrored.flatMap((job) => jobSteps(ci, job)).filter(isGate)
     .map((step) => step.replace(/ --known-red '[^']+'/g, ""))
   const actual = jobSteps(workflow("release.yml"), "publish").filter(isGate)
-    .map(step => step.replace(" && matrix.lane != 'backend'", "")
-      .replace(" && (matrix.lane == 'backend' || matrix.lane == 'release')", ""))
 
   // The gates the release adds on top of the mirrored jobs, pinned so an
   // extra step is a decision here rather than a silent addition. Faults moved
-  // to scheduled reliability but remain a required release gate. The apps/app
-  // and apps/tui gates mirror the `apps-e2e` job without its browser suite; the other two
+  // to scheduled reliability but remain a required release gate. The apps/tui
+  // gates mirror the `apps-e2e` job; the other two
   // are release-only targets the roster comment in release.yml explains. The
   // 2026-09-05 rename added `smthrs` copies of two gates beside their older
   // `smithers-build` twins, and the subset check this case used to be could
   // not see the duplicates, the dropped cache env on two gates, or a step
   // ci.yml gained that the release never mirrored.
   const releaseOnly = [
-    "pnpm exec smthrs build '//apps/app:check' --verbose",
-    "pnpm exec smthrs test '//apps/app:unitTests' --verbose",
-    "pnpm exec smthrs test '//apps/app:conformance' --verbose",
     "pnpm exec smthrs ci '//apps/tui/...' --verbose",
     "pnpm exec smthrs test '//apps/tui:e2eTests' --verbose",
     "pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose",
@@ -377,7 +367,7 @@ test("every toolchain step in ci.yml's required test job also runs in release.ym
   const publishSteps = parse(releaseSource).jobs.publish.steps
   assert.deepEqual(
     publishSteps.filter((step) => step.if?.startsWith(laneCondition)).map((step) => step.name),
-    ["Require Plue matrix target", "Validate GitHub Actions workflows", "Install PostgreSQL"]
+    ["Validate GitHub Actions workflows", "Install PostgreSQL"]
   )
   const releaseSteps = jobSteps(releaseSource, "publish", (step) =>
     step.if?.startsWith(laneCondition) ? Object.fromEntries(Object.entries(step).filter(([key]) => key !== "if")) : step)

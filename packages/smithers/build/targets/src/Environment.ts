@@ -6,9 +6,8 @@
  * is fetched from, and the SHA-256 that artifact must match, plus the Rust
  * toolchain and the PostgreSQL major. `destinations` lists every host the
  * installation reaches. The declaration runs nothing; it reaches the target
- * index as one row, and an environment builder (the Microsandbox layers in
- * `packages/backend`) reads its pins, digests and destinations from that row
- * rather than from a list of its own.
+ * index as one row, and an environment builder reads its pins, digests and
+ * destinations from that row rather than from a list of its own.
  *
  * @since 1.0.0
  */

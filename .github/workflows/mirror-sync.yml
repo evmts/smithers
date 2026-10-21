@@ -1,8 +1,7 @@
 # Push main to the Smithers Cloud mirror of this repository.
 #
 # smithers.sh serves this repository signed out from the Cloud mirror
-# smithers-canary/smithers (apps/server/PUBLIC-REPOSITORIES.md, "Existing
-# repository APIs"): the factory projection under .smithers/, the wiki, the flow
+# smithers-canary/smithers: the factory projection under .smithers/, the wiki, the flow
 # catalog and the docs all reach a visitor through that mirror's contents
 # reads. The mirror has no pull of its own and the Cloud mirror-sync endpoint
 # answers 500, so before this workflow the mirror moved only when someone

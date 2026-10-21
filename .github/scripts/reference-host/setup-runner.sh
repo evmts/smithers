@@ -47,8 +47,8 @@ readonly HOOK=$HOOK_DIR/job-started.sh
 readonly LABEL=org.smithers.reference-host-runner
 readonly PLIST=/Library/LaunchDaemons/$LABEL.plist
 readonly RUNNER_PATH=$TOOLS/bin:/usr/bin:/bin:/usr/sbin:/sbin
-# Toolchain pins: package.json engines/packageManager, .node-version, go.mod
-# and the bun version CI installs. Hashes are the publishers' own:
+# Toolchain pins: package.json engines/packageManager, .node-version, the Go
+# release ci.yml installs and the bun version CI installs. Hashes are the publishers' own:
 # nodejs.org SHASUMS256.txt, the bun release's SHASUMS256.txt, go.dev/dl, and
 # the npm registry's dist.integrity for pnpm.
 readonly NODE_VERSION=26.5.0

@@ -592,7 +592,7 @@ test.each(["Bearer host-toke", "Bearer host-tokenx", "host-token", ""])(
 )
 
 test("bearerAuthorization admits only the exact bearer to a host's own Fetch routes", () => {
-  // apps/model-host guards its model Test and transcript routes with it.
+  // A host guards its model Test and transcript routes with it.
   const authorized = bearerAuthorization("host-token")
   const presenting = (authorization?: string) =>
     new Request("http://host.test/v1/model/test", authorization === undefined ? {} : { headers: { authorization } })

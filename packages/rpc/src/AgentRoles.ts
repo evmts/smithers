@@ -154,8 +154,7 @@ export const AGENT_ROLES: ReadonlyArray<AgentRole> = [
    * an implement-shaped run to them, and no code here or downstream may
    * "start cheap and escalate". Cost control is parallelism, caching and the
    * prototype-first decision, never a cheaper model for the implementation
-   * itself. The pin is
-   * apps/app/src/mainview/state/controller/implementSeat.test.ts.
+   * itself.
    */
   seeded({
     id: "implementation",

@@ -1,12 +1,12 @@
 /**
- * Projects the app's docs (apps/app/src/docs) onto smithers.sh/docs from
+ * Projects the product docs (apps/site/docs/app) onto smithers.sh/docs from
  * their one source: a Starlight page per toc.ts page, a Markdown copy of each
  * at /docs/<slug>.md, and the sidebar astro.config.mjs reads. `welcome`
- * publishes at /docs/. Check mode compares bytes so the site cannot diverge
- * from the app.
+ * publishes at /docs/. Check mode compares bytes so the projection cannot
+ * diverge from its source.
  *
  * Screenshots are not copied here: scripts/app-docs-integration.mjs serves
- * apps/app/src/docs/images at /images/docs/ in `astro dev` and copies it into
+ * apps/site/docs/app/images at /images/docs/ in `astro dev` and copies it into
  * the build.
  *
  * Usage: node apps/site/scripts/sync-app-docs.mjs [--check]
@@ -20,10 +20,10 @@ import { mapMarkdownProse } from "./docs-text.mjs"
 
 const site = resolve(import.meta.dirname, "..")
 const root = resolve(site, "../..")
-const source = "apps/app/src/docs"
+const source = "apps/site/docs/app"
 const origin = "https://smithers.sh"
 
-/** The app's screenshot directory, served at /images/docs/. */
+/** The docs' screenshot directory, served at /images/docs/. */
 export const appDocsImages = join(root, source, "images")
 
 /** The comment every projected page opens its frontmatter with. */
@@ -97,7 +97,7 @@ export function parseToc(text) {
   return sections
 }
 
-/** A page file's title, summary and body, read the way apps/app/src/docs/Docs.ts reads it. */
+/** A page file's title, summary and body: `title` and `summary` frontmatter, then Markdown. */
 export function parsePage(text, name) {
   const lines = text.replace(/\r\n/g, "\n").split("\n")
   const close = lines[0] === "---" ? lines.indexOf("---", 1) : -1
@@ -210,8 +210,7 @@ export function projection() {
     const pages = []
     for (const slug of section.pages) {
       const path = join(root, source, "pages", `${slug}.md`)
-      // The app's loader throws on a listed page with no file; so does the site,
-      // or the two renderers would publish different docs.
+      // A listed page with no file is an error, never a silently shorter sidebar.
       if (!existsSync(path)) throw new Error(`app docs: toc.ts lists ${slug}, but ${source}/pages/${slug}.md does not exist`)
       const page = parsePage(readFileSync(path, "utf8"), `${source}/pages/${slug}.md`)
       const file = slug === "welcome" ? "index" : slug

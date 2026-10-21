@@ -3,14 +3,13 @@
  *
  * Runs `commit.mjs`. It commits every non-ignored edit, other contributors'
  * included, with jj when the checkout has it and Git otherwise. `push` needs
- * the shell commands in `tests` or a `noTest` reason, and always runs the
- * DB-free migration gate, the sqlc drift check and the five landing drift
- * targets before it publishes; `noTest` skips none of them. Test commands,
+ * the shell commands in `tests` or a `noTest` reason, and always runs the five
+ * landing drift targets before it publishes; `noTest` skips none of them. Test commands,
  * generators and gates run without database or publication credentials, and a
  * push refuses a home that holds the issue-claim credential store.
  *
  * ```sh
- * smthrs flow start land --data '{"message":"🐛 fix(app): ...","push":true,"tests":["pnpm exec smthrs test //apps/app:unit"]}' --wait
+ * smthrs flow start land --data '{"message":"🐛 fix(app): ...","push":true,"tests":["pnpm exec smthrs test //apps/tui:unitTests"]}' --wait
  * smthrs flow start land --data '{"push":true,"noTest":"docs only"}' --wait
  * ```
  *
@@ -88,7 +87,6 @@ export default Flow.make("land", {
     "proc:spawn:bash *",
     "proc:spawn:git *",
     "proc:spawn:jj *",
-    "proc:spawn:go *",
     "proc:spawn:smthrs *",
     "net:get:**",
     "net:post:**"

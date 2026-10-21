@@ -3,26 +3,18 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { landingCopy } from '../src/data/landingCopy.ts'
 
-const action = process.env.SMITHERS_LANDING_TEST_ACTION ?? 'install'
 const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const html = () => readFileSync(new URL('../dist/index.html', import.meta.url), 'utf8')
 
-test('landing serves the copy file, its chosen action and the three buttons', () => {
+test('landing serves the copy file, the install command and the two buttons', () => {
   const page = html()
   const buttons = [...page.matchAll(/<a class="landing-button[^"]*" href="([^"]+)"[^>]*>([^<]+)<\/a>/g)].map(([, href, label]) => [label, href])
   assert.deepEqual(buttons, [
-    [landingCopy.startApp, '/?tutorial'],
     [landingCopy.docs.label, '/docs/installation/'],
     [landingCopy.source.label, 'https://github.com/smithersai/smithers']
   ])
-  assert.match(page, /href="\/api\/auth\/github\?return_to=%2F%3Fsigned-in%3Dgithub"[^>]*>Sign in</)
+  assert.doesNotMatch(page, /Sign in|\/api\/auth\//)
   assert.doesNotMatch(page, /coding guide|change-code\.md|npm i -g/)
-  if (action === 'open') {
-    assert.match(page, new RegExp(escape(landingCopy.openHeadline)))
-    assert.match(page, /<form[^>]*class="repository-launcher-open"/)
-    assert.doesNotMatch(page, /id="copy-install"/)
-    return
-  }
   assert.match(page, new RegExp(`<h1>${escape(landingCopy.headline)}</h1>`))
   assert.match(page, new RegExp(`class="landing-sub">${escape(landingCopy.tagline)}<`))
   // Static HTML shows npx; bunx rides only on the switch the script reveals.

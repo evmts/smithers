@@ -8,8 +8,8 @@
 export const PERSON_LANES = 6;
 
 /**
- * The lane a person paints with: FNV-1a of the id over the six lanes, the hash
- * apps/app's `personaLane` uses, so one id gets one color on every surface.
+ * The lane a person paints with: FNV-1a of the id over the six lanes, so one
+ * id gets one color on every surface.
  */
 export function personLane(id: string): number {
   let hash = 2166136261;

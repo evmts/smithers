@@ -320,7 +320,6 @@ of UI goes into `@smthrs/ui` with its test and docs, not into an app.
 | [`@smthrs/scorers`](../packages/smithers/agent/scorers/docs/quickstart.md) | `packages/smithers/agent/scorers` | Grade a flow's output with exact, contains, rubric or tests-pass scorers and keep the scores. | `Scorer.make`, `Scorers.exact`, `Scorers.rubric`, `Scorers.testsPass`, `Rubric.make`, `RunnerLive.layer` | All |
 | [`@smthrs/eval-agent`](../packages/smithers/agent/regression/README.md) (private) | `packages/smithers/agent/regression` | Check that a change to the `@smthrs/agent` loop did not regress, with offline deterministic cases. | `bun packages/smithers/agent/regression/run.ts` | Bun (program) |
 | [`@smthrs/eval-review-seeded-bugs`](../.smithers/flows/review/seeded-bugs/README.md) (private) | `.smithers/flows/review/seeded-bugs` | Measure the review flow's recall and precision on 16 seeded fixture repositories. | `bun test .smithers/flows/review/seeded-bugs`; `run.ts --live` | Bun (program) |
-| [`@smthrs/eval-recommend`](../packages/backend/modelhost/recommend-eval/README.md) (private) | `packages/backend/modelhost/recommend-eval` | Score the command recommender: hit@5, top-1 and coverage. | `bun packages/backend/modelhost/recommend-eval/run.ts` | Bun (program) |
 | [`@smthrs/eval-authoring`](../evals/authoring/README.md) (private) | `evals/authoring` | Validate or upload the flow-authoring fine-tune dataset. | `pnpm exec smithers-build test '//evals/authoring:test'` | Bun (program) |
 | [`@smthrs/eval-swebench`](../packages/smithers/agent/harness/benchmarks/swebench/README.md) (private) | `packages/smithers/agent/harness/benchmarks/swebench` | Benchmark the harness on SWE-bench Verified. Operators run it; it spends real tokens. | `./run-sample.sh`, `./evaluate.sh`, `scorecard.ts` | Bash, Node, Python, Docker |
 
@@ -355,30 +354,23 @@ Apps are composition roots. They pick a host and use the libraries above.
 
 | App | Path | What it is | Runs on |
 | --- | --- | --- | --- |
-| [`smithers-app`](../apps/app/AGENTS.md) (private) | `apps/app` | The old app ("v4": chat, cards, flows) and its local Bun host. Prior art to port from, not the product ([rulings](../apps/mvp/docs/rulings.md) SCOPE-3). | Browser, Bun |
-| [`smithers-server`](../apps/server/AGENTS.md) (private) | `apps/server` | The old stack's smithers.sh edge Worker, which forwarded `/api/*` and git to the Go backend. Prior art (ARCH-1). | Cloudflare Worker |
-| `smithers-model-host` (private) | `apps/model-host` | The packaged model-turn server around `@smthrs/model-host`. | Node |
 | [`@smthrs/mvp`](../apps/mvp/AGENTS.md) (private) | `apps/mvp` | The Smithers app, hosted: React over a framework-free Effect state machine, TanStack DB synced by Electric from Neon Postgres, the agent on the browser's durable engine, and Effect-native Workers deployed by Alchemy. | Browser, Cloudflare Worker |
-| [`@smithers/site`](../apps/site/docs/UI-DOCS.md) (private) | `apps/site` | The smithers.sh landing page, docs and product page. | Node build, browser |
+| [`@smithers/site`](../apps/site/docs/UI-DOCS.md) (private) | `apps/site` | The smithers.sh landing page and docs, and in `apps/site/docs-redirect` the Worker that redirects the retired `<slug>.smithers.sh` library docs sites. | Node build, browser, Cloudflare Worker |
 | [`smithers-tui`](../apps/tui/README.md) (private) | `apps/tui` | The terminal coding agent over the cell harness. | Bun, Node |
 | [`@smthrs/bug-worker`](../apps/bug-worker/README.md) (private) | `apps/bug-worker` | The bug.smithers.sh report intake. | Cloudflare Worker |
 
 Code outside the pnpm workspace:
 
-- `packages/backend` is the old stack's backend in Go, retired with Google
-  Cloud ([rulings](../apps/mvp/docs/rulings.md) ARCH-1); the backend now is
-  `apps/mvp`'s Workers. Its composition root is `app.Config` in
-  `packages/backend/app/app.go`, and `apps/backend` builds the binary. See
-  [`OWNERSHIP.md`](../packages/backend/OWNERSHIP.md) and
-  `packages/backend/docs/`.
 - `packages/smithers-ffi` is the native C ABI for repository and jj
   operations. `packages/smithers/flows/jj-wasm` compiles the `Jj` operations to
-  WebAssembly for the browser. `packages/smithers-machined` is the old stack's
-  Rust daemon inside each microVM branch machine
-  ([ADR 0004](architecture/0004-machined-wire.md)); branch sandboxes now run on
-  Cloudflare Containers (ARCH-14).
+  WebAssembly for the browser.
 - `apps/patterns-site` is the static patterns.smithers.sh site.
 
 Opening memory and skill selection uses the `@smthrs/memory` entry above:
 `Opening.Sources`, `Opening.layerSources`, and `Opening.select`. Hosts inject
 sources and a Jev judge; selection has no filesystem or provider dependency.
+
+The old app (`apps/app`), its edge Worker (`apps/server`), the Go backend
+(`packages/backend`, `apps/backend`), its model-host bundle (`apps/model-host`)
+and its microVM daemon (`packages/smithers-machined`) were removed on
+2026-10-21; read them with `jj file show -r 78407fce59dd <path>`.

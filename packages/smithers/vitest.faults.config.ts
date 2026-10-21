@@ -9,9 +9,6 @@
  * Coverage is off. The work these cases do happens in child processes this one
  * never instruments, and `vitest.config.ts` beside this file stays the coverage
  * gate for `src`.
- *
- * `test/faults/long/` is the long tier, run nightly from
- * `vitest.faults-long.config.ts`; the release gate does not wait on it.
  */
 import { configDefaults, defineConfig } from "vitest/config"
 
@@ -19,7 +16,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["test/faults/**/*.test.ts"],
-    exclude: [...configDefaults.exclude, "test/faults/long/**"],
+    exclude: [...configDefaults.exclude],
     // A fault case drives real processes, real SQLite files, and real sockets.
     // The budget stays finite so a wedged case still fails instead of sitting
     // until the CI job timeout.

@@ -379,9 +379,6 @@ test("the checks gate runs the whole shared release inventory and returns a rece
       "test //.smithers/flows:releaseRehearsal --verbose",
       "test //.smithers/flows:releaseVersion --verbose",
       "lint //:jsdocTree --verbose",
-      "build //apps/app:check --verbose",
-      "test //apps/app:unitTests --verbose",
-      "ci //apps/server/... --verbose",
       "test //packages/smithers/agent/regression:test --verbose",
       "build //packages/smithers/agent/regression:check --verbose",
       "test //packages/smithers/agent/harness/benchmarks/swebench:offline --jobs 1 --verbose",
@@ -443,7 +440,7 @@ for (
   const target of [
     "//packages/...:faults",
     "//packages/smithers/flows/jj-wasm:wasmReproducibility",
-    "//apps/app:unitTests",
+    "//apps/tui:e2eTests",
     "//packages/smithers/flows/engine-store:disasterRecovery"
   ]
 ) {

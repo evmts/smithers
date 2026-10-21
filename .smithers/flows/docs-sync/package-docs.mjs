@@ -4,7 +4,7 @@
  *
  * Until 2026-10 every row below was an Astro site on `<slug>.smithers.sh`. The
  * sites are gone; each package's colocated `docs/` folder on GitHub replaces
- * its site, and one Worker (`apps/server/src/docsRedirect.ts`) answers the old
+ * its site, and one Worker (`apps/site/docs-redirect/src/docsRedirect.ts`) answers the old
  * hostnames with a 301 to the page's file in that folder, or to the folder
  * when the path names no page.
  *
@@ -19,7 +19,7 @@
  * `pnpm docs:check` start it.
  *
  *   smthrs flow start docs-sync --data '{"mode":"print"}' --wait   print the slug -> URL map
- *   smthrs flow start docs-sync --data '{"mode":"write"}' --wait   regenerate apps/server/src/docsRedirectMap.ts
+ *   smthrs flow start docs-sync --data '{"mode":"write"}' --wait   regenerate apps/site/docs-redirect/src/docsRedirectMap.ts
  *   smthrs flow start docs-sync --data '{"mode":"check"}' --wait   fail if that module drifted
  */
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -298,7 +298,7 @@ export const expectedLocation = (slug, path) => {
   return pages[path]
 }
 
-export const GENERATED_MODULE = join(repoRoot, "apps/server/src/docsRedirectMap.ts")
+export const GENERATED_MODULE = join(repoRoot, "apps/site/docs-redirect/src/docsRedirectMap.ts")
 
 /**
  * The Worker's copy of both maps, as TypeScript source.
@@ -333,7 +333,7 @@ if (isMain(import.meta)) {
     writeFileSync(GENERATED_MODULE, renderModule(redirectMapOf(), pageMapOf()))
   } else if (flag === "--check") {
     if (readFileSync(GENERATED_MODULE, "utf8") !== renderModule(redirectMapOf(), pageMapOf())) {
-      console.error("apps/server/src/docsRedirectMap.ts is stale: pnpm docs:sync")
+      console.error("apps/site/docs-redirect/src/docsRedirectMap.ts is stale: pnpm docs:sync")
       process.exitCode = 1
     }
   } else {

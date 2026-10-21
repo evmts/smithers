@@ -2,8 +2,8 @@
  * No app ships a run's scratch output.
  *
  * An enrollment sweep left its shell exit codes (`.enrollment-*.exit`) and a
- * 444 KB macOS `sample` trace of a bun process in `apps/app`, and one exit code
- * in `apps/server`. Nothing read them, yet every clone and every packed app
+ * 444 KB macOS `sample` trace of a bun process in the old app, and one exit
+ * code in its server. Nothing read them, yet every clone and every packed app
  * carried them, the trace with its local pids and paths.
  *
  * The gate is a class, not those files: any tracked file under `apps/` whose
@@ -69,23 +69,23 @@ it("reads jj when the checkout has one, Git otherwise, and flags only scratch na
       assert.equal(command, "git")
       assert.deepEqual(args, ["ls-files", "--", "apps"])
       assert.equal(options.cwd, fixture)
-      return { status: 0, stdout: "apps/app/package.json\n", stderr: "" }
-    }), ["apps/app/package.json"])
+      return { status: 0, stdout: "apps/mvp/package.json\n", stderr: "" }
+    }), ["apps/mvp/package.json"])
     mkdirSync(join(fixture, ".jj"))
     const files = tracked(fixture, (command, args) => {
       assert.equal(command, "jj")
       assert.deepEqual(args, ["file", "list", "--ignore-working-copy", "apps"])
       return {
         status: 0,
-        stdout: "apps/app/.enrollment-e2e.exit\napps/app/.enrollment-sample.txt\napps/server/probe.exit\napps/app/src/exit.ts\napps/app/.gitignore\napps/app/.review-tmp/peek.mjs\napps/app/src/review-tmp.ts\n",
+        stdout: "apps/mvp/.enrollment-e2e.exit\napps/mvp/.enrollment-sample.txt\napps/site/probe.exit\napps/mvp/src/exit.ts\napps/mvp/.gitignore\napps/mvp/.review-tmp/peek.mjs\napps/mvp/src/review-tmp.ts\n",
         stderr: ""
       }
     })
     assert.deepEqual(files.filter(isScratch), [
-      "apps/app/.enrollment-e2e.exit",
-      "apps/app/.enrollment-sample.txt",
-      "apps/server/probe.exit",
-      "apps/app/.review-tmp/peek.mjs"
+      "apps/mvp/.enrollment-e2e.exit",
+      "apps/mvp/.enrollment-sample.txt",
+      "apps/site/probe.exit",
+      "apps/mvp/.review-tmp/peek.mjs"
     ])
     assert.throws(() => tracked(fixture, () => ({ status: 1, stdout: "", stderr: "inventory unavailable" })), /inventory unavailable/)
   } finally { rmSync(fixture, { recursive: true, force: true }) }
@@ -130,8 +130,8 @@ it("ignores the registry's module load siblings and none of their originals", ()
 })
 
 it("ignores review scratch under .review-tmp/ and nothing named like it", () => {
-  // A review session left nine throwaway scripts in apps/app/.review-tmp/.
-  const scratch = ["apps/app/.review-tmp/peek.mjs", "apps/app/.review-tmp/record-debug.mjs", ".smithers/flows/review/.review-tmp/notes.md"]
-  const source = ["apps/app/src/review-tmp.ts", ".smithers/flows/review/flow.ts"]
+  // A review session once left nine throwaway scripts in an app's .review-tmp/.
+  const scratch = ["apps/mvp/.review-tmp/peek.mjs", "apps/mvp/.review-tmp/record-debug.mjs", ".smithers/flows/review/.review-tmp/notes.md"]
+  const source = ["apps/mvp/src/review-tmp.ts", ".smithers/flows/review/flow.ts"]
   assert.deepEqual(ignoredByRoot([...scratch, ...source]), scratch)
 })

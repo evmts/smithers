@@ -32,8 +32,6 @@ production denominator across Worker, CLI, React and static assets.
 
 | Owner | Required behavior | Missing coverage evidence |
 | --- | --- | --- |
-| `apps/server` | Worker unit and canary-wiring assertions | Whole Worker/script source denominator and failure-branch measurement. |
-| `apps/app` | Typecheck, Bun units, offline Playwright | TSX/host/React denominator and live provider acceptance. |
 | `.smithers/flows/review` | Strict source/test typechecks, host registry integration and seeded review contracts | Live model review quality remains separate from deterministic coverage. |
 | `apps/tui` | Bun unit and terminal assertions | Explicit source roster is measured by the Istanbul collector; no numeric floor until TUI child-launch paths and complete behavior coverage are qualified. |
 | `apps/bug-worker` | Real fetch handler against in-memory KV | Complete Worker branch measurement, including transport failures. |
@@ -101,7 +99,6 @@ site's own gate, `//apps/site:smithersLinks`.
 | `barrels.test.mjs` | `@smthrs/flows` re-exports exactly the namespaces it lists, declares every package it re-exports, and every published root export points at a file that exists. |
 | `public-export-maps.test.mjs` | Explicit development/publication allowlists retain reviewed entrypoints, deny internal migrations and future files, and resolve equivalently through Node's ESM and CommonJS resolvers. |
 | `packages/repo-targets/contracts/test-script-wiring.test.mjs` | Every workspace member with tests has a `test` script, and the pnpm workspace and the root manifest name the same members. |
-| `ui-ci-tier.test.mjs` | The required PR workflow selects the apps/app typecheck, units and Playwright once each in their own Ubuntu job; the Playwright wrapper propagates failure; the real scheduler skips TypeScript when strict devkit preparation fails. |
 | `reliability-workflow.test.mjs` | The scheduled `signal-state-machine` job in `reliability.yml` records its seed, preserves histories and results on failure, verifies the evidence and proves mutation sensitivity. |
 | `packages/repo-targets/contracts/ci-inventory.test.mjs` | The planned CI commands cover every package, app, script, eval and fault root, with a retained row per selected target and platform. |
 | `cli-verbs.test.mjs` | The CLI reference indexes every canonical command, retains the compatibility pages, and documents only flags the public parser accepts. |

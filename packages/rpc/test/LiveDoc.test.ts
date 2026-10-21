@@ -11,7 +11,7 @@ import {
 } from "../src/LiveDoc.ts"
 import { LiveDocRelay } from "../src/testing/LiveDocRelay.ts"
 
-const root = new URL("../../backend/internal/compose/testdata/cocontracts/", import.meta.url)
+const root = new URL("../testdata/live-doc/", import.meta.url)
 const fixture = readFileSync(new URL("doc-browser.json", root))
 const golden = JSON.parse(fixture.toString()) as { frames: (string | number[])[] }
 

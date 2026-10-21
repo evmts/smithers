@@ -1,5 +1,5 @@
 /**
- * The app's run scrubber (`apps/app` `PhaseStrip`) laid out in terminal cells.
+ * The run scrubber laid out in terminal cells.
  *
  * Phases, milestones, frame lines and notes all come from the shared fold
  * (`@smthrs/gateway/RunTrace`) through `Activity.model`; this module only

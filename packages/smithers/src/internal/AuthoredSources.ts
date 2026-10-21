@@ -10,11 +10,9 @@
  *
  * The two are matched on the identity both carry: the execution and generation
  * the projection read them under, plus the attempt's own `runId`,
- * `stepKeyDigest`, `attempt` and `bundleIdentity`. That is the same rule the
- * app applies to the projected control rows
- * (`apps/app/src/mainview/state/FlowAuthoringReceipts.ts`); this one runs on
- * the host, over the engine's own entries, because the host has to act before
- * any client reads them.
+ * `stepKeyDigest`, `attempt` and `bundleIdentity`. This runs on the host, over
+ * the engine's own entries, because the host has to act before any client
+ * reads them.
  *
  * @since 1.0.0
  * @private

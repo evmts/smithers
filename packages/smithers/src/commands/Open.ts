@@ -8,15 +8,10 @@
  * is the repository homepage. The first match wins:
  *
  * 1. macOS with Smithers.app installed: `smithers://open/<owner>/<repo>`
- *    (apps/app/src/bun/DeepLink.ts) through LaunchServices.
- * 2. The smithers checkout itself (its remote is smithersai/smithers on
- *    github.com or smithers.sh and it carries apps/app): the dev build,
- *    `pnpm --dir apps/app dev`, handed the same link as `SMITHERS_OPEN_URL`,
- *    with the terminal inherited. The remote check, host included, keeps
- *    `smthrs .` in any other checkout, such as a clone of
- *    `https://evil.example/smithersai/smithers`, from running that checkout's
- *    package scripts.
- * 3. Otherwise the web page, `https://smithers.sh/<owner>/<repo>`, printed.
+ *    through LaunchServices.
+ * 2. Otherwise the web page, `https://smithers.sh/<owner>/<repo>`, printed.
+ *
+ * `open` never runs a checkout's own scripts.
  *
  * @since 1.0.0
  */
@@ -34,22 +29,6 @@ import * as CliError from "../CliError.ts"
  * @since 1.0.0
  */
 export const webOrigin = "https://smithers.sh"
-
-/**
- * The repository whose checkout runs the app's dev build.
- *
- * @category constants
- * @since 1.0.0
- */
-export const smithersRepo = "smithersai/smithers"
-
-/**
- * The hosts whose smithersai/smithers remote runs the dev build.
- *
- * @category constants
- * @since 1.0.0
- */
-export const smithersHosts: ReadonlySet<string> = new Set(["github.com", "smithers.sh", "ssh.smithers.sh"])
 
 const SEGMENT = /^[\w.-]+$/
 
@@ -115,7 +94,7 @@ export const webUrl = (repo: string): string => `${webOrigin}/${repo}`
  */
 export interface Opened {
   readonly repo: string
-  readonly opened: "app" | "dev" | "web"
+  readonly opened: "app" | "web"
   readonly url: string
 }
 
@@ -220,17 +199,8 @@ const installedApp = (host: Host): string | undefined =>
     ? [join("/Applications", "Smithers.app"), join(host.home, "Applications", "Smithers.app")].find(host.exists)
     : undefined
 
-/** The checkout root when it is the smithers repository, whose app the dev build runs. */
-const smithersCheckout = (host: Host, directory: string): string | null => {
-  const remote = firstRemote(host, directory)
-  if (remote === null || repoFromRemote(remote, smithersHosts)?.toLowerCase() !== smithersRepo) return null
-  const root = host.read("git", ["rev-parse", "--show-toplevel"], directory)?.trim() ||
-    host.read("jj", ["root"], directory)?.trim()
-  return root && host.exists(join(root, "apps", "app", "electrobun.config.ts")) ? root : null
-}
-
 /**
- * Opens the checkout's repository in the app, the dev build, or prints the web page.
+ * Opens the checkout's repository in the installed app, or prints the web page.
  *
  * @category constructors
  * @since 1.0.0
@@ -244,15 +214,6 @@ export const open = async (host: Host, directory: string | undefined): Promise<O
   if (app !== undefined) {
     const status = await host.launch("open", ["-a", app, link], { cwd })
     if (status === 0) return { repo, opened: "app", url: link }
-  }
-  const checkout = smithersCheckout(host, cwd)
-  if (checkout !== null) {
-    const status = await host.launch("pnpm", ["--dir", join(checkout, "apps", "app"), "dev"], {
-      cwd: checkout,
-      env: { SMITHERS_OPEN_URL: link }
-    })
-    if (status !== 0) throw new CliError.UnsupportedError({ message: `The dev build exited with status ${status}.` })
-    return { repo, opened: "dev", url: link }
   }
   return { repo, opened: "web", url: webUrl(repo) }
 }

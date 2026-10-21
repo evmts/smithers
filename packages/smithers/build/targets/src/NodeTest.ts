@@ -72,8 +72,8 @@ export const TestSuite = Schema.Struct({
   paths: Schema.NonEmptyArray(Schema.NonEmptyString).check(Schema.isMaxLength(maximumArguments)),
   /**
    * Bun isolation for suites whose files mutate process globals; costs about
-   * 3× wall time. Temporary until https://github.com/smithersai/smithers/issues/3696
-   * lands: apps/app drops isolation, then delete this option if no callers remain.
+   * 3× wall time. Delete this option when no callers remain
+   * (https://github.com/smithersai/smithers/issues/3696).
    */
   isolate: Schema.optional(Schema.Boolean)
 })

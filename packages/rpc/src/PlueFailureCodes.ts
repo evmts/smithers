@@ -3,10 +3,11 @@
  *
  * GENERATED FILE — do not edit. Regenerate with:
  *
- *   node packages/rpc/scripts/refresh-failure-codes.mjs
+ *   node packages/rpc/scripts/refresh-failure-codes.mjs --from <plue checkout>
  *
- * Source: docs/api/failure-codes.json, rendered by Smithers Go and
- * served at GET /api/meta/failure-codes. WHICH revision is the digest below,
+ * Source: plue's docs/failure-codes.json, vendored as
+ * src/plue-failure-codes.json and served at GET /api/meta/failure-codes.
+ * WHICH revision is the digest below,
  * not a path — a local checkout's location is not provenance, and putting one
  * here would rewrite this file on every machine that regenerated it.
  *

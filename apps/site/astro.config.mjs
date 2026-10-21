@@ -1,35 +1,21 @@
 // @ts-check
 import react from "@astrojs/react"
 import starlight from "@astrojs/starlight"
-import tailwindcss from "@tailwindcss/vite"
 import { defineConfig, fontProviders } from "astro/config"
-import { fileURLToPath } from "node:url"
-import { openApiChunk } from "../app/scripts/openapi-chunk.ts"
 import { appDocsAssets } from "./scripts/app-docs-integration.mjs"
-import { buildStamp } from "./scripts/build-stamp-integration.ts"
 import sidebar from "./src/data/docs-sidebar.json" with { type: "json" }
 import project from "./src/data/project.json" with { type: "json" }
 
 /**
  * smithers.sh: the landing page at `/` (src/pages/index.astro), the demo
- * request page at `/demo`, the Starlight documentation at `/docs/**` with
- * the release changelogs under `/changelogs/**`, and the product app at
- * `/<owner>/<repo>` for every available catalog repository (src/pages/[owner]/[repo].astro).
+ * request page at `/demo`, and the Starlight documentation at `/docs/**` with
+ * the release changelogs under `/changelogs/**`.
  *
  * Starlight content is authored under src/content/docs/docs/ so every route
  * carries the /docs prefix and the root stays a plain Astro page. The guides
- * are the app's own docs (apps/app/src/docs): scripts/sync-app-docs.mjs
- * projects each page there and writes the sidebar from apps/app/src/docs/toc.ts,
- * and appDocsAssets serves their screenshots at /images/docs/.
- *
- * The app page mounts apps/app's AppIsland as a `client:only="react"` island,
- * so this build also carries the app's Vite settings: its Tailwind entry
- * (apps/app/src/mainview/index.css) builds through @tailwindcss/vite and stays
- * inside the island's CSS chunk; react, react-dom and effect are deduped so
- * the app and the site share one copy of each; `electrobun/view` resolves to
- * a web shim because no Electrobun SDK exists here; the Vue flags are the
- * ones apps/app/vite.config.ts injects for the Milkdown editor; and the
- * Debug API reads its OpenAPI document through the app's openApiChunk plugin.
+ * come from apps/site/docs/app: scripts/sync-app-docs.mjs projects each page
+ * and writes the sidebar from its toc.ts, and appDocsAssets serves their
+ * screenshots at /images/docs/.
  *
  * @since 1.0.0
  * @category configuration
@@ -63,57 +49,18 @@ export default defineConfig({
     }
   ],
   vite: {
-    server: {
-      // Get started for free imports these lazily; a cold dev server otherwise compiles the graph on the first press.
-      warmup: { clientFiles: ["../app/src/mainview/ControllerBoot.client.ts", "../app/src/mainview/App.tsx"] },
-      /*
-       * Dev only: forward the app's API families to a local apps/server
-       * (`wrangler dev`). Both timeouts are deliberate. Vite's proxy defaults
-       * to none, so a `wrangler dev` that accepts the socket but stops
-       * answering — it wedges while it rebuilds — makes /api/bootstrap hang
-       * forever, and the app shows a bare wordmark until the 60 s startup
-       * watchdog fires. Bounded, the same wedge aborts the request after ten
-       * seconds, so the boot rejects and the startup boundary names the failure
-       * instead of leaving a blank page.
-       */
-      proxy: process.env.SMITHERS_DEV_API_ORIGIN
-        ? Object.fromEntries(["/api", "/v1", "/workflows"].map((path) => [path, {
-          target: process.env.SMITHERS_DEV_API_ORIGIN,
-          // An https origin (a deployed backend) needs its own Host and TLS SNI.
-          changeOrigin: true,
-          ws: true,
-          timeout: 10_000,
-          proxyTimeout: 10_000
-        }]))
-        : undefined
-    },
-    plugins: [openApiChunk(), tailwindcss()],
-    resolve: {
-      dedupe: ["react", "react-dom", "effect"],
-      alias: {
-      }
-    },
-    define: {
-      __VUE_OPTIONS_API__: "true",
-      __VUE_PROD_DEVTOOLS__: "false",
-      __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: "false"
-    },
     build: {
-      // Milkdown ships one indivisible 818 kB module behind the World editor's
-      // dynamic import; keep the size warning meaningful for every other chunk.
-      chunkSizeWarningLimit: 900,
       // The home page's stylesheet is about 7.5 kB, over Vite's 4 kB default;
       // raising the limit lets `build.inlineStylesheets: "auto"` inline it and
       // removes the last render-blocking request on `/`. Fonts never inline:
       // @fontsource's non-latin subsets are under 8 kB each, and as files their
       // unicode-range keeps a Latin visitor from downloading them at all,
-      // while inlined they add ~180 kB of base64 to every visitor's app CSS.
+      // while inlined they add ~180 kB of base64 to every page's CSS.
       assetsInlineLimit: (filePath, content) => (/\.woff2?$/.test(filePath) ? false : content.byteLength < 8192)
     }
   },
   integrations: [
     react(),
-    buildStamp(),
     appDocsAssets(),
     starlight({
       title: "Smithers",
@@ -149,7 +96,7 @@ export default defineConfig({
         { icon: "github", label: "GitHub", href: "https://github.com/smithersai/smithers" }
       ],
       editLink: { baseUrl: "https://github.com/smithersai/smithers/edit/main/apps/site/src/content/docs/" },
-      // One group per apps/app/src/docs/toc.ts section, Install beside
+      // One group per apps/site/docs/app/toc.ts section, Install beside
       // self-hosting, then the reference. Generated by scripts/sync-app-docs.mjs.
       sidebar
     })

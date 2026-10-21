@@ -5,9 +5,8 @@
  * only `/owner/repo`: a pull request, one of its tabs, the pull request list,
  * the issue list, one issue, a folder, a file. Two readers decide what such a
  * path means — the
- * Worker edge, which picks the document a path is served from
- * (apps/server/src/appDocument.ts), and the app, which opens the subject after
- * its repository admission (apps/app/src/mainview/RepoLink.ts) — and they must
+ * Worker edge, which picks the document a path is served from, and the app,
+ * which opens the subject after its repository admission — and they must
  * agree exactly: a path the edge serves as the application but the app cannot
  * open is a blank page, and a path the app would open but the edge answers
  * with the marketing 404 is the production failure this grammar exists to fix

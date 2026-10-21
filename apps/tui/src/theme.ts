@@ -1,7 +1,7 @@
 /**
- * Paper dark, the retained brand palette the Smithers app uses
- * (`apps/app/src/mainview/styles/tokens.css`, `:root[data-theme="dark"]`).
- * Surfaces layer the way the app's do: the page, a panel, an element on it.
+ * Paper dark, the brand palette of `@smthrs/ui-styleguide`
+ * (`themeRegistry.paper.dark`; test/theme.test.ts holds them equal).
+ * Surfaces layer the way the browser UI's do: the page, a panel, an element on it.
  */
 import { ansi256IndexToRgb, type OptimizedBuffer, RGBA, SyntaxStyle, TextAttributes } from "@opentui/core"
 

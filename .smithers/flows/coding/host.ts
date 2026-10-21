@@ -307,10 +307,10 @@ export const systemFlowsFromEnv = (
 
 /**
  * The bound on one bash or test command, in milliseconds, that the hosted
- * composition sets (SMITHERS_CODING_TOOL_CALL_LIMIT_MS; services.HostedToolCallTimeout
- * in packages/backend). Unset, every command keeps its own timeout. A command
- * past it is killed with its process group and fails its turn. A malformed
- * value refuses startup rather than running unbounded.
+ * composition sets (SMITHERS_CODING_TOOL_CALL_LIMIT_MS). Unset, every command
+ * keeps its own timeout. A command past it is killed with its process group
+ * and fails its turn. A malformed value refuses startup rather than running
+ * unbounded.
  */
 export const toolCallLimitFromEnv = (
   environment: Readonly<Record<string, string | undefined>>

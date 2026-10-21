@@ -1,7 +1,7 @@
 /**
  * What the screen draws, owing nothing to the app's state machine.
  *
- * The look is the Smithers app's (`apps/app`): Paper surfaces layered
+ * The look is the Smithers browser UI's: Paper surfaces layered
  * page → panel → element. The user's messages keep the composer's shape. The shapes are opencode's: a left `┃` bar and a filled panel
  * instead of a boxed border, and a selected row filled with the brand color.
  */

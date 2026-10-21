@@ -121,9 +121,6 @@ for (const harness of await detectHarnessesWith(host)) {
 }
 ```
 
-The live adapter is `apps/app/src/bun/Harnesses.ts`, which adds a per-binary
-version cache and runs each probe under the app's seatbelt profile.
-
 ## Probe safety
 
 `PROBE_ENV_KEYS` is the complete set of environment variables a `--version`

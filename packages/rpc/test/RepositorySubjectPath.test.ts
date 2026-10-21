@@ -217,8 +217,8 @@ describe("resolveRefLocation", () => {
    */
   it("divides a commit permalink at its full object name, with no list to hold it", () => {
     const commit = "3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc74"
-    expect(resolveRefLocation(`${commit}/apps/server/src/edge.ts`, refs))
-      .toEqual({ ref: commit, path: "apps/server/src/edge.ts" })
+    expect(resolveRefLocation(`${commit}/apps/mvp/worker/index.ts`, refs))
+      .toEqual({ ref: commit, path: "apps/mvp/worker/index.ts" })
     expect(resolveRefLocation(`${commit}/apps`, [])).toEqual({ ref: commit, path: "apps" })
     expect(resolveRefLocation(commit, [])).toEqual({ ref: commit, path: "" })
     // The revision is kept exactly as the URL spelled it; nothing normalizes a ref here.

@@ -1668,7 +1668,7 @@ test("an in-card heading remains the read destination across layout and repeated
   expect(getViewport().scrollTop).toBe(10);
 });
 
-// Found by the macOS WebKit run of apps/app docs.spec.ts (T-APP-20, T-APP-24): Settings is taller than the
+// Found by a macOS WebKit run (T-APP-20, T-APP-24): Settings is taller than the
 // viewport, and a control at its end was snapped out from under a press because the read re-pinned the card's top.
 describe("a reader who scrolls inside the latest read owns the position", () => {
   const view = (id: string, readAnchor: { targetId?: string; actor?: "arrival" | "output"; version?: number } = {}) => (

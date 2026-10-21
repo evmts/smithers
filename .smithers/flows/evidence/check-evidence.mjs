@@ -82,8 +82,7 @@ export const HOSTS = {
     'rust-ffi-0': 'native FFI compiler and tests', 'wasm-repro-0': 'wasm reproducibility',
     'browser-0': 'web bundle compatibility',
     'packages-0': 'package suites (ubuntu-latest)', 'packages-1': 'package suites (macos-latest)',
-    'packages-2': 'package suites (windows-latest)', 'go-backend-0': 'shared Go backend (PostgreSQL)',
-    'go-backend-access-0': 'backend access-control tests (PostgreSQL)'
+    'packages-2': 'package suites (windows-latest)'
   } },
   'reference-host': { workflow: '.github/workflows/reference-host.yml', events: ['push', 'workflow_dispatch'],
     jobs: { 'macos-release-trust-0': 'macOS release-trust suite' },

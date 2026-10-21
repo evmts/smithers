@@ -1,10 +1,9 @@
 /**
  * USD prices for model calls.
  *
- * The rates are the backend's rate card, `packages/backend/modelprice`,
- * generated into `internal/prices.generated.ts`; a Go check fails when the two
- * drift, so there is one price table in the tree. A caller that pays other
- * rates passes its own rows over {@link table}.
+ * The rates are the rate card in `internal/prices.generated.ts`, the one price
+ * table in the tree. A caller that pays other rates passes its own rows over
+ * {@link table}.
  *
  * A normalized {@link ModelEvent.Usage} counts cache reads and cache writes
  * inside `inputTokens`, so each class is taken out of the input count and

@@ -4,13 +4,13 @@ The public site keeps the app's own docs, one install page, the HTTP and CLI ref
 
 | Page | Source | Projection |
 | --- | --- | --- |
-| App docs, `/docs/` and `/docs/<slug>/` | `apps/app/src/docs/pages/<slug>.md`, ordered by `apps/app/src/docs/toc.ts` | `src/content/docs/docs/<slug>.md` (`welcome` is `index.md`), the Markdown copy `public/docs/<slug>.md`, and the sidebar `src/data/docs-sidebar.json`, written by `scripts/sync-app-docs.mjs` |
+| App docs, `/docs/` and `/docs/<slug>/` | `apps/site/docs/app/pages/<slug>.md`, ordered by `apps/site/docs/app/toc.ts` | `src/content/docs/docs/<slug>.md` (`welcome` is `index.md`), the Markdown copy `public/docs/<slug>.md`, and the sidebar `src/data/docs-sidebar.json`, written by `scripts/sync-app-docs.mjs` |
 | Install | `docs/installation.mdx` | `src/content/docs/docs/installation.mdx` |
 | HTTP reference | `src/content/docs/docs/reference/http-api.mdx` | None |
 | CLI reference, `/docs/reference/cli/` | `src/data/cli-commands.json` and `src/data/help/`, captured from `packages/smithers/src/Cli.ts` by `scripts/gen-cli-data.mjs` | `src/content/docs/docs/reference/cli.md` and the Markdown copy `public/docs/reference/cli.md`, written by `scripts/gen-cli-reference.mjs` |
 | 0.x migration guide, `/migration/1.0` | `packages/smithers/docs/migration.md` | `src/pages/migration/1.0.md`, written by `scripts/gen-cli-data.mjs` with the removed-command table |
 
-Edit the app pages or the install source, then run:
+Edit the docs pages or the install source, then run:
 
 ```bash
 node apps/site/scripts/sync-app-docs.mjs
@@ -26,7 +26,7 @@ node apps/site/scripts/gen-cli-reference.mjs
 node apps/site/scripts/generate-llms.mjs
 ```
 
-Screenshots publish at `/images/docs/<id>.light.webp` and `.dark.webp` straight from `apps/app/src/docs/images`: `scripts/app-docs-integration.mjs` serves them in `astro dev` and copies them into the build, so the site commits no copy. A page shows one with a block image, `![Alt text](images/<id>.webp)`; the projection renders both variants in a framed figure, and Starlight's `light:sl-hidden` and `dark:sl-hidden` classes show the one that matches the theme.
+Screenshots publish at `/images/docs/<id>.light.webp` and `.dark.webp` straight from `apps/site/docs/app/images`: `scripts/app-docs-integration.mjs` serves them in `astro dev` and copies them into the build. A page shows one with a block image, `![Alt text](images/<id>.webp)`; the projection renders both variants in a framed figure, and Starlight's `light:sl-hidden` and `dark:sl-hidden` classes show the one that matches the theme.
 
 Keep Will's generated description unchanged. `generate-project-copy.mjs` refreshes its marker block from `src/data/project.json`; the README copy belongs to Will.
 

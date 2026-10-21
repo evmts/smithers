@@ -87,32 +87,6 @@ check_root_lint() {
 # Package directories with their own test script that changed paths select. File flows live under .smithers/flows (M-49).
 changed_test_dirs() { grep -E '^(packages/[^/]+|\.smithers/flows)/' | sed -E 's#^(packages/[^/]+|\.smithers/flows)/.*#\1#' | sort -u; }
 
-# The first journey guards composition, services and the coding and TODO flows. Reads changed paths on stdin.
-needs_j1() { grep -qE '^(packages/backend/internal/(compose|services)/|\.smithers/flows/(coding|todo)/)'; }
-
-# J1's rehearsal confines processes with Linux bubblewrap (#3783), so it runs only on Linux with bwrap.
-# On macOS, run this gate inside a Linux VM, such as an OrbStack Ubuntu arm64 machine; no macOS host covers main.
-check_j1() {
-  local target ffi
-  if [ "$(uname -s)" != Linux ]; then
-    if [ $mode = baseline ]; then echo "SKIP j1: the rehearsal needs Linux bubblewrap (#3783)" >> "$log"; return 0; fi
-    echo "FAIL j1: the J1 rehearsal needs Linux bubblewrap (#3783); run lane-gates.sh in a Linux VM such as OrbStack Ubuntu arm64" | tee -a "$log"
-    newreds+=("j1: needs a Linux host with bwrap"); return 1
-  fi
-  if ! command -v bwrap >/dev/null 2>&1; then
-    echo "FAIL j1: bwrap is missing; install bubblewrap" | tee -a "$log"
-    newreds+=("j1: bwrap missing"); return 1
-  fi
-  target=${CARGO_TARGET_DIR:-$root/target}; [[ "$target" = /* ]] || target="$root/$target"
-  ffi=${SMITHERS_FFI_LIBRARY_PATH:-$target/release/libsmithers_ffi.so}
-  if [ ! -f "$ffi" ] && [ -z "${SMITHERS_FFI_LIBRARY_PATH:-}" ]; then
-    echo "Building J1 prerequisite libsmithers_ffi.so" >> "$log"
-    (cd "$root" && cargo build --locked --release -p smithers-ffi --lib) >> "$log" 2>&1 || {
-      echo "FAIL j1: could not build libsmithers_ffi.so" >> "$log"; newreds+=("j1: ffi build failed"); return 1; }
-  fi
-  check j1 "SMITHERS_FFI_LIBRARY_PATH=$(printf %q "$ffi") J1_REHEARSAL_CONTINUE=1 node packages/backend/run-journey-todo-label.mjs --j1"
-}
-
 # Sourcing exposes the same parser/check used by the executable to regression fixtures.
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
 
@@ -180,8 +154,6 @@ if ! psql "$SMITHERS_TEST_DATABASE_URL" -Atc 'select 1' >/dev/null 2>&1 && ! pg_
 fi
 
 # 1. The gates .smithers/flows/land/commit.mjs requires before any push to main.
-check migration-gate "go test -run 'TestMigrationGate|TestMigrationRegistry' ./packages/backend/db/product/"
-[ -f packages/backend/scripts/check-sqlc-drift.sh ] && check sqlc-drift "bash packages/backend/scripts/check-sqlc-drift.sh"
 check lane-gates "node --test .smithers/flows/land/lane-gates.test.mjs .smithers/flows/land/lane-prerequisites.test.mjs"
 check tracked-hygiene "node packages/repo-targets/contracts/check-tracked-hygiene.mjs"
 # A here-string, not a pipe: a piped function runs in a subshell and its newreds would be lost.
@@ -199,12 +171,10 @@ for mod in $(printf '%s\n' "$gomap" | awk 'NF{print $1}' | sort -u); do
   else pkgs=$(printf '%s\n' "$gomap" | awk -v m="$mod" '$1==m{print $2}' | while read d; do r=${d#"$mod"}; r=${r#/}; echo "./$r"; done | sed 's#^\./$#.#' | tr '\n' ' '); fi
   par=1
   if [ $mode = gate ]; then
-    if [ "$mod" = . ] && printf '%s\n' "$changed" | grep -q '^packages/backend/.*\.go$'; then check_go_format packages/backend; fi
-    # Other modules are checked in full; root-module files outside backend individually.
+    # Other modules are checked in full; root-module files individually.
     if [ "$mod" != . ]; then check_go_format "$mod"
     else
       while IFS= read -r f; do
-        [[ "$f" = packages/backend/* ]] && continue
         [ -f "$f" ] && check_go_format "$f"
       done < <(printf '%s\n' "$changed" | grep -E '\.go$')
     fi
@@ -226,25 +196,13 @@ for mod in $(printf '%s\n' "$gomap" | awk 'NF{print $1}' | sort -u); do
   check "go-test:$mod" "cd $mod && go test -p $par $pkgs"
 done
 
-# 3. TypeScript: the app, rpc, and any other touched package with its own test script.
-if printf '%s\n' "$changed" | grep -q '^apps/app/'; then
-  check app-typecheck "cd apps/app && pnpm typecheck"
-  if [ $mode = baseline ]; then check app-tests "cd apps/app && bun test --isolate src"
-  else files=$(printf '%s\n' "$changed" | grep -E '^apps/app/.*\.test\.tsx?$' | while read f; do [ -f "$f" ] && echo "${f#apps/app/}"; done | tr '\n' ' ')
-    [ -n "$files" ] && check app-tests "cd apps/app && bun test --isolate $files"; fi
-fi
-# The production site mounts the app as an island with its own Vite config; build it whenever either changes
-# (2026-10-06: #3559 added an app-only Vite plugin and every deploy failed at the site build).
-if printf '%s\n' "$changed" | grep -qE '^apps/(app|site)/'; then check site-build "cd apps/site && pnpm build"; fi
+# 3. TypeScript: the site, rpc, and any other touched package with its own test script.
+if printf '%s\n' "$changed" | grep -q '^apps/site/'; then check site-build "cd apps/site && pnpm build"; fi
 for dir in $(printf '%s\n' "$changed" | changed_test_dirs); do
-  [ "$dir" = packages/backend ] && continue
   [ -f "$dir/package.json" ] || continue
   if [ "$dir" = packages/rpc ]; then check rpc-tests "cd packages/rpc && pnpm exec vitest run"
   elif node -e "process.exit(require('./$dir/package.json').scripts?.test ? 0 : 1)" 2>/dev/null; then check "tests:$dir" "cd $dir && pnpm run test"; fi
 done
-
-# 4. The first journey when composition, services or the coding or TODO flows changed (Linux with bwrap only).
-if printf '%s\n' "$changed" | needs_j1; then check_j1; fi
 
 if [ $mode = baseline ]; then
   sort -u "$allfails" > "$baseline"; echo "BASELINE $(wc -l < "$baseline") failing names at $(git rev-parse --short HEAD) -> $baseline" | tee -a "$log"; exit 0

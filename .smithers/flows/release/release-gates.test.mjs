@@ -87,13 +87,13 @@ for (const [job, source] of parityJobs) {
   })
 
   test(`fail-closed ${job}: literal tokens, separators and comments preserve canonical coverage`, () => {
-    const gate = mirrored.find(gate => gate.name === "UI unit tests")
+    const gate = mirrored.find(gate => gate.name === "TUI end-to-end suite")
     for (const command of [
-      "'pnpm' \"exec\" 'smthrs' \"test\" \"//apps/app:unitTests\" --verbose",
-      "pnpm ex\\ec sm\\thrs te's't '//apps/app:unitTests' --verbose",
-      "pnpm\texec  smthrs test //apps/app:unitTests --verbose",
-      "pnpm exec \"sm\\\nthrs\" test '//apps/app:unitTests' --verbose",
-      "pnpm exec smthrs test '//apps/app:unitTests' \\\n--verbose"
+      "'pnpm' \"exec\" 'smthrs' \"test\" \"//apps/tui:e2eTests\" --verbose",
+      "pnpm ex\\ec sm\\thrs te's't '//apps/tui:e2eTests' --verbose",
+      "pnpm\texec  smthrs test //apps/tui:e2eTests --verbose",
+      "pnpm exec \"sm\\\nthrs\" test '//apps/tui:e2eTests' --verbose",
+      "pnpm exec smthrs test '//apps/tui:e2eTests' \\\n--verbose"
     ]) {
       for (const separator of [" && ", "; ", " | ", "\n"]) {
         const run = `printf '%s' 'a; b && c | # literal'${separator}${command} # ignored smthrs\n# comment`
@@ -110,7 +110,7 @@ for (const [job, source] of parityJobs) {
   })
 
   test(`fail-closed ${job}: wrappers and legacy names cannot inherit a canonical gate's ownership`, () => {
-    const gate = mirrored.find(gate => gate.name === "UI unit tests")
+    const gate = mirrored.find(gate => gate.name === "TUI end-to-end suite")
     const canonical = releaseGateCommand(gate)
     for (const command of [
       ...["env", "time", "nice", "xargs"].map(wrapper => `${wrapper} ${canonical}`),
@@ -118,16 +118,16 @@ for (const [job, source] of parityJobs) {
       canonical.replace("smthrs", '"smithers-build"'),
       canonical.replace("smthrs", "smithers-\\build"),
       `${canonical} --unknown`, `${canonical} ''`, `${canonical} > gate.log`,
-      canonical.replace("unitTests", "unitTests; other"),
-      canonical.replace("unitTests", "unitTests#other"),
-      canonical.replace("unitTests", "unitTests\\\n"),
-      canonical.replace("'//apps/app:unitTests'", '"//apps/app:unitTests\\q"'),
+      canonical.replace("e2eTests", "e2eTests; other"),
+      canonical.replace("e2eTests", "e2eTests#other"),
+      canonical.replace("e2eTests", "e2eTests\\\n"),
+      canonical.replace("'//apps/tui:e2eTests'", '"//apps/tui:e2eTests\\q"'),
       `${canonical}"`, `${canonical}\\`
     ]) assert.deepEqual(missingFor(job, withRun(source, job, gate.name, command)), reported(job, gate.name, command), command)
   })
 
   test(`fail-closed ${job}: unrelated expansions and eval do not taint literal gates`, () => {
-    const gate = mirrored.find(gate => gate.name === "UI unit tests")
+    const gate = mirrored.find(gate => gate.name === "TUI end-to-end suite")
     const canonical = releaseGateCommand(gate)
     for (const command of [
       `${canonical}\nprintf '%s' "$VAR"`, `${canonical}\nprintf '%s' "${"${VAR}"}"`,
@@ -141,7 +141,7 @@ for (const [job, source] of parityJobs) {
   // Only that one generated path joins a canonical gate; any other path or
   // expansion in the option leaves the step unowned.
   test(`fail-closed ${job}: only the generated results file joins a canonical gate`, () => {
-    const gate = mirrored.find(gate => gate.name === "UI unit tests")
+    const gate = mirrored.find(gate => gate.name === "TUI end-to-end suite")
     const canonical = releaseGateCommand(gate)
     const recorded = canonical.replace(" --verbose", ' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose')
     assert.deepEqual(missingFor(job, withRun(source, job, gate.name, recorded)), [])
@@ -255,7 +255,7 @@ test("CI exclusions cannot hide wrappers, expansions or new commands", () => {
 })
 
 test("exception and exclusion drift checks use literal tokens and reject dynamic gates", () => {
-  const gate = mirrored.find(gate => gate.name === "UI unit tests")
+  const gate = mirrored.find(gate => gate.name === "TUI end-to-end suite")
   const canonical = releaseGateCommand(gate)
   const command = canonical.replace("smthrs", '"smthrs"')
   const source = stringify({ jobs: { publish: { steps: [{ name: gate.name, run: command }] } } })
@@ -270,7 +270,7 @@ test("exception and exclusion drift checks use literal tokens and reject dynamic
 })
 
 /** Pin every job so a new one forces a release decision. `on.push` is a trigger, not a job. */
-const ciJobs = ["test", "repository", "scripts", "docs", "apps-e2e", "apps-browser-1", "apps-browser-2", "apps-browser-3", "rust", "rust-ffi", "wasm-repro", "browser", "packages", "go-backend", "go-backend-access"]
+const ciJobs = ["test", "repository", "scripts", "docs", "apps-e2e", "rust", "rust-ffi", "wasm-repro", "browser", "packages"]
 
 /** A copy of the release workflow with one more gate step ahead of the build. */
 const withUnlistedStep = (source, name, command) => {
@@ -322,10 +322,10 @@ test("the inventory is release.yml's publish job: same gates, same names, same o
   assert.ok(steps.length >= 35, `${steps.length} gates is too few to be the publish job`)
   // The gates the review found missing, named so the fix cannot regress quietly.
   for (const target of [
-    "//apps/app:check", "//apps/app:unitTests", "//apps/server/...", "//.smithers/flows/review/...", "//apps/bug-worker/...",
+    "//apps/tui:e2eTests", "//.smithers/flows/review/...", "//apps/bug-worker/...",
     "//:projectCopy", "//packages/smithers/agent/regression:test", "//packages/smithers/agent/regression:check", "//evals/authoring:test",
     "//evals/authoring:check", "//packages/smithers/agent/harness/benchmarks/swebench:offline", "//packages/smithers/agent/harness/benchmarks/swebench:check", "//.smithers/flows/review/seeded-bugs/...",
-    "//.smithers/flows/review/seeded-bugs:check", "//packages/backend/modelhost/recommend-eval/...", "//packages/backend/modelhost/recommend-eval:check", "//:ci", "//:factoryProjection",
+    "//.smithers/flows/review/seeded-bugs:check", "//:ci", "//:factoryProjection",
     "//:targetIndex", "//packages/smithers/flows/engine-store:disasterRecovery", "//packages/smithers/flows/jj-wasm:buildScript",
     "//packages/smithers/flows/jj-wasm:wasmReproducibility", "//.smithers/flows:issueClaim", "//.smithers/flows:releaseRehearsal"
   ]) assert.ok(mirrored.some((gate) => gate.target === target), `${target} is an inventory gate`)
@@ -411,7 +411,7 @@ for (const [spelling, prefix] of [
   for (const [job, source, anchor] of [
     ["publish", release, "Build all workspaces from clean artifacts"],
     ["repository", ci, "Target index drift"],
-    ["apps-e2e", ci, "UI unit tests"]
+    ["apps-e2e", ci, "TUI end-to-end suite"]
   ]) {
     test(`${job} parity reports an unlisted gate with ${spelling}`, () => {
       const command = `${prefix} test '//unlisted:required' --verbose`
@@ -455,14 +455,12 @@ test("the release proves every CI gate the exclusions do not name, and every exc
   assert.deepEqual(workflowJobs(ci), ciJobs)
   assert.deepEqual(ciGatesMissingFromInventory(releaseGates, ci, releaseGateExclusions), [], "these CI gates run in neither the release nor the exclusions")
   assert.deepEqual(staleExclusions(releaseGates, ci, releaseGateExclusions), [])
-  assert.deepEqual(releaseGateExclusions.map((exclusion) => exclusion.job), ["apps-browser-1", "apps-browser-2", "apps-browser-3", "rust", "packages", "browser"])
+  assert.deepEqual(releaseGateExclusions.map((exclusion) => exclusion.job), ["rust", "packages", "browser"])
   for (const exclusion of releaseGateExclusions) assert.ok(exclusion.reason.length > 40, `${exclusion.job} carries a reason`)
   // Partial exclusions name only what the release omits: the rest of the job is mirrored.
-  for (const shard of [1, 2, 3]) assert.deepEqual(releaseGateExclusions.find(exclusion => exclusion.job === `apps-browser-${shard}`).commands, [`pnpm exec smthrs test '//apps/app:browserE2eShard${shard}' --verbose`])
   assert.deepEqual(releaseGateExclusions.find((exclusion) => exclusion.job === "rust").commands, [
     "pnpm exec smthrs lint '//packages/smithers/flows/jj-wasm/...' --verbose",
     "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:cargoTest' --verbose",
-    "pnpm exec smthrs test '//packages/smithers-machined:documentComponents' --verbose",
     "pnpm exec smthrs test '//packages/smithers/flows/jj:thirdPartyNotices' --verbose"
   ])
   for (const job of ["test", "repository", "scripts", "docs", "wasm-repro"]) {
@@ -488,8 +486,8 @@ test("a CI gate added outside the exclusions is reported, and an exclusion that 
   assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "test", commands: ["pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose"], reason: "stale" }]), [
     "test excludes pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose, which the inventory runs"
   ])
-  assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "go-backend", reason: "whole job" }]), [
-    "go-backend excludes pnpm exec smthrs test '//:backendGo' --verbose, which the inventory runs"
+  assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "rust-ffi", reason: "whole job" }]), [
+    "rust-ffi excludes pnpm exec smthrs build '//:nativeFfi' --verbose, which the inventory runs"
   ])
   assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "gone", reason: "stale" }]), ["gone is not a ci.yml job"])
   assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "rust", commands: [command], reason: "stale" }]), [`rust does not run ${command}`])
@@ -514,7 +512,7 @@ test("workflowGateSteps reads names and commands, quoted names included, and ski
   ])
   assert.deepEqual(workflowGateSteps(source, "other"), [{ name: "Elsewhere", command: "pnpm exec smthrs lint '//:ci' --verbose" }])
   assert.throws(() => workflowGateSteps(source, "missing"), /missing is not a job/)
-  assert.deepEqual(parseGateCommand("pnpm exec smthrs build '//apps/app:check' --verbose"), { verb: "build", target: "//apps/app:check" })
+  assert.deepEqual(parseGateCommand("pnpm exec smthrs build '//evals/authoring:check' --verbose"), { verb: "build", target: "//evals/authoring:check" })
   assert.deepEqual(parseGateCommand("pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose"), { verb: "ci", target: "//packages/...", jobs: 2 })
   assert.equal(parseGateCommand("pnpm exec smthrs ci //packages/... --verbose"), undefined)
   // The known-red list changes which red targets fail a step, not which run.
@@ -568,7 +566,7 @@ test("no inventory with the review's 12-entry shape can cover all 35 publish ste
   assert.equal(legacy.length, 12)
   const missing = workflowGatesMissingFromInventory(legacy, release)
   assert.equal(missing.length, workflowGateSteps(release, "publish").length - 10)
-  assert.ok(missing.some((step) => step.name === "UI typecheck"))
+  assert.ok(missing.some((step) => step.name === "TUI typecheck, lint and tests"))
   assert.ok(missing.some((step) => step.name === "Disaster-recovery script test"))
 })
 

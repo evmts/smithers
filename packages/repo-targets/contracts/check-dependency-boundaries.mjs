@@ -41,7 +41,6 @@ import { privateEffectAdapters } from "../scripts/private-effect-adapters.mjs"
 // directly, as they did when they lived under `evals/` (#4090).
 const scannedRoots = ["packages/", "apps/"]
 const evalSuites = [
-  "packages/backend/modelhost/recommend-eval",
   "packages/smithers/agent/regression",
   "packages/smithers/agent/harness/benchmarks/"
 ]
@@ -72,10 +71,6 @@ const builtinPackages = new Set(["bun", ...builtinModules, ...builtinModules.map
 // the list only shrinks.
 const knownReachThroughs = new Set([
   "PACKAGE.ts -> ./apps/site/src/data/project.json",
-  "apps/site/src/AppIsland.tsx -> ../../app/src/mainview/AppIsland",
-  "apps/site/src/components/repoStats.ts -> ../../../server/src/publicRepoCatalog",
-  "apps/app/src/mainview/cards/EngineTrace.test.ts -> ../../../../../packages/smithers/flows/engine-store/src/internal/JournalRecords.ts",
-  "apps/app/src/mainview/cards/fixtures/CodingJournal.ts -> ../../../../../../packages/smithers/flows/engine-store/src/internal/JournalRecords.ts",
   "packages/smithers/build/infra/worker/test/action-cache.test.ts -> ../../../../flows/step-cache/src/CacheStore.ts",
 ])
 
@@ -245,8 +240,8 @@ export function collectSourceFiles(dir, out, nestedPackageDirs) {
  * checks them against the root manifest.
  *
  * The build CLI loads every `legacy declaration` from the repository root against the
- * root install, which is why `apps/server/legacy declaration` may import
- * `@smthrs/targets` without `apps/server` declaring it. Declarations inside a
+ * root install, which is why an app's declaration may import
+ * `@smthrs/targets` without the app declaring it. Declarations inside a
  * scaffolding template describe the app the template generates, not this
  * repository, so a directory holding a manifest that is not a workspace member
  * is not descended into.

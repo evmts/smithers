@@ -1,5 +1,5 @@
-// Renders the PWA's PNG icons (public/icon-192.png, icon-512.png, icon-maskable-512.png) from public/icon.svg, which is
-// apps/app's favicon, generated from the @smthrs/ui wordmark. Run it after icon.svg changes: `node scripts/render-icons.mjs`.
+// Renders the PWA's PNG icons (public/icon-192.png, icon-512.png, icon-maskable-512.png) from public/icon.svg, the
+// favicon drawn from the @smthrs/ui wordmark. Run it after icon.svg changes: `node scripts/render-icons.mjs`.
 import { chromium } from "@playwright/test"
 import { readFile } from "node:fs/promises"
 

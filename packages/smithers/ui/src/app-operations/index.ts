@@ -2,8 +2,8 @@
  * App operations: what one Smithers act declares, apart from any host that
  * runs it (#2125). An operation is the name, the typed input, the catalog
  * copy and the actor and confirmation rules. It carries no handler: the GUI
- * binds a controller call to it (apps/app flows/entries/Declare.ts `flow`),
- * and every other host binds its own implementation to the same declaration.
+ * binds a controller call to it, and every other host binds its own
+ * implementation to the same declaration.
  *
  * Pure: no store, no DOM, no Effect runtime.
  */

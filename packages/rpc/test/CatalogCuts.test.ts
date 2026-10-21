@@ -127,7 +127,7 @@ describe("MVP deferred manifest", () => {
     for (const row of manifest.deferred) {
       for (const name of row.flowNames) expect(cutNames).not.toContain(name)
       for (const kind of row.cardKinds) expect(cutKinds).not.toContain(kind)
-      expect(row.sourcePaths.length).toBeGreaterThan(0)
+      // The old app's doors left with it on 2026-10-21; any source path still listed exists.
       for (const path of row.sourcePaths) expect(existsSync(fileURLToPath(new URL(path, root))), path).toBe(true)
     }
   })

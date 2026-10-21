@@ -103,9 +103,9 @@ describe("child-process containment conformance", () => {
       "smithers/src/commands/Open.ts",
       "`smthrs open`: an interactive CLI hand-off outside a durable flow. It reads the "
       + "checkout's remote with `git`/`jj` (piped, no timeout) and then launches the installed "
-      + "app with `open -a` or the checkout's `pnpm dev` in the foreground terminal, awaiting "
-      + "the direct child's exit status; Ctrl+C belongs to that child. Open.test.ts drives a "
-      + "scripted host. No durable process ledger or hard-kill recovery guarantee."
+      + "app with `open -a` on macOS, awaiting the direct child's exit status; otherwise it "
+      + "prints the smithers.sh page. It never runs the checkout's own scripts. Open.test.ts "
+      + "drives a scripted host. No durable process ledger or hard-kill recovery guarantee."
     ],
     [
       "smithers/src/Providers.ts",

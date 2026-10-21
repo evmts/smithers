@@ -234,19 +234,14 @@
       "disposition": "defer",
       "flowNames": ["billing.balance", "billing.plans", "billing.upgrade", "billing.portal"],
       "cardKinds": ["balance", "billing-plans", "anonymous-ceiling"],
-      "sourcePaths": [
-        "apps/app/src/mainview/flows/entries/billing.ts",
-        "apps/app/src/mainview/cards/BillingCards.tsx",
-        "apps/app/src/mainview/cards/AnonymousCeilingCard.tsx",
-        "apps/app/src/mainview/state/controller/auth-billing.ts"
-      ]
+      "sourcePaths": []
     },
     {
       "id": "cloud",
       "disposition": "defer",
       "flowNames": ["cloud.sign-in", "cloud.prompt", "cloud.sign-out"],
       "cardKinds": [],
-      "sourcePaths": ["apps/app/src/mainview/flows/entries/cloud.ts"]
+      "sourcePaths": []
     },
     {
       "id": "multi-repository",
@@ -262,18 +257,14 @@
       ],
       "cardKinds": ["repository-choice", "repo-update"],
       "legacyCardKinds": ["workflow-repo"],
-      "sourcePaths": [
-        "apps/app/src/mainview/flows/entries/repo.ts",
-        "apps/app/src/mainview/cards/RepositoryChoiceCard.tsx",
-        "apps/app/src/mainview/cards/RepositoryUpdateCard.tsx"
-      ]
+      "sourcePaths": []
     },
     {
       "id": "repository-import",
       "disposition": "hide",
       "flowNames": ["repos.import", "repos.import.retry"],
       "cardKinds": [],
-      "sourcePaths": ["apps/app/src/mainview/flows/entries/repos.ts"]
+      "sourcePaths": []
     },
     {
       "id": "triggers",
@@ -287,11 +278,7 @@
         "triggers.pause"
       ],
       "cardKinds": ["trigger-list"],
-      "sourcePaths": [
-        "apps/app/src/mainview/flows/entries/triggers.ts",
-        "apps/app/src/mainview/cards/TriggersCard.tsx",
-        "packages/smithers/src/operator/Triggers.ts"
-      ],
+      "sourcePaths": ["packages/smithers/src/operator/Triggers.ts"],
       "cliGroups": ["triggers"]
     },
     {
@@ -299,21 +286,21 @@
       "disposition": "hide",
       "flowNames": ["sync.ops.show-more"],
       "cardKinds": ["sync-ops"],
-      "sourcePaths": ["apps/app/src/mainview/flows/entries/sync.ts"]
+      "sourcePaths": []
     },
     {
       "id": "machine-view",
       "disposition": "defer",
       "flowNames": ["box.facet", "box.services", "box.egress", "box.images", "egress.allow", "egress.session"],
       "cardKinds": ["environment-images"],
-      "sourcePaths": ["apps/app/src/mainview/flows/entries/box.ts", "apps/app/src/mainview/flows/entries/egress.ts"]
+      "sourcePaths": []
     },
     {
       "id": "manual-signals",
       "disposition": "defer",
       "flowNames": ["runs.signal"],
       "cardKinds": [],
-      "sourcePaths": ["apps/app/src/mainview/flows/entries/runs.ts"]
+      "sourcePaths": []
     },
     {
       "id": "in-app-review",
@@ -328,21 +315,24 @@
         "review.reopen"
       ],
       "cardKinds": [],
-      "sourcePaths": ["apps/app/src/mainview/flows/entries/prs.ts", "apps/app/src/mainview/flows/entries/review.ts"]
+      "sourcePaths": []
     },
     {
       "id": "maintainer-issue-tools",
       "disposition": "defer",
       "flowNames": ["issue.repro", "issue.poc", "issue.add-flow", "issue.flows"],
       "cardKinds": [],
-      "sourcePaths": ["apps/app/src/mainview/flows/entries/issue.ts"]
+      "sourcePaths": []
     },
     {
       "id": "tui",
       "disposition": "defer",
       "flowNames": [],
       "cardKinds": [],
-      "sourcePaths": ["apps/tui/package.json", "packages/smithers/scripts/build-tui.mjs"],
+      "sourcePaths": [
+        "apps/tui/package.json",
+        "packages/smithers/scripts/build-tui.mjs"
+      ],
       "cliGroups": ["tui"]
     },
     {
