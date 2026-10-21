@@ -243,6 +243,34 @@ fact.
 | `admissionClass` | `(notification: Notification) => "steer" \| "queue"` | How the notification is allowed to reach the model. Steers are promoted in a batch at turn close; queued notifications one at a time at idle.    |
 | `coalesceKey`    | `(notification: Notification) => string \| null`     | The key the notification coalesces on, or `null` when it must never coalesce. Only a `system-event` that declares a `coalescingKey` returns one. |
 
+### humanSteer
+
+```ts
+const humanSteer: (input: {
+  readonly runId: string
+  readonly id: string
+  readonly actor: string
+  readonly payload: Schema.Json
+  readonly attribution?: Readonly<Record<string, string>>
+}) => HumanSteer
+```
+
+A person's steer to a run's own lineage: `targetLineageId`, `sourceRunId` and
+`sourceLineageId` are `runId`, `sourceTurn` is `0`, and `sourceActor` is
+`actor`. `id` is the caller's idempotency key. `Control.steer` builds its steer
+here, and so does any host that admits a person's message straight into a
+run's queue, so a steer reads the same in every transcript.
+
+```ts
+yield* queue.admit(runId, Notification.humanSteer({
+  runId,
+  id: messageId,
+  actor: `person:${login}`,
+  attribution: { login },
+  payload: SteerPayload.encode({ kind: "Message", body })
+}))
+```
+
 ## NotificationState
 
 The pure bounded queue: the same rules with no I/O and no journal. Import from

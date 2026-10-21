@@ -8,7 +8,7 @@
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import * as Fault from "@smthrs/flow/Fault"
 import { Journal, JournalEvent } from "@smthrs/journal"
-import { NotificationQueue } from "@smthrs/notifications"
+import { Notification, NotificationQueue } from "@smthrs/notifications"
 import * as SteerPayload from "@smthrs/notifications/SteerPayload"
 import { Registry } from "@smthrs/registry"
 import { inputDocument } from "@smthrs/registry/Descriptor"
@@ -1852,20 +1852,17 @@ export const layer: Layer.Layer<
                 // message that has no boundary left to deliver it.
                 if (terminal(run.status)) return { _tag: "Terminal", runId: run.runId, status: run.status }
                 const item = steerItem(input.message)
-                const admission = yield* notifications.admit(input.runId, {
-                  _tag: "human-steer",
-                  id: input.message.messageId,
-                  delivery: "steer",
-                  targetLineageId: input.runId,
-                  provenance: {
-                    sourceRunId: input.runId,
-                    sourceLineageId: input.runId,
-                    sourceTurn: 0,
-                    sourceActor: `${input.message.principal.kind}:${input.message.principal.id}`,
-                    ...(input.message.attribution === undefined ? {} : { attribution: input.message.attribution })
-                  },
-                  payload: SteerPayload.encode(item)
-                }, input.version).pipe(
+                const admission = yield* notifications.admit(
+                  input.runId,
+                  Notification.humanSteer({
+                    runId: input.runId,
+                    id: input.message.messageId,
+                    actor: `${input.message.principal.kind}:${input.message.principal.id}`,
+                    attribution: input.message.attribution,
+                    payload: SteerPayload.encode(item)
+                  }),
+                  input.version
+                ).pipe(
                   Effect.mapError((cause) =>
                     cause instanceof NotificationQueue.NotificationError ? cause : new PersistenceError({
                       operation: "control.steer.notification",

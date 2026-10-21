@@ -826,8 +826,12 @@ A drain is idempotent in its boundary string: a second drain at one boundary
 promotes nothing and hands back exactly what the first promoted, with
 `Drain.duplicate` set. A resumed run re-drains the boundaries it already
 drained and must be told the same thing, or it rebuilds a different context
-and re-keys every later sealed step. The service tag is `Steering.Source`;
-`make`, `makeNoop`, `layer`, and `layerNoop` construct and provide it.
+and re-keys every later sealed step. `BoundaryInput` carries the boundary,
+whether the run would go idle, a park's question, and the agent `session`
+draining (`CellTurn` names it): a boundary is unique only within its session,
+so a source one run's several sessions share keys its drains by both. The
+service tag is `Steering.Source`; `make`, `makeNoop`, `layer`, and
+`layerNoop` construct and provide it.
 
 ## Notifications
 
@@ -849,12 +853,33 @@ export const make: (
 export const layer: (
   options: Options
 ) => Layer.Layer<Steering.Source, never, NotificationQueue.NotificationQueue>
+
+export const layerForExecution: () => Layer.Layer<
+  Steering.Source,
+  never,
+  NotificationQueue.NotificationQueue
+>
 ```
 
 `make` captures the journal-backed queue as the harness steering source for
 one run lineage: its `read` reports an empty queue and its `drain` delegates
 to the notification queue's own boundary-aware drain, mapping failures into
 `HarnessError`. `layer` provides it.
+
+`layerForExecution` is the same source for a flow host, which builds an agent
+action's layer once and runs it for every execution it drives. It names its
+run at each read and drain: the current `FlowRuntime.FlowInstance`'s execution
+id is both the run and the lineage. A message admitted with
+`queue.admit(executionId, Notification.humanSteer({ runId: executionId, … }))`
+reaches that execution's agent at its next turn boundary and no other
+execution's. Outside a flow execution a read or a drain fails `engine_failed`.
+
+```ts
+const implement = Implement.layer.pipe(
+  Layer.provide(Notifications.layerForExecution()),
+  Layer.provide(NotificationQueue.layer) // over the engine's own Journal
+)
+```
 
 ## CellCalls
 

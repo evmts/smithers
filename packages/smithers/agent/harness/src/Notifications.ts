@@ -6,11 +6,12 @@
  * @since 0.1.0
  */
 
+import * as FlowRuntime from "@smthrs/flow/FlowRuntime"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { NotificationQueue } from "@smthrs/notifications"
 import type { Notification } from "@smthrs/notifications/Notification"
 import * as SteerPayload from "@smthrs/notifications/SteerPayload"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { HarnessError } from "./HarnessError.ts"
 import * as Steering from "./Steering.ts"
 
@@ -260,3 +261,55 @@ export const layer = (
   options: Options
 ): Layer.Layer<Steering.Source, never, NotificationQueue.NotificationQueue> =>
   Layer.effect(Steering.Source)(make(options))
+
+/**
+ * Provides {@link Steering.Source} backed by the durable notification queue
+ * for whichever flow execution is draining it.
+ *
+ * {@link layer} names its run when it is built, but a flow host builds an
+ * agent action's layer once and runs it for every execution it drives. This
+ * source names its run at each read and drain instead: the current
+ * `FlowRuntime.FlowInstance`'s execution id is both the run and the lineage,
+ * so a message admitted to `queue.admit(executionId, …)` with
+ * `targetLineageId: executionId` reaches that execution's agent at its next
+ * turn boundary and no other execution's. A drain's boundary is keyed by the
+ * agent session that names one (`Steering.BoundaryInput.session`), since an
+ * execution's retries and corrections each number their frames from the start.
+ * Outside a flow execution a read or a drain fails `engine_failed`: there is
+ * no run to read for.
+ *
+ * @category layers
+ * @since 1.0.0-rc.17
+ */
+export const layerForExecution = (): Layer.Layer<
+  Steering.Source,
+  never,
+  NotificationQueue.NotificationQueue
+> =>
+  Layer.effect(Steering.Source)(
+    Effect.gen(function*() {
+      const queue = yield* NotificationQueue.NotificationQueue
+      const current = Effect.flatMap(Effect.serviceOption(FlowRuntime.FlowInstance), (instance) =>
+        Option.isNone(instance)
+          ? Effect.fail(
+            new HarnessError({
+              code: "engine_failed",
+              message: "Steering for the current execution was read outside a flow execution"
+            })
+          )
+          : make({ runId: instance.value.executionId, lineageId: instance.value.executionId }).pipe(
+            Effect.provideService(NotificationQueue.NotificationQueue, queue)
+          ))
+      return Steering.make({
+        read: () => Effect.flatMap(current, (source) => source.read()),
+        // One execution runs several agent sessions (an action's retries and corrections), each numbering its frames
+        // from the start, so a boundary is unique only within its session: the queue's drain identity carries it, or
+        // a later session would be handed an earlier one's drain, empty or not, at a boundary they share.
+        drain: (input) =>
+          Effect.flatMap(current, (source) =>
+            source.drain(
+              input.session === undefined ? input : { ...input, boundary: `${input.session}|${input.boundary}` }
+            ))
+      })
+    })
+  )

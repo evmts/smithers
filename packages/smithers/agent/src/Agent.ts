@@ -1239,3 +1239,32 @@ export const layerDefaultsWithVariant: Layer.Layer<
   QuickJSSandbox.layerWithVariant,
   Steering.layerNoop()
 )
+
+/**
+ * The sandbox half of {@link layerDefaults} alone: the QuickJS single-file
+ * build, and no steering source.
+ *
+ * A host that takes people's messages mid-run provides its own
+ * `Steering.Source` beside this, such as `@smthrs/harness`'s
+ * `Notifications.layerForExecution()` over the durable notification queue.
+ * Merging {@link layerDefaults} with a real source instead would leave two
+ * providers of one service, and which one the agent drains would depend on
+ * the order the layers were merged in.
+ *
+ * @category layers
+ * @since 1.0.0-rc.17
+ */
+export const layerSandbox: Layer.Layer<Sandbox.Sandbox, Sandbox.SandboxError> = QuickJSSandbox.layer
+
+/**
+ * {@link layerSandbox} over the QuickJS build the host names, as
+ * {@link layerDefaultsWithVariant} is {@link layerDefaults} over it.
+ *
+ * @category layers
+ * @since 1.0.0-rc.17
+ */
+export const layerSandboxWithVariant: Layer.Layer<
+  Sandbox.Sandbox,
+  Sandbox.SandboxError,
+  QuickJSSandbox.Variant
+> = QuickJSSandbox.layerWithVariant

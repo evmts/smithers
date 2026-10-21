@@ -169,3 +169,50 @@ export const admissionClass = (notification: Notification): "steer" | "queue" =>
  */
 export const coalesceKey = (notification: Notification): string | null =>
   notification._tag === "system-event" ? notification.coalescingKey ?? null : null
+
+/**
+ * What a person's steer to one run is made of.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export interface HumanSteerInput {
+  /** The run the steer is for. It is also the lineage that receives it and the lineage it comes from. */
+  readonly runId: string
+  /** The caller's idempotency key: the same id with the same content is one steer. */
+  readonly id: string
+  /** Who steers, as the authenticated source the run's model reads: `person:<id>`, for example. */
+  readonly actor: string
+  /** What the steer carries, such as `SteerPayload.encode({ kind: "Message", body })`. */
+  readonly payload: typeof Schema.Json.Type
+  /** Labels shown beside the actor; they never authorize anything. */
+  readonly attribution?: typeof Attribution.Type | undefined
+}
+
+/**
+ * A person's steer to a run's own lineage, delivered at the run's next turn
+ * boundary.
+ *
+ * Every host that lets a person steer a run admits this one shape, so a
+ * steer reads the same in every run's transcript and journal: the control
+ * plane's `Control.steer` and an app's route that admits a message straight
+ * into a run's queue both build it here.
+ *
+ * @param input the run, the steer's id, who sends it and what it carries
+ * @category constructors
+ * @since 1.0.0-rc.17
+ */
+export const humanSteer = (input: HumanSteerInput): HumanSteer => ({
+  _tag: "human-steer",
+  id: input.id,
+  delivery: "steer",
+  targetLineageId: input.runId,
+  provenance: {
+    sourceRunId: input.runId,
+    sourceLineageId: input.runId,
+    sourceTurn: 0,
+    sourceActor: input.actor,
+    ...(input.attribution === undefined ? {} : { attribution: input.attribution })
+  },
+  payload: input.payload
+})

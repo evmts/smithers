@@ -3,6 +3,7 @@
  * These are compile-time assertions: each name below is used in type position,
  * so a schema that exports only a value fails `tsc -p tsconfig.test.json`.
  */
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Notification from "../src/Notification.ts"
 import * as SteerPayload from "../src/SteerPayload.ts"
@@ -46,5 +47,28 @@ describe("schema exports name their decoded type", () => {
       "Thinking",
       "Tools"
     ])
+  })
+})
+
+describe("Notification.humanSteer", () => {
+  it("builds a person's steer to a run's own lineage, with attribution only when given", () => {
+    const payload = { kind: "Message", body: "Use tabs" }
+    expect(Notification.humanSteer({ runId: "todo:a", id: "steer-1", actor: "person:ben", payload })).toEqual({
+      _tag: "human-steer",
+      id: "steer-1",
+      delivery: "steer",
+      targetLineageId: "todo:a",
+      provenance: { sourceRunId: "todo:a", sourceLineageId: "todo:a", sourceTurn: 0, sourceActor: "person:ben" },
+      payload
+    })
+    const attributed = Notification.humanSteer({
+      runId: "todo:a",
+      id: "steer-2",
+      actor: "person:ben",
+      payload,
+      attribution: { login: "ben" }
+    })
+    expect(attributed.provenance.attribution).toEqual({ login: "ben" })
+    expect(Schema.decodeUnknownSync(Notification.Notification)(attributed)).toEqual(attributed)
   })
 })

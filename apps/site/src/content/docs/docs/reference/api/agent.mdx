@@ -187,6 +187,39 @@ to compile WebAssembly from bytes, such as Cloudflare's workerd, provides
 `QuickJSSandbox.layerVariant(variant)` beneath this and builds that variant
 from a `.wasm` module import.
 
+### Agent.layerSandbox
+
+```ts
+const layerSandbox: Layer.Layer<Sandbox.Sandbox, Sandbox.SandboxError>
+```
+
+The sandbox half of `layerDefaults` alone, with no steering source. A host
+that takes people's messages while a run works provides its own
+`Steering.Source` beside it, such as `@smthrs/harness`'s
+`Notifications.layerForExecution()` over the durable notification queue.
+Merging `layerDefaults` with a real source instead leaves two providers of
+one service, and which one the agent drains depends on merge order.
+
+```ts
+const steered = Layer.mergeAll(
+  Agent.layerSandbox,
+  Notifications.layerForExecution().pipe(Layer.provide(NotificationQueue.layer))
+)
+```
+
+### Agent.layerSandboxWithVariant
+
+```ts
+const layerSandboxWithVariant: Layer.Layer<
+  Sandbox.Sandbox,
+  Sandbox.SandboxError,
+  QuickJSSandbox.Variant
+>
+```
+
+`layerSandbox` over the QuickJS build the host names, as
+`layerDefaultsWithVariant` is `layerDefaults` over it.
+
 ## AgentSession
 
 The production `ControlExecutor` for [`@smthrs/control`](/docs/reference/api/control/). When

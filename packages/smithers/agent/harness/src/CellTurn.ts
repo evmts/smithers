@@ -3515,7 +3515,7 @@ const drain = (settling: Settling, wouldIdle: boolean): Effect.Effect<Steering.D
       identity: { session: state.session, frame: state.frame, boundary: `steering-drain:${boundary}` },
       success: Steering.DrainRecord,
       execute: Frame.hasNextFrame(state)
-        ? settling.steering.drain({ boundary: `${state.frame}:${boundary}`, wouldIdle }).pipe(
+        ? settling.steering.drain({ boundary: `${state.frame}:${boundary}`, wouldIdle, session: state.session }).pipe(
           Effect.map(Steering.drainRecord),
           // The supervisor's nudge rides the same recorded drain, in a field
           // of its own and only at a boundary the run continues through: a
@@ -4121,6 +4121,7 @@ const frame = (
         for (let rung = 0;; rung++) {
           const drained = yield* steering.drain({
             boundary: `${state.frame}:${cell.digest}:park:${rung}`,
+            session: state.session,
             // A park IS the run going idle, which is the condition a queued
             // follow-up was admitted to wait for. The continue path passes
             // false because a continuing run is not idle; this is the boundary

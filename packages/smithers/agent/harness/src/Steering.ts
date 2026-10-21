@@ -150,6 +150,13 @@ export interface BoundaryInput {
   readonly boundary: string
   readonly wouldIdle: boolean
   /**
+   * The agent session draining, as `CellTurn` names it. A boundary is unique
+   * within one session; a source shared by several sessions of one run, such
+   * as an action's retries and corrections, keeps their boundaries apart by
+   * it. Absent from a caller that names no session.
+   */
+  readonly session?: string | undefined
+  /**
    * Set only at an honored park's boundary: why the run parked and what it
    * asked. A source that can reach a person may show them the question and
    * answer the drain with their reply; one that cannot ignores it.
