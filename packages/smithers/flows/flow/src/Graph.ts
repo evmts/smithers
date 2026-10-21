@@ -456,6 +456,151 @@ const container = (
   }
 }
 
+/** The own property descriptors of a payload container, refusing one whose reflection throws. @private */
+const ownDescriptors = (
+  source: Record<string, unknown> | ReadonlyArray<unknown>,
+  at: string
+): { readonly [key: string]: PropertyDescriptor } => {
+  try {
+    return Object.getOwnPropertyDescriptors(source)
+  } catch {
+    throw new GraphBuildError({
+      code: "invalid_payload",
+      node: at,
+      path: [],
+      message: `Payload at "${at}" does not expose inert own properties.`
+    })
+  }
+}
+
+/** The members of an array, read as descriptors: a hole is `undefined`, and an accessor is refused. @private */
+const arrayMembers = (
+  length: number,
+  descriptors: { readonly [key: string]: PropertyDescriptor },
+  at: string
+): ReadonlyArray<unknown> =>
+  Array.from({ length }, (_, index) => {
+    const descriptor = descriptors[String(index)]
+    if (descriptor === undefined) return undefined
+    if (!("value" in descriptor)) {
+      throw new GraphBuildError({
+        code: "invalid_payload",
+        node: at,
+        path: [String(index)],
+        message: `Payload at "${at}" contains an accessor at index ${index}. Pass inert data.`
+      })
+    }
+    return descriptor.value
+  })
+
+/** The members of a plain object under `keys`, read as descriptors; an accessor is refused. @private */
+const objectMembers = (
+  keys: ReadonlyArray<string>,
+  descriptors: { readonly [key: string]: PropertyDescriptor },
+  at: string
+): ReadonlyArray<unknown> =>
+  keys.map((key) => {
+    const descriptor = descriptors[key]!
+    if (!("value" in descriptor)) {
+      throw new GraphBuildError({
+        code: "invalid_payload",
+        node: at,
+        path: [key],
+        message: `Payload at "${at}" contains accessor property "${key}". Pass inert data.`
+      })
+    }
+    return descriptor.value
+  })
+
+/** Starts walking one container: its members, in the walk's order, and an empty copy to fill. @private */
+const openFrame = (walk: PayloadWalk, source: Record<string, unknown> | ReadonlyArray<unknown>): PayloadFrame => {
+  const descriptors = ownDescriptors(source, walk.at)
+  if (Array.isArray(source)) {
+    return { source, keys: undefined, members: arrayMembers(source.length, descriptors, walk.at), output: [], index: 0 }
+  }
+  const keys = walk.keysOf(Object.keys(descriptors).filter((key) => descriptors[key]?.enumerable === true))
+  return {
+    source,
+    keys,
+    members: objectMembers(keys, descriptors, walk.at),
+    output: Object.create(null) as Record<string, unknown>,
+    index: 0
+  }
+}
+
+/** Writes one produced member into its container's copy. @private */
+const place = (frame: PayloadFrame, key: string | undefined, produced: unknown): void => {
+  if (key === undefined) {
+    const members = frame.output as Array<unknown>
+    members.push(produced)
+    return
+  }
+  Object.defineProperty(frame.output, key, {
+    configurable: true,
+    enumerable: true,
+    value: produced,
+    writable: true
+  })
+}
+
+/**
+ * Takes the next member of `frame`: a placeholder-like leaf is placed as it
+ * resolves, any other non-container is placed as it is, and a container is
+ * opened and answered so the walk descends into it.
+ *
+ * @private
+ */
+const nextMember = (
+  walk: PayloadWalk,
+  frame: PayloadFrame,
+  depth: number,
+  ancestors: ReadonlySet<object>
+): PayloadFrame | undefined => {
+  const position = frame.index
+  frame.index = position + 1
+  const key = frame.keys?.[position]
+  const member = frame.members[position]
+  const resolved = walk.resolve(member)
+  if (resolved !== undefined) {
+    place(frame, key, resolved.value)
+    return undefined
+  }
+  const nested = container(member, walk.at)
+  if (nested === undefined) {
+    place(frame, key, member)
+    return undefined
+  }
+  checkDescent(walk.at, depth, ancestors, nested)
+  const opened = openFrame(walk, nested)
+  place(frame, key, opened.output)
+  return opened
+}
+
+/**
+ * Refuses descending into a container already on the ancestor chain, or one
+ * that would nest past {@link maximumPayloadDepth}.
+ *
+ * @private
+ */
+const checkDescent = (at: string, depth: number, ancestors: ReadonlySet<object>, nested: object): void => {
+  if (ancestors.has(nested)) {
+    throw new GraphBuildError({
+      code: "cyclic_payload",
+      node: at,
+      path: [],
+      message: `Payload at "${at}" contains itself, so no plan can hash or serialize it. Pass acyclic data.`
+    })
+  }
+  if (depth < maximumPayloadDepth) return
+  throw new GraphBuildError({
+    code: "payload_too_deep",
+    node: at,
+    path: [],
+    message: `Payload at "${at}" nests more than ${maximumPayloadDepth} levels deep. ` +
+      "Flatten the payload: a plan hashes and stores every level of it."
+  })
+}
+
 /**
  * Walks one payload with an explicit stack. Real recursion would let a deep
  * payload overflow the native stack instead of failing loudly, so depth is a
@@ -483,59 +628,7 @@ const walkPayload = (root: unknown, walk: PayloadWalk): unknown => {
   if (resolvedRoot !== undefined) return resolvedRoot.value
   const rootContainer = container(root, walk.at)
   if (rootContainer === undefined) return root
-  const open = (source: Record<string, unknown> | ReadonlyArray<unknown>): PayloadFrame => {
-    const descriptors = (() => {
-      try {
-        return Object.getOwnPropertyDescriptors(source)
-      } catch {
-        throw new GraphBuildError({
-          code: "invalid_payload",
-          node: walk.at,
-          path: [],
-          message: `Payload at "${walk.at}" does not expose inert own properties.`
-        })
-      }
-    })()
-    if (Array.isArray(source)) {
-      const members = Array.from({ length: source.length }, (_, index) => {
-        const descriptor = descriptors[String(index)]
-        if (descriptor === undefined) return undefined
-        if (!("value" in descriptor)) {
-          throw new GraphBuildError({
-            code: "invalid_payload",
-            node: walk.at,
-            path: [String(index)],
-            message: `Payload at "${walk.at}" contains an accessor at index ${index}. Pass inert data.`
-          })
-        }
-        return descriptor.value
-      })
-      return { source, keys: undefined, members, output: [], index: 0 }
-    }
-    const keys = walk.keysOf(
-      Object.keys(descriptors).filter((key) => descriptors[key]?.enumerable === true)
-    )
-    const members = keys.map((key) => {
-      const descriptor = descriptors[key]!
-      if (!("value" in descriptor)) {
-        throw new GraphBuildError({
-          code: "invalid_payload",
-          node: walk.at,
-          path: [key],
-          message: `Payload at "${walk.at}" contains accessor property "${key}". Pass inert data.`
-        })
-      }
-      return descriptor.value
-    })
-    return {
-      source,
-      keys,
-      members,
-      output: Object.create(null) as Record<string, unknown>,
-      index: 0
-    }
-  }
-  const rootFrame = open(rootContainer)
+  const rootFrame = openFrame(walk, rootContainer)
   const frames: Array<PayloadFrame> = [rootFrame]
   const ancestors = new Set<object>([rootContainer])
   while (frames.length > 0) {
@@ -545,53 +638,9 @@ const walkPayload = (root: unknown, walk: PayloadWalk): unknown => {
       ancestors.delete(frame.source)
       continue
     }
-    const position = frame.index
-    frame.index = position + 1
-    const key = frame.keys?.[position]
-    const member = frame.members[position]
-    const place = (produced: unknown): void => {
-      if (key === undefined) {
-        const members = frame.output as Array<unknown>
-        members.push(produced)
-        return
-      }
-      Object.defineProperty(frame.output, key, {
-        configurable: true,
-        enumerable: true,
-        value: produced,
-        writable: true
-      })
-    }
-    const resolved = walk.resolve(member)
-    if (resolved !== undefined) {
-      place(resolved.value)
-      continue
-    }
-    const nested = container(member, walk.at)
-    if (nested === undefined) {
-      place(member)
-      continue
-    }
-    if (ancestors.has(nested)) {
-      throw new GraphBuildError({
-        code: "cyclic_payload",
-        node: walk.at,
-        path: [],
-        message: `Payload at "${walk.at}" contains itself, so no plan can hash or serialize it. Pass acyclic data.`
-      })
-    }
-    if (frames.length >= maximumPayloadDepth) {
-      throw new GraphBuildError({
-        code: "payload_too_deep",
-        node: walk.at,
-        path: [],
-        message: `Payload at "${walk.at}" nests more than ${maximumPayloadDepth} levels deep. ` +
-          "Flatten the payload: a plan hashes and stores every level of it."
-      })
-    }
-    const opened = open(nested)
-    place(opened.output)
-    ancestors.add(nested)
+    const opened = nextMember(walk, frame, frames.length, ancestors)
+    if (opened === undefined) continue
+    ancestors.add(opened.source)
     frames.push(opened)
   }
   return rootFrame.output
@@ -922,29 +971,38 @@ export const build = (
   payload?: unknown,
   options: BuildOptions = {}
 ): Graph => {
-  const observed: Array<GraphNode> = []
-  const observedIds = new Set<string>()
-  const observedEdges: Array<Edge> = []
-  const observedDiagnostics: Array<GraphBuildError> = []
-
-  const observeIdentity = (node: string, field: string, identity: Node.FunctionIdentity | undefined): void => {
-    if (
-      options.callbackIdentity !== "stable" ||
-      (identity !== undefined && identity.algorithm !== "sha256-source-ephemeral/v4")
-    ) return
-    observedDiagnostics.push(
-      new GraphBuildError({
-        code: "unstable_callback",
-        node,
-        path: [field],
-        message:
-          `Callback ${field} at "${node}" has ${identity === undefined ? "unavailable" : "process-local"} identity ` +
-          "and cannot enter a stable graph. " +
-          "Use Node.capture with every semantic capture, including the version of imported implementation behavior."
-      })
-    )
+  const builder: Builder = {
+    options,
+    nodes: [],
+    ids: new Set(),
+    edges: [],
+    diagnostics: [],
+    operations: [],
+    envelopes: new Map()
   }
+  const declaration = flowDeclaration(flowOrNode)
+  const root = options.root ?? "root"
+  if (declaration === undefined) expand(builder, rootVisit((flowOrNode as Node.Any).ast, root))
+  else expandFlowCall(builder, entryCall(declaration, hydrate(payload, new Map(), root), root))
+  // The walk itself: pop until every stacked step has run. A refusal thrown
+  // by any step propagates out of the build unchanged.
+  while (builder.operations.length > 0) builder.operations.pop()!()
+  return { nodes: builder.nodes, edges: builder.edges, diagnostics: builder.diagnostics }
+}
 
+/**
+ * One build in progress: what it has observed so far, and the steps still to
+ * run.
+ *
+ * @private
+ */
+interface Builder {
+  readonly options: BuildOptions
+  readonly nodes: Array<GraphNode>
+  /** Every node id recorded so far, so a second node under one id is refused. */
+  readonly ids: Set<string>
+  readonly edges: Array<Edge>
+  readonly diagnostics: Array<GraphBuildError>
   /**
    * The explicit walk stack. Every step is a thunk; expanding a node pushes
    * its steps in reverse so they pop in authoring order, which keeps the
@@ -952,767 +1010,822 @@ export const build = (
    * walk would produce while making depth a data structure instead of native
    * stack frames a deep graph could exhaust.
    */
-  const operations: Array<() => void> = []
-
-  /** Stacks steps to run in the order written, ahead of everything stacked. */
-  const sequence = (steps: ReadonlyArray<() => void>): void => {
-    for (let index = steps.length - 1; index >= 0; index--) operations.push(steps[index]!)
-  }
-
-  const record = (entry: {
-    readonly id: string
-    readonly kind: Node.Ast["_tag"]
-    readonly dependencies: ReadonlyArray<string>
-    readonly capabilities: ReadonlyArray<string>
-    readonly effects: Annotations.Effects | undefined
-    readonly placement: unknown
-    readonly priority: number | undefined
-    readonly tier: KeyMaterial.KeyMaterial["kind"]
-    readonly nondeterministic?: true | undefined
-    readonly body: unknown
-    readonly capabilityCeilings?: ReadonlyArray<ReadonlyArray<string>>
-    readonly inputs: ReadonlyArray<KeyMaterial.InputRef>
-    readonly ast: Node.Ast
-    readonly payload: unknown
-    readonly declaredAt?: DeclarationSite.DeclaredAt | undefined
-  }): void => {
-    if (observedIds.has(entry.id)) {
-      throw new GraphBuildError({
-        code: "duplicate_node",
-        node: entry.id,
-        path: [],
-        message: `Node id "${entry.id}" is durable dispatch identity, so two nodes may not share one. ` +
-          "Two structural addresses in this graph collided, most often because a Node.all member name " +
-          "contains the separator a nested address also produces. Rename one of them."
-      })
-    }
-    observedIds.add(entry.id)
-    const material: KeyMaterial.KeyMaterial = {
-      version: KeyMaterial.version,
-      kind: entry.tier,
-      body: entry.capabilityCeilings?.length
-        ? { ...entry.body as object, capabilityCeilings: entry.capabilityCeilings }
-        : entry.body,
-      inputs: entry.inputs,
-      layers: sorted(
-        options.resolveLayers?.({
-          nodeId: entry.id,
-          kind: entry.kind,
-          capabilities: entry.capabilities,
-          effects: entry.effects,
-          placement: entry.placement
-        }) ?? []
-      ),
-      capabilities: entry.capabilities,
-      ...(entry.nondeterministic === undefined ? {} : { nondeterministic: entry.nondeterministic }),
-      ...(entry.effects === undefined ? {} : { effects: entry.effects }),
-      ...(entry.placement === undefined ? {} : { placement: entry.placement })
-    }
-    observed.push({
-      id: entry.id,
-      kind: entry.kind,
-      dependencies: entry.dependencies,
-      capabilities: entry.capabilities,
-      capabilityCeilings: entry.capabilityCeilings ?? [],
-      placement: entry.placement,
-      // Priority reaches the compiled plan through the draft and stays OUT of
-      // `material`: it orders ready work without changing what the work
-      // produces, so raising it must not re-key a step.
-      draft: {
-        id: entry.id,
-        material,
-        effects: entry.effects ?? emptyEffects,
-        ...(entry.priority === undefined ? {} : { priority: entry.priority })
-      },
-      ast: entry.ast,
-      payload: entry.payload,
-      ...(entry.declaredAt === undefined ? {} : { declaredAt: entry.declaredAt })
-    })
-  }
-
+  readonly operations: Array<() => void>
   /**
    * An envelope is graph-owned and reaches every node it encloses as the same
    * object, so it is read into its prepared form once and each enclosed
    * declaration is checked against that: a wide envelope costs its size once
    * per build rather than once per node that narrows it.
    */
-  const preparedEnvelopes = new Map<Effects.Declaration, Effects.PreparedEnvelope>()
+  readonly envelopes: Map<Effects.Declaration, Effects.PreparedEnvelope>
+}
 
-  /**
-   * Checks one declaration against the envelope enclosing it, recording the
-   * refusal and answering whether the declaration may become the envelope for
-   * what it encloses in turn. A refused declaration must NOT replace the last
-   * accepted one: widening beneath it would then be measured against the very
-   * claim that was just rejected.
-   */
-  const admitEnvelope = (
-    enclosing: Effects.Declaration | undefined,
-    declared: Effects.Declaration | undefined,
-    site: { readonly id: string; readonly flow: string }
-  ): Effects.Declaration | undefined => {
-    if (declared === undefined) return enclosing
-    if (enclosing === undefined) return declared
-    let prepared = preparedEnvelopes.get(enclosing)
-    if (prepared === undefined) {
-      prepared = Effects.prepareEnvelope(enclosing)
-      preparedEnvelopes.set(enclosing, prepared)
-    }
-    const narrowed = Effects.narrowPrepared(prepared, declared)
-    if (narrowed.ok) return declared
-    observedDiagnostics.push(
-      new GraphBuildError({
-        code: narrowed.code,
-        node: site.id,
-        path: [...narrowed.paths],
-        message: refusalMessage(narrowed, site)
-      })
-    )
-    return enclosing
+/** The visit of a bare node entered as the graph's root. @private */
+const rootVisit = (ast: Node.Ast, root: string): Visit => ({
+  ast,
+  id: root,
+  depth: 0,
+  capabilities: [],
+  placement: undefined,
+  envelope: undefined,
+  priority: undefined,
+  substitutions: new Map(),
+  stack: [],
+  prerequisite: undefined,
+  barriers: []
+})
+
+/** The call a flow is entered as: a call to itself that no author wrote. @private */
+const entryCall = (declaration: Flow.Any, entry: unknown, root: string): Call => ({
+  id: root,
+  depth: 0,
+  // The entry's AST is synthesized here rather than recorded by
+  // `Node.flowCall`, which would replace a payload's non-JSON values with
+  // their plain-object copies. What a body was planned with stays what the
+  // entry node shows.
+  ast: { _tag: "FlowCall", flow: declaration._tag, mode: "inline", payload: entry },
+  flow: declaration._tag,
+  mode: "inline",
+  declaration,
+  payload: entry,
+  capabilities: sorted(Context.get(declaration.annotations, Annotations.Capabilities)),
+  // Nothing encloses the entry, so its own declared placement is what the
+  // body it splices has to be satisfiable under, not a constraint on it.
+  // Its declared envelope reads the same way: the entry is the top of the
+  // authority chain, so it grants rather than narrows.
+  placement: undefined,
+  envelope: undefined,
+  priority: undefined,
+  substitutions: new Map(),
+  stack: [],
+  barriers: [],
+  dependencies: [],
+  inputs: []
+})
+
+/** Stacks steps to run in the order written, ahead of everything stacked. @private */
+const sequence = (builder: Builder, steps: ReadonlyArray<() => void>): void => {
+  for (let index = steps.length - 1; index >= 0; index--) builder.operations.push(steps[index]!)
+}
+
+/** Records that a callback's identity cannot enter a stable graph, when the build asked for one. @private */
+const observeIdentity = (
+  builder: Builder,
+  node: string,
+  field: string,
+  identity: Node.FunctionIdentity | undefined
+): void => {
+  if (
+    builder.options.callbackIdentity !== "stable" ||
+    (identity !== undefined && identity.algorithm !== "sha256-source-ephemeral/v4")
+  ) return
+  builder.diagnostics.push(
+    new GraphBuildError({
+      code: "unstable_callback",
+      node,
+      path: [field],
+      message:
+        `Callback ${field} at "${node}" has ${identity === undefined ? "unavailable" : "process-local"} identity ` +
+        "and cannot enter a stable graph. " +
+        "Use Node.capture with every semantic capture, including the version of imported implementation behavior."
+    })
+  )
+}
+
+/** What one observed node is recorded with. @private */
+interface NodeEntry {
+  readonly id: string
+  readonly kind: Node.Ast["_tag"]
+  readonly dependencies: ReadonlyArray<string>
+  readonly capabilities: ReadonlyArray<string>
+  readonly effects: Annotations.Effects | undefined
+  readonly placement: unknown
+  readonly priority: number | undefined
+  readonly tier: KeyMaterial.KeyMaterial["kind"]
+  readonly nondeterministic?: true | undefined
+  readonly body: unknown
+  readonly capabilityCeilings?: ReadonlyArray<ReadonlyArray<string>>
+  readonly inputs: ReadonlyArray<KeyMaterial.InputRef>
+  readonly ast: Node.Ast
+  readonly payload: unknown
+  readonly declaredAt?: DeclarationSite.DeclaredAt | undefined
+}
+
+/** Records one observed node, refusing a second node under an id already recorded. @private */
+const record = (builder: Builder, entry: NodeEntry): void => {
+  if (builder.ids.has(entry.id)) {
+    throw new GraphBuildError({
+      code: "duplicate_node",
+      node: entry.id,
+      path: [],
+      message: `Node id "${entry.id}" is durable dispatch identity, so two nodes may not share one. ` +
+        "Two structural addresses in this graph collided, most often because a Node.all member name " +
+        "contains the separator a nested address also produces. Rename one of them."
+    })
   }
+  builder.ids.add(entry.id)
+  builder.nodes.push({
+    id: entry.id,
+    kind: entry.kind,
+    dependencies: entry.dependencies,
+    capabilities: entry.capabilities,
+    capabilityCeilings: entry.capabilityCeilings ?? [],
+    placement: entry.placement,
+    // Priority reaches the compiled plan through the draft and stays OUT of
+    // `material`: it orders ready work without changing what the work
+    // produces, so raising it must not re-key a step.
+    draft: {
+      id: entry.id,
+      material: keyMaterial(builder, entry),
+      effects: entry.effects ?? emptyEffects,
+      ...(entry.priority === undefined ? {} : { priority: entry.priority })
+    },
+    ast: entry.ast,
+    payload: entry.payload,
+    ...(entry.declaredAt === undefined ? {} : { declaredAt: entry.declaredAt })
+  })
+}
 
-  /**
-   * Expands the node a flow call becomes, shared by the entry point and by
-   * every `FlowCall` in a body.
-   */
-  const coveredCapability = (stack: ReadonlyArray<Flow.Any>, text: string): boolean => {
-    const groups = stack.flatMap((flow) => capabilityCeilings(flow.annotations))
-    if (groups.length === 0) return true
-    const candidate = Capability.parsePattern(text)
-    if (Option.isNone(candidate)) return false
-    return groups.every((group) =>
-      group.some((text) => {
-        const grant = Capability.parsePattern(text)
-        return Option.isSome(grant) && Capability.subsumes(grant.value, candidate.value)
-      })
-    )
+/** The key material a node is keyed by, with the layers the build's resolver names for it. @private */
+const keyMaterial = (builder: Builder, entry: NodeEntry): KeyMaterial.KeyMaterial => ({
+  version: KeyMaterial.version,
+  kind: entry.tier,
+  body: entry.capabilityCeilings?.length
+    ? { ...entry.body as object, capabilityCeilings: entry.capabilityCeilings }
+    : entry.body,
+  inputs: entry.inputs,
+  layers: sorted(
+    builder.options.resolveLayers?.({
+      nodeId: entry.id,
+      kind: entry.kind,
+      capabilities: entry.capabilities,
+      effects: entry.effects,
+      placement: entry.placement
+    }) ?? []
+  ),
+  capabilities: entry.capabilities,
+  ...(entry.nondeterministic === undefined ? {} : { nondeterministic: entry.nondeterministic }),
+  ...(entry.effects === undefined ? {} : { effects: entry.effects }),
+  ...(entry.placement === undefined ? {} : { placement: entry.placement })
+})
+
+/**
+ * Checks one declaration against the envelope enclosing it, recording the
+ * refusal and answering whether the declaration may become the envelope for
+ * what it encloses in turn. A refused declaration must NOT replace the last
+ * accepted one: widening beneath it would then be measured against the very
+ * claim that was just rejected.
+ *
+ * @private
+ */
+const admitEnvelope = (
+  builder: Builder,
+  enclosing: Effects.Declaration | undefined,
+  declared: Effects.Declaration | undefined,
+  site: { readonly id: string; readonly flow: string }
+): Effects.Declaration | undefined => {
+  if (declared === undefined) return enclosing
+  if (enclosing === undefined) return declared
+  let prepared = builder.envelopes.get(enclosing)
+  if (prepared === undefined) {
+    prepared = Effects.prepareEnvelope(enclosing)
+    builder.envelopes.set(enclosing, prepared)
   }
+  const narrowed = Effects.narrowPrepared(prepared, declared)
+  if (narrowed.ok) return declared
+  builder.diagnostics.push(
+    new GraphBuildError({
+      code: narrowed.code,
+      node: site.id,
+      path: [...narrowed.paths],
+      message: refusalMessage(narrowed, site)
+    })
+  )
+  return enclosing
+}
 
-  const expandFlowCall = (call: {
-    readonly id: string
-    readonly depth: number
-    readonly ast: Node.Ast
-    readonly flow: string
-    readonly mode: Node.CallMode
-    readonly declaration: Flow.Any | undefined
-    readonly payload: unknown
-    readonly capabilities: ReadonlyArray<string>
-    /** The placement of the flow this call is written inside. */
-    readonly placement: unknown
-    /** The effect authority in force at this call, which the callee must narrow. */
-    readonly envelope: Effects.Declaration | undefined
-    /** The priority in force at this call, already including the call's own. */
-    readonly priority: number | undefined
-    readonly substitutions: ReadonlyMap<string, string>
-    readonly stack: ReadonlyArray<Flow.Any>
-    readonly barriers: ReadonlyArray<string>
-    readonly dependencies: Array<string>
-    readonly inputs: ReadonlyArray<KeyMaterial.InputRef>
-  }): void => {
-    const annotations = call.declaration?.annotations ?? Context.empty()
-    const dependencies = call.dependencies
-    const inputs: Array<KeyMaterial.InputRef> = [...payloadInputs(call.payload, call.id), ...call.inputs]
-    const target = call.mode === "inline" ? call.declaration : undefined
-    const ceiling = sorted(capabilityCeilings(annotations)[0] ?? call.capabilities)
-    const placement = declaredPlacement(annotations)
-    const envelope = declaredEnvelope(annotations)
-    // The authority checks are recorded, not thrown: a graph whose callee
-    // claimed too much is still worth inspecting, and the author needs every
-    // over-claim in the composition at once rather than the first one.
-    //
-    // They run for EVERY call mode. An explicit `.child()` boundary and a
-    // trampoline handoff give the callee its own execution, not its own
-    // authority: whoever writes the call is still the one granting it, which is
-    // the rule `@smthrs/core`'s graph applies to a call whose body it does not
-    // splice.
-    const calleeEnvelope = admitEnvelope(call.envelope, envelope, { id: call.id, flow: call.flow })
-    const dropped = ceiling.filter((capability) => !coveredCapability(call.stack, capability))
-    if (dropped.length > 0) {
-      observedDiagnostics.push(
-        new GraphBuildError({
-          code: "capability_outside_grant",
-          node: call.id,
-          path: dropped,
-          message: `Flow "${call.flow}" at "${call.id}" requires ${dropped.join(", ")}, which the calling flow ` +
-            "does not provably grant. Execution intersects this declaration with every caller ceiling."
-        })
-      )
-    }
-    // The placement refusal precedes the recursion one only in position: an
-    // inline call the caller cannot host is invalid whether or not the callee's
-    // declaration survived to be spliced, because inline expansion is the claim
-    // that these steps run in the caller's execution.
-    if (call.mode === "inline" && placementConflicts(call.placement, placement)) {
-      throw new GraphBuildError({
-        code: "placement_requires_boundary",
-        node: call.id,
-        path: [],
-        message: `Flow "${call.flow}" is called inline at "${call.id}", but its declared placement ` +
-          `${renderPlacement(placement)} is not structurally identical to the enclosing flow's ` +
-          `${renderPlacement(call.placement)}. An inline .call() runs in the caller's execution, so use ` +
-          `${call.flow}.child(payload) to give it its own.`
-      })
-    }
-    const recordCall = (): void => {
-      const bodyIdentity = call.declaration === undefined ? undefined : Node.functionIdentity(call.declaration.body)
-      observeIdentity(call.id, "body", bodyIdentity)
-      record({
-        id: call.id,
-        kind: "FlowCall",
-        dependencies,
-        capabilities: call.capabilities,
-        capabilityCeilings: [
-          ...call.stack.flatMap((flow) => capabilityCeilings(flow.annotations)),
-          ...capabilityCeilings(annotations)
-        ],
-        effects: declaredEffects(annotations),
-        placement,
+/** The capability ceilings of every flow on the splice stack, outermost first. @private */
+const stackCeilings = (stack: ReadonlyArray<Flow.Any>): ReadonlyArray<ReadonlyArray<string>> =>
+  stack.flatMap((flow) => capabilityCeilings(flow.annotations))
+
+/** Whether every flow on the splice stack provably grants the capability `text` names. @private */
+const coveredCapability = (stack: ReadonlyArray<Flow.Any>, text: string): boolean => {
+  const groups = stackCeilings(stack)
+  if (groups.length === 0) return true
+  const candidate = Capability.parsePattern(text)
+  if (Option.isNone(candidate)) return false
+  return groups.every((group) =>
+    group.some((text) => {
+      const grant = Capability.parsePattern(text)
+      return Option.isSome(grant) && Capability.subsumes(grant.value, candidate.value)
+    })
+  )
+}
+
+/** Records the capabilities a declaration requires that the calling flows do not provably grant. @private */
+const checkGrant = (
+  builder: Builder,
+  stack: ReadonlyArray<Flow.Any>,
+  ceiling: ReadonlyArray<string>,
+  declared: string,
+  id: string
+): void => {
+  const dropped = ceiling.filter((capability) => !coveredCapability(stack, capability))
+  if (dropped.length === 0) return
+  builder.diagnostics.push(
+    new GraphBuildError({
+      code: "capability_outside_grant",
+      node: id,
+      path: dropped,
+      message: `${declared} at "${id}" requires ${dropped.join(", ")}, which the calling flow ` +
+        "does not provably grant. Execution intersects this declaration with every caller ceiling."
+    })
+  )
+}
+
+/** A flow call being expanded, shared by the entry point and by every `FlowCall` in a body. @private */
+interface Call {
+  readonly id: string
+  readonly depth: number
+  readonly ast: Node.Ast
+  readonly flow: string
+  readonly mode: Node.CallMode
+  readonly declaration: Flow.Any | undefined
+  readonly payload: unknown
+  readonly capabilities: ReadonlyArray<string>
+  /** The placement of the flow this call is written inside. */
+  readonly placement: unknown
+  /** The effect authority in force at this call, which the callee must narrow. */
+  readonly envelope: Effects.Declaration | undefined
+  /** The priority in force at this call, already including the call's own. */
+  readonly priority: number | undefined
+  readonly substitutions: ReadonlyMap<string, string>
+  readonly stack: ReadonlyArray<Flow.Any>
+  readonly barriers: ReadonlyArray<string>
+  readonly dependencies: Array<string>
+  readonly inputs: ReadonlyArray<KeyMaterial.InputRef>
+}
+
+/** What a call's declaration claims for the callee. @private */
+interface Callee {
+  readonly annotations: Context.Context<never>
+  /** The capabilities the callee declares, or the caller's when it declares none. */
+  readonly ceiling: ReadonlyArray<string>
+  readonly placement: unknown
+  readonly envelope: Effects.Declaration | undefined
+}
+
+/**
+ * Expands the node a flow call becomes. An inline call splices the callee's
+ * body beneath it; every other call is a leaf.
+ *
+ * @private
+ */
+const expandFlowCall = (builder: Builder, call: Call): void => {
+  const annotations = call.declaration?.annotations ?? Context.empty()
+  const inputs: Array<KeyMaterial.InputRef> = [...payloadInputs(call.payload, call.id), ...call.inputs]
+  const target = call.mode === "inline" ? call.declaration : undefined
+  const callee: Callee = {
+    annotations,
+    ceiling: sorted(capabilityCeilings(annotations)[0] ?? call.capabilities),
+    placement: declaredPlacement(annotations),
+    envelope: declaredEnvelope(annotations)
+  }
+  // The authority checks are recorded, not thrown: a graph whose callee
+  // claimed too much is still worth inspecting, and the author needs every
+  // over-claim in the composition at once rather than the first one.
+  //
+  // They run for EVERY call mode. An explicit `.child()` boundary and a
+  // trampoline handoff give the callee its own execution, not its own
+  // authority: whoever writes the call is still the one granting it, which is
+  // the rule `@smthrs/core`'s graph applies to a call whose body it does not
+  // splice.
+  const envelope = admitEnvelope(builder, call.envelope, callee.envelope, { id: call.id, flow: call.flow })
+  checkGrant(builder, call.stack, callee.ceiling, `Flow "${call.flow}"`, call.id)
+  // The placement refusal precedes the recursion one only in position: an
+  // inline call the caller cannot host is invalid whether or not the callee's
+  // declaration survived to be spliced, because inline expansion is the claim
+  // that these steps run in the caller's execution.
+  if (call.mode === "inline" && placementConflicts(call.placement, callee.placement)) {
+    throw new GraphBuildError({
+      code: "placement_requires_boundary",
+      node: call.id,
+      path: [],
+      message: `Flow "${call.flow}" is called inline at "${call.id}", but its declared placement ` +
+        `${renderPlacement(callee.placement)} is not structurally identical to the enclosing flow's ` +
+        `${renderPlacement(call.placement)}. An inline .call() runs in the caller's execution, so use ` +
+        `${call.flow}.child(payload) to give it its own.`
+    })
+  }
+  if (target === undefined) return recordCall(builder, call, callee, inputs)
+  if (call.stack.includes(target)) {
+    throw new GraphBuildError({
+      code: "recursion_requires_boundary",
+      node: call.id,
+      path: [],
+      message: `Flow "${call.flow}" cannot call itself inline at "${call.id}". ` +
+        `Use ${call.flow}.to(payload) to hand off to the next round, or .child(payload) for an explicit boundary.`
+    })
+  }
+  spliceCall(builder, call, callee, inputs, target, envelope)
+}
+
+/**
+ * Splices an inline callee's body beneath its call: the body, then the value
+ * edge from it, then the call itself.
+ *
+ * @private
+ */
+const spliceCall = (
+  builder: Builder,
+  call: Call,
+  callee: Callee,
+  inputs: Array<KeyMaterial.InputRef>,
+  target: Flow.Any,
+  envelope: Effects.Declaration | undefined
+): void => {
+  const built = target.body(call.payload)
+  const spliced = `${call.id}.flow`
+  sequence(builder, [
+    () =>
+      expand(builder, {
+        ast: built.ast,
+        id: spliced,
+        depth: call.depth + 1,
+        capabilities: callee.ceiling.filter((capability) => coveredCapability(call.stack, capability)),
+        // Inside the spliced body the callee's own placement is the one to
+        // satisfy; a callee that declared none keeps running under the
+        // caller's.
+        placement: callee.placement ?? call.placement,
+        envelope,
         priority: call.priority,
-        // A declared envelope states how reversible the flow beneath it is, so
-        // it is the call's tier. A flow that declared none keeps the sealed
-        // default every call has always carried, which is what keeps every
-        // existing flow's key exactly where it was.
-        tier: envelope?.tier ?? "sealed",
-        body: {
-          _tag: "FlowCall",
-          flow: call.flow,
-          mode: call.mode,
-          declaration: call.declaration === undefined ? undefined : {
-            payload: schemaIdentity(call.declaration.payloadSchema),
-            success: schemaIdentity(call.declaration.successSchema),
-            error: schemaIdentity(call.declaration.errorSchema),
-            capabilities: ceiling,
-            // A spliced body re-keys this call through the `Ref` on the node it
-            // produced. A call the graph keeps as a LEAF — an explicit boundary,
-            // a handoff — has no such node, and its own digest is the only thing
-            // an edited body can move.
-            body: bodyIdentity
-          }
-        },
-        inputs,
-        ast: call.ast,
-        payload: call.payload,
-        declaredAt: DeclarationSite.declaredAt(call.declaration)
-      })
-    }
-    if (target === undefined) {
-      recordCall()
-      return
-    }
-    if (call.stack.includes(target)) {
-      throw new GraphBuildError({
-        code: "recursion_requires_boundary",
-        node: call.id,
-        path: [],
-        message: `Flow "${call.flow}" cannot call itself inline at "${call.id}". ` +
-          `Use ${call.flow}.to(payload) to hand off to the next round, or .child(payload) for an explicit boundary.`
-      })
-    }
-    const built = target.body(call.payload)
-    const spliced = `${call.id}.flow`
-    sequence([
-      () =>
-        expand({
-          ast: built.ast,
-          id: spliced,
-          depth: call.depth + 1,
-          capabilities: ceiling.filter((capability) => coveredCapability(call.stack, capability)),
-          // Inside the spliced body the callee's own placement is the one to
-          // satisfy; a callee that declared none keeps running under the
-          // caller's.
-          placement: placement ?? call.placement,
-          envelope: calleeEnvelope,
-          priority: call.priority,
-          substitutions: call.substitutions,
-          stack: [...call.stack, target],
-          prerequisite: undefined,
-          barriers: call.barriers
-        }),
-      () => {
-        dependencies.push(spliced)
-        observedEdges.push({ from: spliced, to: call.id, reason: "value" })
-        inputs.push({ _tag: "Ref", from: spliced, path: [] })
-      },
-      recordCall
-    ])
-  }
+        substitutions: call.substitutions,
+        stack: [...call.stack, target],
+        prerequisite: undefined,
+        barriers: call.barriers
+      }),
+    () => {
+      call.dependencies.push(spliced)
+      builder.edges.push({ from: spliced, to: call.id, reason: "value" })
+      inputs.push({ _tag: "Ref", from: spliced, path: [] })
+    },
+    () => recordCall(builder, call, callee, inputs)
+  ])
+}
 
-  /**
-   * The continuation of an `AndThen`, evaluated exactly once against the
-   * placeholder standing for its upstream result. A continuation that is gone
-   * — an AST that crossed a serialization boundary — or that answered with
-   * something other than a node leaves the remainder out and says so, because
-   * a graph missing that recoverable step is still worth inspecting. Computing
-   * on the placeholder is a fatal build refusal and propagates unchanged.
-   */
-  const continuation = (
-    ast: Extract<Node.Ast, { readonly _tag: "AndThen" }>,
-    id: string,
-    subject: string
-  ): Node.Ast | undefined => {
-    const builder = Node.continuation(ast)
-    if (builder === undefined) {
-      observedDiagnostics.push(
-        new GraphBuildError({
-          code: "invalid_continuation",
-          node: id,
-          path: [],
-          message: `Node.bindPlanned at "${id}" no longer holds its continuation builder, so its continuation is ` +
-            "missing from the graph. An AST that crossed a serialization boundary left that side table behind."
-        })
-      )
-      return undefined
-    }
-    const built = builder(Planned.make<unknown>(subject))
-    if (Node.isNode(built)) return built.ast
-    observedDiagnostics.push(
-      new GraphBuildError({
-        code: "invalid_continuation",
-        node: id,
-        path: [],
-        message: `Node.bindPlanned at "${id}" did not produce a Node, so its continuation is missing from the graph.`
-      })
-    )
+/** Records the node a flow call becomes. @private */
+const recordCall = (
+  builder: Builder,
+  call: Call,
+  callee: Callee,
+  inputs: ReadonlyArray<KeyMaterial.InputRef>
+): void => {
+  const bodyIdentity = call.declaration === undefined ? undefined : Node.functionIdentity(call.declaration.body)
+  observeIdentity(builder, call.id, "body", bodyIdentity)
+  record(builder, {
+    id: call.id,
+    kind: "FlowCall",
+    dependencies: call.dependencies,
+    capabilities: call.capabilities,
+    capabilityCeilings: [...stackCeilings(call.stack), ...capabilityCeilings(callee.annotations)],
+    effects: declaredEffects(callee.annotations),
+    placement: callee.placement,
+    priority: call.priority,
+    // A declared envelope states how reversible the flow beneath it is, so
+    // it is the call's tier. A flow that declared none keeps the sealed
+    // default every call has always carried, which is what keeps every
+    // existing flow's key exactly where it was.
+    tier: callee.envelope?.tier ?? "sealed",
+    body: {
+      _tag: "FlowCall",
+      flow: call.flow,
+      mode: call.mode,
+      declaration: call.declaration === undefined
+        ? undefined
+        : callIdentity(call.declaration, callee.ceiling, bodyIdentity)
+    },
+    inputs,
+    ast: call.ast,
+    payload: call.payload,
+    declaredAt: DeclarationSite.declaredAt(call.declaration)
+  })
+}
+
+/** What a called flow's declaration contributes to its call's key. @private */
+const callIdentity = (
+  declaration: Flow.Any,
+  ceiling: ReadonlyArray<string>,
+  bodyIdentity: Node.FunctionIdentity | undefined
+) => ({
+  payload: schemaIdentity(declaration.payloadSchema),
+  success: schemaIdentity(declaration.successSchema),
+  error: schemaIdentity(declaration.errorSchema),
+  capabilities: ceiling,
+  // A spliced body re-keys this call through the `Ref` on the node it
+  // produced. A call the graph keeps as a LEAF — an explicit boundary, a
+  // handoff — has no such node, and its own digest is the only thing an
+  // edited body can move.
+  body: bodyIdentity
+})
+
+/**
+ * The continuation of an `AndThen`, evaluated exactly once against the
+ * placeholder standing for its upstream result. A continuation that is gone
+ * — an AST that crossed a serialization boundary — or that answered with
+ * something other than a node leaves the remainder out and says so, because
+ * a graph missing that recoverable step is still worth inspecting. Computing
+ * on the placeholder is a fatal build refusal and propagates unchanged.
+ *
+ * @private
+ */
+const continuation = (
+  builder: Builder,
+  ast: Extract<Node.Ast, { readonly _tag: "AndThen" }>,
+  id: string,
+  subject: string
+): Node.Ast | undefined => {
+  const buildNext = Node.continuation(ast)
+  if (buildNext === undefined) {
+    builder.diagnostics.push(invalidContinuation(
+      id,
+      `Node.bindPlanned at "${id}" no longer holds its continuation builder, so its continuation is ` +
+        "missing from the graph. An AST that crossed a serialization boundary left that side table behind."
+    ))
     return undefined
   }
+  const built = buildNext(Planned.make<unknown>(subject))
+  if (Node.isNode(built)) return built.ast
+  builder.diagnostics.push(invalidContinuation(
+    id,
+    `Node.bindPlanned at "${id}" did not produce a Node, so its continuation is missing from the graph.`
+  ))
+  return undefined
+}
 
-  const expand = (request: Visit): void => {
-    if (request.depth > maximumGraphDepth) {
-      throw new GraphBuildError({
-        code: "graph_too_deep",
-        node: request.id,
-        path: [],
-        message: `The graph nests more than ${maximumGraphDepth} levels deep. ` +
-          "Split the flow with .child() boundaries or trampoline handoffs so one execution plans a bounded graph."
-      })
-    }
-    const { ast, capabilities, depth, envelope, id, placement, stack, substitutions } = request
-    // A node's own priority wins; otherwise it inherits the enclosing one.
-    const priority = ast.priority ?? request.priority
-    const dependencies: Array<string> = []
-    const inputs: Array<KeyMaterial.InputRef> = []
-    const depend = (from: string, reason: EdgeReason): void => {
-      dependencies.push(from)
-      observedEdges.push({ from, to: id, reason })
-      inputs.push(reason === "continuation" ? { _tag: "Pending", from } : { _tag: "Ref", from, path: [] })
-    }
-    const child = (childAst: Node.Ast, childId: string, options: {
-      readonly substitutions?: ReadonlyMap<string, string>
-      readonly prerequisite?: string | undefined
-      readonly barriers?: ReadonlyArray<string>
-    } = {}): Visit => ({
-      ast: childAst,
-      id: childId,
-      depth: depth + 1,
-      capabilities,
-      placement,
-      envelope,
-      priority,
-      substitutions: options.substitutions ?? substitutions,
-      stack,
-      prerequisite: options.prerequisite,
-      barriers: options.barriers ?? request.barriers
-    })
+/** The diagnostic of a continuation left out of the graph. @private */
+const invalidContinuation = (id: string, message: string): GraphBuildError =>
+  new GraphBuildError({ code: "invalid_continuation", node: id, path: [], message })
 
-    if (request.prerequisite !== undefined) depend(request.prerequisite, "continuation")
-    for (const barrier of request.barriers) {
-      if (barrier !== request.prerequisite) depend(barrier, "continuation")
-    }
+/**
+ * One node being expanded: its visit, the priority in force at it, and the
+ * dependencies and inputs its steps collect before it is recorded.
+ *
+ * @private
+ */
+interface Site {
+  readonly visit: Visit
+  readonly priority: number | undefined
+  readonly dependencies: Array<string>
+  readonly inputs: Array<KeyMaterial.InputRef>
+}
 
-    switch (ast._tag) {
-      case "FlowCall": {
-        expandFlowCall({
-          id,
-          depth,
-          ast,
-          flow: ast.flow,
-          mode: ast.mode,
-          declaration: flowDeclaration(Node.declaration(ast)),
-          payload: hydrate(ast.payload, substitutions, id),
-          capabilities,
-          placement,
-          envelope,
-          priority,
-          substitutions,
-          stack,
-          barriers: request.barriers,
-          dependencies,
-          inputs
-        })
-        return
-      }
-      case "ActionCall": {
-        const declared = actionDeclaration(Node.declaration(ast))
-        const annotations = declared?.annotations ?? Context.empty()
-        const payload = hydrate(ast.payload, substitutions, id)
-        // An action is a leaf, so its declaration cannot become an envelope for
-        // anything; it is only checked against the one it sits inside.
-        admitEnvelope(envelope, declaredEnvelope(annotations), { id, flow: ast.action })
-        // The ceiling the declaration named, read off its bag exactly as a
-        // called flow's is. An action that named none keeps the enclosing grant
-        // and adds nothing to its key, so every declaration written before the
-        // literal existed keys exactly where it did.
-        const ceiling = sorted(Context.get(annotations, Annotations.Capabilities))
-        const dropped = ceiling.filter((capability) => !coveredCapability(stack, capability))
-        if (dropped.length > 0) {
-          observedDiagnostics.push(
-            new GraphBuildError({
-              code: "capability_outside_grant",
-              node: id,
-              path: dropped,
-              message: `Action "${ast.action}" at "${id}" requires ${dropped.join(", ")}, which the calling ` +
-                "flow does not provably grant. Execution intersects this declaration with every caller ceiling."
-            })
-          )
-        }
-        record({
-          id,
-          kind: ast._tag,
-          dependencies,
-          capabilities,
-          capabilityCeilings: [
-            ...stack.flatMap((flow) => capabilityCeilings(flow.annotations)),
-            ...capabilityCeilings(annotations)
-          ],
-          effects: declaredEffects(annotations),
-          placement: declaredPlacement(annotations),
-          priority,
-          tier: declared?.tier ?? "sealed",
-          nondeterministic: declared?.nondeterministic,
-          body: {
-            _tag: "ActionCall",
-            action: ast.action,
-            tier: declared?.tier ?? "sealed",
-            declaration: declared === undefined ? undefined : {
-              payload: schemaIdentity(declared.payloadSchema),
-              success: schemaIdentity(declared.successSchema),
-              error: schemaIdentity(declared.errorSchema),
-              ...(ceiling.length === 0 ? {} : { capabilities: ceiling }),
-              ...(declared.implementationVersion === undefined
-                ? {}
-                : { implementationVersion: declared.implementationVersion })
-            }
-          },
-          inputs: [...payloadInputs(payload, id), ...inputs],
-          ast,
-          payload,
-          declaredAt: DeclarationSite.declaredAt(declared)
-        })
-        return
-      }
-      case "Succeed": {
-        const value = hydrate(ast.value, substitutions, id)
-        const outcome = outcomeTagOf(ast)
-        if (outcome !== undefined) {
-          const tag = typeof value === "object" && value !== null
-            ? Object.getOwnPropertyDescriptor(value, "_tag")
-            : undefined
-          if (tag === undefined || !("value" in tag) || tag.value !== outcome) {
-            throw new GraphBuildError({
-              code: "invalid_payload",
-              node: id,
-              path: [],
-              message: `Flow outcome node at "${id}" lost its ${outcome} payload.`
-            })
-          }
-          Object.defineProperty(value, OutcomeValueTypeId, {
-            configurable: false,
-            enumerable: false,
-            value: outcome,
-            writable: false
-          })
-        }
-        record({
-          id,
-          kind: ast._tag,
-          dependencies,
-          capabilities,
-          effects: undefined,
-          placement: undefined,
-          priority,
-          tier: "sealed",
-          body: outcome === undefined ? { _tag: ast._tag } : { _tag: ast._tag, outcome },
-          inputs: [...payloadInputs(value, id), ...inputs],
-          ast,
-          payload: value
-        })
-        return
-      }
-      case "Fail": {
-        // A constant failure is a leaf exactly as `Succeed` is, and its error
-        // is hydrated and keyed the same way: two different refusals are two
-        // different steps, and one that reads an upstream result depends on it.
-        const error = hydrate(ast.error, substitutions, id)
-        record({
-          id,
-          kind: ast._tag,
-          dependencies,
-          capabilities,
-          effects: undefined,
-          placement: undefined,
-          priority,
-          tier: "sealed",
-          body: { _tag: ast._tag },
-          inputs: [...payloadInputs(error, id), ...inputs],
-          ast,
-          payload: error
-        })
-        return
-      }
-      case "All": {
-        const members = Object.keys(ast.nodes)
-        const steps: Array<() => void> = []
-        for (const member of members) {
-          // This durable address cannot be re-keyed here without coordinating
-          // the plan and engine stores. The record-time duplicate check guards
-          // arbitrary member names instead.
-          const memberId = `${id}.all.${member}`
-          steps.push(() => expand(child(ast.nodes[member]!, memberId)))
-          steps.push(() => depend(memberId, "value"))
-        }
-        steps.push(() =>
-          record({
-            id,
-            kind: ast._tag,
-            dependencies,
-            capabilities,
-            effects: undefined,
-            placement: undefined,
-            priority,
-            tier: "sealed",
-            body: { _tag: ast._tag, members },
-            inputs,
-            ast,
-            payload: undefined
-          })
-        )
-        sequence(steps)
-        return
-      }
-      case "Race": {
-        // A join that settles early is expanded exactly as `All` is: every
-        // member is topology the plan shows, and the interpreter decides at
-        // run time which of them it waits for.
-        const members = Object.keys(ast.nodes)
-        const steps: Array<() => void> = []
-        for (const member of members) {
-          const memberId = `${id}.race.${member}`
-          steps.push(() => expand(child(ast.nodes[member]!, memberId)))
-          steps.push(() => depend(memberId, "value"))
-        }
-        steps.push(() =>
-          record({
-            id,
-            kind: ast._tag,
-            dependencies,
-            capabilities,
-            effects: undefined,
-            placement: undefined,
-            priority,
-            tier: "sealed",
-            body: { _tag: ast._tag, mode: ast.mode, count: ast.count, members },
-            inputs,
-            ast,
-            payload: undefined
-          })
-        )
-        sequence(steps)
-        return
-      }
-      case "Map": {
-        observeIdentity(id, "mapper", ast.mapper)
-        const first = `${id}.map`
-        sequence([
-          () => expand(child(ast.first, first)),
-          () => depend(first, "value"),
-          () =>
-            record({
-              id,
-              kind: ast._tag,
-              dependencies,
-              capabilities,
-              effects: undefined,
-              placement: undefined,
-              priority,
-              tier: "sealed",
-              body: { _tag: ast._tag, mapper: ast.mapper },
-              inputs,
-              ast,
-              payload: undefined
-            })
-        ])
-        return
-      }
-      case "AndThen": {
-        observeIdentity(id, "continuation", ast.continuation)
-        const first = `${id}.andThen`
-        sequence([
-          () => expand(child(ast.first, first)),
-          () => depend(first, "value"),
-          () => {
-            // The continuation builder runs only after the first subtree is
-            // fully observed, exactly where the recursive walk evaluated it.
-            const next = ast.next ?? continuation(ast, id, first)
-            if (next === undefined) return
-            const thenId = `${id}.then`
-            sequence([
-              () =>
-                expand(child(next, thenId, {
-                  prerequisite: first,
-                  // Explicit andThen sequences every descendant, not only the
-                  // result/join node. bindPlanned remains a dependency builder:
-                  // independent members can run while a referenced producer runs.
-                  // The first subtree already carries the outer barriers, so
-                  // its success transitively gates every nested descendant.
-                  barriers: ast.next === undefined ? request.barriers : [first]
-                })),
-              () => depend(thenId, "value")
-            ])
-          },
-          () =>
-            record({
-              id,
-              kind: ast._tag,
-              dependencies,
-              capabilities,
-              effects: undefined,
-              placement: undefined,
-              priority,
-              tier: "sealed",
-              body: { _tag: ast._tag, continuation: ast.continuation, static: ast.next !== undefined },
-              inputs,
-              ast,
-              payload: undefined
-            })
-        ])
-        return
-      }
-      case "Branch": {
-        observeIdentity(id, "predicate", ast.predicate)
-        const first = `${id}.branch`
-        // DECIDED: each Branch AST carries its own
-        // subject token. An outer subject captured inside a nested arm must
-        // retain the outer binding; one shared token silently rebound it to
-        // the inner branch's subject.
-        const arms = new Map([...substitutions, [ast.subject, first]])
-        sequence([
-          () => expand(child(ast.first, first)),
-          () => depend(first, "value"),
-          () => expand(child(ast.then, `${id}.then`, { substitutions: arms, prerequisite: first })),
-          () => depend(`${id}.then`, "value"),
-          () => expand(child(ast.else, `${id}.else`, { substitutions: arms, prerequisite: first })),
-          () => depend(`${id}.else`, "value"),
-          () =>
-            record({
-              id,
-              kind: ast._tag,
-              dependencies,
-              capabilities,
-              effects: undefined,
-              placement: undefined,
-              priority,
-              tier: "sealed",
-              body: { _tag: ast._tag, predicate: ast.predicate },
-              inputs,
-              ast,
-              payload: undefined
-            })
-        ])
-        return
-      }
-      case "Catch": {
-        if (ast.filter !== undefined) observeIdentity(id, "filter", ast.filterIdentity)
-        const protectedId = `${id}.protected`
-        const failureId = `${id}.failure`
-        // DECIDED: each Catch AST carries its own
-        // subject token, exactly as each Branch does. An outer error captured
-        // inside a nested failure arm must retain the outer binding; one shared
-        // token silently rebound it to the inner catch's protected node.
-        const recovery = new Map([...substitutions, [ast.subject, protectedId]])
-        sequence([
-          () => expand(child(ast.protected, protectedId)),
-          () => depend(protectedId, "value"),
-          () => expand(child(ast.failure, failureId, { substitutions: recovery, prerequisite: protectedId })),
-          () => {
-            dependencies.push(failureId)
-            observedEdges.push({ from: protectedId, to: failureId, reason: "failure" })
-            observedEdges.push({ from: failureId, to: id, reason: "value" })
-            inputs.push({ _tag: "Ref", from: failureId, path: [] })
-          },
-          () =>
-            record({
-              id,
-              kind: ast._tag,
-              dependencies,
-              capabilities,
-              effects: undefined,
-              placement: undefined,
-              priority,
-              tier: "sealed",
-              body: { _tag: ast._tag, filter: ast.filter, filterIdentity: ast.filterIdentity },
-              inputs,
-              ast,
-              payload: undefined
-            })
-        ])
-        return
-      }
-    }
-  }
-
-  const declaration = flowDeclaration(flowOrNode)
-  const root = options.root ?? "root"
-  if (declaration === undefined) {
-    expand({
-      ast: (flowOrNode as Node.Any).ast,
-      id: root,
-      depth: 0,
-      capabilities: [],
-      placement: undefined,
-      envelope: undefined,
-      priority: undefined,
-      substitutions: new Map(),
-      stack: [],
-      prerequisite: undefined,
-      barriers: []
-    })
-  } else {
-    const entry = hydrate(payload, new Map(), root)
-    expandFlowCall({
-      id: root,
-      depth: 0,
-      // The entry is a call to the flow itself that no author wrote, so its
-      // AST is synthesized here rather than recorded by `Node.flowCall`, which
-      // would replace a payload's non-JSON values with their plain-object
-      // copies. What a body was planned with stays what the entry node shows.
-      ast: { _tag: "FlowCall", flow: declaration._tag, mode: "inline", payload: entry },
-      flow: declaration._tag,
-      mode: "inline",
-      declaration,
-      payload: entry,
-      capabilities: sorted(Context.get(declaration.annotations, Annotations.Capabilities)),
-      // Nothing encloses the entry, so its own declared placement is what the
-      // body it splices has to be satisfiable under, not a constraint on it.
-      // Its declared envelope reads the same way: the entry is the top of the
-      // authority chain, so it grants rather than narrows.
-      placement: undefined,
-      envelope: undefined,
-      priority: undefined,
-      substitutions: new Map(),
-      stack: [],
-      barriers: [],
-      dependencies: [],
-      inputs: []
+/**
+ * Enters one visit: refuses it past {@link maximumGraphDepth}, then depends
+ * on the prerequisite it continues from and every barrier it inherits.
+ *
+ * @private
+ */
+const enter = (builder: Builder, visit: Visit): Site => {
+  if (visit.depth > maximumGraphDepth) {
+    throw new GraphBuildError({
+      code: "graph_too_deep",
+      node: visit.id,
+      path: [],
+      message: `The graph nests more than ${maximumGraphDepth} levels deep. ` +
+        "Split the flow with .child() boundaries or trampoline handoffs so one execution plans a bounded graph."
     })
   }
-  // The walk itself: pop until every stacked step has run. A refusal thrown
-  // by any step propagates out of the build unchanged.
-  while (operations.length > 0) operations.pop()!()
-
-  return {
-    nodes: observed,
-    edges: observedEdges,
-    diagnostics: observedDiagnostics
+  // A node's own priority wins; otherwise it inherits the enclosing one.
+  const site: Site = { visit, priority: visit.ast.priority ?? visit.priority, dependencies: [], inputs: [] }
+  if (visit.prerequisite !== undefined) depend(builder, site, visit.prerequisite, "continuation")
+  for (const barrier of visit.barriers) {
+    if (barrier !== visit.prerequisite) depend(builder, site, barrier, "continuation")
   }
+  return site
+}
+
+/** Makes the node at `site` depend on `from`. @private */
+const depend = (builder: Builder, site: Site, from: string, reason: EdgeReason): void => {
+  site.dependencies.push(from)
+  builder.edges.push({ from, to: site.visit.id, reason })
+  site.inputs.push(reason === "continuation" ? { _tag: "Pending", from } : { _tag: "Ref", from, path: [] })
+}
+
+/** The visit of a child of the node at `site`, inheriting everything the site has in force. @private */
+const child = (site: Site, ast: Node.Ast, id: string, options: {
+  readonly substitutions?: ReadonlyMap<string, string>
+  readonly prerequisite?: string | undefined
+  readonly barriers?: ReadonlyArray<string>
+} = {}): Visit => ({
+  ast,
+  id,
+  depth: site.visit.depth + 1,
+  capabilities: site.visit.capabilities,
+  placement: site.visit.placement,
+  envelope: site.visit.envelope,
+  priority: site.priority,
+  substitutions: options.substitutions ?? site.visit.substitutions,
+  stack: site.visit.stack,
+  prerequisite: options.prerequisite,
+  barriers: options.barriers ?? site.visit.barriers
+})
+
+/**
+ * Records a node that declares nothing of its own: no effects, no placement,
+ * and the sealed tier. A structural node passes nothing on; a leaf passes its
+ * hydrated `payload`, keyed by `inputs`.
+ *
+ * @private
+ */
+const recordPlain = (
+  builder: Builder,
+  site: Site,
+  body: unknown,
+  payload?: unknown,
+  inputs: ReadonlyArray<KeyMaterial.InputRef> = site.inputs
+): void =>
+  record(builder, {
+    id: site.visit.id,
+    kind: site.visit.ast._tag,
+    dependencies: site.dependencies,
+    capabilities: site.visit.capabilities,
+    effects: undefined,
+    placement: undefined,
+    priority: site.priority,
+    tier: "sealed",
+    body,
+    inputs,
+    ast: site.visit.ast,
+    payload
+  })
+
+/** Expands one visit into the steps that observe its node. @private */
+const expand = (builder: Builder, visit: Visit): void => {
+  const site = enter(builder, visit)
+  const ast = visit.ast
+  switch (ast._tag) {
+    case "FlowCall":
+      return expandCall(builder, site, ast)
+    case "ActionCall":
+      return expandAction(builder, site, ast)
+    case "Succeed":
+      return expandSucceed(builder, site, ast)
+    case "Fail":
+      return expandFail(builder, site, ast)
+    case "All":
+      return expandMembers(builder, site, ast.nodes, "all", (members) => ({ _tag: ast._tag, members }))
+    case "Race":
+      // A join that settles early is expanded exactly as `All` is: every
+      // member is topology the plan shows, and the interpreter decides at
+      // run time which of them it waits for.
+      return expandMembers(
+        builder,
+        site,
+        ast.nodes,
+        "race",
+        (members) => ({ _tag: ast._tag, mode: ast.mode, count: ast.count, members })
+      )
+    case "Map":
+      return expandMap(builder, site, ast)
+    case "AndThen":
+      return expandAndThen(builder, site, ast)
+    case "Branch":
+      return expandBranch(builder, site, ast)
+    case "Catch":
+      return expandCatch(builder, site, ast)
+  }
+}
+
+/** A `FlowCall` in a body. @private */
+const expandCall = (builder: Builder, site: Site, ast: Extract<Node.Ast, { readonly _tag: "FlowCall" }>): void => {
+  const { capabilities, envelope, id, placement, stack, substitutions } = site.visit
+  expandFlowCall(builder, {
+    id,
+    depth: site.visit.depth,
+    ast,
+    flow: ast.flow,
+    mode: ast.mode,
+    declaration: flowDeclaration(Node.declaration(ast)),
+    payload: hydrate(ast.payload, substitutions, id),
+    capabilities,
+    placement,
+    envelope,
+    priority: site.priority,
+    substitutions,
+    stack,
+    barriers: site.visit.barriers,
+    dependencies: site.dependencies,
+    inputs: site.inputs
+  })
+}
+
+/** An `ActionCall`: a leaf keyed by its declaration and its payload. @private */
+const expandAction = (builder: Builder, site: Site, ast: Extract<Node.Ast, { readonly _tag: "ActionCall" }>): void => {
+  const { id, stack } = site.visit
+  const declared = actionDeclaration(Node.declaration(ast))
+  const annotations = declared?.annotations ?? Context.empty()
+  const payload = hydrate(ast.payload, site.visit.substitutions, id)
+  // An action is a leaf, so its declaration cannot become an envelope for
+  // anything; it is only checked against the one it sits inside.
+  admitEnvelope(builder, site.visit.envelope, declaredEnvelope(annotations), { id, flow: ast.action })
+  // The ceiling the declaration named, read off its bag exactly as a called
+  // flow's is. An action that named none keeps the enclosing grant and adds
+  // nothing to its key, so every declaration written before the literal
+  // existed keys exactly where it did.
+  const ceiling = sorted(Context.get(annotations, Annotations.Capabilities))
+  checkGrant(builder, stack, ceiling, `Action "${ast.action}"`, id)
+  record(builder, {
+    id,
+    kind: ast._tag,
+    dependencies: site.dependencies,
+    capabilities: site.visit.capabilities,
+    capabilityCeilings: [...stackCeilings(stack), ...capabilityCeilings(annotations)],
+    effects: declaredEffects(annotations),
+    placement: declaredPlacement(annotations),
+    priority: site.priority,
+    tier: declared?.tier ?? "sealed",
+    nondeterministic: declared?.nondeterministic,
+    body: {
+      _tag: "ActionCall",
+      action: ast.action,
+      tier: declared?.tier ?? "sealed",
+      declaration: declared === undefined ? undefined : actionIdentity(declared, ceiling)
+    },
+    inputs: [...payloadInputs(payload, id), ...site.inputs],
+    ast,
+    payload,
+    declaredAt: DeclarationSite.declaredAt(declared)
+  })
+}
+
+/** What an action's declaration contributes to its call's key. @private */
+const actionIdentity = (declared: ActionDeclaration, ceiling: ReadonlyArray<string>) => ({
+  payload: schemaIdentity(declared.payloadSchema),
+  success: schemaIdentity(declared.successSchema),
+  error: schemaIdentity(declared.errorSchema),
+  ...(ceiling.length === 0 ? {} : { capabilities: ceiling }),
+  ...(declared.implementationVersion === undefined ? {} : { implementationVersion: declared.implementationVersion })
+})
+
+/** A `Succeed`: a leaf whose value is hydrated and keyed, and marked when it is a flow outcome. @private */
+const expandSucceed = (builder: Builder, site: Site, ast: Extract<Node.Ast, { readonly _tag: "Succeed" }>): void => {
+  const id = site.visit.id
+  const value = hydrate(ast.value, site.visit.substitutions, id)
+  const outcome = outcomeTagOf(ast)
+  if (outcome !== undefined) markOutcome(id, value, outcome)
+  const body = outcome === undefined ? { _tag: ast._tag } : { _tag: ast._tag, outcome }
+  recordPlain(builder, site, body, value, [...payloadInputs(value, id), ...site.inputs])
+}
+
+/** Marks the hydrated value of a flow outcome node, refusing one that lost its outcome payload. @private */
+const markOutcome = (id: string, value: unknown, outcome: OutcomeTag): void => {
+  const tag = typeof value === "object" && value !== null
+    ? Object.getOwnPropertyDescriptor(value, "_tag")
+    : undefined
+  if (tag === undefined || !("value" in tag) || tag.value !== outcome) {
+    throw new GraphBuildError({
+      code: "invalid_payload",
+      node: id,
+      path: [],
+      message: `Flow outcome node at "${id}" lost its ${outcome} payload.`
+    })
+  }
+  Object.defineProperty(value, OutcomeValueTypeId, {
+    configurable: false,
+    enumerable: false,
+    value: outcome,
+    writable: false
+  })
+}
+
+/**
+ * A `Fail`: a constant failure is a leaf exactly as `Succeed` is, and its
+ * error is hydrated and keyed the same way: two different refusals are two
+ * different steps, and one that reads an upstream result depends on it.
+ *
+ * @private
+ */
+const expandFail = (builder: Builder, site: Site, ast: Extract<Node.Ast, { readonly _tag: "Fail" }>): void => {
+  const id = site.visit.id
+  const error = hydrate(ast.error, site.visit.substitutions, id)
+  recordPlain(builder, site, { _tag: ast._tag }, error, [...payloadInputs(error, id), ...site.inputs])
+}
+
+/** An `All` or a `Race`: every member, each read by value, then the node that joins them. @private */
+const expandMembers = (
+  builder: Builder,
+  site: Site,
+  nodes: Readonly<Record<string, Node.Ast>>,
+  segment: "all" | "race",
+  body: (members: ReadonlyArray<string>) => unknown
+): void => {
+  const members = Object.keys(nodes)
+  const steps: Array<() => void> = []
+  for (const member of members) {
+    // This durable address cannot be re-keyed here without coordinating the
+    // plan and engine stores. The record-time duplicate check guards
+    // arbitrary member names instead.
+    const memberId = `${site.visit.id}.${segment}.${member}`
+    steps.push(() => expand(builder, child(site, nodes[member]!, memberId)))
+    steps.push(() => depend(builder, site, memberId, "value"))
+  }
+  steps.push(() => recordPlain(builder, site, body(members)))
+  sequence(builder, steps)
+}
+
+/** A `Map`: its upstream node, read by value, then the mapping node. @private */
+const expandMap = (builder: Builder, site: Site, ast: Extract<Node.Ast, { readonly _tag: "Map" }>): void => {
+  observeIdentity(builder, site.visit.id, "mapper", ast.mapper)
+  const first = `${site.visit.id}.map`
+  sequence(builder, [
+    () => expand(builder, child(site, ast.first, first)),
+    () => depend(builder, site, first, "value"),
+    () => recordPlain(builder, site, { _tag: ast._tag, mapper: ast.mapper })
+  ])
+}
+
+/** An `AndThen`: its first node, then the continuation that node's result builds, then the sequence. @private */
+const expandAndThen = (builder: Builder, site: Site, ast: Extract<Node.Ast, { readonly _tag: "AndThen" }>): void => {
+  observeIdentity(builder, site.visit.id, "continuation", ast.continuation)
+  const first = `${site.visit.id}.andThen`
+  sequence(builder, [
+    () => expand(builder, child(site, ast.first, first)),
+    () => depend(builder, site, first, "value"),
+    () => expandNext(builder, site, ast, first),
+    () => recordPlain(builder, site, { _tag: ast._tag, continuation: ast.continuation, static: ast.next !== undefined })
+  ])
+}
+
+/**
+ * The continuation of an `AndThen`. Its builder runs only after the first
+ * subtree is fully observed, exactly where the recursive walk evaluated it.
+ *
+ * @private
+ */
+const expandNext = (
+  builder: Builder,
+  site: Site,
+  ast: Extract<Node.Ast, { readonly _tag: "AndThen" }>,
+  first: string
+): void => {
+  const next = ast.next ?? continuation(builder, ast, site.visit.id, first)
+  if (next === undefined) return
+  const thenId = `${site.visit.id}.then`
+  // Explicit andThen sequences every descendant, not only the result/join
+  // node. bindPlanned remains a dependency builder: independent members can
+  // run while a referenced producer runs. The first subtree already carries
+  // the outer barriers, so its success transitively gates every nested
+  // descendant.
+  const barriers = ast.next === undefined ? site.visit.barriers : [first]
+  sequence(builder, [
+    () => expand(builder, child(site, next, thenId, { prerequisite: first, barriers })),
+    () => depend(builder, site, thenId, "value")
+  ])
+}
+
+/** A `Branch`: its subject, then both arms, then the branch that chooses between them. @private */
+const expandBranch = (builder: Builder, site: Site, ast: Extract<Node.Ast, { readonly _tag: "Branch" }>): void => {
+  const id = site.visit.id
+  observeIdentity(builder, id, "predicate", ast.predicate)
+  const first = `${id}.branch`
+  // DECIDED: each Branch AST carries its own subject token. An outer subject
+  // captured inside a nested arm must retain the outer binding; one shared
+  // token silently rebound it to the inner branch's subject.
+  const arms = new Map([...site.visit.substitutions, [ast.subject, first]])
+  sequence(builder, [
+    () => expand(builder, child(site, ast.first, first)),
+    () => depend(builder, site, first, "value"),
+    () => expand(builder, child(site, ast.then, `${id}.then`, { substitutions: arms, prerequisite: first })),
+    () => depend(builder, site, `${id}.then`, "value"),
+    () => expand(builder, child(site, ast.else, `${id}.else`, { substitutions: arms, prerequisite: first })),
+    () => depend(builder, site, `${id}.else`, "value"),
+    () => recordPlain(builder, site, { _tag: ast._tag, predicate: ast.predicate })
+  ])
+}
+
+/** A `Catch`: the protected node, then the recovery arm its failure runs, then the catch. @private */
+const expandCatch = (builder: Builder, site: Site, ast: Extract<Node.Ast, { readonly _tag: "Catch" }>): void => {
+  const id = site.visit.id
+  if (ast.filter !== undefined) observeIdentity(builder, id, "filter", ast.filterIdentity)
+  const protectedId = `${id}.protected`
+  const failureId = `${id}.failure`
+  // DECIDED: each Catch AST carries its own subject token, exactly as each
+  // Branch does. An outer error captured inside a nested failure arm must
+  // retain the outer binding; one shared token silently rebound it to the
+  // inner catch's protected node.
+  const recovery = new Map([...site.visit.substitutions, [ast.subject, protectedId]])
+  sequence(builder, [
+    () => expand(builder, child(site, ast.protected, protectedId)),
+    () => depend(builder, site, protectedId, "value"),
+    () => expand(builder, child(site, ast.failure, failureId, { substitutions: recovery, prerequisite: protectedId })),
+    () => {
+      site.dependencies.push(failureId)
+      builder.edges.push({ from: protectedId, to: failureId, reason: "failure" })
+      builder.edges.push({ from: failureId, to: id, reason: "value" })
+      site.inputs.push({ _tag: "Ref", from: failureId, path: [] })
+    },
+    () => recordPlain(builder, site, { _tag: ast._tag, filter: ast.filter, filterIdentity: ast.filterIdentity })
+  ])
 }
 
 /**
