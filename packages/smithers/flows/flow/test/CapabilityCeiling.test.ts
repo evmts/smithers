@@ -3,7 +3,7 @@ import { Capability, type CapabilityPattern } from "@smthrs/capability/Capabilit
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { Action, Flow, FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Arbitrary, Context, Effect, Layer, Schema } from "effect"
 import { withCrypto } from "./Crypto.ts"
 import { layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 
@@ -145,5 +145,87 @@ describe("flow capability ceilings", () => {
       expect(CapabilitySet.allows(resumed, read)).toBe(true)
       expect(CapabilitySet.allows(resumed, write)).toBe(false)
       expect(CapabilitySet.allows(resumed, other)).toBe(false)
+    }))
+})
+
+// Transported ceilings (`intersectCeilings`, `ceilingWithin`): the form a run credential or a message carries. Each
+// pattern below is drawn from a vocabulary small enough that generated ceilings overlap, with invalid text among them.
+const PATTERNS = [
+  "fs:read:src/main.ts",
+  "fs:read:src/**",
+  "fs:read:**",
+  "fs:write:src/**",
+  "fs:*:src/**",
+  "net:get:**",
+  "model:call:agent",
+  "*",
+  "fs:read",
+  "bogus:read:x"
+] as const
+const CAPABILITIES = [
+  read,
+  write,
+  other,
+  capability("net:get", "https://example.com/a"),
+  capability("model:call", "agent"),
+  capability("model:call", "judge")
+]
+const Ceiling = Schema.Array(Schema.Array(Schema.Literals(PATTERNS)).check(Schema.isMaxLength(3)))
+  .check(Schema.isMaxLength(3))
+const ceilings = Arbitrary.schema(Ceiling)
+const authority = (groups: ReadonlyArray<ReadonlyArray<string>>) =>
+  CapabilitySet.fromGroups(Flow.parseCapabilityCeilings(groups))
+const allows = (groups: ReadonlyArray<ReadonlyArray<string>>, wanted: Capability) =>
+  CapabilitySet.allows(authority(groups), wanted)
+const property = <A>(arbitrary: Arbitrary.Arbitrary<A>, holds: (value: A) => boolean) =>
+  Effect.gen(function*() {
+    const result = yield* Arbitrary.checkEffect(arbitrary, holds, { runs: 300, seed: 20261020 })
+    expect(Arbitrary.formatCheckFailure(result)).toBeUndefined()
+  })
+
+describe("transported ceilings", () => {
+  it("intersects groups as text, normalized, with [] unrestricted and an empty group denying", () => {
+    expect(Flow.intersectCeilings([], [])).toEqual([])
+    expect(Flow.intersectCeilings([], [["fs:read:src/**", "fs:read:src/**"]])).toEqual([["fs:read:src/**"]])
+    expect(Flow.intersectCeilings([["net:get:**"]], [["fs:read:src/**"]]))
+      .toEqual([["fs:read:src/**"], ["net:get:**"]])
+    expect(Flow.intersectCeilings([["fs:read:src/**"]], [[]])).toEqual([[]])
+    // An invalid pattern grants nothing, so a group of only invalid text denies everything.
+    expect(Flow.intersectCeilings([["fs:read"]], [])).toEqual([[]])
+    expect(Flow.intersectCeilings([["*"]], [])).toEqual([["*:**"]])
+  })
+
+  it("proves containment only when it can", () => {
+    expect(Flow.ceilingWithin([], [])).toBe(true)
+    expect(Flow.ceilingWithin([["fs:read:src/main.ts"]], [["fs:read:src/**"]])).toBe(true)
+    expect(Flow.ceilingWithin([["fs:read:src/**"]], [["fs:read:src/main.ts"]])).toBe(false)
+    expect(Flow.ceilingWithin([["fs:write:src/**"]], [["fs:read:**"]])).toBe(false)
+    // Unrestricted is within only unrestricted; nothing (an empty group) is within anything.
+    expect(Flow.ceilingWithin([], [["fs:read:**"]])).toBe(false)
+    expect(Flow.ceilingWithin([[]], [["fs:read:src/main.ts"]])).toBe(true)
+  })
+
+  it.effect("the intersection allows exactly what both sides allow", () =>
+    property(Arbitrary.all([ceilings, ceilings]), ([left, right]) =>
+      CAPABILITIES.every((wanted) =>
+        allows(Flow.intersectCeilings(left, right), wanted) === (allows(left, wanted) && allows(right, wanted))
+      )))
+
+  it.effect("the intersection is commutative, associative and idempotent, with [] its identity", () =>
+    property(Arbitrary.all([ceilings, ceilings, ceilings]), ([a, b, c]) => {
+      const same = (x: ReadonlyArray<ReadonlyArray<string>>, y: ReadonlyArray<ReadonlyArray<string>>) =>
+        JSON.stringify(x) === JSON.stringify(y)
+      return same(Flow.intersectCeilings(a, b), Flow.intersectCeilings(b, a)) &&
+        same(Flow.intersectCeilings(Flow.intersectCeilings(a, b), c), Flow.intersectCeilings(a, Flow.intersectCeilings(b, c))) &&
+        same(Flow.intersectCeilings(a, a), Flow.intersectCeilings(a, [])) &&
+        same(Flow.intersectCeilings(Flow.intersectCeilings(a, []), []), Flow.intersectCeilings(a, []))
+    }))
+
+  it.effect("an intersection is provably within both sides, and a proven containment never widens", () =>
+    property(Arbitrary.all([ceilings, ceilings]), ([inner, outer]) => {
+      const both = Flow.intersectCeilings(inner, outer)
+      const contained = !Flow.ceilingWithin(inner, outer) ||
+        CAPABILITIES.every((wanted) => !allows(inner, wanted) || allows(outer, wanted))
+      return Flow.ceilingWithin(both, inner) && Flow.ceilingWithin(both, outer) && contained
     }))
 })

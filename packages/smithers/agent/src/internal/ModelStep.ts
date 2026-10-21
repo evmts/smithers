@@ -13,7 +13,7 @@
 
 import { Permission } from "@smthrs/capability"
 import { Digest, type KeyMaterial } from "@smthrs/core"
-import { Action, type FlowRuntime, type RetryPolicy, SpanFailure } from "@smthrs/flow"
+import { Action, FlowRuntime, type RetryPolicy, RunMetrics, SpanFailure } from "@smthrs/flow"
 import { EngineLike, HarnessError } from "@smthrs/harness"
 import { Model, ModelError, ModelEvent, ModelRequest, RequestExecutor, type Route } from "@smthrs/model"
 import { StepKey } from "@smthrs/plan"
@@ -896,6 +896,8 @@ export const dispatch = (
 > =>
   Effect.gen(function*() {
     const fields = { step: options.name, model: options.request.modelId }
+    // The flow whose step makes the call, for its usage metrics.
+    const flow = (yield* FlowRuntime.FlowInstance).flow._tag
     // Both are this dispatch's own: whether any attempt ran here, and how the
     // last one that ran here ended, so the next can say so to `onEvent`.
     let executed = false
@@ -966,6 +968,14 @@ export const dispatch = (
                 previous = { code: end.code!, httpStatus: end.httpStatus, at, elapsedMs: Math.max(0, at - startedAt) }
               }
               yield* Metric.update(Metric.withAttributes(calls, { step: options.name, outcome: end.outcome }), 1)
+              // Usage metrics: this flow's model call and the tokens it reported.
+              yield* RunMetrics.recordModelCall({
+                flow,
+                model: options.request.modelId,
+                outcome: end.outcome,
+                inputTokens: reported?.inputTokens,
+                outputTokens: reported?.outputTokens
+              })
               yield* Effect.annotateLogs(Effect.logDebug("A model step's provider call ended"), {
                 ...fields,
                 attempt,

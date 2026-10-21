@@ -1125,6 +1125,7 @@
     "@smthrs/model": "1.0.0-rc.16",
     "@smthrs/plan": "1.0.0-rc.16",
     "@smthrs/platform-node": "1.0.0-rc.16",
+    "@smthrs/views": "1.0.0-rc.16",
     "ignore": "7.0.8",
     "minimatch": "10.2.6",
     "yaml": "2.9.0"

@@ -7,6 +7,7 @@
  * writes `.smithers/home.json` is `FactoryProjection`, tested in
  * `Factory.test.ts`.
  */
+import * as Views from "@smthrs/views"
 import { describe, expect, it } from "vitest"
 import * as Home from "../src/Home.ts"
 
@@ -149,6 +150,21 @@ describe("Smithers.Factory.Home", () => {
     expect(() => Home.Home({ blocks: [{ type: "text", text: "<em>x</em>" }] })).toThrow(/must not contain HTML/)
     expect(() => Home.Home({ blocks: [] })).toThrow()
     expect(() => Home.Home({ blocks: "text" as never })).toThrow(/array of declared blocks/)
+  })
+
+  it("takes every block @smthrs/views reads, the landing page's and the live ones, and reads them back the same", () => {
+    const landing = [
+      { type: "hero", title: "tinyhttp", tagline: "A small HTTP server.", install: "npm i tinyhttp" },
+      { type: "code", file: "main.ts", language: "ts", code: "const app: App<Request> = serve()" },
+      { type: "action", flow: "branch.new", title: "New branch", key: "b" },
+      { type: "issues" },
+      { type: "runs" }
+    ] as const
+    const home = Home.Home({ blocks: [...blocks, ...landing] })
+    expect(Home.parse(Home.render(home))).toEqual({ blocks: [...blocks, ...landing] })
+    // The format has one copy: these are @smthrs/views' own schemas.
+    expect(Home.Block).toBe(Views.Home.Block)
+    expect(Home.PromptFlow).toBe(Views.Home.FlowName)
   })
 
   it("renders a stable two-space document that parses back, and refuses HTML on the way back in", () => {

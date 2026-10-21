@@ -106,6 +106,27 @@ browser persistence, so it loads one SQLite build and opens one pool.
   `BEGIN; <refused>`, rolls that transaction back, so no transaction stays
   open that its tab doesn't know of.
 
+## Preparing the app's database before any tab reads it
+
+`BrowserRuntime.run({ prepare })` gives the leader work to do on `app.db`
+before it answers any tab's statement, such as bringing the app's stores to
+this build's versions (`@smthrs/effect-tanstack-db`'s
+`Migrations.prepare(registry)`). After it wakes unfinished runs, the leader
+runs `prepare.run` over its own connection as the durable flow
+`device/prepare`, execution `device/prepare/<epoch>`, and waits for it; a
+tab's statement waits meanwhile.
+
+- **Once per epoch.** The next leader of the same build finds the run
+  finished and goes on at once; a build with a new `epoch` prepares again.
+- **Resumable.** A leader that dies mid-way leaves the run unfinished, and the
+  next leader runs the step again. A transaction the step left open ends with
+  the old connection, and the step rolls back any transaction it leaves open.
+- **Never holds the tabs.** The step is tried three times, 200 ms apart, then
+  400 ms. If it still fails, the leader logs `browser.runtime.prepare` with
+  `outcome: failed` and the failure's tag, and serves the tabs anyway.
+- An engine without the app's database, such as `BrowserRuntime.layer`'s,
+  skips it (`outcome: skipped`).
+
 ## Tabs reach the leader over a channel
 
 A tab never talks to the engine directly, not even its own worker. It posts
@@ -114,6 +135,12 @@ request number, and only the leader answers. On `Leader`, every tab posts its
 unanswered requests again. That is safe because every request is idempotent:
 starting an execution id twice admits it once, a poll reads, a cancellation
 and a signal record the first answer.
+
+A start carries the door and actor kind the tab started it with, read from
+the caller's `RunMetrics.CurrentOrigin` (`@smthrs/flow`). The leader admits the
+run under it, so the run's usage metrics (`flows_runs_started`,
+`flows_runs_settled` and the `flow.run.*` log lines, placement `browser`) say
+how it started.
 
 The leader also posts the execution id and event type of every event its
 engine commits. `BrowserEngine.result` waits on those rather than on a timer:
@@ -160,6 +187,7 @@ never content:
 | `run.inspect` span and log                                            | each `Inspect` the leader reads: host `local`, outcome (`read`, `not_found`, `failed`), events, bytes, clipped values, duration |
 | `smithers_browser_engine_storage`, `browser.engine.storage`           | whether the origin holds persistent storage                                                                                     |
 | `smithers_browser_runtime_statements`, `browser.runtime.statement`    | each shared-database statement, by outcome                                                                                      |
+| `smithers_browser_runtime_preparations`, `browser.runtime.prepare`    | each preparation a new leader ran, by outcome (`prepared`, `failed`, `skipped`), with the epoch and a failure's tag             |
 | `smithers_browser_engine_unavailable`, `browser.engine.unavailable`   | a tab whose own worker failed, by reason                                                                                        |
 | `browser.runtime.stopped`                                             | an engine that stopped                                                                                                          |
 | `browser.runtime.lost`                                                | a leader whose lock another context stole                                                                                       |

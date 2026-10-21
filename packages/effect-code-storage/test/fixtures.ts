@@ -110,7 +110,7 @@ export const codeStorage = (publicKey: CryptoKey) => {
       return answer
     }
 
-    const route = /^\/api\/repos(?:\/([^/]+))?(\/upstream\/pull|\/files|\/file|\/commits|\/branches|\/tags)?$/.exec(
+    const route = /^\/api\/repos(?:\/([^/]+))?(\/upstream\/pull|\/files|\/file|\/commits|\/branches\/create|\/branches|\/tags)?$/.exec(
       url.pathname
     )
     if (route === null || url.origin !== BASE) {
@@ -119,7 +119,11 @@ export const codeStorage = (publicKey: CryptoKey) => {
     }
     const name = route[1] === undefined ? (body as { repo_name: string }).repo_name : decodeURIComponent(route[1])
     const action = route[2] ?? ""
-    const scope = action === "" ? "repo:write" : action === "/upstream/pull" ? "git:write" : "git:read"
+    const scope = action === ""
+      ? "repo:write"
+      : action === "/upstream/pull" || action === "/branches/create"
+      ? "git:write"
+      : "git:read"
     const verified = await verify(authorization, name, scope)
     if (verified instanceof Response) {
       record(undefined)
@@ -158,6 +162,21 @@ export const codeStorage = (publicKey: CryptoKey) => {
     }
     if (request.method === "POST" && action === "/upstream/pull") {
       return Response.json({ message: "queued" }, { status: 202 })
+    }
+    if (request.method === "POST" && action === "/branches/create") {
+      const { base_ref, target_branch } = body as { base_ref: string; target_branch: string }
+      const base = repo.branches.find((branch) => branch.name === base_ref)
+      if (base === undefined) return problem(404, "ref_not_found")
+      if (repo.branches.some((branch) => branch.name === target_branch)) {
+        return problem(409, "conflict", `Branch ${target_branch} exists`)
+      }
+      repo.branches.push({ name: target_branch, head_sha: base.head_sha, created_at: "2026-10-20T18:00:00Z" })
+      return Response.json({
+        message: "created",
+        target_branch,
+        target_is_ephemeral: false,
+        commit_sha: base.head_sha
+      })
     }
     if (action === "/files") {
       const all = Object.keys(repo.files).sort()

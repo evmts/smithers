@@ -123,3 +123,9 @@ export * as PresenceRoom from "./PresenceRoom.ts"
  * @since 1.0.0-rc.17
  */
 export * as PresenceSocket from "./PresenceSocket.ts"
+
+/**
+ * @category services
+ * @since 1.0.0-rc.17
+ */
+export * as SharedText from "./SharedText.ts"

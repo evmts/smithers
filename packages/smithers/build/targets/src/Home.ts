@@ -5,10 +5,9 @@
  * alternative the maintainer declares in
  * `.smithers/FACTORY.ts` as `export const home = Smithers.Factory.Home({ blocks })`,
  * the second export beside the factory itself. Blocks are declared values,
- * never raw HTML: a prompt, markdown file, text, links, featured flows, and
- * the repository's live mythical stack.
- * The app renders every block from data; a string carrying an HTML tag is refused where
- * it is written.
+ * never raw HTML, in the one home format `@smthrs/views` defines (`Home`),
+ * which the app reads the file with. The app renders every block from data;
+ * a string carrying an HTML tag is refused where it is written.
  *
  * The declaration is inert, like {@link Flow.Flow}. The `FactoryProjection`
  * target (`Factory.ts`) projects it into a checked-in JSON file beside
@@ -21,56 +20,59 @@
  * @since 1.0.0
  */
 
+import * as Views from "@smthrs/views"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as SchemaIssue from "effect/SchemaIssue"
 import * as NodeUtil from "node:util/types"
 
 /**
- * Maximum length of one block's title or one link's label.
- *
- * @category constants
- * @since 1.0.0
+ * The home file's format, one copy: `@smthrs/views`' `Home`, which the app
+ * reads the file with. Every constant, schema and block below is that
+ * package's own, under the names this module has always exported.
  */
-export const maximumTitleLength = 120
+const Format = Views.Home
 
 /**
- * Maximum length of one text block.
+ * Maximum length of one block's title or one link's label (`Home.maximumTitleLength` of `@smthrs/views`).
  *
  * @category constants
  * @since 1.0.0
  */
-export const maximumTextLength = 4096
+export const maximumTitleLength = Format.maximumTitleLength
 
 /**
- * Maximum length of one link URL.
+ * Maximum length of one text block (`Home.maximumTextLength` of `@smthrs/views`).
  *
  * @category constants
  * @since 1.0.0
  */
-export const maximumUrlLength = 2048
+export const maximumTextLength = Format.maximumTextLength
 
 /**
- * Maximum number of blocks one home declares.
+ * Maximum length of one link URL (`Home.maximumUrlLength` of `@smthrs/views`).
  *
  * @category constants
  * @since 1.0.0
  */
-export const maximumBlocks = 32
+export const maximumUrlLength = Format.maximumUrlLength
 
 /**
- * The shape of raw HTML in a string: a tag, a closing tag, a comment, or a
- * processing instruction opener. Prose that mentions `a < b` does not match;
- * `<b>bold</b>` and `<!-- note -->` do.
+ * Maximum number of blocks one home declares (`Home.maximumBlocks` of `@smthrs/views`).
  *
  * @category constants
  * @since 1.0.0
  */
-export const htmlPattern = /<\/?[A-Za-z!?]/
+export const maximumBlocks = Format.maximumBlocks
 
-const noHtml = Schema.makeFilter<string>(
-  (text) => htmlPattern.test(text) ? "must not contain HTML; blocks are declared values, never markup" : true
-)
+/**
+ * The shape of raw HTML in a string (`Home.htmlPattern` of `@smthrs/views`): a
+ * tag, a closing tag, a comment, or a processing instruction opener.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const htmlPattern = Format.htmlPattern
 
 /**
  * A one-line title or label: non-empty, bounded, one line, no HTML.
@@ -78,11 +80,7 @@ const noHtml = Schema.makeFilter<string>(
  * @category schemas
  * @since 1.0.0
  */
-export const Title = Schema.NonEmptyString.check(
-  Schema.isMaxLength(maximumTitleLength),
-  Schema.isPattern(/^[^\r\n]*$/),
-  noHtml
-)
+export const Title = Format.Title
 
 /**
  * A paragraph of plain text: non-empty, bounded, no HTML.
@@ -90,7 +88,7 @@ export const Title = Schema.NonEmptyString.check(
  * @category schemas
  * @since 1.0.0
  */
-export const Prose = Schema.NonEmptyString.check(Schema.isMaxLength(maximumTextLength), noHtml)
+export const Prose = Format.Prose
 
 /**
  * A link target: an absolute `http` or `https` URL.
@@ -98,10 +96,7 @@ export const Prose = Schema.NonEmptyString.check(Schema.isMaxLength(maximumTextL
  * @category schemas
  * @since 1.0.0
  */
-export const Url = Schema.NonEmptyString.check(
-  Schema.isMaxLength(maximumUrlLength),
-  Schema.isPattern(/^https?:\/\/[^\s<>"']+$/i)
-)
+export const Url = Format.Url
 
 /**
  * A relative path that cannot escape the repository.
@@ -109,24 +104,15 @@ export const Url = Schema.NonEmptyString.check(
  * @category schemas
  * @since 1.0.0
  */
-export const RepositoryPath = Schema.NonEmptyString.check(
-  Schema.isMaxLength(1024),
-  Schema.makeFilter<string>((path) =>
-    path.startsWith("/") || path.startsWith("\\") || path.includes("\\") ||
-      path.split("/").some((part) => part === "" || part === "." || part === "..") ||
-      /[%:?#\x00-\x1f]/.test(path)
-      ? "must be a relative in-repository path" :
-      true
-  )
-)
+export const RepositoryPath = Format.RepositoryPath
 
 /**
- * A slash leaf name or repository flow id.
+ * A slash leaf name or repository flow id (`Home.FlowName` of `@smthrs/views`).
  *
  * @category schemas
  * @since 1.0.0
  */
-export const PromptFlow = Schema.NonEmptyString.check(Schema.isPattern(/^[a-z0-9_-]+(?:[./][a-z0-9_-]+)*$/))
+export const PromptFlow = Format.FlowName
 
 /**
  * A paragraph of plain text under an optional title.
@@ -134,11 +120,7 @@ export const PromptFlow = Schema.NonEmptyString.check(Schema.isPattern(/^[a-z0-9
  * @category schemas
  * @since 1.0.0
  */
-export const TextBlock = Schema.Struct({
-  type: Schema.Literal("text"),
-  title: Schema.optional(Title),
-  text: Prose
-})
+export const TextBlock = Format.TextBlock
 
 /**
  * One link: the label the app shows and the URL it opens.
@@ -146,10 +128,7 @@ export const TextBlock = Schema.Struct({
  * @category schemas
  * @since 1.0.0
  */
-export const Link = Schema.Struct({
-  label: Title,
-  url: Url
-})
+export const Link = Format.Link
 
 /**
  * A list of links under an optional title.
@@ -157,120 +136,74 @@ export const Link = Schema.Struct({
  * @category schemas
  * @since 1.0.0
  */
-export const LinksBlock = Schema.Struct({
-  type: Schema.Literal("links"),
-  title: Schema.optional(Title),
-  links: Schema.NonEmptyArray(Link)
-})
+export const LinksBlock = Format.LinksBlock
 
 /**
- * The repository's featured flows, read by the app from the `flows` rows of
- * `.smithers/factory.json`. The block carries no rows: the projection is the
- * one source of the featured set, and an absent projection renders as absent.
+ * The repository's flows, which the app lists from its own catalog. The block carries no rows.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const FlowsBlock = Schema.Struct({
-  type: Schema.Literal("flows"),
-  title: Schema.optional(Title)
-})
+export const FlowsBlock = Format.FlowsBlock
 
 /**
- * A prompt that sends through the workspace chat, with optional copy.
+ * A prompt: a heading over the way to ask, and the flow that takes the question.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const PromptBlock = Schema.Struct({
-  type: Schema.Literal("prompt"),
-  flow: Schema.optional(PromptFlow),
-  /** The heading over the composer ("What should we work on?"). */
-  title: Schema.optional(Title),
-  placeholder: Schema.optional(Title)
-})
+export const PromptBlock = Format.PromptBlock
 
 /**
- * The pictures an app tile may wear: what the app's result looks like. The
- * app draws each one; a tile with a last result shows that result instead.
+ * The pictures an app tile may wear: what the app's result looks like.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const AppPicture = Schema.Literals(["issue", "review", "wiki", "schedule"])
+export const AppPicture = Format.AppPicture
 
 /**
- * An app: a featured flow with a picture (PRODUCT.md D-18). The tile names
- * the flow it opens; opening it renders that flow's form (one input, one
- * button), then the run card. There is no app model beyond this block.
+ * An app: one flow's button, with a title and a picture.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const AppBlock = Schema.Struct({
-  type: Schema.Literal("app"),
-  flow: PromptFlow,
-  title: Title,
-  picture: AppPicture
-})
+export const AppBlock = Format.AppBlock
 
 /**
- * A repository markdown file resolved at main by the server.
+ * A repository markdown file, read at the home's own commit.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const MarkdownBlock = Schema.Struct({
-  type: Schema.Literal("markdown"),
-  path: RepositoryPath,
-  title: Schema.optional(Title)
-})
+export const MarkdownBlock = Format.MarkdownBlock
 
 /**
- * The repository's mythical stack, live: the app reads it from
- * `GET /api/repos/{owner}/{repo}/mythical` (`@smthrs/rpc/Mythical`). The
- * block carries no rows; an unreadable stack renders its refusal.
+ * The repository's live stack of changes, which the app reads itself. The block carries no rows.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const StackBlock = Schema.Struct({
-  type: Schema.Literal("stack"),
-  title: Schema.optional(Title)
-})
+export const StackBlock = Format.StackBlock
 
 /**
  * The view a repository flow declares (`Smithers.Flow({ view })`), drawn here
- * in its place. This is how a repository names the flow that owns its
- * default view: `Factory.Home({ blocks: [Smithers.Home.View({ flow })] })`.
- * The app resolves the flow's view from the `flows` rows of
- * `.smithers/factory.json`; a flow that is missing or declares no view leaves
- * the file tree in place with a notice naming the flow.
+ * in its place: `Factory.Home({ blocks: [Smithers.Home.View({ flow })] })`.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const ViewBlock = Schema.Struct({
-  type: Schema.Literal("view"),
-  flow: PromptFlow
-})
+export const ViewBlock = Format.ViewBlock
 
 /**
- * One declared block.
+ * One declared block: any kind `@smthrs/views` reads, the landing page's
+ * (`hero`, `code`, `cards`, `stats`, `releases`) and the live ones (`issues`,
+ * `runs`) included.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const Block = Schema.Union([
-  TextBlock,
-  LinksBlock,
-  FlowsBlock,
-  PromptBlock,
-  MarkdownBlock,
-  StackBlock,
-  AppBlock,
-  ViewBlock
-])
+export const Block = Format.Block
 
 /**
  * One block of a flow's own view: every block that needs no server

@@ -14,13 +14,16 @@ describe("integration product scope", () => {
       "Actions",
       "AppAuth",
       "Collaborators",
+      "Commits",
       "Config",
       "Contents",
       "GitHubClient",
       "Issues",
       "Payload",
       "Proxy",
+      "Pulls",
       "RateLimit",
+      "Refs",
       "Repository",
       "Sync"
     ])

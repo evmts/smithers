@@ -5,9 +5,9 @@ import {
   environmentModelResolver,
   MODEL_HOST_PROTOCOL
 } from "@smthrs/model-host"
-import { FetchTransport } from "@smthrs/platform-node"
+import { EgressHttpClient, FetchTransport } from "@smthrs/platform-node"
 import { ConfiguredModel } from "@smthrs/rpc"
-import { Effect } from "effect"
+import { Effect, Scope, Exit } from "effect"
 import { HttpEffect } from "effect/http"
 import { createServer } from "node:http"
 import type { IncomingMessage, ServerResponse } from "node:http"
@@ -73,10 +73,12 @@ if (!Number.isSafeInteger(requestedMaxTokens) || requestedMaxTokens <= 0 || requ
 }
 // This program is the boundary: it serves the library's `effect/http` handler
 // as a Fetch handler, which interrupts a turn whose caller went away.
+const transportScope = Effect.runSync(Scope.make())
+const providerFetch = await Effect.runPromise(Scope.provide(transportScope)(EgressHttpClient.providerFetch(process.env)))
 const handle = HttpEffect.toWebHandler(createModelTurnHandler({
   authorization,
   callbackBaseUrl,
-  resolve: environmentModelResolver({ binding, preflightBinding, env: process.env, maxTokens: requestedMaxTokens }),
+  resolve: environmentModelResolver({ binding, preflightBinding, env: process.env, fetchImpl: providerFetch, maxTokens: requestedMaxTokens }),
   docs,
   // This host is Node, so its journal callbacks are read off Node's own
   // `undici` channels: a callback that never answers names the phase it died in.
@@ -87,7 +89,7 @@ const handle = HttpEffect.toWebHandler(createModelTurnHandler({
     process.stderr.write(line)
   }
 }))
-const modelProbe = createModelProbe({ env: process.env, egress: true })
+const modelProbe = createModelProbe({ env: process.env, egress: true, fetch: providerFetch })
 const authorized = bearerAuthorization(authorization)
 const testModel = async (request: Request): Promise<Response> => {
   if (!authorized(request)) {
@@ -188,6 +190,8 @@ server.listen(port, parsed.values.host, () => {
     `${JSON.stringify({ protocol: MODEL_HOST_PROTOCOL, host: parsed.values.host, port: boundPort })}\n`
   )
 })
-const stop = () => server.close(() => process.exit(0))
+const stop = () => server.close(() => {
+  void Effect.runPromise(Scope.close(transportScope, Exit.void)).then(() => process.exit(0))
+})
 process.on("SIGINT", stop)
 process.on("SIGTERM", stop)

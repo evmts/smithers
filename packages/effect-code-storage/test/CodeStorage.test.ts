@@ -287,6 +287,48 @@ describe("listCommits", () => {
   })
 })
 
+describe("createBranch", () => {
+  test("creates a branch at the commit another names, with a git:write token for that repository", async () => {
+    const h = harness()
+    await h.run((client) => client.createRepo({ name: "acme/r" }))
+    h.repos.get("acme/r")!.branches = [{ name: "main", head_sha: "a".repeat(40), created_at: "2026-10-18T10:00:00Z" }]
+    const created = await h.run((client) => client.createBranch("acme/r", { branch: "maya/k3f9q2", from: "main" }))
+    expect(created).toEqual({ branch: "maya/k3f9q2", sha: "a".repeat(40) })
+    const request = h.seen[1]!
+    expect([request.method, request.url.pathname]).toEqual(["POST", "/api/repos/acme%2Fr/branches/create"])
+    expect(request.body).toEqual({ base_ref: "main", target_branch: "maya/k3f9q2" })
+    expect(request.claims).toMatchObject({ repo: "acme/r", scopes: ["git:write"] })
+    expect(h.repos.get("acme/r")!.branches.map((branch) => branch.name)).toEqual(["main", "maya/k3f9q2"])
+    expect(h.count(CodeStorage.requests, { operation: "createBranch", outcome: "ok" })).toBe(1)
+  })
+
+  test("a commit Code Storage doesn't name is undefined; a branch that exists is conflict; a missing ref ref_not_found", async () => {
+    const h = harness()
+    h.faults.push(Response.json({ message: "created", target_branch: "b", target_is_ephemeral: false }))
+    expect(await h.run((client) => client.createBranch("acme/r", { branch: "b", from: "main" }))).toEqual({
+      branch: "b",
+      sha: undefined
+    })
+    await h.run((client) => client.createRepo({ name: "acme/r" }))
+    h.repos.get("acme/r")!.branches = [{ name: "main", head_sha: "a".repeat(40), created_at: "2026-10-18T10:00:00Z" }]
+    await h.run((client) => client.createBranch("acme/r", { branch: "b", from: "main" }))
+    expect(await h.fail((client) => client.createBranch("acme/r", { branch: "b", from: "main" }))).toMatchObject({
+      operation: "createBranch",
+      code: "conflict",
+      status: 409
+    })
+    expect(await h.fail((client) => client.createBranch("acme/r", { branch: "c", from: "nope" }))).toMatchObject({
+      operation: "createBranch",
+      code: "ref_not_found",
+      status: 404
+    })
+    h.faults.push(Response.json({ message: "created" }))
+    expect((await h.fail((client) => client.createBranch("acme/r", { branch: "d", from: "main" }))).code).toBe(
+      "invalid_response"
+    )
+  })
+})
+
 describe("listBranches", () => {
   test("maps each branch's head and pages with the cursor, git:read only", async () => {
     const h = harness()

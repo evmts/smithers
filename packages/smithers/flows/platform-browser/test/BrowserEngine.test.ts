@@ -3,15 +3,17 @@
  * Locks and `BroadcastChannel`.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Flow } from "@smthrs/flow"
+import { Flow, RunMetrics } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
+import * as Metric from "effect/Metric"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { BrowserEngine, TabChannel } from "../src/index.ts"
+import * as Protocol from "../src/internal/Protocol.ts"
 import * as Engines from "./fixtures/Engines.ts"
 import { Sleeper, Step, Steps, Waiter } from "./fixtures/Flows.ts"
 import * as MemorySqlite from "./fixtures/MemorySqlite.ts"
@@ -48,6 +50,37 @@ describe("BrowserEngine", () => {
       const [event] = yield* Fiber.join(events)
       expect(event).toEqual({ executionId: "steps-1", eventType: expect.any(String) })
     }).pipe(Effect.scoped))
+
+  it.live("carries the tab's door and actor to the leader, whose engine counts the run as the browser's", () =>
+    Effect.gen(function*() {
+      const { name, engine } = yield* setup()
+      yield* engine.start(Steps, { executionId: "origin-1", payload: { prefix: "o" } }).pipe(
+        RunMetrics.withOrigin({ door: "button", actor: "person" })
+      )
+      expect(yield* engine.result(Steps, "origin-1")).toEqual(Exit.succeed("o:three"))
+      // A tab of an earlier build posts its start without an origin: the run is admitted all the same, as unknown.
+      const earlier = yield* Effect.flatMap(TabChannel.TabChannel, (channels) => channels.open(name)).pipe(
+        Effect.provide(TabChannel.layer)
+      )
+      yield* earlier.post(Protocol.encode({
+        _tag: "Start",
+        client: "earlier-build",
+        id: 1,
+        flow: Steps._tag,
+        executionId: "origin-2",
+        payload: { prefix: "p" }
+      }))
+      expect(yield* engine.result(Steps, "origin-2").pipe(Effect.retry(Schedule.spaced("20 millis")))).toEqual(
+        Exit.succeed("p:three")
+      )
+      const started = (yield* Metric.snapshot)
+        .filter((entry) => entry.id === "flows_runs_started")
+        .map((entry) => entry.attributes)
+      expect(started).toEqual(expect.arrayContaining([
+        { flow: Steps._tag, door: "button", actor: "person", placement: "browser" },
+        { flow: Steps._tag, door: "unknown", actor: "unknown", placement: "browser" }
+      ]))
+    }).pipe(Effect.scoped, Effect.provideService(Metric.MetricRegistry, new Map())))
 
   it.live("runs a flow from its reference: its tag and schemas, without its declaration", () =>
     Effect.gen(function*() {

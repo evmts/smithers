@@ -32,6 +32,12 @@ export * as Collaborators from "./github/Collaborators.ts"
  * @category constructors
  * @since 1.0.0
  */
+export * as Commits from "./github/Commits.ts"
+
+/**
+ * @category constructors
+ * @since 1.0.0
+ */
 export * as Config from "./github/Config.ts"
 
 /**
@@ -65,10 +71,22 @@ export * as Payload from "./github/Payload.ts"
 export * as Proxy from "./github/Proxy.ts"
 
 /**
+ * @category constructors
+ * @since 1.0.0
+ */
+export * as Pulls from "./github/Pulls.ts"
+
+/**
  * @category services
  * @since 1.0.0
  */
 export * as RateLimit from "./github/RateLimit.ts"
+
+/**
+ * @category constructors
+ * @since 1.0.0
+ */
+export * as Refs from "./github/Refs.ts"
 
 /**
  * @category constructors

@@ -108,7 +108,8 @@ export const layer = <
     // recorded graph page carries it, and a host that says nothing records
     // nothing (D-068).
     sourceRevision: validated.sourceRevision,
-    sweep: validated.sweep
+    sweep: validated.sweep,
+    placement: validated.placement
   }
   // A host that guards the ambient `Jj` for action bodies keeps the engine's
   // own snapshots on its privileged repository, as `layerHost` does.

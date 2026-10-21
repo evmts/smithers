@@ -56,6 +56,14 @@ export * as BrowserServices from "./BrowserServices.ts"
 export * as BrowserCache from "./BrowserCache.ts"
 
 /**
+ * A language server in a dedicated Web Worker: TypeScript's language service
+ * over a read-only workspace, binding `@smthrs/std`'s `LanguageServer`.
+ *
+ * @since 1.0.0
+ */
+export * as BrowserLanguageServer from "./BrowserLanguageServer.ts"
+
+/**
  * The durable flow engine as a tab sees it: requests to the leader, events back.
  *
  * @since 1.0.0

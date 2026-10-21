@@ -62,6 +62,7 @@ export type Operation =
   | "listCommits"
   | "listBranches"
   | "listTags"
+  | "createBranch"
 
 /**
  * A Code Storage call that failed.
@@ -94,7 +95,8 @@ export class CodeStorageError extends Schema.TaggedError<CodeStorageError>()(
       "readFile",
       "listCommits",
       "listBranches",
-      "listTags"
+      "listTags",
+      "createBranch"
     ]),
     code: Schema.String,
     status: Schema.optional(Schema.Number),
@@ -378,6 +380,30 @@ export interface TagsPage {
 }
 
 /**
+ * A branch to create: its name, and the ref or commit it starts from, such as
+ * the default branch's name.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export interface CreateBranchOptions {
+  readonly branch: string
+  readonly from: string
+}
+
+/**
+ * A branch Code Storage created: its name and the commit it starts at, when
+ * Code Storage said.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export interface CreatedBranch {
+  readonly branch: string
+  readonly sha: string | undefined
+}
+
+/**
  * The calls, each failing with a {@link CodeStorageError}.
  *
  * - `createRepo`: creates a repository, mirroring `github` when given.
@@ -387,6 +413,8 @@ export interface TagsPage {
  *   the repository fail with `sync_in_progress`.
  * - `listFiles`, `readFile`, `listCommits`, `listBranches`, `listTags`:
  *   reads, as their options say.
+ * - `createBranch`: creates a branch at the commit another ref names, with no
+ *   clone and no push. A branch that exists fails with `conflict`.
  *
  * @category services
  * @since 0.1.0
@@ -399,6 +427,13 @@ export interface Client {
   readonly listCommits: (repo: string, options?: ListCommitsOptions) => Effect.Effect<CommitsPage, CodeStorageError>
   readonly listBranches: (repo: string, options?: ListRefsOptions) => Effect.Effect<BranchesPage, CodeStorageError>
   readonly listTags: (repo: string, options?: ListRefsOptions) => Effect.Effect<TagsPage, CodeStorageError>
+  /**
+   * Creates `options.branch` at the commit `options.from` names, with a
+   * `git:write` token for the repository: `POST /api/repos/<repo>/branches/create`.
+   *
+   * @since 0.2.0
+   */
+  readonly createBranch: (repo: string, options: CreateBranchOptions) => Effect.Effect<CreatedBranch, CodeStorageError>
   /**
    * The repository's git remote for reading, with a `git:read` token as its
    * credential: `https://<org>.code.storage/<repo>.git` and Basic `t:<token>`,
@@ -551,6 +586,10 @@ const BranchesJson = Schema.fromJsonString(Schema.Struct({
   branches: Schema.Array(Schema.Struct({ name: Schema.String, head_sha: Schema.String, created_at: Schema.String })),
   has_more: Schema.Boolean,
   next_cursor: Schema.optional(Schema.String)
+}))
+const CreatedBranchJson = Schema.fromJsonString(Schema.Struct({
+  target_branch: Schema.String,
+  commit_sha: Schema.optional(Schema.String)
 }))
 const TagsJson = Schema.fromJsonString(Schema.Struct({
   tags: Schema.Array(Schema.Struct({ name: Schema.String, sha: Schema.String })),
@@ -724,6 +763,20 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
           send("pullUpstream", repo, ["git:write"], HttpClientRequest.post(url(repo, "/upstream/pull"))).pipe(
             Effect.asVoid
           )
+        ),
+
+      createBranch: (repo, options) =>
+        observe(
+          "createBranch",
+          repo,
+          Effect.gen(function*() {
+            const request = HttpClientRequest.post(url(repo, "/branches/create")).pipe(
+              HttpClientRequest.bodyJsonUnsafe({ base_ref: options.from, target_branch: options.branch })
+            )
+            const response = yield* send("createBranch", repo, ["git:write"], request)
+            const { body } = yield* readJson("createBranch", response, CreatedBranchJson)
+            return { branch: body.target_branch, sha: body.commit_sha }
+          })
         ),
 
       listFiles: (repo, options = {}) =>

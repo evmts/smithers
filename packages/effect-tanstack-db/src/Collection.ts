@@ -35,8 +35,9 @@ import type * as Scope from "effect/Scope"
 import type * as Stream from "effect/Stream"
 import { type Change, type Key, LoadFailed, type MutationRefused, type Transaction } from "./internal/model.ts"
 import { changes, mutate, preload, release, toArray } from "./internal/readers.ts"
-import { Persistence, restoreMs, writeFailures } from "./Persistence.ts"
 import { wholeTransactions } from "./internal/wholeTransactions.ts"
+import { declared } from "./Migrations.ts"
+import { Persistence, restoreMs, writeFailures } from "./Persistence.ts"
 
 export { LoadFailed, MutationRefused, TransactionFailed } from "./internal/model.ts"
 export type { Change, Key, Transaction } from "./internal/model.ts"
@@ -154,7 +155,8 @@ export function make<A extends object, K extends Key, U extends UtilsRecord = Ut
   const config = { ...options, ...indexing, gcTime: 0, schema: Schema.toStandardSchemaV1(schema) }
   if (settings === undefined) return create<A, K, U>(config)
   return Effect.gen(function*() {
-    const { persistence } = yield* Persistence
+    const { persistence, registry } = yield* Persistence
+    yield* mustBeDeclared(registry, options.id, "synced", settings.persist.schemaVersion)
     if (Option.isNone(persistence)) return yield* create<A, K, U>(config)
     // Network-first with no wait: restored rows show at once, and the readiness of the restore is observable.
     return yield* timedRestore(
@@ -170,6 +172,19 @@ export function make<A extends object, K extends Key, U extends UtilsRecord = Ut
       )
     )
   })
+}
+
+// A persisted collection the registry doesn't declare, at this version and kind, is a defect: it would skip its
+// migrations. Without a registry, any collection opens.
+const mustBeDeclared = (
+  registry: Persistence["Service"]["registry"],
+  id: string | undefined,
+  kind: "local" | "synced",
+  schemaVersion: number
+): Effect.Effect<void> => {
+  if (registry === undefined) return Effect.void
+  const undeclared = declared(registry, id ?? "", kind, schemaVersion)
+  return undeclared === undefined ? Effect.void : Effect.die(undeclared)
 }
 
 const create = <A extends object, K extends Key, U extends UtilsRecord>(
@@ -239,7 +254,8 @@ export const persisted = <A extends object, K extends Key>(options: {
   readonly schemaVersion: number
 }): Effect.Effect<Collection<A, K>, never, Scope.Scope | Persistence> =>
   Effect.gen(function*() {
-    const { persistence } = yield* Persistence
+    const { persistence, registry } = yield* Persistence
+    yield* mustBeDeclared(registry, options.id, "local", options.schemaVersion)
     if (Option.isNone(persistence)) return yield* local<A, K>(options)
     return yield* reportFailedWrites(
       yield* timedRestore(

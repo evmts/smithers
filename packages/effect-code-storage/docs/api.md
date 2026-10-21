@@ -35,6 +35,7 @@ interface Client {
   readonly listCommits: (repo: string, options?: ListCommitsOptions) => Effect.Effect<CommitsPage, CodeStorageError>
   readonly listBranches: (repo: string, options?: ListRefsOptions) => Effect.Effect<BranchesPage, CodeStorageError>
   readonly listTags: (repo: string, options?: ListRefsOptions) => Effect.Effect<TagsPage, CodeStorageError>
+  readonly createBranch: (repo: string, options: CreateBranchOptions) => Effect.Effect<CreatedBranch, CodeStorageError>
   readonly gitRemote: (repo: string) => Effect.Effect<GitRemote.Upstream>
 }
 ```
@@ -55,6 +56,12 @@ interface Client {
   `GitProxy.uploadPack` or `GitRemote.ref`, never to a guest.
 - `listTags` lists one page of tags in lexical order, each with the commit it
   names (dereferenced for an annotated tag).
+- `createBranch(repo, { branch, from })` creates `branch` at the commit `from`
+  names (a branch, tag or commit) with a `git:write` token, through
+  `POST /api/repos/<repo>/branches/create`: no clone, no push. It answers
+  `{ branch, sha }`, `sha` the commit Code Storage reports, `undefined` when it
+  doesn't. A branch that exists fails `conflict`; a `from` it can't resolve,
+  `ref_not_found`.
 
 ### `CodeStorage.Credentials` and `CodeStorage.config`
 
@@ -184,7 +191,7 @@ interface TagsPage {
 
 ```ts
 class CodeStorageError extends Schema.TaggedError<CodeStorageError>()("@smthrs/effect-code-storage/CodeStorageError", {
-  operation: "configure" | "createRepo" | "pullUpstream" | "listFiles" | "readFile" | "listCommits" | "listBranches" | "listTags",
+  operation: "configure" | "createRepo" | "pullUpstream" | "listFiles" | "readFile" | "listCommits" | "listBranches" | "listTags" | "createBranch",
   code: string,
   status?: number,
   retryAfterMillis?: number,
@@ -250,6 +257,7 @@ type Operation =
   | "listCommits"
   | "listBranches"
   | "listTags"
+  | "createBranch"
 ```
 
 ## `GitRemote`

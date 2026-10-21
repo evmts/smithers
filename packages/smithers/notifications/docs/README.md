@@ -143,6 +143,8 @@ is the one Smithers ships, and it drains this queue at every boundary.
 - [Steer a run](./guides/steer-a-run.md) and
   [Drain at a turn boundary](./guides/drain-at-a-turn-boundary.md): the writing
   half and the reading half.
+- [Send by email and Telegram](./guides/send-by-email-and-telegram.md): reach a
+  person outside the app from a durable step, and which failures to retry.
 - [API reference](./api.md): every export, with its signature.
 - [Troubleshooting](./troubleshooting.md): what each symptom means and what to
   change.

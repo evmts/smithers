@@ -2,7 +2,7 @@
 title: "Test against the queue"
 description: "Run the real queue over an in-memory journal, use the explicit noop seams, drive alert delays on the test clock, and test the promotion rules as pure functions."
 sidebar:
-  order: 7
+  order: 8
 ---
 
 Nothing in this package needs stubbing to be deterministic. The journal is a

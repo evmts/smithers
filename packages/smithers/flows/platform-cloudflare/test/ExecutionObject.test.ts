@@ -1,11 +1,12 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, Sleep } from "@smthrs/flow"
+import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RunMetrics, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -124,6 +125,49 @@ for (const target of Postgres.targets) {
         expect(o.steps).toEqual(["ask:hi"])
         expect(yield* o.status).toBe("failed")
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(o.schema))))
+    })
+
+    it.live("the alarm admits the run under its starter's origin, placed on Cloudflare; another origin is the same intent", () => {
+      const named = object(target)
+      const unnamed = object(target)
+      return Effect.gen(function*() {
+        const value = yield* named.intent({ question: "hi", pauseMs: 0 }).pipe(
+          RunMetrics.withOrigin({ door: "api", actor: "person" })
+        )
+        expect(value.origin).toEqual({ door: "api", actor: "person" })
+        yield* ExecutionObject.start(named.memory.storage, value, Effect.void)
+        // The same flow, execution and payload under another origin is the same intent: no conflict, nothing stored.
+        const stored = named.memory.values.get(ExecutionObject.intentKey)
+        const again = yield* named.intent({ question: "hi", pauseMs: 0 })
+        expect(again.origin).toEqual({ door: "unknown", actor: "unknown" })
+        yield* ExecutionObject.start(named.memory.storage, again, Effect.void)
+        expect(named.memory.values.get(ExecutionObject.intentKey)).toBe(stored)
+        expect(yield* named.alarm()).toEqual(settled)
+
+        // An intent an earlier build stored names no origin: its run is admitted as unknown.
+        const { origin: _origin, ...earlier } = yield* unnamed.intent({ question: "yo", pauseMs: 0 })
+        yield* ExecutionObject.start(unnamed.memory.storage, earlier, Effect.void)
+        expect(yield* unnamed.alarm()).toEqual(settled)
+
+        const counted = (yield* Metric.snapshot)
+          .filter((entry) => entry.id === "flows_runs_settled")
+          .map((entry) => entry.attributes)
+        expect(counted).toEqual(expect.arrayContaining([
+          { flow: Answer._tag, door: "api", actor: "person", placement: "cloudflare", outcome: "succeeded", code: "none" },
+          {
+            flow: Answer._tag,
+            door: "unknown",
+            actor: "unknown",
+            placement: "cloudflare",
+            outcome: "succeeded",
+            code: "none"
+          }
+        ]))
+      }).pipe(
+        Effect.provideService(Metric.MetricRegistry, new Map()),
+        Effect.ensuring(Effect.promise(() => Postgres.dropSchema(named.schema))),
+        Effect.ensuring(Effect.promise(() => Postgres.dropSchema(unnamed.schema)))
+      )
     })
 
     it.live("a duplicate start reruns the caller's effect and stores nothing new; another payload is a conflict", () => {
@@ -525,11 +569,28 @@ describe("ExecutionObject without a database", () => {
       expect(memory.alarm()).toBe(1_000)
     }))
 
+  it.effect("a stored intent that isn't one conflicts with every start, and nothing runs", () =>
+    Effect.gen(function*() {
+      const memory = MemoryStorage.make()
+      yield* memory.storage.put(ExecutionObject.intentKey, "not an intent")
+      const value = yield* ExecutionObject.intent(Answer, { executionId: "e", payload: { question: "q", pauseMs: 5 } })
+      let ran = false
+      const conflict = yield* Effect.flip(ExecutionObject.start(memory.storage, value, Effect.sync(() => (ran = true))))
+      expect(conflict).toBeInstanceOf(ExecutionObject.IntentConflict)
+      expect(ran).toBe(false)
+      expect(memory.values.get(ExecutionObject.intentKey)).toBe("not an intent")
+    }))
+
   it.effect("intent encodes the payload with the flow's codec and refuses one the schema rejects", () =>
     Effect.gen(function*() {
       expect(
         yield* ExecutionObject.intent(Answer, { executionId: "e", payload: { question: "q", pauseMs: 5 } })
-      ).toEqual({ flow: "cloudflare-test/Answer", executionId: "e", payload: { question: "q", pauseMs: 5 } })
+      ).toEqual({
+        flow: "cloudflare-test/Answer",
+        executionId: "e",
+        payload: { question: "q", pauseMs: 5 },
+        origin: { door: "unknown", actor: "unknown" }
+      })
       const refused = yield* Effect.flip(
         ExecutionObject.intent(Answer, { executionId: "", payload: { question: "q", pauseMs: 5 } })
       )

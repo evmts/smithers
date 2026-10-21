@@ -11,7 +11,6 @@
  *
  * Nothing here leaves the loopback interface.
  */
-import { describe, expect, it } from "@effect/vitest"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import { Rule } from "@smthrs/capability/Permission"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
@@ -26,6 +25,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { connect, getDefaultAutoSelectFamily, setDefaultAutoSelectFamily } from "node:net"
 import type { AddressInfo } from "node:net"
 import type { Duplex } from "node:stream"
+import { describe, expect, it } from "vitest"
 import * as EgressHttpClient from "../src/EgressHttpClient.ts"
 
 interface Listener {

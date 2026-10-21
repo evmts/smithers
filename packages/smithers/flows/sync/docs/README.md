@@ -121,6 +121,13 @@ Durable Object holds one with no storage, and a page's socket reconnects and
 resends its latest state. Nothing about presence is journalled. See
 [Presence rooms](./concepts/presence.md).
 
+## Shared text
+
+`SharedText` is a text several people edit at once: one Yjs document wrapped in
+Effect. Updates merge in any order without loss, anchors carry a caret through
+everyone's edits, and a seed gives every replica the same first content. See
+[Shared text](./concepts/shared-text.md).
+
 ## Where this sits
 
 `@smthrs/sync` is one package of the Smithers durable flow engine, and it owns
@@ -157,6 +164,8 @@ project directory without your composing any of this by hand.
   and why a subscription carries its own expiry.
 - [Presence rooms](./concepts/presence.md): who is on a page and where, over a
   room that keeps no state of its own.
+- [Shared text](./concepts/shared-text.md): a text several people edit at once,
+  with their carets.
 - [Follow a run](./guides/follow-a-run.md): the follower above, with cursors
   you persist and the failures that reach you.
 - [Test a follower](./guides/test-a-follower.md): drop, stall, and corrupt

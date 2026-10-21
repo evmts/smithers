@@ -206,10 +206,65 @@ export const providerFetch = (
   options: { readonly connect?: Undici.buildConnector.BuildOptions | undefined } = {}
 ): Effect.Effect<typeof globalThis.fetch, never, Scope.Scope> =>
   Effect.gen(function*() {
-    const pool = yield* dispatcher(environment, { allowH2: false, ...options })
+    const acquire = dispatcher(environment, { allowH2: false, ...options })
+    const context = yield* Effect.context<Scope.Scope>()
+    let pool = yield* acquire
     const undici = yield* loadUndici
-    return ((input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) =>
-      undici.fetch(input as never, { ...init, dispatcher: pool } as never)) as unknown as typeof globalThis.fetch
+    let replacement: Promise<Undici.Dispatcher> | undefined
+    return (async (input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
+      const used = pool
+      // Node's built-in Request and the package's Request have different brands.
+      const target = input instanceof Request ? input.url : input
+      const request = input instanceof Request
+        ? {
+          method: input.method,
+          headers: input.headers,
+          body: input.body,
+          signal: input.signal,
+          duplex: "half",
+          ...init
+        }
+        : init
+      try {
+        // Names the transport each request took, by origin only (a query can
+        // carry a key), so a request meant for an injected fetch shows here.
+        Effect.runSyncWith(context)(
+          Effect.logDebug("platform-node.provider-fetch").pipe(
+            Effect.annotateLogs({ origin: new URL(String(target)).origin, protocol: "http/1.1" })
+          )
+        )
+        return await undici.fetch(target as never, { ...request, dispatcher: used } as never)
+      } catch (error) {
+        // Only connection/session failures before fetch returns headers qualify.
+        // Streams cannot be replayed; aborts, status errors and body failures
+        // belong to the durable step, never this connection repair.
+        const code = (error as { cause?: { code?: string } } | null)?.cause?.code
+        const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
+        const body = init?.body
+        if (
+          signal?.aborted || input instanceof Request ||
+          body instanceof ReadableStream ||
+          ![
+            "ERR_HTTP2_INVALID_SESSION",
+            "ERR_HTTP2_GOAWAY_SESSION",
+            "UND_ERR_SOCKET",
+            "ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC",
+            "ERR_SSL_BAD_RECORD_MAC_ALERT"
+          ].includes(code ?? "")
+        ) throw error
+        if (pool === used) {
+          replacement ??= Effect.runPromiseWith(context)(acquire).then((fresh) => {
+            pool = fresh
+            // Keep the retired pool scoped: Agent.close drops active clients
+            // from its map, preventing scope destruction from aborting a body.
+            replacement = undefined
+            return fresh
+          })
+          await replacement
+        }
+        return await undici.fetch(target as never, { ...request, dispatcher: pool } as never)
+      }
+    }) as unknown as typeof globalThis.fetch
   })
 
 /**

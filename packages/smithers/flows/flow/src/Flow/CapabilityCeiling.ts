@@ -35,3 +35,33 @@ export const parseCapabilityCeilings = (
  */
 export const attenuateCapabilities = (groups: ReadonlyArray<ReadonlyArray<string>>) =>
   CapabilitySet.attenuateGroups(parseCapabilityCeilings(groups))
+
+/** The authority a transported ceiling describes: its groups parsed, invalid patterns dropped so they deny. */
+const authorityOf = (groups: ReadonlyArray<ReadonlyArray<string>>) =>
+  CapabilitySet.fromGroups(parseCapabilityCeilings(groups))
+
+/**
+ * Intersects two ceilings in their transported form, the groups of pattern text a credential or a message carries:
+ * `[]` is unrestricted and a group with no valid pattern denies every capability. The result is normalized exactly as
+ * `CapabilitySet.intersect` normalizes its own, so equal authority has one form, and it never allows what either side
+ * denies.
+ * @category combinators
+ * @since 1.0.0
+ */
+export const intersectCeilings = (
+  left: ReadonlyArray<ReadonlyArray<string>>,
+  right: ReadonlyArray<ReadonlyArray<string>>
+): ReadonlyArray<ReadonlyArray<string>> =>
+  CapabilitySet.intersect(authorityOf(left), authorityOf(right)).groups.map((group) => group.map(Capability.format))
+
+/**
+ * Whether every capability `inner` allows is provably allowed by `outer`, both in transported form
+ * (`CapabilitySet.within`). It answers `false` for any containment its syntactic check can't prove, so a `true` never
+ * lets `inner` stand for authority `outer` lacks: an unrestricted `inner` is within only an unrestricted `outer`.
+ * @category predicates
+ * @since 1.0.0
+ */
+export const ceilingWithin = (
+  inner: ReadonlyArray<ReadonlyArray<string>>,
+  outer: ReadonlyArray<ReadonlyArray<string>>
+): boolean => CapabilitySet.within(authorityOf(inner), authorityOf(outer))

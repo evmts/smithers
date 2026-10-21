@@ -7,7 +7,7 @@
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
 import { FlowEngine } from "@smthrs/engine"
-import { Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Flow, FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
@@ -193,6 +193,11 @@ export interface Dependencies {
    * Who wakes this store's runs. Absent is `"process"`. See {@link Sweep}.
    */
   readonly sweep?: Sweep | undefined
+  /**
+   * Where this store's runs run, as their usage metrics label it
+   * (`@smthrs/flow` `RunMetrics.placements`). Absent is `local`.
+   */
+  readonly placement?: string | undefined
 }
 
 /**
@@ -400,6 +405,37 @@ export const make = (
     const engineState = yield* DurableEngineState.DurableEngineState
     const lifecycle = RunLifecycle.make(store, engineState)
     const wakeBus = dependencies.wakeBus ?? WakeBus.makeNoop()
+    /** Where this store's runs run, as their usage metrics label it. */
+    const placement = RunMetrics.placement(dependencies.placement ?? "local")
+    /**
+     * The level the host that built this store asked the usage lines at. A
+     * run is admitted in its caller's fiber, such as a browser leader's
+     * request handler, whose context doesn't say; every usage record of this
+     * store writes at the host's level.
+     */
+    const lineLevel = yield* RunMetrics.LineLevel
+    /**
+     * Records a lineage's settlement in the usage metrics (`@smthrs/flow`
+     * `RunMetrics`), once its terminal transition committed: by its flow, how
+     * it settled, its origin and this store's placement, and how long it took
+     * since its first round's admission. Never its payload or its result.
+     */
+    const recordSettled = (
+      executionId: string,
+      state: RunState,
+      settled: { readonly outcome: RunMetrics.Outcome; readonly code: string }
+    ): Effect.Effect<void> =>
+      Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
+        RunMetrics.recordSettled({
+          flow: state.flowName,
+          door: state.origin?.door ?? "unknown",
+          actor: state.origin?.actor ?? "unknown",
+          placement,
+          executionId,
+          outcome: settled.outcome,
+          code: settled.code,
+          durationMs: state.origin === undefined ? undefined : nowMs - state.origin.admittedAtMs
+        })).pipe(Effect.provideService(RunMetrics.LineLevel, lineLevel))
     /**
      * Whether a host wakes this store's runs from outside (`sweep: { host }`).
      * Such a host lives for one invocation: it neither sweeps the store nor
@@ -1499,6 +1535,7 @@ export const make = (
             ).pipe(Effect.orDie)
           })
         ).pipe(Effect.orDie)
+        if (settled) yield* recordSettled(runId, state, { outcome: "cancelled", code: "cancelled" })
         // Post-commit, and only reachable after a transition that actually
         // happened. Closing the parked flow scope runs the finalizers the
         // suspension retained, with an interrupt exit so `Flow.withRollback`
@@ -1896,7 +1933,10 @@ export const make = (
             : { parentExecutionId: seam.state.parentExecutionId }),
           ...(seam.state.onParentExit === undefined ? {} : { onParentExit: seam.state.onParentExit }),
           ...(seam.state.maxRounds === undefined ? {} : { maxRounds: seam.state.maxRounds }),
-          ...(seam.handoff.deadline === undefined ? {} : { deadline: seam.handoff.deadline })
+          ...(seam.handoff.deadline === undefined ? {} : { deadline: seam.handoff.deadline }),
+          // The lineage keeps its first round's origin, so its settlement is
+          // labelled and timed from the first admission.
+          ...(seam.state.origin === undefined ? {} : { origin: seam.state.origin })
         })
         const settledStateJson = yield* encodeState({
           ...seam.state,
@@ -2052,6 +2092,7 @@ export const make = (
         if (transitioned._tag === "GuardFailed") {
           yield* cancelOwned(seam.executionId, seam.state)
         } else if (transitioned._tag === "Transitioned") {
+          yield* recordSettled(seam.executionId, seam.state, RunMetrics.settlement(Exit.die(error)))
           yield* announceSettled(seam.executionId, seam.state)
         }
       })
@@ -2084,6 +2125,10 @@ export const make = (
         if (transitioned._tag === "GuardFailed") {
           yield* cancelOwned(executionId, state)
         } else if (transitioned._tag === "Transitioned") {
+          yield* recordSettled(executionId, state, {
+            outcome: "refused",
+            code: RunMetrics.settlement(Exit.die(defect)).code
+          })
           yield* announceSettled(executionId, state)
         }
       })
@@ -2237,7 +2282,8 @@ export const make = (
             }
           }
 
-          const activeState = withoutResult(state)
+          const { parked, ...unparked } = withoutResult(state)
+          const activeState: RunState = unparked
           // The activation transition carries the cancel guard: a run whose
           // cancellation was durably requested while it was parked must cancel
           // here instead of re-executing flow side effects (issue #27).
@@ -2254,6 +2300,24 @@ export const make = (
             return yield* cancelOwned(executionId, withoutResult(state))
           }
           if (cleared._tag !== "Transitioned") return
+          // Usage metrics: the first activation of a lineage's first round is
+          // when its first step can start, and a resume from a park ends the
+          // durable wait it parked on.
+          const activatedAtMs = yield* Clock.currentTimeMillis
+          if (initial.startedAtMs === null && (initial.roundOrdinal ?? 0) === 0 && state.origin !== undefined) {
+            yield* RunMetrics.recordFirstStep({
+              flow: state.flowName,
+              placement,
+              delayMs: activatedAtMs - state.origin.admittedAtMs
+            })
+          }
+          if (parked !== undefined) {
+            yield* RunMetrics.recordWaitEnded({
+              flow: state.flowName,
+              kind: RunMetrics.waitKind(parked.kind),
+              durationMs: activatedAtMs - parked.atMs
+            })
+          }
 
           // The payload was recorded with the codec of the build that admitted
           // the run. One this build's codec refuses can never resume here.
@@ -2317,7 +2381,11 @@ export const make = (
                     CapabilitySet.attenuateGroups(activeState.capabilityCeilings ?? [[]]),
                     Flow.intoResult,
                     Effect.provideService(FlowRuntime.FlowInstance, instance),
-                    Effect.provideService(FlowRuntime.FlowRuntime, flowEngine)
+                    Effect.provideService(FlowRuntime.FlowRuntime, flowEngine),
+                    // A run this run starts came through door `flow`, started
+                    // by the same kind of actor, unless its starter says
+                    // otherwise (an agent's tool call is door `agent`).
+                    RunMetrics.withOrigin({ door: "flow", actor: activeState.origin?.actor ?? "unknown" })
                   ),
                   // A hosted round renews no lease: the host's liveness check
                   // reclaims a crashed incarnation, and every fenced write of a
@@ -2464,10 +2532,21 @@ export const make = (
               // CAS: a cancellation request that raced past the last poll turns
               // the terminal transition into GuardFailed, and the run cancels
               // instead of finalizing (issue #11).
+              // How a terminal status settles, for the usage metrics: a settlement
+              // the codec rejected is `result_unencodable`, whatever it claimed.
+              // A suspension settles nothing, and records none of this.
+              const settledAs = encodedResult.note !== undefined || result._tag === "Suspended"
+                ? { outcome: "failed" as const, code: "result_unencodable" }
+                : RunMetrics.settlement(result.exit)
+              // A park records when it began and what it waits on, so the
+              // resume that ends it measures the wait (`RunMetrics.waitDuration`).
+              const parked = waiting === null
+                ? undefined
+                : { atMs: yield* Clock.currentTimeMillis, kind: RunMetrics.waitKind(waiting.reason) }
               const transitioned = yield* transitionAndRecord(
                 executionId,
                 status,
-                yield* encodeState(nextState),
+                yield* encodeState(parked === undefined ? nextState : { ...nextState, parked }),
                 { decision: "transitioned", status, owner: dependencies.owner },
                 { cancelRequested: "absent" },
                 // A suspension is not an exit: the run is parked and will settle
@@ -2504,7 +2583,11 @@ export const make = (
               // and the cleanup region releases the scope rather than holding it
               // until shutdown.
               if (transitioned._tag !== "Transitioned") return
+              if (parked !== undefined) {
+                yield* RunMetrics.recordWait({ flow: activeState.flowName, kind: parked.kind })
+              }
               if (status !== "suspended") {
+                yield* recordSettled(executionId, activeState, settledAs)
                 // The settle is durable; tell any in-process caller parked on this
                 // run's poll loop, so a run driven to completion by a sweep or a
                 // coordinator wake is observed now rather than on the next tick.
@@ -2836,6 +2919,15 @@ export const make = (
         )(
           options.payload
         ).pipe(Effect.orDie) as Effect.Effect<unknown>)
+        // The caller's door and actor kind, kept with the run for its usage
+        // metrics. A run this call creates is counted once its row commits.
+        const requestedOrigin = yield* RunMetrics.CurrentOrigin
+        const origin = {
+          door: RunMetrics.door(requestedOrigin.door),
+          actor: RunMetrics.actor(requestedOrigin.actor),
+          admittedAtMs: yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+        }
+        let admitted = false
         // Every requested parent — first (creating) parent and a diamond's
         // second parent alike — is recorded as a durable edge BEFORE the run
         // row is created. `recordRunParent` inserts the edge and checks for
@@ -2883,7 +2975,8 @@ export const make = (
             ...(options.parent === undefined
               ? {}
               : { parentExecutionId: options.parent.executionId }),
-            ...(flow.maxRounds === undefined ? {} : { maxRounds: flow.maxRounds })
+            ...(flow.maxRounds === undefined ? {} : { maxRounds: flow.maxRounds }),
+            origin
           }
           const createdStateJson = yield* encodeState(state)
           yield* ensureCreatedRun({
@@ -2898,6 +2991,7 @@ export const make = (
               ? {}
               : { parentRunId: previousExecutionId }),
             onCreated: Effect.gen(function*() {
+              admitted = round.ordinal === 0
               // The run's opening frame. `store.create` used to be the one
               // durable write with no journal record at all, which left the
               // replay-derived state projection with no base to fold onto —
@@ -2979,6 +3073,15 @@ export const make = (
         })).pipe(
           Effect.catchIf((error) => error instanceof Journal.JournalError || error instanceof DatabaseError, Effect.die)
         )
+        if (admitted) {
+          yield* RunMetrics.recordStarted({
+            flow: flow._tag,
+            door: origin.door,
+            actor: origin.actor,
+            placement,
+            executionId: options.executionId
+          }).pipe(Effect.provideService(RunMetrics.LineLevel, lineLevel))
+        }
       })
 
     const readResult = (flow: Flow.Any, executionId: string, followLineage = false) =>

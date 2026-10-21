@@ -34,11 +34,17 @@ const execution = {
 
 /**
  * Admit `executionId` with `payload` and drive it in the background.
+ * `origin` is the door and actor kind the tab started it with, which the
+ * engine keeps for the run's usage metrics (`@smthrs/flow` `RunMetrics`).
  *
  * @category protocol
  * @since 1.0.0
  */
-export const Start = Schema.TaggedStruct("Start", { ...execution, payload: Schema.Json })
+export const Start = Schema.TaggedStruct("Start", {
+  ...execution,
+  payload: Schema.Json,
+  origin: Schema.optionalKey(Schema.Struct({ door: Schema.String, actor: Schema.String }))
+})
 
 /**
  * Read `executionId`'s result, or `null` while it has none.

@@ -45,6 +45,12 @@ scope.
   admits a write; a follower gets `NotAdmitted`, never the library's
   online-only path. `withdraw` takes back a write not sent yet, under the lock
   a send claims its write with, so a write is never both sent and taken back.
+- **Device data across builds.** `Migrations` declares each stored
+  collection's and outbox payload's versions, brings an older build's store to
+  this build's before anything reads it, upgrades or parks the writes an older
+  build queued, and keeps aside every row it can't bring forward. A lock fails
+  a test when a schema changes without a new version. See
+  [Migrations](migrations.md).
 - **Host capabilities as arguments.** The database, its persistence, the tab
   coordinator, the outbox's entry point, storage, leader and network detector
   all come from the host, so the root imports no Node or browser module.
@@ -72,6 +78,7 @@ scope.
 ## Pages
 
 - [API reference](api.md)
+- [Migrations](migrations.md)
 - [Frameworks](frameworks.md)
 
 ## Tests

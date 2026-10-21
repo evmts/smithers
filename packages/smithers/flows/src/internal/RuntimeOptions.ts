@@ -129,6 +129,14 @@ export interface Options {
    * @since 1.0.0
    */
   readonly sweep?: EngineStore.Sweep | undefined
+  /**
+   * Where this runtime's runs run, as their usage metrics label it:
+   * `browser`, `cloudflare`, `sandbox` or `local`, the default. See
+   * `@smthrs/flow` `RunMetrics`.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly placement?: string | undefined
 }
 
 /**
@@ -239,6 +247,9 @@ export const validate = (options: Options, label = "Runtime"): Options => {
     throw invalidConfiguration("privilegedJj", `${label} privilegedJj must be a Layer when supplied`)
   }
   const sweep = decodeField("sweep", Sweep, options.sweep, "must be \"process\" or { host: <execution id> }", label)
+  const placement = options.placement === undefined
+    ? undefined
+    : decodeField("placement", Schema.NonEmptyString, options.placement, nonEmpty, label)
   return Object.freeze({
     owner: Object.freeze({ hostId }),
     isAlive,
@@ -248,6 +259,7 @@ export const validate = (options: Options, label = "Runtime"): Options => {
     cacheEnvironment,
     sourceRevision,
     privilegedJj,
-    sweep
+    sweep,
+    placement
   })
 }

@@ -364,6 +364,7 @@ Service interface:
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `request`  | `(method: RequestMethod, path: string, body?: unknown, options?: RequestOptions) => Effect<unknown, IntegrationError>`, or `<A>(method: RequestMethod, path: string, body: unknown, options: DecodedRequestOptions<A>) => Effect<A, IntegrationError>` | One REST call. Without a schema the result is the parsed JSON as `unknown`; a `schema` decodes it, fixes the result type, and fails `decode-failed` when the body does not match. A rate limit (a 429, or the 403 forms GitHub uses for a secondary limit) is never repeated: it fails `retryable` for every method, with the server's `Retry-After` or `x-ratelimit-reset`, capped at one minute, as `details.retryAfterMillis`. A 5xx or transport failure is `retryable` only for a read, with a 5xx's `Retry-After`; on a write it reports `outcomeUnknown` unless `retryUnsafeWrites` is set. The retry policy of the step that made the call decides whether there is another attempt. An unserializable body or an unparseable path fails `invalid-config` before any request. Interrupting the fiber aborts the request in flight. Each request also carries the configured `requestTimeout`; expiring aborts the exchange and fails `delivery-failed` with `timedOut: true`, and on a write with `outcomeUnknown: true`. |
 | `paginate` | `(path: string, options?: { perPage?: number; maxPages?: number }) => Effect<Page, IntegrationError>`                                                                                                                                                  | Follows `Link: rel="next"` within the page budget and concatenates the pages. `perPage` defaults to 100 and accepts 1 to 100; `maxPages` defaults to 10 and accepts 1 to 1000. A bound outside its range fails `invalid-config` before the first request. Running out of budget with a next link outstanding is reported as `truncated: true`, never as a short but complete answer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `count` | `(path: string, options?: RequestOptions) => Effect<Count, IntegrationError>` | One request for pages of one item (`per_page=1`): `total` is the `rel="last"` link's page, so a repository's branches, tags, commits or contributors are counted without walking them, and `first` is the first item as parsed JSON (`undefined` for an empty list). A list with no `last` link holds what its one page holds. |
 
 | Export                | Signature                                                                             | Notes                                                                                                                                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -373,6 +374,7 @@ Service interface:
 | `isRateLimitResponse` | `(status: number, headers: Headers, body: unknown) => boolean`                        | Whether a response is GitHub telling the client to slow down.                                                                                                                                 |
 | `retryAfterMs`        | `(headers: Headers, nowMs?: number) => number \| null`                                | The wait a rate limit asked for, from `Retry-After` or `x-ratelimit-reset`, capped at one minute.                                                                                             |
 | `nextPageUrl`         | `(linkHeader: string \| null) => string \| null`                                      | The `rel="next"` URL in an RFC 5988 `Link` header.                                                                                                                                            |
+| `lastPageNumber` | `(linkHeader: string \| null) => number \| null` | The `page` of the `rel="last"` URL in an RFC 5988 `Link` header; `null` without one or for a page that isn't a whole number. |
 | `UNSAFE_METHODS`      | `readonly RequestMethod[]`                                                            | `POST`, `PATCH`, `PUT`, `DELETE`: the verbs whose effect the server may already have applied when the answer is lost.                                                                         |
 | `MAX_PER_PAGE`        | `100`                                                                                 | The largest `per_page` GitHub accepts.                                                                                                                                                        |
 | `DEFAULT_MAX_PAGES`   | `10`                                                                                  | The default page budget.                                                                                                                                                                      |
@@ -554,6 +556,48 @@ decoded with `atob` and `TextDecoder`, so it runs in a browser and a Worker.
 | `permission`    | `(owner, repo, login) => Effect<Option<Permission>, IntegrationError, GitHubClient>` | `GET /repos/{owner}/{repo}/collaborators/{login}/permission`; `Option.none()` on a 404, which GitHub answers for an account that does not exist or a repository the token cannot see. |
 | `Permission`    | `{ permission: string; roleName: string }`                                           | `permission` is the base role (`admin`, `write`, `read`, `none`); `roleName` may be `maintain`, `triage` or a custom role.                                                            |
 | `LOGIN_PATTERN` | regex                                                                                | `Repository.OWNER_PATTERN`'s account name, optionally followed by `[bot]`.                                                                                                            |
+
+### GitHub.Pulls
+
+Pull request operations over the `GitHubClient` in context. Opening a pull
+request and submitting a review are not idempotent: mark the body with
+`Issues.withWriteMarker`, and after `outcomeUnknown` look first with
+`findPullByHead` or `findReviewByWrite`. A merge is fenced by the head SHA the
+person saw; a lost merge is read back with `getPull`. Closing is idempotent.
+
+| Export | Signature | Notes |
+| --- | --- | --- |
+| `getPull` | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>` | `GET /repos/{owner}/{repo}/pulls/{number}`, with merge state and size. |
+| `listPulls` | `(owner, repo, options?: { state?, head?, maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>` | Most recently updated first; `state` defaults to `all`; `head` is a branch of the repository itself. |
+| `findPullByHead` | `(owner, repo, { head, writeId? }) => Effect<Option<PullRequest>, IntegrationError, GitHubClient>` | The earliest-opened pull request from `head`, carrying `writeId`'s marker when given. |
+| `createPull` | `(owner, repo, { head, base, title, body, draft? }) => Effect<PullRequest, IntegrationError, GitHubClient>` | `POST /repos/{owner}/{repo}/pulls`. 422 for no commits, a duplicate or a refused draft. A lost answer fails `outcomeUnknown`. |
+| `closePull` | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>` | `PATCH` with `state: closed`; a lost answer fails `retryable`. |
+| `mergePull` | `(owner, repo, number, { sha, method, commitTitle?, commitMessage? }) => Effect<Merged, IntegrationError, GitHubClient>` | `PUT /repos/{owner}/{repo}/pulls/{number}/merge` at exactly `sha`. 409 when the head moved, 405 when not mergeable, 422 for a disallowed method. A lost answer fails `outcomeUnknown`. |
+| `listCommits`, `listReviews` | `(owner, repo, number, options?: { maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>` | Oldest first; at most 3 pages unless `maxPages` says otherwise. |
+| `createReview` | `(owner, repo, number, { commitId, event, body }) => Effect<Review, IntegrationError, GitHubClient>` | `POST .../reviews` against head `commitId`. `event` is `COMMENT`, `APPROVE` or `REQUEST_CHANGES`; `COMMENT` needs a body. A lost answer fails `outcomeUnknown`. |
+| `findReviewByWrite` | `(owner, repo, number, { writeId }) => Effect<Option<Review>, IntegrationError, GitHubClient>` | The review whose body carries the marker. |
+| `PullRequest`, `PullEnd`, `PullCommit`, `Review` | schemas | GitHub's JSON narrowed to the fields Smithers reads. A listing's missing merge and size fields decode as `false`, `null` or `0`. |
+| `MergeMethod`, `ReviewEvent`, `Merged` | types | `squash`, `merge`, `rebase`; the review events; `{ sha, merged }`. |
+
+### GitHub.Refs
+
+Branch refs. Nothing here moves an existing ref, so nothing can force one.
+
+| Export | Signature | Notes |
+| --- | --- | --- |
+| `getBranch` | `(owner, repo, name) => Effect<Option<Branch>, IntegrationError, GitHubClient>` | `GET /repos/{owner}/{repo}/git/ref/heads/{name}`; `Option.none()` on a 404. |
+| `createBranch` | `(owner, repo, { name, sha }) => Effect<Branch, IntegrationError, GitHubClient>` | `POST /repos/{owner}/{repo}/git/refs`. 422 when the branch exists. A lost answer fails `outcomeUnknown`; read it back with `getBranch`. |
+| `isBranch`, `requireBranch` | `(name) => boolean`, `(name) => Effect<string, IntegrationError>` | 1 to 200 characters of letters, digits, `.`, `_`, `-` and `/`, in segments that are not empty, don't start with `.` and don't end with `.lock`, with no `..`. |
+| `Branch`, `MAX_BRANCH_LENGTH` | `{ name, sha }`, `200` | |
+
+### GitHub.Commits
+
+| Export | Signature | Notes |
+| --- | --- | --- |
+| `createOnBranch` | `(owner, repo, { branch, expectedHeadOid, headline, body?, additions, deletions }) => Effect<string, IntegrationError, GitHubClient>` | GraphQL `createCommitOnBranch` (`POST /graphql`), fenced by `expectedHeadOid`; answers the new SHA. Each addition is a whole file, base64; 1 to 1,000 changes. A moved branch fails `status: 409, stale: true`, any other GraphQL error `status: 422`, neither retryable. A lost answer fails `outcomeUnknown`: read the branch back and adopt its head when `getCommit` shows it is yours. |
+| `getCommit` | `(owner, repo, sha) => Effect<GitCommit, IntegrationError, GitHubClient>` | `GET /repos/{owner}/{repo}/git/commits/{sha}`: tree, parents and message. |
+| `compare` | `(owner, repo, base, head) => Effect<Comparison, IntegrationError, GitHubClient>` | `GET /repos/{owner}/{repo}/compare/{base}...{head}` with two SHAs, so the answer never changes. `truncated` when GitHub listed `MAX_COMPARE_FILES` (300) files. |
+| `FileAddition`, `GitCommit`, `ChangedFile`, `Comparison` | types and schemas | A changed file's `patch` is absent for a binary or very large file. |
 
 ### GitHub.Sync
 

@@ -35,3 +35,9 @@ export * as Persistence from "./Persistence.ts"
  * @since 0.2.0
  */
 export * as Outbox from "./Outbox.ts"
+
+/**
+ * @category migrations
+ * @since 0.3.0
+ */
+export * as Migrations from "./Migrations.ts"

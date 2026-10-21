@@ -9,7 +9,7 @@
  * @since 1.0.0
  */
 
-import { Layer } from "effect"
+import { Context, Effect, Layer } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import type * as HttpClient from "effect/http/HttpClient"
 
@@ -45,13 +45,20 @@ export const refusingRedirects = (
 /**
  * An `HttpClient` for credentialed provider calls, over a fetch that refuses
  * redirects ({@link refusingRedirects}). `base` defaults to the runtime's
- * global fetch.
+ * injected FetchHttpClient.Fetch reference (the runtime's global fetch when absent).
  *
  * @category transport
  * @since 1.0.0
  */
 export const providerTransport = (
-  base: typeof globalThis.fetch = globalThis.fetch,
+  base?: typeof globalThis.fetch,
   onRefused?: (status: number) => void
 ): Layer.Layer<HttpClient.HttpClient> =>
-  FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, refusingRedirects(base, onRefused))))
+  Layer.unwrap(Effect.gen(function*() {
+    // Only an injected Fetch: the reference's default caches the first global fetch it sees, so an absent one reads
+    // the global when the layer builds, as an explicit `base` would.
+    const fetch = base ?? Context.getOrUndefined(yield* Effect.context<never>(), FetchHttpClient.Fetch) ?? globalThis.fetch
+    return FetchHttpClient.layer.pipe(
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, refusingRedirects(fetch, onRefused)))
+    )
+  }))

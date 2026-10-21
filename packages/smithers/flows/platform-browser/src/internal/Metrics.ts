@@ -32,6 +32,19 @@ export const wakes = Metric.counter("smithers_browser_runtime_wakes", {
 })
 
 /**
+ * Preparations of the app's shared database a new leader ran before serving
+ * it, by `outcome`: `prepared`, `failed`, or `skipped` when the engine serves
+ * no app database.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const preparations = Metric.counter("smithers_browser_runtime_preparations", {
+  description: "Preparations of the app's shared database a new browser leader ran before serving it, by outcome",
+  incremental: true
+})
+
+/**
  * Follower requests the leader handled, by `request` and `outcome`
  * (`replied` or `refused`).
  *

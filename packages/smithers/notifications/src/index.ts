@@ -11,6 +11,12 @@
 export * as Alerts from "./Alerts.ts"
 
 /**
+ * @category services
+ * @since 1.0.0
+ */
+export * as Channels from "./Channels.ts"
+
+/**
  * @category routing
  * @since 1.0.0
  */

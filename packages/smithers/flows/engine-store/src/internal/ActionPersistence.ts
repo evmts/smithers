@@ -8,7 +8,7 @@
 
 import { Sha256 } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
-import { Action, FlowRuntime, SpanFailure } from "@smthrs/flow"
+import { Action, FlowRuntime, RunMetrics, SpanFailure } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import { Journal, type JournalEvent, Redaction } from "@smthrs/journal"
@@ -803,6 +803,20 @@ export const make = (deps: Dependencies) => {
       Action.reportDispatch({ outcome: "executed", stepKeyDigest, attempt: input.attempt }),
       deps.execute(input)
     ).pipe(
+      // Usage metrics: one step attempt ran its body, under the flow whose
+      // instance dispatched it. A replayed step never reaches here.
+      Effect.onExit((exit) =>
+        Effect.flatMap(Effect.serviceOption(FlowRuntime.FlowInstance), (instance) =>
+          Option.isNone(instance) ? Effect.void : RunMetrics.recordStep({
+            flow: instance.value.flow._tag,
+            attempt: input.attempt,
+            outcome: Exit.isSuccess(exit)
+              ? "succeeded"
+              : Cause.hasInterruptsOnly(exit.cause)
+              ? "interrupted"
+              : "failed"
+          }))
+      ),
       Effect.provideService(Action.CurrentFence, {
         runId: deps.runId,
         stepKeyDigest,

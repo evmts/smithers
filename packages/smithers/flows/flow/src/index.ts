@@ -104,6 +104,14 @@ export * as Stall from "./Stall.ts"
 export * as RetryPolicy from "./RetryPolicy.ts"
 
 /**
+ * Usage metrics every flow run records: runs started and settled, durations,
+ * steps, retries, waits and model calls, content-free and bounded.
+ *
+ * @since 1.0.0-rc.17
+ */
+export * as RunMetrics from "./RunMetrics.ts"
+
+/**
  * The system timer action and its implementation layer.
  *
  * @since 0.1.0

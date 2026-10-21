@@ -174,10 +174,13 @@ Opening a tile renders the flow's form, then the run card.
 `Smithers.Home.Flows({ title })` lists the featured flows,
 `Smithers.Home.Markdown({ path })` a repository Markdown file,
 `Smithers.Home.Links({ links })` links, `Smithers.Home.Text({ text })` plain
-text, and `Smithers.Home.Stack()` the repository's live mythical stack. The
-factory projection writes `.smithers/home.json`; the server resolves Markdown
-files at `main`. When that file is absent, the chat shows `README.md` if
-present.
+text, and `Smithers.Home.Stack()` the repository's live stack. The factory
+projection writes `.smithers/home.json` as one section for everyone, in the
+format `@smthrs/views`' `Home` defines and the app reads; `Factory.Home` takes
+any block that format does, `hero`, `code`, `cards`, `stats`, `releases`,
+`action`, `issues` and `runs` included, as plain objects. A home with sections
+for contributors or maintainers is written as `.smithers/home.json` directly
+([Read a repository's home](../../../ui/views/docs/read-a-home.md)).
 
 ### A flow's own view
 

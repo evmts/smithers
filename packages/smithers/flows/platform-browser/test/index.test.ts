@@ -28,6 +28,7 @@ describe("@smthrs/platform-browser barrel", () => {
         "BrowserEngine",
         "BrowserFileSystem",
         "BrowserHost",
+        "BrowserLanguageServer",
         "BrowserRuntime",
         "BrowserServices",
         "BrowserSqlite",

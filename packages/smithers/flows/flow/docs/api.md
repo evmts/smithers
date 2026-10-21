@@ -126,6 +126,17 @@ omission. `Flow.parseCapabilityCeilings(groups)` parses them, dropping invalid
 patterns. `Flow.attenuateCapabilities(groups)(effect)` applies the parsed patterns
 to the shared kernel authority without widening it.
 
+A ceiling a credential or a message carries travels as the same groups of
+pattern text: `[]` is unrestricted and a group with no valid pattern denies
+everything. `Flow.intersectCeilings(left, right)` intersects two of them exactly
+and answers the normalized text, so equal authority has one form.
+`Flow.ceilingWithin(inner, outer)` answers whether `outer` provably covers every
+capability `inner` allows; it answers `false` for a containment it can't prove,
+so an unrestricted `inner` is within only an unrestricted `outer`. A caller that
+narrows authority at each hop, such as a server minting a child run's credential,
+refuses a callee whose declared ceiling isn't within its own and gives the child
+the intersection.
+
 | Export                                                                           | Purpose                                                                                                                                                                                                                                                                                                                                |
 | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Tier`                                                                           | `sealed`, `compensable`, or `irreversible`                                                                                                                                                                                                                                                                                             |
@@ -373,6 +384,30 @@ A failure with its own `retryAfterMillis`, a finite non-negative number of milli
 `decide` classifies non-retryable errors here and nowhere else, by the policy's declared tags and by `defaultNonRetryable`, which lists the integrity verdicts that must reach the driver unretried under every policy. Exhaustion and expiration preserve the final declared failure. The older `RetryPolicyExpired` and `RetryAttemptsExhausted` schemas remain available for interpreting historical outcomes.
 
 The package's [`examples/retry-and-stall.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/examples/retry-and-stall.ts) runs `RetryPolicy.decide` over five failed attempts and `Stall.observe` over a repair loop's rounds, with no runtime. Run it with `node examples/retry-and-stall.ts` from the package directory.
+
+## `RunMetrics`
+
+Usage metrics for every flow run: which flows run, and how. The durable engine (`@smthrs/engine-store`) records them for every run, and `@smthrs/agent`'s model steps record their calls, so a flow gets them without declaring anything. Each record is a metric and a log line with the same fields, so a store that keeps only logs counts and percentiles them too.
+
+| Metric                    | Kind      | Attributes                                                 | Log line                                |
+| ------------------------- | --------- | ---------------------------------------------------------- | --------------------------------------- |
+| `flows_runs_started`      | counter   | `flow`, `door`, `actor`, `placement`                       | `flow.run.started`, with `executionId`  |
+| `flows_runs_settled`      | counter   | `flow`, `outcome`, `code`, `door`, `actor`, `placement`    | `flow.run.settled`, with `durationMs`   |
+| `flows_run_duration_ms`   | histogram | `flow`, `outcome`, `placement`                             |                                         |
+| `flows_run_first_step_ms` | histogram | `flow`, `placement`                                        |                                         |
+| `flows_steps`             | counter   | `flow`, `outcome` (`succeeded`, `failed`, `interrupted`)   |                                         |
+| `flows_step_retries`      | counter   | `flow`                                                     |                                         |
+| `flows_waits`             | counter   | `flow`, `kind`                                             |                                         |
+| `flows_wait_ms`           | histogram | `flow`, `kind`                                             |                                         |
+| `flows_model_calls`       | counter   | `flow`, `model`, `outcome`                                 | `flow.model.call`, with token counts    |
+| `flows_model_tokens`      | counter   | `flow`, `model`, `direction` (`input`, `output`)           |                                         |
+
+- **A run** is counted when the engine admits it and when its lineage settles: a round that hands off to the next is not a settlement. Its duration runs from the first round's admission to the settlement; `flows_run_first_step_ms` from admission to the engine first starting it. A step answered from its record, and a model step replayed, are not counted again.
+- **Outcomes:** `succeeded`, `failed` (a declared failure or a defect), `refused` (an interpreter refusal such as `plan_changed` or `payload_changed`, or a round the engine would not run), `cancelled`, and `lost` (interrupted with no cancellation asked). `settlement(exit)` classifies an exit; its `code` is `none`, the refusal's code, a typed failure's `code` or tag, a defect's tag or name, `defect` or `interrupted`, never a message.
+- **Origin.** `CurrentOrigin` is the `{ door, actor }` a run started in this context is labelled with; `withOrigin(origin)` sets it. The engine reads it at admission and keeps it with the run, so the settlement carries it. Unset, a run is `unknown` by `unknown`. A run another run starts is door `flow` by its starter's actor kind, and a run an agent's tool call starts is door `agent` by `agent`. `BrowserEngine.start` and `ExecutionObject.intent` carry the caller's origin to the engine that admits the run.
+- **Placement** is the engine's: `EngineStore.Options.placement`, set by each host (`browser`, `cloudflare`; `local` by default).
+- **Log level.** The usage lines are written at `LineLevel`, `Debug` by default, so a command-line program's output stays its own. A host whose logs are its telemetry provides `layerInfoLines`, as the browser engine and the Cloudflare host do: `flow.run.started` and `flow.model.call` at Info, and `flow.run.settled` at Info when the run succeeded and Warn otherwise. The metrics are recorded at every level. The engine reads the level once, where its host builds it, so a run admitted from a caller's fiber, such as the browser leader's request handler, still writes at the host's level.
+- **Bounded and content-free.** `doors`, `actors`, `placements`, `outcomes` and `waitKinds` are closed sets; any other value reads `other`. A flow's tag, a model id and a failure code are cleaned to a short identifier (`clean`) and capped per process at `maxFlows` (200), `maxModels` (50) and `maxCodes` (100) distinct values; past the cap a new value reads `other`. `makeLabels(limit)` builds such a cap. No record carries a payload, a result, a failure's message or who started a run.
 
 ## `SpanFailure`
 

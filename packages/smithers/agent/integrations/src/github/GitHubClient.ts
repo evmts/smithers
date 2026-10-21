@@ -217,6 +217,30 @@ export interface GitHubClient {
     path: string,
     options?: { readonly perPage?: number | undefined; readonly maxPages?: number | undefined }
   ) => Effect.Effect<Page, IntegrationError>
+  /**
+   * How many items a list resource holds, and its first item, in one request.
+   *
+   * It asks for pages of one item (`per_page=1`), so the `rel="last"` link's
+   * `page` is the count: a repository's branches, tags, commits or
+   * contributors without walking them. A list with no `last` link holds what
+   * its one page holds, zero or one item. `first` is that page's item, as
+   * parsed JSON, or `undefined` for an empty list.
+   */
+  readonly count: (
+    path: string,
+    options?: RequestOptions
+  ) => Effect.Effect<Count, IntegrationError>
+}
+
+/**
+ * One `count` request's result.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Count {
+  readonly total: number
+  readonly first: unknown
 }
 
 /**
@@ -289,6 +313,24 @@ export const nextPageUrl = (linkHeader: string | null): string | null => {
   for (const part of linkHeader.split(",")) {
     const match = /^<([^>]+)>;\s*rel="next"$/.exec(part.trim())
     if (match !== null) return match[1]!
+  }
+  return null
+}
+
+/**
+ * The `page` number of the `rel="last"` URL in an RFC 5988 `Link` header, or
+ * `null` when there is none or it names no whole page number.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const lastPageNumber = (linkHeader: string | null): number | null => {
+  if (linkHeader === null || linkHeader.length === 0) return null
+  for (const part of linkHeader.split(",")) {
+    const match = /^<([^>]+)>;\s*rel="last"$/.exec(part.trim())
+    if (match === null || !URL.canParse(match[1]!, "https://api.github.com")) continue
+    const page = new URL(match[1]!, "https://api.github.com").searchParams.get("page")
+    return page !== null && /^[1-9]\d{0,9}$/.test(page) ? Number(page) : null
   }
   return null
 }
@@ -662,7 +704,17 @@ const build = (
       return { items, truncated: url !== null }
     }).pipe(Effect.withSpan("GitHubClient.paginate", { attributes: { "github.path": path } }))
 
-  return GitHubClient.of({ request, paginate })
+  const count: GitHubClient["count"] = (path, options) =>
+    Effect.gen(function*() {
+      const url = yield* urlFor(path, { ...options?.query, per_page: 1 })
+      const page = yield* requestUrl("GET", url)
+      const items = Array.isArray(page.json) ? page.json : page.json === null ? [] : [page.json]
+      const total = lastPageNumber(page.headers.get("link")) ?? items.length
+      yield* Effect.annotateCurrentSpan({ "github.count": total })
+      return { total, first: items[0] }
+    }).pipe(Effect.withSpan("GitHubClient.count", { attributes: { "github.path": path } }))
+
+  return GitHubClient.of({ request, paginate, count })
 }
 
 /**

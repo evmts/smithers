@@ -1,12 +1,12 @@
 ---
 title: "API reference"
-description: "Every export of @smthrs/effect-tanstack-db: the Collection, LiveQuery, Query, Persistence and Outbox namespaces, their models, constructors, metrics and errors."
+description: "Every export of @smthrs/effect-tanstack-db: the Collection, LiveQuery, Query, Persistence, Outbox and Migrations namespaces, their models, constructors, metrics and errors."
 ---
 
-The package root exports five namespaces and nothing else:
+The package root exports six namespaces and nothing else:
 
 ```ts
-import { Collection, LiveQuery, Outbox, Persistence, Query } from "@smthrs/effect-tanstack-db"
+import { Collection, LiveQuery, Migrations, Outbox, Persistence, Query } from "@smthrs/effect-tanstack-db"
 ```
 
 ## `Collection`
@@ -270,14 +270,16 @@ interface Options<D extends Database> {
     coordinator: PersistedCollectionCoordinator | undefined
   ) => PersistedCollectionPersistence
   readonly coordinator?: () => Coordinator
+  readonly registry?: Migrations.Registry
 }
 ```
 
-| Option        | Is                                                                                                                                                        |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `open`        | Opens the database: `openBrowserWASQLiteOPFSDatabase` in a tab, a file in Node. A throw or rejection means the database is unavailable.                   |
-| `make`        | TanStack DB's persistence over the open database, sharing `coordinator` when there is one: `createBrowserWASQLitePersistence({ database, coordinator })`. |
-| `coordinator` | Makes the coordinator that shares one database between a browser's tabs: `new BrowserCollectionCoordinator({ dbName })`.                                  |
+| Option        | Is                                                                                                                                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `open`        | Opens the database: `openBrowserWASQLiteOPFSDatabase` in a tab, a file in Node. A throw or rejection means the database is unavailable.                                                                |
+| `make`        | TanStack DB's persistence over the open database, sharing `coordinator` when there is one: `createBrowserWASQLitePersistence({ database, coordinator })`.                                              |
+| `coordinator` | Makes the coordinator that shares one database between a browser's tabs: `new BrowserCollectionCoordinator({ dbName })`.                                                                               |
+| `registry`    | Every store the program keeps (`Migrations.registry`). A persisted collection it doesn't declare, at that version and kind, dies with `Migrations.Undeclared` as it opens, with or without a database. |
 
 Opens the database and builds the persistence. When the layer closes, the
 coordinator is disposed, then the database closed; a close that fails is
@@ -315,11 +317,11 @@ or test that persists nothing.
 
 ### Models
 
-| Type          | Is                                                                                                                       |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `Persistence` | The service: `{ readonly persistence: Option.Option<PersistedCollectionPersistence> }`, none when rows stay in memory.   |
-| `Database`    | `{ readonly close?: () => Promise<void> \| void }`: whatever `open` returns and `make` builds on.                        |
-| `Coordinator` | TanStack DB's `PersistedCollectionCoordinator` with an optional `dispose`, run as the layer closes, before the database. |
+| Type          | Is                                                                                                                                                              |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Persistence` | The service: `{ readonly persistence: Option.Option<PersistedCollectionPersistence>; readonly registry?: Migrations.Registry }`, none when rows stay in memory. |
+| `Database`    | `{ readonly close?: () => Promise<void> \| void }`: whatever `open` returns and `make` builds on.                                                               |
+| `Coordinator` | TanStack DB's `PersistedCollectionCoordinator` with an optional `dispose`, run as the layer closes, before the database.                                        |
 
 ### Metrics and errors
 
@@ -351,6 +353,8 @@ interface Options<R> {
   readonly leader?: Leader
   readonly online: Online
   readonly mutations: Readonly<Record<string, Mutation<R>>>
+  readonly upgrade?: Migrations.OutboxUpgrade
+  readonly parked?: Readonly<Record<string, (write: Parked) => Effect.Effect<boolean, never, R>>>
 }
 
 type Mutation<R> = (params: {
@@ -359,14 +363,16 @@ type Mutation<R> = (params: {
 }) => Effect.Effect<void, Refused | Retry, R>
 ```
 
-| Option        | Is                                                                                                                                                                                                                      |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `start`       | The library's entry point: `startOfflineExecutor` from `@tanstack/offline-transactions`.                                                                                                                                |
-| `collections` | The collections writes may change, keyed by a name that never changes: a stored write names its collection by this key, so a write queued by one version of a program is restored into the same collection by the next. |
-| `storage`     | Where writes are stored: `new IndexedDBAdapter(...)` in a browser. The library's own storage probe is skipped.                                                                                                          |
-| `leader`      | Who leads: a `LeaderElection`, such as `lockLeader`'s. Without one, the library elects with its own `WebLocksLeader`, which never queues: when the leader closes, no other program takes over.                          |
-| `online`      | The network detector: the library's `WebOnlineDetector` in a browser, `Online.always()` elsewhere.                                                                                                                      |
-| `mutations`   | The named mutations, as Effects run with the services of the fiber that builds the layer.                                                                                                                               |
+| Option        | Is                                                                                                                                                                                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start`       | The library's entry point: `startOfflineExecutor` from `@tanstack/offline-transactions`.                                                                                                                                                                |
+| `collections` | The collections writes may change, keyed by a name that never changes: a stored write names its collection by this key, so a write queued by one version of a program is restored into the same collection by the next.                                 |
+| `storage`     | Where writes are stored: `new IndexedDBAdapter(...)` in a browser. The library's own storage probe is skipped.                                                                                                                                          |
+| `leader`      | Who leads: a `LeaderElection`, such as `lockLeader`'s. Without one, the library elects with its own `WebLocksLeader`, which never queues: when the leader closes, no other program takes over.                                                          |
+| `online`      | The network detector: the library's `WebOnlineDetector` in a browser, `Online.always()` elsewhere.                                                                                                                                                      |
+| `mutations`   | The named mutations, as Effects run with the services of the fiber that builds the layer.                                                                                                                                                               |
+| `upgrade`     | How writes cross builds: `Migrations.outbox(registry)`. Each write is stamped with its payloads' versions; before the library loads the stored writes, each one an older build made is upgraded, or parked. See [Migrations](migrations.md#the-outbox). |
+| `parked`      | What takes a parked write of each mutation name as the outbox starts, such as a feature showing it Not sent: `true` when it took the write, which the outbox then deletes; `false` leaves it parked.                                                    |
 
 Starts the outbox and waits until it has loaded the writes stored earlier,
 restored their rows, and asked to lead; a storage it can't read at start is
@@ -399,6 +405,15 @@ interface Service {
   readonly status: Stream.Stream<Status>
   readonly retryNow: Effect.Effect<void>
   readonly withdraw: (idempotencyKey: string) => Effect.Effect<void, NotWithdrawn>
+  readonly parked: Effect.Effect<ReadonlyArray<Parked>>
+  readonly discard: (id: string) => Effect.Effect<void>
+}
+
+interface Parked {
+  readonly id: string
+  readonly name: string
+  readonly reason: string
+  readonly rows: ReadonlyArray<unknown>
 }
 
 interface Write {
@@ -419,6 +434,8 @@ interface Status {
 | `status`   | The outbox's state now, then each change: whether this program leads, and whether the last send failed on the `network` (no status) or at the `server`; null once a send gets through.                                                                                                                                                                                                                         |
 | `retryNow` | Sends every waiting write now instead of waiting out its backoff: the network detector's `notifyOnline`.                                                                                                                                                                                                                                                                                                       |
 | `withdraw` | Takes back a write not sent yet, by its idempotency key: deletes it from the storage, so it is never sent, and rolls back its optimistic rows. Fails with `NotWithdrawn` when it can't. See below.                                                                                                                                                                                                             |
+| `parked`   | The writes parked now: ones an older build stored that this build can't send as they were meant, with the mutation's `name`, the `reason` and the rows as stored, which no schema checked. A storage that can't be read reads as none.                                                                                                                                                                         |
+| `discard`  | Deletes parked write `id`, logged as `outbox write discarded` at Info level with its `name`. One that isn't parked changes nothing; a storage that fails is logged as `outbox couldn't discard a parked write`.                                                                                                                                                                                                |
 
 `Write.admitted` succeeds once the write is stored, and fails with
 `NotAdmitted` (`reason: "storage"`) when the storage refused it, or
@@ -526,17 +543,46 @@ offline.
 
 ### Models, errors and records
 
-| Export                 | Is                                                                                                                                                                                                                     |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Leader`               | The library's `LeaderElection`.                                                                                                                                                                                        |
-| `Online`               | The library's `OnlineDetector`.                                                                                                                                                                                        |
-| `Refused`              | `Data.TaggedError` with `status?: number`: the server refused the write for good.                                                                                                                                      |
-| `Retry`                | `Data.TaggedError` with `status?: number`: the write didn't get through (a 5xx, 408 or 429, or no status for the network or a deadline).                                                                               |
-| `NotAdmitted`          | `Data.TaggedError` with `reason: "follower" \| "storage"`: another program leads, or the storage failed to store the write. Nothing was sent and the write's rows rolled back.                                         |
-| `NotWithdrawn`         | `Data.TaggedError` with `reason: "follower" \| "gone" \| "sending" \| "storage"`: `withdraw` didn't take the write back, and nothing changed. See [Taking a write back](#taking-a-write-back).                         |
-| `attempts`             | Counter `outbox_attempts`, by `name` and `outcome`: `sent`, `retry`, `refused`, `defect`, `sent_elsewhere` (another program sent the write while this one followed), or `withdrawn` (settled unsent after `withdraw`). |
-| `refused`              | Counter `outbox_refused`, by `name` and `status` (`none` without one).                                                                                                                                                 |
-| `queuedMs`             | Histogram `outbox_queued_ms`, by `name`: milliseconds from a write to its mutation succeeding.                                                                                                                         |
-| `leaderChanges`        | Counter `outbox_leader_changes`, by `leader` (`true` or `false`).                                                                                                                                                      |
-| span `outbox.send`     | One per send, with `name`, `attempt` and `outcome`, linked to the span the write was made in, so a send after a reload still points at the ask.                                                                        |
-| span `outbox.withdraw` | One per `withdraw`, with `outcome`: `withdrawn`, or the `NotWithdrawn` reason.                                                                                                                                         |
+| Export                 | Is                                                                                                                                                                                                                         |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Leader`               | The library's `LeaderElection`.                                                                                                                                                                                            |
+| `Online`               | The library's `OnlineDetector`.                                                                                                                                                                                            |
+| `Refused`              | `Data.TaggedError` with `status?: number`: the server refused the write for good.                                                                                                                                          |
+| `Retry`                | `Data.TaggedError` with `status?: number`: the write didn't get through (a 5xx, 408 or 429, or no status for the network or a deadline).                                                                                   |
+| `NotAdmitted`          | `Data.TaggedError` with `reason: "follower" \| "storage"`: another program leads, or the storage failed to store the write. Nothing was sent and the write's rows rolled back.                                             |
+| `NotWithdrawn`         | `Data.TaggedError` with `reason: "follower" \| "gone" \| "sending" \| "storage"`: `withdraw` didn't take the write back, and nothing changed. See [Taking a write back](#taking-a-write-back).                             |
+| `attempts`             | Counter `outbox_attempts`, by `name` and `outcome`: `sent`, `retry`, `refused`, `defect`, `sent_elsewhere` (another program sent the write while this one followed), or `withdrawn` (settled unsent after `withdraw`).     |
+| `refused`              | Counter `outbox_refused`, by `name` and `status` (`none` without one).                                                                                                                                                     |
+| `queuedMs`             | Histogram `outbox_queued_ms`, by `name`: milliseconds from a write to its mutation succeeding.                                                                                                                             |
+| `leaderChanges`        | Counter `outbox_leader_changes`, by `leader` (`true` or `false`).                                                                                                                                                          |
+| `carried`              | Counter `outbox_carried`, by `name`, `outcome` (`upgraded` or `parked`) and `reason` (`none` for an upgrade): stored writes from an older build the outbox brought forward or parked as it started.                        |
+| `Parked`               | A parked write: its `id`, mutation `name`, `reason` and the `rows` as stored.                                                                                                                                              |
+| span `outbox.carry`    | One per start with `upgrade`: the pass over the stored writes. Each upgraded write is logged as `outbox write upgraded` (Info), each parked one as `outbox write parked` (Warn), with `name` and `reason`, never its rows. |
+| span `outbox.send`     | One per send, with `name`, `attempt` and `outcome`, linked to the span the write was made in, so a send after a reload still points at the ask.                                                                            |
+| span `outbox.withdraw` | One per `withdraw`, with `outcome`: `withdrawn`, or the `NotWithdrawn` reason.                                                                                                                                             |
+
+## `Migrations`
+
+Every store a program keeps on the device declares its history, so each build
+brings the stores an older build wrote to its own versions, and a schema that
+changes without a new version fails a test. The guide is
+[Migrations](migrations.md).
+
+| Export                                                                     | Is                                                                                                                                                                                                                                                   |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `local({ id, versions, migrations?, getKey, discard?, first? })`           | A collection only the device has (`Collection.persisted`'s options): `versions` oldest first, one `step` between each pair. `discard` marks a cache, whose rows that don't migrate are deleted and counted. `first` is the version of `versions[0]`. |
+| `synced({ id, version, schema, family? })`                                 | A collection a sync source fills. A new version drops its rows and the source sends them again; `family` covers `<id>:<anything>`.                                                                                                                   |
+| `payload({ key, versions, migrations? })`                                  | The rows an outbox write carries for collection `key`.                                                                                                                                                                                               |
+| `retired({ id, kind, version, family? })`                                  | A store this build no longer keeps; a local one's rows are set aside.                                                                                                                                                                                |
+| `step(from, to, migrate)`                                                  | A pure migration; it returns the next row or `Unmigratable`, and never changes the key.                                                                                                                                                              |
+| `member(store, name)`                                                      | `<id>:<name>`, a family's collection.                                                                                                                                                                                                                |
+| `registry({ stores, retired?, outbox? })`                                  | Every declaration, checked: two with one id, or an unstamped version no payload has, is an `InvalidDeclaration`. Its `epoch` grows with every change.                                                                                                |
+| `apply(registry, sql)`                                                     | Brings the device store on `sql` to the registry's versions, one transaction per local collection; synced ones are left to the persistence, which drops their rows. Answers a `Report`; fails with `MigrationFailed`.                                |
+| `prepare(registry)`                                                        | `{ epoch, success: Report, run }`, which `@smthrs/platform-browser`'s leader runs as `device/prepare` before it serves the database.                                                                                                                 |
+| `outbox(registry)`                                                         | The `OutboxUpgrade` `Outbox.layer` takes: `stamp`, and `write(stored)`, which answers `Current`, `Upgraded` or `Parked` with a reason.                                                                                                               |
+| `promiseSql(database)`                                                     | `Sql` over a database with a `Promise` `execute`.                                                                                                                                                                                                    |
+| `fingerprint(schema)`, `lock(registry, previous)`, `check(registry, lock)` | The lock: each version's fingerprint, recorded without ever rewriting one, and the `Problem`s a registry has against it.                                                                                                                             |
+| `declarationOf`, `declared`                                                | The declaration a stored collection belongs to, and whether a collection is declared at a version and kind (`Undeclared` when not).                                                                                                                  |
+| `KEPT_TABLE`                                                               | `device_kept`: rows set aside, with their collection, key, version, stored value, reason and time.                                                                                                                                                   |
+| `migrations`, `rowsKept`, `applyMs`                                        | Counter `device_migrations` by `store` and `outcome`; counter `device_rows_kept` by `store` and `reason`; histogram `device_migrate_ms`.                                                                                                             |
+| `Unmigratable`, `InvalidDeclaration`, `Undeclared`, `MigrationFailed`      | The errors: a migration refused a row; a declaration can't hold; a collection opened undeclared; a statement failed and its collection rolled back.                                                                                                  |

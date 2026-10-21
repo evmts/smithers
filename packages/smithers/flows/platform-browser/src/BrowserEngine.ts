@@ -24,6 +24,7 @@
 
 import type { RunInspection } from "@smthrs/engine-store"
 import type { Flow as FlowTypes } from "@smthrs/flow"
+import { RunMetrics } from "@smthrs/flow"
 import * as Context from "effect/Context"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
@@ -387,7 +388,20 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
           Schema.Json,
           Schema.SchemaError
         >).pipe(
-          Effect.flatMap((encoded) => request({ _tag: "Start", flow: flow._tag, executionId, payload: encoded })),
+          // The caller's door and actor kind travel with the start, so the
+          // leader's engine labels the run's usage metrics with them.
+          Effect.flatMap((encoded) =>
+            Effect.gen(function*() {
+              const origin = yield* RunMetrics.CurrentOrigin
+              return yield* request({
+                _tag: "Start",
+                flow: flow._tag,
+                executionId,
+                payload: encoded,
+                origin: { door: origin.door, actor: origin.actor }
+              })
+            })
+          ),
           Effect.asVoid
         ),
       result: (flow, executionId) =>

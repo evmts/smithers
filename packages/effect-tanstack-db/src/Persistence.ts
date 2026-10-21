@@ -30,6 +30,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
+import type { Registry } from "./Migrations.ts"
 
 /**
  * The database could not be opened: no OPFS, no Web Worker, storage refused,
@@ -78,6 +79,12 @@ export interface Options<D extends Database> {
   ) => PersistedCollectionPersistence
   /** Makes the coordinator that shares the database between tabs: `BrowserCollectionCoordinator`. */
   readonly coordinator?: () => Coordinator
+  /**
+   * Every store the program keeps (`Migrations.registry`). A persisted collection the registry doesn't declare, or
+   * declares at another version or kind, is a defect as it opens (`Migrations.Undeclared`), so a store can't skip
+   * its declaration.
+   */
+  readonly registry?: Registry | undefined
 }
 
 /**
@@ -89,6 +96,8 @@ export interface Options<D extends Database> {
 export interface Service {
   /** TanStack DB's persistence, or none when the database couldn't open and rows stay in memory. */
   readonly persistence: Option.Option<PersistedCollectionPersistence>
+  /** The stores the program declares, which every persisted collection must be one of; none to open any. */
+  readonly registry?: Registry | undefined
 }
 
 /**
@@ -161,7 +170,8 @@ export const layer = <D extends Database>(options: Options<D>): Layer.Layer<Pers
           )
         )
       )
-      if (Option.isNone(opened)) return Persistence.of({ persistence: Option.none() })
+      const registry = options.registry === undefined ? {} : { registry: options.registry }
+      if (Option.isNone(opened)) return Persistence.of({ persistence: Option.none(), ...registry })
       const database = opened.value
       yield* Effect.addFinalizer(() =>
         Effect.tryPromise(async () => {
@@ -170,7 +180,7 @@ export const layer = <D extends Database>(options: Options<D>): Layer.Layer<Pers
       )
       const coordinator = options.coordinator?.()
       if (coordinator?.dispose) yield* Effect.addFinalizer(() => Effect.sync(() => coordinator.dispose!()))
-      return Persistence.of({ persistence: Option.some(options.make(database, coordinator)) })
+      return Persistence.of({ persistence: Option.some(options.make(database, coordinator)), ...registry })
     })
   )
 

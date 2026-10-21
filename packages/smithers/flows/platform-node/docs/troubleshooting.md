@@ -154,3 +154,59 @@ always ends here.
 
 **Fix.** Set `settleMs` and `quietMs` from a measurement on your host; see
 [Diagnostics](./guides/run-a-language-server.md#diagnostics).
+
+## Model calls fail with ERR_HTTP2_INVALID_SESSION
+
+The October 20 Cerebras campaign used Node's global fetch and reported 58
+invalid-session failures at concurrency 10. A separate provider run observed a
+TLS `bad record mac` alert before persistent invalid-session failures. This is
+a client HTTP/2 session-lifecycle failure, not evidence of provider capacity.
+The retained `test/fixtures/provider-fatal-tls.mjs` reproduces the same wedge
+without Cerebras. A loopback TCP proxy flips one encrypted record after a
+successful HTTP/2 response. On Node 26.5 (bundled Undici 8.7.0) and Node 26.10
+(bundled Undici 8.10.2), the next call fails with
+`ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC`; every subsequent call to that
+origin fails with `ERR_HTTP2_INVALID_SESSION`. Its stack enters
+`ClientHttp2Session.request` through Undici's `openStream` and `writeH2`:
+the origin's pooled HTTP/2 client continues dispatching against the destroyed
+session after a fatal TLS error. No abort or second origin is needed. Normal
+GOAWAY/session teardown controls recover, which explains why those controls
+alone did not reproduce the historical wedge. The fixture trusts its ephemeral
+CA only inside an isolated child; it never disables certificate verification.
+
+The same fault against `providerFetch` yields six successful calls: the damaged
+pre-header request repairs once on a fresh HTTP/1.1 pool, and later calls remain
+healthy. The regression asserts the old persistent failure on the affected
+bundled versions and recovery on the shared provider transport.
+
+A Node model host passes `EgressHttpClient.providerFetch` as `HostModel`'s
+`fetch` option; packaged model hosts, the playground, evals and the load
+benchmark use the same implementation. Workers and browsers keep their runtime
+transport. Provider fetch owns a scoped, proxy-aware HTTP/1.1 pool, avoiding the
+affected HTTP/2 session path entirely. Each request it carries logs
+`platform-node.provider-fetch` at debug level with its origin.
+
+The `NodeHost` bundles provide no `FetchHttpClient.Fetch`. Effect's fetch client
+reads that reference from the fiber making the request, which outranks the
+context the client was built in, and a flow runtime runs each step in a fiber
+carrying its host's context. A host-wide `Fetch` replaces the fetch every
+composition injects: on 2026-10-20 it sent apps/mvp's model tests, which inject
+the model through a fetch, to the network, where they hung until their timeout.
+
+A fetch rejection caused by `UND_ERR_SOCKET`, `ERR_HTTP2_INVALID_SESSION`,
+`ERR_HTTP2_GOAWAY_SESSION`, `ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC` or
+`ERR_SSL_BAD_RECORD_MAC_ALERT` before response headers gets one fresh-pool repair.
+Concurrent failures share the replacement pool. Aborts, streaming request bodies,
+Request objects, HTTP refusals, and errors while consuming a response body are
+never replayed here. The second failure propagates; there is no retry loop or
+backoff. Durable flow policy remains responsible for real retries. A connection
+loss before headers does not prove the server did no work: provider POST repair
+can duplicate work, so this is not an exactly-once guarantee. Retired pools
+remain owned by the host scope until its finalizers destroy them, so a pending
+response remains cancellable at shutdown.
+
+The sustained 60-second concurrency-10 repeat completed 199 requests, received
+343 provider 429s, and had zero other errors. The 63.3% refusal fraction stopped
+25/50 escalation. This establishes a provider refusal boundary for that shared
+account and workload. The local TLS corruption fixture establishes the transport
+failure independently of this capacity experiment.

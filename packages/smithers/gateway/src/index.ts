@@ -75,3 +75,7 @@ export * as RuntimeBridge from "./RuntimeBridge.ts"
  * @category services
  */
 export * as Sync from "@smthrs/sync"
+/**
+ * @since 1.0.0 @category projections
+ */
+export * as InspectionJournal from "./InspectionJournal.ts"

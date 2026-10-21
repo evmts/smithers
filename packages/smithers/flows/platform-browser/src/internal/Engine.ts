@@ -8,7 +8,7 @@
 
 import { WebCrypto } from "@smthrs/crypto"
 import { OwnerIdentity, RunCatalogRead, RunInspection, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
-import { type Flow, type FlowRuntime, RetryPolicy } from "@smthrs/flow"
+import { type Flow, type FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow"
 import { Runtime } from "@smthrs/flows"
 import * as Jj from "@smthrs/jj"
 import { Ownership } from "@smthrs/run-store"
@@ -24,6 +24,7 @@ import type * as TabChannel from "../TabChannel.ts"
 import type * as WebLock from "../WebLock.ts"
 import * as HttpClientLayer from "./HttpClient.ts"
 import * as Leader from "./Leader.ts"
+import * as Prepare from "./Prepare.ts"
 import * as Protocol from "./Protocol.ts"
 import * as SqlConnection from "./SqlConnection.ts"
 
@@ -47,6 +48,8 @@ export interface Options {
  */
 export interface HostOptions extends Options {
   readonly sqlite: BrowserSqlite.Build
+  /** What the leader runs on the app's database before serving it; its flow is registered here. */
+  readonly prepare?: Prepare.Prepare | undefined
 }
 
 /**
@@ -85,13 +88,15 @@ export const layer = <Registered, RegistrationError, RegistrationRequirements>(
   registerFlows: Layer.Layer<Registered, RegistrationError, RegistrationRequirements>
 ) =>
   Runtime.layer(
-    { owner: { hostId: options.name }, isAlive: Ownership.singleIncarnationLiveness },
+    { owner: { hostId: options.name }, isAlive: Ownership.singleIncarnationLiveness, placement: "browser" },
     StepBoundary.layerUnsupported,
     WorkspaceSandbox.layerUnsupported,
     registerFlows
   ).pipe(
     Layer.provideMerge(Layer.merge(RunCatalogRead.layer, RunInspection.layerWith({ flows: options.flows }))),
-    Layer.provideMerge(engineHost)
+    Layer.provideMerge(engineHost),
+    // The worker's logs are its telemetry: the usage lines (`flow.run.*`) go out at Info.
+    Layer.provide(RunMetrics.layerInfoLines)
   )
 
 /**
@@ -105,10 +110,15 @@ export const layerHost = <Registered, RegistrationError, RegistrationRequirement
   options: HostOptions,
   registerFlows: Layer.Layer<Registered, RegistrationError, RegistrationRequirements>
 ) =>
-  Layer.merge(
-    layer(options, registerFlows).pipe(Layer.provide(BrowserSqlite.layer({ filename: "engine.db" }))),
-    SqlConnection.layer({ filename })
+  layer(
+    options,
+    // The preparation's flow runs over the leader's connection to the app's database.
+    options.prepare === undefined
+      ? registerFlows
+      : Layer.merge(registerFlows, Prepare.declare(options.prepare).registration)
   ).pipe(
+    Layer.provide(BrowserSqlite.layer({ filename: "engine.db" })),
+    Layer.provideMerge(SqlConnection.layer({ filename })),
     Layer.provide(BrowserSqlite.layerSqlite({ build: options.sqlite, directory: `smithers/${options.name}` }))
   )
 

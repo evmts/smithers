@@ -26,6 +26,7 @@ import type * as BrowserSqlite from "./BrowserSqlite.ts"
 import type * as Engine from "./internal/Engine.ts"
 import type * as Leader from "./internal/Leader.ts"
 import * as Metrics from "./internal/Metrics.ts"
+import type * as PrepareModule from "./internal/Prepare.ts"
 import * as TabChannel from "./TabChannel.ts"
 import * as WebLock from "./WebLock.ts"
 
@@ -67,7 +68,27 @@ export interface HostOptions extends Options {
    * worker leads. See `BrowserSqlite.Build`.
    */
   readonly sqlite: BrowserSqlite.Build
+  /**
+   * What the leader runs on the app's shared database before it answers any
+   * tab's statement: see {@link Prepare}.
+   */
+  readonly prepare?: Prepare | undefined
 }
+
+/**
+ * What the leader runs on the app's shared database before any tab reads it,
+ * such as bringing the app's stores to this build's versions
+ * (`@smthrs/effect-tanstack-db`'s `Migrations.prepare(registry)`): `run` over
+ * the database, as the durable flow `device/prepare`, once per `epoch`, with
+ * `success` as its result's schema. A crash mid-way resumes on the next
+ * leader; a run that finished answers at once. The step is tried three times;
+ * if it still fails, the leader logs `browser.runtime.prepare` and serves the
+ * tabs anyway.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Prepare<A = any> = PrepareModule.Prepare<A>
 
 /**
  * The services the engine host gives every registered flow: WebCrypto,
@@ -168,6 +189,16 @@ export const leaderships = Metrics.leaderships
  * @since 1.0.0
  */
 export const wakes = Metrics.wakes
+
+/**
+ * Preparations of the app's shared database a new leader ran before serving
+ * it, by `outcome`: `prepared`, `failed`, or `skipped` when the engine serves
+ * no app database.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const preparations = Metrics.preparations
 
 /**
  * Follower requests the leader handled, by `request` and `outcome`.

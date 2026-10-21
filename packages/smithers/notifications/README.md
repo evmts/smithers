@@ -24,6 +24,7 @@ The root entry point exports these namespaces; each is also importable from `@sm
 | Module              | Description                                                                               |
 | ------------------- | ----------------------------------------------------------------------------------------- |
 | `Alerts`            | Turns run conditions that outlive a delay into coalesced, at-least-once alerts.           |
+| `Channels`          | Sends one short message by email (Resend) or Telegram, each failure classified for retry. |
 | `Inbox`             | Routes a run's state to its launcher and watchers, and merges acks on per-person notices. |
 | `Notification`      | Defines notification schemas, admission classes, and coalescing keys.                     |
 | `NotificationEvent` | Defines journal notification events and decodes them from journal entries.                |

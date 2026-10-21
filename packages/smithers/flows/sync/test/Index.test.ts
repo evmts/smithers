@@ -22,6 +22,7 @@ describe("@smthrs/sync barrel", () => {
       "PresenceRoom",
       "PresenceSocket",
       "RunCatalog",
+      "SharedText",
       "SyncAuth",
       "SyncClient",
       "SyncError",
@@ -54,6 +55,7 @@ describe("@smthrs/sync barrel", () => {
     expect(Sync.PresenceProtocol).toBe(await import("../src/PresenceProtocol.ts"))
     expect(Sync.PresenceRoom).toBe(await import("../src/PresenceRoom.ts"))
     expect(Sync.PresenceSocket).toBe(await import("../src/PresenceSocket.ts"))
+    expect(Sync.SharedText).toBe(await import("../src/SharedText.ts"))
   })
 
   it("maps a branch onto exactly one journal run, reversibly", () => {
@@ -68,9 +70,9 @@ describe("@smthrs/sync barrel", () => {
     expect(Sync.SyncServer.makeNoop).not.toBe(Sync.SyncClient.makeNoop)
   })
 
-  it("exports `make` only where it constructs something: SyncClient", () => {
+  it("exports `make` only where it constructs something: SyncClient and SharedText", () => {
     const withMake = Object.entries(Sync).filter(([, module]) => "make" in module).map(([name]) => name)
-    expect(withMake).toEqual(["SyncClient"])
+    expect(withMake.sort()).toEqual(["SharedText", "SyncClient"])
   })
 
   it("names every internal module after its one concept, in PascalCase", () => {

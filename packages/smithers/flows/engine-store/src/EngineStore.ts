@@ -263,6 +263,15 @@ export interface Options {
    * @since 1.0.0
    */
   readonly sweep?: Sweep | undefined
+  /**
+   * Where this store's runs run, as their usage metrics label it:
+   * `browser`, `cloudflare`, `sandbox` or `local` (`@smthrs/flow`
+   * `RunMetrics.placements`). Defaults to `local`; any other value reads
+   * `other`.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly placement?: string | undefined
 }
 
 type PublicRequirements =
@@ -574,7 +583,8 @@ const makeWithEngineJj = (
       requestResume: options.requestResume,
       engine: Deferred.await(engine),
       wakeBus,
-      sweep: options.sweep
+      sweep: options.sweep,
+      placement: options.placement
     })
     // The one execution a hosted store's registration recovers, if any.
     const hostedExecution = typeof options.sweep === "object" ? options.sweep.host : undefined

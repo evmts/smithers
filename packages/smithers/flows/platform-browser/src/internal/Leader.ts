@@ -12,7 +12,7 @@
  */
 
 import { EngineStore, RunCatalogRead, RunInspection } from "@smthrs/engine-store"
-import { Flow, FlowRuntime, RetryPolicy, WaitFor } from "@smthrs/flow"
+import { Flow, FlowRuntime, RetryPolicy, RunMetrics, WaitFor } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
@@ -30,6 +30,7 @@ import * as Stream from "effect/Stream"
 import { TabChannel } from "../TabChannel.ts"
 import { WebLock } from "../WebLock.ts"
 import { leaderships, requests, statements, wakes } from "./Metrics.ts"
+import * as Prepare from "./Prepare.ts"
 import * as Protocol from "./Protocol.ts"
 import { type Service as Connection, SqlConnection, TransactionLost } from "./SqlConnection.ts"
 import * as SqlProtocol from "./SqlProtocol.ts"
@@ -59,6 +60,12 @@ export interface Options {
   readonly name: string
   /** Every flow followers may start, by tag. Each must be registered with the engine. */
   readonly flows: ReadonlyArray<Flow.Any>
+  /**
+   * What runs, as the durable flow `device/prepare`, before the leader answers any tab's statement on the app's
+   * shared database: once per `epoch`. Its flow must be registered with the engine (`Prepare.declare`), as
+   * `BrowserRuntime.layerHost` does.
+   */
+  readonly prepare?: Prepare.Prepare | undefined
 }
 
 /** The statuses of a run that has work left. */
@@ -153,7 +160,8 @@ const flowRequest = (flows: ReadonlyMap<string, Flow.Any>, request: FlowRequest)
     switch (request._tag) {
       case "Start": {
         const payload = yield* Schema.decodeUnknownEffect(Schema.toCodecJson(flow.payloadSchema))(request.payload)
-        yield* runtime.execute(flow, { executionId: request.executionId, payload, discard: true })
+        const started = runtime.execute(flow, { executionId: request.executionId, payload, discard: true })
+        yield* (request.origin === undefined ? started : RunMetrics.withOrigin(started, request.origin))
         return null
       }
       case "Poll": {
@@ -526,6 +534,8 @@ const lead = <E, R>(
       ),
       Effect.forkScoped
     )
+    // The app's database is prepared for this build before any tab's statement runs on it.
+    if (options.prepare !== undefined) yield* Prepare.run(options.prepare, context)
     yield* serveStatements(options.name, Context.getOption(context as Context.Context<unknown>, SqlConnection))
     yield* port.post(Protocol.encode({ _tag: "Leader" }))
     yield* Stream.fromSubscription(inbox).pipe(

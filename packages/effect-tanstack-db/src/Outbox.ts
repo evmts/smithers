@@ -58,6 +58,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef"
 import * as Tracer from "effect/Tracer"
 import type { Collection } from "./Collection.ts"
 import { type MutationRefused, TransactionFailed } from "./internal/model.ts"
+import type { OutboxUpgrade } from "./Migrations.ts"
 
 /**
  * The server refused a write for good: it is never sent again, and its
@@ -160,6 +161,31 @@ export interface Options<R> {
   /** The network detector: the library's `WebOnlineDetector` in a browser, `Online.always()` elsewhere. */
   readonly online: Online
   readonly mutations: Readonly<Record<string, Mutation<R>>>
+  /**
+   * How writes cross builds: `Migrations.outbox(registry)`. Each write is stamped with its rows' versions, and before
+   * the outbox loads the stored writes, each one an older build made is upgraded, or parked when it can't be.
+   */
+  readonly upgrade?: OutboxUpgrade | undefined
+  /**
+   * What takes a parked write of each mutation name, as its feature shows it Not sent. A handler that succeeds with
+   * `true` took it, and the outbox deletes it; `false` leaves it parked. Each runs as the outbox starts.
+   */
+  readonly parked?: Readonly<Record<string, (write: Parked) => Effect.Effect<boolean, never, R>>> | undefined
+}
+
+/**
+ * A write the outbox parked because this build can't send it as it was
+ * meant: its id and mutation `name`, why (`Migrations.UpgradedWrite`'s
+ * reasons), and its rows as stored, which no schema checked.
+ *
+ * @category models
+ * @since 0.3.0
+ */
+export interface Parked {
+  readonly id: string
+  readonly name: string
+  readonly reason: string
+  readonly rows: ReadonlyArray<unknown>
 }
 
 /**
@@ -222,6 +248,10 @@ export interface Service {
    * storage can't be read or deleted from. Each call is a span, `outbox.withdraw`, with `outcome`.
    */
   readonly withdraw: (idempotencyKey: string) => Effect.Effect<void, NotWithdrawn>
+  /** The writes parked now: ones an older build made that this build can't send as they were meant. */
+  readonly parked: Effect.Effect<ReadonlyArray<Parked>>
+  /** Deletes parked write `id`, logged as `outbox write discarded` with its name; one that isn't parked is no-op. */
+  readonly discard: (id: string) => Effect.Effect<void>
 }
 
 /**
@@ -278,8 +308,97 @@ export const leaderChanges = Metric.counter("outbox_leader_changes", {
   incremental: true
 })
 
+/**
+ * Stored writes an older build made that this build upgraded (`outcome:
+ * upgraded`) or parked (`outcome: parked`, with `reason`), by `name`.
+ *
+ * @category metrics
+ * @since 0.3.0
+ */
+export const carried = Metric.counter("outbox_carried", {
+  description: "Stored outbox writes from an older build, upgraded or parked, by mutation name, outcome and reason",
+  incremental: true
+})
+
 // The library's storage key for a write (`OutboxManager`).
 const KEY_PREFIX = "tx:"
+// Where a parked write waits: the library never loads it.
+const PARKED_PREFIX = "parked:"
+
+/** A parked write as stored: why, its mutation's name, and the write as the library stored it. */
+interface StoredParked {
+  readonly reason: string
+  readonly name: string
+  readonly write: string
+}
+
+/** A stored write's mutation name and rows, as far as they can be read. */
+const readWrite = (stored: string): { readonly name: string; readonly rows: ReadonlyArray<unknown> } => {
+  try {
+    const parsed = JSON.parse(stored) as { readonly mutationFnName?: unknown; readonly mutations?: unknown }
+    return {
+      name: typeof parsed.mutationFnName === "string" ? parsed.mutationFnName : "unknown",
+      rows: Array.isArray(parsed.mutations)
+        ? parsed.mutations.map((mutation: { readonly modified?: unknown }) => mutation.modified)
+        : []
+    }
+  } catch {
+    return { name: "unknown", rows: [] }
+  }
+}
+
+/**
+ * Upgrades every stored write an older build made, before the library loads
+ * them: rewrites one it can bring forward, and moves one it can't to
+ * `parked:<id>`. Each is logged and counted in `carried`; a storage that fails
+ * leaves the write as it was.
+ */
+const carry = (storage: StorageAdapter, upgrade: OutboxUpgrade) =>
+  Effect.gen(function*() {
+    const keys = yield* Effect.tryPromise(() => storage.keys())
+    for (const key of keys.filter((key) => key.startsWith(KEY_PREFIX))) {
+      const stored = yield* Effect.tryPromise(() => storage.get(key))
+      if (stored === null) continue
+      const upgraded = upgrade.write(stored)
+      if (upgraded._tag === "Current") continue
+      const { name } = readWrite(stored)
+      if (upgraded._tag === "Upgraded") {
+        yield* Effect.tryPromise(() => storage.set(key, upgraded.value))
+        yield* Metric.update(Metric.withAttributes(carried, { name, outcome: "upgraded", reason: "none" }), 1)
+        yield* Effect.logInfo("outbox write upgraded").pipe(Effect.annotateLogs({ name }))
+        continue
+      }
+      const parked: StoredParked = { reason: upgraded.reason, name, write: stored }
+      yield* Effect.tryPromise(() =>
+        storage.set(`${PARKED_PREFIX}${key.slice(KEY_PREFIX.length)}`, JSON.stringify(parked))
+      )
+      yield* Effect.tryPromise(() => storage.delete(key))
+      yield* Metric.update(Metric.withAttributes(carried, { name, outcome: "parked", reason: upgraded.reason }), 1)
+      yield* Effect.logWarning("outbox write parked").pipe(Effect.annotateLogs({ name, reason: upgraded.reason }))
+    }
+  }).pipe(
+    Effect.catch(() => Effect.logWarning("outbox couldn't upgrade its writes")),
+    Effect.withSpan("outbox.carry")
+  )
+
+/** The writes parked in `storage`. A storage that fails reads as none. */
+const parkedIn = (storage: StorageAdapter): Effect.Effect<ReadonlyArray<Parked>> =>
+  Effect.gen(function*() {
+    const keys = yield* Effect.tryPromise(() => storage.keys())
+    const writes: Array<Parked> = []
+    for (const key of keys.filter((key) => key.startsWith(PARKED_PREFIX))) {
+      const stored = yield* Effect.tryPromise(() => storage.get(key))
+      if (stored === null) continue
+      const parked = JSON.parse(stored) as StoredParked
+      writes.push({
+        id: key.slice(PARKED_PREFIX.length),
+        name: parked.name,
+        reason: parked.reason,
+        rows: readWrite(parked.write).rows
+      })
+    }
+    return writes
+  }).pipe(Effect.catch(() => Effect.succeed([])))
 
 // The error names a mutation's failure becomes. Their messages are fixed, so the library's substring rules never read
 // anything else, and `shouldRetry` decides on the name alone.
@@ -288,10 +407,14 @@ const WITHDRAWN = "OutboxWithdrawn"
 
 const thrown = (name: string, message: string): Error => Object.assign(new Error(message), { name })
 
-/** What a write carries besides its rows: when it was made, and the span it was made in. */
+/**
+ * What a write carries besides its rows: when it was made, the span it was made in, and the version of each payload
+ * collection when the outbox carries writes across builds (`Options.upgrade`).
+ */
 interface Metadata {
   readonly queuedAt: number
   readonly trace?: { readonly traceId: string; readonly spanId: string }
+  readonly versions?: Readonly<Record<string, number>>
 }
 
 /**
@@ -433,6 +556,9 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         })
       }
 
+      // The writes an older build stored are brought forward, or parked, before the library loads any.
+      if (options.upgrade !== undefined) yield* carry(options.storage, options.upgrade)
+
       const executor = yield* Effect.acquireRelease(
         Effect.sync(() =>
           options.start({
@@ -468,7 +594,8 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           const span = yield* Effect.option(Effect.currentSpan)
           const metadata: Metadata = {
             queuedAt: yield* Clock.currentTimeMillis,
-            ...(Option.isSome(span) ? { trace: { traceId: span.value.traceId, spanId: span.value.spanId } } : {})
+            ...(Option.isSome(span) ? { trace: { traceId: span.value.traceId, spanId: span.value.spanId } } : {}),
+            ...(options.upgrade === undefined ? {} : { versions: options.upgrade.stamp })
           }
           const offline = executor.createOfflineTransaction({
             mutationFnName: name,
@@ -557,11 +684,30 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           Effect.withSpan("outbox.withdraw")
         )
 
+      const discard: Service["discard"] = (id) =>
+        Effect.gen(function*() {
+          const key = `${PARKED_PREFIX}${id}`
+          const stored = yield* Effect.tryPromise(() => options.storage.get(key))
+          if (stored === null) return
+          yield* Effect.tryPromise(() => options.storage.delete(key))
+          yield* Effect.logInfo("outbox write discarded").pipe(
+            Effect.annotateLogs({ name: (JSON.parse(stored) as StoredParked).name })
+          )
+        }).pipe(Effect.catch(() => Effect.logWarning("outbox couldn't discard a parked write")))
+
+      // Each parked write goes to its feature, which shows it Not sent; one it took leaves the outbox.
+      for (const write of yield* parkedIn(options.storage)) {
+        const take = options.parked?.[write.name]
+        if (take !== undefined && (yield* take(write))) yield* discard(write.id)
+      }
+
       return Outbox.of({
         transact,
         status: SubscriptionRef.changes(status),
         retryNow: Effect.sync(() => executor.getOnlineDetector().notifyOnline()),
-        withdraw
+        withdraw,
+        parked: parkedIn(options.storage),
+        discard
       })
     })
   )

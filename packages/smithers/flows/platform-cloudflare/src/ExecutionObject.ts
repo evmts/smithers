@@ -23,7 +23,7 @@
 
 import { canonicalize } from "@smthrs/canonical"
 import { type DurableEngineState, EngineStore } from "@smthrs/engine-store"
-import { type Flow, RetryPolicy } from "@smthrs/flow"
+import { type Flow, RetryPolicy, RunMetrics } from "@smthrs/flow"
 import { RunStore } from "@smthrs/run-store"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
@@ -47,7 +47,14 @@ import * as Routing from "./internal/Routing.ts"
 export const Intent = Schema.Struct({
   flow: Schema.NonEmptyString,
   executionId: Schema.NonEmptyString,
-  payload: Schema.Json
+  payload: Schema.Json,
+  /**
+   * The door and actor kind the caller started the execution with, which the
+   * engine keeps for the run's usage metrics (`@smthrs/flow` `RunMetrics`).
+   * Not part of the intent's identity: a second start with another origin is
+   * the same intent.
+   */
+  origin: Schema.optionalKey(Schema.Struct({ door: Schema.String, actor: Schema.String }))
 })
 
 /**
@@ -279,6 +286,19 @@ const decodeIntent = Schema.decodeUnknownEffect(Schema.fromJsonString(Intent))
 /** The stored form of an intent: its canonical JSON, so equal intents are equal strings. */
 const stored = (value: Intent): string => canonicalize(encodeIntent(value))
 
+/** What a second start must match: the flow, the execution and the payload, never the origin. */
+const identity = (value: Pick<Intent, "flow" | "executionId" | "payload">): string =>
+  canonicalize({ flow: value.flow, executionId: value.executionId, payload: value.payload })
+
+/** The identity of a stored intent; a stored value that is not one is its own identity. */
+const storedIdentity = (raw: string): string => {
+  try {
+    return identity(JSON.parse(raw) as Intent)
+  } catch {
+    return raw
+  }
+}
+
 /** The ids an alarm's span carries: the execution and its flow, never the payload. */
 const annotateIntent = (value: Intent) =>
   Effect.annotateCurrentSpan({ "smithers.execution.id": value.executionId, "smithers.flow": value.flow })
@@ -295,7 +315,16 @@ export const intent = <F extends Flow.Any>(
 ): Effect.Effect<Intent, Schema.SchemaError, Flow.PayloadSchema<F>["EncodingServices"]> =>
   Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))(options.payload).pipe(
     Effect.flatMap((payload) =>
-      Schema.decodeUnknownEffect(Intent)({ flow: flow._tag, executionId: options.executionId, payload })
+      Effect.gen(function*() {
+        // The caller's door and actor kind, kept for the run's usage metrics.
+        const origin = yield* RunMetrics.CurrentOrigin
+        return yield* Schema.decodeUnknownEffect(Intent)({
+          flow: flow._tag,
+          executionId: options.executionId,
+          payload,
+          origin: { door: origin.door, actor: origin.actor }
+        })
+      })
     )
   )
 
@@ -333,7 +362,7 @@ export const start = <A, E, R, RS>(
   Effect.gen(function*() {
     const next = stored(value)
     const previous = yield* storage.get<string>(intentKey)
-    if (previous !== undefined && previous !== next) {
+    if (previous !== undefined && storedIdentity(previous) !== identity(value)) {
       yield* Effect.annotateCurrentSpan({ "smithers.execution.start": "conflict" })
       yield* Metric.update(Metric.withAttributes(starts, { outcome: "conflict" }), 1)
       yield* Effect.logWarning("cloudflare.execution.start").pipe(Effect.annotateLogs({ outcome: "conflict" }))
@@ -426,7 +455,9 @@ const drive = (flow: Flow.Any, value: Intent) =>
     const payload = held ? {} : yield* (Schema.decodeUnknownEffect(Schema.toCodecJson(flow.payloadSchema))(
       value.payload
     ) as Effect.Effect<object, Schema.SchemaError>)
-    const driven = yield* EngineStore.drive(flow, { executionId: value.executionId, payload })
+    const drove = EngineStore.drive(flow, { executionId: value.executionId, payload })
+    // Admission labels the run with the origin its starter recorded.
+    const driven = yield* (value.origin === undefined ? drove : RunMetrics.withOrigin(drove, value.origin))
     switch (driven._tag) {
       case "Settled":
         return { _tag: "Settled" } as const

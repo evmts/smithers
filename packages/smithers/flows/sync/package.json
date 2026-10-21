@@ -49,6 +49,7 @@
     "./PresenceRoom": "./src/PresenceRoom.ts",
     "./PresenceSocket": "./src/PresenceSocket.ts",
     "./RunCatalog": "./src/RunCatalog.ts",
+    "./SharedText": "./src/SharedText.ts",
     "./SyncAuth": "./src/SyncAuth.ts",
     "./SyncClient": "./src/SyncClient.ts",
     "./SyncError": "./src/SyncError.ts",
@@ -211,6 +212,16 @@
           "default": "./dist/cjs/RunCatalog.js"
         }
       },
+      "./SharedText": {
+        "import": {
+          "types": "./dist/esm/SharedText.d.ts",
+          "default": "./dist/esm/SharedText.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SharedText.d.ts",
+          "default": "./dist/cjs/SharedText.js"
+        }
+      },
       "./SyncAuth": {
         "import": {
           "types": "./dist/esm/SyncAuth.d.ts",
@@ -334,7 +345,8 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/journal": "1.0.0-rc.16"
+    "@smthrs/journal": "1.0.0-rc.16",
+    "yjs": "13.6.32"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

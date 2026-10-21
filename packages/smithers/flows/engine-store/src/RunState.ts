@@ -76,6 +76,22 @@ export const RunState = Schema.Struct({
   result: Schema.optionalKey(Schema.Unknown),
   cancellation: Schema.optionalKey(Schema.Struct({
     interruptedAtMs: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))
+  })),
+  // Who started the run and when it was admitted, as its usage metrics label
+  // it (`@smthrs/flow` `RunMetrics`): the door and the actor kind, never who.
+  // Every round of a lineage carries its first round's, so the lineage's
+  // settlement measures from the first admission. Absent on a run admitted
+  // before the field existed.
+  origin: Schema.optionalKey(Schema.Struct({
+    door: Schema.String,
+    actor: Schema.String,
+    admittedAtMs: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))
+  })),
+  // When the run parked on its current durable wait, and on what, so the
+  // resume that ends the wait measures it even in another process.
+  parked: Schema.optionalKey(Schema.Struct({
+    atMs: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
+    kind: Schema.String
   }))
 })
 

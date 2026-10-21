@@ -113,7 +113,10 @@ Stores the intent and arms the alarm at now plus `startGraceMs`, runs `effect`,
 then moves the alarm to now. Returns `effect`'s result, or its failure
 unchanged. The same intent again stores nothing and runs `effect` again;
 another intent for the same object fails with `IntentConflict` before anything
-is stored or run.
+is stored or run. An intent's `origin`, the door and actor kind `intent` read
+from the caller's `RunMetrics.CurrentOrigin` (`@smthrs/flow`), is not part of
+its identity: the alarm admits the run under it, so the run's usage metrics
+carry it, and a second start with another origin is the same intent.
 
 ### `ExecutionObject.wake`
 

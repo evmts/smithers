@@ -40,7 +40,7 @@
  */
 
 import * as Capability from "@smthrs/capability/Capability"
-import { Action, DurableClock, Fault, FlowRuntime } from "@smthrs/flow"
+import { Action, DurableClock, Fault, FlowRuntime, RunMetrics } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import * as CellCalls from "@smthrs/harness/CellCalls"
@@ -1112,13 +1112,16 @@ class ToolCallFailed extends Error {
  * One flow call from a cell, as an OpenTelemetry GenAI `execute_tool` span.
  *
  * A failed call resolves rather than fails, so the span is ended as a failure
- * with `error.type` explicitly and the envelope is handed back unchanged.
+ * with `error.type` explicitly and the envelope is handed back unchanged. A
+ * run the call starts is counted as the agent's, through door `agent`
+ * (`RunMetrics`).
  */
 const executeTool = (
   run: FlowEngineLike.CallRunner["run"],
   call: Cell.Call
 ): Effect.Effect<Cell.CallResult, HarnessError> =>
   run(call).pipe(
+    RunMetrics.withOrigin({ door: "agent", actor: "agent" }),
     Effect.flatMap((result) => {
       if (result.outcome === "success") return Effect.succeed(result)
       const code = result.code ?? Cell.defaultCallFailureCode

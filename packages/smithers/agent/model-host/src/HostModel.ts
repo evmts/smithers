@@ -36,7 +36,7 @@ export interface HostModelRecord {
  * @since 1.0.0
  */
 export interface HostModelOptions {
-  /** The fetch provider calls go through, wrapped to refuse redirects. Defaults to the runtime's global fetch. */
+  /** The fetch provider calls go through, wrapped to refuse redirects. Defaults to the host's injected FetchHttpClient.Fetch, then the runtime's global fetch. */
   readonly fetch?: typeof globalThis.fetch | undefined
 }
 
@@ -80,7 +80,7 @@ export class HostModel extends Context.Service<HostModel, {
   /**
    * Provides a validated generation plan and its credential. Provider calls go
    * over a transport that refuses redirects, so the key never leaves the
-   * planned origin. `fetch` defaults to the runtime's global fetch.
+   * planned origin. `fetch` defaults to the host's injected FetchHttpClient.Fetch.
    *
    * @category layers
    * @since 1.0.0

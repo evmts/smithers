@@ -76,6 +76,13 @@ export {
  * re-exported above for a program composing its own services, but a bundle
  * that spans a whole host has to work inside a sandbox whose only way out is a
  * proxy, so the bundles read the environment. See {@link EgressHttpClient}.
+ *
+ * The bundles provide no `FetchHttpClient.Fetch`. Effect's fetch client reads
+ * that reference from the fiber making the request, which outranks the context
+ * the client was built in, and a flow runtime runs every step in a fiber that
+ * carries its host's context. A host-wide `Fetch` would therefore replace the
+ * fetch each composition injects, a test's included. A Node model host passes
+ * {@link EgressHttpClient.providerFetch} as `HostModel`'s `fetch` option.
  */
 const httpClient = EgressHttpClient.layer(process.env)
 

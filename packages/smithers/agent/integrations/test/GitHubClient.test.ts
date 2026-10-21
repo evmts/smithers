@@ -5,7 +5,7 @@ import { afterEach, describe, expect, expectTypeOf, it } from "vitest"
 import { fromIntegrationError } from "../src/core/ActionFailure.ts"
 import { type IntegrationError, isIntegrationError } from "../src/core/IntegrationError.ts"
 import { DEFAULT_API_BASE_URL, DEFAULT_REQUEST_TIMEOUT, resolve } from "../src/github/Config.ts"
-import { isRateLimitResponse, nextPageUrl, retryAfterMs } from "../src/github/GitHubClient.ts"
+import { isRateLimitResponse, lastPageNumber, nextPageUrl, retryAfterMs } from "../src/github/GitHubClient.ts"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
 import {
   brokenBodyTransport,
@@ -69,6 +69,25 @@ describe("nextPageUrl", () => {
     expect(nextPageUrl(null)).toBeNull()
     expect(nextPageUrl("")).toBeNull()
     expect(nextPageUrl("<https://api.github.com/x?page=1>; rel=\"prev\"")).toBeNull()
+  })
+})
+
+describe("lastPageNumber", () => {
+  it("reads the rel=last target's page", () => {
+    expect(
+      lastPageNumber("<https://api.github.com/x?per_page=1&page=2>; rel=\"next\", <https://api.github.com/x?per_page=1&page=37>; rel=\"last\"")
+    ).toBe(37)
+    expect(lastPageNumber("</x?page=5>; rel=\"last\"")).toBe(5)
+  })
+
+  it("returns null without a last page, or with one that names no whole page", () => {
+    expect(lastPageNumber(null)).toBeNull()
+    expect(lastPageNumber("")).toBeNull()
+    expect(lastPageNumber("<https://api.github.com/x?page=2>; rel=\"next\"")).toBeNull()
+    expect(lastPageNumber("<https://api.github.com/x>; rel=\"last\"")).toBeNull()
+    expect(lastPageNumber("<https://api.github.com/x?page=0>; rel=\"last\"")).toBeNull()
+    expect(lastPageNumber("<https://api.github.com/x?page=2.5>; rel=\"last\"")).toBeNull()
+    expect(lastPageNumber("<http://[::1>; rel=\"last\"")).toBeNull()
   })
 })
 
@@ -225,6 +244,41 @@ describe("GitHubClient over a real HTTP server", () => {
     const page = await Effect.runPromise(client().paginate("/x"))
     expect(page.items).toEqual([])
     expect(page.truncated).toBe(false)
+  })
+
+  it("counts a list from its last page at one item per page, and answers its first item", async () => {
+    fixture = await startFixture((_request, response) =>
+      json(response, 200, [{ name: "main" }], {
+        link: `<${(fixture as Fixture).origin}/repos/o/r/branches?per_page=1&page=2>; rel="next", ` +
+          `<${(fixture as Fixture).origin}/repos/o/r/branches?per_page=1&page=42>; rel="last"`
+      })
+    )
+    const counted = await Effect.runPromise(client().count("/repos/o/r/branches", { query: { protected: false } }))
+    expect(counted).toEqual({ total: 42, first: { name: "main" } })
+    expect(fixture.requests).toHaveLength(1)
+    const url = new URL(`http://x${fixture.requests[0]?.url}`)
+    expect(url.searchParams.get("per_page")).toBe("1")
+    expect(url.searchParams.get("protected")).toBe("false")
+  })
+
+  it("counts a list with no last page as what its one page holds", async () => {
+    fixture = await startFixture((request, response) => {
+      const path = new URL(`http://x${request.url}`).pathname
+      if (path === "/one") json(response, 200, [{ id: 1 }])
+      else if (path === "/object") json(response, 200, { id: 2 })
+      else if (path === "/null") json(response, 200, null)
+      else json(response, 200, [])
+    })
+    expect(await Effect.runPromise(client().count("/one"))).toEqual({ total: 1, first: { id: 1 } })
+    expect(await Effect.runPromise(client().count("/object"))).toEqual({ total: 1, first: { id: 2 } })
+    expect(await Effect.runPromise(client().count("/null"))).toEqual({ total: 0, first: undefined })
+    expect(await Effect.runPromise(client().count("/empty"))).toEqual({ total: 0, first: undefined })
+  })
+
+  it("fails a count GitHub refuses with the request's classified failure", async () => {
+    fixture = await startFixture((_request, response) => json(response, 404, { message: "Not Found" }))
+    const failure = await Effect.runPromise(Effect.flip(client().count("/repos/o/missing/tags")))
+    expect(failure.details).toMatchObject({ status: 404, retryable: false })
   })
 
   // The flow engine decides every retry, durably. The client makes one request

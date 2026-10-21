@@ -92,6 +92,7 @@ export const publishedPackages = [
   "@smthrs/testing",
   "@smthrs/time-travel",
   "@smthrs/triggers",
+  "@smthrs/views",
   "smthrs"
 ]
 

@@ -131,6 +131,14 @@ if (page.truncated) {
 }
 ```
 
+To count a list without walking it, use `count`, which asks for one item per
+page and reads the `rel="last"` link:
+
+```ts
+const branches = yield * client.count("/repos/OWNER/REPO/branches")
+// branches.total: how many; branches.first: the first one, as parsed JSON
+```
+
 Replace `OWNER` and `REPO` with the repository coordinates.
 
 ## Stay inside GitHub's rate limits

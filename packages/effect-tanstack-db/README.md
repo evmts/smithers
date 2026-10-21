@@ -7,7 +7,9 @@ collection stays available for framework bindings such as `@tanstack/react-db`,
 so a view layer renders the same live queries the Effect program writes to.
 `Persistence` keeps a collection's rows on the device in SQLite, and `Outbox`
 stores writes durably and sends them until they succeed or are refused, or
-until the program takes one back before it is sent.
+until the program takes one back before it is sent. `Migrations` carries both
+across builds: each store declares its versions, and each build brings what an
+older one stored to its own before anything reads it.
 
 The package will move to its own repository as an open-source library; its
 proposed npm name is `effect-tanstack-db`.
@@ -69,7 +71,10 @@ with `node examples/quickstart.ts`.
 
 - [Overview](docs/README.md): what the package guarantees, and how it fits a
   sync adapter.
-- [API reference](docs/api.md): every export, `Persistence` and `Outbox`
-  included.
+- [API reference](docs/api.md): every export, `Persistence`, `Outbox` and
+  `Migrations` included.
+- [Migrations](docs/migrations.md): declaring each store's versions, bringing
+  a device forward on every deploy, and the lock that fails a test on a schema
+  change without a version.
 - [Frameworks](docs/frameworks.md): rendering live queries with React or
   another binding.

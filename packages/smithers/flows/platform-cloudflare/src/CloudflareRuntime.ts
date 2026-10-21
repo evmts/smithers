@@ -14,6 +14,7 @@
  */
 
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
+import { RunMetrics } from "@smthrs/flow"
 import { Runtime } from "@smthrs/flows"
 import { Ownership } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
@@ -58,9 +59,14 @@ export const layer = <Registered, RegistrationError, RegistrationRequirements>(
       owner: { hostId: options.hostId },
       isAlive: Ownership.singleIncarnationLiveness,
       canExecute: (row) => Effect.succeed(row.runId === options.executionId),
-      sweep: { host: options.executionId }
+      sweep: { host: options.executionId },
+      placement: "cloudflare"
     },
     StepBoundary.layerUnsupported,
     WorkspaceSandbox.layerUnsupported,
     registerFlows
-  ).pipe(Layer.provide(CloudflareHost.layer))
+  ).pipe(
+    Layer.provide(CloudflareHost.layer),
+    // Workers Logs are this host's telemetry: the usage lines (`flow.run.*`) go out at Info.
+    Layer.provide(RunMetrics.layerInfoLines)
+  )
