@@ -221,59 +221,21 @@ describe("truncation", () => {
       expect(store.state().audits).toEqual([])
     }))
 
-  it.effect("normalizes unexpected in-memory transaction failures and restores state", () =>
-    Effect.gen(function*() {
-      const malformed = {
-        runId: "parent",
-        seq: 1,
-        eventId: "malformed",
-        lineageId: "parent/root",
-        payload: null
-      }
-      Object.defineProperty(malformed, "runId", {
-        get: () => {
-          throw Object.assign(new Error("record read failed"), { code: "EIO" })
-        }
-      })
-      const store = Memory.make({ records: [malformed] })
-      const before = store.state()
-
-      const failure = yield* (
-        Effect.flip(store.archiveAndTruncate("parent", { lineageId: "parent/root", seq: 0 }, [], owner))
-      )
-
-      expect(failure).toMatchObject({ code: "unknown", message: "memory transaction failed" })
-      expect(store.state()).toEqual(before)
-    }))
+  it("refuses seed records that cannot be snapshotted", () => {
+    expect(() => Memory.make({ records: [{ runId: "parent", seq: 0, eventId: "0", payload: () => {} }] }))
+      .toThrow("could not clone records")
+  })
 
   it.effect("does not consume a fork identity when an in-memory transaction rolls back", () =>
     Effect.gen(function*() {
-      let reads = 0
-      const flaky = {
-        runId: "parent",
-        seq: 0,
-        eventId: "parent-0",
-        lineageId: "parent/root",
-        payload: null
-      }
-      Object.defineProperty(flaky, "runId", {
-        enumerable: true,
-        get: () => {
-          reads += 1
-          if (reads === 1) throw new Error("transient record read failure")
-          return "parent"
-        }
-      })
-      const store = Memory.make({ records: [flaky] })
-
-      const failure = yield* (
-        Effect.flip(store.createFork("parent", { lineageId: "parent/root", seq: 0 }))
-      )
-      const fork = yield* (
-        store.createFork("parent", { lineageId: "parent/root", seq: 0 })
-      )
-
-      expect(failure).toMatchObject({ code: "unknown", message: "memory transaction failed" })
+      const options = { records: [...records], failAt: "createFork:commit" }
+      const store = Memory.make(options)
+      const before = store.state()
+      const failure = yield* Effect.flip(store.createFork("parent", { lineageId: "parent/root", seq: 0 }))
+      expect(failure).toMatchObject({ code: "unknown" })
+      expect(store.state()).toEqual(before)
+      options.failAt = ""
+      const fork = yield* store.createFork("parent", { lineageId: "parent/root", seq: 0 })
       expect(fork.runId).toBe("parent:fork:0:1")
       expect(store.state().edges).toEqual([fork.edge])
     }))

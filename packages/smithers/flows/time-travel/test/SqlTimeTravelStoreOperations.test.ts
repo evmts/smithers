@@ -1627,3 +1627,40 @@ describe("SqlTimeTravelStore attempt statements", () => {
       })
     ))
 })
+
+it.effect("truncates when the optional engine attempts table is absent", () =>
+  run((store, sql) =>
+    Effect.gen(function*() {
+      yield* insertOwnedRun(sql, "run")
+      yield* insertRun(sql, "optional-child", { status: "completed" })
+      yield* sql`INSERT INTO flows_time_travel_edges (parent_run_id, parent_seq, child_run_id, kind, attached)
+      VALUES ('run', 1, 'optional-child', 'child', 1)`
+      yield* sql`DROP TABLE flows_attempts`
+      expect(yield* store.archiveAndTruncate("run", { lineageId: "run/root", seq: 0 }, [], owner)).toMatchObject({
+        archived: 0
+      })
+    })
+  ))
+
+it.effect("rewind discards attempt results and checkpoints from beyond the frame", () =>
+  run((store, sql) =>
+    Effect.gen(function*() {
+      yield* insertOwnedRun(sql, "run")
+      for (
+        const [seq, eventType] of [[0, "flows.engine.attempt-started"], [1, "flows.engine.attempt-finished"]] as const
+      ) {
+        yield* sql`INSERT INTO flows_journal_events
+      (run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json)
+      VALUES ('run', ${seq}, ${`event-${seq}`}, 'source', ${seq}, ${seq}, ${eventType},
+      ${JSON.stringify({ stepKeyDigest: "step", attempt: 1, state: "succeeded" })}, ${
+          JSON.stringify({ lineageId: "run/root" })
+        })`
+      }
+      yield* sql`INSERT INTO flows_attempts
+    (run_id, step_key_digest, attempt, state, started_at_ms, finished_at_ms, checkpoint_json, outcome_json, meta_json)
+    VALUES ('run', 'step', 1, 'succeeded', 0, 1, '{"future":true}', '{"future":true}', '{}')`
+      yield* store.archiveAndTruncate("run", { lineageId: "run/root", seq: 0 }, [], owner)
+      const attempts = yield* sql`SELECT state, outcome_json, checkpoint_json FROM flows_attempts WHERE run_id = 'run'`
+      expect(attempts).toEqual([{ state: "running", outcome_json: null, checkpoint_json: null }])
+    })
+  ))

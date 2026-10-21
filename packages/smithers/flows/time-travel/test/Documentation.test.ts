@@ -50,7 +50,8 @@ it("documents ReplayOptions.engineEvents and that inspect cannot supply it", () 
 })
 
 it("keeps the runtime requirement in its own README paragraph", () => {
-  expect(readRaw("../README.md")).toMatch(/\n\nNode\.js 26\.4\.0 or later\./)
+  const manifest = JSON.parse(readRaw("../package.json"))
+  expect(readRaw("../README.md")).toContain(`\n\nNode.js ${manifest.engines.node.replace(">=", "")} or later.`)
 })
 
 it("documents completed-prefix reuse and fresh child actions", () => {
@@ -84,4 +85,14 @@ it("documents the rewind rate limiter as a knob the composition supplies", () =>
   for (const path of ["../docs/api.md", "../docs/troubleshooting.md", "../docs/guides/rewind-a-run.md"]) {
     expect(read(path), `${path} omits Options.rateLimit beside rate_limited`).toContain("`Options.rateLimit`")
   }
+})
+
+it("states the two source coordinates a guarded effect must reserve", () => {
+  expect(read("../src/EffectBoundary.ts")).toContain("reserve two consecutive source sequences")
+})
+
+it("places the fork marker and subsequent child records after the inclusive prefix", () => {
+  const text = read("../src/Frame.ts")
+  expect(text).toContain("forkJournalOffset + 1")
+  expect(text).toContain("forkJournalOffset + 2")
 })

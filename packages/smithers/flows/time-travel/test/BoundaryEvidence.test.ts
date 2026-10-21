@@ -107,6 +107,13 @@ describe("EffectBoundary.fromRecords", () => {
     })
   })
 
+  it("refuses conflicting outputs at the same sequence", () => {
+    const a = record({ id: "a", seq: 2, status: "succeeded", output: { sent: true } })
+    const b = record({ id: "a", seq: 2, status: "succeeded", output: { sent: false } })
+    expect(refusal([a, b])).toMatchObject({ code: "invalid" })
+    expect(fold([a, { ...a, output: { sent: true } }])).toEqual([a])
+  })
+
   it("refuses records whose identity fields differ", () => {
     expect(
       refusal([

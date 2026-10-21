@@ -106,6 +106,15 @@ completion or schedule records lie in the archived suffix. Reaching those
 awaits again therefore parks or schedules them from the rewound history; a
 discarded future cannot answer them.
 
+A guarded effect reserves two source sequence numbers: `sourceSeq` for its
+intention and `sourceSeq + 1` for completion. Producers sharing a source must
+allocate disjoint pairs.
+
+The memory store copies seeded records and snapshot anchors on write and read.
+A rewind clears results and checkpoints for attempts with no completion in the
+retained journal, while preserving their attempt counters. The engine attempts
+table is optional for truncation.
+
 ## Limits
 
 - The SQL store runs on an injected SQLite or PostgreSQL `SqlClient`. Other

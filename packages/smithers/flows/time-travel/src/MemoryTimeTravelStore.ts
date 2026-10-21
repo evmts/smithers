@@ -157,12 +157,11 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
   /**
    * Copies the values a caller hands in and the values a reader takes out.
    *
-   * Audits and receipts are the two collections carrying OPAQUE caller
-   * payloads: `rateLimit`, `detail`, and `receipt` are `Schema.Unknown`, so the
-   * store held the caller's own object graph. Mutating it after the write, or
-   * mutating what a read handed back, rewrote recorded history, which the SQL
-   * store cannot do because it serializes. A value that cannot be cloned is a
-   * typed refusal rather than a raw throw.
+   * Records, anchors, audits and receipts can contain caller-owned object
+   * graphs. Mutating them after a write, or mutating a returned snapshot,
+   * must not rewrite history. SQL obtains this isolation by serializing;
+   * memory copies at the same boundaries. A value that cannot be cloned is
+   * refused with a TimeTravelError.
    */
   const clone = <A>(value: A, label: string): A => {
     try {
@@ -171,15 +170,15 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
       throw error("invalid", `could not clone ${label}`, cause)
     }
   }
-  let records = [...(options.records ?? [])]
+  let records = clone([...(options.records ?? [])], "records")
   let archived: Array<JournalRecord & { readonly generation: number }> = []
   let generations = new Map<string, number>()
-  let edges = [...(options.edges ?? [])]
+  let edges = clone([...(options.edges ?? [])], "edges")
   let audits: Array<TimeTravelStore.Audit> = []
   let receipts: Array<TimeTravelStore.Receipt> = []
-  let snapshots = [...(options.snapshots ?? [])]
+  let snapshots = clone([...(options.snapshots ?? [])], "snapshots")
   const liveRuns = new Set(options.liveRuns ?? [])
-  const runOwners = new Map(options.runOwners ?? [])
+  const runOwners = clone(new Map(options.runOwners ?? []), "owners")
   const runStatuses = new Map(options.runStatuses ?? [])
   /**
    * Every id `nextForkId` minted, with whether reclamation already handed it
@@ -208,14 +207,14 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
     if (options.failAt === step) throw error("unknown", `injected failure at ${step}`)
   }
   const state = (): MemoryState => ({
-    records: [...records],
-    archived: [...archived],
-    edges: [...edges],
+    records: clone(records, "records"),
+    archived: clone(archived, "archived"),
+    edges: clone(edges, "edges"),
     audits: clone([...audits], "audits"),
     receipts: clone([...receipts], "receipts"),
-    snapshots: [...snapshots],
+    snapshots: clone(snapshots, "snapshots"),
     liveRuns: new Set(liveRuns),
-    runOwners: new Map(runOwners),
+    runOwners: clone(runOwners, "owners"),
     runStatuses: new Map(runStatuses),
     forkIntents: forkIntents
       .filter((intent) => !intent.reclaimed)
@@ -240,7 +239,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
         record.seq <= frame.seq &&
         record.eventType === eventType &&
         (record.lineageId === undefined || record.lineageId === frame.lineageId ||
-          edges.some((edge) => edge.childRunId === runId && edge.kind === "fork"))
+          edges.some((edge) => edge.childRunId === runId && (edge.kind === "fork" || edge.kind === "child")))
       )
       .sort((left, right) => left.seq - right.seq)
   const atomic = <A>(body: () => A): Effect.Effect<A, TimeTravelError> =>
@@ -283,7 +282,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
             existing.frame.seq === recorded.frame.seq
           )
         ),
-        recorded
+        clone(recorded, "snapshot")
       ]
     }
   }
@@ -291,9 +290,13 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
     snapshotAt: Effect.fn("TimeTravelStore.snapshotAt")((runId, frame) =>
       Effect.annotateCurrentSpan({ runId, lineageId: frame.lineageId, seq: frame.seq }).pipe(Effect.andThen(
         Effect.sync(() =>
-          snapshots.filter((snapshot) =>
-            snapshot.runId === runId && snapshot.frame.lineageId === frame.lineageId && snapshot.frame.seq <= frame.seq
-          ).sort((a, b) => b.frame.seq - a.frame.seq)[0]
+          clone(
+            snapshots.filter((snapshot) =>
+              snapshot.runId === runId && snapshot.frame.lineageId === frame.lineageId &&
+              snapshot.frame.seq <= frame.seq
+            ).sort((a, b) => b.frame.seq - a.frame.seq)[0],
+            "snapshot"
+          )
         )
       ))
     ),
@@ -324,7 +327,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
               latest.set(snapshot.frame.lineageId, snapshot)
             }
           }
-          return [...latest.values()].sort((a, b) => a.frame.seq - b.frame.seq)
+          return clone([...latest.values()].sort((a, b) => a.frame.seq - b.frame.seq), "snapshots")
         })
       ))
     ),

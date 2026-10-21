@@ -889,18 +889,32 @@ export const make: Effect.Effect<
                    * (`attemptsAtFrame`), and the two now agree about which attempts
                    * a prefix can explain.
                    */
-                  const survivors = yield* attemptsAtFrame(runId, frame)
-                  // One statement for the whole run rather than one round trip
-                  // per unexplained row while the writer lock is held.
-                  yield* sql`
+                  const hasAttempts = (yield* Dialect.tables(sql)).some((row) => row.name === "flows_attempts")
+                  if (hasAttempts) {
+                    const survivors = yield* attemptsAtFrame(runId, frame)
+                    // One statement for the whole run rather than one round trip
+                    // per unexplained row while the writer lock is held.
+                    yield* sql`
             DELETE FROM flows_attempts
             WHERE run_id = ${runId}
               AND (step_key_digest, attempt) NOT IN (${attemptRefsSelect(survivors)})
           `
+                    // A started attempt may have completed or checkpointed in the
+                    // truncated future. Keep its counter, but only a retained
+                    // completion authorizes its terminal state and result.
+                    const completed = yield* attemptsAtFrame(runId, frame, EventTypes.attemptFinished)
+                    yield* sql`
+                    UPDATE flows_attempts
+                    SET state = 'running', finished_at_ms = NULL, heartbeat_at_ms = NULL,
+                        checkpoint_json = NULL, error_json = NULL, outcome_json = NULL
+                    WHERE run_id = ${runId}
+                      AND (step_key_digest, attempt) NOT IN (${attemptRefsSelect(completed)})
+                  `
+                  }
                   for (const childRunId of descendants.attachedRunIds) {
                     // An archived child's journal no longer explains any attempt,
                     // so none of its attempt rows may survive it.
-                    yield* sql`DELETE FROM flows_attempts WHERE run_id = ${childRunId}`
+                    if (hasAttempts) yield* sql`DELETE FROM flows_attempts WHERE run_id = ${childRunId}`
                     const childGeneration = yield* currentGeneration(childRunId)
                     const childResult = yield* sql`
               INSERT INTO flows_time_travel_archive

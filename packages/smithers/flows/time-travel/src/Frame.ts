@@ -107,8 +107,9 @@ export const forkCreatedEventType = "flows.time-travel.fork-created"
  * forked from, and how much of that run's journal was copied.
  *
  * `forkJournalOffset` is the parent `seq` the fork was taken at, so the child's
- * own records begin at that offset — reading it back is how a forensic walk
- * maps a child sequence number onto the parent's timeline.
+ * copied prefix includes that offset. The fork-created marker is at
+ * forkJournalOffset + 1; subsequent child records start at forkJournalOffset + 2.
+ * Copied records retain their parent's sequence numbers.
  *
  * @since 0.1.0
  * @category schemas

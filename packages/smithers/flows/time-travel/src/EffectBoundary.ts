@@ -9,6 +9,7 @@ import * as Journal from "@smthrs/journal/Journal"
 import type * as JournalEvent from "@smthrs/journal/JournalEvent"
 import { OwnerId } from "@smthrs/journal/OwnerId"
 import * as Effect from "effect/Effect"
+import * as Equal from "effect/Equal"
 import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
 import { error, type TimeTravelError } from "./TimeTravelError.ts"
@@ -219,6 +220,11 @@ const emit = (
 /**
  * Runs an action between durable `intended` and terminal boundary records.
  *
+ * Callers sharing a sourceId must reserve two consecutive source sequences
+ * per effect: sourceSeq for intended and sourceSeq + 1 for its terminal.
+ * The next effect must start at sourceSeq + 2 or later; adjacent allocations
+ * collide with the previous terminal and are refused as already_crossed.
+ *
  * Interruption, defects, and typed failures all settle the boundary as
  * `unknown` before their original cause is re-raised. The settlement section
  * is uninterruptible so cancellation cannot strand an in-memory action
@@ -392,6 +398,9 @@ export const fromRecords = (
             return yield* Effect.fail(
               conflict(id, `records at seq ${next.seq} report both ${latest.status} and ${next.status}`)
             )
+          }
+          if (!Equal.equals(latest, next)) {
+            return yield* Effect.fail(conflict(id, `records at seq ${next.seq} differ`))
           }
           continue
         }
