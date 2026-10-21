@@ -59,8 +59,9 @@ export const requests = Metric.counter("smithers_browser_runtime_requests", {
 /**
  * Statements the leader ran on the app's shared database, by `outcome`
  * (`executed`, `failed` or `lost`), statements of a transaction an earlier
- * leader committed with them (`committed`), and transactions it rolled back
- * because their tab ended (`abandoned`).
+ * leader committed with them (`committed`), statements it refused because
+ * this build could not prepare the database (`fenced`), and transactions it
+ * rolled back because their tab ended (`abandoned`).
  *
  * @category metrics
  * @since 1.0.0

@@ -63,7 +63,7 @@ export interface Options {
   /**
    * What runs, as the durable flow `device/prepare`, before the leader answers any tab's statement on the app's
    * shared database: once per `epoch`. Its flow must be registered with the engine (`Prepare.declare`), as
-   * `BrowserRuntime.layerHost` does.
+   * `BrowserRuntime.layerHost` does. When it fails, the leader refuses every tab's statement with `PrepareFailed`.
    */
   readonly prepare?: Prepare.Prepare | undefined
 }
@@ -310,6 +310,7 @@ class TransactionUndecided extends Schema.TaggedError<TransactionUndecided>()(
 
 /** The `outcome` of a statement that failed with each of these tags; any other failure is `failed`. */
 const failureOutcomes: Readonly<Record<string, string>> = {
+  "@smthrs/platform-browser/PrepareFailed": "fenced",
   "@smthrs/platform-browser/TransactionLost": "lost",
   "@smthrs/platform-browser/TransactionUnrecorded": "unrecorded",
   "@smthrs/platform-browser/TransactionUndecided": "undecided"
@@ -353,7 +354,8 @@ const prepareCommits = (connection: Connection, leader: string) =>
 /**
  * Serves tabs' statements on the app's shared database until the scope
  * closes: each request once, in the order each tab sent them, and a rollback
- * of the open transaction of a tab that ends. A statement that opens a
+ * of the open transaction of a tab that ends. With `fence`, the preparation's
+ * failure, it runs none and refuses each with it. A statement that opens a
  * transaction is recorded inside it (`SqlProtocol.commits`), so that when a
  * statement for a transaction an earlier leader held arrives, this leader
  * answers it as committed if that leader committed the transaction with it,
@@ -361,13 +363,13 @@ const prepareCommits = (connection: Connection, leader: string) =>
  * record is rolled back and its statement fails, and a statement whose record
  * it can't read fails without running, so no transaction commits twice.
  */
-const serveStatements = (name: string, database: Option.Option<Connection>) =>
+const serveStatements = (name: string, database: Option.Option<Connection>, fence: Prepare.PrepareFailed | undefined) =>
   Effect.gen(function*() {
     const locks = yield* WebLock
     const port = yield* (yield* TabChannel).open(SqlProtocol.channel(name))
     const inbox = yield* port.subscribe
     const leader = crypto.randomUUID()
-    if (Option.isSome(database)) yield* prepareCommits(database.value, leader)
+    if (Option.isSome(database) && fence === undefined) yield* prepareCommits(database.value, leader)
     // The newest request number taken from each tab: a tab sends one at a
     // time, so a number already taken is a request sent again.
     const taken = new Map<string, number>()
@@ -402,6 +404,8 @@ const serveStatements = (name: string, database: Option.Option<Connection>) =>
     const execute = (request: Extract<SqlProtocol.Message, { readonly _tag: "Execute" }>) =>
       Effect.gen(function*() {
         if (Option.isNone(database)) return yield* new DatabaseUnavailable()
+        // A database this build could not prepare may hold what it can't read: nothing runs on it.
+        if (fence !== undefined) return yield* fence
         const connection = database.value
         const continuing = request.transaction !== null
         if (continuing && request.transaction !== leader) {
@@ -529,9 +533,9 @@ const lead = <E, R>(
         ),
         Effect.forkScoped
       )
-      // The app's database is prepared for this build before any tab's statement runs on it.
-      if (options.prepare !== undefined) yield* Prepare.run(options.prepare, context)
-      yield* serveStatements(options.name, Context.getOption(context as Context.Context<unknown>, SqlConnection))
+      // The app's database is prepared for this build before any tab's statement runs on it, and fenced if it can't be.
+      const fence = options.prepare === undefined ? undefined : yield* Prepare.run(options.prepare, context)
+      yield* serveStatements(options.name, Context.getOption(context as Context.Context<unknown>, SqlConnection), fence)
       yield* port.post(Protocol.encode({ _tag: "Leader" }))
       yield* Stream.fromSubscription(inbox).pipe(
         Stream.runForEach((input) => {

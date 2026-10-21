@@ -3,7 +3,9 @@
  * runs once per build before any tab reads the database, such as bringing
  * its stores to the build's versions. The leader runs it as the durable flow
  * `device/prepare`, one execution per `epoch`, over its own connection, after
- * it wakes unfinished runs and before it answers any tab's statement.
+ * it wakes unfinished runs and before it answers any tab's statement. A
+ * preparation that failed fences the database: the leader refuses every
+ * tab's statement with {@link PrepareFailed} until a build prepares it.
  *
  * @since 1.0.0
  */
@@ -39,7 +41,8 @@ export interface Prepare<A = any> {
 
 /**
  * The preparation failed: `error` is the tag of what it failed with, never
- * its message.
+ * its message. The leader refuses every tab's statement with it, so nothing
+ * reads or writes a database this build could not bring to its versions.
  *
  * @category errors
  * @since 1.0.0
@@ -51,7 +54,7 @@ export class PrepareFailed extends Schema.TaggedError<PrepareFailed>()("@smthrs/
 /** The owner the preparation's statements run as on the leader's connection. */
 const OWNER = "@smthrs/platform-browser/prepare"
 
-/** Three attempts, 200 ms apart, then 400 ms: a preparation that keeps failing must not hold the tabs back. */
+/** Three attempts, 200 ms apart, then 400 ms: a preparation that keeps failing fences the database quickly. */
 const retryPolicy = RetryPolicy.make({ initialMs: 200, factor: 2, maxMs: 1000, maxAttempts: 3 })
 
 /** One preparation's flow and its step. */
@@ -134,10 +137,12 @@ export const declare = (prepare: Prepare): Declared => {
 /**
  * Runs `prepare` on the engine in `context` as `device/prepare/<epoch>`, and
  * waits for it: a run a crashed leader left unfinished resumes, and one that
- * finished answers at once. It never fails: how it went is logged as
- * `browser.runtime.prepare` and counted in `preparations` by `outcome`
- * (`prepared`, `failed`, or `skipped` when the engine serves no app
- * database), and the leader serves the tabs either way.
+ * finished, prepared or failed, answers at once from the journal. It never
+ * fails: how it went is logged as `browser.runtime.prepare` and counted in
+ * `preparations` by `outcome` (`prepared`, `failed`, or `skipped` when the
+ * engine serves no app database). It succeeds with the {@link PrepareFailed}
+ * the leader fences the database with when the preparation failed, and with
+ * `undefined` when the tabs may use the database.
  *
  * @category running
  * @since 1.0.0
@@ -162,7 +167,8 @@ export const run = (prepare: Prepare, context: Context.Context<FlowRuntime.FlowR
           (outcome === "failed" ? Effect.logWarning : Effect.logInfo)("browser.runtime.prepare").pipe(
             Effect.annotateLogs({ outcome, epoch: prepare.epoch, ...failure })
           )
-        )
+        ),
+        Effect.as(Exit.isFailure(exit) ? new PrepareFailed({ error: tagOf(exit.cause) }) : undefined)
       )
     }),
     Effect.withSpan("browser.runtime.prepare", { attributes: { epoch: prepare.epoch } })

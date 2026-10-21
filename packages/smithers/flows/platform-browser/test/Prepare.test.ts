@@ -12,6 +12,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
+import type { SqlError } from "effect/sql/SqlError"
 import { afterEach, beforeEach } from "vitest"
 import { BrowserRuntime, type SharedSqlite, WebLock } from "../src/index.ts"
 import * as Engines from "./fixtures/Engines.ts"
@@ -56,6 +57,12 @@ const worker = (name: string, prepare: BrowserRuntime.Prepare, telemetry = Telem
   })
 
 const select = (tab: SharedSqlite.Service) => tab.execute("SELECT epoch FROM prepared ORDER BY epoch")
+
+/** Whether `statement` failed because the leader fenced the database: a `ConnectionError` naming `PrepareFailed`. */
+const fenced = (statement: Effect.Effect<unknown, SqlError>) =>
+  Effect.map(Effect.flip(statement), (error) =>
+    error.reason._tag === "ConnectionError" &&
+    (error.reason.cause as { readonly name?: unknown } | undefined)?.name === "@smthrs/platform-browser/PrepareFailed")
 
 describe("BrowserRuntime.run with prepare", () => {
   it.live("interrupts pending preparation when leadership is stolen", () =>
@@ -158,7 +165,7 @@ describe("BrowserRuntime.run with prepare", () => {
       expect(ran).toEqual([1, 1])
     }).pipe(Effect.scoped))
 
-  it.live("serves the tabs when the preparation keeps failing, after rolling back what it left open", () =>
+  it.live("fences every tab's statement with PrepareFailed when the preparation keeps failing, after rolling back what it left open", () =>
     Effect.gen(function*() {
       const name = Engines.name()
       const ran: Array<number> = []
@@ -173,7 +180,10 @@ describe("BrowserRuntime.run with prepare", () => {
         }))
       const running = worker(name, failing, telemetry)
       const tab = yield* Engines.sharedTab(name)
-      expect(yield* select(tab)).toEqual([])
+      // Neither a read nor a write runs on a database this build could not prepare.
+      for (const sql of ["SELECT epoch FROM prepared", "INSERT INTO prepared VALUES (2)"]) {
+        expect(yield* fenced(tab.execute(sql))).toBe(true)
+      }
       yield* Fiber.interrupt(running)
       // The step's retry policy tried three times.
       expect(ran).toEqual([1, 1, 1])
@@ -181,6 +191,29 @@ describe("BrowserRuntime.run with prepare", () => {
         { annotations: { outcome: "failed", epoch: 1, "error.type": "@smthrs/platform-browser/PrepareFailed" } }
       ])
       expect(telemetry.count(BrowserRuntime.preparations, { outcome: "failed" })).toBe(1)
+      expect(telemetry.count(BrowserRuntime.statements, { outcome: "fenced" })).toBe(2)
+      // What the failed step left open was rolled back: a later build that prepares finds nothing of it.
+      const next = worker(name, preparation(2, ran))
+      expect(yield* select(tab)).toEqual([{ epoch: 2 }])
+      yield* Fiber.interrupt(next)
+    }).pipe(Effect.scoped))
+
+  it.live("keeps the fence for the build whose preparation failed: its next leader answers from the journal, and a later build prepares", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const ran: Array<number> = []
+      const failing = preparation(1, ran, () => Effect.fail("no"))
+      const tab = yield* Engines.sharedTab(name)
+      const first = worker(name, failing)
+      expect(yield* fenced(tab.execute("SELECT 1"))).toBe(true)
+      yield* Fiber.interrupt(first)
+      const again = worker(name, failing)
+      expect(yield* fenced(tab.execute("SELECT 1"))).toBe(true)
+      yield* Fiber.interrupt(again)
+      expect(ran).toEqual([1, 1, 1])
+      const next = worker(name, preparation(2, ran))
+      expect(yield* select(tab)).toEqual([{ epoch: 2 }])
+      yield* Fiber.interrupt(next)
     }).pipe(Effect.scoped))
 })
 
@@ -191,13 +224,13 @@ describe("BrowserRuntime.run with a preparation that dies", () => {
   })
   afterEach(() => remove())
 
-  it.live("records it as a failed preparation, by no tag, and serves the tabs", () =>
+  it.live("records it as a failed preparation, by no tag, and fences the tabs", () =>
     Effect.gen(function*() {
       const name = Engines.name()
       const telemetry = Telemetry.make()
       const running = worker(name, { epoch: 1, success: Prepared, run: () => Effect.die("no tag") }, telemetry)
       const tab = yield* Engines.sharedTab(name)
-      expect(yield* tab.execute("SELECT 1 AS one")).toEqual([{ one: 1 }])
+      expect(yield* fenced(tab.execute("SELECT 1 AS one"))).toBe(true)
       yield* Fiber.interrupt(running)
       expect(telemetry.count(BrowserRuntime.preparations, { outcome: "failed" })).toBe(1)
     }).pipe(Effect.scoped))

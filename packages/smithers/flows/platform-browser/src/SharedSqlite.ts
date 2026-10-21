@@ -114,6 +114,9 @@ interface Transaction {
 /** What a leader answers a statement of a transaction that ended with an earlier leader. */
 const lost = "@smthrs/platform-browser/TransactionLost"
 
+/** What a leader answers every statement with when this build could not prepare the database. */
+const unprepared = "@smthrs/platform-browser/PrepareFailed"
+
 /** The `SqlError` a refused statement fails with. */
 const refused = (reply: Extract<Reply, { readonly _tag: "Failed" }>): SqlError =>
   reply.error === lost ?
@@ -121,6 +124,14 @@ const refused = (reply: Extract<Reply, { readonly _tag: "Failed" }>): SqlError =
       reason: new ConnectionError({
         cause: reply.error,
         message: "The transaction ended with the leader that held it",
+        operation: "execute"
+      })
+    })
+    : reply.error === unprepared ?
+    new SqlError({
+      reason: new ConnectionError({
+        cause: { name: reply.error },
+        message: "The database is not prepared for this build",
         operation: "execute"
       })
     })

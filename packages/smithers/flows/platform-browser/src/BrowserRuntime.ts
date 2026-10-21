@@ -106,8 +106,9 @@ export type Authorize = (database: SharedSqlite.Service) => Effect.Effect<void, 
  * the database, as the durable flow `device/prepare`, once per `epoch`, with
  * `success` as its result's schema. A crash mid-way resumes on the next
  * leader; a run that finished answers at once. The step is tried three times;
- * if it still fails, the leader logs `browser.runtime.prepare` and serves the
- * tabs anyway.
+ * if it still fails, the leader logs `browser.runtime.prepare` and refuses
+ * every tab's statement with `PrepareFailed` until a later build's epoch
+ * prepares the database.
  *
  * @category models
  * @since 1.0.0
@@ -235,6 +236,7 @@ export const requests = Metrics.requests
 /**
  * Statements the leader ran on the app's shared database, by `outcome`
  * (`executed`; `committed`, a statement an earlier leader committed; `failed`;
+ * `fenced`, refused because this build could not prepare the database;
  * `lost`; `unrecorded`, a transaction it rolled back because it could not
  * record it; `undecided`, a statement it ran nothing for because it could not
  * read that record), and tabs' transactions it rolled back when the tab ended

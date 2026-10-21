@@ -127,9 +127,15 @@ tab's statement waits meanwhile.
 - **Resumable.** A leader that dies mid-way leaves the run unfinished, and the
   next leader runs the step again. A transaction the step left open ends with
   the old connection, and the step rolls back any transaction it leaves open.
-- **Never holds the tabs.** The step is tried three times, 200 ms apart, then
-  400 ms. If it still fails, the leader logs `browser.runtime.prepare` with
-  `outcome: failed` and the failure's tag, and serves the tabs anyway.
+- **Fails closed.** The step is tried three times, 200 ms apart, then 400 ms.
+  If it still fails, the leader logs `browser.runtime.prepare` with
+  `outcome: failed` and the failure's tag, and refuses every tab's statement,
+  read or write, with `PrepareFailed` (counted as `statements` with
+  `outcome: fenced`): nothing runs on a database this build could not bring to
+  its versions. A tab's statement fails with a `ConnectionError` whose `cause`
+  names `PrepareFailed`, so `SharedSqlite.open` rejects and the app keeps its
+  rows in memory. The failed run is the epoch's answer, so the fence holds for
+  every leader of that build; the next build's epoch prepares again.
 - An engine without the app's database, such as `BrowserRuntime.layer`'s,
   skips it (`outcome: skipped`).
 
