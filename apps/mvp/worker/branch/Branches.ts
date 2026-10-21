@@ -70,8 +70,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       fields.repoId = repo
       const known = yield* Conversations.find(repo, ref).pipe(Effect.provide(database))
       if (known !== undefined) {
-        // The branch was read a moment ago in this request, and nothing deletes a tracked branch.
-        const found = (yield* branchAccess(actor, known.branchId).pipe(Effect.provide(database)))!
+        const found = yield* branchAccess(actor, known.branchId).pipe(Effect.provide(database))
+        if (found === undefined) return refusal(404, "not_found")
         if (!canView(found.access)) return refusal(403, "forbidden")
         fields.outcome = "existing"
         fields.access = found.access
@@ -79,6 +79,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       }
       // Tracking a branch makes it the tracker's: only a Member or above may (`repo:branch-create`, decision 0007).
       if (!isMember(actor)) return refusal(403, "forbidden")
+      let resolvedDefault: string | undefined
       if (decoded.value.create === true) {
         // A new branch: made on the forge at the default branch's head, then tracked as any other. A name the forge
         // already has is someone's branch, not this request's: 409 `exists`, and nothing is tracked. A branch name
@@ -91,6 +92,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
             ? refusal(503, "unavailable")
             : refusal(404, "not_found")
         }
+        resolvedDefault = from.success.branch
         const made = yield* createBranch({ owner, name }, ref, from.success.branch).pipe(Effect.result)
         fields.created = made._tag === "Success" ? "created" : made.failure.code
         if (made._tag === "Failure") {
@@ -113,13 +115,21 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           ? refusal(404, "not_found")
           : refusal(503, "unavailable")
       }
-      const remoteDefault = yield* defaultBranch({ owner, name }).pipe(Effect.option)
-      const mode = Option.isSome(remoteDefault) && remoteDefault.value.branch === ref ? "locked" : "open"
+      if (resolvedDefault === undefined) {
+        const remoteDefault = yield* defaultBranch({ owner, name }).pipe(Effect.result)
+        if (remoteDefault._tag === "Failure" || remoteDefault.success.branch === undefined) {
+          fields.forge = remoteDefault._tag === "Failure" ? remoteDefault.failure.code : "no_default_branch"
+          return refusal(503, "unavailable")
+        }
+        resolvedDefault = remoteDefault.success.branch
+      }
+      const mode = resolvedDefault === ref ? "locked" : "open"
       const tracked = yield* Conversations.track(repo, ref, mode, head.success, actor.value.subject.id).pipe(
         Effect.provide(database),
       )
       // Two people tracking one new branch at once: the one whose insert won owns it; the other may not see it.
-      const found = (yield* branchAccess(actor, tracked.branch.branchId).pipe(Effect.provide(database)))!
+      const found = yield* branchAccess(actor, tracked.branch.branchId).pipe(Effect.provide(database))
+      if (found === undefined) return refusal(404, "not_found")
       if (!canView(found.access)) return refusal(403, "forbidden")
       fields.outcome = tracked.created ? "tracked" : "existing"
       fields.mode = mode

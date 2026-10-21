@@ -329,20 +329,24 @@ describe("save", () => {
     expect(await Effect.runPromise(Machine.save(first.box, 1))).toBe("saved")
     const kept = saved(first.map)
 
-    // The object restarts while it writes the next checkpoint's second piece.
+    // The object restarts while it writes the next checkpoint's third piece.
     writeFileSync(join(first.workdir, "big.txt"), "line of text\n".repeat(Math.ceil((2.5 * Machine.CHUNK_BYTES) / 13)))
     const stopping: Machine.Box<never> = {
       ...first.box,
       storage: {
         ...first.box.storage,
         put: (key, value) =>
-          key === "checkpoint:2:1" ? Effect.die(new Error("object restarted")) : first.box.storage.put(key, value),
+          key === "checkpoint:2:2" ? Effect.die(new Error("object restarted")) : first.box.storage.put(key, value),
       },
     }
     expect(Exit.isFailure(await Effect.runPromiseExit(Machine.save(stopping, 1)))).toBe(true)
     expect(saved(first.map)).toEqual(kept)
     expect(first.map.has("checkpoint:1:0")).toBe(true)
 
+    // A smaller retry must also reclaim the surplus pieces of the interrupted save.
+    rmSync(join(first.workdir, "big.txt"))
+    expect(await Effect.runPromise(Machine.save(first.box, 1))).toBe("saved")
+    expect([...first.map.keys()].filter((key) => key.startsWith("checkpoint:"))).toEqual(["checkpoint:3:0"])
     const second = boxOf({ store: first.store })
     expect(await Effect.runPromise(Machine.restore(second.box, 2))).toBe("restored")
     expect(readFileSync(join(second.workdir, "kept.txt"), "utf8")).toBe("saved before\n")

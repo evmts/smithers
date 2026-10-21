@@ -80,13 +80,12 @@ describe("checkoutArgv", () => {
     expect(readFileSync(join(workspace, "work.txt"), "utf8")).toBe("mine\n")
   })
 
-  test("starts over on a workspace a broken clone left", () => {
+  test("preserves files when a broken checkout cannot resolve HEAD", () => {
     const workspace = join(root, "c")
     mkdirSync(join(workspace, ".git"), { recursive: true })
     writeFileSync(join(workspace, "partial"), "")
-    checkout(workspace, "main")
-    expect(git(workspace, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("main")
-    expect(() => readFileSync(join(workspace, "partial"))).toThrow()
+    expect(() => checkout(workspace, "main")).toThrow()
+    expect(readFileSync(join(workspace, "partial"), "utf8")).toBe("")
   })
 
   test("fails on a branch the remote doesn't have, and the branch is an argument, never script", () => {

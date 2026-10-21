@@ -157,7 +157,14 @@ export const save = <R>(box: Box<R>, generation: number) =>
       bytes: blob.byteLength,
       bundleBytes: bundle.byteLength,
     } satisfies Saved)
-    for (let index = 0; index < (before?.pieces ?? 0); index++) yield* box.storage.delete(pieceKey(before!.seq, index))
+    // Keep the active checkpoint and quarantined checkpoints; reclaim pieces from interrupted saves too.
+    // Repeating this after a crash is safe, including a crash during cleanup itself.
+    const retained = new Set([seq])
+    for (const record of (yield* box.storage.list<Saved>("stranded:")).values()) retained.add(record.seq)
+    for (const key of (yield* box.storage.list<Uint8Array>("checkpoint:")).keys()) {
+      const sequence = Number(key.split(":")[1])
+      if (!retained.has(sequence)) yield* box.storage.delete(key)
+    }
     yield* counted("save", "saved")
     return "saved" as const
   }).pipe(Effect.withSpan("sandbox.checkpoint.save", { attributes: { "smithers.sandbox.generation": generation } }))

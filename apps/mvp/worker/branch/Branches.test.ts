@@ -138,12 +138,12 @@ describe("POST /api/branches", () => {
     })
   })
 
-  test("a default branch GitHub won't say is recorded open", async () => {
+  test("a failed default-branch read refuses tracking without recording private ownership", async () => {
     const h = await open()
     h.github.fail("GET", new Response("", { status: 502 }))
     expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "main" }))).toEqual([
-      201,
-      expect.objectContaining({ name: "main", mode: "open" }),
+      503,
+      { code: "unavailable" },
     ])
   })
 
@@ -347,6 +347,7 @@ describe("POST /api/branches with create: a new branch", () => {
     const [status, body] = await json(await create(h, "maya/k3f9q2"))
     expect(status).toBe(201)
     expect(body).toMatchObject({ name: "maya/k3f9q2", mode: "open", access: "owner", repoId: "github/octocat/spoon-knife" })
+    expect(h.github.seen.filter((seen) => seen.method === "GET")).toHaveLength(1)
     expect(h.forge.created).toEqual([{ repo: "github/octocat/spoon-knife", from: "main", branch: "maya/k3f9q2" }])
     expect((await rows()).find((row) => row.name === "maya/k3f9q2")).toMatchObject({ mode: "open", baseSha: shaOf("main") })
     expect(h.only("branch.track").annotations).toMatchObject({ outcome: "tracked", created: "created", status: 201 })

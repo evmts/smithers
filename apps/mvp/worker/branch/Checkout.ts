@@ -2,7 +2,7 @@ import { FORGE_HOST, WORKSPACE } from "../../src/features/terminal/contract.ts"
 
 // How a branch's machine checks the branch out (decision 0013 §2, `terminal/Open` step 2): a shallow clone of the one
 // branch into /workspace, through the forge proxy, whose remote names no credential. A machine that has a checkout
-// keeps it; one whose clone broke off starts it again on an empty /workspace.
+// keeps it. An unresolved HEAD never authorizes deleting files; clone refuses a nonempty workspace.
 
 /** How many commits of the branch the machine clones: enough for `git log`, cheap to read from the forge. */
 export const DEPTH = 50
@@ -22,7 +22,6 @@ const script = [
   // Files the clone writes are the `workspace` group's to change too: every person's shell shares the checkout.
   "umask 002",
   `if git -C ${WORKSPACE} rev-parse --verify -q HEAD >/dev/null 2>&1; then exit 0; fi`,
-  `find ${WORKSPACE} -mindepth 1 -delete`,
   `refs=$(git ls-remote --heads "$2" 2>/dev/null) || exit 70`,
   `printf '%s\\n' "$refs" | awk -v ref="refs/heads/$1" '$2 == ref { found = 1 } END { exit !found }' || exit 71`,
   `git clone --quiet --depth ${DEPTH} --branch "$1" --single-branch "$2" ${WORKSPACE} || exit 72`,
