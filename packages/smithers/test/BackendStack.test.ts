@@ -280,3 +280,96 @@ describe("stack synchronization and merge safety", () => {
     expect(reads).toBe(2)
   })
 })
+
+// `stack submit` finds the pull request a change opened by the change's own head bookmark and the hidden marker naming
+// its change id. Before, a run that died after GitHub opened it, before the stack state recorded it, posted again,
+// got GitHub's 422, and failed.
+describe("stack submit after a lost answer", () => {
+  const OWN = "a1234567"
+  const marked = (text: string) => `${text}\n\n<!-- smithers:write=${OWN} -->`
+  const listing = (path: string) => path.includes("/pulls?")
+  const pullsOf = (...pulls: Array<Values>) =>
+    pulls.map((pull) => ({ state: "open", html_url: "https://github.test/pr", ...pull }))
+
+  it("adopts the change's own pull request from its head, and never a pull request from that head without its marker", async () => {
+    const f = fixture({
+      changes: [],
+      locals: [OWN],
+      github: (method, path) =>
+        method === "GET" && listing(path)
+          ? pullsOf({ number: 5, body: "Someone else's" }, { number: 7, body: marked("Notes") }, {
+            number: 8,
+            body: marked("a copy")
+          })
+          : undefined
+    })
+    const result = object(await stacks["stack submit"]!(f.c, {}, options))
+    expect(result.pr_numbers).toEqual([7])
+    expect(f.github.mock.calls.filter(([method, path]) => method === "POST" && path.endsWith("/pulls"))).toHaveLength(0)
+    const lookup = f.github.mock.calls.find(([method, path]) => method === "GET" && listing(path))![1]
+    const search = new URL(lookup, "https://github.test").searchParams
+    expect(Object.fromEntries(search)).toEqual({ head: "owner:smithers/a1234567", state: "all", per_page: "100" })
+    // Every body it writes carries the change's marker once, so a later run finds it the same way.
+    const bodies = f.github.mock.calls.filter(([method, , body]) => method === "PATCH" && body?.body).map((
+      [, , body]
+    ) => String(body!.body))
+    for (const text of bodies) expect(text.match(/<!-- smithers:write=a1234567 -->/g)).toHaveLength(1)
+    expect(bodies.at(-1)).toMatch(/<!-- smithers:write=a1234567 -->$/)
+  })
+
+  it("adopts its own pull request after GitHub refuses a second one from its head", async () => {
+    let lists = 0
+    const f = fixture({
+      changes: [],
+      locals: [OWN],
+      github: (method, path) => {
+        if (method === "GET" && listing(path)) {
+          lists++
+          return lists === 1 ?
+            pullsOf({ number: 5, body: "Someone else's" }) :
+            pullsOf({ number: 5, body: "Someone else's" }, {
+              number: 9,
+              body: marked("Notes")
+            })
+        }
+        if (method === "POST" && path.endsWith("/pulls")) throw error(422)
+      }
+    })
+    expect(object(await stacks["stack submit"]!(f.c, {}, options)).pr_numbers).toEqual([9])
+    expect(lists).toBe(2)
+  })
+
+  it("fails on GitHub's refusal when only someone else's pull request comes from its head", async () => {
+    const f = fixture({
+      changes: [],
+      locals: [OWN],
+      github: (method, path) => {
+        if (method === "GET" && listing(path)) return pullsOf({ number: 5, body: "Someone else's" })
+        if (method === "POST" && path.endsWith("/pulls")) throw error(422)
+      }
+    })
+    await expect(stacks["stack submit"]!(f.c, {}, options)).rejects.toThrow("422")
+    const other = fixture({
+      changes: [],
+      locals: [OWN],
+      github: (method, path) => {
+        if (method === "POST" && path.endsWith("/pulls")) throw error(503)
+      }
+    })
+    await expect(stacks["stack submit"]!(other.c, {}, options)).rejects.toThrow("503")
+    expect(other.github.mock.calls.filter(([method, path]) => method === "GET" && listing(path))).toHaveLength(1)
+  })
+
+  it("refuses rather than open a second pull request when its head has too many to read", async () => {
+    const f = fixture({
+      changes: [],
+      locals: [OWN],
+      github: (method, path) =>
+        method === "GET" && listing(path)
+          ? pullsOf(...Array.from({ length: 100 }, (_, i) => ({ number: 100 + i, body: "Someone else's" })))
+          : undefined
+    })
+    await expect(stacks["stack submit"]!(f.c, {}, options)).rejects.toThrow("could not be ruled out")
+    expect(f.github.mock.calls.filter(([method, path]) => method === "POST" && path.endsWith("/pulls"))).toHaveLength(0)
+  })
+})

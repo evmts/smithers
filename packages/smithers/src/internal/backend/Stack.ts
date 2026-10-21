@@ -3,6 +3,7 @@
  * @since 1.0.0
  */
 
+import * as GitHub from "@smthrs/integrations/github"
 import { Refused, UsageError } from "../../CliError.ts"
 import { APIError, type Client, esc, list, object, query, str, type Values } from "./Client.ts"
 import { stackChanges } from "./Local.ts"
@@ -72,6 +73,7 @@ const body = (changes: Array<Values>, change: Values) => {
   if (start >= 0 && end >= 0) {
     text = [text.slice(0, start).trim(), text.slice(end + blockEnd.length).trim()].filter(Boolean).join("\n\n")
   }
+  text = GitHub.Issues.withoutWriteMarker(text).trim()
   const block = [
     blockStart,
     "### Smithers Stack",
@@ -89,7 +91,37 @@ const body = (changes: Array<Values>, change: Values) => {
     "*Managed by Smithers*",
     blockEnd
   ].join("\n")
-  return [text, block].filter(Boolean).join("\n\n")
+  return GitHub.Issues.withWriteMarker([text, block].filter(Boolean).join("\n\n"), str(change.change_id))
+}
+/**
+ * The pull request change `change` opened: from its own head bookmark, open or closed, carrying its change id's hidden
+ * write marker; the earliest wins. A run that died after GitHub opened it, before the stack state recorded it, finds it
+ * here instead of opening a second (or failing on GitHub's 422). A pull request from the same head without the marker
+ * is someone else's and is never taken. A listing too long to read whole fails rather than read as "none".
+ */
+const ownPull = async (c: Client, o: Values, change: Values): Promise<Values | undefined> => {
+  const owner = c.repo(o.repo).split("/")[0]!
+  const perPage = 100
+  const listed = list(
+    (await github(
+      c,
+      o,
+      "GET",
+      `/pulls${query({ head: `${owner}:${branch(change)}`, state: "all", per_page: perPage })}`
+    ))
+      .items
+  ).map(object)
+  const own = listed
+    .filter((pull) => GitHub.Issues.writeIdOf(str(pull.body)) === str(change.change_id))
+    .sort((a, b) => Number(a.number) - Number(b.number))[0]
+  if (own === undefined && listed.length >= perPage) {
+    throw new Refused({
+      fault: "dependency",
+      code: "github_protocol",
+      message: `More than ${perPage} pull requests come from ${branch(change)}; the change's own could not be ruled out`
+    })
+  }
+  return own
 }
 const push = async (c: Client, change: Values) => {
   await c.exec("jj", ["--ignore-working-copy", "bookmark", "set", "-B", branch(change), "-r", str(change.change_id)])
@@ -250,18 +282,40 @@ stacks["stack submit"] = async (c, _a, o) => {
   for (const change of (await stackChanges(c, target(o))).reverse()) {
     const entry: Values = { ...change, ...description(change), branch_name: branch(change), status: "created" }
     await push(c, entry)
-    const payload = { base: changes.length ? branch(changes.at(-1)!) : target(o), title: entry.title, body: entry.body }
+    const payload = {
+      base: changes.length ? branch(changes.at(-1)!) : target(o),
+      title: entry.title,
+      body: GitHub.Issues.withWriteMarker(str(entry.body), str(change.change_id))
+    }
     let pull: Values | undefined
+    const update = async (number: unknown) => {
+      const updated = await github(c, o, "PATCH", `/pulls/${str(number)}`, payload)
+      entry.status = "updated"
+      return updated
+    }
     const prior = existing.find((item) => item.change_id === change.change_id)
     if (prior?.pr_number) {
       try {
-        pull = await github(c, o, "PATCH", `/pulls/${str(prior.pr_number)}`, payload)
-        entry.status = "updated"
+        pull = await update(prior.pr_number)
       } catch (error) {
         if (!missing(error)) throw error
       }
     }
-    pull ??= await github(c, o, "POST", "/pulls", { ...payload, draft: o.draft === true, head: branch(change) })
+    // The change's own pull request, opened by a run that died before the stack state recorded it.
+    if (pull === undefined) {
+      const own = await ownPull(c, o, change)
+      if (own !== undefined) pull = await update(own.number)
+    }
+    if (pull === undefined) {
+      try {
+        pull = await github(c, o, "POST", "/pulls", { ...payload, draft: o.draft === true, head: branch(change) })
+      } catch (error) {
+        // An open pull request from this head already: ours, whose answer was lost while it was opened, is adopted.
+        const own = missing(error, [422]) ? await ownPull(c, o, change) : undefined
+        if (own === undefined) throw error
+        pull = await update(own.number)
+      }
+    }
     if (!(Number(pull.number) > 0)) {
       throw new Refused({ fault: "dependency", code: "github_protocol", message: "GitHub did not return a PR number" })
     }
