@@ -54,6 +54,29 @@ so cancellation cannot strand an action that has already crossed the boundary.
 `guard` requires the `Journal` service and adds `TimeTravelError` to the
 action's error channel. It never swallows the action's own failure.
 
+## A success the journal could not record
+
+The result `guard` returns and the evidence it leaves always agree. When the
+action succeeds but its `succeeded` record fails, `guard` writes `unknown` at
+the same terminal sequence:
+
+| `unknown` write                  | Journal after           | `guard` returns                  |
+| -------------------------------- | ----------------------- | -------------------------------- |
+| Lands                            | `intended`, `unknown`   | `TimeTravelError` with `unknown` |
+| Conflicts with a committed write | `intended`, `succeeded` | The action's value               |
+| Fails                            | `intended`              | `TimeTravelError` with `unknown` |
+
+A conflict means the `succeeded` record committed and only its acknowledgment
+was lost. `guard` confirms that with an identical `succeeded` write, which the
+journal answers as a duplicate only for the same bytes, and returns the value.
+A journal that accepts neither terminal leaves the crossing at `intended`, the
+shape a crash leaves, which a rewind treats like `unknown`.
+
+A `TimeTravelError` with code `unknown` here is a persistence failure, not the
+action's own failure. The crossing is settled, so retry the action as a new
+attempt with its own effect id, and give an irreversible effect the same
+idempotency key so the retry cannot repeat it.
+
 ## What the fields are for
 
 | Field               | Why a rewind cares                                                                               |

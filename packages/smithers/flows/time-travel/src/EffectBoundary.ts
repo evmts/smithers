@@ -217,6 +217,65 @@ const emit = (
   )
 }
 
+const isIdempotencyConflict = (failure: TimeTravelError): boolean =>
+  failure.cause instanceof Journal.JournalError && failure.cause.code === "idempotency_conflict"
+
+/**
+ * Settles an action that succeeded but whose `succeeded` record failed, so
+ * the caller's result and the journal agree.
+ *
+ * The terminal identity is `sourceSeq + 1`, and the journal dedupes it by
+ * content, so the `unknown` write that follows answers the one question the
+ * failed write left open:
+ *
+ * - It lands: no success was recorded, and the caller gets a typed `unknown`
+ *   failure that says so. The crossing is settled, and a retry runs as a new
+ *   attempt under its own effect id.
+ * - It conflicts: the `succeeded` record committed and only its
+ *   acknowledgment was lost. An identical `succeeded` write confirms it
+ *   (the journal answers `Duplicate` only for the same bytes), and the caller
+ *   gets the value the journal now holds.
+ * - It fails otherwise: the journal is unreachable. The crossing stays at
+ *   `intended`, the shape a crash leaves, and the caller gets a typed failure.
+ */
+const settleUnrecordedSuccess = <A>(
+  journal: Journal.Service,
+  description: Description,
+  value: A,
+  cause: TimeTravelError
+): Effect.Effect<A, TimeTravelError> =>
+  emit(journal, description, "unknown").pipe(
+    Effect.matchEffect({
+      onSuccess: () =>
+        Effect.fail(
+          error(
+            "unknown",
+            `effect ${description.id} succeeded, but its succeeded boundary could not be recorded; it is recorded unknown`,
+            cause.cause
+          )
+        ),
+      onFailure: (failure) =>
+        isIdempotencyConflict(failure)
+          ? emit(journal, description, "succeeded", value).pipe(
+            Effect.as(value),
+            Effect.mapError((unconfirmed) =>
+              error(
+                "unknown",
+                `effect ${description.id} succeeded, but its succeeded boundary could not be confirmed`,
+                unconfirmed.cause
+              )
+            )
+          )
+          : Effect.fail(
+            error(
+              "unknown",
+              `effect ${description.id} succeeded, but neither its succeeded nor its unknown boundary could be recorded`,
+              cause.cause
+            )
+          )
+    })
+  )
+
 /**
  * Runs an action between durable `intended` and terminal boundary records.
  *
@@ -229,6 +288,10 @@ const emit = (
  * `unknown` before their original cause is re-raised. The settlement section
  * is uninterruptible so cancellation cannot strand an in-memory action
  * after it has crossed the boundary without attempting the terminal record.
+ * A success whose `succeeded` record fails is settled so the result and the
+ * journal agree: the value is returned only when a `succeeded` record holds
+ * it, and otherwise the boundary is recorded `unknown` where the journal
+ * allows and the caller gets a typed `unknown` failure.
  * A kind the engine reserves, such as `EventTypes.childSpawnKind`, fails as
  * `invalid` before anything is journaled, and so does a `sourceSeq` of
  * `Number.MAX_SAFE_INTEGER - 1` or more, whose terminal record at
@@ -276,8 +339,11 @@ export const guard = <A, E, R>(
         }
         const actionExit = yield* Effect.exit(restore(action))
         if (Exit.isSuccess(actionExit)) {
-          yield* emit(journal, validated, "succeeded", actionExit.value)
-          return actionExit.value
+          const value = actionExit.value
+          return yield* emit(journal, validated, "succeeded", value).pipe(
+            Effect.as(value),
+            Effect.catch((cause) => settleUnrecordedSuccess(journal, validated, value, cause))
+          )
         }
         yield* emit(journal, validated, "unknown").pipe(
           Effect.catchCause((cause) =>

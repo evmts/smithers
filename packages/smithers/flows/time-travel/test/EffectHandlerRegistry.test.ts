@@ -639,11 +639,14 @@ describe("EffectHandlerRegistry", () => {
         )
       )
 
+      // The succeeded write failed and so did the unknown write that settles
+      // it, so the crossing stays at intended and the failure says so.
       expect(actionRuns).toBe(1)
-      expect(emits).toBe(2)
+      expect(emits).toBe(3)
       expect(failure).toMatchObject({
         code: "unknown",
-        message: "could not record succeeded boundary for effect terminal-success-failure"
+        message:
+          "effect terminal-success-failure succeeded, but neither its succeeded nor its unknown boundary could be recorded"
       })
     }))
 

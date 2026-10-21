@@ -34,7 +34,10 @@ An effect is journaled as a pair of records under the event type
 
 Interruption, defects, and typed failures all settle the boundary as `unknown`
 before the original cause is re-raised, and the settlement is uninterruptible,
-so cancellation cannot strand an action that has crossed the boundary. An
+so cancellation cannot strand an action that has crossed the boundary. A
+success whose `succeeded` record fails is settled the same way: the caller
+gets the value only when a `succeeded` record holds it, and otherwise a typed
+`unknown` failure while the journal records `unknown`. An
 `unknown` outcome is the honest answer for "we do not know whether this
 reached the world", and it is what stops a rewind from compensating something
 that may never have happened.
