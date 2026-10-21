@@ -19,7 +19,7 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { renderDiagnostic } from "../internal/Diagnostic.ts"
 import { toJsonExit } from "../internal/JsonExit.ts"
-import { actionKey, ordinalScope, uncanonicalKey } from "./ActionKey.ts"
+import { actionKey, ActionKeyEncoding, keyEncodings, ordinalScope, uncanonicalKey } from "./ActionKey.ts"
 import type { ActionExecuteOptions, Encoded } from "./Encoded.ts"
 import { SnapshotBoundary, type SnapshotBoundaryOptions, SnapshotBoundaryRequired } from "./SnapshotBoundary.ts"
 
@@ -115,7 +115,8 @@ const allocateOrdinal = Effect.fnUntraced(function*(instance: Instance, scope: s
 /**
  * The dispatch's invocation key. Invocation keys are run-local, so the cache
  * environment folds into cache keys only (issue #75). A driver resolving a
- * fork's copied history picks the key through `actionReplayKey`.
+ * fork's copied history, or a record an earlier engine wrote under an older
+ * key encoding, picks the key through `actionReplayKey`.
  */
 const invocationKey = Effect.fnUntraced(function*(
   options: Encoded,
@@ -129,10 +130,25 @@ const invocationKey = Effect.fnUntraced(function*(
   // folds in (issue #120); only the `Schema.Constraint` parameters resist the
   // assignment.
   const declared = action as unknown as Action.AnyWithProps & Pick<Action.Any, "annotations">
-  const derive = (executionId: string, runScoped: boolean) =>
-    actionKey(declared, executionId, ordinal, runScoped ? undefined : environment, scope)
+  const encoding = yield* ActionKeyEncoding
+  const keyAt = (executionId: string, runScoped: boolean, at: (typeof keyEncodings)[number]) =>
+    actionKey(declared, executionId, ordinal, runScoped ? undefined : environment, scope, at)
+  const derive = (executionId: string, runScoped: boolean) => keyAt(executionId, runScoped, encoding)
+  // The same dispatch's keys under every earlier encoding, newest first, so a
+  // record an older engine wrote is found again. Two encodings can derive one
+  // key, and most dispatches derive the current key under every encoding.
+  const legacy = (executionId: string, runScoped: boolean) =>
+    Effect.gen(function*() {
+      const current = yield* derive(executionId, runScoped)
+      const keys: Array<string> = []
+      for (const older of keyEncodings.slice(keyEncodings.indexOf(encoding) + 1)) {
+        const key = yield* keyAt(executionId, runScoped, older)
+        if (key !== current && !keys.includes(key)) keys.push(key)
+      }
+      return keys
+    })
   if (options.actionReplayKey === undefined) return yield* derive(instance.executionId, false)
-  return yield* options.actionReplayKey(derive)
+  return yield* options.actionReplayKey(derive, legacy)
 })
 
 /**

@@ -957,7 +957,9 @@ const functionIdentity: (operation: unknown) => FunctionIdentity
 const schemaIdentity: (schema: Schema.Top, options?: SchemaIdentityOptions) => SchemaIdentity
 type SchemaIdentity = JsonSchema.Document<"draft-2020-12">
 type SchemaIdentityOptions = { readonly onExcessProperty?: "ignore" | "error" | undefined }
-const representationIdentity: (ast: SchemaAST.AST) => Schema.Json
+const representationIdentity: (schema: Schema.Top, version?: RepresentationIdentityVersion) => Schema.Json
+const representationIdentityVersions: readonly [2, 1]
+type RepresentationIdentityVersion = 2 | 1
 ```
 
 `flowCall` and `actionCall` validate nothing: an unknown tag becomes a call node the graph keeps as a leaf. `declaration`, `continuation`, `mapper`, `predicate`, and `catchFilter` answer `undefined` for the wrong variant and for an AST rehydrated from JSON, whose side tables did not survive serialization. `functionIdentity` throws a `TypeError` when handed anything but a function.
@@ -966,7 +968,18 @@ const representationIdentity: (ast: SchemaAST.AST) => Schema.Json
 
 The identity has three limits. A built-in check such as `Schema.isMinLength` contributes the constraint its name and arguments state, so a `toJsonSchema` annotation passed to a built-in check is not read; one on a `Schema.makeFilter` check is. `Schema.brand` contributes nothing, because a brand is not part of the schema in `effect@4.0.5`: a declaration that uses one schema with an `identifier`, or one recursive schema, both with and without a brand got two definitions under `effect@4.0.0-rc.115` and gets one now, so it re-keys once. And a codec's behavior contributes nothing, so an author who changes what a transformation does renames the declaration to re-key its calls. `schemaIdentity` throws `Node.SchemaIdentityError`, tagged `@smthrs/plan/SchemaIdentityError`, for a schema that has no JSON Schema form, such as a record keyed by a number.
 
-`representationIdentity` returns what a sealed action's step key folds in for its success and error schemas: `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(ast))` as `effect@4.0.0-rc.115` wrote it. A later release renamed six built-in checks, `isStartsWith`, `isEndsWith`, `isIncludes`, `isLengthBetween`, `isSizeBetween` and `isPropertiesLengthBetween`; the identity writes their rc.115 ids back. A brand cannot be written back, so a sealed action whose success or error schema carries `Schema.brand` re-keys once. `representationIdentity` throws for an AST that has no representation, such as one with a `Schema.makeFilter` check.
+`representationIdentity` returns what a sealed action's step key folds in for its success and error schemas: `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(schema.ast))` as `effect@4.0.0-rc.115` wrote it. A later release renamed six built-in checks, `isStartsWith`, `isEndsWith`, `isIncludes`, `isLengthBetween`, `isSizeBetween` and `isPropertiesLengthBetween`; the identity writes their rc.115 ids back. `representationIdentity` throws for a schema that has no representation, such as one with a `Schema.makeFilter` check.
+
+The identity is versioned, because a key written under an older version must stay derivable. `representationIdentityVersions` lists the versions newest first, and `representationIdentity` takes the newest by default:
+
+| Version | Written                     | What it hashes                                                                                                                         |
+| ------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `2`     | since `effect@4.0.4`        | The installed encoding with the rc.115 check ids. A brand is not part of the AST from `effect@4.0.4` on, so it contributes nothing.    |
+| `1`     | under `effect@4.0.0-rc.115` | Version 2 with each `Schema.brand` restored from the schema value as the `brands` annotation rc.115 wrote, in its place and key order. |
+
+Version 1 restores a brand at every position the schema value names: the schema itself, a struct's fields, an array's or a tuple's elements, a union's members, a record's key and value, the field `Schema.optionalKey`, `Schema.optional` or `Schema.mutableKey` wraps, and a definition a reference names. A brand below a class, a suspended schema or a transformation is not restored. A definition that two positions brand differently, such as one branded at one field and unbranded or branded otherwise at another, was two definitions under rc.115 and is one now, so no restoration reproduces it: version 1 is then the version 2 document. Restoring one position's brand there would print the rc.115 document of a different declaration, and its key could replay that declaration's outcome. A key behind such a schema re-keys once.
+
+Version 1 only adds `brands` annotations to the version 2 document, so two declarations share a version 1 document only if they share a version 2 document. A version 1 key can stand for another declaration only when the two differ in brands alone, which version 2 does not tell apart either. [`@smthrs/engine`](/api/engine) derives a sealed key under each version and replays a record written under either.
 
 ## Planned
 

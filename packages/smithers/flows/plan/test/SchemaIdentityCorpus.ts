@@ -926,7 +926,9 @@ export const corpus = (S: SchemaModule, E: EffectModule): Readonly<Record<string
     return S.Struct({ first: First, second: Second })
   })
 
-  // Brands. Under 4.0.4 a brand is not part of the schema, so these print as their base.
+  // Brands. Under 4.0.4 a brand is not part of the schema, so these print as their base, and
+  // `Node.representationIdentity` version 1 restores them from the schema value at every
+  // position below: a member, an element, a value, an optional field, a nested struct.
   add("brand/string", () => S.String.pipe(S.brand("UserId")))
   add("brand/checked", () => S.String.check(S.isMinLength(1)).pipe(S.brand("UserId")))
   add("brand/identified", () => S.String.pipe(S.brand("UserId")).annotate({ identifier: "UserId" }))
@@ -945,6 +947,42 @@ export const corpus = (S: SchemaModule, E: EffectModule): Readonly<Record<string
   add("brand/struct", () => S.Struct({ a: S.Int }).pipe(S.brand("P")))
   add("brand/int", () => S.Int.pipe(S.brand("Count")))
   add("brand/twice", () => S.String.pipe(S.brand("A"), S.brand("B")))
+  add(
+    "brand/annotated-around",
+    () => S.String.annotate({ title: "t" }).pipe(S.brand("A")).annotate({ description: "d", title: "u" })
+  )
+  add("brand/then-checked", () => S.String.pipe(S.brand("A")).check(S.isMinLength(1)))
+  add(
+    "brand/between-checks",
+    () => S.String.check(S.isMinLength(1)).pipe(S.brand("A")).check(S.isMaxLength(5)).pipe(S.brand("B"))
+  )
+  add("brand/array", () => S.Array(S.String.pipe(S.brand("A"))))
+  add("brand/non-empty-array", () => S.NonEmptyArray(S.String.pipe(S.brand("A"))))
+  add("brand/tuple", () => S.Tuple([S.String.pipe(S.brand("A")), S.Number]))
+  add("brand/union", () => S.Union([S.String.pipe(S.brand("A")), S.Number.pipe(S.brand("B"))]))
+  add("brand/null-or", () => S.NullOr(S.String.pipe(S.brand("A"))))
+  add("brand/record", () => S.Record(S.String, S.Int.pipe(S.brand("Count"))))
+  add("brand/optional-fields", () =>
+    S.Struct({
+      a: S.optionalKey(S.String.pipe(S.brand("A"))),
+      b: S.optional(S.String.pipe(S.brand("B"))),
+      c: S.mutableKey(S.String.pipe(S.brand("C")))
+    }))
+  add("brand/nested-struct", () => S.Struct({ inner: S.Struct({ id: S.String.pipe(S.brand("Id")) }) }))
+  add(
+    "brand/identified-container",
+    () => S.Struct({ id: S.String.pipe(S.brand("Id")) }).annotate({ identifier: "Row" }).pipe(S.brand("R"))
+  )
+  add("brand/twice-annotated", () => S.String.annotate({ title: "t" }).pipe(S.brand("A"), S.brand("B")))
+  add(
+    "brand/tuple-with-rest",
+    () => S.TupleWithRest(S.Tuple([S.String.pipe(S.brand("A"))]), [S.Number.pipe(S.brand("B"))])
+  )
+  add(
+    "brand/struct-with-rest",
+    () =>
+      S.StructWithRest(S.Struct({ a: S.String.pipe(S.brand("A")) }), [S.Record(S.String, S.String.pipe(S.brand("B")))])
+  )
 
   // Codecs and declarations.
   add("transform/decodeTo", () => S.String.pipe(S.decodeTo(S.Number)))

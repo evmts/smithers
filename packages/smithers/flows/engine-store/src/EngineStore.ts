@@ -858,26 +858,35 @@ const emitNode = (store: Store, parent: Instance, record: FlowRuntime.NodeRecord
 }
 
 /**
- * The key a forked run's action replays under: prefer this child's own work
- * on resume, then only ancestor keys backed by attempts copied into this
- * child. Never read parent rows.
+ * The key an action replays under. A record an earlier engine wrote under an
+ * older key encoding is this dispatch's own, so an ordinary run replays it
+ * there. A forked run prefers this child's own work on resume, then only
+ * ancestor keys backed by attempts copied into this child, under every
+ * encoding. Never read parent rows.
  */
 const actionReplayKey = Effect.fnUntraced(function*(
   store: Store,
-  derive: Parameters<NonNullable<FlowEngine.Encoded["actionReplayKey"]>>[0]
+  derive: Parameters<NonNullable<FlowEngine.Encoded["actionReplayKey"]>>[0],
+  legacy: Parameters<NonNullable<FlowEngine.Encoded["actionReplayKey"]>>[1]
 ) {
   const instance = yield* FlowRuntime.FlowInstance
   const origins = yield* keyOrigins(store, instance)
   if (origins.length === 0) {
+    // Only a keyed sealed action's key differs between encodings, so every
+    // other dispatch probes nothing here.
+    for (const key of yield* legacy(instance.executionId, false)) {
+      if (yield* hasAttempts(store, instance, key)) return key
+    }
     return yield* derive(instance.executionId, false)
   }
   const probed = new Set<string>()
   for (const runId of [instance.executionId, ...origins]) {
     for (const runScoped of [true, false]) {
-      const key = yield* derive(runId, runScoped)
-      if (probed.has(key)) continue
-      probed.add(key)
-      if (yield* hasAttempts(store, instance, key)) return key
+      for (const key of [yield* derive(runId, runScoped), ...yield* legacy(runId, runScoped)]) {
+        if (probed.has(key)) continue
+        probed.add(key)
+        if (yield* hasAttempts(store, instance, key)) return key
+      }
     }
   }
   return yield* derive(instance.executionId, true)
@@ -946,7 +955,7 @@ const adapter = (store: Store): FlowEngine.Encoded => ({
     )
   },
   recordNode: (input) => recordNode(store, input),
-  actionReplayKey: (derive) => actionReplayKey(store, derive),
+  actionReplayKey: (derive, legacy) => actionReplayKey(store, derive, legacy),
   // The durable schedule-to-close origin (issue #45): the first
   // attempt's persisted `startedAtMs` for the action key. It lives in
   // the same `flows_attempts` rows that already restore the attempt

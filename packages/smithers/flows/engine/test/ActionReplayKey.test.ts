@@ -3,7 +3,9 @@
  * `actionReplayKey`. The engine hands the hook its canonical derivation and
  * dispatches under whatever key the hook answers, so a fork can reach the
  * attempt rows its ancestor recorded, and fresh fork work can refuse the
- * cross-run cache by asking for a run-scoped key.
+ * cross-run cache by asking for a run-scoped key. It also hands the hook the
+ * dispatch's keys under every older key encoding, so a driver can replay a
+ * record an earlier engine wrote.
  */
 import { describe, expect } from "@effect/vitest"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
@@ -33,13 +35,23 @@ const lookup = Action.make({
   execute: Effect.void
 })
 
+/** A keyed sealed action whose success schema carries a brand: encodings 1 and 2 key it differently. */
+const Done = Schema.Void.pipe(Schema.brand("ActionReplayKey/Done"))
+const branded = Action.make({
+  name: "ActionReplayKey/branded",
+  success: Done,
+  idempotencyKey: "branded-1",
+  execute: Effect.sync(() => Done.make(undefined))
+})
+
 const environment: Action.CacheEnvironment = { layers: ["same-host"], capabilities: {} }
 
 /** Dispatches `action` once in `executionId` and answers the key the driver received. */
-const dispatchedKey = (
-  action: Action.Action,
+const dispatchedKey = <Success extends Schema.Constraint>(
+  action: Action.Action<Success, Schema.Never, never>,
   executionId: string,
-  actionReplayKey?: FlowEngine.Encoded["actionReplayKey"]
+  actionReplayKey?: FlowEngine.Encoded["actionReplayKey"],
+  encoding?: FlowEngine.KeyEncoding
 ) => {
   const keys: Array<string> = []
   const engine = scriptedEngine({
@@ -58,9 +70,25 @@ const dispatchedKey = (
   }).pipe(
     Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(flow, executionId)),
     Effect.provideService(Action.CurrentCacheEnvironment, environment),
+    Effect.provideService(FlowEngine.ActionKeyEncoding, encoding ?? FlowEngine.keyEncodings[0]),
     Effect.provide(Layer.succeed(FlowRuntime.FlowRuntime)(engine))
   )
 }
+
+/** The keys `legacy` answers for one dispatch of `action`, in order. */
+const legacyKeys = <Success extends Schema.Constraint>(
+  action: Action.Action<Success, Schema.Never, never>,
+  encoding?: FlowEngine.KeyEncoding
+) =>
+  Effect.gen(function*() {
+    const answered: Array<ReadonlyArray<string>> = []
+    const key = yield* dispatchedKey(action, "run", (derive, legacy) =>
+      Effect.gen(function*() {
+        answered.push(yield* legacy("run", false), yield* legacy("run", true))
+        return yield* derive("run", false)
+      }), encoding)
+    return { key, cached: answered[0]!, runScoped: answered[1]! }
+  })
 
 describe("actionReplayKey", () => {
   effect("dispatches a fork's action under the ancestor key the driver resolves", () =>
@@ -90,5 +118,33 @@ describe("actionReplayKey", () => {
       expect(cachedElsewhere).toBe(cached)
       expect(fresh).not.toBe(cached)
       expect(freshElsewhere).not.toBe(fresh)
+    }))
+
+  effect(
+    "hands the hook a branded declaration's key under the older encoding, and the hook may pick it",
+    () =>
+      Effect.gen(function*() {
+        const current = yield* legacyKeys(branded)
+        const older = yield* dispatchedKey(branded, "run", undefined, 1)
+        // Encoding 1 restores the brand the current encoding omits, so it keys the
+        // same dispatch differently, run-scoped or not.
+        expect(current.cached).toEqual([older])
+        expect(current.runScoped).toHaveLength(1)
+        expect(current.runScoped[0]).not.toBe(older)
+        expect(current.key).not.toBe(older)
+        const replayed = yield* dispatchedKey(branded, "run", (_derive, legacy) =>
+          Effect.map(legacy("run", false), (keys) =>
+            keys[0]!))
+        expect(replayed).toBe(older)
+      })
+  )
+
+  effect("hands the hook no older key when every encoding derives the current one", () =>
+    Effect.gen(function*() {
+      // A brandless declaration, an unkeyed action, and an engine already
+      // writing the oldest encoding all have nothing older to look under.
+      expect(yield* legacyKeys(lookup)).toMatchObject({ cached: [], runScoped: [] })
+      expect(yield* legacyKeys(charge)).toMatchObject({ cached: [], runScoped: [] })
+      expect(yield* legacyKeys(branded, 1)).toMatchObject({ cached: [], runScoped: [] })
     }))
 })

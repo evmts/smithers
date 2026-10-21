@@ -31,7 +31,6 @@
 import { dual } from "effect/Function"
 import type * as Pipeable from "effect/Pipeable"
 import type * as Schema from "effect/Schema"
-import type * as SchemaAST from "effect/SchemaAST"
 import type * as Types from "effect/Types"
 import { GraphBuildError } from "./GraphBuildError.ts"
 import * as internal from "./internal/node.ts"
@@ -923,23 +922,46 @@ export const schemaIdentity = (schema: Schema.Top, options?: SchemaIdentityOptio
   internalSchemaIdentity.schemaIdentity(schema, options)
 
 /**
- * Identifies a schema AST by its encoded representation, the material a
- * sealed action's step key folds in for its success and error schemas.
- *
- * The value is what `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(ast))`
- * returned under `effect@4.0.0-rc.115`, so a later `effect` release does not
- * re-key recorded steps. The one exception is `Schema.brand`: from
- * `effect@4.0.4` on a brand is not part of the AST, so a declaration with a
- * brand re-keys once.
- *
- * Reserved for the packages that derive step keys. Authors never call it; it
- * throws for an AST that has no representation.
+ * The versions of {@link representationIdentity}, newest first. A key written
+ * under an older version stays derivable, so a driver can find an outcome
+ * recorded before an `effect` upgrade: `2` is the current identity, written
+ * since `effect@4.0.4`, and `1` is what every key written under
+ * `effect@4.0.0-rc.115` hashed, `Schema.brand` included.
  *
  * @since 1.0.0
  * @category engine
  */
-export const representationIdentity = (ast: SchemaAST.AST): Schema.Json =>
-  internalSchemaIdentity.representationIdentity(ast)
+export const representationIdentityVersions = internalSchemaIdentity.representationIdentityVersions
+
+/**
+ * One version of {@link representationIdentityVersions}.
+ *
+ * @since 1.0.0
+ * @category engine
+ */
+export type RepresentationIdentityVersion = internalSchemaIdentity.RepresentationIdentityVersion
+
+/**
+ * Identifies a schema by its encoded representation, the material a sealed
+ * action's step key folds in for its success and error schemas.
+ *
+ * The value is what `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(schema.ast))`
+ * returned under `effect@4.0.0-rc.115`, so a later `effect` release does not
+ * re-key recorded steps. From `effect@4.0.4` on a brand is not part of the
+ * AST: version 2, the default, omits it, and version 1 restores it from the
+ * schema value as rc.115 wrote it, so a key recorded before the upgrade can
+ * be derived again.
+ *
+ * Reserved for the packages that derive step keys. Authors never call it; it
+ * throws for a schema that has no representation.
+ *
+ * @since 1.0.0
+ * @category engine
+ */
+export const representationIdentity = (
+  schema: Schema.Top,
+  version?: RepresentationIdentityVersion
+): Schema.Json => internalSchemaIdentity.representationIdentity(schema, version)
 
 /**
  * Binds a frozen plain copy of inert captures as the callback's this receiver.

@@ -49,13 +49,40 @@ These also fold into both forms when present:
 
 The declaration and boundary enter the outer key as `key1_`-prefixed SHA-256
 digests of their canonical documents. Declaration digests are memoized by the
-success/error AST pair. Boundary digests are reused only while the validated
-metadata document is unchanged.
+success/error AST pair, or, under key encoding 1, by the success/error schema
+values, which carry the brands that encoding restores. Boundary digests are
+reused only while the validated metadata document is unchanged.
 
 This compact encoding intentionally changes persisted string-key bytes, and
 object-key bytes when a boundary is present, following the earlier intentional
 schema-folding break (issue #120). Existing rows under the previous encoding
 miss and the action executes again. Boundary-free object keys are unchanged.
+
+### Key encodings
+
+A record is found again only under the key it was written with, so a change to
+how a sealed key is derived must not strand the outcomes recorded before it.
+The engine numbers each derivation as a key encoding and keeps every earlier
+one derivable. `FlowEngine.keyEncodings` lists them newest first:
+
+| Encoding | Written                     | Declaration digest                                                             |
+| -------- | --------------------------- | ------------------------------------------------------------------------------ |
+| `2`      | since `effect@4.0.4`        | `Node.representationIdentity` version 2: a `Schema.brand` contributes nothing. |
+| `1`      | under `effect@4.0.0-rc.115` | Version 1: each brand restored as rc.115 wrote it.                             |
+
+New keys take the newest encoding. Before it dispatches, the engine hands the
+store the dispatch's keys under every older encoding that differs from the
+current one (`Encoded.actionReplayKey`'s `legacy`). The SQL store looks each up
+in this run's attempts, newest first, and replays a record found there instead
+of running the step again. Most declarations derive one key under every
+encoding, so the lookup costs nothing for them. Only a string-form key folds the
+declaration, so the object form and invocation keys are the same under every
+encoding.
+
+A change to the derivation adds an encoding at the front of
+`keyEncodings`; it never edits one. `FlowEngine.ActionKeyEncoding` selects the
+encoding new keys take. A host leaves it at its default, the newest; a test sets
+an older one to write a journal the way an earlier engine did.
 
 ## The invocation key: everything else
 

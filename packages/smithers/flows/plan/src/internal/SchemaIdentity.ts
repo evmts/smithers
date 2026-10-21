@@ -32,7 +32,8 @@
  * - `Schema.brand` is not part of the representation from `effect@4.0.4` on.
  *   Under rc.115 a schema that takes a definition (an `identifier` or a
  *   recursive schema) and appeared both branded and unbranded in one document
- *   got two definitions; it now gets one.
+ *   got two definitions; it now gets one. The representation identity is
+ *   versioned for this reason: see {@link representationIdentityVersions}.
  *
  * Provenance: {@link fromRepresentation} and its helpers are adapted from
  * `effect@4.0.0-rc.115` (MIT, Copyright (c) 2023 Effectful Technologies Inc;
@@ -49,7 +50,6 @@
 
 import type * as JsonSchema from "effect/JsonSchema"
 import * as Schema from "effect/Schema"
-import type * as SchemaAST from "effect/SchemaAST"
 import * as SchemaRepresentation from "effect/SchemaRepresentation"
 
 /** @private */
@@ -1075,22 +1075,313 @@ const withRc115CheckIds = (value: Schema.Json, isCheck = false): Schema.Json => 
 }
 
 /**
- * The representation identity of a schema AST: what
- * `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(ast))`
- * returned under `effect@4.0.0-rc.115`, key order included. A sealed action's
- * step key hashes it, so it must not move with the installed `effect`.
+ * The versions of a representation identity, newest first. A sealed action's
+ * step key hashes one, and a key written under an older version must stay
+ * derivable, so a version is never changed once published; a change adds a
+ * version at the front.
+ *
+ * - `2`, the current version, written since `effect@4.0.4` (2026-10-13):
+ *   what the installed release encodes, with the six check ids renamed after
+ *   `4.0.0-rc.115` written back. From `4.0.4` on `Schema.brand` is not part of
+ *   the AST, so a brand contributes nothing.
+ * - `1`, what every key written under `4.0.0-rc.115` hashed: version 2 with
+ *   each brand restored as the `brands` annotation rc.115 wrote, in the place
+ *   and key order rc.115 wrote it.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const representationIdentityVersions = [2, 1] as const
+
+/**
+ * One version of {@link representationIdentityVersions}.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export type RepresentationIdentityVersion = (typeof representationIdentityVersions)[number]
+
+/** @private */
+type Representations = SchemaRepresentation.Document["references"]
+
+/** @private */
+type Fields = Record<string, unknown>
+
+/**
+ * A schema value `Schema.brand` returned. From `effect@4.0.4` on it shares its
+ * base's AST and keeps the brand only as these two own properties, which
+ * `annotate`, `check` and the other rebuilding combinators carry forward.
+ *
+ * @private
+ */
+interface Branded {
+  readonly schema: Schema.Top
+  readonly identifier: string
+}
+
+/** @private */
+const branded = (schema: Schema.Top): Branded | undefined => {
+  const fields = schema as unknown as Fields
+  return Object.hasOwn(fields, "identifier") && typeof fields["identifier"] === "string" &&
+      Object.hasOwn(fields, "schema") && Schema.isSchema(fields["schema"])
+    ? { schema: fields["schema"], identifier: fields["identifier"] }
+    : undefined
+}
+
+/**
+ * The schema an `optionalKey` or `mutableKey` field wraps. Such a wrapper
+ * changes the AST's context, never its node, so its representation is the
+ * wrapped schema's. A tuple or struct with rest also keeps the schema it
+ * extends, but adds members of its own, so it is not unwrapped.
+ *
+ * @private
+ */
+const contextWrapped = (schema: Schema.Top): Schema.Top | undefined => {
+  const inner = (schema as unknown as Fields)["schema"]
+  return Schema.isSchema(inner) && inner.ast._tag === schema.ast._tag && !Object.hasOwn(schema, "rest") &&
+      !Object.hasOwn(schema, "records")
+    ? inner
+    : undefined
+}
+
+/**
+ * The schema below every brand and context wrapper of `schema`, pushing each
+ * brand onto `brands` from the outermost in.
+ *
+ * @private
+ */
+const peel = (schema: Schema.Top, brands: Array<Branded>): Schema.Top => {
+  const brand = branded(schema)
+  if (brand !== undefined) {
+    brands.push(brand)
+    return peel(brand.schema, brands)
+  }
+  const inner = contextWrapped(schema)
+  return inner === undefined ? schema : peel(inner, brands)
+}
+
+/**
+ * A restored definition as comparable text. Two restorations of one
+ * definition share everything but the brands they added, which are strings
+ * under string keys, so text that keeps a `bigint` literal and a symbol
+ * distinguishes them.
+ *
+ * @private
+ */
+const printedRepresentation = (node: Representation): string =>
+  JSON.stringify(
+    node,
+    (_key, value: unknown) =>
+      typeof value === "bigint" ? `${value}n` : typeof value === "symbol" ? String(value) : value
+  )
+
+/** @private */
+const schemas = (value: unknown): ReadonlyArray<Schema.Top> | undefined =>
+  Array.isArray(value) && value.every((member) => Schema.isSchema(member)) ? value : undefined
+
+/**
+ * Annotations with `identifier` added to `brands` as rc.115's
+ * `SchemaAST.brand` added it: appended to a `brands` already present, or
+ * placed after the keys the annotations held when the brand was applied
+ * (`before`) and ahead of every key annotated since, because rc.115 spread
+ * later annotations over the branded ones.
+ *
+ * @private
+ */
+const withBrand = (
+  current: Readonly<Fields> | undefined,
+  before: object | undefined,
+  identifier: string
+): Fields => {
+  const out: Fields = {}
+  const entries = Object.entries(current ?? {})
+  const brands = current?.["brands"]
+  if (Array.isArray(brands)) {
+    for (const [key, value] of entries) assignProperty(out, key, key === "brands" ? [...brands, identifier] : value)
+    return out
+  }
+  const earlier = new Set(before === undefined ? [] : Object.keys(before))
+  for (const [key, value] of entries) if (earlier.has(key)) assignProperty(out, key, value)
+  assignProperty(out, "brands", [identifier])
+  for (const [key, value] of entries) if (!earlier.has(key)) assignProperty(out, key, value)
+  return out
+}
+
+/**
+ * A representation node with one brand restored where rc.115 put it: on the
+ * last check its base had when the brand was applied, or on the node itself
+ * when its base had none. Checks added after the brand keep their own
+ * annotations.
+ *
+ * @private
+ */
+const withNodeBrand = (node: Representation, brand: Branded): Representation => {
+  const base = brand.schema.ast
+  const fields = node as unknown as Fields
+  if (base.checks === undefined) {
+    return {
+      ...fields,
+      annotations: withBrand(fields["annotations"] as Fields | undefined, base.annotations, brand.identifier)
+    } as unknown as Representation
+  }
+  const index = base.checks.length - 1
+  const checks = [...(fields["checks"] as ReadonlyArray<Fields>)]
+  checks[index] = {
+    ...checks[index],
+    annotations: withBrand(
+      checks[index]!["annotations"] as Fields | undefined,
+      base.checks[index]!.annotations,
+      brand.identifier
+    )
+  }
+  return { ...fields, checks } as unknown as Representation
+}
+
+/**
+ * A representation document with every brand the schema value carries
+ * restored as rc.115 wrote it, at every position the value names its
+ * members by: a struct's fields, an array's or a tuple's elements, a union's
+ * members, a record's key and value, the field an `optionalKey` or
+ * `mutableKey` wraps, and the definition a reference names.
+ *
+ * A definition every position restores alike is restored once, as rc.115
+ * wrote one definition. When two positions restore one definition
+ * differently, as when it occurs branded and unbranded or under two brands,
+ * rc.115 wrote two definitions and the current encoding writes one, so no
+ * single restoration is rc.115's document: the document comes back
+ * unrestored, the version 2 bytes. Restoring the first position's brands
+ * there would print the document rc.115 wrote for a different declaration,
+ * one with that brand at every position, and a key derived from it could
+ * replay that declaration's outcome.
+ *
+ * A brand below a position the value does not name (a class's fields, a
+ * suspended or transformed schema, a check's own schema) is not restored
+ * either. A declaration either way re-keys once, which is what every branded
+ * declaration did before versions.
+ *
+ * What bounds a restoration that stops short: it only adds `brands`
+ * annotations to the version 2 document and changes nothing else, so two
+ * declarations can share a version 1 document only if they share a version 2
+ * document. A version 1 key can therefore stand for another declaration only
+ * when the two differ in brands alone, which version 2, the identity every
+ * key since `effect@4.0.4` hashed, does not tell apart either.
+ *
+ * @private
+ */
+const withRc115Brands = (
+  schema: Schema.Top,
+  document: SchemaRepresentation.Document
+): SchemaRepresentation.Document => {
+  const definitions: Fields = {}
+  const references: Fields = {}
+  for (const [key, value] of Object.entries(document.references)) {
+    assignProperty(definitions, key, value)
+    assignProperty(references, key, value)
+  }
+  // Each definition as the first position that names it restored it.
+  const restored = new Map<string, string>()
+  let ambiguous = false
+  const at = (schema: Schema.Top, node: Representation): Representation => {
+    if (node._tag === "Reference") {
+      const definition = at(schema, definitions[node.$ref] as Representation)
+      const printed = printedRepresentation(definition)
+      const first = restored.get(node.$ref)
+      if (first === undefined) {
+        restored.set(node.$ref, printed)
+        assignProperty(references, node.$ref, definition)
+      } else if (first !== printed) {
+        ambiguous = true
+      }
+      return node
+    }
+    const brands: Array<Branded> = []
+    const base = peel(schema, brands)
+    let out: Representation = node
+    for (let index = brands.length - 1; index >= 0; index--) out = withNodeBrand(out, brands[index]!)
+    return members(base, out)
+  }
+  /** The schema a member position names, or the node's own representation where it names none. */
+  const member = (schema: unknown, node: Representation): Representation =>
+    Schema.isSchema(schema) ? at(schema, node) : node
+  const members = (schema: Schema.Top, node: Representation): Representation => {
+    const fields = schema as unknown as Fields
+    switch (node._tag) {
+      case "Objects": {
+        // A struct names its fields; a record, or each record a struct with
+        // rest adds, names an index signature's key and value.
+        const declared = (fields["fields"] ?? (fields["schema"] as Fields | undefined)?.["fields"] ?? {}) as Record<
+          PropertyKey,
+          unknown
+        >
+        const records = Schema.isSchema(fields["key"]) ? [schema] : schemas(fields["records"]) ?? []
+        return {
+          ...node,
+          propertySignatures: node.propertySignatures.map((property) => ({
+            ...property,
+            type: member(Object.hasOwn(declared, property.name) ? declared[property.name] : undefined, property.type)
+          })),
+          indexSignatures: node.indexSignatures.map((signature, index) => {
+            const record = records[index] as unknown as Fields | undefined
+            return {
+              ...signature,
+              parameter: member(record?.["key"], signature.parameter),
+              type: member(record?.["value"], signature.type)
+            }
+          })
+        }
+      }
+      case "Arrays": {
+        // A tuple names its elements and, with rest, its rest; an array names
+        // the one value every element and the rest share.
+        const elements = schemas(fields["elements"]) ??
+          schemas((fields["schema"] as Fields | undefined)?.["elements"]) ??
+          []
+        const rest = schemas(fields["rest"]) ?? []
+        const item = fields["value"]
+        return {
+          ...node,
+          elements: node.elements.map((element, index) => ({
+            ...element,
+            type: member(elements[index] ?? item, element.type)
+          })),
+          rest: node.rest.map((type, index) => member(rest[index] ?? item, type))
+        }
+      }
+      case "Union": {
+        const declared = schemas(fields["members"]) ?? []
+        return { ...node, types: node.types.map((type, index) => member(declared[index], type)) }
+      }
+      default:
+        return node
+    }
+  }
+  const representation = at(schema, document.representation)
+  return ambiguous ? document : { representation, references: references as Representations }
+}
+
+/**
+ * The representation identity of a schema: what
+ * `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(schema.ast))`
+ * returned under `effect@4.0.0-rc.115`, key order included, in the given
+ * {@link representationIdentityVersions version} (the newest by default). A
+ * sealed action's step key hashes it, so it must not move with the installed
+ * `effect`.
  *
  * The installed release encodes the representation; this writes back the six
- * check ids renamed after rc.115. One difference cannot be undone: from
- * `effect@4.0.4` on, `Schema.brand` is not part of the AST, so the `brands`
- * annotation rc.115 wrote is absent and a declaration with a brand re-keys
- * once.
+ * check ids renamed after rc.115. From `effect@4.0.4` on `Schema.brand` is not
+ * part of the AST, so version 2 omits it, and version 1 restores it from the
+ * schema value, where the brand still lives.
  *
- * Throws what rc.115 threw for an AST with no representation, such as one
+ * Throws what rc.115 threw for a schema with no representation, such as one
  * whose check carries no `representation` annotation.
  *
  * @since 1.0.0
  * @private
  */
-export const representationIdentity = (ast: SchemaAST.AST): Schema.Json =>
-  withRc115CheckIds(SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(ast)))
+export const representationIdentity = (
+  schema: Schema.Top,
+  version: RepresentationIdentityVersion = representationIdentityVersions[0]
+): Schema.Json => {
+  const document = SchemaRepresentation.toRepresentation(schema.ast)
+  return withRc115CheckIds(SchemaRepresentation.toJson(version === 1 ? withRc115Brands(schema, document) : document))
+}

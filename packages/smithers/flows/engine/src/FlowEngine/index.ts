@@ -5,6 +5,14 @@
  * @since 0.1.0
  */
 
+/**
+ * The encodings a keyed sealed action's key has been written in, and the one
+ * new keys take.
+ *
+ * @category identity
+ * @since 1.0.0
+ */
+export { ActionKeyEncoding, type KeyEncoding, keyEncodings } from "./ActionKey.ts"
 export * from "./Authority.ts"
 export * from "./Encoded.ts"
 export * from "./FlowInstance.ts"

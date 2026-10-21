@@ -8,6 +8,11 @@
  * that uses one, and every recorded step behind such a schema would re-key.
  * `Node.representationIdentity` writes the rc.115 document.
  *
+ * `effect@4.0.4` also dropped `Schema.brand` from the AST, so the current
+ * identity (version 2) prints a branded schema as its base. Version 1 restores
+ * the brands from the schema value, so a key written before the upgrade can
+ * still be derived and its recorded outcome found again.
+ *
  * The fixture beside this file is what rc.115 wrote for every schema in
  * `SchemaIdentityCorpus.ts`, produced by
  * `fixtures/effect-rc115-schema-identity.generate.mjs` from the rc.115 tarball
@@ -33,9 +38,8 @@ const schemas = corpus(Schema, Effect)
 
 /**
  * The corpus entries whose rc.115 document carries a `brands` annotation.
- * From `effect@4.0.4` on a brand is not part of the AST, so nothing an
- * identity reads can restore it: a declaration with one of these schemas
- * re-keys once.
+ * From `effect@4.0.4` on a brand is not part of the AST: version 2 prints
+ * these as their base, and version 1 restores the brand from the schema value.
  */
 const branded = [
   "brand/string",
@@ -46,7 +50,22 @@ const branded = [
   "brand/identified-then-branded",
   "brand/struct",
   "brand/int",
-  "brand/twice"
+  "brand/twice",
+  "brand/annotated-around",
+  "brand/then-checked",
+  "brand/between-checks",
+  "brand/array",
+  "brand/non-empty-array",
+  "brand/tuple",
+  "brand/union",
+  "brand/null-or",
+  "brand/record",
+  "brand/optional-fields",
+  "brand/nested-struct",
+  "brand/identified-container",
+  "brand/twice-annotated",
+  "brand/tuple-with-rest",
+  "brand/struct-with-rest"
 ]
 
 /** A document with every `brands` annotation removed, and an emptied `annotations` with it. */
@@ -61,7 +80,8 @@ const withoutBrands = (value: unknown): unknown => {
   )
 }
 
-const printed = (name: string): string => JSON.stringify(Node.representationIdentity(schemas[name]!().ast))
+const printed = (name: string, version?: Node.RepresentationIdentityVersion): string =>
+  JSON.stringify(Node.representationIdentity(schemas[name]!(), version))
 
 describe("representation identity under an effect upgrade", () => {
   it("is held to the reviewed rc.115 tarball", () => {
@@ -94,16 +114,107 @@ describe("representation identity under an effect upgrade", () => {
     expect(printed(name)).toBe(JSON.stringify(withoutBrands(JSON.parse(fixture.documents[name]!))))
   })
 
+  // Compared as text: version 1 is the bytes every key written before the upgrade hashed.
+  it.each(Object.keys(fixture.documents))("writes %s as rc.115 wrote it, brand included, at version 1", (name) => {
+    expect(printed(name, 1)).toBe(fixture.documents[name])
+  })
+
+  it("names its versions newest first, and defaults to the newest", () => {
+    expect(Node.representationIdentityVersions).toEqual([2, 1])
+    expect(printed("brand/twice")).toBe(printed("brand/twice", 2))
+  })
+
+  it("restores no brand below a schema value that names no members", () => {
+    // `Schema.make` keeps an AST and nothing else: its fields, elements and
+    // members are gone, so only a brand on the value itself can be restored.
+    // A declaration like this re-keys once, as every branded one did before.
+    const UserId = Schema.String.pipe(Schema.brand("UserId"))
+    for (
+      const bare of [
+        Schema.make<Schema.Top>(Schema.Struct({ id: UserId }).ast),
+        Schema.make<Schema.Top>(Schema.Record(Schema.String, UserId).ast),
+        Schema.make<Schema.Top>(Schema.Array(UserId).ast),
+        Schema.make<Schema.Top>(Schema.Union([UserId, Schema.Number]).ast)
+      ]
+    ) {
+      expect(Node.representationIdentity(bare, 1)).toEqual(Node.representationIdentity(bare, 2))
+      expect(JSON.stringify(Node.representationIdentity(bare.pipe(Schema.brand("Row")), 1)))
+        .toBe(
+          JSON.stringify(Node.representationIdentity(bare, 2)).replace(
+            "\"checks\"",
+            "\"annotations\":{\"brands\":[\"Row\"]},\"checks\""
+          )
+        )
+    }
+  })
+
+  it("restores a definition every position brands alike, and none that positions brand differently", () => {
+    // A definition with a bigint literal and a unique symbol, which the
+    // comparison of two restorations must keep apart from each other.
+    const Lit = Schema.Struct({ n: Schema.Literal(1n), s: Schema.UniqueSymbol(Symbol.for("lit")) })
+      .annotate({ identifier: "Lit" })
+    const A = Lit.pipe(Schema.brand("A"))
+    const alike = Schema.Struct({ a: A, b: A })
+    expect(Node.representationIdentity(alike, 1)).toMatchObject({
+      references: { Lit: { annotations: { identifier: "Lit", brands: ["A"] } } }
+    })
+    // rc.115 wrote two definitions for each of these, and the current encoding
+    // writes one. Restoring the first position's brand would print `alike`'s
+    // rc.115 document, so a key derived from it could replay `alike`'s outcome:
+    // version 1 is the unrestored document instead, which adds no older key.
+    for (
+      const differently of [Schema.Struct({ a: A, b: Lit.pipe(Schema.brand("B")) }), Schema.Struct({ a: A, b: Lit })]
+    ) {
+      expect(Node.representationIdentity(differently, 1)).toEqual(Node.representationIdentity(differently, 2))
+      expect(Node.representationIdentity(differently, 1)).not.toEqual(Node.representationIdentity(alike, 1))
+    }
+  })
+
+  it("adds brands to the version 2 document and changes nothing else", () => {
+    // What bounds every restoration, complete or not: two declarations share a
+    // version 1 document only if they share a version 2 one, so a version 1 key
+    // stands for another declaration only when the two differ in brands alone.
+    const X = Schema.String.annotate({ identifier: "X" })
+    const A = X.pipe(Schema.brand("A"))
+    const V = Schema.Number.pipe(Schema.brand("V"))
+    // Positions a restoration does not reach: a suspended field, and a record
+    // whose key union expands into two index signatures.
+    const reachedPartly = [
+      Schema.Struct({ a: A, b: Schema.suspend(() => Schema.Struct({ x: X })) }),
+      Schema.Record(Schema.Union([Schema.String, Schema.Symbol]), V)
+    ]
+    for (const schema of [...Object.keys(fixture.documents).map((name) => schemas[name]!()), ...reachedPartly]) {
+      expect(JSON.stringify(withoutBrands(Node.representationIdentity(schema, 1))))
+        .toBe(JSON.stringify(Node.representationIdentity(schema, 2)))
+    }
+  })
+
+  it("never writes another corpus declaration's rc.115 document at version 1", () => {
+    // The property a legacy key rests on: version 1 of a declaration is its own
+    // rc.115 document, or its unrestored one, and never what rc.115 wrote for a
+    // declaration with a different document.
+    const owners = new Map<string, Set<string>>()
+    for (const [name, document] of Object.entries(fixture.documents)) {
+      owners.set(document, (owners.get(document) ?? new Set()).add(name))
+    }
+    for (const name of Object.keys(fixture.documents)) {
+      const owner = owners.get(printed(name, 1))
+      if (owner !== undefined) expect(owner).toContain(name)
+    }
+  })
+
   it.each(Object.entries(fixture.failures))("refuses %s as rc.115 refused it", (name, message) => {
-    expect(() => Node.representationIdentity(schemas[name]!().ast)).toThrow(expect.objectContaining({ message }))
+    for (const version of Node.representationIdentityVersions) {
+      expect(() => Node.representationIdentity(schemas[name]!(), version)).toThrow(expect.objectContaining({ message }))
+    }
   })
 
   it("is the installed encoding with the renamed check ids written back", () => {
     // The premise of the module, stated where it can fail: the installed
     // release writes the 4.0.4 id, and the identity writes the rc.115 one.
-    const ast = Schema.String.check(Schema.isStartingWith("a")).ast
-    expect(JSON.stringify(SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(ast))))
+    const schema = Schema.String.check(Schema.isStartingWith("a"))
+    expect(JSON.stringify(SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(schema.ast))))
       .toContain("\"effect/schema/isStartingWith\"")
-    expect(JSON.stringify(Node.representationIdentity(ast))).toContain("\"effect/schema/isStartsWith\"")
+    expect(JSON.stringify(Node.representationIdentity(schema))).toContain("\"effect/schema/isStartsWith\"")
   })
 })

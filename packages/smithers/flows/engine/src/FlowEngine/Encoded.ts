@@ -200,18 +200,26 @@ export interface Encoded {
     ) => Effect.Effect<void>)
     | undefined
   /**
-   * Resolve a fork's copied attempt identity before retry and dispatch lookup.
-   * The engine supplies its canonical derivation; persistence selects an
-   * ancestor only when the child's own history contains that attempt.
-   * Fresh fork work uses run-scoped keys so a parent's future cache cannot
-   * answer it. Ordinary runs retain their declared cache environment.
+   * Resolve a dispatch's recorded identity before retry and dispatch lookup:
+   * a fork's copied attempt, or a record an earlier engine wrote under an
+   * older key encoding. The engine supplies its canonical derivation and the
+   * dispatch's keys under every older encoding (`legacy`, newest first, the
+   * current key excluded); persistence selects an ancestor only when the
+   * child's own history contains that attempt, and an older encoding only
+   * when this run recorded under it. Fresh fork work uses run-scoped keys so
+   * a parent's future cache cannot answer it. Ordinary runs retain their
+   * declared cache environment.
    */
   readonly actionReplayKey?:
     | ((
       derive: (
         executionId: string,
         runScoped: boolean
-      ) => Effect.Effect<string, Schema.SchemaError, Crypto.Crypto>
+      ) => Effect.Effect<string, Schema.SchemaError, Crypto.Crypto>,
+      legacy: (
+        executionId: string,
+        runScoped: boolean
+      ) => Effect.Effect<ReadonlyArray<string>, Schema.SchemaError, Crypto.Crypto>
     ) => Effect.Effect<string, Schema.SchemaError, FlowRuntime.FlowInstance | Crypto.Crypto>)
     | undefined
   /**

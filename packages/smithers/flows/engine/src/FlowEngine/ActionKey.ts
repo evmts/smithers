@@ -10,12 +10,57 @@ import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { Action, Flow, StepIdentity } from "@smthrs/flow"
 import { DerivedKey, type StoredKey } from "@smthrs/keys"
 import * as Node from "@smthrs/plan/Node"
+import * as Context from "effect/Context"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import type * as SchemaAST from "effect/SchemaAST"
+
+/**
+ * The encodings a keyed sealed action's key has been written in, newest first.
+ *
+ * A record is found again only under the key it was written with, so changing
+ * how a key is derived must not strand the outcomes recorded before: every
+ * earlier encoding stays derivable, and a driver looks a dispatch up under
+ * them (`actionReplayKey`) before it writes under the newest. A change to the
+ * derivation adds an encoding at the front and keeps the rest.
+ *
+ * - `2` hashes the declaration's `Node.representationIdentity` version 2,
+ *   written since `effect@4.0.4` (2026-10-13).
+ * - `1` hashes version 1, which every key written under
+ *   `effect@4.0.0-rc.115` hashed: the same document with `Schema.brand`
+ *   restored.
+ *
+ * Neither names itself in the key, because both were written before keys were
+ * versioned. The two derive the same key for a declaration with no brand.
+ *
+ * @category identity
+ * @since 1.0.0
+ */
+export const keyEncodings = [2, 1] as const
+
+/**
+ * One encoding of {@link keyEncodings}.
+ *
+ * @category identity
+ * @since 1.0.0
+ */
+export type KeyEncoding = (typeof keyEncodings)[number]
+
+/**
+ * The encoding new keys are written in: the newest. A host never sets it; a
+ * test sets an older one to write a journal as an earlier engine did.
+ *
+ * @category identity
+ * @since 1.0.0
+ */
+export const ActionKeyEncoding = Context.Reference<KeyEncoding>("@smthrs/engine/FlowEngine/ActionKeyEncoding", {
+  defaultValue: () => keyEncodings[0]
+})
+
+/** The representation identity version an encoding hashes a declaration with. */
+const identityVersion = (encoding: KeyEncoding): Node.RepresentationIdentityVersion => encoding === 1 ? 1 : 2
 
 /**
  * Extracts the hermetic boundary descriptor from an action's metadata when
@@ -109,31 +154,40 @@ export const uncanonicalKey = (
     )
   })
 
-// Schema ASTs are immutable and shared by separately constructed actions.
-// Weak keys keep discarded declarations collectible. Cache only successful
-// hashes so a failed Crypto operation can be retried with a working service.
-const declarations = new WeakMap<SchemaAST.AST, WeakMap<SchemaAST.AST, StoredKey>>()
+// Schemas are immutable and shared by separately constructed actions. Weak
+// keys keep discarded declarations collectible. Version 2 depends on the AST
+// alone, so it is cached by AST and shared across schema values; version 1
+// reads the brand off the schema value, so it is cached by that value. Cache
+// only successful hashes so a failed Crypto operation can be retried with a
+// working service.
+const declarations: Record<KeyEncoding, WeakMap<object, WeakMap<object, StoredKey>>> = {
+  1: new WeakMap(),
+  2: new WeakMap()
+}
 
 /**
  * SHA-256 of the canonical success/error declaration document (issue #120).
  *
  * The document is `Node.representationIdentity`, not the installed
  * `SchemaRepresentation.toJson`: `effect` is a peer range, and a release that
- * encodes a schema differently would re-key every recorded sealed step.
+ * encodes a schema differently would re-key every recorded sealed step. The
+ * encoding picks the identity version, so a key written before an `effect`
+ * upgrade stays derivable.
  */
-const declarationDigest = Effect.fnUntraced(function*(action: Action.AnyWithProps) {
-  const success = action.successSchema.ast
-  const error = action.errorSchema.ast
-  let errors = declarations.get(success)
+const declarationDigest = Effect.fnUntraced(function*(action: Action.AnyWithProps, encoding: KeyEncoding) {
+  const version = identityVersion(encoding)
+  const success = version === 1 ? action.successSchema : action.successSchema.ast
+  const error = version === 1 ? action.errorSchema : action.errorSchema.ast
+  let errors = declarations[encoding].get(success)
   const cached = errors?.get(error)
   if (cached !== undefined) return cached
   const digest = yield* Schema.decodeUnknownEffect(DerivedKey)({
-    success: Node.representationIdentity(success),
-    error: Node.representationIdentity(error)
+    success: Node.representationIdentity(action.successSchema, version),
+    error: Node.representationIdentity(action.errorSchema, version)
   })
   if (errors === undefined) {
     errors = new WeakMap()
-    declarations.set(success, errors)
+    declarations[encoding].set(success, errors)
   }
   errors.set(error, digest)
   return digest
@@ -159,6 +213,8 @@ const boundaryDigest = Effect.fnUntraced(function*(metadata: unknown) {
 /**
  * The persisted key an action dispatch is recorded under: a pure cache key
  * for a keyed sealed action, an ordinal-scoped invocation key otherwise.
+ * `encoding` derives the key an earlier engine wrote; only a keyed sealed
+ * action's key with a string `idempotencyKey` differs between encodings.
  *
  * @private
  * @since 0.1.0
@@ -168,7 +224,8 @@ export const actionKey = Effect.fnUntraced(function*(
   executionId: string,
   ordinal: number,
   environment: Action.CacheEnvironment | undefined,
-  scope: string
+  scope: string,
+  encoding: KeyEncoding = keyEncodings[0]
 ): Effect.fn.Return<StoredKey, Schema.SchemaError, Crypto.Crypto> {
   if (action.tier === "sealed" && action.idempotencyKey !== undefined) {
     // Skyframe's SkyKey is (functionName, argument): a string idempotencyKey
@@ -203,7 +260,7 @@ export const actionKey = Effect.fnUntraced(function*(
       ? {
         action: action.name,
         idempotencyKey: action.idempotencyKey,
-        declaration: yield* declarationDigest(action)
+        declaration: yield* declarationDigest(action, encoding)
       }
       : action.idempotencyKey
     // The cacheability-gating boundary descriptor is cache key input

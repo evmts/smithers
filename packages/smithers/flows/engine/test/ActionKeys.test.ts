@@ -75,16 +75,17 @@ describe("action execution keys", () => {
   )
 
   effect(
-    "re-keys a declaration with a brand once, because effect@4.0.4 dropped brands from the AST",
+    "derives a branded declaration's rc.115 key at encoding 1, because effect@4.0.4 dropped brands from the AST",
     () =>
       Effect.gen(function*() {
         // Under effect@4.0.0-rc.115 `Schema.brand` wrote a `brands` annotation
-        // into the representation; from 4.0.4 on a brand is not part of the AST,
-        // so nothing a step key reads can restore it. In this repository that
-        // re-keys the sealed steps of three build install declarations, all
-        // through `Sha256.Digest`: `smithers-build/install`, `install/link` and
-        // `install/fetch/pnpm`. Every other declaration keeps its key. This pins
-        // what changed and that nothing else did.
+        // into the representation; from 4.0.4 on a brand is not part of the AST.
+        // Encoding 2 (the current one) hashes the brandless document; encoding 1
+        // restores the brand from the schema value and derives the key rc.115
+        // wrote, so a record written then is found again. In this repository
+        // that covers three build install declarations, all through
+        // `Sha256.Digest`: `smithers-build/install`, `install/link` and
+        // `install/fetch/pnpm`. This pins both keys.
         const rc115 = {
           representation: {
             _tag: "String",
@@ -102,20 +103,46 @@ describe("action execution keys", () => {
           references: {}
         }
         const { brands: _brands, ...annotations } = rc115.representation.checks[0]!.annotations
-        expect(JSON.stringify(Node.representationIdentity(Sha256.Digest.ast))).toBe(JSON.stringify({
+        expect(JSON.stringify(Node.representationIdentity(Sha256.Digest))).toBe(JSON.stringify({
           ...rc115,
           representation: { ...rc115.representation, checks: [{ ...rc115.representation.checks[0]!, annotations }] }
         }))
+        expect(JSON.stringify(Node.representationIdentity(Sha256.Digest, 1))).toBe(JSON.stringify(rc115))
         const action = Action.make({
           name: "ActionKeys/branded",
           success: Schema.Struct({ store: Sha256.Digest }),
           idempotencyKey: "row",
           execute: Effect.die("unused")
         })
-        const key = yield* actionKey(action, "run", 1, undefined, "scope")
         // The key this action derived on rc.115, and the one it derives now.
-        expect(key).not.toBe("key1_74c8862a35bde5cafe29effa5914ea0bf56540df0b3920271a603bebdcf1608a")
-        expect(key).toBe("key1_690b4cf451009c72a16a06e4f3df233b7c3ed88c9b7b8171be68a15da7ef7752")
+        expect(FlowEngine.keyEncodings).toEqual([2, 1])
+        expect(yield* actionKey(action, "run", 1, undefined, "scope", 1))
+          .toBe("key1_74c8862a35bde5cafe29effa5914ea0bf56540df0b3920271a603bebdcf1608a")
+        expect(yield* actionKey(action, "run", 1, undefined, "scope"))
+          .toBe("key1_690b4cf451009c72a16a06e4f3df233b7c3ed88c9b7b8171be68a15da7ef7752")
+        expect(yield* actionKey(action, "run", 1, undefined, "scope", 2))
+          .toBe("key1_690b4cf451009c72a16a06e4f3df233b7c3ed88c9b7b8171be68a15da7ef7752")
+        // A declaration whose shared definition is branded at one position and
+        // not at another has no rc.115 document version 1 can print, so it
+        // derives no older key: none that could be another declaration's.
+        const Name = Schema.String.annotate({ identifier: "ActionKeys/Name" })
+        const keyed = (success: Schema.Top) =>
+          Action.make({ name: "ActionKeys/shared", success, idempotencyKey: "row", execute: Effect.die("unused") })
+        const alike = keyed(Schema.Struct({ a: Name.pipe(Schema.brand("A")), b: Name.pipe(Schema.brand("A")) }))
+        const mixed = keyed(Schema.Struct({ a: Name.pipe(Schema.brand("A")), b: Name }))
+        expect(yield* actionKey(mixed, "run", 1, undefined, "scope", 1))
+          .toBe(yield* actionKey(mixed, "run", 1, undefined, "scope", 2))
+        expect(yield* actionKey(mixed, "run", 1, undefined, "scope", 1))
+          .not.toBe(yield* actionKey(alike, "run", 1, undefined, "scope", 1))
+        // A brandless declaration derives one key under both encodings.
+        const plain = Action.make({
+          name: "ActionKeys/branded",
+          success: Schema.Struct({ store: Schema.String }),
+          idempotencyKey: "row",
+          execute: Effect.die("unused")
+        })
+        expect(yield* actionKey(plain, "run", 1, undefined, "scope", 1))
+          .toBe(yield* actionKey(plain, "run", 1, undefined, "scope", 2))
       })
   )
 
@@ -617,8 +644,8 @@ describe("action execution keys", () => {
       let spelledRuns = 0
       const success = Schema.String
       const declaration = yield* Schema.decodeUnknownEffect(DerivedKey)({
-        success: Node.representationIdentity(success.ast),
-        error: Node.representationIdentity(Schema.Never.ast)
+        success: Node.representationIdentity(success),
+        error: Node.representationIdentity(Schema.Never)
       })
       const declared = Action.make({
         name: "ActionKeys/charge",
