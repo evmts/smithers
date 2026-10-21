@@ -176,6 +176,34 @@ The fence of the attempt an implementation is running under, when the runtime su
 
 `true` while an implementation runs an attempt an earlier execution started and never settled: its process died or was cut off mid-body, or the body parked on a durable wait and the run resumed. A durable engine re-runs such an attempt under its original number. An implementation that cannot repeat its effect silently, such as a paid provider call, reads it to count or reconcile the repeat.
 
+### `Action.Keyed`
+
+- **Type:** `interface Keyed<A, E = never, R = never> { readonly find: (key: string) => Effect.Effect<Option.Option<A>, E, R>; readonly perform: (key: string) => Effect.Effect<A, E, R> }`
+- **Since:** `1.0.0`
+
+A write to another service that carries its key and can be found by it. `perform` makes the object and puts the key on it in the same request: a commit trailer, a hidden body marker, a name suffix or the provider's idempotency key. `find` answers the object the key made, matching the key (and the acting account where the provider shows one), never a title, a message, a time window or a name alone. It answers `None` only after a complete search and fails when it cannot tell. `Action.keyed(effect)` builds one and infers its types.
+
+### `Action.effectKey`
+
+- **Signature:** `effectKey(name: string): Effect.Effect<string>`
+- **Since:** `1.0.0`
+
+The key of write `name` in the running dispatch: 64 lowercase hex of SHA-256 over `smithers/effect/v1`, the execution id, `Action.CurrentInvocationKey` and `name`, one per line. Every run of one dispatch derives the same key: its attempts, an adopted attempt and a resume. Another dispatch, execution or name derives another. Nothing from the payload or the clock enters it. Outside a dispatch it dies with `Action.EffectKeyUnavailable`.
+
+### `Action.once`
+
+- **Signature:** `once<A, E, R>(name: string, effect: Keyed<A, E, R>): Effect.Effect<A, E, R>`
+- **Since:** `1.0.0`
+
+Finds write `name`'s object, or makes it once. It calls `find(key)` and adopts what it answers; on `None` it calls `perform(key)`; when `perform` fails it calls `find(key)` again and adopts what landed, else fails with `perform`'s failure. A failing first `find` fails without writing. Each write runs in a span `Action.once` with `smithers.effect.name` and `smithers.effect.outcome`, and counts in `flows_effects` by outcome (`performed`, `adopted`, `adopted_after_failure`, `failed`); the key is never logged. Name each write of one step differently.
+
+### `Action.EffectKeyUnavailable`
+
+- **Type:** `Schema.TaggedError` with fields `name: string` and `message: string`
+- **Since:** `1.0.0`
+
+The defect `Action.once` and `Action.effectKey` die with outside a flow dispatch, where no `FlowInstance` or `Action.CurrentInvocationKey` is supplied.
+
 ### `Action.DuplicateImplementation`
 
 - **Type:** `Schema.TaggedError` with field `name: string`
