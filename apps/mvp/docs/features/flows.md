@@ -54,6 +54,7 @@ The tab never imports `@smthrs/agent`: it dispatches by each flow's reference (`
 | `todo/draft { repo, prompt, title?, acceptance? }` | client | yes | the agent, `/todo.new owner/repo <prompt>` (Member and up): a private draft on the device ([TODOs](todos.md#flows)) |
 | `todo/commit { repo, title, prompt, acceptance? }`, `todo/drop { repo, number }` | client | no: a person commits and drops; the agent drafts | Commit on a draft card; Drop, `/todo.drop` (Member and up) |
 | `repo/refs { repo }` | client | yes | the agent ([repo](repo.md#flows)) |
+| `repo/about { repo }` | client | no: a repository's page loads it; the agent reads a repository with `repo/refs`, `repo/tree` and `repo/read` | opening or warming a repository's page ([repo](repo.md#about)) |
 | `repo/clone { repo }` | client | yes | Clone and Try again, `/clone` for a Member or above, the agent ([repo](repo.md#cloning)) |
 | `repo/copy { repo, what, … }` | client | yes | the repository view's Copy buttons, the agent ([repo](repo.md#copy)) |
 | `app/jev/classify { question, items, labels? }` | client | yes | the agent ([Jev](jev.md)) |

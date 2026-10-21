@@ -1,11 +1,11 @@
 import { Effect, Layer } from "effect"
 import { RepoClient, type RepoRefused } from "./api"
 import { textOf } from "./contract"
-import { type FileRead, RepoNotFound, RepoReader, RepoReadsPaused, RepoReadUnavailable } from "./flows"
+import { AboutReader, type FileRead, RepoNotFound, RepoReader, RepoReadsPaused, RepoReadUnavailable } from "./flows"
 
 // The device's `RepoReader` (src/features/repo/flows.ts): the agent's `repo/tree`, `repo/read` and `repo/refs` steps,
-// and `repo/copy`'s contents, read through RepoApi's GET routes, the same answers the view reads. The key stays on the
-// server.
+// and `repo/copy`'s contents, read through RepoApi's GET routes, the same answers the view reads; and its `AboutReader`,
+// `repo/about`'s. The key stays on the server.
 
 /**
  * What a refused read means to a step: gone (404, or a request RepoApi refused as invalid), the read budget spent
@@ -17,6 +17,13 @@ export const readFailure = (refused: RepoRefused): RepoNotFound | RepoReadsPause
     : refused.status === 503 && refused.code === "capacity"
     ? new RepoReadsPaused()
     : new RepoReadUnavailable(refused.retryAfterMillis === undefined ? {} : { retryAfterMillis: refused.retryAfterMillis })
+
+/** `AboutReader` over the browser's `RepoClient`: RepoApi's about route. */
+export const aboutLayer = Layer.effect(
+  AboutReader,
+  Effect.map(RepoClient, (client) =>
+    AboutReader.of({ about: (owner, name) => client.about(owner, name).pipe(Effect.mapError(readFailure)) })),
+)
 
 /** `RepoReader` over the browser's `RepoClient`. A file over RepoApi's limit reads as `too-large` with its size. */
 export const readerLayer = Layer.effect(

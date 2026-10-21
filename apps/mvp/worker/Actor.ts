@@ -118,6 +118,7 @@ export type PersonOnlyEnforcement =
 /** Every person-only flow of the registry, and how the server keeps it the person's. */
 export const PERSON_ONLY_FLOWS = {
   "timeline/summarize": { device: "The device projects conversation labels and reaches only the metered model role; no approval or shared write authority is granted." },
+  "repo/about": { device: "A repository's page reads what GitHub says of it through RepoApi's about route, which any visitor may read; it grants nothing." },
   "chat/Answer": { starts: "POST /api/questions" },
   "chat/Close": {
     device: "The asking tab settles its own answer through the answer route its agent writes; it grants nothing more.",

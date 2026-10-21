@@ -2,7 +2,7 @@ import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { Context, type Effect, Layer, Schema } from "effect"
 import { COPY_KINDS, isFilePath, isRepository, MAX_BLOB_BYTES, SHA_PATTERN } from "./contract"
-import { CloneAccepted, Refs, TreeListing } from "./schema"
+import { About, CloneAccepted, Refs, TreeListing } from "./schema"
 
 // The repository flows (decision 0006 §1, docs/features/repo.md#flows): `repo/tree` lists a cloned repository's files
 // at a commit, `repo/read` reads one file there, and `repo/refs` lists its branches and tags. `repo/clone` asks RepoApi
@@ -10,6 +10,9 @@ import { CloneAccepted, Refs, TreeListing } from "./schema"
 // puts a link, a path, a file's text or the clone URL on the clipboard of the tab that asked
 // (src/features/repo/copy.ts). Each is a model-invocable flow of one step: a person's button or slash command and the
 // agent run the same declaration.
+//
+// `repo/about` reads what GitHub says of a repository for its page (src/features/repo/actions.ts), so a read GitHub
+// refused for a moment is tried again by the engine, not lost until a reload.
 //
 // They run on this device (decision 0011 §2): neither holds the Code Storage key. What a step does is injected through
 // `RepoReader`: on the device, a GET of RepoApi's read routes, whose answers every cache keeps forever; on the server
@@ -69,6 +72,12 @@ export class RepoReader extends Context.Service<
   }
 >()("@smthrs/mvp/repo/RepoReader") {}
 
+/** Where `repo/about` reads what GitHub says of a repository: on the device, RepoApi's about route. */
+export class AboutReader extends Context.Service<
+  AboutReader,
+  { readonly about: (owner: string, name: string) => Effect.Effect<About, ReadFailure> }
+>()("@smthrs/mvp/repo/AboutReader") {}
+
 /** How long a read keeps trying while Code Storage is busy: 1 s doubling to 15 s, for at most 2 minutes. */
 export const READ_RETRY = RetryPolicy.make({
   initialMs: 1_000,
@@ -105,6 +114,29 @@ export const ReadRefs = Action.make("repo/ReadRefs", {
   error: ReadFailure,
   retryPolicy: READ_RETRY,
 })
+
+/** The step: what GitHub says of the repository. */
+export const ReadAbout = Action.make("repo/ReadAbout", {
+  payload: refsPayload,
+  success: About,
+  error: ReadFailure,
+  retryPolicy: READ_RETRY,
+})
+
+/**
+ * `repo/about { repo }`: what GitHub says of a repository, cloned or not, for its page. A refusal that may pass (GitHub
+ * or RepoApi busy, unreachable or rate limited) is tried again under `READ_RETRY`; none for a repository that isn't
+ * there or a spent read budget.
+ */
+export const RepoAbout = Flow.make("repo/about", {
+  description: "What GitHub says of a public repository (owner/name), cloned or not: description, topics, languages, " +
+    "latest release, contributors, counts, newest commit, top folder and README.",
+  modelInvocable: false,
+  payload: refsPayload,
+  success: About,
+  error: ReadFailure,
+  body: Node.capture({ action: ReadAbout.name }, (payload) => ReadAbout.call(payload)),
+}).annotate(Flow.Placement, Placement.client())
 
 /** `repo/tree { repo, revision }`: every file's path at a commit. */
 export const RepoTree = Flow.make("repo/tree", {
@@ -245,8 +277,15 @@ export const parts = (repo: string): readonly [string, string] => {
   return [owner, name]
 }
 
-/** Registers the three read flows, reading through the host's `RepoReader`. */
+/** Registers the read flows, reading through the host's `RepoReader` and, for `repo/about`, its `AboutReader`. */
 export const registration = Layer.mergeAll(
+  Interpreter.layerWithImplementations(
+    RepoAbout,
+    ReadAbout.toLayer(({ repo }) => {
+      const [owner, name] = parts(repo)
+      return AboutReader.use((reader) => reader.about(owner, name))
+    }),
+  ),
   Interpreter.layerWithImplementations(
     RepoTree,
     ReadTree.toLayer(({ repo, revision }) => {

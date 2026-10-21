@@ -15,7 +15,7 @@ import { Close } from "../features/agent/close"
 import { ChatCopy, ChatEdit } from "../features/chat/flows"
 import { AnswerReference } from "../features/agent/reference"
 import { Navigate } from "../features/navigation/flows"
-import { RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../features/repo/flows"
+import { RepoAbout, RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../features/repo/flows"
 import type { Role } from "../features/auth/contract"
 import {
   FlowAnswerReference,
@@ -134,6 +134,10 @@ export const registry = {
   "repo/tree": { flow: RepoTree },
   "repo/read": { flow: RepoRead },
   "repo/refs": { flow: RepoRefs },
+  "repo/about": {
+    flow: RepoAbout,
+    userOnlyReason: "A repository's page loads what GitHub says of it; the agent reads a repository with repo/refs, repo/tree and repo/read.",
+  },
   // Cloning spends the deployment's Code Storage budget, which only a Member or above may (decision 0007).
   "repo/clone": {
     flow: RepoCloneRequest,

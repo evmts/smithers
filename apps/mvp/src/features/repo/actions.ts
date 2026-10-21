@@ -172,6 +172,9 @@ const ensureRefs = (repository: Repository, key: string) =>
 /**
  * Loads what GitHub says of `owner/name` unless this tab has it or is loading it; a failed one loads again. It needs no
  * clone, so the page shows it from the first visit: the about panel, and before a clone the top folder and README.
+ * The read is the flow `repo/about`, door `view`, on this device's engine: a refusal that may pass (GitHub or RepoApi
+ * busy, unreachable or rate limited) is tried again by the step's retry policy while the panel shows it loading, so a
+ * moment's 503 never leaves the page without it until a reload.
  */
 const ensureAbout = (owner: string, name: string, id: string) =>
   Effect.gen(function* () {
@@ -181,14 +184,30 @@ const ensureAbout = (owner: string, name: string, id: string) =>
     yield* put<AboutRow>(store.abouts, id, { key: id, state: "loading", about: null, message: null })
     const load = Effect.gen(function* () {
       const startedAt = yield* Clock.currentTimeMillis
-      const result = yield* Effect.result((yield* RepoClient).about(owner, name))
-      const row: AboutRow = result._tag === "Success"
-        ? { key: id, state: "ready", about: result.success, message: null }
-        : result.failure.status === 404
+      const dispatched = yield* Effect.result(
+        (yield* FlowDispatch).dispatch("repo/about", { repo: `${owner}/${name}` }, { door: "view" }),
+      )
+      const row: AboutRow = dispatched._tag === "Success" && dispatched.success._tag === "Done"
+        ? { key: id, state: "ready", about: dispatched.success.value, message: null }
+        : dispatched._tag === "Success" && dispatched.success._tag === "Failed" &&
+            dispatched.success.error._tag === "@smthrs/mvp/repo/RepoNotFound"
         ? { key: id, state: "missing", about: null, message: NOT_FOUND }
         : { key: id, state: "failed", about: null, message: COULDNT_LOAD }
       yield* put(store.abouts, id, row)
-      yield* observeLoad("repo.about.load", aboutLoadMs, row.state, startedAt, result)
+      const durationMs = (yield* Clock.currentTimeMillis) - startedAt
+      yield* Metric.update(Metric.withAttributes(aboutLoadMs, { outcome: row.state }), durationMs)
+      yield* Effect.logWithLevel(row.state === "failed" ? "Warn" : "Info")("repo.about.load").pipe(
+        Effect.annotateLogs({
+          outcome: row.state,
+          durationMs,
+          feature: "repo",
+          ...(dispatched._tag === "Failure"
+            ? { reason: dispatched.failure.reason }
+            : dispatched.success._tag === "Failed"
+            ? { error: dispatched.success.error._tag }
+            : {}),
+        }),
+      )
     })
     yield* Effect.forkIn(load, store.scope, { startImmediately: true })
   })

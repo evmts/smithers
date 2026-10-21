@@ -21,7 +21,7 @@ import { tabNavigation } from "../features/navigation/tab"
 import { RepoClient } from "../features/repo/api"
 import { Clipboard } from "../clipboard"
 import { TabClipboard } from "../features/repo/copy"
-import { RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../features/repo/flows"
+import { RepoAbout, RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../features/repo/flows"
 import { Repo } from "../features/repo/repo"
 import * as RepoSteps from "../features/repo/steps"
 import { RepoStore } from "../features/repo/store"
@@ -61,7 +61,7 @@ export interface DeviceOptions {
 }
 
 /** The flows this device's engine runs, as the registry names them. */
-const flows = [RepoTree, RepoRead, RepoRefs, RepoCloneRequest, RepoCopy, Navigation.Navigate]
+const flows = [RepoTree, RepoRead, RepoRefs, RepoAbout, RepoCloneRequest, RepoCopy, Navigation.Navigate]
 
 /**
  * A tab: the repository layer over `options`, recording its log lines, metrics, clipboard and navigations, with

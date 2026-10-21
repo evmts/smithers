@@ -30,7 +30,7 @@ import { IssueCommitment, IssueComment, IssueCreate, IssueTriage, TriageEnable, 
 import { Classify, Evaluate } from "../features/jev/flows"
 import { Cancel, Inspect, List, Resume, Retry } from "../features/runs/flows"
 import { Navigate } from "../features/navigation/flows"
-import { RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../features/repo/flows"
+import { RepoAbout, RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../features/repo/flows"
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
 import { AlertChannelSet } from "../features/spend/flows"
@@ -58,6 +58,7 @@ export const declarations = {
   "repo/tree": RepoTree,
   "repo/read": RepoRead,
   "repo/refs": RepoRefs,
+  "repo/about": RepoAbout,
   "repo/clone": RepoCloneRequest,
   "repo/copy": RepoCopy,
   "app/jev/classify": Classify,

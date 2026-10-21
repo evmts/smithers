@@ -139,6 +139,7 @@ describe("names and placement", () => {
       "repo/tree",
       "repo/read",
       "repo/refs",
+      "repo/about",
       "repo/clone",
       "repo/copy",
       "app/jev/classify",

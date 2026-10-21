@@ -471,18 +471,22 @@ describe("what GitHub says, cloned or not", () => {
     expect(h.github.calls).toHaveLength(calls)
   })
 
-  test("one GitHub doesn't have is missing; one GitHub can't answer fails, and loads again when opened again", async () => {
+  test("one GitHub doesn't have is missing; one GitHub can't answer for a moment shows once it answers, with no reopen", async () => {
     const h = await repoHarness(server)
     const tab = await open(h)
     tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Gone" }, {})
     await waitFor(() => expect(tab.about().about).toMatchObject({ state: "missing", message: NOT_FOUND }))
     h.github.publish("octocat", "Spoon-Knife")
     h.github.fail("", 502)
+    const before = h.github.calls.length
     tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Spoon-Knife" }, {})
-    await waitFor(() => expect(tab.about().about).toMatchObject({ state: "failed", message: COULDNT_LOAD }))
+    // RepoApi answered 503: `repo/about`'s step waits and asks again under its retry policy, and the panel shows it
+    // loading meanwhile. Before, the panel showed Couldn't load until the page was opened again.
+    await waitFor(() => expect(h.github.calls.length).toBeGreaterThan(before))
+    expect(tab.about().about?.state).toBe("loading")
     h.github.clear()
-    tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Spoon-Knife" }, {})
-    await waitFor(() => expect(tab.about().about?.state).toBe("ready"))
+    await waitFor(() => expect(tab.about().about?.state).toBe("ready"), { timeout: 30_000 })
+    expect(tab.histogramCount(aboutLoadMs, { outcome: "failed" })).toBe(0)
   })
 
   test("a file the repository's manifest lists: the manifest loads beside it, and links its flow and sources", async () => {

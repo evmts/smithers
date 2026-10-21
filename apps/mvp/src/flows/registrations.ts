@@ -35,7 +35,7 @@ import { type Endpoint, TabPort } from "./tabPort"
 // only an engine's host imports this module, never the tab (src/flows/tab.test.ts).
 
 /**
- * The repository flows: the reads (`repo/tree`, `repo/read`, `repo/refs`) over RepoApi's GET routes on `origin`
+ * The repository flows: the reads (`repo/tree`, `repo/read`, `repo/refs`, `repo/about`) over RepoApi's GET routes on `origin`
  * (src/features/repo/reader.ts), `repo/clone` asking RepoApi's `POST /api/repos`, and `repo/copy`, all through the
  * host's `HttpClient`: the device never holds the Code Storage key. Needs the host's `TabClipboard`, where a copy goes.
  */
