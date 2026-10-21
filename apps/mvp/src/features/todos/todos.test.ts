@@ -3,8 +3,10 @@
 // own layer (`appLayer`) on a Node device whose engine leads (src/test/chatApi.ts), against ChatApi's real stack routes
 // (worker/stack/Api.ts) and its one writer over the compose Postgres and Electric. Only the model is scripted. Unhappy
 // paths give the tab a faulty `StackClient`, the real one behind switches (test.faults-by-injection).
-import { Outbox } from "@smthrs/effect-tanstack-db"
-import { Effect, Layer, type ManagedRuntime, Metric, Option } from "effect"
+import { Persistence, Outbox } from "@smthrs/effect-tanstack-db"
+import { Context, Exit, Effect, Layer, type ManagedRuntime, Metric, Option } from "effect"
+import { ShapeSource } from "@smthrs/effect-electric"
+import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
@@ -670,5 +672,62 @@ describe("the device", () => {
     expect(tab.actions.commit(id)).toBe(stackPath(OWNER, NAME))
     await until(() => expect(tab.view()?.committing).toEqual([]))
     expect(Option.isSome(await tab.runtime.runPromise(tab.store.drafts.get(id)))).toBe(true)
+  }, WITHIN)
+})
+
+
+describe("stack initialization regressions", () => {
+  test.each([[401, "sign_in"], [403, "forbidden"]] as const)("a prompt shape refused %s updates access to %s", async (status, expected) => {
+    const runtime = openTestApp()
+    runtimes.push(runtime)
+    const api = await runtime.runPromise(Effect.service(TestChatApi))
+    await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const built = yield* Layer.build(TodosStore.layer({ origin: api.origin }).pipe(
+        Layer.provide(Layer.succeed(ShapeSource.ShapeSource, {
+          request: (url, init) => url.includes("/api/shapes/todo-requests")
+            ? Effect.succeed(new Response(null, { status }))
+            : ShapeSource.fetchSource.request(url, init),
+        })),
+        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, api.fetch)),
+      ))
+      const store = Context.get(built, TodosStore)
+      yield* store.stackOf(REPO_ID)
+      yield* Effect.promise(() => until(async () => {
+        const row = await runtime.runPromise(store.access.get(REPO_ID))
+        expect(Option.isSome(row) && row.value.status).toBe(expected)
+      }, 5000))
+    })))
+  }, WITHIN)
+
+  test("a failed initialization can be opened again after persistence recovers", async () => {
+    const runtime = openTestApp()
+    runtimes.push(runtime)
+    const api = await runtime.runPromise(Effect.service(TestChatApi))
+    await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const real = yield* Persistence.Persistence
+      let fail = false
+      // A device whose persistence metadata becomes temporarily unreadable, then recovers.
+      const faulty: Persistence.Service = {
+        persistence: real.persistence,
+        get registry() {
+          if (fail) { fail = false; throw new Error("persistence metadata unavailable") }
+          return real.registry
+        },
+      }
+      const built = yield* Layer.build(TodosStore.layer({ origin: api.origin }).pipe(
+        Layer.provide(Layer.succeed(Persistence.Persistence, faulty)),
+        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, api.fetch)),
+      ))
+      const store = Context.get(built, TodosStore)
+      fail = true
+      expect(Exit.isFailure(yield* Effect.exit(store.stackOf(REPO_ID)))).toBe(true)
+      expect(store.opened(REPO_ID)).toBeUndefined()
+      const reopened = yield* Effect.exit(store.stackOf(REPO_ID))
+      expect(Exit.isSuccess(reopened)).toBe(true)
+      if (Exit.isSuccess(reopened)) {
+        expect(store.opened(REPO_ID)).toBe(reopened.value)
+        expect(yield* store.stackOf(REPO_ID)).toBe(reopened.value)
+      }
+    })))
   }, WITHIN)
 })

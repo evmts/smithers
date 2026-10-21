@@ -356,3 +356,10 @@ describe("Stack.TodoRuns", () => {
     expect(Stack.TodoRuns.key).toBe("@smthrs/mvp/stack/TodoRuns")
   })
 })
+
+
+test("a valid prompt survives worst-case JSON escaping at its byte limit", async () => {
+  const h = await stackHarness(runtime, { actor: member })
+  const body = commitBody({ prompt: "x" + "\u0001".repeat(MAX_PROMPT_BYTES - 1) })
+  expect((await post(h, body)).status).toBe(202)
+})

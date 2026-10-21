@@ -73,8 +73,14 @@ export class TodoStepRefused extends Schema.TaggedError<TodoStepRefused>()("@smt
   reason: Schema.Literals(["tab_gone", "not_kept", "issue_not_found", "agent"]),
 }) {}
 
-/** How long a step keeps asking its tab: 1 s doubling to 8 s, for at most 30 s. */
-export const ASK_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 8_000, expirationMs: 30_000 })
+/** Retry transport failures for at most 30 s; a tab's declared refusal is final. */
+export const ASK_RETRY = RetryPolicy.make({
+  initialMs: 1_000,
+  factor: 2,
+  maxMs: 8_000,
+  expirationMs: 30_000,
+  nonRetryable: ["@smthrs/mvp/todos/TodoStepRefused"],
+})
 
 /** The step: keep the draft on the asking tab's device. */
 export const KeepDraft = Action.make("todo/draft/keep", {

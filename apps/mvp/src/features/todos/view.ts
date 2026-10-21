@@ -102,7 +102,7 @@ export const notSentRows = (repoId: string, requested: ReadonlyArray<Requested>)
       id: row.id,
       op: row.op,
       label: row.op === "commit" ? row.title : `Drop T${row.number}`,
-      reason: NOT_SENT_COPY[row.reason as NotSentReason],
+      reason: NOT_SENT_COPY[row.reason as NotSentReason] ?? "Not sent",
     }))
 
 /**
@@ -114,8 +114,9 @@ export const deliveredOf = (
   todos: ReadonlyArray<Todo>,
   requested: ReadonlyArray<Requested>,
 ): ReadonlyArray<string> => {
-  const ids = new Set(todos.map((todo) => todo.id))
-  const dropped = new Set(todos.filter((todo) => todo.state === "dropped").map((todo) => todo.number))
+  const repository = todos.filter((todo) => todo.repoId === repoId)
+  const ids = new Set(repository.map((todo) => todo.id))
+  const dropped = new Set(repository.filter((todo) => todo.state === "dropped").map((todo) => todo.number))
   return requested
     .filter((row) => row.repoId === repoId && (row.op === "commit" ? ids.has(row.id) : dropped.has(row.number)))
     .map((row) => row.id)

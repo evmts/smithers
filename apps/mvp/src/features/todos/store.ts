@@ -1,6 +1,6 @@
 import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
-import { Cache, Clock, Context, Effect, Layer, Option, Scope, Stream } from "effect"
+import { Cache, Clock, Context, Effect, Exit, Layer, Option, Scope, Stream } from "effect"
 import { ChatStore } from "../chat/store"
 import { repoId } from "../repo/contract"
 import { TODO_REQUESTS_SHAPE_ROUTE, TODOS_SHAPE_ROUTE } from "./contract"
@@ -162,10 +162,20 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
       )
       // Unknown until the shape answers.
       yield* Effect.ignore(access.insert({ id, status: "unknown" }))
-      yield* todos.sync.pipe(
-        Stream.runForEach((event) => {
+      // Both shapes must allow access. A successful TODO request cannot erase a prompt refusal.
+      const statuses: Array<Access["status"]> = ["unknown", "unknown"]
+      yield* Stream.merge(
+        todos.sync.pipe(Stream.map((event) => ({ index: 0, event }))),
+        requests.sync.pipe(Stream.map((event) => ({ index: 1, event }))),
+      ).pipe(
+        Stream.runForEach(({ index, event }) => {
           const status = accessOf(event)
-          return status === undefined ? Effect.void : Effect.ignore(access.update(id, (draft) => void (draft.status = status)))
+          if (status === undefined) return Effect.void
+          statuses[index] = status
+          const combined = statuses.includes("sign_in") ? "sign_in"
+            : statuses.includes("forbidden") ? "forbidden"
+            : statuses.every((value) => value === "allowed") ? "allowed" : "unknown"
+          return Effect.ignore(access.update(id, (draft) => void (draft.status = combined)))
         }),
         Effect.forkIn(scope, { startImmediately: true }),
       )
@@ -173,7 +183,10 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
       return stack
     }).pipe(Scope.provide(scope), Effect.provideService(Persistence.Persistence, persistence))
   // Opening a stack twice at once opens it once: the cache runs one lookup per repository and keeps it.
-  const opening = yield* Cache.make({ lookup: open, capacity: Number.MAX_SAFE_INTEGER })
+  const opening = yield* Cache.makeWith(open, {
+    capacity: Number.MAX_SAFE_INTEGER,
+    timeToLive: (exit) => Exit.isFailure(exit) ? 0 : Infinity,
+  })
   const stackOf = (id: string) => Cache.get(opening, id)
 
   /** Keeps `draft` on the device once: a draft the device has already is kept. Answers whether the device has it. */

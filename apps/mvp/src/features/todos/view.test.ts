@@ -592,3 +592,26 @@ describe("TODOs made from issues", () => {
     expect(withTodos([{ number: 8, title: "Eight", state: "open" }], made, false, () => {})[0]!.menu).toBeUndefined()
   })
 })
+
+
+describe("TODO boundary regressions", () => {
+  test("titles count Unicode characters and truncate without a lone surrogate", () => {
+    expect(isTitle("😀".repeat(MAX_TITLE_LENGTH))).toBe(true)
+    expect(isTitle("😀".repeat(MAX_TITLE_LENGTH + 1))).toBe(false)
+  })
+
+  test("title truncation preserves surrogate pairs", () => {
+    expect(titleOf("a".repeat(118) + "😀bc")).toBe("a".repeat(118) + "😀…")
+    expect(titleOf("😀".repeat(MAX_TITLE_LENGTH))).toBe("😀".repeat(MAX_TITLE_LENGTH))
+  })
+
+  test("delivery ignores another repository's matching TODO number and id", () => {
+    const mine = [requested({ id: "drop", op: "drop", number: 1 }), requested({ id: "commit", op: "commit" })]
+    expect(deliveredOf(REPO, [todo({ id: "commit", number: 1, state: "dropped", repoId: "github/other/repo" })], mine)).toEqual([])
+    expect(deliveredOf(REPO, [todo({ id: "commit", number: 1, state: "dropped" })], mine)).toEqual(["drop", "commit"])
+  })
+
+  test("a refused change with no reason still has a badge label", () => {
+    expect(notSentRows(REPO, [requested({ id: "refused", op: "drop", status: "not_sent", reason: null })])[0]?.reason).toBe("Not sent")
+  })
+})

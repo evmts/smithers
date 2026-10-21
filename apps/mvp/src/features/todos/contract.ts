@@ -121,8 +121,8 @@ export const MAX_PROMPT_BYTES = 16_384
 export const MAX_ACCEPTANCE = 20
 export const MAX_ACCEPTANCE_LENGTH = 300
 
-/** The largest `POST .../stack` body, in bytes: a whole prompt, title and criteria, and their JSON. */
-export const MAX_STACK_BODY_BYTES = 2 * MAX_PROMPT_BYTES + 4 * (MAX_TITLE_LENGTH + MAX_ACCEPTANCE * MAX_ACCEPTANCE_LENGTH) +
+/** The largest body: each permitted byte or character may become a six-byte JSON escape, plus framing. */
+export const MAX_STACK_BODY_BYTES = 6 * MAX_PROMPT_BYTES + 6 * (MAX_TITLE_LENGTH + MAX_ACCEPTANCE * MAX_ACCEPTANCE_LENGTH) +
   1024
 
 /** The largest TODO number a route or payload takes: Postgres `integer`. */
@@ -238,7 +238,8 @@ export const todoNumberOf = (text: string): number | undefined => {
 /** A draft's title when the agent or the slash command gave none: the prompt's first line, cut to the limit. */
 export const titleOf = (prompt: string): string => {
   const line = prompt.trim().split("\n", 1)[0]!.replace(/^#+\s*/, "").trim()
-  return line.length <= MAX_TITLE_LENGTH ? line : `${line.slice(0, MAX_TITLE_LENGTH - 1)}…`
+  const characters = Array.from(line)
+  return characters.length <= MAX_TITLE_LENGTH ? line : `${characters.slice(0, MAX_TITLE_LENGTH - 1).join("")}…`
 }
 
 /** UTF-8 bytes of `text`. */
@@ -271,7 +272,7 @@ export const draftFromIssue = <D extends { readonly title: string; readonly prom
 })
 
 /** Whether `title` is a TODO title: 1 to `MAX_TITLE_LENGTH` characters, not blank. */
-export const isTitle = (title: string): boolean => title.trim().length > 0 && title.length <= MAX_TITLE_LENGTH
+export const isTitle = (title: string): boolean => title.trim().length > 0 && Array.from(title).length <= MAX_TITLE_LENGTH
 
 /** Whether `prompt` is a TODO prompt: not blank, at most `MAX_PROMPT_BYTES`. */
 export const isPrompt = (prompt: string): boolean => prompt.trim().length > 0 && bytesOf(prompt) <= MAX_PROMPT_BYTES

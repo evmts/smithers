@@ -1,9 +1,9 @@
 import { WebCrypto } from "@smthrs/crypto"
-import { FlowRuntime } from "@smthrs/flow"
+import { RetryPolicy, FlowRuntime } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
 import { Cause, type Crypto, Effect, Exit, Layer, Metric, Option } from "effect"
 import { describe, expect, test } from "vitest"
-import { TodoStepRefused } from "./flows"
+import { ASK_RETRY, TodoStepRefused } from "./flows"
 import { drafts, queued } from "./metrics"
 import type { TodosCall } from "./schema"
 import { keepDraft, queueChange, TabTodos } from "./steps"
@@ -165,4 +165,12 @@ describe("a draft from an issue", () => {
     await run(commit, `${PERSON}-2`, tab.layer, new Map())
     expect(tab.asked.map(({ call }) => call.kind === "queue" && call.op.issue)).toEqual([7, undefined])
   })
+})
+
+
+test("permanent TODO refusals stop on the first attempt; transport failures retry", () => {
+  for (const reason of ["agent", "issue_not_found", "not_kept", "tab_gone"] as const) {
+    expect(RetryPolicy.decide(ASK_RETRY, { attempt: 1, error: new TodoStepRefused({ reason }) })).toEqual({ _tag: "GiveUp", reason: "nonRetryable" })
+  }
+  expect(RetryPolicy.decide(ASK_RETRY, { attempt: 1, error: { _tag: "TransportUnavailable" } })).toEqual({ _tag: "RetryAfter", delayMs: 1000 })
 })

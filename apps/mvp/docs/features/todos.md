@@ -209,3 +209,10 @@ Run with the compose Postgres and Electric up (`pnpm db:up`).
 
 - The run's step strip on a TODO's page.
 - Slice 2: Before Tn and Amend, Move, two lanes, forward updates, out-of-order merges.
+
+
+### Boundary regression guarantees
+
+Titles count Unicode code points and truncate only between them. The request body allowance covers JSON's six-byte escapes for every permitted prompt byte and title or criterion character; decoded field limits still apply. A missing refusal reason displays “Not sent”. Delivery receipts match the requested repository before comparing TODO ids or numbers.
+
+Client steps use the catalog's `@smthrs/flow` `RetryPolicy`: declared `TodoStepRefused` errors stop immediately, while transport failures retain bounded retries. Stack access combines both Electric shapes; a successful shape cannot erase the other shape's authorization refusal. Failed initialization is evicted from the Effect cache so another open can recover. Existing step and shape telemetry records these outcomes without prompt text.
