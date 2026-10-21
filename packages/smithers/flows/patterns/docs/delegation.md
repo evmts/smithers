@@ -13,31 +13,20 @@ the other patterns here: refine, plan, derisk, execute, review, settle. Both
 compose [`@smthrs/flow`](/api/flow) and [`@smthrs/plan`](/api/plan), and import
 no Node built-ins.
 
-## Why a plan needs two halves
+## One round per plan
 
 A flow declares its graph before it runs. `Recursion.recurse` expands a
 recursive tree at plan time, which requires the tree to be a literal value the
 author already holds. A delegated plan is not: a model writes it while the run
 is in flight.
 
-Each of these modules therefore has two halves, and they answer different
-questions:
-
-| Half   | Question it answers                         | Value                                             |
-| ------ | ------------------------------------------- | ------------------------------------------------- |
-| `make` | What is the most work this can possibly do? | a `Flow` whose graph is the conservative topology |
-| `run`  | What did the model actually ask for?        | an `Effect` executing the authored plan           |
-
-`make` is what a host reads to budget, place, and admit the work in advance.
-`run` is what executes. They agree by construction: `make` declares one leaf
-call per unit of fuel, and `run` refuses any plan that costs more fuel than
-remains.
-
-Durability follows the same split. A model-authored plan is discovered inside a
-round, so a durable host spends one trampoline round per authored plan: the
-round plans a bounded graph, journals it, and hands off to the next round with
-the `To` outcome `@smthrs/flow` defines. A crash resumes at a round boundary,
-never in the middle of a tree no graph described.
+So a trellis spends one trampoline round per authored plan. A round ends by
+handing the plan to the next round with the `To` outcome `@smthrs/flow`
+defines; the next round receives it as payload, reads it as data while its
+graph is built, and declares exactly the leaf calls it names. Each round is its
+own journal segment, so a crash resumes at a round boundary, never in the
+middle of a tree no graph described. The envelope's `fuel` bounds the whole
+lineage before anything runs.
 
 ## Trellis
 
@@ -83,13 +72,8 @@ carries a path, and the path is what an author needs to repair the plan.
 collecting member results in order, and a `parallel` becomes a `Node.all` join
 returned in plan order.
 
-`Trellis.make({ author, leaf, envelope })` declares the conservative topology:
-one call to `author`, then `envelope.fuel` calls to `leaf`. The leaf slots are
-sequenced because a declaration cannot know how the plan will fan out. Each slot
-is declared with the `Leaf` shape `run` and `execute` hand a leaf flow, with the
-authored plan standing in for the goal nothing knows yet and the path naming the
-slot (`slot-0`). An envelope that is not made of positive safe integers throws
-`TrellisError` with code `invalid_envelope`.
+An envelope that is not made of positive safe integers makes
+`Trellis.make` throw `TrellisError` with code `invalid_envelope`.
 
 `Trellis.leaves(plan)` lists the leaves in plan order with their paths. The
 count is the plan's cost in fuel, and the paths are the stable keys a caller
@@ -98,31 +82,34 @@ uses to index leaf outputs.
 ### Running
 
 ```ts
-const result = yield * Trellis.run("ship the release notes", {
+const delegate = Trellis.make({
   envelope: { fuel: 6, depth: 3, fanout: 3 },
-  author: ({ prompt, remaining }) => planner(prompt, remaining),
-  leaf: ({ goal, seat, path }) => worker(goal, seat, path),
-  continue: ({ result, remaining }) => (remaining > 0 ? followUp(result) : Effect.succeed(undefined))
+  author: Planner, // called with the caller's input; answers a Trellis.Plan
+  leaf: Worker, // called with { goal, seat?, path } for each agent the plan names
+  continue: FollowUp // optional: called with { plan, result, round, remaining }
 })
+
+const result = yield * delegate.execute({ input: { prompt: "ship the release notes" } }, { executionId })
 ```
 
-`run` authors a plan, validates it, executes it, and re-authors while
-`continue` returns another plan and fuel remains. It returns every round it
-executed and the fuel left over.
+The first round calls `author` and hands its plan to the next round. A plan
+round validates the plan against the envelope and the fuel left, runs exactly
+the leaves it names, and then, when `continue` is supplied, asks it for the
+next plan. The trellis settles with `{ rounds, remaining }`: every round's
+plan and result, and the fuel left over.
 
-A continuation is a request for another round. Returning nothing ends the
-trampoline, and so does returning a plan that names no work within the envelope
+A continuation is a request for another round. Returning `null` ends the
+trellis, and so does returning a plan that names no work within the envelope
 depth. Deeper continuations fail with `depth_exceeded`, including trees made
-entirely of empty containers. Every other round costs at least one leaf, so
-`run` always terminates.
+entirely of empty containers. Every other round costs at least one leaf, so a
+trellis always ends within `fuel` plan rounds.
 
-Concurrency is bounded by one semaphore shared by the whole plan, defaulting to
-`envelope.fanout`. Sequence members run in order; parallel members start
-together and are admitted by that semaphore, so the bound holds across the plan
-rather than per container.
+A refused plan fails its round with a `TrellisError`, and none of its leaves
+runs. A leaf that fails fails the round with its own error.
 
-`Trellis.execute(plan, { leaf, concurrency })` is that executor on its own, for
-a caller that already holds a validated plan.
+`Trellis.execute(plan, { leaf, concurrency })` runs one validated plan in
+process, with one semaphore bounding the leaves in flight. `DelegationChain.run`
+uses it.
 
 ## DelegationChain
 
@@ -217,12 +204,8 @@ call per rung, one review per rung, weakest first.
 
 ## The durable recipe
 
-`Trellis.run` is the in-process executor. A durable host spends one trampoline
-round per authored plan instead, because a flow body is built before it runs and
-can only read values it already holds. The plan has to arrive as a payload.
-
-[Delegation trellis](/docs/examples/33-delegation-trellis/) is that recipe end
-to end:
+`Trellis.make` is this recipe packaged. [Delegation trellis](/docs/examples/33-delegation-trellis/) writes it out by hand, for a
+caller that wants its own payloads:
 
 1. The first round calls the author step and hands the result off with
    `RunPlan.to({ goal, plan })`. Its body never looks inside the plan, because at
@@ -230,10 +213,6 @@ to end:
 2. The second round receives the plan as payload, so `Trellis.validate` and
    `Trellis.leaves` run over real data while the graph is built. The leaves
    become one `Node.all` join of durable steps.
-
-A refused plan settles the round with the code and path that name the fault, and
-no leaf step is dispatched. Each round is its own journal segment, so a crash
-resumes at a round boundary.
 
 ## Applying a memory policy
 

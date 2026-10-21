@@ -40,6 +40,12 @@ const envelope: Trellis.Envelope = { fuel: 2, depth: 2, fanout: 2 }
 const planned = (flow: Trellis.TrellisFlow<unknown>): ReadonlyArray<string> =>
   Graph.nodes(Graph.build(flow, { input: "ship it" })).map((node) => `${node.kind}:${node.id}`)
 
+/** How many calls to the flow tagged `tag` a trellis round declares. */
+const calls = (flow: Trellis.TrellisFlow<unknown>, payload: unknown, tag: string): number =>
+  Graph.nodes(Graph.build(flow, payload as never)).filter((node) =>
+    node.kind === "FlowCall" && (node.ast as { readonly flow?: string }).flow === tag
+  ).length
+
 const annotation = <I, S>(
   flow: WithMemory.Declared,
   key: Parameters<typeof Annotations.getOption<I, S>>[1]
@@ -245,8 +251,8 @@ describe("WithMemory", () => {
     const scoped = MemoryTrellis.make({ author, leaf, envelope, memory: policy })
 
     // Node for node, the same graph: an annotation is metadata, not identity.
-    // The count is stated so the equality above cannot pass on two empty plans.
-    expect(planned(plain)).toHaveLength(9)
+    // The author call is named so the equality cannot pass on two empty plans.
+    expect(calls(plain, { input: "ship it" }, "author")).toBe(1)
     expect(planned(scoped)).toEqual(planned(plain))
     expect(WithMemory.policyOf(scoped)).toEqual(policy)
     expect(WithMemory.policyOf(plain)).toBeUndefined()
@@ -254,6 +260,24 @@ describe("WithMemory", () => {
     // scoped by `parts` before `Trellis.make` composed them.
     expect(WithMemory.references(scoped)).toEqual([])
     expect(WithMemory.children(scoped)).toEqual([])
+  })
+
+  it("builds the same plan round with a continuation as the plain trellis does", () => {
+    const round = { input: "ship it", round: { plan: { agent: { goal: "a" } }, round: 1, remaining: 2, rounds: [] } }
+    const plain = Trellis.make({ author, leaf, continue: author, envelope })
+    const scoped = MemoryTrellis.make({ author, leaf, continue: author, envelope, memory: policy })
+    const nodes = (flow: Trellis.TrellisFlow<unknown>) =>
+      Graph.nodes(Graph.build(flow, round)).map((node) => `${node.kind}:${node.id}`)
+
+    // The plan round calls the leaf and then the continuation (the author flow
+    // here); the scoped continuation is metadata on the same call.
+    expect([calls(plain, round, "leaf"), calls(plain, round, "author")]).toEqual([1, 1])
+    expect(nodes(scoped)).toEqual(nodes(plain))
+    expect(WithMemory.policyOf(scoped)).toEqual(policy)
+    // The continuation the trellis calls is the scoped one.
+    const scopedParts = MemoryTrellis.parts({ author, leaf, continue: author, envelope, memory: policy })
+    expect(WithMemory.policyOf(scopedParts.continue!)).toEqual(policy)
+    expect(MemoryTrellis.parts({ author, leaf, envelope, memory: policy })).not.toHaveProperty("continue")
   })
 
   it("carries the caller's name and description onto the trellis it declares", () => {

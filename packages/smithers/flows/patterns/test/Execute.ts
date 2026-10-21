@@ -11,6 +11,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
+import type * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
@@ -33,6 +34,29 @@ export const execute = (
   ...layers: ReadonlyArray<Layer.Layer<any, any, any>>
 ): Promise<unknown> =>
   Effect.runPromise(
+    flow.execute(payload, { executionId }).pipe(
+      Effect.provide(
+        Layer.mergeAll(Interpreter.layer(flow as never), ...layers).pipe(
+          Layer.provideMerge(Action.layerImplementations),
+          Layer.provideMerge(FlowEngine.layerMemory),
+          Layer.provideMerge(NodeCrypto.layer)
+        ) as Layer.Layer<any, never, never>
+      ),
+      Effect.scoped
+    ) as Effect.Effect<unknown, unknown, never>
+  )
+
+/**
+ * Runs one declared flow to settlement and answers its `Exit`, so a case can
+ * read a typed failure the flow settled with.
+ */
+export const executeExit = (
+  flow: Executable,
+  payload: unknown,
+  executionId: string,
+  ...layers: ReadonlyArray<Layer.Layer<any, any, any>>
+): Promise<Exit.Exit<unknown, unknown>> =>
+  Effect.runPromiseExit(
     flow.execute(payload, { executionId }).pipe(
       Effect.provide(
         Layer.mergeAll(Interpreter.layer(flow as never), ...layers).pipe(

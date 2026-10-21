@@ -88,7 +88,7 @@ Binding `Flows.recall` with `Flows.runRecall` reaches the store with no namespac
 
 ## MemoryTrellis
 
-`MemoryTrellis.make` is the delegation case. `Trellis.make` declares the topology a model-authored plan fits inside, and fills its leaf slots at run time, so a leaf cannot be handed a namespace at declaration time. `MemoryTrellis.make` applies one policy to the author, to the leaf, and to the memory flows those declare, then annotates the trellis itself.
+`MemoryTrellis.make` is the delegation case. `Trellis.make` runs the plans a model authors, one durable round per plan, so a leaf is known only when its round runs and cannot be handed a namespace at declaration time. `MemoryTrellis.make` applies one policy to the author, to the leaf, to the optional continuation, and to the memory flows those declare, then annotates the trellis itself.
 
 It takes what `Trellis.make` takes, plus `memory`. `Trellis.make` accepts any member it can record a call to; a memory trellis needs more of its author and its leaf, because a policy is an annotation and a member states no annotation bag, so both are declarations here. The `envelope` is the bound the authored plan is admitted under: `fuel` is the total number of leaf calls the plan may make, `depth` the nesting it may reach, and `fanout` the members any one group may hold.
 
@@ -106,7 +106,7 @@ const trellis = MemoryTrellis.make({
 })
 ```
 
-The graph is the plain trellis graph, node for node. `MemoryTrellis.parts` returns the scoped author and leaf on their own, for a caller that drives the plan with `Trellis.run` rather than calling the declared flow: calling the originals instead loses the policy.
+The graph is the plain trellis graph, node for node. `MemoryTrellis.parts` returns the scoped author and leaf on their own, for a caller that composes them itself rather than calling the declared flow: calling the originals instead loses the policy.
 
 See the [`@smthrs/patterns` reference](/docs/reference/api/patterns/) and its [delegation guide](https://smithers-patterns.smithers.sh/delegation/) for the trellis itself.
 
@@ -346,8 +346,8 @@ The service tag is `MemoryStore`, `Context.Service` tag `flows/memory/MemoryStor
 | Export        | Signature                                   | Behavior                                                                                                                     |
 | ------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `MakeOptions` | interface                                   | What `Trellis.make` accepts, with `author` and `leaf` narrowed to `Flow.Any` so each can carry an annotation, plus `memory`. |
-| `Parts`       | interface                                   | `{ author, leaf }`: the scoped flows to hold when you drive the plan yourself with `Trellis.run`.                            |
-| `parts`       | `(options) => Parts`                        | Applies the policy to the author and the leaf without composing them.                                                        |
+| `Parts`       | interface                                   | `{ author, leaf, continue? }`: the scoped flows to hold when you compose them yourself.                                      |
+| `parts`       | `(options) => Parts`                        | Applies the policy to the author, the leaf, and the continuation without composing them.                                     |
 | `make`        | `(options) => Trellis.TrellisFlow<unknown>` | Declares a trellis whose author, leaves, and memory flows all run under one policy. The graph is unchanged.                  |
 
 ### `@smthrs/memory/Migrations`

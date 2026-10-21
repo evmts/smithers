@@ -1,12 +1,12 @@
 /**
  * A Trellis whose generated work inherits one memory policy.
  *
- * `Trellis.make` declares the topology a model-authored plan fits inside. The
- * leaf slots that topology reserves are filled at run time, so the goals a leaf
- * runs are not known at declaration time and cannot each be handed a namespace.
- * The policy is attached to the flows instead: the author and the leaf carry it,
- * and so does every memory flow they declare, which is where the memory
- * bindings in `./Flows.ts` read it back from.
+ * `Trellis.make` runs the plans a model authors, one durable round per plan.
+ * A plan's leaves are known only when its round runs, so the goals a leaf runs
+ * cannot each be handed a namespace at declaration time. The policy is
+ * attached to the flows instead: the author, the leaf, and the continuation
+ * carry it, and so does every memory flow they declare, which is where the
+ * memory bindings in `./Flows.ts` read it back from.
  *
  * An annotation takes no part in flow identity, so the graph a memory trellis
  * plans is the graph the plain trellis plans, node for node. See
@@ -32,18 +32,20 @@ import { withMemory } from "./WithMemory.ts"
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions extends Omit<Trellis.MakeOptions, "author" | "leaf"> {
+export interface MakeOptions extends Omit<Trellis.MakeOptions, "author" | "leaf" | "continue"> {
   readonly author: WithMemoryModule.Declared & Trellis.MakeOptions<unknown>["author"]
   readonly leaf: WithMemoryModule.Declared & Trellis.MakeOptions<unknown>["leaf"]
+  readonly continue?: (WithMemoryModule.Declared & Trellis.MakeOptions<unknown>["author"]) | undefined
   readonly memory: WithMemoryModule.Policy
 }
 
 /**
- * The author and leaf flows a memory trellis calls, each carrying the policy.
+ * The author, leaf, and continuation flows a memory trellis calls, each
+ * carrying the policy.
  *
- * Hold these when you drive the plan yourself with `Trellis.run`: the flows
- * `make` composes are these, and calling the originals instead loses the
- * policy.
+ * Hold these when you compose the author and the leaf yourself, for example in
+ * a hand-written round flow: the flows `make` composes are these, and calling
+ * the originals instead loses the policy.
  *
  * @category introspection
  * @since 0.1.0
@@ -51,17 +53,20 @@ export interface MakeOptions extends Omit<Trellis.MakeOptions, "author" | "leaf"
 export interface Parts {
   readonly author: WithMemoryModule.Declared & Trellis.MakeOptions<unknown>["author"]
   readonly leaf: WithMemoryModule.Declared & Trellis.MakeOptions<unknown>["leaf"]
+  readonly continue?: (WithMemoryModule.Declared & Trellis.MakeOptions<unknown>["author"]) | undefined
 }
 
 /**
- * Applies the policy to the author and the leaf without composing them.
+ * Applies the policy to the author, the leaf, and the continuation when there
+ * is one, without composing them.
  *
  * @category constructors
  * @since 0.1.0
  */
 export const parts = (options: MakeOptions): Parts => ({
   author: withMemory(options.author, options.memory),
-  leaf: withMemory(options.leaf, options.memory)
+  leaf: withMemory(options.leaf, options.memory),
+  ...(options.continue === undefined ? {} : { continue: withMemory(options.continue, options.memory) })
 })
 
 /**
@@ -71,8 +76,8 @@ export const parts = (options: MakeOptions): Parts => ({
  * The answer is the `@smthrs/flow` flow `Trellis.make` states, carrying the
  * policy annotation. Its requirement channel is `unknown` because the author
  * and the leaf arrive as the existential {@link Flow.Any}, which states an
- * obligation it cannot name; run the plan a model authors with `Trellis.run`
- * over {@link parts}, which holds both flows with their own types.
+ * obligation it cannot name; {@link parts} holds both flows with their own
+ * types.
  *
  * @category constructors
  * @since 0.1.0

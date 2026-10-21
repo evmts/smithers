@@ -37,9 +37,7 @@ declared bounds, the way the decorators name theirs: `reviewLoop(maxRounds=3)`,
 same behavioral option names with call-shape differences: `Kanban` declares
 `items` in its `make` options, because a static declaration needs them to lay
 out the board, and `run` receives them as its first argument, the runtime
-input, reserving `until` and `maxIterations` for runtime branching. `Trellis`
-is the remaining exception: `run` additionally accepts `continue` and
-`concurrency`.
+input, reserving `until` and `maxIterations` for runtime branching.
 
 `Intervene` uses the same stage payloads in `make` and `run`:
 
@@ -153,18 +151,16 @@ optional `cause` with the reported error or errors.
 `TrellisError` carries a `code` from `TrellisErrorCode`, the plan `path` the
 fault was found at (`root`, or a path such as `root.parallel[1].sequence[0]`),
 a message, and an optional `cause`. `Trellis.validate` returns every refusal
-it finds as an array and attaches no cause. `Trellis.make` throws one, and
-`Trellis.execute` and `Trellis.run` fail with one for admission errors.
-A plan validation failure from `Trellis.run` preserves the first refusal's code,
-path, and message and carries `{ rounds, remaining, refusals }` as its cause.
-`refusals` contains every validation reason. A later round that exceeds the
-remaining fuel carries `{ rounds, remaining }`.
-
-Typed leaf failures in `Trellis.run` become `leaf_failed` at the leaf's path,
-with `{ rounds, remaining, error }` as the cause. `error` is the original leaf
-failure. `rounds` contains completed rounds only; `remaining` is the fuel left
-after those rounds, before charging the failed round. `Trellis.execute`
-continues to propagate typed leaf failures unchanged.
+it finds as an array and attaches no cause. `Trellis.make` throws one for an
+invalid envelope, and `Trellis.execute` fails with one for an invalid
+concurrency. A trellis round that refuses its plan fails with the first
+refusal's code, path, and message and carries `{ rounds, remaining, refusals }`
+as its cause; `refusals` lists every validation reason as `{ code, path,
+message }` data, so a durable engine can journal it. A round that needs more
+fuel than remains carries `{ rounds, remaining }`. `rounds` holds the settled
+rounds only, and `remaining` is the fuel left after them. Round state that
+claims fuel outside the envelope fails `invalid_envelope`. A leaf failure is
+not wrapped: the round fails with the leaf's own error.
 
 `DelegationChain.run` reports the first refusal with all `refusals` in the
 same cause when the derisked plan does not fit its envelope. Its `rounds` is
@@ -172,12 +168,11 @@ empty and `remaining` is the envelope fuel because execution has not started.
 
 | Code               | Path          | Raised when                                                                                                                                                                      |
 | ------------------ | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `invalid_envelope` | `root`        | A `fuel`, `depth`, or `fanout` bound, or a `concurrency`, is not a positive safe integer                                                                                         |
+| `invalid_envelope` | `root`        | A `fuel`, `depth`, or `fanout` bound, or an `execute` `concurrency`, is not a positive safe integer                                                                              |
 | `invalid_plan`     | the node      | A node is not exactly one of `agent`, `sequence`, or `parallel`, an agent has no non-empty string `goal` or carries a non-string `seat`, or a container is not a non-empty array |
 | `depth_exceeded`   | the node      | A node nests deeper than the envelope `depth`                                                                                                                                    |
 | `fanout_exceeded`  | the container | A container holds more members than the envelope `fanout`                                                                                                                        |
 | `fuel_exhausted`   | `root`        | A plan needs more leaf calls than the envelope `fuel`, or than the fuel left after earlier rounds                                                                                |
-| `leaf_failed`      | the leaf      | A leaf effect fails during `Trellis.run`                                                                                                                                         |
 
 ### `DelegationError`
 

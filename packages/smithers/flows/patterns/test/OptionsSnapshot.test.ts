@@ -404,11 +404,17 @@ const declarations: ReadonlyArray<Declaration> = [
   ported(
     "Trellis.make",
     { input: "prompt" },
-    () => ({ author: step, leaf: step, envelope: { fuel: 2, depth: 2, fanout: 2 } }),
+    () => ({
+      author: step,
+      leaf: step,
+      envelope: { fuel: 2, depth: 2, fanout: 2 },
+      continue: undefined as typeof step | undefined
+    }),
     (options) => Trellis.make(options),
     (options) => {
       options.author = other
       options.leaf = other
+      options.continue = other
       options.envelope.fuel = 3
     }
   ),
@@ -813,32 +819,6 @@ describe("options are snapshotted at the call", () => {
 
       expect(yield* running).toEqual({ outputs: { a: "a" }, ran: ["a"], skipped: [] })
       expect(trace).toEqual(["a"])
-    }))
-
-  it.effect("Trellis.run runs the callbacks and envelope it was called with", () =>
-    Effect.gen(function*() {
-      const { trace, record } = recorder()
-      const options = {
-        author: () =>
-          Effect.sync(() => {
-            trace.push("author")
-            return { agent: { goal: "goal" } }
-          }),
-        leaf: record("leaf"),
-        envelope: { fuel: 1, depth: 1, fanout: 1 },
-        concurrency: 1,
-        continue: undefined as (() => Effect.Effect<unknown>) | undefined
-      }
-      const running = Trellis.run("prompt", options)
-
-      options.author = () => Effect.sync(() => (trace.push("swapped author"), { agent: { goal: "swapped" } }))
-      options.leaf = record("swapped leaf")
-      options.envelope.fuel = 0
-      options.concurrency = 0
-      options.continue = () => Effect.succeed({ agent: { goal: "again" } })
-
-      expect(yield* running).toEqual({ rounds: [{ plan: { agent: { goal: "goal" } }, result: "leaf" }], remaining: 0 })
-      expect(trace).toEqual(["author", "leaf"])
     }))
 
   it.effect("Trellis.execute runs the plan and options it was called with", () =>

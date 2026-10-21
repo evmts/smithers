@@ -74,7 +74,7 @@ Given a declaration that carries no policy, `handlersFor`, `runRecallFor`, and `
 
 ## Cover generated work with MemoryTrellis
 
-`MemoryTrellis.make` is the delegation case. `Trellis.make` from [`@smthrs/patterns`](/api/smithers-patterns) declares the topology a model-authored plan fits inside and fills its leaf slots at run time, so a leaf cannot be handed a namespace at declaration time. `MemoryTrellis.make` applies one policy to the author, to the leaf, and to the memory flows those declare, then annotates the trellis itself.
+`MemoryTrellis.make` is the delegation case. `Trellis.make` from [`@smthrs/patterns`](/api/smithers-patterns) runs the plans a model authors, one durable round per plan, so a leaf is known only when its round runs and cannot be handed a namespace at declaration time. `MemoryTrellis.make` applies one policy to the author, to the leaf, to the optional continuation, and to the memory flows those declare, then annotates the trellis itself.
 
 It takes what `Trellis.make` takes, plus `memory`. `Trellis.make` accepts any member it can record a call to; a memory trellis needs more of its author and its leaf, because a policy is an annotation and a member states no annotation bag, so both are declarations here. The `envelope` bounds the plan the author is allowed to produce: `fuel` is the total number of leaf calls, `depth` the nesting the plan may reach, and `fanout` the members any one group may hold.
 
@@ -92,7 +92,7 @@ const trellis = MemoryTrellis.make({
 })
 ```
 
-The graph is the plain trellis graph, node for node. When you drive the plan yourself with `Trellis.run` rather than calling the declared flow, take the scoped author and leaf from `MemoryTrellis.parts`; calling the originals instead loses the policy. For the trellis itself, see the [`@smthrs/patterns` delegation guide](/pkg/smithers-patterns/delegation).
+The graph is the plain trellis graph, node for node. When you compose the author and leaf yourself rather than calling the declared flow, take the scoped ones from `MemoryTrellis.parts`; calling the originals instead loses the policy. For the trellis itself, see the [`@smthrs/patterns` delegation guide](/pkg/smithers-patterns/delegation).
 
 ## Next steps
 

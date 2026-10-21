@@ -3,16 +3,14 @@
  *
  * A model returns a plan of nested `agent`, `sequence`, and `parallel` nodes.
  * This module validates that plan against an {@link Envelope}, compiles it into
- * ordinary flow calls, and executes it with bounded concurrency.
+ * ordinary flow calls, and runs it.
  *
  * `Recursion.recurse` needs a literal tree while the graph is being planned.
- * A Trellis plan is discovered at run time instead, so the two halves are
- * deliberately separate. {@link make} declares the conservative topology the
- * plan can never exceed, one leaf call per fuel unit. {@link run} executes the
- * plan a model actually authored. A durable host spends one
- * trampoline round per authored plan, handing off with the `To` outcome
- * `@smthrs/flow` defines, so each round is its own journal segment and a crash
- * resumes at the round boundary.
+ * A Trellis plan is discovered at run time instead, so {@link make} spends one
+ * durable trampoline round per authored plan: a round ends by handing the plan
+ * to the next round with the `To` outcome `@smthrs/flow` defines, and the next
+ * round reads it as data and compiles exactly the leaves it names. Each round
+ * is its own journal segment, so a crash resumes at the round boundary.
  *
  * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
  *
@@ -26,9 +24,9 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
 import * as Compose from "./internal/Compose.ts"
+import * as FailureSchema from "./internal/Failure.ts"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
-import { OpaqueInput } from "./internal/Payload.ts"
 import type * as Recursion from "./Recursion.ts"
 
 /**
@@ -42,8 +40,7 @@ export const TrellisErrorCode = Schema.Literals([
   "invalid_plan",
   "depth_exceeded",
   "fanout_exceeded",
-  "fuel_exhausted",
-  "leaf_failed"
+  "fuel_exhausted"
 ])
 
 /**
@@ -55,12 +52,12 @@ export const TrellisErrorCode = Schema.Literals([
 export type TrellisErrorCode = typeof TrellisErrorCode.Type
 
 /**
- * A rejected plan, envelope, or failed leaf, naming its plan path.
+ * A rejected plan or envelope, naming its plan path.
  *
  * Trellis owns this failure rather than reusing `PatternError` because every
  * rejection carries a plan path, and a path is what an author has to read to
- * repair the plan. `cause` carries the reported execution residue. It never
- * carries the caller input.
+ * repair the plan. `cause` carries the settled rounds a refused round leaves
+ * behind. It never carries the caller input.
  *
  * @category errors
  * @since 0.1.0
@@ -440,6 +437,14 @@ export const compile = <R = never>(plan: Plan, options: CompileOptions<R>): Node
 /**
  * Options accepted by {@link make}.
  *
+ * `author` is called with the caller's `input` and answers the first plan.
+ * `leaf` is called once per agent the plan names, with a {@link Leaf}.
+ * `continue`, when supplied, is called after each round with a
+ * {@link Continuation} and answers the next plan; `null`, `undefined`, or a
+ * value whose only content is empty `sequence` or `parallel` containers within
+ * the envelope depth, ends the trellis. Without `continue` the trellis runs one
+ * plan.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -448,97 +453,12 @@ export interface MakeOptions<R = never> {
   readonly description?: string | undefined
   readonly author: Member<R>
   readonly leaf: Member<R>
+  readonly continue?: Member<R> | undefined
   readonly envelope: Envelope
 }
 
 /**
- * The declared form of a trellis.
- *
- * @category models
- * @since 1.0.0
- */
-export type TrellisFlow<R = never> = Flow.Flow<
-  string,
-  typeof OpaqueInput,
-  typeof Schema.Unknown,
-  typeof Schema.Unknown,
-  R
->
-
-/**
- * Declares the conservative topology every authored plan fits inside: one
- * author call followed by one leaf call per fuel unit.
- *
- * The leaf slots are sequenced because a plan-time declaration cannot know
- * which of them a plan will fan out. Use {@link run} to execute the plan a
- * model actually authored.
- * A very large envelope fuel bound builds a very large graph before anything runs.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const make = <R = never>(options: MakeOptions<R>): TrellisFlow<R> => {
-  // The body runs when the graph builds, later than this call, so it reads
-  // these snapshots and never the caller's options again.
-  const envelope = copiedEnvelope(options.envelope)
-  const author = options.author
-  const leaf = options.leaf
-  const invalid = admissionRefusal({ envelope })
-  if (invalid !== undefined) throw invalid
-  const captured = { fuel: envelope.fuel, depth: envelope.depth, fanout: envelope.fanout }
-  const { name, description } = Compose.label("trellis", {
-    fuel: envelope.fuel,
-    depth: envelope.depth,
-    fanout: envelope.fanout
-  }, options)
-  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> =>
-    Node.bindPlanned(
-      callMember(author, input),
-      Node.capture(captured, (plan) => {
-        // A declaration cannot know the goals a plan will name, so the
-        // authored plan stands in for the goal and the slot names the path.
-        // The shape is the `Leaf` that `run` and `execute` hand a leaf flow.
-        const slotLeaf = (slot: number): { readonly goal: unknown; readonly path: string } => ({
-          goal: plan,
-          path: `slot-${slot}`
-        })
-        let slots: Node.Node<unknown, unknown, R> = callMember(leaf, slotLeaf(0))
-        for (let slot = 1; slot < envelope.fuel; slot++) {
-          // Nothing reads the preceding slot's value; the slots are sequenced
-          // so the declared topology spends its fuel one call at a time.
-          slots = Node.andThen(slots, callMember(leaf, slotLeaf(slot)))
-        }
-        return slots
-      })
-    )
-  return Flow.make(name, {
-    ...(description === undefined ? {} : { description }),
-    payload: OpaqueInput,
-    success: Schema.Unknown,
-    // `@smthrs/core` carried its error type as a phantom parameter and declared
-    // no error schema. `@smthrs/flow` needs a real one, because the engine
-    // encodes a typed failure through it, and a trellis fails with whatever the
-    // author or leaf it called failed with.
-    error: Schema.Unknown,
-    body: Node.capture(captured, body)
-  })
-}
-
-/**
- * What {@link run} hands an author on each round.
- *
- * @category models
- * @since 0.1.0
- */
-export interface Authoring {
-  readonly prompt: string
-  readonly round: number
-  readonly previous: unknown
-  readonly remaining: number
-}
-
-/**
- * What {@link run} hands `continue` after a round settles.
+ * What {@link make} hands `continue` after a round settles.
  *
  * @category models
  * @since 0.1.0
@@ -562,7 +482,7 @@ export interface Round {
 }
 
 /**
- * Every round {@link run} executed and the fuel left over.
+ * What a trellis settles with: every round it executed and the fuel left over.
  *
  * @category models
  * @since 0.1.0
@@ -573,24 +493,255 @@ export interface RunResult {
 }
 
 /**
- * Operational callbacks for {@link run}.
+ * The state one plan round is handed: the plan to run, its round number, the
+ * fuel left before it runs, and the rounds already settled.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const RoundState = Schema.Struct({
+  plan: Schema.Unknown,
+  round: Schema.Number,
+  remaining: Schema.Number,
+  rounds: Schema.Array(Schema.Unknown)
+})
+
+/**
+ * What a trellis flow is called with. A caller passes `input` alone; the
+ * trellis hands itself `round` when it opens the next round.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Payload = Schema.Struct({
+  input: Schema.Unknown,
+  round: Schema.optionalKey(RoundState)
+})
+
+/**
+ * What a trellis fails with: a {@link TrellisError}, encoded through its own
+ * schema, or the error of the author, a leaf, or the continuation. A declared
+ * trellis's runtime schema also names the error schema each member flow
+ * declares, so a durable journal encodes a member's tagged error too.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Failure = Schema.Union([TrellisError, Schema.Unknown])
+
+/**
+ * The declared form of a trellis.
  *
  * @category models
+ * @since 1.0.0
+ */
+export type TrellisFlow<R = never> = Flow.Flow<
+  string,
+  typeof Payload,
+  typeof Schema.Unknown,
+  typeof Failure,
+  R
+>
+
+/**
+ * Whether round state agrees with itself and the envelope: the round follows
+ * every settled round, each settled plan is one the envelope admits, and the
+ * fuel left is the envelope's less what those plans cost.
+ */
+const consistent = (state: typeof RoundState.Type, envelope: Envelope): boolean => {
+  if (!Number.isSafeInteger(state.round) || state.round !== state.rounds.length + 1) return false
+  let spent = 0
+  for (const settled of state.rounds) {
+    const plan = typeof settled === "object" && settled !== null
+      ? (settled as { readonly plan?: unknown }).plan
+      : undefined
+    if (validate(plan, envelope).length > 0) return false
+    spent += leaves(plan as Plan).length
+  }
+  return state.remaining === envelope.fuel - spent && state.remaining >= 0
+}
+
+/** A refusal as plain data: what a plan may hold while its graph is built. */
+interface Refusal {
+  readonly code: TrellisErrorCode
+  readonly path: string
+  readonly message: string
+}
+
+/** The data one refused round fails with, before it is minted as an error. */
+interface Refused extends Refusal {
+  readonly rounds: ReadonlyArray<unknown>
+  readonly remaining: number
+  readonly refusals?: ReadonlyArray<Refusal> | undefined
+}
+
+const refusalOf = (error: TrellisError): Refusal => ({ code: error.code, path: error.path, message: error.message })
+
+const mint = (refused: Refused): TrellisError =>
+  new TrellisError({
+    code: refused.code,
+    path: refused.path,
+    message: refused.message,
+    cause: refused.refusals === undefined
+      ? { rounds: refused.rounds, remaining: refused.remaining }
+      : {
+        rounds: refused.rounds,
+        remaining: refused.remaining,
+        refusals: refused.refusals
+      }
+  })
+
+/**
+ * Fails a round with a {@link TrellisError}. A plan holds only data while its
+ * graph is built, and an error is a class instance, so the refusal travels as
+ * data and is minted when the round runs.
+ */
+const refuse = <R>(refused: Refused): Node.Node<unknown, unknown, R> =>
+  Node.bindPlanned(
+    Node.map(Node.succeed(refused), Node.capture({ refused: refused.code }, mint)),
+    Node.capture({ refused: refused.code }, (failure: Planned.Planned<TrellisError>) => Node.fail(failure))
+  )
+
+/**
+ * Declares a trellis that runs the plans a model authors, one durable round
+ * per plan.
+ *
+ * The first round calls `author` with the caller's `input` and hands the plan
+ * off to the next round with the `To` outcome `@smthrs/flow` defines. A round
+ * receives its plan as payload, so it is real data while that round's graph is
+ * built: the round validates it against the envelope and the fuel left, and
+ * compiles it with {@link compile} into exactly the leaf calls it names, with
+ * their goals, seats, and plan paths. Each round is its own journal segment,
+ * so a crash resumes at the round boundary and never re-authors a settled
+ * plan.
+ *
+ * When `continue` is supplied, a settled round calls it with a
+ * {@link Continuation} and hands its answer to the next round; otherwise, or
+ * when the answer names no work, the trellis settles with a {@link RunResult}.
+ * Fuel is charged per leaf after a round validates, so every round costs at
+ * least one unit and the lineage ends within `fuel` plan rounds, plus one that
+ * can only refuse. The flow's `maxRounds` is `fuel + 2` as a backstop. A
+ * `round` handed in by a caller is checked against its own history: a round
+ * number or fuel balance its settled rounds and the envelope do not account
+ * for fails `invalid_envelope`.
+ *
+ * A refused plan fails the round with a {@link TrellisError} whose `cause`
+ * carries `rounds` (the settled residue), `remaining`, and, for a validation
+ * refusal, every reason in `refusals` as `{ code, path, message }` data, so a
+ * durable engine can journal it. No leaf of a refused plan runs. A leaf
+ * failure fails the round with the leaf's own error.
+ *
+ * `make` throws `invalid_envelope` for a bound that is not a positive safe
+ * integer, and snapshots its options at the call.
+ *
+ * @category constructors
  * @since 0.1.0
  */
-export interface RuntimeOptions<E, R, E2, R2, E3, R3> {
-  readonly author: (input: Authoring) => Effect.Effect<unknown, E, R>
-  readonly leaf: (input: Leaf) => Effect.Effect<unknown, E2, R2>
-  readonly envelope: Envelope
-  /**
-   * Requests another round. `undefined`, and any value whose only content is
-   * empty `sequence` or `parallel` containers within the envelope depth,
-   * terminates the trampoline even though the {@link Plan} codec and
-   * {@link validate} refuse such a value as a plan. A continuation names work for another round, so one that names no
-   * work is the same answer as no request.
-   */
-  readonly continue?: ((input: Continuation) => Effect.Effect<unknown, E3, R3>) | undefined
-  readonly concurrency?: number | undefined
+export const make = <R = never>(options: MakeOptions<R>): TrellisFlow<R> => {
+  // The body runs when each round is planned, later than this call, so it
+  // reads these snapshots and never the caller's options again.
+  const envelope = copiedEnvelope(options.envelope)
+  const author = options.author
+  const leaf = options.leaf
+  const continuation = options.continue
+  const invalid = admissionRefusal({ envelope })
+  if (invalid !== undefined) throw invalid
+  const captured = {
+    fuel: envelope.fuel,
+    depth: envelope.depth,
+    fanout: envelope.fanout,
+    continue: continuation !== undefined
+  }
+  const { name, description } = Compose.label("trellis", {
+    fuel: envelope.fuel,
+    depth: envelope.depth,
+    fanout: envelope.fanout
+  }, options)
+  const runRound = (
+    input: unknown,
+    state: typeof RoundState.Type
+  ): Node.Node<unknown, unknown, R> => {
+    const { plan: authored, remaining, round } = state
+    // The state is payload a caller could hand in directly, so its round
+    // number and fuel are checked against its own settled history before the
+    // round pays for anything: a round follows every settled one, and the fuel
+    // left is the envelope's less what those rounds' plans cost.
+    if (!consistent(state, envelope)) {
+      return refuse({
+        code: "invalid_envelope",
+        path: "root",
+        message: `Trellis round ${round} claims ${remaining} fuel, which its settled rounds and the envelope fuel ` +
+          `${envelope.fuel} do not account for`,
+        rounds: [],
+        remaining: 0
+      })
+    }
+    const rounds = state.rounds as ReadonlyArray<Round>
+    const refusals = validate(authored, envelope)
+    if (refusals.length > 0) {
+      return refuse({ ...refusalOf(refusals[0] as TrellisError), rounds, remaining, refusals: refusals.map(refusalOf) })
+    }
+    const plan = authored as Plan
+    const cost = leaves(plan).length
+    if (cost > remaining) {
+      return refuse({
+        code: "fuel_exhausted",
+        path: "root",
+        message: `Round ${round} needs ${cost} leaf calls but only ${remaining} fuel remains`,
+        rounds,
+        remaining
+      })
+    }
+    const left = remaining - cost
+    const marks = { ...captured, round, remaining: left }
+    return Node.bindPlanned(
+      compile(plan, { leaf }),
+      Node.capture(marks, (result: Planned.Planned<unknown>) => {
+        const settled = [...rounds, { plan, result }]
+        const done = (): Node.Node<unknown, unknown, R> => Flow.done({ rounds: settled, remaining: left })
+        if (continuation === undefined) return done()
+        return Node.branch(callMember(continuation, { plan, result, round, remaining: left }), {
+          // A continuation is a request for another round. Nothing (`null`, the
+          // JSON a durable step can answer, or `undefined`), or a plan that
+          // names no work, is the same answer: the trellis is done.
+          if: Node.capture(
+            marks,
+            (next: unknown) => next === null || next === undefined || namesNoWork(next, envelope.depth)
+          ),
+          then: () => done(),
+          else: (next) => self.to({ input, round: { plan: next, round: round + 1, remaining: left, rounds: settled } })
+        })
+      })
+    )
+  }
+  const body = (payload: typeof Payload.Type): Node.Node<unknown, unknown, R> =>
+    payload.round !== undefined
+      ? runRound(payload.input, payload.round)
+      : Node.bindPlanned(
+        callMember(author, payload.input),
+        Node.capture(captured, (plan: Planned.Planned<unknown>) =>
+          self.to({
+            input: payload.input,
+            round: { plan, round: 1, remaining: envelope.fuel, rounds: [] }
+          }))
+      )
+  // The body names the flow it is the body of, which is how one round opens
+  // the next. It is read when a round is planned, long after `Flow.make` has
+  // returned, so the binding is initialized by then.
+  const self: TrellisFlow<R> = Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: Payload,
+    success: Schema.Unknown,
+    // A trellis fails with a `TrellisError`, which the durable engine encodes
+    // through its schema, or with whatever the author, a leaf, or the
+    // continuation failed with.
+    error: FailureSchema.schemaFor([TrellisError], [author, leaf, continuation]) as typeof Failure,
+    // The author round, at most `fuel` plan rounds, and one more round that
+    // can only refuse a plan the remaining fuel cannot pay for.
+    maxRounds: envelope.fuel + 2,
+    body: Node.capture(captured, body)
+  })
+  return self
 }
 
 /**
@@ -637,97 +788,5 @@ export const execute = <E, R>(
       )
     }
     return visit(admitted, "root")
-  })
-}
-
-/**
- * Authors a plan, admits it, executes it, and re-authors while `continue`
- * returns another plan and fuel remains.
- *
- * Every authored plan is validated against the envelope and against the fuel
- * left over from earlier rounds, so a plan that overspends fails
- * `fuel_exhausted` before any of its leaves runs.
- *
- * Plan refusals include every validation reason in `cause.refusals`. Typed
- * leaf failures become `leaf_failed` with their original error in `cause.error`.
- * Both include completed `rounds` and `remaining` fuel. Fuel is charged only
- * after a round completes, so a failed round is absent from that residue.
- *
- * `run` snapshots every callback, the envelope's three bounds, and
- * `concurrency` at the call, so a later edit to the option object does not
- * alter that run.
- *
- * @category combinators
- * @since 0.1.0
- */
-export const run = <E, R, E2, R2, E3 = never, R3 = never>(
-  prompt: string,
-  options: RuntimeOptions<E, R, E2, R2, E3, R3>
-): Effect.Effect<RunResult, E | E2 | E3 | TrellisError, R | R2 | R3> => {
-  // Snapshots taken at the call, ahead of the suspend: the effect may run
-  // later, and a caller's edit to the option object in between must not
-  // reach it.
-  const envelope = copiedEnvelope(options.envelope)
-  const concurrency = options.concurrency ?? envelope.fanout
-  const author = options.author
-  const leaf = options.leaf
-  const continuation = options.continue
-  return Effect.suspend(() => {
-    const invalid = admissionRefusal({ envelope, concurrency })
-    if (invalid !== undefined) return Effect.fail(invalid)
-    return Effect.gen(function*() {
-      const rounds: Array<Round> = []
-      let remaining = envelope.fuel
-      let authored: unknown = yield* author({ prompt, round: 1, previous: undefined, remaining })
-      for (let round = 1;; round++) {
-        const refusals = validate(authored, envelope)
-        if (refusals.length > 0) {
-          const refusal = refusals[0] as TrellisError
-          return yield* Effect.fail(
-            new TrellisError({
-              code: refusal.code,
-              path: refusal.path,
-              message: refusal.message,
-              cause: { rounds: [...rounds], remaining, refusals }
-            })
-          )
-        }
-        const plan = authored as Plan
-        const cost = leaves(plan).length
-        if (cost > remaining) {
-          return yield* Effect.fail(
-            new TrellisError({
-              code: "fuel_exhausted",
-              path: "root",
-              message: `Round ${round} needs ${cost} leaf calls but only ${remaining} fuel remains`,
-              cause: { rounds: [...rounds], remaining }
-            })
-          )
-        }
-        const result = yield* execute(plan, {
-          concurrency,
-          leaf: (work) =>
-            leaf(work).pipe(
-              Effect.mapError((error) =>
-                new TrellisError({
-                  code: "leaf_failed",
-                  path: work.path,
-                  message: `Leaf ${work.path} failed in round ${round}`,
-                  cause: { rounds: [...rounds], remaining, error }
-                })
-              )
-            )
-        })
-        remaining -= cost
-        rounds.push({ plan, result })
-        if (continuation === undefined) return { rounds, remaining }
-        const next = yield* continuation({ plan, result, round, remaining })
-        // A continuation is a request for another round. Nothing, or a plan
-        // that names no work, is the same answer: the trampoline is done. Every
-        // other round costs at least one leaf, so `run` always terminates.
-        if (next === undefined || namesNoWork(next, envelope.depth)) return { rounds, remaining }
-        authored = next
-      }
-    })
   })
 }

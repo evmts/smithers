@@ -31,7 +31,6 @@ import * as Saga from "../src/Saga.ts"
 import * as ScanFixVerify from "../src/ScanFixVerify.ts"
 import * as Sidecar from "../src/Sidecar.ts"
 import * as Supervisor from "../src/Supervisor.ts"
-import * as Trellis from "../src/Trellis.ts"
 import { approval, check, fail, flow, type Pattern, roles, scripted, settleRun } from "./Parity.ts"
 
 const drift: Pattern<{ readonly alerts: boolean }> = {
@@ -832,30 +831,6 @@ it("durable Supervisor requires input tasks even when the boss plans them", asyn
   expect(roles(forms.ranTape)).toEqual(["plan", "coder", "coder", "tester", "review", "finalize"])
 })
 
-const trellisScript = {
-  author: () => ({ agent: { goal: "write" } }),
-  leaf: ({ path }: { readonly path: string }) => `leaf:${path}`
-}
-
-const trellis: Pattern<Record<string, never>> = {
-  make: (m) => Trellis.make({ author: m.author!, leaf: m.leaf!, envelope: { fuel: 2, depth: 2, fanout: 2 } }),
-  run: (e, input) =>
-    Trellis.run((input as { readonly prompt: string }).prompt, {
-      author: e.author!,
-      leaf: e.leaf!,
-      envelope: { fuel: 2, depth: 2, fanout: 2 }
-    }),
-  cases: [{
-    name: "trellis-one-leaf",
-    input: { prompt: "notes" },
-    options: {},
-    script: trellisScript,
-    diverges: "the plan is authored at run time, so make declares fuel-many sequenced leaf slots, not the plan",
-    expected: { rounds: [{ plan: { agent: { goal: "write" } }, result: "leaf:root" }], remaining: 1 },
-    declared: "leaf:slot-1"
-  }]
-}
-
 const delegationScript = {
   refine: () => ({ goal: "ship" }),
   plan: () => ({ agent: { goal: "write" } }),
@@ -918,8 +893,7 @@ const table: Readonly<Record<string, Pattern<any>>> = {
   Saga: saga,
   ScanFixVerify: scanFixVerify,
   Sidecar: sidecar,
-  Supervisor: supervisor,
-  Trellis: trellis
+  Supervisor: supervisor
 }
 
 describe("declared and run forms agree", () => {

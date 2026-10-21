@@ -1,13 +1,15 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph } from "@smthrs/flow"
+import { Action, Flow, Graph } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
+import type * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Trellis from "../src/Trellis.ts"
+import { executeExit } from "./Execute.ts"
 import { callsTo, payloadOf } from "./Graphs.ts"
 
 // The author is handed the caller's prompt and a leaf is handed a `Leaf`, so
@@ -112,7 +114,7 @@ describe("Trellis", () => {
     expect(Schema.decodeUnknownResult(Trellis.Plan)(nested)._tag).toBe("Success")
   })
 
-  it("refuses a container with a missing member and fails run on its typed channel", async () => {
+  it("refuses a container with a missing member", () => {
     const generous: Trellis.Envelope = { fuel: 4, depth: 3, fanout: 3 }
     const dense = { agent: { goal: "g" } }
     const holes: ReadonlyArray<readonly [unknown, string]> = [
@@ -127,17 +129,6 @@ describe("Trellis", () => {
       expect(reported(Trellis.validate(plan, generous))).toEqual([
         ["invalid_plan", path, "A plan node must not be a missing member"]
       ])
-      let leaves = 0
-      const exit = await Effect.runPromiseExit(Trellis.run("prompt", {
-        envelope: generous,
-        author: () => Effect.succeed(plan),
-        leaf: () => Effect.sync(() => ++leaves)
-      }))
-      expect(exit._tag).toBe("Failure")
-      const cause = (exit as { readonly cause: Cause.Cause<unknown> }).cause
-      expect(Cause.hasDies(cause)).toBe(false)
-      expect(Cause.hasFails(cause)).toBe(true)
-      expect(leaves).toBe(0)
     }
     const control = { parallel: [dense] }
     expect(reported(Trellis.validate(control, generous))).toEqual([])
@@ -176,136 +167,16 @@ describe("Trellis", () => {
     expect(refusals[0]?.message).toBe("parallel declares 500 members, above the envelope fan-out 2")
   })
 
-  it.effect("an empty container as a continuation stops the trampoline and is not validated as a plan", () =>
-    Effect.gen(function*() {
-      let continued = 0
-      const trace: Array<string> = []
-      const result = yield* Trellis.run("ship it", {
-        envelope,
-        author: () => Effect.succeed({ agent: { goal: "only" } }),
-        continue: () => Effect.sync(() => (continued += 1, { sequence: [] })),
-        leaf: ({ goal }) =>
-          Effect.sync(() => {
-            trace.push(goal)
-            return goal
-          })
-      })
+  it("refuses a deeply nested value at the envelope depth without walking it", () => {
+    for (const terminal of [{ agent: { goal: "next" } }, { parallel: [] }]) {
+      let next: unknown = terminal
+      for (let depth = 0; depth < 20_000; depth++) next = { sequence: [next] }
 
-      expect(trace).toEqual(["only"])
-      expect(continued).toBe(1)
-      expect(result.rounds).toHaveLength(1)
-      expect(result.remaining).toBe(envelope.fuel - 1)
-    }))
-
-  it.effect("a nested empty continuation stops after visiting every no-work container", () =>
-    Effect.gen(function*() {
-      const result = yield* Trellis.run("ship it", {
-        envelope,
-        author: () => Effect.succeed({ agent: { goal: "only" } }),
-        continue: () => Effect.succeed({ sequence: [{ parallel: [] }] }),
-        leaf: ({ goal }) => Effect.succeed(goal)
-      })
-
-      expect(result.rounds).toHaveLength(1)
-      expect(result.remaining).toBe(2)
-    }))
-
-  it.effect("refuses deeply nested continuations with typed depth errors and completed-round residue", () =>
-    Effect.gen(function*() {
-      const first: Trellis.Plan = { agent: { goal: "only" } }
-      for (const terminal of [{ agent: { goal: "next" } }, { parallel: [] }]) {
-        let next: unknown = terminal
-        for (let depth = 0; depth < 20_000; depth++) next = { sequence: [next] }
-        const trace: Array<string> = []
-        const failure = yield* Trellis.run("ship it", {
-          envelope,
-          author: () => Effect.succeed(first),
-          continue: () => Effect.succeed(next),
-          leaf: ({ goal }) => Effect.sync(() => (trace.push(goal), goal))
-        }).pipe(Effect.flip)
-
-        expect(failure).toBeInstanceOf(Trellis.TrellisError)
-        expect(failure.code).toBe("depth_exceeded")
-        expect(failure.path).toBe("root.sequence[0].sequence[0].sequence[0]")
-        expect(failure.cause).toMatchObject({
-          rounds: [{ plan: first, result: "only" }],
-          remaining: 2
-        })
-        expect(trace).toEqual(["only"])
-      }
-    }))
-
-  it.effect("accepts empty continuations at the envelope depth", () =>
-    Effect.gen(function*() {
-      const result = yield* Trellis.run("ship it", {
-        envelope,
-        author: () => Effect.succeed({ agent: { goal: "only" } }),
-        continue: () => Effect.succeed({ sequence: [{ parallel: [{ sequence: [] }] }] }),
-        leaf: ({ goal }) => Effect.succeed(goal)
-      })
-
-      expect(result.rounds).toHaveLength(1)
-      expect(result.remaining).toBe(2)
-    }))
-
-  it.effect("retains every refusal from initial and continuation plans", () =>
-    Effect.gen(function*() {
-      const first: Trellis.Plan = { agent: { goal: "only" } }
-      const invalid = { sequence: [{ agent: { goal: "" } }, { agent: { goal: "ok", seat: 1 } }] }
-      const refusals = Trellis.validate(invalid, envelope)
-      expect(refusals.map(({ path }) => path)).toEqual([
-        "root.sequence[0].agent.goal",
-        "root.sequence[1].agent.seat"
+      expect(reported(Trellis.validate(next, envelope))).toEqual([
+        ["depth_exceeded", "root.sequence[0].sequence[0].sequence[0]", "Plan depth 4 exceeds the envelope depth 3"]
       ])
-      for (const initial of [true, false]) {
-        const trace: Array<string> = []
-        const failure = yield* Trellis.run("ship it", {
-          envelope,
-          author: () => Effect.succeed(initial ? invalid : first),
-          continue: () => Effect.succeed(invalid),
-          leaf: ({ goal }) => Effect.sync(() => (trace.push(goal), goal))
-        }).pipe(Effect.flip)
-
-        expect(failure.code).toBe(refusals[0]!.code)
-        expect(failure.path).toBe(refusals[0]!.path)
-        expect(failure.message).toBe(refusals[0]!.message)
-        expect(failure.cause).toEqual({
-          rounds: initial ? [] : [{ plan: first, result: "only" }],
-          remaining: initial ? 3 : 2,
-          refusals
-        })
-        expect(trace).toEqual(initial ? [] : ["only"])
-      }
-    }))
-
-  it.effect("retains completed-round residue and the original error when a later leaf fails", () =>
-    Effect.gen(function*() {
-      const first: Trellis.Plan = { agent: { goal: "first" } }
-      const next: Trellis.Plan = { sequence: [{ agent: { goal: "second" } }, { agent: { goal: "fail" } }] }
-      const error = { reason: "worker failed" }
-      const trace: Array<string> = []
-      let continued = 0
-      const failure = yield* Trellis.run("ship it", {
-        envelope,
-        author: () => Effect.succeed(first),
-        continue: () => Effect.sync(() => (continued += 1, next)),
-        leaf: ({ goal }) =>
-          Effect.suspend(() => {
-            trace.push(goal)
-            return goal === "fail" ? Effect.fail(error) : Effect.succeed(goal)
-          })
-      }).pipe(Effect.flip)
-
-      expect(failure).toBeInstanceOf(Trellis.TrellisError)
-      expect(failure).toMatchObject({
-        code: "leaf_failed",
-        path: "root.sequence[1]",
-        cause: { rounds: [{ plan: first, result: "first" }], remaining: 2, error }
-      })
-      expect((failure as Trellis.TrellisError).cause).toHaveProperty("error", error)
-      expect(trace).toEqual(["first", "second", "fail"])
-      expect(continued).toBe(1)
-    }))
+    }
+  })
 
   it.effect("refuses invalid execute concurrency before a leaf callback runs", () =>
     Effect.gen(function*() {
@@ -363,109 +234,6 @@ describe("Trellis", () => {
       expect(peak).toBe(2)
     }))
 
-  it.effect("validates every envelope field before authoring or executing", () =>
-    Effect.gen(function*() {
-      const invalid = [
-        { fuel: 0, depth: 1, fanout: 1 },
-        { fuel: 1, depth: 0, fanout: 1 },
-        { fuel: 1, depth: 1, fanout: 0 }
-      ]
-      for (const candidate of invalid) {
-        let authors = 0
-        let leaves = 0
-        const failure = yield* Effect.flip(
-          Trellis.run("ship it", {
-            envelope: candidate,
-            author: () => Effect.sync(() => (authors += 1, { agent: { goal: "a" } })),
-            leaf: () => Effect.sync(() => (leaves += 1, "done"))
-          })
-        )
-
-        expect(failure.code).toBe("invalid_envelope")
-        expect(failure.path).toBe("root")
-        expect(failure.message).toBe("Trellis envelope fuel, depth, and fanout must be positive safe integers")
-        expect(authors).toBe(0)
-        expect(leaves).toBe(0)
-      }
-    }))
-
-  it.effect("validates explicit run concurrency before authoring or executing", () =>
-    Effect.gen(function*() {
-      for (const concurrency of [0, -5, 1.5, Number.NaN]) {
-        let authors = 0
-        let leaves = 0
-        const failure = yield* Effect.flip(
-          Trellis.run("ship it", {
-            envelope: { fuel: 1, depth: 1, fanout: 1 },
-            concurrency,
-            author: () => Effect.sync(() => (authors += 1, { agent: { goal: "a" } })),
-            leaf: () => Effect.sync(() => (leaves += 1, "done"))
-          })
-        )
-
-        expect(failure.code).toBe("invalid_envelope")
-        expect(failure.path).toBe("root")
-        expect(failure.message).toBe(`Trellis concurrency must be a positive safe integer, received ${concurrency}`)
-        expect(authors).toBe(0)
-        expect(leaves).toBe(0)
-      }
-    }))
-
-  it.effect("runs the authored plan with real concurrency and charges one fuel unit per leaf", () =>
-    Effect.gen(function*() {
-      const trace: Array<string> = []
-      const gate = yield* Latch.make()
-      const result = yield* Trellis.run("ship it", {
-        envelope,
-        author: () => Effect.succeed(nested),
-        leaf: ({ goal }) =>
-          Effect.gen(function*() {
-            trace.push(`${goal} start`)
-            if (goal === "a") yield* gate.await
-            if (goal === "b") yield* gate.open
-            trace.push(`${goal} end`)
-            return goal.toUpperCase()
-          })
-      })
-
-      expect(result.rounds).toHaveLength(1)
-      expect(result.rounds[0]?.result).toEqual(["A", ["B", "C"]])
-      expect(result.remaining).toBe(0)
-      // "a" is still in flight when "b" starts: the two parallel members overlap.
-      expect(trace.indexOf("b start")).toBeLessThan(trace.indexOf("a end"))
-      // The sequence stays ordered inside that parallel member.
-      expect(trace.indexOf("b end")).toBeLessThan(trace.indexOf("c start"))
-    }))
-
-  it.effect("never exceeds the declared concurrency bound", () =>
-    Effect.gen(function*() {
-      const plan: Trellis.Plan = {
-        parallel: [{ agent: { goal: "a" } }, { agent: { goal: "b" } }]
-      }
-      const peak = (concurrency: number) =>
-        Effect.gen(function*() {
-          let inFlight = 0
-          let observed = 0
-          yield* Trellis.run("ship it", {
-            envelope: { fuel: 2, depth: 2, fanout: 2 },
-            concurrency,
-            author: () => Effect.succeed(plan),
-            leaf: () =>
-              Effect.gen(function*() {
-                inFlight += 1
-                observed = Math.max(observed, inFlight)
-                yield* Effect.yieldNow
-                inFlight -= 1
-                return "done"
-              })
-          })
-          return observed
-        })
-
-      expect(yield* peak(1)).toBe(1)
-      expect(yield* peak(2)).toBe(2)
-    }))
-
   it.effect("returns parallel results in declaration order rather than completion order", () =>
     Effect.gen(function*() {
       const plan: Trellis.Plan = {
@@ -501,99 +269,6 @@ describe("Trellis", () => {
       expect(completionOrder).toEqual(["c", "b", "a"])
       expect(result).toEqual(["A", "B", "C"])
     }))
-
-  it.effect("fails fuel_exhausted before running the third leaf", () =>
-    Effect.gen(function*() {
-      const trace: Array<string> = []
-      const first: Trellis.Plan = {
-        sequence: [{ agent: { goal: "a" } }, { agent: { goal: "b" } }]
-      }
-      const second: Trellis.Plan = { agent: { goal: "c" } }
-      const failure = yield* Trellis.run("ship it", {
-        envelope: { fuel: 2, depth: 2, fanout: 2 },
-        author: () => Effect.succeed(first),
-        continue: () => Effect.succeed(second),
-        leaf: ({ goal }) =>
-          Effect.sync(() => {
-            trace.push(goal)
-            return goal
-          })
-      }).pipe(Effect.flip)
-
-      expect(failure.code).toBe("fuel_exhausted")
-      expect(failure.path).toBe("root")
-      expect(failure.message).toBe("Round 2 needs 1 leaf calls but only 0 fuel remains")
-      expect((failure as Trellis.TrellisError & { readonly cause?: unknown }).cause).toEqual({
-        rounds: [{ plan: first, result: ["a", "b"] }],
-        remaining: 0
-      })
-      expect(trace).toEqual(["a", "b"])
-    }))
-
-  it.effect("re-authors a second round and stops when continue returns nothing", () =>
-    Effect.gen(function*() {
-      const trace: Array<string> = []
-      const plans: ReadonlyArray<Trellis.Plan> = [
-        { agent: { goal: "first" } },
-        { agent: { goal: "second" } }
-      ]
-      const result = yield* Trellis.run("ship it", {
-        envelope: { fuel: 3, depth: 1, fanout: 1 },
-        author: () => Effect.succeed(plans[0]),
-        continue: ({ round }) => Effect.succeed(round === 1 ? plans[1] : undefined),
-        leaf: ({ goal }) =>
-          Effect.sync(() => {
-            trace.push(goal)
-            return goal
-          })
-      })
-
-      expect(trace).toEqual(["first", "second"])
-      expect(result.rounds.map((round) => round.plan)).toEqual(plans)
-      expect(result.remaining).toBe(1)
-    }))
-
-  it.effect("refuses a plan the model authored outside the envelope", () =>
-    Effect.gen(function*() {
-      const failure = yield* Trellis.run("ship it", {
-        envelope: { fuel: 2, depth: 1, fanout: 2 },
-        author: () => Effect.succeed({ sequence: [{ agent: { goal: "a" } }] }),
-        leaf: ({ goal }) => Effect.succeed(goal)
-      }).pipe(Effect.flip)
-
-      expect(failure.code).toBe("depth_exceeded")
-      expect(failure.path).toBe("root.sequence[0]")
-      expect(failure.message).toBe("Plan depth 2 exceeds the envelope depth 1")
-    }))
-
-  it("declares one leaf call per fuel unit, each shaped like the leaf run hands over", () => {
-    const trellis = Trellis.make({ author, leaf, envelope })
-
-    expect(Flow.isFlow(trellis)).toBe(true)
-    const graph = Graph.build(trellis, { input: "ship it" })
-    expect(leafCalls(graph)).toHaveLength(envelope.fuel)
-    // The builder enters the declaration as a call of its own, so core's
-    // `fuel + 1` FlowCall count is the fuel slots plus the one author call.
-    expect(callsTo(graph, "author")).toHaveLength(1)
-    // The declared payload is a Leaf, which is what `run` and `execute` hand a
-    // leaf flow. A declaration cannot know the goals, so the plan stands in for
-    // them and the path names the slot.
-    expect(leafCalls(graph).map((node) => Object.keys(payload(node) as object).sort())).toEqual(
-      Array.from({ length: envelope.fuel }, () => ["goal", "path"])
-    )
-    expect(leafCalls(graph).map((node) => (payload(node) as { readonly path: string }).path)).toEqual([
-      "slot-0",
-      "slot-1",
-      "slot-2"
-    ])
-    expect(() => Trellis.make({ author, leaf, envelope: { fuel: 0, depth: 1, fanout: 1 } })).toThrow(
-      expect.objectContaining({
-        code: "invalid_envelope",
-        path: "root",
-        message: "Trellis envelope fuel, depth, and fanout must be positive safe integers"
-      })
-    )
-  })
 
   it("keeps the caller's name and description on the declared flow", () => {
     const trellis = Trellis.make({ author, leaf, envelope, name: "plan-it", description: "Author and run a plan." })
@@ -645,4 +320,364 @@ describe("Trellis", () => {
 
       expect(seen).toEqual([{ goal: "review", seat: "critic", path: "root" }])
     }))
+})
+
+/**
+ * The declared trellis on the engine.
+ *
+ * Every member is a real flow calling one scripted action, so each case runs
+ * the flow `make` declares through `Interpreter.layer` and the engine, and
+ * reads what the action was really handed.
+ */
+interface Script {
+  readonly author: (payload: unknown) => Effect.Effect<unknown, unknown>
+  readonly leaf: (leaf: Trellis.Leaf) => Effect.Effect<unknown, unknown>
+  readonly continue?: ((input: Trellis.Continuation) => Effect.Effect<unknown, unknown>) | undefined
+}
+
+let script: Script = {
+  author: () => Effect.die("no script"),
+  leaf: () => Effect.die("no script")
+}
+
+const step = Action.make("trellis/step", {
+  payload: { role: Schema.String, payload: Schema.Unknown },
+  success: Schema.Unknown,
+  error: Schema.Unknown
+})
+
+const stepLayer = step.toLayer(({ payload, role }) =>
+  Effect.suspend(() =>
+    role === "author"
+      ? script.author(payload)
+      : role === "leaf"
+      ? script.leaf(payload as Trellis.Leaf)
+      : script.continue!(payload as Trellis.Continuation)
+  )
+)
+
+const opaque = Schema.optionalKey(Schema.Unknown)
+
+const roleFlow = (role: string, fields: Schema.Struct.Fields) =>
+  Flow.make(`trellis/${role}`, {
+    payload: fields,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: Node.capture({ role }, (payload: unknown) => step.call({ role, payload }))
+  })
+
+const roles = {
+  author: roleFlow("author", { prompt: opaque }),
+  leaf: roleFlow("leaf", { goal: opaque, seat: opaque, path: opaque }),
+  continue: roleFlow("continue", { plan: opaque, result: opaque, round: opaque, remaining: opaque })
+}
+
+const declared = (bounds: Trellis.Envelope, continued: boolean) =>
+  Trellis.make({
+    author: roles.author,
+    leaf: roles.leaf,
+    ...(continued ? { continue: roles.continue } : {}),
+    envelope: bounds
+  })
+
+let executions = 0
+
+/** Runs one declared trellis to settlement under `next` as its script. */
+const settle = (
+  next: Script,
+  bounds: Trellis.Envelope = envelope
+): Promise<Exit.Exit<unknown, unknown>> => {
+  script = next
+  return executeExit(
+    declared(bounds, next.continue !== undefined) as never,
+    { input: { prompt: "ship it" } },
+    `trellis-${++executions}`,
+    stepLayer
+  )
+}
+
+const succeeded = (exit: Exit.Exit<unknown, unknown>): Trellis.RunResult => {
+  if (exit._tag !== "Success") throw new Error(`the trellis failed: ${String(exit.cause)}`)
+  return exit.value as Trellis.RunResult
+}
+
+const failed = (exit: Exit.Exit<unknown, unknown>): Trellis.TrellisError & { readonly cause?: unknown } => {
+  if (exit._tag !== "Failure") throw new Error("the trellis settled")
+  const error = Cause.findErrorOption(exit.cause)
+  if (error._tag !== "Some") throw new Error(`the trellis did not fail on its typed channel: ${String(exit.cause)}`)
+  return error.value as Trellis.TrellisError
+}
+
+describe("Trellis.make", () => {
+  it("runs the leaves the authored plan names, with their goals and plan paths", async () => {
+    const handed: Array<Trellis.Leaf> = []
+    const result = succeeded(
+      await settle({
+        author: () => Effect.succeed(nested),
+        leaf: (leaf) => Effect.sync(() => (handed.push(leaf), leaf.goal.toUpperCase()))
+      })
+    )
+
+    // Exactly the plan's three leaves, never a placeholder slot carrying the
+    // whole plan as its goal.
+    expect([...handed].sort((left, right) => left.path.localeCompare(right.path))).toEqual(Trellis.leaves(nested))
+    expect(result).toEqual({ rounds: [{ plan: nested, result: ["A", ["B", "C"]] }], remaining: 0 })
+  })
+
+  it("hands the author the caller's input and a seat to the leaf that names it", async () => {
+    const authored: Array<unknown> = []
+    const handed: Array<Trellis.Leaf> = []
+    succeeded(
+      await settle({
+        author: (payload) => Effect.sync(() => (authored.push(payload), { agent: { goal: "review", seat: "critic" } })),
+        leaf: (leaf) => Effect.sync(() => (handed.push(leaf), "ok"))
+      })
+    )
+
+    expect(authored).toEqual([{ prompt: "ship it" }])
+    expect(handed).toEqual([{ goal: "review", seat: "critic", path: "root" }])
+  })
+
+  it("runs a sequence in plan order", async () => {
+    const trace: Array<string> = []
+    succeeded(
+      await settle({
+        author: () => Effect.succeed({ sequence: [{ agent: { goal: "a" } }, { agent: { goal: "b" } }] }),
+        leaf: ({ goal }) => Effect.sync(() => (trace.push(goal), goal))
+      })
+    )
+
+    expect(trace).toEqual(["a", "b"])
+  })
+
+  it("declares the author round as one author call and a handoff, and a plan round as the plan's leaves", () => {
+    const trellis = declared(envelope, false)
+
+    const authoring = Graph.build(trellis, { input: { prompt: "ship it" } })
+    expect(callsTo(authoring, "trellis/author")).toHaveLength(1)
+    expect(callsTo(authoring, "trellis/leaf")).toHaveLength(0)
+
+    const round = Graph.build(trellis, {
+      input: { prompt: "ship it" },
+      round: { plan: nested, round: 1, remaining: envelope.fuel, rounds: [] }
+    })
+    expect(callsTo(round, "trellis/author")).toHaveLength(0)
+    expect(callsTo(round, "trellis/leaf").map(payload)).toEqual([
+      { goal: "a", path: "root.parallel[0]" },
+      { goal: "b", path: "root.parallel[1].sequence[0]" },
+      { goal: "c", path: "root.parallel[1].sequence[1]" }
+    ])
+  })
+
+  it("re-authors a second round and stops when continue returns nothing", async () => {
+    const trace: Array<string> = []
+    const continued: Array<Trellis.Continuation> = []
+    const plans: ReadonlyArray<Trellis.Plan> = [{ agent: { goal: "first" } }, { agent: { goal: "second" } }]
+    const result = succeeded(
+      await settle({
+        author: () => Effect.succeed(plans[0]),
+        continue: (input) => Effect.sync(() => (continued.push(input), input.round === 1 ? plans[1] : null)),
+        leaf: ({ goal }) => Effect.sync(() => (trace.push(goal), goal))
+      }, { fuel: 3, depth: 1, fanout: 1 })
+    )
+
+    expect(trace).toEqual(["first", "second"])
+    expect(continued).toEqual([
+      { plan: plans[0], result: "first", round: 1, remaining: 2 },
+      { plan: plans[1], result: "second", round: 2, remaining: 1 }
+    ])
+    expect(result).toEqual({
+      rounds: [{ plan: plans[0], result: "first" }, { plan: plans[1], result: "second" }],
+      remaining: 1
+    })
+  })
+
+  it("stops when a continuation names no work, at any depth inside the envelope", async () => {
+    for (
+      const empty of [{ sequence: [] }, { sequence: [{ parallel: [] }] }, {
+        sequence: [{ parallel: [{ sequence: [] }] }]
+      }]
+    ) {
+      const trace: Array<string> = []
+      const result = succeeded(
+        await settle({
+          author: () => Effect.succeed({ agent: { goal: "only" } }),
+          continue: () => Effect.succeed(empty),
+          leaf: ({ goal }) => Effect.sync(() => (trace.push(goal), goal))
+        })
+      )
+
+      expect(trace).toEqual(["only"])
+      expect(result).toEqual({ rounds: [{ plan: { agent: { goal: "only" } }, result: "only" }], remaining: 2 })
+    }
+  })
+
+  it("refuses a too-deep continuation with the settled rounds as residue", async () => {
+    const first: Trellis.Plan = { agent: { goal: "only" } }
+    let next: unknown = { agent: { goal: "next" } }
+    for (let depth = 0; depth < 5; depth++) next = { sequence: [next] }
+    const trace: Array<string> = []
+    const failure = failed(
+      await settle({
+        author: () => Effect.succeed(first),
+        continue: () => Effect.succeed(next),
+        leaf: ({ goal }) => Effect.sync(() => (trace.push(goal), goal))
+      })
+    )
+
+    expect(failure).toBeInstanceOf(Trellis.TrellisError)
+    expect(failure.code).toBe("depth_exceeded")
+    expect(failure.path).toBe("root.sequence[0].sequence[0].sequence[0]")
+    expect(failure.cause).toMatchObject({ rounds: [{ plan: first, result: "only" }], remaining: 2 })
+    expect(trace).toEqual(["only"])
+  })
+
+  it("retains every refusal from an initial or a continuation plan, and runs no leaf of it", async () => {
+    const first: Trellis.Plan = { agent: { goal: "only" } }
+    const invalid = { sequence: [{ agent: { goal: "" } }, { agent: { goal: "ok", seat: 1 } }] }
+    const refusals = Trellis.validate(invalid, envelope)
+    for (const initial of [true, false]) {
+      const trace: Array<string> = []
+      const failure = failed(
+        await settle({
+          author: () => Effect.succeed(initial ? invalid : first),
+          continue: () => Effect.succeed(invalid),
+          leaf: ({ goal }) => Effect.sync(() => (trace.push(goal), goal))
+        })
+      )
+
+      expect(failure.code).toBe(refusals[0]!.code)
+      expect(failure.path).toBe(refusals[0]!.path)
+      expect(failure.message).toBe(refusals[0]!.message)
+      expect(failure.cause).toEqual({
+        rounds: initial ? [] : [{ plan: first, result: "only" }],
+        remaining: initial ? 3 : 2,
+        refusals: refusals.map(({ code, message, path }) => ({ code, path, message }))
+      })
+      expect(trace).toEqual(initial ? [] : ["only"])
+    }
+  })
+
+  it("refuses a value that is not a plan before any leaf runs", async () => {
+    let leaves = 0
+    const failure = failed(
+      await settle({
+        author: () => Effect.succeed({ swarm: [] }),
+        leaf: () => Effect.sync(() => ++leaves)
+      })
+    )
+
+    expect([failure.code, failure.path]).toEqual(["invalid_plan", "root"])
+    expect(leaves).toBe(0)
+  })
+
+  it("fails fuel_exhausted before running a round the fuel cannot pay for", async () => {
+    const trace: Array<string> = []
+    const first: Trellis.Plan = { sequence: [{ agent: { goal: "a" } }, { agent: { goal: "b" } }] }
+    const failure = failed(
+      await settle({
+        author: () => Effect.succeed(first),
+        continue: () => Effect.succeed({ agent: { goal: "c" } }),
+        leaf: ({ goal }) => Effect.sync(() => (trace.push(goal), goal))
+      }, { fuel: 2, depth: 2, fanout: 2 })
+    )
+
+    expect(failure.code).toBe("fuel_exhausted")
+    expect(failure.path).toBe("root")
+    expect(failure.message).toBe("Round 2 needs 1 leaf calls but only 0 fuel remains")
+    expect(failure.cause).toEqual({ rounds: [{ plan: first, result: ["a", "b"] }], remaining: 0 })
+    expect(trace).toEqual(["a", "b"])
+  })
+
+  it("refuses with fuel_exhausted, not the round budget, after fuel one-leaf rounds", async () => {
+    const trace: Array<string> = []
+    const failure = failed(
+      await settle({
+        author: () => Effect.succeed({ agent: { goal: "only" } }),
+        continue: () => Effect.succeed({ agent: { goal: "again" } }),
+        leaf: ({ goal }) => Effect.sync(() => (trace.push(goal), goal))
+      }, { fuel: 1, depth: 1, fanout: 1 })
+    )
+
+    expect(failure).toMatchObject({
+      code: "fuel_exhausted",
+      path: "root",
+      message: "Round 2 needs 1 leaf calls but only 0 fuel remains",
+      cause: { rounds: [{ plan: { agent: { goal: "only" } }, result: "only" }], remaining: 0 }
+    })
+    expect(trace).toEqual(["only"])
+  })
+
+  it("refuses round state that its settled rounds and the envelope do not account for", async () => {
+    const settled = { plan: { agent: { goal: "done" } }, result: "done" }
+    for (
+      const round of [
+        { round: 1, remaining: 100, rounds: [] },
+        { round: 0, remaining: 3, rounds: [] },
+        { round: 1, remaining: -1, rounds: [] },
+        { round: 999, remaining: 2, rounds: [settled] },
+        { round: 2, remaining: 3, rounds: [settled] },
+        { round: 2, remaining: 2, rounds: [{ plan: { swarm: [] }, result: null }] },
+        { round: 2, remaining: 2, rounds: [null] }
+      ]
+    ) {
+      let leaves = 0
+      script = { author: () => Effect.die("never authored"), leaf: () => Effect.sync(() => ++leaves) }
+      const failure = failed(
+        await executeExit(
+          declared(envelope, false) as never,
+          { input: { prompt: "ship it" }, round: { plan: { agent: { goal: "a" } }, ...round } },
+          `trellis-${++executions}`,
+          stepLayer
+        )
+      )
+
+      expect(failure).toMatchObject({ code: "invalid_envelope", path: "root" })
+      expect(leaves).toBe(0)
+    }
+  })
+
+  it("refuses a plan the model authored outside the envelope", async () => {
+    const failure = failed(
+      await settle({
+        author: () => Effect.succeed({ sequence: [{ agent: { goal: "a" } }] }),
+        leaf: ({ goal }) => Effect.succeed(goal)
+      }, { fuel: 2, depth: 1, fanout: 2 })
+    )
+
+    expect(failure.code).toBe("depth_exceeded")
+    expect(failure.path).toBe("root.sequence[0]")
+    expect(failure.message).toBe("Plan depth 2 exceeds the envelope depth 1")
+  })
+
+  it("fails the round with a leaf's own error", async () => {
+    const error = { reason: "worker failed" }
+    const trace: Array<string> = []
+    const exit = await settle({
+      author: () => Effect.succeed({ sequence: [{ agent: { goal: "ok" } }, { agent: { goal: "fail" } }] }),
+      leaf: ({ goal }) =>
+        Effect.suspend(() => (trace.push(goal), goal === "fail" ? Effect.fail(error) : Effect.succeed(goal)))
+    })
+
+    expect(failed(exit)).toEqual(error)
+    expect(trace).toEqual(["ok", "fail"])
+  })
+
+  it("refuses an envelope bound that is not a positive safe integer", () => {
+    for (
+      const bounds of [{ fuel: 0, depth: 1, fanout: 1 }, { fuel: 1, depth: 0, fanout: 1 }, {
+        fuel: 1,
+        depth: 1,
+        fanout: 1.5
+      }]
+    ) {
+      expect(() => Trellis.make({ author, leaf, envelope: bounds })).toThrow(
+        expect.objectContaining({
+          code: "invalid_envelope",
+          path: "root",
+          message: "Trellis envelope fuel, depth, and fanout must be positive safe integers"
+        })
+      )
+    }
+  })
 })

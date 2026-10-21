@@ -77,10 +77,10 @@ six, and [Burn down a backlog](./burndown.md) covers `Burndown`.
 Plans a model writes, admitted against bounds it cannot widen.
 [Delegation](./delegation.md) covers both.
 
-| Module                                               | Import specifier                   | What it does                                                           |
-| ---------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------- |
-| [`Trellis`](./delegation.md#trellis)                 | `@smthrs/patterns/Trellis`         | Validate, compile, and execute a model-authored plan under an envelope |
-| [`DelegationChain`](./delegation.md#delegationchain) | `@smthrs/patterns/DelegationChain` | The fixed chain: refine, plan, derisk, execute, review, settle         |
+| Module                                               | Import specifier                   | What it does                                                       |
+| ---------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------ |
+| [`Trellis`](./delegation.md#trellis)                 | `@smthrs/patterns/Trellis`         | Run model-authored plans under an envelope, one durable round each |
+| [`DelegationChain`](./delegation.md#delegationchain) | `@smthrs/patterns/DelegationChain` | The fixed chain: refine, plan, derisk, execute, review, settle     |
 
 ## Decorators and building blocks
 
