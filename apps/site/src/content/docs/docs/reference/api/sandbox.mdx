@@ -307,7 +307,9 @@ const ran = yield* SandboxTools.execute(session, { tool: "run", command: "npm te
   which lies outside the workdir. The same call again answers what the first attempt recorded; a call whose first
   attempt never recorded an exit fails `ToolLost` and does not run again. Reads and writes are repeatable.
 - **Failures:** `ToolRefused` (`path`, `not_found`, `not_a_file`, `not_a_directory`, `not_a_repository`,
-  `too_large`), `ToolLost`, and `ToolUnavailable { code }` when the session failed.
+  `too_large`), `ToolLost`, and `ToolUnavailable { code, exitCode? }` when the session failed (`code` is the provider's)
+  or the tool's script failed (`code` `unknown`, `exitCode` its step: `checkpoint` exits 120 to 124 for `mktemp`,
+  `read-tree`, `add`, `diff` and `bundle`).
 - **Guests:** the scripts are POSIX `sh` with git. GNU `timeout`, when the guest has it, stops a command's whole process
   group; without it the watchdog stops the command's own process.
 - **Telemetry:** a span `sandbox.tool` with the tool, its outcome and a command's exit code; never a path, a command,
@@ -334,29 +336,31 @@ resume the same deterministic change. Custom conflict strategies run separately.
 The lower-level `apply` effect makes one attempt, with no sleep or retry:
 
 ```ts
+import { Action } from "@smthrs/flow"
 import { SandboxMerge } from "@smthrs/sandbox"
 
 const outcome = yield* SandboxMerge.apply(work, {
   repository: "/srv/repo",
   onto: "main",
-  message: "Fix #42"
+  message: "Fix #42",
+  key: yield* Action.effectKey("apply")
 })
 ```
 
 `apply(work, options)` lands a session's `Work` in a host jj repository as one jj change on `onto`. The patch is applied to its own base, then the change is rebased onto `onto`, so jj merges whatever `onto` gained since the base. It requires `ChildProcessSpawner`, `FileSystem` and `@smthrs/jj`'s `RepositoryMutation` fence (`NodeJj.layerRepositoryMutation` on Node and Bun), and `jj` and `git` on the host's `PATH`.
 
-| `ApplyOptions` | Default                  | Meaning                                                                     |
-| -------------- | ------------------------ | --------------------------------------------------------------------------- |
-| `repository`   | required                 | the host jj repository's root directory                                     |
-| `onto`         | required                 | a jj revision naming one commit, the change's parent                        |
-| `message`      | required                 | the change's description                                                    |
-| `key`          | session, base, and patch | what makes two applications the same; the change id derives from it         |
-| `fetch`        | `[]`                     | arguments to `jj git fetch` when the base is missing; `false` never fetches |
-| `strategy`     | `recordConflicts`        | what a conflict means                                                       |
+| `ApplyOptions` | Default           | Meaning                                                                     |
+| -------------- | ----------------- | --------------------------------------------------------------------------- |
+| `repository`   | required          | the host jj repository's root directory                                     |
+| `onto`         | required          | a jj revision naming one commit, the change's parent                        |
+| `message`      | required          | the change's description                                                    |
+| `key`          | required          | what makes two applications the same; the change id derives from it         |
+| `fetch`        | `[]`              | arguments to `jj git fetch` when the base is missing; `false` never fetches |
+| `strategy`     | `recordConflicts` | what a conflict means                                                       |
 
 `Outcome` is `Merged { change, commit, onto }`, `Conflicted { change, commit, onto, paths }`, or the work's own `Unchanged`, which applies as nothing. `change` is the jj change id; `commit` and `onto` are commit ids. A `Conflicted` change exists and records jj conflicts in `paths`, as `jj rebase` would.
 
-`apply` is idempotent per key: applying a key again answers the existing change's outcome. It never reads or writes a working copy (`jj --ignore-working-copy`). The commit is built with git plumbing through a private index in the repository's git store and imported through a temporary `smithers-sandbox/<change>` bookmark, deleted after the rebase. An apply interrupted between import and rebase finishes on the next call.
+`apply` is idempotent per key: applying a key again answers the existing change's outcome. Take the key from the applying step (`Action.effectKey` from `@smthrs/flow`) or an id recorded before the work ran, never from the patch: one patch can belong to two applications, and a retry can produce another patch. It never reads or writes a working copy (`jj --ignore-working-copy`). The commit is built with git plumbing through a private index in the repository's git store and imported through a temporary `smithers-sandbox/<change>` bookmark, deleted after the rebase. An apply interrupted between import and rebase finishes on the next call.
 
 Host import and rebase share the Node/Bun jj workspace and store fences. Their
 default 120-second deadline bounds acquisition of both fences only. Commands

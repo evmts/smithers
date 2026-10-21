@@ -378,6 +378,19 @@ When memory shares a database with the engine or control plane, compose all requ
 | `TagGroup`            | schema and type                                                | The recursive query expression: `{ tags, match? }`, `{ and }`, `{ or }`, or `{ not }`, decoded within the published budgets.                                                                                                       |
 | `matches`             | `(tagGroup: TagGroup, tags: ReadonlyArray<string>) => boolean` | The single source of truth for the five match modes. Non-strict `any` and `all` match untagged records; strict modes require at least one tag; `exact` requires set equality. An undecoded expression over budget answers `false`. |
 
+### `@smthrs/memory/Opening`
+
+| Export         | Signature                                                                                                  | Behavior                                                                                                                                                        |
+| -------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Candidate`    | interface                                                                                                  | `{ kind, bank, key, text }`, where `kind` is `"memory"` or `"skill"`: one recalled document or skill before judgment.                                           |
+| `Verdict`      | interface                                                                                                  | `{ index, unnecessary, withheld }`: a judge's probability, from 0 to 1, that the shortlisted candidate at `index` is unnecessary.                               |
+| `Selection`    | interface                                                                                                  | `{ rows, recalled, judged, inserted, filtered, skillsRecalled, skillsInserted, bytes }`: the chosen rows and counts safe for telemetry.                         |
+| `shortlist`    | `(query, candidates, limit = 30) => ReadonlyArray<Candidate>`                                              | Ranks candidates by query keyword hits, ties in source order, and reserves half of `limit` for each kind so memories can't crowd out every skill.               |
+| `select`       | `(options: { query, candidates, judge, tokenBudget, maxCandidates?, tokens? }) => Effect<Selection, E, R>` | Judges the shortlist once and keeps whole rows, least unnecessary first, while the escaped render fits `tokenBudget`. Invalid or withheld verdicts are dropped. |
+| `Sources`      | service                                                                                                    | `{ recall(query): Effect<ReadonlyArray<Candidate>, MemoryError> }`, the host-owned sources an opening reads.                                                    |
+| `layerSources` | `(banks, skills = []) => Layer<Sources, never, Recall>`                                                    | Recalls `banks` as memory candidates and appends the host's `skills`; the host owns and authorizes the bank list.                                               |
+| `boundedQuery` | `(query, maxBytes = MAX_RECALL_QUERY_BYTES) => string`                                                     | Keeps the newest whole code points of `query` that fit `maxBytes` UTF-8 bytes.                                                                                  |
+
 ### `@smthrs/memory/Recall`
 
 | Export                        | Signature                                    | Behavior                                                                                                                    |
