@@ -2,9 +2,11 @@ import { test as base, type APIRequestContext, type Browser, type BrowserContext
 import { writeFile } from "node:fs/promises"
 import { DEV_URL } from "../dev/https"
 import { faultyApp, faults } from "./faults"
+import { allServerRows, type Row } from "./shape"
 import {
   COULDNT_ANSWER,
   expect,
+  guardSpend,
   NOT_SENT,
   OFFLINE,
   PAGE_SIZE,
@@ -23,7 +25,7 @@ import {
 // through ChatApi (`POST /api/questions`). No mocks: `setOffline` is the device losing its network, and a device
 // opened on the app's faulty services (`openFaulty`, e2e/faults.ts) throws a switch for the sync service being down.
 
-export { COULDNT_ANSWER, expect, NOT_SENT, OFFLINE, PAGE_SIZE, QUEUED, SYNC_FAILED }
+export { allServerRows, COULDNT_ANSWER, expect, NOT_SENT, OFFLINE, PAGE_SIZE, QUEUED, type Row, SYNC_FAILED }
 
 // A laptop's window, as on the default page (playwright.config.ts): each device's video is the whole app at 1:1, and
 // e2e/gifs.mjs lays several side by side without scaling them down (Will, 2026-10-20: "video is too zoomed in").
@@ -372,36 +374,6 @@ export const pairs = (thread: Array<Message>) => {
   return result
 }
 
-/** A row of Postgres `messages` as Electric's shape serves it (snake_case columns). */
-export type Row = { id: string; role: string; text: string; status: string; question_id: string | null; failure: string | null; position: string }
-
-type ShapeMessage = {
-  key?: string
-  value?: Partial<Row>
-  headers: { operation?: "insert" | "update" | "delete"; control?: string }
-}
-
-// Every row of Postgres `messages`, in `position` order, read the way devices read them: Electric's shape through
-// ChatApi's proxy, from the start of its log until it is up to date.
-export const allServerRows = async (request: APIRequestContext): Promise<Array<Row>> => {
-  const rows = new Map<string, Row>()
-  let query = "offset=-1"
-  for (let page = 0; page < 1_000; page++) {
-    const response = await request.get(`/api/shapes/messages?${query}`)
-    expect(response.status(), "ChatApi serves the messages shape").toBe(200)
-    for (const message of (await response.json()) as Array<ShapeMessage>) {
-      const key = message.key ?? message.value?.id
-      if (key === undefined) continue
-      if (message.headers.operation === "delete") rows.delete(key)
-      else if (message.headers.operation !== undefined) rows.set(key, { ...rows.get(key), ...message.value } as Row)
-    }
-    const headers = response.headers()
-    if ("electric-up-to-date" in headers) break
-    query = `offset=${headers["electric-offset"]}&handle=${headers["electric-handle"]}`
-  }
-  return [...rows.values()].sort((left, right) => Number(left.position) - Number(right.position))
-}
-
 // Postgres' rows for this test's questions: each question with `word`, and its answer.
 export const serverRows = async (request: APIRequestContext, word: string): Promise<Array<Row>> => {
   const ordered = await allServerRows(request)
@@ -531,7 +503,9 @@ class Devices {
 
 // Built on Playwright's own test, not fixtures.ts': a device test opens its own contexts and saves each tab's log,
 // so it needs no default page.
-export const test = base.extend<{ devices: Devices }>({
+export const test = base.extend<{ devices: Devices; spendGuard: void }>({
+  // A deployment run stops asking once its answers spent the run's token budget (e2e/spend.ts).
+  spendGuard: [async ({ playwright }, use) => use(await guardSpend(() => playwright.request.newContext())), { auto: true }],
   devices: async ({ browser }, use, testInfo) => {
     const devices = new Devices(browser, testInfo)
     await use(devices)

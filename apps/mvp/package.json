@@ -14,6 +14,7 @@
     "destroy": "alchemy destroy --stage prod",
     "typecheck": "tsc -p tsconfig.json && tsc -p worker/tsconfig.json && tsc -p infra/tsconfig.json && tsc -p evals/tsconfig.json",
     "e2e": "playwright test",
+    "e2e:prod": "node e2e/prod.mjs",
     "e2e:gifs": "node e2e/gifs.mjs",
     "e2e:gifs:check": "node e2e/check-gifs.mjs",
     "bench": "node bench/run.ts",

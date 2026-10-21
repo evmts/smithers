@@ -65,6 +65,7 @@ default.profraw
 playwright-report/
 .playwright-mcp/
 test-results/
+test-results-deployment/
 .tui-test/
 
 # Local agent and review scratch

@@ -1,9 +1,9 @@
 import { expect, test } from "./devices"
-import { local, remoteReason } from "./logs"
+import { requires } from "./target"
 
 // An unhappy-path model service takes longer than the server's old 30-second liveness window. The browser engine,
 // Worker routes, Postgres, Electric and UI are real. No route is intercepted and no clock is replaced.
-test.skip(!local, remoteReason)
+requires("localLogs")
 
 test("a follow-up waits through long reasoning and receives the earlier answer", {
   annotation: { type: "summary", description: "A slow answer keeps its place, and the next question receives its completed reply." },

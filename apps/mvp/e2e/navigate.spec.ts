@@ -1,7 +1,8 @@
 import { allServerRows, expect, type Row, test } from "./devices"
 import { step } from "./fixtures"
 import { type Frame, framesOf, framesPass, recordFrames } from "./loading"
-import { field, local, type LogRecord, LogTail } from "./logs"
+import { field, type LogRecord, LogTail } from "./logs"
+import { partly } from "./target"
 
 // `app/navigate` end to end (docs/features/flows.md#navigation): a real browser, its own durable engine and the real
 // model. Asking the agent to open a repository takes the tab that asked there, through the router, and leaves the
@@ -49,7 +50,7 @@ const relayed = (records: Array<LogRecord>) =>
     .map((record) => [field(record, "door"), field(record, "outcome"), field(record, "reason")])
 
 test("navigate by the agent: asking to open octocat/Spoon-Knife takes the tab that asked there, and the other tab stays", async ({ devices, request }) => {
-  const logs = local ? await LogTail.start() : undefined
+  const logs = partly("localLogs") ? await LogTail.start() : undefined
   const word = devices.word
   const [a] = await devices.open("A")
   const b = await devices.tab(a.device, "B")
@@ -129,7 +130,7 @@ test("navigate by hover: Runs, hovered first, opens at the click with no loading
 })
 
 test("navigate refused: asking the agent to open an outside site is refused, and the page stays put", async ({ devices, request }) => {
-  const logs = local ? await LogTail.start() : undefined
+  const logs = partly("localLogs") ? await LogTail.start() : undefined
   const word = devices.word
   const [a] = await devices.open("A")
   const question = `Call app/navigate with to set to https://example.com/login, then reply with the word refused-${word}.`

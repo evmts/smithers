@@ -1,7 +1,8 @@
 import type { BrowserContext, Page } from "@playwright/test"
 import { THEME_ATTRIBUTE, THEME_MIRROR_KEY } from "../src/features/theme/contract"
 import { allServerRows, expect, type Row, test } from "./devices"
-import { field, local, type LogRecord, LogTail, remoteReason } from "./logs"
+import { field, type LogRecord, LogTail } from "./logs"
+import { requires } from "./target"
 
 // The browser's agent, end to end (docs/features/agent.md, flows.md, decision 0011): a real browser runs `chat/Answer`
 // on its own durable engine (the leader tab's engine worker, SQLite on OPFS), every model call goes through ChatApi's
@@ -86,7 +87,7 @@ test("theme by the agent: asking Smithers to switch to dark mode runs app/theme/
 })
 
 test.describe("killed tab", () => {
-  test.skip(!local, remoteReason)
+  requires("localLogs")
 
   test("killed tab: the answer resumes when the app opens again, replaying sealed model calls from the journal, never calling them again", { annotation: [{ type: "theme", description: "light" }, { type: "summary", description: "An answer cut off by a closed tab finishes when the app opens again, without paying for finished model calls twice." }] }, async ({ devices, request }) => {
     test.setTimeout(240_000)

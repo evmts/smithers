@@ -1,7 +1,10 @@
-import { test as base, expect, type Locator, type Page, type TestInfo } from "@playwright/test"
+import { type APIRequestContext, test as base, expect, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { readdir, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { themeFor } from "./frames.ts"
+import { allServerRows } from "./shape"
+import { runStartedAt, spendGuard, tokenBudget } from "./spend"
+import { meets, target } from "./target"
 
 // The status copy (docs/decisions/0002-local-first.md §2) and how many messages show before Load earlier: chat's
 // contract, which the app and these tests share.
@@ -221,7 +224,34 @@ const writeLog = async (path: string, log: Array<string>) => {
 // Every test keeps the browser's console and page errors; a failing test saves them as browser.log. Every test also
 // writes flow.json beside its video, so e2e/gifs.mjs makes one video and GIF per flow. A test that opens its own
 // contexts instead (repo.spec.ts "clone") leaves the default page blank: its manifest lists those contexts' videos.
-export const test = base.extend<{ browserLog: Array<string> }>({
+/**
+ * This worker's spend guard (e2e/spend.ts): in a deployment, once the run's answers spent its token budget, every later
+ * test fails before it asks. It reads the conversation through `request`, signed in as the run.
+ */
+export const guardSpend = (() => {
+  let open: () => Promise<APIRequestContext> = () => Promise.reject(new Error("the spend guard has no request context"))
+  const guard = spendGuard({
+    applies: () => target === "deployment" && meets("member"),
+    budget: () => tokenBudget(process.env),
+    since: () => runStartedAt(process.env),
+    rows: async () => {
+      const request = await open()
+      try {
+        return await allServerRows(request)
+      } finally {
+        await request.dispose()
+      }
+    },
+  })
+  return (opener: () => Promise<APIRequestContext>) => {
+    open = opener
+    return guard()
+  }
+})()
+
+export const test = base.extend<{ browserLog: Array<string>; spendGuard: void }>({
+  // A deployment run stops asking once its answers spent the run's token budget (e2e/spend.ts).
+  spendGuard: [async ({ playwright }, use) => use(await guardSpend(() => playwright.request.newContext())), { auto: true }],
   // The default page's mode, from its first frame: `themeOf`.
   colorScheme: async ({}, use, testInfo) => use(themeOf(testInfo)),
   browserLog: [

@@ -1,21 +1,46 @@
-import { defineConfig } from "@playwright/test"
-import { DEV_URL } from "./dev/https.ts"
+import { defineConfig, type PlaywrightTestConfig } from "@playwright/test"
+import { baseURL, onThisMachine, sessionFiles, target } from "./e2e/target"
 
-// Real browsers against the real app, Worker, Durable Object and model: no mocks.
-// BASE_URL points the tests at a deployment; without it, Playwright starts `alchemy dev`
-// (which needs the chat model's credential, CEREBRAS_API_KEY by default, in the environment).
-// Locally the tests open the dev server over HTTPS and HTTP/2 (dev/https.ts), as production serves the app.
-const baseURL = process.env.BASE_URL ?? DEV_URL
+// Real browsers against the real app, Worker, Durable Object and model: no mocks. The target is local by default:
+// Playwright starts `alchemy dev` (which needs the chat model's credential, CEREBRAS_API_KEY by default, in the
+// environment). BASE_URL points the tests at a deployment, and `pnpm e2e:prod` at production (e2e/target.ts,
+// docs/infrastructure.md#against-a-deployment). Locally the tests open the dev server over HTTPS and HTTP/2
+// (dev/https.ts), as production serves the app.
+
 // The dev server on this machine, on whatever port: its certificate may be self-signed (dev/https.ts).
-const local = /^https:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(baseURL)
+const devCertificate = onThisMachine(baseURL)
 
 // Every test records its page at the size it renders, a laptop's window, 1:1: `pnpm e2e:gifs` never zooms or crops it
 // (Will, 2026-10-20: "video is too zoomed in"). e2e/devices.ts opens each device at the same size.
 const viewport = { width: 1280, height: 800 }
 
+/**
+ * Against a deployment: the setup signs the test account in once (e2e/deployment/sign-in.setup.ts), every test starts
+ * from that session, and the run's results, summary and recordings go to their own folder, apart from a local run's.
+ * Two workers and no retries: production's model and Electric are shared, and a durable retry is the app's job.
+ */
+const deployment = (): PlaywrightTestConfig => {
+  // When the run began, for the spend guard (e2e/spend.ts): set once here, inherited by every worker.
+  process.env.E2E_RUN_STARTED_AT ??= String(Date.now())
+  const outputDir = "test-results-deployment"
+  return {
+    outputDir,
+    workers: 2,
+    retries: 0,
+    timeout: 180_000,
+    reporter: [["list"], ["json", { outputFile: `${outputDir}/results.json` }], ["./e2e/reporter.ts"]],
+    projects: [
+      // GitHub's pages stay out of every artifact: the setup records neither video nor trace.
+      { name: "deployment-auth", testMatch: /deployment\/[^/]+\.setup\.ts$/, use: { video: "off", trace: "off" } },
+      // No traces: a trace holds the requests' cookies, the session among them. Videos, screenshots and logs remain.
+      { name: "deployment", dependencies: ["deployment-auth"], use: { storageState: sessionFiles(baseURL).session, trace: "off" } },
+    ],
+  }
+}
+
 export default defineConfig({
   testDir: "e2e",
-  // Only specs: e2e/*.test.ts are the media scripts' unit tests, which vitest runs.
+  // Only specs: e2e/*.test.ts are the e2e scripts' unit tests, which vitest runs.
   testMatch: "**/*.spec.ts",
   timeout: 90_000,
   use: {
@@ -26,9 +51,10 @@ export default defineConfig({
     // A machine whose browsers don't trust its dev certificate, such as one without mkcert, made a self-signed one
     // (docs/infrastructure.md#https-and-http2). The flag, not only `ignoreHTTPSErrors`, lets the service worker
     // register over it. A deployment's certificate is always checked.
-    ignoreHTTPSErrors: local,
-    launchOptions: { args: local ? ["--ignore-certificate-errors"] : [] },
+    ignoreHTTPSErrors: devCertificate,
+    launchOptions: { args: devCertificate ? ["--ignore-certificate-errors"] : [] },
   },
+  ...(target === "deployment" ? deployment() : { projects: [{ name: "local" }] }),
   webServer: process.env.BASE_URL
     ? undefined
     : { command: "pnpm dev", url: baseURL, ignoreHTTPSErrors: true, reuseExistingServer: true, timeout: 120_000 },

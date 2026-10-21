@@ -1,5 +1,6 @@
 import { allServerRows, expect, type Row, test } from "./devices"
-import { field, local, type LogRecord, LogTail } from "./logs"
+import { field, type LogRecord, LogTail } from "./logs"
+import { partly } from "./target"
 
 // `repo/clone` end to end (docs/features/repo.md#flows): a person's `/clone owner/name` and the agent asked to clone run
 // the same flow on the browser's engine, whose step asks RepoApi (`POST /api/repos`); RepoApi admits it and starts the
@@ -35,7 +36,7 @@ const steps = (row: Row | undefined, flow: string): Array<string> => {
 }
 
 test("clone by slash: /clone octocat/Hello-World runs repo/clone, and the repository opens ready", { annotation: { type: "summary", description: "/clone clones a repository, and it opens ready." } }, async ({ devices }) => {
-  const logs = local ? await LogTail.start() : undefined
+  const logs = partly("localLogs") ? await LogTail.start() : undefined
   const [a] = await devices.open("A")
   await expect(a.chatButton).toBeVisible({ timeout: 30_000 })
   await a.openComposer()

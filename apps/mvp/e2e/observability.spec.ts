@@ -1,14 +1,15 @@
 import type { Page, Request } from "@playwright/test"
 import { faultyApp, faults } from "./faults"
 import { answerTo, expect, NOT_SENT, test } from "./fixtures"
-import { field, local, type LogRecord, LogTail, remoteReason, traceIdOf } from "./logs"
+import { field, type LogRecord, LogTail, traceIdOf } from "./logs"
+import { requires } from "./target"
 
 // docs/observability.md, end to end: a real ask through the real browser, ChatApi, Postgres, Electric and model, read
 // back from the records ChatApi writes. Locally `alchemy dev` writes each Worker's log under
 // `.alchemy/log/dev_<user>/<Worker>/`, and ChatApi's log also holds the browser's OTLP records it relayed
 // (`otlp.signal`). A deployment's logs are in Workers Logs, which this suite can't read, so these tests run locally only.
 
-test.skip(!local, remoteReason)
+requires("localLogs")
 
 const openChat = async (page: Page, path = "/app") => {
   await page.goto(path)

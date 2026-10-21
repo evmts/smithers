@@ -138,6 +138,10 @@ export default defineConfig({
         "evals/report.ts",
         // How a flow's video and GIF are paced, captioned and checked (e2e/gifs.mjs, e2e/check-gifs.mjs).
         "e2e/frames.ts",
+        // The e2e run against a deployment: its summary, spend guard and stored session (docs/infrastructure.md#against-a-deployment).
+        "e2e/summary.ts",
+        "e2e/spend.ts",
+        "e2e/deployment/session.ts",
         // The dev server over HTTPS and HTTP/2, as production serves the app (docs/infrastructure.md#https-and-http2).
         "dev/https.ts",
       ],

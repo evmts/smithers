@@ -1,5 +1,6 @@
 import { expect, test } from "./devices"
-import { field, local, type LogRecord, LogTail } from "./logs"
+import { field, type LogRecord, LogTail } from "./logs"
+import { partly } from "./target"
 
 // Flow usage, end to end (docs/observability.md#flow-usage, docs/features/runs.md#flows): the real app, its engine
 // worker and ChatApi, no model and no sign-in. The theme button runs `app/theme/set` on the device's durable engine,
@@ -22,7 +23,7 @@ const usage = (records: Array<LogRecord>, message: string, flow: string) =>
 test("flow usage: a button's run is counted by flow, door, actor and placement, and the Runs page sums it", {
   annotation: { type: "summary", description: "Each run records how it started and ended; Runs shows runs, success and p95 per flow." },
 }, async ({ devices }) => {
-  const logs = local ? await LogTail.start() : undefined
+  const logs = partly("localLogs") ? await LogTail.start() : undefined
   const [a] = await devices.open("A")
   const page = a.page
   await expect(page.getByRole("button", { name: "Switch to dark mode" })).toBeVisible({ timeout: 30_000 })
