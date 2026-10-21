@@ -5,7 +5,7 @@
  * @since 1.0.0
  */
 
-import type { Plan, Scheduling } from "@smthrs/plan"
+import { Plan, type Scheduling } from "@smthrs/plan"
 import type { Outcome } from "../PlanScheduler.ts"
 
 /** Mutable coordinator state; dispatch fibers own only attempt-local progress.
@@ -41,6 +41,8 @@ interface Vertex {
   readonly state: NodeState
   readonly dependencies: Set<Vertex>
   readonly dependents: Set<Vertex>
+  /** Later-generation writers waiting for this reader to settle (`Plan.writerFences`). */
+  readonly fenced: Set<Vertex>
   unresolved: number
   blocked: number
   propagated: Outcome | undefined
@@ -137,6 +139,7 @@ export const make = (nodes: ReadonlyArray<Plan.PlanNode>): RuntimeGraph => {
         state,
         dependencies: new Set(),
         dependents: new Set(),
+        fenced: new Set(),
         unresolved: 0,
         blocked: 0,
         propagated: undefined
@@ -145,8 +148,12 @@ export const make = (nodes: ReadonlyArray<Plan.PlanNode>): RuntimeGraph => {
       states.set(node.id, state)
       remaining++
       cost.update.nodes++
-      cost.update.allocations += 4
+      cost.update.allocations += 5
     }
+    // A writer appended after a reader waits for that reader to settle, but is
+    // not its dependent: the reader's outcome never blocks it.
+    const fences = Plan.writerFences(Array.from(vertices.values(), (vertex) => vertex.node))
+    cost.update.allocations++
     for (const node of suffix) {
       const vertex = vertices.get(node.id)!
       cost.update.nodes++
@@ -154,6 +161,14 @@ export const make = (nodes: ReadonlyArray<Plan.PlanNode>): RuntimeGraph => {
       for (const dependency of node.dependsOn) {
         cost.update.membership++
         edge(vertex, vertices.get(dependency)!, cost.update)
+      }
+      for (const reader of fences.get(node.id) ?? []) {
+        cost.update.edges++
+        cost.update.membership++
+        const fence = vertices.get(reader)!
+        if (fence.propagated !== undefined) continue
+        fence.fenced.add(vertex)
+        vertex.unresolved++
       }
       refresh(vertex)
     }
@@ -198,6 +213,14 @@ export const make = (nodes: ReadonlyArray<Plan.PlanNode>): RuntimeGraph => {
           dependent.blocked += delta
           refresh(dependent)
         }
+        // A fence opens on the reader's first settlement, whatever its outcome.
+        for (const writer of vertex.fenced) {
+          cost.settlement.edges++
+          cost.settlement.nodes++
+          writer.unresolved--
+          refresh(writer)
+        }
+        vertex.fenced.clear()
       }
       staged.clear()
     },

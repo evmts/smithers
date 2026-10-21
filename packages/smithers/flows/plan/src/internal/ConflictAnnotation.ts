@@ -1,7 +1,8 @@
 /**
- * The compiler's effect analysis: which writers conflict, and which readers
- * must wait for a producer. Its vocabulary is pairs of declared effects; it
- * never re-keys a node, because ordering is not key material.
+ * The compiler's effect analysis: which writers conflict, which readers must
+ * wait for a producer, and which writers must wait for an earlier
+ * generation's readers. Its vocabulary is pairs of declared effects; it never
+ * re-keys a node, because ordering is not key material.
  *
  * @since 0.1.0
  * @private
@@ -372,3 +373,44 @@ export const annotate = (
     }
     return { conflicts, ordering }
   })
+
+/**
+ * The earlier-generation readers each writer must wait for: for every node
+ * that writes or removes a path, the nodes of an earlier generation that read
+ * it, in plan order.
+ *
+ * Neither pass of {@link annotate} orders this pair. A reader appended after
+ * its writer, or planned beside it, waits for the writer as a missing edge.
+ * A writer appended after a reader was planned without it, so the reader
+ * reads what the path held before the writer, and nothing stops the two from
+ * running at once: the writer can change the bytes the reader is still
+ * reading, or reads at all when it starts late, while its key folds what was
+ * measured before.
+ *
+ * The relation is ordering only, and it is not recorded in `dependsOn`. An
+ * edge there would make the writer a dependent of the reader, so a reader
+ * that failed or was skipped would skip the writer, and every recorded plan
+ * with such a pair would stop verifying. The scheduler applies it instead: a
+ * writer waits until each reader here settles, whatever the outcome. Earlier
+ * generations never depend on later ones, so it closes no cycle.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const writerFences = (nodes: ReadonlyArray<Plan.PlanNode>): ReadonlyMap<string, ReadonlyArray<string>> => {
+  const reads = nodes.map((node) => FileSet.expandReads(node.effects.reads))
+  const readers = EffectCandidates.make(reads)
+  const fences = new Map<string, Array<string>>()
+  for (const writer of nodes) {
+    const produced = producedPaths(writer.effects)
+    if (produced.length === 0) continue
+    const waits: Array<string> = []
+    for (const index of readers(produced)) {
+      const reader = nodes[index]!
+      if (reader.generation >= writer.generation) continue
+      if (readOverlap(reads[index]!, produced).length > 0) waits.push(reader.id)
+    }
+    if (waits.length > 0) fences.set(writer.id, waits)
+  }
+  return fences
+}

@@ -582,6 +582,16 @@ const generationNodes: (plan: Plan) => ReadonlyArray<PlanNode>
 
 The nodes added by the newest generation: what `PlanStore.append` inserts, and what a scheduler such as [`@smthrs/engine-store`](/api/engine-store)'s reports in the `subgraph-appended` record it writes to the run journal.
 
+### Plan.writerFences
+
+```ts
+const writerFences: (nodes: ReadonlyArray<PlanNode>) => ReadonlyMap<string, ReadonlyArray<string>>
+```
+
+The earlier-generation readers each writer must wait for, by writer id and in plan order: for every node that writes or removes a path, the nodes of an earlier generation that read it. Writers with none are absent.
+
+Neither compiler pass orders this pair. A writer appended after a reader was planned without it, so the reader reads what the path held before the writer. The relation is ordering only and is never recorded in `dependsOn`: an edge there would make a failed or skipped reader skip the writer, and would change the digest of every recorded plan with such a pair. A scheduler holds the writer until each reader settles instead; [`@smthrs/engine-store`](/api/engine-store)'s does. Within one generation the reader waits for the writer through its reader-after-writer edge.
+
 ### Plan.maximumPlanNodes
 
 ```ts

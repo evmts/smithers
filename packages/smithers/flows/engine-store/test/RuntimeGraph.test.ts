@@ -152,6 +152,52 @@ describe("RuntimeGraph settlement and generations", () => {
   })
 })
 
+/** A node that reads and writes the given paths. */
+const effected = (
+  id: string,
+  effects: { readonly reads?: ReadonlyArray<string>; readonly writes?: ReadonlyArray<string> },
+  dependencies: ReadonlyArray<string> = []
+): Plan.NodeDraft => ({
+  ...draft(id, dependencies),
+  effects: { reads: effects.reads ?? [], writes: effects.writes ?? [], boundaryMode: "hard" }
+})
+
+describe("RuntimeGraph fences an appended writer behind earlier readers", () => {
+  it("holds the writer until the reader settles, and never skips it for the reader's outcome", async () => {
+    const base = await compile([effected("reader", { reads: ["out"] }), effected("other", { reads: ["elsewhere"] })])
+    const grown = await runPromise(Plan.append(base, [
+      effected("writer", { writes: ["out"] }),
+      effected("free", { writes: ["unread"] })
+    ]))
+    // The plan records no edge between them: only the runtime orders the pair.
+    expect(grown.nodes.find((node) => node.id === "writer")!.dependsOn).toEqual([])
+    for (const outcome of ["built", "failed", "skipped"] as const) {
+      const graph = RuntimeGraph.make(grown.nodes)
+      expect(ids(graph.ready())).toEqual(["reader", "other", "free"])
+      graph.start("reader")
+      expect(ids(graph.ready())).toEqual(["other", "free"])
+      settle(graph, "reader", outcome)
+      expect(ids(graph.ready())).toEqual(["other", "writer", "free"])
+      expect(graph.blocked()).toEqual([])
+    }
+  })
+
+  it("fences a writer a running plan appends, and none behind a reader already settled", async () => {
+    const base = await compile([effected("settled", { reads: ["out"] }), effected("running", { reads: ["out"] })])
+    const graph = RuntimeGraph.make(base.nodes)
+    settle(graph, "settled", "clean")
+    graph.start("running")
+    const grown = await runPromise(Plan.append(base, [effected("writer", { writes: ["out"] })]))
+    const before = { ...graph.cost.update }
+    graph.append(Plan.generationNodes(grown))
+    // Both readers are considered; only the one still running holds the writer.
+    expect(graph.cost.update.edges - before.edges).toBe(2)
+    expect(graph.ready()).toEqual([])
+    settle(graph, "running", "built")
+    expect(ids(graph.ready())).toEqual(["writer"])
+  })
+})
+
 describe("RuntimeGraph deterministic operation counts", () => {
   for (const size of [127, 128, 129, 1024]) {
     it(`settles a ${size}-node chain with one affected edge per settlement`, async () => {

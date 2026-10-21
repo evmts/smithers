@@ -88,6 +88,65 @@ it("shares a cached node between independently constructed schedulers", async ()
   expect(reports.map((report) => report.settlements[0]?.outcome).sort()).toEqual(["built", "clean"])
 })
 
+describe("scheduler fences an appended writer behind earlier readers", () => {
+  it("starts a writer appended after a reader only once the reader settles", async () => {
+    // The reader was planned before the writer existed, so it reads what
+    // "out" held before; the writer may not change it while the reader runs.
+    const base = await runPromise(
+      Plan.compile({ planId: "fence", flow: "test", nodes: [draft("reader", ["reader.out"], ["out"])] })
+    )
+    const grown = await runPromise(Plan.append(base, [draft("writer", ["out"])]))
+    expect(grown.nodes.map((node) => node.dependsOn)).toEqual([[], []])
+    const events: Array<string> = []
+    const report = await runPromise(
+      Effect.gen(function*() {
+        yield* activate("fence")
+        return yield* scheduler("fence").run(grown)
+      }).pipe(
+        Effect.provide(runtime({
+          execute: ({ node }) =>
+            Effect.gen(function*() {
+              events.push(`${node.id}:start`)
+              // Long enough that an unfenced writer, admitted in the same wave, starts first.
+              if (node.id === "reader") yield* Effect.sleep("50 millis")
+              events.push(`${node.id}:end`)
+              return node.id
+            })
+        })),
+        Effect.provide(TestStores.layer())
+      )
+    )
+    expect(events).toEqual(["reader:start", "reader:end", "writer:start", "writer:end"])
+    expect(report.settlements.map(({ nodeId, outcome }) => [nodeId, outcome])).toEqual([
+      ["reader", "built"],
+      ["writer", "built"]
+    ])
+  })
+
+  it("runs the writer when the reader it waited for fails", async () => {
+    const base = await runPromise(
+      Plan.compile({ planId: "fence-failed", flow: "test", nodes: [draft("reader", ["reader.out"], ["out"])] })
+    )
+    const grown = await runPromise(Plan.append(base, [draft("writer", ["out"])]))
+    const report = await runPromise(
+      Effect.gen(function*() {
+        yield* activate("fence-failed")
+        return yield* scheduler("fence-failed").run(grown)
+      }).pipe(
+        Effect.provide(runtime({
+          execute: ({ node }) => node.id === "reader" ? Effect.fail("reader failed") : Effect.succeed(node.id)
+        })),
+        Effect.provide(TestStores.layer())
+      )
+    )
+    // A fence orders; it is not a dependency, so the reader's failure skips nothing.
+    expect(report.settlements.map(({ nodeId, outcome }) => [nodeId, outcome])).toEqual([
+      ["reader", "failed"],
+      ["writer", "built"]
+    ])
+  })
+})
+
 describe("scheduler validates plans before side effects", () => {
   it("executes the verified snapshot when caller-owned plan data changes during dispatch", async () => {
     const plan = await runPromise(

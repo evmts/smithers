@@ -198,6 +198,47 @@ describe("ConflictAnnotation.annotate", () => {
     }))
 })
 
+describe("ConflictAnnotation.writerFences", () => {
+  it("holds a writer appended later behind each earlier-generation reader of what it writes", () => {
+    const fences = Conflicts.writerFences([
+      node("reader", { reads: ["out"] }),
+      node("glob-reader", {
+        effects: { reads: [{ _tag: "Glob", include: ["src/**"] }], writes: [], boundaryMode: "hard" }
+      }),
+      node("other", { reads: ["elsewhere"] }),
+      node("writer", { writes: ["out", "src/a.ts"] }, 1),
+      node("remover", { effects: { reads: [], writes: [], removes: ["OUT"], boundaryMode: "hard" } }, 2),
+      node("tree", { effects: { reads: [], writes: [{ _tag: "TreeArtifact", path: "src" }], boundaryMode: "hard" } }, 2)
+    ])
+    // A removal moves a path's bytes as a write does, and letter case does not
+    // separate two paths; a glob reader waits for a writer inside it.
+    expect([...fences]).toEqual([
+      ["writer", ["reader", "glob-reader"]],
+      ["remover", ["reader"]],
+      ["tree", ["glob-reader"]]
+    ])
+  })
+
+  it("fences no pair within one generation, nor a reader planned after its writer", () => {
+    // Within a generation, and for a later reader, the reader waits for the
+    // writer through the edge the reader-after-writer pass adds instead.
+    expect(Conflicts.writerFences([
+      node("writer", { writes: ["out"] }),
+      node("same", { reads: ["out"] }),
+      node("later", { reads: ["out"] }, 1),
+      node("self", { reads: ["mine"], writes: ["mine"] }, 1)
+    ])).toEqual(new Map())
+  })
+
+  it("is what Plan.writerFences answers for an appended plan, and it leaves the plan's edges alone", () =>
+    Effect.gen(function*() {
+      const base = yield* compile([draft("reader", { reads: ["out"] })])
+      const grown = yield* Plan.append(base, [draft("writer", { writes: ["out"] })])
+      expect([...Plan.writerFences(grown.nodes)]).toEqual([["writer", ["reader"]]])
+      expect(grown.nodes.map((node) => [node.id, node.dependsOn])).toEqual([["reader", []], ["writer", []]])
+    }).pipe(withCrypto, Effect.runPromise))
+})
+
 /**
  * The reader-after-writer pass. Before it existed, `overlap` compared write
  * sets against write sets only, so a node reading what another node wrote was

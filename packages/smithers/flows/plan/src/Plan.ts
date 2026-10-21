@@ -877,6 +877,29 @@ export const generationNodes = (plan: Plan): ReadonlyArray<PlanNode> =>
   plan.nodes.filter((node) => node.generation === plan.generation)
 
 /**
+ * The earlier-generation readers each writer must wait for, by writer id and
+ * in plan order: for every node that writes or removes a path, the nodes of
+ * an earlier generation that read it.
+ *
+ * A writer appended after a reader was planned without it, so the reader
+ * reads what the path held before the writer; without an order between them
+ * the writer could change the bytes the reader is still reading. The relation
+ * is ordering only and is never recorded in `dependsOn`: a scheduler holds
+ * the writer until each reader settles, whatever the reader's outcome, so a
+ * failed or skipped reader never skips the writer, and a recorded plan's
+ * digest and approval do not change. Within one generation the reader waits
+ * for the writer instead, through the edge {@link compile} adds.
+ *
+ * @param nodes - A verified plan's nodes.
+ * @returns Writer ids mapped to the reader ids each waits for; writers with
+ * none are absent.
+ * @since 1.0.0
+ * @category accessors
+ */
+export const writerFences = (nodes: ReadonlyArray<PlanNode>): ReadonlyMap<string, ReadonlyArray<string>> =>
+  Conflicts.writerFences(nodes)
+
+/**
  * Whether `input` is a compiler-owned immutable snapshot that already passed
  * {@link verify}: such values take verify's trusted fast path and need no
  * second schema validation.

@@ -2788,6 +2788,8 @@ interpreter pages the graph. It must reserve allocated sequence/time fields
 deterministically, so a resume keeps exactly the same page identities. The
 interpreter refuses a node that cannot fit alone before recording any page.
 
+`actionReplayKey` chooses the key a dispatch replays under. It receives `derive(executionId, runScoped)`, the dispatch's key under the current encoding, and `legacy(executionId, runScoped)`, its keys under every older key encoding that differ from the current one, newest first. A store answers a fork's copied attempt key, or an older encoding's key when this run recorded under it, so a record an earlier engine wrote replays instead of running again. Without it, every dispatch takes the current key.
+
 `actionRetryOrigin` returns the persisted start time of the first surviving attempt for `key`, so a `RetryPolicy.expirationMs` bound survives park, resume, and process death. `Option.none()` means no attempt row survives, and the engine then falls back to the current clock and logs a warning. `actionLatestAttempt` returns the highest persisted attempt number for `key`, so the attempt counter resumes from the persisted sequence rather than from `1`.
 
 `actionSnapshot` returns the earliest persisted pre-attempt handle for a compensable key. A present handle may itself be null or undefined. Keep it across unfinished attempts and process restarts. The associated `ActionExecuteOptions.snapshot` effect must run only for actual execution, never for a journal hit or joined dispatch.
@@ -2820,6 +2822,28 @@ The refusal raised when a flow operation names a declaration this engine has not
 - **Since:** `1.0.0`
 
 The refusal raised when a caller reuses an execution id for different persisted run identity. `field` is `"flow"`, `"payload"`, `"lineage"`, `"round"`, or `"parent"`. Answering would attach the caller to a run or trampoline round it did not name. `layerMemory` raises it as a defect on `execute` and on a `deferredDone` addressed to the wrong flow; the durable driver also raises it when an existing run row disagrees with the requested flow, encoded payload, lineage, round, or predecessor.
+
+### `FlowEngine.keyEncodings`
+
+- **Type:** `readonly [2, 1]`
+- **Since:** `1.0.0`
+- **Related:** `FlowEngine.KeyEncoding`, `FlowEngine.ActionKeyEncoding`
+
+The encodings a keyed sealed action's key has been written in, newest first. A record is found again only under the key it was written with, so every earlier encoding stays derivable and a change to the derivation adds one at the front. `2` hashes the declaration's `Node.representationIdentity` version 2, written since `effect@4.0.4`; `1` hashes version 1, what every key written under `effect@4.0.0-rc.115` hashed, `Schema.brand` included. Neither names itself in the key, and the two derive one key for a declaration with no brand.
+
+### `FlowEngine.KeyEncoding`
+
+- **Type:** `2 | 1`
+- **Since:** `1.0.0`
+
+One encoding of `FlowEngine.keyEncodings`.
+
+### `FlowEngine.ActionKeyEncoding`
+
+- **Type:** `Context.Reference<KeyEncoding>`
+- **Since:** `1.0.0`
+
+The encoding new keys are written in; the newest by default. A host never sets it. A test sets an older one to write a journal the way an earlier engine did.
 
 ### `FlowEngine.makeInstance`
 
@@ -13901,8 +13925,9 @@ const canonical: (value: unknown) => string
 
 The RFC 8785 canonical JSON serialization of a value. A function, symbol,
 `bigint`, cyclic object, non-finite number, or top-level `undefined` has no
-canonical JSON representation; for those values this throws the `SchemaError`
-from `effect/Schema` raised through `Effect.runSync`, unwrapped.
+canonical JSON representation; for those values this throws `CanonicalError`
+from `@smthrs/canonical`, with its stable `code` and `path`. No Effect is run;
+the bytes match the `Canonical` schema's decode.
 
 ### Digest.provideSync
 
@@ -13910,8 +13935,8 @@ from `effect/Schema` raised through `Effect.runSync`, unwrapped.
 const provideSync: <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>) => Effect.Effect<A, E>
 ```
 
-Provides the synchronous SHA-256 service to an Effect-shaped derivation, so a
-pure constructor can run one without a platform layer.
+Provides the synchronous SHA-256 service to an Effect. The caller runs the
+returned Effect at its program boundary.
 
 ---
 
@@ -15204,7 +15229,7 @@ handoffs; explicit cancellation still cascades to linked children.
 | `clockFireRetryPolicy` | `Schedule<unknown, unknown>` (optional)                | Redispatch policy for a durable clock whose fire failed. Defaults to exponential from 100ms capped at 30s, forever, the same option shape as the engine's `suspendedRetryPolicy`.                                                                                                                                                                                                       |
 | `requestResume`        | `(executionId, reason) => Effect<void>` (optional)     | Called for every wake this engine initiates against a PARKED execution: `"deferred"` (a durable deferred completed), `"clock"` (a durable clock fired), `"parent"` (a child settled under a parent parked on it). An operator's own resume is not reported. A host that refuses to re-enter a parked run nobody asked for reads it to tell an engine wake from its own heartbeat sweep. |
 | `sweep`                | `Sweep` (optional)                                     | Who wakes this store's runs. `"process"`, the default, sweeps the store every heartbeat interval and renews each owned run's lease. `{ host: executionId }` runs no sweep and renews no lease, and registration re-arms only that execution's clocks and completions. See [Hosted executions](#hosted-executions).                                                                      |
-| `placement`            | `string` (optional)                                    | Where this store's runs run, as their usage metrics label it (`@smthrs/flow` `RunMetrics`): `browser`, `cloudflare`, `sandbox` or `local`, the default; any other value reads `other`. The engine counts each run it admits and settles, its steps, retries and durable waits, and keeps the caller's `RunMetrics.CurrentOrigin` with the run. |
+| `placement`            | `string` (optional)                                    | Where this store's runs run, as their usage metrics label it (`@smthrs/flow` `RunMetrics`): `browser`, `cloudflare`, `sandbox` or `local`, the default; any other value reads `other`. The engine counts each run it admits and settles, its steps, retries and durable waits, and keeps the caller's `RunMetrics.CurrentOrigin` with the run.                                          |
 
 ### Required services
 
@@ -15789,6 +15814,17 @@ The coordinator reconciles each completion before admitting dependents, while
 unrelated work can remain in flight. Retry/rebase attempts are not additional
 node settlements. Appended indexes become visible after durable admission.
 
+A writer appended in a later generation also waits for every earlier
+generation's reader of a path it writes or removes, as
+[`Plan.writerFences`](/docs/reference/api/plan/) lists them. The reader was planned before the
+writer existed and reads what the path held before it, so the writer must not
+change those bytes while the reader runs or before it starts. The fence opens
+when the reader settles, whatever its outcome: a failed or skipped reader never
+skips the writer, and nothing about the fence is recorded in the plan, so a
+recorded plan's digest, approval and verification are unchanged. Generations
+only grow and a discovered edge binds pending work behind a node that already
+ran, so a fence never closes a cycle.
+
 The existing scheduling policy ranks the current ready frontier by priority
 plus capacity-constrained admission passes waited, with exact arithmetic and
 compiled plan order for ties. It retains independent step and agent caps.
@@ -16294,21 +16330,21 @@ One run as a person debugging it reads it, from the engine's own tables
 Exported from the root and `@smthrs/engine-store/RunInspection`. Every read runs
 in one `Dialect.readTransaction`, on SQLite and PostgreSQL alike.
 
-| Export                                                | Signature                                                                                                               | Meaning                                                                                                                                                                     |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RunInspection`, `Service`                            | `Context.Service<Service>`                                                                                              | Service tag and its `inspect`, `list` and `payload` operations.                                                                                                             |
-| `Service.inspect(runId, { afterSeq?, limit? })`       | `Effect<Inspection, RunNotFound \| RunStoreError>`                                                                      | The run with its `input` and `result`, its `steps`, its `children`, and the journal page after `afterSeq` (default `-1`), at most `limit` events (default and most 500).    |
-| `Service.list({ limit?, cursor?, roots? })`           | `Effect<RunList, RunStoreError>`                                                                                        | Runs newest first, 50 at a time by default and 200 at most; `roots`, the default, keeps the runs with no parent. A malformed cursor is `invalid_run`.                        |
-| `Service.payload(runId)`                              | `Effect<{ flowName, payload }, RunNotFound \| RunStoreError>`                                                           | The run's payload as the engine stored it: encoded and unredacted, to run the flow again inside the engine. Never put it on a wire or in front of a reader.                 |
-| `make(options?)`, `layer`, `layerWith(options)`       | `Effect<Service, never, SqlClient>`, `Layer<RunInspection, never, SqlClient>`                                            | Build it over a migrated `SqlClient`. `layerWith({ flows })` shows every value whose flow or action is reachable from `flows` through its schema.                            |
-| `Options`                                             | `{ flows? }`                                                                                                            | The flows whose schemas, and whose plans' action schemas, values show through: a `Schema.Redacted` value reads as `redactedMarker` at any depth, an undecodable one as `withheldMarker`. |
-| `redactedMarker`, `withheldMarker`                    | `"<redacted>"`, `"<withheld>"`                                                                                          | What a `Redacted` value reads as, and what a value the reads cannot show safely reads as.                                                                                   |
-| `holdsRedacted(schema)`                               | `boolean`                                                                                                               | Whether a schema holds a `Schema.Redacted` value anywhere, recursive references included.                                                                                   |
-| `Inspection`, `RunSummary`, `Step`, `Attempt`, `Child`, `Event`, `JournalPage`, `RunList`, `Waiting` | models                                                                      | See [Inspect one run](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/guides/observe-executions.md#inspect-one-run-for-a-person).                                                                                         |
-| `Value`                                               | `{ text, bytes, clipped }`                                                                                              | Redacted JSON text, cut to `valueLimitBytes` at a character boundary; `bytes` is the whole size.                                                                            |
-| `valueLimitBytes`, `maximumJournalPage`, `maximumListPage`, `maximumChildren` | `16384`, `500`, `200`, `200`                                                                    | Bounds.                                                                                                                                                                     |
-| `valueOf(value)`, `clip(text)`, `codeOf(failure)`     | pure                                                                                                                    | How a value is released: failures reduced to codes, `Redaction.redact`, JSON, cut. `codeOf` reads only a failure's tag.                                                     |
-| `RunNotFound`                                         | `{ runId }`, tag `@smthrs/engine-store/RunNotFound`                                                                      | The engine holds no run with this id.                                                                                                                                       |
+| Export                                                                                               | Signature                                                                     | Meaning                                                                                                                                                                                  |
+| ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RunInspection`, `Service`                                                                           | `Context.Service<Service>`                                                    | Service tag and its `inspect`, `list` and `payload` operations.                                                                                                                          |
+| `Service.inspect(runId, { afterSeq?, limit? })`                                                      | `Effect<Inspection, RunNotFound \| RunStoreError>`                            | The run with its `input` and `result`, its `steps`, its `children`, and the journal page after `afterSeq` (default `-1`), at most `limit` events (default and most 500).                 |
+| `Service.list({ limit?, cursor?, roots? })`                                                          | `Effect<RunList, RunStoreError>`                                              | Runs newest first, 50 at a time by default and 200 at most; `roots`, the default, keeps the runs with no parent. A malformed cursor is `invalid_run`.                                    |
+| `Service.payload(runId)`                                                                             | `Effect<{ flowName, payload }, RunNotFound \| RunStoreError>`                 | The run's payload as the engine stored it: encoded and unredacted, to run the flow again inside the engine. Never put it on a wire or in front of a reader.                              |
+| `make(options?)`, `layer`, `layerWith(options)`                                                      | `Effect<Service, never, SqlClient>`, `Layer<RunInspection, never, SqlClient>` | Build it over a migrated `SqlClient`. `layerWith({ flows })` shows every value whose flow or action is reachable from `flows` through its schema.                                        |
+| `Options`                                                                                            | `{ flows? }`                                                                  | The flows whose schemas, and whose plans' action schemas, values show through: a `Schema.Redacted` value reads as `redactedMarker` at any depth, an undecodable one as `withheldMarker`. |
+| `redactedMarker`, `withheldMarker`                                                                   | `"<redacted>"`, `"<withheld>"`                                                | What a `Redacted` value reads as, and what a value the reads cannot show safely reads as.                                                                                                |
+| `holdsRedacted(schema)`                                                                              | `boolean`                                                                     | Whether a schema holds a `Schema.Redacted` value anywhere, recursive references included.                                                                                                |
+| `Inspection`, `RunSummary`, `Step`, `Attempt`, `Child`, `Event`, `JournalPage`, `RunList`, `Waiting` | models                                                                        | See [Inspect one run](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/guides/observe-executions.md#inspect-one-run-for-a-person).                                                                                                      |
+| `Value`                                                                                              | `{ text, bytes, clipped }`                                                    | Redacted JSON text, cut to `valueLimitBytes` at a character boundary; `bytes` is the whole size.                                                                                         |
+| `valueLimitBytes`, `maximumJournalPage`, `maximumListPage`, `maximumChildren`                        | `16384`, `500`, `200`, `200`                                                  | Bounds.                                                                                                                                                                                  |
+| `valueOf(value)`, `clip(text)`, `codeOf(failure)`                                                    | pure                                                                          | How a value is released: failures reduced to codes, `Redaction.redact`, JSON, cut. `codeOf` reads only a failure's tag.                                                                  |
+| `RunNotFound`                                                                                        | `{ runId }`, tag `@smthrs/engine-store/RunNotFound`                           | The engine holds no run with this id.                                                                                                                                                    |
 
 ## RunCatalogRead
 
@@ -31078,6 +31114,16 @@ const generationNodes: (plan: Plan) => ReadonlyArray<PlanNode>
 
 The nodes added by the newest generation: what `PlanStore.append` inserts, and what a scheduler such as [`@smthrs/engine-store`](/docs/reference/api/engine-store/)'s reports in the `subgraph-appended` record it writes to the run journal.
 
+### Plan.writerFences
+
+```ts
+const writerFences: (nodes: ReadonlyArray<PlanNode>) => ReadonlyMap<string, ReadonlyArray<string>>
+```
+
+The earlier-generation readers each writer must wait for, by writer id and in plan order: for every node that writes or removes a path, the nodes of an earlier generation that read it. Writers with none are absent.
+
+Neither compiler pass orders this pair. A writer appended after a reader was planned without it, so the reader reads what the path held before the writer. The relation is ordering only and is never recorded in `dependsOn`: an edge there would make a failed or skipped reader skip the writer, and would change the digest of every recorded plan with such a pair. A scheduler holds the writer until each reader settles instead; [`@smthrs/engine-store`](/docs/reference/api/engine-store/)'s does. Within one generation the reader waits for the writer through its reader-after-writer edge.
+
 ### Plan.maximumPlanNodes
 
 ```ts
@@ -31453,7 +31499,9 @@ const functionIdentity: (operation: unknown) => FunctionIdentity
 const schemaIdentity: (schema: Schema.Top, options?: SchemaIdentityOptions) => SchemaIdentity
 type SchemaIdentity = JsonSchema.Document<"draft-2020-12">
 type SchemaIdentityOptions = { readonly onExcessProperty?: "ignore" | "error" | undefined }
-const representationIdentity: (ast: SchemaAST.AST) => Schema.Json
+const representationIdentity: (schema: Schema.Top, version?: RepresentationIdentityVersion) => Schema.Json
+const representationIdentityVersions: readonly [2, 1]
+type RepresentationIdentityVersion = 2 | 1
 ```
 
 `flowCall` and `actionCall` validate nothing: an unknown tag becomes a call node the graph keeps as a leaf. `declaration`, `continuation`, `mapper`, `predicate`, and `catchFilter` answer `undefined` for the wrong variant and for an AST rehydrated from JSON, whose side tables did not survive serialization. `functionIdentity` throws a `TypeError` when handed anything but a function.
@@ -31462,7 +31510,16 @@ const representationIdentity: (ast: SchemaAST.AST) => Schema.Json
 
 The identity has three limits. A built-in check such as `Schema.isMinLength` contributes the constraint its name and arguments state, so a `toJsonSchema` annotation passed to a built-in check is not read; one on a `Schema.makeFilter` check is. `Schema.brand` contributes nothing, because a brand is not part of the schema in `effect@4.0.5`: a declaration that uses one schema with an `identifier`, or one recursive schema, both with and without a brand got two definitions under `effect@4.0.0-rc.115` and gets one now, so it re-keys once. And a codec's behavior contributes nothing, so an author who changes what a transformation does renames the declaration to re-key its calls. `schemaIdentity` throws `Node.SchemaIdentityError`, tagged `@smthrs/plan/SchemaIdentityError`, for a schema that has no JSON Schema form, such as a record keyed by a number.
 
-`representationIdentity` returns what a sealed action's step key folds in for its success and error schemas: `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(ast))` as `effect@4.0.0-rc.115` wrote it. A later release renamed six built-in checks, `isStartsWith`, `isEndsWith`, `isIncludes`, `isLengthBetween`, `isSizeBetween` and `isPropertiesLengthBetween`; the identity writes their rc.115 ids back. A brand cannot be written back, so a sealed action whose success or error schema carries `Schema.brand` re-keys once. `representationIdentity` throws for an AST that has no representation, such as one with a `Schema.makeFilter` check.
+`representationIdentity` returns what a sealed action's step key folds in for its success and error schemas: `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(schema.ast))` as `effect@4.0.0-rc.115` wrote it. A later release renamed six built-in checks, `isStartsWith`, `isEndsWith`, `isIncludes`, `isLengthBetween`, `isSizeBetween` and `isPropertiesLengthBetween`; the identity writes their rc.115 ids back. `representationIdentity` throws for a schema that has no representation, such as one with a `Schema.makeFilter` check.
+
+The identity is versioned, because a key written under an older version must stay derivable. `representationIdentityVersions` lists the versions newest first, and `representationIdentity` takes the newest by default:
+
+| Version | Written                     | What it hashes                                                                                                                         |
+| ------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `2`     | since `effect@4.0.4`        | The installed encoding with the rc.115 check ids. A brand is not part of the AST from `effect@4.0.4` on, so it contributes nothing.    |
+| `1`     | under `effect@4.0.0-rc.115` | Version 2 with each `Schema.brand` restored from the schema value as the `brands` annotation rc.115 wrote, in its place and key order. |
+
+Version 1 restores a brand at every position the schema value names: the schema itself, a struct's fields, an array's or a tuple's elements, a union's members, a record's key and value, the field `Schema.optionalKey`, `Schema.optional` or `Schema.mutableKey` wraps, and a definition a reference names. A brand below a class, a suspended schema or a transformation is not restored. A definition that two positions brand differently, such as one branded at one field and unbranded or branded otherwise at another, was two definitions under rc.115 and is one now, so no restoration reproduces it: version 1 is then the version 2 document. Restoring one position's brand there would print the rc.115 document of a different declaration, and its key could replay that declaration's outcome. A key behind such a schema re-keys once. [`@smthrs/engine`](/docs/reference/api/engine/) derives a sealed key under each version and replays a record written under either.
 
 ## Planned
 

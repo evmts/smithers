@@ -84,6 +84,19 @@ Like a `serialize` edge, the edge enters `dependsOn` and never key material. The
 reader computes the same result either way, and its content dependence is
 already keyed by the hermetic boundary digests measured at dispatch.
 
+## A writer appended after a reader
+
+Both passes run when a generation is appended, and both land their edges on the
+new nodes only, because an append never rewrites a recorded node. A reader
+appended after a writer waits for it like any reader. A writer appended after a
+reader is the other way round: the reader was planned before the writer existed,
+so it reads what the path held before, and the writer must wait for it.
+
+That wait is not an edge. `Plan.writerFences` lists it, and the scheduler holds
+the writer until the reader settles, whatever the reader's outcome. An edge in
+`dependsOn` would make a failed or skipped reader skip the writer, and would
+change the digest and approval of every recorded plan with such a pair.
+
 ## When an edge would close a cycle
 
 An explicit `Ref`/`Pending` dependency path that orders the writer after the
