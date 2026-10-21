@@ -431,6 +431,9 @@ importers:
       '@smthrs/registry':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/registry
+      '@smthrs/repo-view':
+        specifier: workspace:*
+        version: link:../../packages/smithers/ui/repo-view
       '@smthrs/rpc':
         specifier: workspace:*
         version: link:../../packages/rpc
@@ -679,6 +682,9 @@ importers:
       '@smthrs/model-host':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/model-host
+      '@smthrs/notifications':
+        specifier: workspace:*
+        version: link:../../packages/smithers/notifications
       '@smthrs/observability':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/observability
@@ -694,12 +700,30 @@ importers:
       '@smthrs/registry':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/registry
+      '@smthrs/repo-view':
+        specifier: workspace:*
+        version: link:../../packages/smithers/ui/repo-view
       '@smthrs/rpc':
         specifier: workspace:*
         version: link:../../packages/rpc
+      '@smthrs/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/sandbox
+      '@smthrs/secrets':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/secrets
+      '@smthrs/sync':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/sync
+      '@smthrs/terminal-frame':
+        specifier: workspace:*
+        version: link:../../packages/smithers/ui/terminal-frame
       '@smthrs/ui':
         specifier: workspace:*
         version: link:../../packages/smithers/ui
+      '@smthrs/views':
+        specifier: workspace:*
+        version: link:../../packages/smithers/ui/views
       '@tanstack/browser-db-sqlite-persistence':
         specifier: 0.2.36
         version: 0.2.36(@journeyapps/wa-sqlite@1.7.2)(typescript@5.9.3)
@@ -740,9 +764,18 @@ importers:
       '@playwright/test':
         specifier: 1.62.1
         version: 1.62.1
+      '@smthrs/cli':
+        specifier: workspace:*
+        version: link:../../packages/smithers
+      '@smthrs/evals':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/evals
       '@smthrs/platform-node':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/platform-node
+      '@smthrs/scorers':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/scorers
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -5287,6 +5320,57 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
+  packages/smithers/flows/secrets:
+    devDependencies:
+      '@effect/language-service':
+        specifier: 0.87.2
+        version: 0.87.2
+      '@eslint/js':
+        specifier: 9.39.5
+        version: 9.39.5
+      '@types/node':
+        specifier: 26.4.1
+        version: 26.4.1
+      '@vitest/coverage-v8':
+        specifier: 5.0.0
+        version: 5.0.0(vitest@5.0.0)
+      dprint:
+        specifier: 0.57.1
+        version: 0.57.1
+      effect:
+        specifier: 4.0.5
+        version: 4.0.5
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      eslint:
+        specifier: 9.39.5
+        version: 9.39.5(jiti@2.7.0)(supports-color@10.2.2)
+      eslint-import-resolver-typescript:
+        specifier: 4.4.5
+        version: 4.4.5(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-import:
+        specifier: 2.32.0
+        version: 2.32.0(@typescript-eslint/parser@8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2))(eslint-import-resolver-typescript@4.4.5)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-jsdoc:
+        specifier: 64.3.4
+        version: 64.3.4(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-unicorn:
+        specifier: 65.0.0
+        version: 65.0.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))
+      madge:
+        specifier: 8.0.0
+        version: 8.0.0(supports-color@10.2.2)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      typescript-eslint:
+        specifier: 8.69.0
+        version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      vitest:
+        specifier: 5.0.0
+        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+
   packages/smithers/flows/step-cache:
     dependencies:
       '@smthrs/canonical':
@@ -5942,18 +6026,6 @@ importers:
       '@lezer/highlight':
         specifier: 1.2.3
         version: 1.2.3
-      '@milkdown/crepe':
-        specifier: 7.22.1
-        version: 7.22.1(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(supports-color@10.2.2)(typescript@5.9.3)
-      '@milkdown/kit':
-        specifier: 7.22.1
-        version: 7.22.1(@codemirror/language@6.12.4)(@codemirror/state@6.7.2)(@codemirror/view@6.43.11)(supports-color@10.2.2)(typescript@5.9.3)
-      '@milkdown/plugin-listener':
-        specifier: 7.22.1
-        version: 7.22.1(supports-color@10.2.2)
-      '@pierre/diffs':
-        specifier: ^1.3.6
-        version: 1.3.6(@shikijs/themes@4.4.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@smthrs/ui-styleguide':
         specifier: workspace:*
         version: link:ui-styleguide
@@ -6040,6 +6112,92 @@ importers:
         specifier: ~5.9.3
         version: 5.9.3
 
+  packages/smithers/ui/repo-view:
+    dependencies:
+      '@milkdown/crepe':
+        specifier: 7.22.1
+        version: 7.22.1(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(supports-color@10.2.2)(typescript@5.9.3)
+      '@milkdown/kit':
+        specifier: 7.22.1
+        version: 7.22.1(@codemirror/language@6.12.4)(@codemirror/state@6.7.2)(@codemirror/view@6.43.11)(supports-color@10.2.2)(typescript@5.9.3)
+      '@pierre/diffs':
+        specifier: ^1.3.6
+        version: 1.3.6(@shikijs/themes@4.4.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@smthrs/ui':
+        specifier: workspace:*
+        version: link:..
+    devDependencies:
+      '@happy-dom/global-registrator':
+        specifier: ^20.13.2
+        version: 20.13.2
+      '@types/bun':
+        specifier: latest
+        version: 1.4.3
+      '@types/react':
+        specifier: ^19.2.18
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.2.7
+        version: 19.2.7(@types/react@19.2.18)
+      happy-dom:
+        specifier: 20.13.2
+        version: 20.13.2
+      react:
+        specifier: 19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: 19.2.8
+        version: 19.2.8(react@19.2.8)
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
+  packages/smithers/ui/terminal-frame:
+    dependencies:
+      '@smthrs/ui':
+        specifier: workspace:*
+        version: link:..
+      '@smthrs/views':
+        specifier: workspace:*
+        version: link:../views
+    devDependencies:
+      '@happy-dom/global-registrator':
+        specifier: ^20.13.2
+        version: 20.13.2
+      '@types/bun':
+        specifier: latest
+        version: 1.4.3
+      '@types/react':
+        specifier: ^19.2.18
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.2.7
+        version: 19.2.7(@types/react@19.2.18)
+      '@xterm/addon-fit':
+        specifier: ^0.11.0
+        version: 0.11.0
+      '@xterm/xterm':
+        specifier: ^6.0.0
+        version: 6.0.0
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      happy-dom:
+        specifier: 20.13.2
+        version: 20.13.2
+      playwright:
+        specifier: 1.62.1
+        version: 1.62.1
+      react:
+        specifier: 19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: 19.2.8
+        version: 19.2.8(react@19.2.8)
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
   packages/smithers/ui/ui-styleguide:
     devDependencies:
       '@shikijs/themes':
@@ -6076,6 +6234,9 @@ importers:
       '@jitl/quickjs-wasmfile-release-sync':
         specifier: 0.32.0
         version: 0.32.0
+      '@smthrs/targets':
+        specifier: workspace:*
+        version: link:../../build/targets
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -9217,18 +9378,21 @@ packages:
   '@opentelemetry/sdk-trace-base@2.11.0':
     resolution: {integrity: sha512-H19x/TX/LZdqiYOjM7fqtSxwlplC5pgelavqbQdHbhdq0q/AI/TGkM2dfGuuynTXmJPeF2HoZVoPDu+TGoW78A==}
     engines: {node: ^18.19.0 || >=20.6.0}
+    deprecated: Use @opentelemetry/sdk-trace package
     peerDependencies:
       '@opentelemetry/api': '>=1.3.0 <1.10.0'
 
   '@opentelemetry/sdk-trace-node@2.11.0':
     resolution: {integrity: sha512-CuvCMJmZxswhNLlM2LfuLOW3h3fZujA4hsG4B+Sz4dX2zvaXO8Ng74cnDHWD64gLszTlhiG3c0iNUjj4g+0/sA==}
     engines: {node: ^18.19.0 || >=20.6.0}
+    deprecated: Use @opentelemetry/sdk-trace package
     peerDependencies:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
 
   '@opentelemetry/sdk-trace-web@2.11.0':
     resolution: {integrity: sha512-8hgLI437x8VRKzgUr+WRcHFp9AeaHmveKRsPIMNele9tethgCKprakRRqZCWyt41ilALHATfspUMl1An0OTMUQ==}
     engines: {node: ^18.19.0 || >=20.6.0}
+    deprecated: Use @opentelemetry/sdk-trace package
     peerDependencies:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
 
@@ -22401,7 +22565,7 @@ snapshots:
       '@vue/shared': 3.5.42
       estree-walker: 2.0.2
       magic-string: 0.30.21
-      postcss: 8.5.28
+      postcss: 8.5.31
       source-map-js: 1.2.1
 
   '@vue/compiler-ssr@3.5.42':
