@@ -1,5 +1,5 @@
 import { expect, test } from "./fixtures"
-import { broken, requires } from "./target"
+import { requires } from "./target"
 
 // Browsing a repository as Will reviewed it (docs/features/repo.md#the-page), against the real app, Worker, Postgres,
 // Electric, GitHub and Code Storage:
@@ -88,7 +88,6 @@ test(
 
 test.describe("cloned repositories", () => {
   requires("codeStorage", "member")
-  broken("remoteFlows")
 
   test(
     "the clone in the feed: a toast says how far it came, then why it stopped, with Try again",

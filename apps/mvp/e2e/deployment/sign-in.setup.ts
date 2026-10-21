@@ -155,10 +155,15 @@ setup("the run's own conversation is tracked", async () => {
   const request = await api(files.session)
   try {
     const { owner, name, ref } = OWN_BRANCH
-    const response = await request.post("/api/branches", {
-      data: { owner, name, ref, create: true },
-      headers: { origin, [DEVICE_PERSON_HEADER]: identity.personId },
-    })
+    // Track the branch as it is; make it first only when the forge has none. Code Storage answers a create of a branch
+    // it already holds 503, not `exists` (2026-10-21), so creating first would fail every run after the first.
+    const track = (create: boolean) =>
+      request.post("/api/branches", {
+        data: { owner, name, ref, ...(create ? { create } : {}) },
+        headers: { origin, [DEVICE_PERSON_HEADER]: identity.personId },
+      })
+    const tracked = await track(false)
+    const response = tracked.status() === 404 ? await track(true) : tracked
     const body = (await response.json().catch(() => ({}))) as { conversationId?: unknown; access?: unknown; shared?: unknown; code?: unknown }
     setup.info().annotations.push({ type: "own conversation", description: `${owner}/${name}@${ref}: ${response.status()} ${String(body.code ?? body.access ?? "")}` })
     if (!response.ok() || typeof body.conversationId !== "string") return

@@ -10,7 +10,7 @@ import {
   RUN_TRIAGE_AGAIN,
 } from "../src/features/issues/contract"
 import { recordActions, writeManifest } from "./fixtures"
-import { broken, requires, scratchRepository } from "./target"
+import { requires, scratchRepository } from "./target"
 
 // Issues, end to end (docs/features/issues.md, decision 0012 slice G0): the real app, ChatApi, Durable Objects,
 // Postgres and Electric, two devices side by side in one video each, so `pnpm e2e:gifs` makes one GIF per flow.
@@ -141,9 +141,6 @@ test("who reads: signed out, a repository GitHub hasn't said is public asks to s
 
 test("two devices: A opens an issue, B sees GitHub number it and comments, A sees the comment", { annotation: { type: "summary", description: "An issue opened on one device gets its GitHub number, and comments flow between devices through GitHub." } }, async ({ devices }) => {
   requires("githubScratch", "member")
-  // GitHub numbers the issue through the remote flow `github/Write` (worker/github/Write.ts) and B's comment comes back
-  // through `github/Apply` (worker/github/Apply.ts).
-  broken("remoteFlows")
   test.setTimeout(240_000)
   const scratch = scratchRepository()
   const a = await devices.open("A")
@@ -204,8 +201,6 @@ test("who triages: a Maintainer gets Enable triage beside New issue; signed out,
 
 test("triage: a Maintainer enables it, the flow labels a new issue, another device overrides it, and runs it again", { annotation: { type: "summary", description: "With triage on, the flow labels a new issue, another device overrides it, and it runs again." } }, async ({ devices }) => {
   requires("githubScratch", "maintainer")
-  // The issue's write and its labels run as the remote flows `github/Write` and `github/Apply` (worker/github/).
-  broken("remoteFlows")
   test.setTimeout(300_000)
   const scratch = scratchRepository()
   const a = await devices.open("A")

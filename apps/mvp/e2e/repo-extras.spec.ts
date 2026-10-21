@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
 import { expect, test } from "./fixtures"
-import { broken, requires } from "./target"
+import { requires } from "./target"
 
 // The repository view's extras (docs/features/repo.md#the-browser), against the real app, Worker, engine, Postgres,
 // Electric and Code Storage: the branch picker, raw files by the app's link and by GitHub's raw path, Copy permalink and
@@ -10,7 +10,6 @@ import { broken, requires } from "./target"
 // `canClone`), and waits on the `repo/clone` remote flow (worker/RepoApi.ts `start`, worker/flows/RepoClone.ts).
 
 requires("codeStorage", "member")
-broken("remoteFlows")
 
 const REPO = "/octocat/Spoon-Knife"
 

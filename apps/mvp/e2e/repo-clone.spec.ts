@@ -1,6 +1,6 @@
 import { allServerRows, expect, type Row, test } from "./devices"
 import { field, type LogRecord, LogTail } from "./logs"
-import { broken, partly, requires } from "./target"
+import { partly, requires } from "./target"
 
 // `repo/clone` end to end (docs/features/repo.md#flows): a person's `/clone owner/name` and the agent asked to clone run
 // the same flow on the browser's engine, whose step asks RepoApi (`POST /api/repos`); RepoApi admits it and starts the
@@ -10,7 +10,6 @@ import { broken, partly, requires } from "./target"
 // (worker/RepoApi.ts `start`, worker/flows/RepoClone.ts).
 
 requires("codeStorage", "member")
-broken("remoteFlows")
 
 /** Typing a person can follow in the video. */
 const typing = { delay: 60 }

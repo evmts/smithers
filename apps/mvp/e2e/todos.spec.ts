@@ -1,5 +1,5 @@
 import { expect, type Tab, test } from "./devices"
-import { broken, requires, scratchRepository, scriptedAgent } from "./target"
+import { requires, scratchRepository, scriptedAgent } from "./target"
 
 // TODOs and the stack, end to end (decision 0016 slice 1, Track A; docs/features/todos.md): two people in real
 // browsers against the real app, ChatApi, its one stack writer, Postgres and Electric. Ann asks Smithers for a TODO;
@@ -132,8 +132,6 @@ test("todo-new-keyboard: New TODO on the stack page, typed and committed with th
 
 test("todo-from-issue: Make TODO from an issue's menu drafts it linked; the issue shows its TODO; t makes a second while the first is open", async ({ devices }) => {
   requires("githubScratch", "member")
-  // GitHub's issues reach the projection through the remote flow `github/Apply` (worker/github/Apply.ts).
-  broken("remoteFlows")
   test.setTimeout(300_000)
   const repo = scratchRepository()
   const [ann] = await devices.open("Ann")

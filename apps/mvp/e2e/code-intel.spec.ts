@@ -1,5 +1,5 @@
 import { expect, step, test } from "./fixtures"
-import { broken, requires } from "./target"
+import { requires } from "./target"
 
 // Code intelligence in the code view (docs/features/code-intelligence.md), against the real app, Worker, Postgres,
 // Electric, GitHub and Code Storage, with TypeScript's language service in the tab's own worker. The fixture is the
@@ -10,7 +10,6 @@ import { broken, requires } from "./target"
 // remote flow finished (worker/RepoApi.ts `start`, worker/flows/RepoClone.ts).
 
 requires("codeStorage", "member")
-broken("remoteFlows")
 
 const REPO = "/vercel/ms"
 const SHA = "4ff48cec099f0514c3e9bbca18706c9c21122bfb"

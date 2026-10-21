@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
 import { expect, step, test } from "./fixtures"
-import { broken, me, requires } from "./target"
+import { me, requires } from "./target"
 
 // The branch workspace's first slice (decision 0013 §9, docs/features/branch-workspace.md), end to end against the
 // real app, Worker, Durable Objects, Postgres, Electric and a real container: open a public repository's existing
@@ -11,9 +11,6 @@ import { broken, me, requires } from "./target"
 // page tracks it, which only a Member or above may (worker/branch/Branches.ts), and asking needs one too.
 
 requires("member", "ownConversation")
-// A deployment reads a branch from its repository's Code Storage mirror (worker/branch/Forge.ts), which the remote flow
-// `repo/Clone` makes, and opens its terminal through the remote flow `terminal/Open` (worker/flows/TerminalOpen.ts).
-broken("remoteFlows")
 
 const REPO = "/octocat/Spoon-Knife"
 

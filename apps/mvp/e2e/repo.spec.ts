@@ -1,5 +1,5 @@
 import { expect, recordActions, test } from "./fixtures"
-import { broken, requires } from "./target"
+import { requires } from "./target"
 
 // Clone a public GitHub repository and browse it (docs/features/repo.md, decision 0006), against the real app,
 // Worker, Durable Object, Postgres, Electric, GitHub and Code Storage. The fixture is the tiny public
@@ -10,7 +10,6 @@ import { broken, requires } from "./target"
 // both ready and Not found.
 
 requires("codeStorage", "member")
-broken("remoteFlows")
 
 const REPO = "/octocat/Spoon-Knife"
 

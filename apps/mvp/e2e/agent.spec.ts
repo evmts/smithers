@@ -77,12 +77,13 @@ test("theme by the agent: asking Smithers to switch to dark mode runs app/theme/
   requires("member", "ownConversation")
   const word = devices.word
   const [a] = await devices.open("A")
-  await expect(a.page.getByRole("button", { name: "Switch to dark mode" })).toBeVisible({ timeout: 30_000 })
+  // The page it asks on may have no theme button (a branch's, in a deployment): the painted mode is the evidence, and
+  // "theme by button" proves the button.
+  await expect.poll(() => painted(a.page), { timeout: 30_000 }).toBe("light")
   const question = `Switch to dark mode, then reply with the word theme-${word}.`
   await a.askAndWaitTaken(question)
   await expect.poll(() => painted(a.page), { timeout: 60_000 }).toBe("dark")
   await a.expectAnswered(question, `theme-${word}`)
-  await expect(a.page.getByRole("button", { name: "Switch to light mode" })).toBeVisible()
   // The answer records the flow call as a step: one `app/theme/set`, done.
   const answer = await answerRow(await allServerRows(request), question)
   expect(stepsOf(answer)).toEqual([expect.objectContaining({ flow: "app/theme/set", status: "done" })])

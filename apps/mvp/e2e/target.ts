@@ -225,19 +225,21 @@ export type NeedName = keyof typeof needs
 /** Every need a test may declare, with its reason. */
 export const NEEDS: Readonly<Record<NeedName, Need>> = needs
 
-/** Behavior known to fail on a target (TEST-5): each is fixed by deleting its entry, which turns its tests back on. */
-export const KNOWN_BROKEN = {
-  remoteFlows: {
-    in: ["deployment"],
-    reason: "every remote flow fails MigrationError in production (apps/mvp/docs/work/prod-e2e.md)",
-  },
-} satisfies Record<string, { readonly in: ReadonlyArray<Target>; readonly reason: string }>
+/** What a known-broken entry says: the targets it breaks and why (TEST-5). */
+export type Broken = { readonly in: ReadonlyArray<Target>; readonly reason: string }
 
-export type BrokenName = keyof typeof KNOWN_BROKEN
+/**
+ * Behavior known to fail on a target (TEST-5), by name: `broken(name)` marks a test that fails there for that reason.
+ * Each is fixed by deleting its entry and its marks, which turns its tests back on. None is known today: production's
+ * remote flows, the last entry, run since the 2026-10-21 18:48 UTC smoke on 931fed70.
+ */
+export const KNOWN_BROKEN: Readonly<Record<string, Broken>> = {}
+
+export type BrokenName = string
 
 /** A skip's or a broken mark's description: the need's name, then its reason. The summary reads the name back. */
 export const describeNeed = (name: NeedName) => `${NEEDS[name].blocked ? "blocked" : "needs"} ${name}: ${NEEDS[name].reason}`
-export const describeBroken = (name: BrokenName) => `broken ${name}: ${KNOWN_BROKEN[name].reason}`
+export const describeBroken = (name: BrokenName) => `broken ${name}: ${KNOWN_BROKEN[name]!.reason}`
 
 /** The need or broken mark a description names, if any: `needs faults: …` is `faults`. */
 export const parseDescription = (description: string | undefined): { kind: "needs" | "blocked" | "broken"; name: string } | undefined => {
@@ -277,14 +279,36 @@ const inTest = () => {
  */
 export const requires = (...names: ReadonlyArray<NeedName>) => {
   for (const name of names) {
-    if (inTest()) base.skip(!meets(name), describeNeed(name))
-    else base.skip(() => !meets(name), describeNeed(name))
+    if (inTest()) {
+      record(name)
+      base.skip(!meets(name), describeNeed(name))
+    } else {
+      // A modifier's condition may be read once per worker, so a hook records the need for each test of the scope.
+      base.beforeEach(() => record(name))
+      base.skip(() => !meets(name), describeNeed(name))
+    }
   }
 }
 
+/** The needs each running test declared, by its TestInfo: helpers such as `devices.open` adapt to them. */
+const declaredBy = new WeakMap<object, Set<NeedName>>()
+
+const record = (name: NeedName) => {
+  if (!inTest()) return
+  const info = base.info()
+  const names = declaredBy.get(info) ?? new Set<NeedName>()
+  names.add(name)
+  declaredBy.set(info, names)
+}
+
+/** Whether the running test declared `name`: a test that declared `ownConversation` opens the app in it. */
+export const declared = (name: NeedName) => (inTest() ? (declaredBy.get(base.info())?.has(name) ?? false) : false)
+
 /** Marks a test (in its body) or a file or describe block as failing on the targets `name` breaks (TEST-5). */
 export const broken = (name: BrokenName) => {
-  const on = (KNOWN_BROKEN[name].in as ReadonlyArray<Target>).includes(target)
+  const entry = KNOWN_BROKEN[name]
+  if (entry === undefined) throw new Error(`No known-broken entry ${name} in KNOWN_BROKEN (e2e/target.ts)`)
+  const on = entry.in.includes(target)
   if (inTest()) base.fail(on, describeBroken(name))
   else base.fail(() => on, describeBroken(name))
 }
@@ -330,8 +354,17 @@ export const home = () => {
   return appHome()
 }
 
-/** Where the app opens for a run: its own branch in a deployment that has one, else `/app`. It declares nothing. */
-export const appHome = () => ownPlace()?.path ?? "/app"
+/**
+ * Where the app opens for a test: its run's own branch, in a deployment that has one, for a test that declared
+ * `ownConversation`; else `/app`. It declares nothing.
+ */
+export const appHome = () => (declared("ownConversation") ? ownPlace()?.path : undefined) ?? "/app"
+
+/** Whether `url` is the run's own branch: a page there asks in the run's own conversation. */
+export const atOwnPlace = (url: string) => {
+  const place = ownPlace()
+  return place !== undefined && new URL(url).pathname.startsWith(place.path)
+}
 
 /** A page's URL ending at `appHome()`, for a tab that should still be where it opened. */
 export const atAppHome = () => new RegExp(`${appHome().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`)

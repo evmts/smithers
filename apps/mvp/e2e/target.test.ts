@@ -2,9 +2,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   appURLOf,
+  type Broken,
   describeBroken,
   describeNeed,
   guard,
@@ -189,13 +190,26 @@ describe("needs", () => {
 })
 
 describe("descriptions", () => {
+  // A known-broken entry, as one is added when a target breaks (TEST-5); none is known today.
+  const registry = KNOWN_BROKEN as Record<string, Broken>
+  beforeAll(() => {
+    registry.clones = { in: ["deployment"], reason: "the deployment's clones never finish (an example entry)" }
+  })
+  afterAll(() => {
+    delete registry.clones
+  })
+
   it("name the need, and the summary reads the name back", () => {
     expect(describeNeed("faults")).toMatch(/^needs faults: the app's faulty services/)
     expect(describeNeed("member")).toMatch(/^blocked member: /)
-    expect(describeBroken("remoteFlows")).toMatch(/^broken remoteFlows: every remote flow fails MigrationError/)
+    expect(describeBroken("clones")).toBe("broken clones: the deployment's clones never finish (an example entry)")
     expect(parseDescription(describeNeed("faults"))).toEqual({ kind: "needs", name: "faults" })
     expect(parseDescription(describeNeed("member"))).toEqual({ kind: "blocked", name: "member" })
-    expect(parseDescription(describeBroken("remoteFlows"))).toEqual({ kind: "broken", name: "remoteFlows" })
+    expect(parseDescription(describeBroken("clones"))).toEqual({ kind: "broken", name: "clones" })
+  })
+
+  it("name no known-broken entry once it is deleted", () => {
+    expect(parseDescription("broken remoteFlows: every remote flow fails MigrationError")).toBeUndefined()
   })
 
   it("that name no declared need, or the wrong kind for it, are not declarations", () => {

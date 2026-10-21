@@ -1,6 +1,6 @@
 import type { BrowserContext, Page } from "@playwright/test"
 import { expect, type Tab, test } from "./devices"
-import { broken, requires, scriptedAgent } from "./target"
+import { requires, scriptedAgent } from "./target"
 
 // The sandbox tools, end to end (docs/features/sandbox-tools.md, decision 0005 §5): the browser's agent calls typed
 // tools that run on the branch's own machine, a real container under `alchemy dev` (local workerd and Docker), as the
@@ -12,7 +12,6 @@ import { broken, requires, scriptedAgent } from "./target"
 // (worker/flows/SandboxCall.ts).
 
 requires("member", "ownConversation")
-broken("remoteFlows")
 
 const BRANCH = "/octocat/Spoon-Knife/tree/test-branch"
 

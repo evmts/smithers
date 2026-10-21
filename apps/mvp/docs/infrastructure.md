@@ -268,7 +268,7 @@ E2E_PROD_URL=<the production URL> pnpm e2e:prod [spec…] [playwright options…
 - A test that checks logs only where it can uses `partly("localLogs")`, and the summary lists it.
 - A deployment test never signs out: that would end the run's shared session.
 
-**Broken.** A test known to fail on a target is marked `broken(...)` (TEST-5); for example, `remoteFlows` covers production's remote flows. It is expected to fail there. If it passes, the run fails until the mark is removed.
+**Broken.** A test known to fail on a target is marked `broken(name)` (TEST-5), naming its entry in `KNOWN_BROKEN` (`e2e/target.ts`). It is expected to fail there. If it passes, the run fails until the mark is removed. No entry is known today: `remoteFlows` was removed once production's remote flows ran (2026-10-21).
 
 **Summary.** The run ends with a table: each spec's passed, failed, broken, skipped and blocked counts, then each skip reason with its count. It writes `test-results-deployment/summary.json`. The command exits 1 on any of these:
 - a failure;
@@ -279,6 +279,11 @@ E2E_PROD_URL=<the production URL> pnpm e2e:prod [spec…] [playwright options…
 **Spend.** Before each test that can ask, a guard adds up the tokens the run's answers used (`e2e/spend.ts`). From `E2E_TOKEN_BUDGET` (600,000 by default) on, later tests fail with `SpendBudgetSpent`. Every run alerts the Admins on spend (AUTH-4).
 
 **Fixtures.** For a Member or above, the setup requests clones of `octocat/Spoon-Knife` and of the own branch's repository (`POST /api/repos`, idempotent), then tracks the own branch (`POST /api/branches`). It records the branch only when the branch is the account's own and unshared.
+
+**One run at a time.**
+- `pnpm e2e:prod` holds a lock directory for the whole run: `E2E_PROD_LOCK`, or `run.lock` beside the stored session.
+- Its `owner` file names the run's pid and checkout. Another run waits for it.
+- A lock whose owner process has ended is reported and left in place for a person to remove.
 
 **Results.**
 - Playwright's results go to `test-results-deployment/`, apart from a local run's.

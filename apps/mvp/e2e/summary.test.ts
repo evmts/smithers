@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it } from "vitest"
 import { type Ended, outcomeOf, render, summarize } from "./summary"
-import { describeBroken, describeNeed } from "./target"
+import { type Broken, describeBroken, describeNeed, KNOWN_BROKEN } from "./target"
+
+// A known-broken entry, as one is added when a target breaks (TEST-5); none is known today.
+const registry = KNOWN_BROKEN as Record<string, Broken>
+registry.clones = { in: ["deployment"], reason: "the deployment's clones never finish (an example entry)" }
+afterAll(() => {
+  delete registry.clones
+})
 
 const ended = (fields: Partial<Ended>): Ended => ({
   file: "/repo/apps/mvp/e2e/chat.spec.ts",
@@ -45,9 +52,9 @@ describe("a test's outcome", () => {
   })
 
   it("is broken when a test marked broken fails, fixed only when it passes, and failed when it fails otherwise", () => {
-    const fail = { type: "fail", description: describeBroken("remoteFlows") }
-    expect(outcomeOf(ended({ expectedStatus: "failed", status: "failed", annotations: [fail] }))).toEqual({ kind: "broken", name: "remoteFlows" })
-    expect(outcomeOf(ended({ expectedStatus: "failed", outcome: "unexpected", annotations: [fail] }))).toEqual({ kind: "fixed", name: "remoteFlows" })
+    const fail = { type: "fail", description: describeBroken("clones") }
+    expect(outcomeOf(ended({ expectedStatus: "failed", status: "failed", annotations: [fail] }))).toEqual({ kind: "broken", name: "clones" })
+    expect(outcomeOf(ended({ expectedStatus: "failed", outcome: "unexpected", annotations: [fail] }))).toEqual({ kind: "fixed", name: "clones" })
     expect(outcomeOf(ended({ expectedStatus: "failed", outcome: "unexpected", status: "timedOut", annotations: [fail] }))).toEqual({ kind: "failed" })
   })
 
@@ -65,7 +72,7 @@ describe("the run's summary", () => {
     ended({ file: "/e/chat.spec.ts", title: "reload", outcome: "skipped", annotations: [skip(describeNeed("member"))] }),
     ended({ file: "/e/sync.spec.ts", title: "down", outcome: "skipped", annotations: [skip(describeNeed("faults"))] }),
     ended({ file: "/e/sync.spec.ts", title: "down twice", outcome: "skipped", annotations: [skip(describeNeed("faults"))] }),
-    ended({ file: "/e/repo.spec.ts", title: "clone", expectedStatus: "failed", annotations: [{ type: "fail", description: describeBroken("remoteFlows") }] }),
+    ended({ file: "/e/repo.spec.ts", title: "clone", expectedStatus: "failed", annotations: [{ type: "fail", description: describeBroken("clones") }] }),
   ]
 
   it("counts each spec's outcomes and each skip reason", () => {
@@ -87,13 +94,13 @@ describe("the run's summary", () => {
       ...run,
       ended({ file: "/e/chat.spec.ts", title: "stream", outcome: "unexpected" }),
       ended({ file: "/e/web.spec.ts", title: "open", outcome: "skipped", annotations: [skip("the conversation is short")] }),
-      ended({ file: "/e/repo.spec.ts", title: "browse", expectedStatus: "failed", outcome: "unexpected", annotations: [{ type: "fail", description: describeBroken("remoteFlows") }] }),
+      ended({ file: "/e/repo.spec.ts", title: "browse", expectedStatus: "failed", outcome: "unexpected", annotations: [{ type: "fail", description: describeBroken("clones") }] }),
     ])
     expect(summary.passed).toBe(false)
     expect(summary.failing).toEqual([
       "chat.spec.ts: stream: failed",
       "web.spec.ts: open: skipped without a declared need (the conversation is short)",
-      "repo.spec.ts: browse: passes though marked broken remoteFlows; remove the mark",
+      "repo.spec.ts: browse: passes though marked broken clones; remove the mark",
       "1 tests blocked: the run lacks a prerequisite (see \"blocked\" below)",
     ])
   })

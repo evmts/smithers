@@ -1,5 +1,5 @@
 import { expect, step, test } from "./fixtures"
-import { broken, requires } from "./target"
+import { requires } from "./target"
 
 // A repository's own home (docs/features/home.md, decision 0014 §4, F5), against the real app, Worker, Postgres,
 // Electric, GitHub and Code Storage. The fixture is the small public `smithersai/home-fixture`, whose
@@ -16,7 +16,6 @@ const REPO = "/smithersai/home-fixture"
 
 test("declared: a repository's own home draws its blocks, Code opens its tree, a file opens by its URL, and Home comes back", async ({ page }) => {
   requires("member")
-  broken("remoteFlows")
   test.setTimeout(240_000)
   const header = page.locator('header[aria-label="Repository"]')
   const home = page.getByRole("region", { name: "Home" })
@@ -85,9 +84,6 @@ test("declared: a repository's own home draws its blocks, Code opens its tree, a
 })
 
 test("absent: a repository without a home opens on its tree, with no tabs", async ({ page }) => {
-  // In a deployment the setup asks for this fixture's clone, which runs as a remote flow: until those run, the page
-  // shows Cloning instead of the README or Clone.
-  broken("remoteFlows")
   const header = page.locator('header[aria-label="Repository"]')
   const readme = page.getByText("Well hello there!")
 

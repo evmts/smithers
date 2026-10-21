@@ -4,7 +4,7 @@ import type { Dialog, Page } from "@playwright/test"
 import { faults } from "./faults"
 import { expect, QUEUED, type Tab, test } from "./devices"
 import { step, test as pageTest } from "./fixtures"
-import { baseURL, me, requires, sessionFiles, signedOut } from "./target"
+import { appHome, baseURL, me, requires, sessionFiles, signedOut } from "./target"
 
 // Sign-in, end to end (docs/features/sign-in.md): the real app, ChatApi and Postgres. Under `alchemy dev` without the
 // GitHub App, a local developer is signed in as an Admin until they sign out, and "Sign in with GitHub" signs them in
@@ -386,7 +386,7 @@ test("an ownerless offline activation reopens under verified authority when the 
       }))
   })
   await tab.device.offline()
-  await tab.page.goto("/app")
+  await tab.page.goto(appHome())
   // Chromium keeps context-level HTTP emulation across this cached navigation but initializes the new renderer's
   // navigator.onLine to true. Correct only its connection state; context.setOffline owns the HTTP fault.
   const network = await tab.device.context.newCDPSession(tab.page)

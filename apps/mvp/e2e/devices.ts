@@ -4,7 +4,7 @@ import { DEV_URL } from "../dev/https"
 import { devReload } from "./devReload"
 import { faultyApp, faults } from "./faults"
 import { allServerRows, type Row } from "./shape"
-import { appHome, guard, ownPlace, requires } from "./target"
+import { appHome, atOwnPlace, guard, requires, target, UndeclaredNeed } from "./target"
 import {
   COULDNT_ANSWER,
   expect,
@@ -236,7 +236,7 @@ export class Tab {
   // The app has opened the conversation: the shell renders only once its first snapshot loaded.
   // The app's home, or a deployment run's own branch (e2e/target.ts `home`), whose chrome names the branch.
   async ready() {
-    const opened = ownPlace() === undefined ? this.page.getByRole("main", { name: "App" }) : this.page.getByRole("navigation", { name: "Branch" })
+    const opened = atOwnPlace(this.page.url()) ? this.page.getByRole("navigation", { name: "Branch" }) : this.page.getByRole("main", { name: "App" })
     await expect(opened, `${this.name}: the app opens`).toBeVisible({ timeout: 30_000 })
   }
 
@@ -328,7 +328,12 @@ export class Tab {
   // Types a question and presses Enter once the composer is ready to send. A deployment run asks only in its own
   // conversation (e2e/target.ts `ownConversation`): without one the test stops here, blocked, before asking.
   send(text: string) {
-    requires("ownConversation")
+    // A slash command runs on the device and asks nothing; anything else is a question.
+    if (!text.startsWith("/")) {
+      requires("ownConversation")
+      // In a deployment the tab must be in the run's own conversation, or the question would reach the team's home.
+      if (target === "deployment" && !atOwnPlace(this.page.url())) throw new UndeclaredNeed("ownConversation")
+    }
     return step(`${this.name}: send "${text}"`, async () => {
       await this.openComposer()
       await expect(this.composerForm, `${this.name}: the composer is ready to send`).toHaveAttribute("data-status", "ready", { timeout: 30_000 })
