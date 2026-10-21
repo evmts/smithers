@@ -108,6 +108,8 @@ export const REFUSALS = [
   "unavailable",
   // `POST /api/branches` with `create: true` on a forge that can't make a branch (GitHub, read with no credential).
   "not_configured",
+  // `POST /api/branches` with `create: true` for a name the forge already has (409): someone else's branch.
+  "exists",
 ] as const
 export type Refusal = (typeof REFUSALS)[number]
 

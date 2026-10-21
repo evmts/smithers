@@ -16,11 +16,12 @@ export const BranchName = Schema.String.check(Schema.makeFilter(isBranchName))
 /**
  * ChatApi didn't track the branch: GitHub has no such repository or branch (`not_found`), signed out (`sign_in`), a
  * branch this person may not open, or a new one only a Member may track (`forbidden`), a name that can't be one
- * (`invalid`), or, for a new branch, a forge that can't make one (`not_configured`: GitHub, read with no credential).
+ * (`invalid`), or, for a new branch, a forge that can't make one (`not_configured`: GitHub, read with no credential)
+ * or a name the forge already has (`exists`: someone else's branch, never taken as the new one).
  */
 export class BranchTrackRefused extends Schema.TaggedError<BranchTrackRefused>()(
   "@smthrs/mvp/branch/BranchTrackRefused",
-  { reason: Schema.Literals(["not_found", "sign_in", "forbidden", "invalid", "not_configured"]) },
+  { reason: Schema.Literals(["not_found", "sign_in", "forbidden", "invalid", "not_configured", "exists"]) },
 ) {}
 
 /** ChatApi couldn't track the branch now: unreachable, or GitHub or Postgres didn't answer. */
@@ -80,12 +81,14 @@ export const CreateBranch = Action.make("branch/create/request", {
  * `branch/create { repo, branch }` (docs/features/branch-workspace.md#new-branch): makes a new branch at the default
  * branch's head on the repository's forge, Code Storage's mirror, and tracks it with its conversation, as the
  * person's own; a page then opens its workspace. A repository's home's New branch runs it, `/branch.new` and the agent
- * can too. Asking again for a branch it made answers that branch.
+ * can too. Asking again for a branch it made answers that branch; a name the forge already has, and the app doesn't
+ * track, is refused `exists`.
  */
 export const BranchCreate = Flow.make("branch/create", {
   description: "Make a new branch of a GitHub repository (owner/name) at its default branch's head, and track it with " +
     "its conversation as the person's own. Answers { branchId, conversationId, repoId, name, mode, access }. " +
-    "BranchTrackRefused says why not: not_found, sign_in, forbidden, invalid or not_configured.",
+    "BranchTrackRefused says why not: not_found, sign_in, forbidden, invalid, not_configured, or exists (a branch of " +
+    "that name is already on the forge).",
   modelInvocable: true,
   payload,
   success: Tracked,

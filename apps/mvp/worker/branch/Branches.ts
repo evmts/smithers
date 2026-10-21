@@ -20,7 +20,8 @@ import { branchHead, createBranch, defaultBranch, type Forge } from "./Forge.ts"
 // tracks already answers at once, to those it is shared with (worker/branch/Access.ts), and 403 to anyone else; a new
 // one is read from its forge first (`Forge`), with the read credential the server holds, so a name GitHub doesn't have
 // is never recorded, and becomes the Member's who tracked it, private until they share it. The repository's default
-// branch is recorded `locked` (decision 0007 §5), and is the team's.
+// branch is recorded `locked` (decision 0007 §5), and is the team's. A new branch whose name the forge already has is
+// refused 409 `exists`: it is someone else's branch, not one this request made.
 
 /** `POST /api/branches` requests, by `outcome`: `tracked`, `existing`, or the refusal's code. */
 export const tracks = Metric.counter("smithers_branch_tracks", {
@@ -79,8 +80,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       // Tracking a branch makes it the tracker's: only a Member or above may (`repo:branch-create`, decision 0007).
       if (!isMember(actor)) return refusal(403, "forbidden")
       if (decoded.value.create === true) {
-        // A new branch: made on the forge at the default branch's head, then tracked as any other. One the forge has
-        // already (a retry whose answer was lost, or a branch someone pushed) is tracked as it is.
+        // A new branch: made on the forge at the default branch's head, then tracked as any other. A name the forge
+        // already has is someone's branch, not this request's: 409 `exists`, and nothing is tracked. A branch name
+        // carries no mark of who made it, so its existence is never read as our own create
+        // (docs/proposals/durable-external-effects.md). A retry after a lost answer finds the branch tracked above.
         const from = yield* defaultBranch({ owner, name }).pipe(Effect.result)
         if (from._tag === "Failure" || from.success.branch === undefined) {
           fields.forge = from._tag === "Failure" ? from.failure.code : "no_default_branch"
@@ -90,7 +93,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         }
         const made = yield* createBranch({ owner, name }, ref, from.success.branch).pipe(Effect.result)
         fields.created = made._tag === "Success" ? "created" : made.failure.code
-        if (made._tag === "Failure" && made.failure.code !== "exists") {
+        if (made._tag === "Failure") {
+          if (made.failure.code === "exists") {
+            fields.outcome = "exists"
+            return refusal(409, "exists")
+          }
           return made.failure.code === "not_found"
             ? refusal(404, "not_found")
             : made.failure.code === "not_configured"

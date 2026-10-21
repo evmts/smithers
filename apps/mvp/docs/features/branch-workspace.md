@@ -50,12 +50,13 @@ The repository's default branch is recorded `locked` (decision 0007 §5) and is 
 
 ## New branch
 
-`branch/create { repo, branch }` (`src/features/branch/flows.ts`) makes a new branch and tracks it. A repository home's New branch runs it ([home](home.md#new-branch)), `/branch.new` and the agent can too; Will, 2026-10-20 18:12: "The maintainer should have a prominent button to start working on a new branch". Its one step posts the same route with `create: true`: `POST /api/branches { owner, name, ref, create: true }`. For a branch the app doesn't track yet, the route reads the default branch from the forge, makes `ref` there at its head (`CodeStorage.createBranch` on the repository's mirror, decision 0005 §"Create is lazy"), then tracks it as above: `201`, `open`, the Member's own. A branch the forge already has, from a retry whose answer was lost or a push, is tracked as it is. Then the page opens its workspace: its conversation, terminal and views.
+`branch/create { repo, branch }` (`src/features/branch/flows.ts`) makes a new branch and tracks it. A repository home's New branch runs it ([home](home.md#new-branch)), `/branch.new` and the agent can too; Will, 2026-10-20 18:12: "The maintainer should have a prominent button to start working on a new branch". Its one step posts the same route with `create: true`: `POST /api/branches { owner, name, ref, create: true }`. For a branch the app doesn't track yet, the route reads the default branch from the forge, makes `ref` there at its head (`CodeStorage.createBranch` on the repository's mirror, decision 0005 §"Create is lazy"), then tracks it as above: `201`, `open`, the Member's own. Asking again for a branch the app tracks, such as a retry whose answer was lost, answers that branch. A name the forge already has and the app doesn't track is someone else's branch, from a push or the mirror, so the route refuses it `409 exists` and tracks nothing: a branch name carries no mark of who made it, so its existence is never read as this request's create ([durable external effects](../proposals/durable-external-effects.md)). Then the page opens its workspace: its conversation, terminal and views.
 
 | Answer | When |
 |---|---|
 | `201`, `200` | as tracking |
 | `404 not_found` | the forge has no such repository, or no default branch to start from |
+| `409 exists` | the forge already has a branch of that name, which the app doesn't track: the flow fails `exists`, never tried again, and the home's New branch shows "Couldn't make a branch" |
 | `503 not_configured` | the forge is GitHub, read with no credential, which can't make a branch: the flow fails `not_configured`, never tried again |
 | `503 unavailable` | the forge or Code Storage didn't answer; the step tries again for 30 s |
 

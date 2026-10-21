@@ -29,6 +29,8 @@ export const trackFailure = (refused: TrackRefused): TrackFailure =>
     ? new BranchTrackRefused({ reason: "invalid" })
     : refused.code === "not_configured"
     ? new BranchTrackRefused({ reason: "not_configured" })
+    : refused.status === 409 && refused.code === "exists"
+    ? new BranchTrackRefused({ reason: "exists" })
     : new BranchTrackUnavailable()
 
 /**

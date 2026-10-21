@@ -317,6 +317,14 @@ describe("the step", () => {
     ])
   })
 
+  test("ChatApi's 409 exists, a name the forge already has, is refused exists and never tried again; another 409 is unavailable", async () => {
+    const exists = await step(async () => Response.json({ code: "exists" }, { status: 409 }))
+    expect(exists.exit).toEqual({ failed: new BranchTrackRefused({ reason: "exists" }) })
+    expect(exists.count("exists")).toBe(1)
+    const locked = await step(async () => Response.json({ code: "locked" }, { status: 409 }))
+    expect(locked.exit).toEqual({ failed: new BranchTrackUnavailable() })
+  })
+
   test("tracked is counted and logged as Info; no answer at all is unavailable, with no status; never the branch's name", async () => {
     const sentinel = "feature/sentinel-41c9"
     const tracked = await step(async () => Response.json({ ...trackedBody, name: sentinel }, { status: 201 }), sentinel)

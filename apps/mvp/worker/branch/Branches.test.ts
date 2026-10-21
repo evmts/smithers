@@ -355,13 +355,14 @@ describe("POST /api/branches with create: a new branch", () => {
     expect(h.forge.created).toHaveLength(1)
   })
 
-  test("a branch the forge has that the app doesn't track is tracked as it is", async () => {
+  // A branch someone pushed under the name a create asked for was tracked as the requester's new branch, owned by them
+  // and not at the default branch's head. A branch name carries no mark of who made it, so its existence is refused.
+  test("a branch the forge has that the app doesn't track is someone else's: 409 exists, nothing tracked", async () => {
     const h = await onCodeStorage()
-    const [status, body] = await json(await create(h, "feature"))
-    expect([status, (body as { readonly name: string }).name]).toEqual([201, "feature"])
-    expect((await rows()).find((row) => row.name === "feature")?.baseSha).toBe(shaOf("feature"))
+    expect(await json(await create(h, "feature"))).toEqual([409, { code: "exists" }])
+    expect((await rows()).find((row) => row.name === "feature")).toBeUndefined()
     expect(h.forge.created).toEqual([])
-    expect(h.only("branch.track").annotations).toMatchObject({ created: "exists" })
+    expect(h.only("branch.track").annotations).toMatchObject({ created: "exists", outcome: "exists", status: 409 })
   })
 
   test("Code Storage refusing or failing: 404 for no mirror or start, 503 otherwise; nothing recorded", async () => {
