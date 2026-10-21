@@ -207,7 +207,7 @@ Metrics (`worker/ChatMetrics.ts`):
 |---|---|---|---|
 | `model.proxy.serve` | every request, once it has ended | Info `success` and `interrupted`, Warn `invalid` and `refused`, Error `failed` | `role`, `requestId` (the caller's), `invocationId` (the server's, the `model_usage` key), `traceId`, `side: server`, `outcome`, `status`, `durationMs`, `events`; when known `modelId`, `provider`, `errorCode` (the `ModelError` code: `authentication`, `quota_exceeded`, `no_route`, `provider_internal`, …), `errorTag`, `firstEventMs`, `requestBytes`, `inputTokens`, `outputTokens` |
 | `model.endpoint` | Postgres failed (sessions, the role lookup or the budget reservation), or a role's setting is unusable | Error | `role`, `errorCode`: `sql:<reason>`, or `unusable:<reason>` (the planner's code, such as `credential_missing`, `credential_unknown` or `invalid`) |
-| `model.usage` | a call's usage was unknown, so it kept its reservation (`kept`); it ended after its reservation expired (`expired`); or its settle failed and it stays counted at the reservation | Info `kept`, Warn `expired`, Error for a failed settle | `role`, `invocationId`, `requestId`; `outcome` and `ended` (the call's `success`, `failed` or `interrupted`) for `kept` and `expired`, and `reported` (`none`, `partial` or `complete`: which counts the model reported) for `kept`; `errorCode` for a failed settle |
+| `model.usage` | the provider refused a call before any output, so it settled to what the provider reported (`refused`); a call's usage was unknown, so it kept its reservation (`kept`); it ended after its reservation expired (`expired`); or its settle failed and it stays counted at the reservation | Info `refused` and `kept`, Warn `expired`, Error for a failed settle | `role`, `invocationId`, `requestId`; `outcome` and `ended` (the call's `success`, `failed` or `interrupted`) for `refused`, `kept` and `expired`, `reported` (`none`, `partial` or `complete`: which counts the model reported) for `refused` and `kept`, and the call's `ModelError` code as `errorCode` when it failed; `errorCode` for a failed settle |
 | `admin.set_model` | every `admin/SetModel` step that ended | Info `set`, Warn `refused`, Error `error` | `outcome`, `role`; `modelId` when set; `reason` (`not_admin`, `delegated`) when refused; `errorCode` on error |
 
 Spans: `model.proxy.serve` (server, or internal under an HTTP server span) with `smithers.model.proxy.request_id`, `smithers.model.proxy.invocation_id`, `smithers.model.proxy.outcome`, `http.response.status_code`, `error.type`, `gen_ai.request.model`, `gen_ai.provider.name`, `smithers.model.proxy.events`, `smithers.model.proxy.duration_ms`, `smithers.model.proxy.first_event_ms` and `smithers.model.proxy.request_bytes`; under it `chat <model>` from `Model.withGenAiSpan`, and the SQL statements of the role lookup, the budget reservation and its settle. A failed span ends with a `ModelError` rebuilt from its code alone. `admin.set_model` (internal) carries `smithers.model.role`.
@@ -218,9 +218,31 @@ Spans: `model.proxy.serve` (server, or internal under an HTTP server span) with 
 | `smithers_model_proxy_requests` | counter | `role`, `side: server`, `outcome`, `status` | `model.proxy.serve` `outcome`, `status` |
 | `smithers_model_proxy_duration_ms` | histogram | `role`, `side: server`, `outcome` | `durationMs` |
 | `smithers_model_proxy_first_event_ms` | histogram | `role`, `side: server` | `firstEventMs` |
-| `smithers_model_usage_writes` | counter | `outcome` = `recorded` (settled to what it spent), `kept` (its usage was unknown), `expired` (it ended after its reservation expired) or `error`: settles of a call's reservation | `model.usage` for every outcome but `recorded` |
+| `smithers_model_usage_writes` | counter | `outcome` = `recorded` (settled to what it spent), `refused` (refused before any output, settled to what the provider reported), `kept` (its usage was unknown), `expired` (it ended after its reservation expired) or `error`: settles of a call's reservation | `model.usage` for every outcome but `recorded` |
 
-The spend alert reads `smithers_model_tokens`, by role and model ([todo.md](todo.md#alerts-on-token-spend)). The budget itself is the `model_budget_days` counter and the `model_usage` ledger, not a metric; a refused reservation is `model.proxy.serve` with `status` 429 and `errorCode` `quota_exceeded`.
+The budget itself is the `model_budget_days` counter and the `model_usage` ledger, not a metric; a refused reservation is `model.proxy.serve` with `status` 429 and `errorCode` `quota_exceeded`. What each call spent, and the alerts it raises, are under [Spend alerts](#spend-alerts).
+
+### Spend alerts
+
+Model spend and its alerts to Admins ([spend-alerts.md](features/spend-alerts.md)): `ModelSpend.record` for each metered call (`worker/ModelSpend.ts`, from the model endpoint's `onEnd` and from `ModelEndpoint.local`'s calls), the endpoint's start of a window's alert, `ops/SpendAlert`'s alert step (`worker/flows/SpendAlert.ts`) and the alerts' shape (`worker/SpendAlerts.ts`). They carry roles, model ids, ids of alerts and calls, counts, tokens and dollars; never a prompt, an answer or a provider's text.
+
+| Message | When | Level | Fields |
+|---|---|---|---|
+| `model.spend` | a metered call ended whose model reported tokens or a cost | Info | `role`, `modelId`, `invocationId`, `tokens` (input and output reported); `costUsd` and `costSource` (`estimated` from the rate card, `reported` by the provider) when priced |
+| `model.spend.alert` | the endpoint couldn't start a window's alert | Error | `outcome: not_started`, `errorCode` (the host's, or the failure's tag, `unknown` for a defect) |
+| `model.spend.alert` | each `ops/RecordSpendAlert` attempt that ended | Warn `recorded` and `failed`, Info `existing` and `none` | `alertId`, `outcome`; `calls`, `tokens` and, when priced, `costUsd` unless it failed; `errorCode` (`sql:<reason>`) when it failed |
+| `spend.alerts.shape` | every `GET /api/shapes/spend-alerts` (`ShapeProxy`) | as `ShapeProxy` logs | `status`, `live` |
+
+Spans: `model.spend.alert` (internal) with `smithers.spend_alert.id`, around the alert step and its SQL.
+
+| Metric | Kind | Attributes | Log field |
+|---|---|---|---|
+| `smithers_model_spend_tokens` | counter | `role`, `model` | `model.spend` `tokens` |
+| `smithers_model_spend_usd` | counter | `role`, `model`; an unpriced model adds nothing | `model.spend` `costUsd` |
+| `smithers_model_spend_alerts` | counter | `outcome` = `recorded`, `existing`, `none`, `failed` or `not_started` | `model.spend.alert` `outcome` |
+| `smithers_spend_alert_shape_requests` | counter | `status`, `live` | `spend.alerts.shape` |
+
+In the browser (`src/features/spend/`, `SPEND_TELEMETRY`), an Admin's tab records `spend.alert.shown` (Info: `alertId`, `calls`, `tokens`) and `smithers_web_spend_alerts_shown` once per alert per tab, and `spend.alert.hidden` (Info: `alertId`) and `smithers_web_spend_alerts_hidden` once the device stored a Hide.
 
 ### Sign-in
 
@@ -325,15 +347,29 @@ The browser (`src/features/repo/`), the tab's and the engine worker's, relayed t
 | `smithers_web_repo_tree_load_ms`, `smithers_web_repo_blob_load_ms`, `smithers_web_repo_refs_load_ms` | histogram | `outcome` |
 | `smithers_web_repo_copies` | counter | `what`, `door`, `outcome`, as `repo.copy` |
 
+### A repository's home
+
+The browser's read of a repository's own home ([home.md](features/home.md)), relayed through ChatApi's allowlist (`HOME_TELEMETRY` in `src/features/home/contract.ts`). No record carries a block, a title, a text, a path, a link or a file's contents; RepoApi's own `repo.blob` lines record the reads.
+
+| Record | Kind | Fields |
+|---|---|---|
+| `home.resolve` | log and span; Warn `unreadable`, Info otherwise | `outcome` (`declared`, `absent`, `invalid`, `unreadable`, or `cached` for a home this device had), `blocks` (drawn), `skipped` (of a kind the app doesn't know), `reason` (an invalid home's: `json`, `shape`, `blocks`, `block`, `binary`, `too_large`), `status` (RepoApi's, for a refusal), `durationMs`; the span's `smithers.home.outcome`, `smithers.home.blocks`, `smithers.home.skipped` |
+| `home.file.load` | log; Warn `failed`, Info `text` | `outcome`, `status`, `durationMs`: a file a Markdown block names |
+| `smithers_web_home_resolves` | counter | `outcome`, as `home.resolve` |
+
+`src/features/home/home.test.ts` asserts each outcome's record and count, and that a sentinel in the home's text, title, link and Markdown file reaches no log line.
+
 ### GitHub
 
-The git loop's routes, flows and tokens, and the browser's issue writes, record ids, operations, outcomes, statuses and durations, never a title, a body, a login, a payload, the webhook secret or a token. [issues.md](features/issues.md#observability) lists every record; `worker/github/Flows.test.ts`, `worker/github/Api.test.ts` and `src/features/issues/issues.test.ts` assert them and their sentinels.
+The git loop's routes, flows and tokens, triage, and the browser's issue writes, record ids, operations, outcomes, statuses and durations, never a title, a body, a comment, a login, a payload, the webhook secret or a token. [issues.md](features/issues.md#observability) lists every record; `worker/github/Flows.test.ts`, `worker/github/Api.test.ts`, `worker/github/Triage.test.ts` and `src/features/issues/issues.test.ts` assert them and their sentinels.
 
 | Record | Kind | Where |
 |---|---|---|
 | `github.webhook`, `github.write.request`, `github.shape.<table>`, `github.reconcile.start` | log, span | ChatApi |
 | `github.write`, `github.write.give_up`, `github.apply`, `github.reconcile`, `github.token.mint`, `github.config` | log, span | the `FlowExecution` Durable Object |
 | `github_webhooks`, `github_delivery_lag_ms`, `github_write_requests`, `github_writes`, `github_write_ms`, `github_write_unknown`, `github_applies`, `github_reconciles`, `github_reconcile_changed`, `github_sync_age_seconds`, `github_token_mints`, `github_shape_requests` | counters, histograms, gauge | ChatApi and the Durable Object |
+| `triage.read`, `triage.decide`, `triage.apply`, `triage.comment` | log, span | the `FlowExecution` Durable Object ([triage](features/issues.md#triage)); `triage.apply` with `dropped: enabler_demoted` is an Error |
+| `triage_runs{outcome}`, `triage_decisions{decision,via}`, `triage_dropped{reason}`, `triage_overrides{from,to}`, `triage_tokens` | counters | the Durable Object; a person's override is counted by `github/Write`. Overrides of the flow are its error rate |
 | `issues.write.queue`, `issues.write.send`, `issues.pending`, `smithers_issue_writes`, `smithers_issue_write_sends`, `smithers_issue_pending_actions` | browser | the engine worker and the tab |
 
 ### Agent status
@@ -354,9 +390,27 @@ What the agent's runs report, and what the person does about a question ([agent-
 | `agent.status.shown` | log | tab | `runId`, `version`, `surface` |
 | `smithers_agent_status_shown` | counter | tab | `surface` |
 
+### Notifications
+
+The personal feed: a run's state routed to its people, GitHub's `main` and release deliveries, and what each person does with their entries ([notifications.md](features/notifications.md#observability)). Records carry run ids, subjects and counts, never a title, a question, a commit message or who pushed.
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `runs.fold` | span | ChatApi | `smithers.run.id`, `smithers.notifications.written` |
+| `smithers_notifications_routed` | counter | ChatApi | `kind` (`run`, `main`, `release`), `state` |
+| `notifications.repo_event` | log, span | ChatApi | `kind`, `repoId`, `watchers`, `written` |
+| `notifications.watch`, `notifications.ack` | log | ChatApi | `conversationId` or `subject`, `act`, `version`, `status`, `durationMs`, `bytes`, `existing`, `errorCode` |
+| `notifications.request` | span | ChatApi | `smithers.route`, `http.response.status_code` |
+| `smithers_notification_requests` | counter | ChatApi | `route` (`watch`, `ack`), `status` |
+| `smithers_notification_shape_requests` | counter | ChatApi | `status`, `live` |
+| `notifications.watch`, `notifications.ack` | log, span | engine worker | `subject`, `act`, `version`, `outcome` (`sent`, `refused`, `unsent`), `status` |
+| `smithers_notification_watches`, `smithers_notification_acks` | counter | engine worker | `outcome`; `act`, `outcome` |
+| `notifications.shown` | log | tab | `subject`, `version`, `state`, `kind` |
+| `smithers_notifications_shown` | counter | tab | `state` |
+
 ### Branch workspace
 
-Tracking a branch, its conversation, its terminals and its machine ([branch-workspace.md](features/branch-workspace.md#observability)). No record carries a terminal's bytes, a screen, a branch's name, a token or anything asked; no metric label carries an id.
+Tracking a branch, its conversation, its terminals, its machine, sharing it and its room ([branch-workspace.md](features/branch-workspace.md#observability)). No record carries a terminal's bytes, a screen, a branch's name, a token, a login, a person's place or anything asked; no metric label carries an id.
 
 | Record | Kind | Where | Fields |
 |---|---|---|---|
@@ -374,12 +428,76 @@ Tracking a branch, its conversation, its terminals and its machine ([branch-work
 | `git.proxy` (log), `GitProxy.uploadPack` (span), `git_proxy_requests` | | `SandboxObject` (`@smthrs/effect-code-storage`) | `service`, `outcome`, `status`, `durationMs` |
 | `branch.track`, `branch.open`, `smithers_web_branch_tracks`, `smithers_web_branch_opens`, `chat conversation opened`, `chat conversation shown` | browser | the engine worker and the tab | `outcome`, `status`, `durationMs`, `conversation`, `conversationId` |
 | `terminal.open`, `terminal.open.press`, `terminal.connect`, `smithers_web_terminal_opens`, `terminal_open_ms`, `terminal_reconnects`, `terminal_bytes`, `terminal_ended` | browser | the engine worker and the tab | `outcome`, `status`, `terminalId`, `branchId`, `durationMs`, `code`, `direction`, `reason` |
+| `branch.share` | log, span | ChatApi | `branchId`, `change` (`person`, `access`, `remove`, `link`), `outcome` (`changed`, `unchanged`, or the refusal), `revoked`, `status`, `durationMs`, `errorCode` |
+| `smithers_branch_shares` | counter | ChatApi | `change`, `outcome` |
+| `smithers_branch_terminal_revocations` | counter | ChatApi | none |
+| `branch.shares.shape` | log, span | ChatApi | `status`, `live`, `durationMs`, `bytes`, `outcome` |
+| `smithers_branch_share_shape_requests` | counter | ChatApi | `status`, `live` |
+| `branch.room` | log, span | ChatApi | `branchId`, `access`, `outcome` (`joined`, or the refusal), `status`, `durationMs`, `errorCode` |
+| `smithers_branch_room_joins` | counter | ChatApi | `outcome` |
+| `sandbox.enforce` (log), `sandbox.object.enforce` (span) | | `SandboxObject` | `detached`, `revoked`, `attached`, `errorCode` |
+| `room.enforce` (log), `room.object.enforce` (span) | | `RoomObject` | `closed`, `errorCode` |
+| `smithers_presence_joins`, `_frames`, `_evictions`, `_open` | counters | `RoomObject` (`@smthrs/sync`'s `PresenceRoom`) | `outcome` |
+| `branch.share`, `branch.share.post`, `branch.share.press`, `smithers_web_branch_shares` | browser | the engine worker and the tab | `outcome`, `change`, `status` |
+| `presence.join`, `presence.closed`, `smithers_web_presence_joins`, `smithers_web_presence_closes` | browser | the tab | `outcome`, `code` |
+
+### Sandbox tools
+
+A branch machine's tools and its sleep and wake ([sandbox-tools.md](features/sandbox-tools.md#observability)). No record carries a command, a path, a file's content or a command's output; no metric label carries an id.
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `sandbox.call`, `sandbox.result` | log, span | ChatApi | `callId`, `tool`, `door` (`person`, `agent`), `branchId`, `outcome` (`running`, `existing`, a status, or the refusal), `code`, `status`, `durationMs`, `errorCode` |
+| `smithers_sandbox_call_requests` | counter | ChatApi | `route` (`call`, `result`), `outcome` |
+| `sandbox.tool`, `sandbox.call` | log | the `FlowExecution` Durable Object | `callId`, `branchId`, `tool`, `outcome`, `settled`, `exitCode`, `timedOut`, `errorCode` |
+| `sandbox.call.tool`, `sandbox.call.settle` | span | the `FlowExecution` Durable Object | `smithers.branch.id`, `smithers.sandbox.tool`, `smithers.sandbox.call.id` |
+| `smithers_sandbox_calls` | counter | the `FlowExecution` Durable Object | `tool`, `outcome` (`done`, or the failure) |
+| `sandbox.keep`, `sandbox.slept` | log, span | the `FlowExecution` Durable Object | `branchId`, `generation`, `ended`, `terminals`, `errorCode` |
+| `smithers_sandbox_keeps` | counter | the `FlowExecution` Durable Object | `outcome` (`slept`, `busy`, `gone`, `unavailable`) |
+| `sandbox.object.tool`, `sandbox.object.sleep`, `sandbox.checkpoint.save`, `sandbox.checkpoint.restore` (spans), `sandbox.checkpoint.save`, `sandbox.checkpoint.restore` (logs) | | `SandboxObject` | `smithers.sandbox.tool`, `smithers.sandbox.generation`, `outcome`, `errorCode` |
+| `smithers_sandbox_checkpoints` | counter | `SandboxObject` | `op` (`save`, `restore`), `outcome` |
+| `sandbox.tool` | span | `SandboxObject` (`@smthrs/sandbox`'s `SandboxTools`) | `smithers.sandbox.tool`, `smithers.sandbox.tool.outcome`, `smithers.sandbox.tool.exit_code` |
+| `sandbox.call`, `sandbox.call.start`, `sandbox.call.post`, `sandbox.call.result`, `smithers_web_sandbox_calls` | browser | the engine worker | `tool`, `outcome`, `callId`, `door` |
+
+### Secrets
+
+An Admin's writes of repository secrets, their shape, and a box's requests through the egress ([secrets.md](features/secrets.md#observability)). No record carries a value, a ciphertext, a header, a path or a body; records name secrets by name only, and no metric label carries a name or an id.
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `secret.request` | log, span | ChatApi | `op` (`put`, `delete`), `repoId`, `name`, `hosts` (a count), `outcome` (`putting`, `deleting`, or the refusal), `code`, `status`, `durationMs`, `errorCode` |
+| `smithers_secret_requests` | counter | ChatApi | `op`, `outcome` |
+| `secret.shape` | log, span | ChatApi | `status`, `live`, `durationMs`, `bytes`, `outcome` |
+| `smithers_secret_shape_requests` | counter | ChatApi | `status`, `live` |
+| `secret.write` | log, span | the `FlowExecution` Durable Object | `op`, `change` (`set`, `replace`, `deleted`, `missing`, `repeat`), `repoId`, `name`, `outcome`, `errorCode` |
+| `smithers_secret_writes` | counter | the `FlowExecution` Durable Object | `op`, `change` |
+| `secrets.egress` (span) | | the egress | `smithers.branch.id`, `smithers.sandbox.generation` |
+| `Egress.execute` (span), `secrets.egress` (log) | | the egress (`@smthrs/secrets`) | `server.address`, `http.request.method`, `smithers.egress.outcome`, `http.response.status_code`; the log's `outcome`, `host`, `method`, `status`, `secrets` (a count), `durationMs`, `errorCode` |
+| `secret_egress_requests` | counter | the egress (`@smthrs/secrets`) | `outcome` (`forwarded`, `broken`, a refusal code, `unavailable_<code>`) |
+
+The egress turns its HTTP client's own span off, so no request header reaches a trace. `secret_events` keeps each decision in Postgres for the audit.
+
+### TODOs
+
+The stack's route, its one writer, its shapes and the browser's TODO steps and sends ([todos.md](features/todos.md#observability)). No record carries a title, a prompt, a criterion or a login: only ids, numbers, operations, outcomes, statuses and durations. `worker/stack/Stack.test.ts` and `worker/stack/Api.test.ts` assert the records and their sentinels.
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `stack.request` | log, span | ChatApi | `op`, `via` (from the session), `opId`, `outcome` (`committed`, `dropped`, `repeated`, or the refusal's code), `number`, `status`, `bytes`, `durationMs`, `errorCode` |
+| `stack.apply` | log, span | ChatApi, inside `stack.request` | `repoId`, `opId`, `op`, `via`, `outcome` (`committed`, `dropped`, `stack_full`, `merged`, `not_found`, `repeated`, `conflict`), `number`, `version`, `durationMs` |
+| `smithers_stack_requests` | counter | ChatApi | `op`, `outcome` |
+| `smithers_stack_ops`, `smithers_todo_transitions` | counters | ChatApi | `op`, `outcome`; `from` (`new` for a commit), `to` |
+| `stack.shape.todos`, `stack.shape.todo_requests`; `smithers_todo_shape_requests`, `smithers_todo_request_shape_requests` | log, span; counters | ChatApi | `status`, `live` |
+| `todos.draft`, `todos.queue`, `smithers_todo_drafts`, `smithers_todo_queued` | browser | the engine worker | `draftId` or `opId`, `op`, `via`, `door`, `outcome` (`kept`, `not_kept`, `tab_gone`, `agent`), `durationMs` |
+| `todos.send`, `todos.pending`, `smithers_todo_sends`, `smithers_todo_pending_actions` | browser | the tab | `opId`, `op`, `outcome` (`taken`, `existing`, `retry`, `refused`), `status`, `code`; `action` (`edit`, `discard`, `discard_draft`) |
+
+A refused commit or drop of the agent's (`outcome: agent`) is the defense the catalog already holds; a nonzero count means a flow call reached the step that the catalog should have refused.
 
 ### Relayed browser records
 
 `POST /api/telemetry/v1/{logs,traces,metrics}` relays the browser's records through `OtlpRelay.serve` with limits and an allowlist (`worker/Chat.ts`; [chat.md](features/chat.md#post-apitelemetryv1logstracesmetrics)):
 
-- **One list, shared:** `BROWSER_TELEMETRY` (`src/telemetry.ts`) merges every feature's contract (`APP_TELEMETRY`, `CHAT_TELEMETRY`, `AUTH_TELEMETRY`, `FLOWS_TELEMETRY`, `AGENT_TELEMETRY`, `THEME_TELEMETRY`, `NAVIGATION_TELEMETRY`, `REPO_TELEMETRY`, `STATUS_TELEMETRY`, `BRANCH_TELEMETRY`, `TERMINAL_TELEMETRY` and the others). The relay takes it as `allow`, and the engine worker's exporter sends only its span names, so the browser and ChatApi can't drift: `src/telemetry.test.ts` fails when the relay drops anything the browser exports that `WITHHELD` doesn't name.
+- **One list, shared:** `BROWSER_TELEMETRY` (`src/telemetry.ts`) merges every feature's contract (`APP_TELEMETRY`, `CHAT_TELEMETRY`, `AUTH_TELEMETRY`, `FLOWS_TELEMETRY`, `AGENT_TELEMETRY`, `THEME_TELEMETRY`, `NAVIGATION_TELEMETRY`, `REPO_TELEMETRY`, `HOME_TELEMETRY`, `STATUS_TELEMETRY`, `BRANCH_TELEMETRY`, `TERMINAL_TELEMETRY` and the others). The relay takes it as `allow`, and the engine worker's exporter sends only its span names, so the browser and ChatApi can't drift: `src/telemetry.test.ts` fails when the relay drops anything the browser exports that `WITHHELD` doesn't name.
 - **Records:** the log messages, span names and metric names under [Browser](#browser) and [The engine worker](#the-engine-worker), by name. Any other record is dropped and counted as `not_allowed`.
 - **Fields:** the relay's own (`RELAY_FIELDS`: `otlp.signal`, `service.name`, `otlp.severity`, `trace_id`, `span_id`, `otlp.parent_span_id`, `otlp.duration_ms`, `otlp.metric_type`, `otlp.unit`, `otlp.value`, `otlp.count`, `otlp.sum`), each feature's attributes, `exception.type`, and the HTTP client span's `http.request.method`, `http.response.status_code`, `url.full`, `url.path`, `url.query`, `url.scheme`, `server.address`, `server.port` and `error.type`. Every other field is removed.
 - **Withheld (`WITHHELD`):** the fields `exception.message`, `exception.stacktrace` and `otlp.status_message`, since a message can quote what someone wrote, and `effect.fiberId`; and the per-request spans `browser.engine.request` (the tab's, dropped by the relay) and `browser.runtime.request` (the leader's, never sent), one per poll, hundreds per answer, which `smithers_browser_engine_requests` and `smithers_browser_runtime_requests` count.
@@ -399,7 +517,9 @@ The relay doesn't check the values: a caller picks its records' `service.name`, 
 | `worker/Chat.test.ts` "POST /api/telemetry/v1/*" tests | a browser record becomes one ChatApi line with only the allowlisted fields; a span's status message is dropped; records off the allowlist or past 200 are dropped and counted; past 128 KiB is 413 |
 | `worker/ShapeProxy.test.ts` | one `chat.shape` line per request with its bytes (502 at Error, an abandoned request `aborted`), and the Electric secret in no log or span |
 | `worker/ModelEndpoint.test.ts` "telemetry" | a sentinel in the prompt, echoed by the model and quoted in a provider's error, and a sentinel key, appear in no log, span attribute, event or failure, or metric attribute |
-| `worker/ModelEndpoint.test.ts` refusal, role and metering tests | `model.proxy.serve` with `role` and its outcome for 401, 403, 400, 429 and 503; `model.endpoint` with `sql:<reason>` and `unusable:<reason>`; `model.usage` for `kept` (with `ended` and `reported`), `expired` and a failed settle, and `smithers_model_usage_writes` by outcome; `smithers_model_tokens` by role and model |
+| `worker/ModelSpend.test.ts`, `worker/flows/SpendAlert.test.ts`, `worker/SpendAlerts.test.ts` | `model.spend` and both spend counters by role and model, with no prompt; `model.spend.alert` `not_started` by code, never a defect's message, and `smithers_model_spend_alerts` by outcome; the alert step's lines at Warn and Info and its failure by `sql:<reason>`; `spend.alerts.shape` and its count |
+| `src/features/spend/spend.test.ts` | `smithers_web_spend_alerts_shown` once per alert per tab, and `smithers_web_spend_alerts_hidden` once per stored Hide |
+| `worker/ModelEndpoint.test.ts` refusal, role and metering tests | `model.proxy.serve` with `role` and its outcome for 401, 403, 400, 429 and 503; `model.endpoint` with `sql:<reason>` and `unusable:<reason>`; `model.usage` for `refused` and `kept` (with `ended`, `reported` and the failure's `errorCode`), `expired` and a failed settle, and `smithers_model_usage_writes` by outcome; `smithers_model_tokens` by role and model |
 | `worker/SetModel.test.ts` | `admin.set_model` at Warn with the refusal's reason, and at Error with the SQL reason |
 | `packages/smithers/agent/model/test/ModelProxy.test.ts` | the proxy's spans, metrics and log lines, the host's attributes on server records only, and no prompt, response or provider text in any of them |
 | `packages/smithers/flows/observability/test/Logger.test.ts` | `Logger.layerStructuredJson` writes the current span's `trace_id` and `span_id`, and a caller's own annotations under those names win |

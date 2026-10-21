@@ -1,11 +1,28 @@
 ---
 title: Jev for the agent (app/jev/classify, app/jev/evaluate)
-status: done
+status: in-progress
 area: app
-owner: Jev agent; reported done 07:49:53 on 2026-10-20 (9 of 9 unit tests at 100% coverage, e2e with one judge call and its GIF, `ModelStep.model` added to `@smthrs/agent` with a changeset); nothing committed, so it lands in round 2 of the landing. Until 07:49: Jev agent (started 06:42:25 on 2026-10-20); by 07:12 unit tests, a passing e2e with its GIF and `docs/features/jev.md`; unreported. Until 07:01: Jev agent, started 06:42:25 on 2026-10-20 by the lead; writing `src/features/jev/**` and its registry entries since about 06:53; unreported
+owner: Jev walkthrough rework agent (started about 20:00 on 2026-10-20, from Will's 19:52 review). Until then: Jev agent; reported done 07:49:53 on 2026-10-20 (9 of 9 unit tests at 100% coverage, e2e with one judge call and its GIF, `ModelStep.model` added to `@smthrs/agent` with a changeset); nothing committed, so it lands in round 2 of the landing. Until 07:49: Jev agent (started 06:42:25 on 2026-10-20); by 07:12 unit tests, a passing e2e with its GIF and `docs/features/jev.md`; unreported. Until 07:01: Jev agent, started 06:42:25 on 2026-10-20 by the lead; writing `src/features/jev/**` and its registry entries since about 06:53; unreported
 updated: 2026-10-20
 links: [model-endpoint.md, model-step.md, flows-and-agent.md, slash-commands.md, issue-triage.md, agent-evals.md, import-rules-and-jev-lint.md, observability.md, e2e-suite-and-gifs.md, land-to-main.md, ../decisions/0003-flows-and-the-agent.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../features/agent.md, ../features/model-endpoint.md, ../features/jev.md, repo-view-branches-raw-clone.md, docs-check-flow-outcome.md, library-catalog.md]
 ---
+
+## Current specification — 2026-10-20, 19:44 PDT
+
+**What:** Show the agent choosing Jev naturally, with debug info opening its run graph.
+
+**Why:** Will’s 19:37 queue answer asks for implicit Jev use and visible flow evidence.
+
+**Current state:** The lead assigned a natural classification question that never names Jev, an eval regression, and answer debug info opening the existing run graph with the Jev step highlighted. The original Jev implementation remains completed history; this follow-up has no completed receipt.
+
+**Next step:** Prove natural tool selection against the real model, retain the eval, and record keyboard-accessible debug navigation to the actual step input/output.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, approximately 17:44–19:44 PDT; queue answers through 19:38 PDT; rulings, decisions, proposals, TODOs, rules and shared feature/host/panel briefs and designs. Latest Will text and queue answers prevail. Product receipts are lead-reported; tracker validation is the site build. Existing execution ownership is preserved.
+
+## Earlier tracker history (retained)
+
 
 ## What
 

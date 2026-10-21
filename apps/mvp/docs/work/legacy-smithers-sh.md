@@ -1,9 +1,9 @@
 ---
 title: The old smithers.sh and the Tuesday launch
-status: blocked
+status: done
 area: infra
 owner: Will (decision)
-updated: 2026-10-19
+updated: 2026-10-20
 links: [../proposals/mvp-gaps.md]
 ---
 
@@ -24,9 +24,12 @@ Will, after walking the ask-to-PR flow step by step: "I think it's fair to say n
 
 ## Next
 
-Will decides what happens to the old stack.
+Nothing. The old stack is prior art ([rulings](../rulings.md) ARCH-1, SCOPE-1).
 
 ## Questions for Will
 
-- Does any Tuesday launch of the old stack still happen, or does the new app replace it?
-- Retire the old backend once the new app opens repos?
+None. Answered by his rulings (2026-10-20):
+- **No Tuesday launch of the old stack.** The new app (`apps/mvp`) replaces it, built from scratch (SCOPE-1), and the Mac mini org that ran the launch is stopped (HOST-9, PROC-17).
+- **The old backend is retired with Google Cloud.** Will, 12:59 on 2026-10-19: "I think we can move to cloudflare only and abandon gcloud" (ARCH-1). Its code stays as prior art.
+
+Until 2026-10-20 this section asked: "Does any Tuesday launch of the old stack still happen, or does the new app replace it?" and "Retire the old backend once the new app opens repos?"

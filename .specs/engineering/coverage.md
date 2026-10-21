@@ -1,5 +1,7 @@
 # Coverage: product → spec → ticket → check
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (ARCH-1, SCOPE-8, ARCH-14). Kept as prior art.
+
 Status: v0.1 by the engineering agent (smithers-8a), 2026-10-02. Answers Codex Astra A-28. Every journey step (mvp.md §5) and every in-MVP feature row (mvp.md §6, §8 Keep rows) maps to the spec section that states its mechanism, the ticket that builds it, and the check that asserts it at its user-facing layer.
 
 Rules:

@@ -2,10 +2,78 @@
 title: Creating flows (a form card, the agent builds, a PR activates)
 status: in-progress
 area: app
-owner: repository home builder (started about 13:09 on 2026-10-20), which runs `e2e/flows.spec.ts` before building the home view; its first run failed at 13:12:56 and it changed `src/features/flows-ui/` from 13:15. Until 13:09: 0014's builder, which reported the first slice built at 13:05 on 2026-10-20 (relayed by the lead at 13:09:31), less the home view and a passing e2e. Until 13:05: 0014's builder; `e2e/flows.spec.ts` on disk at 12:10:42 on 2026-10-20 and the flows and runs feature docs rewritten at 12:35 to 12:37; no recorded e2e run, GIF or report by 12:45. Until 12:10: 0014's builder, not stopped by either weekly limit (the lead, 11:42:48 on 2026-10-20); `src/features/flows-ui/` and `src/features/runs/` with tests on disk to 11:50; no e2e and unreported by 11:55. Until 11:42: 0014's builder, resumed by the lead at 10:42 on 2026-10-20 from where it stopped (the Claude usage limit stopped it from about 08:15 to 10:40); unreported by 10:44. Until 10:42: 0014's builder, the walking skeleton from 07:30:21 on 2026-10-20 (the lead to Will); nothing on disk by 07:37; unreported. Until 07:30: Panel F; decision 0014 written 07:02:13 on 2026-10-20 (status: proposed); no builder yet. Until 07:02: Panel F (Opus merges into decision 0014; started 06:42:06 on 2026-10-20). Sol's design done 06:43; Opus's independent design written 06:56:49
+owner: flow authoring builder; plugin runtime slice next
 updated: 2026-10-20
-links: [review-round-4.md, land-to-main.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, flow-debugging.md, repository-declared-home.md, flows-and-agent.md, slash-commands.md, scratch-branches.md, sandboxes.md, todos-and-stack.md, pull-request-list-and-tabs.md, agent-ui-rendering.md, roles-and-labels.md, old-app-feature-gaps.md, decisions-for-will.md, ../decisions/0003-flows-and-the-agent.md, ../decisions/0004-agent-ui-codemode-and-rendering.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../proposals/mvp-gaps.md, dev-stack-hygiene.md]
+links: [review-round-4.md, land-to-main.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, flow-debugging.md, repository-declared-home.md, flows-and-agent.md, slash-commands.md, scratch-branches.md, sandboxes.md, todos-and-stack.md, pull-request-list-and-tabs.md, agent-ui-rendering.md, roles-and-labels.md, old-app-feature-gaps.md, decisions-for-will.md, ../decisions/0003-flows-and-the-agent.md, ../decisions/0004-agent-ui-codemode-and-rendering.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../proposals/mvp-gaps.md, dev-stack-hygiene.md, smithers-playground.md, prompt-flows-are-code-flows.md, docs-truth-pass.md]
 ---
+
+## Current specification — 2026-10-20, 17:14 PDT
+
+**What:** Draft, save, edit and execute Flow.make modules through one flow model.
+
+**Why:** Prompt flows are code flows, and authored code needs safe execution.
+
+**Current state:** At 16:36 both flows browser tests pass; a prompt draft saves a real module with an agent step, using the shared execution and run page. Saving waits for device sync. Hand-edited source still cannot run; Will’s 17:05 QuickJS answer resolves the placement decision, with implementation after plugin reviews.
+
+**Next step:** Finish reviewed QuickJS authored-code execution in personal-code-flow-sandbox.md; preserve the passing draft/run evidence and current honest refusal until then.
+
+**Open questions for Will:** None.
+
+Evidence: script-extracted human text and lead replies from session 6253ecf2, latest two hours through 2026-10-21 00:13:56 UTC; queue answers through 00:06:34 UTC; current rulings, decisions, proposals and shared briefs. Queue answers supersede older design proposals. Test results are lead-reported; this tracker runs the site build only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 16:44 PDT
+
+**What:** Create, save, edit and run flows through one Flow.make source model.
+
+**Why:** FLOW-2 makes prompt flows a kind of code flow.
+
+**Current state:** At 16:36 the lead confirmed prompt drafts save as Flow.make modules with one agent step, run through the shared run path/page, and open in the source editor. Both browser tests pass. The save waits for device sync, fixing disappearing entries. Hand-edited code saves but cannot execute and shows Needs a sandbox. Repository activation and arbitrary code execution remain unfinished.
+
+**Next step:** Retain passing recordings and implement safe sandbox execution after the plugin design’s sandbox choice; see personal-code-flow-sandbox.md.
+
+**Open questions for Will:** Decision 0017’s sandbox-only versus device QuickJS choice remains with Will; do not reopen the settled single-model ruling.
+
+Evidence: user-typed text and lead text replies extracted by script for 21:43–23:43 UTC from session 6253ecf2; rulings and queue answers override older briefs. Product receipts above are reported by the lead; this tracker ran only the site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 16:35 PDT
+
+**What:** Create, save and run flows through one Flow.make model, including prompt flows.
+
+**Why:** FLOW-2 makes prompt flows a kind of code flow.
+
+**Current state:** At 16:24 two passing chaptered flows videos returned to the queue. At 16:34 the lead confirmed the flows browser test passes: saving waits for the flow to reach the device, fixing its disappearance from the list. This supersedes the 16:02 failures. Full repository activation and flow-unification work have no new completion receipt here.
+
+**Next step:** Retain the passing save-sync regression and review videos; finish the remaining code-flow unification and activation receipts.
+
+**Open questions for Will:** None; the prompt-flow ruling is settled.
+
+Evidence: lead text replies extracted by script from the session’s latest two hours through 23:34:16 UTC; current rulings and queue answers take precedence over older designs. Reported product-test receipts only; this tracker ran no product tests.
+
+## Prior tracker record (retained)
+
+
+## Current specification — 2026-10-20, 16:04 PDT
+
+**What:** Create, save and run flows using one Flow.make model; prompt flows are code flows.
+
+**Why:** FLOW-2 forbids a second flow model; the authoring experience must pass real browser tests.
+
+**Current state:** At 16:02 the lead reported both flows browser tests failing, superseding the earlier passing run and 15:56 replacement-video claim. At 16:03 the flows review was removed pending passing recordings. No later repair receipt is present.
+
+**Next step:** Assigned builder reproduces and fixes both failures, retains regressions and records passing chaptered journeys before returning the review.
+
+**Open questions for Will:** None; the unification ruling is already settled.
+
+Evidence: user-typed messages and lead text replies extracted with a script from session 6253ecf2 for the latest two hours through 23:03:42 UTC; rulings, queue answers, shared briefs/designs and current decisions, proposals, TODOs and rules. Reported receipts only; this tracker ran no product tests. Later rulings supersede older proposals.
+
+## Prior tracker record (retained)
+
 
 ## What
 
@@ -24,7 +92,7 @@ People and the agent author new flows: a repository's `.smithers/flows/<name>/fl
 
 **Decided in 0014 (07:02, proposed):**
 - **Three kinds of flow, and the kind decides where it runs.** App flows (`src/features/<f>/flows.ts`, the team's) run as today. Prompt flows are a `SKILL.md` (frontmatter `name`, `description`, `flows`, optional `model`, plus instructions) that the trusted agent loop reads; they run on the person's own browser engine. Code flows are `.smithers/flows/<name>/flow.ts` and run only in a job sandbox.
-- **Your own flows ("Mine") are prompt flows** stored in Postgres and synced to your devices. There is no personal code flow. A repository's flows reach its default branch only through a PR a person merges.
+- **Your own flows ("Mine") are prompt flows** stored in Postgres and synced to your devices. There is no personal code flow. (Superseded 14:26:24 by Will's ruling: one flow model, a person's flow is `Flow.make` source; see [prompt flows are code flows](prompt-flows-are-code-flows.md).) A repository's flows reach its default branch only through a PR a person merges.
 - **`flow/new` is one durable flow on the browser engine.** A form card (where, name, what it should do) starts it, with the current repository as default. Each round drafts, asks optional questions with the default it assumed, checks the draft and saves the draft row; only a blocking question parks it on `HumanTask`. **Try** runs the draft once, **Save** stores a personal flow, **Propose** opens a PR through 0012.
 - **Activation receipt:** when the mirror's head moves, `flow/refresh` finds `.smithers/flows/` without running it, checks each flow, and moves its active revision in `flow_bindings` by compare-and-set; a failure shows `Merged · not active`.
 - **One catalog:** the slash menu, the Flows pages and the agent read one join of the app registry, the person's flows and the repository's active bindings; every non-app flow runs through `flow/run { ref, input }`. Nothing shadows an app flow.
@@ -89,10 +157,19 @@ Planned before only as `mvp-gaps.md` item 8: "Let teams author and safely activa
 - Round 4's double-save finding is still open: `worker/PersonalFlows.ts` (unchanged since 12:18:01) marks the draft `saved` with no `status = 'ready'` guard.
 - **13:13 on 2026-10-20: the lead raised the dev budget to 10,000,000 tokens** (`apps/mvp/.env`, not committed) and restarted the shared dev server; a first restart at 13:11 left two servers running until 13:13:19.
 - **13:12:05 to 13:12:56: the repository home builder's first run of `flows.spec.ts` failed** (scratchpad `home-view/flows1.log`), during the two-server window: after Save the page returned to `/app/flows`, but the new flow's `Run count-…` button didn't appear within 5 s; the table showed only an earlier run's flow. 13:15:34 to 13:16:44: `src/features/flows-ui/` `actions.ts`, `store.ts` and `faults.test.ts` changed. No passing run by 13:17. Status stays `in-progress` until the e2e passes.
+- **13:17:41 to 13:20:39 on 2026-10-20: `e2e/flows.spec.ts` passed** on the restarted dev server: "flows: draft a flow, save it, run it, watch its run page, then stop a run and retry it", 1 passed in 2.9 min (scratchpad `home-view/flows2.log`). GIF: `~/Desktop/smithers-mvp/gifs/flows-flows.gif` (13:20:55). The walking skeleton works end to end on a personal prompt flow. Not built yet: Propose (a repository flow through a PR, L1), code flows (L2) and the home view.
+- **13:31:14, Will on flows:** "Flows are the most important part of oour product and technology and should be supported very very well but we should be thoughtful and high quality with adding support to flows." To help, he asked for the [Smithers Playground](smithers-playground.md), whose flows page gets the deepest treatment. 13:32:34, the lead: "Given that flows are the core of the product, I'll hold every flow feature to a higher bar."
+- 13:26:18: 0014 Q1 asked again as quick question 4 of 4. 13:31:14: Will answered the other three, not this one. 13:32:34, the lead: "You didn't answer question 4 (personal flows are prompt-only for now), so I'll build on the recommended yes."
+- **14:26:24 on 2026-10-20, Will answered 0014 Q1 in the queue, reversing the recommended yes:** "No everything is a flow this ruling is clear prompt flows are just a type of code flow". The lead's yes from 13:32:34 no longer holds.
+- **14:27:52, the lead:** "an agent is merging the two into one flow model, built with `Flow.make` from `@smthrs/flow`. A flow drafted from a prompt is saved as flow source you can open, edit and run like any other flow. Hand-edited personal code stays refused, with the reason shown, until a host can run it safely." Tracked in [prompt flows are code flows](prompt-flows-are-code-flows.md).
 
 ## Next
 
-From 13:09 on 2026-10-20: the repository home builder gets `e2e/flows.spec.ts` passing on the restarted dev server, with its GIF, then builds the [home view](repository-declared-home.md). The double-save fix goes with round 4's routing ([review round 4](review-round-4.md)). The slice lands in the lander's app round ([land to main](land-to-main.md)).
+From 14:30 on 2026-10-20: the unification agent's report ([prompt flows are code flows](prompt-flows-are-code-flows.md)), the flows e2e rerun on the new model, and 0014 rewritten to match; then the [home view](repository-declared-home.md), the double-save fix in the [P3 cleanup](review-round-4-p3-cleanup.md) and landing in round 3 ([land to main](land-to-main.md)). Repository flows (L1) wait for [pull requests](pull-request-list-and-tabs.md).
+
+Until 14:30 on 2026-10-20 the next step was, from 13:20 on 2026-10-20: the builder's report; the [home view](repository-declared-home.md); the double-save fix in the [P3 cleanup](review-round-4-p3-cleanup.md); landing in round 3 ([land to main](land-to-main.md)). Repository flows (L1) wait for [pull requests](pull-request-list-and-tabs.md); code flows (L2) for [sandboxes](sandboxes.md). Every flow feature meets the higher bar Will set at 13:31.
+
+Until 13:46 on 2026-10-20 the next step was, from 13:09 on 2026-10-20: the repository home builder gets `e2e/flows.spec.ts` passing on the restarted dev server, with its GIF, then builds the [home view](repository-declared-home.md). The double-save fix goes with round 4's routing ([review round 4](review-round-4.md)). The slice lands in the lander's app round ([land to main](land-to-main.md)).
 
 Until 13:09 on 2026-10-20 the next step was, from 11:07 on 2026-10-20: the walking skeleton as before; the double-save fix goes with round 4's routing ([review round 4](review-round-4.md)).
 
@@ -111,6 +188,10 @@ Until 07:02 the next step was: Opus merges both designs into 0014 (status: propo
 
 ## Questions for Will
 
-- Q1 of 0014: your own flows, usable in any repository, are prompt flows (a `SKILL.md` of instructions plus the flows it may call, stored in Smithers and synced to your devices); code flows (`flow.ts`) live only in repositories and run only in a sandbox. Recommended: yes. It ships the first slice before sandboxes exist; Sol's alternative, every authored flow as sandboxed code, waits for sandboxes and pull requests. (Relayed by the lead at 07:30:21 on 2026-10-20; the first slice builds on yes until Will changes it.)
+None. 0014 Q1 answered 14:26:24 on 2026-10-20: no; prompt flows are a type of code flow.
+
+Until 14:30:
+
+- Q1 of 0014: your own flows, usable in any repository, are prompt flows (a `SKILL.md` of instructions plus the flows it may call, stored in Smithers and synced to your devices); code flows (`flow.ts`) live only in repositories and run only in a sandbox. Recommended: yes. It ships the first slice before sandboxes exist; Sol's alternative, every authored flow as sandboxed code, waits for sandboxes and pull requests. (Relayed by the lead at 07:30:21 on 2026-10-20; the first slice builds on yes until Will changes it. Asked again 10:42:03 and 13:26:18; not answered at 13:31:14, when Will answered the other three quick questions; the lead builds on yes, 13:32:34.)
 
 Until 07:02: None yet. Panel F sends at most 3 with 0014. Sol's recommended defaults: repository scope first; Personal flows are owner-only; App flows are published by a human Admin.

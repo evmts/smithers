@@ -1,5 +1,7 @@
 # ADR 0003: Live code co-editing: one live channel, documents addressed by topic, the daemon as disk authority
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (ARCH-14, BR-1). Kept as prior art.
+
 Status: proposed (2026-10-07). T-COL-10 ([#3508](https://github.com/smithersai/smithers/issues/3508)) records the write-precondition contract below. Provider security qualification and owner acceptance remain pending; this record does not enable a provider. T-COL-01's spike evidence ([#3441](https://github.com/smithersai/smithers/issues/3441)) is retained below. Topology: documents in the daemon, by T-COL-11's rule ([#3553](https://github.com/smithersai/smithers/issues/3553)), pending smithers-3f and smithers-38 review.
 
 ## Every write carries `base_digest`; stale is refused

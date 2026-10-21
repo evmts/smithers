@@ -81,13 +81,13 @@ CHECKs hold the shape: `waiting` is set exactly while `waiting` or `needs_you`; 
 | Piece | What it is |
 |---|---|
 | `runs` | the person's `runs`, an Electric collection kept on the device (`persist: { schemaVersion: 1 }`) |
-| `status-local` | this tab's rows about each run's latest question: `draft`, `hidden`, `sending`, `focus`; a row for an older `version` counts as none |
+| `status-local` | this tab's rows about each run's latest question: `draft`, `sending`, `focus`; a row for an older `version` counts as none |
 | `statuses` | each answer's state, question, answer, draft and focus: `messages` left-joined to `runs` and `status-local` |
-| `needs`, `latest` | the open questions, oldest first, with `hidden`; and the latest answer's state |
-| `answer(id, value)`, `setDraft`, `hide`, `focus`, `focusFirst` | the card's Answer, its field, a toast's Hide and Answer, and the header pill |
+| `needs`, `latest` | the open questions, oldest first; and the latest answer's state |
+| `answer(id, value)`, `setDraft`, `focus`, `focusFirst` | the card's Answer, its field, a toast's Answer, and the header pill |
 | followers | delivery (`run/deliver` per answered question), the title (`TabTitle`, the host's `document.title`), and `agent.status.shown` |
 
-The views are `@smthrs/ui`'s `AgentStatusPill`, `NeedsYouCard`, `ToastStack` and `Toast` (`components/`): `AnswerStatus` under each answer, `HeaderStatus` first in the header row, and `NeedsYouToasts` under the header (`ToastStack`'s `inline` placement): the open composer docks over the column's foot, so a toast there would hide behind it. A toast fades in after 300 ms, so a question answered at once never flashes.
+The views are `@smthrs/ui`'s `AgentStatusPill` and `NeedsYouCard` (`components/`): `AnswerStatus` under each answer, and `HeaderStatus` first in the header row. The question's toast is the feed's ([notifications.md](notifications.md)): its row for the run's launcher reads `needs_you` with the question, its Answer runs `focus`, and Hide is synced to the person's other devices. It sits in the shell's one stack under the header (`src/screens/app/Toasts.tsx`, `ToastStack`'s `inline` placement): the open composer docks over the column's foot, so a toast there would hide behind it. A toast fades in after 300 ms, so a question answered at once never flashes.
 
 ## Observability
 
@@ -110,15 +110,15 @@ No record carries a question, an option or an answer (tests read the logs for th
 - **Ten minutes to answer.** A question closes after `ASK_WITHIN_MS`, inside `chat/Expire`'s 25 minutes; a longer one needs `chat/Expire` to read the run's row (0015 phase 2).
 - **A waiting run writes nothing**, so after `ANSWER_TURN_LIVE_SECONDS` a later question starts beside it, as for any quiet answer.
 - **A tab closed while a question is open costs one model call.** The frame that asked was in flight, so the next tab's engine asks its model again; the call it makes joins the question already parked (`flows.test.ts`).
-- **Only the asker answers**, and only their own runs sync. Branch and repository scopes come with 0009's watches.
-- **No browser notification yet**, and no failed toast: 0015 phase 2.
+- **Only the asker answers**, and only their own runs sync. Other people see a run on their branch through the feed ([notifications.md](notifications.md)).
+- **No browser notification yet**: 0015 phase 2. A failed answer toasts for 4 s through the feed.
 
 ## Tests
 
 | Test | Proves |
 |---|---|
 | `src/features/status/flows.test.ts` | On the Node host with a scripted model and the real routes: the run reports working, needs you and done; an answer resumes it; an approval; an answer from another device delivered by `run/deliver`; a second answer is `not_open`; a question that can't be shown; a run killed while it needs you resumes and asks again; waiting reported once while the turn waits; a failed answer reports failed |
-| `src/features/status/status.test.ts` | The tab's layer on two Node devices whose engines lead: the question in `statuses`, `needs` and the title on both, this tab's draft, focus and Hide, an answer from the other device delivered through sync, an approval, waiting behind a question, a failure |
+| `src/features/status/status.test.ts` | The tab's layer on two Node devices whose engines lead: the question in `statuses`, `needs` and the title on both, this tab's draft and focus, an answer from the other device delivered through sync, an approval, waiting behind a question, a failure |
 | `src/features/status/faults.test.ts` | Injected `RunsClient` faults: a question reported again, a delivery before the question parks, an approval refused, an answer sent again, refusals final |
 | `src/features/status/api.test.ts`, `reporter.test.ts` | Every answer `RunsClient` reads; what the reporter sends, skips and fails with |
 | `worker/Runs.test.ts` | Every route and status, the CHECK-backed transitions, the shape's filter and columns, records without the question or answer |

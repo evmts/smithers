@@ -1,5 +1,7 @@
 # UI components: design builds, engineering wires
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (ARCH-1, SCOPE-8, ARCH-14). Kept as prior art.
+
 Version 0.5 · 2026-10-03 · Owner: engineering (contract), design (components) · Rulings: Will, 2026-10-02 (spec.md §14.2.1); minimal-code synthesis v1 §2 and v2, 2026-10-03
 
 Design builds Views and visual components. Engineering uses the existing card file as the container, mapping data to props and callbacks to catalog commands. `CardRenderers.tsx` is the only mount point. Each card ticket owns its schema changes. No separate Container class, fixture layer or golden layer exists. The ticket that wires a View deletes the old card it replaces in the same change. Check: C-UI-13.

@@ -1,11 +1,28 @@
 ---
 title: Branch sandboxes (feature 5)
-status: todo
+status: in-progress
 area: infra
-owner: unassigned; from 13:21:12 on 2026-10-20 it waits for the [branch terminal](branch-terminal.md) slice. Until 13:21: Panel S (Opus lead, Sol)
+owner: agent-in-the-sandbox builder (from 13:43:30 on 2026-10-20) keeps a sandbox awake while something runs; the per-branch `SandboxObject` and container shipped with the branch slice (13:42:00). Until 13:46: unassigned; from 13:21:12 on 2026-10-20 it waits for the [branch terminal](branch-terminal.md) slice. Until 13:21: Panel S (Opus lead, Sol)
 updated: 2026-10-20
 links: [branch-terminal.md, branch-sharing.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../todo.md, sandbox-budgets.md, ../decisions/0007-roles-and-tags.md, ../decisions/0002-local-first.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, connect-agents-sandboxes-forge.md, model-endpoint.md, token-spend-alerts.md, secrets-proxy.md]
 ---
+
+## Current specification — 2026-10-20, 16:35 PDT
+
+**What:** Keep one durable restartable machine per branch, with durable tools and persisted working copy.
+
+**Why:** Branch work must survive tabs closing and machines sleeping.
+
+**Current state:** At 16:25 the lead reported machines stay awake while work runs, sleep after 15 idle minutes and save/restore the working copy across restarts. Real-model and closed-tab tool tests passed. Secrets remain disabled pending browser proof; broader sandbox work stays in progress.
+
+**Next step:** Retain restart/lifetime evidence and finish egress proof and remaining sandbox acceptance checks.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies extracted by script from the session’s latest two hours through 23:34:16 UTC; current rulings and queue answers take precedence over older designs. Reported product-test receipts only; this tracker ran no product tests.
+
+## Prior tracker record (retained)
+
 
 ## What
 
@@ -47,10 +64,18 @@ Will: "We need to be able to run most git repos in most sandboxes. I think frees
 - **06:39 to 06:42 on 2026-10-20: the first sandbox has a driver.** Will put "ability to open terminal in an iframe" in his priorities and asked for branch sharing. Panel B's walking skeleton must reach a real shell in a real Cloudflare sandbox: a branch `SandboxObject`, a digest-pinned image, a PTY seam in `@smthrs/sandbox` and a terminal gateway Worker ([branch terminal](branch-terminal.md)). Sol estimates `standard-1` at about $0.047 to $0.074 an awake hour. Status stays `todo` until 0013 merges.
 - 13:19:52 on 2026-10-20: the lead's list: "Branch sandboxes, secrets via an egress proxy, agent connected to sandboxes and the forge: not started".
 - 13:21:12: the lead: "Branch sharing, branch sandboxes, and connecting the agent to sandboxes: these build on the branch and terminal slice that's still running." So they wait for the [branch terminal](branch-terminal.md) builder. Of the group, only [secrets through an egress proxy](secrets-proxy.md) started (13:22:52), at a seam outside the container and terminal code.
+- 13:42:00 on 2026-10-20: the branch workspace slice finished with a real container per branch under `alchemy dev` ([branch terminal](branch-terminal.md)).
+- **13:43:30: the lead started the agent-in-the-sandbox builder**, whose brief includes "the sandbox stays awake while something runs" ([connecting it all](connect-agents-sandboxes-forge.md)). Secrets through the egress proxy stay with [secrets proxy](secrets-proxy.md). **Status moved from todo to in-progress.**
+- 14:30 on 2026-10-20, on disk, the builder: the machine wakes on the first call or terminal, saves the working copy (commit and binary patch, in the branch object's storage) after every `run` and `write`, when a terminal closes and before sleep, and puts it back on the next generation's first wake; `sandbox/Keep` asks every 5 minutes and puts a generation to sleep after 15 idle minutes, never while a person's process runs ([sandbox tools](../features/sandbox-tools.md#sleep-and-wake)).
+- 14:26 on 2026-10-20: the shared dev stack got `0024_sandbox_calls` and an `alchemy dev` restart, so the sandbox tools e2e can run ([connecting it all](connect-agents-sandboxes-forge.md)). 14:30: the same builder wires the [secrets egress](secrets-proxy.md) into `SandboxObject`.
 
 ## Next
 
-From 13:21 on 2026-10-20: after the [branch terminal](branch-terminal.md) builder finishes its first slice (a real Cloudflare container per branch), extend that container into the branch sandbox of 0005, with secrets only through the [egress proxy](secrets-proxy.md).
+From 14:30 on 2026-10-20: the sandbox tools e2e, including sleep after 15 idle minutes and wake with the working copy restored. Sandbox limits stay deferred until we ship ([sandbox budgets](sandbox-budgets.md)).
+
+Until 14:30 on 2026-10-20 the next step was, from 13:43 on 2026-10-20: the builder's report on keeping a sandbox awake while a step runs. Sandbox limits stay deferred until we ship ([sandbox budgets](sandbox-budgets.md)).
+
+Until 13:46 on 2026-10-20 the next step was, from 13:21 on 2026-10-20: after the [branch terminal](branch-terminal.md) builder finishes its first slice (a real Cloudflare container per branch), extend that container into the branch sandbox of 0005, with secrets only through the [egress proxy](secrets-proxy.md).
 
 Until 13:21 on 2026-10-20 the next step was: a one-day spike after features 1 to 3. Switch to Freestyle if restoring a 2 GB workspace takes over 30 s, more than 10% of a 20-repo set fails, or the shutdown checkpoint can't finish in time.
 

@@ -1,5 +1,7 @@
 # MVP UI mock seams
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (SCOPE-3, TEST-2). Kept as prior art.
+
 Ledger of every seeded row and stub mutation behind the mounted MVP design cards
 (mount-mvp-design, 2026-10-03, parent main 0380af69). Paths are relative to
 `apps/app/src/mainview/` unless they start with `packages/` or `.specs/`.

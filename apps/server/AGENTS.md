@@ -1,5 +1,7 @@
 # Worker implementation
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (ARCH-1, ARCH-3). Kept as prior art: the old stack's smithers.sh gateway to the Go backend, deployed by Wrangler. The backend now is `apps/mvp`'s Workers, deployed by Alchemy.
+
 - Use Effect for service implementation, I/O, resource lifetimes, concurrency,
   cancellation, and failures. Services expose Effects and receive dependencies
   through typed Effect services and Layers. Effect v4 is authoritative; read

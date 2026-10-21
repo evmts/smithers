@@ -1,9 +1,9 @@
 # Superseded: friendly-alpha MVP requirements
 
-Will approved the replacement on 2026-10-02 (mvp.md M-12). The product contract is now:
+Will approved the replacement on 2026-10-02 (mvp.md M-12). Since 2026-10-20 the source of truth is [the rulings](../../apps/mvp/docs/rulings.md), and the app being built is `apps/mvp` (SCOPE-9, mvp.md M-53). The product vision behind it:
 
 - [Product overview](../../.specs/product/overview.md): what Smithers is.
-- [MVP spec](../../.specs/product/mvp.md): the user, journeys, features, decisions M-01 to M-48, cuts and release. M-44 to M-48 carry Will's 2026-10-15 release scope ([#4022](https://github.com/smithersai/smithers/issues/4022)): a GitHub UI replacement, hosted use in scope, the `/` launcher and `/owner/repo` routes, import and the GitHub App path, the basics as repository workflows, and product quality defects as release bugs.
+- [MVP spec](../../.specs/product/mvp.md): the user, journeys, features, decisions M-01 to M-57, cuts and release; M-53 to M-57 record the 2026-10-20 rulings (what we build now, hosted only, everything is a plugin, prompt flows are code flows, `mythical` later). M-44 to M-48 carry Will's 2026-10-15 release scope ([#4022](https://github.com/smithersai/smithers/issues/4022)): a GitHub UI replacement, hosted use in scope, the `/` launcher and `/owner/repo` routes, import and the GitHub App path, the basics as repository workflows, and product quality defects as release bugs.
 - [Design](../../.specs/design/README.md) and [engineering](../../.specs/engineering/README.md) specs built on it.
 
 The 2026-09-16 requirements (five maintenance jobs, setup, evals, trials and registration) are [kept in history](https://github.com/smithersai/smithers/blob/d4d2eaccab9382205f4a47e789ce560fb016b388/docs/mvp/PRODUCT.md). Don't build from them.

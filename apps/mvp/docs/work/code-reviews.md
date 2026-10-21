@@ -2,10 +2,60 @@
 title: Codex and Fable reviews
 status: in-progress
 area: process
-owner: lead (smithers-b3); review round 4 (Codex Astra, Codex Sol, Claude Opus and Claude Fable at once) running since 10:47 on 2026-10-20, tracked in `review-round-4`: Sol and Astra written 10:50 and 10:52, Opus 11:04, Fable still writing at 11:07; the Codex findings are with a worker fix agent and the branch workspace builder. Until 10:47: lead (smithers-b3); a review round is planned for after landing round 2 (Codex Astra, then fixes, then Fable) over slash commands, `navigate`, the web page flow and Jev; the client Fable fixes remain. Until 07:59: lead (smithers-b3); Fable review 2's worker and engine and hosts fixes reported done at 07:01:52 and 07:07:38 on 2026-10-20; the client fixes remain. Until 07:01: lead (smithers-b3); Fable review 2 written 06:08:31 on 2026-10-20: all five Astra fixes verified, 12 new findings (0 P0, 1 P1, 3 P2, 8 P3); from 06:09 three Fable fix agents (client, worker, engine and hosts), tracked in `fable-review-2-fixes`. Until 06:09: lead (smithers-b3); Fable review 2 running since about 05:54 on 2026-10-20 over the whole uncommitted diff (1,412 files), told what became of each Astra finding, to write scratchpad `final/fable-review-2.md`; all five Astra findings fixed (finding 3 reported 05:54:14 with the wiring agent's report). Until 05:54: lead (smithers-b3); Codex Astra review 3 written 01:18 on 2026-10-20 (five findings, two reproduced), all five accepted and assigned by 01:19: findings 1 and 4 to one fix agent, 2 to a views fix agent, 3 to the wiring agent, 5 to a sandbox host-boundary agent; Fable reviews the fixed code after; finding 2 fully done (reported about 02:08 on 2026-10-20, `ViewCodeError` included); findings 1 and 4 fixed (reported about 02:16); finding 5 fixed (reported 02:26:57); finding 3 on disk with the wiring agent, unreported; Codex checkpoint review 2 written 23:01; finding 3 fixed 23:27; finding 1 fixed 00:21 on 2026-10-20
+owner: review agents and queue curator; lead assigns fixes
 updated: 2026-10-20
-links: [review-round-4.md, agent-jev.md, site-deployment-test.md, land-to-main.md, known-host-access-burn-down.md, dev-stack-hygiene.md, ../rules.md, integrations-durable-retries.md, sign-in.md, local-first.md, flows-and-agent.md, one-sqlite-one-leader.md, repo-checks-green.md, agent-ui-rendering.md, model-endpoint.md, platform-cloudflare-edge-cache.md, sdk-test-reds.md, effect-tanstack-db-and-effect-electric.md, decisions-for-will.md, cloudflare-flow-host.md, durable-answering.md, repo-clone-and-view.md, integrations-browser-safe-root.md, land-and-deploy-mvp.md, gitremote-unicode-branches.md, web-standard-globals-rule.md, flows-root-platform-neutral.md, observability.md, app-wiring.md, auth.md, host-agnostic-flows.md, plan-identity-minified-builds.md, navigate-flow.md, web-page-flow.md, fable-review-2-fixes.md, agent-status.md, model-step.md]
+links: [review-round-4.md, agent-jev.md, site-deployment-test.md, land-to-main.md, known-host-access-burn-down.md, dev-stack-hygiene.md, ../rules.md, integrations-durable-retries.md, sign-in.md, local-first.md, flows-and-agent.md, one-sqlite-one-leader.md, repo-checks-green.md, agent-ui-rendering.md, model-endpoint.md, platform-cloudflare-edge-cache.md, sdk-test-reds.md, effect-tanstack-db-and-effect-electric.md, decisions-for-will.md, cloudflare-flow-host.md, durable-answering.md, repo-clone-and-view.md, integrations-browser-safe-root.md, land-and-deploy-mvp.md, gitremote-unicode-branches.md, web-standard-globals-rule.md, flows-root-platform-neutral.md, observability.md, app-wiring.md, auth.md, host-agnostic-flows.md, plan-identity-minified-builds.md, navigate-flow.md, web-page-flow.md, fable-review-2-fixes.md, agent-status.md, model-step.md, will-decision-queue.md, code-review-guides.md]
 ---
+
+## Current specification — 2026-10-20, 18:33 PDT
+
+**What:** Review finished implementation with Astra, fixes, then Fable, and provide understandable code guides for Will.
+
+**Why:** Agent reviews accompany Will’s review; his latest feedback requires why/how/what and architecture context.
+
+**Current state:** At 18:21 the lead reported 15 Latitude SDK fixes landed, two already fixed and one stopped for a design decision about legacy model-host persistence across restarts. At 18:29 unguided human code reviews were paused; four writers began the top 40 guides by 18:32.
+
+**Next step:** Return code to Will only with its guide and package overview. Retain review dispositions and regression evidence; keep the unresolved legacy model-host design separate from landed fixes.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered last two hours of session 6253ecf2 through 18:32 PDT; queue answers through 18:30 PDT; current rulings, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Queue answers supersede older open questions. Product receipts are reported evidence; this tracker validates only the site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 17:55 PDT
+
+**What:** Review landed code and preserve unresolved findings.
+
+**Why:** Fast landing does not replace human review or security verification.
+
+**Current state:** At 17:54:45 PDT the lead reports the core flow code first, followed by 99 alternating collaboration/security groups, then remaining code. Today’s finished app work is reported landed as c9c89a94. Ranking and landing do not imply review approval; plugin final design edits remain in progress.
+
+**Next step:** Review actual landed revisions and their regression receipts; keep security alongside collaboration, apply Astra then fixes then Fable, and retain Will’s independent review.
+
+**Open questions for Will:** None for this update.
+
+Evidence: script-extracted user-typed text and lead replies for the latest two session hours through 2026-10-21 00:54:49 UTC; queue answers through 00:42:06 UTC; current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Later rulings prevail. Product and landing receipts are lead-reported; this tracker validates the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 16:54 PDT
+
+**What:** Review finished changes and expose current code slices in Will’s decision queue.
+
+**Why:** Rapid landing still needs review of each feature and preserved regression evidence.
+
+**Current state:** At 16:51 the lead reported 15 remote SDK fixes already on main and overlapping local fixes being reconciled. Queue code review now covers everything landed in the last 24 hours so recent bursts do not displace core flow changes from this morning. At 16:53 live evals added five agent bugs with a builder assigned; these are not review approvals.
+
+**Next step:** Review the reconciled code and its receipts, keep unresolved findings visible, and follow Astra review, fixes, then Fable per PROC-1. Track live eval regressions separately; recommendations and queue placement do not imply Will’s approval.
+
+**Open questions for Will:** None.
+
+Evidence: script-extracted user-typed messages and lead replies, 21:53–23:53 UTC, session 6253ecf2. Current rulings and queue answers override older panel proposals. Product checks are lead-reported; this pass validates the site build only.
+
+## Earlier tracker history (retained)
 
 ## What
 
@@ -239,6 +289,8 @@ Will, 01:12 on 2026-10-20: "remember to have /codex astra review code and then o
   | Fixes to the Codex findings | **in progress** since about 10:53 |
   | The lead's merged list and routing of Opus's and Fable's findings | **waiting** on Fable |
 - 12:57:25 on 2026-10-20, the lead: the next review round takes an [agent status](agent-status.md) bug. Reopening a tab while the agent waits on a question makes one extra model call, where a saved model step should replay ([model step](model-step.md)).
+- **From 14:07 on 2026-10-20, Will reviews code in his queue** ([Will's decision queue](will-decision-queue.md)): the curator cuts every file into slices of related files (about 5,200 in `queue/coverage.json`, flows first) and queues them under blockers, fix checks, decisions, GIFs and designs; 117 slices are in the queue at 14:30. A file that changes after he reviewed it comes back.
+- 14:20: round 4's SDK-only P3s and `dprint` go to the Codex coordinator on the [Latitude server](second-build-machine.md) (tasks c and d).
 
 ## Next
 

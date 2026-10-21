@@ -9,7 +9,7 @@ Status: proposed (feature 2 owner, 2026-10-19). Will's three questions are at th
 3. **Cloning is the durable flow `repo/Clone`** on the Cloudflare host from the lead's durable-answering plan ([HOST-PLAN]). Its steps are Inspect, Import, Pull, AwaitSync (a durable `Poll`) and Settle, within a 10-minute `Deadline`. Retries, timers and resumption belong to the engine, never to the app.
 4. **Repository metadata lives in Postgres** (`repositories`), and Electric syncs it to every device. One row per repository holds its status, default branch and head commit.
 5. **File contents are not copied into Postgres.** The tree and file bodies are read from Code Storage at a commit SHA, so they never change. The view reads them through RepoApi's `GET` routes, whose responses cache forever. The agent reads them through the flows `repo/tree` and `repo/read` ([0004](0004-agent-ui-codemode-and-rendering.md)'s catalog). One implementation serves both.
-6. **The view is `RepoView`** (`@smthrs/ui/adapters/repo-view`), built on `FileTree`, the new `Breadcrumbs` and `DirectoryListing`, `CodeFileView` (`@pierre/diffs` `File`) and `MarkdownEditor` (Milkdown). It fetches nothing, and the host owns its location. One component serves the routed page (`size="full"`) and [0004](0004-agent-ui-codemode-and-rendering.md)'s `repo` template (`inline` in a message, `full` at `/app/views/$viewId`).
+6. **The view is `RepoView`** (`@smthrs/repo-view`, imported from its root), built on `FileTree`, the new `Breadcrumbs` and `DirectoryListing`, `CodeFileView` (`@pierre/diffs` `File`) and `MarkdownEditor` (Milkdown). It fetches nothing, and the host owns its location. One component serves the routed page (`size="full"`) and [0004](0004-agent-ui-codemode-and-rendering.md)'s `repo` template (`inline` in a message, `full` at `/app/views/$viewId`).
 7. **Routes** follow GitHub's paths: `/$owner/$repo`, `/$owner/$repo/tree/$ref/$` and `/$owner/$repo/blob/$ref/$`. Changing the domain from github.com opens the same view.
 
 ## Why
@@ -208,7 +208,7 @@ GitHub reports 0 until its hourly count runs, so a repository pushed within the 
 | **Copy permalink** (the view's one primary action; links the head SHA) | Ask (chat is feature 1 and 3's surface) |
 | States: loading, not found, binary, too large (above 512 KiB), empty, failed | |
 
-### `RepoView` (built; `@smthrs/ui/adapters/repo-view`)
+### `RepoView` (built; `@smthrs/repo-view`)
 
 ```
 RepoView { name, tree, location: {kind, path, line?, lineEnd?}, file?, readme?, size: "inline" | "full",
@@ -321,13 +321,13 @@ Registries to change outside feature 2's files:
 - `docs/libraries.md`: add the catalog row.
 - The root `PACKAGE.ts`: add the package to `sdkRuleLibraries` and `sdkRuleGenericLibraries`.
 - `packages/repo-targets/browser/browser-contract.mjs`: add its entry.
-- `apps/mvp/PACKAGE.ts`: `rootImportsOnly` must allow `@smthrs/ui/adapters/*` (question 2).
+- `apps/mvp/PACKAGE.ts`: no `rootImportsOnly` exception; `RepoView` is `@smthrs/repo-view`'s root export (question 2).
 - The fixture repository `smithersai/repo-view-fixture`.
 
 ## Questions for Will
 
 1. **Code Storage needs a paid organization and a key: $20 a month minimum, about $3.60 per GB-month stored, and no free tier.** Until one exists, the e2e and live tests skip and nothing clones outside tests. Will you create the organization (proposed name `smithers`) and give its ES256 key to the deploy secrets as `CODE_STORAGE_KEY`? Recommended: yes, the Starter plan.
-2. **Heavy UI adapters vs root imports.** `CodeFileView` (about 10 MB with Shiki) and `MarkdownEditor` (about 2.9 MB) live behind `@smthrs/ui/adapters/*` subpaths so the base barrel stays light, and `RepoView` joins them. `apps/mvp` allows only root imports. Recommended: allow `@smthrs/ui/adapters/*` as the one exception. The alternative is to move each heavy renderer into its own package with a root entry.
+2. **Heavy UI adapters vs root imports.** `CodeFileView` (about 10 MB with Shiki) and `MarkdownEditor` (about 2.9 MB) live behind `@smthrs/ui/adapters/*` subpaths so the base barrel stays light, and `RepoView` joins them. `apps/mvp` allows only root imports. Recommended: allow `@smthrs/ui/adapters/*` as the one exception. The alternative is to move each heavy renderer into its own package with a root entry. **Answered 2026-10-20: the alternative.** Will: "Yes move code viewer to it's own package". `RepoView`, `CodeFileView`, `PierreDiffView` and `MarkdownEditor` are `@smthrs/repo-view`, `TerminalFrame` is `@smthrs/terminal-frame`, and the app imports both from their roots with no exception.
 3. **Markdown: view or edit?** Recommended for now: the WYSIWYG renders read-only. Saving an edit means a commit to the Code Storage mirror, which then diverges from GitHub (public mode is one-way) and needs the auth design to say who may write.
 
 [HOST-PLAN] the lead's durable-answering plan, 2026-10-19: `@smthrs/platform-cloudflare`, the per-execution Durable Object, the engine journal in Postgres, and fencing (§5).

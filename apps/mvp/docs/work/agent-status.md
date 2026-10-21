@@ -1,11 +1,78 @@
 ---
 title: Agent status (working, needs you, waiting, failed, done)
-status: done
+status: in-progress
 area: design
-owner: agent-status builder, reported phase 1 done at 12:57 on 2026-10-20 (the lead); queued for the lander's app round, uncommitted at 13:06. Until 12:57: agent-status builder; the GIF remade at 12:43:36 on 2026-10-20 and `e2e/status.spec.ts` changed at 12:44:35; unreported by 12:45. Until 12:24: agent-status builder; browser test started 12:16 on 2026-10-20, rerunning at 12:23 before it makes its GIF (the lead); `docs/design/agent-status/status-needs-you.gif` (12:21:16) and 20 screenshots (12:22) on disk; unreported by 12:23. Until 12:23: agent-status builder, waiting from about 12:07 on 2026-10-20 for the shared heavy-test lock before running `e2e/status.spec.ts`; no result by 12:14. Until 12:07: agent-status builder, not stopped by either weekly limit (the lead, 11:42:48 on 2026-10-20); phase 1 (decision 0015, the feature doc, `e2e/status.spec.ts`, `src/features/status/`) on disk at 11:50:47; unreported by 11:55. Until 11:42: agent-status builder, resumed by the lead at 10:42 on 2026-10-20 from where it stopped (the Claude usage limit stopped it from about 08:15 to 10:40); unreported by 10:44. Until 10:42: agent-status builder, building phase 1 of 0015 from about 07:00 on 2026-10-20: `@smthrs/ui` status components, the `runs` table, `src/features/status/` and three flows; unreported. Until 07:00: agent-status designer and builder, started 06:43:04 on 2026-10-20 by the lead; decision 0015 (06:58:01) and the mock (06:59:36) written, now building the first slice; unreported. Until 06:58: designing first (decision 0015 and HTML mocks), then the first slice; unreported
+owner: agent-status feature owner; replacement video ready for review
 updated: 2026-10-20
 links: [cerebras-rate-limits.md, dev-stack-hygiene.md, ../decisions/0015-agent-status.md, ../design/agent-status/agent-status.html, notifications-and-live-work.md, flow-debugging.md, chat-message-controls.md, durable-answering.md, local-first.md, agent-ui-rendering.md, observability.md, e2e-suite-and-gifs.md, ../decisions/0009-notifications-and-live-work.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../features/agent.md, ../features/chat.md, ../rules.md, fable-review-2-fixes.md, roles-and-labels.md, model-step.md, code-reviews.md, land-to-main.md, cerebras-rate-limits.md]
 ---
+
+## Current specification — 2026-10-20, 18:26 PDT
+
+**What:** Show run status and shared answer inputs, reached through the common top-bar notifications.
+
+**Why:** Will requested live answer-input cursors at 18:06 and a top-bar notification entry at 18:23.
+
+**Current state:** The original status feature and chaptered replacement passed. New requests are assigned to co-editing and notifications builders; no passing receipt for the revised combined experience.
+
+**Next step:** Replace the separate pill with the shared unread/needs-you entry point; prove shared typing/cursors and retain host-owned person-only submission.
+
+**Open questions for Will:** None.
+
+Evidence: latest two session hours extracted by script as human text/lead replies; queue answers through 2026-10-21 01:24:15 UTC, current rulings, shared briefs/designs, decisions, proposals, TODOs and rules. Latest rulings override historical proposals. Product results are reported receipts; this pass verifies the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 18:18 PDT
+
+**What:** Show actionable agent status and questions; co-edit shared answer inputs with visible cursors.
+
+**Why:** Will’s 18:06 queue answer requests CRDT typing and the other person’s cursor in the answer box.
+
+**Current state:** The original status feature and replacement chaptered video are reported passing. The new shared-input request is assigned to [branch co-editing](branch-coediting.md), which remains in progress; it is not covered by the earlier completion receipt.
+
+**Next step:** Prove two-person concurrent answering-input edits and cursors, retain person-only submission enforcement, and return the new recording. Keep the existing status completion distinct from this pending enhancement.
+
+**Open questions for Will:** None.
+
+Evidence: queue answer at 2026-10-21 01:06:38 UTC and script-extracted lead reply at 01:06:48 UTC.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 18:04 PDT
+
+**What:** Show working, needs-you, waiting, failed and done states with actionable questions.
+
+**Why:** People need to see when a run needs their response.
+
+**Current state:** Functional completion remains reported. At 18:00:14 PDT the lead reported the replacement agent-status video now has chapters and controls and is ready for Will in the queue, addressing the 17:42 missing-timeline request. No new approval of that replacement is recorded.
+
+**Next step:** Retain the passing feature evidence and collect Will’s review of the replacement. Track person-only answer enforcement in slice 0.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies extracted by script from the latest two transcript hours through 2026-10-21 01:03:57 UTC; queue rulings through 00:42:06 UTC; current rulings and decision 0017 override historical panel proposals. Product checks and landing receipts are reported evidence; this tracker runs the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 17:44 PDT
+
+**What:** Show working, needs-you, waiting, failed and done states with actionable questions.
+
+**Why:** People need to know when a run needs their response.
+
+**Current state:** Functional completion remains reported. At 17:42 Will rejected its legacy GIF because controls and timeline were missing; the lead prioritized its chaptered replacement. This feedback provides no new functional failure receipt.
+
+**Next step:** Replace the old design-folder GIF with a passing chaptered video through the recording workstream.
+
+**Open questions for Will:** None for this update.
+
+Evidence: queue answers through 2026-10-21 00:42:06 UTC and script-filtered human text/lead replies from 22:43–00:43 UTC; current rulings and decision 0017 supersede historical briefs. Product checks are reported evidence; this tracker validates the site build.
+
+## Earlier tracker history (retained)
+
 
 ## What
 

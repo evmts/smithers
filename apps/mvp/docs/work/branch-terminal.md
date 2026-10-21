@@ -1,11 +1,114 @@
 ---
 title: A terminal in an iframe on the branch's sandbox
-status: in-progress
+status: done
 area: infra
-owner: branch workspace builder; told at 13:13 on 2026-10-20 to rerun its live-model tests on the restarted dev server; unreported by 13:17. Until 13:13: branch workspace builder, resumed by the lead at 11:42:48 on 2026-10-20 after the second weekly limit stopped it; running its first e2e from 11:49 (2 tests red at 11:55:02); unreported by 11:55. Until 11:42: branch workspace builder, resumed by the lead at 10:42 on 2026-10-20 from where it stopped (the Claude usage limit stopped it from about 08:15 to 10:40); unreported by 10:44. Until 10:42: branch workspace builder, 0013's first slice from 07:20:40 on 2026-10-20 (`infra/sandbox/Dockerfile` and `tmux.conf` on disk by 07:25, a Miniflare and Docker container spike in scratchpad `spike/` by 07:27); unreported. Panel B reported 0013 at 07:20:20. Until 07:20: Panel B; decision 0013 written 07:03:40 on 2026-10-20 (status: proposed); no builder yet. Until 07:03: Panel B (Opus merges into decision 0013; started 06:42:01 on 2026-10-20). Sol's design done 06:45; Opus's independent design written 06:55:57
+owner: branch workspace clarity builder
 updated: 2026-10-20
-links: [review-round-4.md, ../decisions/0013-branch-workspace.md, conversations-and-history.md, branch-sharing.md, sandboxes.md, sandbox-budgets.md, ssh-into-a-branch.md, web-page-flow.md, connect-agents-sandboxes-forge.md, roles-and-labels.md, infrastructure-as-code.md, old-app-feature-gaps.md, decisions-for-will.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../decisions/0007-roles-and-tags.md, ../proposals/mvp-gaps.md, docs-check-flow-outcome.md, land-to-main.md, dev-stack-hygiene.md]
+links: [review-round-4.md, ../decisions/0013-branch-workspace.md, conversations-and-history.md, branch-sharing.md, sandboxes.md, sandbox-budgets.md, ssh-into-a-branch.md, web-page-flow.md, connect-agents-sandboxes-forge.md, roles-and-labels.md, infrastructure-as-code.md, old-app-feature-gaps.md, decisions-for-will.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../decisions/0007-roles-and-tags.md, ../proposals/mvp-gaps.md, docs-check-flow-outcome.md, land-to-main.md, dev-stack-hygiene.md, ../rulings.md, chaptered-review-videos.md, branch-workspace-clarity.md]
 ---
+
+## Current specification — 2026-10-20, 17:44 PDT
+
+**What:** Offer a shared branch terminal with server-enforced access.
+
+**Why:** Editors need the same branch machine; viewers must remain read-only.
+
+**Current state:** At 17:13 the lead reported branch terminal and sharing tests passing, including raw-connection viewer refusal and immediate revocation. The earlier in-progress status is stale. Workspace clarity and new co-editing remain separate active work.
+
+**Next step:** Retain terminal access/revocation regressions and complete the requested collaboration/security code review.
+
+**Open questions for Will:** None for this update.
+
+Evidence: queue answers through 2026-10-21 00:42:06 UTC and script-filtered human text/lead replies from 22:43–00:43 UTC; current rulings and decision 0017 supersede historical briefs. Product checks are reported evidence; this tracker validates the site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 17:34 PDT
+
+**What:** Show branch conversation, sandbox terminal and views clearly.
+
+**Why:** Will rejected the revised workspace demo as an empty screen.
+
+**Current state:** The 17:13 backend/access and branch-view test completion remains evidence. The 17:30 queue rejection reopens the page presentation; the lead assigned a product fix as well as recording repair.
+
+**Next step:** Complete branch-workspace-clarity.md, retain access/terminal regressions and rerecord the corrected page.
+
+**Open questions for Will:** None.
+
+Evidence: queue answers through 2026-10-21 00:34:14 UTC; script-filtered human text and lead replies from the latest two transcript hours through 00:33:48 UTC; current rulings, decisions, proposals, TODOs, rules and shared briefs. Latest answers supersede older blockers. Product tests are reported evidence; this tracker runs the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 17:14 PDT
+
+**What:** Provide the branch conversation, persistent terminal and views with enforced sharing access.
+
+**Why:** Branch work must survive reload and remain usable when switching.
+
+**Current state:** The 17:13 completion supersedes the failing branch-views receipt: all reported branch-sharing/view tests pass. The empty-conversation flash is fixed with a test failing on the old code. Revocation closes the terminal immediately; viewers cannot write even through a raw connection.
+
+**Next step:** Retain passing terminal/reload evidence and the fresh chaptered branch recordings for review; broader sandbox and secrets work remains separately tracked.
+
+**Open questions for Will:** None.
+
+Evidence: script-extracted human text and lead replies from session 6253ecf2, latest two hours through 2026-10-21 00:13:56 UTC; queue answers through 00:06:34 UTC; current rulings, decisions, proposals and shared briefs. Queue answers supersede older design proposals. Test results are lead-reported; this tracker runs the site build only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 16:04 PDT
+
+**What:** Provide a branch conversation, persistent terminal and views.
+
+**Why:** Branch work needs usable tools and a stable conversation when switching branches.
+
+**Current state:** Docker recovered at 15:17. Later replacements were reported, but at 16:02 the lead found the branch-views browser test failing and an empty-conversation flash of about a tenth of a second on branch switches. The branch builder is fixing the flicker with a regression test. At 16:03 the branch-workspace review was withdrawn pending passing evidence. No new terminal failure was specifically reported.
+
+**Next step:** Fix branch views and the switch flicker, rerun branch/terminal/reload tests and return passing chaptered recordings.
+
+**Open questions for Will:** None.
+
+Evidence: user-typed messages and lead text replies extracted with a script from session 6253ecf2 for the latest two hours through 23:03:42 UTC; rulings, queue answers, shared briefs/designs and current decisions, proposals, TODOs and rules. Reported receipts only; this tracker ran no product tests. Later rulings supersede older proposals.
+
+## Prior tracker record (retained)
+
+
+## Current specification — 2026-10-20, 15:24 PDT
+
+**What:** Provide a persistent real shell and conversation for each branch.
+
+**Why:** Branch work needs working tools and reliable review evidence.
+
+**Current state:** Earlier four-browser-test completion remains recorded below. The Docker outage blocker cleared at 15:17:27: containers start, Postgres/Electric are up and waiting agents were told to rerun. A fresh terminal/reload rerun and the replacement branch recording are not reported.
+
+**Next step:** Rerun terminal startup and shell reconnection after reload, then return a valid chaptered video to Will.
+
+**Open questions for Will:** None.
+
+Evidence: Will’s typed messages and lead text replies, extracted from session `6253ecf2` for its latest two hours through 15:23:55 PDT; [rulings](../rulings.md), queue answers through 14:36 PDT, shared briefs/designs and current decisions, proposals, TODOs and rules. Receipts above are reported, not fresh product tests run by this tracker.
+
+## Earlier tracker history
+
+
+## Current specification — 2026-10-20, 14:55 PDT
+
+**What:** One conversation and persistent shell per branch.
+
+**Why:** Branch work needs a usable terminal and reviewable evidence.
+
+**Current state:** Four browser tests passed at 13:43, but at 14:53 the lead reports Docker unable to start containers, blocking terminals and sandboxes. Will rejected the glitching recording at 14:28. Earlier feature completion is retained below.
+
+**Next step:** Recover Docker, rerun real terminal/reload checks, and queue a valid chaptered recording.
+
+**Open questions for Will:** None; the lead can settle implementation details.
+
+Evidence: Will's typed messages and the lead's text updates in session `6253ecf2`, 12:54–14:55 PDT; [rulings](../rulings.md); queue answers through 14:36 PDT. These are reported receipts, not a new verification run by the tracker.
+
+## Earlier tracker history
+
+Previous owner record: branch workspace builder, finished at 13:42:00 on 2026-10-20 (4 e2e tests pass against `alchemy dev` with a real container; its review findings fixed); uncommitted, lands in round 3. Until 13:46: branch workspace builder; told at 13:13 on 2026-10-20 to rerun its live-model tests on the restarted dev server; unreported by 13:17. Until 13:13: branch workspace builder, resumed by the lead at 11:42:48 on 2026-10-20 after the second weekly limit stopped it; running its first e2e from 11:49 (2 tests red at 11:55:02); unreported by 11:55. Until 11:42: branch workspace builder, resumed by the lead at 10:42 on 2026-10-20 from where it stopped (the Claude usage limit stopped it from about 08:15 to 10:40); unreported by 10:44. Until 10:42: branch workspace builder, 0013's first slice from 07:20:40 on 2026-10-20 (`infra/sandbox/Dockerfile` and `tmux.conf` on disk by 07:25, a Miniflare and Docker container spike in scratchpad `spike/` by 07:27); unreported. Panel B reported 0013 at 07:20:20. Until 07:20: Panel B; decision 0013 written 07:03:40 on 2026-10-20 (status: proposed); no builder yet. Until 07:03: Panel B (Opus merges into decision 0013; started 06:42:01 on 2026-10-20). Sol's design done 06:45; Opus's independent design written 06:55:57
+
 
 ## What
 
@@ -114,10 +217,18 @@ The old app had a branch terminal (`apps/app/src/mainview/cards/TerminalCard.tsx
 - 13:06:34: the lander left the branch workspace out of round 2 and waits for this builder to stop before landing all of `apps/mvp` ([land to main](land-to-main.md)).
 - 13:11:34, scratchpad `bw0013/full.log`: the builder's full app suite run, 17 failed of 1,234 tests in 10 files, none of them a branch or terminal file (7 in `issues/issues.test.ts`, others in triage, chat controls, agent, Jev, repo, `ShapeProxy` and `db/Database.test.ts`, all other builders' in-flight work). 13:13:43 to 13:15:08 (`bw0013/cov.log`): a two-file run, 70 passed with 8 unhandled errors.
 - **13:13:57, the lead:** the dev server was restarted with a 10,000,000-token daily budget, and "I've told the message-controls and branch agents to rerun their live-model tests" ([dev stack hygiene](dev-stack-hygiene.md)). `e2e/branch-workspace.spec.ts` is unchanged since 12:08:46; no passing e2e or report by 13:17.
+- **13:29:46 to 13:32:18 on 2026-10-20: `e2e/branch-workspace.spec.ts` passed, 4 tests in 2.5 min** (scratchpad `e2e-results/.last-run.json`): a branch's conversation only; the terminal, where a reload keeps the shell; branch views from there and from its URL; a second branch's own machine, checkout and shell. GIFs in `~/Desktop/smithers-mvp/gifs/branch-workspace/` (13:32:26 to 13:32:29): `branch-workspace-branch-conversation.gif`, `branch-workspace-branch-terminal.gif`, `branch-workspace-branch-views.gif`, `branch-workspace-second-branch-terminal.gif`.
+- **13:42:00, the builder's report:** "The 0013 first slice is finished ... All the review findings are fixed and tested." Fixed this round: the `openTerminal` helper hung when a terminal was already open, and the reload test lost its last keystroke. New unit tests: `worker/flows/TerminalOpen.test.ts` and conversation tests in `ExecutionHost`, `Views`, `Chat` and `ShapeProxy`; `worker/branch/*.ts` and migration `0014` joined the coverage gate at 100%. The client-tests sub-agent fixed 6 bugs; the worst, a 365-day timer overflowed and closed the terminal panel about 1 ms after attach. Also fixed: Retry didn't restart branch shapes; a late answer could overwrite the next branch's page or terminal; `/web` let a person type `conversationId`.
+- Still red outside the slice: `importRules` and the worker typecheck each fail once in `worker/ExecutionHost.test.ts`; the full unit suite has 11 failures in 8 files (Database 0019, a `chat/Expire` handoff test, chat, telemetry and boot). Known gaps: Retry doesn't reconnect a branch's views shape; a cut-short Electric live response can lose a row on a device ([the packages](effect-tanstack-db-and-effect-electric.md)).
+- The builder also added an `allow` list to `rootImportsOnly` and allowed `@smthrs/ui/adapters/*` for `TerminalPanel.tsx` and `RepoPage.tsx`, which Will's 13:31 answer replaces ([repo-view package split](repo-view-package-split.md)).
+- **13:43:30, the lead to Will:** "The branch workspace is finished. Each branch has its own conversation and a real shell in a terminal panel, and reloading the page brings back the same shell." To try it: open `http://localhost:1337/octocat/Spoon-Knife/tree/test-branch`, click Terminal, then Open terminal, run `git log` and reload; then open `/tree/change-the-title`. The lead started [branch sharing](branch-sharing.md), the [agent in the sandbox](connect-agents-sandboxes-forge.md), the sync bug and landing round 3.
+- **Status moved from in-progress to done.** Nothing is deployed.
 
 ## Next
 
-From 11:07 on 2026-10-20: the first slice's report as before, and the lead's routing of round 4's R4-10, R4-16, R4-18 and R4-19 ([review round 4](review-round-4.md)). R4-10 breaks the first real clone through GitHub, so the slice's live test can't pass without it. Nothing is deployed.
+From 13:42 on 2026-10-20: lands in round 3 ([land to main](land-to-main.md)). Follow-ups: Retry reconnects the views shape (the [P3 cleanup](review-round-4-p3-cleanup.md)); the first deploy proves the container on Cloudflare.
+
+Until 13:46 on 2026-10-20 the next step was, from 11:07 on 2026-10-20: the first slice's report as before, and the lead's routing of round 4's R4-10, R4-16, R4-18 and R4-19 ([review round 4](review-round-4.md)). R4-10 breaks the first real clone through GitHub, so the slice's live test can't pass without it. Nothing is deployed.
 
 Until 11:07 on 2026-10-20 the next step was, from 07:20 on 2026-10-20: the first slice's report: a branch's terminal in its iframe running `git log` in a real container, the same shell after a reload, and a second branch with its own terminal, tested locally on Docker. Nothing is deployed.
 

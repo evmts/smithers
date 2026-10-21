@@ -1,5 +1,7 @@
 # ADR 0001: One Smithers product, several assemblies
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (ARCH-1). Kept as prior art.
+
 Status: accepted for the pre-release cutover (2026-09-21). Superseded for the Mac install by [ADR 0002](0002-mac-install.md). Implements the ownership decision in [issue 1655](https://github.com/smithersai/smithers/issues/1655). The source inventory below describes the starting point; it is not a claim that extraction is complete.
 
 ## Decision

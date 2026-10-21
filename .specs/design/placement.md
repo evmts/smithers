@@ -1,5 +1,7 @@
 # Machine placement: this Mac and other computers
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (ARCH-14, SCOPE-8). Kept as prior art.
+
 > **Deferred until after launch** (M-40 revised 2026-10-06, spec §8.13.0). The MVP builds none of this page; it records the agreed design so the MVP leaves room for it. Remote computers are the first item after launch.
 
 Design for #3706 (Will, 2026-10-04: sandboxes on this machine and on remote boxes such as Smithers Cloud, feature flagged). The product contract is #3706's "Product position", which lands as M-40 in [`../product/mvp.md`](../product/mvp.md). The engineering contract is 8a's. This page answers three questions:

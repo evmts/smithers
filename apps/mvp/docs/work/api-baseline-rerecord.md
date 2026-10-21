@@ -1,11 +1,27 @@
 ---
 title: Record the API baseline again after the SDK agents land
-status: todo
+status: done
 area: sdk
-owner: unassigned; on the lead's shared-file rules in scratchpad `final/WIRING.md` (about 07:00 on 2026-10-20); raised by the repo-checks agent's report (about 02:06 on 2026-10-20)
+owner: lander and public API record owner
 updated: 2026-10-20
 links: [repo-checks-green.md, agent-root-browser-safe.md, code-reviews.md, one-sqlite-one-leader.md, app-wiring.md, flows-root-platform-neutral.md, land-and-deploy-mvp.md, observability.md, plan-identity-minified-builds.md, land-to-main.md, review-round-4.md, model-step.md, repo-clone-and-view.md, model-endpoint.md]
 ---
+
+## Current specification — 2026-10-20, 18:04 PDT
+
+**What:** Refresh the public API baseline after the finished SDK changes land.
+
+**Why:** The release record must match the shipped public package surface.
+
+**Current state:** At 18:00:14 PDT the lead reported the updated public API record landed on main. This closes this refresh round, without asserting that future SDK changes need no new review.
+
+**Next step:** Retain the landed record and change evidence; refresh again when a later change alters the public API.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies extracted by script from the latest two transcript hours through 2026-10-21 01:03:57 UTC; queue rulings through 00:42:06 UTC; current rulings and decision 0017 override historical panel proposals. Product checks and landing receipts are reported evidence; this tracker runs the maintainer-site build only.
+
+## Earlier tracker history (retained)
 
 ## What
 

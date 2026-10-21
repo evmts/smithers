@@ -1,19 +1,21 @@
 # 0014: Flows you can create, debug and see, and a repository's own home view
 
-Status: proposed (2026-10-20; design panel: Opus as lead and merger, and Sol). It answers the last item of Will's 2026-10-20 list: "ability to create a repositories own home view is important. Stuff related to flows debugging flows creting flows which wasn't listed is another one." It builds on [0002](0002-local-first.md) (the outbox), [0003](0003-flows-and-the-agent.md) (the registry and parity), [0004](0004-agent-ui-codemode-and-rendering.md) (views, the presentation realm, the frame and forms), [0005](0005-sandboxes-secrets-and-the-forge.md) (sandboxes), [0007](0007-roles-and-tags.md) (roles), [0008](0008-auth.md) (actors), [0009](0009-notifications-and-live-work.md) (`runs` rows and run acts) and [0011](0011-the-agent-runs-in-the-browser.md) (the browser engine). Decisions 0012 (the git flow) and 0013 (the branch workspace) are designed beside it. Nothing here is built. Opus and Sol designed independently; the [appendix](#appendix-opus-sol-and-final-compared) compares them point by point, and Will's one question is at the end.
+Status: proposed (2026-10-20; design panel: Opus as lead and merger, and Sol). §1, §2 and Q1 amended 2026-10-20 by Will's ruling on Q1: one flow model, below. It answers the last item of Will's 2026-10-20 list: "ability to create a repositories own home view is important. Stuff related to flows debugging flows creting flows which wasn't listed is another one." It builds on [0002](0002-local-first.md) (the outbox), [0003](0003-flows-and-the-agent.md) (the registry and parity), [0004](0004-agent-ui-codemode-and-rendering.md) (views, the presentation realm, the frame and forms), [0005](0005-sandboxes-secrets-and-the-forge.md) (sandboxes), [0007](0007-roles-and-tags.md) (roles), [0008](0008-auth.md) (actors), [0009](0009-notifications-and-live-work.md) (`runs` rows and run acts) and [0011](0011-the-agent-runs-in-the-browser.md) (the browser engine). Decisions 0012 (the git flow) and 0013 (the branch workspace) are designed beside it. Nothing here is built. Opus and Sol designed independently; the [appendix](#appendix-opus-sol-and-final-compared) compares them point by point, and Will's one question is at the end.
 
 ## Decision
 
-1. **A flow is one of three kinds, and its kind decides where it may run.**
+1. **Everything is a flow, and there is one flow model: `Flow.make` from `@smthrs/flow`.** Will, 2026-10-20, answering Q1: "No everything is a flow this ruling is clear prompt flows are just a type of code flow". A flow drafted from a prompt is not a second kind stored another way. It is flow source, a typed `Flow.make("<name>", { ... })` module with its payload, success, error and body, written by the system, so it reads, edits, versions and runs like any other flow and can grow into hand-written code.
 
-   | Kind | Source | Written by | Runs on |
+   | Where it lives | Source | Written by | Runs on |
    |---|---|---|---|
-   | App flow | `src/features/<f>/flows.ts` | the team | the browser engine, or Cloudflare by 0011's need rule; unchanged |
-   | Prompt flow | `SKILL.md`: frontmatter (`name`, `description`, `flows`, optional `model`) and instructions | a person or the agent | the person's own browser engine, through the agent driver |
-   | Code flow | `.smithers/flows/<name>/flow.ts`, `export default Flow.make(...)` | a person or the agent | a job sandbox only (0005), started remotely |
+   | The app | `src/features/<f>/flows.ts` | the team | the browser engine, or Cloudflare by 0011's need rule; unchanged |
+   | A person ("Mine") | one `flow.ts` module per revision, in Postgres | the system from a prompt, or the person and the agent by hand | by its placement, below |
+   | A repository | `.smithers/flows/<name>/` (M-49); a `flow.mdx` or `SKILL.md` there lowers to the same `@smthrs/flow` flow through the registry's `Executable` | a person or the agent, merged by a person | a job sandbox only (0005), started remotely |
 
-   A prompt flow is data: the trusted agent loop reads it, and its cells reach the world only through `ctx.call`. A code flow is repository code: it never runs in the tab, the engine worker or the Worker.
-2. **Scope never confers trust.** A person's own flows ("Mine", Will's flows usable in any repository) are prompt flows stored in Postgres and synced to that person's devices. A repository's flows are files in `.smithers/flows/<name>/` (M-49) and reach the default branch only through a pull request a person merges (M-04, M-39). There is no personal code flow, because code needs a repository and a sandbox. A flow run in a repository acts with its person's grants there, never more (0007 §5).
+   **A person's flow runs where its source says, never where a flag says.** Its placement is read from its bytes. Exactly the module the system writes for a drafted flow (its description, instructions and calls are the only data in it, and its body is one agent step, `<name>/agent`) is `client`: the person's own engine runs it, pinning that data and running the step as the engine declares it (`flow/run/prompt`), so the engine only ever runs a body the system wrote. Any other code, a hand edit included, is `sandbox`.
+2. **Scope never confers trust, and a person's own code runs only where repository code may.** A person's own flows ("Mine", Will's flows usable in any repository) are stored in Postgres and synced to that person's devices. A repository's flows are files in `.smithers/flows/<name>/` (M-49) and reach the default branch only through a pull request a person merges (M-04, M-39). The two differ only in where they live and who may run them, never in kind. Repository code runs only once a host runs repository code (0005), and a person's own hand-written code stays inside the same boundary: it never runs in the tab, the engine worker or the Worker.
+   - **The limit today:** no host runs a person's code yet (0005's job sandboxes are unbuilt). A `sandbox` revision is saved and readable, but its run fails `FlowNeedsSandbox` before anything runs, and the Flows page says `Needs a sandbox`. A drafted flow as drafted runs. Drafting it again writes a drafted module that runs here again. This limit lifts when a job sandbox runs `SandboxedFlow` for personal flows (L2).
+   - A flow run in a repository acts with its person's grants there, never more (0007 §5).
 3. **Authoring is one durable flow, `flow/new`, on the browser engine.** A form card (where, name, what it should do) starts it, and the repository defaults to the one the person is in (Will, 2026-10-13). Each round drafts the files, asks optional questions with the default it assumed, checks the draft and writes the draft row. It parks on a `HumanTask` only for a blocking question. **Try** runs the draft once, **Save** stores a personal flow, and **Propose** opens a pull request through 0012.
 4. **A repository flow becomes runnable through an activation receipt.** When the Code Storage mirror's head moves, `flow/refresh` discovers `.smithers/flows/` at that commit without running it, checks each flow, and advances that flow's active revision in `flow_bindings` by compare-and-set. A flow that fails keeps its previous revision active and shows `Merged · not active` (mvp.md §6.12, "Pinned versions").
 5. **One catalog.** The slash menu, the Flows pages, the agent's `ctx.flows` and later the CLI read one join: the app registry, the person's flows and the open repository's active bindings. Every non-app flow runs through one registered flow, `flow/run { ref, input }`, so the registry's laws hold unchanged. A personal or repository flow never shadows an app flow.
@@ -22,14 +24,15 @@ Status: proposed (2026-10-20; design panel: Opus as lead and merger, and Sol). I
 8. **Step inputs and outputs are content.** They reach only people who may read the run. The host's read passes every value through `@smthrs/journal`'s `Redaction`, never releases a `Redacted` schema field, drops provider error text and HTTP headers in favor of closed codes, and clips each value to 16 KiB. The page renders values as text. No value reaches a log, span or metric.
 9. **Four acts on a run:** `run/cancel` (live), `run/retry` (settled: a new linked execution, on the pinned version or the current one), `run/resume` (`Control.resume`'s meaning: restart a run that hasn't settled and that no host drives; a durable timer is never skipped) and `run/answer` (0009). Cancel and Resume carry the row's `seq` they acted on, and a stale one is refused. An act on a run another device or host holds becomes a 0009 `run_commands` row that the owning engine applies; the row reads `Stopping` until it settles.
 10. **A repository's home is data at `.smithers/home.json`** on the default branch's head. Its blocks are v4's vocabulary, whose schema moves to `@smthrs/views` as `Home`, and `@smthrs/ui` renders them natively. The tree is one tab away, and `/tree/` and `/blob/` links open what they name. A `view` block draws a flow's `view.tsx` through 0004's presentation realm and frame (phase 3). Arriving at a home runs no flow.
-11. **People merge; agents propose.** The agent may author, try, save its person's flows and propose repository flows. It never merges or activates, and a prompt flow's catalog never includes the `flow/*` or `run/*` acts.
+11. **People merge; agents propose.** The agent may author, try, save its person's flows and propose repository flows. It never merges or activates, and a person's flow's catalog never includes the `flow/*` or `run/*` acts.
 
 ## Why
 
-- **"Repository code never in the app's realm" leaves one safe executor in the browser: the agent.**
-  - A prompt flow is text the agent loop reads, with the same trust as a file `repo/read` returns (0004 §1, eval 11). Its catalog is its own `flows:` list intersected with what its person may run.
-  - The registry already models this. A skill "listing its tools is naming what the model may call, not what runs it", and it delegates to the host's `agent` driver (`packages/smithers/agent/registry/docs/concepts/delegation.md:26`).
-  - So the first slice needs no sandbox. Sandboxes (0005) are unbuilt, and the browser engine (B1) runs today.
+- **One flow model is Will's ruling and the flow-layering rule.** "Never add a second node or graph model" (root `AGENTS.md`). `@smthrs/flow` already makes a prompt flow a kind of code flow: `Flow.make` takes a typed prompt renderer and "lowers to one ordinary action implemented by the host" (`packages/smithers/flows/flow/src/Flow/make.ts:160-170`). A stored `SKILL.md` would have been a second format with its own parser, checks and runner.
+- **"Repository code never in the app's realm" still leaves one safe executor in the browser: the agent.**
+  - A drafted flow's instructions are text the agent loop reads, with the same trust as a file `repo/read` returns (0004 §1, eval 11). Its catalog is its own `flows` list intersected with what its person may run.
+  - So the engine may run a drafted flow only while its source is exactly what the system wrote: then the body that runs is the system's agent step and only the data came from the draft. Telling that apart needs no evaluation: re-render the module from the data read out of it and compare the bytes (`readGenerated`, `apps/mvp/src/features/flows-ui/source.ts`).
+  - So the first slice needs no sandbox. Sandboxes (0005) are unbuilt, and the browser engine (B1) runs today. Anything else waits for the sandbox, as repository code does.
 - **Discovery is already static.** `Discovery` scans flows "without loading their bodies" (`packages/smithers/agent/registry/src/Discovery.ts:46-62`). `ModuleMetadata` reads a `flow.ts` declaration's description, payload JSON Schema, placement and `modelInvocable` from its source text (`registry/src/internal/ModuleMetadata.ts:26-60`). `executionDigest` binds a run to the exact bytes it ran (`registry/src/Descriptor.ts:841`).
 - **The engine keeps what a debugger needs.**
   - Its tables: `flows_runs`, `flows_attempts` and `flows_journal_events` (`packages/smithers/flows/run-store/src/migrations/0001_initial.ts:20,91`; `packages/smithers/flows/journal/src/migrations/0001_initial.ts:20`).
@@ -41,7 +44,7 @@ Status: proposed (2026-10-20; design panel: Opus as lead and merger, and Sol). I
 - **v4's authoring proved the shape and showed two faults.** `create-flow` had optional and blocking questions (`.smithers/flows/create-flow/flow.mdx:25-46`). The app found its output by scanning the journal for file writes (`apps/app/src/mainview/state/FlowAuthoringReceipts.ts:4-48`), the files landed in a machine's working copy outside review, and the only check was an automatic plan. Here a draft is a row, and repository files reach `main` only by a merged pull request.
 - **The spec asks for activation, not presence.** "If loading fails, the previous version stays active and the card shows 'Merged · not active' with the error" (mvp.md §6.12). A flow file on `main` is not yet a runnable flow.
 - **v4's home contract is right, and this repository already uses it.** A home is data, not code; a missing or broken declaration keeps the tree with one sentence; a button runs only when pressed (`apps/app/src/mainview/cards/RepositoryHomeView.tsx:16-50,254-262`). `.smithers/home.json` already declares one, so our own repository works the day W6 lands.
-- **`SKILL.md` keeps a personal flow portable.** It follows the Agent Skills format: a `name` of up to 64 lowercase letters, digits and hyphens, and a `description` of up to 1,024 characters ([skills]). The same file is a repository flow under M-49 and a Claude Code skill. It lowers to `@smthrs/flow` through the registry's `Executable`, so the root `AGENTS.md` flow-layering rule holds.
+- **A module keeps a personal flow portable.** The same `flow.ts` is a repository flow under M-49, and `@smthrs/registry`'s `ModuleFlow` reads it without importing it, as `Discovery` reads a repository's (added for this, 2026-10-20). Superseded reasoning, kept for the record: **`SKILL.md` kept a personal flow portable.** It follows the Agent Skills format: a `name` of up to 64 lowercase letters, digits and hyphens, and a `description` of up to 1,024 characters ([skills]). The same file is a repository flow under M-49 and a Claude Code skill. It lowers to `@smthrs/flow` through the registry's `Executable`, so the root `AGENTS.md` flow-layering rule holds.
 
 ## Consequences
 
@@ -50,7 +53,8 @@ Status: proposed (2026-10-20; design panel: Opus as lead and merger, and Sol). I
   - `@smthrs/platform-browser`: `inspect` and `list` on `BrowserEngine` and its worker protocol. Today it offers `start`, `result`, `cancel`, `signal` and `events` only (`src/BrowserEngine.ts:135`).
   - `@smthrs/views`: `Home`, the block schema, moved from `packages/smithers/build/targets/src/Home.ts`, which re-exports it. `@smthrs/targets` can't load in a browser (`docs/libraries.md`, "Known violations").
   - `@smthrs/effect-code-storage`: `CodeStorageFileSystem`, a read-only Effect `FileSystem` over a repository at a commit, so `Discovery` runs in the Worker (L1).
-  - `@smthrs/ui`: the components in §5.
+  - `@smthrs/ui`: the components in §5, and `Textarea`'s `code` for a flow's code page.
+  - `@smthrs/registry`: `ModuleFlow.fromModule`, a `flow.ts`'s descriptor and declared tag read from text, for checking a person's flow source (built 2026-10-20).
 - **The remote door returns with its first consumer.** `POST /api/flows/run` starts a code flow, as `features/remote-flows.md` "No remote door" foresaw (L2).
 - **0009's run acts are spelled `run/cancel` and `run/retry`,** lowercase verbs as `app/theme/set` is. 0009 gains `run/resume`, and `run/cancel` and `run/resume` carry the row's `seq`.
 - **Library catalog entries used:** `@smthrs/flow`, `@smthrs/agent` (`AgentAction`, `ModelStep`), `@smthrs/registry`, `@smthrs/engine-store`, `@smthrs/journal`, `@smthrs/control`, `@smthrs/gateway`, `@smthrs/platform-browser`, `@smthrs/platform-cloudflare`, `@smthrs/platform-node` (`SandboxedFlow`), `@smthrs/sandbox`, `@smthrs/views`, `@smthrs/ui`, `@smthrs/integrations`, `@smthrs/effect-code-storage`, `@smthrs/artifacts` (`ImmutableCache`), `@smthrs/effect-tanstack-db`, `@smthrs/effect-electric` and `@smthrs/observability`.
@@ -78,7 +82,7 @@ flow_drafts    (id uuid PRIMARY KEY, actor_id uuid NOT NULL,
                 checks jsonb,      -- [{check, ok, code?}]
                 questions jsonb,   -- [{id, text, assumed, blocking, answer?}], at most 5 a round
                 failure text, flow_id uuid, pull_number int, created_at timestamptz, updated_at timestamptz)
-flow_bindings  (repo_id text, name text, kind text CHECK (kind IN ('prompt','code')),
+flow_bindings  (repo_id text, name text,
                 active_sha text, active_digest text, description text, input jsonb, model_invocable bool,
                 minimum text, candidate_sha text, failure text, updated_at timestamptz,
                 PRIMARY KEY (repo_id, name))                                              -- L1; only flow/refresh writes it
@@ -117,11 +121,13 @@ Each is registered in `src/flows/registry.ts` and is model-invocable unless the 
 |---|---|---|---|---|
 | `flow/new` | `{ scope: "person" \| "repo", repo?, name?, request }` | client; model calls through the endpoint, role `agent` | person: signed in; repo: Member | `/flow.new`, New flow, the agent |
 | `flow/answer` | `{ draftId, round, answers: [{ id, value }] }` | client; completes the round's `HumanTask` when it lives here | the draft's author | the card. User-only: "The agent that asked can't answer itself." |
-| `flow/try` | `{ draftId, input }` | prompt: client; code: remote by need (sandbox) | the draft's author; a Guest's code waits for a Member (0007 §1) | Try, the agent |
+| `flow/try` | `{ draftId, input }` | a drafted module as drafted: client; other code: remote by need (sandbox) | the draft's author; a Guest's code waits for a Member (0007 §1) | Try, the agent |
 | `flow/save` | `{ draftId }` | client; ChatApi admits the outbox write | the draft's author, scope person | Save, the agent |
+| `flow/read` | `{ name, revision? }` | client read | its owner | Code, the agent |
+| `flow/write` | `{ name, revision, source }` | client; checked as every revision is, admitted while `revision` is the latest | its owner | Save on the code page, the agent |
 | `flow/propose` | `{ draftId }` | client, through 0012's branch and pull-request flow (GitHub App token: remote by need) | Member | Propose, the agent |
 | `flow/refresh` | `{ repo, sha }` | remote: it runs when the mirror moves, with every device off, over the Code Storage key | the flow that moves `repositories.head_sha` | none; not invocable |
-| `flow/run` | `{ ref, input }` | prompt: client; code: remote by need, `POST /api/flows/run` | person: its owner; repo: `repo:flow-run` (Member, or the flow's minimum) | `/flow.run <name>`, `/<name>` when no app command has it, Run, the agent |
+| `flow/run` | `{ ref, input }` | a drafted module as drafted: client; other code: remote by need, `POST /api/flows/run` (L2; refused `FlowNeedsSandbox` until then) | person: its owner; repo: `repo:flow-run` (Member, or the flow's minimum) | `/flow.run <name>`, `/<name>` when no app command has it, Run, the agent |
 | `flow/list` | `{ repo? }` | client read | readers of the scope | `/flows`, the agent |
 | `flow/delete` | `{ flowId }` | client | its owner | Delete, the agent |
 | `run/list` | `{ scope?, status? }` | client read | run readers (below) | `/runs`, the agent |
@@ -151,28 +157,32 @@ A round never waits on an optional question. An answer given after the round set
 
 **Static checks** (in `Check`, and again wherever a write is admitted):
 
-| Check | Prompt flow | Code flow |
-|---|---|---|
-| Parses | `MarkdownFlow` reads it without warnings | `ModuleMetadata` finds a `Flow.make` default export |
-| Name | `^[a-z][a-z0-9-]{0,63}$`; matches its directory; free in its scope; outside the app namespaces (`app`, `chat`, `repo`, `ui`, `view`, `flow`, `run`) | the same, and the declared tag equals the directory |
-| Description | 1 to 1,024 characters | present |
-| Calls | each `flows:` entry is an app flow its person may run or a flow in the same scope; never `flow/*` or `run/*` | from `capabilities`, checked in the sandbox |
-| Model | absent, or a role the endpoint knows (`agent`); never a provider's model id | n/a |
-| Placement | none declared | `sandbox` |
-| Size | 64 KiB | 64 KiB for all files |
-| Typecheck, tests, plan | n/a | `flow/check` in a job sandbox (L2); a plan is a declaration preview, not proof |
+Every revision is checked the same way, whoever wrote it: its source read by `@smthrs/registry`'s `ModuleFlow`, without importing it.
 
-**`flow/run` for a prompt flow:**
+| Check | Every flow's source | Also, a repository's |
+|---|---|---|
+| Parses | a `Flow.make` default export, read without a warning | |
+| Name | the tag `Flow.make` declares: `^[a-z][a-z0-9-]{0,63}$`; outside the app namespaces (`app`, `chat`, `repo`, `ui`, `view`, `flow`, `run`); the flow's name; free in its scope | matches its directory |
+| Description | 1 to 1,024 characters | |
+| Calls | each `flows` entry is an app flow its person may run or a flow in the same scope; never `flow/*` or `run/*` | from `capabilities`, checked in the sandbox |
+| Model | absent, or a role the endpoint knows (`agent`); never a provider's model id | |
+| Placement | none declared: the host reads it from the source (§1) | `sandbox` |
+| Size | 64 KiB | 64 KiB for all files |
+| Typecheck, tests, plan | a drafted module is type-checked once, in the app's tests | `flow/check` in a job sandbox (L2); a plan is a declaration preview, not proof |
+
+**`flow/run` for a person's flow:**
 
 ```
 flow/run (client)
-  Load    sealed: the SKILL.md at its ref (a flow_revisions row, or RepoApi's blob at the sha); digest checked
-  Agent   AgentAction "flow/Agent", seat agent, system FLOW_SYSTEM + the rendered instructions, input args;
-          catalog = flows: ∩ (the app catalog for this person's role ∪ same-scope prompt flows); nesting ≤ 3
+  Load    sealed: the flow.ts at its revision (a flow_revisions row); digest and checks verified, then its placement:
+          sandbox ─▶ FlowNeedsSandbox, before anything runs (until L2)
+          client  ─▶ its instructions and calls, pinned in the child's payload
+  Agent   flow/run/prompt: AgentAction "flow/run/agent", seat agent, system FLOW_SYSTEM, the module's own prompt
+          (its instructions, then the input); catalog = flows ∩ (the app catalog for this person's role); nesting ≤ 3
   ─▶ the agent's answer text
 ```
 
-**`flow/run` for a code flow (L2).** The device calls `POST /api/flows/run`. FlowApi admits it: sign-in, `repo:flow-run`, repository read, the binding's active revision and the budget. It then starts `flow/Sandboxed { repo, sha, name, input, actor }` on the `FlowExecution` Durable Object. That flow wakes a job sandbox at the commit, discovers the flow there, and runs `SandboxedFlow.execute` under the person's capability ceiling, with egress through 0005's `Egress`. It never trusts a descriptor the device sent. The device shows the remote run.
+**`flow/run` for a repository's flow, or a person's `sandbox` code (L2).** The device calls `POST /api/flows/run`. FlowApi admits it: sign-in, `repo:flow-run`, repository read, the binding's active revision and the budget. It then starts `flow/Sandboxed { repo, sha, name, input, actor }` on the `FlowExecution` Durable Object. That flow wakes a job sandbox at the commit, discovers the flow there, and runs `SandboxedFlow.execute` under the person's capability ceiling, with egress through 0005's `Egress`. It never trusts a descriptor the device sent. The device shows the remote run.
 
 **`flow/refresh` (L1).** It is started, execution `flow-refresh:<repo>:<sha>`, by the flow that moves `repositories.head_sha` (`repo/Clone`'s Settle and 0012's sync). It runs `Discovery` over `CodeStorageFileSystem` at the commit, runs the static checks (code flows: `flow/check` too), and writes each binding by compare-and-set on `active_sha`. A failure sets `candidate_sha` and `failure` and leaves the active revision. A root `flows/` folder gets M-49's one diagnostic and runs nothing.
 
@@ -240,7 +250,7 @@ Presentation code (a pure `View` and `reduce`) runs in 0004's QuickJS realm, whi
 │ What  [Summarize merged PRs since the last tag]                   │
 │ ? Which tag pattern?         [v*          ] assumed               │
 │ ? Post as a draft release?   [no          ] assumed               │
-│ SKILL.md ▸                   ✓ parses  ✓ name  ✓ calls            │
+│ flow.ts ▸                    ✓ parses  ✓ name  ✓ calls            │
 │                                              [Try]  [Propose]     │
 └───────────────────────────────────────────────────────────────────┘
 ```
@@ -296,8 +306,10 @@ Presentation code (a pure `View` and `reduce`) runs in 0004's QuickJS realm, whi
 | A merged flow fails `flow/refresh` | The previous revision stays active; the Flows page says `Merged · not active` with the code |
 | The mirror's head moves | `flow/refresh` runs once per commit; running runs keep their pinned revision |
 | RepoApi can't read the home | The tree, with `Couldn't read home` |
-| A prompt flow calls outside its list | The cell gets a refused call naming the flow; the run continues |
-| Prompt flows nest deeper than 3 | Refused the same way |
+| A flow calls outside its list | The cell gets a refused call naming the flow; the run continues |
+| Flows nest deeper than 3 | Refused the same way |
+| A person's flow whose code isn't the drafted module, before L2 | `FlowNeedsSandbox` before anything runs; the Flows page says `Needs a sandbox` |
+| A code edit from a revision another followed | `409 stale`; the code page says `Changed since you opened it` |
 | A browser run is opened on another device | `On another device`, with its status from the `runs` row |
 | A remote run is forgotten or unreadable | `Expired`, or `No access` on a `403` |
 | This device's engine worker fails | The engine-failure state with Reload; Resume on a stuck local run restarts the worker |
@@ -317,7 +329,7 @@ No record carries a request, a draft file, a question or answer, a personal flow
 | `flow.save`, `flow.propose` | log, span | `draftId`, `outcome`, `code` |
 | `flow.refresh` | log, span | `repoId`, `sha`, `flows`, `activated`, `failed`, `durationMs` |
 | `smithers_flow_activations` | counter | `kind`, `outcome` |
-| `flow.dispatch` (exists) | log, span | adds `source` (`app`, `person`, `repo`), `kind` (`prompt`, `code`) and the digest's first 12 hex characters |
+| `flow.dispatch` (exists) | log, span | adds `source` (`app`, `person`, `repo`), `placement` (`client`, `sandbox`) and the digest's first 12 hex characters |
 | `run.inspect` | log, span | `host` (`local`, `remote`), `outcome`, `events`, `bytes`, `clipped`, `durationMs` |
 | `smithers_run_acts` | counter | `act` (`cancel`, `retry`, `resume`, `answer`), `host`, `outcome` |
 | `smithers_run_command_ack_ms` | histogram | `host_kind` |
@@ -338,7 +350,8 @@ No record carries a request, a draft file, a question or answer, a personal flow
   - a blocking question parks on its `HumanTask`, and `flow/answer` completes it;
   - a killed engine resumes with no second model call.
 - `flow/save`'s admission: size, name, duplicate and a signed-out actor.
-- `flow/run` for a prompt flow:
+- `flow/run` for a person's flow:
+  - code that isn't the drafted module, byte for byte, is refused `FlowNeedsSandbox` before any model call;
   - it calls only its list, and anything else is a typed refusal;
   - nesting stops at 3;
   - a model role the endpoint lacks is refused.
@@ -357,7 +370,7 @@ No record carries a request, a draft file, a question or answer, a personal flow
 - F6: the run page of a `repo/Clone` run on Cloudflare.
 - F7: Stop on a live local run reads `Stopping`, then `Cancelled`; keyboard only, both themes.
 
-**Evals** (0004's suite; live runs by hand): "make a flow that …" calls `flow/new` with the current repository and never answers with steps for the person to follow; a prompt flow's injected text can't reach a flow outside its list.
+**Evals** (0004's suite; live runs by hand): "make a flow that …" calls `flow/new` with the current repository and never answers with steps for the person to follow; a drafted flow's injected text can't reach a flow outside its list.
 
 **Benchmarks** (`pnpm bench`, against a baseline): folding a 5,000-event journal, a run-list query over 1,000 runs, and a home's first paint.
 
@@ -368,7 +381,7 @@ No record carries a request, a draft file, a question or answer, a personal flow
 2. `/app/runs` and the run page over the local engine with `RunTrace`; `run/cancel` and `run/retry` on local runs.
 3. The migration for `flows`, `flow_revisions` and `flow_drafts`; their shapes; admission of `flow/save`'s outbox write.
 4. `flow/new` with optional questions, `flow/answer`, `flow/try` and `flow/save`, scope person; the `flow-draft` view. A draft whose scope is a repository can be tried, and Propose arrives with L1.
-5. `flow/run` for prompt flows; the joined catalog in the slash menu and the agent; a `run` view with Inspect.
+5. `flow/run` for drafted flows; the joined catalog in the slash menu and the agent; a `run` view with Inspect.
 
 **Then, by file ownership.** `src/flows/registry.ts`, `PACKAGE.ts`, the vitest configs, the router and the migration numbers go through the lead.
 
@@ -377,7 +390,7 @@ No record carries a request, a draft file, a question or answer, a personal flow
 | W1 SDK reads | `packages/smithers/flows/engine-store/src/RunInspection.ts`; `packages/smithers/flows/platform-browser/src/{BrowserEngine.ts,internal/Protocol.ts,internal/Engine.ts}` | none | one trace on SQLite and Postgres; redaction; 100% |
 | W2 SDK UI | `packages/smithers/ui/src/{run-page,flow-draft-view,repository-home,json-value}/**` | W3 for the home | conformance, keyboard and both themes |
 | W3 SDK schemas | `packages/smithers/ui/views/src/Home.ts`, the re-export in `packages/smithers/build/targets/src/Home.ts` | none | one schema; this repository's `.smithers/home.json` decodes |
-| W4 app flows | `apps/mvp/src/features/flows/**` | W1 | authoring, the catalog and prompt runs |
+| W4 app flows | `apps/mvp/src/features/flows/**` | W1 | authoring, the catalog and runs of drafted flows |
 | W5 app runs | `apps/mvp/src/features/runs/**`, `apps/mvp/src/screens/runs/**`, `apps/mvp/worker/RunApi.ts` | W1, W2 | local and remote run pages; the four acts |
 | W6 app home | `apps/mvp/src/features/home/**`; the Home and Code tabs in `apps/mvp/src/screens/repo/**`, with the repository owner | W2, W3 | F5 |
 | W7 evidence | `apps/mvp/e2e/{flows,runs,home}.spec.ts`, `apps/mvp/evals/flows.eval.ts`, the benchmarks, `apps/mvp/docs/features/{flow-authoring,runs,home}.md` | with W4 to W6 | §8 |
@@ -388,7 +401,7 @@ No record carries a request, a draft file, a question or answer, a personal flow
 
 ## Questions for Will
 
-1. **Your own flows, usable in any repository, are prompt flows: a `SKILL.md` of instructions plus the flows it may call, stored in Smithers and synced to your devices. Code flows (`flow.ts`) live only in repositories and run only on a sandbox.** This ships the first slice before sandboxes exist and keeps repository code out of the browser. Sol's alternative makes every authored flow code in a sandbox, which holds the slice until sandboxes and pull requests land. Recommended: yes.
+1. **Answered no, 2026-10-20 at about 14:25.** The question was "Your own flows, usable in any repository, are prompt flows: a `SKILL.md` of instructions plus the flows it may call. Code flows (`flow.ts`) live only in repositories and run only on a sandbox." Will: "No everything is a flow this ruling is clear prompt flows are just a type of code flow." The same day: "Flows are the most important part of our product and technology and should be supported very very well but we should be thoughtful and high quality with adding support to flows." §1 and §2 record the result: one flow model, a person's flow stored as `Flow.make` source, a drafted flow running on the device only as drafted, and other code waiting for a sandbox. Migration `0025_flow_source` converted the `SKILL.md` flows the first slice stored.
 
 ## Sources
 
@@ -437,12 +450,12 @@ Opus and Sol wrote their designs independently on 2026-10-20; Opus merged them. 
 
 | Point | Opus | Sol | Final | Why |
 |---|---|---|---|---|
-| What a flow is | prompt flows (`SKILL.md`, run by the agent in the browser) and code flows (sandbox) | one shape: `flow.ts`; every authored flow is code in a sandbox | Opus; question 1 | The registry already delegates a skill to the host's agent (verified, `delegation.md:26`), and M-49 lists `SKILL.md`. The slice ships before sandboxes. |
-| Personal flows | prompt only, in Postgres | code in `@smthrs/artifacts` objects, in a sandbox | Opus | 64 KiB of text fits a row that Electric syncs; `apps/mvp` wires no artifact store |
+| What a flow is | prompt flows (`SKILL.md`, run by the agent in the browser) and code flows (sandbox) | one shape: `flow.ts`; every authored flow is code in a sandbox | Will, question 1: one shape, `Flow.make` source; a drafted module as drafted runs in the browser, other code on a sandbox | "prompt flows are just a type of code flow" (Will, 2026-10-20). The slice still ships before sandboxes, because the drafted module's body is the system's own |
+| Personal flows | prompt only, in Postgres | code in `@smthrs/artifacts` objects, in a sandbox | code (`flow.ts` source) in Postgres | 64 KiB of text fits a row that Electric syncs; `apps/mvp` wires no artifact store |
 | App-wide scope | none | App flows published by an Admin | none | Will asked for flows usable in any repository and in one; a person's own flows meet both. An Admin catalog adds an approval path nobody asked for |
 | Activation | runnable when the file is on the head | an activation receipt; a failed load keeps the previous version | Sol's, as `flow_bindings` and `flow/refresh` | mvp.md §6.12 requires `Merged · not active` with the previous version kept |
 | Where discovery runs | the device, over RepoApi reads | a sandbox with no credentials | the Worker, over `CodeStorageFileSystem` | Discovery parses text and runs nothing (verified, `Discovery.ts:46-62`), so it needs no sandbox; one server pass per commit beats a request per file on every device |
-| Validation and tests | static checks in the round | static checks, typecheck and the flow's tests in a sandbox | both: static in the round; `flow/check` in a sandbox for code flows | prompt flows have nothing to typecheck; code flows need their real dependencies |
+| Validation and tests | static checks in the round | static checks, typecheck and the flow's tests in a sandbox | both: static in the round; `flow/check` in a sandbox for code the system didn't write | the drafted module is type-checked once in the app's tests; other code needs its real dependencies |
 | Safe values | readers only, `Redaction`, a 16 KiB clip, text | an allowlisted projection; arbitrary values hidden by default | Opus, plus Sol's host-boundary rules: no `Redacted` field, no provider error text or headers | The brief asks for each step's input and output; hiding them by default hides what debugging needs |
 | Resume | `Control.resume`: restart a run no host drives | continue a parked run; answer a human wait; a timer is never skipped | Opus's meaning with Sol's timer rule; Answer stays its own act | 0009 already names Answer; a durable timer is the flow's own intent |
 | Stale and remote acts | not covered | `expectedVersion`; acts queued for an absent browser host | Sol's, as the row's `seq` and 0009's `run_commands` | stops a stale Stop; Stop works across devices |
@@ -451,6 +464,6 @@ Opus and Sol wrote their designs independently on 2026-10-20; Opus merged them. 
 | Home storage | read at the commit on the device | a `repository_homes` table | Opus | an immutable read at a commit needs no table and no flow |
 | Pull-request writes | through 0012 | `createCommitOnBranch` with `expectedHeadOid`; reconcile by listing `head` and `base` | Sol's, through 0012 | verified on GitHub's pages; one fenced multi-file commit, and no duplicate pull request |
 | Run reader | `RunInspection` in `@smthrs/engine-store` and `@smthrs/gateway`'s `RunTrace` | a projection contract across control, journal and sync, in `packages/rpc` | Opus | both pieces exist or extend existing modules (verified); `packages/rpc` is the old app's zod package |
-| Walking skeleton | a personal prompt flow: create, save, run, inspect | a repository code flow: sandbox tests, a pull request, a merge, activation and the home | Opus; Sol's path becomes L1 and L2 | a skeleton that waits on two unbuilt platforms (0005, 0012) doesn't walk |
+| Walking skeleton | a personal drafted flow: create, save, run, inspect | a repository code flow: sandbox tests, a pull request, a merge, activation and the home | Opus; Sol's path becomes L1 and L2 | a skeleton that waits on two unbuilt platforms (0005, 0012) doesn't walk |
 | Tests | the slice, durability, two devices, the home | adds spoofed rows, fuzzing, gap-free paging and benchmarks | both | broader failure coverage |
-| Questions for Will | two | none | one | the split between prompt and code flows decides the slice, and the designs disagree on it; the other is settled by M-04 and Will's 2026-10-13 ruling |
+| Questions for Will | two | none | one, answered | the split between prompt and code flows decided the slice, and the designs disagreed on it; Will ruled one model (question 1). The other is settled by M-04 and Will's 2026-10-13 ruling |

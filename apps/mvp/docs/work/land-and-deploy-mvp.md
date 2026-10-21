@@ -1,11 +1,111 @@
 ---
 title: Land and deploy the new app
-status: blocked
+status: in-progress
 area: process
-owner: Will (yes to deploy). Landing on `main`: the lander agent from 06:42:50 on 2026-10-20 ([land to main](land-to-main.md)). Until 06:39 on 2026-10-20: Will (code review)
+owner: deploy agent; retrying after pushed Neon fix bbe0b0e9
 updated: 2026-10-20
-links: [site-deployment-test.md, land-to-main.md, app-wiring.md, ../infrastructure.md, ../../../../AGENTS.md, infrastructure-as-code.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md, sign-in.md, integrations-browser-safe-root.md, gitremote-unicode-branches.md, integrations-effect-httpclient.md, flows-root-platform-neutral.md, flows-and-agent.md, cloudflare-flow-host.md, repo-checks-green.md, local-first.md, pwa.md, agent-ui-rendering.md, repo-clone-and-view.md, code-reviews.md]
+links: [site-deployment-test.md, land-to-main.md, app-wiring.md, ../infrastructure.md, ../../../../AGENTS.md, infrastructure-as-code.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md, sign-in.md, integrations-browser-safe-root.md, gitremote-unicode-branches.md, integrations-effect-httpclient.md, flows-root-platform-neutral.md, flows-and-agent.md, cloudflare-flow-host.md, repo-checks-green.md, local-first.md, pwa.md, agent-ui-rendering.md, repo-clone-and-view.md, code-reviews.md, will-decision-queue.md, cloudflare-electric-service-binding.md, private-hosted-infrastructure.md]
 ---
+
+## Current specification — 2026-10-20, 19:44 PDT
+
+**What:** Deploy pushed main through Alchemy and prove the live feature set.
+
+**Why:** Will authorized deploys while there are no users.
+
+**Current state:** At 19:38 the lead reports production revision 7b96f878 loads, syncs, redirects to GitHub with the production callback and refuses signed-out protected requests. Sign-in fails until the GitHub App accepts the callback. Later features await round 4 and redeployment. Branch sandboxes lack a published container image and production proof.
+
+**Next step:** After GitHub App settings are corrected, test live sign-in, model call and webhook. Redeploy the pushed round-4 revision and test its actual features; publish and verify the sandbox image separately.
+
+**Open questions for Will:** Add the production callback and webhook in smitherspreviewrelease settings; deployment owner supplies the exact validated values and secret reference. Switching the webhook replaces the retired jjhub destination.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, approximately 17:44–19:44 PDT; queue answers through 19:38 PDT; rulings, decisions, proposals, TODOs, rules and shared feature/host/panel briefs and designs. Latest Will text and queue answers prevail. Product receipts are lead-reported; tracker validation is the site build. Existing execution ownership is preserved.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 18:44 PDT
+
+**What:** Deploy pushed main through Alchemy and verify the actual production feature set.
+
+**Why:** Will authorized the first production deploy and subsequent deploys while there are no users.
+
+**Current state:** At 18:37 the lead reports a live app: load, GitHub sign-in redirect and signed-out refusal pass. Electric sync failed because one Worker fetched another through workers.dev. Fix 7b96f878 is landed and redeploy plus sync verification are running. Spend alerts, TODOs, secrets, notifications, triage and sharing are explicitly not deployed yet. Earlier bundle-limit fix 850bd45f and Neon fix bbe0b0e9 remain part of the record.
+
+**Next step:** Obtain successful redeploy and live sync receipts; smoke-test the deployed revision and list its actual features. Ship later work in the next pushed commit round. Give Will validated callback/webhook settings and a secret reference. The lead’s displayed live address and callback hostname differ; verify the canonical hostname before configuration. Replace inter-Worker public fetch with the linked private binding.
+
+**Open questions for Will:** GitHub App callback and webhook configuration still require Will; exact canonical values must be validated by the deploy owner.
+
+Evidence: user-typed text and lead replies extracted by script from session 6253ecf2 for 23:45–01:44 UTC (16:45–18:44 PDT); queue answers through 18:30 PDT; current rulings, decisions, proposals, TODOs, rules and shared feature/host/panel briefs and designs. Latest words and queue answers supersede older plans. Product receipts are reported by the lead; this tracker verifies only the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 18:33 PDT
+
+**What:** Deploy the pushed main revision through Alchemy, then verify the live site.
+
+**Why:** Will approved the first deploy and permits further deploys while there are no users.
+
+**Current state:** The Neon restore-window fix bbe0b0e9 addressed the first failure. At 18:29 the lead reported a second fix, 850bd45f: two production bundles exceeded offline-cache size limits. Redeploy is retrying; no success or smoke-test receipt exists.
+
+**Next step:** Finish the redeploy, smoke-test live load, sync, sign-in boundaries, model calls and spend alerts, and run live browser journeys. Supply production callback/webhook values; keep hosted specifics in the private infrastructure repository.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered last two hours of session 6253ecf2 through 18:32 PDT; queue answers through 18:30 PDT; current rulings, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Queue answers supersede older open questions. Product receipts are reported evidence; this tracker validates only the site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 18:04 PDT
+
+**What:** Deploy apps/mvp through Alchemy from pushed main and verify the live site.
+
+**Why:** Will approved deployment and waived fresh asks while there are no users.
+
+**Current state:** At 18:03:57 PDT the lead reported the first deploy failed because Neon free allows six hours of restore history, not the configured day. The one-line fix landed as bbe0b0e9 and redeployment is underway. Existing empty database/resources are reused; no data loss is reported. No completed deploy or live smoke-test receipt exists.
+
+**Next step:** Finish the retry, then prove live load, sync, signed-out asking refusal, model calls, spend alerts and browser journeys. Supply exact production callback/webhook settings. Track the exposed Code Storage key’s rotation separately.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies extracted by script from the latest two transcript hours through 2026-10-21 01:03:57 UTC; queue rulings through 00:42:06 UTC; current rulings and decision 0017 override historical panel proposals. Product checks and landing receipts are reported evidence; this tracker runs the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 17:55 PDT
+
+**What:** Deploy apps/mvp through Alchemy from pushed main.
+
+**Why:** Will approved deployment; while there are no users, a fresh approval is unnecessary.
+
+**Current state:** At 17:54:23 PDT the lead reports deployment of c9c89a94 underway from a clean workspace. The prerequisite landing round is complete. No production address, completed deployment or live smoke-test receipt is reported.
+
+**Next step:** Finish deployment and real live load, sync, signed-out asking refusal, model, spend-alert and browser checks. Supply production callback/webhook details for GitHub App configuration. Stop on missing settings or destructive data replacement.
+
+**Open questions for Will:** None for this update.
+
+Evidence: script-extracted user-typed text and lead replies for the latest two session hours through 2026-10-21 00:54:49 UTC; queue answers through 00:42:06 UTC; current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Later rulings prevail. Product and landing receipts are lead-reported; this tracker validates the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 17:34 PDT
+
+**What:** Deploy apps/mvp from clean main through Alchemy.
+
+**Why:** Will answered yes to the first production deploy at 17:32.
+
+**Current state:** Approval is recorded in question:first-mvp-deploy. At 17:33 the lead assigned preflight and deployment preparation; the landing round is still running. No deployment or live smoke receipt exists. The old approval blocker is resolved.
+
+**Next step:** Finish non-mutating plan and permission/config checks, await the landing receipt, deploy from a clean workspace, then run live load, sync, signed-out refusal for asking, model, spend-alert and browser checks. Stop on destructive data replacement or missing settings. Give Will the production callback and webhook URLs after deployment.
+
+**Open questions for Will:** No fresh deploy approval is needed. GitHub App production callback/webhook configuration follows the actual deploy.
+
+Evidence: queue answers through 2026-10-21 00:34:14 UTC; script-filtered human text and lead replies from the latest two transcript hours through 00:33:48 UTC; current rulings, decisions, proposals, TODOs, rules and shared briefs. Latest answers supersede older blockers. Product tests are reported evidence; this tracker runs the maintainer-site build only.
+
+## Earlier tracker history (retained)
 
 ## What
 
@@ -53,6 +153,7 @@ Root `AGENTS.md`: development work lands on `main` and deploys through the exist
 - **05:54 on 2026-10-20: the app is ready for Will to test.** The wiring agent reported done (final fresh-state run 36 passed, 1 skipped; 496 unit tests at 100%; typecheck clean; `docs:check` green; the prod plan shows no cron), and the lead opened http://localhost:1337/app for Will ([app wiring](app-wiring.md)). The Fable review started about 05:54 ([code reviews](code-reviews.md)). Still open before landing: the [plan identity](plan-identity-across-deploys.md) fix, the Fable findings, Will's review and his callback URL ([sign-in](sign-in.md)). Nothing is committed. Status stays blocked on Will's review.
 - **06:39:37 on 2026-10-20: landing no longer waits on Will's review** (Why, above). 06:42:50: the lead started a lander that commits finished work by area and pushes `main`, with no deploy ([land to main](land-to-main.md)). By 06:55, `main@origin` is still `fe9800eec5` (06:13) and the 19 local commits sit directly on it; nothing is pushed. Status stays `blocked`: what remains in this note is the deploy, which waits on Will's yes.
 - **07:30:21 on 2026-10-20: round 1 landed** on `main` (`bba8df6fab`, 28 commits, the 05:58 snapshot) with no deploy; the push triggers only the mirror to Smithers Cloud ([land to main](land-to-main.md)). One site test is red ([site deployment test](site-deployment-test.md)). Status stays `blocked` on Will's yes to deploy.
+- 14:07:58 on 2026-10-20: the queue's curator dropped "first deploy yes", since deploying waits on Will's review ([Will's decision queue](will-decision-queue.md)). Status stays `blocked` on Will's yes to deploy.
 
 ## Next
 

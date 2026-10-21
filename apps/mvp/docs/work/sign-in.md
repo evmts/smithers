@@ -2,10 +2,63 @@
 title: Sign-in for the new app
 status: done
 area: app
-owner: none; done again at 12:31:22 on 2026-10-20, when review round 4's worker fix agent reported R4-2 and R4-4 fixed; the CSRF check, the sign-in throttle and the doc line (P3s) are the [P3 cleanup](review-round-4-p3-cleanup.md)'s; Will registers the callback URL. Until 12:31: review round 4's worker fix agent (from about 10:53 on 2026-10-20): R4-2, a `RecheckRole` retry re-redeems the spent refresh token and revokes the session (P2, reproduced), and R4-4, sign-out can lose GitHub token revocation (P2); unreported, and `RecheckRole.ts`, `SignIn.ts` and `SessionStore.ts` unchanged by 11:07. Unrouted: Opus P3-4 (CSRF `Origin` check) and P3-7 (sign-in unthrottled), Fable P3-8 (docs). Will registers the callback URL. Until 10:53: Fable fix agents, since 06:09 on 2026-10-20: the client agent coordinates the sign-out wipe across tabs (P3-2); the worker agent limits the open relays (P3-4) and fixes the stale doc lines (P3-8); tracked in `fable-review-2-fixes`. Until 06:09: fix agent for Codex Astra review 3's findings 1 and 4 (assigned by 01:19 on 2026-10-20): one role check per session in `auth/RecheckRole`, plus `auth/KeepRole` (reported fixed about 02:16 on 2026-10-20); the wiring agent (since about 01:17) wires sign-in into the app and closes its three policy gaps; S1 agent built 0008 phase 1 (started about 23:39 on 2026-10-19, reported done about 01:00 on 2026-10-20); Will registers the callback URL
+owner: sign-in builder and live GitHub test builder
 updated: 2026-10-20
-links: [review-round-4.md, pull-request-list-and-tabs.md, dev-stack-hygiene.md, app-wiring.md, integrations-effect-httpclient.md, integrations-durable-retries.md, ../todo.md, ../decisions/0008-auth.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, roles-and-labels.md, decisions-for-will.md, auth.md, durable-answering.md, code-reviews.md, ../features/sign-in.md, fable-review-2-fixes.md, local-first.md]
+links: [review-round-4.md, pull-request-list-and-tabs.md, dev-stack-hygiene.md, app-wiring.md, integrations-effect-httpclient.md, integrations-durable-retries.md, ../todo.md, ../decisions/0008-auth.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, roles-and-labels.md, decisions-for-will.md, auth.md, durable-answering.md, code-reviews.md, ../features/sign-in.md, fable-review-2-fixes.md, local-first.md, issues.md, self-hosted-grafana.md, ../rulings.md]
 ---
+
+## Current specification — 2026-10-20, 18:26 PDT
+
+**What:** Sign in through GitHub and revoke tokens and device data on sign-out.
+
+**Why:** Real identity and readable verification are required.
+
+**Current state:** Will approved the revised live GitHub sign-in video at 18:17. At 18:20 he returned the separate signed-out/sign-out recording as too zoomed in or potentially unresponsive; helper and responsive-layout investigation are assigned. No new authentication failure is established.
+
+**Next step:** Retain live sign-in receipts, replace the sign-out recording after shared-helper fixes and fix any actual layout bug with regression coverage. Configure production callback/webhook after deployment.
+
+**Open questions for Will:** None; first deployment is already authorized.
+
+Evidence: latest two session hours extracted by script as human text/lead replies; queue answers through 2026-10-21 01:24:15 UTC, current rulings, shared briefs/designs, decisions, proposals, TODOs and rules. Latest rulings override historical proposals. Product results are reported receipts; this pass verifies the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 16:35 PDT
+
+**What:** Sign in through the GitHub App and revoke the token on sign-out.
+
+**Why:** Personal GitHub actions require real identity.
+
+**Current state:** At 16:29 the lead reported real browser sign-in against the registered callback and token revocation on sign-out. The live sign-in recording is available. No deployed webhook receipt exists.
+
+**Next step:** Retain live evidence and configure the webhook after a deployed address exists.
+
+**Open questions for Will:** First production deploy remains queued separately.
+
+Evidence: lead text replies extracted by script from the session’s latest two hours through 23:34:16 UTC; current rulings and queue answers take precedence over older designs. Reported product-test receipts only; this tracker ran no product tests.
+
+## Prior tracker record (retained)
+
+
+## Current specification — 2026-10-20, 14:55 PDT
+
+**What:** Sign people in through the Smithers GitHub App.
+
+**Why:** Live identity is needed for GitHub actions taken as the person.
+
+**Current state:** Queue answer confirms the callback, three permissions, eight events, key and installations on smithersai/smithers and roninjin10/smithers-github-tests. At 14:50 the lead reports a real GitHub sign-in recording placed first in the queue. This does not prove issues/triage writes or a deployed webhook.
+
+**Next step:** Have Will review the recording; finish the remaining live GitHub tests and set the webhook only after a deployed address exists.
+
+**Open questions for Will:** None; the lead can settle implementation details.
+
+Evidence: Will's typed messages and the lead's text updates in session `6253ecf2`, 12:54–14:55 PDT; [rulings](../rulings.md); queue answers through 14:36 PDT. These are reported receipts, not a new verification run by the tracker.
+
+## Earlier tracker history
+
+Previous owner record: none; done again at 12:31:22 on 2026-10-20, when review round 4's worker fix agent reported R4-2 and R4-4 fixed; the CSRF check, the sign-in throttle and the doc line (P3s) are the [P3 cleanup](review-round-4-p3-cleanup.md)'s; Will registers the callback URL. Until 12:31: review round 4's worker fix agent (from about 10:53 on 2026-10-20): R4-2, a `RecheckRole` retry re-redeems the spent refresh token and revokes the session (P2, reproduced), and R4-4, sign-out can lose GitHub token revocation (P2); unreported, and `RecheckRole.ts`, `SignIn.ts` and `SessionStore.ts` unchanged by 11:07. Unrouted: Opus P3-4 (CSRF `Origin` check) and P3-7 (sign-in unthrottled), Fable P3-8 (docs). Will registers the callback URL. Until 10:53: Fable fix agents, since 06:09 on 2026-10-20: the client agent coordinates the sign-out wipe across tabs (P3-2); the worker agent limits the open relays (P3-4) and fixes the stale doc lines (P3-8); tracked in `fable-review-2-fixes`. Until 06:09: fix agent for Codex Astra review 3's findings 1 and 4 (assigned by 01:19 on 2026-10-20): one role check per session in `auth/RecheckRole`, plus `auth/KeepRole` (reported fixed about 02:16 on 2026-10-20); the wiring agent (since about 01:17) wires sign-in into the app and closes its three policy gaps; S1 agent built 0008 phase 1 (started about 23:39 on 2026-10-19, reported done about 01:00 on 2026-10-20); Will registers the callback URL
+
 
 ## What
 
@@ -137,10 +190,14 @@ Codex and Fable both flagged no sign-in as a blocker. Will: "Great call out on t
   - R4-2: `auth/RecheckRole` is three steps: redeem (journals only the sealed tokens), store (retried until Postgres answers), check. The test redeems, fails the store, rebuilds the engine, and ends with one redemption and a live session. A redemption whose answer is lost still ends the session; documented and tested.
   - R4-4: sign-out starts its durable revoke flow before anything changes; a refused start returns 503 and keeps the session. The flow ends the session itself; signing out again recovers an ended session whose token was never revoked; signing in again starts the old session's sign-out before redeeming GitHub's code. `TokenRevocations` is deleted.
 - **Status moved from in-progress to done**: no P1 or P2 here is open. Opus P3-4 (CSRF `Origin` check), P3-7 (sign-in unthrottled) and Fable P3-8 (docs) wait for the [P3 cleanup](review-round-4-p3-cleanup.md).
+- **14:08:55 on 2026-10-20: the callback URL `http://localhost:1337/api/auth/callback` is registered** in the GitHub App, with the new private key and both installs ([issues](issues.md)). 14:12:55: a separate agent runs the live sign-in test on its own dev server; scratchpad `live/signin-video/` has a recording at 14:27; no result by 14:30.
+- **14:20:47: Will on the Grafana password:** "Can we self host grafana instead of using graafana cloud". A Codex lane sets up a self-hosted stack ([self-hosted Grafana](self-hosted-grafana.md)); the Grafana Cloud password stays exposed until that stack is deleted or the password rotated.
 
 ## Next
 
-From 12:31 on 2026-10-20: nothing here but Will's callback URL ([decisions for Will](decisions-for-will.md), row 2). The fixes land with round 3 of [land to main](land-to-main.md).
+From 14:30 on 2026-10-20: the live sign-in test's result and GIF ([issues](issues.md)). The production callback URL follows the first deploy. The fixes land with round 3 of [land to main](land-to-main.md).
+
+Until 14:30 on 2026-10-20 the next step was, from 12:31 on 2026-10-20: nothing here but Will's callback URL ([decisions for Will](decisions-for-will.md), row 2). The fixes land with round 3 of [land to main](land-to-main.md).
 
 Until 12:31 on 2026-10-20 the next step was, from 10:53 on 2026-10-20: the worker fix agent's report on R4-2 and R4-4, each with a test that fails on the old code: a successful redemption followed by one failed store leaves one redemption and a live session with the replacement; a failed revocation start after sign-out is retried until it runs. Then the lead's ruling on the CSRF check and the sign-in throttle ([review round 4](review-round-4.md)). Still Will's: the callback URL ([decisions for Will](decisions-for-will.md), row 2). Then this item is done again.
 

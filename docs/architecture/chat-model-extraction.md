@@ -1,5 +1,7 @@
 # Chat and model runtime extraction
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (ARCH-1, ARCH-6). Kept as prior art.
+
 ## Audited provider paths
 
 - The app submits `POST /api/conversations/{branch}/prompt` and reads

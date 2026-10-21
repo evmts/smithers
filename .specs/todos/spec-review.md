@@ -1,5 +1,7 @@
 # Spec findings from the standing Codex Sol reviewer
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (SCOPE-9). Kept as prior art.
+
 Appended per review cycle (~/.config/smithers-review-loop); each line is a falsifiable claim with a path. Owners: product (mvp.md), engineering (spec.md, delta.md, card-kinds.md, ui-components.md), design (mock).
 
 

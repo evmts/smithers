@@ -1,5 +1,7 @@
 # Flow Builder & Monitor — Decisions
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (FLOW-4; decision 0014). Kept as prior art.
+
 Append-only decision log. Each entry: the decision, who made it, the reasoning,
 and what would falsify it. `OPEN` means nobody has decided yet. `PROPOSED` means
 Claude proposed it and Will has not ruled. `RULED` means Will decided.

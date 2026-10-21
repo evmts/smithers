@@ -1,11 +1,27 @@
 ---
 title: Two declared deep-import exceptions
-status: todo
+status: in-progress
 area: sdk
-owner: unassigned; declared by the repo-checks agent (reported about 02:06 on 2026-10-20)
+owner: evals builder removed the mechanism; SDK cleanup owner verifies remaining callers
 updated: 2026-10-20
 links: [repo-checks-green.md, deep-import-migration.md, agent-root-browser-safe.md, library-catalog.md, import-rules-and-jev-lint.md, ../rules.md, ../../../../AGENTS.md, ../../../../docs/libraries.md]
 ---
+
+## Current specification — 2026-10-20, 16:54 PDT
+
+**What:** Remove all deep-import exceptions and consume public package roots.
+
+**Why:** SDK-5 and SDK-11 require root imports and completion of migrations.
+
+**Current state:** At 16:53 the lead confirmed the evals builder removed its CLI NodeControl exception and deleted the exception mechanism itself. The older two exceptions retained below are historical, not sanctioned exemptions. The reply does not provide a fresh repository-wide import audit proving every historical caller migrated.
+
+**Next step:** Verify the old model-host and rpc callers through root imports and run the owning import/export/browser checks. Keep any remaining violation assigned until real passing receipts exist.
+
+**Open questions for Will:** None.
+
+Evidence: script-extracted user-typed messages and lead replies, 21:53–23:53 UTC, session 6253ecf2. Current rulings and queue answers override older panel proposals. Product checks are lead-reported; this pass validates the site build only.
+
+## Earlier tracker history (retained)
 
 ## What
 

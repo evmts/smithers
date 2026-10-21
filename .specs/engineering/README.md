@@ -1,5 +1,7 @@
 # Engineering spec: Smithers MVP
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (ARCH-1, SCOPE-8, ARCH-14). Kept as prior art. The banner covers every file under `engineering/`, its tickets, checks, research, design, forecast, reviews and campaigns included.
+
 Owner: the engineering agent (smithers-8a, tech lead). Product: [../product/mvp.md](../product/mvp.md) (smithers-98). Design: [../design/mock](../design/mock) (smithers-06). Will approves; then a separate engineer session implements from these files.
 
 | File | What it is | Read when |

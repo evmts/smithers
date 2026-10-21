@@ -2,10 +2,45 @@
 title: Maintainer site and work board
 status: done
 area: process
-owner: lead (smithers-b3); work-tracker loop every 10 minutes. The old-app audit agent finished at 06:15:52 on 2026-10-20; the loop now keeps its 20 notes current. Until 06:15: lead (smithers-b3); work-tracker loop every 10 minutes; from about 06:03 on 2026-10-20 an old-app feature audit agent writes `idea` notes for unplanned features plus the index `old-app-feature-gaps.md`, which it owns. Until 06:03: lead (smithers-b3); work-tracker loop
+owner: maintainer site builder and tracker curator
 updated: 2026-10-20
-links: [../todo.md, ../../../../README.md, design-questions.md, decisions-for-will.md, old-app-feature-gaps.md, fable-review-2-fixes.md, self-host-install.md, web-page-flow.md, model-endpoint.md]
+links: [will-decision-queue.md, dev-stack-hygiene.md, ../todo.md, ../../../../README.md, design-questions.md, decisions-for-will.md, old-app-feature-gaps.md, fable-review-2-fixes.md, self-host-install.md, web-page-flow.md, model-endpoint.md, docs-truth-pass.md, ../rulings.md, everything-is-a-plugin.md, chaptered-review-videos.md]
 ---
+
+## Current specification — 2026-10-20, 18:18 PDT
+
+**What:** Keep the maintainer app as the current work tracker and review surface.
+
+**Why:** Will switched work tracking from GitHub issues to this app at 18:12.
+
+**Current state:** The lead confirmed the switch at 18:15 and updated agent instructions; existing issues remain history. The site is built; continuous curation remains active.
+
+**Next step:** Keep one owned note per workstream and decisions in the queue; rebuild after curation. Move the maintainer features into Smithers as public plugins once the app works and the tooling is high quality.
+
+**Open questions for Will:** None; the recorded requests settle product intent.
+
+Evidence: script-filtered user text and lead replies from the latest two session hours; queue answers through 2026-10-21 01:16:08 UTC; current rulings, decisions, proposals, TODOs, rules and shared panel briefs/designs. Later rulings override historical proposals. Product receipts are reported evidence; this pass validates the site build only.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 14:55 PDT
+
+**What:** Maintain the existing documentation, work tracker and review queue.
+
+**Why:** Will uses this surface to direct and review the build.
+
+**Current state:** The existing site and queue are live. Will at 14:40 requested these features inside the main app as public-interface plugins at P2; that migration is designing, not built.
+
+**Next step:** Continue tracker/queue upkeep and rebuild; use the plugin workstream for migration after Will reviews its design.
+
+**Open questions for Will:** None; the lead can settle implementation details.
+
+Evidence: Will's typed messages and the lead's text updates in session `6253ecf2`, 12:54–14:55 PDT; [rulings](../rulings.md); queue answers through 14:36 PDT. These are reported receipts, not a new verification run by the tracker.
+
+## Earlier tracker history
+
+Previous owner record: lead (smithers-b3); work-tracker loop every 10 minutes; from about 14:00 on 2026-10-20 a queue builder and a queue curator (both Claude Opus) add Will's decision queue at `/queue`, served by `serve.mjs` (will-decision-queue.md). Until 14:00: lead (smithers-b3); work-tracker loop every 10 minutes. The old-app audit agent finished at 06:15:52 on 2026-10-20; the loop now keeps its 20 notes current. Until 06:15: lead (smithers-b3); work-tracker loop every 10 minutes; from about 06:03 on 2026-10-20 an old-app feature audit agent writes `idea` notes for unplanned features plus the index `old-app-feature-gaps.md`, which it owns. Until 06:03: lead (smithers-b3); work-tracker loop
+
 
 ## What
 
@@ -40,10 +75,19 @@ Will: "Can you make me a maintainer website that I can look at that simply is th
 - **06:15:52 on 2026-10-20: the audit agent finished.** 06:15:58, the lead to Will: "The index card is 'Old app feature gaps' at `~/Desktop/smithers-maintainer/index.html#/work`." It found 19 gaps, each an `idea` note, plus "18 features cut on purpose, each with its reason, and 26 old features that existing plans already cover" ([old app feature gaps](old-app-feature-gaps.md)). Its one question for Will, hosted only for now, is row 4 of [decisions for Will](decisions-for-will.md).
 - 06:21:41 on 2026-10-20, the lead to Will: "The model endpoint reopened in the tracker until the budget race is fixed, and a card tracks all 12 Fable findings by owner. The tracker also caught a security gap in the web-page flow, which I sent to that agent." The lead's fix for that gap went to the web page agent at 06:21:32 ([web page flow](web-page-flow.md)).
 - 06:26 on 2026-10-20: a tracker refresh added the self-hosting row to [decisions for Will](decisions-for-will.md) and closed the web page frame's security look in [code reviews](code-reviews.md). No status changed.
+- 11:53 to 13:53 on 2026-10-20: the loop ran every 10 minutes (one tracker agent at a time; the 13:43 tick was skipped because the 13:34 run was still going). Its status changes were relayed to Will at 12:15, 12:36, 13:00, 13:09, 13:21, 13:30 and 13:54.
+- **About 13:57 on 2026-10-20: Will asked for a decision queue in this app**, full screen and keyboard only. It has its own note, [Will's decision queue](will-decision-queue.md) (`in-progress`). The site gains a no-dependency server, `apps/maintainer-site/serve.mjs`, that serves the static pages and the queue at `http://localhost:4747/queue` (127.0.0.1 only); `GET /queue` first answered at 14:07.
+- **13:59: the 13:53 tracker refresh was stopped** to free an agent slot: the session hit its cap of 20 agents at once when the queue's curator started. The lead: "I hit the session's limit of 20 agents at once, so I paused one tracker update to make room." 14:04: the next refresh started.
+- 14:07 on 2026-10-20: the queue went live at `/queue`; the lead reported it finished at 14:30 (53 server tests in `test/serve.test.mjs`, 57 keyboard checks in `test/queue.e2e.mjs`), and Will answered 10 items by 14:28 ([Will's decision queue](will-decision-queue.md), now `done`).
+- 14:10:36 and 14:13 on 2026-10-20: the lead paused tracker ticks to free agent slots (the live GitHub tests, then the usage limit at 14:15). The 14:25 tick ran.
 
 ## Next
 
-From 06:16 on 2026-10-20: none; the loop keeps the notes current, the 20 audit notes included. When Will picks a gap, its note moves from `idea` to `todo`.
+From 14:30 on 2026-10-20: the loop keeps the notes current, and Will's queue answers count as rulings in them; the queue's own work is in [Will's decision queue](will-decision-queue.md). At the agent cap the tracker tick is the first one the lead stops.
+
+Until 14:30 on 2026-10-20 the next step was, from 14:00 on 2026-10-20: the loop keeps the notes current; the queue's own work is in [Will's decision queue](will-decision-queue.md). At the agent cap the tracker tick is the first one the lead stops.
+
+Until 14:00 on 2026-10-20 the next step was, from 06:16 on 2026-10-20: none; the loop keeps the notes current, the 20 audit notes included. When Will picks a gap, its note moves from `idea` to `todo`.
 
 Until 06:16 on 2026-10-20 the next step was, from about 06:03 on 2026-10-20: the audit agent's report (how many gaps, the top 5, how many deliberately cut) and its notes on the Work board. The loop keeps the other notes current.
 

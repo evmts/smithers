@@ -1,5 +1,7 @@
 # Durable external work: attach, don't restart
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (SCOPE-3, ARCH-14). Kept as prior art.
+
 Status: proposal, 2026-10-01; §3.5 approved by Will on 2026-10-02 UTC. Line references are `main` at 954a8125.
 Scope: liveness of long external work (10-60 min coding agents in microVMs or
 Cloud workspaces) under host stalls, network loss, restarts and code changes,

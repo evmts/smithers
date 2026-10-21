@@ -1,6 +1,8 @@
 # Smithers MVP design
 
-The design spec is a working mock of the app: [`mock/`](mock/). It plays every P0 journey of the product spec on the app's real stylesheet, Paper palette and `@smthrs/ui` primitives. [`../product/mvp.md`](../product/mvp.md) is the requirements authority; this page records the design decisions the mock embodies. [`architecture.html`](architecture.html) draws them: one anchored diagram per recurring question.
+> Since 2026-10-20 the mock and `architecture.html` are inspiration only, not the design authority: the app is redone in `apps/mvp` with the design system (`apps/mvp/docs/rulings.md` SCOPE-4), and the rulings are the requirements authority (SCOPE-9).
+
+The design spec was a working mock of the app: [`mock/`](mock/). It plays every P0 journey of the product spec on the app's real stylesheet, Paper palette and `@smthrs/ui` primitives. [`../product/mvp.md`](../product/mvp.md) is the requirements authority; this page records the design decisions the mock embodies. [`architecture.html`](architecture.html) draws them: one anchored diagram per recurring question.
 
 Every reel step cites the spec line it shows in the caption chip ("J3.5", "§4.2", "B.4", "M-34"), so a review note lands on that line. Press play to judge motion: co-editing, typing and the composer exist only while a step plays.
 

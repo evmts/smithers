@@ -1,11 +1,27 @@
 ---
 title: "The navigate flow (app/navigate): a person or the agent opens an app page"
-status: done
+status: in-progress
 area: app
 owner: navigate agent; reported done 07:44:39 on 2026-10-20 (e2e 3 of 3 with three GIFs, 32 of 32 unit tests, navigation files at 100% coverage; `docs:check` never finished in three tries); it ran `pnpm db:migrate` on the dev database (0010 to 0012); nothing committed, so it lands in round 2 of the landing. Until 07:44: navigate agent; both e2e cases have GIFs from 06:37 on 2026-10-20, navigation files changed again 07:06 to 07:07, and its `pnpm docs:check` failed twice (07:05, 07:11) with a third try from 07:16; unreported. Until 06:37: navigate agent; building from about 06:09 on 2026-10-20 (`src/features/navigation/`, `src/flows/requests.ts`, the registry), unreported. Until 06:09: navigate agent (started about 05:58 on 2026-10-20 by the lead, at Will's request); researching from 05:58 to at least 06:04 (the flows folder, the tab engine and its tests, the e2e helpers and the dev script, the lint's bans, decisions 0003 and 0011); no source file changed, unreported
 updated: 2026-10-20
 links: [review-round-4-p3-cleanup.md, repo-view-branches-raw-clone.md, review-round-4.md, agent-repo-navigation.md, slash-commands.md, web-page-flow.md, flows-and-agent.md, repo-clone-and-view.md, durable-browser-engine.md, observability.md, e2e-suite-and-gifs.md, code-reviews.md, decisions-for-will.md, ../decisions/0003-flows-and-the-agent.md, ../decisions/0006-repo-clone-and-view.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../features/flows.md, ../features/agent.md, ../features/repo.md, ../rules.md, docs-check-flow-outcome.md, dev-stack-hygiene.md]
 ---
+
+## Current specification — 2026-10-20, 18:18 PDT
+
+**What:** Open the requested app page with stable content and one consistent loading pattern.
+
+**Why:** Will rejected the janky indicator at 18:10 and an apparently empty destination at 18:12.
+
+**Current state:** The lead assigned investigation and replacement: no indicator for the first 300 ms, then a top bar or content placeholder, keeping the current page until the destination is ready. No fix receipt.
+
+**Next step:** Inspect recordings for blank destinations versus loading-only footage; fix the cause, test no flash/layout shift and correct destination, and return a chaptered video.
+
+**Open questions for Will:** None; the recorded requests settle product intent.
+
+Evidence: script-filtered user text and lead replies from the latest two session hours; queue answers through 2026-10-21 01:16:08 UTC; current rulings, decisions, proposals, TODOs, rules and shared panel briefs/designs. Later rulings override historical proposals. Product receipts are reported evidence; this pass validates the site build only.
+
+## Earlier tracker history (retained)
 
 ## What
 

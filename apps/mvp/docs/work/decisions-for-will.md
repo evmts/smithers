@@ -2,16 +2,101 @@
 title: Decisions for Will
 status: blocked
 area: process
-owner: Will (decision)
+owner: Will through curated queue; lead routes answered work
 updated: 2026-10-20
-links: [dev-stack-hygiene.md, review-round-4.md, issues.md, site-deployment-test.md, ../decisions/0012-git-end-to-end.md, ../decisions/0013-branch-workspace.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, ../decisions/0015-agent-status.md, repo-view-package-split.md, repo-follow-ups.md, app-wiring.md, sdk-test-reds.md, platform-cloudflare-edge-cache.md, integrations-durable-retries.md, design-questions.md, flows-and-agent.md, host-agnostic-flows.md, durable-answering.md, model-host-effect-boundary.md, repo-clone-and-view.md, infrastructure-as-code.md, code-storage-spend-caps.md, land-and-deploy-mvp.md, mvp-scope-cut.md, legacy-smithers-sh.md, move-effectscript-repos.md, vibelang-0-0-2-publish.md, electric-client-bug-report.md, sign-in.md, token-spend-alerts.md, deep-import-migration.md, import-rules-and-jev-lint.md, observability.md, cerebras-rate-limits.md, clone-token-scope-bug.md, effect-tanstack-db-and-effect-electric.md, local-first.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md, pwa.md, agent-ui-rendering.md, sandboxes.md, sandbox-budgets.md, roles-and-labels.md, pr-review-and-merge.md, web-standard-globals-rule.md, code-reviews.md, flows-root-platform-neutral.md, b1-follow-ups.md, auth.md, slash-commands.md, plan-identity-across-deploys.md, navigate-flow.md, web-page-flow.md, plan-identity-minified-builds.md, agent-repo-navigation.md, maintainer-site.md, fable-review-2-fixes.md, self-host-install.md, old-app-feature-gaps.md, land-to-main.md, pull-request-list-and-tabs.md, issue-triage.md, conversations-and-history.md, branch-terminal.md, branch-sharing.md, flow-authoring.md, flow-debugging.md, repository-declared-home.md, agent-status.md, github-source-of-truth.md, no-github-actions.md, second-build-machine.md, agent-evals.md, secrets-proxy.md, notifications-and-live-work.md, todos-and-stack.md]
+links: [will-decision-queue.md, dev-stack-hygiene.md, review-round-4.md, issues.md, site-deployment-test.md, ../decisions/0012-git-end-to-end.md, ../decisions/0013-branch-workspace.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, ../decisions/0015-agent-status.md, repo-view-package-split.md, repo-follow-ups.md, app-wiring.md, sdk-test-reds.md, platform-cloudflare-edge-cache.md, integrations-durable-retries.md, design-questions.md, flows-and-agent.md, host-agnostic-flows.md, durable-answering.md, model-host-effect-boundary.md, repo-clone-and-view.md, infrastructure-as-code.md, code-storage-spend-caps.md, land-and-deploy-mvp.md, mvp-scope-cut.md, legacy-smithers-sh.md, move-effectscript-repos.md, vibelang-0-0-2-publish.md, electric-client-bug-report.md, sign-in.md, token-spend-alerts.md, deep-import-migration.md, import-rules-and-jev-lint.md, observability.md, cerebras-rate-limits.md, clone-token-scope-bug.md, effect-tanstack-db-and-effect-electric.md, local-first.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md, pwa.md, agent-ui-rendering.md, sandboxes.md, sandbox-budgets.md, roles-and-labels.md, pr-review-and-merge.md, web-standard-globals-rule.md, code-reviews.md, flows-root-platform-neutral.md, b1-follow-ups.md, auth.md, slash-commands.md, plan-identity-across-deploys.md, navigate-flow.md, web-page-flow.md, plan-identity-minified-builds.md, agent-repo-navigation.md, maintainer-site.md, fable-review-2-fixes.md, self-host-install.md, old-app-feature-gaps.md, land-to-main.md, pull-request-list-and-tabs.md, issue-triage.md, conversations-and-history.md, branch-terminal.md, branch-sharing.md, flow-authoring.md, flow-debugging.md, repository-declared-home.md, agent-status.md, github-source-of-truth.md, no-github-actions.md, second-build-machine.md, agent-evals.md, secrets-proxy.md, notifications-and-live-work.md, todos-and-stack.md, smithers-playground.md, ../decisions/0016-todos-and-the-stack.md, chat-message-controls.md, docs-truth-pass.md, prompt-flows-are-code-flows.md, self-hosted-grafana.md, disk-space.md, ../rulings.md, everything-is-a-plugin.md]
 ---
+
+## Current specification — 2026-10-20, 18:26 PDT
+
+**What:** Keep only genuine unresolved choices in the decision queue and dispatch answered rulings.
+
+**Why:** Stale questions must not hold up authorized work.
+
+**Current state:** Deploy, plugin placement/React/queue, private smithers-infra, views publication, public home fixture and conditional Grafana Cloud deletion are answered. The obsolete TODO write-from-reading question was removed at 18:19 because branch-machine tools exist.
+
+**Next step:** Dispatch the answers to existing owners; track Code Storage rotation separately; remove stale pending-question claims without erasing history.
+
+**Open questions for Will:** External spend-alert delivery; Code Storage budgets and Playground shelf remain in the latest reported queue. Ask only when the active work needs the answer.
+
+Evidence: latest two session hours extracted by script as human text/lead replies; queue answers through 2026-10-21 01:24:15 UTC, current rulings, shared briefs/designs, decisions, proposals, TODOs and rules. Latest rulings override historical proposals. Product results are reported receipts; this pass verifies the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 17:34 PDT
+
+**What:** Track genuine unresolved decisions and dispatch answered ones.
+
+**Why:** Answered questions must stop blocking work.
+
+**Current state:** First deployment is approved at 17:32. Plugin approval, arbitrary React apps, QuickJS placement and queue-over-flows are answered; extra Fable review is active. Message controls are approved. New branch/home/TODO changes are implementation requests.
+
+**Next step:** Remove answered deploy/plugin gates from active questions; route the new UI corrections. Retain only unresolved product choices.
+
+**Open questions for Will:** Views publication, home-fixture retention, external spend-alert delivery and hosted IaC location remain unanswered in the evidence.
+
+Evidence: queue answers through 2026-10-21 00:34:14 UTC; script-filtered human text and lead replies from the latest two transcript hours through 00:33:48 UTC; current rulings, decisions, proposals, TODOs, rules and shared briefs. Latest answers supersede older blockers. Product tests are reported evidence; this tracker runs the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 14:55 PDT
+
+**What:** Surface only decisions not already settled by current rulings.
+
+**Why:** Stale docs had produced unnecessary questions.
+
+**Current state:** Use rulings §18 and live queue over the historical table below. GitHub App setup, hosted-only, mythical deferral, sharing and prompt-as-code are settled. The curator reports a fresh queue at 14:54.
+
+**Next step:** Review the merged plugin design when ready, and the genuine queued decisions. Older question tables below are history.
+
+**Open questions for Will:** First production deploy; hosted IaC location; issues/claim versus maintainer tracker; external alert destination; self-hosted Grafana after research; personal-file contradictions. Exact effectscript-ts repository remains unresolved.
+
+Evidence: Will's typed messages and the lead's text updates in session `6253ecf2`, 12:54–14:55 PDT; [rulings](../rulings.md); queue answers through 14:36 PDT. These are reported receipts, not a new verification run by the tracker.
+
+## Earlier tracker history
+
+Previous owner record: Will (decision)
+
 
 ## What
 
 Every open question for Will on the Work board, in one place, blocking ones first. Each row links to the note that holds the details; the answer goes back into that note and its decision record.
 
 ### Next for Will
+
+As of 14:30 on 2026-10-20. Will worked the queue from 14:08:55 to 14:27:56 and answered every row of the 13:46 table except testing and code review (all under Answered): the GitHub App visit is done; Latitude servers are ours to use; Grafana is self-hosted instead of rotated; 0016 keeps the stack in Postgres and the `mythical` history comes out for now; the docs follow the MVP being built (M-31); prompt flows are a type of code flow (0014 Q1 reversed); the curator dropped the fleet cap. He accepted the Playground's choices 1 and 2 and sent two change requests on feature GIFs. The queue is the place to answer; this table lists only what remains.
+
+| # | Ask | Your time | When | Unblocks | Note |
+|---|---|---|---|---|---|
+| 1 | **Work the queue** at `http://localhost:4747/queue`. Open at 14:30: 8 decisions, 4 questions, 5 designs, 16 GIF groups and 117 code slices. The decisions and questions: 0015's needs-you toast (760), 0016 Q1 and Q2 (720, 715; the lead settled both at 13:45), the spend-alert destination (640), an expired session keeps the device's copy (600), `navigate` stays on app paths (560), libraries may call `fetch` and `crypto.subtle` (540), the old stack's Tuesday launch (520), the effectscript repo move (480), VibeLang 0.0.2 (460), Code Storage budgets (420), and the Playground shelf (313). | as long as you like | now | each linked note | [Will's decision queue](will-decision-queue.md) |
+| 2 | **Security, not blocking:** the Grafana Cloud password (`TF_VAR_grafana_password`) stays exposed until that stack is deleted or the password rotated. Delete the Grafana Cloud stack once the self-hosted one receives the app's telemetry? Recommended: yes. | 2 min | after the self-hosted stack reports | closes the exposure | [self-hosted Grafana](self-hosted-grafana.md) |
+| 3 | Test the app at http://localhost:1337/app. New since 13:46: issues against live GitHub once the live test agent reports; the sandbox tools and branch sharing after their e2e runs on the restarted stack (14:26). | 5 to 10 min | when the reports land | catches client and agent problems | [app wiring](app-wiring.md), [issues](issues.md) |
+| 4 | Review the code: the queue's code slices (117 at 14:30, from about 5,200 covering every file, flows first). | ongoing | in the queue | Will's sign-off; the first deploy still waits on his separate yes | [code reviews](code-reviews.md), [land and deploy](land-and-deploy-mvp.md) |
+
+The 13:46 version, for history. Its intro:
+
+From 14:04 on 2026-10-20 every open row below is also an item in [Will's decision queue](will-decision-queue.md) at `http://localhost:4747/queue`, where Will answers by key; this note stays the index. The curator's ranking at 14:03: row 1 (1000), row 7 (930), row 6 (880), the Playground's three design choices (870 to 866), row 2 (860), row 5 (850), row 4 (840), row 3 (830); then feature GIFs, designs and code review (row 9) in groups of files.
+
+As of 13:46 on 2026-10-20. Will answered at 13:25:53 and 13:31:14, so the 13:28 table's rows 3 and 4 and most of row 5 are under Answered: what he posts through Smithers appears under his own GitHub account (0012 Q1); the code viewer moves to `@smthrs/repo-view` (B); hosted only for now; branch sharing is the lead's call by common practice (0013 Q1, decided 13:32:34). He didn't answer 0014 Q1 (row 3); the lead builds on yes. At 13:26:18 the lead folded the callback URL (old row 2) and the issues setup (old row 9) into one GitHub App visit, "the one blocker that holds the most work", adding Pull requests and Contents and more events (row 1). New: the M-31 line that hosted-only contradicts (row 4), and decision 0016's departure from the "One mythical stack" rule (row 5), which the lead flagged at 13:45:10. The lead settled 0016's two questions himself at 13:45:10 (under "Building proceeds").
+
+| # | Ask | Your time | When | Unblocks | Note |
+|---|---|---|---|---|---|
+| 1 | **The GitHub App's settings, one visit.** (1) Add the callback URL `http://localhost:1337/api/auth/callback`. (2) Repository permissions, Read and write: **Issues**, **Pull requests** and **Contents**. (3) Subscribe to the events Issues, Issue comment, Label, Pull request, Pull request review, Push, Create and Delete. (4) Generate a new private key and save it at the path `GH_APP_PEM` names; the current file isn't on this Mac. (5) Install the App on the repository Smithers should wrap and on a scratch repository for tests, and tell the lead both names. Leave the webhook URL until a deploy gives the address. | about 5 min | now (asked 13:26:18; the callback since 01:00, the issues setup since 12:54:04) | real GitHub sign-in; the issue create and comment e2e and live tests; triage's label writes; later, pull requests | [issues](issues.md), [sign-in](sign-in.md), [pull requests](pull-request-list-and-tabs.md) |
+| 2 | **Security, not blocking:** rotate the Grafana password, `TF_VAR_grafana_password` in `~/.zshrc`. The sign-in agent printed it into its transcript early on 2026-10-20; treat it as exposed. | 2 to 5 min | now (asked 01:00, 05:49, 06:43:26, 10:42:03 and 13:26:18) | closes the exposure | [sign-in](sign-in.md) |
+| 3 | 0014 Q1: your own flows, usable in any repository, are prompt flows; code flows live only in repositories and run in a sandbox. Recommended: yes. | 10 s | asked 07:30:21, 10:42:03 and 13:26:18; unanswered at 13:31:14; built on yes | confirms the personal-flows design | [flow authoring](flow-authoring.md) |
+| 4 | Hosted only conflicts with M-31: root `AGENTS.md` and mvp.md M-31 move Smithers' own development onto the install on your Mac mini. Change M-31 now (for example, dogfood on the hosted app), or keep it as the later target? Best guess: dogfood on hosted until the install returns. | 1 min | when convenient (the lead left the line for you, 13:32:34) | `AGENTS.md` matching your 13:31 ruling | [self-hosted install](self-host-install.md) |
+| 5 | Decision 0016 keeps the stack's order in Postgres with no `mythical` ref, departing from root `AGENTS.md` "One mythical stack; append-only main". Every TODO still reaches `main` as one squash-merged PR a person merges. Accept, and update `AGENTS.md` to match? | 1 min | when convenient (flagged 13:45:10) | `AGENTS.md` matching what's built | [TODOs and the stack](todos-and-stack.md) |
+| 6 | Cap the fleet at about 8 agents at a time to stretch the second account, finishing the review fixes and landing first? | 10 s | offered 11:42:48 | how long the account lasts | [dev stack hygiene](dev-stack-hygiene.md) |
+| 7 | Name a Latitude server for a second build machine: its own clone, Postgres, Electric and dev server, pushing to `main` itself. Not one of the two hosts running production sandbox workers, and not nyc-01. | 10 s | asked 13:21:12 | the waiting features skip this Mac's one test lock and checkout | [second build machine](second-build-machine.md) |
+| 8 | Test the app at http://localhost:1337/app, signed in as the local developer. New since 13:00: message controls (Copy or `/copy`, Edit or `/edit` on a queued question, times, a draft that survives a reload); Flows, New flow, Draft, Save, Run, then Stop and Retry on the run page; a branch's own conversation and terminal at `/octocat/Spoon-Knife/tree/test-branch` (Terminal, Open terminal, `git log`, reload). | 5 to 10 min | under way since 05:56; try-it steps 13:09:31 (flows) and 13:43:30 (branch) | catches client and agent problems | [app wiring](app-wiring.md), [message controls](chat-message-controls.md), [flow authoring](flow-authoring.md), [branch terminal](branch-terminal.md) |
+| 9 | Review the code, starting with `packages/effect-tanstack-db` and `packages/effect-electric`. | 20 min for the packages | after the feature list (Will, 23:00); not before landing (06:39:37) | Will's sign-off; the first deploy still waits on his separate yes | [code reviews](code-reviews.md), [land and deploy](land-and-deploy-mvp.md) |
+
+From 13:54 on 2026-10-20: the [Smithers Playground](smithers-playground.md) design is ready (`apps/playground/design/playground.html`). The lead relayed its three main choices, which the agent builds on unless Will objects: the code is the truth; a time-first flow inspector with Kill host; a shelf that joins the playgrounds. Each is a queue decision.
+
+Until 13:54: Coming after this table: the [Smithers Playground](smithers-playground.md) design mock, when its agent opens it; not a question.
+
+The 13:28 version, for history. Its intro:
 
 As of 13:28 on 2026-10-20: row 5's 0012 Q1 is reworded and row 10 is new. At 13:21:27 Will answered item 1 of the lead's 13:19:52 list, "your GitHub actions show as you", as if it meant GitHub Actions: "Githubactions we don't support those at all". That is a ruling, now under Answered ([no GitHub Actions](no-github-actions.md)), but it doesn't answer 0012 Q1, which asks whether what you post through Smithers appears on GitHub under your own account. The lead asked it again in plain words at 13:23:33. Row 10: at 13:21:12 the lead asked Will to name a Latitude server for a second build machine, after Will offered them at 13:20:43. Will's 13:21:41 "start the ones that can start now" answered the lead's offer to start four items in parallel (under Answered). No answer to rows 1 to 10 otherwise by 13:28. Until 13:28 the intro read: As of 12:59 on 2026-10-20: row 9 is new. At 12:54:04 the lead asked Will to set up the GitHub App so the issues slice's create and comment e2e and its live GitHub tests can run; it is 0012 Q2's App change, limited to what issues need. At 12:36:24 the lead reminded Will that the sign-in callback URL still needs registering (row 2). No answer to rows 1 to 5, 8 or 9 is on record by 12:59. Until 12:59 the intro read: As of 11:46 on 2026-10-20: row 8 is new. At 11:42:48, after two weekly usage limits stopped the agents (the first account at about 11:30, the second at about 11:35; Will logged in to another account and applied a usage reset), the lead offered to cap the fleet at about 8 agents at a time. No answer to rows 1 to 5 or 8 is on record. Until 11:46 the intro read: As of 10:44 on 2026-10-20: no answer to rows 1 to 5 is on record. At 10:42:03, after the Claude usage limit stopped every agent from about 08:15 to 10:40, the lead asked again for all eight answers in rows 1 to 5. As of 07:53 on 2026-10-20. No answer to rows 1 to 5 is on record. Row 6 has more to try: from 07:44 to 07:49 the lead told Will that `navigate`, the web page flow and Jev are done, each with what to try ([navigate](navigate-flow.md), [web page flow](web-page-flow.md), [agent Jev](agent-jev.md)). The [site deployment test](site-deployment-test.md) is fixed in the working copy (07:51) and clears the one red on `main` when round 2 lands. The navigate question under "Proceeding on the recommendation" stays open; the web page flow covers outside pages.
 
@@ -100,27 +185,26 @@ The lead's 22:00 ranking, for history: 1 Code Storage organization name (answere
 
 | Question | Recommended | Blocks | Note |
 |---|---|---|---|
-| The repo view's `@smthrs/ui/adapters/repo-view` import: A, one exception to root-only imports, or B, the heavy renderers in their own package imported from its root? (Asked 02:35 and 02:36 on 2026-10-20, and again at 05:49. At 05:54 the wiring agent reported it as the app's only `importRules` red.) | B | `//apps/mvp:importRules`, red on that one import | [repo-view package split](repo-view-package-split.md) |
+| (Answered 13:31:14 on 2026-10-20: B; an agent builds `@smthrs/repo-view`.) The repo view's `@smthrs/ui/adapters/repo-view` import: A, one exception to root-only imports, or B, the heavy renderers in their own package imported from its root? (Asked 02:35 and 02:36 on 2026-10-20, and again at 05:49. At 05:54 the wiring agent reported it as the app's only `importRules` red.) | B | `//apps/mvp:importRules`, red on that one import | [repo-view package split](repo-view-package-split.md) |
 | Review the new app's code so it can land on `main` and deploy. (06:39:37 on 2026-10-20: landing no longer waits. Will: "everything should be merged into main even before I review exiting code"; a lander pushes `main` from 06:42:50, [land to main](land-to-main.md). Deploying still waits on the row below.) | n/a | deploy | [land and deploy](land-and-deploy-mvp.md) |
 | Say yes to the first `pnpm deploy` (stage `prod`)? The real plan passed at 22:13. | after the code review and sign-in | the live app | [infrastructure as code](infrastructure-as-code.md), [land and deploy](land-and-deploy-mvp.md) |
-| Register `http://localhost:1337/api/auth/callback` in the Smithers GitHub App's settings; the production URL after the first deploy. (01:00 on 2026-10-20: S1 reported; GitHub answers `redirect_uri_mismatch` until then. Until 01:00 this row asked to register the callback URLs S1 reports. Until 23:39 this row asked: approve building decision 0008 phase 1 (sign-in) now? 23:02: the lead queued it after W5, since both edit `worker/ChatApi.ts`. 23:39: the lead started it as S1 on the recommendation.) | n/a | signing in, then a public deploy that lets signed-in people ask | [sign-in](sign-in.md) |
+| (From 13:26:18 on 2026-10-20 part of one GitHub App visit, row 1 of "Next for Will".) Register `http://localhost:1337/api/auth/callback` in the Smithers GitHub App's settings; the production URL after the first deploy. (01:00 on 2026-10-20: S1 reported; GitHub answers `redirect_uri_mismatch` until then. Until 01:00 this row asked to register the callback URLs S1 reports. Until 23:39 this row asked: approve building decision 0008 phase 1 (sign-in) now? 23:02: the lead queued it after W5, since both edit `worker/ChatApi.ts`. 23:39: the lead started it as S1 on the recommendation.) | n/a | signing in, then a public deploy that lets signed-in people ask | [sign-in](sign-in.md) |
 | Where should the token-spend alert and the Code Storage 50/80/100% budget alerts reach you: Telegram, email or other? | n/a | both alerts | [token-spend alerts](token-spend-alerts.md), [Code Storage spend caps](code-storage-spend-caps.md) |
-| Does a Tuesday launch of the old stack still happen? Retire the old backend once the new app opens repos? | n/a | legacy cleanup, the clone-token bug | [legacy smithers.sh](legacy-smithers-sh.md), [clone token scope](clone-token-scope-bug.md) |
 | Which repo did "effectscript-ts" mean? Then transfer the repos, or run `gh auth refresh -h github.com -s repo,admin:org` | n/a | the repo move | [move effectscript repos](move-effectscript-repos.md) |
-| Publish VibeLang 0.0.2 now (`sh ~/effectscript/dist-npm/publish-0.0.2.sh`, your npm one-time password), or wait for the next release? | n/a | the publish | [vibelang 0.0.2](vibelang-0-0-2-publish.md) |
 
 ### Building proceeds on the recommended answer
 
 | Question | Recommended | Note |
 |---|---|---|
+| 0016 Q1: a TODO's run (plan, write the change, open the PR, wait for the merge) runs on Cloudflare, not in the committer's browser. Settled by the lead at 13:45:10 (0011: work that must go on with every device off runs remotely) | Cloudflare | [TODOs and the stack](todos-and-stack.md) |
+| 0016 Q2: slice 1's agent writes a TODO's change from reading the code, until it can run code on the branch's machine. Settled by the lead at 13:45:10 | yes | [TODOs and the stack](todos-and-stack.md) |
+| Branch sharing: private until shared, "can view" or "can edit", an optional link for repository Members, the owner revokes (the lead, 13:32:34, under Will's 13:31:14 "use common sense") | Google Docs and Figma conventions | [branch sharing](branch-sharing.md) |
+| Session expiry: a request with an expired or invalid session cookie answers 401, so the device keeps its synced copy and shows sign-in; an explicit sign-out still wipes (the lead, 13:38:52; 0008 says 401 or 403) | keep the copy | [the packages](effect-tanstack-db-and-effect-electric.md), [P3 cleanup](review-round-4-p3-cleanup.md) |
 | Should `app/navigate` go to outside URLs, for example after a confirmation step? Asked 05:58 on 2026-10-20: "Tell me if you want outside URLs allowed, for example with a confirmation step." Outside pages go through the web page flow instead, which always shows the address | same-origin app paths only | [navigate flow](navigate-flow.md), [web page flow](web-page-flow.md) |
 | Codex review 2, finding 4: may a library call the web-standard globals all four runtimes ship (`fetch`, `crypto.subtle`), or must WebCrypto come through an injected service? By 23:12 the lead ruled they aren't platform code and wrote it into `docs/libraries.md`; you may overrule | the ruling stands | [web-standard globals](web-standard-globals-rule.md) |
 | Override any of the lead's three 0009 choices (22:56): a finished run disappears after `Done`; no toasts for someone else's run; built-in routing only. 22:58: Will overrode the second (see Answered); the first and third stand | keep them | [notifications](notifications-and-live-work.md) |
 | The 4 open design questions, 0007 Q3 and 0009 Q1 to Q3; all closed at 22:56 (7 at 22:43 and 8 at 22:41; 0003 and 0004 answered by 22:35, 0005 Q1 at 22:41, 0005 Q2 at 22:42, 0005 Q3 deferred at 22:45, 0007 Q1 at 22:48, 0007 Q2 at 22:49; Will answers one at a time) | the recommended answer to each | [design questions](design-questions.md) |
-| Does `ModelProxy` come back in `@smthrs/model` or only in the app's `worker/`? Since 22:59 the W5 agent restores it into `@smthrs/model`, on the recommendation (done 23:39) | `@smthrs/model` | [model endpoint](model-endpoint.md) |
-| May `apps/mvp` import `@smthrs/ui/adapters/*` as the one exception to root-only imports? (Superseded at 02:35 on 2026-10-20: now the A or B row under "Blocking work now", recommended B.) | yes, until 02:35 | [deep-import migration](deep-import-migration.md), [repo clone and view](repo-clone-and-view.md) |
 | Markdown in the repo view stays read-only for now? | yes | [repo clone and view](repo-clone-and-view.md) |
-| `effect.boundary-only`: keep your narrow "where necessary" reading over `apps/mvp/AGENTS.md`'s broader one? | yes | [ImportRules and Jev](import-rules-and-jev-lint.md) |
 | Which usage questions should metrics answer first? | daily askers, asks per person, time to first answer text | [observability](observability.md) |
 | File the Electric client issues on Electric's GitHub? | don't file unless you say so | [Electric client bug report](electric-client-bug-report.md) |
 | Ask Cerebras about Enterprise limits now or after a load test? | after | [Cerebras rate limits](cerebras-rate-limits.md) |
@@ -130,6 +214,27 @@ The lead's 22:00 ranking, for history: 1 Code Storage organization name (answere
 
 | Question | Answer | Note |
 |---|---|---|
+| Does a Tuesday launch of the old stack still happen? Retire the old backend? | Answered by rulings (2026-10-20 docs truth pass): no Tuesday launch; the new app replaces the old stack (SCOPE-1), and the old backend is retired with Google Cloud (ARCH-1, Will 12:59 on 2026-10-19: "move to cloudflare only and abandon gcloud"). Drop the queue item. | [legacy smithers.sh](legacy-smithers-sh.md), [rulings](../rulings.md) |
+| Publish VibeLang 0.0.2 now? | Answered by OTHER-2 (14:00 on 2026-10-20): "we will publish at the end" of the migration. Drop the queue item. | [vibelang 0.0.2](vibelang-0-0-2-publish.md), [rulings](../rulings.md) |
+| `effect.boundary-only`: Will's narrow "where necessary" over `apps/mvp/AGENTS.md`'s broader reading? | Answered by SDK-7: Will's words outrank the doc. `apps/mvp/AGENTS.md` is narrowed and `rules.md` closed (docs truth pass, 2026-10-20). | [ImportRules and Jev](import-rules-and-jev-lint.md), [rulings](../rulings.md) |
+| Does `ModelProxy` come back in `@smthrs/model` or only in the app's `worker/`? | `@smthrs/model`, per SDK-1 (extend the SDK) and ARCH-17 (Will, 16:16 on 2026-10-19: "Name the package thing ModelProxy please"); restored 23:39. | [model endpoint](model-endpoint.md), [rulings](../rulings.md) |
+| Row 1 (13:26:18): the GitHub App's settings in one visit | 14:08:55 on 2026-10-20 (queue): done through Arc. Callback URL added; Issues, Pull requests and Contents Read and write; eight events; a new key at `~/.secrets/smithers-jjhub.pem`; installs on `smithersai/smithers` and the new public `roninjin10/smithers-github-tests`. Webhook URL waits for a deploy. 14:12:55: an agent runs the live tests. | [issues](issues.md), [sign-in](sign-in.md) |
+| Row 7 (13:21:12): name a Latitude server for a second build machine | 14:09:17 (queue): "The servers are yours to do whatever you want". A Codex Sol coordinator runs SDK lanes on msb-lat-nyc-01. | [second build machine](second-build-machine.md) |
+| Row 6 (11:42:48): cap the fleet at about 8 agents? | 14:07:58: dropped by the curator; "ship faster" already answered it. | [dev stack hygiene](dev-stack-hygiene.md) |
+| Playground choice 1: the code is the source of truth, not the form | 14:11:48 (queue): option 1, accepted. | [Smithers Playground](smithers-playground.md) |
+| Playground choice 2: a time-first run inspector with Kill host | 14:19:59 (queue): option 1, accepted. | [Smithers Playground](smithers-playground.md) |
+| Row 2 (since 01:00): rotate the exposed Grafana password | 14:20:47 (queue): "Can we self host grafana instead of using graafana cloud". A Codex lane sets up the LGTM stack on msb-lat-nyc-01; the Cloud password stays exposed until that stack is deleted or rotated (row 2 now). | [self-hosted Grafana](self-hosted-grafana.md) |
+| Row 5 (13:45:10): keep the TODO stack order in Postgres, with no `mythical` ref? | 14:21:35 (queue): "Remove mythical history stuff we are adding that later not now". 0016 stands; the docs truth pass removes the `mythical` stack for now. | [TODOs and the stack](todos-and-stack.md), [docs truth pass](docs-truth-pass.md) |
+| Row 4 (13:32:34): M-31 under hosted only | 14:22:33 (queue): "A lot of our docs are out of date we need to update them the source of truth is htis mvp. we are building and what we are doing now". 14:25: the docs truth pass started. | [self-hosted install](self-host-install.md), [docs truth pass](docs-truth-pass.md) |
+| Row 3 (07:30:21): 0014 Q1, your own flows are prompt flows, code flows live in repositories | 14:26:24 (queue): "No everything is a flow this ruling is clear prompt flows are just a type of code flow". Reverses the recommended yes; an agent merges them into one `Flow.make` model. | [prompt flows are code flows](prompt-flows-are-code-flows.md), [flow authoring](flow-authoring.md) |
+| (Change request) the repository home GIF | 14:27:10 (queue): "I don't think the demo worked". The home-view agent fixes the product and records it again. | [home view](repository-declared-home.md) |
+| (Change request) the message controls GIF | 14:27:56 (queue): "copy should not be visible nor should the timestamp unless you are already hovering over the message". Unassigned at 14:30. | [message controls](chat-message-controls.md) |
+| (Unasked) Run more on the Latitude servers and free disk here | 14:16:52: "we should be running more stuff on latitude servers and freeing up unused worktrees and disk space please have an agent find safe disk space on this machine to free". | [disk space](disk-space.md), [second build machine](second-build-machine.md) |
+| Quick question 1 (13:26:18; row 3 since 02:35): move the heavy code viewer into its own package, `@smthrs/repo-view`? | 13:31:14 on 2026-10-20: "Yes move code viewer to it's own package." 13:32:34: an agent started; the old import path is deleted. | [repo-view package split](repo-view-package-split.md) |
+| Quick question 2 (row 4 since 06:15:58): build for hosted only now, the self-hosted Mac install later? | 13:31:14: "Built for hosted only now yes cut scope in that way." Deferred; the M-31 line it contradicts is now row 4 of "Next for Will". 14:04: recorded in decision 0010 ("Hosted only") and `todo.md` ("the self-hosted install, after ship"). | [self-hosted install](self-host-install.md) |
+| Quick question 3 (0013 Q1): is a shared branch visible only to Members and the people it's shared with? | 13:31:14: "Shared branch you should be able to use common sense and how other collaboration tools to figure it out without asking me questions." 13:32:34: the lead decided by Google Docs and Figma; no more sharing questions. 14:05: recorded in decision 0013 (decisions 8, 9 and 12; Q1 closed). | [branch sharing](branch-sharing.md) |
+| 0012 Q1: should what you post through Smithers appear on GitHub under your own account, rather than the App's? (Asked in plain words 13:23:33.) | 13:25:53: "yes should appear under your account is better ux". Recorded in 0012; issues already work this way. | [issues](issues.md), [pull requests](pull-request-list-and-tabs.md) |
+| (Unasked) How much weight do flows get? | 13:31:14: "Flows are the most important part of oour product and technology and should be supported very very well but we should be thoughtful and high quality with adding support to flows." He asked for the Smithers Playground; an Opus agent started 13:32:34. The lead holds every flow feature to a higher bar. | [Smithers Playground](smithers-playground.md), [flow authoring](flow-authoring.md) |
 | Item 1 of the lead's 13:19:52 list, "your GitHub actions show as you" (meant 0012 Q1, read as GitHub Actions) | 13:21:27 on 2026-10-20, a ruling: "Githubactions we don't support those at all we should not have any view or support for github actions. We support smithers workflows however which are very similar but run on our servers". A PR's Checks tab shows Smithers workflow runs on its head SHA; 0012 drops GitHub checks, statuses and their permissions (docs agent from 13:23:25). 0012 Q1 itself stays open in row 5. | [no GitHub Actions](no-github-actions.md), [pull requests](pull-request-list-and-tabs.md) |
 | Can any of the not-started features start in parallel now? (Will asked 13:20:28 and 13:20:43; the lead offered four at 13:21:12: "Should I start those four now?") | 13:21:41 on 2026-10-20: "start the ones that can start now we are trying to ship faster". 13:22:43 to 13:23:25: the lead started agent evals, the secrets egress proxy, token-spend alerts, notifications slice 1, Panel T (TODOs design) and the 0012 docs agent. | [agent evals](agent-evals.md), [secrets](secrets-proxy.md), [spend alerts](token-spend-alerts.md), [notifications](notifications-and-live-work.md), [TODOs](todos-and-stack.md) |
 | Which of the 19 old-app gaps to build, and in what order? (The audit's question; the lead hadn't asked it.) | 06:39:05 on 2026-10-20: "ability to open terminal in an iframe is important. Message controls is important. One conversation per branch is important. Repo view extras we should do. Pull request list and generally finishing the entire git e2e flow ... ability to create a repositories own home view is important. Stuff related to flows debugging flows creting flows which wasn't listed is another one." Three design panels and three builders started 06:41 to 06:43. | [old app feature gaps](old-app-feature-gaps.md) |
@@ -243,10 +348,32 @@ Will asked at 21:31 on 2026-10-19 whether the design questions were in his maint
 - **13:21:27: Will: "1. Githubactions we don't support those at all ..."** He read item 1 as GitHub Actions; recorded as a ruling under Answered ([no GitHub Actions](no-github-actions.md)).
 - **13:21:41: Will: "start the ones that can start now we are trying to ship faster"** (under Answered).
 - **13:23:33, the lead to Will:** "My item 1 was badly worded and wasn't about GitHub Actions. It asked whether a comment or issue you post through Smithers should appear on GitHub under your own account, rather than the App's. I recommend yes; is that right?" Row 5's 0012 Q1 is reworded to match. No answer by 13:28.
+- **13:25:53 on 2026-10-20, Will:** "yes should appear under your account is better ux are there any other questions that are quick and fast for me to answer or a blocker that is blocking a lot of work from finishing/continuing?" 0012 Q1 is answered.
+- **13:26:18, the lead:** the GitHub App's settings page is "the one blocker that holds the most work", one visit of about 5 minutes (row 1), plus four 10-second questions: the code viewer package, hosted only, shared-branch visibility and personal flows prompt-only; and, not blocking, the Grafana password.
+- **13:31:14, Will:** "Yes move code viewer to it's own package. Built for hosted only now yes cut scope in that way. Shared branch you should be able to use common sense and how other collaboration tools to figure it out without asking me questions." Then the flows direction and the [Smithers Playground](smithers-playground.md). Question 4 unanswered.
+- **13:32:34, the lead:** started the playground and the code viewer package; a docs agent records hosted-only and the sharing rules; M-31 left for Will; 0014 Q1 built on yes.
+- 13:38:52: the lead ruled on session expiry (keep the device copy, ask to sign in); under "Building proceeds".
+- 13:44:12: decision 0016 (TODOs and the stack) is written with two questions for Will. 13:45:10: the lead settled both on the recommended answers and flagged one change for Will: the stack's order lives in Postgres with no `mythical` ref, departing from root `AGENTS.md` (row 5).
+- The GitHub App visit, the Grafana password, the fleet cap, the Latitude server and the code review are not done by 13:46.
+- **14:04 to 14:05 on 2026-10-20: the docs agent recorded both 13:31:14 rulings in the decision records.** Hosted only is in decision 0010, with "the self-hosted install, after ship" in `todo.md` ([self-hosted install](self-host-install.md)). Shared branches are 0013 decisions 8, 9 and 12: private until shared, `Can view` or `Can edit` by name, optional general access for Members and above, the owner revokes, viewers in presence; sharing questions no longer go to Will ([branch sharing](branch-sharing.md)). 0013 Q1 is off every open list here. Root `AGENTS.md` is unchanged; M-31 stays row 4.
+- **13:54 on 2026-10-20, the lead to Will:** "The Playground design is ready for you." Its three choices (above the table) proceed unless he objects.
+- **About 13:57: Will:** "I should have a queue of decisions I can make in the UI and this queue of decisions should be extremelyfast and productive to use." The lead started a queue builder and a curator ([Will's decision queue](will-decision-queue.md)).
+- **14:03:47: the curator's first queue holds every open row here** as a `question` or `decision` item (9 and 11), ranked as in the intro. 14:04, the lead: "The GitHub App setup comes first, then the other blockers, the Playground, decision 0016 and M-31 decisions, 18 feature GIF groups and 5 designs." 14:06:34: 150 items with 107 code slices.
+- By 14:08: no answer from Will in `apps/maintainer-site/queue/answers.jsonl`; none of rows 1 to 9 is done.
+- **14:07:28 on 2026-10-20: the queue went live** at `http://localhost:4747/queue`; 14:07:58: the curator dropped the fleet cap (row 6) and "first deploy yes" (deploying waits on Will's review).
+- **14:08:55 to 14:27:56: Will answered rows 1 to 7 and the Playground's choices 1 and 2 in the queue**, and sent two GIF change requests (all under Answered). 14:12:55, the lead: the curator ranks the app and its SDK above internal tools.
+- 14:16:52: Will asked for more work on the Latitude servers and a safe disk cleanup here.
+- 14:25 to 14:28: Grafana, 0016 and M-31 went to `queue/dispatch.md`, assigned to a Codex lane and the [docs truth pass](docs-truth-pass.md); the Latitude answer is ticked.
 
 ## Next
 
-From 06:55 on 2026-10-20: on each answer, write it into the linked note and its decision record, then move the row off this list. When a panel merges, add its questions (at most 3) to row 5, one row each, with the recommended answer.
+From 14:30 on 2026-10-20: Will answers in the queue. On each answer in `apps/maintainer-site/queue/answers.jsonl` (or in chat), write it into the linked note and its decision record, then move the row off this list. Questions that exist only because a doc was stale leave the queue after the [docs truth pass](docs-truth-pass.md).
+
+Until 14:30 on 2026-10-20 the next step was, from 14:04 on 2026-10-20: Will answers in the queue. On each answer in `apps/maintainer-site/queue/answers.jsonl` (or in chat), write it into the linked note and its decision record, then move the row off this list.
+
+Until 14:04 on 2026-10-20 the next step was, from 13:46 on 2026-10-20: on each answer, write it into the linked note and its decision record, then move the row off this list.
+
+Until 13:46 on 2026-10-20 the next step was, from 06:55 on 2026-10-20: on each answer, write it into the linked note and its decision record, then move the row off this list. When a panel merges, add its questions (at most 3) to row 5, one row each, with the recommended answer.
 
 Until 06:55 on 2026-10-20 the next step was, from 06:26: on each answer, write it into the linked note and its decision record, then move the row off this list. Row 5 is under way: what Will finds while testing goes into the note for that feature.
 
@@ -257,6 +384,27 @@ Until about 06:05 on 2026-10-20 the next step was: On each answer: write it into
 Until about 05:54 on 2026-10-20 the next step was: On each answer: write it into the linked note and its decision record, then move the row off this list.
 
 ## Questions for Will
+
+As of 14:30 on 2026-10-20, in order (rows of "Next for Will"):
+- The queue's open decisions and questions (row 1).
+- Delete the Grafana Cloud stack once the self-hosted one works (row 2, not blocking).
+- Test the app (row 3) and review the code in the queue (row 4).
+- Answered 14:07:58 to 14:27:56: the GitHub App (done), a Latitude server (all of them), the fleet cap (dropped), Grafana (self-host), 0016 (Postgres, `mythical` later), M-31 (docs follow the MVP), 0014 Q1 (prompt flows are code flows), Playground choices 1 and 2 (accepted).
+
+Until 14:30:
+
+As of 14:08 on 2026-10-20: the 13:46 list below, unchanged, plus the Playground's three design choices; each is a queue item at `/queue`.
+
+As of 13:46 on 2026-10-20, in order:
+- **Now (asked 13:26:18):** one visit to the GitHub App's settings: the callback URL, Issues, Pull requests and Contents read and write, the eight events, a new private key, installs on the wrapped and a scratch repository (row 1).
+- **Not blocking, now:** rotate the Grafana password (row 2).
+- 0014 Q1, personal flows prompt-only: unanswered at 13:31:14; built on yes (row 3).
+- M-31 under hosted only (row 4).
+- 0016's departure from "One mythical stack" (row 5); 0016 Q1 and Q2 settled by the lead at 13:45:10.
+- The fleet cap and a Latitude server (rows 6 and 7).
+- Answered 13:25:53 and 13:31:14: 0012 Q1 (yes, as the person), the code viewer package (B), hosted only (yes), shared branches (the lead decides by common practice).
+
+Until 13:46:
 
 - **Now (asked again in plain words 13:23:33 on 2026-10-20):** 0012 Q1: when you post a comment or an issue through Smithers, should it appear on GitHub under your own account, rather than the App's? Recommended: yes. Not about GitHub Actions, which Will ruled out at 13:21:27 ([no GitHub Actions](no-github-actions.md)).
 - **Now (asked 13:21:12 on 2026-10-20):** name a Latitude server for a second build machine, not one running production sandbox workers or nyc-01 (row 10, [second build machine](second-build-machine.md)).

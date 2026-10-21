@@ -1,11 +1,27 @@
 ---
 title: "Open a webpage from chat (app/web/open): embedded in the conversation or in a new tab"
-status: done
+status: in-progress
 area: app
 owner: web page agent; reported done 07:44:34 on 2026-10-20 (e2e 5 of 5 against the dev server and the real model, five GIFs, new files at 100% unit coverage, `docs:sync` and `docs:check` pass); a fix in `@smthrs/effect-electric` with a changeset; nothing committed, so it lands in round 2 of the landing. Until 07:44: web page agent; from 07:06 on 2026-10-20 `e2e/web-page.spec.ts`, five GIFs (07:11 to 07:12) and `docs/features/web-pages.md` (07:13); unreported. Until 07:06: web page agent; from 06:30:52 on 2026-10-20 under the lead's second instruction (`localHttp` read from Config so production is `https` only, with a test; a real `frame-ancestors 'none'`; the slash list from the registry). By 06:34 all three are on disk with tests; `docs/features/web-pages.md` and `e2e/web-page.spec.ts` aren't; unreported. Until 06:30: web page agent; from 06:21:32 on 2026-10-20 under the lead's security requirement for `embed` (refuse the app's own origin and any origin sharing its cookies or storage, with a test); the refusal is on disk in `src/features/web/url.ts` (06:24:07), its test isn't, unreported. Until 06:21: web page agent; building from about 06:08 on 2026-10-20 (`src/features/web/` and `src/features/views/`, migration `0010_views`, `worker/Views.ts`, and `@smthrs/ui` `src/web-page/`), unreported. Until 06:08: web page agent (started about 05:59 on 2026-10-20 by the lead, at Will's request); researching from 05:59 to at least 06:04 (the app's answer and actor workers, the flow runtime's execution context, the agent's flows and instructions, TanStack DB queries, Playwright); no source file changed, unreported
 updated: 2026-10-20
 links: [navigate-flow.md, slash-commands.md, agent-ui-rendering.md, flows-and-agent.md, pwa.md, observability.md, e2e-suite-and-gifs.md, code-reviews.md, ../decisions/0003-flows-and-the-agent.md, ../decisions/0004-agent-ui-codemode-and-rendering.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../features/flows.md, ../features/agent.md, ../rules.md, ../../../../AGENTS.md, fable-review-2-fixes.md, ../features/web-pages.md, effect-tanstack-db-and-effect-electric.md, land-to-main.md]
 ---
+
+## Current specification — 2026-10-20, 18:18 PDT
+
+**What:** Handle pages that refuse embedding with an honest, usable fallback.
+
+**Why:** Will requested graceful iframe refusal at 18:11.
+
+**Current state:** The lead assigned a durable server preflight with private-address protection and a link-card fallback, also for failures after loading. No completion receipt.
+
+**Next step:** Prove a refusing local page produces the fallback with title/domain and Open in a new tab; make the agent report card rather than embed, and rerecord the browser journey.
+
+**Open questions for Will:** None; the recorded requests settle product intent.
+
+Evidence: script-filtered user text and lead replies from the latest two session hours; queue answers through 2026-10-21 01:16:08 UTC; current rulings, decisions, proposals, TODOs, rules and shared panel briefs/designs. Later rulings override historical proposals. Product receipts are reported evidence; this pass validates the site build only.
+
+## Earlier tracker history (retained)
 
 ## What
 

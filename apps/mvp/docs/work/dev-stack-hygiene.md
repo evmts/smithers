@@ -2,10 +2,97 @@
 title: Dev stack hygiene for the agent fleet
 status: in-progress
 area: infra
-owner: lead (smithers-b3); from 13:13 on 2026-10-20 it also owns the shared dev server's model budget (raised to 10,000,000 tokens a day in `apps/mvp/.env`) and restarts the server only under the shared test lock (scratchpad `restart-dev.sh`). Until 13:13: lead (smithers-b3); from 11:42:48 on 2026-10-20 it resumes the agents each usage limit stops, and it offered Will a cap of about 8 agents at a time (no answer by 11:46); reopened from done at 11:46. Until 11:42: lead (smithers-b3); from 07:30:21 on 2026-10-20 full test suites wait for one shared lock (scratchpad `heavy.lock`). Until 07:30: lead (smithers-b3); written into the wiring checklist (scratchpad `final/WIRING.md`, "Dev stack hygiene") at 02:15 on 2026-10-20; compose Postgres recreated with `max_connections` 300 about 02:27; the `$TMPDIR` cleanup stays a step of each tracker tick
+owner: lead and dev transport owner to assign
 updated: 2026-10-20
-links: [cerebras-rate-limits.md, flow-authoring.md, chat-message-controls.md, review-round-4.md, decisions-for-will.md, navigate-flow.md, site-deployment-test.md, docs-check-flow-outcome.md, land-to-main.md, disk-space.md, app-wiring.md, model-endpoint.md, sign-in.md, repo-clone-and-view.md, code-reviews.md, e2e-suite-and-gifs.md, second-build-machine.md]
+links: [will-decision-queue.md, cerebras-rate-limits.md, flow-authoring.md, chat-message-controls.md, review-round-4.md, decisions-for-will.md, navigate-flow.md, site-deployment-test.md, docs-check-flow-outcome.md, land-to-main.md, disk-space.md, app-wiring.md, model-endpoint.md, sign-in.md, repo-clone-and-view.md, code-reviews.md, e2e-suite-and-gifs.md, second-build-machine.md, issues.md, connect-agents-sandboxes-forge.md, branch-sharing.md, self-hosted-grafana.md, ../rulings.md, local-dev-sync-connections.md, mac-mini-test-farm.md]
 ---
+
+## Current specification — 2026-10-20, 17:14 PDT
+
+**What:** Keep the shared stack usable and local behavior representative of production.
+
+**Why:** Development delays must not mask product or test failures.
+
+**Current state:** Docker/Postgres/Electric recovered; the Mac mini farm is proven separately. At 17:13 the lead identifies persistent plain-HTTP feed connection contention delaying cross-device sync by about 40 seconds. Earlier low-priority sync scheduling helped writes but is not a full resolution.
+
+**Next step:** Fix the newly tracked local-dev connection bottleneck and measure multi-tab sync; preserve isolated test capacity and passing recordings.
+
+**Open questions for Will:** None.
+
+Evidence: script-extracted human text and lead replies from session 6253ecf2, latest two hours through 2026-10-21 00:13:56 UTC; queue answers through 00:06:34 UTC; current rulings, decisions, proposals and shared briefs. Queue answers supersede older design proposals. Test results are lead-reported; this tracker runs the site build only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 15:24 PDT
+
+**What:** Keep the shared development stack usable and serialize disruptive restarts with the test lock.
+
+**Why:** Disk exhaustion had stalled writes and stopped container startup.
+
+**Current state:** At 15:17:27 the lead reported Docker starting containers, database/Electric up and repository pages loading; waiting builders were told to rerun. This supersedes the queued-restart blocker. Sandbox-tool and tab-close recordings followed.
+
+**Next step:** Collect dependent terminal, sharing, hover-controls and spend-alert browser receipts; move heavy work to isolated Latitude lanes.
+
+**Open questions for Will:** None.
+
+Evidence: Will’s typed messages and lead text replies, extracted from session `6253ecf2` for its latest two hours through 15:23:55 PDT; [rulings](../rulings.md), queue answers through 14:36 PDT, shared briefs/designs and current decisions, proposals, TODOs and rules. Receipts above are reported, not fresh product tests run by this tracker.
+
+## Earlier tracker history
+
+
+## Current specification — 2026-10-20, 15:14 PDT
+
+**What:** Recover OrbStack, Postgres, Electric and the shared dev server under the shared test lock.
+
+**Why:** Repository pages and branch sandboxes remain unavailable on the shared dev server.
+
+**Current state:** At 15:10:02 PDT the lead says the restart will take the test lock as soon as it frees. Repository pages and branch sandboxes still do not work, and the home recording waits. No completed restart receipt appears through 15:13:56. Disk recovery alone is not service recovery.
+
+**Next step:** Restart Docker, migrate/start the database and Electric, then restart dev with Code Storage credentials. Prove repository reads, sandbox startup and sync before dependent tests resume.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies through 2026-10-20 22:13:56 UTC (15:13:56 PDT), extracted from session `6253ecf2`; [rulings](../rulings.md), queue answers through 21:36 UTC, decisions, proposals, todo and rules. Reported receipts are not fresh test execution by this tracker.
+
+## Earlier tracker history
+
+
+## Current specification — 2026-10-20, 15:10 PDT
+
+**What:** Recover OrbStack, Postgres, Electric and the shared dev server under the test lock.
+
+**Why:** Repository pages and branch terminals are blocked by host failures.
+
+**Current state:** At 14:59 the Docker restart was still waiting on the shared test lock. The lead’s 15:08 tracker recap still calls repo view and branch terminal blocked. Free disk reached a reported 18 GiB, which alone does not prove recovery. Earlier Code Storage credential omission also remains part of the restart fix.
+
+**Next step:** Restart with migrations and the Code Storage key; verify repo reads, a real terminal and sync before dependent browser reruns.
+
+**Open questions for Will:** None.
+
+Evidence: recent user text and lead replies from session `6253ecf2`, extracted through 15:10 PDT; [rulings](../rulings.md) and queue answers through 14:36 PDT. Reported completion is distinguished from a test run by this tracker.
+
+## Earlier tracker history
+
+
+## Current specification — 2026-10-20, 14:55 PDT
+
+**What:** Keep the shared database, Electric, Docker and dev server healthy for real tests.
+
+**Why:** Tests and repository pages are blocked by host failures.
+
+**Current state:** At 14:53 Docker cannot start containers. OrbStack → database/Electric → dev server restart is queued behind the shared lock. The 14:26 restart omitted Code Storage credentials, breaking repo pages. Budget was separately raised to 10M daily tokens at 13:13, resolving earlier message-control failures.
+
+**Next step:** Restore the stack under the lock with migrations and the Code Storage key, then prove repository pages and terminal startup before rerunning affected tests.
+
+**Open questions for Will:** None; the lead can settle implementation details.
+
+Evidence: Will's typed messages and the lead's text updates in session `6253ecf2`, 12:54–14:55 PDT; [rulings](../rulings.md); queue answers through 14:36 PDT. These are reported receipts, not a new verification run by the tracker.
+
+## Earlier tracker history
+
+Previous owner record: lead (smithers-b3); `restart-dev.sh` migrates the database first since 14:25 on 2026-10-20; the live GitHub tests run on a second, separate dev server (scratchpad `live/`). Until 14:30: lead (smithers-b3); from 13:13 on 2026-10-20 it also owns the shared dev server's model budget (raised to 10,000,000 tokens a day in `apps/mvp/.env`) and restarts the server only under the shared test lock (scratchpad `restart-dev.sh`). Until 13:13: lead (smithers-b3); from 11:42:48 on 2026-10-20 it resumes the agents each usage limit stops, and it offered Will a cap of about 8 agents at a time (no answer by 11:46); reopened from done at 11:46. Until 11:42: lead (smithers-b3); from 07:30:21 on 2026-10-20 full test suites wait for one shared lock (scratchpad `heavy.lock`). Until 07:30: lead (smithers-b3); written into the wiring checklist (scratchpad `final/WIRING.md`, "Dev stack hygiene") at 02:15 on 2026-10-20; compose Postgres recreated with `max_connections` 300 about 02:27; the `$TMPDIR` cleanup stays a step of each tracker tick
+
 
 ## What
 
@@ -79,10 +166,27 @@ Keep the shared local dev stack on Will's MacBook healthy while 10 or more agent
 - **13:20:43 on 2026-10-20: Will offered Latitude servers.** "If you need more computing resources we have latitude servers". The lead, 13:21:12: "CPU isn't the bottleneck": the one shared test lock and the one shared checkout are. A Latitude box helps only as a second build machine with its own clone, Postgres, Electric and dev server, pushing to `main` itself, and never the two hosts running production sandbox workers or nyc-01. Waiting on Will to name one ([second build machine](second-build-machine.md)).
 - 13:22:27: the lead rewrote the builder rules (scratchpad `final/BUILD-COMMON.md`): the heavy lock before any full suite, e2e or `docs:check`; never `pkill` or `killall` by pattern; the shared dev server restarts only through the lead; no git; no clones or large toolchains; about 9 GiB free.
 - 13:22:43 to 13:23:25: six more agents started (evals, secrets, spend alerts, notifications, Panel T with a Codex Sol member, the 0012 docs agent), on top of the triage, branch workspace, home view and SDK builders. 13:23:36: the lead checked the lock's age and cleaned stale temp items. **13:23:56: 8.6 GiB free.**
+- 13:34 (the lead): 9.0 GiB free. 13:43: 8.9 GiB, and nothing held the test lock.
+- **13:54, the lead:** "Load peaked at about 130 from many parallel test runs and the commit round's dependency install, then settled. Nothing ran away."
+- **13:59: the session hit its cap of 20 agents at once** when the queue's curator started; the lead stopped that round's tracker refresh to make room ([Will's decision queue](will-decision-queue.md)).
+- **14:03: 6.0 GiB free**, because the lander installed dependencies in `~/smithers-lander` (its `node_modules` at 13:55) for landing round 3 ([land to main](land-to-main.md)). 14:04: 6.2 GiB. The lead's line (12:34): below 6 GiB, clear older material from finished sessions. The Go half of `pnpm docs:check` refuses below 5 GiB ([disk space](disk-space.md)).
+- 14:02: `heavy.lock` was taken, and round 3's per-package type checks and unit run (scratchpad `r3/`) ran from about 14:02, still going at 14:06.
+- **14:07:58 on 2026-10-20: the fleet-cap question is gone.** The curator dropped "cap the agents at 8" from the queue because "ship faster" answered it.
+- 14:12:55: the live GitHub test agent runs on its own dev server (scratchpad `live/start-live-dev.sh`, `dev-live.log`), "so the other agents' tests aren't affected".
+- **14:12: the shared dev server went down**: a new import was missing from `package.json` (the lead, 14:25:28: "It's restarting, and I told that agent to add the missing dependency").
+- **About 14:15: the session usage limit stopped 13 agents** (home view, sync bug, triage, TODOs Track A, spend alerts, queue UI, agent in the sandbox, repo-view split, branch sharing, live GitHub tests, agent evals, Playground, notifications). 14:18:28, Will: "keep going". The lead resumed all 13 at 14:19.
+- **14:16:52, Will:** "we should be running more stuff on latitude servers and freeing up unused worktrees and disk space please have an agent find safe disk space on this machine to free" ([disk space](disk-space.md), [second build machine](second-build-machine.md)).
+- 14:24: the Playground paused to free an agent slot ([Playground](smithers-playground.md)).
+- **14:26:05 to 14:26:25: the shared dev stack migrated and restarted** (scratchpad `restart-dev.log`): `db:migrate` applied `18_triage, 19_spend_alerts, 20_notifications, 21_secrets, 22_todos, 23_branch_sharing, 24_sandbox_calls`; 7 old processes killed; up after 10 s. It also loads [branch sharing](branch-sharing.md)'s `RoomObject`. 14:27:52, the lead: "The dev server was migrated and restarted at 14:26 and is answering again."
+- 14:30: 6.4 GiB free on the MacBook.
 
 ## Next
 
-From 13:13 on 2026-10-20: as below, plus: restart the dev server only through `restart-dev.sh` (under `heavy.lock`, both trees killed, port checked); when a live-model e2e fails, read the 429's body first, since our own budget and a provider limit both answer 429; and check `model_budget_days` before a fan-out of live-model tests, because killed runs keep their reservations until midnight UTC.
+From 14:30 on 2026-10-20: keep one slot free under the 20-agent cap; restart the shared dev server only under the shared test lock and only through `restart-dev.sh`, which migrates first; with free disk near 6 GiB, act on Will's 14:16 disk request before the next fan-out ([disk space](disk-space.md)).
+
+Until 14:30 on 2026-10-20 the next step was, from 14:04 on 2026-10-20: as below, plus: with free disk at the 6 GiB line, run the cleanup recipe before the next fan-out or full suite; the lander's `~/smithers-lander` dependencies go once round 3 lands. Keep one slot free under the 20-agent cap, since the tracker tick is the first one stopped.
+
+Until 14:04 on 2026-10-20 the next step was, from 13:13 on 2026-10-20: as below, plus: restart the dev server only through `restart-dev.sh` (under `heavy.lock`, both trees killed, port checked); when a live-model e2e fails, read the 429's body first, since our own budget and a provider limit both answer 429; and check `model_budget_days` before a fan-out of live-model tests, because killed runs keep their reservations until midnight UTC.
 
 Until 13:13 on 2026-10-20 the next step was, from 12:54 on 2026-10-20: as below, and every brief says to stop a test run by its own pid, never with `pkill -f` on a shared pattern (the 12:52 kill).
 
@@ -101,6 +205,10 @@ Until about 02:58 on 2026-10-20 the next step was: none open. Keep the 60-minute
 Until about 02:27 on 2026-10-20 the next step was: raise `max_connections` to 300 and restart the compose Postgres once no agent runs tests. Then rerun the reds that carry 53300 to confirm they pass in the crowd. Keep the 60-minute `$TMPDIR` cleanup at every tracker tick, and check `df -h /` before fanning out more than 5 agents.
 
 ## Questions for Will
+
+None. The fleet cap question was dropped at 14:07:58 on 2026-10-20 ("ship faster" answered it).
+
+Until 14:30:
 
 - **Cap the fleet at about 8 agents at a time** to stretch the second account, finishing the review fixes and landing first? The lead offered it at 11:42:48 on 2026-10-20; about 15 agents run now, plus their sub-agents. No recommendation is on record. ([Decisions for Will](decisions-for-will.md), row 8.)
 

@@ -1,5 +1,7 @@
 # Smithers MVP engineering specification
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (ARCH-1, SCOPE-8, ARCH-14). Kept as prior art.
+
 Status: draft v0.4 by the engineering agent (smithers-8a), 2026-10-02. Implements [mvp.md v2.6](../product/mvp.md) (M-01..M-30, build stages §11, deferrals §16). It specifies behavior. [delta.md](delta.md) is the build plan, and [overview.md](overview.md) is the one-page version.
 
 ## 0. Stages and deferrals

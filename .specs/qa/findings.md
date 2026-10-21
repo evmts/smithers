@@ -1,4 +1,7 @@
 # QA findings log
+
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (SCOPE-5, SCOPE-8, TEST-1). Kept as prior art.
+
 | When (PT) | ID | Where | Finding | Routed | Status |
 | --- | --- | --- | --- | --- | --- |
 | 10-02 15:15 | Q-001 | stk lane todo_state.go (#3433) | needs_you→queued missing (spec §4.1) | 22 + comment #3433 | open |

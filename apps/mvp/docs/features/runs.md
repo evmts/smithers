@@ -66,6 +66,6 @@ No record carries a value of a run.
 | `src/features/runs/runs.test.ts` | Every act on the Node host's engine: Stop on a live run and on a settled one, a stale fence, Retry once per act, pinned and current, every refusal, Resume of a run whose engine died, and runs of a flow the engine doesn't run |
 | `src/features/runs/page.test.ts` | The steps, the selected step, the journal with More, the acts a run offers, and the list's rows |
 | `src/features/flows-ui/tab.test.ts` | The run page from a tab following a run to its answer, Retry opening the new run, the list, Stop, and Resume refused |
-| `e2e/flows.spec.ts` | In a real browser: create a flow, run it, watch its run page, stop a run and retry it |
+| `e2e/flows.spec.ts` | In a real browser: create a flow, run it, watch its run page, stop a run and retry it; open a drafted flow's code, run it, relabel its step, and see Run refused with `Needs a sandbox` |
 
 Run them with the compose Postgres and Electric up (`pnpm db:up`): `pnpm exec vitest run src/features/runs src/features/flows-ui`.

@@ -1,5 +1,7 @@
 # ADR 0002: Mac install, multiple members, microVM execution, any origin
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (SCOPE-8, ARCH-14). Kept as prior art.
+
 Status: proposed (2026-10-02). Supersedes [ADR 0001](0001-shared-product.md) for the Mac install's deployment, membership and execution model.
 This record becomes accepted when Will approves the MVP engineering spec.
 

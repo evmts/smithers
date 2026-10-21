@@ -24,6 +24,7 @@ A registry entry with a `slash` door is a command ([the registry](flows.md#the-r
 ```
 
 - **Its row** is `/<command>` and the first sentence of the flow's description. The rest of the description is for the agent.
+- **The agent knows them.** Its system teaching lists every command from the same registry, each with the flow it runs, and marks the ones only the person runs (`SLASH_COMMANDS`, `src/features/agent/instructions.ts`; [the agent](agent.md#what-the-agent-is-told)). Asked how to use one for a result ("How do I use /theme to turn on dark mode?"), the agent does it and names the command; asked only what one does, it explains. Before 2026-10-20 it knew none, and told a person there was no `/theme` ([agent evals](agent-evals.md)).
 - **Its arguments** are the flow's payload, through `@smthrs/ui`'s `formFieldsFor`: a field whose schema is a union of literals lists its values; any other field is free text. Arguments fill the fields in schema order, the last text field takes the rest of the line, and `--name` sets a boolean field.
 - **Who sees it:** a person who is at least `minimum`: `anyone` (signed out included), then `guest`, `member`, `maintainer` and `admin` ([decision 0007](../decisions/0007-roles-and-tags.md#1-roles)). Signed in with no role counts as a Guest. The list only hints: a flow that writes shared state is checked again on the server.
 
@@ -32,6 +33,12 @@ A registry entry with a `slash` door is a command ([the registry](flows.md#the-r
 | `/theme` | `app/theme/set` | anyone | `mode`: `light` or `dark` |
 | `/issue` | `issue/create` | guest | `repo` (`owner/name`), then the title as the rest of the line; its door names `fields: ["repo", "title"]`, so the body keeps its default ([issues](issues.md)) |
 | `/comment` | `issue/comment` | guest | `repo`, `number`, then the comment as the rest of the line |
+| `/triage` | `issue/triage` | member | `repo`, `number`, `decision` (`accept` or `reject`), then an optional reason as the rest of the line, posted as the person's comment ([triage](issues.md#triage)) |
+| `/triage.run` | `triage/run` | member | `repo`, `number`: Run triage again |
+| `/triage.enable` | `triage/enable` | maintainer | `repo`, then an optional daily budget in tokens |
+| `/triage.pause` | `triage/pause` | maintainer | `repo` |
+| `/todo.new` | `todo/draft` | member | `repo`, then the prompt as the rest of the line: a private draft on the stack page, to edit and commit ([TODOs](todos.md)) |
+| `/todo.drop` | `todo/drop` | member | `repo`, `number`: drops TODO `T<number>` |
 | `/copy` | `chat/copy` | anyone | none: copies Smithers' latest finished answer; `messageId` is hidden ([chat](chat.md#message-controls)) |
 | `/edit` | `chat/edit` | member | none: takes the latest question Smithers doesn't have yet back to the composer; `questionId` is hidden |
 

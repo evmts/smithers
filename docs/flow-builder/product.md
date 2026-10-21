@@ -1,5 +1,7 @@
 # Flow Builder & Monitor — Product
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (FLOW-4; decision 0014). Kept as prior art.
+
 Stage: **vision ruled by Will (2026-09-18); sentence wording still open.**
 
 Will's ruling, verbatim: "I imagine working with smithers to build a workflow to

@@ -1,284 +1,162 @@
 # Permanent product interaction rules
 
+Every agent in this repository follows these rules. The source of truth for
+what we build is [the rulings](apps/mvp/docs/rulings.md): Will's latest words,
+then his decision-queue answers, then the decision records in
+`apps/mvp/docs/decisions/`, then older docs. Anything that contradicts a ruling
+is out of date; fix it or report it (Will, 2026-10-20, SCOPE-9). Each rule
+below cites its ruling ID.
+
+## What we are building now (Will, 2026-10-19 and 2026-10-20)
+
+- **The app is [`apps/mvp`](apps/mvp/AGENTS.md),** built from scratch one
+  feature at a time (SCOPE-1). Read its `AGENTS.md` before touching it.
+  `apps/app` (the old app, "v4"), `apps/server`, `packages/backend` and Plue are
+  prior art: port the minimal proven code into the new architecture, never
+  extend them (SCOPE-3, ARCH-1).
+- **The work is Will's feature list** (rulings SCOPE-6 and SCOPE-7), not an MVP
+  scope, a build stage or a journey suite. Don't raise MVP scope (SCOPE-5).
+  `.specs/product/` is the product vision; where it disagrees with the rulings,
+  the rulings win.
+- **Hosted only, on Cloudflare** (SCOPE-8, ARCH-1, ARCH-3): Effect-native
+  Workers deployed by Alchemy (no Wrangler config), Neon Postgres synced by
+  Electric into TanStack DB (ARCH-4), git hosting on Code Storage (ARCH-13),
+  branch sandboxes on Cloudflare Containers (ARCH-14), and a secrets egress
+  proxy (ARCH-16). Google Cloud is abandoned. The self-hosted Mac install waits
+  until after ship (SCOPE-8).
+- **The agent runs in the browser** on `@smthrs/platform-browser`'s durable
+  engine. The app is a local-first PWA, and every model call goes through our
+  server's model proxy (ARCH-5, ARCH-6, ARCH-17).
+- **Web first.** Add an Electrobun desktop app only when a feature must run on
+  the person's own machine (SCOPE-10).
+- **Go fast; land the final draft.** Quality comes from fast iterations with
+  Will's feedback, and the code that lands is held to perfection, test
+  coverage included (PROC-3, SDK-14).
+
 ## Everything is a durable flow (Will, 2026-10-19, permanent)
 
 Smithers is built on its own durable flows (`@smthrs/flow`). Every action the
 app or an agent takes runs as a durable flow step, and that includes every model
 call. Flows run on the user's machine, on Cloudflare, or on our sandbox
-provider.
+provider (DUR-1).
 
 - **Durable by default.** The flow engine supplies retries, resumption after a
   crash, idempotency and deadlines. App and library code never write their own
-  retry loops, background jobs, sweeps, queues or "re-dispatch" logic.
+  retry loops, background jobs, sweeps, queues or "re-dispatch" logic (DUR-2).
 - **Model calls go through the durable layer only.** That means a flow step,
   through `@smthrs/agent` or `@smthrs/flow`. No handler or app module calls
-  `Model.stream` directly.
+  `Model.stream` directly. The app uses the Smithers agent, and a durable model
+  call keeps the provider's prompt cache (DUR-4, DUR-6).
 - **Never substitute another runtime for one.** No Cloudflare Workflows,
   Durable Object job loops, bare `waitUntil` work, Temporal, Inngest,
   Trigger.dev, Vercel AI SDK, LangChain or LangGraph, or Mastra. If the flow
   engine can't run where a job must run, the fix is a host for it in the SDK
   (`@smthrs/platform-node`, `-bun`, `-browser`, and the Cloudflare and sandbox
-  hosts). A workaround in an app is not a fix.
+  hosts). A workaround in an app is not a fix (DUR-3, DUR-7).
+- **Local first.** A flow runs remotely only when it needs a server-held key, a
+  machine to run code, or to continue while every device is off; never because
+  it is long (DUR-5).
 - **Before choosing any library,** find the job in
   [the library catalog](docs/libraries.md), and say in the change which entry
   you used. A brief written for another agent states this rule.
 
-## Doneish first; release continuously (Will, 2026-10-08)
+## Everything is a plugin (Will, 2026-10-20, permanent)
 
-Make it work, then make it good. The goal is **doneish**, and every doneish
-`main` ships as a silent prerelease. Where another rule here or in `.specs`
-sets a stricter bar or a different order, this section wins until the
-prerelease is out.
+Like webpack, Smithers treats everything as a plugin. The app's core supplies
+infrastructure and primitives; every feature we can express that way ships as
+an opinionated first-party plugin built on the same public plugin interface
+anyone uses to add Smithers flows, flows as config, custom flows and custom
+UIs. Everything is ultimately a flow, running locally or remotely in a sandbox
+(PLUGIN-1).
 
-- **Doneish:** to the best of our knowledge the spec is implemented. On one
-  `main` commit a real install on an ordinary Mac takes a TODO to a merged pull
-  request, the J1 to J11 journey suites pass, and every ticket is either
-  believed complete or listed in `PRERELEASE.md` as off, broken, missing or
-  unverified. A suite that runs on fixtures is not the real install. It may be
-  unverified on the reference host and unreviewed.
-- **Done** is unchanged: owner sign-off and a closed issue. Done gates the real release,
-  never a prerelease. That work continues after each prerelease.
-- Nothing strict blocks doneish: no wiped or reference Mac mini, independent
-  operator, receipt, `Ready:` restamp, owner pre-review, second-model review or
-  coverage campaign. Each becomes a line under Unverified.
-- Security hard rules and contributor trust rules still hold. A feature with a
-  known hole ships switched off and listed.
-- Work in this order: the real install run, failing journey rows, the release
-  path, then the rest. Work that serves none of them waits for the prerelease.
-- A prerelease is a suffixed version such as `1.0.0-rc.2`, published under npm
-  `next` with no announcement; `latest` does not move. Only gates that prove it
-  builds, installs and starts can block it; every other gate reports. Cut one
-  whenever the journeys pass, at least daily, so Will sees the product instead
-  of waiting on it.
-
-## MVP scope (Will, 2026-10-02)
-
-The product contract is [`.specs/product/overview.md`](.specs/product/overview.md)
-and [`.specs/product/mvp.md`](.specs/product/mvp.md). They replace
-`docs/mvp/PRODUCT.md`, which keeps only an index of the decision IDs code still
-cites (M-12). A feature the spec doesn't name is a candidate to delete or defer,
-decided one at a time.
-
-- Smithers is a replacement for the GitHub web UI: a wrapper whose repository
-  interaction, actions and customization are durable workflows. It runs hosted
-  and as one install on one Apple Silicon Mac, for one team, wrapping one GitHub
-  repository; members reach a self-hosted install at the address the owner sets
-  in Settings (M-28). Hosted use is in this release (M-44); billing and plans
-  are not (M-09).
-- Everything is a flow. A button, slash command, agent action, CLI command and
-  API call run the same typed flow, and the factory's process is a flow in the
-  repository.
-- The five-job setup UI and CI, Feature and Chores jobs are cut (mvp.md §8;
-  M-12). TODOs replace the five maintenance jobs. Each TODO is one item on the
-  repository's stack, worked on its own branch by the customizable TODO flow,
-  and reaches `main` as one squash-merged GitHub pull request. People merge,
-  by hand or by pre-approving a TODO so its PR merges when ready (M-39);
-  agents never approve, merge or move `main`.
-- Build in the order of mvp.md §11 (walking skeleton first). Maintainers with
-  outside contributors get their release one week after launch (§14); items in
-  §16 are deferred with no promised release. Don't build either early.
-
-### Release scope override (Will, 2026-10-15 Pacific, [#4022](https://github.com/smithersai/smithers/issues/4022))
-
-This supersedes the 2026-10-02 reading above wherever they disagree. The spec
-decisions are mvp.md M-44 to M-48; read them before planning release work.
-
-- Hosted use is in this release's scope. "Self-hosted only" and "Cloud after the
-  MVP" no longer describe the release; billing and plans stay deferred (M-09).
-  Nothing is cut or deferred by this change.
-- `/` is the launcher: open, create and explore repositories, plus genuine
-  Smithers update news. `/owner/repo` is GitHub's path, so swapping the domain
-  opens the repository. A repository opens on its file tree, and a repository's
-  own flow or custom UI can replace that view (M-45).
-- A repository GitHub has and Smithers doesn't: a signed-in person with access
-  imports it when the Smithers GitHub App covers it, else follows the App's
-  installation path. Signed-out, absent, inaccessible and failed-import states
-  say what is true. Never report an import that did not happen, widen a
-  permission to make one possible, or sign a person in silently (M-46).
-- Secrets, authoring flows and their custom UI, run monitoring, notifications,
-  pull requests and issues ship through one workflow architecture, customizable
-  by repository flows — including notification policy and issue transitions such
-  as proposed to accepted (M-47). Every authorization, human-approval, trust and
-  secret-opacity boundary in this file is unchanged: people still merge, agents
-  never approve, system flows stay non-overridable, and a secret's value never
-  appears in a card, log, trace or diagnostic.
-- Confusing prose, noisy or unintuitive layout, broken CSS and weak keyboard
-  access are release bugs. Fix them with a regression test that fails on the old
-  build (M-48).
-- A specification is not an implementation. Don't mark any of the above built,
-  verified or release-ready without a receipt from the deployed app.
-
-### Superseded 2026-10-01 rulings ([#3385](https://github.com/smithersai/smithers/issues/3385))
-
-- "Retain all five maintenance jobs" is replaced by TODOs and the customizable
-  TODO flow (mvp.md §8). Keep the issue and review machinery (event admission,
-  dispatch, reproduction, review, approvals) hidden but intact for the
-  maintainer release, and enforce contributor trust rules from launch.
-- "Smithers developing itself on Smithers Cloud" is replaced by M-31: once
-  stage 1 passes J1 and J2, Smithers' own development moves onto the stack of
-  the self-hosted install on Will's Mac mini. Hosted use is in this release
-  (M-44), and our own dogfood install stays the Mac mini.
-- "Remove Pair multiplayer" no longer covers shared branch access and presence,
-  which return under M-17. The rest of Pair stays removed.
-
-### Still in force (Will, 2026-10-01, [#3385](https://github.com/smithersai/smithers/issues/3385))
-
-- Retain the build system, independent public library packages, and the wiki
-  as the agent memory/source of truth, including runtime decisions stored
-  outside source. Retain mirrors, Git/LFS/SSH needed by workers, jj, Mythical,
-  native factory issue/landing data, and their security boundaries.
-- Remove legacy forge-only customer controls, cloud desktop streaming,
-  non-GitHub integrations, create-app, and Electrobun desktop distribution from
-  the MVP. Preserve shared execution, headless browser/self-hosting, custom flow
-  UI, and ordinary repository flow authoring when removing those surfaces.
-- Remove user-facing historical fork/rewind controls, never core time-travel
-  libraries or recovery/replay. Preserve decoding of existing persisted history.
-- Remove TUI predictive estimates and the ordinary-user model laboratory.
-  Preserve actual usage/budgets, monitors, custom UI/extensions, model APIs and
-  host configuration/routing/credentials.
-- Review is an ordinary `/review` flow using the shared runtime, host services
-  and custom UI. It has no separate service, account, billing or model runtime;
-  reviewer quizzes are out of scope. Preserve review quality and verification.
-- Second-round scope ([#3404](https://github.com/smithersai/smithers/issues/3404))
-  removes Pair multiplayer (except what M-17 restores), the public marketplace,
-  community repository nominations, third-party OAuth application hosting,
-  separate Explainer mode, personal calendar-to-notes and public traction-metrics
-  flows. Preserve ordinary teams, approvals, single-user prompt queues,
-  first-party login/tokens, repository-owned flows/plugins/MCP, bug intake and
-  shared notes/memory.
-- Keep browser IDE code intelligence and the general webpage reader. Use the
-  existing Paper palette with light/dark modes and accessibility; defer the
-  theme collection. Old sessions and recorded events must remain readable.
-- Future restoration is explicitly blocked pending Will's authorization:
-  [Pair #3401](https://github.com/smithersai/smithers/issues/3401) (except the
-  shared workspace access and presence M-17 restores),
-  [marketplace #3402](https://github.com/smithersai/smithers/issues/3402), and
-  [themes #3403](https://github.com/smithersai/smithers/issues/3403). These open
-  recovery issues are not instructions to implement or merge the features.
-
-Task-specific maintenance guidance lives in
-[the repository skill](.agents/skills/smithers-maintenance/SKILL.md): use it for
-workspace graph changes, generated docs, benchmarks, and flow authoring.
-Read the scoped `AGENTS.md` for app, server, or TUI files. Keep `AGENTS.md`
-rules to behavior that applies throughout their directory trees.
-
-## Production iteration (Will, 2026-10-13)
-
-For development changes in this repository, commit and push directly to append-only
-`main` with jj, then deploy through the existing Deploy apps workflow so Will can
-test in the production app open in Arc. Do not open pull requests for this
-repository's development work. Product TODO approval and merge authorization
-remain enforced for customer repositories.
-
-## Maintainer workflow (Will, 2026-09-24)
-
-- Keep communication brief; take ownership and ask only necessary questions.
-  Persist durable decisions in instructions and track actionable work in issues.
-- Prioritize the smallest reliable features that let Smithers develop itself
-  on its own stack, on the self-hosted install on Will's Mac mini (Will,
-  2026-10-02; M-31). Local agent work outside the stack is transitional
-  bootstrap/repair.
-- Once stage 1 passes J1 and J2, run the coding factory and change automation
-  on that install, and `issue-sweep` stops pushing straight to `main` (M-31).
-  GitHub keeps `main`, issues, pull requests and reviews (M-22). Smithers has
-  no GitHub Actions support; a pull request's checks are Smithers flow runs
-  (M-52). Do not build a parallel GitHub Actions factory.
-- Commit and push repository maintenance directly to `main` with `jj`; do not
-  open PRs for maintenance (Will, 2026-10-13). This overrides PR-only landing
-  and agent `main` movement restrictions for source maintenance; the product's
-  TODO flow still follows its own contract. After relevant validation, deploy
-  product changes from the pushed `main` revision through the existing
-  deployment workflow so Will can test them in production. This is standing
-  authorization to deploy; do not ask again for routine deployments.
-  Temporary workspaces are for one change and are removed after landing; no
-  permanent integration branches or history-rewrite lanes.
-- Reuse or create a GitHub issue for every actionable TODO, bug, blocker, or
-  deferred requirement. Reconcile stale issues against evidence; never close an
-  issue merely because code exists or a launch request was accepted.
-- Keep the repository wiki current through the existing app wiki workflows.
-  Refresh on source changes, retain review/source receipts, and surface failures
-  or staleness. Keep code, issues, and wiki aligned through the factory.
-- Keep reusable product code, public docs, reproducible benchmark evidence, and
-  self-hosting in this repository. Hosted deployment/IaC, private operations, and
-  marketing planning/assets belong in the private deployment repository. Public
-  builds and self-hosting must not depend on private files or services.
-- Ship the MVP in small, tested increments in the mvp.md §11 order, with the
-  npm packages; the TUI and Smithers Cloud follow the MVP. Require actual
-  release evidence for the real release, not for a prerelease (Doneish
-  first); defer unreliable or undifferentiated features. Publish
-  benchmark claims only with reproducible methods, artifacts, and limitations.
-
-## Claim an issue before working it (Will, 2026-09-29)
-
-Every agent, session, machine, and Cloud worker claims an issue before starting
-it, so work is never duplicated. Use `pnpm issue-claim
-check|claim|release|comment <repo>#<n> --by <agent/session>` (the
-`issue-claim` flow runs the same module through `smthrs flow start`).
-
-- Claim: the `in-progress` label plus the comment `Claimed by <agent/session>
-  on <host> at <UTC>; expires <UTC+6h>`. If another agent holds an unexpired
-  claim, do not start; pick another issue (exit 2).
-- Claim again before expiry to refresh. A claim under 1 h old is kept without
-  a new comment. A claim over 6 h old without a refreshing comment may be
-  taken over; the tool records the takeover.
-- Release when done, failed, or abandoned: remove the label and record the
-  landed commit or the reason. If you post a receipt or failure comment, fold
-  the release into it with `comment --body-file <f> --release --note <commit |
-  reason> [--close --landed <sha>]`, one comment. Otherwise use `release --note`. Non-completion closes use
-  `comment --close --reason not-planned|duplicate|superseded --note <link>`;
-  duplicate and superseded notes identify the replacing issue or commit.
-- Post issue comments, closes, and label changes through this tool: it
-  throttles writes machine-wide and backs off on rate limits. Exit 75 means
-  rate limited: nothing was lost; retry after `retry_at` and do not count it
-  as a failed attempt.
-- The tool runs as a GitHub App, not a person, when one is configured in
-  `~/.config/issue-claim/app.json` (`{"app_id", "private_key_path"}`); each
-  output line's `identity` says which. Without it, writes spend the `gh`
-  user's rate limits.
-
-## Zero tech debt; one backend (Will, 2026-09-25)
-
-No tech debt. Finish every migration in the same effort: delete the old path,
-never leave two implementations of one behavior. The product backend is
-`packages/backend` only; Plue composes it and adds private deployment ports.
-Never add product code to Plue.
+- Don't hardcode a feature into the app that a plugin could declare. A new
+  feature starts as a plugin, or says in its change why the core needs it.
+- First-party plugins get no private interface; if a plugin needs something,
+  the public interface gains it.
+- Trust boundaries are unchanged: system flows stay non-overridable, people
+  merge, agents never approve or merge, and secrets stay opaque.
+- The interface is being designed by a four-model panel; Will reviews it before
+  building starts (PLUGIN-2). Docs that hardcode a feature are marked
+  "superseded by: everything is a plugin (design pending)" until then.
 
 ## Use the Smithers libraries (Will, 2026-10-19)
 
 Before writing code that calls a model, runs an agent loop, makes a durable
 workflow, renders UI, or touches GitHub, use the Smithers library for that job
 from [the library catalog](docs/libraries.md). Hand-rolling one needs a stated
-reason in the change, such as a missing feature and its issue.
+reason in the change, such as a missing feature and its issue (SDK-2, SDK-3).
+
+- **We maintain the SDK.** When a package lacks something the app needs, add
+  it to that package with tests and docs, then use it; never hand-roll it in an
+  app (SDK-1). Libraries stay generic enough for other apps (SDK-10).
+- **Effect for everything; React is only the view** (ARCH-2, FE-5). Use every
+  library through Effect: its own Effect API when it has one, else a thin
+  Effect wrapper in the SDK (SDK-8). Run an Effect only at the program's
+  absolute boundary, and only where necessary; on the Alchemy backend, never
+  (SDK-7).
+- **Choices are services.** The model, URLs and limits come from a service or
+  Effect `Config`, named for what they are, not for one vendor (SDK-9).
+- Workspace packages depend on each other with pnpm `workspace:` specifiers
+  (SDK-6).
 
 Platform code (`node:*`, `Bun.*`, the DOM, child processes, sockets, the
 filesystem) lives only in the host packages `@smthrs/platform-node`,
 `@smthrs/platform-bun` and `@smthrs/platform-browser`, and reaches every other
 package as injected Effect services and layers. Every other library must
 import and run in a browser, a Cloudflare Worker, Node and Bun, and consumers
-import only from a package's root entry. A package that breaks this has a bug;
-the catalog lists the known ones. Apps, command-line programs and `@smthrs/ui`
-components are exempt.
+import only from a package's root entry; make public what should be public
+(SDK-4, SDK-5). A package that breaks this has a bug; the catalog lists the
+known ones. Apps, command-line programs and `@smthrs/ui` components are exempt.
+Cloudflare is reached only through dependency injection, so the same code runs
+elsewhere later (ARCH-7).
 
-## One mythical stack; append-only main (Will, 2026-09-25)
+Every engineering rule becomes a lint rule, an `ImportRules` check or a Jev
+rubric in `PACKAGE.ts`, catalogued in [`apps/mvp/docs/rules.md`](apps/mvp/docs/rules.md)
+(PROC-4).
 
-A repository's history is one linear `mythical` stack of logical changes that
-only the stack service writes (`packages/backend/internal/services/mythical*.go`).
-Work is planned onto it (append, insert or amend) and reaches append-only `main`
-only as one commit per item: a squash-merged GitHub PR that a maintainer
-merges or pre-approved (mvp.md M-05, M-39). Never rewrite `main`; never write `mythical` by hand.
+## Zero tech debt; one backend (Will, 2026-09-25)
+
+No tech debt and no dead code. Finish every migration in the same effort:
+delete the old path, never leave two implementations of one behavior (SDK-11).
+The backend is `apps/mvp`'s Effect-native Workers on Cloudflare (Will,
+2026-10-19, ARCH-1). `packages/backend` (Go) and Plue are the old stack; add no
+product code to either.
+
+## TODOs reach `main` through a person (Will, 2026-09-25 and 2026-10-20)
+
+`main` is append-only; never rewrite it. Each TODO is worked on its own branch
+and reaches `main` as one squash-merged GitHub pull request (TODO-1). People
+merge, by hand or by pre-approving a TODO (M-39); merging runs a configurable
+workflow, by default for Maintainers and up (BR-7). Agents never approve, merge
+or move `main`. The stack's order lives in Postgres, written only by
+`apps/mvp/worker/stack/Stack.ts`; the `mythical` history comes later, not now
+(TODO-2).
+
+## Trust boundaries (Will, 2026-10-15 and 2026-10-19)
+
+- People approve and merge; agents never do. System flows can't be overridden
+  (M-47).
+- A secret is referenced by name only. Its value never enters a sandbox and
+  never appears in a card, log, trace, metric or diagnostic (ARCH-16, OBS-5).
+- GitHub is the truth for issues, pull requests and branches. Smithers has no
+  GitHub Actions support or view; a pull request's checks are Smithers flow
+  runs (GH-1, M-52).
+- Opening a repository says what is true in every case: signed out, absent,
+  inaccessible, rate limited or GitHub down. Never report an import that did
+  not happen, widen a permission, or sign a person in silently (GH-4, M-46).
+- A feature with a known security hole ships switched off.
 
 ## Instant chat; slow work runs in the background (Will, 2026-09-15)
 
 Chat responses acknowledge an action immediately. Repository setup, research,
 planning, implementation, tests, and other slow work run in the background.
-This applies to every MVP action (mvp.md §8; M-12).
 
 - Persist the request and return an honest acknowledgment without awaiting the
   network request or the job. “Requested” is not “started” or “completed.”
-- Use the app's shared toast stack for background progress. Follow its existing
-  300 ms debounce; keep the toast running through launch AND execution, then
-  resolve it from the real completion or failure. A launch acknowledgment is
-  not job completion. Keep detailed output in the durable embedded run card.
+- Show background progress in the app's shared toast stack; keep the toast
+  running through launch AND execution, then resolve it from the real
+  completion or failure. A launch acknowledgment is not job completion. Keep
+  detailed output in the durable run card.
 - Keep Chat, navigation, and unrelated actions usable throughout. Advance
   dependent work only after its real completion receipts exist.
 - Deduplicate repeated launches, reconnect persisted requests after reload,
@@ -288,44 +166,140 @@ This applies to every MVP action (mvp.md §8; M-12).
   command must return before either finishes, chat must remain usable, and
   the toast must settle only with the job. Cover failure and duplicate input.
 
-Reference implementation: `apps/app/src/mainview/state/controller/backgroundWork.ts`.
-Shared notifications: `apps/app/src/mainview/state/controller/failures.ts`.
-App-specific rules: `apps/app/AGENTS.md`.
+Reference: `apps/mvp`'s durable outbox ([decision 0002](apps/mvp/docs/decisions/0002-local-first.md)),
+the agent's status ([decision 0015](apps/mvp/docs/decisions/0015-agent-status.md))
+and the feed and toasts ([decision 0009](apps/mvp/docs/decisions/0009-notifications-and-live-work.md)).
 
 ## Flow layering
 
-`@smthrs/flow` is the fundamental library; every other flow API is a thin wrapper over it. Never add a second node or graph model.
+`@smthrs/flow` is the fundamental library; every other flow API is a thin wrapper over it. Never add a second node or graph model. A prompt flow is a kind of code flow, not a second model (Will, 2026-10-20, FLOW-2).
 
 One shape, everywhere: a file flow lives at `.smithers/flows/<name>/flow.ts` (mvp.md M-49; never a root `flows/`) and its `export default` is `Flow.make("<tag>", { description, capabilities, effects, modelInvocable?, payload, success, error?, body })` from `@smthrs/flow`. The tag is the first argument and is required, so a flow is never anonymous; a file flow declares the name its path derives.
 
+Anything a person can do, the agent can do, through the same flows (FLOW-3). The agent acts; it never answers with steps for the person to do (FLOW-5).
+
 ## ⚖️ MINIMAL TEXT (Will, 2026-09-15, permanent)
 
-Cards, panes, toasts, and lessons carry the fewest words needed to act. No explanatory prose about how the product works, no provenance footers, no rows whose value is "not measured yet", no summary sentence beside a button. Show a button, a count, or a picture instead of a sentence. Unrequested buttons and unrequested copy are defects (NO INVENTION); delete them on sight.
+Cards, panes, toasts, and lessons carry the fewest words needed to act. No explanatory prose about how the product works, no provenance footers, no rows whose value is "not measured yet", no summary sentence beside a button. Show a button, a count, or a picture instead of a sentence. Unrequested buttons and unrequested copy are defects (NO INVENTION); delete them on sight (FE-15). Confusing prose, a noisy layout, broken CSS and weak keyboard access are bugs, fixed with a regression test that fails on the old build (M-48).
 
 ## Product words (Will, 2026-09-26)
 
-Docs and visible UI copy use product words, not internal modeling terms such as thread or task. [D-16](docs/mvp/PRODUCT.md#in-force) is the rule, and the [MVP vocabulary](.specs/product/mvp.md#3-vocabulary) lists the words.
+Docs and visible UI copy use product words, not internal modeling terms such as thread or task. [D-16](docs/mvp/PRODUCT.md#in-force) is the rule, and the [vocabulary](.specs/product/mvp.md#3-vocabulary) lists the words.
 
-## Testing quality (Will, 2026-09-27)
+## Testing quality (Will, 2026-09-27 and 2026-10-19)
 
+- A feature works only when a real end-to-end test passes, and is broken when
+  one fails. E2e tests run locally and against production, at every layer the
+  feature has (UI, API, CLI, TUI), and every feature or flow yields a GIF on
+  request (TEST-1, TEST-3, TEST-4, TEST-6).
+- No mocks. Unhappy paths inject a faulty Effect service; happy paths use the
+  real one. Any other mock is justified to Will, or the test is deleted or made
+  real (TEST-2, TEST-7). Known-broken behavior has a committed test marked
+  broken (TEST-5). Agent behavior has real evals (TEST-11).
 - Earn 100% coverage with meaningful behavioral assertions. Cover parameter
   combinations, boundaries, error cases, cancellation, recovery, and ordering;
   coverage is necessary, never sufficient. Do not lower thresholds or hide
   production code to make a test gate pass.
 - Prioritize unit tests, then integration, end-to-end, fuzz, and benchmarks.
   Unit and integration suites must each provide confidence independently.
-  Integration tests use real dependencies; any mock exception needs a concrete
-  justification. Exercise the terminal, browser, HTTP API, and public authoring
-  API through their user-facing boundaries.
+  Integration tests use real dependencies. Exercise the terminal, browser,
+  HTTP API, and public authoring API through their user-facing boundaries.
 - Retain reproducible fuzz counterexamples and benchmark methods, artifacts,
   correctness checks, and limitations. Distinguish executed coverage from
   configured thresholds, skipped cases, and platform-specific evidence.
+  Benchmarks run locally and live (TEST-8); publish a benchmark claim only with
+  its reproducible method, artifacts and limitations.
 - Sonnet agents author pepper tests that probe weak classes (Will, 2026-10-02);
-  GPT-6.1 Sol agents, up to thirty-two when the session permits, implement
-  durable suites and fix every discovered product bug, retaining its regression
-  test and validation receipts. The orchestrator reviews both.
-- Track the campaign and outstanding evidence in
-  [#2290](https://github.com/smithersai/smithers/issues/2290).
+  GPT-6.1 Sol agents implement durable suites and fix every discovered product
+  bug, retaining its regression test and validation receipts. The orchestrator
+  reviews both.
+
+## Observability (Will, 2026-10-13 and 2026-10-19)
+
+Every action logs, traces and counts what it does, front end and back end, with
+tests and docs (OBS-1, OBS-2). When the records can't answer a question, fix
+observability before debugging (OBS-4). A dependency an agent can't debug from
+its records is not used (OBS-3). Credentials and user content never appear in
+logs, spans or metrics (OBS-5).
+
+## Track work in the maintainer app (Will, 2026-10-20)
+
+Work is tracked in the maintainer app, not GitHub issues (Will, 2026-10-20:
+"Let's switch now to using maintainer app. Once we have the smithers app
+working we will also get the maintainer app working within smithers and we will
+dogfood smithers with smithers").
+
+- Each workstream is one note in [`apps/mvp/docs/work/`](apps/mvp/docs/work/)
+  with frontmatter (title, status, area, owner, updated, links). Before
+  starting, set yourself as `owner` and the status to `in-progress`; never take
+  a note another agent owns and updated in the last 6 hours.
+- Will's decisions and reviews go through the decision queue
+  (`apps/maintainer-site`, `queue/`). His answers are rulings.
+- Don't open new GitHub issues for our own work or claim them with
+  `issue-claim`. Existing issues stay as history; product GitHub issues (the
+  app's issues feature) are unaffected.
+- When Smithers runs well, the maintainer app moves into it as a plugin and we
+  dogfood Smithers on Smithers.
+
+## Commit and push to `main` with jj (Will, 2026-10-13)
+
+- Commit and push this repository's development and maintenance directly to
+  append-only `main` with jj; open no pull requests for it. Product TODO
+  approval and merge rules still hold for customer repositories.
+- Land finished work on `main` continuously, before Will reviews it; he still
+  reviews every feature (HOST-3). Commit current changes before starting new
+  ones (HOST-4).
+- Push everything to GitHub; never back up repositories to the MacBook, and
+  don't waste its disk (HOST-2, HOST-8). No long-lived branches: a side
+  `jj workspace` lives for one change, lands on `main`, and is removed (HOST-5).
+- `apps/mvp` deploys with Alchemy (`pnpm run deploy --yes`,
+  [infrastructure](apps/mvp/docs/infrastructure.md)). While there are no
+  users, deploy from a pushed `main` revision without a fresh ask, and
+  smoke-test after (Will, 2026-10-20 17:32: "Deploy now; no users yet").
+- Our hosted deployment's details live in the private `smithers-infra`
+  repository (Will, 2026-10-20: "we should have the deployment info private
+  in smithers-infra repo"). This repository keeps a generic, self-hostable
+  stack whose deployment-specific values arrive as an Effect Layer; private
+  operations, credentials and marketing stay out, and public builds never
+  depend on private files or services.
+- Heavy work runs on the Latitude servers, where any agent, Claude or Codex,
+  may run (HOST-6, HOST-7).
+
+## Working with Will (Will, 2026-10-19)
+
+- Be short and conversational; answer only what was asked. A feature works or
+  doesn't, never "partly"; say plainly whether work is done (COMM-1 to COMM-5).
+- Ask Will only what he can answer and what is being built now. Settle micro
+  choices yourself and record them (PROC-7, PROC-8, PROC-16).
+- Record a durable decision in a decision record under
+  `apps/mvp/docs/decisions/`, and document every feature in the app's docs
+  (PROC-5).
+- Reviews: `/codex` reviews work in progress; finished work gets a Codex Astra
+  review, then fixes, then a Fable review. Agent reviews never block Will's
+  own (PROC-1, PROC-2). Important designs: Claude Opus and Codex Sol design
+  independently and Opus merges them (PROC-6).
+- No agent carries Will's authority (PROC-17). Never send bug or feedback
+  reports (PROC-11).
+
+## Libraries we keep (Will, 2026-10-01, [#3385](https://github.com/smithersai/smithers/issues/3385))
+
+Keep the build system and the independent public library packages, including
+jj, the time-travel and recovery libraries, and decoding of existing persisted
+history; old sessions and recorded events stay readable. Restoring the public
+marketplace ([#3402](https://github.com/smithersai/smithers/issues/3402)), the
+theme collection ([#3403](https://github.com/smithersai/smithers/issues/3403)),
+or Pair ([#3401](https://github.com/smithersai/smithers/issues/3401)) beyond the
+branch sharing and presence Will asked for (BR-1, BR-4) needs his authorization.
+
+## Where to read next
+
+Task-specific maintenance guidance lives in
+[the repository skill](.agents/skills/smithers-maintenance/SKILL.md): use it for
+workspace graph changes, generated docs, benchmarks, and flow authoring. Read
+[`apps/mvp/AGENTS.md`](apps/mvp/AGENTS.md) for the app and
+[`apps/tui/AGENTS.md`](apps/tui/AGENTS.md) for the TUI; `apps/app/AGENTS.md`
+and `apps/server/AGENTS.md` describe the old stack. Keep `AGENTS.md` rules to
+behavior that applies throughout their directory trees.
 
 ## Execution environments
 

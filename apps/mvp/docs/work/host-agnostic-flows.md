@@ -7,6 +7,23 @@ updated: 2026-10-20
 links: [agent-root-browser-safe.md, cloudflare-flow-host.md, ../rules.md, ../decisions/0003-flows-and-the-agent.md, ../decisions/0010-web-first-desktop-later.md, flows-and-agent.md, durable-answering.md, design-questions.md, web-first-desktop-later.md, everything-is-a-durable-flow.md, infrastructure-as-code.md, import-rules-and-jev-lint.md, ../decisions/0011-the-agent-runs-in-the-browser.md, durable-browser-engine.md, model-endpoint.md, pwa.md, integrations-browser-safe-root.md, one-sqlite-one-leader.md, flows-root-platform-neutral.md, code-reviews.md, app-wiring.md, known-host-access-burn-down.md]
 ---
 
+## Current specification — 2026-10-20, 18:26 PDT
+
+**What:** Keep SDK execution portable and make model-call persistence durable across host restarts.
+
+**Why:** Latitude review identified an older model host whose call storage needs a design decision.
+
+**Current state:** At 18:21 the lead reports one review-fix lane stopped because legacy model-host persistence needs design. This is not evidence that the whole portable-host workstream is complete.
+
+**Next step:** Inspect the retained finding and design the shared durable storage seam before resuming that fix; preserve compatibility and use the existing flow runtime.
+
+**Open questions for Will:** No new question until engineering establishes which product tradeoff needs Will.
+
+Evidence: latest two session hours extracted by script as human text/lead replies; queue answers through 2026-10-21 01:24:15 UTC, current rulings, shared briefs/designs, decisions, proposals, TODOs and rules. Latest rulings override historical proposals. Product results are reported receipts; this pass verifies the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+
 ## What
 
 The agent and every flow are host-agnostic Effect programs. Cloudflare reaches them only as injected layers, wired in four places: `worker/ChatApi.ts`, `worker/index.ts`, `alchemy.run.ts` and `infra/`. The same flow code then runs on Cloudflare, in the native app on `@smthrs/platform-bun` or `@smthrs/platform-node`, or in a sandbox.

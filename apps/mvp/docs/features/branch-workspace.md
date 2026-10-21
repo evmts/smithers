@@ -1,8 +1,8 @@
 # Branch workspace
 
-A branch is a workspace: it has one conversation for as long as it lives, and a terminal for each person on the branch's own machine. This page covers the first slice of [decision 0013](../decisions/0013-branch-workspace.md) (its §9, S1): open a repository's existing branch, ask in that branch's conversation, open the branch's terminal in a frame, run `git log` in a real container, reload and keep the same shell; another branch has its own conversation and terminal.
+A branch is a workspace: it has one conversation for as long as it lives, and a terminal for each person on the branch's own machine. This page covers the first slice of [decision 0013](../decisions/0013-branch-workspace.md) (its §9, S1): open a repository's existing branch, ask in that branch's conversation, open the branch's terminal in a frame, run `git log` in a real container, reload and keep the same shell; another branch has its own conversation and terminal. It also covers the next slice, [sharing](#sharing) a branch Google Docs style and the people on it [live](#presence).
 
-Sharing, presence, co-editing, `sandbox/Keep` and `sandbox/Sleep`, snapshots and branch creation come later ([What's not built](#whats-not-built)).
+Co-editing files, snapshots and branch creation come later ([What's not built](#whats-not-built)); the machine's tools, sleep and wake are [sandbox tools](sandbox-tools.md).
 
 ## The page
 
@@ -10,16 +10,16 @@ Sharing, presence, co-editing, `sandbox/Keep` and `sandbox/Sleep`, snapshots and
 
 ```
 ┌ octocat / Spoon-Knife                                         ┐
-│ test-branch                                   Code   Terminal │
+│ test-branch             (B)(G)+1   [Share]    Code   Terminal │
 │ ┌ the Code view, or the Terminal view (?terminal=me) ───────┐ │
 │ └────────────────────────────────────────────────────────────┘ │
 │ the branch's conversation                                      │
-│ Chat ⌘K                                                        │
+│ Chat ⌘K                       (only for those who may edit)    │
 └────────────────────────────────────────────────────────────────┘
 ```
 
-- **Route** (`src/router.tsx`): the tree route's loader opens the location (`repo.actions.openRoute`), tracks the branch (`branch.actions.open`) and, under `?terminal`, shows its terminal (`terminal.actions.show`). `?terminal=me` is the person's own terminal; `?terminal=<id>` watches that terminal.
-- **Screen**: `src/screens/branch/BranchScreen.tsx` composes `RepoHeader`, `BranchHeader` (the branch's name and the Code and Terminal links), `RepoPage` or `TerminalPanel`, chat's `Conversation` and the `Composer`.
+- **Route** (`src/router.tsx`): the tree route's loader opens the location (`repo.actions.openRoute`), tracks the branch (`branch.actions.open`), joins its room (`branch.presence.actions.join`) and, under `?terminal`, shows its terminal (`terminal.actions.show`), then says where on the page the person is (`branch.presence.actions.at`). `?terminal=me` is the person's own terminal, or the branch's first live one when they have none; `?terminal=<id>` shows that terminal. Leaving the route leaves the room (`onLeave`).
+- **Screen**: `src/screens/branch/BranchScreen.tsx` composes `RepoHeader`, `BranchHeader` (the branch's name, the people on it, Share for its owner, and the Code and Terminal links), `RepoPage` or `TerminalPanel`, chat's `Conversation` and, for someone who may edit, the `Composer`. A branch this person may not open, or stops being able to, shows `No access` and the repository view (`src/features/branch/view.ts` `accessNow`).
 - **`/app`** shows the home conversation: the deployment repository's (`GITHUB_REPOSITORY`) `main`. Its loader leaves the branch, so the composer asks there again.
 - **A ref that isn't a branch** (a commit, a tag, a name GitHub doesn't have) shows the repository view alone.
 
@@ -29,14 +29,14 @@ Sharing, presence, co-editing, `sandbox/Keep` and `sandbox/Sleep`, snapshots and
 
 | Answer | When |
 |---|---|
-| `200 { branchId, conversationId, repoId, name, mode }` | the app tracks the branch already; nothing is read from GitHub |
-| `201` with the same body | the branch was read from its forge and recorded, with its conversation, in one transaction |
+| `200 { branchId, conversationId, repoId, name, mode, access }` | the app tracks the branch already and this person may open it; nothing is read from GitHub. `access` is `owner`, `edit` or `view` ([sharing](#sharing)) |
+| `201` with the same body | the branch was read from its forge and recorded, with its conversation, in one transaction, as the person's own (`owner`) |
 | `404 not_found` | GitHub (or the mirror) has no such repository or branch, or the repository is private |
-| `401`, `403` | signed out; not a Member (`mayWatch`) |
+| `401`, `403` | signed out; a tracked branch this person may not open, or a new one and they aren't a Member |
 | `400`, `413` | not a repository's name, not a branch name git accepts, or a body over 2 KiB |
 | `503 unavailable` | the forge or Postgres didn't answer; the step tries again for 30 s |
 
-The repository's default branch is recorded `locked` (decision 0007 §5); every other tracked branch is `open`.
+The repository's default branch is recorded `locked` (decision 0007 §5) and is the team's; every other tracked branch is `open` and belongs to the Member who tracked it first (`branches.created_by`).
 
 ## Conversations
 
@@ -44,7 +44,7 @@ The repository's default branch is recorded `locked` (decision 0007 §5); every 
 - **Everything chat-scoped names it.** `POST /api/questions` and `POST /api/views` take `conversationId`; without one, the home conversation (for one release, so asks queued by the build before branches still land). An agent's view names its answer instead (`answerId`), and goes to that answer's conversation, only for the person who asked it.
 - **Shapes are per conversation.** `GET /api/shapes/messages?conversation=<id>` and `GET /api/shapes/views?conversation=<id>` fix `where conversation_id = $1` on the server; no `conversation` means the home conversation. `messages` syncs `conversation_id` (`SYNCED_MESSAGE_COLUMNS` in `worker/Chat.ts`).
 - **The agent's turn and history are per conversation** (`worker/Answers.ts`, `worker/Messages.ts`): two branches' answers proceed in parallel; one conversation's still take turns.
-- **On the device** (`src/features/chat/store.ts`), the home conversation keeps its collection (`chat-messages`); each branch conversation opens its own (`chat-messages:<id>`, persisted) and views (`views:<id>`) when a page shows it. The `place` row says which conversation the tab shows and asks in. A question keeps the conversation it was asked in, whatever the tab shows when it sends.
+- **On the device** (`src/features/chat/store.ts`), the home conversation keeps its collection (`chat-messages`); each branch conversation opens its own (`chat-messages:<id>`, persisted) and views (`views:<id>`) when a page shows it. The `place` row says which conversation the tab shows and asks in. A question keeps the conversation it was asked in, whatever the tab shows when it sends. A conversation is blank until it opens: once the device's rows are restored, or, for one this device has no rows of yet, once its shape has synced, so switching to a branch never shows the empty state for a frame before its conversation arrives (`src/features/branch/conversation.test.ts`).
 - **Full-screen views** of a branch conversation are `/app/views/<id>?conversation=<conversation id>`.
 
 ## The terminal
@@ -65,7 +65,7 @@ The repository's default branch is recorded `locked` (decision 0007 §5); every 
 - **One terminal per person per branch.** While theirs opens or is open, `POST /api/terminals` answers its id. An open that hasn't finished within `OPEN_DEADLINE_SECONDS` (180) settles `failed` (in `terminal/Record`, or at the person's next open), so it never locks them out.
 - **The socket.** `GET /api/terminals/<id>` with `Upgrade: websocket` checks the `Origin` is the app's own, then the session: the terminal's owner attaches `write`, any other Member `read`. A terminal whose machine lost its session answers `410` and is ended `lost`. ChatApi strips any `x-smithers-*` header the browser sent and forwards its decision to the branch's `SandboxObject` (`worker/BranchSandboxes.ts`), which accepts the socket (no hibernation, which would drop the tmux client) and runs `@smthrs/platform-cloudflare`'s `ContainerTerminal.attach` in its own scope.
 - **The wire protocol** is `@smthrs/sandbox`'s `TerminalProtocol`: binary frames are bytes; JSON text frames are control (`resize` from the owner, `ready` and `ended` from the host); frames over 64 KiB close with 1009; final close codes don't reconnect; `@smthrs/platform-browser`'s `TerminalSocket` reconnects after 1 s, doubling to 30 s, 10 times, and drops keystrokes typed while disconnected.
-- **The frame** is `@smthrs/ui`'s `TerminalFrame` (`@smthrs/ui/adapters/terminal-frame`): our xterm in an opaque-origin `srcdoc` frame whose script is pinned by hash and whose CSP allows no network. ⌘K comes back to the page; links open only from a click.
+- **The frame** is `@smthrs/terminal-frame`'s `TerminalFrame`: our xterm in an opaque-origin `srcdoc` frame whose script is pinned by hash and whose CSP allows no network. ⌘K comes back to the page; links open only from a click.
 - **Reload keeps the shell.** Each terminal is a tmux session; a socket is one tmux client. A new socket attaches to the same session, and tmux redraws the screen.
 
 ## The machine
@@ -85,15 +85,61 @@ The box has no credential and no internet. Its only way out is `http://forge.smi
 
 `branch/track` reads a branch through the same forge with git protocol v2's `ls-refs` for that one ref (`GitRemote.ref`): `octocat/Spoon-Knife`'s full ref list took 40 to 70 seconds to read from a Worker.
 
-## Who may watch and write
+## Sharing
 
-`worker/branch/Access.ts` is the one place the policy lives:
+A live branch (its conversation, terminals and room) is private to its owner until they share it, as in Google Docs and Figma (decision 0013, decisions 8, 9 and 12). The code stays as public as GitHub makes it.
 
-- **Watch** (the conversation, the terminals): a Member or above. `LIVE_BRANCHES_PUBLIC` is `false`: the recommended answer to decision 0013's question 1, unanswered. A "no" from Will is that one line set to `true`, which opens a public repository's live branch to everyone.
-- **Write** (open a terminal): a Member or above, on an `open` branch.
-- A shape asked for by someone who may not watch is a shape with no rows.
+```
+Share test-branch ┌──────────────────────────────────────────────┐
+                  │ [Add people        ] [Can view ▾] [Share]    │
+                  │ People with access                           │
+                  │ (L) local-developer (you)            Owner   │
+                  │ (B) ben                  [Can edit ▾] Remove │
+                  │ General access                               │
+                  │ [Restricted ▾ | Anyone in this repository with the link] [Can view ▾] │
+                  │ [Copy link]                           [Done] │
+                  └──────────────────────────────────────────────┘
+```
+
+**Who may do what** is decided at every request by `accessOf` in `worker/branch/Access.ts`, the one place the policy lives:
+
+| Person | What they may do |
+|---|---|
+| The owner (`branches.created_by`), a Member or above | `owner`: everything below, and share |
+| Someone the branch is shared with by name | their share's `view` or `edit` |
+| A Member or above, when general access is on | general access's `view` or `edit` |
+| A Guest | only what a share by name grants, and never more than `view` |
+| Anyone else, or signed out | nothing: `No access` |
+
+- **The best grant wins, capped by role:** a Member or above may edit at most, a Guest view, a person with no role nothing. A Guest shared to edit views.
+- **The team's branches have no owner:** the default branch, and branches tracked before sharing existed, carry general access `edit` (migration `0023_branch_sharing`), so every Member uses them as before and nobody can change that.
+- **`view`** opens the conversation, every terminal on the branch read-only and the room. **`edit`** also asks in the conversation, adds views, writes answers, opens a terminal, and types into any terminal on the branch: editors use one terminal together, live (the sharing brief, 2026-10-20). A terminal still runs as its owner's own user ([The machine](#the-machine)), so an editor typing in someone else's terminal runs as them; sharing to edit is the owner's trust decision, as Live Share's read-write terminals are.
+- **Enforced on every request:** the track route, every shape (`messages`, `views`, `terminal_sessions`, `branch_shares`: anyone else's shape has no rows), `POST /api/questions` (`403 view_only`), `POST /api/views`, the answer routes, `POST /api/terminals`, each terminal socket (`write` for `edit` and up, `read` for `view`; a reader's bytes and resizes never reach the shell) and the room.
+
+**Changing it** is the client flow `branch/share { branchId, change }` (`src/features/sharing/`, door `button`, never the agent's), whose step posts `POST /api/branches/<id>/shares` (`worker/branch/Shares.ts`):
+
+| Body | Does |
+|---|---|
+| `{ login, access }` | shares with the person who signed in to this deployment with that GitHub login (any case), or local development's people (`worker/branch/People.ts` `Directory`), by their id |
+| `{ grantee, access }` | changes a grant: a person's id, or `repository`, general access |
+| `{ grantee, access: null }` | removes it; anyone may remove their own |
+
+It answers `200 { txid }` (`null` when nothing changed), `401`, `403 forbidden` (not the owner), `404 not_found` or `no_person`, `400 invalid` (a bad body, or sharing with yourself), `409 too_many` (over `MAX_SHARES`, 100 people), `413`, or `503`. Only the owner's `branch_shares` shape (`GET /api/shapes/shares?branch=<id>`) has rows; the dialog shows it.
+
+**Revocation takes effect on open sessions** before the route answers: it reads the branch's whole list (`policyOf`) and hands it to the branch's machine (`TerminalSockets.enforce`, `SandboxObject`) and room (`Rooms.enforce`, `RoomObject`), which apply `underPolicy` to every socket they hold, from the principal and role each socket attached with. A socket whose person may no longer view the branch closes with 1008 (final: the page shows `No access` at once, and the terminal detaches); one whose access changed closes with 1011 (terminal) or 1012 (room) and reconnects with the new access, so `view` to `edit` turns on typing and the composer without a reload. The terminals of a person who lost the branch end `revoked` (their tmux sessions are killed). The shapes refuse the person's next request: their `where` changes, Electric answers `409 must-refetch`, and the device's copy empties. If the machine or room can't be reached, the route answers 503 with the change already made, and the flow's step sends it again until it is applied.
+
+## Presence
+
+Everyone on a branch's page is in its room: one hibernating `RoomObject` Durable Object per branch (`worker/BranchRooms.ts`), which stores nothing and never wakes the branch's machine. The page's socket is `GET /api/branches/<id>/room` (`worker/branch/Presence.ts`): same origin only, signed in, at least `view`. ChatApi stamps who joins (principal, login, role, access) in headers the browser can't set; the room keeps them in each socket's attachment (`@smthrs/sync`'s `PresenceRoom`) and sends everyone the roster on each change. The page sends only where it is: `{ view: "code", path }` or `{ view: "terminal", terminalId }` (`src/features/presence/where.ts`), at most 1 KiB.
+
+- **Avatars** (`PresenceAvatars`, `@smthrs/ui`'s `AvatarStack`): everyone else, once each, titled with where they are; choosing one follows them to their place, as in Google Docs and Figma.
+- **Live cursors:** the terminal is the view with a cursor today, and tmux shows everyone the same screen and cursor. Files have no cursors until co-editing.
+- **Live access:** the room's roster says what this person may do (`read` or `write`); the screen follows it (`accessNow`), and a room closed with 1008 is `revoked`.
+- **Seams with notifications (0009):** a run on a branch reaches only watchers who may still view it (`worker/Notifications.ts` reads `policyOf` and `underPolicy`), and a watch is recorded only for someone who may view the branch. The runs other people start on a branch show through notifications, not presence.
 
 ## Postgres
+
+`db/migrations/0023_branch_sharing.ts` adds `branch_shares` (one row per grantee: a person's id with their login then, or `repository`; `view` or `edit`), gives the team's branches general access `edit`, and adds `terminal_sessions.owner_role` (default `member`), so a change of sharing knows whose terminals end.
 
 `db/migrations/0014_branch_workspace.ts` adds `branches` (an immutable id per living branch; `(repo_id, name)` unique while not deleted; no foreign key to `repositories`, because a branch of a repository this deployment can't clone is read from GitHub), `conversations` (one per branch), `conversation_id` on `messages` and `views` (an answer's `(question_id, conversation_id)` references its question's own), and `terminal_sessions` (status `opening`, `open`, `ended` with why, `failed` with why; one live per person per branch). It binds every existing message and view to the home conversation. `branches.mode` allows `locked` beside 0013's `open` and `restricted`, for the default branch (decision 0007 §5).
 
@@ -103,18 +149,21 @@ Content-free: ids, outcomes, statuses, close codes, byte counts by direction and
 
 | Where | Records |
 |---|---|
-| ChatApi | `branch.track` (log, span, `smithers_branch_tracks{outcome}`); `terminal.open` and `terminal.connect` (logs, spans, `smithers_terminal_requests{route,outcome}`); `terminal.shape` (`smithers_terminal_shape_requests`) |
+| ChatApi | `branch.track` (log, span, `smithers_branch_tracks{outcome}`); `terminal.open` and `terminal.connect` (logs, spans, `smithers_terminal_requests{route,outcome}`); `terminal.shape` (`smithers_terminal_shape_requests`); `branch.share` (log, span, `smithers_branch_shares{change,outcome}`, `smithers_branch_terminal_revocations`); `branch.shares.shape` (`smithers_branch_share_shape_requests`); `branch.room` (log, span, `smithers_branch_room_joins{outcome}`) |
+| `RoomObject` | `room.enforce` (log), `room.object.enforce` (span); `@smthrs/sync`'s `smithers_presence_{joins,frames,evictions,open}` |
 | `terminal/Open` | `terminal.open.wake`, `terminal.open` (logs), `sandbox.wake`, `terminal.session`, `terminal.open` (spans), `smithers_terminal_opens{outcome}` |
-| `SandboxObject` | `sandbox.object.wake`, `sandbox.checkout`, `sandbox.wake`; `@smthrs/platform-cloudflare`'s `smithers_cloudflare_terminal_{connects,sessions_open,bytes,sessions}` and `smithers_cloudflare_sandbox_wakes`; `git.proxy` with `git_proxy_requests{service,outcome}` |
-| Browser (`BRANCH_TELEMETRY`, `TERMINAL_TELEMETRY` in `src/telemetry.ts`) | `branch.track`, `branch.open`, `smithers_web_branch_{tracks,opens}`, `terminal.open`, `terminal.connect`, `smithers_web_terminal_opens`, `terminal_open_ms`, `terminal_reconnects{code}`, `terminal_bytes{direction}`, `terminal_ended{reason}` |
+| `SandboxObject` | `sandbox.object.wake`, `sandbox.checkout`, `sandbox.wake`, `sandbox.enforce` (log), `sandbox.object.enforce` (span); `@smthrs/platform-cloudflare`'s `smithers_cloudflare_terminal_{connects,sessions_open,bytes,sessions}` and `smithers_cloudflare_sandbox_wakes`; `git.proxy` with `git_proxy_requests{service,outcome}` |
+| Browser (`BRANCH_TELEMETRY`, `SHARING_TELEMETRY`, `PRESENCE_TELEMETRY`, `TERMINAL_TELEMETRY` in `src/telemetry.ts`) | `branch.track`, `branch.open`, `smithers_web_branch_{tracks,opens}`, `branch.share`, `branch.share.post`, `branch.share.press`, `smithers_web_branch_shares{change,outcome}`, `presence.join`, `presence.closed`, `smithers_web_presence_{joins,closes}`, `terminal.open`, `terminal.connect`, `smithers_web_terminal_opens`, `terminal_open_ms`, `terminal_reconnects{code}`, `terminal_bytes{direction}`, `terminal_ended{reason}` |
+
+No record carries a login, a person's place or a path; a share's records name its kind (`person`, `access`, `remove`, `link`), never its grantee.
 
 ## Tests
 
 | Kind | Where |
 |---|---|
-| Unit | `worker/branch/*.test.ts`, `worker/flows/TerminalOpen.test.ts` and `worker/ExecutionHost.test.ts` (`terminal/Open` on the remote host), conversations in `worker/Chat.test.ts`, `worker/Views.test.ts` and `worker/ShapeProxy.test.ts`, `src/features/branch/*.test.ts`, `src/features/terminal/*.test.ts`; `@smthrs/effect-code-storage` (`GitProxy`, `GitRemote.ref`, `gitRemote`), `@smthrs/crypto` (`Uuid`), `@smthrs/sandbox` (`TerminalProtocol`), `@smthrs/platform-browser` (`TerminalSocket`), `@smthrs/ui` (`TerminalFrame`) |
+| Unit | `worker/branch/*.test.ts` (sharing: `Access`, `Shares`, `Presence`), `worker/flows/TerminalOpen.test.ts` and `worker/ExecutionHost.test.ts` (`terminal/Open` on the remote host), conversations in `worker/Chat.test.ts`, `worker/Views.test.ts` and `worker/ShapeProxy.test.ts`, `src/features/branch/*.test.ts`, `src/features/sharing/*.test.ts`, `src/features/presence/*.test.ts`, `src/features/terminal/*.test.ts`; `@smthrs/sync` (`PresenceProtocol`, `PresenceRoom`, `PresenceSocket`), `@smthrs/ui` (`AvatarStack`, `ShareDialog`); `@smthrs/effect-code-storage` (`GitProxy`, `GitRemote.ref`, `gitRemote`), `@smthrs/crypto` (`Uuid`), `@smthrs/sandbox` (`TerminalProtocol`), `@smthrs/platform-browser` (`TerminalSocket`), `@smthrs/ui` (`TerminalFrame`) |
 | Real container | `@smthrs/platform-cloudflare`'s `test/ContainerTerminal.workerd.test.ts`: local workerd and Docker with this image |
-| End to end | `e2e/branch-workspace.spec.ts` against `alchemy dev` (`pnpm e2e e2e/branch-workspace.spec.ts`, `pnpm e2e:gifs`) |
+| End to end | `e2e/branch-workspace.spec.ts` and `e2e/branch-sharing.spec.ts` (two and three people on separate devices: share to view and edit, a viewer's input refused by the server, revoke, general access and a Guest) against `alchemy dev` (`pnpm e2e e2e/branch-sharing.spec.ts`, `pnpm e2e:gifs`) |
 
 ## Running it locally
 
@@ -122,7 +171,8 @@ Content-free: ids, outcomes, statuses, close codes, byte counts by direction and
 
 ## What's not built
 
-- Sharing (`branch_shares`, links, `branch/Share`), presence (`RoomObject`), co-editing, `sandbox/Keep` and `sandbox/Sleep` with the last screen, snapshots, and creating branches (0012).
+- Sharing with someone who has never signed in to this deployment: the dialog finds people by the login they signed in with, not through GitHub's API, so it never reads a GitHub permission at share time; the role (GitHub's permission, re-checked hourly) caps every check instead.
+- Co-editing files and their cursors, the last screen of a terminal whose machine slept ([sandbox tools](sandbox-tools.md#sleep-and-wake) ends it `slept`), snapshots, and creating branches (0012).
 - Archive (`conversation_people`) and the branch picker.
 - Private repositories: they wait for per-repository GitHub App installation tokens.
 - The live half of the end-to-end test waits for Will's yes to deploy.

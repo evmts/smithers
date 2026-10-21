@@ -1,5 +1,7 @@
 # Landing procedure
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (ARCH-1, SCOPE-8, ARCH-14). Kept as prior art.
+
 1. Establish that each migration is unlanded before renumbering it. Assign numbers only at landing and regenerate the registry and sqlc output. Preserve landed history. Check: C-PRC-02.
 2. Run the T-PRC-01 drift gates in spec.md §21.2. Refuse publication if a gate fails. Check: C-PRC-01.
 

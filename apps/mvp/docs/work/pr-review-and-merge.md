@@ -1,8 +1,8 @@
 ---
 title: PR review and merge (MVP 2, early feature 8a)
-status: todo
+status: in-progress
 area: app
-owner: unassigned; from 13:21:12 on 2026-10-20 it waits for the [triage](issue-triage.md) builder (same GitHub write path and list view). Until 13:21: unassigned; not in 0012's slice G0 (started 07:40:55 on 2026-10-20). Until 07:40: Panel G designed the PR pages, opening a PR and the merge flow in decision 0012 (written 06:58:11 on 2026-10-20, status: proposed; panel started 06:41:56). The `/review` findings flow has no owner. Until 06:41 on 2026-10-20: unassigned
+owner: coding factory builder (Claude Opus, session 6253ecf2), from 19:10 on 2026-10-20: PRs, the todo run, /review. Until 19:10: unassigned; from 13:21:12 on 2026-10-20 it waits for the [triage](issue-triage.md) builder (same GitHub write path and list view). Until 13:21: unassigned; not in 0012's slice G0 (started 07:40:55 on 2026-10-20). Until 07:40: Panel G designed the PR pages, opening a PR and the merge flow in decision 0012 (written 06:58:11 on 2026-10-20, status: proposed; panel started 06:41:56). The `/review` findings flow has no owner. Until 06:41 on 2026-10-20: unassigned
 updated: 2026-10-20
 links: [issues.md, ../decisions/0012-git-end-to-end.md, pull-request-list-and-tabs.md, github-source-of-truth.md, review-requests-and-revisions.md, issue-triage.md, ../proposals/early-features.md, ../proposals/mvp-gaps.md, ../decisions/0007-roles-and-tags.md, roles-and-labels.md, design-questions.md, docs-check-flow-outcome.md, no-github-actions.md, second-build-machine.md]
 ---

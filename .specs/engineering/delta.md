@@ -1,5 +1,7 @@
 # From main to the MVP spec
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (ARCH-1, SCOPE-8, ARCH-14). Kept as prior art.
+
 Status: draft v0.5, 2026-10-03, against `main` at `383f82f40e`, for mvp.md v2.6. It applies minimal-code synthesis v1 and v2 (`~/Smithers-Ops/Areas/minimal-spec-20261003/SYNTHESIS-v1.md`, `SYNTHESIS-v2.md`) and starts from the Astra classification of the 51 old Add rows (4 exist, 29 small, 1 restore, 17 new). This is the build plan for [spec.md](spec.md); the spec states behavior. Rows tagged [S1]/[S2]/[S3]/[R] follow the stages in spec.md §0. Deferred behavior has no rows. Existing code is not release evidence: tickets still owe their named checks. Product decisions that wait for Will are listed in §12 and change no row here.
 
 Paths: `B/` = `packages/backend/internal/`, `P/` = `packages/backend/microsandbox/`, `MV/` = `apps/app/src/mainview/`, `F/` = `flows/`, `UI/` = `packages/smithers/ui/src/`. Restore sources: `5b77095672` is the parent of `39e43c0fe` (MVP cut #3385); `a73a77de36` is the parent of `2753d2e3d` (second cut #3404); `06a13ab4ee` is the parent of `35ec608f6`.

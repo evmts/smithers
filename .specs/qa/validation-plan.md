@@ -1,5 +1,7 @@
 # Smithers MVP validation plan
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (SCOPE-5, SCOPE-8, TEST-1). Kept as prior art.
+
 Status: v1.1, lead QA (smithers-4c), 2026-10-02; tech lead's 16-change review folded in. Product (smithers-98) accepted the gate model; the lead engineer's review is folded in. Reviewed by Codex gpt-6.1-sol twice ([v0.2](research/codex-review-v0.2.md): 9 blockers; [v0.3](research/codex-review-v0.3.md): 7 resolved, the last 2 ruled by product at 6b2a28d3).
 Contract: [../product/mvp.md](../product/mvp.md), engineering overview/spec/checks/tickets, and `AGENTS.md`. Research: [research/gap-analysis.md](research/gap-analysis.md), [research/test-infra.md](research/test-infra.md), eng-progress (lane snapshot, not retained), [findings.md](findings.md), [research/ci-triage-20261002.md](research/ci-triage-20261002.md), [research/pepper-todo-state.md](research/pepper-todo-state.md) and [research/pepper-github-matrix.md](research/pepper-github-matrix.md). Review: [research/codex-review-v0.2.md](research/codex-review-v0.2.md).
 This revision is text only. It creates no harness, executes no check, and certifies no candidate SHA.

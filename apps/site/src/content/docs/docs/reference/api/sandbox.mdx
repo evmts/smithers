@@ -57,6 +57,7 @@ Every namespace is also its own subpath, and `./internal/*` is null mapped.
 | `@smthrs/sandbox/SandboxHealth`             | [src/SandboxHealth/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/SandboxHealth)                         |
 | `@smthrs/sandbox/SandboxSupervision`        | [src/SandboxSupervision/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/SandboxSupervision)               |
 | `@smthrs/sandbox/TerminalProtocol`          | [src/TerminalProtocol/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/TerminalProtocol)                   |
+| `@smthrs/sandbox/SandboxTools`              | [src/SandboxTools/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/SandboxTools)                           |
 
 ## RemoteChildProcessSpawner
 
@@ -273,6 +274,48 @@ else wait(TerminalProtocol.reconnectDelay(attempt))
 - **Reconnects:** `reconnectDelay(attempt)` is 1 s doubling to 30 s for `reconnect.maxAttempts` (10) attempts, and
   `undefined` after; a connection that reaches `ready` starts the count again. Keystrokes are never queued while
   disconnected: input whose delivery is unknown is not safe to repeat.
+
+## SandboxTools
+
+Typed tools on a session's working copy, for whatever runs on the host: an agent, a button, an API route. The sandbox
+exposes itself and these tools and knows nothing about agents.
+
+```ts
+import { SandboxTools } from "@smthrs/sandbox"
+
+const ran = yield* SandboxTools.execute(session, { tool: "run", command: "npm test", timeoutSeconds: 120 }, {
+  callId: "call-7f3a",
+  callsDirectory: "/home/me/.smithers/calls"
+})
+// { tool: "run", exitCode, timedOut, stdout, stderr, stdoutBytes, stderrBytes, truncated }
+```
+
+| Tool     | Input (`Call`)                          | Output (`Result`)                                                   |
+| -------- | --------------------------------------- | ------------------------------------------------------------------- |
+| `run`    | `command`, `cwd?`, `timeoutSeconds?`     | exit code, whether the timeout stopped it, each stream's first bytes |
+| `read`   | `path`                                  | the file's text, its size, whether it was cut                       |
+| `write`  | `path`, `content`                       | the path and its size; directories are made                         |
+| `list`   | `path?`                                 | entries `{ name, kind, bytes }` in name order                       |
+| `status` | none                                    | the branch (`null` when detached) and git's short status per path   |
+| `diff`   | `paths?`                                | a unified diff from `HEAD`, untracked files as new ones              |
+
+- **Bounded (`limits`):** a command runs 60 s unless it names a timeout, 600 s at most; each stream returns 64 KiB, a
+  read and a write 1 MiB, a listing 1,000 entries, a diff 256 KiB, and each result says when it cut.
+- **Confined:** `resolve(workdir, path)` takes a path under the workdir and refuses one that leaves it by name; the
+  tools refuse it with `ToolRefused { reason: "path" }` before anything runs.
+- **At most once:** `execute` fences a `run` by `callId` in `callsDirectory`, which the session's user may write and
+  which lies outside the workdir. The same call again answers what the first attempt recorded; a call whose first
+  attempt never recorded an exit fails `ToolLost` and does not run again. Reads and writes are repeatable.
+- **Failures:** `ToolRefused` (`path`, `not_found`, `not_a_file`, `not_a_directory`, `not_a_repository`,
+  `too_large`), `ToolLost`, and `ToolUnavailable { code }` when the session failed.
+- **Guests:** the scripts are POSIX `sh` with git. GNU `timeout`, when the guest has it, stops a command's whole process
+  group; without it the watchdog stops the command's own process.
+- **Telemetry:** a span `sandbox.tool` with the tool, its outcome and a command's exit code; never a path, a command,
+  content or output.
+
+`checkpoint(session)` captures the working copy without changing it: `HEAD` and a binary patch with every tracked and
+untracked change (ignored files are not carried), at most `limits.checkpointBytes` (8 MiB). `restore(session, saved)`
+moves `HEAD` to the checkpoint's commit when it is elsewhere and applies the patch; restore onto a clean checkout.
 
 ## SandboxMerge
 

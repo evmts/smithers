@@ -1,11 +1,60 @@
 ---
 title: Infrastructure as code (Neon and Electric through Alchemy)
-status: done
+status: in-progress
 area: infra
-owner: IaC agent (finished); Will (go-ahead for the first deploy)
+owner: deploy and IaC owner
 updated: 2026-10-20
-links: [review-round-4.md, ../infrastructure.md, ../decisions/0001-electric-postgres-tanstack-db.md, durable-answering.md, land-and-deploy-mvp.md, decisions-for-will.md, host-agnostic-flows.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, cloudflare-flow-host.md]
+links: [review-round-4.md, ../infrastructure.md, ../decisions/0001-electric-postgres-tanstack-db.md, durable-answering.md, land-and-deploy-mvp.md, decisions-for-will.md, host-agnostic-flows.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, cloudflare-flow-host.md, private-hosted-infrastructure.md, cloudflare-electric-service-binding.md]
 ---
+
+## Current specification — 2026-10-20, 18:44 PDT
+
+**What:** Keep the public Alchemy stack generic and inject deployment-specific configuration through an Effect Layer.
+
+**Why:** Will requires hosted deployment information in private smithers-infra.
+
+**Current state:** The first app is live per the 18:37 lead update, but sync verification is still pending after a workers.dev routing fix. No private repository creation or configuration migration receipt exists.
+
+**Next step:** Complete the private hosted-configuration workstream and the Electric service-binding workstream. Keep public builds independent of private files and services.
+
+**Open questions for Will:** None.
+
+Evidence: user-typed text and lead replies extracted by script from session 6253ecf2 for 23:45–01:44 UTC (16:45–18:44 PDT); queue answers through 18:30 PDT; current rulings, decisions, proposals, TODOs, rules and shared feature/host/panel briefs and designs. Latest words and queue answers supersede older plans. Product receipts are reported by the lead; this tracker verifies only the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 18:18 PDT
+
+**What:** Keep a generic Alchemy stack public; inject hosted deployment specifics from private smithers-infra through an Effect Layer.
+
+**Why:** Will settled the code-location question at 18:08: deployment information belongs in smithers-infra.
+
+**Current state:** The lead says smithersai/smithers-infra does not exist yet and plans creation after the first successful deploy. Neon retention was corrected on pushed main; deployment is retrying.
+
+**Next step:** After live deployment succeeds, create the private repository and move production account/domain/secret mappings and plan settings there. Public builds must work without private files or services.
+
+**Open questions for Will:** None; the recorded requests settle product intent.
+
+Evidence: script-filtered user text and lead replies from the latest two session hours; queue answers through 2026-10-21 01:16:08 UTC; current rulings, decisions, proposals, TODOs, rules and shared panel briefs/designs. Later rulings override historical proposals. Product receipts are reported evidence; this pass validates the site build only.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 18:04 PDT
+
+**What:** Keep all hosted infrastructure deployable through Alchemy.
+
+**Why:** A plan or declaration alone does not establish deployability.
+
+**Current state:** The 18:03 first production attempt failed on Neon’s restore-history setting. The free-plan limit is six hours; the correction is pushed as bbe0b0e9 and the deploy is retrying. Earlier plan-only completion did not prove a successful production deployment.
+
+**Next step:** Verify the corrected stack deploys and live checks pass. Keep the six-hour free-plan setting; raise it with a future Neon plan upgrade. Deploy approval is settled; infrastructure-code location remains a separate existing ruling question.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies extracted by script from the latest two transcript hours through 2026-10-21 01:03:57 UTC; queue rulings through 00:42:06 UTC; current rulings and decision 0017 override historical panel proposals. Product checks and landing receipts are reported evidence; this tracker runs the maintainer-site build only.
+
+## Earlier tracker history (retained)
 
 ## What
 
@@ -75,10 +124,13 @@ Will: "Do we have infra as code for everything including postgres? ... Since we 
 
 - **11:01 on 2026-10-20: [review round 4](review-round-4.md)'s R4-13 (P2, Claude Fable P2-2, source-verified against Cloudflare's Workers Logs docs): the Electric secret lands in Workers Logs.** `infra/ElectricGateway.ts:83` reads `?secret=` from the gateway's inbound URL and compares it with `!==`; `:59-72` declares the gateway with `observability.logs.invocationLogs: true, persist: true`, and a fetch invocation log records the request URL with its query string. So every shape request from ChatApi writes `…&secret=<ELECTRIC_SECRET>` into the gateway's persisted logs, and anyone with Workers Logs read access holds a secret that bypasses ChatApi's throttle, actor checks and column lists against everything Electric replicates. Rotation happens only when Alchemy's `Random` is replaced. ChatApi's logs also hold `GET /api/auth/callback?code=…&state=…`; that code is single-use and PKCE-bound, so low. Fix: between ChatApi and the gateway carry the secret in an `authorization` header, compare it with `Core.Signature.constantTimeEqual` as `worker/SignIn.ts:169-170` does, and add `secret=` only on the hop to the container; or turn invocation logs off for the gateway. Unrouted by 11:07.
 - Status stays done: a source-verified P2 waits for the lead's ruling (round 4 tracker rule). The production deploy still waits on Will's yes ([land and deploy](land-and-deploy-mvp.md)).
+- **13:38:27 on 2026-10-20: R4-13 fixed** (round 4's SDK fix agent): ChatApi sends the Electric secret as `authorization: Bearer`, and the gateway checks it in constant time (`infra/ElectricAccess.ts`, tested with a sentinel). Electric accepts its secret only in the URL, and Cloudflare traces record URLs, so the container runs with `ELECTRIC_INSECURE=true` and the gateway is its only way in; `infra/Electric.ts` sets `ELECTRIC_SECRET_AS=bearer`. Neither has run on a real deploy.
 
 ## Next
 
-From 11:07 on 2026-10-20, first: the lead's ruling on round 4's R4-13, the Electric secret in the gateway's persisted logs, before the first production deploy ([review round 4](review-round-4.md)). Then:
+From 13:38 on 2026-10-20: at the first deploy, after Will's yes, verify that `ELECTRIC_INSECURE=true` is reachable only through the gateway, that `ELECTRIC_SECRET_AS=bearer` works, and that the model keep-alive bytes aren't buffered ([model endpoint](model-endpoint.md)).
+
+Until 13:46 on 2026-10-20 the next step was, from 11:07 on 2026-10-20, first: the lead's ruling on round 4's R4-13, the Electric secret in the gateway's persisted logs, before the first production deploy ([review round 4](review-round-4.md)). Then:
 
 - Deploying: `pnpm deploy` (stage `prod`) only on Will's explicit yes, after [land and deploy](land-and-deploy-mvp.md)'s code review and [sign-in](sign-in.md).
 - Add `CODE_STORAGE_KEY` to deploy secrets once R3 of [repo clone and view](repo-clone-and-view.md) binds it. (Saving `CLOUDFLARE_ACCOUNT_ID` and `NEON_ORG_ID` is done: `apps/mvp/.env`, about 22:18.)

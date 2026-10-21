@@ -2,10 +2,109 @@
 title: Land finished work on main (the lander)
 status: in-progress
 area: process
-owner: lander agent, between rounds; it reported round 2 at 13:06 on 2026-10-20 and removed its workspace; round 3 (all of `apps/mvp` at once) starts when the branch workspace, flows, message controls and SDK fix builders stop (the lead, 13:06:45). Until 13:06: lander agent; round 2 pushed at 13:04:55 on 2026-10-20 (`main@origin` is `c9d1e0c5ed`, 6 commits, SDK and docs only); unreported by 13:06. Until 13:04: lander agent, on round 2 at 11:55 on 2026-10-20: one unit red (the two-tab `chat.test.ts` test) in its 11:47 to 11:49 run, then edits to that test and `chatApi.ts` at 11:49; not pushed (`main@origin` is `bba8df6fab`). Until 11:55: lander agent, resumed by the lead at 11:42:18 on 2026-10-20 on Will's new login, after the first account's weekly limit stopped it at about 11:30; not among the five the second account's limit stopped (the lead, 11:42:48); round 2's app typecheck passes and one unit test stays red at 11:42:40; not pushed by 11:45 (`main@origin` is `bba8df6fab`). Until 11:42: lander agent, resumed by the lead at 10:42 on 2026-10-20 from where it stopped (the Claude usage limit stopped it from about 08:15 to 10:40), in `~/smithers-lander`; round 2 not pushed by 10:44 (`main@origin` is `bba8df6fab`). Until 10:42: lander agent, resumed by the lead at 07:53:57 on 2026-10-20 for round 2; working in a jj workspace at `~/smithers-lander` from 08:00:25; unreported by 08:07. Until 07:53: lander agent; round 1 pushed `bba8df6fab` to `main` (reported 07:30:21 on 2026-10-20); the one red site test fixed in the working copy at 07:51:39; round 2 by the lander or the lead. Until 07:51: lander agent; round 1 pushed `bba8df6fab` to `main` (reported 07:30:21 on 2026-10-20); a small agent fixes the one red site test from 07:34:02; round 2 by the lander or the lead. Until 07:30: lander agent, started 06:42:50 on 2026-10-20 by the lead; later rounds by the lander or the lead
+owner: lander; finished app round reported on main
 updated: 2026-10-20
 links: [land-and-deploy-mvp.md, code-reviews.md, decisions-for-will.md, app-wiring.md, repo-checks-green.md, old-app-feature-gaps.md, fable-review-2-fixes.md, plan-identity-minified-builds.md, slash-commands.md, navigate-flow.md, web-page-flow.md, agent-jev.md, agent-status.md, repo-view-branches-raw-clone.md, ../../../../AGENTS.md, site-deployment-test.md, api-baseline-rerecord.md, dev-stack-hygiene.md, plan-identity-minified-builds.md, review-round-4.md, docs-check-flow-outcome.md, model-step.md, cloudflare-flow-host.md, effect-tanstack-db-and-effect-electric.md, library-catalog.md, issues.md, chat-message-controls.md, flow-authoring.md, model-endpoint.md, plan-identity-across-deploys.md, second-build-machine.md]
 ---
+
+## Current specification — 2026-10-20, 19:44 PDT
+
+**What:** Land finished development on append-only main.
+
+**Why:** Will wants finished work pushed continuously.
+
+**Current state:** At 19:35 the lead started commit round 4 from a quiet snapshot. Later app features and fixes are not yet in production; in-progress work and VibeLang files stay excluded. Earlier rounds remain completed history; no round-4 push receipt is reported.
+
+**Next step:** Obtain passing checks and the round-4 pushed revision, then hand it to deployment.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies from session 6253ecf2, approximately 17:44–19:44 PDT; queue answers through 19:38 PDT; rulings, decisions, proposals, TODOs, rules and shared feature/host/panel briefs and designs. Latest Will text and queue answers prevail. Product receipts are lead-reported; tracker validation is the site build. Existing execution ownership is preserved.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 18:04 PDT
+
+**What:** Land finished app and SDK work on append-only main.
+
+**Why:** Deploy from a pushed revision without machine-local dependencies.
+
+**Current state:** At 18:02:31 PDT the lead reports main at 8031e8f783 with today’s finished app work. App tests reached 100% coverage; docs, import-rule and secret-scan checks passed. At 18:03 the Neon retention fix also landed as bbe0b0e9. VibeLang local-link files remain excluded. Test-runner errors and an intermittent proxy failure have separate active follow-up.
+
+**Next step:** Retain these reported receipts; land subsequent work separately and follow the deployment retry. Do not describe the remaining runner/proxy failures as a green overall run.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies extracted by script from the latest two transcript hours through 2026-10-21 01:03:57 UTC; queue rulings through 00:42:06 UTC; current rulings and decision 0017 override historical panel proposals. Product checks and landing receipts are reported evidence; this tracker runs the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 17:55 PDT
+
+**What:** Land the finished app and SDK changes on append-only main.
+
+**Why:** Give deployment a pushed revision that excludes machine-local dependencies.
+
+**Current state:** At 17:54:23 PDT the lead reports all finished app work on main as c9c89a94, eight commits above the server SDK fixes. The VibeLang local-link files stayed out. This completes this landing round, not the active follow-up workstreams.
+
+**Next step:** Retain the landing receipt and follow deployment in land-and-deploy-mvp.md; land later follow-ups as separate finished changes.
+
+**Open questions for Will:** None for this update.
+
+Evidence: script-extracted user-typed text and lead replies for the latest two session hours through 2026-10-21 00:54:49 UTC; queue answers through 00:42:06 UTC; current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Later rulings prevail. Product and landing receipts are lead-reported; this tracker validates the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 17:34 PDT
+
+**What:** Land finished app and SDK work on append-only main using jj.
+
+**Why:** Keep tested remote and local fixes together.
+
+**Current state:** At 17:33 the lead says the commit round still runs; 15 remote SDK fixes overlap local work. The 17-minute browser-test lock is not a completion receipt. Local VibeLang filesystem links must stay off main until publication. Production deploy is now authorized.
+
+**Next step:** Reconcile overlapping fixes with their regression tests, exclude unpublished local-link migration, retain checks and landing receipt, then hand the clean main revision to deployment.
+
+**Open questions for Will:** None.
+
+Evidence: queue answers through 2026-10-21 00:34:14 UTC; script-filtered human text and lead replies from the latest two transcript hours through 00:33:48 UTC; current rulings, decisions, proposals, TODOs, rules and shared briefs. Latest answers supersede older blockers. Product tests are reported evidence; this tracker runs the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 16:54 PDT
+
+**What:** Land finished app and SDK changes on append-only main with jj.
+
+**Why:** Keep the shared working changes and remote fixes together without losing tested behavior.
+
+**Current state:** At 16:51 the lead reported 15 SDK fixes pushed by Latitude Codex lanes between 14:33 and 15:54, across roughly 14 packages including flow, agent, views, ui, sandbox, model and the browser host. Several overlap uncommitted Mac fixes. The current app landing round still has no completion receipt in the extracted window. Earlier 1,247 passing app tests are a reported snapshot, not proof of the merged result.
+
+**Next step:** Reconcile both sides, preserving each fix’s behavior and preferring stronger regression tests where fixes overlap. Run checks on the merged result, then retain the landing receipt. Review the last 24 hours of landed code in the queue. Production deploy remains a separate unresolved approval.
+
+**Open questions for Will:** None.
+
+Evidence: script-extracted user-typed messages and lead replies, 21:53–23:53 UTC, session 6253ecf2. Current rulings and queue answers override older panel proposals. Product checks are lead-reported; this pass validates the site build only.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 16:14 PDT
+
+**What:** Land finished repository work on append-only main with jj.
+
+**Why:** HOST-3 and HOST-4 require continuous landing before review and before starting new changes.
+
+**Current state:** At 16:13:53 PDT the lead reported all 1,247 app tests passing. The lander is adding tests for the last uncovered lines. The commit round is close, but no completed commit/push receipt was reported; status remains in-progress.
+
+**Next step:** Finish coverage checks and obtain the landing receipt. The first production deploy remains a separate unresolved decision.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies extracted by script from session 6253ecf2, latest two hours through 2026-10-20 23:13:53 UTC; current rulings and queue answers prevail over older briefs. Reported receipts only; this tracker ran no product tests.
+
+## Prior tracker record (retained)
+
 
 ## What
 
@@ -132,10 +231,22 @@ This reverses the earlier order, where nothing moved until Will reviewed the cod
 - 13:05 to 13:16 on 2026-10-20, toward round 3: flows reported built (13:05, e2e not yet passing; [flow authoring](flow-authoring.md)); message controls' e2e passed at 13:15:50 ([message controls](chat-message-controls.md)); the branch workspace and SDK fix (R4-21, [plan identity across deploys](plan-identity-across-deploys.md)) builders and the keep-alive agent ([model endpoint](model-endpoint.md)) are unreported. The repository home and triage builders also edit `apps/mvp`. `main@origin` is still `c9d1e0c5ed`.
 - **13:19:52 on 2026-10-20, the lead's plan once the current agents finish, "Land and clean up (next)":** commit all of the app work to `main` in one round, about 941 files; re-record the [API baseline](api-baseline-rerecord.md); one cleanup pass over about 61 small review findings ([P3 cleanup](review-round-4-p3-cleanup.md)); move answering fully onto the browser agent ([durable answering](durable-answering.md)); then Codex Astra reviews, fixes, then Fable. "Then: the first deploy, after your yes."
 - 13:18:35: the keep-alive fix is done and lands with the SDK files in round 3 ([model endpoint](model-endpoint.md)). 13:22 to 13:23: six more agents started in the shared checkout ([dev stack hygiene](dev-stack-hygiene.md)); each new in-flight file is one more to exclude or wait for at the round 3 snapshot.
+- 13:33:09 to 13:42:00 on 2026-10-20: the builders round 3 waited for finished: message controls (13:33), round 4's SDK fixes (13:38) and the branch workspace (13:42); flows passed its e2e at 13:20:39.
+- **13:43:30: the lead started round 3:** "commits all finished app work to `main` (no deploy), fixing the 11 full-suite test failures first". The branch builder's full suite had 11 failures in 8 files, none in its slice (Database 0019, a `chat/Expire` handoff test, chat, telemetry and boot). Still being edited while it lands: [spend alerts](token-spend-alerts.md), [notifications](notifications-and-live-work.md), [agent evals](agent-evals.md), [triage](issue-triage.md), the [home view](repository-declared-home.md), [branch sharing](branch-sharing.md) and the [agent in the sandbox](connect-agents-sandboxes-forge.md).
+
+- On disk, unreported, 13:55 to 14:06 on 2026-10-20: the lander installed dependencies in `~/smithers-lander` (`node_modules` 13:55), which took free disk to 6.0 GiB at 14:03 ([dev stack hygiene](dev-stack-hygiene.md)). From about 14:02 its per-package type checks (`r3/tc-*.log`, the SDK flows packages, `@smthrs/ui`, `@smthrs/views`) and a unit run (`r3/unit1.log`, 14:06) ran in scratchpad `r3/`. Builders kept editing app files throughout (sharing, TODOs, notifications, secrets, spend alerts, the sandbox agent).
+- By 14:08: no round 3 report.
+- 14:09 to 14:10 on 2026-10-20: round 3's first app unit run failed in 20 files (scratchpad `r3/failed1.txt`: chat, controls, steps, telemetry, flows UI, repo copy, runs, status, engine, `Expire`, `RepoClone`, `RepoApi`, `ShapeProxy` and `TestDatabase`). A second run (`r3/unit2.log`) was still writing at 14:29.
+- The usage limit at 14:15 didn't stop the lander. The Codex dprint lane on the [Latitude server](second-build-machine.md) waits for round 3's commit on `main`.
+- 14:26: the shared dev database got migrations 0018 to 0024 from the in-flight builders; round 3 must carry each migration with the code that needs it.
 
 ## Next
 
-From 13:06 on 2026-10-20: round 3 lands all of `apps/mvp` (features, migrations 0010 to 0018, decisions 0012 to 0015, the Fable and round 4 fixes) with the remaining SDK changes in one round once the branch workspace, flows, message controls and SDK fix builders stop; the tip passes the app unit suite (including the two-tab chat test), typechecks, `docs:check` and a secret scan; then the [API baseline](api-baseline-rerecord.md) is re-recorded. Nothing is deployed.
+From 14:30 on 2026-10-20: round 3's second unit run, then its report: all finished `apps/mvp` work and the remaining SDK changes on `main`, the full-suite failures fixed, in-flight builders' files left in the working copy. Then the [API baseline](api-baseline-rerecord.md) is re-recorded. Nothing is deployed.
+
+Until 14:30 on 2026-10-20 the next step was, from 13:43 on 2026-10-20: round 3 lands all finished `apps/mvp` work and the remaining SDK changes on `main`, with the 11 full-suite failures fixed and the two-tab chat test passing; in-flight builders' files stay in the working copy; then the [API baseline](api-baseline-rerecord.md) is re-recorded. Nothing is deployed.
+
+Until 13:46 on 2026-10-20 the next step was, from 13:06 on 2026-10-20: round 3 lands all of `apps/mvp` (features, migrations 0010 to 0018, decisions 0012 to 0015, the Fable and round 4 fixes) with the remaining SDK changes in one round once the branch workspace, flows, message controls and SDK fix builders stop; the tip passes the app unit suite (including the two-tab chat test), typechecks, `docs:check` and a secret scan; then the [API baseline](api-baseline-rerecord.md) is re-recorded. Nothing is deployed.
 
 Until 13:06 on 2026-10-20 the next step was, from 13:04 on 2026-10-20: the lander's report. Then the app round: the `apps/mvp` features, migrations 0010 onward and decisions 0012 to 0015, with [agent status](agent-status.md) (queued 12:57), [issues](issues.md) and the [Fable](fable-review-2-fixes.md) and [review round 4](review-round-4.md) fixes as each reports. Each tip builds and is scanned for secrets. The 4.1 GB `~/smithers-lander` workspace goes after landing. Nothing is deployed.
 

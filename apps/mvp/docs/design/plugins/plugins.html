@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Everything is a plugin</title>
+<meta name="description" content="Decision 0017, approved by Will on 2026-10-20 at 17:03, with Astra's and Fable's reviews applied; ready to build slice 0.">
+<style>
+/* The Paper palette, copied from @smthrs/ui-styleguide's standaloneThemeCss (light, then dark). */
+:root { color-scheme:light; --font-sans:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; --font-mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  --bg:#f7f4ee; --text:#211d18; --text-muted:#665f54; --text-faint:#6c655a; --surface:#fffefa; --surface-2:#efeae0; --border:rgba(33,29,24,.08); --border-strong:rgba(33,29,24,.14); --border-solid:#e4ddcf; --inverse-bg:#211d18; --inverse-text:#f7f4ee;
+  --brand:#0f766e; --success:#0b5b57; --danger:#a4442a; --warning:#8c5a08; --shadow-rgb:33 29 24; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme:dark; --bg:#0d1514; --text:#ece7db; --text-muted:#a8a193; --text-faint:#969083; --surface:#131b1a; --surface-2:#1a2422; --border:rgba(236,231,219,.1); --border-strong:rgba(236,231,219,.18); --border-solid:#293532; --inverse-bg:#ece7db; --inverse-text:#211d18; --brand:#45c4b2; --success:#7fbfb3; --danger:#d97757; --warning:#f0c169; --shadow-rgb:0 0 0; } }
+:root[data-theme="dark"] { color-scheme:dark; --bg:#0d1514; --text:#ece7db; --text-muted:#a8a193; --text-faint:#969083; --surface:#131b1a; --surface-2:#1a2422; --border:rgba(236,231,219,.1); --border-strong:rgba(236,231,219,.18); --border-solid:#293532; --inverse-bg:#ece7db; --inverse-text:#211d18; --brand:#45c4b2; --success:#7fbfb3; --danger:#d97757; --warning:#f0c169; --shadow-rgb:0 0 0; }
+:root { --brand-soft:color-mix(in srgb, var(--brand) 10%, var(--surface)); --brand-border:color-mix(in srgb, var(--brand) 38%, transparent); --warning-soft:color-mix(in srgb, var(--warning) 12%, var(--surface)); --warning-border:color-mix(in srgb, var(--warning) 45%, transparent); --danger-soft:color-mix(in srgb, var(--danger) 10%, var(--surface)); --danger-border:color-mix(in srgb, var(--danger) 40%, transparent); }
+
+* { box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; }
+body { margin:0; font:15px/1.55 var(--font-sans); background:var(--bg); color:var(--text); }
+a { color:var(--brand); text-underline-offset:2px; }
+code, pre, kbd { font-family:var(--font-mono); }
+code { font-size:.88em; background:var(--surface-2); padding:1px 5px; border-radius:4px; overflow-wrap:anywhere; }
+kbd { font-size:12px; border:1px solid var(--border-strong); border-bottom-width:2px; border-radius:4px; padding:0 5px; background:var(--surface); }
+q { quotes:"\201C" "\201D"; }
+
+.page { max-width:1080px; margin:0 auto; padding:24px 16px 64px; }
+header.top { display:flex; flex-wrap:wrap; gap:12px 16px; align-items:flex-start; justify-content:space-between; }
+h1 { font-size:30px; line-height:1.15; margin:0 0 6px; letter-spacing:-.01em; }
+.meta { color:var(--text-muted); font-size:13px; }
+.status { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+.pill { display:inline-flex; align-items:center; gap:6px; height:24px; padding:0 10px; border-radius:999px; font-size:12px; font-weight:650; white-space:nowrap; }
+.pill.ok { background:var(--brand-soft); border:1px solid var(--brand-border); color:var(--brand); }
+.pill.wait { background:var(--warning-soft); border:1px solid var(--warning-border); color:var(--warning); }
+.pill.quiet { border:1px solid var(--border-strong); color:var(--text-muted); }
+.theme { display:flex; gap:4px; }
+.theme button { font:inherit; font-size:12px; height:28px; padding:0 10px; border-radius:999px; border:1px solid var(--border-strong); background:var(--surface); color:var(--text); cursor:pointer; }
+.theme button[aria-pressed="true"] { background:var(--inverse-bg); color:var(--inverse-text); border-color:transparent; }
+.lede { font-size:18px; line-height:1.5; margin:18px 0 10px; max-width:64ch; }
+nav.toc { display:flex; flex-wrap:wrap; gap:6px; margin:16px 0 8px; }
+nav.toc a { font-size:13px; text-decoration:none; color:var(--text); border:1px solid var(--border-strong); background:var(--surface); border-radius:999px; padding:3px 10px; }
+nav.toc a:hover { border-color:var(--brand); color:var(--brand); }
+
+section { margin-top:44px; }
+h2 { font-size:21px; margin:0 0 4px; letter-spacing:-.005em; }
+h2 + .sub { color:var(--text-muted); margin:0 0 16px; font-size:14px; }
+h3 { font-size:15px; margin:0 0 6px; }
+
+/* Will's answers */
+.answers { display:grid; gap:10px; }
+.ans { background:var(--surface); border:1px solid var(--border-strong); border-left:3px solid var(--brand); border-radius:12px; padding:14px 16px; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); gap:14px; }
+.ans .qn { font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); }
+.ans h3 { font-size:15px; margin:2px 0 8px; }
+.ans blockquote { margin:0; padding:8px 12px; border-radius:8px; background:var(--surface-2); font-size:14px; }
+.ans .change b { display:block; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--brand); margin-bottom:4px; }
+.ans .change { font-size:14px; }
+
+/* Rules */
+ol.rules { margin:0; padding:0; list-style:none; counter-reset:r; display:grid; gap:8px; }
+ol.rules li { counter-increment:r; display:grid; grid-template-columns:28px 1fr; gap:10px; background:var(--surface); border:1px solid var(--border-strong); border-radius:10px; padding:12px 14px; }
+ol.rules li::before { content:counter(r); width:24px; height:24px; border-radius:50%; background:var(--inverse-bg); color:var(--inverse-text); font-size:12px; font-weight:700; display:grid; place-items:center; }
+ol.rules b { display:block; }
+ol.rules span { color:var(--text-muted); font-size:14px; }
+
+/* Diagram */
+.diagram { display:grid; gap:0; }
+.band { border:1px solid var(--border-strong); border-radius:12px; padding:14px; background:var(--surface); }
+.band > .label { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px; margin-bottom:10px; }
+.band > .label b { font-size:13px; letter-spacing:.06em; text-transform:uppercase; }
+.band > .label span { font-size:13px; color:var(--text-muted); }
+.band.plugins { background:var(--brand-soft); border-color:var(--brand-border); }
+.band.iface { border-style:dashed; }
+.band.core { background:var(--inverse-bg); color:var(--inverse-text); border-color:transparent; }
+.band.core > .label span { color:color-mix(in srgb, var(--inverse-text) 70%, transparent); }
+.tiers { display:grid; grid-template-columns:2fr 1fr 1fr; gap:10px; }
+.tier { background:var(--surface); border:1px solid var(--border-strong); border-radius:10px; padding:10px; min-width:0; }
+.tier h3 { font-size:13px; display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap; }
+.tier h3 small { font-weight:500; color:var(--text-muted); }
+.chips { display:flex; flex-wrap:wrap; gap:5px; }
+.chip { font-family:var(--font-mono); font-size:12px; padding:2px 8px; border-radius:6px; background:var(--surface-2); border:1px solid var(--border); white-space:nowrap; }
+.chip.star { background:var(--warning-soft); border-color:var(--warning-border); color:var(--warning); font-weight:700; }
+.chip.new { border-style:dashed; }
+.core .chip { background:color-mix(in srgb, var(--inverse-text) 10%, transparent); border-color:color-mix(in srgb, var(--inverse-text) 18%, transparent); color:var(--inverse-text); font-family:var(--font-sans); }
+.link { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:8px; padding:6px 0; color:var(--text-muted); font-size:12px; }
+.link::before, .link::after { content:""; height:1px; background:var(--border-strong); }
+.link span { display:inline-flex; gap:6px; align-items:center; }
+.link span::before { content:"▼"; font-size:9px; color:var(--brand); }
+.iface-row { display:grid; grid-template-columns:auto 1fr; gap:10px 14px; align-items:start; }
+.iface-row .file { font-family:var(--font-mono); font-size:13px; font-weight:700; padding:6px 10px; border-radius:8px; background:var(--inverse-bg); color:var(--inverse-text); white-space:nowrap; }
+.lanes { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+.lane { border:1px solid var(--border-strong); border-radius:8px; padding:8px 10px; font-size:13px; background:var(--surface-2); }
+.lane b { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); margin-bottom:2px; }
+.deltest { margin-top:12px; display:grid; grid-template-columns:auto 1fr; gap:10px; align-items:start; font-size:14px; }
+.tag { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:3px 8px; border-radius:6px; background:var(--danger-soft); color:var(--danger); border:1px solid var(--danger-border); white-space:nowrap; }
+
+/* Sandboxes */
+.sandboxes { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; }
+.sbx { background:var(--surface); border:1px solid var(--border-strong); border-radius:12px; padding:12px 14px; display:flex; flex-direction:column; gap:6px; font-size:13.5px; }
+.sbx.trusted { background:var(--inverse-bg); color:var(--inverse-text); border-color:transparent; }
+.sbx.trusted .k { color:color-mix(in srgb, var(--inverse-text) 70%, transparent); }
+.sbx h3 { margin:0; font-size:15px; }
+.sbx .k { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); margin-top:4px; }
+.sbx .pill { align-self:flex-start; }
+
+/* Manifest */
+.manifest { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; }
+pre.code { margin:0; background:var(--surface); border:1px solid var(--border-strong); border-radius:12px; padding:14px; font-size:12.5px; line-height:1.55; overflow:auto; }
+pre.code .k { color:var(--brand); }
+pre.code .s { color:var(--text); }
+pre.code .n { color:var(--warning); }
+pre.code .p { color:var(--text-faint); }
+.notes { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:8px; }
+.note { background:var(--surface); border:1px solid var(--border-strong); border-left:3px solid var(--brand); border-radius:8px; padding:10px 12px; font-size:14px; }
+.note b { display:block; margin-bottom:2px; }
+.note.warn { border-left-color:var(--warning); }
+
+/* Tables */
+.table-wrap { overflow-x:auto; border:1px solid var(--border-strong); border-radius:12px; background:var(--surface); }
+table { border-collapse:collapse; width:100%; font-size:14px; }
+th, td { text-align:left; vertical-align:top; padding:9px 12px; border-bottom:1px solid var(--border); }
+th { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:650; background:var(--surface-2); }
+tr:last-child td { border-bottom:0; }
+td.sev { font-weight:700; white-space:nowrap; }
+td.sev.p1 { color:var(--danger); }
+
+/* Points */
+.points { display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:8px; }
+.point { background:var(--surface); border:1px solid var(--border-strong); border-radius:10px; padding:10px 12px; }
+.point > code:first-child { background:none; padding:0; font-weight:700; font-size:13px; color:var(--brand); }
+.point p { margin:4px 0 6px; font-size:13.5px; }
+.point .who { font-size:12px; color:var(--text-muted); }
+.semantics { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:8px; margin-top:12px; }
+.sem { border:1px solid var(--border-strong); border-radius:10px; padding:10px 12px; background:var(--surface-2); font-size:13.5px; }
+.sem.closed { border-color:var(--danger-border); background:var(--danger-soft); }
+.sem b { font-family:var(--font-mono); font-size:13px; display:block; }
+.sem small { color:var(--text-muted); display:block; margin-top:4px; }
+
+/* Tiers */
+.tiercards { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; margin-top:12px; }
+.tc { background:var(--surface); border:1px solid var(--border-strong); border-radius:12px; padding:14px; }
+.tc h3 { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.tc dl { margin:8px 0 0; display:grid; gap:6px; font-size:13.5px; }
+.tc dt { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); }
+.tc dd { margin:0; }
+.renderers { display:flex; gap:4px; flex-wrap:wrap; }
+.r { font-size:12px; border-radius:6px; padding:1px 7px; border:1px solid var(--border-strong); }
+.r.on { background:var(--brand-soft); border-color:var(--brand-border); color:var(--brand); font-weight:650; }
+.r.off { color:var(--text-faint); text-decoration:line-through; }
+.never { margin-top:10px; border:1px solid var(--danger-border); background:var(--danger-soft); border-radius:12px; padding:12px 14px; font-size:14px; }
+.never b { color:var(--danger); }
+.never ul { margin:6px 0 0; padding-left:18px; columns:2; column-gap:24px; }
+
+/* Slices */
+ol.slices { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+ol.slices > li { display:grid; grid-template-columns:44px 1fr; gap:12px; background:var(--surface); border:1px solid var(--border-strong); border-radius:12px; padding:12px 14px; }
+ol.slices > li.first { border:2px solid var(--brand); }
+ol.slices > li.pre { border:2px solid var(--warning-border); }
+.num { width:36px; height:36px; border-radius:10px; display:grid; place-items:center; font-weight:750; background:var(--surface-2); }
+li.first .num { background:var(--brand); color:var(--surface); }
+li.pre .num { background:var(--warning); color:var(--surface); }
+ol.slices h3 { margin:0; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+ol.slices p { margin:4px 0 0; font-size:14px; color:var(--text-muted); }
+.two { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px; }
+.two h4 { margin:0 0 4px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); }
+.two ul { margin:0; padding-left:18px; font-size:14px; }
+.two li { margin:2px 0; }
+ul.checks { list-style:none; padding-left:0 !important; }
+ul.checks li::before { content:"☐ "; color:var(--brand); }
+
+footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--border-strong); color:var(--text-muted); font-size:13px; }
+
+@media (max-width: 900px) {
+  .sandboxes { grid-template-columns:1fr 1fr; }
+  .semantics { grid-template-columns:repeat(3, minmax(0,1fr)); }
+}
+@media (max-width: 820px) {
+  .tiers, .tiercards, .two, .ans { grid-template-columns:1fr; }
+  .lanes { grid-template-columns:1fr; }
+  .never ul { columns:1; }
+}
+@media (max-width: 480px) {
+  h1 { font-size:25px; }
+  .lede { font-size:16.5px; }
+  .sandboxes, .semantics { grid-template-columns:1fr; }
+  .iface-row, .deltest { grid-template-columns:1fr; }
+  .deltest .tag { justify-self:start; }
+  ol.slices > li { grid-template-columns:1fr; }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior:smooth; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="top">
+  <div>
+    <h1>Everything is a plugin</h1>
+    <div class="meta">Decision 0017 · panel P: Opus, Fable, Sol, Astra · P2, never blocks the release</div>
+    <div class="status">
+      <span class="pill ok">✓ Approved by Will 17:03</span>
+      <span class="pill ok">✓ Astra and Fable reviews applied</span>
+      <span class="pill wait">● Ready to build slice 0</span>
+    </div>
+  </div>
+  <div class="theme" role="group" aria-label="Theme">
+    <button type="button" data-set="auto" aria-pressed="true">Auto</button>
+    <button type="button" data-set="light" aria-pressed="false">Light</button>
+    <button type="button" data-set="dark" aria-pressed="false">Dark</button>
+  </div>
+</header>
+
+<p class="lede">The app is a short list of core primitives plus plugins, ours included. Every plugin is a <code>plugin.json</code> that binds <code>Flow.make</code> flows to contribution points. Anything not compiled into the app runs in a sandbox.</p>
+
+<nav class="toc" aria-label="Sections">
+  <a href="#answers">Your answers</a><a href="#rules">Five rules</a><a href="#diagram">Core and plugins</a><a href="#sandboxes">Where code runs</a><a href="#manifest">The manifest</a><a href="#points">Contribution points</a><a href="#tiers">Trust tiers</a><a href="#slices">Slices</a><a href="#fixes">Review fixes</a>
+</nav>
+
+<section id="answers">
+  <h2>Your three answers, and what each changed</h2>
+  <p class="sub">17:03, with "Looks good but you should have fable and astra review this one extra time".</p>
+  <div class="answers">
+    <div class="ans">
+      <div>
+        <div class="qn">Question 1 · React</div>
+        <h3>May plugins draw with React?</h3>
+        <blockquote><q>they should be able to make arbitrary react based apps that are embedded in chat or can be full screened this is extremely important functionality just like how agent itself can directly do this</q></blockquote>
+      </div>
+      <div class="change"><b>Changed</b>Every plugin, not only built-ins, can ship an arbitrary React app, inline in chat or full screen. A plugin that isn't compiled in runs it in a sandboxed frame with a typed bridge to flows. The agent gets the same ability through <code>ui/app</code> cards. This overrides the panel's "no plugin JavaScript in a frame".</div>
+    </div>
+    <div class="ans">
+      <div>
+        <div class="qn">Question 2 · Sandboxes</div>
+        <h3>Where may repository and personal code run?</h3>
+        <blockquote><q>The question makes no sense to me quickjs is a sandbox</q></blockquote>
+      </div>
+      <div class="change"><b>Changed</b>The trust tiers are now written as sandboxes. Plugin and flow code from a repository or a person runs in the QuickJS realm, hand-edited personal flows included (no more <code>FlowNeedsSandbox</code> for them). Containers are only for code that needs a machine. Frames are for React apps.</div>
+    </div>
+    <div class="ans">
+      <div>
+        <div class="qn">Question 3 · The queue</div>
+        <h3>Product feature or maintainer tool?</h3>
+        <blockquote><q>Everything in the maintainer tool is dogfooded and we will be adding it to the product itself after it's really high quality but yes I like this feature it will very likely end up as a workflow that can be ran on top of other workflows specifically ones that are doing coding work or some other type</q></blockquote>
+      </div>
+      <div class="change"><b>Changed</b>"A flow that runs over other flows" is now first-class: it observes other runs, reads them, and asks you. The product queue becomes one, running over coding flows, after dogfooding. Slice 1 stays small: a view of what waits on you.</div>
+    </div>
+  </div>
+</section>
+
+<section id="rules">
+  <h2>The decision in five rules</h2>
+  <p class="sub">Thirteen rules in the decision; these five carry it.</p>
+  <ol class="rules">
+    <li><div><b>A small core; everything else is a plugin.</b><span>16 named primitives. Our features use the same interface as anyone's, and the core names no plugin outside its built-in list.</span></div></li>
+    <li><div><b>One manifest, in the SDK we have.</b><span><code>plugin.json</code>, decoded by <code>Plugin.Manifest</code> in <code>@smthrs/plugin</code>, with the host contract <code>PluginHost</code> beside it. No new package.</span></div></li>
+    <li><div><b>Plugins act only through flows, and every dispatch carries who asked.</b><span>The server mints a credential per run naming the person, the agent or plugin acting for them, and its ceiling. Flows can run over other flows.</span></div></li>
+    <li><div><b>Everything not compiled in runs in a sandbox.</b><span>Flow code in the QuickJS realm; React apps in a sandboxed frame; machine work in a container. Every plugin and the agent can ship a React app.</span></div></li>
+    <li><div><b>People act; plugins and agents never act as them.</b><span>Person-only routes refuse any agent or plugin credential, and the host draws every person-only button and key itself. A merge activates a plugin; an Admin grants each secret to each plugin.</span></div></li>
+  </ol>
+</section>
+
+<section id="diagram">
+  <h2>Core versus plugins</h2>
+  <p class="sub">Plugins sit on one interface. The interface sits on the core. Nothing reaches past it.</p>
+  <div class="diagram" role="img" aria-label="Plugins in three tiers declare contributions in plugin.json, which the core's 16 primitives load and run.">
+    <div class="band plugins">
+      <div class="label"><b>Plugins</b><span>features; delete a whole one and the rest still build and pass</span></div>
+      <div class="tiers">
+        <div class="tier">
+          <h3>Built-in <small>this monorepo · compiled in</small></h3>
+          <div class="chips">
+            <span class="chip star">needs-you</span><span class="chip">agent</span><span class="chip">repo</span><span class="chip">home</span><span class="chip">issues</span><span class="chip">triage</span><span class="chip">todos</span><span class="chip">branch</span><span class="chip">flows</span><span class="chip">runs</span><span class="chip">web</span><span class="chip">jev</span><span class="chip">notifications</span><span class="chip">spend</span><span class="chip">secrets</span><span class="chip new">review-media</span><span class="chip new">review-code</span>
+          </div>
+        </div>
+        <div class="tier">
+          <h3>Repository <small>a person merged it</small></h3>
+          <div class="chips"><span class="chip new">work</span><span class="chip">.smithers/flows</span><span class="chip">.smithers/home.json</span><span class="chip new">your own</span></div>
+        </div>
+        <div class="tier">
+          <h3>Personal <small>saved by you</small></h3>
+          <div class="chips"><span class="chip new">your own</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="link"><span>declare</span></div>
+    <div class="band iface">
+      <div class="label"><b>One interface</b><span>data, read and checked without running plugin code</span></div>
+      <div class="iface-row">
+        <span class="file">plugin.json</span>
+        <div class="chips">
+          <span class="chip">views</span><span class="chip">slots</span><span class="chip">commands</span><span class="chip">keybindings</span><span class="chip">flows · owns</span><span class="chip">cards</span><span class="chip">settings</span><span class="chip">triggers</span><span class="chip">hooks · taps</span><span class="chip">modelRoles</span><span class="chip">records</span>
+        </div>
+      </div>
+      <div class="lanes">
+        <div class="lane"><b>Acts through</b><code>Flow.make</code> flows only, each dispatch carrying a server-minted invocation context</div>
+        <div class="lane"><b>Draws with</b>blocks · realm views · React apps in a frame · components (compiled in only)</div>
+      </div>
+    </div>
+    <div class="link"><span>load and run</span></div>
+    <div class="band core">
+      <div class="label"><b>Core primitives</b><span>enforce trust, consistency and boot; no plugin replaces them</span></div>
+      <div class="chips">
+        <span class="chip">Plugin host</span><span class="chip">Flows and dispatch</span><span class="chip">Flow catalog</span><span class="chip">Runs</span><span class="chip">Identity and run credentials</span><span class="chip">Access and grants</span><span class="chip">Sync and data</span><span class="chip">Shell, router, slots</span><span class="chip">Commands and keys</span><span class="chip">UI kit and its sandboxes</span><span class="chip">Attention</span><span class="chip">Models</span><span class="chip">Secrets</span><span class="chip">System flows</span><span class="chip">Telemetry</span><span class="chip">Host services</span>
+      </div>
+    </div>
+  </div>
+  <div class="deltest">
+    <span class="tag">Deletion test</span>
+    <div>CI deletes each <em>whole</em> built-in plugin and its one line: every other test passes. CI boots with no plugins: shell, sign-in, sign-out and plugin settings still work. Slice 1 proves the skeleton; slice 3's parity gate proves the public interface.</div>
+  </div>
+</section>
+
+<section id="sandboxes">
+  <h2>Where code runs</h2>
+  <p class="sub">Three sandboxes, and the app's realm for code compiled into the build. Placement stays local first, remote by need.</p>
+  <div class="sandboxes">
+    <div class="sbx trusted">
+      <h3>The app's realm</h3>
+      <span class="k">Runs</span><div>the core and built-in plugins</div>
+      <span class="k">Who</span><div>only code compiled into the build</div>
+      <span class="k">Boundary</span><div>code review and the build: it is trusted application code</div>
+    </div>
+    <div class="sbx">
+      <h3>QuickJS realm</h3>
+      <span class="pill ok">sandbox</span>
+      <span class="k">Runs</span><div>today: the agent's cells and views; from slice 5: flow code from repositories and people, hand-edited flows too</div>
+      <span class="k">Can't</span><div>network, files, a clock, randomness; imports only the host's set; 64 MiB, 1 s a step</div>
+      <span class="k">On</span><div>the browser engine, or the Worker by need</div>
+    </div>
+    <div class="sbx">
+      <h3>Sandboxed frame</h3>
+      <span class="pill ok">sandbox</span>
+      <span class="k">Runs</span><div>React apps from any plugin and the agent, inline or full screen</div>
+      <span class="k">Can't</span><div>network or navigate away; data only through the typed bridge; never acts as you</div>
+      <span class="k">On</span><div>a views-origin wrapper, under a label the host draws</div>
+    </div>
+    <div class="sbx">
+      <h3>Container</h3>
+      <span class="pill ok">sandbox</span>
+      <span class="k">Runs</span><div>code that needs a machine: files, processes, a checkout</div>
+      <span class="k">Secrets</span><div>only through the egress, per plugin grant</div>
+      <span class="k">On</span><div>Cloudflare Containers</div>
+    </div>
+  </div>
+</section>
+
+<section id="manifest">
+  <h2>The manifest, for real: the decision queue as a plugin</h2>
+  <p class="sub"><code>apps/mvp/plugins/needs-you/plugin.json</code>, slice 1. It is also a test fixture that must load and dispatch through the real loader.</p>
+  <div class="manifest">
+<pre class="code" id="json">{
+  "apiVersion": 1,
+  "id": "needs-you",
+  "version": "0.1.0",
+  "title": "Needs you",
+  "description": "Everything that waits on you, one item at a time, full screen, by keyboard.",
+  "requires": { "api": "^1.0.0" },
+  "capabilities": [],
+  "uses": ["run/answer", "app/navigate"],
+  "$defs": {
+    "Option": { "type": "object", "properties": { "index": { "type": "integer", "minimum": 0, "maximum": 8 } },
+                "required": ["index"], "additionalProperties": false },
+    "Note": { "type": "object", "properties": { "note": { "type": "string", "maxLength": 4000 } },
+              "required": ["note"], "additionalProperties": false }
+  },
+  "contributes": {
+    "views": [{
+      "id": "needs-you/queue", "title": "Needs you", "scope": "app", "path": "",
+      "sizes": ["inline", "full"], "minimum": "member",
+      "reads": ["core/waits"],
+      "render": { "kind": "component", "export": "Queue" },
+      "events": [
+        { "name": "option", "payload": { "$ref": "#/$defs/Option" }, "flow": "run/answer",
+          "args": { "runId": "$item.runId", "version": "$item.version", "execution": "$item.execution",
+                    "value": "$item.options[$event.index]" } },
+        { "name": "approve", "payload": { "$ref": "#/$defs/Note" }, "flow": "run/answer",
+          "args": { "runId": "$item.runId", "version": "$item.version", "execution": "$item.execution",
+                    "value": { "approved": true, "note": "$event.note" } } },
+        { "name": "changes", "payload": { "$ref": "#/$defs/Note" }, "flow": "run/answer",
+          "args": { "runId": "$item.runId", "version": "$item.version", "execution": "$item.execution",
+                    "value": { "approved": false, "note": "$event.note" } } },
+        { "name": "reply", "payload": { "$ref": "#/$defs/Note" }, "flow": "run/answer",
+          "args": { "runId": "$item.runId", "version": "$item.version", "execution": "$item.execution",
+                    "value": "$event.note" } },
+        { "name": "next", "local": true },
+        { "name": "previous", "local": true }
+      ]
+    }],
+    "slots": [{ "slot": "shell.nav", "id": "needs-you/nav", "order": 10, "minimum": "member",
+                "reads": ["core/waits"], "render": { "kind": "component", "export": "NavCount" } }],
+    "commands": [{ "id": "needs-you/open", "flow": "app/navigate", "args": { "to": "/app/needs-you" },
+                   "title": "Needs you", "minimum": "member", "slash": { "name": "needs" }, "palette": true }],
+    "keybindings": [
+      { "key": "g n", "command": "needs-you/open" },
+      { "key": "digit", "event": "option", "fields": { "index": "$key.index" },
+        "when": "view == needs-you/queue &amp;&amp; item.question &amp;&amp; !focus.input" },
+      { "key": "a", "event": "approve", "when": "view == needs-you/queue &amp;&amp; item.approval &amp;&amp; !focus.input" },
+      { "key": "r", "event": "changes", "when": "view == needs-you/queue &amp;&amp; item.approval &amp;&amp; !focus.input" },
+      { "key": "mod+enter", "event": "reply", "when": "view == needs-you/queue &amp;&amp; item.question" },
+      { "key": "j", "event": "next", "when": "view == needs-you/queue &amp;&amp; !focus.input" },
+      { "key": "k", "event": "previous", "when": "view == needs-you/queue &amp;&amp; !focus.input" }
+    ]
+  }
+}</pre>
+    <div class="notes">
+      <div class="note"><b>Data, not code</b>The host decodes and checks it before any plugin code loads. Schemas resolve only to this file's <code>$defs</code>; a bad field fails the build, naming it.</div>
+      <div class="note warn"><b>No trust field</b>Nothing here says "trusted". <code>component</code> renders only because this plugin is compiled in; elsewhere the same view ships as a framed <code>app</code>.</div>
+      <div class="note"><b>The host draws your buttons</b><code>run/answer</code> is person-only, so the host's action strip draws these four events and owns their keys. The view only shows the item, calls <code>select</code>, and may <code>propose</code> a note.</div>
+      <div class="note"><b>Keys fill payloads</b><kbd>2</kbd> sets <code>index</code> to 1 through <code>$key.index</code>; <code>args</code> picks <code>$item.options[1]</code>. No queue-specific code in the host.</div>
+      <div class="note"><b>One source</b><code>core/waits</code> lists every wait addressed to you, from runs. No queue table. Members and up, as <code>run/answer</code> requires.</div>
+      <div class="note"><b>Your keys</b><kbd>1</kbd>–<kbd>9</kbd> option, <kbd>a</kbd> approve, <kbd>r</kbd> changes, <kbd>i</kbd> the strip's text box, <kbd>⌘</kbd><kbd>↵</kbd> send, <kbd>j</kbd>/<kbd>k</kbd>. Later and undo come in slice 2.</div>
+    </div>
+  </div>
+</section>
+
+<section id="points">
+  <h2>Contribution points</h2>
+  <p class="sub">Each lands with its first consumer. Until then the host refuses it by name, so nothing half-loads.</p>
+  <div class="points">
+    <div class="point"><code>views</code><p>A view in the chat shell, inline or full screen, with the queries it <code>reads</code> and the <code>events</code> it binds to flows.</p><div class="who">any · slice 1</div></div>
+    <div class="point"><code>slots</code><p>An entry in a named place: <code>shell.nav</code>, <code>shell.header</code>, <code>repo.tabs</code>, <code>branch.pane</code>, <code>item.pane</code>.</p><div class="who">any · slice 1</div></div>
+    <div class="point"><code>commands</code><p>A flow, with fixed args, as a slash command and a palette entry.</p><div class="who">any · slice 1</div></div>
+    <div class="point"><code>keybindings</code><p>A key and a <code>when</code>: exactly one command or one declared view event.</p><div class="who">any · slice 1</div></div>
+    <div class="point"><code>triggers</code><p>An event, cron, webhook, or other runs' events with <code>over</code>: flows over flows.</p><div class="who">built-in · repository · slice 2</div></div>
+    <div class="point"><code>hooks · taps</code><p>A seam a plugin owns, and a flow or value on it. Each acting tap is a durable child run.</p><div class="who">as the hook allows · slice 4</div></div>
+    <div class="point"><code>records</code><p>Small JSON records only the plugin's flows write, synced by an authorized shape.</p><div class="who">any · slice 4</div></div>
+    <div class="point"><code>flows · owns</code><p>The flows a plugin owns: its own folder, or <code>.smithers/flows/&lt;name&gt;</code> for a repository plugin. One owner per flow.</p><div class="who">slice 5 for repositories</div></div>
+    <div class="point"><code>settings</code><p>A person or repository setting with a JSON Schema. A secret field is refused.</p><div class="who">any · slice 5</div></div>
+    <div class="point"><code>modelRoles</code><p>A named model use; Admins map it; calls go through <code>ModelStep</code> within budgets.</p><div class="who">built-in · repository · slice 5</div></div>
+    <div class="point"><code>cards</code><p>A card kind in the conversation. Replaces <code>VIEW_TEMPLATES</code>.</p><div class="who">any · slice 7</div></div>
+  </div>
+  <div class="semantics">
+    <div class="sem"><b>collect</b>Every tap adds a result, kept in order.<small>item kinds, a PR's check flows</small></div>
+    <div class="sem"><b>select</b>One provider, chosen explicitly. A failed decision falls back to the default.<small>triage decider, repo home, TODO flow</small></div>
+    <div class="sem"><b>narrow</b>Only removes; mandatory members are restored.<small>who gets notified</small></div>
+    <div class="sem closed"><b>guard</b>Allow only if every tap allows. A failure or timeout <em>refuses</em>.<small>issue transitions, merge rules</small></div>
+    <div class="sem"><b>observe</b>Sees the event; can't change it.<small>telemetry, audit</small></div>
+  </div>
+</section>
+
+<section id="tiers">
+  <h2>Trust tiers</h2>
+  <p class="sub">Set by where the plugin came from, never by its manifest. The interface is identical; the tier decides the sandbox and the caps.</p>
+  <div class="tiercards">
+    <div class="tc">
+      <h3>Built-in <span class="pill ok">compiled in</span></h3>
+      <dl>
+        <dt>Draws with</dt><dd class="renderers"><span class="r on">blocks</span><span class="r on">views</span><span class="r on">apps</span><span class="r on">components</span></dd>
+        <dt>Flow code runs in</dt><dd>the app's realm</dd>
+        <dt>Can do</dt><dd>any act that isn't person-only</dd>
+        <dt>Hooks</dt><dd>owns hooks; taps any hook</dd>
+        <dt>Secrets</dt><dd>by name, through the egress</dd>
+        <dt>Activated by</dt><dd>the build</dd>
+      </dl>
+    </div>
+    <div class="tc">
+      <h3>Repository <span class="pill quiet">.smithers/plugins</span></h3>
+      <dl>
+        <dt>Draws with</dt><dd class="renderers"><span class="r on">blocks</span><span class="r on">views</span><span class="r on">apps (frame)</span><span class="r off">components</span></dd>
+        <dt>Flow code runs in</dt><dd>the QuickJS realm; a container for machine work</dd>
+        <dt>Can do</dt><dd>Member-level <code>repo:*</code> acts, its own <code>plugin:&lt;id&gt;:*</code>, <code>run:observe</code></dd>
+        <dt>Hooks</dt><dd>taps hooks that allow repository taps</dd>
+        <dt>Secrets</dt><dd>by name, once an Admin grants each one to this plugin</dd>
+        <dt>Text you type in its UI</dt><dd>its data, going only where its events send it</dd>
+        <dt>Activated by</dt><dd>a person's merge, then an installation snapshot; a bad one stays <em>Merged · not active</em></dd>
+      </dl>
+    </div>
+    <div class="tc">
+      <h3>Personal <span class="pill quiet">saved by you</span></h3>
+      <dl>
+        <dt>Draws with</dt><dd class="renderers"><span class="r on">blocks</span><span class="r on">views</span><span class="r on">apps (frame)</span><span class="r off">components</span></dd>
+        <dt>Flow code runs in</dt><dd>the same as a repository plugin</dd>
+        <dt>Can do</dt><dd>only what you may do</dd>
+        <dt>Hooks</dt><dd>taps nothing shared; starts no unattended team work</dd>
+        <dt>Secrets</dt><dd>none</dd>
+        <dt>Activated by</dt><dd>Save; each run pins its revision</dd>
+      </dl>
+    </div>
+  </div>
+  <div class="never">
+    <b>Never, for any plugin, app or agent</b>
+    <ul>
+      <li>act with your session: they hold a run credential, and person-only routes refuse it</li>
+      <li>answer, approve, merge or pre-approve for you</li>
+      <li>change roles, settings, protection or secrets</li>
+      <li>start or override a system flow</li>
+      <li>read a secret's value, or use another plugin's grant</li>
+      <li>run in the app's realm without being compiled in</li>
+      <li>ask you for a password or token inline</li>
+      <li>draw a person-only button: the host draws those</li>
+    </ul>
+  </div>
+</section>
+
+<section id="slices">
+  <h2>Slices</h2>
+  <p class="sub">P2, beside the release. No conversion touches a file a release lane is editing.</p>
+  <ol class="slices">
+    <li class="pre">
+      <div class="num">0</div>
+      <div><h3>Run credentials <span class="pill wait">core prerequisite · build next</span></h3><p>Every run except your own root press gets a server-minted credential; the server sets <code>act</code> from the registry, never the request. Person-only routes come from the registry's <code>userOnlyReason</code>, one source, and refuse it. <code>chat/Answer</code> → <code>run/answer</code> nested is refused. Slice 1 ships to production only after it.</p></div>
+    </li>
+    <li class="first">
+      <div class="num">1</div>
+      <div>
+        <h3>Walking skeleton: <code>needs-you</code> <span class="pill ok">compiled-plugin skeleton</span></h3>
+        <p>You answer the agent's questions full screen, by keyboard, in the hosted app. Five points, one view, no new table.</p>
+        <div class="two">
+          <div>
+            <h4>Built</h4>
+            <ul>
+              <li><code>Plugin.Manifest</code>, <code>check</code>, <code>Load</code> and <code>PluginHost</code> in <code>@smthrs/plugin</code></li>
+              <li><code>core/waits</code> over runs; <code>run/answer</code> takes a note with an approval</li>
+              <li>The app's adapters: built-in lists, host contract with <code>select</code> and <code>propose</code>, the action strip, <code>&lt;Slot&gt;</code>, view host, keymap, <kbd>key</kbd> door</li>
+              <li><code>needs-you</code>: the queue view and nav count; the host's strip draws the options, Approve, Changes and the text box</li>
+              <li>Load spans and counters, content-free</li>
+            </ul>
+          </div>
+          <div>
+            <h4>Acceptance</h4>
+            <ul class="checks">
+              <li>e2e: 3 asks; <kbd>g</kbd><kbd>n</kbd>; <kbd>2</kbd> answers from the strip; the run resumes; empty state; GIF</li>
+              <li>The Queue dispatching <code>run/answer</code> itself is refused</li>
+              <li>Held admission: chat stays usable; Sending settles only on the real result</li>
+              <li>Two presses, one answer; a stale answer shows <code>not_open</code></li>
+              <li>Reload mid-send, offline answer, two devices</li>
+              <li>Delete the plugin, boot with none: all green</li>
+              <li>The printed manifest loads through the real loader</li>
+              <li>You answer one real question in production</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </li>
+    <li><div class="num">2</div><div><h3>Durable asks and flows over flows</h3><p><code>smthrs ask</code> with its own deadline, so the lead and curator ask you through Smithers. Later and undo, never past a deadline. Priority. Run-event triggers, with the curator over <code>todo</code> runs as the first flow over flows.</p></div></li>
+    <li><div class="num">3</div><div><h3>React apps in sandboxed frames, and the parity gate</h3><p><b>Gated first:</b> a host-drawn label on every frame; no inline credential prompts; password inputs refused; a views-origin wrapper with <code>frame-src 'self'</code> and a zero-foreign-requests test; <code>src/pwa.ts:34</code> narrowed. Then the frame, its bridge and the agent's <code>ui/app</code> cards. Gate: the same queue ships as a framed app, and <kbd>2</kbd> on the host's strip still answers.</p></div></li>
+    <li><div class="num">4</div><div><h3>Review plugins, hooks and records</h3><p><code>review-media</code> (a chapter timeline) and <code>review-code</code> (slices pinned to a commit) add item kinds through the first hook. The maintainer queue and GIF pages retire.</p></div></li>
+    <li><div class="num">5</div><div><h3>Repository plugins and the realm flow host</h3><p>Hand-edited personal flows run in QuickJS. Installation snapshots, <code>owns</code>, preview, and the <code>work</code> board: merge it and the Work tab appears with no deploy.</p></div></li>
+    <li><div class="num">6</div><div><h3>Seams repositories can tap, and secret grants (M-47)</h3><p>Triage, notifications, issue transitions and merge rules take repository taps with their failure rules. Per-plugin secret grants, switched on only when their tests pass.</p></div></li>
+    <li><div class="num">7</div><div><h3>The rest</h3><p>Convert <code>web</code>, <code>jev</code>, <code>runs</code>, <code>flows</code>, <code>repo</code>, <code>home</code>, <code>issues</code>, <code>triage</code>, <code>notifications</code>, <code>todos</code>, <code>branch</code>, then <code>agent</code>. Personal plugins, vendored npm plugins, and the lossless <code>pack.json</code> migration.</p></div></li>
+  </ol>
+</section>
+
+<section id="fixes">
+  <h2>Review fixes</h2>
+  <p class="sub">Astra: 4 P1s and 9 P2s, all fixed. Fable: 3 P1s and 6 P2s, all fixed but one rejected sub-point. Every citation was checked against the code; the decision has the evidence.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Sev</th><th>Finding</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr><td class="sev p1">Astra P1</td><td>The server can't tell the agent from you: sign-in never sets <code>Actor.act</code></td><td>Slice 0's run credential; no cookie fallback; person-only routes refuse any <code>act</code>; receipts from host UI</td></tr>
+        <tr><td class="sev p1">Astra P1</td><td>The authority intersection had no enforcement; compiled code was called bounded</td><td>An invocation context in every dispatch, narrowed per hop; <code>uses</code> checked against the caller; compiled code stated as trusted</td></tr>
+        <tr><td class="sev p1">Astra P1</td><td>Secret approval was repository-wide</td><td>Grants per plugin installation; egress from manifest ∩ ceiling ∩ grants; off until tested</td></tr>
+        <tr><td class="sev p1">Astra P1</td><td>A timed-out merge policy fell back to "allow"</td><td>Five semantics with failure rules; <code>guard</code> fails closed</td></tr>
+        <tr><td class="sev">Astra P2 ×9</td><td>No public data contract; <code>parallel</code> drops results; snooze vs a 10-minute deadline; Pack loses skills; flow ownership; templates that don't exist; an unvalidatable example; activation pins; slice 1 too broad</td><td><code>PluginHost</code> and <code>core/waits</code>; a <code>collect</code> kernel kind; Later moved to slice 2; Pack migration in slice 7; <code>owns</code>; realm code instead of templates; discriminated unions and a fixture; installation snapshots; slice 1 cut to five points</td></tr>
+        <tr><td class="sev p1">Fable P1</td><td>A framed queue couldn't answer: <code>run/answer</code> is person-only and a frame acts as <code>app</code></td><td>The host draws and keys person-only actions in an action strip; <code>select</code> and <code>propose</code>; the <code>$key</code> grammar; the slice 1 Queue built that way</td></tr>
+        <tr><td class="sev p1">Fable P1</td><td>A plugin or the agent could imitate host UI and ask for your token</td><td>A host-drawn label on every frame; no inline credential prompts; password inputs refused; gated before slice 3</td></tr>
+        <tr><td class="sev p1">Fable P1</td><td>A frame could leak by navigating itself</td><td>A views-origin wrapper with <code>frame-src 'self'</code> refuses it before the request; <code>pwa.ts:34</code> narrowed; a zero-request test</td></tr>
+        <tr><td class="sev">Fable P2 ×6</td><td>Which runs get a credential; a hand-written person-only list; realm determinism; triggers with no person; confirm spoofing; citation drifts</td><td>The registry's <code>acts</code> mark, <code>act</code> set by the server, <code>app</code> added; the list generated from <code>userOnlyReason</code>; realm limits; the installation as principal; a hardened confirm; drifts fixed. Rejected: "the agent's cells don't use QuickJS today" (<code>Agent.ts:53</code>)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  Decision: <code>apps/mvp/docs/decisions/0017-everything-is-a-plugin.md</code> · Work note: <code>apps/mvp/docs/work/everything-is-a-plugin.md</code> · Rulings PLUGIN-1 to PLUGIN-3 · mvp.md M-55 · Next: build slice 0
+</footer>
+</div>
+
+<script>
+(function () {
+  // Theme: Auto follows the system; Light and Dark pin it.
+  var root = document.documentElement;
+  var buttons = document.querySelectorAll(".theme button");
+  function apply(mode) {
+    if (mode === "auto") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", mode);
+    buttons.forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-set") === mode)); });
+    try { localStorage.setItem("plugins-theme", mode); } catch (e) {}
+  }
+  buttons.forEach(function (b) { b.addEventListener("click", function () { apply(b.getAttribute("data-set")); }); });
+  try { var saved = localStorage.getItem("plugins-theme"); if (saved) apply(saved); } catch (e) {}
+
+  // Colour the manifest: keys, strings, numbers and punctuation.
+  var pre = document.getElementById("json");
+  if (pre) {
+    var esc = function (s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
+    pre.innerHTML = esc(pre.textContent).replace(/("(?:[^"\\]|\\.)*")(\s*:)?|\b(\d+)\b|([{}\[\],])/g, function (m, str, colon, num, punct) {
+      if (str) return colon ? '<span class="k">' + str + '</span>' + colon : '<span class="s">' + str + '</span>';
+      if (num) return '<span class="n">' + num + '</span>';
+      return '<span class="p">' + punct + '</span>';
+    });
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,5 +1,7 @@
 # Flow Builder & Monitor — Engineering
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (FLOW-4; decision 0014). Kept as prior art.
+
 Stage: **vision ruled (decisions.md D-029); codebase survey done.** Most of this
 is re-lighting, not building. Two genuinely new pieces: the plan-graph
 projection (D-020) and the duration predictor (D-030).

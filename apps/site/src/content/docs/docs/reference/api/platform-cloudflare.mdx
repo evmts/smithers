@@ -14,6 +14,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 import {
   CloudflareHost,
   CloudflareRuntime,
+  ContainerSession,
   ContainerTerminal,
   EdgeCache,
   ExecutionObject,
@@ -358,6 +359,7 @@ const wake: <F, E, R>(
 interface WakeOptions<F> {
   readonly intercepts: ReadonlyArray<{ readonly host: string; readonly fetcher: F }>
   readonly inactivityTimeoutMs?: number | undefined
+  readonly egress?: F | undefined
 }
 
 type WakeOutcome = "started" | "running"
@@ -368,7 +370,9 @@ type WakeOutcome = "started" | "running"
 2. Arms the inactivity timeout: `inactivityTimeoutMs`, default
    `SandboxObject.defaultInactivityTimeoutMs` (30 minutes).
 3. Registers each intercept with `interceptOutboundHttp(host, fetcher)`, in
-   order.
+   order, then, with `egress`, every other request: `interceptAllOutboundHttp(egress)` and
+   `interceptOutboundHttps("*", egress)`. HTTPS reaches the egress decrypted through the container's per-instance CA,
+   which the box must trust. Without `egress` the box reaches only its intercepted hosts.
 
 It runs all three on every call, so a restarted object, or one that died
 between its start and its registration, gets its timeout and intercepts back.
@@ -384,6 +388,8 @@ interface Machine<F, E = never, R = never> {
   start(options: { readonly enableInternet: false }): Effect.Effect<void, E, R>
   setInactivityTimeout(durationMs: number): Effect.Effect<void, E, R>
   interceptOutboundHttp(addr: string, binding: F): Effect.Effect<void, E, R>
+  interceptAllOutboundHttp(binding: F): Effect.Effect<void, E, R>
+  interceptOutboundHttps(addr: string, binding: F): Effect.Effect<void, E, R>
 }
 ```
 
@@ -557,3 +563,41 @@ No metric attribute holds an id. Each `attach` runs in a `terminal.connect`
 span with `smithers.terminal.id`, `smithers.terminal.access`,
 `smithers.terminal.outcome`, `smithers.terminal.close_code` and the three byte
 counts, and logs one `cloudflare.terminal.connect` line inside it.
+
+## ContainerSession
+
+A container Durable Object's container as `@smthrs/sandbox`'s `Sandbox.Session`, so `SandboxTools`,
+`Sandbox.layerHost` and every other session consumer run on it.
+
+```ts
+import { ContainerSession } from "@smthrs/platform-cloudflare"
+import { SandboxTools } from "@smthrs/sandbox"
+
+const session = yield* ContainerSession.make(box, { id: branchId, workdir: "/workspace", user: "p1a2b3", env: { HOME: "/home/p1a2b3" } })
+const status = yield* SandboxTools.execute(session, { tool: "status" }, { callId, callsDirectory: "/home/p1a2b3/.smithers/calls" })
+```
+
+### `ContainerSession.make`
+
+```ts
+declare const make: <E, R>(
+  container: ContainerSession.Container<E, R>,
+  options: ContainerSession.Options
+) => Effect.Effect<Sandbox.Session, never, R>
+```
+
+- Every command runs as `sh -c <command>` as `options.user` (the container's default user when absent), in
+  `options.workdir` unless the command names a `cwd`; a relative `cwd` is under the workdir.
+- `options.env` reaches every command, under the command's own variables.
+- A command's input is fed beside its output, so one that writes before it has read all its input doesn't stall.
+- `readFile` and `writeFile` are commands (`cat`), so the container needs only `sh` and `cat`; `readFile` of an absent
+  path or a directory fails `not_found`, and `writeFile` makes the file's directories.
+- `ping` runs `true`.
+- It starts nothing: wake the container (`SandboxObject.wake`) before handing the session out. A failure of the
+  container itself is a `ProviderError` with code `unavailable`, naming the operation, never the command or a path.
+
+### `ContainerSession.Container`, `ContainerSession.Process` and `ContainerSession.ExecOptions`
+
+The slice of an Effect container client `make` uses: `exec(argv, { user?, cwd?, env?, stdin?: "pipe", stdout: "pipe",
+stderr: "pipe" })` returning a process with `stdin` (a sink; completing it closes the input), `stdout`, `stderr` and
+`exitCode`. An Alchemy Durable Object's container handle satisfies it with `R = RuntimeContext`.

@@ -1,5 +1,7 @@
 # Card kinds, schemas and owners
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (ARCH-1, SCOPE-8, ARCH-14). Kept as prior art.
+
 Version 0.2 · 2026-10-03 · Owner: engineering · Referenced by spec.md §14.1.5 and §14.2.1, T-APP-19 and T-APP-22 · Minimal-code synthesis v1 §2 and v2 applied
 
 This page does three things. §1 names each card's one card file, its View and its owners. §2 states how persisted cards stay readable when a kind is removed. §3 maps every card kind in `packages/rpc/src/Cards.ts` today to what replaces it, keeps it or cuts it. `MV` is `apps/app/src/mainview`.

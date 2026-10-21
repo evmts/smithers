@@ -40,6 +40,8 @@ Spec M-22: GitHub keeps main, issues, pull requests, reviews and checks. Will's 
 - 13:19:52 on 2026-10-20: the lead's list: "Pull request list, review and merge; branch update and resync: not started (rest of 0012)". 13:21:12: they wait for the [triage](issue-triage.md) builder, which edits the same GitHub write path and list view.
 - **13:21:27: Will ruled out GitHub Actions** ([no GitHub Actions](no-github-actions.md)). GitHub still owns issues, pull requests, reviews, labels and published refs; Smithers no longer mirrors check runs or commit statuses, and checks are Smithers workflow runs. A docs agent removes 0012's `checks` table, `check_run` and `status` webhooks and the Checks and statuses permissions from 13:23:25.
 - 13:23:33: the lead asked 0012 Q1 again in plain words, since Will read "your GitHub actions show as you" as Actions: should what a person posts through Smithers appear on GitHub under their own account, rather than the App's? Recommended: yes ([decisions for Will](decisions-for-will.md)). G0 already builds it that way.
+- 13:25:53 on 2026-10-20: Will answered 0012 Q1: a person's writes through Smithers appear on GitHub under their own account ("yes should appear under your account is better ux"); recorded in 0012.
+- 13:32:34 to 13:39:45: no GitHub Actions in 0012, `rules.md` (`github.no-actions`) and mvp.md M-52: GitHub keeps `main`, issues, pull requests and reviews, and a PR's checks are Smithers flow runs ([no GitHub Actions](no-github-actions.md)).
 
 ## Next
 

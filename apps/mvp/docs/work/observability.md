@@ -4,7 +4,7 @@ status: in-progress
 area: app
 owner: lead (smithers-b3); each feature adds its records; the wiring agent (the allowlist contract and the engine worker's exporter, since about 01:17 on 2026-10-20; its sub-agent A2b reported both done at 02:18); the views fix agent (review 3's finding 2, since about 01:19; reported fixed about 01:58, then sent back for `ViewCodeError.message`; fully done about 02:08 on 2026-10-20)
 updated: 2026-10-20
-links: [review-round-4.md, app-wiring.md, ../observability.md, ../rules.md, code-reviews.md, agent-ui-rendering.md, local-first.md, flows-and-agent.md, browser-engine-worker-load-hang.md, fable-review-2-fixes.md, docs-check-flow-outcome.md]
+links: [review-round-4.md, app-wiring.md, ../observability.md, ../rules.md, code-reviews.md, agent-ui-rendering.md, local-first.md, flows-and-agent.md, browser-engine-worker-load-hang.md, fable-review-2-fixes.md, docs-check-flow-outcome.md, self-hosted-grafana.md]
 ---
 
 ## What
@@ -65,10 +65,14 @@ Will: "We have 0 observability. 0 logging. This is a production system. We need 
   - R4-13 (P2, Claude Fable): the Electric secret travels in the gateway's URL, which persisted Workers Logs record ([IaC](infrastructure-as-code.md)). The root rule keeps secrets out of telemetry.
   - Claude Opus P3-5: `src/telemetry.ts:56-58` keeps `url.full`, `url.path` and `url.query` for every client span, so each `GET /api/repos/<owner>/<name>/blob/<sha>/<path>` (`features/repo/api.ts:110`) exports the repository's file paths, while `features/navigation/contract.ts:32-34` says a path "can carry content" and records none. Fix: relay the route template only (`/api/repos/:owner/:name/blob/:sha/*`) and drop `url.full` and `url.query`.
   - Claude Fable S-P3-1: `GitProxy` counts a 2xx as `ok` before the body streams, so a pack that breaks off is recorded `ok`; `ShapeProxy` records on `Stream.onExit` (`packages/effect-code-storage/src/GitProxy.ts:147-148`).
+- **14:20:47 on 2026-10-20, Will:** "Can we self host grafana instead of using graafana cloud". A Codex lane on msb-lat-nyc-01 sets up Grafana, Tempo, Loki and Prometheus with an OTLP collector, on 127.0.0.1 behind an SSH tunnel ([self-hosted Grafana](self-hosted-grafana.md)).
+- **About 19:40 on 2026-10-20: flow usage metrics built** (Will, 18:45: "Everything is a flow so the most obvious metrics are just what flows are being ran and how"). `@smthrs/flow` `RunMetrics`, recorded by the durable engine for every run: runs started and settled by flow, outcome and code, door, actor kind and placement; duration and time to first step; steps, retries and durable waits; model calls and tokens per flow. Each is also a log line (`flow.run.started`, `flow.run.settled`, `flow.model.call`), relayed through `/api/telemetry`. Dashboard as code: `ops/grafana/flow-usage.json`, provisioned per `ops/grafana/README.md`, reading Loki. The Runs page shows runs, success and p95 per flow ([flow usage](../observability.md#flow-usage)).
 
 ## Next
 
-From 11:07 on 2026-10-20: as before, plus the lead's routing of round 4's telemetry findings: R4-13 and Opus P3-5 ([review round 4](review-round-4.md)).
+From 14:30 on 2026-10-20: as before, plus pointing the app's OTLP export at the [self-hosted Grafana](self-hosted-grafana.md) stack once it reports.
+
+Until 14:30 on 2026-10-20 the next step was, from 11:07 on 2026-10-20: as before, plus the lead's routing of round 4's telemetry findings: R4-13 and Opus P3-5 ([review round 4](review-round-4.md)).
 
 Until 11:07 on 2026-10-20 the next step was, from 07:01 on 2026-10-20: the relay limits are done. Next: usage metrics for "how users use the app", then dashboards and [token-spend alerts](token-spend-alerts.md).
 

@@ -2,7 +2,7 @@
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Account flows — #3871</title>
 <style>body{max-width:52rem;margin:3rem auto;padding:0 1rem;font:17px/1.6 system-ui;color:#242424;background:#faf9f6}h1,h2{line-height:1.2}code{font-size:.9em}table{border-collapse:collapse}th,td{padding:.5rem;text-align:left;border-bottom:1px solid #bbb}@media(prefers-color-scheme:dark){body{background:#20201e;color:#eee}}</style>
-<main><h1>Account flows</h1>
+<main><blockquote>Superseded on 2026-10-20 by <code>apps/mvp/docs/rulings.md</code> (ARCH-1, FLOW-2). Kept as prior art.</blockquote><h1>Account flows</h1>
 <p>Design for <a href="https://github.com/smithersai/smithers/issues/3871">#3871</a>. Proposed execution and storage contract; this document is not implementation or production evidence.</p>
 <h2>Scope and creation</h2>
 <p><code>flow.new</code> offers Scope: Repository or Global. Repository is the default and retains the current repository. Global belongs to the authenticated account, never to an inferred repository, team or browser profile. Selecting Global removes the repository destination; a repository remains an explicit execution target when the flow needs one. Creation still opens the shared form and requires the person's submission.</p>

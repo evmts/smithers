@@ -1,5 +1,7 @@
 # Flow runtime bridge
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (ARCH-1). Kept as prior art.
+
 The product backend admits work through `packages/backend/flowdispatch`; the
 TypeScript Flow host executes it. The boundary is `smithers.flow-runtime/v1`
 on `/runtime/v1/command` and `/runtime/v1/observe`.

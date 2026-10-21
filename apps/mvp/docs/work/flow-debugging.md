@@ -2,10 +2,77 @@
 title: Debugging and monitoring flows (run list, run page, retry, cancel, resume)
 status: in-progress
 area: app
-owner: repository home builder (started about 13:09 on 2026-10-20), which runs `e2e/flows.spec.ts` (draft, save, run, run page, Stop, Retry) before building the home view; its first run failed at 13:12:56. Until 13:09: 0014's builder, which reported the run page built at 13:05 on 2026-10-20 (relayed by the lead at 13:09:31), less a passing e2e. Until 13:05: 0014's builder; `e2e/flows.spec.ts` on disk at 12:10:42 on 2026-10-20 and the flows and runs feature docs rewritten at 12:35 to 12:37; no recorded e2e run, GIF or report by 12:45. Until 12:10: 0014's builder, not stopped by either weekly limit (the lead, 11:42:48 on 2026-10-20); `src/features/flows-ui/` and `src/features/runs/` with tests on disk to 11:50; no e2e and unreported by 11:55. Until 11:42: 0014's builder, resumed by the lead at 10:42 on 2026-10-20 from where it stopped (the Claude usage limit stopped it from about 08:15 to 10:40); unreported by 10:44. Until 10:42: 0014's builder, the walking skeleton from 07:30:21 on 2026-10-20 (the lead to Will); nothing on disk by 07:37; unreported. Until 07:30: Panel F; decision 0014 written 07:02:13 on 2026-10-20 (status: proposed); no builder yet. Until 07:02: Panel F (Opus merges into decision 0014; started 06:42:06 on 2026-10-20). Sol's design done 06:43; Opus's independent design written 06:56:49
+owner: flow UI builder; Opus designs visual follow-up
 updated: 2026-10-20
-links: [review-round-4.md, land-to-main.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, flow-authoring.md, agent-status.md, notifications-and-live-work.md, durable-browser-engine.md, cloudflare-flow-host.md, observability.md, timeline-rail.md, old-app-feature-gaps.md, decisions-for-will.md, ../decisions/0009-notifications-and-live-work.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../proposals/mvp-gaps.md, dev-stack-hygiene.md, review-round-4-p3-cleanup.md]
+links: [review-round-4.md, land-to-main.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, flow-authoring.md, agent-status.md, notifications-and-live-work.md, durable-browser-engine.md, cloudflare-flow-host.md, observability.md, timeline-rail.md, old-app-feature-gaps.md, decisions-for-will.md, ../decisions/0009-notifications-and-live-work.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../proposals/mvp-gaps.md, dev-stack-hygiene.md, review-round-4-p3-cleanup.md, smithers-playground.md, prompt-flows-are-code-flows.md, flow-visual-ui.md]
 ---
+
+## Current specification — 2026-10-20, 19:56 PDT
+
+**What:** Inspect and control durable runs through the shared run view.
+
+**Why:** Debugging must show actual flow steps and journal evidence.
+
+**Current state:** The 19:42 lead update and flows-run-graph-slice1.md establish the read-only graph, scrubber and keyboard inspector, with Astra/Fable findings fixed. Existing Stop, Retry and Resume retain their flows. Broader cross-host evidence and new linked-run retry remain unproven.
+
+**Next step:** Land the completed graph, connect the Jev debug-info entry to its recorded step, and verify remaining cross-host inspection/control journeys.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies, session 6253ecf2, latest approximately two hours through 2026-10-21 02:55 UTC; queue answers through 02:38 UTC; rulings, decisions 0001–0020, proposals, TODOs, rules and shared feature/host/panel briefs and designs. Later rulings supersede older proposals. Builder receipts are reported evidence; tracker verification is the site build. Execution ownership retained; reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 17:34 PDT
+
+**What:** Inspect and control durable runs, with a visual graph follow-up.
+
+**Why:** Will wants flows supported at the quality of leading workflow tools.
+
+**Current state:** Both flows browser tests pass per the lead. Will approved the replacement recording at 17:29 and requested a more visual UI. Broader cross-host inspection/resume evidence remains outstanding.
+
+**Next step:** Keep existing passing control tests; coordinate the run-graph-first design in flow-visual-ui.md and verify remaining cross-host cases.
+
+**Open questions for Will:** None.
+
+Evidence: queue answers through 2026-10-21 00:34:14 UTC; script-filtered human text and lead replies from the latest two transcript hours through 00:33:48 UTC; current rulings, decisions, proposals, TODOs, rules and shared briefs. Latest answers supersede older blockers. Product tests are reported evidence; this tracker runs the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 17:14 PDT
+
+**What:** Inspect and control durable runs through one run page.
+
+**Why:** Run controls need passing evidence instead of withdrawn failed recordings.
+
+**Current state:** At 16:24 two passing chaptered flows videos returned to the queue; at 16:36 the lead confirmed both flows browser tests pass through the unified flow model and run page. This supersedes the 16:02 failing-run report. No fresh receipt establishes every broader remote-inspection/resume acceptance case.
+
+**Next step:** Keep the passing run/Stop/Retry recordings available; verify remaining cross-host inspection and resume cases against the decision before marking the whole workstream done.
+
+**Open questions for Will:** None.
+
+Evidence: script-extracted human text and lead replies from session 6253ecf2, latest two hours through 2026-10-21 00:13:56 UTC; queue answers through 00:06:34 UTC; current rulings, decisions, proposals and shared briefs. Queue answers supersede older design proposals. Test results are lead-reported; this tracker runs the site build only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 16:04 PDT
+
+**What:** Inspect recorded runs and control Stop, Retry and resume through durable flows.
+
+**Why:** Run controls and review evidence must show working behavior.
+
+**Current state:** At 16:02 the lead identified both flows browser tests as failing; the flows review was removed at 16:03. Earlier run-page completion and recordings remain historical evidence, superseded for current working status.
+
+**Next step:** Repair the assigned flows failures and verify run controls in real browser tests with passing chaptered recordings.
+
+**Open questions for Will:** None.
+
+Evidence: user-typed messages and lead text replies extracted with a script from session 6253ecf2 for the latest two hours through 23:03:42 UTC; rulings, queue answers, shared briefs/designs and current decisions, proposals, TODOs and rules. Reported receipts only; this tracker ran no product tests. Later rulings supersede older proposals.
+
+## Prior tracker record (retained)
+
 
 ## What
 
@@ -81,10 +148,16 @@ Planned before in parts: 0009's run index and run card ([notifications and live 
   - **Differs from 0014:** Answer on the run page links to the conversation; the engine records no input for a plain step, only for child runs.
   - 105 tests pass with 100% coverage on new files; its two run-acts timeouts were load and pass in isolation. The e2e couldn't finish on the dev server's spent model budget ([flow authoring](flow-authoring.md), [dev stack hygiene](dev-stack-hygiene.md)).
 - 13:13: the lead raised the dev budget to 10,000,000 tokens and restarted the dev server. 13:12:56: the repository home builder's first `flows.spec.ts` run failed before reaching the run page, at the new flow's Run button ([flow authoring](flow-authoring.md)). No passing run by 13:17.
+- **13:17:41 to 13:20:39 on 2026-10-20: `e2e/flows.spec.ts` passed**, run page included: "flows: draft a flow, save it, run it, watch its run page, then stop a run and retry it", 1 passed in 2.9 min (scratchpad `home-view/flows2.log`). GIF: `~/Desktop/smithers-mvp/gifs/flows-flows.gif` (13:20:55). Stop and Retry are proven; Resume and Answer are not.
+- 13:38:27: round 4's SDK fix agent: engine-store misses one line of coverage, in the in-progress `RunInspection` work.
+- 13:31:14: Will put flows first ("the most important part of oour product and technology"); the [Smithers Playground](smithers-playground.md) plans a flows page that inspects each step, replays, pauses and resumes, retries and injects faults.
+- 14:26:24 on 2026-10-20: Will ruled that prompt flows are a type of code flow ([prompt flows are code flows](prompt-flows-are-code-flows.md)); the run page and Stop and Retry carry over to the one flow model.
 
 ## Next
 
-From 13:09 on 2026-10-20: the repository home builder gets `e2e/flows.spec.ts` passing, including Stop and Retry on the run page, with its GIF. Round 4's `RunInspection` P3s are open and not yet listed in the [P3 cleanup](review-round-4-p3-cleanup.md): `inspect` reads every attempt with no limit, and one deep import is left (`@smthrs/database/Dialect`; `@smthrs/journal` and `@smthrs/run-store` are now root imports). One run list across devices and Cloudflare (L4) waits for 0009 phase 1.
+From 13:20 on 2026-10-20: the builder's report. Then Resume and Answer on the run page; the `RunInspection` coverage line and P3s in the [P3 cleanup](review-round-4-p3-cleanup.md); one run list across devices and Cloudflare (L4) after 0009 phase 1.
+
+Until 13:46 on 2026-10-20 the next step was, from 13:09 on 2026-10-20: the repository home builder gets `e2e/flows.spec.ts` passing, including Stop and Retry on the run page, with its GIF. Round 4's `RunInspection` P3s are open and not yet listed in the [P3 cleanup](review-round-4-p3-cleanup.md): `inspect` reads every attempt with no limit, and one deep import is left (`@smthrs/database/Dialect`; `@smthrs/journal` and `@smthrs/run-store` are now root imports). One run list across devices and Cloudflare (L4) waits for 0009 phase 1.
 
 Until 13:09 on 2026-10-20 the next step was, from 11:07 on 2026-10-20: the skeleton as before, and the lead's routing of round 4's R4-22 and the `RunInspection` P3s ([review round 4](review-round-4.md)). R4-22 must hold before `GET /api/runs/:id/trace` ships.
 

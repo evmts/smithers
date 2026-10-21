@@ -25,6 +25,10 @@ conversation: view row ─ embed: WebPageView (origin · Full screen · Open in 
 
 A person's own `/web <url> tab` is different: it runs synchronously in their Enter (the slash command's `submit`), and when the browser still allows it (`navigator.userActivation.isActive`), opens the tab right there, with `noopener,noreferrer`, and runs no flow. `window.open` takes the keypress's activation when it opens a tab, so an activation still there afterwards means the browser refused; then, or when the browser can't say, the flow runs and adds the card instead. The app never claims a tab it didn't open.
 
+## Well-known docs
+
+"Show me the Effect docs" opens `https://effect.website/docs`. The flow's description names the page for each well-known docs site (`KNOWN_DOCS` in `src/features/web/contract.ts`: Effect, React, TypeScript, TanStack and Cloudflare Workers), and the agent opens exactly that page; for any other site it picks the URL itself. Before 2026-10-20 it guessed, and three of eight [agent eval](agent-evals.md) runs opened `effect-ts.dev`, `docs.effect.website` or `effect-ts.github.io`; after, eight of eight opened `effect.website/docs`. Each listed page opens embedded under the production policy (`src/features/web/url.test.ts`).
+
 ## Which pages
 
 `checkUrl(url, mode, policy)` (`src/features/web/url.ts`) is the one check. The flow's step, a person's `/web` and ChatApi all run it.

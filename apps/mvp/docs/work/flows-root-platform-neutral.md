@@ -4,7 +4,7 @@ status: done
 area: sdk
 owner: sandbox host-boundary agent (assigned by 01:19 on 2026-10-20), Codex Astra review 3's finding 5: `execHandles`' Node and Bun code behind a host service, `HiddenHostAccess` tightened (reported done 02:26:57 on 2026-10-20); the 10 modules it listed are [their own item](known-host-access-burn-down.md); flows-root agent (started about 23:39 on 2026-10-19; widened at 23:58 to fix the browser gate that missed the leak; fixed the stale `SandboxedFlow` paths at 00:24; reported done 00:39 on 2026-10-20)
 updated: 2026-10-20
-links: [known-host-access-burn-down.md, cloudflare-flow-host.md, durable-answering.md, durable-browser-engine.md, host-agnostic-flows.md, flows-and-agent.md, integrations-browser-safe-root.md, library-catalog.md, b1-follow-ups.md, code-reviews.md, sdk-test-reds.md, disk-space.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../../../../docs/libraries.md, ../../../../AGENTS.md, repo-checks-green.md, agent-ui-rendering.md, agent-root-browser-safe.md]
+links: [known-host-access-burn-down.md, cloudflare-flow-host.md, durable-answering.md, durable-browser-engine.md, host-agnostic-flows.md, flows-and-agent.md, integrations-browser-safe-root.md, library-catalog.md, b1-follow-ups.md, code-reviews.md, sdk-test-reds.md, disk-space.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../../../../docs/libraries.md, ../../../../AGENTS.md, repo-checks-green.md, agent-ui-rendering.md, agent-root-browser-safe.md, second-build-machine.md]
 ---
 
 ## What
@@ -93,6 +93,7 @@ Root `AGENTS.md`: every library except the host packages "must import and run in
   - **Proof:** 100% coverage in `sandbox`, `platform-node`, `platform-bun` and `repo-targets`; the Bun lane is green; typecheck, eslint and dprint are clean; the browser gate passes for a browser and a Worker; `docs:sync` ran.
   - **Not proven:** `pnpm docs:check` and `smthrs docs` returned "Something went wrong on our side". `smithers-build` targets were blocked by `@smthrs/std`'s `PACKAGE.ts`, which still names the moved `NodeLanguageServer.ts` ([agent root in the browser](agent-root-browser-safe.md)). Two real-container sandbox tests were excluded to report coverage; they fail on a file mode, 666 where 644 is expected, as before.
 - 02:27:02: the lead to Will: "Astra finding #5 is fixed. The sandbox library no longer touches Node or Bun directly; garbage collection now comes from a host service, with Node, Bun and no-op versions. The browser gate is also stricter: a probe of the old code fails it with 4 findings, where the old rules reported none."
+- 14:20 on 2026-10-20: the Codex coordinator on the [Latitude server](second-build-machine.md) has finding 5 (`execHandles`' host code) as task (b), to fix if still open on `main@origin`. This note records it fixed at 02:26:57; if that fix never reached `main`, the lane redoes it and may collide with round 3 ([land to main](land-to-main.md)).
 
 ## Next
 

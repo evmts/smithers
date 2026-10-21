@@ -1,5 +1,7 @@
 # Smithers MVP engineering overview
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (ARCH-1, SCOPE-8, ARCH-14). Kept as prior art.
+
 Status: draft v0.5 by the engineering agent (smithers-8a, tech lead), 2026-10-03. Product: [mvp.md v2.6](../product/mvp.md). Design: [mock](../design/mock/). Read this page first. Then read [spec.md](spec.md) for the target system, [delta.md](delta.md) for the path from `main`, [tickets/](tickets/) for the work, and [checks/](checks/) for acceptance.
 
 ## In one sentence

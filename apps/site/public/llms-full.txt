@@ -21559,23 +21559,50 @@ explains the pattern.
 Issue and issue-comment operations over the `GitHubClient` in context, plus
 the hidden write marker a step adopts its own earlier write by. A step POSTs
 once; on a retry after `outcomeUnknown` it calls the finder first, adopts what
-it finds, and writes only when nothing carries its marker. Coordinates are
-validated as `Repository.repositoryPath` does.
+it finds, and writes only when nothing carries its marker. The label writes
+are idempotent, so a lost answer fails `retryable` rather than
+`outcomeUnknown` and a step repeats them without looking first. Coordinates,
+label names included, are validated as `Repository.repositoryPath` does.
 
-| Export                               | Signature                                                                                                   | Notes                                                                                                                                                |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `getIssue`                           | `(owner, repo, number) => Effect<Issue, IntegrationError, GitHubClient>`                                    | `GET /repos/{owner}/{repo}/issues/{number}`.                                                                                                         |
-| `listComments`                       | `(owner, repo, number, options?) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`           | Oldest first; `options.since` (ISO 8601) and `options.maxPages` (default 10).                                                                        |
-| `createIssue`                        | `(owner, repo, { title, body }) => Effect<Issue, IntegrationError, GitHubClient>`                           | `POST /repos/{owner}/{repo}/issues`. A lost answer fails `outcomeUnknown`.                                                                           |
-| `createComment`                      | `(owner, repo, number, body) => Effect<IssueComment, IntegrationError, GitHubClient>`                       | `POST /repos/{owner}/{repo}/issues/{number}/comments`. A lost answer fails `outcomeUnknown`.                                                         |
-| `findIssueByWrite`                   | `(owner, repo, { writeId, since }) => Effect<Option<Issue>, IntegrationError, GitHubClient>`                | Issues updated since `since`, newest created first, at most `Actions.RECONCILE_PAGES` pages; pull requests skipped. The earliest-created match wins. |
-| `findCommentByWrite`                 | `(owner, repo, number, { writeId, since }) => Effect<Option<IssueComment>, IntegrationError, GitHubClient>` | The same for one issue's comments.                                                                                                                   |
-| `writeMarker`                        | `(writeId: string) => string`                                                                               | `<!-- smithers:write=ID -->`; `ID` is 1 to 100 letters, digits and hyphens, else throws `invalid-config`.                                            |
-| `withWriteMarker`                    | `(body: string, writeId: string) => string`                                                                 | `body`, a blank line, then the marker.                                                                                                               |
-| `writeIdOf`                          | `(body: string \| null \| undefined) => string \| undefined`                                                | The last marker's write id; whitespace tolerated.                                                                                                    |
-| `withoutWriteMarker`                 | `(body: string) => string`                                                                                  | The body with every marker, and the blank line before it, removed.                                                                                   |
-| `Issue`, `IssueComment`, `IssueUser` | schemas                                                                                                     | GitHub's JSON narrowed to the fields Smithers reads; a missing `state_reason` decodes as `null`, and `pull_request` is present on a pull request.    |
-| `WRITE_ID_PATTERN`                   | regex                                                                                                       | The write id rule.                                                                                                                                   |
+| Export                                             | Signature                                                                                                                           | Notes                                                                                                                                                                                             |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getIssue`                                         | `(owner, repo, number) => Effect<Issue, IntegrationError, GitHubClient>`                                                            | `GET /repos/{owner}/{repo}/issues/{number}`.                                                                                                                                                      |
+| `listComments`                                     | `(owner, repo, number, options?) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`                                   | Oldest first; `options.since` (ISO 8601) and `options.maxPages` (default 10).                                                                                                                     |
+| `createIssue`                                      | `(owner, repo, { title, body }) => Effect<Issue, IntegrationError, GitHubClient>`                                                   | `POST /repos/{owner}/{repo}/issues`. A lost answer fails `outcomeUnknown`.                                                                                                                        |
+| `createComment`                                    | `(owner, repo, number, body) => Effect<IssueComment, IntegrationError, GitHubClient>`                                               | `POST /repos/{owner}/{repo}/issues/{number}/comments`. A lost answer fails `outcomeUnknown`.                                                                                                      |
+| `findIssueByWrite`                                 | `(owner, repo, { writeId, since }) => Effect<Option<Issue>, IntegrationError, GitHubClient>`                                        | Issues updated since `since`, newest created first, at most `Actions.RECONCILE_PAGES` pages; pull requests skipped. The earliest-created match wins.                                              |
+| `findCommentByWrite`                               | `(owner, repo, number, { writeId, since }) => Effect<Option<IssueComment>, IntegrationError, GitHubClient>`                         | The same for one issue's comments.                                                                                                                                                                |
+| `addLabels`                                        | `(owner, repo, number, names: readonly [string, ...string[]]) => Effect<ReadonlyArray<IssueLabel>, IntegrationError, GitHubClient>` | `POST /repos/{owner}/{repo}/issues/{number}/labels`; answers every label the issue carries after. Each name is 1 to 50 characters.                                                                |
+| `removeLabel`                                      | `(owner, repo, number, name) => Effect<boolean, IntegrationError, GitHubClient>`                                                    | `DELETE /repos/{owner}/{repo}/issues/{number}/labels/{name}`. `true` when removed; `false` on a 404, which GitHub also answers for an issue it does not show the token. `.` and `..` are refused. |
+| `createLabel`                                      | `(owner, repo, { name, color, description? }) => Effect<boolean, IntegrationError, GitHubClient>`                                   | `POST /repos/{owner}/{repo}/labels`. `true` when created; `false` on a 422, the label exists. `color` is six hex digits without `#`.                                                              |
+| `writeMarker`                                      | `(writeId: string) => string`                                                                                                       | `<!-- smithers:write=ID -->`; `ID` is 1 to 100 letters, digits and hyphens, else throws `invalid-config`.                                                                                         |
+| `withWriteMarker`                                  | `(body: string, writeId: string) => string`                                                                                         | `body`, a blank line, then the marker.                                                                                                                                                            |
+| `writeIdOf`                                        | `(body: string \| null \| undefined) => string \| undefined`                                                                        | The last marker's write id; whitespace tolerated.                                                                                                                                                 |
+| `withoutWriteMarker`                               | `(body: string) => string`                                                                                                          | The body with every marker, and the blank line before it, removed.                                                                                                                                |
+| `Issue`, `IssueComment`, `IssueUser`, `IssueLabel` | schemas                                                                                                                             | GitHub's JSON narrowed to the fields Smithers reads; a label to its `name`. A missing `state_reason` decodes as `null` and missing `labels` as `[]`; `pull_request` is present on a pull request. |
+| `WRITE_ID_PATTERN`                                 | regex                                                                                                                               | The write id rule.                                                                                                                                                                                |
+| `LABEL_COLOR_PATTERN`                              | regex                                                                                                                               | Six hex digits.                                                                                                                                                                                   |
+| `MAX_LABEL_DESCRIPTION`                            | `100`                                                                                                                               | The longest label description GitHub accepts.                                                                                                                                                     |
+
+### GitHub.Contents
+
+A repository file's text over the `GitHubClient` in context. The path and ref
+are validated before they become a request, and the base64 GitHub answers is
+decoded with `atob` and `TextDecoder`, so it runs in a browser and a Worker.
+
+| Export           | Signature                                                                                             | Notes                                                                                                                                                                                                                                                                                                                                                |
+| ---------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getText`        | `(owner, repo, path, options?: { ref? }) => Effect<Option<TextFile>, IntegrationError, GitHubClient>` | `GET /repos/{owner}/{repo}/contents/{path}?ref=REF`; `Option.none()` on a 404. `path` is relative, with non-empty segments, no `.` or `..` segment, no backslash and no control character; each segment is encoded. Fails `decode-failed` on a directory, symlink, submodule, a file over GitHub's 1 MB contents limit, or bytes that are not UTF-8. |
+| `TextFile`       | `{ sha: string; text: string }`                                                                       | The blob SHA and the decoded text.                                                                                                                                                                                                                                                                                                                   |
+| `MAX_REF_LENGTH` | `255`                                                                                                 | The longest `ref`; a ref has no spaces or control characters.                                                                                                                                                                                                                                                                                        |
+
+### GitHub.Collaborators
+
+| Export          | Signature                                                                            | Notes                                                                                                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `permission`    | `(owner, repo, login) => Effect<Option<Permission>, IntegrationError, GitHubClient>` | `GET /repos/{owner}/{repo}/collaborators/{login}/permission`; `Option.none()` on a 404, which GitHub answers for an account that does not exist or a repository the token cannot see. |
+| `Permission`    | `{ permission: string; roleName: string }`                                           | `permission` is the base role (`admin`, `write`, `read`, `none`); `roleName` may be `maintain`, `triage` or a custom role.                                                            |
+| `LOGIN_PATTERN` | regex                                                                                | `Repository.OWNER_PATTERN`'s account name, optionally followed by `[bot]`.                                                                                                            |
 
 ### GitHub.Sync
 
@@ -27454,7 +27481,10 @@ See [Proxy a model](https://github.com/smithersai/smithers/blob/main/packages/sm
 | `ServeOptions<R>`      | interface   | `prepare: (request, admission) => Effect<Prepared, Refusal, R>`, required; `maxBodyBytes?`, default `defaultMaxBodyBytes`; `attributes?`, labels added to every server-side metric and the log line (the proxy's own names win); `onEnd?: (end: End) => Effect<void, never, R>`, run once, uninterrupted, after an admitted request's model stream ends; the terminal line waits for it.                                                                                                                                               |
 | `Prepared`             | interface   | `{ request, model }`: the `ModelRequest` the model receives and the `Model` that answers it.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `Admission`            | interface   | `{ requestId, invocationId, requestBytes }`, `prepare`'s second argument: the caller's id, the server's id for this call (the one `End` carries, so a host reserves spend under it in `prepare` and settles it in `onEnd`), and the body's size in bytes, at most `maxBodyBytes`.                                                                                                                                                                                                                                                      |
-| `End`                  | interface   | `{ requestId, invocationId, outcome, modelId, usage }`; `invocationId` is the server's own id for the call, minted for every admitted request (key metering on it; the caller chooses `requestId` and may repeat it); `outcome` is `success`, `failed` or `interrupted`, and `usage` is the merged `usage` events (a `retry` starts it over). Never passed for a refused request.                                                                                                                                                      |
+| `End`                  | interface   | `{ requestId, invocationId, outcome, modelId, usage, produced, errorCode?, httpStatus? }`; `invocationId` is the server's own id for the call, minted for every admitted request (key metering on it; the caller chooses `requestId` and may repeat it); `outcome` is `success`, `failed` or `interrupted`, and `usage` is the merged `usage` events (a `retry` starts it over). `produced` is whether the model sent any event but `usage` and `retry`. A `failed` call carries its `ModelError` code (`unknown` for any other failure) and, when its provider answered an HTTP error, that status. Never passed for a refused request.                                                                                                                                                      |
+| `refusedCleanly(end)`  | function    | `boolean`: the call failed before producing output, `rate_limited` or with a provider 4xx status, so it spent nothing beyond the usage its provider reported. A host that reserved spend settles such a call to that usage, 0 when none. Any other failure, a transport failure or a 5xx included, may have spent tokens nobody reported.                                                                                                                                                                                              |
+| `producesOutput(event)` | function   | `boolean`: whether a `ModelEvent` counts as output for `End.produced`, anything but `usage` and `retry`. For a host that runs a model in process and builds its own `End`.                                                                                                                                                                                                                                                                                                                                                             |
+| `failureOf(cause)`     | function    | `{ errorCode, httpStatus? }`: what a failed stream's cause gives `End`, its `ModelError` code (`unknown` for any other failure) and the provider's HTTP status when it had one.                                                                                                                                                                                                                                                                                                                                                         |
 | `Refusal`              | error class | Tag `flows/model/ModelProxyRefusal`. `status` (400 to 599) and `message` reach the client as written; `code?` is the client's `ModelError` code, chosen by the status when omitted. `modelErrorCode` is the code the client gets; its `ModelError.faults` class is the refusal's fault, so a `429` waits and a `401` asks the person.                                                                                                                                                                                                  |
 | `makeClient(options)`  | client      | `Effect<Model, never, HttpClient>`. `stream` posts the encoded request with a fresh request id and trace context and decodes the lines. Runs `Model.Liveness` for every chunk of the body, a blank keep-alive line included, and decodes no event from a blank line. Interrupting it aborts the request.                                                                                                                                                                                                                               |
 | `layerClient(options)` | client      | `Layer<Model, never, HttpClient>` from `makeClient`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -28481,6 +28511,45 @@ other, so the shape they have to agree on belongs beneath both.
 | -------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `decode` | `(notification: Notification) => SteerPayload \| undefined` | The steering item a notification carries, or `undefined` when it carries none. A `system-event` is never a steer. Inside a human notification, a record with a `body` string and no `kind` reads as a message. |
 | `encode` | `(item: SteerPayload) => SteerPayload`                      | The record the item is stored as. Every item is written with its `kind`, including a message. The result is assignable to `Notification.payload` and shares no mutable structure with `item`.                  |
+
+## Inbox
+
+Pure routing and acknowledgement rules for per-person notices about runs.
+Import from `@smthrs/notifications/Inbox`. See
+[Who hears about a run](https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/docs/concepts/inbox.md).
+
+### Models
+
+| Export          | Shape                                                                                                                                                                                               |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Level`         | `Schema`: `"all" \| "attention" \| "muted"`. How closely a principal follows a subject.                                                                                                             |
+| `DEFAULT_LEVEL` | `"attention"`. The level of a watch nobody chose a level for.                                                                                                                                       |
+| `RunState`      | `Schema`: `"working" \| "waiting" \| "needs_you" \| "failed" \| "done"`. A run's state as a notice reads it.                                                                                        |
+| `Act`           | `Schema`: `"read" \| "dismiss" \| "hide"`. Read records that the person opened the notice, Dismiss closes it, Hide removes its toast and keeps its entry.                                           |
+| `Watcher`       | `{ principal: string; level: Level }`. One principal following a subject.                                                                                                                           |
+| `Delivery`      | `{ recipient: string; mine: boolean; state: RunState; quiet: boolean }`. One person's notice about a run. `quiet` means a toast while it lives and never a list entry.                              |
+| `RunFact`       | `{ launcher: string \| undefined; state: RunState; watchers: ReadonlyArray<Watcher>; mayRead?: (principal: string) => boolean }`. What `route` reads about one run. `mayRead` defaults to everyone. |
+| `Versions`      | `{ version: number; readVersion: number; dismissedVersion: number; hiddenVersion: number }`. A notice's versions.                                                                                   |
+
+### Routing
+
+| Export     | Signature                                                                                               | Returns                                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `route`    | `(fact: RunFact) => ReadonlyArray<Delivery>`                                                            | The launcher first, when defined, with the run's own state, `mine: true` and `quiet: false`, even if the launcher's watch is muted. Then every other watcher that is not muted and may read the run, in input order, with `mine: false`; `needs_you` reads as `waiting`, and an `attention` watcher is `quiet`. Each recipient once; a principal listed twice is decided by its first entry. |
+| `audience` | `(watchers: ReadonlyArray<Watcher>, mayRead?: (principal: string) => boolean) => ReadonlyArray<string>` | Who hears about a subject's event that is not a run, such as `main` moving or a new release: every watcher that is not muted and may read it, each once, in input order, decided by its first entry.                                                                                                                                                                                         |
+
+### Versions
+
+| Export     | Signature                                                              | Returns                                                                                                                                                                                                                                              |
+| ---------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `raises`   | `(before: RunState \| undefined, after: RunState) => boolean`          | Whether the notice needs attention again, so its version goes up. True for a new notice, and when `after` is `needs_you`, `failed` or `done` and differs from `before`. False otherwise.                                                             |
+| `ack`      | `<V extends Versions>(notice: V, act: Act, version: number) => V`      | The notice with the act's field set to `max(current, min(version, notice.version))`, the merge of Postgres' `greatest()`. Other fields are kept. A call that changes nothing, including a `NaN` version, returns `notice` itself. Order-independent. |
+| `isOpen`   | `(notice: Pick<Versions, "version" \| "dismissedVersion">) => boolean` | `dismissedVersion < version`.                                                                                                                                                                                                                        |
+| `isUnread` | `(notice: Pick<Versions, "version" \| "readVersion">) => boolean`      | `readVersion < version`.                                                                                                                                                                                                                             |
+| `isHidden` | `(notice: Pick<Versions, "version" \| "hiddenVersion">) => boolean`    | `hiddenVersion >= version`.                                                                                                                                                                                                                          |
+
+Each predicate reads only the two fields it compares, so any row carrying them
+can be passed.
 
 ## Alerts
 
@@ -32508,6 +32577,7 @@ https://smithers.sh/docs/reference/api/platform-cloudflare/
 import {
   CloudflareHost,
   CloudflareRuntime,
+  ContainerSession,
   ContainerTerminal,
   EdgeCache,
   ExecutionObject,
@@ -32852,6 +32922,7 @@ const wake: <F, E, R>(
 interface WakeOptions<F> {
   readonly intercepts: ReadonlyArray<{ readonly host: string; readonly fetcher: F }>
   readonly inactivityTimeoutMs?: number | undefined
+  readonly egress?: F | undefined
 }
 
 type WakeOutcome = "started" | "running"
@@ -32862,7 +32933,9 @@ type WakeOutcome = "started" | "running"
 2. Arms the inactivity timeout: `inactivityTimeoutMs`, default
    `SandboxObject.defaultInactivityTimeoutMs` (30 minutes).
 3. Registers each intercept with `interceptOutboundHttp(host, fetcher)`, in
-   order.
+   order, then, with `egress`, every other request: `interceptAllOutboundHttp(egress)` and
+   `interceptOutboundHttps("*", egress)`. HTTPS reaches the egress decrypted through the container's per-instance CA,
+   which the box must trust. Without `egress` the box reaches only its intercepted hosts.
 
 It runs all three on every call, so a restarted object, or one that died
 between its start and its registration, gets its timeout and intercepts back.
@@ -32878,6 +32951,8 @@ interface Machine<F, E = never, R = never> {
   start(options: { readonly enableInternet: false }): Effect.Effect<void, E, R>
   setInactivityTimeout(durationMs: number): Effect.Effect<void, E, R>
   interceptOutboundHttp(addr: string, binding: F): Effect.Effect<void, E, R>
+  interceptAllOutboundHttp(binding: F): Effect.Effect<void, E, R>
+  interceptOutboundHttps(addr: string, binding: F): Effect.Effect<void, E, R>
 }
 ```
 
@@ -33051,6 +33126,44 @@ No metric attribute holds an id. Each `attach` runs in a `terminal.connect`
 span with `smithers.terminal.id`, `smithers.terminal.access`,
 `smithers.terminal.outcome`, `smithers.terminal.close_code` and the three byte
 counts, and logs one `cloudflare.terminal.connect` line inside it.
+
+## ContainerSession
+
+A container Durable Object's container as `@smthrs/sandbox`'s `Sandbox.Session`, so `SandboxTools`,
+`Sandbox.layerHost` and every other session consumer run on it.
+
+```ts
+import { ContainerSession } from "@smthrs/platform-cloudflare"
+import { SandboxTools } from "@smthrs/sandbox"
+
+const session = yield* ContainerSession.make(box, { id: branchId, workdir: "/workspace", user: "p1a2b3", env: { HOME: "/home/p1a2b3" } })
+const status = yield* SandboxTools.execute(session, { tool: "status" }, { callId, callsDirectory: "/home/p1a2b3/.smithers/calls" })
+```
+
+### `ContainerSession.make`
+
+```ts
+declare const make: <E, R>(
+  container: ContainerSession.Container<E, R>,
+  options: ContainerSession.Options
+) => Effect.Effect<Sandbox.Session, never, R>
+```
+
+- Every command runs as `sh -c <command>` as `options.user` (the container's default user when absent), in
+  `options.workdir` unless the command names a `cwd`; a relative `cwd` is under the workdir.
+- `options.env` reaches every command, under the command's own variables.
+- A command's input is fed beside its output, so one that writes before it has read all its input doesn't stall.
+- `readFile` and `writeFile` are commands (`cat`), so the container needs only `sh` and `cat`; `readFile` of an absent
+  path or a directory fails `not_found`, and `writeFile` makes the file's directories.
+- `ping` runs `true`.
+- It starts nothing: wake the container (`SandboxObject.wake`) before handing the session out. A failure of the
+  container itself is a `ProviderError` with code `unavailable`, naming the operation, never the command or a path.
+
+### `ContainerSession.Container`, `ContainerSession.Process` and `ContainerSession.ExecOptions`
+
+The slice of an Effect container client `make` uses: `exec(argv, { user?, cwd?, env?, stdin?: "pipe", stdout: "pipe",
+stderr: "pipe" })` returning a process with `stdin` (a sink; completing it closes the input), `stdout`, `stderr` and
+`exitCode`. An Alchemy Durable Object's container handle satisfies it with `R = RuntimeContext`.
 
 ---
 
@@ -34238,6 +34351,36 @@ with `HttpClient.ResolveHostUnavailable`; a composition that installs a pinning
 client without this layer gets that refusal, which the web tools report as
 `unsupported`.
 
+## A model provider's fetch
+
+`EgressHttpClient.providerFetch(environment, { connect? })` is the `fetch` a Node
+model host passes as `HostModel`'s `fetch` option. It is Undici's `fetch` over a
+pool of its own, in the caller's scope, that follows the environment's proxy
+variables as `dispatcher` does and speaks HTTP/1.1 only. `connect` carries TLS
+options such as a private provider's `ca`.
+
+```ts
+import { EgressHttpClient } from "@smthrs/platform-node"
+import { HostModel } from "@smthrs/model-host"
+import { Effect, Layer } from "effect"
+
+const model = Layer.unwrap(Effect.map(
+  EgressHttpClient.providerFetch(process.env),
+  (fetch) => HostModel.layerConfig("CHAT_MODEL", undefined, { fetch })
+))
+```
+
+Node's own `fetch` and Undici 8 negotiate HTTP/2 when an origin offers it. Once
+a provider's edge tears an HTTP/2 session down, every later request to that
+origin fails within milliseconds with `ERR_HTTP2_INVALID_SESSION` until the
+process restarts: on Node 26.10 against `api.cerebras.ai`, about two minutes into
+a stream of agent-sized calls, after a TLS `bad record mac` alert (2026-10-20).
+Over HTTP/1.1 a socket the provider closed fails the one request on it
+(`UND_ERR_SOCKET`), which the provider route retries on a fresh connection.
+
+`EgressHttpClient.dispatcher(environment, { allowH2?, connect? })` takes the same
+pool options; without them the pool is Undici's default.
+
 ## FetchTransport
 
 `FetchTransport.observe(origin)` reports how far each `fetch` to one origin got
@@ -34899,6 +35042,7 @@ declaration values a discovered body carries, see the
 | [`Descriptor`](#descriptor)               | The serializable `FlowDescriptor` and every value it is built from.       |
 | [`Discovery`](#discovery)                 | The service that walks one source root and returns a `SourceScan`.        |
 | [`MarkdownFlow`](#markdownflow)           | Markdown and Agent Skills compatibility.                                  |
+| [`ModuleFlow`](#moduleflow)               | A `flow.ts` module's descriptor and tag, read without importing it.       |
 | [`Registry`](#registry)                   | The refreshable, first-found-wins catalog and its layers.                 |
 | [`Disclosure`](#disclosure)               | The compact projections a model and an autocomplete list are shown.       |
 | [`Executable`](#executable)               | Turning a descriptor into a runnable `@smthrs/flow` value.                |
@@ -35538,6 +35682,57 @@ Projects a descriptor into the one authoring value
 registry-to-core adapter boundary: metadata crosses it once and is not
 independently reinterpreted downstream. `Executable` uses it to lower a loaded
 markdown body into its annotations.
+
+## ModuleFlow
+
+Discovery for `flow.ts` modules, whose default export is `Flow.make("<tag>", { ... })`.
+
+### ModuleFlow.fromModule
+
+```ts
+interface FromModuleOptions {
+  readonly text: string
+  readonly contentDigest?: string | undefined
+  readonly path: string
+  readonly naming: "path" | "frontmatter"
+  readonly name: Option.Option<string>
+  readonly dirBasename: string
+  readonly provenance: Provenance
+  readonly imports?: ReadonlyArray<ModuleImport> | undefined
+  readonly hostImports?: ReadonlyArray<string> | undefined
+}
+
+interface FromModuleResult {
+  readonly descriptor: Option.Option<FlowDescriptor>
+  readonly tag: Option.Option<string>
+  readonly warnings: ReadonlyArray<DiscoveryWarning>
+}
+
+const fromModule: (options: FromModuleOptions) => FromModuleResult
+```
+
+Derives a module flow descriptor from already-read source text without
+importing or evaluating it. `Discovery` calls it for every `flow.ts` entry with
+a metadata prefix, the digest of the whole file and the module's closure; a
+host that keeps a flow's source outside a file system, such as a database row
+or an editor buffer, calls it with the complete text, and the digest of `text`
+is used.
+
+The description, payload and success schemas, `flows`, `capabilities`,
+`effects`, `model`, `modelInvocable`, `budget` and a leading placement
+directive (`"use sandbox"`) come from the literal declaration. `tag` is the
+string literal `Flow.make` takes as its first argument; it is `Option.none()`
+for a record declaration or a tag the reader can't evaluate, such as a
+variable or a template with a substitution. The descriptor's `name` is the
+path-derived `name` in a path-named source and `dirBasename` otherwise, so a
+caller that requires the tag to match the name compares the two itself.
+
+`descriptor` is `Option.none()` when the declaration has no literal
+description (`missing_description`). Metadata the reader can't project is
+reported as `unsupported_module_metadata`, with the line when it has one, and
+projected conservatively. In a path-named source, a `name` field that differs
+from the path is reported as `name_field_ignored`. Report `warnings` whether or
+not a descriptor was produced.
 
 ## Registry
 
@@ -37604,6 +37799,7 @@ Every namespace is also its own subpath, and `./internal/*` is null mapped.
 | `@smthrs/sandbox/SandboxHealth`             | [src/SandboxHealth/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/SandboxHealth)                         |
 | `@smthrs/sandbox/SandboxSupervision`        | [src/SandboxSupervision/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/SandboxSupervision)               |
 | `@smthrs/sandbox/TerminalProtocol`          | [src/TerminalProtocol/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/TerminalProtocol)                   |
+| `@smthrs/sandbox/SandboxTools`              | [src/SandboxTools/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/SandboxTools)                           |
 
 ## RemoteChildProcessSpawner
 
@@ -37820,6 +38016,48 @@ else wait(TerminalProtocol.reconnectDelay(attempt))
 - **Reconnects:** `reconnectDelay(attempt)` is 1 s doubling to 30 s for `reconnect.maxAttempts` (10) attempts, and
   `undefined` after; a connection that reaches `ready` starts the count again. Keystrokes are never queued while
   disconnected: input whose delivery is unknown is not safe to repeat.
+
+## SandboxTools
+
+Typed tools on a session's working copy, for whatever runs on the host: an agent, a button, an API route. The sandbox
+exposes itself and these tools and knows nothing about agents.
+
+```ts
+import { SandboxTools } from "@smthrs/sandbox"
+
+const ran = yield* SandboxTools.execute(session, { tool: "run", command: "npm test", timeoutSeconds: 120 }, {
+  callId: "call-7f3a",
+  callsDirectory: "/home/me/.smithers/calls"
+})
+// { tool: "run", exitCode, timedOut, stdout, stderr, stdoutBytes, stderrBytes, truncated }
+```
+
+| Tool     | Input (`Call`)                          | Output (`Result`)                                                   |
+| -------- | --------------------------------------- | ------------------------------------------------------------------- |
+| `run`    | `command`, `cwd?`, `timeoutSeconds?`     | exit code, whether the timeout stopped it, each stream's first bytes |
+| `read`   | `path`                                  | the file's text, its size, whether it was cut                       |
+| `write`  | `path`, `content`                       | the path and its size; directories are made                         |
+| `list`   | `path?`                                 | entries `{ name, kind, bytes }` in name order                       |
+| `status` | none                                    | the branch (`null` when detached) and git's short status per path   |
+| `diff`   | `paths?`                                | a unified diff from `HEAD`, untracked files as new ones              |
+
+- **Bounded (`limits`):** a command runs 60 s unless it names a timeout, 600 s at most; each stream returns 64 KiB, a
+  read and a write 1 MiB, a listing 1,000 entries, a diff 256 KiB, and each result says when it cut.
+- **Confined:** `resolve(workdir, path)` takes a path under the workdir and refuses one that leaves it by name; the
+  tools refuse it with `ToolRefused { reason: "path" }` before anything runs.
+- **At most once:** `execute` fences a `run` by `callId` in `callsDirectory`, which the session's user may write and
+  which lies outside the workdir. The same call again answers what the first attempt recorded; a call whose first
+  attempt never recorded an exit fails `ToolLost` and does not run again. Reads and writes are repeatable.
+- **Failures:** `ToolRefused` (`path`, `not_found`, `not_a_file`, `not_a_directory`, `not_a_repository`,
+  `too_large`), `ToolLost`, and `ToolUnavailable { code }` when the session failed.
+- **Guests:** the scripts are POSIX `sh` with git. GNU `timeout`, when the guest has it, stops a command's whole process
+  group; without it the watchdog stops the command's own process.
+- **Telemetry:** a span `sandbox.tool` with the tool, its outcome and a command's exit code; never a path, a command,
+  content or output.
+
+`checkpoint(session)` captures the working copy without changing it: `HEAD` and a binary patch with every tracked and
+untracked change (ignored files are not carried), at most `limits.checkpointBytes` (8 MiB). `restore(session, saved)`
+moves `HEAD` to the checkpoint's commit when it is elsewhere and applies the patch; restore onto a clean checkout.
 
 ## SandboxMerge
 
@@ -40229,6 +40467,50 @@ the seven branch procedures have no integration against a real gateway yet.
 Treat the branch modules as a library surface pending a host, not as a served
 endpoint.
 :::
+
+## Presence rooms
+
+Since 1.0.0-rc.17. [Presence rooms](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/concepts/presence.md) explains the
+design; this section lists the exports.
+
+`PresenceProtocol` is pure:
+
+| Export                                                | What it is                                                                                    |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `maxStateBytes`, `maxFrameBytes`                      | 1024 and 2048 UTF-8 bytes: one participant's state, and one frame from a page.                |
+| `maxParticipants`, `maxDataBytes`                     | 256 connections per room, and 512 UTF-8 bytes of host-only data per connection.               |
+| `Access`, `Participant`, `ClientFrame`, `ServerFrame` | The wire's types. A participant is `{ id, principal, name, access, state }`.                  |
+| `CloseCode`                                           | `left` 1000, `unsupported` 1003, `noAccess` 1008, `tooBig` 1009, `changed` 1012, `full` 1013. |
+| `isFinal(code)`                                       | True for `left`, `unsupported`, `noAccess` and `tooBig`.                                      |
+| `reconnect`, `reconnectDelay(attempt)`                | 1 s doubling to 30 s, at most 10 attempts; `undefined` once they are spent.                   |
+| `encodeClientFrame`, `decodeClientFrame`              | A page's `state` frame. Decoding answers `undefined` for anything over a limit or malformed.  |
+| `encodeServerFrame`, `decodeServerFrame`              | The room's `roster` frame, with `self`.                                                       |
+
+`PresenceRoom` runs over a `RoomHost<S, R>`, whose `sockets` are every
+`RoomSocket<R>` the host holds open. It keeps nothing in memory: each
+connection lives in its socket's attachment.
+
+| Export                                 | Answers              | Behavior                                                                                                                          |
+| -------------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `join(host, socket, identity)`         | `"joined" \| "full"` | Keeps a fresh id, the `Identity` and a `null` state, then sends everyone the roster. At the cap it closes the socket with `full`. |
+| `receive(host, socket, message)`       | `void`               | A state goes to everyone. Binary or malformed closes with `unsupported`, oversized with `tooBig`.                                 |
+| `leave(host, socket)`                  | `void`               | Forgets a closed or failed socket and tells the others. Idempotent.                                                               |
+| `close(host, socket, code)`            | `void`               | Closes one connection with `code`, forgets it, and tells the others.                                                              |
+| `evict(host, principal, code?)`        | `number`             | Closes every connection of `principal` (`noAccess` by default) and tells the others once.                                         |
+| `connections(host)`                    | `Connection<S>[]`    | Every joined connection in join order, with its `participant` and host-only `data`.                                               |
+| `joins`, `frames`, `evictions`, `open` | metrics              | `smithers_presence_joins`, `_frames`, `_evictions` and `_open`; counts only.                                                      |
+
+None of them fails. A send or close that fails or throws marks that socket
+gone. `Identity.data` over `maxDataBytes`, or joining one socket twice, dies.
+
+`PresenceSocket.connect(url)` needs `Scope` and Effect's
+`Socket.WebSocketConstructor`, and answers a `Connection`:
+
+| Member       | Type                                 | Behavior                                                                                             |
+| ------------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `set(state)` | `Effect<void>`                       | Keeps the latest state and sends it while open and after every reconnect. Over `maxStateBytes` dies. |
+| `roster`     | `Stream<ReadonlyArray<Participant>>` | The current roster, then every change; empty while not open.                                         |
+| `status`     | `Stream<Status>`                     | `Connecting`, `Open { self }`, `Offline { attempt, code }`, `Closed { code }`.                       |
 
 ## Test helpers
 

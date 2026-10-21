@@ -1,5 +1,7 @@
 # Shared backend implementation ledger
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (ARCH-1, SCOPE-8). Kept as prior art.
+
 Owner brief: 2026-09-21. Epic: https://github.com/smithersai/smithers/issues/1655.
 
 This ledger tracks implementation and required proof, not completion. [ADR 0002](0002-mac-install.md) supersedes the single-owner container and native-app topology for the Mac install. [ADR 0001](0001-shared-product.md) still governs the shared backend and Plue composition.

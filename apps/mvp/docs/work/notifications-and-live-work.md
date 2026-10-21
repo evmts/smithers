@@ -2,10 +2,61 @@
 title: Notifications and live work (MVP 4 and 6, early feature 8b)
 status: in-progress
 area: design
-owner: notifications builder (Claude Opus), started by the lead at 13:23:06 on 2026-10-20 on slice 1; unreported by 13:24. Until 13:23: Panel N (Opus lead, Sol); the 0011 docs agent wrote the browser-run path into 0009 (22:49)
+owner: notifications builder; live GitHub webhook follow-up
 updated: 2026-10-20
-links: [agent-status.md, flow-debugging.md, ../decisions/0009-notifications-and-live-work.md, mvp-scope-cut.md, ../proposals/early-features.md, ../proposals/mvp-gaps.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, durable-browser-engine.md, ../decisions/0002-local-first.md, local-first.md, durable-answering.md, ../decisions/0015-agent-status.md, token-spend-alerts.md, branch-terminal.md, issue-triage.md]
+links: [agent-status.md, flow-debugging.md, ../decisions/0009-notifications-and-live-work.md, mvp-scope-cut.md, ../proposals/early-features.md, ../proposals/mvp-gaps.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, durable-browser-engine.md, ../decisions/0002-local-first.md, local-first.md, durable-answering.md, ../decisions/0015-agent-status.md, token-spend-alerts.md, branch-terminal.md, issue-triage.md, local-dev-sync-connections.md]
 ---
+
+## Current specification — 2026-10-20, 18:26 PDT
+
+**What:** Use one top-bar notification entry point with unread count and a distinct needs-you mark, plus expandable notifications and shared toasts.
+
+**Why:** Will requested a general top-bar route to agent status at 18:23, after requesting useful notification clicks.
+
+**Current state:** At 18:24 the lead assigned one entry point to replace the separate status pill. Existing live-work multi-device receipts remain valid; the new navigation and expansion are unfinished. Repository-event browser proof still awaits deployed webhook.
+
+**Next step:** Implement click/key to the notification panel and one more step to the waiting run. Prove counts, needs-you, expansion, Answer/Retry, cross-device read state and clone progress with the common toast stack.
+
+**Open questions for Will:** None.
+
+Evidence: latest two session hours extracted by script as human text/lead replies; queue answers through 2026-10-21 01:24:15 UTC, current rulings, shared briefs/designs, decisions, proposals, TODOs and rules. Latest rulings override historical proposals. Product results are reported receipts; this pass verifies the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 17:44 PDT
+
+**What:** Make notifications fast, navigable and expandable with useful actions.
+
+**Why:** Will requested click-to-expand interaction and called the walkthrough slow at 17:36.
+
+**Current state:** Live-work sync and shared toast behavior previously passed. Two owners now cover transport performance and notification interaction; repository-event browser proof still needs the deployed webhook.
+
+**Next step:** Make toasts open their subject; add newest-first unread entries with step/question/failure expansion, Answer/Retry and keyboard access; rerun real multi-device tests.
+
+**Open questions for Will:** None for this update.
+
+Evidence: queue answers through 2026-10-21 00:42:06 UTC and script-filtered human text/lead replies from 22:43–00:43 UTC; current rulings and decision 0017 supersede historical briefs. Product checks are reported evidence; this tracker validates the site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 17:14 PDT
+
+**What:** One live-run index, synced personal feed and shared toast stack.
+
+**Why:** People must see real work outcomes and answer waits across devices.
+
+**Current state:** At 17:13 the lead reports passing real browser coverage for Ann’s two devices and Ben on the shared branch, including needs-you, Answer, Hide and stacked toasts. Read/Hide/Dismiss sync across devices; toasts name the initiator and share the spend-alert stack. Push/release feed entries have unit tests only: browser proof requires the deployed GitHub webhook. The full workstream remains in progress for that acceptance gap.
+
+**Next step:** Retain notifications-live-work.gif/video; test repository events through the real webhook after deploy. Add Unwatch and resolve local-dev feed contention. Lead conventions: opening a branch auto-watches it; failed toast hides after four seconds while Retry remains in conversation and feed.
+
+**Open questions for Will:** None.
+
+Evidence: script-extracted human text and lead replies from session 6253ecf2, latest two hours through 2026-10-21 00:13:56 UTC; queue answers through 00:06:34 UTC; current rulings, decisions, proposals and shared briefs. Queue answers supersede older design proposals. Test results are lead-reported; this tracker runs the site build only.
+
+## Earlier tracker history (retained)
+
 
 ## What
 
@@ -59,6 +110,11 @@ Will: "Notifications are on the menu but it seems like a feature an agent on the
 - 13:23:33, the lead to Will: "your feed (needs you, finished, failed), toasts for runs on your branch including other people's, and `main` changed or new release".
 - **Status moved from todo to in-progress.**
 - Open against 0009 §8: choice 1 says a finished run disappears after `Done`, while slice 1's feed lists what finished. Best guess: the feed entry is the person's record, and the run row still leaves the live list; the builder's report should say which.
+- On disk by 13:46 on 2026-10-20, unreported: `db/migrations/0020_notifications.ts` (13:39:19).
+- 14:15 to 14:17 on 2026-10-20: the session usage limit stopped the notifications builder with 12 others; the lead resumed all 13 at 14:19.
+- 14:26: `0020_notifications` applied to the shared dev database ([dev stack hygiene](dev-stack-hygiene.md)). No report by 14:30.
+
+- 14:45 on 2026-10-20: **slice 1 built** by the notifications builder ([notifications.md](../features/notifications.md)): migration `0020_notifications` (the run index's scope, `watches`, `notifications`); the fold in the run report's and the answer's transaction (`worker/Notifications.ts`, `@smthrs/notifications`' new `Inbox`); GitHub's `push` to `main` and published releases as repository entries; `watch/set` from each conversation a tab shows; Read, Hide and Dismiss synced across devices (`notification/ack`); the one toast stack reads the feed (the shell's, beside spend alerts, and a floating one on other pages; `@smthrs/ui` `ToastStack` `more`, `Toast` `update`/`word`/`unread`). A second local person for e2e: `smithers_dev_person=teammate`.
 
 ## Next
 

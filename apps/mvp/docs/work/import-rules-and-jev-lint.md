@@ -4,7 +4,7 @@ status: in-progress
 area: process
 owner: rules agent; the lead refreshes at session end
 updated: 2026-10-20
-links: [review-round-4.md, repo-view-package-split.md, repo-checks-green.md, ../rules.md, ../../AGENTS.md, ../../../../docs/libraries.md, model-host-effect-boundary.md, sync-service-di-test-seam.md, route-ban-any-receiver.md, code-storage-spend-caps.md, host-agnostic-flows.md, ../decisions/0011-the-agent-runs-in-the-browser.md]
+links: [review-round-4.md, repo-view-package-split.md, repo-checks-green.md, ../rules.md, ../../AGENTS.md, ../../../../docs/libraries.md, model-host-effect-boundary.md, sync-service-di-test-seam.md, route-ban-any-receiver.md, code-storage-spend-caps.md, host-agnostic-flows.md, ../decisions/0011-the-agent-runs-in-the-browser.md, no-github-actions.md]
 ---
 
 ## What
@@ -39,10 +39,15 @@ Will: "For rules like don't use effect in tsx it would be great if we did a PACK
 - **11:04:02 on 2026-10-20: [review round 4](review-round-4.md)'s R4-20 (P2, Claude Opus P2-9; the glob checked by a fork with `matchesGlob`): the app's import rules never read `worker/` subdirectories.** `apps/mvp/PACKAGE.ts:27-34` (`appSources`) and `:324` (`workerSources`) use `worker/!(*.test).ts`, which matches top-level files only. So the durability and boundary rules (`Effect.run*`, `setTimeout`, `Effect.retry`, `Schedule.*`, `*.waitUntil`, every `workerSources` rule) skip `worker/github/**`, `worker/branch/**` and `worker/flows/**`: the GitHub write path, the terminals and every server flow. "A gate that can't fail there." Fix: `worker/**/!(*.test).ts`, excluding `worker/test/**`. Unrouted by 11:07.
 - Round 4's P3s on the gates: Opus P3-9: the gate is red on `state.waitUntil` in `worker/BranchSandboxes.ts:128` (a fork ran `packages/repo-targets/scripts/import-rules.mjs`); Opus P3-11: `SdkRules`' platform-neutral globs miss `node:fs/promises` and bare built-ins (`packages/repo-targets/src/SdkRules.ts:93`); Fable S-P2-2: the same line forbids `crypto` only as a module import, so no gate sees ambient `crypto.subtle`; Opus P3-13: `RunInspection.ts:25-29` deep-imports three packages, and `@smthrs/jj`'s `retryGitIndexLock` is a hand-rolled recursive sleep loop of up to 1,200 tries in library code. Fable verified the SDK import rules pass on `effect-tanstack-db`, `effect-electric` and `effect-code-storage`.
 - Opus's assessment: platform code stays in host packages and the app imports from roots, "so the rule holds by habit rather than by gate."
+- **13:38:27 on 2026-10-20: R4-20 fixed** (round 4's SDK fix agent): the bug was in `apps/mvp/PACKAGE.ts`, not `@smthrs/repo-targets` (`*` stops at `/`, as documented). The new `apps/mvp/PACKAGE.test.ts` checks the globs against the files on disk. `importRules` found nothing new in `worker/github`, `worker/branch` or `worker/flows`; one violation remains, `worker/ExecutionHost.test.ts:6` importing `@smthrs/platform-cloudflare`.
+- 13:29 to 13:31: rule `github.no-actions`: a Jev rule in `PACKAGE.ts` plus a string scan in `PACKAGE.test.ts`, since ImportRules reads imports and calls, not strings. Jev doesn't run yet: the build CLI lacks `JevReviewLive` ([no GitHub Actions](no-github-actions.md)).
+- 13:42:00: the branch workspace builder gave `rootImportsOnly` an `allow` list (tested, README updated) and allowed `@smthrs/ui/adapters/*` in the app. Will's 13:31 answer removes that app exception ([repo-view package split](repo-view-package-split.md)).
 
 ## Next
 
-From 11:07 on 2026-10-20: the lead routes round 4's R4-20: widen the worker globs, then fix what the gate finds in `worker/github`, `worker/branch` and `worker/flows`; and the gate P3s above ([review round 4](review-round-4.md)).
+From 13:42 on 2026-10-20: fix `worker/ExecutionHost.test.ts:6` in the [P3 cleanup](review-round-4-p3-cleanup.md); remove the app's adapters exception with the [repo-view package](repo-view-package-split.md); run Jev once the build CLI has `JevReviewLive`.
+
+Until 13:46 on 2026-10-20 the next step was, from 11:07 on 2026-10-20: the lead routes round 4's R4-20: widen the worker globs, then fix what the gate finds in `worker/github`, `worker/branch` and `worker/flows`; and the gate P3s above ([review round 4](review-round-4.md)).
 
 Until 11:07 on 2026-10-20 the next steps were:
 

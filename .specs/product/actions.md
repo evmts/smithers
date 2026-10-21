@@ -1,5 +1,7 @@
 # Appendix C. Every internal action and flow
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (SCOPE-3). Kept as prior art.
+
 Companion to [Appendix B](mvp.md). Appendix B lists what a person or agent can do. This appendix lists every `Flow.make`, `Action.make` and `AgentAction.make` tag that ships, so no shared UI behavior is missing from the Inspect view.
 
 Inventoried from `main` on 2026-10-02 with:

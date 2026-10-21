@@ -1,5 +1,7 @@
 # QA spec: Smithers MVP validation
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (SCOPE-5, SCOPE-8, TEST-1). Kept as prior art. The banner covers every file under `qa/`: the J1 to J11 validation of the old install.
+
 Owner: lead QA (smithers-4c). Product: [../product/mvp.md](../product/mvp.md). Engineering checks: [../engineering/checks/](../engineering/checks/README.md).
 
 | File | What it is | Read when |

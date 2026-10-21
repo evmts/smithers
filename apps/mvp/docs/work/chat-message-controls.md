@@ -2,10 +2,79 @@
 title: Message controls (copy, times, reasoning, queued prompts, saved draft)
 status: done
 area: app
-owner: message controls builder; its e2e passed at 13:15:50 on 2026-10-20 after the dev budget was raised; the GIF and report are pending at 13:17, and the work is uncommitted. Until 13:15: message controls builder; at 13:03 on 2026-10-20 waiting on its unit suite before rerunning its e2e and recording the GIF (the lead), with test 1's "Couldn't answer" failures being checked against the Cerebras rate limit; unreported by 13:06. Until 13:03: message controls builder; chat files and `e2e/message-controls.spec.ts` changed to 12:52:24 on 2026-10-20, then test 1 failed four times from 12:53 to 12:58; unreported by 12:59. Until 12:52: message controls builder; `e2e/message-controls.spec.ts` on disk at 12:39:34 on 2026-10-20; its draft test failed at 12:45:30; unreported by 12:45. Until 12:24: message controls builder, started by the lead about 12:00 on 2026-10-20; the chat store, actions, schema, steps and view changing 12:18 to 12:23; unreported by 12:23. Until 12:23: message controls builder; `src/flows/askingTab.ts` (12:12:43) and `src/clipboard.ts` (12:13:26) on disk; unreported by 12:14. Until 12:00: unassigned; queued by the lead at 06:43 on 2026-10-20 to start after the chat-store (Fable fix) and composer (slash commands) agents land. Until 06:43: unassigned
+owner: message controls builder; Will approved replacement
 updated: 2026-10-20
-links: [land-to-main.md, dev-stack-hygiene.md, old-app-feature-gaps.md, local-first.md, conversations-and-history.md, keyboard-navigation-and-vim.md, fable-review-2-fixes.md, slash-commands.md, agent-status.md, ../features/chat.md, ../features/agent.md, ../decisions/0002-local-first.md, cerebras-rate-limits.md]
+links: [land-to-main.md, dev-stack-hygiene.md, old-app-feature-gaps.md, local-first.md, conversations-and-history.md, keyboard-navigation-and-vim.md, fable-review-2-fixes.md, slash-commands.md, agent-status.md, ../features/chat.md, ../features/agent.md, ../decisions/0002-local-first.md, cerebras-rate-limits.md, review-round-4-p3-cleanup.md, will-decision-queue.md, ../rulings.md, chaptered-review-videos.md]
 ---
+
+## Current specification — 2026-10-20, 17:44 PDT
+
+**What:** Reveal message time, Copy and Edit on hover, focus or tap without layout movement.
+
+**Why:** Will requested hidden controls until interaction.
+
+**Current state:** Both browser tests previously passed; Will explicitly approved the replacement recording at 17:30:36 PDT.
+
+**Next step:** Retain behavioral and keyboard regression coverage.
+
+**Open questions for Will:** None for this update.
+
+Evidence: queue answers through 2026-10-21 00:42:06 UTC and script-filtered human text/lead replies from 22:43–00:43 UTC; current rulings and decision 0017 supersede historical briefs. Product checks are reported evidence; this tracker validates the site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 17:34 PDT
+
+**What:** Reveal message time and actions on hover, focus or touch.
+
+**Why:** Will requested unobtrusive controls.
+
+**Current state:** Will approved the revised message-controls recording at 17:30:36. Earlier real browser and app regression receipts cover hover, focus, touch, layout stability and reduced motion.
+
+**Next step:** Retain approved recordings and behavioral tests; land with the current round.
+
+**Open questions for Will:** None.
+
+Evidence: queue answers through 2026-10-21 00:34:14 UTC; script-filtered human text and lead replies from the latest two transcript hours through 00:33:48 UTC; current rulings, decisions, proposals, TODOs, rules and shared briefs. Latest answers supersede older blockers. Product tests are reported evidence; this tracker runs the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 15:44 PDT
+
+**What:** Hide Copy, Edit and time until hover, keyboard focus or touch activation without layout shifts.
+
+**Why:** Will requested hidden message controls in his 14:27 queue answer.
+
+**Current state:** At 15:26 the lead reported the final docs check; at 15:28:50 the lead reported the completed hover/focus/tap behavior and fresh copy/edit recordings returned as a verify item. Earlier lock and Postgres waits are superseded. Completion is reported; Will has not accepted the revised recording.
+
+**Next step:** Collect Will’s re-check and a landing receipt; retain his original feedback and previous recordings.
+
+**Open questions for Will:** Feedback on the revised copy/edit walkthroughs.
+
+Evidence: user-typed text and lead replies extracted from session 6253ecf2’s latest two hours through 22:43:59 UTC; current rulings, queue answers, shared briefs/designs, decisions, proposals, TODOs and rules. These are reported receipts; this tracker ran no product tests. Later rulings supersede older briefs.
+
+## Earlier tracker history
+
+
+## Current specification — 2026-10-20, 14:55 PDT
+
+**What:** Hide Copy, Edit and time until hover, keyboard focus or touch activation, without layout shifts.
+
+**Why:** Will requested this in the 14:27 queue answer.
+
+**Current state:** Assigned at 14:28. Docs sync passed; the lead at 14:51 says its browser rerun is waiting on the shared lock after Postgres recovery. The earlier passing copy/edit tests do not prove this change.
+
+**Next step:** Restore Postgres, run the remaining browser checks and re-record both walkthroughs; return the fix to the queue.
+
+**Open questions for Will:** None; the lead can settle implementation details.
+
+Evidence: Will's typed messages and the lead's text updates in session `6253ecf2`, 12:54–14:55 PDT; [rulings](../rulings.md); queue answers through 14:36 PDT. These are reported receipts, not a new verification run by the tracker.
+
+## Earlier tracker history
+
+Previous owner record: unassigned at 14:30 on 2026-10-20: Will's 14:27:56 change request (Copy and the time show only on hover) isn't in `queue/dispatch.md` yet. Until 14:30: message controls builder, reported done at 13:33:09 on 2026-10-20 (relayed by the lead); uncommitted, lands in round 3; three P2 follow-ups queued for the cleanup pass. Until 13:46: message controls builder; its e2e passed at 13:15:50 on 2026-10-20 after the dev budget was raised; the GIF and report are pending at 13:17, and the work is uncommitted. Until 13:15: message controls builder; at 13:03 on 2026-10-20 waiting on its unit suite before rerunning its e2e and recording the GIF (the lead), with test 1's "Couldn't answer" failures being checked against the Cerebras rate limit; unreported by 13:06. Until 13:03: message controls builder; chat files and `e2e/message-controls.spec.ts` changed to 12:52:24 on 2026-10-20, then test 1 failed four times from 12:53 to 12:58; unreported by 12:59. Until 12:52: message controls builder; `e2e/message-controls.spec.ts` on disk at 12:39:34 on 2026-10-20; its draft test failed at 12:45:30; unreported by 12:45. Until 12:24: message controls builder, started by the lead about 12:00 on 2026-10-20; the chat store, actions, schema, steps and view changing 12:18 to 12:23; unreported by 12:23. Until 12:23: message controls builder; `src/flows/askingTab.ts` (12:12:43) and `src/clipboard.ts` (12:13:26) on disk; unreported by 12:14. Until 12:00: unassigned; queued by the lead at 06:43 on 2026-10-20 to start after the chat-store (Fable fix) and composer (slash commands) agents land. Until 06:43: unassigned
+
 
 ## What
 
@@ -65,10 +134,23 @@ S.
 - 13:05:22 to 13:14:40, on disk: `src/features/chat/` `chat.test.ts` (13:05:22), `store.ts` (13:05:59), `controls.test.ts` (13:11:06) and `actions.ts` (13:13:38); `e2e/message-controls.spec.ts` (13:14:40).
 - **13:14:45 to 13:15:50 on 2026-10-20: the e2e passed, both tests** (`test-results/.last-run.json`: passed, no failed tests): "Copy puts an answer on the clipboard, and every message shows its time" (a live-model answer) and "Edit takes a question queued offline back to the composer before it is sent, and a draft survives a reload". Each recorded a video (`test-results/message-controls-*/videos/`); no GIF under `~/Desktop/smithers-mvp/gifs/` yet.
 - **Status moved from in-progress to done** on the passing e2e, this note's stated bar. Still open: the builder's report, the GIF, and landing in the lander's app round ([land to main](land-to-main.md)).
+- **13:33:09 on 2026-10-20, the lead to Will, "Message controls work":** "Every message shows its time. Finished answers have Copy, also available as `/copy` or through the agent. A queued question has Edit, also `/edit`, and edit can't race with send in the same tab. Drafts survive a reload. Both browser tests pass." GIFs: `~/Desktop/smithers-mvp/gifs/message-controls-message-copy.gif` (13:15:53) and `message-controls-message-edit.gif` (13:15:54). The duplicate "ask the tab that asked" channel is merged into `src/flows/askingTab.ts`.
+- **Three P2 follow-ups for the cleanup pass** (scratchpad `final/WIRING.md`, "Message controls done"):
+  1. **A draft is lost on a reload right after typing.** The device-store write lands a moment after the keystroke; the e2e waits on `data-draft="saved"`, which hides it. Fix: flush on `pagehide` or `visibilitychange`, or write synchronously, with an e2e that reloads with no wait.
+  2. **`Outbox.withdraw` locks only its own tab.** If a second tab takes over sending as you press Edit, that tab can still send the question. Withdraw and send must share the cross-tab leader lock, with a two-tab test.
+  3. **Two chat tests fail only in the full run** ("the composer always sends" and the telemetry connection test), from load or isolation. Fix before landing round 3.
+  Also: recheck the repo "browse" copy-permalink e2e against the merged helper.
+- **About 14:31 on 2026-10-20, Will's review finding** after watching `message-controls-message-copy.gif`: "copy should not be visible nor should the timestamp unless you are already hovering over the message". Fixed in `@smthrs/ui`, so every surface gets it: `ChatMessage` takes `actions` (the time, Copy, a queued question's Edit), hidden with opacity until the pointer is over the message (`hover: hover`) or focus is inside it; a message with actions is `tabindex="-1"`, so a tap shows them on a touch screen. Their space is kept; the fade is 120 ms, none under reduced motion. `Queued`, `Not sent` and the recovery buttons stay in `meta`, always shown. Regression: `packages/smithers/ui/browser/chat-message.browser.test.ts` (real Chromium: hover, keyboard Tab, touch, reduced motion; fails on the old `ChatMessage`); `e2e/message-controls.spec.ts` hovers before Copy and Edit and checks both hidden first. Its first run (14:45 to 14:48) failed on the dev stack, not the change: Postgres commits waited 48 s on `WALWrite`, so `/api/questions` and every shape timed out with 500s. Rerun at 15:25: both tests passed; GIFs re-recorded (`message-controls-message-copy.gif`, `message-controls-message-edit.gif`).
+- **14:27:56 on 2026-10-20, Will (queue, on the message controls GIF):** "copy should not be visible nor should the timestamp unless you are already hovering over the message". A change to built work: Copy and the time appear only while the pointer is over a message. Keyboard and touch need an equivalent (best guess: on focus, and on tap for touch), so Copy stays reachable without a mouse.
+- **Status moved from done to todo:** the change isn't assigned or in `queue/dispatch.md` by 14:30.
 
 ## Next
 
-From 13:15 on 2026-10-20: the builder's report and GIF; the lander commits it in its app round with the chat client fixes. Reopen if the report names a red or the e2e fails again.
+From 14:30 on 2026-10-20: the lead assigns the hover change; it lands with an e2e that checks Copy and the time are hidden until hover or focus, and a new GIF; the curator queues a `verify` item. The three P2 follow-ups stay with the [P3 cleanup](review-round-4-p3-cleanup.md), and round 3 commits the rest ([land to main](land-to-main.md)).
+
+Until 14:30 on 2026-10-20 the next step was, from 13:33 on 2026-10-20: the lander commits it in round 3 ([land to main](land-to-main.md)); the three follow-ups go to the [P3 cleanup](review-round-4-p3-cleanup.md) pass, and follow-up 3 must pass before round 3 lands.
+
+Until 13:46 on 2026-10-20 the next step was, from 13:15 on 2026-10-20: the builder's report and GIF; the lander commits it in its app round with the chat client fixes. Reopen if the report names a red or the e2e fails again.
 
 Until 13:15 on 2026-10-20 the next step was, from 13:03 on 2026-10-20: the unit suite, then the e2e rerun and its GIF, then the builder's report; this note moves to `done` when the e2e passes. Whether test 1 failed on Cerebras's limit or on a bug decides whether the fix is capacity or code.
 

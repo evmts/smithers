@@ -1,11 +1,98 @@
 ---
 title: Clone and view a repo (feature 2)
-status: done
+status: in-progress
 area: app
-owner: none; review round 4's R4-23 fixed by the SDK batch 2 agent, reported 12:52:09 on 2026-10-20. Until 12:52: the wiring agent, reported done 05:54:14 on 2026-10-20: execution ids are a UUID per clone attempt (migration `0009`), with regression tests, and all 3 `e2e/repo.spec.ts` cases pass in the final fresh-state run; the lead pointed Will at `/octocat/Spoon-Knife` at 05:54. Leftovers are [repo follow-ups](repo-follow-ups.md) and Will's [repo-view package split](repo-view-package-split.md) answer. Until 05:54: the wiring agent, from about 04:56 on 2026-10-20 fixing the clone `StartConflict` as a product bug under the lead's ruling (a generated UUID per clone attempt, proven by a regression test after a reset); the fix and three regression tests on disk by 05:09, the unit suite green at 05:13:29, no `e2e/repo.spec.ts` run with the fix yet, unreported (at 05:04: migration `0009_clone_ids` and `worker/Repos.ts` only, no test). Until 04:56: the wiring agent; its 04:55 run (`wiring/e2e-5`) has all 3 `e2e/repo.spec.ts` cases green after it wiped the dev Durable Object state, unreported. From 04:43 on 2026-10-20, the wiring agent, whose fresh-database run has all 3 `e2e/repo.spec.ts` cases red (unreported). Until 04:43: R3 to R5 agent (started about 01:00, reported done by 02:35 on 2026-10-20); the router and boot wiring went to the wiring agent's sub-agent C1 (by 02:35); leftovers are [repo follow-ups](repo-follow-ups.md); the lead wires the deploy secret; the feature 2 agent finished R1 and R2. Until 02:35: "R3 to R5 agent (started about 01:00 on 2026-10-20; R3 and R4 code, the live clone test, the e2e spec and `docs/features/repo.md` on disk by 02:01; repo files at 100% coverage by 02:27; in final checks at 02:33, routes not wired, unreported)"
+owner: repo viewer builder and recording builder
 updated: 2026-10-20
-links: [review-round-4.md, repo-follow-ups.md, repo-view-package-split.md, agent-root-browser-safe.md, dev-stack-hygiene.md, app-wiring.md, sign-in.md, one-sqlite-one-leader.md, ../decisions/0006-repo-clone-and-view.md, code-storage-spend-caps.md, platform-cloudflare-edge-cache.md, integrations-browser-safe-root.md, ../proposals/mvp-gaps.md, ../../../../docs/libraries.md, repo-open-states.md, deep-import-migration.md, durable-answering.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, cloudflare-flow-host.md, code-reviews.md, gitremote-unicode-branches.md, web-standard-globals-rule.md, integrations-effect-httpclient.md, flows-root-platform-neutral.md, local-first.md, navigate-flow.md, agent-repo-navigation.md, fable-review-2-fixes.md, repo-view-branches-raw-clone.md]
+links: [review-round-4.md, repo-follow-ups.md, repo-view-package-split.md, agent-root-browser-safe.md, dev-stack-hygiene.md, app-wiring.md, sign-in.md, one-sqlite-one-leader.md, ../decisions/0006-repo-clone-and-view.md, code-storage-spend-caps.md, platform-cloudflare-edge-cache.md, integrations-browser-safe-root.md, ../proposals/mvp-gaps.md, ../../../../docs/libraries.md, repo-open-states.md, deep-import-migration.md, durable-answering.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, cloudflare-flow-host.md, code-reviews.md, gitremote-unicode-branches.md, web-standard-globals-rule.md, integrations-effect-httpclient.md, flows-root-platform-neutral.md, local-first.md, navigate-flow.md, agent-repo-navigation.md, fable-review-2-fixes.md, repo-view-branches-raw-clone.md, ../rulings.md, chaptered-review-videos.md]
 ---
+
+## Current specification — 2026-10-20, 18:26 PDT
+
+**What:** Clone repositories and present a useful, full repository browse page.
+
+**Why:** Will approved clone but requested a major browse-page overhaul.
+
+**Current state:** Clone-by-agent passed at 17:28 and Will approved clone at 18:16. At 18:16–18:17 the lead assigned browse redesign, Markdown permissions and HTML preview; earlier agent-clone failure is superseded. The broader viewer remains in progress.
+
+**Next step:** Deliver the overhaul in repo-view-branches-raw-clone.md, retain approved clone regressions and return a new passing walkthrough.
+
+**Open questions for Will:** None.
+
+Evidence: latest two session hours extracted by script as human text/lead replies; queue answers through 2026-10-21 01:24:15 UTC, current rulings, shared briefs/designs, decisions, proposals, TODOs and rules. Latest rulings override historical proposals. Product results are reported receipts; this pass verifies the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 16:04 PDT
+
+**What:** Clone repositories and browse their trees and files, including through the agent.
+
+**Why:** Repository operations must work through the same flows used by people and agents.
+
+**Current state:** Repository browser tests passed 3/3 at 15:44, including repaired copy permalink; the code-viewer package is done. At 16:02 the lead nevertheless reported clone-by-the-agent failing, with ownership sent to the cleanup pass. Earlier clone recordings do not establish this path works.
+
+**Next step:** Assign the agent-clone regression explicitly to the cleanup pass, fix it and retain a passing real browser test and recording.
+
+**Open questions for Will:** None before the assigned fix.
+
+Evidence: user-typed messages and lead text replies extracted with a script from session 6253ecf2 for the latest two hours through 23:03:42 UTC; rulings, queue answers, shared briefs/designs and current decisions, proposals, TODOs and rules. Reported receipts only; this tracker ran no product tests. Later rulings supersede older proposals.
+
+## Prior tracker record (retained)
+
+
+## Current specification — 2026-10-20, 15:44 PDT
+
+**What:** Clone repositories and display their trees and files safely.
+
+**Why:** Repository pages and review evidence must reflect working behavior.
+
+**Current state:** The stack recovered at 15:17:27. At 15:40:17 the lead reported browse, clone and refusal walkthroughs as videos in the queue. The earlier blank-recording replacement wait is superseded. The text update supplies no fresh explicit full test-suite or landing receipt, so this note remains in progress.
+
+**Next step:** Collect the clone/view behavioral test and landing receipts and Will’s review of the replacement videos.
+
+**Open questions for Will:** Feedback on the revised walkthroughs.
+
+Evidence: user-typed text and lead replies extracted from session 6253ecf2’s latest two hours through 22:43:59 UTC; current rulings, queue answers, shared briefs/designs, decisions, proposals, TODOs and rules. These are reported receipts; this tracker ran no product tests. Later rulings supersede older briefs.
+
+## Earlier tracker history
+
+
+## Current specification — 2026-10-20, 15:24 PDT
+
+**What:** Clone repositories and display their trees and files safely.
+
+**Why:** Repository pages must work for the app being reviewed.
+
+**Current state:** At 15:17:27 the lead reported the local stack healthy and repository pages loading, clearing the missing-credentials/restart blocker. Home recordings followed at 15:22:54. A new clone-journey test/recording receipt is still missing.
+
+**Next step:** Rerun the real clone/view journey and replace the blank clone recording; retain existing implementation receipts.
+
+**Open questions for Will:** None.
+
+Evidence: Will’s typed messages and lead text replies, extracted from session `6253ecf2` for its latest two hours through 15:23:55 PDT; [rulings](../rulings.md), queue answers through 14:36 PDT, shared briefs/designs and current decisions, proposals, TODOs and rules. Receipts above are reported, not fresh product tests run by this tracker.
+
+## Earlier tracker history
+
+
+## Current specification — 2026-10-20, 14:55 PDT
+
+**What:** Clone and display repositories with safe file viewing.
+
+**Why:** Repository navigation must work in the app Will is reviewing.
+
+**Current state:** Earlier implementation/test receipts remain below. At 14:39 the lead says every repository page failed because Code Storage credentials were omitted; at 14:53 the recovery restart is still queued. The clone GIF was also reported blank.
+
+**Next step:** Restart with credentials, rerun the repo browser journey and replace the broken recording.
+
+**Open questions for Will:** None; the lead can settle implementation details.
+
+Evidence: Will's typed messages and the lead's text updates in session `6253ecf2`, 12:54–14:55 PDT; [rulings](../rulings.md); queue answers through 14:36 PDT. These are reported receipts, not a new verification run by the tracker.
+
+## Earlier tracker history
+
+Previous owner record: none; review round 4's R4-23 fixed by the SDK batch 2 agent, reported 12:52:09 on 2026-10-20. Until 12:52: the wiring agent, reported done 05:54:14 on 2026-10-20: execution ids are a UUID per clone attempt (migration `0009`), with regression tests, and all 3 `e2e/repo.spec.ts` cases pass in the final fresh-state run; the lead pointed Will at `/octocat/Spoon-Knife` at 05:54. Leftovers are [repo follow-ups](repo-follow-ups.md) and Will's [repo-view package split](repo-view-package-split.md) answer. Until 05:54: the wiring agent, from about 04:56 on 2026-10-20 fixing the clone `StartConflict` as a product bug under the lead's ruling (a generated UUID per clone attempt, proven by a regression test after a reset); the fix and three regression tests on disk by 05:09, the unit suite green at 05:13:29, no `e2e/repo.spec.ts` run with the fix yet, unreported (at 05:04: migration `0009_clone_ids` and `worker/Repos.ts` only, no test). Until 04:56: the wiring agent; its 04:55 run (`wiring/e2e-5`) has all 3 `e2e/repo.spec.ts` cases green after it wiped the dev Durable Object state, unreported. From 04:43 on 2026-10-20, the wiring agent, whose fresh-database run has all 3 `e2e/repo.spec.ts` cases red (unreported). Until 04:43: R3 to R5 agent (started about 01:00, reported done by 02:35 on 2026-10-20); the router and boot wiring went to the wiring agent's sub-agent C1 (by 02:35); leftovers are [repo follow-ups](repo-follow-ups.md); the lead wires the deploy secret; the feature 2 agent finished R1 and R2. Until 02:35: "R3 to R5 agent (started about 01:00 on 2026-10-20; R3 and R4 code, the live clone test, the e2e spec and `docs/features/repo.md` on disk by 02:01; repo files at 100% coverage by 02:27; in final checks at 02:33, routes not wired, unreported)"
+
 
 ## What
 

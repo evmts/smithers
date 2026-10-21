@@ -2,10 +2,94 @@
 title: Customizable issue triage (proposed, accepted, not accepted)
 status: in-progress
 area: app
-owner: triage builder; worker, `@smthrs/ui` `TriageControl` and `@smthrs/integrations` files on disk to 13:14:38 on 2026-10-20; no e2e and unreported by 13:17. Until 13:05: triage builder; migration `0018_triage` (13:04:05), `db/Database.ts` (13:04:07) and `src/features/issues/contract.ts` (13:04:51) on disk on 2026-10-20; unreported by 13:06. Until 13:04: triage builder, started by the lead about 12:54 on 2026-10-20 on 0012 §5 (Accepted / Not accepted, decided by a flow or an agent); no triage file on disk and unreported by 12:59. Until 12:54: unassigned; designed in decision 0012 §5 (Panel G reported 07:40:55 on 2026-10-20); not in slice G0. Until 07:40: Panel G; decision 0012 written 06:58:11 on 2026-10-20 (status: proposed), §5 Triage; no builder yet. Until 06:58: Panel G (Opus merges into decision 0012; started 06:41:56 on 2026-10-20). Sol's design done 06:46; Opus's independent design written 06:53
+owner: triage builder; lead coordinates deployment and spend follow-up
 updated: 2026-10-20
 links: [issues.md, ../decisions/0012-git-end-to-end.md, pull-request-list-and-tabs.md, github-source-of-truth.md, roles-and-labels.md, agent-jev.md, model-endpoint.md, notifications-and-live-work.md, decisions-for-will.md, old-app-feature-gaps.md, ../decisions/0007-roles-and-tags.md, ../decisions/0009-notifications-and-live-work.md, ../proposals/mvp-gaps.md, docs-check-flow-outcome.md, no-github-actions.md, pr-review-and-merge.md]
 ---
+
+## Current specification — 2026-10-20, 18:26 PDT
+
+**What:** Run configurable durable issue triage using GitHub identity and human authority.
+
+**Why:** Live triage needs browser proof under the test account’s real permissions.
+
+**Current state:** Live GitHub triage previously passed. At 18:21 Will said another agent is granting codeplanesmithers Maintain; the lead plans the browser test during rerecording. Permission completion has not been verified.
+
+**Next step:** Check the actual Maintain grant, then run and record real triage browser coverage; finish webhook/guidelines verification after deployment.
+
+**Open questions for Will:** None now; the permission task is already assigned, not awaiting a new yes.
+
+Evidence: latest two session hours extracted by script as human text/lead replies; queue answers through 2026-10-21 01:24:15 UTC, current rulings, shared briefs/designs, decisions, proposals, TODOs and rules. Latest rulings override historical proposals. Product results are reported receipts; this pass verifies the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 16:35 PDT
+
+**What:** Run configurable issue triage through durable flows with human authority and GitHub labels/comments.
+
+**Why:** People retain final authority over triage decisions.
+
+**Current state:** At 16:29 the lead reported live GitHub triage passing, with the App’s own identity on writes. The triage browser test still needs codeplanesmithers to have Maintain on the scratch repository. The earlier live label/comment and judge receipts remain valid; a deployed webhook is not yet evidenced.
+
+**Next step:** After the test-account permission is granted, run and record the triage browser test; finish webhook and repository-guidelines verification.
+
+**Open questions for Will:** Grant codeplanesmithers Maintain on roninjin10/smithers-github-tests? The question is queued; no grant is inferred.
+
+Evidence: lead text replies extracted by script from the session’s latest two hours through 23:34:16 UTC; current rulings and queue answers take precedence over older designs. Reported product-test receipts only; this tracker ran no product tests.
+
+## Prior tracker record (retained)
+
+
+## Current specification — 2026-10-20, 15:54 PDT
+
+**What:** Triage issues through durable flows with GitHub as the truth.
+
+**Why:** Give Members explicit issue actions while limiting triage enable/pause and authority to Maintainers.
+
+**Current state:** At 15:30 PDT the lead reported real GitHub e2e: spam labelled smithers:not-accepted with one fixed-reason comment, issue left open; the real judge accepted a clear bug in 3/4 runs and abstained once. UI and slash-command actions work; Maintainer authority is rechecked before writes. Live webhook and repository triage.md reads remain unproven.
+
+**Next step:** Prove the deployed webhook and repository instructions read, and fix alerts for triage-only spend through the existing durable spend flow. Keep triage migration behind plugin design review.
+
+**Open questions for Will:** None now. Five fixed rejection reasons and server execution are lead choices, not new rulings.
+
+Evidence: lead text replies extracted from the latest two hours of session 6253ecf2; current rulings and queue answers take precedence over older briefs. No product tests rerun by this tracker.
+
+## Prior tracker record (retained)
+
+
+## Current specification — 2026-10-20, 15:35 PDT
+
+**What:** Configurable durable issue triage with human overrides and GitHub labels/comments.
+
+**Why:** GitHub remains truth; people retain the final decision.
+
+**Current state:** At 15:30 PDT the lead reported real GitHub proof on roninjin10/smithers-github-tests: spam received smithers:not-accepted and one comment while remaining open; the judge accepted a clear bug in three runs and abstained once. Maintainer authority is checked before each write. This supersedes the missing label-write receipt. The webhook and .smithers/triage.md read still lack live proof. Triage spend alerts need a queued fix; plugin migration waits for design review.
+
+**Next step:** Connect triage spend to alerts, verify webhook delivery after deployment and repository guidelines with Contents permission, and collect landing/review receipts.
+
+**Open questions for Will:** None required now. Fixed rejection reasons and server-side reruns are lead decisions Will may override.
+
+Evidence: last two hours of user-typed messages and lead text replies extracted from session `6253ecf2` through 15:34 PDT; queue answers through 14:36 PDT; current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Completion receipts are reported evidence; this tracker ran no product tests. Older briefs yield to later rulings.
+
+## Earlier tracker history
+
+## Current specification — 2026-10-20, 15:14 PDT
+
+**What:** Configurable durable issue triage, with human overrides and GitHub label/comment writes.
+
+**Why:** Members need a reviewable decision path without replacing GitHub as truth.
+
+**Current state:** The 15:12 PDT lead update places an issues access/triage video in the queue. It is unchaptered and supplies no explicit completed live label-write or full triage suite receipt. The GitHub App setup is complete; retain in-progress pending behavioral evidence.
+
+**Next step:** Collect live label-write, authorization, override and failure receipts; chapter the walkthrough. PR work can advance once its shared-path dependency is actually complete.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies through 2026-10-20 22:13:56 UTC (15:13:56 PDT), extracted from session `6253ecf2`; [rulings](../rulings.md), queue answers through 21:36 UTC, decisions, proposals, todo and rules. Reported receipts are not fresh test execution by this tracker.
+
+## Earlier tracker history
+
 
 ## What
 
@@ -74,10 +158,15 @@ Prior art: `.smithers/flows/issue-triage/flow.mdx` and `.smithers/flows/triage-p
   - No triage e2e in `e2e/` and no report by 13:17. Status stays `in-progress`.
 - 13:21:12 on 2026-10-20: the lead holds the [PR list](pull-request-list-and-tabs.md), [review and merge](pr-review-and-merge.md) and branch update and resync until this builder finishes, since they use the same GitHub write path and list view.
 - 13:23:25: a docs agent removes GitHub checks from 0012 under Will's 13:21:27 ruling ([no GitHub Actions](no-github-actions.md)) and leaves 0012 §5, which this builder edits, alone.
+- 14:08:55 on 2026-10-20: the GitHub App's Label event and Issues write are on, so live label writes can run ([issues](issues.md)); the live test agent (from 14:12:55) runs the triage tests against `roninjin10/smithers-github-tests`.
+- 14:15 to 14:17 on 2026-10-20: the session usage limit stopped this agent with 12 others; the lead resumed all 13 at 14:19.
+- 14:26: the shared dev database got `0018_triage` with migrations 0019 to 0024 ([dev stack hygiene](dev-stack-hygiene.md)). No triage e2e or report by 14:30.
 
 ## Next
 
-From 12:54 on 2026-10-20: the triage builder's report, each behavior with a test that fails first: `triage/Enable` and `triage/Pause` (Maintainer); `triage/Decide`, one `Classifier` call on the `judge` role that abstains on failure; the non-overridable `issue/ApplyTriage` writing one label and one comment as the App; `issue/Triage` overrides by a Member or above, final until `triage/Run`; an e2e with its GIF. Live label writes on GitHub wait on the same GitHub App setup as [issues](issues.md).
+From 14:30 on 2026-10-20: as below, plus the live label write against the scratch repository. The [PR list](pull-request-list-and-tabs.md), [review and merge](pr-review-and-merge.md) and branch resync start when this finishes.
+
+Until 14:30 on 2026-10-20 the next step was, from 12:54 on 2026-10-20: the triage builder's report, each behavior with a test that fails first: `triage/Enable` and `triage/Pause` (Maintainer); `triage/Decide`, one `Classifier` call on the `judge` role that abstains on failure; the non-overridable `issue/ApplyTriage` writing one label and one comment as the App; `issue/Triage` overrides by a Member or above, final until `triage/Run`; an e2e with its GIF. Live label writes on GitHub wait on the same GitHub App setup as [issues](issues.md).
 
 Until 12:54 on 2026-10-20 the next step was, from 07:40 on 2026-10-20: slice G0 ([issues](issues.md)) is building; triage (W7) follows it. No triage builder yet.
 
@@ -86,6 +175,10 @@ Until 07:40 on 2026-10-20 the next step was, from 06:58 on 2026-10-20: triage bu
 Until 06:58 the next step was: Opus merges both designs into 0012 (status: proposed), picking the label names and whether a rejection closes the issue. Triage builds after Panel G's walking skeleton (issues through webhooks and the outbox) lands.
 
 ## Questions for Will
+
+None. Live label writes were unblocked by the GitHub App visit (14:08:55 on 2026-10-20).
+
+Until 14:30:
 
 - None new. Live label writes need Will's GitHub App setup ([issues](issues.md), asked 12:54:04 on 2026-10-20).
 

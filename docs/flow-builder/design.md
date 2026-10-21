@@ -1,5 +1,7 @@
 # Flow Builder & Monitor — Design
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (FLOW-4; decision 0014). Kept as prior art.
+
 Stage: **a mock exists; the one-line product sentence is still unruled.**
 
 Open it: `open docs/flow-builder/mockups/flow-builder.html`

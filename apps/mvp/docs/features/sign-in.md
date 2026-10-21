@@ -133,7 +133,7 @@ Migration `0005_sign_in`. None of these tables is synced to browsers.
 
 ChatApi and the `FlowExecution` Durable Object read them with Effect `Config`. Set the App's two in the deploying environment; Alchemy binds them to the Worker as secrets ([infrastructure.md](../infrastructure.md#credentials)).
 
-**Callback URLs.** The GitHub App must list `<origin>/api/auth/callback` for every origin people sign in from: `http://localhost:1337/api/auth/callback` for `pnpm dev`, and the deployed site's `url` plus `/api/auth/callback`. GitHub refuses any other redirect URI (`redirect_uri_mismatch`, logged as `exchange_misconfigured`).
+**Callback URLs.** The GitHub App must list `<origin>/api/auth/callback` for every origin people sign in from: `http://localhost:1337/api/auth/callback` for `pnpm dev`, and the deployed site's `url` plus `/api/auth/callback`. GitHub refuses any other redirect URI (`redirect_uri_mismatch`, logged as `exchange_misconfigured`). On a loopback host GitHub ignores the port: with only `http://localhost:1337/api/auth/callback` listed, it takes `http://localhost:1338/api/auth/callback` and `http://127.0.0.1:1338/api/auth/callback`, and refuses `http://localhost:1337/other` (checked 2026-10-20). So a second `alchemy dev`, which takes the next free port, signs in for real too.
 
 ## Local development
 
@@ -186,3 +186,15 @@ Run with the compose Postgres up (`pnpm db:up`). GitHub is the second scripted s
 | `src/features/auth/auth.test.ts` | the tab on a Node device: signed out, signed in through GitHub, signing out, sign-in off, ChatApi unreachable, refused or silent; `composerAccess` for every status and role; a Member reloading offline or before ChatApi answers still asking; a Guest or no role seeing the line; ChatApi saying signed out forgetting the confirmed session; a sign-out ChatApi takes leaving no stored rows and an empty outbox, a failed one leaving both; a wipe the host couldn't do counted; no login in its log lines |
 
 The browser half of signing in, pressing Approve on GitHub, belongs to the end-to-end suite with the `codeplanesmithers` test account (decision 0008, E2).
+
+### Verified live (2026-10-20)
+
+Against the Smithers GitHub App Will set up (`smitherspreviewrelease`), on a second `alchemy dev` (stage `live_williamcory`, port 1338, its own database and Electric, `GITHUB_REPOSITORY=roninjin10/smithers-github-tests`), so the shared :1337 kept its local developer:
+
+| What | Result |
+|---|---|
+| `worker/GitHubAuth.live.test.ts`, every case | 3 of 3 pass on `smithersai/smithers` and on `roninjin10/smithers-github-tests`: the App's client is known, `http://localhost:1337/api/auth/callback` is a callback, and a real `ghu_` token reads its person and role |
+| A real sign-in in a browser | `codeplanesmithers`, from a saved browser profile, pressed "Sign in with GitHub": GitHub returned to `/app` signed in, `GET /api/auth/session` said `{ signedIn: true, login: "codeplanesmithers", role: "guest" }` (read on a public repository), and the session cookie was `smithers_session`, HttpOnly, SameSite=Lax. GIF: `~/Desktop/smithers-mvp/gifs/sign-in-github-live.gif` |
+| Signing that session out | `POST /api/auth/sign-out` answered `204`; `auth/RevokeGitHubToken` revoked the token on GitHub (`auth.revoke_token` `revoked`) and forgot both tokens; the cookie then reads signed out |
+
+A driver outside the suite does the browser half, since GitHub's own pages are not the app's to test; it hands the session cookie to `e2e/issues.spec.ts` as `E2E_SESSION_COOKIE`.

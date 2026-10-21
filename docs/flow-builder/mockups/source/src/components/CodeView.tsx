@@ -2,7 +2,7 @@ import { useMemo, useRef } from "react"
 
 /**
  * A small TypeScript highlighter. The product renders code through
- * `CodeFileView` (Shiki) in `@smthrs/ui/adapters/code-view`; the mock only needs
+ * `CodeFileView` (Shiki) in `@smthrs/repo-view`; the mock only needs
  * to look like it, in one file, with no grammar to ship.
  */
 

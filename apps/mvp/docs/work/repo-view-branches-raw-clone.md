@@ -1,11 +1,44 @@
 ---
 title: Repo view extras (branch picker, branch count, raw, copy file, clone menu)
-status: done
+status: in-progress
 area: app
 owner: none; reported done 10:52:10 on 2026-10-20 by the repo view extras agent, uncommitted (lands with the next landing round). Queued cleanup with the review round 4 fixes: one `src/flows` helper for the "ask the tab that asked" channel that `app/navigate` and `repo/copy` each implement. Until 10:52: repo view extras agent, resumed by the lead at 10:42 on 2026-10-20 from where it stopped (the Claude usage limit stopped it from about 08:15 to 10:40); unreported by 10:44. Until 10:42: repo view extras agent (started 06:42:16 on 2026-10-20); from 07:06 to 07:07 also `/clone`, a local `repo/clone` flow over the checked `POST /api/repos`. By 07:20 on disk: `repo/refs`, `repo/clone`, `repo/copy`, raw and refs routes, `@smthrs/ui` `RefPicker` and `CopyButton`; no e2e change, GIF or report. Until 07:06: repo view extras agent, started 06:42:16 on 2026-10-20 by the lead; owns `src/features/repo/**`, `src/screens/repo/**` and `worker/Repo*.ts`; unreported. Until 06:42: unassigned
 updated: 2026-10-20
 links: [review-round-4.md, old-app-feature-gaps.md, repo-clone-and-view.md, repo-open-states.md, repo-view-package-split.md, navigate-flow.md, pull-request-list-and-tabs.md, sandboxes.md, command-palette.md, land-to-main.md, e2e-suite-and-gifs.md, ../decisions/0006-repo-clone-and-view.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../features/repo.md, slash-commands.md, fable-review-2-fixes.md, flows-and-agent.md, agent-jev.md]
 ---
+
+## Current specification — 2026-10-20, 18:26 PDT
+
+**What:** Fill the repository page with tree, README, about panel, topics, languages, latest release, contributors, branch/tag counts, last commit and Code.
+
+**Why:** Will rejected empty first visits and weak file experiences at 18:16.
+
+**Current state:** The lead assigned a browse builder at 18:16. Before cloning, show available GitHub metadata. Clone progress uses durable notifications/toasts: requested, fetching, indexing, ready or failed with Retry. No completion receipt.
+
+**Next step:** Implement reclaimability notice until App install, with Install; reclaim only through a flow. Show Markdown WYSIWYG when writing is permitted and read-only otherwise, with raw text one key away. Add sandboxed HTML code/preview/split. Enforce permissions and save through the existing branch flow. Coordinate LSP and hover preload with their owners; prove real browser journeys.
+
+**Open questions for Will:** None; Will settled Markdown editability at 18:17.
+
+Evidence: latest two session hours extracted by script as human text/lead replies; queue answers through 2026-10-21 01:24:15 UTC, current rulings, shared briefs/designs, decisions, proposals, TODOs and rules. Latest rulings override historical proposals. Product results are reported receipts; this pass verifies the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 18:18 PDT
+
+**What:** Polish the repository browser, initial page, clone progress and file viewing.
+
+**Why:** Will reopened this slice at 18:16: empty layout, repeated spinners and weak file experiences.
+
+**Current state:** The latest queue answer asks for workflow notifications during clone, hover preloading, a reclaimability notice until the Smithers App is installed, WYSIWYG Markdown, optional CodePen-like HTML preview and full LSP code support. No implementation or lead assignment receipt for this newest answer.
+
+**Next step:** Triage the request into the owning SDK/plugin workstreams; fill the initial layout, replace clone spinners with durable progress toasts, and verify each requested file experience with real browser tests.
+
+**Open questions for Will:** None; the recorded requests settle product intent.
+
+Evidence: script-filtered user text and lead replies from the latest two session hours; queue answers through 2026-10-21 01:16:08 UTC; current rulings, decisions, proposals, TODOs, rules and shared panel briefs/designs. Later rulings override historical proposals. Product receipts are reported evidence; this pass validates the site build only.
+
+## Earlier tracker history (retained)
 
 ## What
 

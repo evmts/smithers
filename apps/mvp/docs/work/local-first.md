@@ -2,10 +2,44 @@
 title: Local-first device store and outbox
 status: in-progress
 area: app
-owner: the client Fable fix agent (P1-1, P2-3, P3-2), on disk by 07:20 on 2026-10-20 and unreported; the worker agent's P2-1 added the synced-columns rule at 07:01:52. Until 07:01: the client Fable fix agent, from 06:09:02 on 2026-10-20: P1-1 (the outbox lets an ask go before the engine records its start), P2-3 (a non-leading tab's ask shows Not sent) and P3-2 (the sign-out wipe races other tabs), tracked in `fable-review-2-fixes`; the lead still owes a call on the "Electric down at boot" flake. Until 06:09: the lead, from 05:54 on 2026-10-20, with no builder named: a call on the "Electric down at boot" flake (about 1 run in 8; render only stored rows upstream, or change the test), and causes for the 5 reds seen only on the accumulated database. The wiring agent reported its part done at 05:54:14, with every local-first case green on fresh state except "late joiner", skipped. Until 05:54: the wiring agent, from about 05:38 on 2026-10-20: the final e2e rerun on a fresh database and fresh Durable Object state (scratchpad `wiring/e2e-fresh.log`, from 05:40:43), with a named cause for any local-first case still red; the lead's best guess for the final run's 5 local-first reds is its own instruction to keep 2 stuck answers in the dev database, which block later answers because answers run in turn. Before: the wiring agent's sub-agent D1, on the 3 local-first reds (two tabs, Retry, Electric down at boot) since 03:23 on 2026-10-20, unreported at 03:46, 04:04 and 04:15. Before: L1 agent (started 23:01 on 2026-10-19; reported done 00:44 on 2026-10-20: 0002's plan steps 1, 2, 4 and 5, and the PWA); left: the wiring agent (since about 01:17 on 2026-10-20) wires L1's `Host` and derives the relay allowlist; `subset:` in `worker/Chat.ts`, 0002 §8 step 3 (the turn wait) and the §7 benchmarks have no named owner (by 01:52 on 2026-10-20 `subset:` is gone upstream, and the turn wait exists as F4+F5's `chat/LoadTurn`; the §7 benchmarks still have no owner)
+owner: client and sync repair builders
 updated: 2026-10-20
 links: [review-round-4.md, app-wiring.md, ../decisions/0002-local-first.md, ../decisions/0002-local-first-comparison.md, ../todo.md, effect-tanstack-db-and-effect-electric.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, pwa.md, durable-browser-engine.md, lru-size-limit.md, model-endpoint.md, land-and-deploy-mvp.md, one-sqlite-one-leader.md, flows-and-agent.md, durable-answering.md, ../decisions/0001-electric-postgres-tanstack-db.md, ../../../../docs/libraries.md, agent-root-browser-safe.md, repo-clone-and-view.md, plan-identity-across-deploys.md, fable-review-2-fixes.md, agent-status.md]
 ---
+
+## Current specification — 2026-10-20, 18:26 PDT
+
+**What:** Keep durable device state and outbox writes consistent across devices, offline use, crashes and conflicts.
+
+**Why:** Will requested coverage of every conflict type, with clearer multi-device walkthroughs at 18:22.
+
+**Current state:** Earlier repair receipts remain below; crash/recovery walkthrough approved at 18:22. The lead assigned a conflict inventory and two-device tests at 18:23. Offline and tabs/devices recordings were returned for clarity and coverage; no full conflict-matrix receipt.
+
+**Next step:** Complete local-first-conflict-coverage.md; replace old offline footage with full-size chaptered video. Keep unhandled cases visible as committed broken tests.
+
+**Open questions for Will:** None until an actual unsupported conflict requires a product decision.
+
+Evidence: latest two session hours extracted by script as human text/lead replies; queue answers through 2026-10-21 01:24:15 UTC, current rulings, shared briefs/designs, decisions, proposals, TODOs and rules. Latest rulings override historical proposals. Product results are reported receipts; this pass verifies the maintainer-site build only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 15:24 PDT
+
+**What:** Keep durable device data and outbox writes consistent through reload, interruption and recovery.
+
+**Why:** Local-first durability is the app’s foundation (0002).
+
+**Current state:** At 15:20:31 the lead reported the cut-response sync repair passing twenty fault points with exactly-once rows and device/Postgres agreement. One rare upstream-dependent case remains open. Stack recovery at 15:17 clears the local test-environment blocker; other recovery/outbox work is retained below.
+
+**Next step:** Record the remaining sync limitation and finish outstanding recovery/outbox checks; preserve the fault regressions.
+
+**Open questions for Will:** None.
+
+Evidence: Will’s typed messages and lead text replies, extracted from session `6253ecf2` for its latest two hours through 15:23:55 PDT; [rulings](../rulings.md), queue answers through 14:36 PDT, shared briefs/designs and current decisions, proposals, TODOs and rules. Receipts above are reported, not fresh product tests run by this tracker.
+
+## Earlier tracker history
+
 
 ## What
 

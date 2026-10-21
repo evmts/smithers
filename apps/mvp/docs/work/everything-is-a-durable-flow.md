@@ -4,7 +4,7 @@ status: done
 area: process
 owner: lead (smithers-b3), SDK cleanup agent
 updated: 2026-10-20
-links: [integrations-durable-retries.md, issue-sync-ingest-retry-loop.md, ../../../../AGENTS.md, ../../../../docs/libraries.md, ../rules.md, model-step.md, durable-answering.md, route-ban-any-receiver.md, ../decisions/0011-the-agent-runs-in-the-browser.md, durable-browser-engine.md, model-endpoint.md, cloudflare-flow-host.md, flows-and-agent.md, app-wiring.md, sign-in.md, code-reviews.md, agent-root-browser-safe.md]
+links: [integrations-durable-retries.md, issue-sync-ingest-retry-loop.md, ../../../../AGENTS.md, ../../../../docs/libraries.md, ../rules.md, model-step.md, durable-answering.md, route-ban-any-receiver.md, ../decisions/0011-the-agent-runs-in-the-browser.md, durable-browser-engine.md, model-endpoint.md, cloudflare-flow-host.md, flows-and-agent.md, app-wiring.md, sign-in.md, code-reviews.md, agent-root-browser-safe.md, prompt-flows-are-code-flows.md]
 ---
 
 ## What
@@ -38,6 +38,7 @@ Will: "This is important our entire application will be built on top of durable 
 - By 01:19: the fix for Codex Astra review 3's finding 4 serializes token redemption through the flow layer, instead of a compare-and-swap after GitHub answers ([sign-in](sign-in.md)).
 
 - 01:44 to 01:59 on 2026-10-20, on disk, unreported: **the app's breach is deleted in the working tree.** `worker/ChatApi.ts` and `worker/Chat.ts` (01:53) have no `waitUntil`, cron or sweep, and migration 0008 drops `attempts` ([durable answering](durable-answering.md)). New work follows the rule: `auth/RevokeGitHubToken` and `auth/KeepRole` are durable flows with engine retry policies ([sign-in](sign-in.md)). Not yet reported, and the app doesn't yet open in a real browser ([app wiring](app-wiring.md), [agent root in the browser](agent-root-browser-safe.md)).
+- **14:26:24 on 2026-10-20, Will (queue):** "No everything is a flow this ruling is clear prompt flows are just a type of code flow". A personal flow drafted from a prompt becomes `Flow.make` source like any other flow ([prompt flows are code flows](prompt-flows-are-code-flows.md)).
 
 ## Next
 

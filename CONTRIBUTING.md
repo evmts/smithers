@@ -1,22 +1,15 @@
 # Contributing
 
-Track actionable work in a GitHub issue. Smithers' own coding factory runs on
-the stack of the self-hosted install on Will's Mac mini, not on Smithers Cloud
-([M-31](.specs/product/mvp.md)). Its target loop:
+Read [AGENTS.md](AGENTS.md) and [the rulings](apps/mvp/docs/rulings.md) first:
+the rulings are the source of truth for what we build, and the app being built
+is [`apps/mvp`](apps/mvp/AGENTS.md). Track actionable work in a GitHub issue
+(whether the maintainer app replaces issues is an open question for Will,
+rulings §18).
 
-```text
-GitHub issue -> mythical stack item -> TODO run on the install -> checks/review
-  -> GitHub PR -> owner merge -> append-only main -> wiki refresh + issue receipt
-```
-
-This is the operating target, not a claim that the loop is qualified: fix
-blockers to it before adding features, and record each one in an issue. Local
-agent work outside the stack is bootstrap or repair. The stack service alone
-writes the repository's linear `mythical` stack. This repository sends work
-upstream through a GitHub PR the owner merges, with one commit per item on
-append-only `main`. Never rewrite `main` or push `mythical` by hand. Close
-issues and refresh documentation from real completion evidence. See
-[Cloud development](docs/cloud-workspace.md).
+Development and maintenance of this repository commit and push directly to
+append-only `main` with jj; open no pull requests for it, and never rewrite
+`main`. There is no `mythical` stack now; it comes later (rulings TODO-2). Close
+issues and refresh documentation from real completion evidence.
 
 The factory's repository configuration lives in `.smithers/`: `FACTORY.ts` and
 its projections, `coding-project.json` (the wiki page catalog and coding host
@@ -350,22 +343,21 @@ To move `packages/<child>` under `packages/<parent>`:
 ## Landing changes
 
 Prepare one logical change with its issue, reviewed diff, and validation receipts.
-The stack service owns its `mythical` item and upstream PR; the owner merges that
-PR onto append-only `main`. Preserve unrelated edits in a shared checkout.
+Commit it with jj and push it directly to append-only `main` (AGENTS.md, "Commit
+and push to `main` with jj"). Preserve unrelated edits in a shared checkout.
 
 The legacy `pnpm commit` / `//:commit` helper still snapshots every nonignored
-edit and can push directly to `main`. It does not implement the current stack
-policy and is not the landing path for this repository. For authorized bootstrap use,
+edit and can push directly to `main`. It is a bootstrap path for when `smthrs`
+on `main` is broken, not the ordinary landing path. For that use,
 pass `pnpm commit --push --test "<command>"` (repeat `--test` for each gate).
 The helper runs tests with pipefail before any VCS mutation and records
 `Landing-Tests` in the commit. An explicit `--no-test "<reason>"` exception
 records its reason instead. Require exit zero and `LANDED <sha>`: that receipt
 requires a post-push fetch and ancestry verification against remote main.
 
-Deployment is a separate Cloud operation against the landed revision. Retain
-the deployment receipt and compare `/__build.json` with that revision before
-claiming production is current. Follow the scoped app/server instructions for
-bootstrap or repair operations.
+Deployment is a separate operation against the landed revision: `apps/mvp`
+deploys with Alchemy (`pnpm deploy`, [infrastructure](apps/mvp/docs/infrastructure.md)).
+Retain the deployment receipt before claiming production is current.
 
 ## Working with the pinned jj fork
 

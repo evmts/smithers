@@ -1,11 +1,11 @@
 # 0013: The branch workspace: one conversation per branch, a terminal in a frame, and sharing
 
-Status: proposed (design panel B: Opus as lead and merger, and Sol; 2026-10-20). It covers three of Will's 2026-10-20 asks:
+Status: proposed (design panel B: Opus as lead and merger, and Sol; 2026-10-20). Its one question is settled: sharing follows Google Docs and Figma (decisions 8, 9 and 12; Will at 13:31:14 and the lead at 13:32:34 on 2026-10-20). It covers three of Will's 2026-10-20 asks:
 - "One conversation per branch is important";
 - "ability to open terminal in an iframe is important";
 - "google docs style sharing where we can create a branch share with others to read and write to that branch in multiplayer experience".
 
-It builds on [0002](0002-local-first.md) (the device store and the outbox), [0004](0004-agent-ui-codemode-and-rendering.md) (views and the sandboxed frame), [0005](0005-sandboxes-secrets-and-the-forge.md) (branch sandboxes, Yjs files), [0007](0007-roles-and-tags.md) (roles and branch modes), [0008](0008-auth.md) (actors), [0009](0009-notifications-and-live-work.md) (watches) and [0011](0011-the-agent-runs-in-the-browser.md) (the agent in the browser). Creating, pushing and resyncing branches belongs to 0012 (the git loop, panel G); this record builds the workspace on the branch that 0012 creates. Opus and Sol designed independently; the [appendix](#appendix-opus-sol-and-final-compared) compares them. Will's one question is at the end.
+It builds on [0002](0002-local-first.md) (the device store and the outbox), [0004](0004-agent-ui-codemode-and-rendering.md) (views and the sandboxed frame), [0005](0005-sandboxes-secrets-and-the-forge.md) (branch sandboxes, Yjs files), [0007](0007-roles-and-tags.md) (roles and branch modes), [0008](0008-auth.md) (actors), [0009](0009-notifications-and-live-work.md) (watches) and [0011](0011-the-agent-runs-in-the-browser.md) (the agent in the browser). Creating, pushing and resyncing branches belongs to 0012 (the git loop, panel G); this record builds the workspace on the branch that 0012 creates. Opus and Sol designed independently; the [appendix](#appendix-opus-sol-and-final-compared) compares them. Its one question for Will is settled ([Questions for Will](#questions-for-will)).
 
 ## Decision
 
@@ -23,19 +23,24 @@ It builds on [0002](0002-local-first.md) (the device store and the outbox), [000
    - **Ruled out:** ttyd, a second domain, and a ticket in a URL.
 5. **One terminal per person per branch.** Each terminal is a tmux session in the branch's container. Each socket attaches with `exec(argv, { pty })`, Cloudflare's own 1.0 pattern [1].
    - **The owner** attaches read-write. Every other viewer attaches with `-r`, and the server drops all of their input, including the terminal's automatic replies and resizes.
+   - **Built (sharing slice, 2026-10-20):** anyone with `Can edit` (decision 8) attaches read-write too, so editors use one terminal together, live, as the sharing brief asked; `Can view` attaches read-only. The shell still runs as its owner's user, so sharing to edit is the owner's trust decision, as Live Share's read-write terminals are ([branch-workspace.md](../features/branch-workspace.md#sharing)).
    - **Readers** never start a shell or wake a machine.
 6. **Opening a terminal is a durable flow; its bytes are not.** `terminal/Open` admits, wakes, creates the session and records it on the Cloudflare host. Keystrokes and output stream outside the journal, and neither is ever replayed, logged, traced or counted by content.
 7. **A terminal outlives reloads and dropped connections, and ends with its machine.**
    - tmux keeps the shell while the container runs, and redraws the screen on reattach.
    - `sandbox/Sleep` stores each session's last screen and ends it.
    - `sandbox/Keep` decides idleness from what the box is doing, not from open sockets, so an idle tab never keeps a container awake.
-8. **Sharing adds people to a branch, within GitHub's ceiling.**
-   - **Form:** a share names a person by GitHub id, or is a link, and grants `read` or `write`.
-   - **Effective access** is the minimum of the share, the person's role (derived from GitHub, re-checked hourly) and the branch's mode, decided at every check.
-   - **Ceilings:** write needs the Member role (GitHub write); read on a private repository needs GitHub read.
-   - **Links:** a link grants only to signed-in people who already qualify.
+8. **Sharing works as in Google Docs and Figma, within GitHub's ceiling.**
+   - **Private until shared:** a branch's live workspace is visible only to its owner, the person who created or first tracked it.
+   - **The team's branches have no owner:** `main`, and branches tracked before sharing existed, are open to every Member and above. `main` stays `locked`.
+   - **By name:** the owner shares with people by GitHub login, as `Can view` (`view`) or `Can edit` (`edit`).
+   - **General access:** off by default. The owner may turn on "Anyone in this repository with the link", as `Can view` or `Can edit`. It admits Members and above only.
+   - **Guests** see a branch only when it's shared with them by name, and only as `Can view`.
+   - **Effective access** is the best grant a person holds (owner, their own share, general access), capped by their role (derived from GitHub, re-checked hourly) and the branch's lock, decided at every check.
+   - **Ceilings:** edit needs the Member role (GitHub write); view on a private repository needs GitHub read.
+   - **Changing and revoking:** the owner changes or removes anyone's access and general access. Anyone may remove their own access.
    - **GitHub stays untouched:** sharing never sends a GitHub invitation and never grants secrets, merging, approvals or administration.
-9. **The live workspace is visible only to Members and the people a branch is shared with,** including on a public repository. The live workspace is the conversation, terminals, presence and live edits. Code stays as public as GitHub makes it ([question 1](#questions-for-will)).
+9. **The live workspace is private to the people with access,** on a public repository too. The live workspace is the conversation, terminals, presence and live edits. Viewers see everyone's avatars and live cursors and appear in them, as in Figma. Code stays as public as GitHub makes it.
 10. **Each kind of state has its transport.**
     - **Durable state** syncs through Postgres and Electric: conversations, shares and terminal rows.
     - **Files** use 0005's Yjs documents over Electric.
@@ -45,6 +50,9 @@ It builds on [0002](0002-local-first.md) (the device store and the outbox), [000
     - **Order:** bump `access_epoch` (0007 §6), then evict the person from the room and the sandbox with close code 1008.
     - **A former writer** also loses their tmux sessions.
     - **Shapes** refuse within one live request (Electric holds one for up to 20 s).
+12. **Sharing and multiplayer UX follow established collaboration tools, and aren't put to Will.** Will, 13:31:14 on 2026-10-20: "Shared branch you should be able to use common sense and how other collaboration tools to figure it out without asking me questions."
+    - Where Google Docs and Figma agree, do what they do. Where they differ, pick the simpler behavior and record it here.
+    - GitHub's ceiling (decision 8) and revocation (decision 11) still hold.
 
 ## Why
 
@@ -68,10 +76,10 @@ It builds on [0002](0002-local-first.md) (the device store and the outbox), [000
 - **One terminal per person, not one shared controller.** mvp.md §6.8 says each person's terminal runs as that person, in that machine's home, where their tool logins persist. A shared shell that writers take turns controlling would later run one person's commands with another's logins. Every terminal is still visible to everyone on the branch, so "read-only for readers" holds.
 - **Presence must not pin a machine.** Hibernated Durable Objects bill no duration [3]. A container's object holds its socket open (hibernation would drop the tmux handle [1]), so presence lives in its own object. A watcher's open tab then costs nothing and wakes nothing.
 - **Shares can't widen GitHub (M-46).**
-  - **Private repositories:** a read share to someone GitHub hides the repository from would leak code.
-  - **Writes:** a write share to someone without push would let the App push their code.
-  - **Links:** the old `BranchShare` signed links (`packages/smithers/flows/sync/src/BranchShare.ts:1-25`) grant a capability to whoever holds them, so they aren't used for people. A link here only lets an eligible, signed-in person claim a grant.
-- **The live workspace is private by default, as Codespaces and Live Share are.** Prompts, terminal output and cursors are Smithers' data, not GitHub's. Opening them on every public repository is a privacy surprise and an open socket for anyone. 0007 lists "watching a branch live" under `repo:read`, which is anyone on a public repository; narrowing that needs Will.
+  - **Private repositories:** a `Can view` share to someone GitHub hides the repository from would leak code.
+  - **Writes:** a `Can edit` share to someone without push would let the App push their code.
+  - **Links:** the old `BranchShare` signed links (`packages/smithers/flows/sync/src/BranchShare.ts:1-25`) grant a capability to whoever holds them, so they aren't used for people. General access needs no token. As in Google Docs' "Anyone in this organization with the link", the branch's own URL is the link and the repository role is the gate, so a forwarded link admits nobody new and never a Guest.
+- **Private until shared is what people expect** from Google Docs, Figma, Codespaces and Live Share. Prompts, terminal output and cursors are Smithers' data, not GitHub's. Opening them on every public repository, or to every Member, would be a privacy surprise. 0007 lists "watching a branch live" under `repo:read`; decisions 9 and 12 narrow it.
 
 ## Consequences
 
@@ -80,9 +88,10 @@ It builds on [0002](0002-local-first.md) (the device store and the outbox), [000
   - Cursors move from y-electric awareness rows to the room. 0002 §4 said to add a stream once presence exceeds one write a second per person, and cursors do while typing.
   - `CodeEditorView` does not bind `yCollab` today; it only accepts a binding (`packages/smithers/ui/src/adapters/code-editor/index.tsx:26-37`). The binding moves into `@smthrs/ui` here.
 - **0007 changes before it is built:**
-  - `branches.mode` replaces `branch_rules`, and write rows in `branch_shares` replace `branch_writers`, both keyed by branch id, not name (0005's identity rule);
-  - two actions join the catalog: `repo:branch-watch` (Member, or a live share) and `repo:branch-share` (the branch's creator, or Maintainer; the agent never);
-  - `repo:read` loses "watching a branch live" if Will agrees.
+  - `branch_shares` replaces `branch_writers`, and `branches.mode` replaces `branch_rules`, both keyed by branch id, not name (0005's identity rule). Of the modes, only `locked` still decides anything: the share list replaces `open` and `restricted`;
+  - two actions join the catalog: `repo:branch-watch` (the owner, a share, or general access) and `repo:branch-share` (the branch's owner; the agent never);
+  - `repo:read` loses "watching a branch live" (decisions 9 and 12).
+- **The first slice** let every Member watch every live branch (`LIVE_BRANCHES_PUBLIC = false`). Sharing replaces that rule with decision 8's grants, decided in `worker/branch/Access.ts`.
 - **0008:** the global conversation ends as 0008 planned. Each shape names a conversation, and the proxy authorizes it on every request.
 - **The agent (0011)** answers inside one conversation: its turn wait and its history stay there, and the conversation's branch is its default ref.
 - **No new npm dependency.** xterm 6.0.0 and `y-protocols` are already in `@smthrs/ui`, and Alchemy already provides containers. The image adds Debian packages only.
@@ -92,7 +101,7 @@ It builds on [0002](0002-local-first.md) (the device store and the outbox), [000
 
 ```sql
 branches          (id uuid PRIMARY KEY, repo_id text REFERENCES repositories, name text,
-                   mode text NOT NULL DEFAULT 'open' CHECK (mode IN ('open','restricted')),
+                   mode text NOT NULL DEFAULT 'open' CHECK (mode IN ('locked','open','restricted')),  -- only 'locked' decides access (decision 8)
                    base_sha text, created_by uuid, created_at timestamptz, deleted_at timestamptz)
                    -- UNIQUE (repo_id, name) WHERE deleted_at IS NULL; shared with 0012, which creates and renames refs
 conversations     (id uuid PRIMARY KEY,                                   -- uuidv5(branch_id)
@@ -102,11 +111,10 @@ conversation_people (conversation_id uuid, person_id uuid, archived_at timestamp
 messages          + conversation_id uuid NOT NULL REFERENCES conversations, + author_login text, + author_github_id bigint
                   -- UNIQUE (id, conversation_id); an answer's (question_id, conversation_id) references it
 views             + conversation_id uuid NOT NULL REFERENCES conversations
-branch_shares     (branch_id uuid, github_id bigint, login text, access text CHECK (access IN ('read','write')),
-                   via_link uuid, shared_by uuid, created_at timestamptz, revoked_at timestamptz, revoked_by uuid,
-                   PRIMARY KEY (branch_id, github_id))
-branch_links      (id uuid PRIMARY KEY, branch_id uuid, token_digest bytea UNIQUE, access text, created_by uuid,
-                   created_at timestamptz, expires_at timestamptz, revoked_at timestamptz)   -- never synced
+branch_shares     (branch_id uuid, grantee text, login text, access text CHECK (access IN ('view','edit')),
+                   shared_by text, created_at timestamptz, updated_at timestamptz,
+                   PRIMARY KEY (branch_id, grantee))
+                   -- grantee: a person, or 'repository' for general access (Members and above with the link)
 sandboxes         (branch_id uuid PRIMARY KEY, state text, generation bigint, snapshot_id text, image_digest text)  -- 0005
 terminal_sessions (id uuid PRIMARY KEY, branch_id uuid, owner_id uuid, owner_login text, generation bigint,
                    status text CHECK (status IN ('opening','open','ended','failed')),
@@ -117,7 +125,7 @@ terminal_sessions (id uuid PRIMARY KEY, branch_id uuid, owner_id uuid, owner_log
 
 - **Conversations start with their branch.** 0012's `branch/Create` inserts the conversation in its last step. For a ref that already exists on GitHub, `branch/Track` creates the row on first open (§2). The ask route also inserts the conversation `ON CONFLICT DO NOTHING`, so an offline device can ask before the row syncs.
 - **Authors** are a snapshot of the asker's login and GitHub id, taken from the session, never from the body. `asked_by` stays unsynced.
-- **Shares are keyed by GitHub numeric id,** so a person can be added before their first sign-in. A login is resolved again by id after a rename, as the old roster did (`packages/backend/internal/services/member_roster.go:217-260`).
+- **A share names its grantee by id, never by login,** so a rename keeps it. The login is a snapshot for display, resolved again by id after a rename, as the old roster did. General access is the row whose grantee is `repository` (`packages/backend/internal/services/member_roster.go:217-260`).
 - **Migration `0013_branch_workspace`:**
   1. Insert a `main` row for every repository already cloned.
   2. Bind today's `messages` and `views` to the deployment repository's (`GITHUB_REPOSITORY`) default-branch conversation, keeping their ids and positions. With no such repository, bind them to one archived legacy conversation that no shape serves (0008).
@@ -129,10 +137,11 @@ terminal_sessions (id uuid PRIMARY KEY, branch_id uuid, owner_id uuid, owner_log
 | Shape | `where` | Authorized by | Device collection |
 |---|---|---|---|
 | `branches` | `repo_id = $1` | `repo:read` | `branches:<repo>`, persisted |
-| `conversations` | `repo_id = $1` | `repo:branch-watch` on the repository (Members); a shared reader gets `branch_id = $1` | `conversations:<repo>`, persisted |
+| `conversations` | the branches the person may watch | `repo:branch-watch` on each branch | `conversations:<repo>`, persisted |
 | `conversation_people` | `person_id = $actor` | signed in | `myConversations`, persisted |
 | `messages`, `views` | `conversation_id = $1` | `repo:branch-watch` on its branch | `messages:<conversation>`, `views:<conversation>`, persisted, eager (0002) |
-| `branch_shares`, `terminal_sessions` | `branch_id = $1` | the same | `shares:<branch>`, `terminals:<branch>`, persisted |
+| `branch_shares` | `branch_id = $1` | the branch's owner | `shares:<branch>`, persisted |
+| `terminal_sessions` | `branch_id = $1` | `repo:branch-watch` on its branch | `terminals:<branch>`, persisted |
 | `ydoc_updates` (0005) | `doc_id = $1` | the same; writes need `repo:branch-write` | y-electric's provider |
 
 - **The collection registry** (in `@smthrs/effect-electric`) opens a conversation's collection when a route, an outbox entry or a running answer needs it. It keeps each collection's shape handle and offset with it, never a global `messages` handle.
@@ -162,11 +171,8 @@ Every payload carries a client-chosen id for idempotence. The actor, role and ep
 | `terminal/Open` | `{ terminalId, branchId, cols, rows }` | Cloudflare (needs a machine) | `repo:branch-write`; never on a locked branch | never: a terminal is a person's own session; the agent's commands run as jobs (0005) |
 | `terminal/Close` | `{ terminalId }` | Cloudflare | the owner, or Maintainer | never |
 | `sandbox/Wake`, `Keep`, `Sleep` | 0005's | Cloudflare | system | — |
-| `branch/Share` | `{ branchId, login, access }` | Cloudflare (the sharer's sealed GitHub token, as `auth/RecheckRole` uses one) | `repo:branch-share` | never: granting is non-delegable (0008 decision 9) |
-| `branch/ShareLink` | `{ branchId, linkId, access, expiresAt? }`, or a revoke | Cloudflare | `repo:branch-share` | never |
-| `branch/Redeem` | `{ token }` | Cloudflare | a signed-in person who qualifies | never |
-| `branch/Unshare` | `{ branchId, githubId }` | Cloudflare | `repo:branch-share`, or the person themselves | never |
-| `branch/Mode` | `{ branchId, mode }` | Cloudflare | the creator, or Maintainer (0007 `repo:branch-mode`) | never |
+| `branch/Share` | `{ branchId, login, access }`, or `{ branchId, repository: true, access }` for general access | Cloudflare (the sharer's sealed GitHub token, as `auth/RecheckRole` uses one) | `repo:branch-share` | never: granting is non-delegable (0008 decision 9) |
+| `branch/Unshare` | `{ branchId, grantee }` | Cloudflare | `repo:branch-share`, or the person themselves | never |
 
 **`terminal/Open`:**
 1. **Admit:** under `access_epoch FOR SHARE`, check `repo:branch-write`, then insert the `opening` row.
@@ -184,23 +190,28 @@ Every payload carries a client-chosen id for idempotence. The actor, role and ep
 **`branch/Share`:**
 1. Resolve the login with `GET /users/{login}` to a numeric id.
 2. Read `GET /repos/{o}/{r}/collaborators/{login}/permission` [4], whose `permission` is `admin`, `write`, `read` or `none`.
-3. Refuse `write` below `write`, and `read` at `none` on a private repository.
+3. Refuse `edit` below GitHub `write`, and any share at `none` on a private repository. A Guest gets `view` at most.
 4. Upsert the row and the grantee's watch. If the grantee is already a person, they get a 0009 notification (kind `shared`, action Open).
 
-GitHub is read only through `@smthrs/integrations`, and no GitHub invitation is ever sent. `branch/Redeem` runs the same check for the person redeeming, and records `via_link`. Revoking a link revokes the grants that came only from it.
+GitHub is read only through `@smthrs/integrations`, and no GitHub invitation is ever sent. General access calls no GitHub API: it admits only Members and above, whose role already means GitHub write. Turning it off removes everyone who had only the link, at their next check.
 
 **Who may watch and write.**
 
 | Person | Watches the live branch | Writes (files, own terminal, jobs) |
 |---|---|---|
-| Admin, Maintainer, Member | yes | on `open`; on `restricted` only with a write share or as creator |
-| Guest (GitHub read; any signed-in person on a public repository) | with a share | never: a write share stays unavailable until GitHub grants write |
+| The owner (a Member or above) | yes | yes, unless `locked` |
+| Shared by name | yes | with `Can edit`, as a Member or above |
+| Admin, Maintainer, Member, with general access on | yes, from the link | with `Can edit` general access |
+| Admin, Maintainer, Member, otherwise | never: private until shared | never |
+| Guest (GitHub read; any signed-in person on a public repository) | only when shared by name | never: `Can edit` stays unavailable until GitHub grants write |
 | No access to a private repository | never: the dialog shows `needs access on GitHub ↗` (mvp.md §6.15) | never |
 | Signed out | never | never |
 
-Asking in a branch's conversation needs `repo:ask` (Member) and watch. On `main`, asking is allowed and every code tool still meets the locked mode.
+The team's branches (`main`, and branches tracked before sharing existed) have general access `Can edit` for Members and above, and no owner.
 
-**Revocation (`branch/Unshare`, a narrowing `branch/Mode`, or `auth/RecheckRole` finding a lower role):**
+Asking in a branch's conversation is writing: it needs `repo:ask` (Member) and edit access. On `main`, every Member asks, and every code tool still meets the locked mode.
+
+**Revocation (`branch/Unshare`, narrowing general access, or `auth/RecheckRole` finding a lower role):**
 1. In one transaction: change the rows and bump `repositories.access_epoch`. Writes check that epoch `FOR SHARE` (0007 §6).
 2. `RoomObject.evict(person)` and `SandboxObject.evict(person, access)`: sockets close with 1008. A person who lost write has each tmux session's screen captured, then killed, and the session ends `revoked`.
 3. Return. Shapes refuse the person's next request, and the device deletes those rows (0007 §8).
@@ -236,8 +247,8 @@ Work already done in the box can't be recalled, and the UI never claims it was u
 
 | Surface | Truth | Live transport | Reader | Writer |
 |---|---|---|---|---|
-| Presence: who, and where (conversation, `path:line`, terminal) | none: leases | `RoomObject` socket. Each participant lives in its socket's attachment (16 KiB at most [3]); an auto-response ping answers without waking the object | sees everyone | — |
-| Cursors | none | Yjs awareness relayed by the room. The room sets `user {id, login, color}` itself and never trusts the client's (`packages/backend/internal/live/docprotocol.go:13-60`); the last cursor rides in the attachment for late joiners | sees them | sends their own |
+| Presence: who, and where (conversation, `path:line`, terminal) | none: leases | `RoomObject` socket. Each participant lives in its socket's attachment (16 KiB at most [3]); an auto-response ping answers without waking the object | sees everyone, and appears | the same |
+| Cursors | none | Yjs awareness relayed by the room. The room sets `user {id, login, color}` itself and never trusts the client's (`packages/backend/internal/live/docprotocol.go:13-60`); the last cursor rides in the attachment for late joiners | sees them, and sends their own | the same |
 | Files | Postgres `ydoc_updates` (0005) | y-electric, a shape per document. The Yjs write endpoint refuses a reader's update before it enters the document | live, read-only editor | edits |
 | Conversation | Postgres `messages` | an Electric shape per conversation; the outbox | reads | asks, with `repo:ask` |
 | Terminal | tmux in the box; `last_screen` when it ends | a socket per viewer to `SandboxObject` | `attach -r` | their own sessions |
@@ -245,8 +256,8 @@ Work already done in the box can't be recalled, and the UI never claims it was u
 - **The room reuses `@smthrs/sync`.** It takes `BranchProtocol`'s `Participant`, `PresenceWhere` and `Cursor` schemas, and `BranchPresence`'s rules: leases, nothing journaled, at most 256 participants (`packages/smithers/flows/sync/src/BranchPresence.ts:1-19,211`).
 - **Two adapters:** `RoomObject` in `@smthrs/platform-cloudflare` for production, and `BranchPresence.makeMemory` behind a Node WebSocket server for tests.
 - **Agents appear in presence (M-34).** While `chat/Answer` runs in Ben's tab, that tab also announces "Smithers for Ben".
-- **Offline:** multiplayer branches are read-only offline, and a `restricted` branch with one writer edits offline (0005 §2).
-- **Restricting a branch** is `branch/Mode` (`Restrict`). A read share never downgrades a Member's write on an `open` branch.
+- **Offline:** multiplayer branches are read-only offline, and a branch with one editor edits offline (0005 §2).
+- **Grants combine by the best one:** a `Can view` share never lowers a Member's `Can edit` from general access.
 
 ## 5. UI
 
@@ -269,13 +280,13 @@ Work already done in the box can't be recalled, and the UI never claims it was u
 - **Missing, each added to `@smthrs/ui` with its test:**
   - `TerminalFrame`: the frame host and its hash-pinned runtime with `Terminal`;
   - `AvatarStack`: presence, `+N`;
-  - `ShareDialog`: people with access as `Read` and `Write` rows with `Remove`, `Restrict`, and `Copy link`;
+  - `ShareDialog`, laid out as Google Docs' and Figma's: people with access as `Can view` and `Can edit` rows with `Remove`; general access, `Restricted` (Google Docs' word) or `Anyone in this repository with the link`; and `Copy link`;
   - `PeoplePicker`: a GitHub-username combobox over `CompletionList`;
   - `TerminalHeader`: owner, watchers and state;
   - `collabBinding(ytext, awareness, { readOnly })`, ported from `apps/app/src/mainview/cards/liveDoc.ts:32-58`.
 - **Copy:**
   - terminal: `Ended`, `No access`, `Offline`, `Open terminal`;
-  - share dialog: `needs access on GitHub ↗` and `needs write on GitHub ↗`.
+  - share dialog: `Can view`, `Can edit`, `Remove`, `Restricted`, `Anyone in this repository with the link`, `Copy link`, `needs access on GitHub ↗` and `needs write on GitHub ↗` (the last two wait for GitHub's permission read at share time; the sharing slice caps by role at every check instead).
 
   Nothing else (MINIMAL TEXT).
 
@@ -290,14 +301,14 @@ Work already done in the box can't be recalled, and the UI never claims it was u
 | The container won't start, or no capacity | `terminal/Open` fails with a typed reason | a toast with Retry (0009) |
 | A share revoked, or GitHub demotes the person | eviction (§2); shapes 403; rows dropped | `No access` |
 | A question queued for an archived conversation | archive is personal, so it is sent and answered as usual | nothing |
-| GitHub down during a share or redeem | the step retries under its policy, then fails closed: no grant on an unknown permission | a toast with Retry |
+| GitHub down during a share | the step retries under its policy, then fails closed: no grant on an unknown permission | a toast with Retry |
 | The room unreachable | no avatars or cursors; editing and chat go on | the avatars hide |
 | An answer arrives after switching branches | it lands in its own conversation; the open one never changes | nothing |
 
 ## 7. Observability
 
 - **Spans:**
-  - flows: `branch.track`, `conversation.archive`, `terminal.open`, `branch.share`, `branch.redeem` and `branch.unshare`, beside 0005's `sandbox.*`;
+  - flows: `branch.track`, `conversation.archive`, `terminal.open`, `branch.share` and `branch.unshare`, beside 0005's `sandbox.*`;
   - sockets: `terminal.connect {access, outcome}` and `room.connect {outcome}`.
 - **Metrics:**
   - terminals: `terminal_open_ms` (open to first byte, cold and warm), `terminal_sessions_open{access}`, `terminal_reconnects{code}`, `terminal_ended{reason}` and `terminal_bytes{direction}` (a count, never content);
@@ -305,9 +316,9 @@ Work already done in the box can't be recalled, and the UI never claims it was u
   - conversations: `conversation_restore_ms`.
 
   No metric label holds an id.
-- **Logs** carry branch, conversation, terminal, generation and trace ids only. Terminal bytes, screens, share tokens, logins, picker searches, prompts and file contents never appear.
+- **Logs** carry branch, conversation, terminal, generation and trace ids only. Terminal bytes, screens, logins, picker searches, prompts and file contents never appear.
 - **The browser** adds each record to `BROWSER_TELEMETRY` (`src/telemetry.ts`).
-- **Sentinel tests:** a sentinel typed into a terminal, asked in a question and placed in a share token never reaches the OTLP export, the Worker's logs or the frame's console.
+- **Sentinel tests:** a sentinel typed into a terminal or asked in a question never reaches the OTLP export, the Worker's logs or the frame's console.
 
 ## 8. Tests
 
@@ -317,10 +328,10 @@ Work already done in the box can't be recalled, and the UI never claims it was u
   - an answer can never write another conversation (the composite key);
   - the turn wait and history stay in one conversation: two asks on one branch serialize, and two branches proceed in parallel;
   - asks from the old build land in the default conversation;
-  - the shape proxy across Member, shared Guest, revoked, signed-out and public outsider, with a forged `where`, table or subset parameter dropped;
+  - the shape proxy across owner, unshared Member, Member through general access, shared Guest, revoked, signed-out and public outsider, with a forged `where`, table or subset parameter dropped;
   - a revocation racing document writes and socket opens.
 - **`@smthrs/access` properties:** watch contains write; no share, link or mode ever beats the role; the agent never shares; every `branch/*` action has a flow that enforces it.
-- **`branch/Share` and `branch/Redeem`** run against the scripted GitHub seam: `admin`, `write`, `read` and `none`; a missing user; a rename; GitHub down.
+- **`branch/Share`** runs against the scripted GitHub seam: `admin`, `write`, `read` and `none`; a missing user; a rename; GitHub down.
 - **A real container** (local workerd and Docker: "Local development runs every image through workerd and Docker", `alchemy/src/Cloudflare/Containers/Container.ts:435`):
   - owner input reaches the shell; reader bytes, automatic replies and resizes never do;
   - `stty size` follows the owner;
@@ -333,10 +344,10 @@ Work already done in the box can't be recalled, and the UI never claims it was u
   - B1: open a branch, ask, switch to `main` (another conversation) and back; archive and restore; a branch name with a slash.
   - B2: open the terminal in its frame; `git rev-parse --abbrev-ref HEAD` prints the branch; reload during `sleep 5; echo done`; the screen returns and `done` arrives; ⌘K escapes the frame.
   - B3: a second person watches read-only and their keystrokes never arrive.
-  - B4: share `read` with the second test account; they see the conversation, avatars and the terminal, read-only.
-  - B5: share `write` with a GitHub writer, who co-edits a file with live cursors and opens their own terminal.
+  - B4: before any share, the second test account sees nothing live. Shared `Can view`, they see the conversation, avatars, cursors and the terminal, read-only, and appear in presence.
+  - B5: share `Can edit` with a GitHub writer, who co-edits a file with live cursors and opens their own terminal.
   - B6: a share to a person without GitHub access on a private fixture is refused.
-  - B7: a link redeemed by an eligible person works, and by an ineligible one doesn't.
+  - B7: with general access on, a Member who opens the link gets in, and a Guest with the same link doesn't.
   - B8: unshare closes their sockets and removes the rows.
   - B9: force Sleep, and the last screen shows.
 
@@ -401,6 +412,10 @@ S1 is done when B1 and B2 pass locally and live, with their GIFs and the sentine
 
 ## Questions for Will
 
+None. Q1 is settled by decision 12. Will, 13:31:14 on 2026-10-20: "Shared branch you should be able to use common sense and how other collaboration tools to figure it out without asking me questions." The lead's rules at 13:32:34 follow Google Docs and Figma and are now decisions 8 and 9: a live branch is private until shared, so it is never public by default.
+
+Until 13:31 on 2026-10-20:
+
 1. **On a public repository, is the live branch visible only to Members and the people it's shared with?** The live branch is the conversation and its history, terminals, presence and live edits. Recommended: yes. It narrows 0007's "watching a branch live: anyone if public"; the code stays public. The first slice's shape authorization depends on it. If no, read shares mean little on public repositories, and every visitor can watch every terminal.
 
 ## Sources
@@ -448,8 +463,8 @@ Opus and Sol wrote their designs independently on 2026-10-20; Opus merged them. 
 | Conversation id | `uuidv5(branch, generation)` | a server UUID, made by `conversation/Ensure` | Opus's, as `uuidv5(branch)` | an offline device can ask with no extra flow |
 | Terminal surface | xterm on the app origin, no iframe (asked Will) | our Terminal in an iframe on a separate domain, with a single-use ticket over a `MessagePort` | an iframe with `srcdoc` on the app origin; the page holds the cookie-authenticated socket | Will said iframe; an opaque frame isolates untrusted output; `GeneratedView` proves the pattern; no new domain and no ticket |
 | Sessions | one per person, owner types | one shared per branch; writers take control, one at a time | Opus's | mvp.md §6.8: each terminal runs as its person, whose logins live in their home |
-| Links | none: the link is the branch's URL | a hashed token, redeemed only by eligible signed-in people | Sol's | Google Docs fidelity without widening GitHub |
-| Live workspace on public repositories | Members and shares (asked Will) | 0007's readers, so anyone | Opus's; question 1 | the conversation and terminal are Smithers' data, and opening them to anyone is a privacy surprise |
+| Links | none: the link is the branch's URL | a hashed token, redeemed only by eligible signed-in people | general access, closer to Opus's (decision 8, 2026-10-20; until then Sol's) | Google Docs' "anyone in this organization with the link": the URL is the link and the role is the gate, with no token to leak |
+| Live workspace on public repositories | Members and shares (asked Will) | 0007's readers, so anyone | private until shared (decisions 9 and 12, 2026-10-20; until then Opus's, question 1) | the conversation and terminal are Smithers' data, and opening them to anyone is a privacy surprise |
 | Branch creation | Code Storage `createBranch` | on GitHub through integrations, with panel A | 0012's (panel G) | that panel owns the git loop; S1 tracks an existing branch instead |
 | The box's checkout | clone through an intercept that adds a read token | the host writes the tree; credentialed networking off | Opus's, with Sol's as the S0 fallback | a real `.git` for `git log`; the token stays outside the box; S0 proves it |
 | Keeping awake | from box activity (input, foreground process, jobs) | an open terminal keeps it awake | Opus's | an idle tab must not cost $0.047 an hour |
@@ -459,4 +474,4 @@ Opus and Sol wrote their designs independently on 2026-10-20; Opus merged them. 
 | Collections | one per opened conversation | identity includes the principal and the predicate; bounded live set; pending work keeps its collection | Sol's additions | switching must not drop a pending write |
 | Answer integrity | not covered | a composite key stops cross-conversation answers | Sol's | a schema rule beats a code check |
 | Unread markers | none | a per-person read position | none | nothing asks for it yet; it would add a write per ask |
-| Questions | iframe; public visibility | none | public visibility only | Sol's iframe answers the first, and the second decides the first slice's shapes |
+| Questions | iframe; public visibility | none | none from 2026-10-20 (decision 12); until then public visibility only | Sol's iframe answers the first, and the second decides the first slice's shapes |

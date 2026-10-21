@@ -2,10 +2,27 @@
 title: effect-tanstack-db and effect-electric packages
 status: in-progress
 area: sdk
-owner: unassigned; reopened at 11:07 on 2026-10-20 by review round 4's R4-8 (P1: `ShapeProxy` passes Electric's public `cache-control` on per-person shapes) and R4-11 (an outbox tab that regains the lead re-sends delivered writes), both reproduced; the lead routes them after merging round 4. Until 11:07: Electric and TanStack DB package agent (Opus, finished); Will (code review asked); the lead commits
+owner: sync repair builder
 updated: 2026-10-20
 links: [review-round-4.md, web-page-flow.md, land-to-main.md, app-wiring.md, ../state.md, ../decisions/0002-local-first.md, ../../../../docs/libraries.md, local-first.md, sync-service-di-test-seam.md, electric-client-bug-report.md, decisions-for-will.md, code-reviews.md]
 ---
+
+## Current specification — 2026-10-20, 15:24 PDT
+
+**What:** Provide reusable Effect wrappers and prevent incomplete Electric responses from losing device rows.
+
+**Why:** Local-first devices must converge to Postgres without silently skipping rows.
+
+**Current state:** At 15:20:31 the lead reported reading/checking each response fully before Electric sees it. Old code lost rows at twenty response cut points; repaired code delivered every row exactly once and matched Postgres. Sync records include cursor, status and row counts without row content. One rare upstream-dependent case remains open; a report is drafted but unfiled.
+
+**Next step:** Retain regression receipts, identify the remaining rare case and its protection explicitly, and collect landing evidence. No outbound bug report is authorized (PROC-11).
+
+**Open questions for Will:** None; obey the standing no-bug-reports ruling.
+
+Evidence: Will’s typed messages and lead text replies, extracted from session `6253ecf2` for its latest two hours through 15:23:55 PDT; [rulings](../rulings.md), queue answers through 14:36 PDT, shared briefs/designs and current decisions, proposals, TODOs and rules. Receipts above are reported, not fresh product tests run by this tracker.
+
+## Earlier tracker history
+
 
 ## What
 
@@ -48,10 +65,17 @@ Will: "So wouldn't the electric layer and tanstack db be better architecture her
 - **Status moved from done to in-progress** under the round 4 tracker rule: a P1, or a reproduced P2 every finder rates P2, reopens a done note ([review round 4](review-round-4.md)).
 - **11:54:51 on 2026-10-20: R4-11 fixed** by the client agent, uncommitted. A queued write another tab already sent settles as `sent_elsewhere` instead of a second send. `Outbox.Lock.hold` takes a steal option and returns `lost`, a breaking change (changeset `outbox-lock-leader-take`). `smthrs docs //packages/effect-tanstack-db:docs` passes; the package is at 100% coverage ([Fable review 2 fixes](fable-review-2-fixes.md)). R4-8's `ShapeProxy` change is on disk since 11:49, unreported ([review round 4](review-round-4.md)).
 - **13:04:55 on 2026-10-20: part of `@smthrs/effect-electric` landed on `main`** in round 2 as `8359ef179e` "🐛 fix(effect-electric): a sync replays only the latest event per key; ShapeProxy serves only listed columns" (changesets `electric-sync-replays-latest` and `electric-proxy-columns`) ([land to main](land-to-main.md)). Not in it: R4-8's `no-store` change (`electric-shapes-no-store`) and R4-11's outbox changes (`outbox-lock-leader-take`, `outbox-withdraw`). Status stays `in-progress` until R4-8 reports.
+- **13:38:27 on 2026-10-20: R4-8 fixed** (round 4's SDK fix agent; relayed 13:38:52): `ShapeProxy` answers `cache-control: private, no-store` by default, and a shape opts in to Electric's caching with `cache: "public"`; the browser source skips the HTTP cache. A real Electric client still syncs through the proxy and receives a live insert; the app tests check six routes. Changeset `electric-shapes-no-store.md`.
+- Same report, R4-12 (Fable P2-1): when sessions or the home conversation can't be read, the messages, views, runs, flows, drafts, terminals and GitHub-writes shapes answer `503` with `Retry-After: 5`, so the device keeps its rows and retries (`ShapeProxy.Refused`, `worker/ShapeAccess.ts`). An expired session still makes Electric answer `409 must-refetch`, which wipes the device's copy. **The lead ruled (13:38:52):** a request with an expired or invalid session cookie answers 401, so the device keeps its rows and asks to sign in; an explicit sign-out still wipes (0008). That goes to the [P3 cleanup](review-round-4-p3-cleanup.md).
+- 13:42:00, the branch workspace builder: "A cut-short Electric live response can lose a row on the device, which looks like an `@smthrs/effect-electric` defect." **13:43:30: the lead started an agent** to "find and fix a case where a cut-short live sync response can lose a row on a device".
+- 14:15 to 14:17 on 2026-10-20: the session usage limit stopped the sync bug agent with 12 others; the lead resumed all 13 at 14:19.
+- By 14:24 on 2026-10-20, uncommitted ([Electric client bug report](electric-client-bug-report.md)): `ElectricCollection.make` reads every 2xx batch of the log in full before Electric sees it, so a cut batch stops the shape before Electric takes its offset. Regression and seeded fuzz tests in `test/ElectricCollection.test.ts` fail on the old code (all 20 cut points lost a row). A row that fails the collection's schema still skips its batch on `reconnect`. No report by 14:30.
 
 ## Next
 
-From 11:55 on 2026-10-20: R4-8's report ([review round 4](review-round-4.md)). Then this item is done again. Will's own review stays open.
+From 13:43 on 2026-10-20: the sync bug agent's report, with a test that fails on the old code. Then this item is done again. Will's own review stays open.
+
+Until 13:46 on 2026-10-20 the next step was, from 11:55 on 2026-10-20: R4-8's report ([review round 4](review-round-4.md)). Then this item is done again. Will's own review stays open.
 
 Until 11:55 on 2026-10-20 the next step was, from 11:07 on 2026-10-20: the lead rules on R4-8 and R4-11 and routes the fixes, each with a test that fails on the old code ([review round 4](review-round-4.md)). Then this item is done again. Will's own review stays open.
 

@@ -2,10 +2,27 @@
 title: Review round 4 P3 cleanup (one pass after the P1 and P2 fixes land)
 status: todo
 area: process
-owner: unassigned; the lead starts one cleanup pass after round 4's P1 and P2 fixes land (queued 11:20:44 on 2026-10-20, scratchpad `final/WIRING.md`)
+owner: unassigned; every P1 and P2 it waited for is reported fixed by 13:42:00 on 2026-10-20, and the lead's landing round 3 (from 13:43:30) fixes the 11 full-suite failures first. Until 13:46: unassigned; the lead starts one cleanup pass after round 4's P1 and P2 fixes land (queued 11:20:44 on 2026-10-20, scratchpad `final/WIRING.md`)
 updated: 2026-10-20
-links: [review-round-4.md, land-to-main.md, model-endpoint.md, flow-authoring.md, repo-view-branches-raw-clone.md, local-first.md, sign-in.md, durable-answering.md, observability.md, agent-ui-rendering.md, agent-status.md, branch-terminal.md, conversations-and-history.md, flow-debugging.md, import-rules-and-jev-lint.md, one-sqlite-one-leader.md, effect-tanstack-db-and-effect-electric.md, github-source-of-truth.md, issue-sync-ingest-retry-loop.md, flows-and-agent.md, everything-is-a-durable-flow.md, web-standard-globals-rule.md, navigate-flow.md, plan-identity-across-deploys.md, model-step.md, repo-clone-and-view.md]
+links: [review-round-4.md, land-to-main.md, model-endpoint.md, flow-authoring.md, repo-view-branches-raw-clone.md, local-first.md, sign-in.md, durable-answering.md, observability.md, agent-ui-rendering.md, agent-status.md, branch-terminal.md, conversations-and-history.md, flow-debugging.md, import-rules-and-jev-lint.md, one-sqlite-one-leader.md, effect-tanstack-db-and-effect-electric.md, github-source-of-truth.md, issue-sync-ingest-retry-loop.md, flows-and-agent.md, everything-is-a-durable-flow.md, web-standard-globals-rule.md, navigate-flow.md, plan-identity-across-deploys.md, model-step.md, repo-clone-and-view.md, chat-message-controls.md, repo-view-package-split.md, second-build-machine.md]
 ---
+
+## Current specification — 2026-10-20, 16:24 PDT
+
+**What:** Finish the remaining review findings and fix the agent-driven repository clone regression.
+
+**Why:** A real failing journey is broken under TEST-1, even when direct repository browsing passes.
+
+**Current state:** At 16:02:07 PDT the lead assigned clone-by-the-agent to the cleanup pass after its browser test failed. Branch views and both flows tests also failed and have separate owners. No later clone repair or cleanup completion receipt appears through 16:23 PDT. Earlier review-completion receipts below do not establish that this journey works.
+
+**Next step:** Give the agent-clone failure an explicit implementation owner, reproduce it through the real agent and retain its passing regression test and chaptered recording alongside the remaining cleanup receipts.
+
+**Open questions for Will:** None; the lead assigns ownership and resolves implementation details.
+
+Evidence: lead text replies extracted by script from session 6253ecf2, latest two hours through 23:23:40 UTC; current rulings and queue answers govern. Shared briefs/designs, decisions, proposals, TODOs and rules were consulted. Reported product receipts only; this tracker ran no product tests.
+
+## Prior tracker record (retained)
+
 
 ## What
 
@@ -53,10 +70,23 @@ Will's rules: zero tech debt, everything durable, docs true to the code. The rev
 - 12:55 (scratchpad `final/WIRING.md`): this pass also runs `dprint fmt` on the files `dprint check` flags: 19 untouched files in `@smthrs/agent`, and `GitProxy.ts`, `CodeStorage.ts` and `GitProxy.test.ts` in `effect-code-storage`.
 - By 12:59 no agent has the pass.
 - 13:19:52 on 2026-10-20, the lead to Will: after the current agents finish, "one cleanup pass covering about 61 small review findings": formatting; the extra model call when a tab is reopened mid-question ([agent status](agent-status.md)); two saves of one draft creating two revisions; the "copy permalink" regression in the repository view. It runs after round 3 lands ([land to main](land-to-main.md)), then Codex Astra, fixes, then Fable.
+- **By 13:42:00 on 2026-10-20 every P1 and P2 is reported fixed** ([review round 4](review-round-4.md)), so the pass can start once round 3 lands.
+- **New items since 12:55** (scratchpad `final/WIRING.md`, builder reports):
+  - message controls (P2): a draft lost on a reload right after typing; `Outbox.withdraw` locks only its own tab; two chat tests fail only in the full run, to fix before round 3 lands; recheck the repo copy-permalink e2e against `src/flows/askingTab.ts` ([message controls](chat-message-controls.md));
+  - the lead's 13:38:52 ruling: an expired or invalid session cookie answers 401, so the device keeps its rows and shows sign-in; no cookie keeps today's public or empty shape; an explicit sign-out still wipes (0008); a two-case test;
+  - `worker/github/Api.ts` private-repository refusals switch to `ShapeProxy.Refused` (`private, no-store`);
+  - `importRules`: `worker/ExecutionHost.test.ts:6` imports `@smthrs/platform-cloudflare`;
+  - engine-store misses one line of coverage in `RunInspection`;
+  - views: optional `arguments` in `refusedNames`; a pre-warmed pool of frozen runtimes only if interaction feels slow;
+  - Retry doesn't reconnect a branch's views shape ([branch terminal](branch-terminal.md));
+  - reopening a tab mid-question costs one extra model call ([agent status](agent-status.md)).
+- 14:20 on 2026-10-20: round 4's SDK-only P3s (from `review4-opus.md` and `review4-fable.md`) go to the Codex coordinator on the [Latitude server](second-build-machine.md) as task (d), deduped and fixed in batches of one package per lane; `dprint fmt` on `@smthrs/agent` and `@smthrs/effect-code-storage` is its task (c), after round 3 lands. The app P3s stay here.
 
 ## Next
 
-From 12:55 on 2026-10-20: the steps below, less S-P3-6 (fixed), plus `dprint fmt` on the agent and effect-code-storage files. Until 12:55 the steps were the list below.
+From 13:42 on 2026-10-20: after round 3 lands, one pass: dedupe the about 61 P3s, then fix them with the new items above, the double-save fix and `dprint fmt`, each with a test that fails on the old code where it is a behavior.
+
+Until 13:46 on 2026-10-20 the next step was, from 12:55 on 2026-10-20: the steps below, less S-P3-6 (fixed), plus `dprint fmt` on the agent and effect-code-storage files. Until 12:55 the steps were the list below.
 
 1. Wait for the P1 and P2 owners to report and the fixes to land in round 3 of [land to main](land-to-main.md).
 2. Deduplicate the about 61 P3s into one list, each with its file, line and home note.

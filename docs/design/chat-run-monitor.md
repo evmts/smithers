@@ -1,5 +1,7 @@
 # Chat run monitor
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (SCOPE-3). Kept as prior art.
+
 The screenshot supplied on 2026-09-22 came from
 `~/Desktop/smithers-agent-monitor/index.html`, created in Claude session
 `25817c50-6d41-4677-a17c-4cbb3c5bb4a2`. Its exact completion-warning text and

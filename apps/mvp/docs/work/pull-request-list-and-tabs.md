@@ -1,8 +1,8 @@
 ---
 title: Pull request list, and the conversation, commits and checks tabs
-status: todo
+status: in-progress
 area: app
-owner: unassigned; from 13:21:12 on 2026-10-20 it waits for the [triage](issue-triage.md) builder, which edits the same GitHub write path and list view. Until 13:21: unassigned; designed in decision 0012 (Panel G reported 07:40:55 on 2026-10-20); not in slice G0, which started 07:40:55. Until 07:40: Panel G; decision 0012 written 06:58:11 on 2026-10-20 (status: proposed); no builder yet. Until 06:58: Panel G (Opus merges into decision 0012, the git flow end to end; started 06:41:56 on 2026-10-20). Sol's design done 06:46; Opus's independent design written 06:53. Until 06:41: unassigned
+owner: coding factory builder (Claude Opus, session 6253ecf2), from 19:10 on 2026-10-20: PRs, the todo run, /review. Until 19:10: unassigned; from 13:21:12 on 2026-10-20 it waits for the [triage](issue-triage.md) builder, which edits the same GitHub write path and list view. Until 13:21: unassigned; designed in decision 0012 (Panel G reported 07:40:55 on 2026-10-20); not in slice G0, which started 07:40:55. Until 07:40: Panel G; decision 0012 written 06:58:11 on 2026-10-20 (status: proposed); no builder yet. Until 06:58: Panel G (Opus merges into decision 0012, the git flow end to end; started 06:41:56 on 2026-10-20). Sol's design done 06:46; Opus's independent design written 06:53. Until 06:41: unassigned
 updated: 2026-10-20
 links: [issues.md, ../decisions/0012-git-end-to-end.md, old-app-feature-gaps.md, pr-review-and-merge.md, github-source-of-truth.md, issue-triage.md, repo-view-branches-raw-clone.md, agent-ui-rendering.md, review-requests-and-revisions.md, roles-and-labels.md, sign-in.md, decisions-for-will.md, ../decisions/0007-roles-and-tags.md, ../decisions/0008-auth.md, ../proposals/mvp-gaps.md, ../proposals/early-features.md, docs-check-flow-outcome.md, no-github-actions.md, second-build-machine.md]
 ---
@@ -81,6 +81,9 @@ M.
 - 13:19:52: the lead's list: "Pull request list, review and merge; branch update and resync: not started (rest of 0012)".
 - 13:21:12: the lead: these "use the same GitHub write path and list view the triage agent is editing. Start them when triage finishes." Not in the 13:22 batch Will approved at 13:21:41.
 - **13:21:27: Will ruled out GitHub Actions** ([no GitHub Actions](no-github-actions.md)). The Checks tab lists the Smithers workflow runs on the PR's head SHA from the one run index (`runs`, migration `0013_runs`), not GitHub check runs or statuses. 0012's `checks` table, `check_run` and `status` webhooks and `ChecksList` over GitHub checks go; a docs agent rewrites 0012 from 13:23:25. 0012 Q2's "Checks and Commit statuses read" permissions drop out ([decisions for Will](decisions-for-will.md)).
+- **13:25:53 on 2026-10-20, Will answered 0012 Q1:** "yes should appear under your account is better ux". A person's reviews and merges through Smithers post under their own GitHub account.
+- 13:26:18: 0012 Q2's App change became part of one GitHub App visit that already asks for Pull requests and Contents read and write and the Pull request, Pull request review, Push, Create and Delete events, "Granting all three now saves a second visit when pull requests start" ([decisions for Will](decisions-for-will.md), row 1).
+- 13:32:34: the docs agent rewrote the Checks tab in 0012: Smithers runs on the PR's head SHA from `runs`, drawn with `RunList`; `runs` gains `repo_id` and `sha` ([no GitHub Actions](no-github-actions.md)). 13:39: mvp.md M-52 matches.
 
 ## Next
 
@@ -93,6 +96,11 @@ Until 07:40 on 2026-10-20 the next step was, from 06:58 on 2026-10-20: Will answ
 Until 06:58 the next step was: Opus merges into `apps/mvp/docs/decisions/0012-git-end-to-end.md` (status: proposed) and runs `pnpm docs:check`. Then the walking skeleton G0, with a half-day spike on the Code Storage mirror: does `pullUpstream` re-sync a public-mode repository, and can a repository switch to App mode?
 
 ## Questions for Will
+
+- Q1: answered 13:25:53 on 2026-10-20: as the person.
+- Q2: folded into the one GitHub App visit asked at 13:26:18 (Issues, Pull requests and Contents read and write, the events, a new key, two installs); not done by 13:46.
+
+Until 13:25:
 
 Until 06:41 on 2026-10-20: none.
 

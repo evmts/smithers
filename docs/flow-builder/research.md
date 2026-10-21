@@ -1,5 +1,7 @@
 # Flow Builder & Monitor — External Research
 
+> Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (FLOW-4; decision 0014). Kept as prior art.
+
 **Purpose.** Prior art for the visual flow builder and run monitor we are adding to
 Smithers. This file is written for LLM consumption: verbose, quote-heavy, no
 context elided. Append to it over time; never compress it.

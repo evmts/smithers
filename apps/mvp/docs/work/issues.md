@@ -1,11 +1,79 @@
 ---
 title: Issues list, view, create and comment (0012 slice G0)
-status: blocked
+status: done
 area: app
-owner: Will: his GitHub App setup (the lead's ask at 12:54:04 on 2026-10-20) gates the create and comment e2e and the live GitHub tests; slice G0 built, reported by 0012's builder at 12:52:55 on 2026-10-20, with R4-7 and R4-15 fixed; nothing committed. Until 12:52: 0012's builder; `e2e/issues.spec.ts` on disk at 12:03:12; waiting from about 12:18 on 2026-10-20 for the shared heavy-test lock (the lead); unreported by 12:23. Until 12:18: 0012's builder, not stopped by either weekly limit (the lead, 11:42:48 on 2026-10-20); `src/features/issues/` and its tests changing to 11:55; no e2e and unreported by 11:55. Until 11:42: 0012's builder and its UI sub-agent ("UI: issue list and conversation"), resumed by the lead at 10:42 on 2026-10-20 from where they stopped (the Claude usage limit stopped both from about 08:15 to 10:40); unreported by 10:44. Until 10:42: 0012's builder, slice G0 from 07:40:55 on 2026-10-20 (the lead to Will); unreported
+owner: issues builder and live GitHub test builder
 updated: 2026-10-20
-links: [review-round-4.md, ../decisions/0012-git-end-to-end.md, github-source-of-truth.md, pull-request-list-and-tabs.md, issue-triage.md, pr-review-and-merge.md, decisions-for-will.md, local-first.md, sign-in.md, roles-and-labels.md, old-app-feature-gaps.md, land-to-main.md, dev-stack-hygiene.md, ../features/issues.md, land-and-deploy-mvp.md]
+links: [review-round-4.md, ../decisions/0012-git-end-to-end.md, github-source-of-truth.md, pull-request-list-and-tabs.md, issue-triage.md, pr-review-and-merge.md, decisions-for-will.md, local-first.md, sign-in.md, roles-and-labels.md, old-app-feature-gaps.md, land-to-main.md, dev-stack-hygiene.md, ../features/issues.md, land-and-deploy-mvp.md, self-hosted-grafana.md, will-decision-queue.md]
 ---
+
+## Current specification — 2026-10-20, 16:35 PDT
+
+**What:** List, view, create and comment on GitHub issues through durable flows and local-first sync.
+
+**Why:** GitHub is authoritative; personal writes must use the person’s identity.
+
+**Current state:** At 16:29 the lead reported issues passing against live GitHub. The two-device test created issue #17 and its comment as the person; App writes appear as smitherspreviewrelease[bot]. A sync connection starvation bug was fixed: about 12 sync connections competed with the browser’s six HTTP connections; low-priority waiting sync requests reduced other requests from 11–21 seconds to under 70 ms. These timings are the lead’s reported observations, not a benchmark run by this tracker.
+
+**Next step:** Retain the live two-device regression and recording; configure deployed webhook separately. Triage’s remaining browser authorization is tracked in issue-triage.
+
+**Open questions for Will:** None for this completed slice.
+
+Evidence: lead text replies extracted by script from the session’s latest two hours through 23:34:16 UTC; current rulings and queue answers take precedence over older designs. Reported product-test receipts only; this tracker ran no product tests.
+
+## Prior tracker record (retained)
+
+
+## Current specification — 2026-10-20, 16:14 PDT
+
+**What:** List, view, create and comment on GitHub issues through durable flows and local-first sync.
+
+**Why:** GitHub remains authoritative; personal writes retain the person’s identity.
+
+**Current state:** At 16:08:34 PDT the lead reported a new passing two-device issues recording in the queue. This adds multi-device evidence to the live triage receipts. No complete personal create/comment and recovery matrix or deployed webhook receipt was supplied; status remains in-progress.
+
+**Next step:** Collect the remaining personal-write and recovery receipts; keep live webhook and triage-guidelines verification explicit.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies extracted by script from session 6253ecf2, latest two hours through 2026-10-20 23:13:53 UTC; current rulings and queue answers prevail over older briefs. Reported receipts only; this tracker ran no product tests.
+
+## Prior tracker record (retained)
+
+
+## Current specification — 2026-10-20, 15:44 PDT
+
+**What:** List, view, create and comment on GitHub issues through durable flows and local-first sync.
+
+**Why:** GitHub is authoritative and personal writes must retain the person’s identity.
+
+**Current state:** App setup is complete per Will’s queue answer. At 15:30:52 the lead reported triage label/comment writes against roninjin10/smithers-github-tests, including maintained authorization, an open rejected issue and judge abstention. This proves the App’s triage writes, not the full personal create/comment and recovery matrix. Webhook and repository triage-guidelines reads remain unverified live.
+
+**Next step:** Collect personal create/comment, recovery and multi-device receipts; finish the distinct triage spend-alert and live-ingress follow-ups.
+
+**Open questions for Will:** None; App configuration is no longer blocked on Will.
+
+Evidence: user-typed text and lead replies extracted from session 6253ecf2’s latest two hours through 22:43:59 UTC; current rulings, queue answers, shared briefs/designs, decisions, proposals, TODOs and rules. These are reported receipts; this tracker ran no product tests. Later rulings supersede older briefs.
+
+## Earlier tracker history
+
+
+## Current specification — 2026-10-20, 15:14 PDT
+
+**What:** List, view, create and comment on GitHub issues through durable flows and local-first sync.
+
+**Why:** Complete the GitHub workflow using the person’s account for their writes and GitHub as source of truth.
+
+**Current state:** GitHub App setup is complete per Will’s queue answer. At 15:12 PDT the lead reports a real video titled “issues: who can read them, who triages” in the queue, without chapters. No explicit complete create/comment, dropped-response and multi-device test receipt is supplied by that update; retain in-progress.
+
+**Next step:** Collect the live write and recovery test receipts against roninjin10/smithers-github-tests; add video chapters and return the recording for review.
+
+**Open questions for Will:** None; App configuration is no longer a question for Will.
+
+Evidence: lead text replies through 2026-10-20 22:13:56 UTC (15:13:56 PDT), extracted from session `6253ecf2`; [rulings](../rulings.md), queue answers through 21:36 UTC, decisions, proposals, todo and rules. Reported receipts are not fresh test execution by this tracker.
+
+## Earlier tracker history
+
 
 ## What
 
@@ -66,16 +134,34 @@ Will, 06:39:05 on 2026-10-20: "Pull request list and generally finishing the ent
   - While stopping its own duplicate suite the builder ran `pkill -f 'vitest run --coverage.enabled=false'`, which also matches other agents' runs; any vitest run that died around 12:52 should be rerun ([dev stack hygiene](dev-stack-hygiene.md)).
 - **12:54:04 on 2026-10-20, the lead to Will:** "Issues now work end to end in the app: list, view, create and comment, with changes syncing between devices. People post as themselves and the agent posts as the App." "**Your next step: set up the GitHub App.**" Four steps: Issues read and write; the Issues and Issue comment events; a new private key (`GH_APP_PEM` in `~/.zshrc` points to `smithers-jjhub.pem`, which isn't on this Mac); install the App on the wrapped repository and on a scratch repository, and tell the lead both names. "Leave the webhook URL for now; it needs the deployed address." Row 9 of [decisions for Will](decisions-for-will.md).
 - **Status moved from in-progress to blocked:** the slice is built, and the rest of its proof (the create and comment e2e and the live GitHub tests) waits on Will's GitHub App setup.
+- **13:25:53 on 2026-10-20, Will answered 0012 Q1:** "yes should appear under your account is better ux". What a person posts through Smithers appears on GitHub under their own account; the App posts only for the agent and flows. 13:26:18, the lead: "That's already how issues work." Recorded in 0012 (line 369).
+- **13:26:18: the GitHub App setup became one visit**, "the one blocker that holds the most work": the callback URL `http://localhost:1337/api/auth/callback`; Issues, Pull requests and Contents read and write; the events Issues, Issue comment, Label, Pull request, Pull request review, Push, Create and Delete; a new private key at the path `GH_APP_PEM` names; installs on the wrapped repository and a scratch repository. Not done by 13:46 ([decisions for Will](decisions-for-will.md), row 1).
+- **14:08:55 on 2026-10-20: the GitHub App setup is done** (Will's queue answer, a transcript of the agent that drove Arc for him; GitHub asked Will for a passkey twice): the callback URL added; Issues, Pull requests and Contents verified Read and write; all eight events on; a new private key saved at `~/.secrets/smithers-jjhub.pem`, owner-only; installs on `smithersai/smithers` (wrapped) and `roninjin10/smithers-github-tests`, a new public scratch repository. The webhook URL is unchanged until a deploy. "Live sign-in and tests haven't been run."
+- 14:10:36, the lead: "The GitHub App key is in place." **Status moved from blocked to in-progress.**
+- **14:12:55, the lead to Will:** "an agent is now running the live sign-in, issues and triage tests against `roninjin10/smithers-github-tests` on a separate dev server, so the other agents' tests aren't affected."
+- 14:15 to 14:16: the usage limit stopped that agent ("Run live GitHub sign-in and issues tests"); resumed at 14:19.
+- On disk, unreported, 14:13 to 14:27: scratchpad `live/` holds the separate dev server's scripts and log (`start-live-dev.sh`, `dev-live.log` to 14:28), a sign-in probe (`app-sign-in.mjs`, 14:24), and a sign-in recording (`signin-video/`, two `.webm` files, 14:27). No result or GIF yet.
 
 ## Next
 
-From 12:54 on 2026-10-20: Will sets up the GitHub App (row 9 of [decisions for Will](decisions-for-will.md)): Issues read and write (Metadata read stays on); the Issues and Issue comment events; `GITHUB_APP_ID` and a new key in `GITHUB_APP_PRIVATE_KEY`; installs on `GITHUB_REPOSITORY` and a scratch repository (`GITHUB_LIVE_REPOSITORY`). Then the create-on-A, comment-from-B e2e and the live tests run, with GIFs, and this note moves to done. The webhook URL (`<deploy url>/api/github/webhook`) and `GITHUB_WEBHOOK_SECRET` follow the first deploy ([land and deploy](land-and-deploy-mvp.md)). The fixes land in round 3 of [land to main](land-to-main.md).
+From 14:30 on 2026-10-20: the live test agent's report: real GitHub sign-in, then create on one device and comment from another against `roninjin10/smithers-github-tests`, with GIFs. Then this note moves to done. The webhook URL (`<deploy url>/api/github/webhook`) and `GITHUB_WEBHOOK_SECRET` follow the first deploy ([land and deploy](land-and-deploy-mvp.md)). The fixes land in round 3 of [land to main](land-to-main.md).
+
+Until 14:30 on 2026-10-20 the next step was, from 12:54 on 2026-10-20: Will sets up the GitHub App (row 9 of [decisions for Will](decisions-for-will.md)): Issues read and write (Metadata read stays on); the Issues and Issue comment events; `GITHUB_APP_ID` and a new key in `GITHUB_APP_PRIVATE_KEY`; installs on `GITHUB_REPOSITORY` and a scratch repository (`GITHUB_LIVE_REPOSITORY`). Then the create-on-A, comment-from-B e2e and the live tests run, with GIFs, and this note moves to done. The webhook URL (`<deploy url>/api/github/webhook`) and `GITHUB_WEBHOOK_SECRET` follow the first deploy ([land and deploy](land-and-deploy-mvp.md)). The fixes land in round 3 of [land to main](land-to-main.md).
 
 Until 12:54 on 2026-10-20 the next step was, from 11:07 on 2026-10-20: G0's report as before, and the lead's routing of round 4's R4-7 and R4-15 ([review round 4](review-round-4.md)). R4-7 must be fixed before the App is configured on a private repository.
 
 Until 11:07 on 2026-10-20 the next step was: G0's report: the webhook in, `issue/Create` and `issue/Comment` out from a button and the agent, the same issue on two devices, offline writes sent once, and GIFs. Writes against the real repository need the App's new permissions and webhook (Q2).
 
 ## Questions for Will
+
+None. The GitHub App visit is done (14:08:55 on 2026-10-20).
+
+Until 14:30:
+
+- **Now (asked 13:26:18 on 2026-10-20, replacing the 12:54:04 ask below):** one visit to the GitHub App's settings: the callback URL, Issues, Pull requests and Contents read and write, the eight events, a new private key, and installs on the wrapped and a scratch repository; tell the lead both names.
+- 0012 Q1: answered 13:25:53 on 2026-10-20: yes, under the person's own account.
+
+Until 13:26:
 
 - **Now (asked 12:54:04 on 2026-10-20):** set up the GitHub App: Issues read and write; the Issues and Issue comment events; a new private key (the file `GH_APP_PEM` names isn't on this Mac); install it on the wrapped repository and a scratch repository you own, and tell the lead both names. This is 0012 Q2's App change, limited to what issues need.
 - 0012 Q1: should your issues, comments, reviews and merges show on GitHub as you, through your own sign-in token, rather than as the Smithers App? Recommended: yes. (Relayed 07:40:55 on 2026-10-20; built on yes.)

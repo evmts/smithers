@@ -1,11 +1,81 @@
 ---
 title: End-to-end suite and flow GIFs
-status: done
+status: in-progress
 area: app
-owner: e2e fault-rewrite agent (finished); lead
+owner: recording pipeline builder and feature builders
 updated: 2026-10-20
-links: [../features/chat.md, ../rules.md, ../observability.md, sync-service-di-test-seam.md, route-ban-any-receiver.md, land-and-deploy-mvp.md, app-wiring.md, local-first.md, slash-commands.md, navigate-flow.md, web-page-flow.md, agent-jev.md]
+links: [../features/chat.md, ../rules.md, ../observability.md, sync-service-di-test-seam.md, route-ban-any-receiver.md, land-and-deploy-mvp.md, app-wiring.md, local-first.md, slash-commands.md, navigate-flow.md, web-page-flow.md, agent-jev.md, ../rulings.md, chaptered-review-videos.md]
 ---
+
+## Current specification — 2026-10-20, 17:44 PDT
+
+**What:** Keep real local/live journeys and usable review recordings current.
+
+**Why:** A passing test and a comprehensible walkthrough establish different evidence.
+
+**Current state:** At 17:28 the lead reported every recording passing, including clone by agent. Subsequent Will feedback rejects branch/TODO clarity and identifies old sign-in/status media. The earlier four failures are superseded by passing reports, not by universal review approval.
+
+**Next step:** Complete chaptered replacements, rerun changed UI journeys and execute live checks after deployment; keep failures out of the review queue.
+
+**Open questions for Will:** None for this update.
+
+Evidence: queue answers through 2026-10-21 00:42:06 UTC and script-filtered human text/lead replies from 22:43–00:43 UTC; current rulings and decision 0017 supersede historical briefs. Product checks are reported evidence; this tracker validates the site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 16:24 PDT
+
+**What:** Run real browser journeys locally and live, retaining passing chaptered MP4s and GIF previews.
+
+**Why:** TEST-1–7 and Will’s queue feedback require working behavior and usable review evidence.
+
+**Current state:** The dev stack recovered at 15:17 PDT. At 16:02 the lead reported four failing browser tests: branch views, both flows tests and clone by the agent. At 16:03 failing-run media was removed from the queue; flows and branch-workspace verification stays withdrawn. Message controls and repository home retain passing recordings. At 16:08 a passing two-device issues recording joined the queue. Around 55 older GIFs still need replacement; mini test-farm setup has no completion receipt. These later receipts supersede the outage and chapterless-first-video state below.
+
+**Next step:** Fix the four product failures and retain passing chaptered recordings; re-record older media once independent mini runs are proven. Do not present failing-run media for verification.
+
+**Open questions for Will:** None; Will reviews the passing replacements.
+
+Evidence: lead text replies extracted by script from session 6253ecf2, latest two hours through 23:23:40 UTC; current rulings and queue answers govern. Shared briefs/designs, decisions, proposals, TODOs and rules were consulted. Reported product receipts only; this tracker ran no product tests.
+
+## Prior tracker record (retained)
+
+
+## Current specification — 2026-10-20, 15:14 PDT
+
+**What:** Real local/live browser tests with reliable chaptered videos and GIF previews.
+
+**Why:** TEST-1 to TEST-7 require real behavior; Will needs usable recordings to review it.
+
+**Current state:** At 15:12 PDT the first feature video is reported in the queue, covering issue access and triage, but without chapters. The lead requested chapters for every recording. Shared dev recovery still lacks a completion receipt; branch, flows, clone and home re-recordings remain outstanding.
+
+**Next step:** Add named chapters, verify recording health and rerun blocked journeys after stack recovery. Preserve rejected recordings’ review history.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies through 2026-10-20 22:13:56 UTC (15:13:56 PDT), extracted from session `6253ecf2`; [rulings](../rulings.md), queue answers through 21:36 UTC, decisions, proposals, todo and rules. Reported receipts are not fresh test execution by this tracker.
+
+## Earlier tracker history
+
+
+## Current specification — 2026-10-20, 14:55 PDT
+
+**What:** Produce trustworthy real browser evidence and usable walkthroughs.
+
+**Why:** Will rejected blank/glitching GIFs and requested a timeline.
+
+**Current state:** Earlier suite/GIF completion is historical. At 14:29 the lead assigned shared recording fixes; at 14:36 the pipeline moved toward fixed-size MP4s with named chapters and GIF health checks. Queue playback is live; feature re-recordings remain outstanding.
+
+**Next step:** Run the recovered local stack and regenerate branch, flows, clone and home evidence; reject blank/frozen/glitched output.
+
+**Open questions for Will:** None; the lead can settle implementation details.
+
+Evidence: Will's typed messages and the lead's text updates in session `6253ecf2`, 12:54–14:55 PDT; [rulings](../rulings.md); queue answers through 14:36 PDT. These are reported receipts, not a new verification run by the tracker.
+
+## Earlier tracker history
+
+Previous owner record: e2e fault-rewrite agent (finished); lead
+
 
 ## What
 
