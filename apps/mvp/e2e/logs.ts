@@ -2,7 +2,7 @@ import { expect } from "@playwright/test"
 import { open, readdir, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { guard, target } from "./target"
+import { baseURL, guard, target } from "./target"
 
 // ChatApi's records, for the e2e tests that read what it recorded (docs/observability.md): its own, the remote flows'
 // its `FlowExecution` objects ran, and the browser's and the engine worker's OTLP records it relayed (`otlp.signal`).
@@ -79,8 +79,29 @@ export class CloudflareTail {
     })
     socket.send(JSON.stringify({ filters: [], debug: false }))
     process.once("beforeExit", () => void tail.close())
+    await tail.streaming(new URL("/api/repos/app/x/about", baseURL))
     return tail
   }
+
+  /**
+   * Waits until the tail streams: a new tail starts sending a moment after it connects, and a record written before
+   * then is lost. Reads `probe` (a refused read that writes nothing and logs its `repo.about` line) every 2 seconds
+   * until a line arrives, for at most 30 seconds.
+   */
+  private async streaming(probe: URL) {
+    for (let tries = 0; tries < 15 && this.lines.length === 0; tries++) {
+      // The next line, or two seconds without one.
+      const arrived = new Promise<void>((resolve) => {
+        this.arrivals.push(resolve)
+        AbortSignal.timeout(2_000).addEventListener("abort", () => resolve(), { once: true })
+      })
+      await fetch(probe).then((response) => response.body?.cancel(), () => undefined)
+      await arrived
+    }
+  }
+
+  /** Who waits for the next line. */
+  private readonly arrivals: Array<() => void> = []
 
   /** The one script whose name starts with the stage's ChatApi prefix; only the scripts' ids are read. */
   private static async script(scripts: string, headers: Record<string, string>, stage: string): Promise<string> {
@@ -104,6 +125,7 @@ export class CloudflareTail {
         const record = recordOf(message)
         const text = typeof message === "string" ? message : JSON.stringify(message)
         this.lines.push({ worker: "ChatApi", file: "tail", text, ...(record === undefined ? {} : { record }) })
+        for (const resolve of this.arrivals.splice(0)) resolve()
       }
     }
   }
