@@ -147,15 +147,18 @@ const needs = {
     met: (run) => run.target === "local" && !githubAppLocally(run),
     reason: "it signs out and in as local development's person, who exists only without GitHub sign-in; in a deployment that would end the run's shared session",
   },
-  localLogs: localOnly("it reads the Workers' logs from local .alchemy/log files; a deployment's are in Workers Logs"),
+  localLogs: {
+    met: (run) => run.target === "local" || set(run, "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"),
+    reason: "it reads ChatApi's records: locally from .alchemy/log, in a deployment through a Cloudflare tail (e2e/logs.ts), which needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID",
+  },
   localServer: localOnly("it serves fixtures or builds from this machine, which a deployment can't reach"),
   noGitHubApp: {
     met: (run) => run.target === "local" && !set(run, "GITHUB_APP_ID") && !set(run, "E2E_ISSUES_REPOSITORY"),
     reason: "it needs a repository GitHub hasn't said is public: a dev server without the GitHub App (GITHUB_APP_ID and E2E_ISSUES_REPOSITORY unset)",
   },
   webhookSecret: {
-    met: (run) => run.target === "local" && set(run, "E2E_GITHUB_WEBHOOK_SECRET"),
-    reason: "it signs GitHub's deliveries as GitHub does: set E2E_GITHUB_WEBHOOK_SECRET to the dev server's GITHUB_WEBHOOK_SECRET, with the GitHub App configured",
+    met: (run) => set(run, "E2E_GITHUB_WEBHOOK_SECRET"),
+    reason: "it signs GitHub's deliveries as GitHub does: set E2E_GITHUB_WEBHOOK_SECRET to the app's GITHUB_WEBHOOK_SECRET, the dev server's (with the GitHub App configured) or the deployment's",
   },
   alertProviders: {
     met: (run) =>
@@ -179,6 +182,14 @@ const needs = {
   githubScratch: {
     met: (run) => run.target === "deployment" && set(run, "E2E_ISSUES_REPOSITORY") && !/^smithersai\//i.test(run.env.E2E_ISSUES_REPOSITORY!),
     reason: "it writes issues to GitHub as a real person: run against a deployment with E2E_ISSUES_REPOSITORY set to a scratch repository it syncs, never a smithersai one",
+  },
+  githubApp: {
+    met: (run) => run.target === "deployment",
+    reason: "it syncs the deployment's GitHub repository through its GitHub App and webhook, which local development runs without",
+  },
+  longRun: {
+    met: (run) => run.target === "deployment" && run.env.E2E_LONG === "1",
+    reason: "it waits out a deployment's own window (the spend alert's 15 minutes, an answer's 25, a role's hour), which local development shortens or turns off: set E2E_LONG=1 against a deployment",
   },
   member: {
     met: (run) => MEMBER_OR_ABOVE.has(run.role()),

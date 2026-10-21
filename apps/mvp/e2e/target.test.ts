@@ -62,16 +62,16 @@ describe("the target", () => {
 describe("needs", () => {
   it("are all met locally, where local development's Admin is signed in, but GitHub sign-in", () => {
     const unmet = (Object.keys(NEEDS) as Array<NeedName>).filter((name) => !NEEDS[name].met(local))
-    expect(unmet).toEqual(["webhookSecret", "alertProviders", "oldBuild", "githubSignIn", "factoryRepository", "githubScratch"])
+    expect(unmet).toEqual(["webhookSecret", "alertProviders", "oldBuild", "githubSignIn", "factoryRepository", "githubScratch", "githubApp", "longRun"])
   })
 
   it("in a deployment, leave out every dev-only need, and meet a role need by the account's role", () => {
     const met = (role: ReturnType<Run["role"]>) => (Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].met(deployedAs(role)))
-    expect(met("guest")).toEqual(["githubSignIn", "codeStorage"])
-    expect(met(null)).toEqual(["githubSignIn", "codeStorage"])
-    expect(met("member")).toEqual(["githubSignIn", "codeStorage", "member"])
-    expect(met("maintainer")).toEqual(["githubSignIn", "codeStorage", "member", "maintainer"])
-    expect(met("admin")).toEqual(["githubSignIn", "codeStorage", "member", "maintainer"])
+    expect(met("guest")).toEqual(["githubSignIn", "codeStorage", "githubApp"])
+    expect(met(null)).toEqual(["githubSignIn", "codeStorage", "githubApp"])
+    expect(met("member")).toEqual(["githubSignIn", "codeStorage", "githubApp", "member"])
+    expect(met("maintainer")).toEqual(["githubSignIn", "codeStorage", "githubApp", "member", "maintainer"])
+    expect(met("admin")).toEqual(["githubSignIn", "codeStorage", "githubApp", "member", "maintainer"])
   })
 
   it("for local development's people and sign-out, are unmet once the dev server signs in through GitHub", () => {
@@ -83,9 +83,10 @@ describe("needs", () => {
     expect(NEEDS.noGitHubApp.met({ ...local, env: { E2E_ISSUES_REPOSITORY: "a/b" } })).toBe(false)
   })
 
-  it("for the dev server's own settings, are met only locally with those settings", () => {
+  it("for the dev server's own settings, are met only locally with those settings; the webhook's secret, wherever it is set", () => {
     expect(NEEDS.webhookSecret.met({ ...local, env: { E2E_GITHUB_WEBHOOK_SECRET: "s" } })).toBe(true)
-    expect(NEEDS.webhookSecret.met(deployedAs("admin", { E2E_GITHUB_WEBHOOK_SECRET: "s" }))).toBe(false)
+    expect(NEEDS.webhookSecret.met(deployedAs("admin", { E2E_GITHUB_WEBHOOK_SECRET: "s" }))).toBe(true)
+    expect(NEEDS.webhookSecret.met(deployedAs("admin", { E2E_GITHUB_WEBHOOK_SECRET: "" }))).toBe(false)
     const providers = { ALERT_TELEGRAM_API_URL: "http://localhost:9", ALERT_EMAIL_API_URL: "http://localhost:9", MODEL_SPEND_ALERTS: "true" }
     expect(NEEDS.alertProviders.met({ ...local, env: providers })).toBe(true)
     expect(NEEDS.alertProviders.met({ ...local, env: { ...providers, ALERT_EMAIL_API_URL: "http://localhost:8" } })).toBe(false)
@@ -135,6 +136,19 @@ describe("needs", () => {
     expect(NEEDS.githubScratch.met(deployedAs("member", { E2E_ISSUES_REPOSITORY: "SmithersAI/smithers" }))).toBe(false)
     expect(NEEDS.githubScratch.met(deployedAs("member"))).toBe(false)
     expect(NEEDS.githubScratch.met({ ...local, env: { E2E_ISSUES_REPOSITORY: "roninjin10/smithers-github-tests" } })).toBe(false)
+  })
+
+  it("for ChatApi's records, are met locally, and in a deployment when a Cloudflare tail can open: a token and the account", () => {
+    expect(NEEDS.localLogs.met(local)).toBe(true)
+    expect(NEEDS.localLogs.met(deployedAs("member", { CLOUDFLARE_API_TOKEN: "t", CLOUDFLARE_ACCOUNT_ID: "a" }))).toBe(true)
+    expect(NEEDS.localLogs.met(deployedAs("member", { CLOUDFLARE_API_TOKEN: "t" }))).toBe(false)
+    expect(NEEDS.localLogs.met(deployedAs("member", { CLOUDFLARE_API_TOKEN: "", CLOUDFLARE_ACCOUNT_ID: "a" }))).toBe(false)
+  })
+
+  it("for a deployment's long windows, are met only against a deployment with E2E_LONG=1", () => {
+    expect(NEEDS.longRun.met(deployedAs("member", { E2E_LONG: "1" }))).toBe(true)
+    expect(NEEDS.longRun.met(deployedAs("member"))).toBe(false)
+    expect(NEEDS.longRun.met({ ...local, env: { E2E_LONG: "1" } })).toBe(false)
   })
 
   it("read the role only when a role need asks, so a dev-only need never needs the setup", () => {
