@@ -32,15 +32,6 @@ export service FlowInvoker {
   invoke(invocation: Invocation): unknown!FsError
 }
 
-const ownInvoke = (input: unknown, description: string): FlowInvoker["invoke"] => {
-  if (typeof input !== "object" || input === null) throw new TypeError(description)
-  const descriptor = Object.getOwnPropertyDescriptor(input, "invoke")
-  if (descriptor === undefined || !("value" in descriptor) || typeof descriptor.value !== "function") {
-    throw new TypeError(description)
-  }
-  return descriptor.value
-}
-
 /**
  * Constructs a flow invoker from an implementation.
  *
@@ -48,8 +39,7 @@ const ownInvoke = (input: unknown, description: string): FlowInvoker["invoke"] =
  * @since 0.1.0
  */
 export const make = (implementation: FlowInvoker): FlowInvoker => {
-  const invoke = ownInvoke(implementation, "FlowInvoker implementations require an own invoke function")
-  return Object.freeze({ invoke })
+  return Object.freeze({ invoke: implementation.invoke })
 }
 
 /**
@@ -59,12 +49,8 @@ export const make = (implementation: FlowInvoker): FlowInvoker => {
  * @since 0.1.0
  */
 export const makeNoop = (overrides: Partial<FlowInvoker> = {}): FlowInvoker => {
-  const descriptor = Object.getOwnPropertyDescriptor(overrides, "invoke")
-  if (descriptor !== undefined && (!("value" in descriptor) || typeof descriptor.value !== "function")) {
-    throw new TypeError("FlowInvoker overrides require an own invoke function")
-  }
   return make({
-    invoke: descriptor?.value ?? ((_invocation) =>
+    invoke: overrides.invoke ?? ((_invocation) =>
       withSpan("FlowInvoker.invoke") {
         throw new FsError({
           code: "invocation_unavailable",

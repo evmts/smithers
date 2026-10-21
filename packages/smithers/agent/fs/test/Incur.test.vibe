@@ -739,9 +739,9 @@ describe("Incur projection", () => {
       const sentinel = "SECRET_SENTINEL_credential_from_backend"
       const invoke: FlowInvoker.FlowInvoker["invoke"] = kind === "throw"
         // A plain function that throws instead of returning a program.
-        ? (): never => {
+        ? sync((sentinel) => (): never => {
           throw new Error(sentinel)
-        }
+        }, sentinel)
         : kind === "die"
         ? () => die(new Error(sentinel))
         // A JavaScript host can violate the service's typed failure contract.

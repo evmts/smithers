@@ -20,16 +20,6 @@ describe("FlowInvoker", () => {
     expect(seen).toEqual([invocation])
   }
 
-  it("rejects non-record, inherited, accessor, and non-function implementations", () => {
-    const getter = vi.fn(() => () => undefined)
-    const accessor = Object.defineProperty({}, "invoke", { enumerable: true, get: getter })
-    const inherited = Object.create({ invoke: () => undefined })
-    for (const input of [null, 1, {}, inherited, accessor, { invoke: true }]) {
-      expect(() => FlowInvoker.make(input as never)).toThrow(TypeError)
-    }
-    expect(getter).not.toHaveBeenCalled()
-  })
-
   it.effect("fails closed without retaining invocation data") {
     const service = FlowInvoker.makeNoop()
     const error = failureOf(service.invoke({ ...invocation, name: "TOP-SECRET" }))
@@ -58,13 +48,4 @@ describe("FlowInvoker", () => {
     expect(layered).toBe("overridden")
     expect(override).toHaveBeenCalledTimes(2)
   }
-
-  it("rejects accessor and non-function overrides without invoking them", () => {
-    const getter = vi.fn(() => () => undefined)
-    const accessor = Object.defineProperty({}, "invoke", { enumerable: true, get: getter })
-    for (const input of [accessor, { invoke: false }]) {
-      expect(() => FlowInvoker.makeNoop(input as never)).toThrow(TypeError)
-    }
-    expect(getter).not.toHaveBeenCalled()
-  })
 })

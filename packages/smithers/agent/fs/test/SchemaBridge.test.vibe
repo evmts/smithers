@@ -23,9 +23,7 @@ vitest.mock(
 )
 
 // A service that a decoding transformation needs and the bridge cannot supply.
-service Prefix {
-  value: string
-}
+service Prefix: string
 
 const moduleRef = new Descriptor.SchemaRefModule({ path: "/absolute/flow.ts", field: "input" })
 
@@ -207,7 +205,7 @@ describe("SchemaBridge", () => {
       optional: true
     }
   ])("preserves the declared $name values and requiredness", ({ field, optional, value }) => {
-    const Input = Schema.Struct({ choice: field })
+    schema Input { choice: field }
     const command = SchemaBridge.toCommandSchema(moduleRef, Input)
     const advertised = z.toJSONSchema(command.options!, { unrepresentable: "any" })
     const declared = Schema.toJsonSchemaDocument(Input).schema
@@ -232,7 +230,7 @@ describe("SchemaBridge", () => {
   })
 
   it.effect("supports an explicit args property and schema definitions") {
-    const WithArgs = Schema.Struct({ args: Schema.Array(Schema.String) })
+    schema WithArgs { args: string[] }
     const argsCommand = SchemaBridge.toCommandSchema(moduleRef, WithArgs)
     expect(argsCommand.decode(argsCommand.assemble(["a", "b"], {}))).toEqual({
       args: ["a", "b"]
@@ -393,9 +391,9 @@ describe("SchemaBridge", () => {
   it.effect("turns document-generation errors into sanitized typed unsupported_schema failures") {
     const error = failureOf(SchemaBridge.toCommandSchema(
       moduleRef,
-      Schema.suspend((): typeof Schema.String => {
+      sync(() => Schema.suspend((): typeof Schema.String => {
         throw new Error("private schema cause")
-      })
+      }))
     ))
     expect(error).toMatchObject({ code: "unsupported_schema", method: "SchemaBridge.toCommandSchema" })
     expect(JSON.stringify(error)).not.toContain("private schema cause")
@@ -482,9 +480,9 @@ describe("SchemaBridge", () => {
 
   it.effect("keeps help, OpenAPI, and MCP usable beside an unsupported schema") {
     const inputs: Record<string, Schema.Top> = {
-      bad: Schema.suspend((): typeof Schema.String => {
+      bad: sync(() => Schema.suspend((): typeof Schema.String => {
         throw new Error("private schema cause")
-      }),
+      })),
       tuple: Schema.Tuple([Schema.String, Schema.Finite]),
       healthy: Schema.Struct({
         nested: Schema.Struct({ mode: Schema.Literals(["fast", "slow"]), count: Schema.Finite })
@@ -571,15 +569,15 @@ describe("SchemaBridge", () => {
       Schema.decodeTo(
         Schema.String,
         SchemaTransformation.transformEffect({
-          decode: (value) => `${Prefix().value}${value}`,
-          encode: (value) => value.slice(Prefix().value.length)
+          decode: (value) => `${Prefix()}${value}`,
+          encode: (value) => value.slice(Prefix().length)
         })
       )
     )
 
     expect(failureOf(SchemaBridge.decodeInput(ServiceSchema, "value")).code).toBe("decode_failed")
     expect(failureOf(SchemaBridge.encodeOutput(ServiceSchema, "prefix:value")).code).toBe("encode_failed")
-    provide Prefix = { value: "prefix:" } {
+    provide Prefix = "prefix:" {
       expect(SchemaBridge.decodeInput(ServiceSchema, "value")).toBe("prefix:value")
       expect(SchemaBridge.encodeOutput(ServiceSchema, "prefix:value")).toBe("value")
     }

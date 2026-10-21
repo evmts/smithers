@@ -95,11 +95,11 @@ describe("Route boundary", () => {
     expect(failureOf(Route.snapshot(accessor)).code).toBe("invalid_route")
     expect(getter).not.toHaveBeenCalled()
 
-    const hostileOption = new Proxy({}, {
+    const hostileOption = sync((target) => new Proxy(target, {
       has: () => {
         throw new Error("trap")
       }
-    })
+    }), {})
     expect(failureOf(Route.snapshot({ ...base, description: hostileOption as never })).code).toBe("invalid_route")
     expect(failureOf(Route.snapshot({ ...base, placement: hostileOption as never })).code).toBe("invalid_route")
   }
@@ -135,11 +135,11 @@ describe("Route boundary", () => {
     })
     expect(failureOf(Route.snapshot({ ...base, input: accessorPath as never })).code).toBe("invalid_route")
     expect(pathGetter).not.toHaveBeenCalled()
-    const hostileRef = new Proxy({ _tag: "None" }, {
+    const hostileRef = sync((target) => new Proxy(target, {
       getPrototypeOf: () => {
         throw new Error("trap")
       }
-    })
+    }), { _tag: "None" })
     expect(failureOf(Route.snapshot({ ...base, input: hostileRef as never })).code).toBe("invalid_route")
 
     for (

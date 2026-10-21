@@ -5,7 +5,6 @@
  */
 
 import * as ReadonlyMap from "@smthrs/canonical/ReadonlyMap"
-import { trusted } from "vibelang-runtime"
 import { FsError } from "./FsError.vibe"
 import * as Boundary from "./internal/Boundary.ts"
 import * as CommandLine from "./internal/CommandLine.vibe"
@@ -70,10 +69,9 @@ const emptyNode = (): MutableTree => ({ route: Option.none(), children: new Map(
 const resourceLimit = (method: string, description: string): FsError =>
   new FsError({ code: "resource_limit", method, description })
 
-// Every reflective operation is inside the try, and every throw leaves it as an
-// FsError, so the trusted wrapper's only expected failure is FsError.
-const routeReferences = trusted((input: ReadonlyArray<Route.Route>): ReadonlyArray<Route.Route> => {
-  try {
+// Bound foreign reflection with a JavaScript try hatch and normalize to FsError.
+const routeReferences = (input: ReadonlyArray<Route.Route>): ReadonlyArray<Route.Route>!FsError! => {
+  return try((input, maximumRoutes, resourceLimit) => {
     if (!Array.isArray(input) || Object.getPrototypeOf(input) !== Array.prototype) {
       throw new FsError({
         code: "invalid_route",
@@ -105,14 +103,12 @@ const routeReferences = trusted((input: ReadonlyArray<Route.Route>): ReadonlyArr
       output.push(descriptor.value as Route.Route)
     }
     return Object.freeze(output)
-  } catch (cause) {
-    throw cause instanceof FsError ? cause : new FsError({
-      code: "invalid_route",
-      method: "CommandTree.make",
-      description: "Routes could not be inspected without executing user code"
-    })
-  }
-}, [FsError])
+  }, (cause) => cause instanceof FsError ? cause : new FsError({
+    code: "invalid_route",
+    method: "CommandTree.make",
+    description: "Routes could not be inspected without executing user code"
+  }), input, maximumRoutes, resourceLimit)
+}
 
 const freezeTree = (root: MutableTree): CommandTree => {
   const frozen = new Map<MutableTree, CommandTree>()

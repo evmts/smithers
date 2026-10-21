@@ -78,11 +78,11 @@ describe("CommandTree", () => {
     const accessor = Object.defineProperty([], "0", { enumerable: true, get: () => makeRoute("bad") })
     Object.defineProperty(accessor, "length", { value: 1 })
     expect(failureOf(CommandTree.make(accessor as Array<Route.Route>)).code).toBe("invalid_route")
-    const hostile = new Proxy([makeRoute("bad")], {
+    const hostile = sync((target) => new Proxy(target, {
       ownKeys: () => {
         throw new Error("trap")
       }
-    })
+    }), [makeRoute("bad")])
     expect(failureOf(CommandTree.make(hostile)).code).toBe("invalid_route")
   }
 

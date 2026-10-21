@@ -8,7 +8,6 @@ import type * as Flow from "@smthrs/core/Flow"
 import * as RuntimeFlow from "@smthrs/flow/Flow"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { fileSpecifier } from "@smthrs/registry/Executable"
-import { trusted } from "vibelang-runtime"
 import { FsError } from "./FsError.vibe"
 import * as Boundary from "./internal/Boundary.ts"
 
@@ -138,7 +137,7 @@ const invalidRoute = (path: string, description = "Route metadata violates the c
 const text = (
   value: unknown,
   options: { path: string; maximum: number; empty?: boolean | undefined }
-): string => {
+): string!FsError! => {
   if (
     typeof value !== "string" || (options.empty !== true && value.length === 0) ||
     value.length > options.maximum || value.includes("\0") || !Boundary.isWellFormedText(value)
@@ -150,7 +149,7 @@ const fields = (
   value: unknown,
   required: ReadonlyArray<string>,
   optional: ReadonlyArray<string> = []
-): Readonly<Record<string, unknown>> => {
+): Readonly<Record<string, unknown>>!FsError! => {
   const admitted = Boundary.inspectRecord(value, required, optional)
   if (!admitted.ok) throw invalidRoute(admitted.path)
   return admitted.value
@@ -160,8 +159,8 @@ const schemaFields = (
   input: unknown,
   required: ReadonlyArray<string>,
   optional: ReadonlyArray<string> = []
-): Readonly<Record<string, unknown>> => {
-  try {
+): Readonly<Record<string, unknown>>!FsError! => {
+  return try((input, required, optional, invalidRoute) => {
     if (typeof input !== "object" || input === null || Array.isArray(input)) throw invalidRoute("$")
     const prototype = Object.getPrototypeOf(input)
     const known = input instanceof Descriptor.SchemaRefMarkdownArgs ||
@@ -186,40 +185,37 @@ const schemaFields = (
       output[key] = descriptor.value
     }
     return Object.freeze(output)
-  } catch (cause) {
-    throw cause instanceof FsError ? cause : invalidRoute("$")
-  }
+  }, (cause) => cause instanceof FsError ? cause : invalidRoute("$"), input, required, optional, invalidRoute)
 }
+
+// Inspect foreign Option values inside JavaScript so hostile proxy traps are normalized.
+const inspectOption = (input: unknown, path: string): Option.Option<unknown>!FsError! =>
+  try((input) => {
+    if (!Option.isOption(input)) throw new Error("Invalid Option")
+    // Reading the payload here also catches a hostile getter.
+    return input._tag === "None" ? Option.none() : Option.some(input.value)
+  }, () => invalidRoute(path), input)
 
 const optionText = (
   input: unknown,
   path: string,
   maximum: number
-): Option.Option<string> => {
-  try {
-    if (!Option.isOption(input)) throw invalidRoute(path)
-    return input.map((value) => text(value, { path, maximum }))
-  } catch (cause) {
-    throw cause instanceof FsError ? cause : invalidRoute(path)
-  }
+): Option.Option<string>!FsError! => {
+  const option = inspectOption(input, path)
+  if (option.isNone()) return Option.none()
+  return Option.some(text(option.value, { path, maximum }))
 }
 
-const optionPlacement = (input: unknown): Option.Option<Descriptor.Placement> => {
-  try {
-    if (!Option.isOption(input)) throw invalidRoute("$.placement")
-    if (input.isNone()) return Option.none()
-    const placement = input.value
-    if (!(placement is "client" or "local" or "sandbox" or "remote")) throw invalidRoute("$.placement")
-    return Option.some(placement)
-  } catch (cause) {
-    throw cause instanceof FsError ? cause : invalidRoute("$.placement")
-  }
+const optionPlacement = (input: unknown): Option.Option<Descriptor.Placement>!FsError! => {
+  const option = inspectOption(input, "$.placement")
+  if (option.isNone()) return Option.none()
+  const placement = option.value
+  if (!(placement is "client" or "local" or "sandbox" or "remote")) throw invalidRoute("$.placement")
+  return Option.some(placement)
 }
 
-const schemaRef = (input: unknown, path: string): Descriptor.SchemaRef => {
+const schemaRef = (input: unknown, path: string): Descriptor.SchemaRef!FsError! => {
   const tagged = schemaFields(input, ["_tag"], ["path", "field", "document"])
-  // This stays a switch: a match arm can only throw with a throw expression,
-  // and VibeLang makes a function with one an Effect, not plain JavaScript.
   switch (tagged._tag) {
     case "MarkdownArgs":
       return new Descriptor.SchemaRefMarkdownArgs({})
@@ -242,7 +238,7 @@ const schemaRef = (input: unknown, path: string): Descriptor.SchemaRef => {
   }
 }
 
-const effectDeclaration = (input: unknown): Descriptor.EffectDeclaration => {
+const effectDeclaration = (input: unknown): Descriptor.EffectDeclaration!FsError! => {
   const data = fields(input, ["reads", "writes", "mode", "onConflict", "tier"])
   const reads = Boundary.stringArray(data.reads, {
     maxItems: maximumCapabilities,
@@ -269,9 +265,8 @@ const effectDeclaration = (input: unknown): Descriptor.EffectDeclaration => {
 const isAbsolutePath = (value: string): boolean =>
   value.startsWith("file:///") || value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)
 
-// Every reflective helper above catches foreign throws and normalizes them, so
-// this throws only FsError; anything else would be a defect.
-const copyRoute = (input: Route): Route => {
+// Foreign inspection is bounded by hatches; validation fails with FsError.
+const copyRoute = (input: Route): Route!FsError! => {
   const data = fields(input, [
     "name",
     "segments",
@@ -335,7 +330,7 @@ const copyRoute = (input: Route): Route => {
  * @category constructors
  * @since 0.1.0
  */
-export const snapshot = trusted(copyRoute, [FsError])
+export const snapshot = copyRoute
 
 /**
  * True only for routes the agent and Incur command surfaces may execute.
