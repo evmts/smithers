@@ -10,6 +10,7 @@ import { type BootOptions, type Host, realServices, start } from "./boot"
 import { AttentionProvider } from "./features/attention/components/AttentionContext"
 import { AuthProvider } from "./features/auth/components/AuthContext"
 import { BranchProvider } from "./features/branch/components/BranchContext"
+import { CodeIntelProvider } from "./features/code-intel/components/CodeIntelContext"
 import { CommandsProvider } from "./features/commands/components/CommandsContext"
 import { IssuesProvider } from "./features/issues/components/IssuesContext"
 import { RepoProvider } from "./features/repo/components/RepoContext"
@@ -108,9 +109,13 @@ const host: Host = {
       return !activation.isActive
     },
   },
+  // The repository view's language server: TypeScript in a worker of its own, started when a TypeScript or JavaScript
+  // file first shows, so its bundle loads only then (docs/features/code-intelligence.md).
+  codeIntelWorker: () => new Worker(new URL("./features/code-intel/language.worker.ts", import.meta.url), { type: "module" }),
   // This tab's engine worker: it runs every client flow, the agent among them, once its tab leads (decision 0011). Under
   // the dev server, `?agent=<script>` names a scripted model for the end-to-end tests (src/test/scriptedAgent.ts); the
   // worker reads it from its name, and a production build drops the branch.
+  engineName: ENGINE_NAME,
   engineWorker: () =>
     // Vite reads the worker's `type` statically, so it comes after the spread.
     new Worker(new URL("./flows/engine.worker.ts", import.meta.url), {
@@ -143,6 +148,7 @@ const render: BootOptions["render"] = (
   spend,
   attention,
   todos,
+  codeIntel,
 ) =>
   root.render(
     <StrictMode>
@@ -151,6 +157,7 @@ const render: BootOptions["render"] = (
         <AuthProvider value={auth}>
           <ThemeProvider value={theme}>
             <RepoProvider value={repo}>
+              <CodeIntelProvider value={codeIntel}>
               <CommandsProvider value={commands}>
                 <ViewsProvider value={views}>
                   <WebProvider value={web}>
@@ -184,6 +191,7 @@ const render: BootOptions["render"] = (
                   </WebProvider>
                 </ViewsProvider>
               </CommandsProvider>
+              </CodeIntelProvider>
             </RepoProvider>
           </ThemeProvider>
         </AuthProvider>

@@ -1,4 +1,5 @@
 import { ShapeSource } from "@smthrs/effect-electric"
+import type { Interpreter } from "@smthrs/flow"
 import { Effect } from "effect"
 import { type AppOptions, type BootOptions, start } from "../boot"
 import type { Question } from "../features/chat/api"
@@ -20,7 +21,11 @@ export interface Switches {
     readonly heal: () => void
   }
   readonly questions: { readonly failNext: (fault: QuestionFault) => void; readonly asked: () => ReadonlyArray<Question> }
-  readonly engine: { readonly holdStarts: () => void; readonly releaseStarts: () => void }
+  readonly engine: {
+    readonly holdStarts: () => void
+    readonly releaseStarts: () => void
+    readonly refuseResults: (flow: string, code: Interpreter.InterpreterError["code"]) => void
+  }
 }
 
 /**
@@ -66,6 +71,7 @@ export const startWithFaults = async (page: AppOptions & BootOptions, search: st
     engine: {
       holdStarts: () => runtime.runSync(engine.holdStarts),
       releaseStarts: () => runtime.runSync(engine.releaseStarts),
+      refuseResults: (flow, code) => runtime.runSync(engine.refuseResults(flow, code)),
     },
   }
   Object.assign(target, { faults })

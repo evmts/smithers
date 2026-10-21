@@ -1,6 +1,7 @@
 import { Config, Effect, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import type { CapacityReason, Failure, Status } from "../src/features/repo/contract.ts"
+import * as CloneFeed from "./CloneFeed.ts"
 
 // The `repositories` table and Code Storage's spend (docs/features/repo.md, decision 0006 "Capacity and spend"): asking
 // for a clone, admission, settling, and metering what Code Storage serves. Code Storage bills usage above its minimum
@@ -88,10 +89,15 @@ export interface Attempt {
 }
 
 /**
- * Asks for a clone of `owner/name` under `id`, in one transaction that holds `repo_imports`' row, so two requests
- * can't both take the last place under `maxRepositories`.
+ * Asks for a clone of `owner/name` under `id` for person `requestedBy`, in one transaction that holds `repo_imports`'
+ * row, so two requests can't both take the last place under `maxRepositories`. A new attempt starts at stage
+ * `requested` and is folded into `requestedBy`'s feed in the same transaction.
  */
-export const request = (repository: { readonly id: string; readonly owner: string; readonly name: string }, limits: Budgets) =>
+export const request = (
+  repository: { readonly id: string; readonly owner: string; readonly name: string },
+  limits: Budgets,
+  requestedBy: string,
+) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
@@ -107,15 +113,22 @@ export const request = (repository: { readonly id: string; readonly owner: strin
       if (held!.n >= limits.maxRepositories) return { kind: "limit" } satisfies Requested
       const [row] = existing === undefined
         ? yield* sql<Clone & { readonly txid: string }>`
-          INSERT INTO repositories (id, owner, name, status) VALUES (${repository.id}, ${repository.owner}, ${repository.name}, 'cloning')
+          INSERT INTO repositories (id, owner, name, status, stage)
+          VALUES (${repository.id}, ${repository.owner}, ${repository.name}, 'cloning', 'requested')
           RETURNING owner, name, ${attemptColumns(sql)}, pg_current_xact_id()::xid::text AS txid`
         : yield* sql<Clone & { readonly txid: string }>`
           UPDATE repositories SET status = 'cloning', attempt = attempt + 1, clone_id = gen_random_uuid(),
             owner = ${repository.owner},
             name = ${repository.name}, failure = NULL, capacity = NULL, stored_bytes = NULL, retry_at = NULL,
-            requested_at = now(), settled_at = NULL
+            stage = 'requested', reclaimable = false, requested_at = now(), settled_at = NULL
           WHERE id = ${repository.id}
           RETURNING owner, name, ${attemptColumns(sql)}, pg_current_xact_id()::xid::text AS txid`
+      // Who asked for this attempt, and so whose feed shows it from now on: requested, then each stage it reaches.
+      yield* sql`
+        INSERT INTO clone_requests (repo_id, clone_id, requested_by) VALUES (${repository.id}, ${row!.cloneId}, ${requestedBy})
+        ON CONFLICT (repo_id) DO UPDATE SET clone_id = EXCLUDED.clone_id, requested_by = EXCLUDED.requested_by,
+          requested_at = now()`
+      yield* CloneFeed.fold(repository.id)
       const { txid, owner, name, attempt, cloneId, requestedAt } = row!
       return { kind: "started", txid: Number(txid), owner, name, attempt, cloneId, requestedAt } satisfies Requested
     }))
@@ -138,7 +151,8 @@ export type Admission =
  * Admits attempt `cloneId` of clone `id` against the budgets, in one transaction that holds `repo_imports`' row so
  * two imports can't both take the last headroom. The first rule that holds decides: imports `paused`; GitHub withheld
  * the size (`size_unknown`); over `maxRepositoryBytes` (`too_large`); stored bytes plus this one over
- * `maxStoredBytes` (`storage`); this month's reads at `maxReadBytes` (`reads`); else admitted, writing `stored_bytes`.
+ * `maxStoredBytes` (`storage`); this month's reads at `maxReadBytes` (`reads`); else admitted, writing `stored_bytes`
+ * and stage `fetching`, folded into the feed of the person who asked.
  * Running it again for the same attempt decides the same: the repository's own row never counts against it.
  */
 export const admit = (clone: Attempt, size: Size, limits: Budgets) =>
@@ -157,9 +171,11 @@ export const admit = (clone: Attempt, size: Size, limits: Budgets) =>
         WHERE status IN ('cloning', 'ready') AND id <> ${clone.id}`
       if (Number(stored!.bytes) + size.bytes > limits.maxStoredBytes) return refuse("storage", size.bytes)
       if ((yield* readThisMonth) >= limits.maxReadBytes) return refuse("reads", size.bytes)
-      yield* sql`
-        UPDATE repositories SET stored_bytes = ${size.bytes}
-        WHERE id = ${clone.id} AND clone_id = ${clone.cloneId} AND status = 'cloning'`
+      const owned = yield* sql`
+        UPDATE repositories SET stored_bytes = ${size.bytes}, stage = 'fetching'
+        WHERE id = ${clone.id} AND clone_id = ${clone.cloneId} AND status = 'cloning'
+        RETURNING 1`
+      if (owned.length > 0) yield* CloneFeed.fold(clone.id)
       return { admitted: true, storedBytes: size.bytes } satisfies Admission
     }))
   })
@@ -226,6 +242,25 @@ export const meterRead = (bytes: number, limits: Budgets) =>
     }))
   })
 
+/**
+ * Moves attempt `cloneId` of clone `id` to stage `indexing`, once Code Storage has its head commit, and folds it into the
+ * feed of the person who asked, in one transaction. Answers whether the attempt still owns a `cloning` row: a stale
+ * attempt changes nothing.
+ */
+export const indexing = (clone: Attempt) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    return yield* sql.withTransaction(Effect.gen(function* () {
+      const owned = yield* sql`
+        UPDATE repositories SET stage = 'indexing'
+        WHERE id = ${clone.id} AND clone_id = ${clone.cloneId} AND status = 'cloning'
+        RETURNING 1`
+      if (owned.length === 0) return false
+      yield* CloneFeed.fold(clone.id)
+      return true
+    }))
+  })
+
 /** A ready repository's default branch and its head commit, as Settle wrote them. */
 export interface ReadyHead {
   readonly defaultBranch: string
@@ -251,7 +286,13 @@ export interface Head {
 
 /** How a clone ended, as `repo/Settle` writes it. */
 export type Outcome =
-  | { readonly status: "ready"; readonly defaultBranch: string; readonly head: Head }
+  | {
+    readonly status: "ready"
+    readonly defaultBranch: string
+    readonly head: Head
+    /** The Smithers GitHub App isn't installed on the repository: storage may reclaim its copy. */
+    readonly reclaimable: boolean
+  }
   | { readonly status: "failed"; readonly failure: Failure }
   | {
     readonly status: "capacity"
@@ -264,8 +305,8 @@ export type Outcome =
  * Writes how attempt `cloneId` of clone `id` ended, only while that attempt still owns a `cloning` row: a stale
  * attempt, one settled already, or one from before the table was reset or restored, changes nothing and answers
  * `settled: false`. The attempt's id fences it, never the `attempt` counter, which restarts after a reset. A clone
- * that became `ready` adds its `stored_bytes` to this month's imported bytes and recomputes the spend, in the same
- * transaction.
+ * that became `ready` records whether its copy is reclaimable, adds its `stored_bytes` to this month's imported bytes
+ * and recomputes the spend, in the same transaction; any outcome is folded into the feed of the person who asked.
  */
 export const settle = (clone: Attempt, outcome: Outcome, limits: Budgets) =>
   Effect.gen(function* () {
@@ -279,6 +320,7 @@ export const settle = (clone: Attempt, outcome: Outcome, limits: Budgets) =>
           head_message: outcome.head.message,
           head_author: outcome.head.author,
           head_at: outcome.head.at,
+          reclaimable: outcome.reclaimable,
         }
         : outcome.status === "failed"
         ? { status: "failed", failure: outcome.failure }
@@ -289,10 +331,11 @@ export const settle = (clone: Attempt, outcome: Outcome, limits: Budgets) =>
           retry_at: outcome.retryAt === null ? null : new Date(outcome.retryAt).toISOString(),
         }
       const [row] = yield* sql<{ readonly bytes: string | null }>`
-        UPDATE repositories SET ${sql.update(fields)}, settled_at = now()
+        UPDATE repositories SET ${sql.update(fields)}, stage = NULL, settled_at = now()
         WHERE id = ${clone.id} AND clone_id = ${clone.cloneId} AND status = 'cloning'
         RETURNING stored_bytes::text AS bytes`
       if (row === undefined) return { settled: false, spend: null }
+      yield* CloneFeed.fold(clone.id)
       if (outcome.status !== "ready") return { settled: true, spend: null }
       // Admission wrote the size before Import, so a ready row always has one.
       const imported = Number(row.bytes)

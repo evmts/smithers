@@ -11,6 +11,7 @@ import { agentFlows, catalogDescription, childExecutionId, publicError } from ".
 import { clientFlows, declarationOf, declarations, modelInvocable } from "./declarations"
 import { entryOf, names, registry } from "./registry"
 import { requesterOf } from "./requests"
+import { AGENT_FLOWS, PERSON_ONLY_FLOWS } from "../../worker/Actor.ts"
 
 /** Every source file under `src/`, tests and test support left out. */
 const sources = (dir: string): ReadonlyArray<string> =>
@@ -26,6 +27,18 @@ describe("the parity law", () => {
       const entry = entryOf(name)
       expect([name, modelInvocable(name)]).toEqual([name, entry.userOnlyReason === undefined])
       if (entry.userOnlyReason !== undefined) expect(entry.userOnlyReason.length).toBeGreaterThan(0)
+    }
+  })
+
+  test("the server's person-only list and its agents are the registry's, one to one (decision 0017 slice 0)", () => {
+    expect(Object.keys(PERSON_ONLY_FLOWS).sort()).toEqual(
+      names.filter((name) => entryOf(name).userOnlyReason !== undefined).toSorted(),
+    )
+    expect([...AGENT_FLOWS].sort()).toEqual(names.filter((name) => entryOf(name).acts === "agent").toSorted())
+    // An agent asks nobody's leave: the person only starts it, and its run's own requests carry its credential.
+    for (const name of AGENT_FLOWS) {
+      const enforcement = PERSON_ONLY_FLOWS[name as keyof typeof PERSON_ONLY_FLOWS]
+      if (enforcement !== undefined) expect("route" in enforcement, name).toBe(false)
     }
   })
 
@@ -66,6 +79,7 @@ describe("the parity law", () => {
       "run/list",
       "run/inspect",
       "branch/track",
+      "branch/create",
       "issue/create",
       "issue/comment",
       "todo/draft",
@@ -85,7 +99,7 @@ describe("names and placement", () => {
   test("each entry is registered under its own flow's tag, in a namespace only the app claims", () => {
     for (const name of names) {
       expect(registry[name].flow._tag).toBe(name)
-      expect(name).toMatch(/^(app|chat|repo|ui|view|flow|run|branch|terminal|issue|triage|todo|watch|notification|sandbox)\//)
+      expect(name).toMatch(/^(app|chat|repo|ui|view|flow|run|branch|terminal|issue|triage|todo|watch|notification|alert|sandbox|timeline)\//)
     }
   })
 
@@ -114,6 +128,7 @@ describe("names and placement", () => {
   test("the engine runs every registered flow", () => {
     expect(clientFlows).toEqual(names.map(declarationOf))
     expect(clientFlows.map((flow) => flow._tag)).toEqual([
+      "timeline/summarize",
       "app/theme/set",
       "app/navigate",
       "app/web/open",
@@ -146,11 +161,13 @@ describe("names and placement", () => {
       "run/list",
       "run/inspect",
       "branch/track",
+      "branch/create",
       "branch/share",
       "terminal/open",
       "issue/create",
       "issue/comment",
       "issue/triage",
+      "issue/commitment",
       "triage/run",
       "triage/enable",
       "triage/pause",
@@ -160,6 +177,7 @@ describe("names and placement", () => {
       "todo/drop",
       "watch/set",
       "notification/ack",
+      "alert/channel",
       "sandbox/run",
       "sandbox/read",
       "sandbox/write",
@@ -215,6 +233,13 @@ describe("side effects (the registry's `changes`)", () => {
     expect(catalogDescription("flow/save")).toContain("Side effect: saves a draft as the person's flow;")
     expect(catalogDescription("flow/run")).toContain("Side effect: runs the person's flow")
     expect(catalogDescription("repo/tree")).toBe(declarationOf("repo/tree").description)
+  })
+
+  test("every registered flow describes itself, which the catalog, the slash menu and the drafting agent read", () => {
+    for (const name of names) {
+      const { description } = declarationOf(name)
+      expect([name, typeof description === "string" && description.length > 0]).toEqual([name, true])
+    }
   })
 })
 

@@ -32,6 +32,7 @@ import {
   TRIAGE_SETTINGS_TABLE,
   WRITES_TABLE,
 } from "../../../src/features/issues/contract.ts"
+import { PULL_COMMITS_TABLE, PULLS_TABLE, REVIEWS_TABLE, RUNS_TABLE } from "../../../src/features/pulls/contract.ts"
 import * as Actor from "../../Actor.ts"
 import * as ExecutionHost from "../../ExecutionHost.ts"
 import { FlowStarter, StartConflict } from "../../Flows.ts"
@@ -167,10 +168,24 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
   })
 
   const routes = await runtime.runPromise(
-    observed(Api.make(database, { repository: REPOSITORY, app: options.app === null ? Option.none() : Option.some(options.app ?? app()) })),
+    observed(Api.make(database, {
+      repository: REPOSITORY,
+      app: options.app === null ? Option.none() : Option.some(options.app ?? app()),
+      http: github.http,
+    })),
   )
   // Electric, as the routes call it: each table in this file's schema.
-  const tables = new Set([ITEMS_TABLE, COMMENTS_TABLE, WRITES_TABLE, SYNC_TABLE, TRIAGE_SETTINGS_TABLE])
+  const tables = new Set([
+    ITEMS_TABLE,
+    COMMENTS_TABLE,
+    WRITES_TABLE,
+    SYNC_TABLE,
+    TRIAGE_SETTINGS_TABLE,
+    PULLS_TABLE,
+    PULL_COMMITS_TABLE,
+    REVIEWS_TABLE,
+    RUNS_TABLE,
+  ])
   const electric: typeof globalThis.fetch = (input, init) => {
     const upstream = new URL(input instanceof Request ? input.url : String(input))
     const table = upstream.searchParams.get("table")

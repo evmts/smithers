@@ -8,7 +8,8 @@ import type { Signed } from "./SignIn.ts"
 // browser's agent can call the model endpoint on a laptop (docs/features/sign-in.md#local-development). It keeps
 // `/web … tab` links to the dev machine's own `http://localhost` pages (docs/features/web-pages.md), and turns spend
 // alerts off, since a laptop's runs and the end-to-end tests spend all day (`MODEL_SPEND_ALERTS=true` turns them back
-// on; docs/features/spend-alerts.md). Production
+// on; docs/features/spend-alerts.md), and lets an alert provider pointed at a local fake (`ALERT_EMAIL_API_URL`,
+// `ALERT_TELEGRAM_API_URL`) send without its key (docs/features/spend-alerts.md#channels). Production
 // bundles worker/ChatApi.ts, which never imports this file.
 
 /** The local developer: a person with the Admin role. */
@@ -40,13 +41,24 @@ export const localGuest: Actor.Actor = {
   login: "local-guest",
 }
 
+/**
+ * Local development's Maintainer: `smithers_dev_person=maintainer`. A repository's home shows them the Maintainers'
+ * sections (docs/features/home.md#who-sees-what).
+ */
+export const localMaintainer: Actor.Actor = {
+  subject: { kind: "person", id: "local-maintainer" },
+  role: "maintainer",
+  login: "local-maintainer",
+}
+
 const teammates: Readonly<Record<string, Signed>> = {
   teammate: { actor: localTeammate, login: "local-teammate" },
   guest: { actor: localGuest, login: "local-guest" },
+  maintainer: { actor: localMaintainer, login: "local-maintainer" },
 }
 
 export default class DevChatApi extends Cloudflare.Worker<DevChatApi>()(
   "ChatApi",
   { ...props, main: "worker/DevChatApi.ts" },
-  program({ fallback, teammates, localHttp: true, spendAlerts: false }),
+  program({ fallback, teammates, localHttp: true, spendAlerts: false, dev: true }),
 ) {}

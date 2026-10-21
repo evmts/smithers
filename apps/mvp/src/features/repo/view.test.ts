@@ -1,13 +1,24 @@
 import { describe, expect, test } from "vitest"
-import { CAPACITY_COPY, FAILURE_COPY, SIGN_IN_TO_CLONE } from "./contract"
-import type { BlobRow, CloneRow } from "./rows"
-import type { Repository } from "./schema"
+import { CAPACITY_COPY, CLONING, FAILURE_COPY, NOT_CLONED, SIGN_IN_TO_CLONE } from "./contract"
+import type { AboutRow, BlobRow, CloneRow, RefsRow, TreeRow } from "./rows"
+import type { About, Repository } from "./schema"
 import {
+  aboutOf,
+  aboutProps,
+  atRoot,
+  countLabel,
+  countsOf,
+  generatedLinksFor,
+  previewCommitOf,
+  previewReadmeOf,
+  previewTreeOf,
+  reclaimNoteOf,
   capacityText,
   commitOf,
   fileLinksOf,
   fileProps,
   formatBytes,
+  codeEmptyOf,
   headerOf,
   parseTimestamp,
   refsProps,
@@ -37,6 +48,8 @@ const repository = (fields: Partial<Repository> = {}): Repository => ({
   cloneId: "0b6c1d2e-3f40-4a51-8b62-7c83d94ea5f6",
   requestedAt: "2026-10-20 11:59:00+00",
   settledAt: "2026-10-20 12:00:05+00",
+  stage: null,
+  reclaimable: false,
   ...fields,
 })
 
@@ -97,6 +110,24 @@ describe("treeProps and fileProps", () => {
       state: "failed",
       message: "",
     })
+  })
+})
+
+describe("codeEmptyOf", () => {
+  // The branch workspace's recordings showed a blank page for a repository nobody had cloned (Will, 2026-10-20):
+  // the Code view rendered nothing until the clone was ready.
+  test("a repository that isn't ready says so in the Code view, never a blank page", () => {
+    expect(codeEmptyOf(headerOf(undefined, undefined, true))).toBe(NOT_CLONED)
+    expect(codeEmptyOf(headerOf(undefined, undefined, false))).toBe(NOT_CLONED)
+    expect(codeEmptyOf(headerOf(repository({ status: "failed", failure: "timed_out" }), undefined, true))).toBe(NOT_CLONED)
+    expect(codeEmptyOf(headerOf(undefined, clone("limit"), true))).toBe(NOT_CLONED)
+    expect(codeEmptyOf(headerOf(repository({ status: "cloning" }), undefined, true))).toBe(CLONING)
+    expect(codeEmptyOf(headerOf(undefined, clone("requesting"), true))).toBe(CLONING)
+  })
+
+  test("says nothing while the device can't tell yet, or once the files show", () => {
+    expect(codeEmptyOf(headerOf(undefined, undefined, true, false))).toBeUndefined()
+    expect(codeEmptyOf(headerOf(repository(), undefined, true))).toBeUndefined()
   })
 })
 
@@ -248,5 +279,173 @@ describe("fileLinksOf", () => {
       expect(fileLinksOf(view, file)).toEqual({ copyContents: false })
     }
     expect(fileLinksOf({ ...view, sha: null }, blob({}))).toEqual({ copyContents: false })
+  })
+})
+
+const about = (fields: Partial<About> = {}): About => ({
+  name: "octocat/Spoon-Knife",
+  description: "Demo",
+  homepage: "https://example.com",
+  topics: ["demo"],
+  stars: 14126,
+  forks: 3,
+  watchers: 9,
+  license: "MIT",
+  defaultBranch: "main",
+  archived: false,
+  languages: [{ name: "HTML", bytes: 300 }],
+  release: { tag: "v 1", name: null, publishedAt: "2026-10-01T12:00:00Z" },
+  releases: 2,
+  contributors: [{ login: "octo cat", avatarUrl: "https://avatars.githubusercontent.com/u/1" }],
+  contributorCount: 40,
+  commits: 3,
+  branches: 3,
+  tags: 1,
+  head: { sha: "d".repeat(40), message: "First line\n\nBody", author: "octocat", at: "2014-02-12T23:20:44Z" },
+  root: [{ name: "README.md", kind: "file" }, { name: "docs", kind: "dir" }],
+  readme: { path: "README.md", text: "# Hi é" },
+  installUrl: "https://github.com/apps/smithers/installations/new",
+  ...fields,
+})
+
+const aboutRow = (state: AboutRow["state"], value: About | null = null): AboutRow => ({
+  key: "github/octocat/spoon-knife",
+  state,
+  about: value,
+  message: null,
+})
+
+describe("the first visit: what GitHub says, before and after a clone", () => {
+  test("the top level is the repository's home or a ref's root; a file or a folder isn't", () => {
+    expect(atRoot({ kind: "tree", path: "" })).toBe(true)
+    expect(atRoot({ kind: "tree", path: "docs" })).toBe(false)
+    expect(atRoot({ kind: "blob", path: "" })).toBe(false)
+  })
+
+  test("the about panel's props: loading, then GitHub's answer with its links; none for a failure", () => {
+    expect(aboutOf(undefined)).toBeUndefined()
+    expect(aboutOf(aboutRow("loading"))).toBeUndefined()
+    expect(aboutOf(aboutRow("ready", about()))).toEqual(about())
+    expect(aboutProps(undefined)).toEqual({ loading: true })
+    expect(aboutProps(aboutRow("loading"))).toEqual({ loading: true })
+    expect(aboutProps(aboutRow("failed"))).toEqual({ loading: false })
+    expect(aboutProps(aboutRow("ready", about()))).toMatchObject({
+      loading: false,
+      description: "Demo",
+      stars: 14126,
+      release: {
+        tag: "v 1",
+        name: null,
+        publishedAt: Date.parse("2026-10-01T12:00:00Z"),
+        href: "https://github.com/octocat/Spoon-Knife/releases/tag/v%201",
+      },
+      contributors: [{ login: "octo cat", href: "https://github.com/octo%20cat" }],
+      contributorCount: 40,
+    })
+    expect(aboutProps(aboutRow("ready", about({ release: null }))).release).toBeNull()
+    expect(
+      aboutProps(aboutRow("ready", about({ release: { tag: "v1", name: "One", publishedAt: "not a time" } }))).release,
+    ).toMatchObject({ publishedAt: null })
+  })
+
+  test("before a clone: GitHub's top folder, README and newest commit", () => {
+    expect(previewTreeOf(undefined)).toBeUndefined()
+    expect(previewTreeOf(about({ root: null }))).toBeUndefined()
+    expect(previewTreeOf(about())).toEqual({ state: "ready", paths: ["README.md"], directories: ["docs"], truncated: false })
+    expect(previewReadmeOf(about({ readme: null }))).toBeUndefined()
+    // Its size is the UTF-8 bytes, as a file's is.
+    expect(previewReadmeOf(about())).toEqual({ path: "README.md", file: { state: "text", contents: "# Hi é", size: 7 } })
+    expect(previewCommitOf(undefined)).toBeUndefined()
+    expect(previewCommitOf(about({ head: null }))).toBeUndefined()
+    expect(previewCommitOf(about({ head: { sha: "e".repeat(40), message: "m", author: "a", at: "" } }))).toBeUndefined()
+    expect(previewCommitOf(about())).toEqual({
+      message: "First line",
+      author: "octocat",
+      shortSha: "ddddddd",
+      at: Date.parse("2014-02-12T23:20:44Z"),
+    })
+  })
+
+  test("branch and tag counts: the clone's own once its refs loaded whole, else GitHub's; commits only GitHub's", () => {
+    const refs = (fields: Partial<RefsRow> = {}): RefsRow => ({
+      key: "k",
+      state: "ready",
+      branches: [{ name: "main", sha: "a".repeat(40) }],
+      tags: [],
+      truncated: false,
+      message: null,
+      ...fields,
+    })
+    expect(countsOf(undefined, undefined)).toEqual({})
+    expect(countsOf(refs(), undefined)).toEqual({ branches: 1, tags: 0 })
+    expect(countsOf(refs(), about())).toEqual({ branches: 1, tags: 0, commits: 3 })
+    expect(countsOf(refs({ truncated: true }), about())).toEqual({ branches: 3, tags: 1, commits: 3 })
+    expect(countsOf(refs({ state: "loading" }), about({ branches: null, tags: null, commits: null }))).toEqual({})
+    expect(countLabel(1, "Branch", "Branches")).toBe("1 Branch")
+    expect(countLabel(1200, "Tag", "Tags")).toBe("1,200 Tags")
+  })
+
+  test("a ready copy storage may reclaim gets the note, with Install when GitHub named the App's path", () => {
+    expect(reclaimNoteOf(undefined, about())).toBeUndefined()
+    expect(reclaimNoteOf(repository({ reclaimable: false }), about())).toBeUndefined()
+    expect(reclaimNoteOf(repository({ status: "cloning", reclaimable: true }), about())).toBeUndefined()
+    expect(reclaimNoteOf(repository({ reclaimable: true }), about())).toEqual({
+      installUrl: "https://github.com/apps/smithers/installations/new",
+    })
+    expect(reclaimNoteOf(repository({ reclaimable: true }), undefined)).toEqual({ installUrl: null })
+  })
+})
+
+describe("generated files", () => {
+  const text = (contents: string): BlobRow => ({ key: "k", state: "text", contents, size: contents.length, message: null })
+  const tree: TreeRow = {
+    key: "t",
+    state: "ready",
+    paths: ["docs/api.md", "src/api.ts", ".smithers/flows/docs/build/flow.ts"],
+    truncated: false,
+    message: null,
+  }
+  const view = { owner: "octocat", name: "Spoon-Knife", revision: "main", manifestPath: ".smithers/generated.json" }
+  const manifest = text(JSON.stringify({
+    outputs: { "docs/api.md": { flow: "docs/build", inputs: ["src/api.ts", "src/gone.ts"], cacheKey: "abc", run: "r-1" } },
+  }))
+
+  test("a file the manifest lists links its flow, its last run and its sources at the view's revision", () => {
+    expect(generatedLinksFor(view, repository(), "docs/api.md", "# API", manifest, tree)).toEqual({
+      flow: { label: "docs/build", href: "/octocat/Spoon-Knife/blob/main/.smithers/flows/docs/build/flow.ts" },
+      run: { label: "r-1", href: "/app/runs/r-1" },
+      sources: [{ label: "src/api.ts", href: "/octocat/Spoon-Knife/blob/main/src/api.ts" }, { label: "src/gone.ts" }],
+    })
+  })
+
+  test("a header marker marks a file with no links; a person's file, or no repository, has none", () => {
+    expect(generatedLinksFor(view, repository(), "gen.go", "// Code generated by x. DO NOT EDIT.\npackage x", undefined, tree))
+      .toEqual({ sources: [] })
+    expect(generatedLinksFor(view, repository(), "src/api.ts", "export {}", manifest, tree)).toBeUndefined()
+    expect(generatedLinksFor(view, undefined, "docs/api.md", "# API", manifest, tree)).toBeUndefined()
+    // The default branch stands in for a revision the view hasn't resolved; a list not loaded links nothing.
+    expect(generatedLinksFor({ ...view, revision: null }, repository(), "docs/api.md", undefined, manifest, undefined))
+      .toMatchObject({ flow: { label: "docs/build" }, sources: [{ label: "src/api.ts" }, { label: "src/gone.ts" }] })
+    expect(generatedLinksFor({ ...view, revision: null }, repository({ defaultBranch: null }), "x", "@generated", undefined, tree))
+      .toEqual({ sources: [] })
+    // A manifest still loading, or read without its text, marks nothing yet.
+    const loading: BlobRow = { key: "k", state: "loading", contents: null, size: null, message: null }
+    expect(generatedLinksFor(view, repository(), "docs/api.md", "# API", loading, tree)).toBeUndefined()
+    expect(generatedLinksFor(view, repository(), "docs/api.md", "# API", { ...manifest, contents: null }, tree)).toBeUndefined()
+  })
+
+  test("a project's manifest marks only files in its folder, by their paths from it", () => {
+    const nested = { ...view, manifestPath: "tools/docgen/.smithers/generated.json" }
+    const projectManifest = text(JSON.stringify({ outputs: { "out/a.md": { flow: "docs/generate", inputs: ["project.ts"] } } }))
+    const files: TreeRow = { ...tree, paths: ["tools/docgen/project.ts", "tools/docgen/out/a.md"] }
+    expect(generatedLinksFor(nested, repository(), "tools/docgen/out/a.md", "# A", projectManifest, files)).toEqual({
+      flow: { label: "docs/generate" },
+      sources: [{ label: "project.ts", href: "/octocat/Spoon-Knife/blob/main/tools/docgen/project.ts" }],
+    })
+    // A file outside its folder, though a path inside it reads the same, isn't the manifest's.
+    expect(generatedLinksFor(nested, repository(), "out/a.md", "# A", projectManifest, files)).toBeUndefined()
+    // No manifest near the view: header markers alone.
+    expect(generatedLinksFor({ ...view, manifestPath: null }, repository(), "out/a.md", "# A", projectManifest, files))
+      .toBeUndefined()
   })
 })

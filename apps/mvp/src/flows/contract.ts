@@ -1,5 +1,6 @@
 // Flows' contract between the tab, its engine worker and ChatApi's telemetry relay (docs/features/flows.md): the one
 // home of the values they share. Nothing here imports a library, so every side can.
+import { RUNS_ROUTE } from "../features/status/contract"
 
 /** The engine's name in every tab and its worker: its Web Lock, its channel and its OPFS directory. */
 export const ENGINE_NAME = "smithers"
@@ -9,6 +10,22 @@ export const ENGINE_NAME = "smithers"
  * device wrote asks this device to act on a run it holds (an answer to deliver, decision 0015).
  */
 export const DOORS = ["button", "slash", "view", "composer", "agent", "sync"] as const
+
+/**
+ * The person's own doors (decision 0017 slice 0): a press, a typed command, a question sent. A root run of a person's
+ * flow started through one of them runs with the person's session; every other run gets a run credential
+ * (docs/features/sign-in.md#run-credentials).
+ */
+export const PERSON_DOORS: ReadonlyArray<(typeof DOORS)[number]> = ["button", "slash", "composer"]
+
+/** How long a run credential lasts (worker/RunCredentials.ts); the engine mints a fresh one a minute before then. */
+export const CREDENTIAL_TTL_MS = 15 * 60 * 1000
+
+/** `POST /api/runs/<run>/credential`: run `run`'s credential, its execution id percent-encoded. */
+export const credentialRoute = (run: string): string => `${RUNS_ROUTE}/${encodeURIComponent(run)}/credential`
+
+/** The engine's channel to the tab that started a run: which door it came through (src/flows/credentials.ts). */
+export const doorChannel = (name: string): string => `${name}/door`
 
 /**
  * What flows record in the browser (docs/observability.md#browser), by name, and the attributes they carry: dispatch in
@@ -22,6 +39,9 @@ export const FLOWS_TELEMETRY = {
   records: [
     "flow.dispatch",
     "smithers_flow_dispatches",
+    // Run credentials on the device (src/flows/credentials.ts).
+    "auth.run_credential",
+    "smithers_run_credential_mints",
     // The tab's side of the engine (@smthrs/platform-browser BrowserEngine, StoragePersistence).
     "browser.engine.storage",
     "browser.engine.unavailable",
@@ -66,6 +86,20 @@ export const FLOWS_TELEMETRY = {
     "flows_db_write_retries",
     "flows_step_cache_lookups",
     "flows_step_cache_puts",
+    // Usage: which flows run and how (@smthrs/flow RunMetrics, recorded by the engine and the agent's model steps).
+    "flow.run.started",
+    "flow.run.settled",
+    "flow.model.call",
+    "flows_runs_started",
+    "flows_runs_settled",
+    "flows_run_duration_ms",
+    "flows_run_first_step_ms",
+    "flows_steps",
+    "flows_step_retries",
+    "flows_waits",
+    "flows_wait_ms",
+    "flows_model_calls",
+    "flows_model_tokens",
   ],
   fields: [
     "flow",
@@ -100,5 +134,16 @@ export const FLOWS_TELEMETRY = {
     "operation",
     "time_unit",
     "effect.fiber.interrupted",
+    "act",
+    "principal",
+    "depth",
+    // RunMetrics' labels: closed sets, a capped flow tag and model id, token counts. Never a payload or who.
+    "actor",
+    "placement",
+    "kind",
+    "model",
+    "direction",
+    "inputTokens",
+    "outputTokens",
   ],
 } as const

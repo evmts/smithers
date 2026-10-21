@@ -1,3 +1,5 @@
+import { COMMITMENTS, commitmentLabel } from "../../src/features/issues/lifecycle.ts"
+import { triageOf } from "../../src/features/issues/contract.ts"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
@@ -174,6 +176,8 @@ export const steps = <E, R>(services: Services<E, R>) => {
       }
       // Run triage again is admitted for `triage/Run`, which settles it; this flow never runs one.
       if (payload.op === "triage/run") return yield* settled(write, "none", { status: "refused", failure: "invalid" })
+      // A merge is admitted for `pr/Merge` (worker/github/Merge.ts), which settles it; this flow never runs one.
+      if (payload.op === "pr/merge") return yield* settled(write, "none", { status: "refused", failure: "invalid" })
       const kind = write.via === "person" ? "user" as const : "app" as const
       const token = yield* (write.via === "person"
         ? services.tokens.forSession(write.sessionId!)
@@ -226,6 +230,20 @@ export const steps = <E, R>(services: Services<E, R>) => {
             return { number: issue.number, githubId: issue.id, adopted: Option.isSome(adopted) }
           }
           if (payload.op === "issue/comment") return yield* comment(payload.number, payload.body)
+          if (payload.op === "issue/commitment") {
+            const permission = write.login === null ? Option.none() : yield* GitHub.Collaborators.permission(repository.owner, repository.name, write.login)
+            const maintains = Option.isSome(permission) &&
+              [permission.value.roleName, permission.value.permission].some((role) => role === "admin" || role === "maintain")
+            const issue = yield* GitHub.Issues.getIssue(repository.owner, repository.name, payload.number)
+            if (write.via !== "person" || !maintains || triageOf(issue.labels.map((label) => label.name)) !== "accepted")
+              return { number: payload.number, githubId: null, adopted: false, refused: true }
+            const add = commitmentLabel(payload.commitment)
+            yield* GitHub.Issues.createLabel(repository.owner, repository.name, { name: add, color: "1d76db" })
+            yield* GitHub.Issues.addLabels(repository.owner, repository.name, payload.number, [add])
+            for (const other of COMMITMENTS) if (other !== payload.commitment)
+              yield* GitHub.Issues.removeLabel(repository.owner, repository.name, payload.number, commitmentLabel(other))
+            return { number: payload.number, githubId: null, adopted: false }
+          }
           // A person's Accept or Not accepted: one triage label on, the other off (each idempotent, so a repeat is
           // harmless), then their reason as their own comment when they gave one.
           const add = labelOf(payload.decision)
@@ -257,6 +275,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
       // GitHub took it: read the issue back, then settle the write with its rows in one transaction. A read-back that
       // fails is tried again; the next attempt finds the write by its marker.
       const result = made.success
+      if ("refused" in result && result.refused) return yield* settled(write, kind, { status: "refused", failure: "not_allowed" })
       if (result.adopted) yield* Effect.annotateCurrentSpan({ "smithers.github.adopted": true })
       const fetched = yield* fetchIssue(repository, result.number).pipe(withToken(token.success, services.apiBaseUrl))
       const projected = project(repository, result.number, fetched)

@@ -13,7 +13,7 @@ import {
   SECRETS_TABLE,
   writeExecutionId,
 } from "../../src/features/secrets/contract.ts"
-import { type Actor, canAsk, Sessions } from "../Actor.ts"
+import { type Actor, canAsk, refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
@@ -113,6 +113,8 @@ export const make = (repository: { readonly id: string }) => Effect.gen(function
       if (Option.isNone(keys)) return refuse(503, "off")
       const actor = yield* sessions.resolve
       if (Option.isNone(actor)) return refuse(401, "authentication")
+      // A secret is a protected act: anyone acting for the person is refused, and counted as such (decision 0017).
+      if (yield* refusesPersonOnly(actor.value, "secret")) return refuse(403, "forbidden")
       if (!mayWrite(actor.value)) return refuse(403, "forbidden")
       const repo = repoId(route.owner, route.name)
       if (repo !== repository.id) return refuse(404, "not_found")

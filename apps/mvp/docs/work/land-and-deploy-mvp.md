@@ -3,9 +3,240 @@ title: Land and deploy the new app
 status: in-progress
 area: process
 owner: deploy agent; retrying after pushed Neon fix bbe0b0e9
-updated: 2026-10-20
-links: [site-deployment-test.md, land-to-main.md, app-wiring.md, ../infrastructure.md, ../../../../AGENTS.md, infrastructure-as-code.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md, sign-in.md, integrations-browser-safe-root.md, gitremote-unicode-branches.md, integrations-effect-httpclient.md, flows-root-platform-neutral.md, flows-and-agent.md, cloudflare-flow-host.md, repo-checks-green.md, local-first.md, pwa.md, agent-ui-rendering.md, repo-clone-and-view.md, code-reviews.md, will-decision-queue.md, cloudflare-electric-service-binding.md, private-hosted-infrastructure.md]
+updated: 2026-10-21 00:06 PDT
+links: [site-deployment-test.md, land-to-main.md, app-wiring.md, ../infrastructure.md, ../../../../AGENTS.md, infrastructure-as-code.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md, sign-in.md, integrations-browser-safe-root.md, gitremote-unicode-branches.md, integrations-effect-httpclient.md, flows-root-platform-neutral.md, flows-and-agent.md, cloudflare-flow-host.md, repo-checks-green.md, local-first.md, pwa.md, agent-ui-rendering.md, repo-clone-and-view.md, code-reviews.md, will-decision-queue.md, cloudflare-electric-service-binding.md, private-hosted-infrastructure.md, device-data-migrations.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 00:06 PDT
+
+**What:** Deploy the pushed app and smoke-test production.
+
+**Why:** Ship only after the real device-upgrade gate passes.
+
+**Current state:** At 23:59 the lead clears the migration gate and reports 4c landing underway. At 00:00 the deploy brief still waits for the lander’s main commit. No new production deploy or smoke-test receipt appears in the extracted window.
+
+**Next step:** Obtain the pushed 4c revision, run the Alchemy deploy recipe and smoke-test upgrades, sign-in and webhooks. Treat later 4d separately.
+
+**Open questions for Will:** No new ask; production GitHub App setup was still unconfirmed in the latest direct queue answer.
+
+Evidence: script-filtered human text and lead replies from the last two session hours, through 00:05 PDT; queue answers through 00:05:48 PDT; current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are reported receipts, not checks executed by this tracker. Existing execution owners and history retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20 23:44 PDT
+
+**What:** Deploy the pushed app after the device-upgrade gate passes.
+
+**Why:** Protect persisted local work and verify real production behavior.
+
+**Current state:** Rounds 4a/4b and API baseline are reported at 80b1220e. At 23:43 the corrected upgrade test is queued on the mini; no 4c or new production deployment receipt. Production GitHub App completion remains unconfirmed.
+
+**Next step:** Land 4c after proof, deploy, and smoke-test upgrades and production sign-in/webhooks. Validate later 4d handoffs before redeploy.
+
+**Open questions for Will:** No new ask; await Will’s App setup completion.
+
+Evidence: user-typed text and lead text replies extracted by script from session 6253ecf2, approximately 21:44–23:44 PDT; queue answers through 23:38:44, current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Synthetic notifications and tool content excluded. Later rulings supersede retained history. Product receipts are lead-reported; this tracker validates the maintainer-site build. Execution ownership retained; documentation reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20 23:25 PDT
+
+**What:** Land validated changes and deploy from pushed main.
+
+**Why:** Preserve device data through deployment.
+
+**Current state:** Round 4b is reported on main at 1f758104 (23:25), with a green-exiting suite, docs:check, import rules and typecheck. Device migrations remain the final gate; the upgrade from the deployed build is still finishing. Will has not confirmed production App setup complete. No new deploy or production smoke receipt.
+
+**Next step:** Land proven round 4c, deploy, and smoke-test sign-in, webhooks and device upgrades.
+
+**Open questions for Will:** No new question; await Will’s App setup completion receipt.
+
+Evidence: script-filtered human messages and lead text replies through 23:25 PDT; queue answers through 23:16, current rulings, decisions, proposals and shared briefs/designs. Automated notifications excluded. Product receipts are lead-reported; tracker validation is the site build. Execution owner retained; Codex curates the note.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20 23:14 PDT
+
+**What:** Land validated changes and deploy from pushed main.
+
+**Why:** Ship the burn-down without losing persisted device data.
+
+**Current state:** At 23:07 the lead reports 290 passing browser-platform tests and SDK coverage at 100%. The full app suite and upgrade test from the deployed build are still running. No completed upgrade, round 4c landing or new deployment receipt exists. The shared outbox also contains an unrelated edit that appears to undo a fix already on main; the lander was told to take only migration changes. At 23:13 Will says production GitHub App setup is not done yet and he is working on it.
+
+**Next step:** Finish migration proofs and landing; deploy and smoke-test. When Will confirms App setup completion, smoke-test production sign-in and webhook, then repeat after deployment.
+
+**Open questions for Will:** Confirm production GitHub App setup completion when ready; the queue answer is progress, not completion.
+
+Evidence: session 6253ecf2 user-typed text and lead text replies, script-filtered for the latest two hours through 23:13 PDT; rulings FE-16 and PROC-18; queue answers through 23:13 PDT. Synthetic notifications and relayed agent messages excluded. Current rulings supersede historical briefs and proposals. Product checks are lead-reported, not rerun by the tracker. Execution ownership retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20, 23:04 PDT
+
+**What:** Land validated changes and deploy from pushed main.
+
+**Why:** Ship the current feature work safely across persisted device upgrades.
+
+**Current state:** The 23:02 lead update lifts the test pause and reports round 4b’s full run finished. Device migration full suites, docs:check and the upgrade from the deployed build are now running for round 4c. Round 4a is on main through fbf7e89c. No newer pushed landing or deployment/smoke receipt is reported. Secrets egress stays off and production GitHub sign-in still needs the person-owned App setup.
+
+**Next step:** Confirm pushed 4b/4c, complete migration upgrade proof, then deploy and smoke-test.
+
+**Open questions for Will:** No new question; production GitHub App setup remains with Will.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, 21:03–23:03 PDT; synthetic notifications and tool blocks excluded. Current rulings and queue answers (latest 19:38 PDT) prevail over historical briefs/designs. Execution ownership is retained; Codex tracker curator reconciles documentation only. Product receipts are lead-reported; this pass verifies the site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20, 22:54 PDT
+
+**Current state:** At 22:46 the lead reports round 4a on main, ending fbf7e89c. GitHub-style TODOs (4b) and device migrations (4c) remain before the next deploy. Secrets egress remains switched off. Production GitHub sign-in still needs Will’s GitHub App setup.
+
+**Next step:** Obtain 4b/4c validation and pushed receipts, run the deployed-build device-upgrade test, deploy and smoke-test.
+
+**Open questions for Will:** No new question; existing person-owned decisions remain open.
+
+Evidence: lead text replies extracted by script from session 6253ecf2, approximately 20:54–22:54 PDT; user-typed text only for human messages, synthetic notifications excluded. Rulings and queue answers (latest 19:38 PDT) prevail. Execution ownership retained; Codex tracker curator records reported receipts.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20, 22:15 PDT
+
+**What:** Deploy the verified pushed revision after proven migration of the deployed build’s device data.
+
+**Why:** The next production upgrade must preserve drafts and offline writes.
+
+**Current state:** At 22:10 the lead reports migration code done, docs/tests targeted for 23:10 and landing about 30 minutes after the test pause lifts. These estimates do not establish an upgrade, push or deploy receipt. Clean suite → 4a → 4b → device migrations → deploy/smoke remains the path. Production sign-in still needs GitHub App settings.
+
+**Next step:** Obtain real old-build upgrade proof and clean landing receipts, deploy through Alchemy from pushed main, and smoke-test the deployed revision.
+
+**Open questions for Will:** Complete the production GitHub App callback/webhook settings in queue item 995.
+
+Evidence: script-filtered user-typed text and lead text replies from session 6253ecf2, approximately 20:15–22:15 PDT; synthetic notifications, relayed agents and compaction summaries excluded. Rulings and all 75 queue answers (latest 19:38 PDT) take precedence over historical shared briefs, panel designs, decisions, proposals, TODOs and rules. Execution ownership and status retained; Codex tracker curator reconciles documentation only. Product results are reported evidence; this pass validates the site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20, 22:05 PDT
+
+**What:** Deploy the verified pushed revision after device-data migration proof.
+
+**Why:** Pending drafts and writes must survive the next production upgrade.
+
+**Current state:** The 22:04 lead update makes the path clean suite → round 4a → round 4b → device migrations → Alchemy deploy and smoke test. Around 01:00 is an estimate, contingent on the migrations ETA; it is not a deploy receipt. Production sign-in remains broken pending GitHub App settings.
+
+**Next step:** Require pushed revision and real old-build upgrade proof, then deploy and smoke-test; report working features, cuts and videos.
+
+**Open questions for Will:** Finish production GitHub App callback and webhook settings (queue priority 995).
+
+Evidence: script-filtered human text and lead replies in session 6253ecf2, approximately 20:04–22:04 PDT; synthetic notifications, compaction summaries and tool blocks excluded. Rulings and queue answers through 19:38 prevail over historical briefs, decisions and proposals. Execution ownership retained; Codex curates this note. Product checks are reported evidence; tracker validation is the site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 21:54 PDT
+
+**What:** Deploy a pushed main revision after safe device-upgrade proof.
+
+**Why:** Will authorized deployment with no users; drafts and pending writes must survive.
+
+**Current state:** The shared dev server restarted at 21:51 with database 0028; this is not a production deploy receipt. No later round-4 push or deploy appears in the filtered lead updates. Last reported production revision remains 7b96f878, and local-first migration proof still gates the next deploy.
+
+**Next step:** Collect pushed revision, old-build offline-write upgrade proof and real browser checks; deploy through Alchemy and smoke-test.
+
+**Open questions for Will:** Complete the production GitHub App settings in the queue.
+
+Evidence: script-filtered user text and lead replies from session 6253ecf2, approximately 19:54–21:54 PDT; compaction summaries, tool blocks and relayed agent messages excluded. Current rulings and queue answers take precedence over historical briefs, decisions and proposals. Execution ownership retained; reconciliation by Codex tracker curator. Product receipts are reported evidence; tracker validation is the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 21:43 PDT
+
+**What:** Deploy a pushed main revision after proving safe device upgrades and completed feature checks.
+
+**Why:** Will authorized deploys while there are no users; pending writes and drafts must survive upgrades.
+
+**Current state:** Through 21:43 PDT no new round-4 push or deploy is reported. The last recorded production revision remains 7b96f878. Local-first migration proof is still required. The mini remains blocked: API-server packaging cannot read the sandbox WebAssembly file. The earlier recovery claim is superseded.
+
+**Next step:** Obtain the pushed revision, old-production offline-write upgrade proof and passing browser checks. Deploy through Alchemy and smoke-test, including sign-in/model/webhook behavior once GitHub App settings are complete.
+
+**Open questions for Will:** Complete the queued production GitHub App setup. No fresh deployment permission is needed.
+
+Evidence: lead text replies and human-typed messages extracted by script from session 6253ecf2 for 19:43–21:43 PDT; synthetic notifications and compaction summaries excluded. Rulings and queue answers through 19:38 PDT take precedence over older briefs, designs, decisions, proposals, TODOs and rules. Product results are reported receipts; this tracker validates the site build. Execution ownership is retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 21:25 PDT
+
+**What:** Deploy the next pushed main revision only after safe device upgrades are proven.
+
+**Why:** Will authorized deploys while there are no users; drafts and pending writes must survive.
+
+**Current state:** Through the 21:23 PDT lead updates there is no newer round-4 push or production deploy receipt. Production is last reported at 7b96f878. Device migration proof remains required. At 21:18 the lead reports mini startup recovered and waiting owners rerunning; this removes the previously reported startup hold from the lead’s current account, without supplying those browser receipts. GitHub App callback/webhook setup remains first in Will’s queue.
+
+**Next step:** Collect the pushed revision, old-production upgrade proof and completed browser checks, then deploy with Alchemy and smoke-test. Verify sign-in, model calls and webhook after the App settings are completed.
+
+**Open questions for Will:** Complete the queued production GitHub App setup. No fresh deploy permission is needed.
+
+Evidence: script-filtered user-typed text and lead assistant replies from the last approximately two transcript hours; current rulings, queue answers through 19:38 PDT, shared feature/host/panel briefs and designs, decisions through 0021, proposals, TODOs and rules. Completion checks are reported evidence, not rerun by this tracker. Execution ownership retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 20:57 PDT
+
+**What:** Deploy the next pushed main revision after device upgrades are proven safe.
+
+**Why:** Will authorized deploys while there are no users; local drafts and pending writes must survive.
+
+**Current state:** Production remains last reported at 7b96f878. No round-4 push or redeploy receipt appears in the latest lead replies through 20:57 PDT. Device migration proof remains a deploy gate. The GitHub App setup checklist is first in the queue at priority 995. The mini’s startup failure now delays waiting browser evidence.
+
+**Next step:** Obtain round-4 push and real old-build migration receipts, deploy through Alchemy, then smoke-test sign-in, model calls, webhook and shipped features. Coordinate the test-farm blocker separately.
+
+**Open questions for Will:** Complete the queued production GitHub App callback/webhook setup. No fresh deploy permission is needed.
+
+Evidence: script-filtered human messages and lead text replies from session 6253ecf2, approximately 18:57–20:57 PDT; current rulings and queue answers, decisions through 0021, proposals and shared briefs/designs. Transport details additionally use its final builder report. Product checks are reported evidence; this pass runs the maintainer-site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 20:24 PDT
+
+**What:** Deploy a pushed main revision through Alchemy after safe device upgrades are proven.
+
+**Why:** Will authorized production deployment while there are no users; existing device data must survive the next release.
+
+**Current state:** Production remains reported at 7b96f878. At 20:23 PDT no newer main landing is reported. Device migration slice 1 now has proposed decision 0021 and an old-production-build fixture, but no completed upgrade receipt. Production GitHub App setup is now first in the decision queue at priority 995; sign-in remains blocked on that setup.
+
+**Next step:** Obtain the actual round-4 push and migration upgrade receipts, deploy, then smoke-test sign-in, webhook, model requests and newly shipped features. Use the queued checklist for callback/webhook setup; switching the webhook stops deliveries to retired jjhub.
+
+**Open questions for Will:** Complete the production GitHub App setup in the queued checklist. No fresh deployment permission is needed.
+
+Evidence: script-filtered user text and assistant replies from session 6253ecf2, approximately 18:24–20:24 PDT; queue answers through 19:38 PDT; rulings, decisions through 0021, proposals, TODOs, rules and shared feature/host/panel briefs and designs. Builder checks are reported evidence; this tracker verifies the maintainer-site build. Existing execution ownership retained.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 20:14 PDT
+
+**What:** Deploy pushed main through Alchemy after device migration safety is proven.
+
+**Why:** Will authorized deployment, and the lead now explicitly gates the next deploy on safe device upgrades.
+
+**Current state:** Production remains reported at 7b96f878: load, sync and signed-out refusals pass; GitHub callback configuration still blocks sign-in. Round 4 was still testing at 20:04. At 20:05 the lead says the next deploy waits for the new device-data migration work. No newer push, deploy or production sandbox receipt is reported.
+
+**Next step:** Finish round-4 checks and obtain its pushed revision; complete device-data migrations and the real old-build upgrade journey before redeploying. Then smoke-test live sign-in, model call, webhook and newly shipped features.
+
+**Open questions for Will:** Configure the production GitHub App callback and webhook as previously supplied; no new deploy permission is needed.
+
+Evidence: script-filtered user-typed text and assistant replies in session 6253ecf2, 18:15–20:14 PDT on 2026-10-20; queue answers through 19:38 PDT; current rulings, decisions 0001–0020, proposals, TODOs, rules and shared briefs/designs. Later Will text and queue answers prevail. Product checks are reported receipts; this tracker validates the site build. Execution ownership is retained.
+
+## Earlier tracker history (retained)
 
 ## Current specification — 2026-10-20, 19:44 PDT
 

@@ -1,4 +1,4 @@
-import type { ImmutableCache } from "@smthrs/artifacts"
+import { ImmutableCache } from "@smthrs/artifacts"
 import type { CodeStorage } from "@smthrs/effect-code-storage"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
@@ -23,6 +23,7 @@ import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import { FlowStarter } from "./Flows.ts"
 import { Clone } from "./flows/RepoClone.ts"
+import * as RepoAbout from "./RepoAbout.ts"
 import * as RepoMetrics from "./RepoMetrics.ts"
 import * as RepoReads from "./RepoReads.ts"
 import * as Repos from "./Repos.ts"
@@ -75,6 +76,17 @@ const parseRead = (path: string) => {
   }
 }
 
+/** `/api/repos/<owner>/<name>/about`, decoded, or `undefined` for any other path. */
+const parseAbout = (path: string) => {
+  const segments = path.slice(REPOS_ROUTE.length + 1).split("/")
+  if (segments.length !== 3 || segments[2] !== "about") return undefined
+  try {
+    return { owner: decodeURIComponent(segments[0]!), name: decodeURIComponent(segments[1]!) }
+  } catch {
+    return undefined
+  }
+}
+
 /** A raw file's type: text as UTF-8 plain text, anything else as bytes to save. */
 const rawType = (bytes: Uint8Array): string =>
   textOf(bytes) === undefined ? "application/octet-stream" : "text/plain; charset=utf-8"
@@ -91,6 +103,7 @@ export interface Options {
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, options: Options) =>
   Effect.gen(function* () {
     const budgets = yield* Repos.budgets
+    const aboutSettings = yield* RepoAbout.settings
     const maxTreePaths = yield* RepoReads.maxTreePaths
     const maxRefs = yield* RepoReads.maxRefs
     const reads = Option.map(
@@ -158,7 +171,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const id = repoId(body.value.owner, body.value.name)
         fields.id = id
         yield* Effect.annotateCurrentSpan({ "smithers.repo.id": id })
-        const requested = yield* Repos.request({ id, ...body.value }, budgets).pipe(Effect.provide(database))
+        const requested = yield* Repos.request({ id, ...body.value }, budgets, actor.value.value.subject.id).pipe(
+          Effect.provide(database),
+        )
         if (requested.kind === "limit") return refused(429, "repository_limit")
         fields.attempt = requested.attempt
         fields.cloneId = requested.cloneId
@@ -304,6 +319,73 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         return response
       }).pipe(Effect.withSpan(`repo.${parseRead(path)?.kind ?? "tree"}`, { kind: "server" }))
 
+    /**
+     * `GET /api/repos/<owner>/<name>/about`: what GitHub says of a repository, cloned or not, from the immutable cache
+     * under the window it was read in (`REPO_ABOUT_FRESH_MINUTES`), so GitHub is asked once a window; the browser keeps
+     * it until the window ends. Open to everyone, like the other reads.
+     */
+    const about = (target: { readonly owner: string; readonly name: string }) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const startedAt = yield* Clock.currentTimeMillis
+        const fields: Record<string, string | number> = {}
+        const response = yield* Effect.gen(function* () {
+          if (!isRepository(target.owner, target.name)) return refuse(404, "not_found")
+          if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
+          const id = repoId(target.owner, target.name)
+          fields.repoId = id
+          const { bucket, maxAgeSeconds } = RepoAbout.window(startedAt, aboutSettings.freshFor)
+          const client = yield* RepoAbout.client(aboutSettings)
+          let fresh = false
+          const read = RepoAbout.read(client, target.owner, target.name, aboutSettings.appSlug).pipe(
+            Effect.map((answer) => {
+              fresh = true
+              return { bytes: encoder.encode(JSON.stringify(answer)), metadata: {} }
+            }),
+          )
+          return yield* ImmutableCache.readThrough(ImmutableCache.key("repo.about", id, bucket), read).pipe(
+            Effect.map(({ bytes }) => {
+              fields.bytes = bytes.length
+              fields.cached = fresh ? "miss" : "hit"
+              return HttpServerResponse.uint8Array(bytes, {
+                headers: { "cache-control": `public, max-age=${maxAgeSeconds}` },
+                contentType: "application/json",
+              })
+            }),
+            Effect.catchTag("AboutRefused", (refused) => {
+              fields.errorCode = refused.code
+              return Effect.succeed(
+                refused.code === "not_found"
+                  ? refuse(404, "not_found")
+                  : refuse(
+                    503,
+                    "unavailable",
+                    {},
+                    refused.retryAfterMillis === undefined
+                      ? {}
+                      : { "retry-after": String(Math.max(1, Math.ceil(refused.retryAfterMillis / 1000))) },
+                  ),
+              )
+            }),
+          )
+        }).pipe(
+          Effect.catchDefect((defect) =>
+            Effect.sync(() => {
+              fields.errorCode = codeOf(defect)
+              return refuse(503, "unavailable")
+            })
+          ),
+        )
+        yield* RepoReads.counted("about", response.status, Number(fields.bytes ?? 0))
+        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+          "repo.about",
+        ).pipe(
+          Effect.annotateLogs({ ...fields, status: response.status, durationMs: (yield* Clock.currentTimeMillis) - startedAt }),
+        )
+        return response
+      }).pipe(Effect.withSpan("repo.about", { kind: "server" }))
+
     const fetch: Effect.Effect<
       HttpServerResponse.HttpServerResponse,
       never,
@@ -318,6 +400,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       const path = request.url.split("?")[0]!
       if (path === REPOSITORIES_SHAPE_ROUTE) return yield* shape
       if (path === REPOS_ROUTE) return yield* clone
+      const aboutTarget = parseAbout(path)
+      if (aboutTarget !== undefined) return yield* about(aboutTarget)
       if (path.startsWith(`${REPOS_ROUTE}/`)) return yield* read(path)
       return HttpServerResponse.empty({ status: 404 })
     })

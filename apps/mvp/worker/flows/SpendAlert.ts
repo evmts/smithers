@@ -1,8 +1,11 @@
 import { Action, Flow, Interpreter, RetryPolicy, Sleep } from "@smthrs/flow"
 import { Pricing } from "@smthrs/model"
+import { Channels } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
-import { Clock, Effect, Layer, Metric, Schema } from "effect"
+import { Clock, Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
+import { alertMessage } from "../../src/features/spend/copy.ts"
+import { destinationOf } from "../AlertChannels.ts"
 import { codeOf } from "../ErrorCode.ts"
 
 // `ops/SpendAlert { from, until, budget }` (docs/features/spend-alerts.md): one alert to the deployment's Admins about
@@ -13,8 +16,13 @@ import { codeOf } from "../ErrorCode.ts"
 // calls, tokens and estimated cost by role, and today's tokens against the daily budget. Admins' devices sync that row
 // and show it in the toast stack. A window whose calls an earlier alert already carried records nothing.
 //
+// Then it delivers the alert outside the app, one step per channel (`ops/DeliverSpendAlert`): to the email addresses
+// and the Telegram chat an Admin set (`alert_channels`, worker/AlertChannels.ts), through `@smthrs/notifications`'
+// `Channels`, each recorded as an `alert_deliveries` receipt. A send another attempt may clear fails the step and the
+// engine retries it, for a day, waiting a provider's Retry-After; a refusal is recorded and ends it.
+//
 // It runs remotely because it must happen while every device is off (`devices-off`, `flows.local-first-placement` in
-// docs/rules.md). It runs on any host; the host injects Postgres through `registration`.
+// docs/rules.md). It runs on any host; the host injects Postgres and the channels through `registration`.
 
 const nonNegative = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const positive = Schema.Int.check(Schema.isGreaterThan(0))
@@ -92,18 +100,88 @@ export const Record = Action.make("ops/RecordSpendAlert", {
   retryPolicy,
 })
 
-/** `ops/SpendAlert`: once a window ends, alerts the Admins about the model spend no alert has carried yet. */
+/**
+ * What a delivery step did: `sent`; `refused` for good (recorded); `off`, no destination set for the channel; `none`,
+ * no alert to send; `existing`, a receipt an earlier run of the step recorded.
+ */
+const Delivered = Schema.Struct({ outcome: Schema.Literals(["sent", "refused", "off", "none", "existing"]) })
+type Delivered = typeof Delivered.Type
+
+/** Postgres failed a delivery step. It retries, as a send that failed does. */
+export class DeliverUnavailable extends Schema.TaggedError<DeliverUnavailable>()(
+  "@smthrs/mvp/ops/DeliverUnavailable",
+  { reason: Schema.Literal("database") },
+) {}
+
+/**
+ * Deliveries, by `channel` and `outcome`: `sent`, `refused`, `failed` for one attempt another may clear, `off`, `none`
+ * and `existing`.
+ */
+export const deliveries = Metric.counter("smithers_spend_alert_deliveries", {
+  description: "Spend alert deliveries outside the app, by channel and outcome",
+  incremental: true,
+})
+
+/** 5 seconds doubling to 10 minutes, for a day: a provider that is down or rate limiting gets the time it asks for. */
+const deliverRetryPolicy = RetryPolicy.make({
+  initialMs: 5_000,
+  factor: 2,
+  maxMs: 600_000,
+  expirationMs: 86_400_000,
+})
+
+/** The window's alert as one channel delivers it: its id, the channel, and what recording it did. */
+const deliverPayload = { alertId: Schema.String, channel: Channels.Channel, outcome: Alerted.fields.outcome }
+
+/** One delivery's payload. */
+export interface DeliverRequest {
+  readonly alertId: string
+  readonly channel: Channels.Channel
+  readonly outcome: Alerted["outcome"]
+}
+
+/** Sends the window's alert on one channel and records its receipt. */
+export const Deliver = Action.make("ops/DeliverSpendAlert", {
+  payload: deliverPayload,
+  success: Delivered,
+  error: Schema.Union([Channels.DeliveryFailed, DeliverUnavailable]),
+  capabilities: ["db:read:alert_channels", "db:write:alert_deliveries", "net:alert_channels"],
+  retryPolicy: deliverRetryPolicy,
+})
+
+/** What the flow did: the alert it recorded, and each channel's delivery. */
+const Outcome = Schema.Struct({ alert: Alerted, email: Delivered, telegram: Delivered })
+
+/**
+ * `ops/SpendAlert`: once a window ends, alerts the Admins about the model spend no alert has carried yet, in the app
+ * and on each channel they set.
+ */
 export const SpendAlert = Flow.make("ops/SpendAlert", {
-  description: "Once a window ends, alert the deployment's Admins about its model spend: tokens and cost by role.",
-  capabilities: ["db:write:model_usage", "db:write:spend_alerts"],
+  description: "Once a window ends, alert the deployment's Admins about its model spend: tokens and cost by role, " +
+    "in the app and by email and Telegram where they set them.",
+  capabilities: [
+    "db:write:model_usage",
+    "db:write:spend_alerts",
+    "db:read:alert_channels",
+    "db:write:alert_deliveries",
+    "net:alert_channels",
+  ],
   modelInvocable: false,
   payload,
-  success: Alerted,
-  error: Schema.Union([AlertFailed, Sleep.SleepRequestInvalid]),
+  success: Outcome,
+  error: Schema.Union([AlertFailed, Sleep.SleepRequestInvalid, Channels.DeliveryFailed, DeliverUnavailable]),
   body: Node.capture({}, (window: Window) =>
     AlertIn.call(window).pipe(
       Node.bindPlanned(Node.capture({}, (millis) => Sleep.action.call({ millis }))),
       Node.andThen(Record.call(window)),
+      // Each channel's step takes the recorded outcome, so it starts once the alert is recorded.
+      Node.bindPlanned(Node.capture({ alertId: executionId(window) }, function (alerted) {
+        return Node.all({
+          alert: Node.succeed(alerted),
+          email: Deliver.call({ alertId: this.alertId, channel: "email", outcome: alerted.outcome }),
+          telegram: Deliver.call({ alertId: this.alertId, channel: "telegram", outcome: alerted.outcome }),
+        })
+      })),
     )),
 })
 
@@ -227,12 +305,154 @@ export const observedRecord = <E, R>(window: Window, database: Layer.Layer<SqlCl
   )
 }
 
-/** Registers `ops/SpendAlert` with its steps, reaching Postgres through `database`. */
-export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+/** The alert a delivery sends, as Postgres holds it. */
+interface AlertRow {
+  readonly from: number
+  readonly until: number
+  readonly tokens: number
+  readonly costUsd: number | null
+  readonly roles: ReadonlyArray<RoleSpend>
+}
+
+/** A channel's setting, as Postgres holds it. */
+interface ChannelRow {
+  readonly destinations: ReadonlyArray<string>
+  readonly appUrl: string
+}
+
+/**
+ * A receipt's fields: its status, the failure's code, the provider's short reason and the HTTP status, and the
+ * provider's id for the message.
+ */
+interface Receipt {
+  readonly status: "sent" | "refused" | "failed"
+  readonly code: string | null
+  readonly reason: string | null
+  readonly httpStatus: number | null
+  readonly providerId: string | null
+}
+
+/** Records one attempt's receipt for an alert and channel; a later attempt overwrites it and counts. */
+const recordReceipt = (request: Pick<DeliverRequest, "alertId" | "channel">, receipt: Receipt) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql`
+      INSERT INTO alert_deliveries (alert_id, channel, status, code, reason, http_status, provider_id)
+      VALUES (${request.alertId}, ${request.channel}, ${receipt.status}, ${receipt.code}, ${receipt.reason},
+        ${receipt.httpStatus}, ${receipt.providerId})
+      ON CONFLICT (alert_id, channel) DO UPDATE SET status = EXCLUDED.status, code = EXCLUDED.code,
+        reason = EXCLUDED.reason, http_status = EXCLUDED.http_status, provider_id = EXCLUDED.provider_id,
+        attempts = alert_deliveries.attempts + 1, updated_at = now()`)
+
+/** A failure's receipt: its status, code and HTTP status. */
+const failedReceipt = (error: Channels.DeliveryError): Receipt => ({
+  status: error._tag === "@smthrs/notifications/DeliveryFailed" ? "failed" : "refused",
+  code: error.code,
+  reason: error.reason ?? null,
+  httpStatus: error.status ?? null,
+  providerId: null,
+})
+
+/**
+ * Delivers one alert on one channel, against the `SqlClient` and `Channels` in context: nothing when the alert wasn't
+ * recorded, when an earlier run recorded its receipt, or when no Admin set the channel; else one send and its receipt.
+ * A refusal, including a channel the deployment has no provider for (`unconfigured`), is recorded and returned; a
+ * failure another attempt may clear is recorded and fails the step.
+ */
+export const deliver = (request: DeliverRequest) =>
+  Effect.gen(function* () {
+    if (request.outcome === "none") return { outcome: "none" } satisfies Delivered
+    const sql = yield* SqlClient.SqlClient
+    const [earlier] = yield* sql<{ readonly status: string }>`
+      SELECT status FROM alert_deliveries WHERE alert_id = ${request.alertId} AND channel = ${request.channel}`
+    if (earlier !== undefined && earlier.status !== "failed") return { outcome: "existing" } satisfies Delivered
+    const [setting] = yield* sql<ChannelRow>`
+      SELECT destinations, app_url AS "appUrl" FROM alert_channels WHERE channel = ${request.channel}`
+    if (setting === undefined) return { outcome: "off" } satisfies Delivered
+    const [alert] = yield* sql<AlertRow>`
+      SELECT (extract(epoch FROM window_start) * 1000)::float8 AS "from",
+        (extract(epoch FROM window_end) * 1000)::float8 AS "until", tokens::float8 AS tokens, cost_usd AS "costUsd",
+        roles
+      FROM spend_alerts WHERE id = ${request.alertId}`
+    if (alert === undefined) return { outcome: "none" } satisfies Delivered
+    const destination = destinationOf(request.channel, setting.destinations)
+    const sent = Option.isNone(destination)
+      ? yield* Effect.fail(
+        new Channels.DeliveryRefused({ channel: request.channel, code: "rejected", reason: "invalid_destination" }),
+      ).pipe(Effect.result)
+      : yield* (yield* Channels.Channels).send(destination.value, {
+        id: request.alertId,
+        ...alertMessage(alert, setting.appUrl),
+      }).pipe(Effect.result)
+    if (sent._tag === "Success") {
+      yield* recordReceipt(request, {
+        status: "sent",
+        code: null,
+        reason: null,
+        httpStatus: null,
+        providerId: sent.success.providerId,
+      })
+      return { outcome: "sent" } satisfies Delivered
+    }
+    yield* recordReceipt(request, failedReceipt(sent.failure))
+    if (sent.failure._tag === "@smthrs/notifications/DeliveryRefused") return { outcome: "refused" } satisfies Delivered
+    return yield* sent.failure
+  })
+
+/**
+ * The delivery step over `database` and the `Channels` in context, with its records: a `spend.alert.delivery` log line
+ * and span, Warn when a send failed or was refused, and `smithers_spend_alert_deliveries`. They carry the alert, the
+ * channel, the outcome and the failure's code and status, never an address, a chat id or a key.
+ */
+export const observedDeliver = <E, R>(request: DeliverRequest, database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+  deliver(request).pipe(
+    Effect.provide(database),
+    Effect.tapError((error) =>
+      Effect.andThen(
+        Metric.update(Metric.withAttributes(deliveries, { channel: request.channel, outcome: "failed" }), 1),
+        Effect.logWarning("spend.alert.delivery").pipe(
+          Effect.annotateLogs({
+            alertId: request.alertId,
+            channel: request.channel,
+            outcome: "failed",
+            ...(error instanceof Channels.DeliveryFailed
+              ? { errorCode: error.code, ...(error.status === undefined ? {} : { status: error.status }) }
+              : { errorCode: codeOf(error) }),
+          }),
+        ),
+      )
+    ),
+    Effect.mapError((error) =>
+      error instanceof Channels.DeliveryFailed ? error : new DeliverUnavailable({ reason: "database" })
+    ),
+    Effect.tap((delivered) =>
+      Effect.andThen(
+        Metric.update(Metric.withAttributes(deliveries, { channel: request.channel, outcome: delivered.outcome }), 1),
+        Effect.logWithLevel(delivered.outcome === "refused" ? "Warn" : "Info")("spend.alert.delivery").pipe(
+          Effect.annotateLogs({ alertId: request.alertId, channel: request.channel, outcome: delivered.outcome }),
+        ),
+      )
+    ),
+    Effect.withSpan("spend.alert.delivery", {
+      attributes: { "smithers.spend_alert.id": request.alertId, "smithers.channel": request.channel },
+    }),
+  )
+
+/** No channels: every send is refused `unconfigured`. A host with no alert providers passes it. */
+export const noChannels: Layer.Layer<Channels.Channels> = Channels.layer({})
+
+/**
+ * Registers `ops/SpendAlert` with its steps, reaching Postgres through `database` and sending through `channels`
+ * (worker/AlertChannels.ts `channelsConfig`; none by default).
+ */
+export const registration = <E, R>(
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
+  channels: Layer.Layer<Channels.Channels> = noChannels,
+) =>
   Interpreter.layerWithImplementations(
     SpendAlert,
-    Layer.merge(
+    Layer.mergeAll(
       AlertIn.toLayer((window) => alertIn(window)),
       Record.toLayer((window) => observedRecord(window, database)),
+      Deliver.toLayer((request) => observedDeliver(request, database)),
     ),
-  ).pipe(Layer.provideMerge(Action.layerImplementations))
+  ).pipe(Layer.provide(channels), Layer.provideMerge(Action.layerImplementations))

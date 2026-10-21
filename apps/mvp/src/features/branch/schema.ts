@@ -5,8 +5,9 @@ import { ACCESSES, MODES, REFUSALS } from "./contract"
 // and the branch this tab's route shows.
 
 /**
- * A branch the app tracks, as `POST /api/branches` answers it: its id, its conversation's, its mode, and what the
- * person may do on it (docs/features/branch-workspace.md#sharing).
+ * A branch the app tracks, as `POST /api/branches` answers it: its id, its conversation's, its mode, what the person
+ * may do on it (docs/features/branch-workspace.md#sharing), and whether its owner shared it, which makes its prompt one
+ * text its people type together (docs/features/coedit.md#the-prompt).
  */
 export const Tracked = Schema.Struct({
   branchId: Schema.String,
@@ -15,6 +16,7 @@ export const Tracked = Schema.Struct({
   name: Schema.String,
   mode: Schema.Literals(MODES),
   access: Schema.Literals(ACCESSES),
+  shared: Schema.Boolean,
 })
 export type Tracked = typeof Tracked.Type
 

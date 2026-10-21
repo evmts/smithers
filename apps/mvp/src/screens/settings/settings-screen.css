@@ -1,0 +1,18 @@
+/* Page layout only; components and colors come from @smthrs/ui. */
+.settings-screen {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.settings-screen-header { display: flex; align-items: center; gap: 1rem; }
+.alert-settings { display: flex; flex-direction: column; gap: 1rem; }
+.alert-settings-channel { display: flex; align-items: flex-end; gap: 0.75rem; flex-wrap: wrap; }
+.alert-settings-channel [data-slot="field"] { flex: 1 1 18rem; min-width: 0; }
+.alert-settings-receipts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.alert-settings-receipts li { display: grid; grid-template-columns: 8rem 1fr auto; gap: 0.75rem; }
+@media (max-width: 480px) { .alert-settings-receipts li { grid-template-columns: 1fr; gap: 0; } }

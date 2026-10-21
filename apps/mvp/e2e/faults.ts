@@ -51,6 +51,15 @@ export const faults = (page: Page) => {
         await built()
         await page.evaluate(() => (window as unknown as OnWindow).faults.engine.holdStarts())
       },
+      /**
+       * The end of every run of `flow` in this tab reads as the engine refusing it with `code`, as a run parked under one
+       * build of the app and resumed under the next reads `plan_changed` or `payload_changed`. A page opened again is a
+       * new build: healthy.
+       */
+      refuseResults: async (flow: string, code: "plan_changed" | "payload_changed") => {
+        await built()
+        await page.evaluate(({ flow, code }) => (window as unknown as OnWindow).faults.engine.refuseResults(flow, code), { flow, code })
+      },
     },
   }
 }

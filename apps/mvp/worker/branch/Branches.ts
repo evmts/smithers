@@ -9,11 +9,14 @@ import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { branchAccess, canView, isMember } from "./Access.ts"
 import * as Conversations from "./Conversations.ts"
-import { branchHead, defaultBranch, type Forge } from "./Forge.ts"
+import { branchHead, createBranch, defaultBranch, type Forge } from "./Forge.ts"
 
 // `POST /api/branches` (decision 0013 §2, docs/features/branch-workspace.md#tracking-a-branch): the write path of the
-// client flow `branch/track`, which a person opening a branch's page and the agent run alike. It records a branch
-// GitHub already has, with its conversation, and answers both ids and what the person may do on it. A branch the app
+// client flows `branch/track`, which a person opening a branch's page and the agent run alike, and `branch/create`,
+// which first makes a new branch on the forge from the default branch's head (`create: true`; a repository's home's New
+// branch, `/branch.new` and the agent; docs/features/branch-workspace.md#new-branch). It records a branch
+// GitHub already has, with its conversation, and answers both ids, what the person may do on it and whether its owner
+// shared it (`shared`: its prompt is then typed together, docs/features/coedit.md#the-prompt). A branch the app
 // tracks already answers at once, to those it is shared with (worker/branch/Access.ts), and 403 to anyone else; a new
 // one is read from its forge first (`Forge`), with the read credential the server holds, so a name GitHub doesn't have
 // is never recorded, and becomes the Member's who tracked it, private until they share it. The repository's default
@@ -29,6 +32,8 @@ const TrackRequest = Schema.Struct({
   owner: Schema.String,
   name: Schema.String,
   ref: Schema.String,
+  /** `branch/create`'s: make the branch on the forge, from the default branch's head, before tracking it. */
+  create: Schema.optional(Schema.Literal(true)),
 }).check(
   Schema.makeFilter((request) => isRepository(request.owner, request.name) && isBranchName(request.ref)),
 )
@@ -69,10 +74,30 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         if (!canView(found.access)) return refusal(403, "forbidden")
         fields.outcome = "existing"
         fields.access = found.access
-        return HttpServerResponse.jsonUnsafe({ ...known, access: found.access }, { headers: noStore })
+        return HttpServerResponse.jsonUnsafe({ ...known, access: found.access, shared: found.shared }, { headers: noStore })
       }
       // Tracking a branch makes it the tracker's: only a Member or above may (`repo:branch-create`, decision 0007).
       if (!isMember(actor)) return refusal(403, "forbidden")
+      if (decoded.value.create === true) {
+        // A new branch: made on the forge at the default branch's head, then tracked as any other. One the forge has
+        // already (a retry whose answer was lost, or a branch someone pushed) is tracked as it is.
+        const from = yield* defaultBranch({ owner, name }).pipe(Effect.result)
+        if (from._tag === "Failure" || from.success.branch === undefined) {
+          fields.forge = from._tag === "Failure" ? from.failure.code : "no_default_branch"
+          return from._tag === "Failure" && from.failure.code !== "not_found" && from.failure.code !== "empty"
+            ? refusal(503, "unavailable")
+            : refusal(404, "not_found")
+        }
+        const made = yield* createBranch({ owner, name }, ref, from.success.branch).pipe(Effect.result)
+        fields.created = made._tag === "Success" ? "created" : made.failure.code
+        if (made._tag === "Failure" && made.failure.code !== "exists") {
+          return made.failure.code === "not_found"
+            ? refusal(404, "not_found")
+            : made.failure.code === "not_configured"
+            ? refusal(503, "not_configured")
+            : refusal(503, "unavailable")
+        }
+      }
       const head = yield* branchHead({ owner, name }, ref).pipe(Effect.result)
       if (head._tag === "Failure") {
         const code = head.failure.code
@@ -93,7 +118,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       fields.mode = mode
       fields.access = found.access
       return HttpServerResponse.jsonUnsafe(
-        { ...tracked.branch, access: found.access },
+        { ...tracked.branch, access: found.access, shared: found.shared },
         { status: tracked.created ? 201 : 200, headers: noStore },
       )
     }).pipe(

@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import {
   Button,
   EmptyState,
@@ -5,8 +6,10 @@ import {
   RunHeader,
   RunJournal,
   RunWaterfall,
-  SpanDetail,
-  SpanTree,
+  FlowGraph,
+  JournalScrubber,
+  journalPosition,
+  StepInspector,
   Tabs,
   TabsContent,
   TabsList,
@@ -26,8 +29,10 @@ import {
   STOP,
   THIS_DEVICE,
 } from "../contract"
-import { actsOf, journalOf, selectedStep, stepsOf } from "../page"
-import type { Inspection, RunTab } from "../schema"
+import { actsOf, journalOf, selectedStep } from "../page"
+import { graphOf, runTitle } from "../graph"
+import type { RunsActions } from "../runs"
+import type { Inspection, RunTab, RunPage, RunView } from "../schema"
 import { useRuns } from "./RunsContext"
 
 // One run's page (decision 0014 §5): its header with Stop, Retry and Resume, then its steps with each one's input and
@@ -41,17 +46,36 @@ export function RunPageView() {
   if (page.state !== "read") {
     return <EmptyState title={page.state === "not_found" ? ON_ANOTHER_DEVICE : COULDNT_READ} />
   }
+  return <ReadRunPage page={page} view={view} actions={actions} />
+}
+
+function ReadRunPage({ page, view, actions }: { page: RunPage; view: RunView; actions: RunsActions }) {
   const inspection = page.inspection as Inspection
   const { run } = inspection
-  const now = Date.now()
-  const steps = stepsOf(inspection)
+  const now = view.now ?? Date.now()
+  const at = view.at ?? null
+  // The evidence fold is independent of the presentation clock; open bars use the current time below.
+  const frame = useMemo(() => graphOf(page, at, run.createdAtMs), [page, at, run.createdAtMs])
+  const graph = { ...frame, time: at === null ? now : frame.time }
+  const steps = graph.steps
   const shown = selectedStep(steps, view.selected)
   const acts = actsOf(inspection, now)
   const busy = view.acting !== null
   return (
-    <div className="run-page">
+    <div className="run-page" tabIndex={-1} onKeyDown={(event) => {
+      const target = event.target as HTMLElement
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      if (target.closest("textarea,select,[contenteditable=true],input:not([type=range])")) return
+      if (event.key === "[" || event.key === "]" || event.key === "{" || event.key === "}") {
+        event.preventDefault()
+        actions.scrub(journalPosition(graph.events, at, event.key === "[" || event.key === "{" ? -1 : 1, event.shiftKey))
+      } else if (event.key.toLowerCase() === "l") {
+        event.preventDefault(); actions.scrub(null)
+      } else if (event.key === "Escape") actions.showInspector(false)
+      else if (event.key === "i" && shown !== undefined) { event.preventDefault(); actions.inspectStep(shown.row.id) }
+    }}>
       <RunHeader
-        title={run.flowName}
+        title={runTitle(run)}
         state={run.status}
         cancelRequested={run.cancelRequestedAtMs !== null}
         startedAtMs={run.startedAtMs ?? run.createdAtMs}
@@ -84,31 +108,25 @@ export function RunPageView() {
           <TabsTrigger value="journal">Journal</TabsTrigger>
         </TabsList>
         <TabsContent value="steps">
-          <div className="run-page-steps">
-            <SpanTree
-              steps={steps.map((step) => step.row)}
-              selected={shown?.row.id ?? null}
-              onSelect={actions.select}
-              now={now}
-            />
-            {shown === undefined ? null : (
-              <SpanDetail
-                label={shown.row.label}
-                state={shown.row.state}
-                attempts={shown.attempts}
-                input={shown.input}
-                output={shown.output}
-                wait={shown.wait}
-                now={now}
-                actions={shown.href === null ? undefined : <Link to={shown.href as never}>{OPEN}</Link>}
-              />
+          <JournalScrubber events={graph.events} at={at} onChange={actions.scrub} />
+          <div className="run-page-graph" data-inspector={view.inspectorOpen !== false}>
+            <FlowGraph nodes={graph.nodes} edges={graph.edges} selected={view.selected} onSelect={actions.select} onInspect={actions.inspectStep} />
+            {shown === undefined || view.inspectorOpen === false ? null : (
+              <StepInspector key={shown.row.id} step={shown.row} attempts={shown.attempts} input={shown.input} output={shown.output}
+                logs={shown.logs ?? []} wait={shown.wait} now={graph.time}
+                actions={shown.href === null ? undefined : <Link to={shown.href as never}>{OPEN}</Link>} />
             )}
           </div>
+          <RunWaterfall steps={graph.timeline.map((step) => step.row)} now={graph.time}
+            cursorMs={at === null ? undefined : graph.time} selected={shown?.row.id ?? null} onSelect={actions.select}
+            segments={graph.segments} />
         </TabsContent>
         <TabsContent value="timeline">
           <RunWaterfall
-            steps={steps.map((step) => step.row)}
-            now={now}
+            steps={graph.timeline.map((step) => step.row)}
+            now={graph.time}
+            cursorMs={at === null ? undefined : graph.time}
+            segments={graph.segments}
             selected={shown?.row.id ?? null}
             onSelect={actions.select}
           />

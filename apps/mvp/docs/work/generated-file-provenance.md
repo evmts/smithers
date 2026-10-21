@@ -11,9 +11,9 @@ links: [repo-view-branches-raw-clone.md, vibelang-generated-docs.md, ../rulings.
 
 **Why:** Will’s 19:35 queue answer says cached generated output should be identifiable and inspectable.
 
-**Current state:** At 19:36 the lead assigned the repository-view half alongside VibeLang docs generation. A warning on editing generated output is a lead implementation choice. No completed UI or browser receipt exists.
+**Current state (22:05):** Built in the repository view ([repo.md](../features/repo.md#generated-files)): `@smthrs/ui`'s `GeneratedChip` in a file's toolbar links the flow's source, its last run and its inputs, from the manifest nearest the file (`.smithers/generated.json`, as `docs/generate` writes it) or a header marker; the branch editor warns over a generated file. Unit tests cover the manifest, the markers, the nearest manifest and the links.
 
-**Next step:** Consume the manifest through public interfaces, enforce existing write permissions, and prove provenance links and editing behavior in a real browser.
+**Next step:** an e2e on a small public repository that carries a manifest or a header marker; none of the repositories the specs clone has one.
 
 **Open questions for Will:** None.
 

@@ -26,7 +26,7 @@ const openReady = async (page: import("@playwright/test").Page) => {
   await expect(page.getByText("Well hello there!")).toBeVisible({ timeout: 120_000 })
 }
 
-test("clone: two devices see the repository open on its README once Code Storage has it", async ({ browser }) => {
+test("clone: two devices see the repository open on its README once Code Storage has it", { annotation: { type: "summary", description: "Two devices see a repository open on its README once it is cloned." } }, async ({ browser }) => {
   const alice = await browser.newContext({ recordVideo: { dir: test.info().outputPath("alice") } })
   const bob = await browser.newContext({ recordVideo: { dir: test.info().outputPath("bob") } })
   const [a, b] = [await alice.newPage(), await bob.newPage()]
@@ -41,7 +41,7 @@ test("clone: two devices see the repository open on its README once Code Storage
   await bob.close()
 })
 
-test("browse: a file from the listing, its lines, a reload, and the permalink at the head commit", async ({ page, context }) => {
+test("browse: a file from the listing, its lines, a reload, and the permalink at the head commit", { annotation: { type: "summary", description: "A file opens from the listing with its lines, survives a reload, and has a permalink at the head commit." } }, async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"])
   await openReady(page)
   await page.getByRole("link", { name: "index.html" }).first().click()
@@ -63,7 +63,7 @@ test("browse: a file from the listing, its lines, a reload, and the permalink at
   await expect(page.getByText("Well hello there!")).toBeVisible({ timeout: 30_000 })
 })
 
-test("refusals: a repository GitHub doesn't have says Not found, and so does a missing file", async ({ page }) => {
+test("refusals: a repository GitHub doesn't have says Not found, and so does a missing file", { annotation: { type: "summary", description: "A repository GitHub doesn't have, and a missing file, both say Not found." } }, async ({ page }) => {
   const name = `no-such-repo-${Date.now().toString(36)}`
   await page.goto(`/octocat/${name}`)
   const header = page.locator('header[aria-label="Repository"]')

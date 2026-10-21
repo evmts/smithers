@@ -2,25 +2,35 @@
 
 A branch is a workspace: it has one conversation for as long as it lives, and a terminal for each person on the branch's own machine. This page covers the first slice of [decision 0013](../decisions/0013-branch-workspace.md) (its §9, S1): open a repository's existing branch, ask in that branch's conversation, open the branch's terminal in a frame, run `git log` in a real container, reload and keep the same shell; another branch has its own conversation and terminal. It also covers the next slice, [sharing](#sharing) a branch Google Docs style and the people on it [live](#presence).
 
-Co-editing files, snapshots and branch creation come later ([What's not built](#whats-not-built)); the machine's tools, sleep and wake are [sandbox tools](sandbox-tools.md).
+People on a shared branch type its prompt and its files together, with each other's carets ([co-editing](coedit.md)). Snapshots and branch creation come later ([What's not built](#whats-not-built)); the machine's tools, sleep and wake are [sandbox tools](sandbox-tools.md).
 
 ## The page
 
 `/$owner/$repo/tree/$ref` opens the repository at `$ref` and, when `$ref` is a branch GitHub has, its workspace:
 
 ```
-┌ octocat / Spoon-Knife                                         ┐
-│ test-branch             (B)(G)+1   [Share]    Code   Terminal │
-│ ┌ the Code view, or the Terminal view (?terminal=me) ───────┐ │
-│ └────────────────────────────────────────────────────────────┘ │
-│ the branch's conversation                                      │
-│ Chat ⌘K                       (only for those who may edit)    │
-└────────────────────────────────────────────────────────────────┘
+┌ octocat / Spoon-Knife                                     Issues  Stack  [Clone] ┐
+│ test-branch [Owner]                     (L)(B)(G)+1  [Share]   Code  Terminal    │
+│ ┌ the Code view, or the Terminal view (?terminal=me) ─┐ ┌ the conversation ──────┐ │
+│ │ files and README, or Not cloned                     │ │ messages and views     │ │
+│ │ the terminal, or [Open terminal] in its middle      │ │ or No messages yet     │ │
+│ └─────────────────────────────────────────────────────┘ └────────────────────────┘ │
+│                                                              Chat ⌘K / composer    │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Route** (`src/router.tsx`): the tree route's loader opens the location (`repo.actions.openRoute`), tracks the branch (`branch.actions.open`), joins its room (`branch.presence.actions.join`) and, under `?terminal`, shows its terminal (`terminal.actions.show`), then says where on the page the person is (`branch.presence.actions.at`). `?terminal=me` is the person's own terminal, or the branch's first live one when they have none; `?terminal=<id>` shows that terminal. Leaving the route leaves the room (`onLeave`).
-- **Screen**: `src/screens/branch/BranchScreen.tsx` composes `RepoHeader`, `BranchHeader` (the branch's name, the people on it, Share for its owner, and the Code and Terminal links), `RepoPage` or `TerminalPanel`, chat's `Conversation` and, for someone who may edit, the `Composer`. A branch this person may not open, or stops being able to, shows `No access` and the repository view (`src/features/branch/view.ts` `accessNow`).
-- **`/app`** shows the home conversation: the deployment repository's (`GITHUB_REPOSITORY`) `main`. Its loader leaves the branch, so the composer asks there again.
+The page never shows a blank area (Will, 2026-10-20, on its first recordings: "most of the recording looks like an empty
+screen"). Each part says what it is: the chrome names the branch, what this person may do on it in the share dialog's
+words (`Owner`, `Can edit`, `Can view`, `statusOf` in `src/features/branch/view.ts`) and everyone there, this person
+first (`avatarsOf`); the Code view of a repository that isn't cloned says `Not cloned` or `Cloning` beside the header's
+Clone (`codeEmptyOf` in `src/features/repo/view.ts`); the Terminal view always has its screen, with Open terminal in its
+middle, a calm bar along its top while the machine wakes, or `No terminals` for someone who can't open one (`panelViewOf` in
+`src/features/terminal/view.ts`); and an empty conversation says `No messages yet`. Under 60 rem wide, the conversation
+stacks under the view.
+
+- **Route** (`src/router.tsx`): the tree route warms the location (`repo.actions.warmRoute`; a link's hover does only that), then opens it (`repo.actions.openRoute`), tracks the branch (`branch.actions.open`), joins its room (`branch.presence.actions.join`) and, under `?terminal`, shows its terminal (`terminal.actions.show`), then says where on the page the person is (`branch.presence.actions.at`). `?terminal=me` is the person's own terminal, or the branch's first live one when they have none; `?terminal=<id>` shows that terminal. Leaving the route leaves the room (`onLeave`).
+- **Screen**: `src/screens/branch/BranchScreen.tsx` composes `RepoHeader`, `BranchHeader` (the branch's name and this person's access, the people on it, Share for its owner, and the Code and Terminal tabs), `RepoPage`, `TerminalPanel` or, under `?edit=<path>`, the live editor (`SharedFile`, [co-editing](coedit.md#the-page)) in the view column, and chat's `Conversation` with the `Composer` at its foot (`docked={false}`) in the conversation column: once its owner shares the branch, the branch's prompt, typed together by those who may edit it and read-only for those who may only view it; until then the owner's own draft, kept on their device ([co-editing](coedit.md#the-prompt)). A branch this person may not open, or stops being able to, shows `No access` in the conversation's place beside the repository view (`src/features/branch/view.ts` `accessNow`).
+- **`/app`** shows the home conversation: the deployment repository's (`GITHUB_REPOSITORY`) `main`. Its route leaves the branch, so the composer asks there again.
 - **A ref that isn't a branch** (a commit, a tag, a name GitHub doesn't have) shows the repository view alone.
 
 ## Tracking a branch
@@ -29,7 +39,7 @@ Co-editing files, snapshots and branch creation come later ([What's not built](#
 
 | Answer | When |
 |---|---|
-| `200 { branchId, conversationId, repoId, name, mode, access }` | the app tracks the branch already and this person may open it; nothing is read from GitHub. `access` is `owner`, `edit` or `view` ([sharing](#sharing)) |
+| `200 { branchId, conversationId, repoId, name, mode, access, shared }` | the app tracks the branch already and this person may open it; nothing is read from GitHub. `access` is `owner`, `edit` or `view` ([sharing](#sharing)); `shared` says its owner shared it, which makes its prompt one text ([co-editing](coedit.md#the-prompt)) |
 | `201` with the same body | the branch was read from its forge and recorded, with its conversation, in one transaction, as the person's own (`owner`) |
 | `404 not_found` | GitHub (or the mirror) has no such repository or branch, or the repository is private |
 | `401`, `403` | signed out; a tracked branch this person may not open, or a new one and they aren't a Member |
@@ -37,6 +47,19 @@ Co-editing files, snapshots and branch creation come later ([What's not built](#
 | `503 unavailable` | the forge or Postgres didn't answer; the step tries again for 30 s |
 
 The repository's default branch is recorded `locked` (decision 0007 §5) and is the team's; every other tracked branch is `open` and belongs to the Member who tracked it first (`branches.created_by`).
+
+## New branch
+
+`branch/create { repo, branch }` (`src/features/branch/flows.ts`) makes a new branch and tracks it. A repository home's New branch runs it ([home](home.md#new-branch)), `/branch.new` and the agent can too; Will, 2026-10-20 18:12: "The maintainer should have a prominent button to start working on a new branch". Its one step posts the same route with `create: true`: `POST /api/branches { owner, name, ref, create: true }`. For a branch the app doesn't track yet, the route reads the default branch from the forge, makes `ref` there at its head (`CodeStorage.createBranch` on the repository's mirror, decision 0005 §"Create is lazy"), then tracks it as above: `201`, `open`, the Member's own. A branch the forge already has, from a retry whose answer was lost or a push, is tracked as it is. Then the page opens its workspace: its conversation, terminal and views.
+
+| Answer | When |
+|---|---|
+| `201`, `200` | as tracking |
+| `404 not_found` | the forge has no such repository, or no default branch to start from |
+| `503 not_configured` | the forge is GitHub, read with no credential, which can't make a branch: the flow fails `not_configured`, never tried again |
+| `503 unavailable` | the forge or Code Storage didn't answer; the step tries again for 30 s |
+
+The route's `branch.track` line says `created`: `created`, `exists`, or the forge's refusal. The branch lives on Code Storage's mirror until a person pushes it to GitHub.
 
 ## Conversations
 
@@ -133,7 +156,7 @@ It answers `200 { txid }` (`null` when nothing changed), `401`, `403 forbidden` 
 Everyone on a branch's page is in its room: one hibernating `RoomObject` Durable Object per branch (`worker/BranchRooms.ts`), which stores nothing and never wakes the branch's machine. The page's socket is `GET /api/branches/<id>/room` (`worker/branch/Presence.ts`): same origin only, signed in, at least `view`. ChatApi stamps who joins (principal, login, role, access) in headers the browser can't set; the room keeps them in each socket's attachment (`@smthrs/sync`'s `PresenceRoom`) and sends everyone the roster on each change. The page sends only where it is: `{ view: "code", path }` or `{ view: "terminal", terminalId }` (`src/features/presence/where.ts`), at most 1 KiB.
 
 - **Avatars** (`PresenceAvatars`, `@smthrs/ui`'s `AvatarStack`): everyone else, once each, titled with where they are; choosing one follows them to their place, as in Google Docs and Figma.
-- **Live cursors:** the terminal is the view with a cursor today, and tmux shows everyone the same screen and cursor. Files have no cursors until co-editing.
+- **Live cursors:** the prompt, a file in the live editor and a run's answer box show everyone's carets, each through its own text's room ([co-editing](coedit.md)); the terminal shows everyone tmux's one screen and cursor. Following someone in the live editor (`edit`) opens the same file.
 - **Live access:** the room's roster says what this person may do (`read` or `write`); the screen follows it (`accessNow`), and a room closed with 1008 is `revoked`.
 - **Seams with notifications (0009):** a run on a branch reaches only watchers who may still view it (`worker/Notifications.ts` reads `policyOf` and `underPolicy`), and a watch is recorded only for someone who may view the branch. The runs other people start on a branch show through notifications, not presence.
 
@@ -167,12 +190,12 @@ No record carries a login, a person's place or a path; a share's records name it
 
 ## Running it locally
 
-`pnpm db:up`, `pnpm db:migrate`, `pnpm dev`, then open `http://localhost:1337/octocat/Spoon-Knife/tree/test-branch`. `alchemy dev` builds the sandbox image for `linux/amd64` through Docker on first start (a few minutes under emulation on Apple Silicon) and runs each branch's container in local workerd. A Worker reload restarts the objects and their containers, so an open terminal ends `lost` and Open terminal starts a new one.
+`pnpm db:up`, `pnpm db:migrate`, `pnpm dev`, then open `https://localhost:1443/octocat/Spoon-Knife/tree/test-branch`. `alchemy dev` builds the sandbox image for `linux/amd64` through Docker on first start (a few minutes under emulation on Apple Silicon) and runs each branch's container in local workerd. A Worker reload restarts the objects and their containers, so an open terminal ends `lost` and Open terminal starts a new one.
 
 ## What's not built
 
 - Sharing with someone who has never signed in to this deployment: the dialog finds people by the login they signed in with, not through GitHub's API, so it never reads a GitHub permission at share time; the role (GitHub's permission, re-checked hourly) caps every check instead.
-- Co-editing files and their cursors, the last screen of a terminal whose machine slept ([sandbox tools](sandbox-tools.md#sleep-and-wake) ends it `slept`), snapshots, and creating branches (0012).
+- The last screen of a terminal whose machine slept ([sandbox tools](sandbox-tools.md#sleep-and-wake) ends it `slept`), snapshots, and creating branches (0012).
 - Archive (`conversation_people`) and the branch picker.
 - Private repositories: they wait for per-repository GitHub App installation tokens.
 - The live half of the end-to-end test waits for Will's yes to deploy.

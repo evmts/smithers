@@ -1,3 +1,4 @@
+import { COMMITMENTS, COMMITMENT_COPY, type Commitment } from "./lifecycle"
 import type { IssuesViewIssue, IssuesViewTriage } from "@smthrs/ui"
 import { mayAsk, type Role } from "../auth/contract"
 import { viewerOf } from "../commands/catalog"
@@ -19,6 +20,7 @@ export interface ListRow {
   readonly updatedAt: string
   /** The triage state of a synced row; empty for this device's own new issue. */
   readonly triage: string
+  readonly commitment?: string | null
   readonly pending: string
   readonly reason: unknown
   readonly local: number
@@ -62,6 +64,7 @@ export const issueOf = (row: ListRow, triageOn = false): IssuesViewIssue => {
     title: row.title,
     state: stateOf(row.state),
     author: shown(row.author),
+    ...(row.commitment === "conflict" ? { labels: ["Commitment conflict"] } : (COMMITMENTS as ReadonlyArray<string>).includes(row.commitment ?? "") ? { labels: [COMMITMENT_COPY[row.commitment as Commitment]] } : {}),
     comments: row.comments,
     updatedAt: row.updatedAt,
     ...(triage === undefined ? {} : { triage: triage satisfies IssuesViewTriage }),

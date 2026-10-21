@@ -1,8 +1,9 @@
+import { COMMITMENTS } from "../../src/features/issues/lifecycle.ts"
 import { digestSync } from "@smthrs/crypto"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Core } from "@smthrs/integrations"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Redacted, Schema } from "effect"
-import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { type HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
@@ -33,22 +34,42 @@ import {
   TRIAGE_SETTINGS_TABLE,
   triageRunExecutionId,
   WRITE_COLUMNS,
-  WRITE_VIAS,
   writeExecutionId,
+  type WriteVia,
   type WriteRefusal,
   WRITES_SEGMENT,
   WRITES_SHAPE_ROUTE,
   WRITES_TABLE,
 } from "../../src/features/issues/contract.ts"
+import {
+  CHECK_COLUMNS,
+  CHECKS_SHAPE_ROUTE,
+  DEFAULT_MERGE_METHOD,
+  MERGE_METHODS,
+  mergeExecutionId,
+  PULL_COLUMNS,
+  PULL_COMMIT_COLUMNS,
+  PULL_COMMITS_SHAPE_ROUTE,
+  PULL_COMMITS_TABLE,
+  PULLS_SHAPE_ROUTE,
+  PULLS_TABLE,
+  REVIEW_COLUMNS,
+  REVIEWS_SHAPE_ROUTE,
+  REVIEWS_TABLE,
+  RUNS_TABLE,
+  SHA,
+} from "../../src/features/pulls/contract.ts"
 import { REPOS_ROUTE, repoId } from "../../src/features/repo/contract.ts"
-import { type Actor, canAsk, Sessions } from "../Actor.ts"
+import { type Actor, canAsk, refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { FlowStarter } from "../Flows.ts"
 import * as Notifications from "../Notifications.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
-import { Apply } from "./Apply.ts"
+import { Apply, PULL_EVENTS } from "./Apply.ts"
+import * as Compare from "./Compare.ts"
 import type { GitHubApp, Repository } from "./Config.ts"
+import { Merge } from "./Merge.ts"
 import * as Metrics from "./Metrics.ts"
 import { Reconcile } from "./Reconcile.ts"
 import * as Store from "./Store.ts"
@@ -81,7 +102,6 @@ const refuse = (status: number, code: WriteRefusal | "not_configured" | "invalid
 const NOBODY = ""
 
 const WriteId = Schema.String.check(Schema.isUUID())
-const Via = Schema.Literals(WRITE_VIAS)
 const Title = Schema.String.check(
   Schema.makeFilter((value: string) => value.trim().length > 0 && value.length <= MAX_TITLE_LENGTH),
 )
@@ -91,37 +111,45 @@ const CommentBody = Schema.String.check(
 )
 
 const IssueNumber = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 2_147_483_647 }))
+const Sha = Schema.String.check(Schema.isPattern(SHA))
 const Reason = Schema.String.check(
   Schema.makeFilter((value: string) => value.trim().length > 0 && value.length <= MAX_REASON_LENGTH),
 )
 
-/** A write as the device sends it. */
+/** A write as the device sends it. It names nobody: who acts is the session's or the run credential's to say. */
 const WriteBody = Schema.Union([
-  Schema.Struct({ writeId: WriteId, via: Via, op: Schema.Literal("issue/create"), title: Title, body: IssueBody }),
-  Schema.Struct({ writeId: WriteId, via: Via, op: Schema.Literal("issue/comment"), number: IssueNumber, body: CommentBody }),
+  Schema.Struct({ writeId: WriteId, op: Schema.Literal("issue/commitment"), number: IssueNumber, commitment: Schema.Literals(COMMITMENTS) }),
+  Schema.Struct({ writeId: WriteId, op: Schema.Literal("issue/create"), title: Title, body: IssueBody }),
+  Schema.Struct({ writeId: WriteId, op: Schema.Literal("issue/comment"), number: IssueNumber, body: CommentBody }),
   Schema.Struct({
     writeId: WriteId,
-    via: Via,
     op: Schema.Literal("issue/triage"),
     number: IssueNumber,
     decision: Schema.Literals(TRIAGE_DECISIONS),
     reason: Schema.optional(Reason),
   }),
-  Schema.Struct({ writeId: WriteId, via: Via, op: Schema.Literal("triage/run"), number: IssueNumber }),
+  Schema.Struct({ writeId: WriteId, op: Schema.Literal("triage/run"), number: IssueNumber }),
   Schema.Struct({
     writeId: WriteId,
-    via: Via,
     op: Schema.Literal("triage/enable"),
     dailyTokens: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MAX_TRIAGE_DAILY_TOKENS }))),
   }),
-  Schema.Struct({ writeId: WriteId, via: Via, op: Schema.Literal("triage/pause") }),
+  Schema.Struct({ writeId: WriteId, op: Schema.Literal("triage/pause") }),
+  Schema.Struct({
+    writeId: WriteId,
+    op: Schema.Literal("pr/merge"),
+    number: IssueNumber,
+    headSha: Sha,
+    baseSha: Sha,
+    method: Schema.optional(Schema.Literals(MERGE_METHODS)),
+  }),
 ])
 type WriteBody = typeof WriteBody.Type
 
 /**
  * Whether `who` may make `write` (decision 0007, decision 0012 §3): opening an issue and commenting are Guest acts;
  * overriding triage and Run triage again Member and above (`repo:triage`); enabling and pausing it Maintainer and above
- * (`repo:triage-flow`). Triage is a person's act only: the agent never triages.
+ * (`repo:triage-flow`). Triage is the person's own act: the route refuses anyone acting for them first.
  */
 const mayWrite = (who: Actor, write: WriteBody): boolean => {
   switch (write.op) {
@@ -130,20 +158,41 @@ const mayWrite = (who: Actor, write: WriteBody): boolean => {
       return who.role !== null
     case "issue/triage":
     case "triage/run":
-      return write.via === "person" && canAsk(who)
+      return canAsk(who)
+    case "issue/commitment":
     case "triage/enable":
     case "triage/pause":
-      return write.via === "person" && (who.role === "admin" || who.role === "maintainer")
+    // Merging's minimum is Maintainer (decision 0007 `repo:merge`, decision 0012 decision 6).
+    case "pr/merge":
+      return who.role === "admin" || who.role === "maintainer"
   }
 }
 
+/**
+ * Who a write acts for, as the request says it, never its body (decision 0017 slice 0): the person in their own
+ * session, or the agent through its run credential, whose write goes as the App.
+ */
+const viaOf = (who: Actor): WriteVia => (who.act === undefined ? "person" : "agent")
+
 /** The writes that act on GitHub with the person's own token, so need their session. */
-const withPersonToken = (write: WriteBody): boolean =>
-  write.via === "person" && (write.op === "issue/create" || write.op === "issue/comment" || write.op === "issue/triage")
+const withPersonToken = (write: WriteBody, via: WriteVia): boolean =>
+  via === "person" &&
+  (write.op === "issue/create" || write.op === "issue/comment" || write.op === "issue/triage" ||
+    write.op === "issue/commitment" || write.op === "pr/merge")
 
 /** A write's payload as it is recorded and hashed. */
 const payloadOf = (write: WriteBody): Store.WritePayload => {
   switch (write.op) {
+    case "issue/commitment":
+      return { op: write.op, number: write.number, commitment: write.commitment }
+    case "pr/merge":
+      return {
+        op: write.op,
+        number: write.number,
+        headSha: write.headSha,
+        baseSha: write.baseSha,
+        method: write.method ?? DEFAULT_MERGE_METHOD,
+      }
     case "issue/create":
       return { op: write.op, title: write.title.trim(), body: write.body }
     case "issue/comment":
@@ -178,11 +227,16 @@ const SHAPES: ReadonlySet<string> = new Set([
   WRITES_SHAPE_ROUTE,
   SYNC_SHAPE_ROUTE,
   TRIAGE_SETTINGS_SHAPE_ROUTE,
+  PULLS_SHAPE_ROUTE,
+  PULL_COMMITS_SHAPE_ROUTE,
+  REVIEWS_SHAPE_ROUTE,
+  CHECKS_SHAPE_ROUTE,
 ])
 
 /** Whether ChatApi routes `path` here. */
 export const handles = (path: string): boolean =>
-  path === GITHUB_WEBHOOK_ROUTE || SHAPES.has(path) || parseWritesPath(path) !== undefined
+  path === GITHUB_WEBHOOK_ROUTE || SHAPES.has(path) || parseWritesPath(path) !== undefined ||
+  Compare.parseComparePath(path) !== undefined
 
 /** The bounds of a delivery id: GitHub's are UUIDs; anything up to 128 characters is taken. */
 const DELIVERY_ID = /^[A-Za-z0-9-]{1,128}$/
@@ -194,13 +248,34 @@ const Subject = Schema.Struct({
 })
 const decodeSubject = Schema.decodeUnknownOption(Subject)
 
+/** The subject of a `pull_request` or `pull_request_review` event: the repository and pull request. */
+const PullSubject = Schema.Struct({
+  repository: Schema.Struct({ full_name: Schema.String }),
+  pull_request: Schema.Struct({ number: Schema.Int }),
+})
+const decodePullSubject = Schema.decodeUnknownOption(PullSubject)
+
 /** The events whose subject is an issue. */
 const ISSUE_EVENTS: ReadonlySet<string> = new Set(["issues", "issue_comment"])
+
+
+/** The issue or pull request a delivery of `event` names, as one shape. */
+const subjectOf = (event: string, payload: unknown) =>
+  ISSUE_EVENTS.has(event)
+    ? decodeSubject(payload)
+    : PULL_EVENTS.has(event)
+    ? Option.map(decodePullSubject(payload), (found) => ({
+      repository: found.repository,
+      issue: { number: found.pull_request.number },
+    }))
+    : Option.none()
 
 /** What the routes need besides Postgres: the synced repository, and the GitHub App when it is configured. */
 export interface Options {
   readonly repository: Repository
   readonly app: Option.Option<GitHubApp>
+  /** How the routes' own reads reach GitHub (the compare route's): `fetch` unless set. */
+  readonly http?: HttpClient.HttpClient
 }
 
 /**
@@ -212,6 +287,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
   Effect.gen(function* () {
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
     const { repository } = options
+    // A pull request's files (worker/github/Compare.ts), read with the App's token: none without the App.
+    const compare = Option.isSome(options.app)
+      ? Option.some(yield* Compare.make(options.app.value, Option.fromUndefinedOr(options.http)))
+      : Option.none()
     const repoParams = { "1": repository.id }
 
     // The webhook's channel (`Core.Channel`): GitHub's HMAC over the exact bytes, then strict JSON into an
@@ -279,13 +358,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         // `Core.Channel` checked the decoder's output as an `ExternalEvent`.
         const delivered = decoded.success as Core.ExternalEvent.ExternalEvent
         const action = (delivered.payload as { readonly action?: unknown }).action
-        const subject = ISSUE_EVENTS.has(event) ? decodeSubject(delivered.payload) : Option.none()
+        const subject = subjectOf(event, delivered.payload)
         const named = Option.filter(subject, (found) => {
           const [owner = "", name = ""] = found.repository.full_name.split("/")
           return repoId(owner, name) === repository.id
         })
-        // Only issue events of the synced repository name a subject; the rest (ping, installation, other
-        // repositories) are recorded and answered.
+        // Only issue and pull request events of the synced repository name a subject; the rest (ping, installation,
+        // other repositories) are recorded and answered.
         if (Option.isSome(named)) {
           const number = named.value.issue.number
           fields.number = number
@@ -363,25 +442,30 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           const body = decodeWrite(text.success)
           if (Option.isNone(body)) return refused(400, "invalid")
           const write = body.value
+          const via = viaOf(who)
           fields.op = write.op
-          fields.via = write.via
+          fields.via = via
           fields.writeId = write.writeId
+          // Triage is the person's own act: anyone acting for them is refused, and counted as such (decision 0017).
+          if (write.op !== "issue/create" && write.op !== "issue/comment" && (yield* refusesPersonOnly(who, write.op))) {
+            return refused(403, "forbidden")
+          }
           // A person's own write to GitHub runs with their GitHub token, which only a signed-in session holds.
-          if (withPersonToken(write) && who.session === undefined) return refused(401, "authentication")
+          if (withPersonToken(write, via) && who.session === undefined) return refused(401, "authentication")
           // The agent's write runs as the App. Only a person who may ask Smithers has an agent (decision 0007
           // `repo:ask`, Member or above), so a Guest's write goes as the Guest or not at all, never as the bot.
-          if (write.via === "agent" && !canAsk(who)) return refused(403, "forbidden")
+          if (via === "agent" && !canAsk(who)) return refused(403, "forbidden")
           if (!mayWrite(who, write)) return refused(403, "forbidden")
           // The App writes triage under the role of the person who enabled it, re-checked by their GitHub login.
           if (write.op === "triage/enable" && who.login === undefined) return refused(401, "authentication")
           const payload = payloadOf(write)
-          const payloadHash = digestSync(JSON.stringify({ via: write.via, ...payload }))
+          const payloadHash = digestSync(JSON.stringify({ via, ...payload }))
           const inserted = yield* Store.insertWrite({
             id: write.writeId,
             repoId: repository.id,
             actorId: who.subject.id,
-            sessionId: write.via === "person" ? who.session ?? null : null,
-            via: write.via,
+            sessionId: via === "person" ? who.session ?? null : null,
+            via,
             payload,
             payloadHash,
           }).pipe(Effect.provide(database))
@@ -399,6 +483,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                   trigger: "again",
                   key: write.writeId,
                 },
+              })
+              : write.op === "pr/merge"
+              ? (yield* FlowStarter).start(Merge, {
+                executionId: mergeExecutionId(write.writeId),
+                payload: { writeId: write.writeId },
               })
               : (yield* FlowStarter).start(Write, {
                 executionId: writeExecutionId(write.writeId),
@@ -497,7 +586,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     })
 
     /** A repository shape, served only to whom `readRefusal` lets read it; the refusal is counted under its table. */
-    const readable = (table: string, columns: ReadonlyArray<string>) =>
+    const readable = (table: string, columns: ReadonlyArray<string>, where = "repo_id = $1") =>
       Effect.gen(function* () {
         const refused = yield* readRefusal
         if (Option.isSome(refused)) {
@@ -508,7 +597,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           yield* Effect.logWarning(`github.shape.${table}`).pipe(Effect.annotateLogs({ status: refused.value.status }))
           return refused.value
         }
-        return yield* shape(table, columns, "repo_id = $1", repoParams)
+        return yield* shape(table, columns, where, repoParams)
       })
 
     /**
@@ -540,6 +629,23 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       if (path === SYNC_SHAPE_ROUTE) return yield* readable(SYNC_TABLE, SYNC_COLUMNS)
       if (path === TRIAGE_SETTINGS_SHAPE_ROUTE) return yield* readable(TRIAGE_SETTINGS_TABLE, TRIAGE_SETTINGS_COLUMNS)
       if (path === WRITES_SHAPE_ROUTE) return yield* ownWrites
+      // Pull requests (docs/features/pulls.md): their rows, and a head's checks: the runs on a commit.
+      if (path === PULLS_SHAPE_ROUTE) return yield* readable(PULLS_TABLE, PULL_COLUMNS)
+      if (path === PULL_COMMITS_SHAPE_ROUTE) return yield* readable(PULL_COMMITS_TABLE, PULL_COMMIT_COLUMNS)
+      if (path === REVIEWS_SHAPE_ROUTE) return yield* readable(REVIEWS_TABLE, REVIEW_COLUMNS)
+      if (path === CHECKS_SHAPE_ROUTE) return yield* readable(RUNS_TABLE, CHECK_COLUMNS, "repo_id = $1 AND sha IS NOT NULL")
+      const compared = Compare.parseComparePath(path)
+      if (compared !== undefined) {
+        if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
+        if (repoId(compared.owner, compared.name) !== repository.id) return refuse(404, "not_found")
+        const refused = yield* readRefusal
+        if (Option.isSome(refused)) return refused.value
+        if (Option.isNone(compare)) return refuse(503, "not_configured")
+        return yield* compare.value(repository, compared.base, compared.head).pipe(
+          Effect.provide(database),
+          Effect.catchCause(() => Effect.succeed(refuse(503, "unavailable"))),
+        )
+      }
       const target = parseWritesPath(path)
       if (target !== undefined) return yield* writes(target)
       return HttpServerResponse.empty({ status: 404 })

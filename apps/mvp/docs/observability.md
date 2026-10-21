@@ -36,6 +36,16 @@ optional       ── Cloudflare.Workers.ObservabilityDestination: Workers Logs 
 - **Metrics.** Workers has no metric exporter in this stack, so ChatApi's Effect metrics live in the isolate and the tests read them. Every metric is also a field of a log line (the table below names it), so Workers Logs' query builder counts and percentiles them, for example p95 of `durationMs` over `chat.question` lines.
 - **Locally**, `alchemy dev` writes each Worker's logs to `.alchemy/log/dev_<user>/<Worker>/`, and the browser's console shows its own records.
 
+### Sending to your own collector
+
+Not wired yet: today Cloudflare keeps the Workers' logs and traces, and nothing leaves the account. To also send them to an OTLP/HTTP collector (Grafana, Tempo, Loki, or a hosted vendor):
+
+1. Give the collector a public HTTPS endpoint that accepts OTLP/JSON at `/v1/traces` and `/v1/logs` and requires an auth header. Cloudflare preflights the endpoint with a `POST` that may carry no body, so that request must get a `2xx`.
+2. Declare one `Cloudflare.Workers.ObservabilityDestination` per signal in `alchemy.run.ts`: `logpushDataset: "opentelemetry-traces"` with `<endpoint>/v1/traces`, and `"opentelemetry-logs"` with `<endpoint>/v1/logs`, each with the auth header as a `Redacted` value. Read the endpoint and the header from `Config` (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`) and declare no destination when they're unset.
+3. List each destination's slug in each Worker's `observability.traces.destinations` and `observability.logs.destinations`, then deploy.
+
+The Cloudflare token needs Workers Observability Edit. Cloudflare doesn't export Workers metrics over OpenTelemetry, so the metrics arrive as the log fields named in the tables below. The browser's records leave the same way, as ChatApi's relayed log lines and spans.
+
 ## What is recorded
 
 ### Browser
@@ -57,6 +67,7 @@ Logs:
 | `unsent question handled` | Edit, Discard or Retry on an unsent question | Info | `questionId`, `action` (`edit`, `discard`, `retry`) |
 | `queued question taken back` | the tab's side of Edit on a queued question (`chat/edit`) | Info, Warn for `failed` | `questionId`, `outcome` (`edited`, `sent`, `failed`) |
 | `chat draft restored` | a reload put the kept draft back into the composer | Info | `draft.length` |
+| `chat prompt shared` | the owner shared the branch shown, or took its last share away: the draft became the branch's prompt, or theirs again ([co-editing](features/coedit.md#the-prompt)) | Info | `shared` |
 | `outbox write withdrawn` | `Outbox.withdraw` took a write back (`@smthrs/effect-tanstack-db`) | Info | none of the write's contents |
 | `chat connection changed` | the connection pill changed | Info | `status` (`up`, `offline`, `failed`, `stopped`) |
 | `browser.engine.unavailable` | this tab's engine is unavailable (`@smthrs/platform-browser` `BrowserEngine`): its worker threw, as when a module can't load in a worker (`reason: worker-failed`), or couldn't build the engine (`engine-failed`); or its sign-out wipe couldn't delete the device's stores (`worker-failed`, `error.type` `WipeUnfinished`, src/wipe.ts); the device store opens in memory and the pill says Smithers can't run here | Error | `reason`, `error.type` (the failure's name, never its message) |
@@ -139,7 +150,7 @@ Each tab's engine worker (`src/flows/engine.worker.ts`) passes `BrowserRuntime.r
 | `browser.runtime.elect`, `browser.runtime.leader`, `browser.runtime.wake`, `browser.runtime.request` (a failed request's line), `browser.runtime.statement`, `browser.runtime.lost`, `browser.runtime.stopped`, `smithers_browser_runtime_*` | the leader (`@smthrs/platform-browser`) | `flows`, `request`, `outcome`, `error.type`, `smithers.execution.id`, `smithers.flow`, `smithers.wake` |
 | `FlowEngine.execute` and `Action.execute` (a run and each of its steps), the engine's three warnings, `flows_engine_*`, `flows_run_*`, `flows_journal_*`, `flows_db_*`, `flows_step_cache_*` | the durable engine (`@smthrs/flows`) | `executionId`, `flow`, `runId`, `action`, `stepKey`, `attempt`, `tier`, `outcome`, `error`, `code`, `op`, `to`, `channel`, `receipt` |
 | `web.navigate` (log and span), `smithers_web_navigations` | `app/navigate`'s step ([flows](features/flows.md#navigation)) | `door` (the dispatch's, `agent`, or `unknown` when the tab that dispatched it is gone), `outcome` (`navigated`, `refused`, `gone`, `failed`), `executionId`, `durationMs`, `reason` on a refusal; the span's `smithers.navigation.door` and `smithers.navigation.outcome`. Never the path |
-| `web.page.open` (log and span), `smithers_web_pages_opened` | `app/web/open`'s steps for the agent's openings, the tab for a person's ([web pages](features/web-pages.md#observability)) | `web_mode` (`embed`, `tab`), `door`, `outcome` (`embedded`, `card`, `opened`, `refused`, `forbidden`, `unavailable`), `reason` on a refusal; the span's `smithers.web.mode` and `smithers.web.outcome`. Never the URL, its origin or its path |
+| `web.page.open` (log and span), `smithers_web_pages_opened` | `app/web/open`'s steps for the agent's openings, the tab for a person's ([web pages](features/web-pages.md#observability)) | `web_mode` (`embed`, `tab`), `door`, `outcome` (`embedded`, `card`, `opened`, `refused`, `forbidden`, `unavailable`), `reason` on a refusal, `web_framing` (`allowed`, `refused`, `unknown`) once ChatApi checked the page; the span's `smithers.web.mode`, `smithers.web.outcome` and `smithers.web.framing`. Never the URL, its origin or its path |
 | `jev.judge` (log and span), `smithers_jev_judgments`, `smithers_jev_verdicts` | `app/jev/classify`'s and `app/jev/evaluate`'s steps in the engine worker ([Jev](features/jev.md#observability)) | `flow`, `items`, `outcome` (`judged` or the judge's failure code), the verdicts by code (`yes`, `no`, `labeled`, `unsure`), `durationMs`; the span's `smithers.jev.flow`, `smithers.jev.items` and `smithers.jev.outcome`. Never an item, a question, a label, a text or a criterion |
 | `invoke_agent`, `chat agent`, `ModelStep`, `model.proxy.stream`, `execute_tool <flow>`, `agent_model_step_calls`, `agent_model_step_replays`, `agent_model_step_redispatches`, `smithers_model_proxy_*` (`side: client`) | the agent (`@smthrs/agent`, `@smthrs/model`) | `step` (the step's name, `harness/sealStep`), `gen_ai.*`, `smithers.model_step.*`, `smithers.model.proxy.*`, `requestId`, `modelId`, `events`, `firstEventMs`, `inputTokens`, `outputTokens` |
 
@@ -158,6 +169,7 @@ Logs (`worker/Chat.ts`, and `ShapeProxy` from `@smthrs/effect-electric`, mounted
 | `chat.shape` | every shape request, once it has ended | Error 5xx or a failed body, Warn other 4xx, Info otherwise | `status` (499 when the browser left before Electric answered), `live`, `durationMs` (to the body's end), `bytes` (body bytes sent), `outcome` (`complete`, `aborted` or `failed`) |
 | `chat.view.add` | every `POST /api/views` ([web pages](features/web-pages.md#the-views-table)) | Info 2xx, Warn 4xx, Error 5xx | `status`, `bytes`, `durationMs`; `viewId`, `template` once the body is valid; `reason` for a page it refused; `existing: true` for the same add again; `errorCode` for 503. Never the URL |
 | `chat.views.shape` | every `GET /api/shapes/views`, once it has ended | as `chat.shape` | as `chat.shape` |
+| `chat.web.preview` | every `POST /api/web/preview` ([web pages](features/web-pages.md#before-a-page-is-framed)) | Info 2xx, Warn 4xx, Error 5xx | `status`, `durationMs`; `mode` once the body is valid; `reason` for a page the policy refused; `framing`, `framingReason` and `cached` once checked; `errorCode` for 503. Never the URL, its host or its path |
 | `chat.throttle` | a Rate Limiting binding failed, so the request went through ([throttling](features/chat.md#throttling)) | Warn | `route` (`shape`, `telemetry`), `outcome: error`. Never the address or the network |
 | the browser's records | every OTLP record relayed ([below](#relayed-browser-records)) | the record's severity | the fields the allowlist keeps |
 
@@ -184,6 +196,8 @@ Spans:
 | `chat.shape` | server | `http.response.status_code`, `electric.shape.live` |
 | `chat.view.request` | server | `http.response.status_code` |
 | `chat.views.shape` | server | `http.response.status_code`, `electric.shape.live` |
+| `chat.web.preview` | server | `http.response.status_code`, `smithers.web.framing` |
+| `WebPage.check` | internal, inside `chat.web.preview` (`@smthrs/views`) | `web_page.framing`, `web_page.reason`, `http.response.status_code`, `web_page.redirects`. Never the URL |
 | SQL statements | client (`effect/sql`) | `db.query.text`: the statement with `$1` placeholders, never its values |
 | HTTP calls to the model and Electric | client (Effect `HttpClient`) | `url.full` with `secret` redacted; request headers with `authorization` redacted |
 
@@ -195,6 +209,7 @@ Metrics (`worker/ChatMetrics.ts`):
 | `smithers_chat_shape_requests` | counter | `status`, `live` | `chat.shape` |
 | `smithers_view_requests` | counter (`worker/Views.ts`) | `status` | `chat.view.add` `status` |
 | `smithers_view_shape_requests` | counter (`worker/Views.ts`) | `status`, `live` | `chat.views.shape` |
+| `smithers_web_previews` | counter (`worker/WebPreview.ts`) | `status`, `framing` | `chat.web.preview` |
 | `smithers_throttle_decisions` | counter (`worker/Throttle.ts`) | `route` (`shape`, `telemetry`), `outcome` (`admitted`, `limited`, `error`) | `chat.throttle` for `error`; a `limited` request has no log line, so a flood writes none |
 | `flows_observability_otlp_relayed` | counter | `signal` | (`OtlpRelay`) |
 | `flows_observability_otlp_relay_dropped` | counter | `signal`, `reason` = `not_allowed` (off the allowlist) or `over_limit` (past 200 in one export) | (`OtlpRelay`) |
@@ -232,8 +247,11 @@ Model spend and its alerts to Admins ([spend-alerts.md](features/spend-alerts.md
 | `model.spend.alert` | the endpoint couldn't start a window's alert | Error | `outcome: not_started`, `errorCode` (the host's, or the failure's tag, `unknown` for a defect) |
 | `model.spend.alert` | each `ops/RecordSpendAlert` attempt that ended | Warn `recorded` and `failed`, Info `existing` and `none` | `alertId`, `outcome`; `calls`, `tokens` and, when priced, `costUsd` unless it failed; `errorCode` (`sql:<reason>`) when it failed |
 | `spend.alerts.shape` | every `GET /api/shapes/spend-alerts` (`ShapeProxy`) | as `ShapeProxy` logs | `status`, `live` |
+| `spend.alert.delivery` | each `ops/DeliverSpendAlert` attempt that ended (`worker/flows/SpendAlert.ts`) | Info `sent`, `off`, `none`, `existing`; Warn `refused` and `failed` | `alertId`, `channel`, `outcome`; `errorCode` (the send's code, such as `rate_limited`, or `sql:<reason>`) and `status` (the provider's HTTP status, when it answered) when it failed |
+| `alerts.channel` | every `POST /api/alert-channels` (`worker/AlertChannels.ts`) | Info, Warn for a 4xx, Error for a 5xx | `status`, `durationMs`, `bytes`; `channel` and `destinations` (how many) once decoded; `existing: true` when it changed nothing; `errorCode` for a 503 |
+| `alerts.channels.shape`, `alerts.deliveries.shape` | every `GET /api/shapes/alert-channels` and `/api/shapes/alert-deliveries` | as `ShapeProxy` logs | `status`, `live` |
 
-Spans: `model.spend.alert` (internal) with `smithers.spend_alert.id`, around the alert step and its SQL.
+Spans: `model.spend.alert` (internal) with `smithers.spend_alert.id`, around the alert step and its SQL; `spend.alert.delivery` with `smithers.spend_alert.id` and `smithers.channel`, around a delivery, and inside it `@smthrs/notifications`' `notifications.channel.send` (client) with `smithers.channel`, `http.response.status_code`, `smithers.channel.outcome` and `smithers.channel.code`; the HTTP client's own span, which would record the bot token in its url, is off. `alerts.channel.request` (server) around `POST /api/alert-channels`. No record carries an email address, a chat id, a key or a token.
 
 | Metric | Kind | Attributes | Log field |
 |---|---|---|---|
@@ -241,8 +259,11 @@ Spans: `model.spend.alert` (internal) with `smithers.spend_alert.id`, around the
 | `smithers_model_spend_usd` | counter | `role`, `model`; an unpriced model adds nothing | `model.spend` `costUsd` |
 | `smithers_model_spend_alerts` | counter | `outcome` = `recorded`, `existing`, `none`, `failed` or `not_started` | `model.spend.alert` `outcome` |
 | `smithers_spend_alert_shape_requests` | counter | `status`, `live` | `spend.alerts.shape` |
+| `smithers_spend_alert_deliveries` | counter | `channel`; `outcome` = `sent`, `refused`, `failed`, `off`, `none` or `existing` | `spend.alert.delivery` `outcome` |
+| `smithers_alert_channel_requests` | counter | `channel` (`none` before one decoded), `status` | `alerts.channel` |
+| `smithers_alert_channel_shape_requests`, `smithers_alert_delivery_shape_requests` | counter | `status`, `live` | `alerts.channels.shape`, `alerts.deliveries.shape` |
 
-In the browser (`src/features/spend/`, `SPEND_TELEMETRY`), an Admin's tab records `spend.alert.shown` (Info: `alertId`, `calls`, `tokens`) and `smithers_web_spend_alerts_shown` once per alert per tab, and `spend.alert.hidden` (Info: `alertId`) and `smithers_web_spend_alerts_hidden` once the device stored a Hide.
+In the browser (`src/features/spend/`, `SPEND_TELEMETRY`), an Admin's tab records `spend.alert.shown` (Info: `alertId`, `calls`, `tokens`) and `smithers_web_spend_alerts_shown` once per alert per tab, and `spend.alert.hidden` (Info: `alertId`) and `smithers_web_spend_alerts_hidden` once the device stored a Hide. Each Save of a channel runs `alert/channel`, whose step records `alerts.channel.set` (Info `sent`, Warn `refused` and `unsent`: `channel`, `destinations` as a count, `outcome`, and ChatApi's `status` and `code` when it refused) and `smithers_web_alert_channel_sets` by `channel` and `outcome`, with its span `alerts.channel.set` (client).
 
 ### Sign-in
 
@@ -267,6 +288,21 @@ Spans: `auth.sign_in`, `auth.callback`, `auth.sign_out`, `auth.session` and `aut
 | `smithers_auth_requests` | counter | `route` (`sign_in`, `callback`, `sign_out`), `outcome`, `reason` (`none` unless refused or failed) | the route's line |
 | `smithers_auth_role_checks` | counter | `step` and `outcome`: a step's outcome above, or `failed` | `auth.role_check` `step`, `outcome` |
 | `smithers_auth_token_revocations` | counter | `step` and `outcome`: a step's outcome above, or `failed` | `auth.revoke_token` `step`, `outcome` |
+
+**Run credentials** ([sign-in.md](features/sign-in.md#run-credentials)): who acted, as which `act`. No record carries a token, a payload or content; a run is its execution id.
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `auth.credential` | log | ChatApi, each `POST /api/runs/<run>/credential` | `runId`, `flow`, `by` (`person`, or the caller's `act`), `act` and `depth` when minted, `status`, `durationMs`, `bytes`, `errorCode` |
+| `auth.credential` | log, Warn | ChatApi, a bearer token that didn't read | `op: verify`, `outcome` (`forged`, `expired`, `ended`) |
+| `auth.credential.verify` | span | ChatApi | |
+| `smithers_run_credentials` | counter | ChatApi | `op` (`mint`, `verify`), `outcome` (`minted`, `person_only`, `capability_exceeded`, `too_deep`; `verified`, `forged`, `expired`, `ended`), `act` |
+| `auth.person_only` | log, Warn | ChatApi, a person-only route refusing an `act` | `act` (the flow or protected act), `by` (`agent`, `flow`, `app`, `sandbox`), `runId`, `depth` |
+| `smithers_person_only_refusals` | counter | ChatApi | `act`, `by` |
+| `auth.resolve`'s `smithers.actor.act` | span attribute | ChatApi, every request | `person`, an `act` kind, or `none` |
+| `auth.run_credential` | span | engine worker, each credential asked for | `smithers.execution.id` |
+| `auth.run_credential` | log | engine worker | `flow`, `outcome` (`minted` at Debug; `anonymous`, `refused`, `unavailable`, and `stale` when a credential came back `401`, at Warn), `act`, `principal` (`session`, `credential`), `status`, `code` |
+| `smithers_run_credential_mints` | counter | engine worker | `outcome`, `act` |
 
 ### Remote flow executions
 
@@ -299,8 +335,9 @@ RepoApi (`worker/RepoApi.ts`), the clone (`worker/flows/RepoClone.ts`) and the b
 |---|---|---|---|
 | `repo.clone.request` | every `POST /api/repos` | Info 2xx, Warn 4xx, Error 5xx | `outcome` (`started`, `existing`, `method`, `conflict`, or the refusal's code), `status`, `durationMs`; `id`, `attempt` and `cloneId` once valid; `row` (the existing row's status); `errorCode` for 503 (`conflict` when the start found another payload under the attempt's execution id, and the attempt settled `failed`) |
 | `repo.tree`, `repo.blob`, `repo.raw`, `repo.refs` | every read | Info 200, Warn 4xx, Error 5xx | `repoId`, `status`, `bytes` (returned), `durationMs`; `sha` for a tree or a file; `errorCode` (`not_found`, `too_large`, `capacity`, `unavailable`, or a defect's name) |
+| `repo.about` | every `GET /api/repos/<owner>/<name>/about` | Info 200, Warn 4xx, Error 5xx | `repoId`, `status`, `bytes`, `cached` (`hit`, or `miss` when GitHub was read), `durationMs`; `errorCode` (`not_found`, `unavailable`, or a defect's name) |
 | `repo.meter` | a read's bytes Postgres didn't record; the read still answered | Warn | `bytes`, `errorCode` |
-| `repo.clone.step` | each of Inspect, Import, Pull and AwaitSync that answered | Info | `step`, `id`; Inspect's `cloneId`, `outcome` and `reason`; Import's `created`; AwaitSync's `outcome` (`ready`, `timed_out`); the engine's `runId`, `stepKey`, `attempt` |
+| `repo.clone.step` | each of Inspect, Import, Pull, AwaitSync and Index that answered | Info | `step`, `id`; Inspect's `cloneId`, `outcome` and `reason`; Import's `created`; AwaitSync's `outcome` (`ready`, `timed_out`); Index's `files` (-1 when the list couldn't be read) and `installed`; the engine's `runId`, `stepKey`, `attempt` |
 | `repo.clone.settle` | Settle | Warn `failed`, Info otherwise | `id`, `cloneId`, `status`, `reason` (the failure or budget, or `none`), `settled` (false for a stale attempt); `errorCode` when Postgres refused |
 | `repo.spend.alert` | a metered write crossed 50%, 80% or 100% of `REPO_BUDGET_USD` for the first time this month | Error | `pct`, `estimateUsd` |
 | `repo.config` | the Code Storage key didn't import; the deployment clones nothing | Error | `errorCode` (`invalid_key`) |
@@ -311,7 +348,9 @@ RepoApi (`worker/RepoApi.ts`), the clone (`worker/flows/RepoClone.ts`) and the b
 |---|---|---|
 | `repo.clone.request` | server | `smithers.repo.id`, `http.response.status_code` |
 | `repo.tree`, `repo.blob`, `repo.raw`, `repo.refs` | server | `http.response.status_code`, `smithers.repo.bytes` |
-| `repo.clone.inspect`, `repo.clone.import`, `repo.clone.pull`, `repo.clone.await_sync`, `repo.clone.settle` | internal, inside the engine's step spans | `smithers.repo.id` |
+| `repo.about` | server; GitHub's ten-odd reads under `repo.about.github`, each a `GitHubClient.request` or `GitHubClient.count` span | `http.response.status_code` |
+| `repo.clone.inspect`, `repo.clone.import`, `repo.clone.pull`, `repo.clone.await_sync`, `repo.clone.index`, `repo.clone.settle` | internal, inside the engine's step spans | `smithers.repo.id` |
+| `repo.clone.feed` | internal, inside each write to a clone's row: the person's feed row (worker/CloneFeed.ts) | `smithers.repo.id` |
 | `CodeStorage.<operation>`, `GitRemote.head` | internal (`@smthrs/effect-code-storage`) | `code_storage.repo`, `git.remote` |
 | `GitHubClient.request` | internal (`@smthrs/integrations`) | `http.request.method`, `url.path` |
 | `ImmutableCache.get`, `ImmutableCache.put` | internal (`@smthrs/artifacts`) | `immutable_cache.backend`, `.namespace`, `.outcome`, `.bytes` |
@@ -338,26 +377,50 @@ The browser (`src/features/repo/`), the tab's and the engine worker's, relayed t
 | `repo.clone` | log and span, `repo/clone`'s step; Info `started` and `existing`, Warn otherwise | `outcome` (`started`, `existing`, `sign_in`, `forbidden`, `limit`, `invalid`, `not_configured`, `unavailable`), `status` (RepoApi's, for a refusal), `durationMs` |
 | `repo.clone.unconfirmed` | log, Warn: a person's clone RepoApi took whose row Electric didn't deliver in time | |
 | `repo.copy` | log and span, `repo/copy`'s step; Info `copied`, Warn `refused`, Error otherwise | `what` (`permalink`, `path`, `contents`, `clone-url`), `door` (the dispatch's, `agent`, or `unknown` when the tab that asked is gone), `outcome` (`copied`, `failed`, `refused`, `unavailable`, `gone`), `executionId`, `durationMs`; the span's `smithers.repo.copy` |
-| `repo.tree.load`, `repo.blob.load`, `repo.refs.load` | log | `outcome`, `durationMs`, `status` |
-| `repo.clone.post`, `repo.tree.get`, `repo.blob.get`, `repo.refs.get` | span, parents the client's `GET` or `POST` | `http.response.status_code` |
+| `repo.tree.load`, `repo.blob.load`, `repo.refs.load`, `repo.about.load` | log | `outcome`, `durationMs`, `status` |
+| `repo.clone.post`, `repo.tree.get`, `repo.blob.get`, `repo.refs.get`, `repo.about.get` | span, parents the client's `GET` or `POST` | `http.response.status_code` |
 | `execute_tool repo/tree`, `repo/read`, `repo/refs`, `repo/clone`, `repo/copy` | span: the agent's call of the flow | |
 | `smithers_web_repo_clone_clicks` | counter | `kind` (`clone`, `retry`) |
 | `smithers_web_repo_clones` | counter | `outcome`, as `repo.clone` |
 | `smithers_web_repo_opens` | counter | `kind` |
-| `smithers_web_repo_tree_load_ms`, `smithers_web_repo_blob_load_ms`, `smithers_web_repo_refs_load_ms` | histogram | `outcome` |
+| `smithers_web_repo_tree_load_ms`, `smithers_web_repo_blob_load_ms`, `smithers_web_repo_refs_load_ms`, `smithers_web_repo_about_load_ms` | histogram | `outcome` |
 | `smithers_web_repo_copies` | counter | `what`, `door`, `outcome`, as `repo.copy` |
 
 ### A repository's home
 
-The browser's read of a repository's own home ([home.md](features/home.md)), relayed through ChatApi's allowlist (`HOME_TELEMETRY` in `src/features/home/contract.ts`). No record carries a block, a title, a text, a path, a link or a file's contents; RepoApi's own `repo.blob` lines record the reads.
+The browser's read of a repository's homes and its actions ([home.md](features/home.md)), relayed through ChatApi's allowlist (`HOME_TELEMETRY` in `src/features/home/contract.ts`), and ChatApi's home route. No record carries a section, a block, a title, a text, a path, a link, a branch's name or a file's contents; RepoApi's own `repo.blob` lines record the reads.
 
 | Record | Kind | Fields |
 |---|---|---|
-| `home.resolve` | log and span; Warn `unreadable`, Info otherwise | `outcome` (`declared`, `absent`, `invalid`, `unreadable`, or `cached` for a home this device had), `blocks` (drawn), `skipped` (of a kind the app doesn't know), `reason` (an invalid home's: `json`, `shape`, `blocks`, `block`, `binary`, `too_large`), `status` (RepoApi's, for a refusal), `durationMs`; the span's `smithers.home.outcome`, `smithers.home.blocks`, `smithers.home.skipped` |
+| `home.resolve` | log and span; Warn `unreadable`, Info otherwise | `outcome` (`declared`, `absent`, `invalid`, `unreadable`, or `cached` for a home this device had), `blocks` (in all sections), `skipped` (of a kind the app doesn't know), `reason` (an invalid home's: `json`, `shape`, `sections`, `section`, `blocks`, `block`, `binary`, `too_large`), `status` (RepoApi's, for a refusal), `durationMs`; the span's `smithers.home.outcome`, `smithers.home.blocks`, `smithers.home.skipped` |
 | `home.file.load` | log; Warn `failed`, Info `text` | `outcome`, `status`, `durationMs`: a file a Markdown block names |
-| `smithers_web_home_resolves` | counter | `outcome`, as `home.resolve` |
+| `home.answer` | log and span; Warn `unreadable` | `outcome` (`declared`, `absent`, `unreadable`), `audience`, `sections`, `status`, `durationMs`: ChatApi's answer of who the person is and the curated home |
+| `home.action` | log and span; Warn on a failure | `flow`, `outcome` (`done` or the flow's refusal), `durationMs`; the span's `smithers.home.flow`, `smithers.home.outcome` |
+| `smithers_web_home_resolves`, `smithers_web_home_answers`, `smithers_web_home_actions` | counters | `outcome`; the last also `flow` |
+| `home.curated` (ChatApi) | log and span; Warn `unavailable`, `invalid` | `outcome` (`curated`, `absent`, `invalid`, `unavailable`, `method`), `audience`, `sections` sent, `hidden` held back, `status`, `durationMs`; the span's `smithers.home.outcome`, `smithers.home.audience` |
+| `smithers_home_curated_requests` (ChatApi) | counter | `outcome`, `audience` |
 
-`src/features/home/home.test.ts` asserts each outcome's record and count, and that a sentinel in the home's text, title, link and Markdown file reaches no log line.
+`src/features/home/home.test.ts` asserts each outcome's record and count, and that a sentinel in the home's text, title, link and Markdown file reaches no log line; `worker/home/Api.test.ts` that no section's words reach ChatApi's records.
+
+### Code intelligence
+
+The repository view's language server ([code-intelligence.md](features/code-intelligence.md)), relayed through ChatApi's allowlist (`CODE_INTEL_TELEMETRY` in `src/features/code-intel/contract.ts`). No record carries a path, a symbol, a signature, documentation or a problem's message.
+
+| Record | Kind | Fields |
+|---|---|---|
+| `code.file.open` | span | a routed file opening: its server, problems and outline |
+| `code.session.open` | span | a server starting for a repository and commit; `files` in its file list |
+| `code.hover`, `code.definition`, `code.references`, `code.problems`, `code.outline` | span | `act` |
+| `code.ask.failed` | log, Warn | `act`, `error` (the failure's tag) |
+| `smithers_web_code_intel_asks` | counter | `act`, `outcome` (`answered`, `none`, `failed`) |
+| `smithers_web_code_intel_sessions` | counter | servers started |
+| `browser.language_server.<method>` (`@smthrs/platform-browser`) | span | `method`, and on an answer `files` loaded and `partial` |
+| `browser.language_server.failed` | log, Error | the worker failed |
+| `smithers_browser_language_server_requests` | counter | `method`, `outcome` (`answered` or the failure's code) |
+| `smithers_browser_language_server_ms` | histogram | `method` |
+| `smithers_browser_language_server_files` | counter | files the tab read for its servers |
+
+`src/features/code-intel/code-intel.test.ts` asserts the counts and the failure line; `src/telemetry.test.ts` that each name is one the app or its SDK packages emit.
 
 ### GitHub
 
@@ -397,7 +460,7 @@ The personal feed: a run's state routed to its people, GitHub's `main` and relea
 | Record | Kind | Where | Fields |
 |---|---|---|---|
 | `runs.fold` | span | ChatApi | `smithers.run.id`, `smithers.notifications.written` |
-| `smithers_notifications_routed` | counter | ChatApi | `kind` (`run`, `main`, `release`), `state` |
+| `smithers_notifications_routed` | counter | ChatApi and the clone's steps | `kind` (`run`, `clone`, `main`, `release`), `state` |
 | `notifications.repo_event` | log, span | ChatApi | `kind`, `repoId`, `watchers`, `written` |
 | `notifications.watch`, `notifications.ack` | log | ChatApi | `conversationId` or `subject`, `act`, `version`, `status`, `durationMs`, `bytes`, `existing`, `errorCode` |
 | `notifications.request` | span | ChatApi | `smithers.route`, `http.response.status_code` |
@@ -407,6 +470,8 @@ The personal feed: a run's state routed to its people, GitHub's `main` and relea
 | `smithers_notification_watches`, `smithers_notification_acks` | counter | engine worker | `outcome`; `act`, `outcome` |
 | `notifications.shown` | log | tab | `subject`, `version`, `state`, `kind` |
 | `smithers_notifications_shown` | counter | tab | `state` |
+| `notifications.panel` | log | tab | `act` (`open`, `expand`, `retry`), `via` (`bell`, `toast`, `more`, `key`) on open, `subject` |
+| `smithers_notifications_panel` | counter | tab | `act`, `via` on open |
 
 ### Branch workspace
 
@@ -440,6 +505,19 @@ Tracking a branch, its conversation, its terminals, its machine, sharing it and 
 | `smithers_presence_joins`, `_frames`, `_evictions`, `_open` | counters | `RoomObject` (`@smthrs/sync`'s `PresenceRoom`) | `outcome` |
 | `branch.share`, `branch.share.post`, `branch.share.press`, `smithers_web_branch_shares` | browser | the engine worker and the tab | `outcome`, `change`, `status` |
 | `presence.join`, `presence.closed`, `smithers_web_presence_joins`, `smithers_web_presence_closes` | browser | the tab | `outcome`, `code` |
+
+### Co-editing
+
+Texts people edit together ([coedit.md](features/coedit.md#observability)). No record carries a text, an update, a path or a cursor; no metric label carries an id.
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `text.write` | log, span | ChatApi | `textId`, `scope` (`conversation`, `run`), `bytes`, `seed`, `outcome` (`stored`, `existing`, or the refusal), `status`, `durationMs`, `errorCode` |
+| `text.room` | log, span | ChatApi | `textId`, `scope`, `access`, `outcome` (`joined`, or the refusal), `status`, `durationMs`, `errorCode` |
+| `smithers_text_writes`, `smithers_text_room_joins` | counters | ChatApi | `outcome` |
+| `text.shape`, `smithers_text_shape_requests` | span, counter | ChatApi | `status`, `live` |
+| `coedit.open`, `coedit.send`, `coedit.seed`, `coedit.apply`, `coedit.save` | browser | the tab | `kind`, `outcome`, `status`, `bytes`, `textId`, `durationMs` |
+| `smithers_web_coedit_opens`, `_sends`, `_saves` | browser | the tab | `kind`, `outcome` |
 
 ### Sandbox tools
 
@@ -494,6 +572,26 @@ The stack's route, its one writer, its shapes and the browser's TODO steps and s
 
 A refused commit or drop of the agent's (`outcome: agent`) is the defense the catalog already holds; a nonzero count means a flow call reached the step that the catalog should have refused.
 
+### Flow usage
+
+Which flows run, and how (Will, 2026-10-20: "Everything is a flow so the most obvious metrics are just what flows are being ran and how"). The durable engine records them for every run on every host, so a flow gets them without declaring anything: `@smthrs/flow` `RunMetrics`, recorded by `@smthrs/engine-store` and by `@smthrs/agent`'s model steps ([its API](../../../packages/smithers/flows/flow/docs/api.md#runmetrics)).
+
+| Record | Kind | Fields |
+|---|---|---|
+| `flow.run.started`, `flows_runs_started` | log (Info), counter | `flow`, `door`, `actor`, `placement`; the line adds `executionId` |
+| `flow.run.settled`, `flows_runs_settled` | log (Info `succeeded`, else Warn), counter | the same, `outcome` (`succeeded`, `failed`, `refused`, `cancelled`, `lost`) and `code` (`none`, the refusal's or failure's code, `defect`, `interrupted`, `cancelled`); the line adds `durationMs` |
+| `flows_run_duration_ms` | histogram | `flow`, `outcome`, `placement`: from admission to the lineage's settlement |
+| `flows_run_first_step_ms` | histogram | `flow`, `placement`: from admission to the engine first starting the run |
+| `flows_steps`, `flows_step_retries` | counters | `flow`, `outcome` (`succeeded`, `failed`, `interrupted`): each step attempt that ran its body; a retry is an attempt after the first |
+| `flows_waits`, `flows_wait_ms` | counter, histogram | `flow`, `kind` (`timer`, `signal`, `approval`, `quota`, `human`, `other`): each park, and its length at the resume |
+| `flow.model.call`, `flows_model_calls`, `flows_model_tokens` | log (Info), counters | `flow`, `model`, `outcome`; tokens by `direction` (`input`, `output`); the line carries `inputTokens` and `outputTokens` |
+
+- **Door and actor.** The app's dispatch (`src/flows/dispatch.ts`) names them: its door, and the actor kind behind it (`actorOf`: `person` for `button`, `slash`, `view` and `composer`; `agent` for `agent`; `app` for `sync`). `BrowserEngine.start` carries them to the leader. A run another run starts is door `flow` by its starter's actor kind, and a run an agent's tool call starts is door `agent` by `agent`. Remote flows carry their starter's through `ExecutionObject.intent`; one ChatApi starts without naming one is `unknown`.
+- **Placement** is the engine's: `browser` in the engine worker, `cloudflare` in `FlowExecution`. Both hosts write the lines at Info (`RunMetrics.layerInfoLines`); elsewhere they are Debug.
+- **Model.** On the app a model step's model id is its role (`agent`), so `flows_model_tokens` joins ChatApi's `smithers_model_spend_tokens` and `model.spend` by role.
+- **Bounded, content-free.** Doors, actors, placements, outcomes and wait kinds are closed sets (`other` otherwise). Flow tags, model ids and codes are cleaned to identifiers and capped per engine at 200, 50 and 100 distinct values (`other` past the cap). No record carries a payload, a result, a failure's message or who started a run.
+- **Where they go.** The engine worker's records reach ChatApi's log through the relay (`FLOWS_TELEMETRY`); `FlowExecution`'s are its own log lines. The [flow usage dashboard](../ops/grafana/README.md) reads the `flow.run.*` and `flow.model.call` lines from Loki, since a browser's counters start over on each reload and a line per run adds up across devices. On the device, the Runs page sums its own runs ([runs](features/runs.md#flows)).
+
 ### Relayed browser records
 
 `POST /api/telemetry/v1/{logs,traces,metrics}` relays the browser's records through `OtlpRelay.serve` with limits and an allowlist (`worker/Chat.ts`; [chat.md](features/chat.md#post-apitelemetryv1logstracesmetrics)):
@@ -546,12 +644,16 @@ The relay doesn't check the values: a caller picks its records' `service.name`, 
 | `worker/flows/RevokeGitHubToken.test.ts` "its records carry the outcome and the session id, never a token or a login" | `auth.revoke_token` by step: `over`, `failed` and `revoked`, with no token or login |
 | `worker/SignIn.test.ts` sign-out tests | `auth.sign_out` `failed` with reason `not_started` and the host's code; `auth.callback` `failed` with reason `sign_out_not_started` |
 | `src/features/auth/auth.test.ts` | `session loaded` with `signedIn` and never the login, `session unreachable` and `sign out failed` with their `status`, `device wiped` and `device wipe failed`, `smithers_web_sign_in_presses`, `smithers_web_sign_outs` and `smithers_web_device_wipes` by outcome |
-| `worker/RepoApi.test.ts` | `repo.clone.request` by outcome, `repo.tree` and `repo.blob` with `repoId`, `sha` and `errorCode`, `repo.raw` and `repo.refs` (no `sha`), `repo.meter`, `repo.clone.step` and `repo.clone.settle`, `repo.spend.alert` once per threshold, `repo_clone_requests`, `repo_reads`, `repo_clones`, the gauges, and a sentinel file and commit message in no log, span or metric |
-| `worker/flows/RepoClone.test.ts` | `repo_clones` and `repo_capacity` by reason; `repo.clone.settle` with `errorCode` when Postgres refuses |
+| `worker/RepoApi.test.ts` | `repo.about` with `cached` and `errorCode`, and `repo_reads` of kind `about`; `repo.clone.request` by outcome, `repo.tree` and `repo.blob` with `repoId`, `sha` and `errorCode`, `repo.raw` and `repo.refs` (no `sha`), `repo.meter`, `repo.clone.step` and `repo.clone.settle`, `repo.spend.alert` once per threshold, `repo_clone_requests`, `repo_reads`, `repo_clones`, the gauges, and a sentinel file and commit message in no log, span or metric |
+| `worker/flows/RepoClone.test.ts` | `repo_clones` and `repo_capacity` by reason; `repo.clone.settle` with `errorCode` when Postgres refuses; the clone's feed row through each stage |
 | `worker/RepoConfig.test.ts` | `repo.config` with `invalid_key`, and the key nowhere in the log |
 | `src/features/repo/repo.test.ts`, `faults.test.ts`, `copy.test.ts` | the browser's repository records and metrics by outcome: `repo.clone` and `smithers_web_repo_clones` for each of RepoApi's answers, `repo.clone.unconfirmed`, `repo.copy` and `smithers_web_repo_copies` by what, door (a person's and the agent's) and outcome, and `repo.refs.load` |
 | `src/features/commands/commands.test.ts` | `smithers_slash_choices` by kind and how, `smithers_slash_submits` by outcome and command (none for a name the app doesn't offer), and `smithers_flow_dispatches` with door `slash` for a command that ran |
 | `src/features/navigation/navigation.test.ts` | `web.navigate` and `smithers_web_navigations` by door and outcome for every outcome, the span's attributes, every field one the relay keeps, and a sentinel path in no line or span |
-| `src/features/web/web.test.ts`, `src/features/views/views.test.ts`, `worker/Views.test.ts` | `web.page.open` and `smithers_web_pages_opened` by mode, door and outcome for the agent's steps and a person's tab, every field one the relay keeps, a sentinel page in no line or span; `chat.view.add` and its counts for every status |
+| `src/features/web/web.test.ts`, `src/features/views/views.test.ts`, `worker/Views.test.ts`, `worker/WebPreview.test.ts` | `web.page.open` and `smithers_web_pages_opened` by mode, door, outcome and framing for the agent's steps and a person's tab, every field one the relay keeps, a sentinel page in no line or span; `chat.view.add` and its counts for every status; `chat.web.preview`, its span and `smithers_web_previews` by status and framing, a sentinel page in no record |
 | `src/features/jev/jev.test.ts` | `jev.judge`, `smithers_jev_judgments` and `smithers_jev_verdicts` by flow, outcome and verdict code, every field one the relay keeps, a sentinel item, question, label, text and criterion in no line or span |
+| `packages/smithers/flows/flow/test/RunMetrics.test.ts` | `RunMetrics`' closed sets and caps, `settlement` by code and never message, and each recorder's metric and log line with the same fields |
+| `packages/smithers/flows/engine-store/test/RunUsageMetrics.test.ts` | through the durable engine, into an injected registry and logger: runs started and settled by flow, door, actor and placement (a child's door `flow`), a declared failure's code, a cancellation, the first step, a step's retry, a signal wait parked and ended; a sentinel payload in no attribute or line |
+| `ops/grafana/dashboard.test.ts` | the flow usage dashboard filters only on lines the relay keeps or ChatApi writes, and parses only fields they carry |
+| `e2e/flow-usage.spec.ts` | locally, the theme button's `flow.run.started` and `flow.run.settled` lines (door `button`, actor `person`, placement `browser`, `succeeded`) relayed to ChatApi, and the Runs page's flows summary counting the run |
 | `e2e/navigate.spec.ts` | locally, the engine worker's `web.navigate` lines for the agent's navigation and refusal, read from ChatApi's relayed records |

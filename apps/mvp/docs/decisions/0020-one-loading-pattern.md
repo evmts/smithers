@@ -1,0 +1,13 @@
+# 0020 — One loading pattern, and pages that preload on hover
+
+Date: 2026-10-20. Will, about 18:15 on the navigate walkthrough: "The loading symbol was super janky you can do better"; about 18:20: "The gif looks like it opened a empty page"; about 18:22: "I keep seeing janky loading spinners. One consistent pattern we should do also is preload on hover often".
+
+What the recordings showed: a spinner ring and three typing dots pulsing at once, which the 10 fps recording turned into stutter; the pending answer's bubble 35 px tall, then 42 px once the answer's first line came, so the transcript jumped; a button's spinner pushing its label sideways; and the repository page drawing its header over a blank body for 4 to 5 s while its home and files were read, because the route opened the page before its data and the page drew nothing while it waited.
+
+1. **One pattern, in `@smthrs/ui`.** Nothing shows for the first `LOADING_DELAY_MS` (300 ms), so a fast load shows nothing at all. Past it, either a thin `LoadingBar` (2 px, at the top of the page, or along the top edge of the card or button that is busy) or a `Skeleton` in the content's place, the content's size, so nothing moves when the content arrives. Both fade in and out. There is no spinner: `Spinner` and the typing dots are deleted, and Working no longer pulses.
+2. **Reduced motion holds the wait.** The house reduced-motion policy ends every animation at once and drops its delay, except a delay an element names in `--motion-hold`: a wait is not motion. The bar rests at full width and the skeleton doesn't pulse.
+3. **Navigation keeps the previous page until the next is ready.** Each route warms what its page shows into the device (`beforeLoad`: the repository's files, README and homes; the issues' and the stack's syncs), then opens it, while TanStack Router keeps the previous page on screen with its `LoadingBar`. The wait is bounded (`pageWait`, 1 s): files still on their way after it show as skeletons in place. A page never draws a blank body.
+4. **Preload on hover.** `defaultPreload: "intent"` with a 50 ms delay: a link's hover or focus runs the route's warm, so most clicks open a page whose data is already on the device and show no loading state at all. `@smthrs/ui`'s plain links (file lists, READMEs, homes, issue lists) preload the same way through `IntentPreload`.
+5. **`beforeLoad`, never a loader.** A navigation adopts a loader a preload left in flight (router-core's flights), so a loader can't tell a hover from the click after it; `beforeLoad` runs afresh for each. A preload only warms; it never opens a page, joins a room or shows a terminal.
+
+The e2e no-spinner observer (0002 §7) counts a loading marker only once a frame paints it, and exempts the router's bar.

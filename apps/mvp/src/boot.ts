@@ -1,6 +1,11 @@
 import { Otlp } from "@smthrs/observability"
 import { Persistence } from "@smthrs/effect-tanstack-db"
-import { type BrowserEngine, type StoragePersistence, TabChannel } from "@smthrs/platform-browser"
+import {
+  type BrowserEngine,
+  type BrowserLanguageServer,
+  type StoragePersistence,
+  TabChannel,
+} from "@smthrs/platform-browser"
 import type { BrowserWASQLiteDatabase } from "@tanstack/browser-db-sqlite-persistence"
 import { Clock, type Duration, Effect, Fiber, Layer, ManagedRuntime, Metric } from "effect"
 import { FetchHttpClient, type HttpClient } from "effect/http"
@@ -21,10 +26,14 @@ import { chatShortcuts } from "./features/chat/shortcuts"
 import { buttonShortcuts } from "./features/keys/keys"
 import { tabChat } from "./features/chat/tab"
 import { type ChatConfig, type ChatHost, ChatStore, chatConfig } from "./features/chat/store"
+import { CodeIntel, type CodeIntelView } from "./features/code-intel/codeIntel"
+import { LanguageServers } from "./features/code-intel/session"
+import { CodeIntelStore } from "./features/code-intel/store"
 import { Commands, type CommandsView } from "./features/commands/commands"
 import { FlowsUi, type FlowsUiView } from "./features/flows-ui/flowsUi"
 import { FlowsUiStore } from "./features/flows-ui/store"
 import { Home, type HomeView } from "./features/home/home"
+import { HomeClient } from "./features/home/api"
 import { HomeStore } from "./features/home/store"
 import { CommandsStore } from "./features/commands/store"
 import { IssuesClient } from "./features/issues/api"
@@ -37,7 +46,12 @@ import { TodosStore } from "./features/todos/store"
 import { tabTodos } from "./features/todos/tab"
 import { Todos, type TodosView } from "./features/todos/todos"
 import { StackWrites } from "./features/todos/writes"
+import { TextsClient } from "./features/coedit/api"
+import * as SharedPromptLayer from "./features/coedit/prompt"
+import { CoeditStore } from "./features/coedit/store"
+import { TextWrites } from "./features/coedit/writes"
 import { tabNavigation } from "./features/navigation/tab"
+import { tabDoors } from "./flows/doors"
 import { RepoClient, REQUEST_WITHIN } from "./features/repo/api"
 import { tabClipboard } from "./features/repo/tab"
 import { Repo, type RepoView } from "./features/repo/repo"
@@ -56,10 +70,10 @@ import { ViewsStore } from "./features/views/store"
 import { Views, type ViewsView } from "./features/views/views"
 import { type WebHost, WebTab } from "./features/web/actions"
 import { Web, type WebView } from "./features/web/web"
-import { ENGINE_NAME } from "./flows/contract"
 import { type ClientEngine, FlowDispatch } from "./flows/dispatch"
 import { failFastOnEngine, tabAnswers, tabEngine } from "./flows/engine"
 import type { Endpoint } from "./flows/tabPort"
+import { deviceRegistry } from "./device/registry"
 import { Page } from "./page"
 import { EXPORTED_SPANS, WEB_SERVICE } from "./telemetry"
 
@@ -89,10 +103,15 @@ export interface Host extends ChatHost {
   readonly navigate: (path: string) => void
   /** Which outside pages open, and a tab opened from the person's own click or key (src/features/web/actions.ts). */
   readonly web: WebHost
+  /**
+   * Starts a language server's worker (src/features/code-intel/language.worker.ts) for the repository view's code; a
+   * host without one has no code intelligence.
+   */
+  readonly codeIntelWorker?: () => BrowserLanguageServer.WorkerLike
   /** Starts this tab's engine worker (src/flows/engine.worker.ts), which runs every client flow once it leads. */
   readonly engineWorker: () => BrowserEngine.WorkerLike & Endpoint
-  /** The engine's name: its Web Lock, channel and store. `ENGINE_NAME` unless set, so tests can keep engines apart. */
-  readonly engineName?: string
+  /** The engine's name: its Web Lock, channel and store. `ENGINE_NAME` in the browser; a test names its own. */
+  readonly engineName: string
   /**
    * Wipes what this device holds of a session that ended: its synced database, the engine's store and the outbox
    * (decision 0008 §4.6). Sign-out calls it once ChatApi has ended the session (src/features/auth/device.ts).
@@ -146,7 +165,15 @@ export const appLayer = <S = never>(
     auth,
     Theme.layer,
     Repo.layer,
-    // A repository's own home (decision 0014 §4), over the repository store and RepoApi's client.
+    // Code intelligence on the repository view's TypeScript and JavaScript (docs/features/code-intelligence.md).
+    CodeIntel.layer.pipe(
+      Layer.provide(CodeIntelStore.layer),
+      Layer.provide(
+        host.codeIntelWorker === undefined ? LanguageServers.layerNone : LanguageServers.layerBrowser(host.codeIntelWorker),
+      ),
+    ),
+    // A repository's home (decision 0014 §4), over the repository store, RepoApi's client and ChatApi's home route, and
+    // the issues', TODOs' and agent status's stores for its live blocks.
     Home.layer.pipe(Layer.provide(HomeStore.layer)),
     Commands.layer,
     Views.layer,
@@ -161,13 +188,13 @@ export const appLayer = <S = never>(
     Terminal.layer({ origin }),
     // Git issues (decision 0012): the issue pages, and this tab's answers to the issue writes' steps it started.
     Issues.layer,
-    tabIssues({ name: host.engineName ?? ENGINE_NAME }).pipe(Layer.provide(TabChannel.layer)),
+    tabIssues({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
     // TODOs and the stack (decision 0016): the stack pages, the drafts, and this tab's answers to the TODO steps it
     // started.
     Todos.layer,
-    tabTodos({ name: host.engineName ?? ENGINE_NAME }).pipe(Layer.provide(TabChannel.layer)),
+    tabTodos({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
     // Chat's Copy and Edit, answered by the tab that asked, from its conversation, clipboard and composer.
-    tabChat({ name: host.engineName ?? ENGINE_NAME }).pipe(Layer.provide(TabChannel.layer)),
+    tabChat({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
     // Your own flows and this device's runs (decision 0014): their pages, and the router's navigate their acts open.
     Layer.merge(Runs.layer.pipe(Layer.provide(RunsStore.layer)), FlowsUi.layer.pipe(Layer.provide(FlowsUiStore.layer({
       origin,
@@ -186,8 +213,13 @@ export const appLayer = <S = never>(
         ),
       ),
     ),
-    // The command menu completes chat's composer draft.
-    Layer.provideMerge(CommandsStore.layer),
+    // The command menu completes chat's composer draft, which is the shown conversation's shared prompt: co-editing
+    // (docs/features/coedit.md) sits between chat's store, whose outbox sends its updates, and the menu.
+    Layer.provideMerge(
+      CommandsStore.layer.pipe(
+        Layer.provideMerge(SharedPromptLayer.layer.pipe(Layer.provideMerge(CoeditStore.layer({ origin })))),
+      ),
+    ),
     // Chat's store, between the issues' and the TODOs' two: an issue write or a change to a stack goes through the
     // device's one outbox, which chat's store builds over the writes below it hand over (src/outbox.ts) and leads for
     // the stores above it.
@@ -196,6 +228,7 @@ export const appLayer = <S = never>(
         Layer.provideMerge(ChatStore.layer(chatConfig(origin, chat), host)),
         Layer.provideMerge(StackWrites.layer),
         Layer.provideMerge(IssueWrites.layer),
+        Layer.provideMerge(TextWrites.layer),
       ),
     ),
     // Below chat's store, whose conversation shows the views among the messages.
@@ -204,12 +237,14 @@ export const appLayer = <S = never>(
     Layer.provideMerge(RepoStore.layer({ origin })),
     // Below the repository store, which shows the sign-in link in Clone's place from sign-in's row.
     Layer.provideMerge(AuthStore.layer),
-    // Above dispatch, which remembers this tab's requests: `app/navigate` moves only the tab that asked, and `repo/copy`
-    // writes only its clipboard.
+    // Above dispatch, which remembers this tab's requests: `app/navigate` moves only the tab that asked, `repo/copy`
+    // writes only its clipboard, and only the tab's own press of a person's flow runs with the person's session.
     Layer.provideMerge(
-      Layer.merge(
-        tabNavigation({ name: host.engineName ?? ENGINE_NAME, origin, navigate: host.navigate }),
-        tabClipboard({ name: host.engineName ?? ENGINE_NAME }),
+      Layer.mergeAll(
+        tabNavigation({ name: host.engineName, origin, navigate: host.navigate }),
+        tabClipboard({ name: host.engineName }),
+        // Which door this tab's runs came through, so only the person's own press runs with their session.
+        tabDoors({ name: host.engineName }),
       ).pipe(Layer.provide(TabChannel.layer)),
     ),
     Layer.provideMerge(FlowDispatch.layer),
@@ -221,13 +256,18 @@ export const appLayer = <S = never>(
       Layer.mergeAll(
         IssuesClient.layer({ origin, within: REQUEST_WITHIN }),
         StackClient.layer({ origin, within: REQUEST_WITHIN }),
+        TextsClient.layer({ origin, within: REQUEST_WITHIN }),
         RepoClient.layer({ origin, within: REQUEST_WITHIN }),
+        HomeClient.layer({ origin, within: REQUEST_WITHIN }),
       ),
     ),
     Layer.provideMerge(Clipboard.layer(host.clipboard)),
     // The device store opens through the leading tab's engine worker; if this tab's worker fails, it opens in memory
     // at once instead of waiting for a leader that will never answer.
-    Layer.provideMerge(Layer.unwrap(Effect.map(failFastOnEngine(host.persistence), Persistence.layer))),
+    // Every persisted collection must be one the device's registry declares, at its version (decision 0021).
+    Layer.provideMerge(
+      Layer.unwrap(Effect.map(failFastOnEngine({ ...host.persistence, registry: deviceRegistry }), Persistence.layer)),
+    ),
     // Built before the device store: the leading tab's engine worker serves the store's SQLite, so this tab starts
     // its worker first.
     Layer.provideMerge(tabEngine(host.engineWorker, host.engineName)),
@@ -310,6 +350,7 @@ export interface BootOptions {
     spend: SpendView,
     attention: AttentionView,
     todos: TodosView,
+    codeIntel: CodeIntelView,
   ) => void
 }
 
@@ -338,6 +379,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const spend = yield* Spend
     const attention = yield* Attention
     const todos = yield* Todos
+    const codeIntel = yield* CodeIntel
     const store = yield* ChatStore
     yield* Effect.sync(() =>
       options.render(
@@ -358,6 +400,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         spend,
         attention,
         todos,
+        codeIntel,
       )
     )
     yield* chatShortcuts(options.target)

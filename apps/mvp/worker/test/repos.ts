@@ -31,11 +31,14 @@ import * as Actor from "../Actor.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import { FlowStarter, StartConflict } from "../Flows.ts"
 import * as RepoClone from "../flows/RepoClone.ts"
+import * as HomeApi from "../home/Api.ts"
+import type { CuratedFile } from "../home/Curated.ts"
 import * as RepoApi from "../RepoApi.ts"
 import * as RepoReads from "../RepoReads.ts"
 import * as Repos from "../Repos.ts"
 import type { RepoUpstream } from "../RepoUpstream.ts"
 import { fixture, type GitHubRepository, type Scripted, scripted as makeScripted } from "./codeStorage.ts"
+import { GITHUB_API, type ScriptedGitHub, scriptedGitHub } from "./githubRest.ts"
 import { build, type Engine } from "./flowHost.ts"
 import { signedIn, type testFile } from "./harness.ts"
 
@@ -44,13 +47,16 @@ type Runtime = ReturnType<typeof testFile>
 /** The person a harness signs every request in as, unless told otherwise. */
 export const member: Actor.Actor = { subject: { kind: "person", id: "octocat" }, role: "member" }
 
-/** Empties the repository tables and resumes imports, for a test that starts from nothing. */
+/** Empties the repository tables and the clones' feed rows, and resumes imports, for a test that starts from nothing. */
 export const resetRepos = (runtime: Runtime) =>
   runtime.runPromise(
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
       Effect.andThen(
         sql`TRUNCATE repositories, code_storage_usage`,
-        sql`UPDATE repo_imports SET paused = false`,
+        Effect.andThen(
+          sql`TRUNCATE clone_requests`,
+          Effect.andThen(sql`DELETE FROM notifications WHERE kind = 'clone'`, sql`UPDATE repo_imports SET paused = false`),
+        ),
       )),
   )
 
@@ -73,6 +79,8 @@ export interface RepoHarnessOptions {
   readonly actor?: Actor.Actor | null
   /** Sessions in place of `actor`, such as ones that can't be read. */
   readonly sessions?: Layer.Layer<Actor.Sessions>
+  /** The curated homes ChatApi's home route answers, as worker/ChatApi.ts routes it: the real ones unless set. */
+  readonly homes?: ReadonlyArray<CuratedFile>
   /** RepoApi's and the flow's configuration, in place of the environment. */
   readonly config?: Record<string, string>
   /** The scripted Code Storage and GitHub: a fresh one unless set. */
@@ -87,6 +95,13 @@ export interface RepoHarnessOptions {
   readonly starter?: FlowStarter["Service"]
   /** The clone's deadline from its request: 10 minutes unless set. */
   readonly deadline?: Duration.Input
+  /** Whether the Smithers GitHub App is installed on every repository Index asks about: not unless set. */
+  readonly installed?: boolean
+  /**
+   * GitHub's REST API as RepoApi's about route reaches it (`GITHUB_API_URL`, `https://api.github.com` unless the config
+   * says otherwise): the scripted one (worker/test/githubRest.ts) unless set.
+   */
+  readonly github?: ScriptedGitHub
 }
 
 /**
@@ -138,6 +153,13 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
           upstream: options.upstream ?? scripted.upstream,
           budgets,
           deadline: Duration.fromInputUnsafe(options.deadline ?? "10 minutes"),
+          index: (owner, name, sha) =>
+            RepoReads.make({ codeStorage: client, database, budgets, maxTreePaths: 50_000, maxRefs: 1_000 })
+              .files(owner, name, sha).pipe(
+                Effect.provideContext(cache),
+                Effect.mapError(() => new RepoClone.CloneUnavailable()),
+              ),
+          installed: () => Effect.succeed(options.installed ?? false),
         }),
         { maxConnections: 3 },
       ).pipe(Effect.provideService(Scope.Scope, scope), Effect.orDie)
@@ -173,9 +195,11 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
   const repo = await runtime.runPromise(
     observed(RepoApi.make(database, { codeStorage: codeStorage === "none" ? Option.none() : Option.some(codeStorage) })),
   )
-  // Electric, as RepoApi calls it: the table in this file's schema.
+  // What RepoApi calls out to: Electric, with the table in this file's schema, and GitHub's REST API, scripted.
+  const github = options.github ?? scriptedGitHub()
   const electric: typeof globalThis.fetch = (input, init) => {
     const upstream = new URL(input instanceof Request ? input.url : String(input))
+    if (upstream.origin === GITHUB_API) return github.fetch(new Request(upstream, init))
     if (upstream.searchParams.get("table") === REPOSITORIES_TABLE) {
       upstream.searchParams.set("table", `${scratch.name}.${REPOSITORIES_TABLE}`)
     }
@@ -194,10 +218,21 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
       ),
     ),
   )
+  // ChatApi's home route, which worker/ChatApi.ts routes before RepoApi's: who the asker is, and the curated homes.
+  const home = HomeApi.make(options.homes)
+  const homeHandler = HttpEffect.toWebHandler(
+    observed(
+      home.fetch.pipe(
+        Effect.provide(
+          options.sessions ?? (options.actor === null ? Actor.signedOut : signedIn(options.actor ?? member)),
+        ),
+      ),
+    ),
+  )
   const origin = "http://repos.test"
   const fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(new URL(String(input), origin), init)
-    return handler(request)
+    return HomeApi.handles(new URL(request.url).pathname) ? homeHandler(request) : handler(request)
   }) as typeof globalThis.fetch
   const line = (message: string) => logs.filter((log) => log.message === message)
 
@@ -206,6 +241,8 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
     /** RepoApi as the browser reaches it: a full URL or a path on `origin`. */
     fetch,
     scripted,
+    /** GitHub's REST API as the about route reaches it, scripted. */
+    github,
     /** Asks for a clone of `owner/name`. */
     clone: (owner: string, name: string) =>
       fetch("/api/repos", {
@@ -285,11 +322,16 @@ export const repositoryRow = (runtime: Runtime, id: string) =>
         readonly attempt: number
         readonly cloneId: string
         readonly settledAt: Date | null
+        readonly stage: string | null
+        readonly requestedBy: string | null
+        readonly reclaimable: boolean
       }>`
         SELECT id, owner, name, status, failure, capacity, stored_bytes::text AS "storedBytes", retry_at AS "retryAt",
           default_branch AS "defaultBranch", head_sha AS "headSha", head_message AS "headMessage",
-          head_author AS "headAuthor", attempt, clone_id::text AS "cloneId", settled_at AS "settledAt"
-        FROM repositories WHERE id = ${id}`
+          head_author AS "headAuthor", attempt, clone_id::text AS "cloneId", settled_at AS "settledAt", stage,
+          (SELECT c.requested_by FROM clone_requests c WHERE c.repo_id = r.id AND c.clone_id = r.clone_id) AS "requestedBy",
+          reclaimable
+        FROM repositories r WHERE id = ${id}`
       return row
     }),
   )
@@ -305,5 +347,26 @@ export const usageRow = (runtime: Runtime) =>
       return row === undefined
         ? undefined
         : { read: Number(row.read), imported: Number(row.imported), alerted: row.alerted }
+    }),
+  )
+
+/** `recipient`'s feed row for `subject`, if any: what the toast and the feed list show. */
+export const notificationRow = (runtime: Runtime, recipient: string, subject: string) =>
+  runtime.runPromise(
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      const [row] = yield* sql<{
+        readonly kind: string
+        readonly state: string
+        readonly mine: boolean
+        readonly title: string | null
+        readonly ref: string | null
+        readonly href: string
+        readonly version: number
+        readonly dismissedVersion: number
+      }>`
+        SELECT kind, state, mine, title, ref, href, version, dismissed_version AS "dismissedVersion"
+        FROM notifications WHERE recipient = ${recipient} AND subject = ${subject}`
+      return row
     }),
   )

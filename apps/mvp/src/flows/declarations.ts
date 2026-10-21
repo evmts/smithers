@@ -1,6 +1,7 @@
+import { Summarize } from "../features/timeline/flow"
 import { Flow } from "@smthrs/flow"
 import { Context } from "effect"
-import { BranchTrack } from "../features/branch/flows"
+import { BranchCreate, BranchTrack } from "../features/branch/flows"
 import { BranchShare } from "../features/sharing/flows"
 import { TerminalOpenRequest } from "../features/terminal/flows"
 import {
@@ -25,13 +26,14 @@ import {
   FlowSave,
   FlowWrite,
 } from "../features/flows-ui/flows"
-import { IssueComment, IssueCreate, IssueTriage, TriageEnable, TriagePause, TriageRunAgain } from "../features/issues/flows"
+import { IssueCommitment, IssueComment, IssueCreate, IssueTriage, TriageEnable, TriagePause, TriageRunAgain } from "../features/issues/flows"
 import { Classify, Evaluate } from "../features/jev/flows"
 import { Cancel, Inspect, List, Resume, Retry } from "../features/runs/flows"
 import { Navigate } from "../features/navigation/flows"
 import { RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../features/repo/flows"
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
+import { AlertChannelSet } from "../features/spend/flows"
 import { SetTheme } from "../features/theme/flows"
 import { TodoCommit, TodoDraft, TodoDrop, TodoIssue } from "../features/todos/flows"
 import { OpenWebPage } from "../features/web/flows"
@@ -45,6 +47,7 @@ import { type FlowName, type FlowOf, names } from "./registry"
 
 /** Each registered flow's declaration, by name: one per registry entry, with that entry's tag and schemas. */
 export const declarations = {
+  "timeline/summarize": Summarize,
   "app/theme/set": SetTheme,
   "app/navigate": Navigate,
   "app/web/open": OpenWebPage,
@@ -77,11 +80,13 @@ export const declarations = {
   "run/list": List,
   "run/inspect": Inspect,
   "branch/track": BranchTrack,
+  "branch/create": BranchCreate,
   "branch/share": BranchShare,
   "terminal/open": TerminalOpenRequest,
   "issue/create": IssueCreate,
   "issue/comment": IssueComment,
   "issue/triage": IssueTriage,
+  "issue/commitment": IssueCommitment,
   "triage/run": TriageRunAgain,
   "triage/enable": TriageEnable,
   "triage/pause": TriagePause,
@@ -91,6 +96,7 @@ export const declarations = {
   "todo/drop": TodoDrop,
   "watch/set": WatchSet,
   "notification/ack": Ack,
+  "alert/channel": AlertChannelSet,
   "sandbox/run": SandboxRun,
   "sandbox/read": SandboxRead,
   "sandbox/write": SandboxWrite,

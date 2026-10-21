@@ -3,6 +3,7 @@ import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
+import { CommitmentControl } from "../../features/issues/components/CommitmentControl"
 import { useIssues } from "../../features/issues/components/IssuesContext"
 import { useTodos } from "../../features/todos/components/TodosContext"
 import { MAKE_TODO, MAKE_TODO_KEY, TODO } from "../../features/todos/contract"
@@ -11,6 +12,7 @@ import { DISCARD, EDIT, NOT_FOUND } from "../../features/issues/contract"
 import {
   conversationProps,
   draftOf,
+  mayManageTriage,
   mayTriage,
   mayWrite,
   pageOf,
@@ -81,6 +83,8 @@ export function IssueScreen() {
           </ItemAsideSection>
         )}
         headerActions={!control.shown ? undefined : (
+          <>
+          {item.triage === "accepted" ? <CommitmentControl value={item.commitment} pending={triagePending?.find((row) => row.number === number && row.op === "issue/commitment")?.pending} onChange={session !== undefined && mayManageTriage(session, confirmed) ? (commitment) => actions.setCommitment(owner, repo, number, commitment, triagePending?.find((row) => row.number === number && row.op === "issue/commitment" && row.pending === "not_sent")?.id) : undefined} /> : null}
           <TriageControl
             state={control.state}
             pending={control.pending}
@@ -89,6 +93,7 @@ export function IssueScreen() {
             onReject={control.reject ? () => actions.triage(owner, repo, number, "reject") : undefined}
             onRunAgain={control.runAgain ? () => actions.runTriageAgain(owner, repo, number) : undefined}
           />
+          </>
         )}
         comments={shown.comments.map((comment) => ({
           ...comment,

@@ -1,0 +1,206 @@
+import { Flow } from "@smthrs/flow"
+import { Clock, Context, Effect, Layer, Metric, Option, Result, Schema } from "effect"
+import { Base64Url } from "effect/encoding"
+import { HttpServerRequest } from "effect/http"
+import {
+  AGENT_FLOWS,
+  type ActKind,
+  type Actor,
+  refusesCredential,
+  Sessions,
+  type SessionsUnavailable,
+} from "./Actor.ts"
+import { CREDENTIAL_TTL_MS } from "../src/flows/contract.ts"
+import type { SessionKeys } from "./SessionKeys.ts"
+
+// Run credentials (decision 0017 slice 0, docs/features/sign-in.md#run-credentials): how the server tells a person from
+// the agent, a flow or a plugin acting for them. Every run but a person's own press of a person's flow asks
+// `POST /api/runs/<run>/credential`, and gets a signed bearer token bound to that run. The server sets its `act` from
+// the registry's mark and the run's parent (worker/Actor.ts `AGENT_FLOWS`), never from the request, and narrows its
+// ceiling at every hop. A request that carries one is that run's, never its person's, whatever cookie rides along:
+// sessions read the credential first and never fall back (`resolveWith`). Every person-only route refuses an `act`.
+
+/** The longest caller chain a credential carries: a deeper nested call is refused `too_deep`. */
+export const MAX_CHAIN = 16
+
+/** The largest bearer token sessions read; a longer `Authorization` header is no credential at all. */
+export const MAX_TOKEN_LENGTH = 8 * 1024
+
+/** A run's id: an engine's execution id, printable ASCII. */
+const RunId = Schema.String.check(Schema.isPattern(/^[\x21-\x7e]{1,256}$/))
+
+/** A flow's tag, as `Flow.make`'s first argument. */
+const FlowTag = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]*(\/[A-Za-z0-9][A-Za-z0-9.-]*){0,3}$/))
+  .check(Schema.isMaxLength(128))
+
+/** A capability ceiling in transported form (`Flow.intersectCeilings`): `[]` is unrestricted. */
+const Ceiling = Schema.Array(Schema.Array(Schema.String.check(Schema.isMaxLength(256))).check(Schema.isMaxLength(32)))
+  .check(Schema.isMaxLength(16))
+
+/**
+ * What the engine asks a credential for: the run's flow, and its declared ceiling (its `Flow.make` capabilities) when
+ * it declares one. A declared ceiling only ever narrows: the server intersects it, and refuses a callee whose declared
+ * ceiling its caller's doesn't cover.
+ */
+export const MintRequest = Schema.Struct({ flow: FlowTag, ceiling: Schema.optional(Ceiling) })
+export type MintRequest = typeof MintRequest.Type
+
+/** What a credential says, signed: who, which run acts for them and as what, its chain, its ceiling and its end. */
+export const Claims = Schema.Struct({
+  v: Schema.Literal(1),
+  /** The person the run acts for. */
+  sub: Schema.String.check(Schema.isMaxLength(128)),
+  /** The session it was minted under: it ends with that session. Absent where sign-in isn't configured. */
+  sid: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),
+  act: Schema.Literals(["agent", "flow", "app", "sandbox"]),
+  run: RunId,
+  root: RunId,
+  chain: Schema.Array(FlowTag).check(Schema.isMinLength(1), Schema.isMaxLength(MAX_CHAIN)),
+  ceiling: Ceiling,
+  /** When it ends, in epoch milliseconds. */
+  exp: Schema.Int,
+})
+export type Claims = typeof Claims.Type
+
+/** Why a credential isn't minted: a person-only flow, a callee its caller's ceiling doesn't cover, or too deep. */
+export type MintRefusal = "person_only" | "capability_exceeded" | "too_deep"
+
+/**
+ * The claims `who` gets for run `run` of `request.flow` at `now`, or why not. A request with no `act` is the person's
+ * session starting a run that isn't their own press: the chain starts here, as the agent when the registry marks
+ * `request.flow` an agent, else as a flow. One with an `act` is a credential's nested call: the chain grows by one, the
+ * ceiling narrows to the intersection, and the kind stays the caller's, becoming the agent's inside an agent. Neither
+ * mints for a person-only flow whose route refuses an `act`: those run only as the person's own press.
+ */
+export const claimsFor = (
+  who: Actor,
+  run: string,
+  request: MintRequest,
+  now: number,
+): Result.Result<Claims, MintRefusal> => {
+  if (refusesCredential(request.flow)) return Result.fail("person_only")
+  const declared = request.ceiling ?? []
+  const agent = AGENT_FLOWS.has(request.flow)
+  const base = {
+    v: 1 as const,
+    sub: who.subject.id,
+    ...(who.session === undefined ? {} : { sid: who.session }),
+    run,
+    exp: now + CREDENTIAL_TTL_MS,
+  }
+  const parent = who.act
+  if (parent === undefined) {
+    return Result.succeed({
+      ...base,
+      act: agent ? "agent" : "flow",
+      root: run,
+      chain: [request.flow],
+      ceiling: Flow.intersectCeilings([], declared),
+    })
+  }
+  const chain = parent.chain ?? [parent.id]
+  const ceiling = parent.ceiling ?? []
+  if (chain.length >= MAX_CHAIN) return Result.fail("too_deep")
+  if (request.ceiling !== undefined && !Flow.ceilingWithin(declared, ceiling)) return Result.fail("capability_exceeded")
+  const kind: ActKind = parent.kind === "agent" || agent ? "agent" : parent.kind
+  return Result.succeed({
+    ...base,
+    act: kind,
+    root: parent.root ?? parent.id,
+    chain: [...chain, request.flow],
+    ceiling: Flow.intersectCeilings(ceiling, declared),
+  })
+}
+
+/** How a credential a request carried read: as its run (`verified`), or not at all, and why not. */
+export type Verification = "verified" | "forged" | "expired" | "ended"
+
+/** Credentials minted and read, by `op` (`mint`, `verify`), `outcome` and `act`. */
+export const credentials = Metric.counter("smithers_run_credentials", {
+  description: "Run credentials minted and read, by op, outcome and act",
+  incremental: true,
+})
+
+/** Signs and reads run credentials. */
+export class RunCredentials extends Context.Service<
+  RunCredentials,
+  {
+    /** `claims`, signed: the bearer token the engine sends with every request of the run. */
+    readonly sign: (claims: Claims) => Effect.Effect<string>
+    /**
+     * The actor a bearer token stands for: its person, as their session stands now, with `act` from its claims. None
+     * when it is forged, has expired, or its session ended. Each read that fails is logged and counted.
+     */
+    readonly verify: (token: string) => Effect.Effect<Option.Option<Actor>, SessionsUnavailable>
+  }
+>()("@smthrs/mvp/RunCredentials") {}
+
+const decodeClaims = Schema.decodeUnknownOption(Schema.fromJsonString(Claims))
+
+/**
+ * Run credentials signed with `keys` (purpose `run`, so no cookie ever reads as one), whose person `person` resolves as
+ * their session stands now: none once it ended.
+ */
+export const make = (options: {
+  readonly keys: SessionKeys
+  readonly person: (claims: Claims) => Effect.Effect<Option.Option<Actor>, SessionsUnavailable>
+}): RunCredentials["Service"] => {
+  const failed = (outcome: Exclude<Verification, "verified">) =>
+    Effect.as(
+      Effect.andThen(
+        Metric.update(Metric.withAttributes(credentials, { op: "verify", outcome, act: "none" }), 1),
+        Effect.logWarning("auth.credential").pipe(Effect.annotateLogs({ op: "verify", outcome })),
+      ),
+      Option.none<Actor>(),
+    )
+  return RunCredentials.of({
+    sign: (claims) => options.keys.sign("run", Base64Url.encode(JSON.stringify(claims))),
+    verify: (token) =>
+      Effect.gen(function* () {
+        const value = yield* options.keys.verify("run", token)
+        if (Option.isNone(value)) return yield* failed("forged")
+        const text = Base64Url.decodeString(value.value)
+        const claims = Result.isSuccess(text) ? decodeClaims(text.success) : Option.none()
+        // Signed by us yet not claims: a key reused for another purpose would be a bug; it reads as forged.
+        if (Option.isNone(claims)) return yield* failed("forged")
+        if ((yield* Clock.currentTimeMillis) >= claims.value.exp) return yield* failed("expired")
+        const person = yield* options.person(claims.value)
+        if (Option.isNone(person)) return yield* failed("ended")
+        const { act, run, root, chain, ceiling } = claims.value
+        yield* Metric.update(Metric.withAttributes(credentials, { op: "verify", outcome: "verified", act }), 1)
+        return Option.some<Actor>({ ...person.value, act: { kind: act, id: run, root, chain, ceiling } })
+      }).pipe(Effect.withSpan("auth.credential.verify")),
+  })
+}
+
+/** The run credential `request` carries: its `Authorization: Bearer` token, when one at most `MAX_TOKEN_LENGTH` long. */
+export const bearerOf = (request: HttpServerRequest.HttpServerRequest): Option.Option<string> => {
+  const header = request.headers["authorization"]
+  if (header === undefined || !header.startsWith("Bearer ")) return Option.none()
+  const token = header.slice("Bearer ".length).trim()
+  return token.length === 0 || token.length > MAX_TOKEN_LENGTH ? Option.none() : Option.some(token)
+}
+
+/**
+ * Who a request is: the run its credential names, when it carries one, and never its cookie's person then, even when the
+ * credential doesn't read; else `session`, the person behind its cookie. Annotates the span with who acts, as which
+ * `act`, never with content.
+ */
+export const resolveWith = <R>(
+  credentials: RunCredentials["Service"],
+  session: Effect.Effect<Option.Option<Actor>, SessionsUnavailable, R>,
+): Effect.Effect<Option.Option<Actor>, SessionsUnavailable, R | HttpServerRequest.HttpServerRequest> =>
+  Effect.gen(function* () {
+    const bearer = bearerOf(yield* HttpServerRequest.HttpServerRequest)
+    const actor = Option.isSome(bearer) ? yield* credentials.verify(bearer.value) : yield* session
+    yield* Effect.annotateCurrentSpan({
+      "smithers.actor.act": Option.match(actor, { onNone: () => "none", onSome: (who) => who.act?.kind ?? "person" }),
+    })
+    return actor
+  })
+
+/** `Sessions` that read a request's run credential first (`resolveWith`), else `session`, with the `RunCredentials` in context. */
+export const sessionsWith = (
+  session: Effect.Effect<Option.Option<Actor>, SessionsUnavailable, HttpServerRequest.HttpServerRequest>,
+): Layer.Layer<Sessions, never, RunCredentials> =>
+  Layer.effect(Sessions, Effect.map(RunCredentials, (credentials) => Sessions.of({ resolve: resolveWith(credentials, session) })))

@@ -42,6 +42,9 @@ export const conversationQuery = (
           local: 0,
           at: synced.position,
           createdAt: synced.createdAt,
+          // A message's tokens as numbers, 0 while unknown: a nullable column here collapses the union's row type.
+          inputTokens: Query.coalesce(synced.inputTokens, 0),
+          outputTokens: Query.coalesce(synced.outputTokens, 0),
         })),
         q.from({ view: views.tanstack }).select(({ view }) => ({
           id: view.id,
@@ -54,6 +57,10 @@ export const conversationQuery = (
           createdAt: view.createdAt,
           template: view.template,
           url: view.props.url,
+          // What the page says about itself, read by ChatApi's check: a card shows it, a framed page until it loads.
+          title: view.props.title,
+          description: view.props.description,
+          icon: view.props.icon,
         })),
         q
           .from({ refused: unsent.tanstack })

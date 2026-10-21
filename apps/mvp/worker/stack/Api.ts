@@ -21,7 +21,7 @@ import {
   TODOS_SHAPE_ROUTE,
   TODOS_TABLE,
 } from "../../src/features/todos/contract.ts"
-import { Sessions } from "../Actor.ts"
+import { refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
@@ -167,6 +167,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           fields.op = admitted.op
           fields.via = via
           fields.opId = admitted.opId.toLowerCase()
+          // Committing and dropping are the person's presses: anyone acting for them is refused, and counted as such
+          // (decision 0017 slice 0).
+          const act = admitted.op === "commit" ? "todo/commit" : "todo/drop"
+          if (yield* refusesPersonOnly(who, act)) return refused("forbidden")
           if (!mayChange(who)) return refused("forbidden")
           const applied = yield* Stack.apply(
             {

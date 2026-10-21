@@ -1,0 +1,225 @@
+{
+  "epoch": 47,
+  "stores": {
+    "chat-unsent": {
+      "kind": "local",
+      "versions": {
+        "1": "9a9f1d7276e2a5c7"
+      }
+    },
+    "chat-drafts": {
+      "kind": "local",
+      "versions": {
+        "1": "2e3b027d15ac792d"
+      }
+    },
+    "issue-requested": {
+      "kind": "local",
+      "versions": {
+        "1": "52197947eaf596c8",
+        "2": "a652bcc3bfcce151"
+      }
+    },
+    "issue-drafts": {
+      "kind": "local",
+      "versions": {
+        "1": "60ced9e0aaf4e760"
+      }
+    },
+    "auth-confirmed": {
+      "kind": "local",
+      "versions": {
+        "1": "5952c0a213ac7491"
+      }
+    },
+    "preferences": {
+      "kind": "local",
+      "versions": {
+        "1": "1444df6c1d4e86c2"
+      }
+    },
+    "homes": {
+      "kind": "local",
+      "versions": {
+        "2": "3913295b44917af6"
+      }
+    },
+    "curated-homes": {
+      "kind": "local",
+      "versions": {
+        "1": "c02d2671c4fb481e"
+      }
+    },
+    "attention-pending": {
+      "kind": "local",
+      "versions": {
+        "1": "05618a6f6026892d"
+      }
+    },
+    "spend-seen": {
+      "kind": "local",
+      "versions": {
+        "1": "0f9d97976b794f85"
+      }
+    },
+    "todo-drafts": {
+      "kind": "local",
+      "versions": {
+        "1": "0a0ad36b40938642"
+      }
+    },
+    "todo-requested": {
+      "kind": "local",
+      "versions": {
+        "1": "dabd1d95e7d0a02f"
+      }
+    },
+    "timeline-summaries": {
+      "kind": "local",
+      "versions": {
+        "1": "4bed7c4c611479a2"
+      }
+    },
+    "chat-messages": {
+      "kind": "synced",
+      "versions": {
+        "3": "fad6fd295c841426"
+      }
+    },
+    "views": {
+      "kind": "synced",
+      "versions": {
+        "2": "eab96e2a43688e23"
+      }
+    },
+    "runs": {
+      "kind": "synced",
+      "versions": {
+        "1": "a8b6d8a96b2ccfb8"
+      }
+    },
+    "repo-repositories": {
+      "kind": "synced",
+      "versions": {
+        "3": "8c608a025f56038b"
+      }
+    },
+    "issue-items": {
+      "kind": "synced",
+      "versions": {
+        "3": "33be5d593291f26b"
+      }
+    },
+    "issue-comments": {
+      "kind": "synced",
+      "versions": {
+        "1": "b5aa3bdd0763e470"
+      }
+    },
+    "issue-sync": {
+      "kind": "synced",
+      "versions": {
+        "1": "b0c0ae0b152febbb"
+      }
+    },
+    "issue-writes": {
+      "kind": "synced",
+      "versions": {
+        "1": "900c98190b4a7657"
+      }
+    },
+    "issue-triage-settings": {
+      "kind": "synced",
+      "versions": {
+        "1": "d49a12999fa2df56"
+      }
+    },
+    "flows": {
+      "kind": "synced",
+      "versions": {
+        "2": "1788543c3fde7d20"
+      }
+    },
+    "flow-drafts": {
+      "kind": "synced",
+      "versions": {
+        "1": "7c2412270978bb1c"
+      }
+    },
+    "notifications": {
+      "kind": "synced",
+      "versions": {
+        "1": "7e884d326cb0e6c8"
+      }
+    },
+    "spend-alerts": {
+      "kind": "synced",
+      "versions": {
+        "1": "c7bf0034db58c563"
+      }
+    },
+    "alert-channels": {
+      "kind": "synced",
+      "versions": {
+        "1": "cd92662381b733b7"
+      }
+    },
+    "alert-deliveries": {
+      "kind": "synced",
+      "versions": {
+        "1": "f14ef22ddcde5173"
+      }
+    },
+    "todos": {
+      "kind": "synced",
+      "versions": {
+        "2": "836adaeaec60ebbd"
+      }
+    },
+    "todo-requests": {
+      "kind": "synced",
+      "versions": {
+        "1": "70c545648a714a06"
+      }
+    },
+    "text-updates": {
+      "kind": "synced",
+      "versions": {
+        "1": "53adcabcae2e43cf"
+      }
+    }
+  },
+  "payloads": {
+    "asking": {
+      "kind": "payload",
+      "versions": {
+        "1": "e01399d99860628a"
+      }
+    },
+    "issue-sending": {
+      "kind": "payload",
+      "versions": {
+        "1": "5f06729ded14d532",
+        "2": "fcf63f783785b96c"
+      }
+    },
+    "text-sending": {
+      "kind": "payload",
+      "versions": {
+        "1": "06eef24ad076cbe9"
+      }
+    },
+    "todo-sending": {
+      "kind": "payload",
+      "versions": {
+        "1": "3c0ca8e41d1eb3d4"
+      }
+    }
+  },
+  "mutations": [
+    "ask",
+    "issue-write",
+    "text-update",
+    "todo-op"
+  ]
+}

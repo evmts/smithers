@@ -123,17 +123,25 @@ test("todo-new-keyboard: New TODO on the stack page, typed and committed with th
   await expect(row(ann, word)).toHaveAttribute("data-status", "dropped", { timeout: 60_000 })
 })
 
-// Make TODO on an issue (docs/features/todos.md#from-an-issue) needs an open issue GitHub's projection holds: the
-// deployment's GITHUB_REPOSITORY with the Smithers GitHub App installed, named E2E_ISSUES_REPOSITORY as in
-// e2e/issues.spec.ts. Without it, it skips naming what it lacks.
-const ISSUES_REPOSITORY = process.env.E2E_ISSUES_REPOSITORY
+// Make TODO on an issue (docs/features/todos.md#from-an-issue) needs an open issue GitHub's projection holds, as
+// e2e/issues.spec.ts does: E2E_ISSUES_REPOSITORY, the deployment's GITHUB_REPOSITORY with the Smithers GitHub App
+// installed, and E2E_SESSION_COOKIE (`name=value`), a session of a Member or above there, since sign-in is GitHub's.
+// Without either, it skips naming what it lacks.
+const ISSUES_REPOSITORY = process.env.E2E_ISSUES_REPOSITORY ?? ""
+const SESSION_COOKIE = process.env.E2E_SESSION_COOKIE ?? ""
+const lacking = [
+  ...(ISSUES_REPOSITORY === "" ? ["E2E_ISSUES_REPOSITORY"] : []),
+  ...(SESSION_COOKIE === "" ? ["E2E_SESSION_COOKIE"] : []),
+]
 
 test("todo-from-issue: Make TODO from an issue's menu drafts it linked; the issue shows its TODO; t makes another", async ({ devices }) => {
-  test.skip(ISSUES_REPOSITORY === undefined, "needs E2E_ISSUES_REPOSITORY: a repository whose issues the app syncs")
+  test.skip(lacking.length > 0, `This needs a repository whose GitHub issues the app syncs: set ${lacking.join(", ")}.`)
   test.setTimeout(300_000)
-  const repo = ISSUES_REPOSITORY!
+  const repo = ISSUES_REPOSITORY
   const [ann] = await devices.open("Ann")
   const page = ann.page
+  const at = SESSION_COOKIE.indexOf("=")
+  await page.context().addCookies([{ name: SESSION_COOKIE.slice(0, at), value: SESSION_COOKIE.slice(at + 1), url: page.url() }])
 
   // From the issues list: Make TODO in an open issue's menu opens the stack with a draft from it.
   await page.goto(`/${repo}/issues`)

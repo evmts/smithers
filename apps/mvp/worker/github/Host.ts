@@ -7,6 +7,7 @@ import type { Seat } from "../ModelEndpoint.ts"
 import type { SessionKeys } from "../SessionKeys.ts"
 import * as Apply from "./Apply.ts"
 import * as GitHubConfig from "./Config.ts"
+import * as Merge from "./Merge.ts"
 import * as Reconcile from "./Reconcile.ts"
 import * as Tokens from "./Tokens.ts"
 import * as Triage from "./Triage.ts"
@@ -19,7 +20,7 @@ import * as Write from "./Write.ts"
 // here names a host.
 
 /** The GitHub flows, in the order a host registers them. */
-export const flows = [Apply.Apply, Reconcile.Reconcile, Write.Write, Triage.TriageRun] as const
+export const flows = [Apply.Apply, Reconcile.Reconcile, Write.Write, Triage.TriageRun, Merge.Merge] as const
 
 /** The App, configured and ready: what `services` turns into the flows' services once the host knows how to refresh. */
 export interface Ready<E, R> {
@@ -66,11 +67,12 @@ export const services = <E, R>(
   judge,
 })
 
-/** Registers `github/Apply`, `github/Reconcile`, `github/Write` and `triage/Run` over `services`. */
+/** Registers `github/Apply`, `github/Reconcile`, `github/Write`, `triage/Run` and `pr/Merge` over `services`. */
 export const registration = <E, R>(services: Triage.Services<E, R>) =>
   Layer.mergeAll(
     Apply.registration(services),
     Reconcile.registration(services),
     Write.registration(services),
     Triage.registration(services),
+    Merge.registration(services),
   )

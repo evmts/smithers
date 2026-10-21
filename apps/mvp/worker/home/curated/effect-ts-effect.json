@@ -1,0 +1,120 @@
+{
+  "repository": "Effect-TS/effect",
+  "defaultBranch": "main",
+  "home": {
+    "sections": [
+      {
+        "title": "Today",
+        "audience": "maintainer",
+        "blocks": [
+          { "type": "action", "flow": "branch.new", "title": "New branch", "key": "b" },
+          { "type": "issues" },
+          { "type": "runs" }
+        ]
+      },
+      {
+        "title": "Your work",
+        "audience": "contributor",
+        "blocks": [
+          { "type": "prompt", "title": "What should we work on?", "placeholder": "Ask Smithers about Effect…" },
+          { "type": "stack" },
+          { "type": "flows", "title": "Your flows" },
+          { "type": "app", "flow": "todo.new", "title": "New TODO", "picture": "issue" },
+          { "type": "app", "flow": "issue", "title": "Open an issue", "picture": "issue" }
+        ]
+      },
+      {
+        "audience": "everyone",
+        "blocks": [
+          {
+            "type": "hero",
+            "title": "Effect",
+            "tagline": "Build production-ready applications in TypeScript.",
+            "text": "Typed errors, dependency injection, structured concurrency, retries, tracing and schemas in one library with zero dependencies.",
+            "install": "npm install effect",
+            "actions": [
+              { "label": "Get started", "url": "https://effect.website/docs/getting-started/introduction/" },
+              { "label": "Playground", "url": "https://effect.website/play" },
+              { "label": "Discord", "url": "https://discord.gg/effect-ts" }
+            ],
+            "announcement": { "label": "Effect 4.0 is here", "url": "https://effect.website/blog/releases/effect/40" }
+          },
+          {
+            "type": "code",
+            "file": "fetch-user.ts",
+            "language": "ts",
+            "code": "import { Data, Effect, Schedule } from \"effect\"\n\nclass FetchError extends Data.TaggedError(\"FetchError\")<{\n  readonly cause: unknown\n}> {}\n\nconst getUser = (id: string) =>\n  Effect.tryPromise({\n    try: (signal) => fetch(`/users/${id}`, { signal }),\n    catch: (cause) => new FetchError({ cause })\n  })\n\n// Typed failure, retried with backoff, bounded in time.\nconst program = getUser(\"42\").pipe(\n  Effect.retry({\n    times: 3,\n    schedule: Schedule.exponential(\"100 millis\")\n  }),\n  Effect.timeout(\"5 seconds\")\n)"
+          },
+          {
+            "type": "stats",
+            "stats": [
+              { "value": "MIT", "label": "License" },
+              { "value": "0", "label": "Dependencies" },
+              { "value": "TypeScript 5.9+", "label": "Strict mode" },
+              { "value": "Node · Bun · Deno", "label": "and browsers" }
+            ]
+          },
+          {
+            "type": "cards",
+            "title": "Why Effect",
+            "cards": [
+              { "title": "Typed errors", "text": "Every failure is in the type, so the compiler lists what you haven't handled.", "url": "https://effect.website/docs/error-management/two-error-types/" },
+              { "title": "Dependency injection", "text": "Services and layers, checked at compile time, swapped in tests.", "url": "https://effect.website/docs/requirements-management/services/" },
+              { "title": "Structured concurrency", "text": "Fibers that cancel cleanly, with no leaked work.", "url": "https://effect.website/docs/concurrency/basic-concurrency/" },
+              { "title": "Retries and scheduling", "text": "Backoff, jitter and timeouts as values you compose.", "url": "https://effect.website/docs/scheduling/introduction/" },
+              { "title": "Built-in tracing", "text": "Spans and metrics with OpenTelemetry, no extra code.", "url": "https://effect.website/docs/observability/tracing/" },
+              { "title": "Schema", "text": "One definition to validate, decode, encode and document data.", "url": "https://effect.website/docs/schema/introduction/" }
+            ]
+          },
+          {
+            "type": "cards",
+            "title": "Ecosystem",
+            "cards": [
+              { "label": "effect", "title": "Core", "text": "Effect, Layer, Schema, Stream and the rest.", "url": "https://www.npmjs.com/package/effect" },
+              { "label": "@effect/platform-node", "title": "Node.js", "text": "HTTP, files, sockets and workers.", "url": "https://www.npmjs.com/package/@effect/platform-node" },
+              { "label": "@effect/sql-pg", "title": "PostgreSQL", "text": "Typed SQL with pooling and migrations.", "url": "https://www.npmjs.com/package/@effect/sql-pg" },
+              { "label": "@effect/ai-anthropic", "title": "AI", "text": "Model calls as effects: retries, tools, streaming.", "url": "https://www.npmjs.com/package/@effect/ai-anthropic" },
+              { "label": "@effect/opentelemetry", "title": "Tracing", "text": "Export spans and metrics anywhere.", "url": "https://www.npmjs.com/package/@effect/opentelemetry" },
+              { "label": "@effect/vitest", "title": "Testing", "text": "Run effects as tests, with test clocks.", "url": "https://www.npmjs.com/package/@effect/vitest" },
+              { "label": "@effect/atom-react", "title": "React", "text": "Reactive state backed by effects.", "url": "https://www.npmjs.com/package/@effect/atom-react" },
+              { "label": "@effect/platform-bun", "title": "Bun", "text": "The platform services on Bun.", "url": "https://www.npmjs.com/package/@effect/platform-bun" }
+            ],
+            "more": { "label": "All packages", "url": "https://github.com/Effect-TS/effect#packages" }
+          },
+          {
+            "type": "cards",
+            "title": "Learn",
+            "cards": [
+              { "title": "Introduction", "text": "What Effect is and the problems it solves.", "url": "https://effect.website/docs/getting-started/introduction/" },
+              { "title": "Building pipelines", "text": "Compose effects step by step.", "url": "https://effect.website/docs/getting-started/building-pipelines/" },
+              { "title": "Platform", "text": "HTTP servers, clients and the file system.", "url": "https://effect.website/docs/platform/introduction/" },
+              { "title": "Examples", "text": "Complete apps built with Effect.", "url": "https://github.com/Effect-TS/examples" }
+            ]
+          },
+          {
+            "type": "releases",
+            "title": "Releases",
+            "releases": [
+              { "name": "effect@3.22.3", "url": "https://github.com/Effect-TS/effect/releases/tag/effect%403.22.3", "date": "2026-10-16", "summary": "LayerMap releases preloaded entries after their idle TTL." },
+              { "name": "@effect/sql-pg@0.53.1", "url": "https://github.com/Effect-TS/effect/releases/tag/%40effect%2Fsql-pg%400.53.1", "date": "2026-10-16", "summary": "Closes the pool when the first connection check fails." },
+              { "name": "effect@4.0.5", "url": "https://github.com/Effect-TS/effect/releases/tag/effect%404.0.5", "date": "2026-10-15", "summary": "A patch release of the 4.0 line." }
+            ],
+            "more": { "label": "All releases", "url": "https://github.com/Effect-TS/effect/releases" }
+          },
+          {
+            "type": "links",
+            "title": "Community",
+            "links": [
+              { "label": "Discord", "url": "https://discord.gg/effect-ts" },
+              { "label": "X", "url": "https://x.com/EffectTS_" },
+              { "label": "Bluesky", "url": "https://bsky.app/profile/effect-ts.bsky.social" },
+              { "label": "YouTube", "url": "https://www.youtube.com/@Effect-TS" },
+              { "label": "Community hub", "url": "https://effect.website/community-hub" }
+            ]
+          },
+          { "type": "prompt", "title": "Questions about Effect?", "placeholder": "Ask Smithers about this repository…" }
+        ]
+      }
+    ]
+  }
+}

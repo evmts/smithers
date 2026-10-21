@@ -1,0 +1,14 @@
+import { BrowserLanguageServer } from "@smthrs/platform-browser"
+import ts from "typescript"
+
+// The language server's worker (decision: docs/design/code-intelligence/DESIGN.md): a program boundary, like
+// src/main.tsx. main.tsx starts it when the repository view first shows a TypeScript or JavaScript file, so TypeScript
+// and its lib files load in this worker's bundle and only then. Each lib file is its own chunk, loaded when a project
+// names it.
+
+const libs = import.meta.glob<string>("/node_modules/typescript/lib/lib.*.d.ts", { query: "?raw", import: "default" })
+
+BrowserLanguageServer.serve({
+  typescript: ts,
+  lib: (name) => libs[`/node_modules/typescript/lib/${name}`]?.() ?? Promise.resolve(undefined),
+})

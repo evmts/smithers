@@ -579,6 +579,13 @@ describe("the device", () => {
     expect(tab.store.opened("github/octo/never")).toBeUndefined()
   }, WITHIN)
 
+  test("a link's warm opens the stack's sync without moving the page shown", async () => {
+    const tab = await open({ answers: false })
+    await tab.actions.warm(OWNER, NAME)
+    expect(tab.store.opened(REPO_ID)).toBeDefined()
+    expect(tab.view()).toMatchObject({ owner: "", repoId: "" })
+  }, WITHIN)
+
   test("keeps a draft once and queues a change once; a draft it can't store isn't kept", async () => {
     const tab = await open({ answers: false })
     const draft: Draft = {

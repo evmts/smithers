@@ -17,11 +17,15 @@ const titleCount = async (page: Page) => Number((await page.title()).match(/^\((
 const surfaces = (tab: Tab, answerId: string) => ({
   card: tab.page.locator(`[data-slot="needs-you"][data-run="${answerId}"]`),
   toast: tab.page.getByRole("region", { name: "Smithers" }).locator(`[data-slot="toast"][data-run="${answerId}"]`),
-  header: tab.page.getByRole("status", { name: "Smithers" }).getByRole("button", { name: /^Smithers needs you/ }),
+  // The top bar's bell (docs/features/notifications.md#the-top-bar).
+  header: tab.page.getByRole("button", { name: /^Notifications/ }),
+  // This run's entry in the notifications panel the bell opens. Runs an earlier test left open wait on the same person,
+  // so the bell's count alone doesn't say this run is one of them; its entry does.
+  entry: tab.page.getByRole("dialog", { name: "Notifications" }).locator(`[data-slot="notification"][data-entry="run:${answerId}"]`),
 })
 
-test("needs you: the agent asks, every surface on every device shows it, and an answer from another device resumes the run", async ({ devices }) => {
-  test.setTimeout(300_000)
+test("needs you: the agent asks, every surface on every device shows it, and an answer from another device resumes the run", { annotation: { type: "summary", description: "When the agent asks a question, every device shows it, and an answer from any device lets the run go on." } }, async ({ devices }) => {
+  test.setTimeout(120_000)
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
   // A's engine worker answers with the scripted agent.
@@ -32,17 +36,23 @@ test("needs you: the agent asks, every surface on every device shows it, and an 
   const answerId = a.asked.find((asked) => asked.text === question)!.answerId
 
   for (const tab of [a, b]) {
-    const { card, toast, header } = surfaces(tab, answerId)
-    await expect(card, `${tab.name}: the question shows in the conversation`).toBeVisible({ timeout: 60_000 })
+    const { card, toast, header, entry } = surfaces(tab, answerId)
+    await expect(card, `${tab.name}: the question shows in the conversation`).toBeVisible({ timeout: 30_000 })
     await expect(card).toHaveAttribute("role", "group")
     await expect(card).toHaveAccessibleName(PROMPT)
     await expect(card.getByRole("button", { name: "docs-v2" })).toBeVisible()
-    await expect(header, `${tab.name}: the header says the agent needs you`).toBeVisible()
-    // The toast is the feed's, its own shape (docs/features/notifications.md): under the dev server's HTTP/1.1, a
-    // device's live shapes share six connections, so it can arrive a long poll after the card.
-    await expect(toast, `${tab.name}: a toast says so, with Answer`).toContainText(`Needs you · ${PROMPT}`, { timeout: 60_000 })
+    // The toast is the feed's, its own shape (docs/features/notifications.md), so it can arrive a response after the card;
+    // a person with many runs left open by earlier tests has a larger feed to sync first.
+    await expect(toast, `${tab.name}: a toast says so, with Answer`).toContainText(`Needs you · ${PROMPT}`, { timeout: 30_000 })
+    // The top bar's bell reads the same feed.
+    await expect(header, `${tab.name}: the top bar says the agent needs you`).toContainText("Needs you", { timeout: 15_000 })
     // Nothing covers it, the open composer included: a trial click finds the button takes the pointer.
     await toast.getByRole("button", { name: "Answer" }).click({ trial: true })
+    // One click on the bell opens the panel at the newest run waiting on the person: this one, with its question.
+    await header.click()
+    await expect(entry, `${tab.name}: the bell opens at this run`).toHaveAttribute("data-expanded", "")
+    await expect(entry.getByRole("button", { name: "docs-v2" })).toBeVisible()
+    await tab.page.keyboard.press("Escape")
     // Questions an earlier run left open count too.
     await expect.poll(() => titleCount(tab.page), { message: `${tab.name}: the title counts it` }).toBeGreaterThan(0)
   }
@@ -57,19 +67,22 @@ test("needs you: the agent asks, every surface on every device shows it, and an 
 
   // A's engine holds the run: it gets the answer through sync, and its agent goes on.
   for (const tab of [a, b]) {
-    const { card, toast, header } = surfaces(tab, answerId)
-    await tab.expectAnswered(question, "Deploying docs-v2.", 120_000)
+    const { card, toast, header, entry } = surfaces(tab, answerId)
+    await tab.expectAnswered(question, "Deploying docs-v2.", 30_000)
     await expect(card, `${tab.name}: the question shows what was answered`).toHaveAttribute("data-state", "answered")
     await expect(card).toContainText("docs-v2")
-    await expect(toast).toHaveCount(0, { timeout: 60_000 })
+    await expect(toast).toHaveCount(0, { timeout: 15_000 })
     // Questions an earlier run left open may close meanwhile too, so the count only has to drop.
     await expect.poll(() => titleCount(tab.page), { message: `${tab.name}: the title stops counting it` })
       .toBeLessThan(open[tab.name as "A" | "B"])
-    if ((await titleCount(tab.page)) === 0) await expect(header).toHaveCount(0)
+    // In the panel, this run no longer waits on the person.
+    await header.click()
+    await expect(entry, `${tab.name}: this run is done`).toContainText("Done", { timeout: 15_000 })
+    await tab.page.keyboard.press("Escape")
   }
 })
 
-test("needs you, live: the real model asks with app/agent/ask, and the person's answer reaches it", async ({ devices }) => {
+test("needs you, live: the real model asks with app/agent/ask, and the person's answer reaches it", { annotation: { type: "summary", description: "The real model asks a question, and the person's answer reaches it." } }, async ({ devices }) => {
   test.setTimeout(420_000)
   const word = devices.word
   const [a] = await devices.open("A")

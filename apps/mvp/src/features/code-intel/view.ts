@@ -1,0 +1,51 @@
+import type { CodeIntelRow } from "./rows"
+
+// What the code view draws from the row, for any frontend: the marks on the code, the hover card and the Symbols pane.
+// Lines and columns are 1-based.
+
+/** The problems at a 1-based position: those whose range holds it. */
+export const problemsAt = (row: CodeIntelRow, at: { readonly line: number; readonly column: number }) =>
+  row.problems.filter((problem) =>
+    (problem.line < at.line || (problem.line === at.line && problem.column <= at.column)) &&
+    (problem.endLine > at.line || (problem.endLine === at.line && problem.endColumn > at.column))
+  )
+
+/** A problem that runs past its line underlines to the line's end. */
+const LINE_END = Number.MAX_SAFE_INTEGER
+
+/** The selected symbol's occurrences in this file, then every problem. */
+export const marksOf = (row: CodeIntelRow) => [
+  ...row.highlights.map((at) => ({ line: at.line, column: at.column, kind: "symbol" as const })),
+  ...row.problems.map((problem) => ({
+    line: problem.line,
+    column: problem.column,
+    end: problem.endLine === problem.line ? problem.endColumn : LINE_END,
+    kind: problem.severity,
+  })),
+]
+
+/** The hover card: its signature, its documentation and the problems under its token. */
+export const hoverCardOf = (row: CodeIntelRow) => {
+  if (row.hover === null) return undefined
+  const { line, column, signature, documentation } = row.hover
+  return {
+    line,
+    column,
+    signature: signature ?? undefined,
+    documentation,
+    problems: problemsAt(row, { line, column }).map((problem) => ({ severity: problem.severity, message: problem.message })),
+  }
+}
+
+/** The Symbols pane, when it is open: the selected symbol's places, or the outline. */
+export const paneOf = (row: CodeIntelRow) =>
+  !row.pane ? undefined : {
+    symbol: row.symbol === null
+      ? undefined
+      : {
+        name: row.symbol.name,
+        definitions: row.definitions ?? undefined,
+        references: row.references ?? undefined,
+      },
+    outline: row.outline ?? undefined,
+  }

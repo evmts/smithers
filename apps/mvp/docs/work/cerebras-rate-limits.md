@@ -1,11 +1,45 @@
 ---
 title: Cerebras rate-limit plan
-status: idea
+status: blocked
 area: infra
-owner: unassigned
-updated: 2026-10-20
-links: [../features/chat.md, ../benchmarks.md, agent-status.md, chat-message-controls.md, model-step.md, model-endpoint.md, dev-stack-hygiene.md]
+owner: lead coordinates capacity follow-up; Will sends provider request
+updated: 2026-10-20 23:44 PDT
+links: [cerebras-load.md, h2-model-transport.md, ../features/chat.md, ../benchmarks.md, agent-status.md, chat-message-controls.md, model-step.md, model-endpoint.md, dev-stack-hygiene.md]
 ---
+
+## Tracker reconciliation — 2026-10-20 23:44 PDT
+
+**What:** Send the approved measured-capacity request, then obtain a provider response.
+
+**Why:** Measured rate limits do not support the expected user traffic.
+
+**Current state:** At 23:35 Will authorized a Codex computer-use agent to send the draft through Arc. At 23:36 the lead reports it stopped because Arc and the Mac were in active use. The email was not sent. This supersedes the old requirement that Will send it himself.
+
+**Next step:** Lead reruns the authorized send when Arc is free; retain send evidence and provider response. This tracker sends no message.
+
+**Open questions for Will:** When is Arc free? Existing authorization covers the drafted message; do not ask for approval again.
+
+Evidence: user-typed text and lead text replies extracted by script from session 6253ecf2, approximately 21:44–23:44 PDT; queue answers through 23:38:44, current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Synthetic notifications and tool content excluded. Later rulings supersede retained history. Product receipts are lead-reported; this tracker validates the maintainer-site build. Execution ownership retained; documentation reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 21:04 PDT
+
+**What:** Resolve provider capacity for expected traffic using the completed load-test evidence.
+
+**Why:** Will asked what happens at hundreds of users and chose measurement before a capacity request.
+
+**Current state:** The 20:59 lead reports the transport fixed and sustained provider rate limits measured: 343 of 542 requests at concurrency 10 returned HTTP 429. Headers report 150k TPM and 450 RPM. The unsent capacity request is queued at priority 960. This supersedes the earlier “no confirmed provider 429” and “no load run” statements retained below. Neither the test nor a proposed tier proves support for hundreds of users.
+
+**Next step:** Review the draft’s measured limits and user-count assumptions, then follow up on the provider’s actual offered capacity. Retain durable retry and budget distinctions. Older proposals for quotas, token-history limits or fallback are ideas, not newly authorized implementation.
+
+**Open questions for Will:** Review and send the queued capacity request; no message is sent by this tracker.
+
+Evidence: script-filtered lead updates through 21:04 PDT, queue answers and cerebras-load.md. Existing experiment receipts are reported evidence; this tracker runs only the site build.
+
+## Earlier tracker history (retained)
+
 
 ## What
 

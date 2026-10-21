@@ -20,6 +20,7 @@ import { NewFlowScreen } from "./screens/flows/NewFlowScreen"
 import { IssueScreen } from "./screens/issues/IssueScreen"
 import { StackScreen } from "./screens/stack/StackScreen"
 import { TodoScreen } from "./screens/stack/TodoScreen"
+import { commitmentSearch } from "./features/issues/lifecycle"
 import { IssuesScreen } from "./screens/issues/IssuesScreen"
 import { NewIssueScreen } from "./screens/issues/NewIssueScreen"
 import { Landing } from "./screens/landing/Landing"
@@ -28,16 +29,21 @@ import { RepoScreen } from "./screens/repo/RepoScreen"
 import { Root } from "./screens/root/Root"
 import { RunScreen } from "./screens/runs/RunScreen"
 import { RunsScreen } from "./screens/runs/RunsScreen"
+import { SettingsScreen } from "./screens/settings/SettingsScreen"
 import { ViewScreen } from "./screens/view/ViewScreen"
 
 // The app's routes. A repository's are GitHub's paths (decision 0006 §2): swapping github.com for the app's domain
-// opens the same view. Each repository route's loader opens its location through the repository layer main.tsx hands
-// the router (`openRoute`), so nothing loads from a component. `?L=` is a loader dependency: a new line anchor opens
-// the location again.
+// opens the same view. Each route opens what it shows through the layers main.tsx hands the router, so nothing loads
+// from a component; a new `?L=` line anchor opens the location again.
+//
+// Loading (docs/features/navigation.md): a link's hover or focus preloads its page (`defaultPreload: "intent"`), which
+// warms what the page shows into the device; a navigation warms it too, then opens it. The router keeps the previous
+// page on screen until then, and Root's LoadingBar shows only if that takes longer than LOADING_DELAY_MS. A page whose
+// files are still on their way after a second shows with skeletons in their place, never blank.
 
 /**
- * What every route's loader gets: the repository, its home, views, branch, terminal, issues, runs and flows layers,
- * from main.tsx's `RouterProvider`.
+ * What every route gets: the repository, its home, views, branch, terminal, issues, runs and flows layers, from
+ * main.tsx's `RouterProvider`.
  */
 export interface RouterContext {
   readonly repo: RepoView
@@ -52,13 +58,43 @@ export interface RouterContext {
 }
 
 /**
- * A branch page's search: `?L=` as any repository page's, and `?terminal`, which shows the branch's terminal: `me` for
- * the person's own, or a terminal's id to watch (decision 0013 §5).
+ * A branch page's search: `?L=` as any repository page's; `?terminal`, which shows the branch's terminal: `me` for the
+ * person's own, or a terminal's id to watch (decision 0013 §5); and `?edit`, a file of the branch's working copy in the
+ * live editor (docs/features/coedit.md#files).
  */
-const branchSearch = (search: Record<string, unknown>): { readonly L?: unknown; readonly terminal?: string } => ({
+const branchSearch = (
+  search: Record<string, unknown>,
+): { readonly L?: unknown; readonly terminal?: string; readonly edit?: string } => ({
   ...lineSearch(search),
   ...(typeof search.terminal === "string" && search.terminal !== "" ? { terminal: search.terminal } : {}),
+  ...(typeof search.edit === "string" && search.edit !== "" ? { edit: search.edit } : {}),
 })
+
+/** How long a link must be hovered before its page preloads, so a pointer sweeping over a list preloads nothing. */
+export const PRELOAD_DELAY_MS = 50
+
+/** What a route's `beforeLoad` knows of the load it is part of. */
+interface Load {
+  /** A link's hover or focus, not a navigation. */
+  readonly preload: boolean
+  /** Aborted once a newer navigation takes over. */
+  readonly abortController: AbortController
+}
+
+/**
+ * Every route opens what it shows in `beforeLoad`, never a loader: the router runs `beforeLoad` afresh for each
+ * navigation and each preload, while a navigation adopts a loader a preload left in flight (router-core's flights), so
+ * a loader can't tell a preload from the click that follows it. A preload only warms what the page shows; a navigation
+ * warms it, then opens it, unless a newer navigation took over.
+ */
+const enter = async (load: Load, warm: () => unknown, open: () => unknown): Promise<void> => {
+  await warm()
+  if (load.preload || load.abortController.signal.aborted) return
+  await open()
+}
+
+/** A page whose data is on the device already: nothing to warm. */
+const local = () => undefined
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({ component: Root })
 
@@ -69,12 +105,13 @@ const appRoute = createRoute({
   path: "/app",
   component: AppScreen,
   // The home conversation (decision 0013 §5): a tab that showed a branch asks here again.
-  loader: ({ context }) =>
-    Promise.all([
-      context.branch.actions.leave(),
-      context.branch.presence.actions.leave(),
-      context.terminal.actions.show(null),
-    ]),
+  beforeLoad: (load) =>
+    enter(load, local, () =>
+      Promise.all([
+        load.context.branch.actions.leave(),
+        load.context.branch.presence.actions.leave(),
+        load.context.terminal.actions.show(null),
+      ])),
 })
 
 /**
@@ -89,8 +126,8 @@ const viewRoute = createRoute({
     typeof search.conversation === "string" && /^[0-9a-f-]{36}$/i.test(search.conversation)
       ? { conversation: search.conversation.toLowerCase() }
       : {},
-  loaderDeps: ({ search }) => ({ conversation: search.conversation }),
-  loader: ({ context, params, deps }) => context.views.actions.show(params.viewId, deps.conversation),
+  beforeLoad: (load) =>
+    enter(load, local, () => load.context.views.actions.show(load.params.viewId, load.search.conversation)),
 })
 
 /** `/app/flows`: your own flows and drafts (decision 0014 §5). `app` is a reserved owner, so no repository matches. */
@@ -103,8 +140,7 @@ const newFlowRoute = createRoute({
   component: NewFlowScreen,
   validateSearch: (search: Record<string, unknown>): { readonly name?: string } =>
     typeof search.name === "string" && search.name !== "" ? { name: search.name } : {},
-  loaderDeps: ({ search }) => ({ name: search.name }),
-  loader: ({ context, deps }) => context.flows.actions.openNew(deps.name),
+  beforeLoad: (load) => enter(load, local, () => load.context.flows.actions.openNew(load.search.name)),
 })
 
 /** `/app/flows/drafts/$draftId`: one draft at its full size. */
@@ -112,7 +148,7 @@ const draftRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/app/flows/drafts/$draftId",
   component: DraftScreen,
-  loader: ({ context, params }) => context.flows.actions.openDraft(params.draftId),
+  beforeLoad: (load) => enter(load, local, () => load.context.flows.actions.openDraft(load.params.draftId)),
 })
 
 /** `/app/flows/code/$name`: a flow's code, to read and edit. */
@@ -120,7 +156,7 @@ const codeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/app/flows/code/$name",
   component: CodeScreen,
-  loader: ({ context, params }) => context.flows.actions.openCode(params.name),
+  beforeLoad: (load) => enter(load, local, () => load.context.flows.actions.openCode(load.params.name)),
 })
 
 /** `/app/runs`: every run on this device (decision 0014 §5). */
@@ -128,63 +164,84 @@ const runsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/app/runs",
   component: RunsScreen,
-  loader: ({ context }) => context.runs.actions.openList(),
+  beforeLoad: (load) => enter(load, local, () => load.context.runs.actions.openList()),
 })
+
+/** `/app/settings`: the deployment's settings, for an Admin; their rows sync to an Admin's devices. */
+const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/app/settings", component: SettingsScreen })
 
 /** `/app/runs/$runId`: one run's page, read from this device's engine. */
 const runRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/app/runs/$runId",
   component: RunScreen,
-  loader: ({ context, params }) => context.runs.actions.openRun(params.runId),
+  beforeLoad: (load) => enter(load, local, () => load.context.runs.actions.openRun(load.params.runId)),
 })
 
 /**
  * `/$owner/$repo`: the repository's own home when it declares one (decision 0014 §4), else its root at its default
- * branch. The loader opens both the location and the home.
+ * branch. Both the location and the home are warmed, then opened.
  */
 const repoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo",
   component: RepoHomeScreen,
   validateSearch: lineSearch,
-  loaderDeps: ({ search }) => ({ L: search.L }),
-  loader: ({ context, params, deps }) => {
-    context.repo.actions.openRoute("tree", params, deps)
-    context.home.actions.open(params.owner, params.repo)
-  },
+  beforeLoad: ({ context, params, search, ...load }) =>
+    enter(
+      load,
+      () =>
+        Promise.all([
+          context.repo.actions.warmRoute("tree", params, search),
+          context.home.actions.warm(params.owner, params.repo),
+        ]),
+      () => {
+        context.repo.actions.openRoute("tree", params, search)
+        context.home.actions.open(params.owner, params.repo)
+      },
+    ),
 })
 
 /**
  * `/$owner/$repo/tree/$ref/$`: a directory at a branch or commit, and the branch's workspace (decision 0013 §5): its
- * conversation, its room, and its terminal under `?terminal`. The loader opens the location and tracks the branch at
- * once, joins the branch's room and says where on the page this person is; leaving the route leaves the room.
+ * conversation, its room, and its terminal under `?terminal`. The location is warmed; then the route opens it and
+ * tracks the branch at once, joins the branch's room and says where on the page this person is; leaving the route
+ * leaves the room. A preload only warms the files: it joins no room.
  */
 const treeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/tree/$ref/$",
   component: BranchScreen,
   validateSearch: branchSearch,
-  loaderDeps: ({ search }) => ({ L: search.L, terminal: search.terminal }),
-  loader: ({ context, params, deps }) =>
-    Promise.all([
-      context.repo.actions.openRoute("tree", params, { L: deps.L }),
-      context.branch.actions.open(params.owner, params.repo, params.ref).then(async (branchId) => {
-        const { presence } = context.branch
-        if (branchId === undefined) {
-          await context.terminal.actions.show(null)
-          return presence.actions.leave()
-        }
-        await presence.actions.join(branchId)
-        if (deps.terminal === undefined) {
-          await context.terminal.actions.show(null)
-          return presence.actions.at({ view: "code", path: params._splat ?? "" })
-        }
-        const terminalId = await context.terminal.actions.show(branchId, deps.terminal === "me" ? undefined : deps.terminal)
-        return presence.actions.at({ view: "terminal", terminalId })
-      }),
-    ]),
-  onLeave: ({ context }) => void context.branch.presence.actions.leave(),
+  beforeLoad: ({ context, params, search, ...load }) =>
+    enter(load, () => context.repo.actions.warmRoute("tree", params, { L: search.L }), () =>
+      Promise.all([
+        context.repo.actions.openRoute("tree", params, { L: search.L }),
+        context.branch.actions.open(params.owner, params.repo, params.ref).then(async (branchId) => {
+          const { presence, coedit } = context.branch
+          if (branchId === undefined) {
+            await context.terminal.actions.show(null)
+            return presence.actions.leave()
+          }
+          await presence.actions.join(branchId)
+          // The file in the live editor under `?edit`, or none: its room is left with the editor.
+          const editing = search.terminal === undefined ? search.edit : undefined
+          await coedit.actions.showFile(branchId, editing)
+          if (search.terminal === undefined) {
+            await context.terminal.actions.show(null)
+            return presence.actions.at(editing === undefined ? { view: "code", path: params._splat ?? "" } : { view: "edit", path: editing })
+          }
+          const terminalId = await context.terminal.actions.show(
+            branchId,
+            search.terminal === "me" ? undefined : search.terminal,
+          )
+          return presence.actions.at({ view: "terminal", terminalId })
+        }),
+      ])),
+  onLeave: ({ context }) => {
+    void context.branch.presence.actions.leave()
+    void context.branch.coedit.actions.hideFiles()
+  },
 })
 
 /**
@@ -196,11 +253,11 @@ const blobRoute = createRoute({
   path: "/$owner/$repo/blob/$ref/$",
   component: RepoScreen,
   validateSearch: lineSearch,
-  loaderDeps: ({ search }) => ({ L: search.L }),
-  loader: ({ context, params, deps }) => {
-    context.repo.actions.openRoute("blob", params, deps)
-    context.home.actions.open(params.owner, params.repo)
-  },
+  beforeLoad: ({ context, params, search, ...load }) =>
+    enter(load, () => context.repo.actions.warmRoute("blob", params, search), () => {
+      context.repo.actions.openRoute("blob", params, search)
+      context.home.actions.open(params.owner, params.repo)
+    }),
 })
 
 /**
@@ -212,26 +269,34 @@ const rawRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/raw/$ref/$",
   component: RepoScreen,
-  loader: async ({ context, params }) => {
-    context.home.actions.open(params.owner, params.repo)
-    const href = await context.repo.actions.rawRoute(params)
-    if (href !== undefined) throw redirect({ href, reloadDocument: true })
-  },
+  // Nothing to warm: a preload would load the raw file in place of the app.
+  beforeLoad: ({ context, params, ...load }) =>
+    enter(load, local, async () => {
+      context.home.actions.open(params.owner, params.repo)
+      const href = await context.repo.actions.rawRoute(params)
+      if (href !== undefined) throw redirect({ href, reloadDocument: true })
+    }),
 })
 
 /**
  * `/$owner/$repo/issues`: the repository's issues (decision 0012 §6). The route opens its stack too, so each issue shows
- * the TODOs made from it.
+ * the TODOs made from it; a preload starts both syncs.
  */
 const issuesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/issues",
   component: IssuesScreen,
-  loader: ({ context, params }) =>
-    Promise.all([
-      context.issues.actions.open(params.owner, params.repo),
-      context.todos.actions.open(params.owner, params.repo),
-    ]),
+  validateSearch: commitmentSearch,
+  beforeLoad: ({ context, params, ...load }) =>
+    enter(
+      load,
+      () => Promise.all([context.issues.actions.warm(), context.todos.actions.warm(params.owner, params.repo)]),
+      () =>
+        Promise.all([
+          context.issues.actions.open(params.owner, params.repo),
+          context.todos.actions.open(params.owner, params.repo),
+        ]),
+    ),
 })
 
 /** `/$owner/$repo/issues/new`: the new-issue form. */
@@ -239,7 +304,8 @@ const newIssueRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/issues/new",
   component: NewIssueScreen,
-  loader: ({ context, params }) => context.issues.actions.open(params.owner, params.repo),
+  beforeLoad: ({ context, params, ...load }) =>
+    enter(load, () => context.issues.actions.warm(), () => context.issues.actions.open(params.owner, params.repo)),
 })
 
 /** `/$owner/$repo/issues/$number`: one issue, and the TODOs made from it; any other `$number` matches no route. */
@@ -254,11 +320,16 @@ const issueRoute = createRoute({
     },
     stringify: (params) => ({ ...params, number: String(params.number) }),
   },
-  loader: ({ context, params }) =>
-    Promise.all([
-      context.issues.actions.open(params.owner, params.repo, params.number),
-      context.todos.actions.open(params.owner, params.repo),
-    ]),
+  beforeLoad: ({ context, params, ...load }) =>
+    enter(
+      load,
+      () => Promise.all([context.issues.actions.warm(), context.todos.actions.warm(params.owner, params.repo)]),
+      () =>
+        Promise.all([
+          context.issues.actions.open(params.owner, params.repo, params.number),
+          context.todos.actions.open(params.owner, params.repo),
+        ]),
+    ),
 })
 
 /**
@@ -271,7 +342,12 @@ const stackRoute = createRoute({
   component: StackScreen,
   validateSearch: (search: Record<string, unknown>): { readonly state?: StackFilter } =>
     stackFilterOf(search.state) === "closed" ? { state: "closed" } : {},
-  loader: ({ context, params }) => context.todos.actions.open(params.owner, params.repo),
+  beforeLoad: ({ context, params, ...load }) =>
+    enter(
+      load,
+      () => context.todos.actions.warm(params.owner, params.repo),
+      () => context.todos.actions.open(params.owner, params.repo),
+    ),
 })
 
 /** `/$owner/$repo/stack/$number`: TODO `T<number>`'s page, as GitHub's issue page; any other `$number` matches no route. */
@@ -286,7 +362,12 @@ const todoRoute = createRoute({
     },
     stringify: (params) => ({ ...params, number: String(params.number) }),
   },
-  loader: ({ context, params }) => context.todos.actions.open(params.owner, params.repo, params.number),
+  beforeLoad: ({ context, params, ...load }) =>
+    enter(
+      load,
+      () => context.todos.actions.warm(params.owner, params.repo),
+      () => context.todos.actions.open(params.owner, params.repo, params.number),
+    ),
 })
 
 export const router = createRouter({
@@ -300,6 +381,7 @@ export const router = createRouter({
     codeRoute,
     runsRoute,
     runRoute,
+    settingsRoute,
     repoRoute,
     treeRoute,
     blobRoute,
@@ -310,6 +392,9 @@ export const router = createRouter({
     stackRoute,
     todoRoute,
   ]),
+  // A link's hover or focus preloads its page: its route's `beforeLoad` warms what it shows (`enter`).
+  defaultPreload: "intent",
+  defaultPreloadDelay: PRELOAD_DELAY_MS,
   // main.tsx's `RouterProvider` gives the real one before the first load.
   context: {
     repo: undefined!,

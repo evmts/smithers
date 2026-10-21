@@ -1,6 +1,7 @@
 // What the tab loads (decision 0011 §4, docs/features/flows.md#how-a-dispatch-runs): the page's module graph never
-// reaches @smthrs/agent, @smthrs/std or a Node built-in. The agent runs in the engine worker, a bundle of its own
-// (src/flows/engine.worker.ts → src/flows/registrations.ts); the tab dispatches by the registry's references. A tab that
+// reaches @smthrs/agent or a Node built-in, and reaches @smthrs/std only through code intelligence's LanguageServer
+// seam. The agent runs in the engine worker, a bundle of its own (src/flows/engine.worker.ts →
+// src/flows/registrations.ts); the tab dispatches by the registry's references. A tab that
 // imports the agent fails before it renders: Vite stubs `node:` modules in the page, and the stub throws when read.
 //
 // The graph is esbuild's, as `packages/repo-targets/browser/browser-check.mjs` bundles the SDK's browser entry points:
@@ -8,7 +9,7 @@
 // src/test/e2e.ts) is walked too. Stylesheets are left out; the engine worker isn't imported, only started by URL.
 import { build } from "esbuild"
 import { isBuiltin } from "node:module"
-import { join } from "node:path"
+import { join, relative } from "node:path"
 import { describe, expect, test } from "vitest"
 
 const app = join(import.meta.dirname, "../..")
@@ -33,7 +34,7 @@ const reached = async (entry: string): Promise<ReadonlyArray<string>> => {
       setup: (graph) => {
         graph.onResolve({ filter: /\.css$/ }, (args) => ({ path: args.path, external: true }))
         graph.onResolve({ filter: /.*/ }, (args) => {
-          if (forbidden(args.path)) found.add(`${args.path} <- ${args.importer.replace(`${app}/`, "")}`)
+          if (forbidden(args.path)) found.add(`${args.path} <- ${relative(app, args.importer)}`)
           // A Node built-in can't resolve for a browser: keep it out of the bundle, and keep walking.
           return isBuiltin(args.path) ? { path: args.path, external: true } : undefined
         })
@@ -43,9 +44,21 @@ const reached = async (entry: string): Promise<ReadonlyArray<string>> => {
   return [...found]
 }
 
+/**
+ * The one door the page has into `@smthrs/std`: code intelligence binds std's `LanguageServer` seam to a language server
+ * in a Web Worker (docs/design/code-intelligence/DESIGN.md). Its module graph reaches no Node built-in; any other
+ * importer of std, or of the agent, fails the check.
+ */
+const languageServerSeam = new Set([
+  "@smthrs/std <- src/features/code-intel/session.ts",
+  "@smthrs/std <- ../../packages/smithers/flows/platform-browser/src/BrowserLanguageServer.ts",
+])
+
 describe("the tab's modules", () => {
-  test("the page never imports the agent, its standard tools or Node", async () => {
-    expect(await reached("src/main.tsx")).toEqual([])
+  test("the page never imports the agent, its standard tools or Node; std only through the language-server seam", async () => {
+    const found = await reached("src/main.tsx")
+    expect(found.filter((edge) => !languageServerSeam.has(edge))).toEqual([])
+    expect(found.filter((edge) => languageServerSeam.has(edge)).sort()).toEqual([...languageServerSeam].sort())
   })
 
   test("the check sees them where they are: the engine worker's registrations import the agent", async () => {

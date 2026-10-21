@@ -117,6 +117,19 @@ export const rawRoute = (owner: string, name: string, sha: string, path: string)
 export const refsRoute = (owner: string, name: string): string =>
   `${REPOS_ROUTE}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/refs`
 
+/** `GET` route of what GitHub says of a repository, cloned or not: `About` (schema.ts). */
+export const aboutRoute = (owner: string, name: string): string =>
+  `${REPOS_ROUTE}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/about`
+
+/** The most contributors the about answer names; the rest are counted. */
+export const ABOUT_CONTRIBUTORS = 12
+
+/** The most top-level entries the about answer lists before a clone. */
+export const ABOUT_ROOT_ENTRIES = 1000
+
+/** Where the Smithers GitHub App is installed, by the App's `slug`. */
+export const installUrl = (slug: string): string => `https://github.com/apps/${encodeURIComponent(slug)}/installations/new`
+
 /** One page of branches or tags from Code Storage. */
 export const REFS_PAGE_SIZE = 100
 
@@ -211,6 +224,12 @@ export const SIGN_IN_TO_CLONE = "Sign in to clone"
 /** A repository GitHub doesn't have, or keeps private. */
 export const NOT_FOUND = "Not found"
 
+/** The Code view of a repository nobody cloned yet, or whose clone failed or was refused: Clone is in its header. */
+export const NOT_CLONED = "Not cloned"
+
+/** The Code view while the repository clones. */
+export const CLONING = "Cloning"
+
 /** What a failed clone shows, by failure. */
 export const FAILURE_COPY: Readonly<Record<Failure, string>> = {
   not_found: NOT_FOUND,
@@ -227,6 +246,63 @@ export const CAPACITY_COPY: Readonly<Record<CapacityReason, string>> = {
   too_large: "Too large to import",
   size_unknown: "Can't check its size until",
 }
+
+/** How far a running clone has come: RepoApi took it, Code Storage is fetching it from GitHub, or its files are being listed. */
+export const CLONE_STAGES = ["requested", "fetching", "indexing"] as const
+export type CloneStage = (typeof CLONE_STAGES)[number]
+
+/** A running clone's stage, as its toast says it. */
+export const CLONE_STAGE_COPY: Readonly<Record<CloneStage, string>> = {
+  requested: "Requested",
+  fetching: "Fetching",
+  indexing: "Indexing",
+}
+
+/** The feed row of repository `id`'s clone (worker/CloneFeed.ts): one per person who asked, `clone:<id>`. */
+export const cloneSubject = (id: string): string => `clone:${id}`
+
+/**
+ * What a clone's feed row says in its `ref`: the stage while it runs, with the size once admission knows it
+ * (`fetching:<bytes>`, `indexing:<bytes>`); `ready`; or `failed:<failure>` or `capacity:<reason>`.
+ */
+export const cloneRef = (stage: CloneStage, bytes?: number): string =>
+  bytes === undefined || stage === "requested" ? stage : `${stage}:${bytes}`
+
+/** Bytes in the largest whole unit, one decimal past KB: `512 B`, `1.2 MB`. */
+export const formatBytes = (bytes: number): string => {
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit++
+  }
+  return unit === 0 ? `${value} B` : `${value.toFixed(1)} ${units[unit]}`
+}
+
+/**
+ * A clone feed row's detail from its `ref`: `Fetching 1.2 MB` while it runs, why it failed or was refused, or `null`
+ * once ready, or for a `ref` this app doesn't know.
+ */
+export const cloneDetail = (ref: string | null): string | null => {
+  const [kind = "", value] = (ref ?? "").split(":", 2)
+  if ((CLONE_STAGES as ReadonlyArray<string>).includes(kind)) {
+    const words = CLONE_STAGE_COPY[kind as CloneStage]
+    const bytes = value === undefined ? Number.NaN : Number(value)
+    return Number.isFinite(bytes) && bytes >= 0 ? `${words} ${formatBytes(bytes)}` : words
+  }
+  if (kind === "failed") return FAILURE_COPY[value as Failure] ?? FAILURE_COPY.unavailable
+  if (kind === "capacity") {
+    return value === "size_unknown" ? "Can't check its size" : CAPACITY_COPY[value as CapacityReason] ?? CAPACITY_COPY.paused
+  }
+  return null
+}
+
+/** The quiet note on a cloned repository whose copy may be reclaimed: until the Smithers GitHub App is installed on it. */
+export const RECLAIMABLE = "Until the Smithers app is installed, this copy may be reclaimed for space."
+
+/** Opens the Smithers GitHub App's installation on GitHub. */
+export const INSTALL = "Install"
 
 /** A view read Code Storage couldn't answer. */
 export const BUSY = "Code Storage is busy"
@@ -249,6 +325,8 @@ export const REPO_TELEMETRY = {
     "repo.tree.load",
     "repo.blob.load",
     "repo.refs.load",
+    "repo.about.load",
+    "repo.about.get",
     "repo.clone.unconfirmed",
     "repo.copy",
     "repo.clone.post",
@@ -261,6 +339,7 @@ export const REPO_TELEMETRY = {
     "smithers_web_repo_tree_load_ms",
     "smithers_web_repo_blob_load_ms",
     "smithers_web_repo_refs_load_ms",
+    "smithers_web_repo_about_load_ms",
     "smithers_web_repo_copies",
     "execute_tool repo/tree",
     "execute_tool repo/read",

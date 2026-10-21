@@ -13,6 +13,20 @@ Each verdict is `{ verdict, confidence }`, with `confidence` from 0 to 1 as `Cla
 
 Both are model-invocable and in the registry, so the agent's catalog has them ([flows](flows.md#the-agents-catalog)). Neither has a slash command: a person's run would have nowhere to show its verdicts, so a person asks Smithers.
 
+**The agent picks Jev on its own.** A person never has to name it. `app/jev/classify`'s description, which the agent reads in its catalog, says when to use it: whenever the person asks to sort, group, label, triage, filter or pick from a list of two or more items, with every item in one call and the person's categories as `labels`, and never to decide over a list itself. "Sort these issue titles into bug, feature and question: …" runs `app/jev/classify` with the three labels (Will, 2026-10-20 19:52: "a test where we don't explicitly ask for jev but it uses jev"). The agent eval `jev-sort` holds it to that ([agent evals](agent-evals.md#cases)).
+
+## Seeing that Smithers used Jev
+
+An answer's debug info, an icon among its hover controls, opens the run that answered it ([chat](chat.md#message-controls)). Its flow view shows the answer's steps and the Jev step its call ran:
+
+```
+/app/runs/<answer id>          chat/LoadTurn ─▶ chat/Respond ─▶ chat/Settle
+                               app/jev/classify/judge  ✓ Done      ◀ select: Output = { verdicts }, Open ─▶
+/app/runs/<call's run id>      app/jev/classify   Input = { question, items, labels }   Result = { verdicts }
+```
+
+The step's output is its verdicts. An action step records no input, so the step's Open link leads to the call's own run, `app/jev/classify`, whose Input is what the agent asked and whose Result is what Jev answered ([runs](runs.md#the-run-page)).
+
 ## How a judgment runs
 
 ```
@@ -51,7 +65,9 @@ Counts and verdict codes only: no record carries an item, a question, a label, a
 | Test | Proves |
 |---|---|
 | `src/features/jev/jev.test.ts` | Both flows on the Node host against ChatApi's real model endpoint on the compose Postgres, with a scripted model: one judge call per judgment through the `judge` role, a verdict per item in order with `unsure` below the floor, labels, a rubric, a settled judgment read back without a second call, `invalid_answer` and a signed-out `unreachable`, the payload's bounds, records without a sentinel item, question, label, text or criterion; and the agent's cell calling `app/jev/classify` as a journaled step and reading its verdicts |
-| `e2e/jev.spec.ts` | A real browser asks which of three items are bug reports; the agent calls `app/jev/classify` once, the judgment goes through `/api/model/judge`, and the answer shows a verdict per item |
+| `src/features/jev/jev.test.ts` "the answer's debug info…" | The answer's debug info opens its own run; read as the run screen reads it, its flow view shows `chat/LoadTurn`, `chat/Respond`, `chat/Settle` and `app/jev/classify/judge`, done, with the verdicts as output and a link to the call's run, whose input is the agent's question and items |
+| `e2e/jev.spec.ts` | A real browser asks Smithers to sort nine issue titles into bug, feature and question, never naming Jev. The agent calls `app/jev/classify` once on its own, the judgment goes through `/api/model/judge` once, and the answer groups the titles. Debug info, shown only on hover, opens the answer's run; in its flow view Down moves the highlight through the steps to the Jev step and Enter inspects it; its output holds nine verdicts, and its Open link shows the call's input, every title and the labels. Video and GIF: `~/Desktop/smithers-mvp/videos/jev/jev.mp4`, `gifs/jev-jev.gif` |
+| `evals/cases.ts` `jev-sort` | The real agent and model: the same nine titles go to `app/jev/classify` with labels naming bug, feature and question, and nothing else is called ([agent evals](agent-evals.md#cases)) |
 | `packages/smithers/agent/test/ModelStep.test.ts` "serves a Model…", "fails a Model's stream…" | `ModelStep.model`: calls sealed and replayed on resume, a sealed refusal failing the stream, and its failures |
 
 Run them with the compose Postgres up (`pnpm db:up`): `pnpm exec vitest run src/features/jev`, and `pnpm e2e e2e/jev.spec.ts` against `alchemy dev`.

@@ -5,7 +5,7 @@ import { Metric } from "effect"
 
 /**
  * Write steps, by `op`, `door` (`button`, `slash`, `agent`, or `unknown` when no tab answered) and `outcome`
- * (`queued`, `not_admitted`, `tab_gone`).
+ * (`queued`, `not_admitted`, `tab_gone`, `no_credential`).
  */
 export const writes = Metric.counter("smithers_issue_writes", {
   description: "Issue write steps, by operation, door and outcome",

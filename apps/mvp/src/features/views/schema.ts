@@ -1,3 +1,4 @@
+import { WebPage } from "@smthrs/views"
 import { Schema } from "effect"
 import { MAX_URL_LENGTH } from "../web/contract"
 import { VIEW_TEMPLATES } from "./contract"
@@ -9,8 +10,25 @@ import { VIEW_TEMPLATES } from "./contract"
 /** A view's template. */
 export const Template = Schema.Literals(VIEW_TEMPLATES)
 
-/** What both templates render: the outside page's URL, which the policy allowed (src/features/web/url.ts). */
-export const PageProps = Schema.Struct({ url: Schema.String.check(Schema.isMaxLength(MAX_URL_LENGTH)) })
+/** An `https:` URL with no user or password: the only icon a card loads. */
+const isHttpsUrl = (value: string) => {
+  const url = URL.parse(value)
+  return url !== null && url.protocol === "https:" && url.username === "" && url.password === ""
+}
+
+/**
+ * What both templates render: the outside page's URL, which the policy allowed (src/features/web/url.ts), and what
+ * ChatApi's check read from the page's head (`@smthrs/views`' `WebPage.Preview`): its title, description and `https:`
+ * icon, which a card shows, and a framed page shows until it loads. A row from before the check has the URL alone.
+ */
+export const PageProps = Schema.Struct({
+  url: Schema.String.check(Schema.isMaxLength(MAX_URL_LENGTH)),
+  title: Schema.optional(Schema.String.check(Schema.isMaxLength(WebPage.MAX_TITLE))),
+  description: Schema.optional(Schema.String.check(Schema.isMaxLength(WebPage.MAX_DESCRIPTION))),
+  icon: Schema.optional(
+    Schema.String.check(Schema.isMaxLength(WebPage.MAX_ICON_URL), Schema.makeFilter(isHttpsUrl)),
+  ),
+})
 
 /**
  * One row of Postgres `views` as Electric delivers it: columns in camelCase, `position` (int8) parsed to a number, and

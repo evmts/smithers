@@ -106,21 +106,70 @@ export class RunsStore extends Context.Service<
         initialData: [{ id: VIEW, runId: null, listOpen: false, selected: null, tab: "steps", acting: null, refusal: null }],
       })
 
-      const readRun = (runId: string) =>
+      const readRun = (runId: string, changed?: ReadonlySet<string>) =>
         Effect.gen(function* () {
+          const held = Option.getOrThrow(yield* view.get(VIEW))
+          if (held.runId === runId && held.at != null) return
           const startedAt = yield* Clock.currentTimeMillis
           const read = yield* Effect.result(engine.inspect(runId, { limit: JOURNAL_PAGE }))
+          const afterRead = Option.getOrThrow(yield* view.get(VIEW))
+          if (afterRead.runId === runId && afterRead.at != null) return
           if (read._tag === "Success") {
             const inspection = read.success
             const current = yield* pages.get(runId)
             // A run read again keeps the pages More read only while the first page still ends where they begin.
-            const kept = Option.match(current, {
+            let kept: { more: ReadonlyArray<Inspection["journal"]["events"][number]>; hasMore: boolean } = Option.match(current, {
               onNone: () => ({ more: [], hasMore: inspection.journal.hasMore }),
               onSome: (page) => page.more.length > 0 && inspection.journal.hasMore
-                ? { more: page.more, hasMore: page.hasMore }
+                ? { more: page.more as Inspection["journal"]["events"], hasMore: page.hasMore }
                 : { more: [], hasMore: inspection.journal.hasMore },
             })
-            yield* put(pages, { id: runId, state: "read", inspection, ...kept })
+            // Read finite pages through this inspection's snapshot, never poll or retry.
+            let after = kept.more.at(-1)?.seq ?? inspection.journal.nextSeq
+            // An earlier fully read page can have new events beyond it now.
+            if (inspection.run.lastSeq > after && inspection.journal.hasMore) kept = { ...kept, hasMore: true }
+            while (kept.hasMore && after < inspection.run.lastSeq) {
+              const next = yield* Effect.result(engine.inspect(runId, { afterSeq: after, limit: JOURNAL_PAGE }))
+              if (next._tag === "Failure") break
+              const fresh = next.success.journal.events.filter((event) => event.seq > after)
+              if (fresh.length === 0) break
+              kept = { more: [...kept.more, ...fresh], hasMore: next.success.journal.hasMore }
+              after = fresh.at(-1)!.seq
+            }
+            // Child journals carry their own identities. Never join children by display name.
+            const descendants: Inspection[] = []
+            const seen = new Set([runId])
+            const pending = [...inspection.children.map((child) => child.runId)]
+            for (let i = 0; i < pending.length; i++) {
+              const childId = pending[i]!
+              if (seen.has(childId)) continue
+              seen.add(childId)
+              const previous = Option.isSome(current) ? (current.value.descendants as ReadonlyArray<Inspection> | undefined)?.find((read) => read.run.runId === childId) : undefined
+              if (previous !== undefined && changed !== undefined && !changed.has(childId)) {
+                descendants.push(previous)
+                pending.push(...previous.children.map((child) => child.runId))
+                continue
+              }
+              const child = yield* Effect.result(engine.inspect(childId, { limit: JOURNAL_PAGE }))
+              if (child._tag === "Failure") continue
+              const firstEnd = child.success.journal.nextSeq
+              const retained = child.success.journal.hasMore && previous !== undefined ? previous.journal.events.filter((event) => event.seq > firstEnd) : []
+              const events = [...child.success.journal.events, ...retained]
+              let cursor = events.at(-1)?.seq ?? firstEnd
+              let hasMore = child.success.journal.hasMore && cursor < child.success.run.lastSeq
+              while (hasMore && cursor < child.success.run.lastSeq) {
+                const next = yield* Effect.result(engine.inspect(childId, { afterSeq: cursor, limit: JOURNAL_PAGE }))
+                if (next._tag === "Failure") break
+                const fresh = next.success.journal.events.filter((event) => event.seq > cursor)
+                if (fresh.length === 0) break
+                events.push(...fresh); cursor = fresh.at(-1)!.seq; hasMore = next.success.journal.hasMore
+              }
+              descendants.push({ ...child.success, journal: { ...child.success.journal, events, nextSeq: cursor, hasMore } })
+              pending.push(...child.success.children.map((child) => child.runId))
+            }
+            const latestView = Option.getOrThrow(yield* view.get(VIEW))
+            if (latestView.runId === runId && latestView.at != null) return
+            yield* put(pages, { id: runId, state: "read", inspection, ...kept, descendants })
             yield* put(runs, rowOf(inspection.run))
             return yield* recordRead("run", "read", startedAt, inspection.journal.events.length)
           }
@@ -133,6 +182,8 @@ export class RunsStore extends Context.Service<
 
       const readMore = (runId: string) =>
         Effect.gen(function* () {
+          const held = Option.getOrThrow(yield* view.get(VIEW))
+          if (held.runId === runId && held.at != null) return
           const current = yield* pages.get(runId)
           if (Option.isNone(current) || current.value.inspection === null) return
           const page = current.value
@@ -140,6 +191,8 @@ export class RunsStore extends Context.Service<
           const afterSeq = events.at(-1)?.seq ?? -1
           const read = yield* Effect.result(engine.inspect(runId, { afterSeq, limit: JOURNAL_PAGE }))
           if (read._tag === "Failure") return
+          const latestView = Option.getOrThrow(yield* view.get(VIEW))
+          if (latestView.runId === runId && latestView.at != null) return
           yield* put(pages, {
             ...page,
             more: [...page.more, ...read.success.journal.events],
@@ -158,13 +211,23 @@ export class RunsStore extends Context.Service<
         yield* recordRead("list", "read", startedAt)
       }).pipe(Effect.orDie)
 
+      // Presentation clock only: no engine polling, dispatch, retry or background job.
+      yield* Stream.tick(Duration.seconds(1)).pipe(
+        Stream.runForEach(() => Effect.gen(function* () {
+          const current = Option.getOrThrow(yield* view.get(VIEW))
+          if (current.runId === null || current.at != null) return
+          const now = yield* Clock.currentTimeMillis
+          yield* view.update(VIEW, (draft) => { draft.now = now }).pipe(Effect.orDie)
+        })), Effect.forkScoped,
+      )
+
       // Every event the engine commits reads the open run, and the list while it shows, again.
       yield* engine.events.pipe(
-        Stream.debounce(FOLLOW_EVERY),
-        Stream.runForEach(() =>
+        Stream.groupedWithin(Number.MAX_SAFE_INTEGER, FOLLOW_EVERY),
+        Stream.runForEach((events) =>
           Effect.gen(function* () {
             const current = Option.getOrThrow(yield* view.get(VIEW))
-            if (current.runId !== null) yield* readRun(current.runId)
+            if (current.runId !== null) yield* readRun(current.runId, new Set(events.map((event) => event.executionId)))
             if (current.listOpen) yield* readList
           })
         ),

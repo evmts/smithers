@@ -1,6 +1,7 @@
 import { test as base, expect, type Browser, type BrowserContext, type Page, type TestInfo } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
 import { SIGN_IN, SIGN_OUT } from "../src/features/auth/contract"
+import { DEV_URL } from "../dev/https"
 import {
   ACCEPT,
   ENABLE_TRIAGE,
@@ -33,7 +34,7 @@ import { recordActions, writeManifest } from "./fixtures"
 // The issues list shows a loading state until the repository's first complete sync (0012 §2, never "No issues"
 // before), so these tests don't use the no-spinner fixtures: a loading list is the specified state, not a regression.
 
-const BASE = process.env.BASE_URL ?? "http://localhost:1337"
+const BASE = process.env.BASE_URL ?? DEV_URL
 const local = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(BASE)
 
 /** The repository the "who reads" test opens, read-only: the dev server's default `GITHUB_REPOSITORY`. */
@@ -115,7 +116,7 @@ const test = base.extend<{ devices: Devices }>({
   },
 })
 
-test("who reads: signed out, a repository GitHub hasn't said is public asks to sign in; a Member gets the list", async ({ devices }) => {
+test("who reads: signed out, a repository GitHub hasn't said is public asks to sign in; a Member gets the list", { annotation: { type: "summary", description: "Signed out, a repository not known to be public asks to sign in; a Member sees its issues." } }, async ({ devices }) => {
   test.skip(!local, "signing out on a deployment goes through GitHub; this runs against alchemy dev's local developer")
   test.skip(
     process.env.E2E_ISSUES_REPOSITORY !== undefined || process.env.GITHUB_APP_ID !== undefined,
@@ -153,7 +154,7 @@ const needs = [
   ...(local ? ["GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY"] : []),
 ].filter((name) => (process.env[name] ?? "") === "")
 
-test("two devices: A opens an issue, B sees GitHub number it and comments, A sees the comment", async ({ devices }) => {
+test("two devices: A opens an issue, B sees GitHub number it and comments, A sees the comment", { annotation: { type: "summary", description: "An issue opened on one device gets its GitHub number, and comments flow between devices through GitHub." } }, async ({ devices }) => {
   test.skip(needs.length > 0, `This writes to a scratch GitHub repository: set ${needs.join(", ")}.`)
   test.skip(/^smithersai\//i.test(scratch), "E2E_ISSUES_REPOSITORY may not be a smithersai repository")
   test.setTimeout(240_000)
@@ -188,7 +189,7 @@ test("two devices: A opens an issue, B sees GitHub number it and comments, A see
   await expect(a.page.getByText(comment)).toBeVisible({ timeout: 120_000 })
 })
 
-test("who triages: a Maintainer gets Enable triage beside New issue; signed out, neither", async ({ devices }) => {
+test("who triages: a Maintainer gets Enable triage beside New issue; signed out, neither", { annotation: { type: "summary", description: "A Maintainer can turn on triage; a signed-out person can't." } }, async ({ devices }) => {
   test.skip(!local, "signing out on a deployment goes through GitHub; this runs against alchemy dev's local developer")
   test.skip(
     process.env.E2E_ISSUES_REPOSITORY !== undefined || process.env.GITHUB_APP_ID !== undefined,
@@ -218,7 +219,7 @@ test("who triages: a Maintainer gets Enable triage beside New issue; signed out,
   await expect(list.getByRole("button", { name: ENABLE_TRIAGE })).toBeVisible()
 })
 
-test("triage: a Maintainer enables it, the flow labels a new issue, another device overrides it, and runs it again", async ({ devices }) => {
+test("triage: a Maintainer enables it, the flow labels a new issue, another device overrides it, and runs it again", { annotation: { type: "summary", description: "With triage on, the flow labels a new issue, another device overrides it, and it runs again." } }, async ({ devices }) => {
   test.skip(needs.length > 0, `This writes to a scratch GitHub repository: set ${needs.join(", ")}.`)
   test.skip(/^smithersai\//i.test(scratch), "E2E_ISSUES_REPOSITORY may not be a smithersai repository")
   test.setTimeout(300_000)

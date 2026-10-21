@@ -14,7 +14,7 @@ const painted = (page: Page) => page.evaluate((attribute) => document.documentEl
 /** Typing a person can follow in the video. */
 const typing = { delay: 60 }
 
-test("complete and run: / lists the commands, typing filters, the keyboard completes, and /theme dark sets the theme", async ({ devices }) => {
+test("complete and run: / lists the commands, typing filters, the keyboard completes, and /theme dark sets the theme", { annotation: [{ type: "theme", description: "light" }, { type: "summary", description: "Typing / lists the commands, the keyboard completes one, and /theme dark runs it." }] }, async ({ devices }) => {
   const [a] = await devices.open("A")
   const page = a.page
   // The browser starts light (Playwright's color scheme), with no preference on the device.
@@ -75,7 +75,7 @@ test("complete and run: / lists the commands, typing filters, the keyboard compl
   await expect(a.conversation.locator('.sui-chat-message[data-role="user"]', { hasText: "/nope" })).toHaveCount(0)
 })
 
-test("escape: Escape closes the list and keeps the draft, and a second Escape hides the composer", async ({ devices }) => {
+test("escape: Escape closes the list and keeps the draft, and a second Escape hides the composer", { annotation: { type: "summary", description: "Escape closes the command list and keeps the draft; a second Escape hides the composer." } }, async ({ devices }) => {
   const [a] = await devices.open("A")
   const page = a.page
   await expect(a.chatButton).toBeVisible({ timeout: 30_000 })
@@ -106,7 +106,7 @@ test("escape: Escape closes the list and keeps the draft, and a second Escape hi
 
 const local = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(process.env.BASE_URL ?? "http://localhost:1337")
 
-test("roles: a member-only command is offered to an Admin, never to a signed-out person, and typing one does nothing", async ({ devices }) => {
+test("roles: a member-only command is offered to an Admin, never to a signed-out person, and typing one does nothing", { annotation: { type: "summary", description: "A member-only command is offered to an Admin, never to a signed-out person." } }, async ({ devices }) => {
   test.skip(!local, "signing out on a deployment goes through GitHub; this runs against alchemy dev's local developer")
   const [a] = await devices.open("A")
   const page = a.page

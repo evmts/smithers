@@ -156,8 +156,10 @@ describe("the flows", () => {
     expect(await engine.execute(SandboxDiff, executionId, {})).toEqual(Exit.succeed(diffed))
     expect(await rows()).toEqual([{ id: callId, answerId: ids.answerId, tool: "diff", status: "done" }])
     expect(engine.h.starts).toEqual([])
+    // Who called is the request's to say: this engine sends no run credentials (the browser's does,
+    // src/flows/credentials.ts), so ChatApi records the person, who may name their own answer.
     expect(engine.h.line("sandbox.call").map((line) => [line.annotations.door, line.annotations.outcome])).toEqual([
-      ["agent", "existing"],
+      ["person", "existing"],
     ])
   }, WITHIN)
 

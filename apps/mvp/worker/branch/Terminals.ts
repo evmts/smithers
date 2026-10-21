@@ -10,7 +10,7 @@ import {
   TERMINALS_TABLE,
 } from "../../src/features/terminal/contract.ts"
 import type { Actor } from "../Actor.ts"
-import { Sessions } from "../Actor.ts"
+import { refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
@@ -168,6 +168,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
           const actor = yield* sessions.resolve.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
           if (Option.isNone(actor)) return refuse(fields, 401, "authentication")
+          // A terminal is the person's own shell; the agent runs commands as jobs (decision 0017 slice 0).
+          if (yield* refusesPersonOnly(actor.value, "terminal/open")) return refuse(fields, 403, "person_only")
           const body = yield* readBounded(request, MAX_OPEN_BODY_BYTES).pipe(Effect.result)
           if (body._tag === "Failure") return refuse(fields, body.failure.reason === "too_large" ? 413 : 400, "invalid")
           const decoded = yield* decodeOpen(body.success).pipe(Effect.option)

@@ -1,6 +1,7 @@
 import { test as base, expect, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { readdir, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
+import { themeFor } from "./frames.ts"
 
 // The status copy (docs/decisions/0002-local-first.md §2) and how many messages show before Load earlier: chat's
 // contract, which the app and these tests share.
@@ -8,17 +9,35 @@ export { COULDNT_ANSWER, NOT_SENT, OFFLINE, PAGE_SIZE, QUEUED, SYNC_FAILED } fro
 
 /**
  * The no-spinner observer (0002 §7), an init script: it records every loading marker the page ever shows, `aria-busy`
- * true or a progress bar, on `window.__busy`. The only animation the app may show is a streaming answer's dots,
- * inside `[data-answer=streaming]`. The app has no Suspense boundary, so no fallback can show.
+ * true or a progress bar, on `window.__busy`. Shows means paints: @smthrs/ui's loading pattern stays invisible for its
+ * first LOADING_DELAY_MS, so a marker counts only once a frame draws it with every ancestor's opacity above 0. A
+ * streaming answer's pending line, inside `[data-answer=streaming]`, is exempt, and so is the router's own bar
+ * (`[data-placement=page]`), which shows only while a navigation waits on the network past that delay. The app has no
+ * Suspense boundary, so no fallback can show.
  */
 export const watchForSpinners = () => {
   const seen: Array<string> = []
   Object.assign(window, { __busy: seen })
-  const busy = '[aria-busy="true"], [role="progressbar"]'
+  const busy = '[aria-busy="true"], [role="progressbar"]:not([data-placement="page"])'
+  const watched = new WeakSet<Element>()
+  const painted = (element: Element) => {
+    if (element.getClientRects().length === 0) return false
+    for (let node: Element | null = element; node !== null; node = node.parentElement) {
+      if (Number(getComputedStyle(node).opacity) === 0) return false
+    }
+    return true
+  }
+  // Each frame while the marker is still in the page and still busy: recorded the first frame it paints.
+  const watch = (element: Element) => {
+    if (!element.isConnected || !element.matches(busy)) return watched.delete(element)
+    if (painted(element)) return seen.push(element.outerHTML.slice(0, 160))
+    requestAnimationFrame(() => watch(element))
+  }
   const check = (root: ParentNode) => {
     for (const element of root.querySelectorAll(busy)) {
-      if (element.closest("[data-answer=streaming]")) continue
-      seen.push(element.outerHTML.slice(0, 160))
+      if (element.closest("[data-answer=streaming]") || watched.has(element)) continue
+      watched.add(element)
+      watch(element)
     }
   }
   addEventListener("DOMContentLoaded", () => {
@@ -141,6 +160,20 @@ export const recordActions = async (page: Page, testInfo: TestInfo, who = "") =>
 }
 
 /**
+ * The mode a test runs and records in, light or dark, about half of each (e2e/frames.ts `themeFor`): the browser's
+ * color scheme, which the app's theme setting follows while the device has no preference, so the very first frame is in
+ * it. A test that needs a mode names it: `{ annotation: { type: "theme", description: "light" } }`.
+ */
+export const themeOf = (testInfo: TestInfo) => themeFor(specOf(testInfo), testInfo.title, testInfo.annotations)
+
+/**
+ * What a test proves, in one sentence, for its video's title card: the `summary` annotation a spec can set, as
+ * `test("title", { annotation: { type: "summary", description: "…" } }, …)`. Without one, the card reads the title.
+ */
+export const summaryOf = (testInfo: TestInfo): string | undefined =>
+  testInfo.annotations.find((annotation) => annotation.type === "summary")?.description
+
+/**
  * Writes a test's media manifest (`file`, beside its videos) with what the test did (its `step`s and recorded
  * actions), and attaches it as `media`. e2e/gifs.mjs makes the test's video, chapters and GIF from it. `startedAt` is
  * when the recording started, in ms since the epoch; each video's `openedAt` is seconds after it. The video lands at
@@ -159,6 +192,10 @@ export const writeManifest = async (
     spec: specOf(testInfo),
     test: slug(testInfo.title.split(":")[0]!),
     title: testInfo.title,
+    // The video's title card (e2e/frames.ts `titleCardOf`): the test's describe blocks, and the summary it set.
+    describe: testInfo.titlePath.slice(1, -1),
+    summary: summaryOf(testInfo),
+    theme: themeOf(testInfo),
     status: testInfo.status,
     startedAt,
     ...extra,
@@ -185,6 +222,8 @@ const writeLog = async (path: string, log: Array<string>) => {
 // writes flow.json beside its video, so e2e/gifs.mjs makes one video and GIF per flow. A test that opens its own
 // contexts instead (repo.spec.ts "clone") leaves the default page blank: its manifest lists those contexts' videos.
 export const test = base.extend<{ browserLog: Array<string> }>({
+  // The default page's mode, from its first frame: `themeOf`.
+  colorScheme: async ({}, use, testInfo) => use(themeOf(testInfo)),
   browserLog: [
     async ({ page }, use, testInfo) => {
       const startedAt = Date.now()

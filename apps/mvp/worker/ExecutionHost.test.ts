@@ -23,6 +23,10 @@ import { answers, harness, row, testFile } from "./test/harness.ts"
 import { repositoryRow, resetRepos } from "./test/repos.ts"
 import { resetBranches, terminal, terminalRows, tracked } from "./test/branch.ts"
 import { Sandboxes } from "./branch/Sandboxes.ts"
+import { Machines } from "./branch/Machines.ts"
+import * as SandboxCall from "./flows/SandboxCall.ts"
+import * as SandboxKeep from "./flows/SandboxKeep.ts"
+import * as SecretFlows from "./secrets/SecretFlows.ts"
 import * as TerminalOpen from "./flows/TerminalOpen.ts"
 import { openExecutionId } from "../src/features/terminal/contract.ts"
 import { cookie, SECRET, signInHarness } from "./test/signIn.ts"
@@ -441,7 +445,7 @@ describe("ExecutionHost over the compose Postgres", () => {
     const database = (await app.runPromise(Effect.service(TestDatabase.Scratch))).database
     const budgets = { maxRepositories: 100, maxStoredBytes: 3e9, maxReadBytes: 40e9, maxRepositoryBytes: 1e9, budgetUsd: 20 }
     const requested = await app.runPromise(
-      Repos.request({ id: "github/octocat/spoon-knife", owner: "octocat", name: "Spoon-Knife" }, budgets),
+      Repos.request({ id: "github/octocat/spoon-knife", owner: "octocat", name: "Spoon-Knife" }, budgets, "octocat"),
     )
     if (requested.kind !== "started") throw new Error(`requested ${requested.kind}`)
     const flows = ExecutionHost.withRepoClone(ExecutionHost.remote({ database, expiry: Expire.DEFAULT_EXPIRY }), {
@@ -450,6 +454,8 @@ describe("ExecutionHost over the compose Postgres", () => {
       upstream: provider.upstream,
       budgets,
       deadline: Duration.minutes(10),
+      index: () => Effect.succeed(3),
+      installed: () => Effect.succeed(false),
     })
     expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, RepoClone.Clone])
     await withSchema(({ name, sql, url }) =>
@@ -477,6 +483,26 @@ describe("ExecutionHost over the compose Postgres", () => {
       })
     )
     expect(await repositoryRow(app, "github/octocat/spoon-knife")).toMatchObject({ status: "ready" })
+  })
+
+  test("the deployed flows add the sandbox tools' and the secrets' flows, as worker/Executions.ts composes them", async () => {
+    const database = (await app.runPromise(Effect.service(TestDatabase.Scratch))).database
+    // Never built: only the registration's composition is read.
+    const machines = Layer.effect(Machines, Effect.die(new Error("no machine in this test")))
+    const flows = ExecutionHost.withSecrets(
+      ExecutionHost.withSandboxTools(ExecutionHost.remote({ database, expiry: Expire.DEFAULT_EXPIRY }), database, machines),
+      database,
+    )
+    expect(flows.flows).toEqual([
+      Pause.Pause,
+      Expire.Expire,
+      SpendAlert.SpendAlert,
+      SandboxCall.SandboxCall,
+      SandboxKeep.Keep,
+      SecretFlows.Put,
+      SecretFlows.Delete,
+    ])
+    expect(Layer.isLayer(flows.registration)).toBe(true)
   })
 
   test("with the branches' machines, the deployed flows run terminal/Open over the app's tables", async () => {

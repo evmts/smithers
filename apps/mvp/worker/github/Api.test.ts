@@ -59,7 +59,6 @@ const post = (body: unknown) => ({
 
 const createWrite = (overrides: Record<string, unknown> = {}) => ({
   writeId: crypto.randomUUID(),
-  via: "person",
   op: "issue/create",
   title: "Crash on empty body",
   body: "Steps",
@@ -267,9 +266,11 @@ describe("POST /api/repos/<owner>/<name>/writes", () => {
     await h.settled()
     expect(await writeRow(runtime, issue.writeId)).toMatchObject({ status: "done", itemNumber: 1 })
     expect(github.issues.get(1)!.login).toBe("maya")
-    const reply = { writeId: crypto.randomUUID(), via: "agent", op: "issue/comment", number: 1, body: "On it" }
-    expect((await h.fetch(writesRoute("acme", "widgets"), post(reply))).status).toBe(202)
-    await h.settled()
+    // The agent's comment comes with its run credential: it acts for Maya, as the App.
+    const agent = await githubHarness(runtime, { actor: { ...actor, act: { kind: "agent", id: "answer-1" } }, run: true, github })
+    const reply = { writeId: crypto.randomUUID(), op: "issue/comment", number: 1, body: "On it" }
+    expect((await agent.fetch(writesRoute("acme", "widgets"), post(reply))).status).toBe(202)
+    await agent.settled()
     expect(github.issues.get(1)!.comments.map((comment) => [comment.login, comment.body.split("\n")[0]])).toEqual([
       ["smithers[bot]", "On it"],
     ])
@@ -290,20 +291,28 @@ describe("POST /api/repos/<owner>/<name>/writes", () => {
   })
 
   test("a Guest's write goes as the Guest, never as the bot: their own write is taken, an agent's refused", async () => {
-    const h = await githubHarness(runtime, { actor: { ...member(), role: "guest" } })
+    const guest: Actor.Actor = { ...member(), role: "guest" }
+    const h = await githubHarness(runtime, { actor: guest })
     // Opening an issue and commenting are Guest acts, with the Guest's own GitHub token.
     expect((await h.fetch(writesRoute("acme", "widgets"), post(createWrite()))).status).toBe(202)
-    const comment = { writeId: crypto.randomUUID(), via: "person", op: "issue/comment", number: 1, body: "Me too" }
+    const comment = { writeId: crypto.randomUUID(), op: "issue/comment", number: 1, body: "Me too" }
     expect((await h.fetch(writesRoute("acme", "widgets"), post(comment))).status).toBe(202)
     // The App's token is the agent's, and a Guest has no agent: refused, nothing recorded or started.
-    for (const write of [createWrite({ via: "agent" }), { ...comment, writeId: crypto.randomUUID(), via: "agent" }]) {
-      const refused = await h.fetch(writesRoute("acme", "widgets"), post(write))
+    const agent = await githubHarness(runtime, { actor: { ...guest, act: { kind: "agent", id: "answer-1" } } })
+    for (const write of [createWrite(), { ...comment, writeId: crypto.randomUUID() }]) {
+      const refused = await agent.fetch(writesRoute("acme", "widgets"), post(write))
       expect(refused.status).toBe(403)
       expect(await refused.json()).toEqual({ code: "forbidden" })
     }
     expect(await sql(runtime, `SELECT via FROM github_writes ORDER BY created_at`)).toEqual([{ via: "person" }, { via: "person" }])
     expect(h.starts).toHaveLength(2)
-    expect(h.count(Metrics.writeRequests, { op: "issue/create", outcome: "forbidden" })).toBe(1)
+    expect(agent.count(Metrics.writeRequests, { op: "issue/create", outcome: "forbidden" })).toBe(1)
+  })
+
+  test("a body that names who acts claims nothing: the request's session or run credential says", async () => {
+    const h = await githubHarness(runtime)
+    expect((await h.fetch(writesRoute("acme", "widgets"), post(createWrite({ via: "agent" })))).status).toBe(202)
+    expect(await sql(runtime, `SELECT via FROM github_writes`)).toEqual([{ via: "person" }])
   })
 
   test("bounds: another repository, a bad body, a blank title, a write too large, a person with no session", async () => {
@@ -315,9 +324,8 @@ describe("POST /api/repos/<owner>/<name>/writes", () => {
       createWrite({ title: "   " }),
       createWrite({ title: "x".repeat(257) }),
       createWrite({ op: "issue/delete" }),
-      createWrite({ via: "someone" }),
-      { writeId: crypto.randomUUID(), via: "person", op: "issue/comment", number: 0, body: "Hi" },
-      { writeId: crypto.randomUUID(), via: "person", op: "issue/comment", number: 1, body: " " },
+      { writeId: crypto.randomUUID(), op: "issue/comment", number: 0, body: "Hi" },
+      { writeId: crypto.randomUUID(), op: "issue/comment", number: 1, body: " " },
     ]) {
       const response = await h.fetch(writesRoute("acme", "widgets"), post(body))
       expect(response.status).toBe(400)
@@ -331,7 +339,10 @@ describe("POST /api/repos/<owner>/<name>/writes", () => {
     const sessionless = await githubHarness(runtime, { actor: member(crypto.randomUUID(), null) })
     expect((await sessionless.fetch(writesRoute("acme", "widgets"), post(createWrite()))).status).toBe(401)
     // The agent acts as the App, so it needs no session.
-    expect((await sessionless.fetch(writesRoute("acme", "widgets"), post(createWrite({ via: "agent" })))).status).toBe(202)
+    const agent = await githubHarness(runtime, {
+      actor: { ...member(crypto.randomUUID(), null), act: { kind: "agent", id: "answer-1" } },
+    })
+    expect((await agent.fetch(writesRoute("acme", "widgets"), post(createWrite()))).status).toBe(202)
     expect(h.starts).toEqual([])
   })
 

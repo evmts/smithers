@@ -3,7 +3,7 @@
 // what each toast says, and the order.
 import { describe, expect, test } from "vitest"
 import { HOME_HREF, LISTED_FOR_MS } from "./contract"
-import { feedOf, follows, landed, timeOf, withPending, wordsOf } from "./entries"
+import { feedOf, follows, landed, newestNeed, timeOf, withPending, wordsOf } from "./entries"
 import type { Notice, Pending } from "./schema"
 
 const T0 = Date.parse("2026-10-20T12:00:00.000Z")
@@ -172,6 +172,37 @@ describe("feedOf", () => {
       "u",
     ])
   })
+
+  test("the panel's fields: when it happened, as GitHub or the latest report says; who; and the run's conversation", () => {
+    expect(one(notice({ occurredAt: at(5_000), updatedAt: at(9_000) }), T0 + 10_000)).toMatchObject({
+      atMs: T0 + 5_000,
+      actor: "ann",
+      conversationId: "c-home",
+    })
+    // A time that doesn't read falls back to the row's last change.
+    expect(one(notice({ occurredAt: "soon", updatedAt: at(9_000) }), T0 + 10_000)!.atMs).toBe(T0 + 9_000)
+    expect(one(notice({ kind: "main", state: "update", runId: null, conversationId: null, actor: null }))).toMatchObject({
+      actor: null,
+      conversationId: null,
+    })
+  })
+})
+
+describe("newestNeed", () => {
+  test("the newest of the person's own listed runs that need them; none, null", () => {
+    const entry = (subject: string, ms: number, overrides: Partial<Notice> = {}) =>
+      one(notice({ subject, state: "needs_you", occurredAt: at(ms), updatedAt: at(ms), ...overrides }), T0 + 10_000)!
+    const older = entry("run:a", 1_000)
+    const newer = entry("run:b", 2_000)
+    expect(newestNeed([older, newer])).toBe("run:b")
+    expect(newestNeed([newer, older])).toBe("run:b")
+    // Someone else's, a quiet one (never listed), or one that no longer needs them, doesn't count.
+    expect(newestNeed([older, { ...newer, mine: false }])).toBe("run:a")
+    expect(newestNeed([older, { ...newer, listed: false }])).toBe("run:a")
+    expect(newestNeed([older, { ...newer, state: "working" }])).toBe("run:a")
+    expect(newestNeed([{ ...older, state: "done" }])).toBeNull()
+    expect(newestNeed([])).toBeNull()
+  })
 })
 
 describe("landed", () => {
@@ -192,5 +223,42 @@ describe("follows", () => {
     expect(follows({ status: "unreachable", role: null })).toBe(true)
     expect(follows({ status: "signed_out", role: null })).toBe(false)
     expect(follows({ status: "loading", role: null })).toBe(false)
+  })
+})
+
+describe("a clone's entry", () => {
+  const clone = (overrides: Partial<Notice> = {}) =>
+    notice({
+      subject: "clone:github/acme/widgets",
+      kind: "clone",
+      runId: null,
+      conversationId: null,
+      actor: null,
+      title: "acme/widgets",
+      ref: "requested",
+      href: "/acme/widgets",
+      ...overrides,
+    })
+
+  test("says Clone, the repository, and how far it came or why it stopped", () => {
+    expect(wordsOf(clone())).toEqual({ word: "Clone", detail: "acme/widgets · Requested" })
+    expect(wordsOf(clone({ ref: `fetching:${1536}` }))).toEqual({ word: "Clone", detail: "acme/widgets · Fetching 1.5 KB" })
+    expect(wordsOf(clone({ ref: "indexing" }))).toEqual({ word: "Clone", detail: "acme/widgets · Indexing" })
+    expect(wordsOf(clone({ state: "done", ref: "ready" }))).toEqual({ word: "Clone", detail: "acme/widgets" })
+    expect(wordsOf(clone({ state: "failed", ref: "failed:timed_out" }))).toEqual({
+      word: "Clone",
+      detail: "acme/widgets · Clone timed out",
+    })
+  })
+
+  test("a live clone toasts on a page and over a conversation, and opens its repository", () => {
+    const live = one(clone(), T0 + 100, "c-home")!
+    expect(live).toMatchObject({ kind: "clone", stack: true, stackHere: true, here: false, listed: true, action: "open" })
+  })
+
+  test("the person's failed clone offers Try again; someone else's, or one done, opens", () => {
+    expect(one(clone({ state: "failed", ref: "failed:not_found" }))).toMatchObject({ action: "retry", settled: true })
+    expect(one(clone({ state: "failed", ref: "failed:not_found", mine: false }))).toMatchObject({ action: "open" })
+    expect(one(clone({ state: "done", ref: "ready" }))).toMatchObject({ action: "open" })
   })
 })

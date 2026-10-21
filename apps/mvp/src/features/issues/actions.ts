@@ -1,3 +1,4 @@
+import type { Commitment } from "./lifecycle"
 import { Effect, Metric, Option } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { repoId } from "../repo/contract"
@@ -18,7 +19,13 @@ import { IssuesStore } from "./store"
 // flows `issue/create` and `issue/comment`, dispatched with door `button` in the store's scope: the press returns at
 // once, and the draft clears once the write is queued. Sending runs in the outbox, never in an action.
 
-/** What the route's loader calls: shows `owner/name`'s issues, or, with `number`, that issue; and starts the sync. */
+/**
+ * What an issue route calls on a link's hover or focus (the router's intent preload): starts the issues' sync without
+ * showing a page, so the page the click opens has its rows.
+ */
+export const warm = Effect.flatMap(IssuesStore, (store) => store.activate)
+
+/** What the route calls on a navigation: shows `owner/name`'s issues, or, with `number`, that issue; and starts the sync. */
 export const open = (owner: string, name: string, number?: number) =>
   Effect.gen(function* () {
     const store = yield* IssuesStore
@@ -117,7 +124,7 @@ export const comment = (owner: string, name: string, number: number) =>
  * Runs `dispatch` in the store's scope: the press returns at once, and the write shows as Requested from the outbox. A
  * flow that failed, or didn't run, has logged and counted why.
  */
-const press = (dispatch: Effect.Effect<unknown, unknown, FlowDispatch>) =>
+const press = <R>(dispatch: Effect.Effect<unknown, unknown, R>) =>
   Effect.gen(function* () {
     const store = yield* IssuesStore
     yield* Effect.forkIn(Effect.ignore(dispatch), store.scope, { startImmediately: true })
@@ -172,3 +179,12 @@ export const edit = (writeId: string) => handle(writeId, "edit")
 
 /** Discard on a write that wasn't sent: it goes. */
 export const discard = (writeId: string) => Effect.asVoid(handle(writeId, "discard"))
+
+/** A Maintainer's own press; the write is admitted and completed in the durable outbox. */
+export const setCommitment = (owner: string, name: string, number: number, commitment: Commitment, previousWriteId?: string) =>
+  Effect.flatMap(FlowDispatch, (flows) =>
+    press(Effect.gen(function* () {
+      const result = yield* flows.dispatch("issue/commitment", { repo: `${owner}/${name}`, number, commitment }, { door: "button" })
+      // Replacing a refused write retains the old failure until the new request has a durable queue receipt.
+      if (result._tag === "Done" && previousWriteId !== undefined) yield* discard(previousWriteId)
+    })))

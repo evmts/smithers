@@ -1,12 +1,17 @@
 import { AgentStatusPill, NeedsYouCard } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
+import { useBranch } from "../../branch/components/BranchContext"
+import { answerOf } from "../../coedit/view"
 import { useStatus } from "./StatusContext"
 
 // An answer's agent status in the conversation (decision 0015): its question card while it needs the person, the
-// answer once given, and a Waiting pill while its turn waits. Working, done and failed show as the answer itself.
+// answer once given, and a Waiting pill while its turn waits. Working, done and failed show as the answer itself. The
+// question's field is a text the person's devices type together, with each other's carets (docs/features/coedit.md).
 export function AnswerStatus({ id }: { readonly id: string }) {
   const { queries, actions } = useStatus()
+  const { coedit } = useBranch()
   const { data: statuses } = useLiveQuery(queries.statuses)
+  const { data: texts } = useLiveQuery(coedit.queries.texts)
   const status = statuses.find((row) => row.id === id)
   if (status === undefined) return null
   if (status.state === "waiting") return <AgentStatusPill state="waiting" />
@@ -14,17 +19,24 @@ export function AnswerStatus({ id }: { readonly id: string }) {
   if (wait === undefined || wait === null) return null
   const answered = status.answer?.value
   if (status.state !== "needs_you" && answered === undefined) return null
+  const shared = typeof status.version === "number" ? answerOf(texts, id, status.version) : undefined
   return (
     <NeedsYouCard
       data-run={id}
       kind={wait.kind}
       prompt={wait.prompt}
       options={wait.options}
-      value={status.draft ?? ""}
+      value={shared?.text ?? status.draft ?? ""}
       sending={status.sending === true}
       answered={answered}
       focusRequest={status.focus === 0 ? undefined : status.focus ?? undefined}
-      onValueChange={(text) => actions.setDraft(id, text)}
+      onValueChange={(text, selection) =>
+        shared === undefined
+          ? actions.setDraft(id, text)
+          : coedit.actions.type(shared.id, text, { base: shared.text, selection })}
+      collaborators={shared?.collaborators}
+      selection={shared?.selection ?? undefined}
+      onSelectionChange={shared === undefined ? undefined : (selection) => coedit.actions.select(shared.id, selection)}
       onAnswer={(value) => actions.answer(id, value)}
     />
   )

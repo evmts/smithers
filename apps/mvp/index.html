@@ -7,6 +7,13 @@
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <title>Smithers</title>
+    <!-- The first paint is the theme's background, never white, while the app loads (src/features/theme/firstPaint.test.ts
+         holds these to @smthrs/ui's default theme). -->
+    <style>
+      html { background: #f7f4ee; }
+      @media (prefers-color-scheme: dark) { html:not([data-theme="light"]) { background: #0d1514; } }
+      html[data-theme="dark"] { background: #0d1514; }
+    </style>
     <script>
       // This device's theme, painted before the app opens its store: the store mirrors the mode here
       // (src/features/theme/store.ts, THEME_MIRROR_KEY).

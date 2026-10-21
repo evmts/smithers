@@ -86,10 +86,12 @@ export const EvaluateText = Action.make("app/jev/evaluate/judge", {
 /** `app/jev/classify`: one verdict per item, from Jev. */
 export const Classify = Flow.make("app/jev/classify", {
   description: "Ask Jev, Smithers' judge, one question about each of several short items: yes or no, or one of the " +
-    "labels you give. Use it for every decision over a list (which issues are bugs, which messages need a reply, " +
-    "label each change) instead of deciding yourself, with all the items in one call. Answers { verdicts }, one per " +
-    "item in order: verdict is \"yes\", \"no\", a label, or \"unsure\" when Jev isn't sure, with its confidence " +
-    "from 0 to 1.",
+    "labels you give. Use it whenever the person asks you to sort, group, label, triage, filter or pick from a list " +
+    "of two or more items (which issues are bugs, label each pull request by area, which answers are correct, which " +
+    "messages need a reply), even when they don't name Jev: never decide over a list yourself. Put " +
+    "all the items in one call, and the categories the person names as labels. Answers { verdicts: [{ verdict, " +
+    "confidence }] }, one per item in order: each verdict is \"yes\", \"no\", a label, or \"unsure\" when Jev isn't " +
+    "sure, and its confidence runs from 0 to 1. Answer from each item's verdict: an unsure item stays unsure.",
   modelInvocable: true,
   payload: ClassifyPayload,
   success: Verdicts,

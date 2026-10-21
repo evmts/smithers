@@ -4,8 +4,24 @@ status: in-progress
 area: app
 owner: recording pipeline builder and feature builders
 updated: 2026-10-20
-links: [../features/chat.md, ../rules.md, ../observability.md, sync-service-di-test-seam.md, route-ban-any-receiver.md, land-and-deploy-mvp.md, app-wiring.md, local-first.md, slash-commands.md, navigate-flow.md, web-page-flow.md, agent-jev.md, ../rulings.md, chaptered-review-videos.md]
+links: [../features/chat.md, ../rules.md, ../observability.md, sync-service-di-test-seam.md, route-ban-any-receiver.md, land-and-deploy-mvp.md, app-wiring.md, local-first.md, slash-commands.md, navigate-flow.md, web-page-flow.md, agent-jev.md, ../rulings.md, chaptered-review-videos.md, device-data-migrations.md]
 ---
+
+## Current specification — 2026-10-20, 20:14 PDT
+
+**What:** Keep real local/live browser journeys and review recordings current.
+
+**Why:** Working behavior and readable review evidence need separate receipts.
+
+**Current state:** At 19:56 the lead reports the shared helper complete and the full rerecord underway. At 20:10 the lead names issues, navigate, chat shortcut and web-page replacement recordings in progress. No full rerecord or production-suite completion is reported.
+
+**Next step:** Finish passing replacements with full-window capture, title cards, chapters, scripts and deterministic theme coverage; publish each only after its product changes pass. Add the old-build device migration journey before the next deploy.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and assistant replies in session 6253ecf2, 18:15–20:14 PDT on 2026-10-20; queue answers through 19:38 PDT; current rulings, decisions 0001–0020, proposals, TODOs, rules and shared briefs/designs. Later Will text and queue answers prevail. Product checks are reported receipts; this tracker validates the site build. Execution ownership is retained.
+
+## Earlier tracker history (retained)
 
 ## Current specification — 2026-10-20, 17:44 PDT
 

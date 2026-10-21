@@ -1,0 +1,11 @@
+{
+  "note": "Final reviewed sources; report text and retired-pool shutdown handling changed after the live run. No transport failures occurred in that run.",
+  "sha256": {
+    "apps/mvp/bench/cerebras-load/run.ts": "7d9a24d2d4783c2c9e0338fb354af63a7b8be08a7458f4e9fbeb58a63b3020b8",
+    "apps/mvp/bench/cerebras-load/stats.ts": "b89195502bb8f4ca21fbd90e56f33d26172720b29b855c237d71a80924b7e473",
+    "apps/mvp/bench/cerebras-load/report.ts": "9ecb855b6f604a8b50f63e986c0e2f18d6e871cff00165dbd7e7ed24496251c5",
+    ".smithers/flows/cerebras-load/flow.ts": "fd047dd1993382840f055a8eeabd4820b1be3bbfcadbdb77c001ffbd8a9243b7",
+    "packages/smithers/flows/platform-node/src/EgressHttpClient.ts": "5f8db3f1a723bf85cba248a28ab34c09e8caf0257de81134b2050ce610a047d0",
+    "packages/smithers/agent/model-host/src/ProviderTransport.ts": "aaa955fc2bcd4ce5f791b00c8a6075050bf586fd564f417df587ea4db4a54da1"
+  }
+}

@@ -45,13 +45,26 @@ export interface Services {
 
 /**
  * The access an installation token is minted with: reading issues, writing them (triage's labels included), or reading
- * the repository's files (`contents`: triage's guidelines).
+ * the repository's files (`contents`: triage's guidelines); reading a pull request with its diff (`pulls`), publishing
+ * a TODO's branch, commit and pull request (`publish`), or reviewing one (`review`, a comment review's findings).
  */
-export type Access = "read" | "write" | "contents"
+export type Access = "read" | "write" | "contents" | "pulls" | "publish" | "review"
 
 /** The permissions GitHub mints a token with for `access`: only what the step needs. */
-const permissionsOf = (access: Access): Readonly<Record<string, "read" | "write">> =>
-  access === "contents" ? { contents: "read" } : { issues: access }
+export const permissionsOf = (access: Access): Readonly<Record<string, "read" | "write">> => {
+  switch (access) {
+    case "contents":
+      return { contents: "read" }
+    case "pulls":
+      return { issues: "read", pull_requests: "read", contents: "read" }
+    case "publish":
+      return { issues: "read", pull_requests: "write", contents: "write" }
+    case "review":
+      return { issues: "read", pull_requests: "write", contents: "read" }
+    default:
+      return { issues: access }
+  }
+}
 
 const unavailable = (error: unknown) => {
   const classified = classify(error)

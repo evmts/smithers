@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { Ref } from "./schema"
+import { About, Ref } from "./schema"
 
 // This tab's own repository rows, in memory: what it has loaded and where the view is. Synced rows (`Repository`) and
 // RepoApi's answers are in schema.ts.
@@ -53,6 +53,18 @@ export const CloneRow = Schema.Struct({
 })
 export type CloneRow = typeof CloneRow.Type
 
+/**
+ * What GitHub says of a repository, keyed by its id, as this tab loaded it: loading, ready with `about`, `missing`
+ * (GitHub has no such public repository) or failed (GitHub or RepoApi couldn't answer, with why).
+ */
+export const AboutRow = Schema.Struct({
+  key: Schema.String,
+  state: Schema.Literals(["loading", "ready", "missing", "failed"]),
+  about: Schema.NullOr(About),
+  message: Schema.NullOr(Schema.String),
+})
+export type AboutRow = typeof AboutRow.Type
+
 /** The one view row's key. */
 export const VIEW = "view"
 
@@ -84,6 +96,12 @@ export const ViewRow = Schema.Struct({
   fileKey: Schema.NullOr(Schema.String),
   readmeKey: Schema.NullOr(Schema.String),
   readmePath: Schema.NullOr(Schema.String),
+  /**
+   * The generated-files manifest nearest the view's location at its commit (`.smithers/generated.json` in its folder or
+   * one above), and its key; `null` when no folder on the way has one.
+   */
+  manifestPath: Schema.NullOr(Schema.String),
+  manifestKey: Schema.NullOr(Schema.String),
   signedIn: Schema.NullOr(Schema.Boolean),
   answered: Schema.Boolean,
 })
@@ -110,6 +128,8 @@ export const emptyView: ViewRow = {
   fileKey: null,
   readmeKey: null,
   readmePath: null,
+  manifestPath: null,
+  manifestKey: null,
   signedIn: null,
   answered: false,
 }

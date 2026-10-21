@@ -1,11 +1,28 @@
 ---
 title: Cerebras capacity load test
-status: in-progress
+status: done
 area: infra
 owner: codex-cerebras-load
 updated: 2026-10-20
 links: [../../bench/cerebras-load/RESULTS.md]
 ---
+
+## Current specification — 2026-10-20, 21:04 PDT
+
+**What:** Retain the bounded capacity experiment, sustained repeat and draft capacity request.
+
+**Why:** Will chose measurement before contacting Cerebras.
+
+**Current state:** The 20:59 lead confirms sustained results after the transport fix: at concurrency 10, 343 of 542 requests returned provider HTTP 429. Earlier receipts record 199 successes, zero other failures, 60.45 seconds, 371,265 tokens and estimated $0.39302; escalation to 25/50 stopped. Headers report 150k TPM and 450 RPM. The capacity request is queued at priority 960, for Will to send. The experiment is finished; sufficient capacity for hundreds of users is not established.
+
+**Next step:** Keep raw receipts, method and user-count assumptions with the draft. Track provider capacity follow-up in cerebras-rate-limits.md; do not send a message or start another live campaign from this tracker.
+
+**Open questions for Will:** Review the draft capacity request in the queue.
+
+Evidence: script-filtered user-typed text and assistant text replies from session 6253ecf2, 19:04–21:04 PDT on 2026-10-20; rulings and queue answers through 19:38 PDT; decisions through 0021, proposals, TODOs, rules and shared feature/host/panel briefs and designs. Later Will text and queue answers prevail. Product receipts are reported evidence; this tracker verifies the site build. Execution ownership retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 19:56 PDT
 

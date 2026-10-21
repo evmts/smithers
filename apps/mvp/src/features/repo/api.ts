@@ -1,7 +1,7 @@
 import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
-import { blobRoute, refsRoute, REPOS_ROUTE, treeRoute } from "./contract"
-import { CloneAccepted, RefusalBody, Refs, TreeListing } from "./schema"
+import { aboutRoute, blobRoute, refsRoute, REPOS_ROUTE, treeRoute } from "./contract"
+import { About, CloneAccepted, RefusalBody, Refs, TreeListing } from "./schema"
 
 // RepoApi's routes as the browser calls them (docs/features/repo.md#routes), through Effect's HttpClient. Each request
 // has one deadline covering the whole exchange, its body included.
@@ -132,6 +132,20 @@ export const getRefs = Effect.fn("repo.refs.get")(function* (
   )
 })
 
+/** `GET /api/repos/<owner>/<name>/about`: what GitHub says of the repository, cloned or not. */
+export const getAbout = Effect.fn("repo.about.get")(function* (
+  origin: string,
+  repository: { readonly owner: string; readonly name: string },
+  within: Duration.Input,
+) {
+  return yield* exchange(
+    HttpClientRequest.get(`${origin}${aboutRoute(repository.owner, repository.name)}`),
+    within,
+    (status) => status === 200,
+    json(About),
+  )
+})
+
 /**
  * RepoApi's client, as a service: the one way the browser asks for a clone and reads a repository. Tests of a RepoApi
  * that fails provide a faulty one; every other test uses the real one.
@@ -143,6 +157,7 @@ export class RepoClient extends Context.Service<
     readonly tree: (owner: string, name: string, sha: string) => Effect.Effect<TreeListing, RepoRefused>
     readonly blob: (owner: string, name: string, sha: string, path: string) => Effect.Effect<Blob, RepoRefused>
     readonly refs: (owner: string, name: string) => Effect.Effect<Refs, RepoRefused>
+    readonly about: (owner: string, name: string) => Effect.Effect<About, RepoRefused>
   }
 >()("@smthrs/mvp/repo/RepoClient") {
   /** The real client: RepoApi at `origin`, with `within` for each whole request. */
@@ -157,6 +172,7 @@ export class RepoClient extends Context.Service<
           blob: (owner, name, sha, path) =>
             withClient(getBlob(options.origin, { owner, name, sha, path }, options.within)),
           refs: (owner, name) => withClient(getRefs(options.origin, { owner, name }, options.within)),
+          about: (owner, name) => withClient(getAbout(options.origin, { owner, name }, options.within)),
         })
       }),
     )

@@ -3,9 +3,244 @@ title: Will's decision queue (full-screen, keyboard-only, in the maintainer app)
 status: in-progress
 area: process
 owner: queue curator and lead
-updated: 2026-10-20
-links: [maintainer-site.md, decisions-for-will.md, code-reviews.md, e2e-suite-and-gifs.md, smithers-playground.md, todos-and-stack.md, self-host-install.md, second-build-machine.md, dev-stack-hygiene.md, review-round-4-p3-cleanup.md, docs-truth-pass.md, prompt-flows-are-code-flows.md, self-hosted-grafana.md, chat-message-controls.md, repository-declared-home.md, issues.md, ../rulings.md, chaptered-review-videos.md, everything-is-a-plugin.md, maintainer-app-plugins.md, code-review-guides.md, queue-general-feedback.md, queue-before-after-review.md, queue-review-quality-gate.md]
+updated: 2026-10-21 00:06 PDT
+links: [maintainer-site.md, decisions-for-will.md, code-reviews.md, e2e-suite-and-gifs.md, smithers-playground.md, todos-and-stack.md, self-host-install.md, second-build-machine.md, dev-stack-hygiene.md, review-round-4-p3-cleanup.md, docs-truth-pass.md, prompt-flows-are-code-flows.md, self-hosted-grafana.md, chat-message-controls.md, repository-declared-home.md, issues.md, ../rulings.md, chaptered-review-videos.md, everything-is-a-plugin.md, maintainer-app-plugins.md, code-review-guides.md, queue-general-feedback.md, queue-before-after-review.md, queue-review-quality-gate.md, native-app-di-plan.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 00:06 PDT
+
+**What:** Keep the live review queue usable and current.
+
+**Why:** Review decisions must preserve original evidence and avoid repeated stale asks.
+
+**Current state:** The lead reports 43 items at 23:59. The old flows-as-code proposal is removed pending the four-model design. Code-view controls are regressed: scrolling restored, buttons still broken at 00:05. Queue answers approve the agent, offline and device-upgrade recordings; these approvals do not prove deployment.
+
+**Next step:** Prioritize code controls, ingest the registry-service and Dispatch readability requests, and return verify items only with real proof. Keep product migration in product-review-queue.md.
+
+**Open questions for Will:** Review the merged authoring and product-queue designs when ready; no repeat of answered queue questions.
+
+Evidence: script-filtered human text and lead replies from the last two session hours, through 00:05 PDT; queue answers through 00:05:48 PDT; current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are reported receipts, not checks executed by this tracker. Existing execution owners and history retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20 23:55 PDT
+
+**What:** Keep decisions, code review context and requested code-view controls current.
+
+**Why:** Will must review actual code and current proposals without stale asks.
+
+**Current state:** At 23:50 the lead reports 43 items and the first guided ModelStep slice approved (1 of 5,394 slices). Will’s comment hiding, folding and outline requests are assigned, not fixed. At 23:51 the workflows-as-code proposal was returned for a four-model redesign.
+
+**Next step:** Replace the stale authoring decision with the merged panel design when ready; attach a verify item only after code-view controls are finished. Preserve original answers and before media.
+
+**Open questions for Will:** The merged authoring design remains for review when ready; the disk question remains outstanding.
+
+Evidence: last two session hours of user-typed text and lead replies extracted with a JSONL script (notifications and tool content excluded), through 23:54 PDT; queue answers through 23:51; current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Product receipts are lead-reported; tracker validation is the maintainer-site build. Prior history and execution ownership retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20 23:44 PDT
+
+**What:** Keep answered decisions and review evidence synchronized.
+
+**Why:** Avoid stale asks and wrong media.
+
+**Current state:** Through 23:38 Will approved sign-in, slash commands, run graph, Effect repository home, navigate and web-page checks. GH-9/GH-10 and TEST-12 are recorded. At 23:39–23:43 the lead reports 44 items with the flows-as-code decision first at 994. Its PACKAGE.ts comparison is being corrected. Repository-home verify now uses the three Effect recordings rather than the VibeLang mock.
+
+**Next step:** Retain accurate comparison, confidence scores and immutable before media; do not requeue answered choices. Distinguish review approval from landing or production proof.
+
+**Open questions for Will:** Flows-as-code choices, disk question and remaining Playground decisions remain; use current queued recommendations and confidence scores.
+
+Evidence: user-typed text and lead text replies extracted by script from session 6253ecf2, approximately 21:44–23:44 PDT; queue answers through 23:38:44, current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Synthetic notifications and tool content excluded. Later rulings supersede retained history. Product receipts are lead-reported; this tracker validates the maintainer-site build. Execution ownership retained; documentation reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20 23:34 PDT
+
+**What:** Keep review decisions, confidence scores and current evidence synchronized.
+
+**Why:** Avoid repeating resolved questions or equating answers with shipped work.
+
+**Current state:** Latest lead count is 51 at 23:32. Native plan approved at 23:27; VibeLang README approved and repository settings authorized at 23:28; settings verified through API at 23:29. Fs/errors review approval was passed to its owner as potentially stale. Nx removal authorized, claude.yml restriction declined. TODO walkthrough received new active-run feedback at 23:33.
+
+**Next step:** Dispatch these answers to owning streams; retain scores, immutable before evidence and recording gates. Do not requeue resolved native, repo-settings, credential-ownership or declined launcher asks.
+
+**Open questions for Will:** Publishing and commit-status choices remain open unless subsequently answered.
+
+Evidence: script-filtered user-typed text and lead text replies in session 6253ecf2, approximately 21:34–23:34 PDT; queue answers through 23:33:36, current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Notifications and teammate messages excluded from human evidence. Product receipts are lead-reported; this tracker verifies the site build. Existing execution ownership retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20 23:25 PDT
+
+**What:** Keep review evidence and decisions current, with confidence scores.
+
+**Why:** Make recommendations assessable and avoid stale asks.
+
+**Current state:** PROC-19 follows Will’s 23:14 answer: recommended defaults show a percentage and reason, plus what would raise confidence below 60%. At 23:16 all open decisions have scores; native plan 50%, commit statuses 55%. The latest reported queue has 59 items at 23:21. App setup and credential rotation asks were removed; neither is thereby complete. The workflows-as-code proposal is held until ready.
+
+**Next step:** Retain scores and before/after evidence; dispatch FLOW-9, hold unfinished proofs and do not requeue the person-owned credential rotation.
+
+**Open questions for Will:** Existing native-plan, publishing, commit-status and Tevm-security decisions remain; no new tracker question.
+
+Evidence: script-filtered human messages and lead text replies through 23:25 PDT; queue answers through 23:16, current rulings, decisions, proposals and shared briefs/designs. Automated notifications excluded. Product receipts are lead-reported; tracker validation is the site build. Execution owner retained; Codex curates the note.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20 23:14 PDT
+
+**What:** Keep review evidence and person-owned decisions current.
+
+**Why:** Avoid stale questions and false completion claims.
+
+**Current state:** The lead reports 63 items at 23:11. Will’s actual answer at 23:13 to question:prod-github-app-setup says it is not done yet, but he is working on it. This supersedes earlier “no new answers since 19:38” statements. The lead promises sign-in/webhook smoke tests on completion and again after deployment.
+
+**Next step:** Dispatch the progress answer without resolving setup as complete. Preserve before/after evidence and require passing recordings before requeueing feature checks.
+
+**Open questions for Will:** Finish production App setup; native-app choices, credential rotation and existing publishing/status/security decisions remain queued.
+
+Evidence: session 6253ecf2 user-typed text and lead text replies, script-filtered for the latest two hours through 23:13 PDT; rulings FE-16 and PROC-18; queue answers through 23:13 PDT. Synthetic notifications and relayed agent messages excluded. Current rulings supersede historical briefs and proposals. Product checks are lead-reported, not rerun by the tracker. Execution ownership retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20, 22:05 PDT
+
+**What:** Keep Will’s review queue current with passing evidence and preserved revisions.
+
+**Why:** Reviews need reliable before/after media and actionable priorities.
+
+**Current state:** At 21:58 the queue holds 58 items; TODO verification is at 968, sign-in and slash commands returned with passing quality gates. At 22:04 co-editing records include one failed and one passed journey, both held pending handoff. No new answers since 19:38. Production GitHub App setup (995), credential rotation and VibeLang settings (975) are the lead’s immediate person-only requests.
+
+**Next step:** Curate burn-down handoffs, preserve media before presentation, and requeue fixes only with passing evidence and dispatch receipts.
+
+**Open questions for Will:** Complete the production App setup, rotate exposed active keys if still outstanding, and set VibeLang security/labels. Native planning and capacity email may wait.
+
+Evidence: script-filtered human text and lead replies in session 6253ecf2, approximately 20:04–22:04 PDT; synthetic notifications, compaction summaries and tool blocks excluded. Rulings and queue answers through 19:38 prevail over historical briefs, decisions and proposals. Execution ownership retained; Codex curates this note. Product checks are reported evidence; tracker validation is the site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 21:54 PDT
+
+**What:** Keep a current, evidence-backed review and decision queue.
+
+**Why:** Will reviews one actionable item at a time.
+
+**Current state:** At 21:52 the queue holds 57 items. Sign-in and slash-command walkthroughs are back for verification with passing recording gates. Five VibeLang syntax questions remain closed on D278–D283; native-app and production GitHub App decisions remain unanswered. New media is now copied before presentation; 37 older answers have no surviving before videos.
+
+**Next step:** Keep failed recordings out, refresh stale code guides, preserve snapshots before review and dispatch actual answers without treating agent reports as approvals.
+
+**Open questions for Will:** Production GitHub App setup, the two native-app choices and queued capacity/review items remain with Will.
+
+Evidence: script-filtered user text and lead replies from session 6253ecf2, approximately 19:54–21:54 PDT; compaction summaries, tool blocks and relayed agent messages excluded. Current rulings and queue answers take precedence over historical briefs, decisions and proposals. Execution ownership retained; reconciliation by Codex tracker curator. Product receipts are reported evidence; tracker validation is the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 21:43 PDT
+
+**What:** Keep Will’s priority review queue current with revision-specific evidence and persisted rulings.
+
+**Why:** Settled decisions must close, and failed recordings must not be presented as working features.
+
+**Current state:** The latest 21:39 PDT snapshot has 49 items. Five VibeLang syntax questions remain closed against D278–D283; answers.jsonl still ends at 19:38 PDT. At 21:34 the curator held failed code-intelligence and flow-usage recordings (priorities 790 and 780). Four changed and five regrouped code guides are being rewritten. Production GitHub App setup remains first at 995, native planning at 990, and fs/errors review at 970.
+
+**Next step:** Return held reviews only with passing runs and current guides. Collect the repository-docs handoff and queue person-only settings/labels after its reviewed push. Preserve the answer log and existing feedback.
+
+**Open questions for Will:** Existing GitHub App setup, two native-app choices, remaining VibeLang reviews and Cerebras capacity draft remain queued; no new question is inferred.
+
+Evidence: lead text replies and human-typed messages extracted by script from session 6253ecf2 for 19:43–21:43 PDT; synthetic notifications and compaction summaries excluded. Rulings and queue answers through 19:38 PDT take precedence over older briefs, designs, decisions, proposals, TODOs and rules. Product results are reported receipts; this tracker validates the site build. Execution ownership is retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 21:34 PDT
+
+**What:** Keep Will’s decision and review queue current with revision-specific evidence and feedback.
+
+**Why:** Queue answers are rulings; settled decisions must not keep asking for answers.
+
+**Current state:** At 21:32 PDT the lead and curator report 50 items after closing five VibeLang syntax decisions against D278–D283 at f7f786c5. answers.jsonl is unchanged and still ends at 19:38 PDT; these later decisions were answered live in the VibeLang session. Production GitHub App setup remains first at 995, native-app planning at 990, and the fs/errors review stays at 970. The replacement tweet-style timeline mock awaits review. Navigate returns after recording gates pass; repo-browse recordings require the owner’s completion and dispatch fix receipt before verification.
+
+**Next step:** Keep settled syntax items closed, route remaining reviews and setup answers, and add replacement walkthroughs only after actual fix and recording receipts. Preserve the answer log.
+
+**Open questions for Will:** Production GitHub App callback/webhook setup, the two native-app proposal decisions, remaining VibeLang reviews and the Cerebras capacity draft remain queued; no new question is introduced by this tracker pass.
+
+Evidence: script-filtered human text and lead assistant replies from session 6253ecf2, approximately 19:34–21:34 PDT; rulings, queue answers through 19:38, shared feature/host/panel briefs and designs, decisions through 0021, proposals, TODOs and rules. Execution ownership retained; reconciled by Codex tracker curator. Product checks are reported evidence; this pass validates the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 21:15 PDT
+
+**What:** Keep Will’s decision and review queue current, with usable evidence and revision-specific feedback.
+
+**Why:** Queue answers are rulings and rejected designs must not continue as approved implementation.
+
+**Current state:** The latest count remains the lead’s 21:03 report of 55 items: production GitHub App setup at 995, native-app plan at 990, VibeLang review/syntax at 978–965 and the unsent Cerebras capacity request at 960. answers.jsonl still ends at 19:38 PDT. At 21:14 the lead reports a replacement timeline designer running after Will rejected the sketch; a new mock must be reviewed before implementation. At 21:15 the lead confirms the tracker already marks transport and load-test work done; their landing and capacity follow-up remain separate.
+
+**Next step:** Preserve current queue ordering, route answers to existing owners and replace the timeline design review with the tweet-style mock once ready. Keep production setup first and do not treat reported test completion as deployment evidence.
+
+**Open questions for Will:** Production callback/webhook setup; the two native-plan choices; existing VibeLang reviews and syntax choices; review and send the capacity request. Review the replacement timeline mock when ready.
+
+Evidence: script-filtered user-typed text and lead text replies in session 6253ecf2, approximately 19:15–21:15 PDT; current rulings (especially FE-16), queue answers through 19:38 PDT, decisions 0001–0021, proposals, TODOs, rules and shared feature/host/panel briefs and designs. Latest Will text and queue answers prevail. Execution ownership follows the lead’s assignment; reconciliation by Codex tracker curator. Product checks are reported evidence; this pass validates the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 21:04 PDT
+
+**What:** Keep Will’s keyboard-first decision and review queue current.
+
+**Why:** Will reviews work and makes rulings through the maintainer app.
+
+**Current state:** At 21:03 the curator reports 55 items: production GitHub App setup first at 995, the native-app plan at 990, VibeLang review and syntax decisions at 978–965, and the Cerebras capacity draft at 960. The native plan has two unanswered questions; sign-in/model routing is already decided. The 21:00 watcher update reports no new answers, consistent with answers.jsonl still ending at 19:38 PDT.
+
+**Next step:** Route new answers to their existing owners, retain revision-specific guides and verified recordings, and incorporate the 21:04 timeline requirement in its design review. Keep production setup first.
+
+**Open questions for Will:** Production callback/webhook setup; the two native-plan choices; review the unsent Cerebras capacity request and existing VibeLang items.
+
+Evidence: script-filtered user-typed text and assistant text replies from session 6253ecf2, 19:04–21:04 PDT on 2026-10-20; rulings and queue answers through 19:38 PDT; decisions through 0021, proposals, TODOs, rules and shared feature/host/panel briefs and designs. Later Will text and queue answers prevail. Product receipts are reported evidence; this tracker verifies the site build. Execution ownership retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 20:57 PDT
+
+**What:** Keep Will’s keyboard-first review and decision queue current and evidence-based.
+
+**Why:** Will uses the maintainer app to review the work and make rulings.
+
+**Current state:** At 20:24 PDT the queue held 52 items with production GitHub App setup first at priority 995. At 20:57 the merged native-app plan is reported ready for addition at priority 990 with three concrete questions. This is an insertion request; no new queue count or Will answer is evidenced. Existing Markdown, before/after and general-feedback features remain completed history.
+
+**Next step:** Confirm the merged plan is queued, keep guides and recordings tied to their revisions, and route new answers back to the owning workstreams. Retain the production setup blocker first.
+
+**Open questions for Will:** Production GitHub App setup and the three native-plan choices; existing release/code reviews remain in the queue.
+
+Evidence: script-filtered human messages and lead text replies from session 6253ecf2, approximately 18:57–20:57 PDT; current rulings and queue answers, decisions through 0021, proposals and shared briefs/designs. Transport details additionally use its final builder report. Product checks are reported evidence; this pass runs the maintainer-site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 20:02 PDT
+
+**What:** Maintain guided reviews with general feedback, before/after comparisons and quality admission.
+
+**Why:** Will authorized the queue improvements and wants usable evidence before reviewing.
+
+**Current state:** At 19:58 all eight stale guides are reported rewritten. At 19:59 the two VibeLang checks show old and new README/token-comparison and generated-doc versions; the latest reported queue count is 49. These supersede the 36-item snapshot and the earlier absence of real comparison items. Controls and Markdown rendering retain their earlier reported test receipts; no new independent comparison test is claimed.
+
+**Next step:** Keep the two VibeLang checks and refreshed guides current; admit passing full-window chaptered recordings as rerecording finishes and retain original feedback.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and assistant text replies in session 6253ecf2, 18:02–20:02 PDT; queue answers through 19:38 PDT; rulings, decisions 0001–0020, proposals, TODOs, rules and shared feature/host/panel briefs and designs. Timeline validation also uses its builder report. Latest Will text and queue answers prevail. Product receipts are reported evidence; this tracker verifies the site build. Execution owner retained; reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 19:56 PDT
 

@@ -62,6 +62,7 @@ export const listQuery = (
             comments: item.comments,
             updatedAt: item.updatedAt,
             triage: item.triage,
+            commitment: Query.coalesce(item.commitment, ""),
             pending: "",
             reason: "",
             local: 0,
@@ -82,6 +83,7 @@ export const listQuery = (
             comments: 0,
             updatedAt: "",
             triage: "",
+            commitment: "",
             pending: pendingOf(mine, write),
             reason: Query.coalesce(mine.reason, write?.failure, ""),
             local: 1,
@@ -104,6 +106,7 @@ export const listQuery = (
             comments: 0,
             updatedAt: "",
             triage: "",
+            commitment: "",
             pending: "requested",
             reason: "",
             local: 1,
@@ -133,6 +136,7 @@ export const itemQuery = (view: View, items: Synced<Item>) =>
         createdAt: item.createdAt,
         triage: item.triage,
         pinned: item.triagePinned,
+        commitment: item.commitment,
       }))
       .findOne()
   )
@@ -248,6 +252,7 @@ export const viewQuery = (view: View, drafts: Local<Draft>) =>
 const isTriage = (write: { readonly op: unknown }) =>
   Query.or(
     Query.eq(write.op, "issue/triage"),
+    Query.eq(write.op, "issue/commitment"),
     Query.eq(write.op, "triage/run"),
     Query.eq(write.op, "triage/enable"),
     Query.eq(write.op, "triage/pause"),

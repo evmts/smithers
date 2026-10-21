@@ -20,7 +20,13 @@ export const shownQuery = (views: Collection.Collection<View>, showing: Collecti
       .from({ showing: showing.tanstack })
       .innerJoin({ view: views.tanstack }, ({ showing, view }) => Query.eq(showing.viewId, view.id))
       .where(({ view }) => Query.eq(view.template, "webpage"))
-      .select(({ view }) => ({ id: view.id, url: view.props.url }))
+      .select(({ view }) => ({
+        id: view.id,
+        url: view.props.url,
+        title: view.props.title,
+        description: view.props.description,
+        icon: view.props.icon,
+      }))
       .findOne()
   )
 
@@ -59,7 +65,7 @@ export class ViewsStore extends Context.Service<
           schema: View,
           getKey: (row) => row.id,
           syncMode: "eager",
-          persist: { schemaVersion: 1 },
+          persist: { schemaVersion: 2 },
           shape: {
             url: `${config.origin}${VIEWS_SHAPE_ROUTE}`,
             columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -84,7 +90,7 @@ export class ViewsStore extends Context.Service<
               schema: View,
               getKey: (row) => row.id,
               syncMode: "eager",
-              persist: { schemaVersion: 1 },
+              persist: { schemaVersion: 2 },
               shape: {
                 url: `${config.origin}${VIEWS_SHAPE_ROUTE}?conversation=${encodeURIComponent(conversationId)}`,
                 columnMapper: ElectricCollection.snakeCamelMapper(),

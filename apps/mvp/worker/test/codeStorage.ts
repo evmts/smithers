@@ -231,6 +231,20 @@ export const scripted = (options: { readonly syncPolls?: number; readonly pageSi
         const { page, next } = pageOf(mirror.tags!, list.cursor, list.limit ?? 20)
         return { tags: page, nextCursor: next, bytesRead: JSON.stringify(page).length }
       }),
+    // A branch at the commit `from` names, as Code Storage makes one: `conflict` when it exists.
+    createBranch: (repo, create) =>
+      Effect.gen(function* () {
+        calls.push(`createBranch:${repo}:${create.branch}`)
+        yield* fault("createBranch")
+        const mirror = mirrors.get(repo)
+        if (mirror === undefined || !mirror.synced) return yield* error("createBranch", "repository_not_found", 404)
+        const branches = mirror.branches!
+        const from = branches.find((branch) => branch.name === create.from)
+        if (from === undefined) return yield* error("createBranch", "ref_not_found", 404)
+        if (branches.some((branch) => branch.name === create.branch)) return yield* error("createBranch", "conflict", 409)
+        mirror.branches = [...branches, { name: create.branch, sha: from.sha }]
+        return { branch: create.branch, sha: from.sha }
+      }),
   }
 
   const githubFault = (operation: "head" | "size") => githubFaults.get(operation)?.shift()

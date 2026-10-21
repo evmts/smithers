@@ -7,9 +7,14 @@
 // what it did: its helpers' steps and the actions its pages saw. For each flow this lays its recordings side by side,
 // each starting when its tab opened, at 10 fps, and writes:
 //
-// - <video-dir>/<spec>/<test>.mp4: H.264 at the recorded size. Blank page loads are cut and waits shortened
-//   (e2e/frames.ts `plan`); a strip under the picture names the current step and shows the real run's clock.
-// - <video-dir>/<spec>/<test>.chapters.json: the video's timeline, `[{ "t": seconds, "label": "step" }]`.
+// - <video-dir>/<spec>/<test>.mp4: H.264 at the recorded size. It opens on a 2 s title card: the feature, the test's
+//   name and what it proves (e2e/frames.ts `titleCardOf`, from the test's describe blocks and title or the summary it
+//   set). Blank page loads are cut and waits shortened hard (`plan`, `cutIdle`); a strip under the picture names the
+//   current step in product words (`plainLabel`) and shows the real run's clock.
+// - <video-dir>/<spec>/<test>.chapters.json: `{ title, feature, name, line, status, theme, chapters }`, where
+//   `status` is Playwright's for the run (`passed`, `failed`, …), `theme` the mode it ran in (`themeFor`, about half
+//   dark) and `chapters` the video's timeline, `[{ "t": seconds, "label" }]`, the title card first (`chaptersFileOf`).
+// Each device is a 1280×800 window recorded 1:1 and laid side by side unscaled up to three; nothing is cropped.
 // - <gif-dir>/<flow>.gif: a preview of the same, at most 1000 px wide, shorter still, from a two-pass palette.
 //
 // Then it checks every video and GIF it wrote (e2e/check-gifs.mjs) and exits 1 when one fails.
@@ -20,14 +25,35 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { checkGif, checkVideo, measuredFrames } from "./check-gifs.mjs"
-import { chapterAt, chaptersOf, combine, FPS, GIF_PACE, holdChapters, MAX_GIF_BYTES, MEASURE_HEIGHT, MEASURE_WIDTH, plan, retime, VIDEO_PACE } from "./frames.ts"
+import {
+  chapterAt,
+  chaptersFileOf,
+  chaptersOf,
+  combine,
+  cutIdle,
+  FPS,
+  GIF_PACE,
+  holdChapters,
+  MAX_GIF_BYTES,
+  MEASURE_HEIGHT,
+  MEASURE_WIDTH,
+  plan,
+  retime,
+  themeFor,
+  titleCardOf,
+  VIDEO_PACE,
+} from "./frames.ts"
 
 const results = process.argv[2] ?? "test-results"
 const gifDir = process.argv[3] ?? join(homedir(), "Desktop/smithers-mvp/gifs")
 const videoDir = process.argv[4] ?? join(homedir(), "Desktop/smithers-mvp/videos")
 const GIF_WIDTH = 1000
-const MAX_WIDTH = 1920
 const GAP = 6
+/**
+ * The widest video: three 1280 px devices side by side, each at 1:1 (playwright.config.ts, e2e/devices.ts). Only a
+ * wider flow is scaled down; nothing is ever cropped.
+ */
+const MAX_WIDTH = 3 * 1280 + 2 * GAP
 /** The caption strip under the picture, in pixels at the recorded size. */
 const STRIP = 32
 /** A device's name badge (e2e/devices.ts `label`) sits in this top-right box of its pane, in recorded pixels. */
@@ -202,6 +228,70 @@ const captions = async (page, width, items) => {
   return drawn.map((base64) => Buffer.from(base64, "base64"))
 }
 
+/**
+ * Draws a recording's title card in Chromium, `width`×`height`: the feature, the test's name, the line saying what it
+ * proves (wrapped, at most three lines), and the run's status and length at the foot. Returns it as raw rgb24.
+ */
+const titleCard = async (page, width, height, card, status, length) => {
+  const drawn = await page.evaluate(
+    ([width, height, card, status, length]) => {
+      const canvas = document.createElement("canvas")
+      canvas.width = width
+      canvas.height = height
+      const context = canvas.getContext("2d")
+      context.fillStyle = "#111827"
+      context.fillRect(0, 0, width, height)
+      // Sized by the picture's height, which is one device's: a card several devices wide keeps a readable line.
+      const scale = Math.max(0.6, Math.min(1.5, height / 832))
+      const sans = "-apple-system, BlinkMacSystemFont, system-ui, sans-serif"
+      const left = Math.round(Math.max(width * 0.1, (width - 1100 * scale) / 2))
+      const room = width - 2 * left
+      context.textBaseline = "alphabetic"
+      context.textAlign = "left"
+      const lines = []
+      context.font = `400 ${Math.round(26 * scale)}px ${sans}`
+      let current = ""
+      for (const word of card.line.split(/\s+/).filter(Boolean)) {
+        const next = current === "" ? word : `${current} ${word}`
+        if (context.measureText(next).width > room && current !== "") {
+          lines.push(current)
+          current = word
+        } else current = next
+      }
+      if (current !== "") lines.push(current)
+      if (lines.length > 3) lines.splice(3, lines.length - 3, `${lines.slice(2).join(" ").slice(0, 80)}…`)
+      const lineHeight = Math.round(36 * scale)
+      let y = Math.round(height / 2 - (lines.length * lineHeight) / 2)
+      context.fillStyle = "#9ca3af"
+      context.font = `600 ${Math.round(20 * scale)}px ${sans}`
+      if (card.feature !== "" && card.feature.toLowerCase() !== card.name.toLowerCase()) {
+        context.fillText(card.feature.toUpperCase(), left, y - Math.round(76 * scale))
+      }
+      context.fillStyle = "#f9fafb"
+      context.font = `700 ${Math.round(46 * scale)}px ${sans}`
+      context.fillText(card.name, left, y - Math.round(22 * scale))
+      context.fillStyle = "#d1d5db"
+      context.font = `400 ${Math.round(26 * scale)}px ${sans}`
+      for (const line of lines) {
+        y += lineHeight
+        context.fillText(line, left, y)
+      }
+      context.font = `600 ${Math.round(18 * scale)}px ${sans}`
+      context.fillStyle = status === "passed" ? "#34d399" : "#f87171"
+      context.fillText(status, left, height - Math.round(48 * scale))
+      context.fillStyle = "#9ca3af"
+      context.font = `500 ${Math.round(16 * scale)}px ui-monospace, Menlo, monospace`
+      context.fillText(`${length} run`, left + context.measureText(status).width + Math.round(40 * scale), height - Math.round(48 * scale))
+      const rgba = context.getImageData(0, 0, width, height).data
+      let binary = ""
+      for (let index = 0; index < rgba.length; index += 4) binary += String.fromCharCode(rgba[index], rgba[index + 1], rgba[index + 2])
+      return btoa(binary)
+    },
+    [width, height, card, status, length],
+  )
+  return Buffer.from(drawn, "base64")
+}
+
 const readManifests = () => {
   // devices.json wins over flow.json in the same directory: a devices test has no default page.
   const manifests = readdirSync(results, { recursive: true })
@@ -235,8 +325,10 @@ const make = async (flow, page, alike) => {
     const frames = measurePanes(composed, timed)
     // An older manifest has neither `startedAt` nor `marks`: its video has no chapters, and the check fails it.
     const found = chaptersOf(flow.marks ?? [], flow.startedAt ?? 0)
-    const videoRepeat = holdChapters(plan(frames, VIDEO_PACE), frames, found, VIDEO_PACE.chapter)
-    const gifRepeat = holdChapters(plan(frames, GIF_PACE), frames, found, GIF_PACE.chapter)
+    const videoRepeat = holdChapters(cutIdle(plan(frames, VIDEO_PACE), frames, VIDEO_PACE), frames, found, VIDEO_PACE.chapter)
+    const gifRepeat = holdChapters(cutIdle(plan(frames, GIF_PACE), frames, GIF_PACE), frames, found, GIF_PACE.chapter)
+    const card = titleCardOf({ spec: flow.spec ?? "flows", title: flow.title, describe: flow.describe, summary: flow.summary })
+    const status = flow.status ?? "unknown"
     if (!videoRepeat.some((count) => count > 0)) throw new Error(`${flow.flow}: every frame is blank`)
     // Tests whose titles start alike (flows.spec.ts' "flows: …") are named by their whole titles instead.
     const spec = flow.spec ?? "flows"
@@ -258,7 +350,7 @@ const make = async (flow, page, alike) => {
       const chapter = chapterAt(found, index)
       needed.set(key, {
         step: chapter < 0 ? "" : `${chapter + 1}/${found.length}`,
-        label: chapter < 0 ? flow.title : found[chapter].label,
+        label: chapter < 0 ? card.name : found[chapter].label,
         time: `${clock(index / FPS)} / ${total}`,
         failed: flow.status !== undefined && flow.status !== "passed",
       })
@@ -270,6 +362,10 @@ const make = async (flow, page, alike) => {
     const video = encoder(width, tall, ["-c:v", "libx264", "-preset", "medium", "-crf", "23", "-pix_fmt", "yuv420p", "-movflags", "+faststart", mp4], mp4)
     const preview = join(work, "preview.mkv")
     const gifFrames = encoder(width, tall, ["-vf", `scale='min(${GIF_WIDTH},iw)':-2:flags=lanczos`, "-c:v", "ffv1", "-pix_fmt", "gbrp", preview], preview)
+    // The title card first: what the video shows, before any of it plays.
+    const cardFrame = await titleCard(page, width, tall, card, status, total)
+    for (let copy = 0; copy < VIDEO_PACE.title; copy++) await video.write(cardFrame)
+    for (let copy = 0; copy < GIF_PACE.title; copy++) await gifFrames.write(cardFrame)
     let index = 0
     for await (const frame of rawFrames(composed, width * height * 3)) {
       if (videoRepeat[index] > 0 || gifRepeat[index] > 0) {
@@ -282,7 +378,9 @@ const make = async (flow, page, alike) => {
       index++
     }
     await Promise.all([video.end(), gifFrames.end()])
-    writeFileSync(chaptersFile, `${JSON.stringify(retime(found, videoRepeat), null, 2)}\n`)
+    const theme = flow.theme ?? themeFor(spec, flow.title)
+    const chaptersJson = chaptersFileOf(card, { title: flow.title, status, theme }, VIDEO_PACE.title, retime(found, videoRepeat))
+    writeFileSync(chaptersFile, `${JSON.stringify(chaptersJson, null, 2)}\n`)
 
     // A two-pass palette: one palette from every frame, then each frame mapped onto it with a stable ordered dither.
     const palette = join(work, "palette.png")
@@ -291,11 +389,11 @@ const make = async (flow, page, alike) => {
       execFileSync("ffmpeg", ["-v", "error", "-y", "-i", preview, "-i", palette, "-lavfi", "paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle", gif])
       if (statSync(gif).size <= MAX_GIF_BYTES) break
     }
-    const seconds = (repeat) => (repeat.reduce((sum, count) => sum + count, 0) / FPS).toFixed(0)
+    const seconds = (repeat, title) => ((repeat.reduce((sum, count) => sum + count, 0) + title) / FPS).toFixed(0)
     const mb = (file) => (statSync(file).size / 1024 / 1024).toFixed(1)
     console.log(`${String(flow.status).padEnd(8)} ${flow.flow}  (${timed.map((video) => video.name || "page").join(" | ")})`)
-    console.log(`         ${mp4}  ${mb(mp4)} MB  ${seconds(videoRepeat)} s of ${end.toFixed(0)} s  ${found.length} chapters`)
-    console.log(`         ${gif}  ${mb(gif)} MB  ${seconds(gifRepeat)} s`)
+    console.log(`         ${mp4}  ${mb(mp4)} MB  ${seconds(videoRepeat, VIDEO_PACE.title)} s of ${end.toFixed(0)} s  ${found.length} chapters`)
+    console.log(`         ${gif}  ${mb(gif)} MB  ${seconds(gifRepeat, GIF_PACE.title)} s`)
     return { gif, mp4 }
   } finally {
     rmSync(work, { recursive: true, force: true })

@@ -1,13 +1,13 @@
 # Notifications
 
-Your feed: what needs you, what finished, what failed, live work on the branches you're on, and your repositories' `main` moving and new releases. It reads the one run index (`runs`), keeps one row per person per subject in Postgres, and shows on every device you have open: the toast stack, and `+N`, which opens your list in place. Read, Hide and Dismiss on one device reach the others. Decision: [0009](../decisions/0009-notifications-and-live-work.md), slice 1; Will's rulings in its §8: toasts follow the scope you're in, so you see other people's runs on your branch, and `main` changing and a new release belong to the repository.
+Your feed: what needs you, what finished, what failed, live work on the branches you're on, and your repositories' `main` moving and new releases. It reads the one run index (`runs`), keeps one row per person per subject in Postgres, and shows on every device you have open: the toast stack, and the notifications panel, which the header's bell, `+N` and Alt+N open. Read, Hide and Dismiss on one device reach the others. Decision: [0009](../decisions/0009-notifications-and-live-work.md), slice 1; Will's rulings in its §8: toasts follow the scope you're in, so you see other people's runs on your branch, and `main` changing and a new release belong to the repository.
 
 ```
 run report (worker/Runs.ts) ── one transaction ──▶ runs ─▶ foldRun ─▶ notifications (launcher + branch watchers)
 GitHub push / release (worker/github/Api.ts) ─────────────▶ recordRepoEvent ─▶ notifications (repository watchers)
 a tab shows a conversation ─▶ watch/set ─▶ POST /api/watches ─▶ watches (branch:<id>, repo:<id>)
 Read · Hide · Dismiss ─▶ notification/ack ─▶ POST /api/notifications/ack ─▶ greatest(read|dismissed|hidden_version)
-notifications ─▶ Electric (/api/shapes/notifications, your rows) ─▶ every device ─▶ feedOf ─▶ the stack, the list
+notifications ─▶ Electric (/api/shapes/notifications, your rows) ─▶ every device ─▶ feedOf ─▶ the stack, the panel
 ```
 
 ## Who hears what
@@ -16,6 +16,7 @@ notifications ─▶ Electric (/api/shapes/notifications, your rows) ─▶ ever
 |---|---|---|---|
 | `run:<id>` | each report of an agent's answer | its launcher | every state: working, waiting, needs you (Answer), failed, done (Open) |
 | | | everyone watching the run's branch who may open it | a quiet toast naming the launcher while it lives (`Waiting` while the launcher is asked), gone 4 s after it settles; never an entry |
+| `clone:<repo id>` | each write to a clone's row (worker/CloneFeed.ts, [repo.md](repo.md#the-clone-in-the-feed)) | the person who asked for the attempt | `Clone · <repository> · Requested`, `Fetching 640.0 KB`, `Indexing`; done; or failed with why and Try again, which runs `repo/clone` again |
 | `main:<repo id>` | GitHub's `push` to the default branch | everyone watching the repository | `main · <commit> <first line>`, raised again for each newer push |
 | `release:<repo id>:<tag>` | GitHub's `release` `published` | everyone watching the repository | `Release · <name>` |
 
@@ -25,20 +26,54 @@ notifications ─▶ Electric (/api/shapes/notifications, your rows) ─▶ ever
 
 ## The stack
 
-| Entry | Toast | Its list entry |
+| Entry | Toast | In the panel |
 |---|---|---|
-| your question | `◆ Needs you · <question>` with Answer, until answered | stays while open; Answer focuses its card |
-| your run, live, elsewhere | `◌ Working · <question>` with Open | stays while open |
-| your run, done or failed | 4 s, with Open | done: 7 days; failed: until dismissed |
+| your question | `◆ Needs you · <question>` with Answer, until answered | stays while open; expanded, its options and field with Answer |
+| your run, live, elsewhere | `◌ Working · <question>` | stays while open; expanded, its last steps |
+| your run, done or failed | 4 s | done: 7 days, expanded, its last steps and answer; failed: until dismissed, expanded, why, and Retry |
 | someone else's run | `◌ Working · <who> · <question>`, then 4 s after it settles | none |
-| `main`, a release | 4 s, with Open | 7 days |
+| `main`, a release | 4 s | 7 days; expanded, who pushed or published |
 
 - **Over a conversation**, its own runs show in it instead of as toasts, unless they need you. `/app` places the stack under its header beside the spend alerts (`src/screens/app/Toasts.tsx`); every other page floats it at the bottom-left (`src/screens/root/Root.tsx`, `PageNotices`); a branch's page doesn't show it yet.
-- **Order:** needs you, failed, live, done, updates; the newest first within each. Three toasts show; `+N` counts the rest and your list, and opens them in place.
-- **×** hides a toast (the entry stays in your list); in the list, × dismisses a settled entry.
-- **Unread** entries carry a dot. Answer and Open record Read.
+- **Order:** needs you, failed, live, done, updates; the newest first within each. Three toasts show; `+N` counts the rest and your list, and opens the panel.
+- **Clicking a toast** opens what it is about: a run's conversation at its answer (`<href>#<run id>`, which the router scrolls into view), or your question's card, which takes focus; `main`, the repository; a release, its tag.
+- **×** hides a toast (the entry stays in your list); in the panel, × dismisses a settled entry and hides a live one.
+- **Unread** entries carry a dot, and the bell counts them. Opening, expanding and Answer record Read.
 - **A failed run's toast** shows for 4 s like a finished one; the failure stays in its conversation with Retry and in your list until you dismiss it.
 - Every toast fades in after 300 ms.
+
+## The top bar
+
+The top bar's bell (`NotificationsBell`, `@smthrs/ui` `NotificationBell`) is the one way in to what waits on you, on every page: in `/app`'s header, and floated at the window's top-right on every other page (`src/screens/root/Root.tsx`). It counts your unread entries, and while a run of yours waits on you it reads `◆ Needs you` in gold (with the count above 1), replacing agent status's header pill. Clicking it or Alt+N opens the panel at the newest run waiting on you, expanded with its question; O or Open goes to it.
+
+## The panel
+
+`src/features/attention/components/NotificationsPanel.tsx`, on every page (`src/screens/root/Root.tsx`): `@smthrs/ui`'s `NotificationPanel` at the window's top-right, its list scrolling, full width on a phone. It lists your entries newest first (by `occurred_at`), unread ones dotted, each with its time. Clicking an entry expands it in place; Open goes where its toast would. Expanded (`detailOf`, `src/features/attention/detail.ts`):
+
+| Entry | Shows |
+|---|---|
+| your question | its options and a field with Answer (`NeedsYouCard compact`), sharing the draft with the conversation's card; it answers a branch's question while the tab shows home, too |
+| your run | its last three steps (the answer's `parts`, when this device holds its conversation), and, done, the answer's text |
+| your failed run | why (`Rate limited`, `Model error`, `No answer`, `Stopped`, `Unfinished`); Retry in the conversation the tab shows, which asks the question again there and dismisses the entry |
+| `main`, a release | who pushed or published |
+
+The top bar's bell, `+N`, a toast's E and Alt+N open it; Escape, × and a click outside close it, giving focus back. The panel is the tab's own (`attention-panel`); what it shows is the synced rows.
+
+## Keys
+
+`@smthrs/ui`'s `NOTICE_KEYS`, on a focused toast or panel entry. Fields keep their letters.
+
+| Key | Does |
+|---|---|
+| Alt+T | focuses the first toast; Escape gives focus back |
+| Alt+N | opens or closes the panel, from anywhere, at the newest run waiting on you |
+| ↑ ↓, J K, Home End | move between toasts, or between the panel's entries |
+| Enter | a toast: opens it; an entry: expands it |
+| O | opens it |
+| E | expands it: a toast's opens the panel at its entry |
+| A | answers: a toast's is its Answer; in the panel, its field takes focus |
+| H | hides it (Dismiss, in the panel, for a settled entry) |
+| R | marks it read |
 
 ## Postgres
 
@@ -81,11 +116,15 @@ The run report and answer routes (`worker/Runs.ts`) fold in their own transactio
 | `notifications` | your rows, an Electric collection kept on the device (`persist: { schemaVersion: 1 }`) |
 | `attention-pending` | acts this device took that the rows don't show yet, kept on the device until they do |
 | `attention-entries` | what the views read, worked out by `feedOf` (`entries.ts`, pure) from the rows, the pending acts, the clock and the conversation the tab shows; again when a toast is due to hide |
-| `stack`, `stackHere`, `list`, `listHere` | the toasts and the list, on a page and over a conversation |
-| `open(subject, surface)`, `hide`, `dismiss` | the toast's action, its ×, and the list's × |
+| `stack`, `stackHere`, `list`, `listHere` | the toasts and the rest of your list, which `+N` counts, on a page and over a conversation |
+| `attention-panel` | the panel on this tab: open, the entry expanded, the entry to focus, A's focus requests |
+| `attention-details` | the expanded entry's detail (`detailOf`), worked out again when the entry, its answer, its run row or the tab's draft changes |
+| `feed`, `unread`, `needs`, `panel`, `detail` | the panel's entries newest first, the bell's counts, the panel, the detail |
+| `open(subject, surface)`, `hide`, `dismiss`, `read`, `answer` | a toast's click or Answer, its ×, the panel's ×, R, A |
+| `openPanel(via, subject?)`, `togglePanel`, `closePanel`, `expand`, `retry` | the panel |
 | followers | the feed (above), and the watch: `watch/set` for each conversation the tab shows, once per person, for a Member (or while sign-in can't say) |
 
-The views are `@smthrs/ui`'s `ToastStack` (`more`, `+N` / `Less`) and `Toast` (`tone="update"`, `word`, `unread`, `hideLabel`), with `noticeDismissDelay` and `workNoticeVisible`. Agent status keeps the header's pill, the card and the tab's title; its toast is the feed's.
+The views are `@smthrs/ui`'s `ToastStack` (`onMore`, `moreCount`), `Toast` (`tone="update"`, `word`, `unread`, `hideLabel`, `onOpen`, `onExpand`, `onAnswer`, `onRead`), `NotificationPanel`, `NotificationEntry`, `NotificationBell` and `NeedsYouCard`, with `noticeDismissDelay`, `workNoticeVisible` and `NOTICE_KEYS`. Agent status keeps the header's pill, the card and the tab's title; its toast is the feed's.
 
 ## Observability
 
@@ -98,13 +137,14 @@ The views are `@smthrs/ui`'s `ToastStack` (`more`, `+N` / `Less`) and `Toast` (`
 | `notifications.request`; `smithers_notification_requests`, `smithers_notification_shape_requests` | span; counters, ChatApi | `route`, `status`; `status`, `live` |
 | `notifications.watch`, `notifications.ack`; `smithers_notification_watches`, `smithers_notification_acks` | log and span; counters, engine | `outcome` (`sent`, `refused`, `unsent`), `act` |
 | `notifications.shown`, `smithers_notifications_shown` | log and counter, tab | `subject`, `version`, `state`, `kind` |
+| `notifications.panel`, `smithers_notifications_panel` | log and counter, tab | `act` (`open`, `expand`, `retry`), `via` (`bell`, `toast`, `more`, `key`) on open, `subject` |
 
 No record carries a title, a question, a commit message or who pushed (the tests search the logs for them).
 
 ## Not built in this slice
 
 - Live work of runs other than agents' answers (flows, Cloudflare, attached machines), `JournalPush`, `run_commands`, Stop and Retry from a toast, and the engine facts (`retry-scheduled`, beats, `Progress.report`) of 0009 §2.
-- Unwatch and levels from the app; a branch's page placing the stack; the left edges for live work scrolled out of view; browser notifications; `notifications/Prune` (rows past 7 days are hidden, not deleted); repository policy (M-47).
+- Unwatch and levels from the app; a branch's page placing the stack or the bell; a run's steps when this device doesn't hold its conversation; the left edges for live work scrolled out of view; browser notifications; `notifications/Prune` (rows past 7 days are hidden, not deleted); repository policy (M-47).
 - Repository events locally: GitHub's deliveries need the GitHub App and its webhook secret, which `alchemy dev` doesn't have unless you configure them.
 
 ## Tests
@@ -112,11 +152,12 @@ No record carries a title, a question, a commit message or who pushed (the tests
 | Test | Proves |
 |---|---|
 | `worker/Notifications.test.ts` | On the real ChatApi and Postgres: routing to the launcher and the branch's watchers (quiet, `all`, muted, access), versions, a question answered, a second question, a settled run, an answer settled before its run reports, a run with no scope; every watch and ack answer; greatest() from two devices in either order; the shape's filter; signed GitHub `push` and `release` deliveries: newer, older, replayed, other branches and repositories; no record carries a title |
-| `src/features/attention/entries.test.ts` | `feedOf`: every toast and list rule, pending acts, words, order; `timeOf`, `landed`, `follows` |
-| `src/features/attention/attention.test.ts` | Two people on Node devices: Ann's run on both her devices and Ben's; Read, Hide and Dismiss across her devices; done hiding after 4 s; an act a device can't send; watching per conversation and per sign-in |
+| `src/features/attention/entries.test.ts` | `feedOf`: every toast and list rule, pending acts, words, order, the panel's time; `timeOf`, `landed`, `follows` |
+| `src/features/attention/detail.test.ts` | `detailOf`: steps, notes, questions and Retry for every state; `surfaceOf` |
+| `src/features/attention/attention.test.ts` | Two people on Node devices: Ann's run on both her devices and Ben's; Read, Hide and Dismiss across her devices; done hiding after 4 s; an act a device can't send; watching per conversation and per sign-in. The panel: newest first, the unread count, expanding reads, answering in place, Open at the answer, Retry, a branch's question answered from home |
 | `src/features/attention/api.test.ts` | `AttentionClient`'s answers and the steps' outcomes |
 | `worker/flows/Expire.test.ts` | An abandoned answer's run fails, and its launcher's row says so |
-| `@smthrs/notifications` `test/Inbox.test.ts`, `@smthrs/ui` `tests/agent-status-notices.test.tsx` | `Inbox`; the notices, `Toast` and `ToastStack` |
-| `e2e/notifications.spec.ts` | In real browsers: Ann on two devices, Ben on one; Ben sees Ann's run on `main` from the Runs page, settling and hiding; Ann's question toasts on both her devices, Hide and Dismiss and Read reach both; `main` and a release reach both people (needs `E2E_GITHUB_WEBHOOK_SECRET`) |
+| `@smthrs/notifications` `test/Inbox.test.ts`, `@smthrs/ui` `tests/agent-status-notices.test.tsx`, `tests/notification-panel.test.tsx` | `Inbox`; the notices, `Toast`, `ToastStack`, the panel, its entries, the bell and every key |
+| `e2e/notifications.spec.ts` | In real browsers: Ann on two devices, Ben on one; Ben sees Ann's run on `main` from the Runs page and clicks its toast to her run; Alt+T and H hide her toast on both her devices; she expands it in the panel and answers there with A; Alt+N, R, E and O on her second device; `+1` and Dismiss; `main` and a release reach both people, expanded with who pushed (needs `E2E_GITHUB_WEBHOOK_SECRET`) |
 
 Two people locally: `worker/DevChatApi.ts` signs in a browser with the cookie `smithers_dev_person=teammate` as `local-teammate`, a Member (`devices.openTeammate`).

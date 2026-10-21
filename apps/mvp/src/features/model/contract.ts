@@ -11,7 +11,7 @@ export const MODEL_ROUTE = "/api/model"
  * What a model call is for. Each role is answered by the model an admin set for it (`admin/SetModel`), or by the
  * deployment's default model when no admin has.
  */
-export const MODEL_ROLES = ["agent", "renderer", "judge"] as const
+export const MODEL_ROLES = ["agent", "renderer", "judge", "summary"] as const
 
 /** One of {@link MODEL_ROLES}. */
 export type ModelRole = (typeof MODEL_ROLES)[number]

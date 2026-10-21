@@ -1,11 +1,44 @@
 ---
 title: Node model transport session recovery
-status: in-progress
+status: done
 area: sdk
 owner: codex-h2-transport
 updated: 2026-10-20
 links: [cerebras-load.md]
 ---
+
+## Current specification — 2026-10-20, 21:04 PDT
+
+**What:** Use one scoped Node provider transport with safe connection recovery.
+
+**Why:** Load tests and evals encountered invalid HTTP/2 sessions.
+
+**Current state:** At 20:58–20:59 the lead explicitly reports the transport fix done and waiting for round 4 to land on main. The earlier final builder report records the TLS corruption reproduction, HTTP/1.1 recovery, 42 Node and six model-host tests, full changed-file coverage, benchmark checks and packaged-host end-to-end proof. Its broader platform-node/environment failures and pending docs check remain limitations; this is not a claim that the entire package or production is green.
+
+**Next step:** Hand the completed transport change and receipts to the round-4 lander; retain broader package/doc checks with their owners. Confirm the pushed revision and deployment separately.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and assistant text replies from session 6253ecf2, 19:04–21:04 PDT on 2026-10-20; rulings and queue answers through 19:38 PDT; decisions through 0021, proposals, TODOs, rules and shared feature/host/panel briefs and designs. Later Will text and queue answers prevail. Product receipts are reported evidence; this tracker verifies the site build. Execution ownership retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 20:57 PDT
+
+**What:** Use one scoped Node provider transport with safe connection recovery.
+
+**Why:** Capacity tests and evals encountered invalid HTTP/2 sessions.
+
+**Current state:** The final transport report now reproduces a destroyed Undici HTTP/2 session after a corrupted TLS record on Node 26.5/26.10. The shared HTTP/1.1 providerFetch recovers under the same fixture. It reports 42 Node and six model-host transport tests passing with 100% changed-file coverage, three benchmark checks and packaged-host e2e. Full platform-node validation still has environment/test failures and docs:check is pending. This supersedes the earlier 41-test and unproven-local-cause summary; it does not prove the exact historical incident cause.
+
+**Next step:** Resolve full-package environment/test failures and obtain docs:check. Preserve the rate-limited repeat’s limits; no provider capacity claim beyond its measured receipts.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human messages and lead text replies from session 6253ecf2, approximately 18:57–20:57 PDT; current rulings and queue answers, decisions through 0021, proposals and shared briefs/designs. Transport details additionally use its final builder report. Product checks are reported evidence; this pass runs the maintainer-site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
 
 ## Current specification — 2026-10-20, 19:56 PDT
 
@@ -50,3 +83,5 @@ Live receipt: concurrency 10, 60.45 s, 199 OK / 343 provider 429 / 0 other, 371,
 Validation: 41 focused EgressHttpClient/providerFetch tests and six model-host transport tests pass with 100% statements, branches, functions and lines in each changed transport file; three offline benchmark tests pass. Packaged model-host e2e passes on the mini. Full platform-node suite on mini failed with missing native smithers-jj-export, later runtime/environment errors and two unhandled errors; no whole-package pass/coverage claim. Both SDK source checks and model-host test-source checks passed; final host checks pending. Docs sync completed (run-320); docs check pending.
 
 Final source checks: platform-node (including tests), model-host (including tests), packaged model host and playground all pass. No runtime-failure or transport-error rows occurred in the sustained repeat. Docs check remains the sole pending validation receipt.
+
+Root cause established subsequently with a retained local fatal-TLS fixture: corrupt one encrypted record after a successful HTTP/2 response; Node 26.5/26.10 emit BAD_RECORD_MAC, then every later request uses the destroyed session through Undici openStream/writeH2 and fails INVALID_SESSION. No abort or alternate origin is involved. This supersedes the earlier unproven-race limitation. HTTP/1.1 with a single pre-header fresh-pool repair passes all six calls under the same fault; the new regression retains both outcomes. The isolated child trusts its ephemeral CA without disabling certificate verification. Package docs and decision 0019 updated.

@@ -105,7 +105,7 @@ describe("branchAccess and policyOf", () => {
   test("read the branch, its conversation and the asker's access, by branch or by conversation", async () => {
     const branch = await tracked(runtime, REPO, "feature/share", "open", "person-1")
     const owner = await runtime.runPromise(branchAccess(person("member"), branch.branchId))
-    expect(owner).toEqual({ ...branch, createdBy: "person-1", access: "owner" })
+    expect(owner).toEqual({ ...branch, createdBy: "person-1", access: "owner", shared: false })
     const byConversation = await runtime.runPromise(branchAccess(person("member"), branch.conversationId, "conversation"))
     expect(byConversation).toEqual(owner)
     expect(await runtime.runPromise(branchAccess(person("member", "person-2"), branch.branchId)))
@@ -117,8 +117,11 @@ describe("branchAccess and policyOf", () => {
     const branch = await tracked(runtime, REPO, "feature/shared", "open", "person-1")
     await shared(runtime, branch.branchId, "person-2", "edit", "ben")
     await shared(runtime, branch.branchId, "person-3", "view", "gus")
+    // Shared: its owner and everyone it names see it so.
+    expect(await runtime.runPromise(branchAccess(person("member", "person-1"), branch.branchId)))
+      .toMatchObject({ access: "owner", shared: true })
     expect(await runtime.runPromise(branchAccess(person("member", "person-2"), branch.branchId)))
-      .toMatchObject({ access: "edit" })
+      .toMatchObject({ access: "edit", shared: true })
     expect(await runtime.runPromise(branchAccess(person("guest", "person-3"), branch.branchId)))
       .toMatchObject({ access: "view" })
     expect(await runtime.runPromise(branchAccess(person("member", "person-4"), branch.branchId)))
@@ -139,8 +142,9 @@ describe("branchAccess and policyOf", () => {
     const team = await tracked(runtime, REPO, "team")
     const main = await tracked(runtime, REPO, "main", "locked", "person-1")
     for (const branch of [team, main]) {
+      // Nobody shared the team's: their link's grant is the team's own.
       expect(await runtime.runPromise(branchAccess(person("member"), branch.branchId)))
-        .toMatchObject({ createdBy: null, access: "edit" })
+        .toMatchObject({ createdBy: null, access: "edit", shared: false })
       expect(await runtime.runPromise(branchAccess(person("guest"), branch.branchId))).toMatchObject({ access: "none" })
     }
     expect(await runtime.runPromise(policyOf(main.branchId))).toEqual({

@@ -1,8 +1,22 @@
 import { digestSync } from "@smthrs/crypto"
-import { Clock, Context, Effect, Metric, Schema } from "effect"
+import { Clock, Context, Effect, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import { STACK_OUTCOMES, type StackOutcome, type StackVia, type TodoState } from "../../src/features/todos/contract.ts"
-import { apply as applyRules, type Row, type Stack } from "../../src/features/todos/stack.ts"
+import {
+  STACK_OUTCOMES,
+  type StackOutcome,
+  type StackVia,
+  type TodoFailure,
+  type TodoNote,
+  type TodoState,
+  type TodoStep,
+} from "../../src/features/todos/contract.ts"
+import {
+  apply as applyRules,
+  type FinishedState,
+  type Result,
+  type Row,
+  type Stack,
+} from "../../src/features/todos/stack.ts"
 
 // The one writer of a repository's stack (decision 0016 §1): the only code that writes `stacks`, `todos`,
 // `todo_requests`, `todo_attempts` and `stack_ops`. Each change is one short transaction that locks the repository's
@@ -251,3 +265,187 @@ export const apply = (change: Change, options: { readonly runs: boolean }) =>
 /** The outcomes a stack refuses a change with: what the route answers instead of the change. */
 export const isRefusal = (outcome: StackOutcome): outcome is "stack_full" | "merged" | "not_found" =>
   outcome === "stack_full" || outcome === "merged" || outcome === "not_found"
+
+/** The attempt a `todo` run reports for: every report is fenced by its TODO and ordinal. */
+export interface RunAttempt {
+  readonly attemptId: string
+  readonly todoId: string
+  readonly repoId: string
+  readonly ordinal: number
+}
+
+/**
+ * What a `todo` run reports (decision 0016, the factory simplified): the step it is on; the branch it made at its base;
+ * the pull request it opened at its head; or how it ended. Each changes the TODO's row; only an ending frees the lane.
+ */
+export type RunEvent =
+  | { readonly kind: "step"; readonly step: TodoStep }
+  | { readonly kind: "branch"; readonly branch: string; readonly baseSha: string }
+  | { readonly kind: "published"; readonly headSha: string; readonly prNumber: number }
+  | {
+    readonly kind: "finished"
+    readonly state: FinishedState
+    readonly failure?: TodoFailure | undefined
+    readonly note?: TodoNote | undefined
+    readonly mergeSha?: string | undefined
+  }
+
+/** How a report went: `applied`, with any attempts an ending started, or `stale` (another attempt, or a dropped TODO). */
+export type Reported =
+  | { readonly outcome: "applied"; readonly starts: ReadonlyArray<AttemptStart> }
+  | { readonly outcome: "stale"; readonly starts: ReadonlyArray<AttemptStart> }
+
+/** Reports a `todo` run made, by `kind` and `outcome`. */
+export const reports = Metric.counter("smithers_todo_reports", {
+  description: "Reports the todo runs made to the stack's writer, by kind and outcome",
+  incremental: true,
+})
+
+/**
+ * Applies `event`, reported by `attempt`'s run, in one transaction that locks the repository's `stacks` row like
+ * `apply`. A report from an attempt that no longer holds its TODO's lane (a dropped TODO, an earlier attempt) is `stale`
+ * and changes nothing, so a dropped TODO's run stops at its next report. An ending starts the next Queued TODO when the
+ * host runs TODOs (`runs`). Logs `stack.report` with ids only.
+ */
+export const report = (attempt: RunAttempt, event: RunEvent, options: { readonly runs: boolean }) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const reported = yield* sql.withTransaction(Effect.gen(function* () {
+      const [locked] = yield* sql<{ readonly nextNumber: number; readonly lanes: number; readonly maxOpen: number }>`
+        SELECT next_number AS "nextNumber", lanes, max_open AS "maxOpen" FROM stacks
+        WHERE repo_id = ${attempt.repoId} FOR UPDATE`
+      const rows = yield* sql<Row>`
+        SELECT id, number, state, position, attempt, revision FROM todos
+        WHERE repo_id = ${attempt.repoId} AND (position IS NOT NULL OR id = ${attempt.todoId}::uuid)`
+      const todo = rows.find((row) => row.id === attempt.todoId)
+      const holds = locked !== undefined && todo !== undefined && todo.attempt === attempt.ordinal &&
+        (todo.state === "working" || todo.state === "in_review")
+      if (!holds) return { outcome: "stale", starts: [] } satisfies Reported
+      if (event.kind === "step") {
+        yield* sql`UPDATE todos SET step = ${event.step}, updated_at = now() WHERE id = ${attempt.todoId}::uuid`
+        return { outcome: "applied", starts: [] } satisfies Reported
+      }
+      if (event.kind === "branch") {
+        yield* sql`
+          UPDATE todos SET branch = ${event.branch}, base_sha = ${event.baseSha}, updated_at = now()
+          WHERE id = ${attempt.todoId}::uuid`
+        yield* sql`UPDATE todo_attempts SET base_sha = ${event.baseSha} WHERE id = ${attempt.attemptId}::uuid`
+        return { outcome: "applied", starts: [] } satisfies Reported
+      }
+      if (event.kind === "published") {
+        yield* sql`
+          UPDATE todos SET state = 'in_review', step = 'await', head_sha = ${event.headSha}, pr_number = ${event.prNumber},
+            pr_draft = false, updated_at = now()
+          WHERE id = ${attempt.todoId}::uuid`
+        yield* sql`UPDATE todo_attempts SET status = 'published' WHERE id = ${attempt.attemptId}::uuid`
+        if (todo.state !== "in_review") {
+          yield* Metric.update(Metric.withAttributes(transitions, { from: todo.state, to: "in_review" }), 1)
+        }
+        return { outcome: "applied", starts: [] } satisfies Reported
+      }
+      const before: Stack = {
+        nextNumber: locked.nextNumber,
+        lanes: options.runs ? locked.lanes : 0,
+        maxOpen: locked.maxOpen,
+        todos: rows,
+      }
+      const { stack: after, result } = applyRules(before, {
+        kind: "finish",
+        id: attempt.todoId,
+        ordinal: attempt.ordinal,
+        state: event.state,
+      })
+      // `holds` checked what `finish` checks, so the rules finish it.
+      const finished = result as Extract<Result, { readonly kind: "finished" }>
+      const starts = finished.starts.map((start): AttemptStart => ({
+        attemptId: crypto.randomUUID(),
+        todoId: start.todoId,
+        repoId: attempt.repoId,
+        number: start.number,
+        ordinal: start.ordinal,
+        revision: start.revision,
+      }))
+      const changed = after.todos.filter((row) => {
+        const was = before.todos.find((candidate) => candidate.id === row.id)!
+        return was.state !== row.state || was.position !== row.position || was.attempt !== row.attempt
+      })
+      const values = JSON.stringify(changed.map(({ id, state, position, attempt: ordinal }) => ({
+        id,
+        state,
+        position,
+        attempt: ordinal,
+      })))
+      yield* sql`
+        UPDATE todos AS t
+        SET state = v.state, position = v.position, attempt = v.attempt, updated_at = now(),
+          step = CASE WHEN t.id = ${attempt.todoId}::uuid THEN NULL ELSE t.step END,
+          settled_at = CASE WHEN v.state IN ('merged', 'dropped') THEN coalesce(t.settled_at, now()) ELSE NULL END
+        FROM jsonb_to_recordset(${values}::jsonb) AS v(id uuid, state text, position integer, attempt integer)
+        WHERE t.id = v.id`
+      yield* sql`
+        UPDATE todos SET failure = ${event.failure ?? null}, note = ${event.note ?? null},
+          merge_sha = ${event.mergeSha ?? null}
+        WHERE id = ${attempt.todoId}::uuid`
+      yield* sql`
+        UPDATE todo_attempts SET status = ${event.state === "failed" ? "failed" : "settled"}, settled_at = now()
+        WHERE id = ${attempt.attemptId}::uuid`
+      for (const start of starts) {
+        yield* sql`
+          INSERT INTO todo_attempts (id, todo_id, repo_id, ordinal, revision, status)
+          VALUES (${start.attemptId}::uuid, ${start.todoId}::uuid, ${attempt.repoId}, ${start.ordinal},
+            ${start.revision}, 'running')`
+      }
+      yield* sql`UPDATE stacks SET version = version + 1, updated_at = now() WHERE repo_id = ${attempt.repoId}`
+      for (const row of changed) {
+        const was = before.todos.find((candidate) => candidate.id === row.id)!.state
+        if (was !== row.state) yield* Metric.update(Metric.withAttributes(transitions, { from: was, to: row.state }), 1)
+      }
+      return { outcome: "applied", starts } satisfies Reported
+    }))
+    yield* Metric.update(Metric.withAttributes(reports, { kind: event.kind, outcome: reported.outcome }), 1)
+    yield* Effect.logWithLevel(reported.outcome === "stale" ? "Warn" : "Info")("stack.report").pipe(
+      Effect.annotateLogs({
+        repoId: attempt.repoId,
+        todoId: attempt.todoId,
+        attemptId: attempt.attemptId,
+        kind: event.kind,
+        outcome: reported.outcome,
+        ...(event.kind === "step" ? { step: event.step } : {}),
+        ...(event.kind === "published" ? { prNumber: event.prNumber } : {}),
+        ...(event.kind === "finished" ? { state: event.state, ...(event.failure ? { failure: event.failure } : {}) } : {}),
+        starts: reported.starts.length,
+      }),
+    )
+    return reported
+  }).pipe(Effect.withSpan("stack.report"))
+
+/** The TODO an attempt works on, as its run reads it: its number, title, prompt, issue and committer. */
+export interface AttemptTodo {
+  readonly number: number
+  readonly title: string
+  readonly prompt: string
+  readonly acceptance: ReadonlyArray<string>
+  readonly issueNumber: number | null
+  readonly createdBy: string
+  readonly createdLogin: string
+  readonly state: TodoState
+  readonly attempt: number
+  readonly branch: string | null
+  readonly baseSha: string | null
+  readonly headSha: string | null
+  readonly prNumber: number | null
+}
+
+/** Attempt `attempt`'s TODO and the prompt revision it works on, or `None`. Reads only. */
+export const attemptTodo = (attempt: RunAttempt) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<AttemptTodo>`
+      SELECT t.number, t.title, r.prompt, r.acceptance, t.issue_number AS "issueNumber", t.created_by AS "createdBy",
+        t.created_login AS "createdLogin", t.state, t.attempt, t.branch, t.base_sha AS "baseSha",
+        t.head_sha AS "headSha", t.pr_number AS "prNumber"
+      FROM todos t JOIN todo_attempts a ON a.todo_id = t.id
+      JOIN todo_requests r ON r.todo_id = t.id AND r.revision = a.revision
+      WHERE a.id = ${attempt.attemptId}::uuid AND t.id = ${attempt.todoId}::uuid`
+    return Option.fromNullishOr(row)
+  })

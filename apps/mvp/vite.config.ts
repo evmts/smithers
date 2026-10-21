@@ -2,6 +2,7 @@ import { join } from "node:path"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 import { VitePWA } from "vite-plugin-pwa"
+import { devHttps } from "./dev/https.ts"
 import { FRAME_POLICY, PAGE_HEADERS, shellCaches } from "./src/pwa.ts"
 
 // The app's shell, for the service worker to precache: everything a reload needs before it reaches the network.
@@ -27,6 +28,9 @@ export default defineConfig({
       },
     },
     react(),
+    // The dev server over HTTPS and HTTP/2 at https://localhost:1443, as Cloudflare serves the app (dev/https.ts,
+    // docs/infrastructure.md#https-and-http2). Its certificate is this machine's, kept beside the dev service worker.
+    devHttps(join(import.meta.dirname, "node_modules", ".dev-https")),
     // The app is a PWA (docs/decisions/0011-the-agent-runs-in-the-browser.md §5): installable, and its service worker
     // serves the shell offline after one online visit (0002 §8). The service worker only serves files; it never runs
     // the flow engine, and never caches or answers /api/*.
@@ -53,6 +57,9 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: SHELL,
+        // The language server's worker and TypeScript's lib files (src/features/code-intel/language.worker.ts) load
+        // only when a TypeScript or JavaScript file first shows; the runtime cache below keeps them once they have.
+        globIgnores: ["**/language.worker-*.js", "**/lib.*.d-*.js"],
         // The app's bundle and the engine worker are each over Workbox's 2 MiB default (2.7 and 2.3 MB on
         // 2026-10-20), which fails `vite build`; an offline reload needs both precached.
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
@@ -93,6 +100,9 @@ export default defineConfig({
     },
   ],
   worker: { format: "es" },
+  // TypeScript is the language server worker's one CommonJS import: bundled up front, so the first TypeScript file the
+  // dev server shows doesn't reload every page to optimize it.
+  optimizeDeps: { include: ["typescript"] },
   server: { port: 5190, strictPort: true, fs: { strict: false } },
   build: { target: "esnext" },
 })

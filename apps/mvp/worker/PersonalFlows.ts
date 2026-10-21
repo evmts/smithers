@@ -20,7 +20,7 @@ import {
   WriteRequest,
 } from "../src/features/flows-ui/schema.ts"
 import { placementOf, SOURCE_PATH } from "../src/features/flows-ui/source.ts"
-import { type Actor, canAsk, Sessions } from "./Actor.ts"
+import { type Actor, canAsk, refusesPersonOnly, Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
@@ -585,6 +585,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         Effect.gen(function* () {
           fields.draftId = id
           if (request.method !== "POST") return methodNot("POST")
+          // Only the person answers what the drafting agent asked (decision 0017 slice 0).
+          if (yield* refusesPersonOnly(actor, "flow/answer")) return refusal(403, "person_only")
           const read = yield* body(request, fields, decodeAnswers)
           if (!read.ok) return read.response
           fields.round = read.value.round

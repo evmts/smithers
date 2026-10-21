@@ -1,5 +1,5 @@
 import { type CodeStorage, GitRemote } from "@smthrs/effect-code-storage"
-import { Context, Effect, Layer, Option } from "effect"
+import { Context, Data, Effect, Layer, Option } from "effect"
 import type { HttpClient } from "effect/http"
 import { repoId } from "../../src/features/repo/contract.ts"
 import * as RepoConfig from "../RepoConfig.ts"
@@ -15,6 +15,14 @@ import * as RepoConfig from "../RepoConfig.ts"
 //   would read every repository its owner can, private ones included, for anyone who names one. Private repositories
 //   wait for per-repository GitHub App installation tokens (decision 0008 §5).
 
+/**
+ * The forge didn't create a branch: one of that name exists (`exists`), it has no such repository or start (`not_found`),
+ * it can't create branches here (`not_configured`: GitHub read with no credential), or it didn't answer (`unavailable`).
+ */
+export class CreateRefused extends Data.TaggedError("CreateRefused")<{
+  readonly code: "exists" | "not_found" | "not_configured" | "unavailable"
+}> {}
+
 /** A GitHub repository, by its owner and name. */
 export interface Repository {
   readonly owner: string
@@ -24,18 +32,47 @@ export interface Repository {
 /** The remote a branch's git is read from, with its credential. */
 export class Forge extends Context.Service<
   Forge,
-  { readonly upstream: (repository: Repository) => Effect.Effect<GitRemote.Upstream> }
+  {
+    readonly upstream: (repository: Repository) => Effect.Effect<GitRemote.Upstream>
+    /** Creates `branch` at the commit `from` names, on the forge. */
+    readonly create: (repository: Repository, branch: string, from: string) => Effect.Effect<void, CreateRefused>
+  }
 >()("@smthrs/mvp/branch/Forge") {
-  /** The repository's Code Storage mirror, read with a `git:read` token. */
+  /**
+   * The repository's Code Storage mirror: read with a `git:read` token, and a new branch made there with a `git:write`
+   * one (`CodeStorage.createBranch`). The branch is Smithers' until a person pushes it to GitHub.
+   */
   static readonly codeStorage = (client: CodeStorage.Client) =>
-    Layer.succeed(Forge, Forge.of({ upstream: ({ owner, name }) => client.gitRemote(repoId(owner, name)) }))
+    Layer.succeed(
+      Forge,
+      Forge.of({
+        upstream: ({ owner, name }) => client.gitRemote(repoId(owner, name)),
+        create: ({ owner, name }, branch, from) =>
+          client.createBranch(repoId(owner, name), { branch, from }).pipe(
+            Effect.asVoid,
+            Effect.mapError((error) =>
+              new CreateRefused({
+                code: error.code === "conflict"
+                  ? "exists"
+                  : ["not_found", "repository_not_found", "ref_not_found", "branch_not_found"].includes(error.code)
+                  ? "not_found"
+                  : "unavailable",
+              })
+            ),
+          ),
+      }),
+    )
 
-  /** The public repository on GitHub, read with no credential: GitHub answers a private one as missing. */
+  /**
+   * The public repository on GitHub, read with no credential: GitHub answers a private one as missing. It can't create
+   * a branch, which needs a credential this forge never holds.
+   */
   static readonly gitHub = Layer.succeed(
     Forge,
     Forge.of({
       upstream: ({ owner, name }) =>
         Effect.succeed({ url: `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}.git` }),
+      create: () => Effect.fail(new CreateRefused({ code: "not_configured" })),
     }),
   )
 
@@ -49,6 +86,10 @@ export class Forge extends Context.Service<
 export const branchHead = (repository: Repository, branch: string) =>
   Effect.flatMap(Forge, (forge) =>
     Effect.flatMap(forge.upstream(repository), (upstream) => GitRemote.ref(upstream, branch)))
+
+/** Creates `branch` on the repository's forge at the commit `from` names. */
+export const createBranch = (repository: Repository, branch: string, from: string) =>
+  Effect.flatMap(Forge, (forge) => forge.create(repository, branch, from))
 
 /** The repository's default branch on its forge. */
 export const defaultBranch = (repository: Repository) =>

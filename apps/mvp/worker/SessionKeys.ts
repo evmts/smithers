@@ -11,8 +11,11 @@ import { Effect, Option, Redacted } from "effect"
 /** The shortest SESSION_SECRET sign-in accepts. Alchemy generates 64 hexadecimal characters. */
 export const MIN_SECRET_LENGTH = 32
 
-/** What a signed value is for, so a value signed for one cookie never verifies as another. */
-export type Purpose = "session" | "sign_in"
+/**
+ * What a signed value is for, so a value signed for one use never verifies as another: a cookie (`session`,
+ * `sign_in`) or a run credential (`run`, worker/RunCredentials.ts).
+ */
+export type Purpose = "session" | "sign_in" | "run"
 
 /** What a sealed value is and whose it is; the cipher authenticates both with the ciphertext. */
 export type SealContext = CredentialCipher.Context

@@ -19,7 +19,7 @@ export const shapes = Metric.counter("repo_shape_requests", {
   incremental: true,
 })
 
-/** Tree and file reads RepoApi answered, by `kind` (`tree` or `blob`) and HTTP `status`. */
+/** Reads RepoApi answered, by `kind` (`tree`, `blob`, `raw`, `refs` or `about`) and HTTP `status`. */
 export const reads = Metric.counter("repo_reads", {
   description: "Repository tree and file reads, by kind and status",
   incremental: true,

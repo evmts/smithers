@@ -1,6 +1,7 @@
 import { Context, Data, type Duration, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { type TriageDecision, type WriteOp, writesRoute, type WriteVia } from "./contract"
+import { withBearer, withoutCookie } from "../../flows/bearer"
+import { type TriageDecision, type WriteOp, writesRoute } from "./contract"
 import { WriteTaken } from "./schema"
 
 // ChatApi's writes route as the browser calls it (decision 0012 §4, docs/features/issues.md#routes), through Effect's
@@ -12,56 +13,48 @@ import { WriteTaken } from "./schema"
  */
 export class WriteNotTaken extends Data.TaggedError("WriteNotTaken")<{ readonly status?: number }> {}
 
-/** A write as the route takes it. */
+/** A write as the route takes it. It names nobody: who acts is the session's or the run credential's to say. */
 export type WriteRequest =
+  | { readonly writeId: string; readonly op: "issue/commitment"; readonly number: number; readonly commitment: import("./lifecycle").Commitment }
+  | { readonly writeId: string; readonly op: Extract<WriteOp, "issue/create">; readonly title: string; readonly body: string }
   | {
     readonly writeId: string
-    readonly via: WriteVia
-    readonly op: Extract<WriteOp, "issue/create">
-    readonly title: string
-    readonly body: string
-  }
-  | {
-    readonly writeId: string
-    readonly via: WriteVia
     readonly op: Extract<WriteOp, "issue/comment">
     readonly number: number
     readonly body: string
   }
   | {
     readonly writeId: string
-    readonly via: WriteVia
     readonly op: Extract<WriteOp, "issue/triage">
     readonly number: number
     readonly decision: TriageDecision
     readonly reason?: string
   }
-  | { readonly writeId: string; readonly via: WriteVia; readonly op: Extract<WriteOp, "triage/run">; readonly number: number }
-  | {
-    readonly writeId: string
-    readonly via: WriteVia
-    readonly op: Extract<WriteOp, "triage/enable">
-    readonly dailyTokens?: number
-  }
-  | { readonly writeId: string; readonly via: WriteVia; readonly op: Extract<WriteOp, "triage/pause"> }
+  | { readonly writeId: string; readonly op: Extract<WriteOp, "triage/run">; readonly number: number }
+  | { readonly writeId: string; readonly op: Extract<WriteOp, "triage/enable">; readonly dailyTokens?: number }
+  | { readonly writeId: string; readonly op: Extract<WriteOp, "triage/pause"> }
 
 const decodeTaken = Schema.decodeUnknownEffect(WriteTaken)
 
-/** `POST /api/repos/<owner>/<name>/writes`: `202` took a new write, `200` had it already. */
+/**
+ * `POST /api/repos/<owner>/<name>/writes`: `202` took a new write, `200` had it already. With `credential`, the write
+ * goes as the run that wrote it, with that run credential and without the session cookie (decision 0017 slice 0).
+ */
 export const postWrite = (
   origin: string,
   repository: { readonly owner: string; readonly name: string },
   write: WriteRequest,
   within: Duration.Input,
+  credential?: string,
 ) =>
   Effect.gen(function* () {
     const client = yield* HttpClient.HttpClient
-    const response = yield* client
-      .execute(
-        HttpClientRequest.post(`${origin}${writesRoute(repository.owner, repository.name)}`).pipe(
-          HttpClientRequest.bodyJsonUnsafe(write),
-        ),
-      )
+    const request = HttpClientRequest.post(`${origin}${writesRoute(repository.owner, repository.name)}`).pipe(
+      HttpClientRequest.bodyJsonUnsafe(write),
+    )
+    const response = yield* (credential === undefined
+      ? client.execute(request)
+      : withoutCookie(client.execute(withBearer(request, credential))))
       .pipe(Effect.mapError(() => new WriteNotTaken({})))
     yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
     if (response.status !== 200 && response.status !== 202) return yield* new WriteNotTaken({ status: response.status })
@@ -80,7 +73,15 @@ export const postWrite = (
  */
 export class IssuesClient extends Context.Service<
   IssuesClient,
-  { readonly write: (owner: string, name: string, write: WriteRequest) => Effect.Effect<WriteTaken, WriteNotTaken> }
+  {
+    /** Sends `write`: as the run whose `credential` it carries, else in the person's session. */
+    readonly write: (
+      owner: string,
+      name: string,
+      write: WriteRequest,
+      credential?: string,
+    ) => Effect.Effect<WriteTaken, WriteNotTaken>
+  }
 >()("@smthrs/mvp/issues/IssuesClient") {
   /** The real client: ChatApi at `origin`, with `within` for each whole request. */
   static readonly layer = (options: { readonly origin: string; readonly within: Duration.Input }) =>
@@ -88,8 +89,8 @@ export class IssuesClient extends Context.Service<
       IssuesClient,
       Effect.map(HttpClient.HttpClient, (client) =>
         IssuesClient.of({
-          write: (owner, name, write) =>
-            postWrite(options.origin, { owner, name }, write, options.within).pipe(
+          write: (owner, name, write, credential) =>
+            postWrite(options.origin, { owner, name }, write, options.within, credential).pipe(
               Effect.provideService(HttpClient.HttpClient, client),
             ),
         })),

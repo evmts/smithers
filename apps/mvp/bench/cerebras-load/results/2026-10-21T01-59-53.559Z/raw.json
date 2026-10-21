@@ -1,0 +1,14 @@
+{
+  "model": {
+    "protocol": "openai-chat",
+    "baseUrl": "https://api.cerebras.ai",
+    "modelId": "qwen-3.8-27b",
+    "credential": "CEREBRAS_API_KEY"
+  },
+  "seconds": 1,
+  "chargedTokens": 0,
+  "estimatedUsd": 0,
+  "stopReason": "runtime_failure",
+  "steps": [],
+  "requests": []
+}

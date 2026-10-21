@@ -42,7 +42,8 @@ export interface Allowed {
 /** The policy's answer. */
 export type Checked = { readonly ok: true; readonly page: Allowed } | { readonly ok: false; readonly reason: Refusal }
 
-const LOCAL_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"])
+/** This machine's hostnames, as a URL spells them: what `localHttp` lets a tab open and ChatApi's page check read. */
+export const LOCAL_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"])
 
 /** Browsers drop ASCII tab, line feed and carriage return before they parse a URL; so does the check. */
 const CONTROL = /[\t\n\r]/g

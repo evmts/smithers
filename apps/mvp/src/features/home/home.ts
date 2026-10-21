@@ -1,24 +1,48 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Option } from "effect"
 import type { RepoClient } from "../repo/api"
 import type { RepoStore } from "../repo/store"
-import { open } from "./actions"
+import { TodosStore } from "../todos/store"
+import type { FlowDispatch } from "../../flows/dispatch"
+import { open, runAction, warm } from "./actions"
+import type { HomeClient } from "./api"
 import { HomeStore } from "./store"
 
 // A repository's home as a frontend sees it: live queries to read and a plain function to act, with no Effect in
 // sight. React renders the queries with `useLiveQuery`, and a repository route's loader calls `open`.
 
 type Store = HomeStore["Service"]
+type Stacks = TodosStore["Service"]
 
-/** What a frontend reads live: whose home the page shows, with the home; and the files its Markdown blocks read. */
+/** What a frontend reads live. */
 export interface HomeQueries {
+  /** Whose home the page shows, with its declared and curated homes. */
   readonly home: Store["homeState"]["tanstack"]
+  /** The files its Markdown blocks read. */
   readonly files: Store["fileState"]["tanstack"]
+  /** The live blocks' rows: the synced issues and pull requests, their sync, and this person's runs. */
+  readonly items: Store["items"]["tanstack"]
+  readonly syncs: Store["syncs"]["tanstack"]
+  readonly runs: Store["runs"]["tanstack"]
+  /** A repository's TODOs once `open` opened its stack for a `stack` block; no rows before, nor without the TODOs. */
+  readonly stack: (repoId: string) => Stacks["empty"]["todos"]["tanstack"] | Store["noTodos"]["tanstack"]
+  /** Whether this person may read each opened stack, as its shape last said; none without the TODOs. */
+  readonly stackAccess: Stacks["accessQuery"]["tanstack"] | Store["noAccess"]["tanstack"]
 }
 
 /** What a route does. */
 export interface HomeActions {
-  /** A repository route's loader: reads `owner/name`'s home at its default branch's head. Returns at once. */
+  /** A repository route, once warm: reads `owner/name`'s homes, who the person is on it, and its live rows. Returns at once. */
   readonly open: (owner: string, name: string) => void
+  /**
+   * A repository route first, on a link's hover or focus and before every navigation: reads `owner/name`'s own home
+   * and its files into this tab without showing them. Resolves once read, or after a second.
+   */
+  readonly warm: (owner: string, name: string) => Promise<void>
+  /**
+   * An action block's button or key on the routed repository, as `login`: resolves once its flow settles with the page
+   * to open (New branch: the new branch's workspace), or nothing when it failed or isn't an action the home runs.
+   */
+  readonly run: (flow: string, login: string | null) => Promise<string | undefined>
 }
 
 export class Home extends Context.Service<Home, { readonly queries: HomeQueries; readonly actions: HomeActions }>()(
@@ -29,10 +53,26 @@ export class Home extends Context.Service<Home, { readonly queries: HomeQueries;
     Home,
     Effect.gen(function* () {
       const store = yield* HomeStore
-      const run = Effect.runSyncWith(yield* Effect.context<HomeStore | RepoStore | RepoClient>())
+      const todos = yield* Effect.serviceOption(TodosStore)
+      const context = yield* Effect.context<HomeStore | HomeClient | RepoStore | RepoClient | FlowDispatch>()
+      const run = Effect.runSyncWith(context)
+      const promise = Effect.runPromiseWith(context)
       return Home.of({
-        queries: { home: store.homeState.tanstack, files: store.fileState.tanstack },
-        actions: { open: (owner, name) => run(open(owner, name)) },
+        queries: {
+          home: store.homeState.tanstack,
+          files: store.fileState.tanstack,
+          items: store.items.tanstack,
+          syncs: store.syncs.tanstack,
+          runs: store.runs.tanstack,
+          stack: (repoId) =>
+            Option.isSome(todos) ? (todos.value.opened(repoId) ?? todos.value.empty).todos.tanstack : store.noTodos.tanstack,
+          stackAccess: Option.isSome(todos) ? todos.value.accessQuery.tanstack : store.noAccess.tanstack,
+        },
+        actions: {
+          open: (owner, name) => run(open(owner, name)),
+          warm: (owner, name) => promise(warm(owner, name)),
+          run: (flow, login) => promise(runAction(flow, login)),
+        },
       })
     }),
   )

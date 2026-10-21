@@ -59,7 +59,9 @@ const refuse = (status: number, code: ModelProxy.Refusal["code"], message: strin
 
 const unavailable = refuse(503, "provider_internal", "Smithers can't reach its database. Try again.")
 
-const noRoute = refuse(503, "no_route", "This model isn't available.")
+// A role whose model can't be used here is a setting to change, not an outage to wait out: a 4xx, which a caller's
+// model step seals as its answer. A 503 was a capacity refusal to the step, which the engine retried six times.
+const noRoute = refuse(409, "no_route", "This model isn't available.")
 
 const INVALID_CAPS = "Send maxTokens as a whole number above 0 and thinkingBudget as a whole number of at least 0."
 

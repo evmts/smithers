@@ -7,6 +7,23 @@ updated: 2026-10-20
 links: [repo-checks-green.md, sdk-test-reds.md, land-to-main.md, local-first.md, model-endpoint.md]
 ---
 
+## Current specification — 2026-10-20, 20:24 PDT
+
+**What:** Eliminate two-tab background failures, proxy flakiness and misclassified engine refusals.
+
+**Why:** A passing assertion count must also produce a clean runner exit and preserve refusal semantics.
+
+**Current state:** At 20:16 PDT the lead reports fixes for TanStack hydration through whole transactions, a model-proxy test passing 200 consecutive runs, and engine refusals carrying their refusal code. The upstream report remains a draft. Three other intermittent failures remain with the same investigator; two consecutive full green runs are still required.
+
+**Next step:** Retain regression tests for each discovered bug, fix the remaining intermittent failures and obtain two full clean runs. Keep focused receipts distinct from whole-suite completion.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user text and assistant replies from session 6253ecf2, approximately 18:24–20:24 PDT; queue answers through 19:38 PDT; rulings, decisions through 0021, proposals, TODOs, rules and shared feature/host/panel briefs and designs. Builder checks are reported evidence; this tracker verifies the maintainer-site build. Existing execution ownership retained.
+
+## Earlier tracker history (retained)
+
+
 ## Current specification — 2026-10-20, 18:04 PDT
 
 **What:** Fix unhandled two-tab background errors and an intermittent proxy-test failure.

@@ -1,0 +1,33 @@
+import { Effect, Layer, Ref } from "effect"
+import { SharedPrompt } from "../chat/sharedPrompt"
+import type { ChatStore } from "../chat/store"
+import { followPrompt, shownConversation, type ShownPrompt, type } from "./actions"
+import type { CoeditStore } from "./store"
+import type { TextWrites } from "./writes"
+
+// The composer's draft on a branch its owner shared (docs/features/coedit.md#the-prompt): the branch's prompt, a text
+// everyone with `Can edit` types together. Chat's draft actions hand each change here (`SharedPrompt`), and everyone
+// else's typing comes back into the draft (`followPrompt`). Anywhere else chat keeps the draft on the device, the
+// person's alone.
+
+/** `SharedPrompt` over co-editing, following the conversation chat shows for as long as the store lives. */
+export const layer = Layer.effect(
+  SharedPrompt,
+  Effect.gen(function* () {
+    // The shown prompt, once it is open, and what the person typed in the conversation shown before it was.
+    const current = yield* Ref.make<ShownPrompt | undefined>(undefined)
+    const pending = yield* Ref.make("")
+    yield* followPrompt(current, pending)
+    const context = yield* Effect.context<CoeditStore | ChatStore | TextWrites>()
+    return SharedPrompt.of({
+      set: (draft, { base, selection }) =>
+        Effect.gen(function* () {
+          const shown = yield* Ref.get(current)
+          // Chat hands a change here only while the conversation shown is shared. Until its prompt opens, the draft
+          // waits for it.
+          if (shown === undefined || shown.conversation !== (yield* shownConversation)) return yield* Ref.set(pending, draft)
+          yield* type(shown.textId, draft, { base, selection })
+        }).pipe(Effect.provideContext(context)),
+    })
+  }),
+)

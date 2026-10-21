@@ -10,10 +10,16 @@ export const resolves = Metric.counter("smithers_web_home_resolves", {
   incremental: true,
 })
 
+/** Answers of who the person is and the curated home, by `outcome`: `declared`, `absent` or `unreadable`. */
+export const answers = Metric.counter("smithers_web_home_answers", {
+  description: "Answers of who the person is on a repository and its curated home, by outcome",
+  incremental: true,
+})
+
 /** Records a resolve: `home.resolve` with its outcome, counts and duration, the span's attributes, and its count. */
 export const recordResolve = (row: HomeRow, outcome: string, durationMs: number, status: number | undefined) =>
   Effect.gen(function* () {
-    const blocks = row.blocks.length
+    const blocks = row.sections.reduce((total, section) => total + section.blocks.length, 0)
     yield* Metric.update(Metric.withAttributes(resolves, { outcome }), 1)
     yield* Effect.annotateCurrentSpan({
       "smithers.home.outcome": outcome,
@@ -33,8 +39,49 @@ export const recordResolve = (row: HomeRow, outcome: string, durationMs: number,
     )
   })
 
+/**
+ * Records an answer: `home.answer` with its outcome, the audience ChatApi said, how many sections it sent, its
+ * status when it failed and its duration; and its count.
+ */
+export const recordAnswer = (
+  outcome: string,
+  audience: string | undefined,
+  sections: number,
+  durationMs: number,
+  status: number | undefined,
+) =>
+  Effect.gen(function* () {
+    yield* Metric.update(Metric.withAttributes(answers, { outcome }), 1)
+    yield* Effect.logWithLevel(outcome === "unreadable" ? "Warn" : "Info")("home.answer").pipe(
+      Effect.annotateLogs({
+        feature: "home",
+        outcome,
+        sections,
+        durationMs,
+        ...(audience === undefined ? {} : { audience }),
+        ...(status === undefined ? {} : { status }),
+      }),
+    )
+  })
+
 /** Records a Markdown block's file read: `home.file.load` with its outcome, RepoApi's status and its duration. */
 export const recordFile = (outcome: string, durationMs: number, status: number | undefined) =>
   Effect.logWithLevel(outcome === "failed" ? "Warn" : "Info")("home.file.load").pipe(
     Effect.annotateLogs({ feature: "home", outcome, durationMs, ...(status === undefined ? {} : { status }) }),
   )
+
+/** Action blocks pressed, by `flow` and `outcome`: `done`, or why not (`not_configured`, `forbidden`, `unavailable`, …). */
+export const actions = Metric.counter("smithers_web_home_actions", {
+  description: "Repository home action blocks pressed, by flow and outcome",
+  incremental: true,
+})
+
+/** Records an action: `home.action` with its flow, outcome and duration, and its count. Never the branch's name. */
+export const recordAction = (flow: string, outcome: string, durationMs: number) =>
+  Effect.gen(function* () {
+    yield* Metric.update(Metric.withAttributes(actions, { flow, outcome }), 1)
+    yield* Effect.annotateCurrentSpan({ "smithers.home.flow": flow, "smithers.home.outcome": outcome })
+    yield* Effect.logWithLevel(outcome === "done" ? "Info" : "Warn")("home.action").pipe(
+      Effect.annotateLogs({ feature: "home", flow, outcome, durationMs }),
+    )
+  })

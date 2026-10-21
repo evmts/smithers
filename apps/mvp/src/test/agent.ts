@@ -19,7 +19,12 @@ import { Tabs } from "../features/navigation/flows"
 import type { Part } from "../features/agent/schema"
 import type { ThemeMode } from "../features/theme/contract"
 import { tabPreferences, ThemeStore } from "../features/theme/store"
+import * as RunCredentials from "../flows/credentials"
+import { clientFlows } from "../flows/declarations"
+import type { Door } from "../flows/dispatch"
+import { tabDoors } from "../flows/doors"
 import { registrations } from "../flows/registrations"
+import { TabRequests } from "../flows/requests"
 import { TabClipboard } from "../features/repo/copy"
 import { TabChat } from "../features/chat/steps"
 import { TabIssues } from "../features/issues/steps"
@@ -27,6 +32,12 @@ import { TabTodos } from "../features/todos/steps"
 
 /** ChatApi's origin as the agent reaches it: the harness's in-process handler. */
 export const ORIGIN = "http://chat.test"
+
+/** The person's presses, as a tab would remember them, for a host with no tab: every run a test starts is theirs. */
+const personPresses = Layer.succeed(
+  TabRequests,
+  TabRequests.of({ add: () => Effect.void, doorOf: () => Effect.succeedSome<Door>("button") }),
+)
 
 /** A person with the Member role: the signed-in caller every agent test asks as. */
 export const member: Actor = { subject: { kind: "person", id: "person-member" }, role: "member" }
@@ -43,6 +54,8 @@ export interface Engine {
   readonly schema: string
   readonly flows: FlowRuntime.FlowRuntime["Service"]
   readonly driver: EngineStore.EngineStore.Driver["Service"]
+  /** The engine's run reads, what a run's page reads through the browser's engine (decision 0014 §3). */
+  readonly inspection: EngineStore.RunInspection.RunInspection["Service"]
   readonly theme: ThemeStore["Service"]
   /** Closes the engine, interrupting what it runs. */
   readonly kill: () => Promise<void>
@@ -62,11 +75,14 @@ export const openAgent = async (
     readonly partsEvery?: `${number} millis`
     /** The deployment's default model in place of `script`: the agent evals' real model (evals/agent.eval.ts). */
     readonly model?: HostModel["Service"]
+    /** The fetch ChatApi reaches Electric and outside pages with (worker/test/pages.ts): the harness's unless set. */
+    readonly fetch?: typeof globalThis.fetch
   } = {},
 ) => {
   const h: Harness = await harness(runtime, script, {
     actor: options.actor ?? member,
     ...(options.model === undefined ? {} : { model: options.model }),
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
   })
   // Only a call: Bun's globals, which a program loading the `@smthrs/cli` root sees, add `preconnect` to `fetch`.
   const fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -92,11 +108,19 @@ export const openAgent = async (
     engineOptions: { readonly turnWait?: Duration.Input } = {},
   ): Promise<Engine> => {
     const scope = Effect.runSync(Scope.make())
-    const registration = registrations({
-      origin: ORIGIN,
-      partsEvery: options.partsEvery ?? "20 millis",
-      ...(engineOptions.turnWait === undefined ? {} : { turnWait: engineOptions.turnWait }),
-    }).pipe(
+    const doors = `agent-${crypto.randomUUID()}`
+    const registration = Layer.merge(
+      registrations({
+        origin: ORIGIN,
+        partsEvery: options.partsEvery ?? "20 millis",
+        ...(engineOptions.turnWait === undefined ? {} : { turnWait: engineOptions.turnWait }),
+      }),
+      // No tab dispatches here: the test is the person, so every root run it starts is their own press. The agent's
+      // runs, and every run nested in one, still get run credentials (src/flows/credentials.ts).
+      tabDoors({ name: doors }).pipe(Layer.provide(personPresses)),
+    ).pipe(
+      // Every request goes as the run that made it, as in the browser's engine worker.
+      Layer.provide(RunCredentials.layer({ origin: ORIGIN, name: doors, flows: clientFlows })),
       Layer.provide(tabPreferences),
       // No tab listens on this engine's navigation, clipboard, issues, TODOs or chat channels: a navigation, a copy, an
       // issue or TODO write or a message's Copy or Edit here finds its tab gone.
@@ -107,7 +131,7 @@ export const openAgent = async (
       Layer.provide(TabChat.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
       Layer.provide(TabChannel.layer),
       // The run reads the acts on runs need, which the browser's engine provides (decision 0014 §3).
-      Layer.provide(EngineStore.RunInspection.layer),
+      Layer.provideMerge(EngineStore.RunInspection.layer),
       Layer.provideMerge(device),
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
@@ -126,6 +150,7 @@ export const openAgent = async (
       schema: built.engine.schema,
       flows: Context.get(built.context, FlowRuntime.FlowRuntime),
       driver: Context.get(built.context, EngineStore.EngineStore.Driver),
+      inspection: Context.get(built.context, EngineStore.RunInspection.RunInspection),
       theme: Context.get(built.context, ThemeStore),
       kill: () => Effect.runPromise(Scope.close(scope, Exit.void)),
       crash: () =>

@@ -3,9 +3,43 @@ title: Flow usage metrics and Grafana dashboard
 status: in-progress
 area: sdk
 owner: flow metrics builder assigned by lead
-updated: 2026-10-20
+updated: 2026-10-21 00:06 PDT
 links: [observability.md, self-hosted-grafana.md, flow-debugging.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 00:06 PDT
+
+**What:** Show per-flow counts and expandable run details.
+
+**Why:** Will wants Smithers runs presented with the familiarity of GitHub Actions.
+
+**Current state:** The 23:55 lead update reports the flow-usage e2e passing. Will’s 23:59 queue answer requests expandable details; the lead assigns this for after deployment. The requested UI is not implemented.
+
+**Next step:** After deployment, show flow, status, branch, trigger and duration, with expandable run steps/details. Retain metrics privacy and dashboard-ingestion proof; no GitHub Actions support is added.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human text and lead replies from the last two session hours, through 00:05 PDT; queue answers through 00:05:48 PDT; current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are reported receipts, not checks executed by this tracker. Existing execution owners and history retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 21:43 PDT
+
+**What:** Measure flow runs and outcomes through SDK instrumentation, with per-flow totals and a Grafana dashboard.
+
+**Why:** Will wants to see which flows run and how they are used, without user content in diagnostics.
+
+**Current state:** At 21:34 PDT the lead reports the first flow-usage browser recording failed. It shows a slash-command run counted by flow and per-flow totals on Runs. The curator holds priority 780 until it passes; no successful dashboard ingestion or complete feature receipt is established.
+
+**Next step:** Fix the failing recording journey, prove counts through the real engine and Runs page, and retain telemetry-ingestion/dashboard receipts with privacy assertions.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies and human-typed messages extracted by script from session 6253ecf2 for 19:43–21:43 PDT; synthetic notifications and compaction summaries excluded. Rulings and queue answers through 19:38 PDT take precedence over older briefs, designs, decisions, proposals, TODOs and rules. Product results are reported receipts; this tracker validates the site build. Execution ownership is retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
 
 **What:** Emit engine-level run counts, outcomes, duration, steps, retries, waits and model tokens, split by flow, entry point, execution host and safe actor category. Provide a Grafana dashboard for volume, success, p50/p95 duration, failures and tokens.
 

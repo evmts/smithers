@@ -36,6 +36,7 @@ export const RunPage = Schema.Struct({
   inspection: Schema.NullOr(Schema.Unknown),
   /** The journal events read past the first page, by More. */
   more: Schema.Array(Schema.Unknown),
+  descendants: Schema.optionalKey(Schema.Array(Schema.Unknown)),
   hasMore: Schema.Boolean,
 })
 export type RunPage = typeof RunPage.Type
@@ -53,6 +54,9 @@ export const RunView = Schema.Struct({
   runId: Schema.NullOr(Schema.String),
   listOpen: Schema.Boolean,
   selected: Schema.NullOr(Schema.String),
+  now: Schema.optionalKey(Schema.Number),
+  at: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  inspectorOpen: Schema.optionalKey(Schema.Boolean),
   tab: Schema.Literals(["steps", "timeline", "journal"]),
   acting: Acting,
   refusal: Schema.NullOr(Schema.String),

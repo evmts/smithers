@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { CAPACITY_REASONS, FAILURES, STATUSES } from "./contract"
+import { CAPACITY_REASONS, CLONE_STAGES, FAILURES, STATUSES } from "./contract"
 
 // The repository feature's rows and RepoApi's answers, as the Effect Schemas they are checked with. Constants the
 // browser shares with RepoApi live in contract.ts. A row kept on the device is read by the next version of the app
@@ -27,6 +27,16 @@ export const Repository = Schema.Struct({
   cloneId: Schema.String,
   requestedAt: Schema.String,
   settledAt: Schema.NullOr(Schema.String),
+  /**
+   * How far a `cloning` row has come; `null` otherwise. Absent from a database before migration 0028, which the device
+   * reads as no stage.
+   */
+  stage: Schema.optional(Schema.NullOr(Schema.Literals(CLONE_STAGES))),
+  /**
+   * A ready copy of a repository the Smithers GitHub App isn't installed on: storage may reclaim it. Absent from a
+   * database before migration 0028, which the device reads as not reclaimable.
+   */
+  reclaimable: Schema.optional(Schema.Boolean),
 })
 export type Repository = typeof Repository.Type
 
@@ -59,6 +69,53 @@ export const Refs = Schema.Struct({
   ...RefsListing.fields,
 })
 export type Refs = typeof Refs.Type
+
+/** A file or folder at the top of a repository, as GitHub lists it before a clone. */
+export const AboutEntry = Schema.Struct({ name: Schema.String, kind: Schema.Literals(["file", "dir"]) })
+export type AboutEntry = typeof AboutEntry.Type
+
+/** A commit as the about answer names it: its SHA, its message, who wrote it, and when (ISO). */
+export const AboutCommit = Schema.Struct({
+  sha: Schema.String,
+  message: Schema.String,
+  author: Schema.String,
+  at: Schema.String,
+})
+export type AboutCommit = typeof AboutCommit.Type
+
+/**
+ * `GET /api/repos/<owner>/<name>/about`'s body: what GitHub says of a repository, cloned or not (docs/features/repo.md#about).
+ * `name` is GitHub's own `owner/name`. Counts are `null` when GitHub didn't give them; `root` and `readme` are GitHub's
+ * top folder and README at the default branch, for the page before a clone; `installUrl` is where the Smithers GitHub
+ * App is installed.
+ */
+export const About = Schema.Struct({
+  name: Schema.String,
+  description: Schema.NullOr(Schema.String),
+  homepage: Schema.NullOr(Schema.String),
+  topics: Schema.Array(Schema.String),
+  stars: Schema.Number,
+  forks: Schema.Number,
+  watchers: Schema.Number,
+  license: Schema.NullOr(Schema.String),
+  defaultBranch: Schema.String,
+  archived: Schema.Boolean,
+  languages: Schema.Array(Schema.Struct({ name: Schema.String, bytes: Schema.Number })),
+  release: Schema.NullOr(
+    Schema.Struct({ tag: Schema.String, name: Schema.NullOr(Schema.String), publishedAt: Schema.NullOr(Schema.String) }),
+  ),
+  releases: Schema.NullOr(Schema.Number),
+  contributors: Schema.Array(Schema.Struct({ login: Schema.String, avatarUrl: Schema.String })),
+  contributorCount: Schema.NullOr(Schema.Number),
+  commits: Schema.NullOr(Schema.Number),
+  branches: Schema.NullOr(Schema.Number),
+  tags: Schema.NullOr(Schema.Number),
+  head: Schema.NullOr(AboutCommit),
+  root: Schema.NullOr(Schema.Array(AboutEntry)),
+  readme: Schema.NullOr(Schema.Struct({ path: Schema.String, text: Schema.String })),
+  installUrl: Schema.NullOr(Schema.String),
+})
+export type About = typeof About.Type
 
 /** `POST /api/repos`'s answer: `202` with the transaction to wait for, or `200` for a clone already running or done. */
 export const CloneAccepted = Schema.Union([

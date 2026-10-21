@@ -4,7 +4,8 @@
 // a scripted provider on loopback HTTP. `admin/SetModel` runs on the Node host (worker/test/flowHost.ts).
 import { Model, ModelError, type ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
-import { ConfigProvider, Deferred, Duration, Effect, Exit, Fiber, Layer, Redacted, Schema, Stream } from "effect"
+import { Action, FlowRuntime } from "@smthrs/flow"
+import { Cause, ConfigProvider, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Redacted, Schema, Scope, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http"
@@ -17,7 +18,9 @@ import * as ModelEndpoint from "./ModelEndpoint.ts"
 import * as ModelRoles from "./ModelRoles.ts"
 import * as ModelUsage from "./ModelUsage.ts"
 import * as SetModel from "./SetModel.ts"
-import { runFlow } from "./test/flowHost.ts"
+import { Summarize, SummaryFailed } from "../src/features/timeline/flow.ts"
+import { registration as summaries, SummarySeat } from "../src/features/timeline/steps.ts"
+import { build, runFlow } from "./test/flowHost.ts"
 import { delta, eventually, harness, recorded, stop, testFile, usage } from "./test/harness.ts"
 
 const runtime = testFile("model_endpoint")
@@ -148,7 +151,7 @@ const scratchDatabase = () =>
   runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.database))
 
 /** Runs `admin/SetModel` on the Node host as `actor`, writing to this file's schema. */
-const setModel = async (actor: Actor, change: { readonly role: "agent" | "renderer" | "judge"; readonly model: ModelRoles.ModelRecord }) =>
+const setModel = async (actor: Actor, change: { readonly role: "agent" | "renderer" | "judge" | "summary"; readonly model: ModelRoles.ModelRecord }) =>
   runFlow(
     SetModel.SetModel,
     change,
@@ -468,7 +471,7 @@ describe("roles", () => {
     expect(counts).toEqual([{ settings: 0, changes: 0 }])
   })
 
-  test("a setting the Worker can't use is refused with 503 no_route, logged by its reason", async () => {
+  test("a setting the Worker can't use is refused with 409 no_route, logged by its reason", async () => {
     const h = await harness(runtime, answering, { actor: member })
     await setModel(admin, { role: "agent", model: rowModel("https://models.example") })
     await runtime.runPromise(
@@ -480,7 +483,7 @@ describe("roles", () => {
     const notARecord = await call(h, ask("hi"), "judge")
 
     for (const { status, error } of [missingKey, notARecord]) {
-      expect(status).toBe(503)
+      expect(status).toBe(409)
       expect(error).toMatchObject({ code: "no_route", message: "This model isn't available." })
     }
     expect(h.line("model.endpoint").map(({ annotations }) => [annotations.role, annotations.errorCode])).toEqual([
@@ -1118,5 +1121,96 @@ describe("a server flow's own calls (ModelEndpoint.local)", () => {
     const [row] = await ledger()
     expect(row).toMatchObject({ settled: true, inputTokens: 0, outputTokens: 0 })
     expect((await charges())[0]!.charged).toBe(row!.reserved)
+  })
+})
+
+
+describe("timeline summary role", () => {
+  test("summary never silently spends on the default agent model", async () => {
+    const h = await harness(runtime, answering, { actor: member })
+    const refused = await call(h, ask("Summarize this entry"), "summary")
+    expect(refused.status).toBe(409)
+    expect(refused.error).toMatchObject({ code: "no_route" })
+    expect(h.line("model.endpoint").map(({ annotations }) => annotations.errorCode)).toEqual(["unusable:unconfigured"])
+    expect(h.requests).toHaveLength(0)
+  })
+
+  // The timeline's summary of one entry on the Node host's engine, its model calls admitted and metered by the endpoint
+  // in process (`ModelEndpoint.local`), with `config` as the Worker's configuration. Counts the step's model calls.
+  const summarize = async (config: Record<string, string> = {}) => {
+    const database = await runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.database))
+    const local = await Effect.runPromise(
+      ModelEndpoint.local(database).pipe(
+        // The agent's model, which the summary role must never reach.
+        Effect.provideService(HostModel, HostModel.of({
+          modelId: "agent-model",
+          model: Model.make({ stream: () => Stream.die(new Error("the summary role reached the agent's model")) }),
+          route: { prepare: () => Effect.die("unused") },
+        })),
+        Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
+      ),
+    )
+    const seat = local("summary")
+    let calls = 0
+    const counted = Layer.succeed(SummarySeat, {
+      route: seat.route,
+      model: Model.make({ stream: (request) => Stream.suspend(() => (calls++, seat.model.stream(request))) }),
+    })
+    const scope = Effect.runSync(Scope.make())
+    try {
+      const { context } = await Effect.runPromise(Scope.provide(scope)(build(summaries.pipe(
+        Layer.provide(counted),
+        Layer.provideMerge(Action.layerImplementations),
+      ))))
+      const payload = { id: "entry", revision: "r1", role: "user" as const, text: "Please check the release retries." }
+      const exit = await Effect.runPromise(
+        Effect.exit(Context.get(context, FlowRuntime.FlowRuntime).execute(Summarize, { executionId: crypto.randomUUID(), payload })),
+      )
+      return { exit, calls }
+    } finally {
+      await Effect.runPromise(Scope.close(scope, Exit.void))
+    }
+  }
+
+  test("a summary role with no model fails its step once: the model is asked once, never again", async () => {
+    const { exit, calls } = await summarize()
+
+    expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "unavailable" }))
+    // As a 503 the refusal was capacity to the step, which the engine retried six times, up to 30 s apart.
+    expect(calls).toBe(1)
+  }, 30_000)
+
+  test("SUMMARY_MODEL answers the summary role when no admin set one, and an admin setting overrides it", async () => {
+    const upstream = await provider({ text: "Check both release retries" })
+    const config = { ...keyConfig(upstream.origin), SUMMARY_MODEL: JSON.stringify(rowModel(upstream.origin, "cheap-summary")) }
+
+    const byDefault = await summarize(config)
+    await setModel(admin, { role: "summary", model: rowModel(upstream.origin, "set-summary") })
+    const bySetting = await summarize(config)
+
+    expect(byDefault.exit).toEqual(Exit.succeed({ summary: "Check both release retries" }))
+    expect(bySetting.exit).toEqual(Exit.succeed({ summary: "Check both release retries" }))
+    expect(upstream.seen.map(({ body }) => body.model)).toEqual(["cheap-summary", "set-summary"])
+  })
+
+  test("a SUMMARY_MODEL that isn't a model record is refused as unusable configuration", async () => {
+    const h = await harness(runtime, answering, { actor: member, config: { SUMMARY_MODEL: "{\"modelId\": 1}" } })
+
+    const refused = await call(h, ask("Summarize this entry"), "summary")
+
+    expect(refused.status).toBe(409)
+    expect(h.line("model.endpoint").map(({ annotations }) => annotations.errorCode)).toEqual(["unusable:config"])
+  })
+  test("an explicit summary setting reaches the metered role through the real endpoint", async () => {
+    const upstream = await provider({ text: "Inspect both retry attempts" })
+    const h = await harness(runtime, answering, { actor: member, config: keyConfig(upstream.origin) })
+    const ran = await setModel(admin, { role: "summary", model: rowModel(upstream.origin, "cheap-summary") })
+    expect(Exit.isSuccess(ran.exit)).toBe(true)
+    const answered = await call(h, ask("Summarize this entry"), "summary")
+    expect(answered.status).toBe(200)
+    expect(upstream.seen).toHaveLength(1)
+    expect(upstream.seen[0]!.body.model).toBe("cheap-summary")
+    expect(answered.lines.some(line => line.type === "text-delta" && line.text === "Inspect both retry attempts")).toBe(true)
+    expect(h.requests).toHaveLength(0)
   })
 })

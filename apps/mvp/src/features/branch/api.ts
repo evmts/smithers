@@ -22,10 +22,12 @@ const decodeTracked = Schema.decodeUnknownEffect(Tracked)
 export class BranchClient extends Context.Service<
   BranchClient,
   {
+    /** Tracks `ref`; with `create`, makes it on the forge at the default branch's head first (`branch/create`). */
     readonly track: (branch: {
       readonly owner: string
       readonly name: string
       readonly ref: string
+      readonly create?: true
     }) => Effect.Effect<Tracked, TrackRefused>
   }
 >()("@smthrs/mvp/branch/BranchClient") {

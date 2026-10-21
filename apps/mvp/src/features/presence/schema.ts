@@ -4,9 +4,13 @@ import { Schema } from "effect"
 // everyone in the branch's room as this tab last heard, and this tab's place in the room. Nothing here is synced or
 // kept: presence is live, and a closed tab leaves no trace.
 
-/** Where a person is on a branch's page: its Code view at a path, or its Terminal view on a terminal. */
+/**
+ * Where a person is on a branch's page: its Code view at a path, a file of its working copy in the live editor, or its
+ * Terminal view on a terminal.
+ */
 export const Where = Schema.Union([
   Schema.Struct({ view: Schema.Literal("code"), path: Schema.String }),
+  Schema.Struct({ view: Schema.Literal("edit"), path: Schema.String }),
   Schema.Struct({ view: Schema.Literal("terminal"), terminalId: Schema.NullOr(Schema.String) }),
 ])
 export type Where = typeof Where.Type

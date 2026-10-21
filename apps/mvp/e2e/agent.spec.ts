@@ -34,7 +34,7 @@ const stepsOf = (row: Row | undefined): Array<{ flow: string; status: string }> 
   return (list as Array<{ kind: string; flow: string; status: string }>).filter((part) => part.kind === "step")
 }
 
-test("ask: the browser's agent answers through the model endpoint, and the answer streams into the conversation", async ({ devices }) => {
+test("ask: the browser's agent answers through the model endpoint, and the answer streams into the conversation", { annotation: { type: "summary", description: "The agent runs in the browser, asks the model through the metered endpoint, and the answer streams in." } }, async ({ devices }) => {
   const word = devices.word
   const [a] = await devices.open("A")
   const calls = modelCalls(a.device.context)
@@ -47,7 +47,7 @@ test("ask: the browser's agent answers through the model endpoint, and the answe
   expect(new Set(calls)).toEqual(new Set(["agent"]))
 })
 
-test("theme by button: the theme button switches the mode, and the device keeps it across a reload", async ({ devices }) => {
+test("theme by button: the theme button switches the mode, and the device keeps it across a reload", { annotation: [{ type: "theme", description: "light" }, { type: "summary", description: "The theme button switches light and dark, and the device keeps the choice after a reload." }] }, async ({ devices }) => {
   const [a] = await devices.open("A")
   const page = a.page
   const toDark = page.getByRole("button", { name: "Switch to dark mode" })
@@ -71,7 +71,7 @@ test("theme by button: the theme button switches the mode, and the device keeps 
   await expect(toDark).toBeVisible()
 })
 
-test("theme by the agent: asking Smithers to switch to dark mode runs app/theme/set, the same flow as the button", async ({ devices, request }) => {
+test("theme by the agent: asking Smithers to switch to dark mode runs app/theme/set, the same flow as the button", { annotation: [{ type: "theme", description: "light" }, { type: "summary", description: "Asking Smithers for dark mode runs the same theme flow as the button." }] }, async ({ devices, request }) => {
   const word = devices.word
   const [a] = await devices.open("A")
   await expect(a.page.getByRole("button", { name: "Switch to dark mode" })).toBeVisible({ timeout: 30_000 })
@@ -88,7 +88,7 @@ test("theme by the agent: asking Smithers to switch to dark mode runs app/theme/
 test.describe("killed tab", () => {
   test.skip(!local, remoteReason)
 
-  test("killed tab: the answer resumes when the app opens again, replaying sealed model calls from the journal, never calling them again", async ({ devices, request }) => {
+  test("killed tab: the answer resumes when the app opens again, replaying sealed model calls from the journal, never calling them again", { annotation: [{ type: "theme", description: "light" }, { type: "summary", description: "An answer cut off by a closed tab finishes when the app opens again, without paying for finished model calls twice." }] }, async ({ devices, request }) => {
     test.setTimeout(240_000)
     const logs = await LogTail.start()
     const word = devices.word

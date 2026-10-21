@@ -1,11 +1,38 @@
 ---
 title: "Local dev live-feed connection contention"
-status: in-progress
+status: done
 area: infra
 owner: dev sync performance builder assigned by lead
-updated: 2026-10-20
+updated: 2026-10-20 23:55 PDT
 links: [dev-stack-hygiene.md, notifications-and-live-work.md, effect-tanstack-db-and-effect-electric.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-20 23:55 PDT
+
+**What:** Serve local live feeds over HTTP/2 and prove prompt cross-device convergence.
+
+**Why:** Plain HTTP connection starvation delayed device updates.
+
+**Current state:** At 23:51 the lead reports the builder finished and handed off for round 4d. Branch sharing passes 2/2 and the HTTP/2 sync test passes with GIFs; the HTTPS front has 100% coverage. The measured Mac-mini write latency is 0.05 s versus 19.6 s previously. Notifications/status tests still fail because their new assertions count 411 stale runs, not because sync waits expired. This note’s done status covers the dev transport slice, not landing or the full app.
+
+**Next step:** Land the validated handoff in 4d. Notifications owner must isolate assertions to runs created by each test; retain timing method and limitations.
+
+**Open questions for Will:** None.
+
+Evidence: last two session hours of user-typed text and lead replies extracted with a JSONL script (notifications and tool content excluded), through 23:54 PDT; queue answers through 23:51; current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Product receipts are lead-reported; tracker validation is the maintainer-site build. Prior history and execution ownership retained.
+
+## Earlier tracker history (retained)
+
+
+## Builder's state — 2026-10-20, 22:20 PDT
+
+**Fix:** `pnpm dev` also serves the app at https://localhost:1443 over HTTP/2 (`dev/https.ts`, a Vite plugin in front of Vite), as Cloudflare does; e2e tests open it by default. Fewer long polls per tab was rejected: Electric has no multi-shape endpoint, and production needs none. See [infrastructure.md](../infrastructure.md#https-and-http2). A dev server on a stage other than `dev_$USER` must set `DEV_HTTPS_PORT`, and fails to start without it.
+
+**Measured** on the Mac mini, same server and tree: a write on A reaches B in 19.6 s median over HTTP/1.1 and 0.05 s over HTTP/2; the agent's toast on B 35.1 s and 1.5 s.
+
+**Waits lowered:** notifications (sync 90 s to 15 s, test 480 s to 180 s), status (toast 60 s to 15 s, test 300 s to 120 s), branch sharing (sync 90 s to 30 s). New regression test: `e2e/sync.spec.ts` "sync over HTTP/2". `e2e/devices.ts` names the dev person cookie `__Host-` over HTTPS, as ChatApi reads it.
+
+**Proof, 23:50 on the Mac mini over HTTP/2:** branch-sharing passed both tests (sync wait 30 s), and sync.spec "sync over HTTP/2" passed (GIF `~/Desktop/smithers-mvp/gifs/sync-sync-over-http-2.gif`). notifications and status failed on the new top-bar assertions from the notifications work ("Notifications: N needs you" not found; 411 open questions left by earlier runs on the mini), not on a sync wait. `dev/https.ts` has 100% coverage over 44 tests.
 
 ## Current specification — 2026-10-20, 17:55 PDT
 

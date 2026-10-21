@@ -1,0 +1,14 @@
+# Grafana dashboard provisioning for the Smithers dashboards (README.md beside it).
+# Grafana reads this file from its provisioning directory (`conf/provisioning/dashboards/`) at start and loads every
+# dashboard JSON under `path`; a changed JSON file is picked up within `updateIntervalSeconds`.
+apiVersion: 1
+providers:
+  - name: smithers
+    folder: Smithers
+    type: file
+    disableDeletion: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 60
+    options:
+      path: /var/lib/grafana/dashboards/smithers
+      foldersFromFilesStructure: false

@@ -9,7 +9,7 @@ import { IssuesClient, type WriteRequest } from "./api"
 // stalled body, a body cut short and nothing listening are what a browser would meet. Every answer ChatApi itself gives
 // is tested through its real handler in issues.test.ts.
 
-const write: WriteRequest = { writeId: crypto.randomUUID(), via: "person", op: "issue/create", title: "t", body: "" }
+const write: WriteRequest = { writeId: crypto.randomUUID(), op: "issue/create", title: "t", body: "" }
 
 const servers: Array<() => Promise<void>> = []
 afterEach(async () => {

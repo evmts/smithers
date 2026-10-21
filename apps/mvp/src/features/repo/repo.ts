@@ -1,6 +1,6 @@
 import { Context, Data, Effect, Layer, Option } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { clone, copy, navigate, open, rawHref, retryClone } from "./actions"
+import { clone, copy, navigate, open, rawHref, retryClone, warm } from "./actions"
 import type { RepoClient } from "./api"
 import type { CopyKind } from "./contract"
 import { type RouteParams, type Target, targetOf } from "./paths"
@@ -16,7 +16,7 @@ type Store = RepoStore["Service"]
 
 /**
  * What a frontend reads live: the routed view with its repository and clone request, its branches and tags, its file
- * list, file and README.
+ * list, file and README, and what GitHub says of the repository.
  */
 export interface RepoQueries {
   readonly view: Store["viewState"]["tanstack"]
@@ -24,6 +24,10 @@ export interface RepoQueries {
   readonly tree: Store["treeState"]["tanstack"]
   readonly file: Store["fileState"]["tanstack"]
   readonly readme: Store["readmeState"]["tanstack"]
+  /** What GitHub says of the view's repository, cloned or not. */
+  readonly about: Store["aboutState"]["tanstack"]
+  /** The repository's generated-files manifest at the view's commit, beside a file. */
+  readonly manifest: Store["manifestState"]["tanstack"]
 }
 
 /** A Copy button's flow didn't put its text on the clipboard. */
@@ -45,8 +49,14 @@ export interface RepoActions {
   readonly retryClone: (owner: string, name: string) => boolean
   /** Opens a location in the routed view. */
   readonly open: (target: Target) => void
-  /** What a route's loader calls: opens the route's location. */
+  /** What a route calls once the location is warm: opens it in the routed view. */
   readonly openRoute: (kind: "tree" | "blob", params: RouteParams, search: { readonly L?: unknown }) => void
+  /**
+   * What a route calls first, on a link's hover or focus and before every navigation: loads the location's files into
+   * this tab without opening it. Resolves once they loaded or failed, or after a second (`pageWait`), so the page the
+   * router then shows is complete or shows skeletons where its files will be.
+   */
+  readonly warmRoute: (kind: "tree" | "blob", params: RouteParams, search: { readonly L?: unknown }) => Promise<void>
   /** What the raw route's loader calls: RepoApi's raw route of its file at its commit, or `undefined`. */
   readonly rawRoute: (params: RouteParams) => Promise<string | undefined>
   /** A Copy button, through `repo/copy`: resolves once the text is on the clipboard, rejects `NotCopied` otherwise. */
@@ -79,6 +89,8 @@ export class Repo extends Context.Service<
           tree: store.treeState.tanstack,
           file: store.fileState.tanstack,
           readme: store.readmeState.tanstack,
+          about: store.aboutState.tanstack,
+          manifest: store.manifestState.tanstack,
         },
         lookups: {
           repository: (id) => now(device.repository(id)),
@@ -91,6 +103,7 @@ export class Repo extends Context.Service<
           retryClone: (owner, name) => run(retryClone(owner, name)),
           open: (target) => run(open(target)),
           openRoute: (kind, params, search) => run(open(targetOf(kind, params, search))),
+          warmRoute: (kind, params, search) => promise(warm(targetOf(kind, params, search))),
           rawRoute: (params) => promise(rawHref(targetOf("blob", params, {}))),
           copy: (what) =>
             promise(Effect.flatMap(copy(what), (copied) => (copied ? Effect.void : Effect.fail(new NotCopied())))),

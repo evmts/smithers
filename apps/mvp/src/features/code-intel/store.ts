@@ -1,0 +1,63 @@
+import type { LanguageServer } from "@smthrs/std"
+import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
+import { Context, Effect, FiberHandle, Layer, Ref, ScopedRef } from "effect"
+import type { Place } from "./lsp"
+import { CODE_INTEL, CodeIntelRow, fresh } from "./rows"
+
+// Code intelligence's state on this tab (docs/features/code-intelligence.md#the-browser): the one local row the view
+// reads, the language server of the repository and commit the view shows, and the routed file's load. Actions reach
+// the server through the session; nothing here does.
+
+/** The repository and commit the view shows, and the file in it. */
+export interface Target {
+  readonly owner: string
+  readonly name: string
+  readonly sha: string
+  readonly path: string
+  /** Every file's path at the commit. */
+  readonly paths: ReadonlyArray<string>
+  /** The revision links use: a branch, a tag or the SHA. */
+  readonly revision: string
+  readonly defaultBranch: string | null
+}
+
+/** One server, for one repository at one commit, and the texts it read, by path, for the Symbols pane's lines. */
+export interface Session {
+  readonly key: string
+  readonly server: LanguageServer.LanguageServer
+  readonly texts: Map<string, string>
+  readonly paths: ReadonlySet<string>
+}
+
+const make = Effect.gen(function* () {
+  const state = yield* Collection.local<CodeIntelRow, string>({
+    id: CODE_INTEL,
+    schema: CodeIntelRow,
+    getKey: (row) => row.id,
+    initialData: [fresh(null, null, false)],
+  })
+  return {
+    state,
+    /** The one row, live. */
+    query: yield* LiveQuery.make((q) => q.from({ state: state.tanstack }).findOne()),
+    /** The server of the shown repository and commit; the previous one stops when another replaces it. */
+    session: yield* ScopedRef.make<Session | undefined>(() => undefined),
+    /** The shown file. */
+    target: yield* Ref.make<Target | undefined>(undefined),
+    /** The latest hover asked for: an answer to an older one is dropped. */
+    asked: yield* Ref.make(0),
+    /** Where a definition in another file lands the cursor once that file opens. */
+    landing: yield* Ref.make<Place | undefined>(undefined),
+    /** The routed file's load: opening another interrupts it. */
+    loader: yield* FiberHandle.make<void, never>(),
+    /** Where actions' work runs, closed with the store. */
+    scope: yield* Effect.scope,
+  }
+})
+
+export class CodeIntelStore extends Context.Service<CodeIntelStore, Effect.Success<typeof make>>()(
+  "@smthrs/mvp/code-intel/CodeIntelStore",
+) {
+  /** The store; its server stopped and its load interrupted with the scope. */
+  static readonly layer = Layer.effect(CodeIntelStore, make)
+}

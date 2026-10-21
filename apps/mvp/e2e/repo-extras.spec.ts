@@ -31,7 +31,7 @@ const openReady = async (page: Page) => {
 
 const clipboard = (page: Page) => page.evaluate(() => navigator.clipboard.readText())
 
-test("switch branch: the picker lists the branches, filters, and opens one, keeping the path's kind", async ({ page }) => {
+test("switch branch: the picker lists the branches, filters, and opens one, keeping the path's kind", { annotation: { type: "summary", description: "The branch picker lists and filters branches, and opens one at the same kind of path." } }, async ({ page }) => {
   await openReady(page)
   await page.getByRole("button", { name: "main", exact: true }).click()
   const picker = page.getByRole("dialog", { name: "Branches and tags" })
@@ -49,7 +49,7 @@ test("switch branch: the picker lists the branches, filters, and opens one, keep
   await expect(page.getByRole("article", { name: "test.md" })).toBeVisible({ timeout: 30_000 })
 })
 
-test("raw: Raw opens the file as plain text in a new tab, and GitHub's raw path loads the same", async ({ page, context }) => {
+test("raw: Raw opens the file as plain text in a new tab, and GitHub's raw path loads the same", { annotation: { type: "summary", description: "Raw opens a file as plain text, and GitHub's raw path opens the same." } }, async ({ page, context }) => {
   await openReady(page)
   await page.goto(`${REPO}/blob/test-branch/index.html`)
   await expect(page.getByText("<!DOCTYPE html>", { exact: false }).first()).toBeVisible({ timeout: 30_000 })
@@ -67,7 +67,7 @@ test("raw: Raw opens the file as plain text in a new tab, and GitHub's raw path 
   await expect(page.locator("body")).toContainText("<!DOCTYPE html>")
 })
 
-test("copy: Copy permalink, Copy path, Copy and the clone URL put what they say on the clipboard", async ({ page, context }) => {
+test("copy: Copy permalink, Copy path, Copy and the clone URL put what they say on the clipboard", { annotation: { type: "summary", description: "Copy permalink, Copy path, Copy and the clone URL copy what they say." } }, async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"])
   await openReady(page)
   await page.goto(`${REPO}/blob/test-branch/test.md`)

@@ -1,6 +1,6 @@
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import type { Effect } from "effect"
-import type { Seen, SpendAlert } from "./schema"
+import type { AlertChannel, AlertDelivery, ChannelSave, Seen, SpendAlert } from "./schema"
 
 // What frontends read about spend alerts (docs/features/spend-alerts.md): a live query over the synced alerts and this
 // device's mark of what it has seen.
@@ -18,3 +18,24 @@ export const openQuery = (alerts: Collection.Collection<SpendAlert>, seen: Colle
 
 /** The alerts that show. */
 export type Open = Effect.Success<ReturnType<typeof openQuery>>
+
+/** The channels an Admin turned on. */
+export const channelsQuery = (channels: Collection.Collection<AlertChannel>) =>
+  LiveQuery.make((q) => q.from({ channel: channels.tanstack }).select(({ channel }) => channel))
+
+/** How many receipts the settings show: the latest. */
+export const RECEIPTS_SHOWN = 10
+
+/** The latest receipts, newest first. */
+export const deliveriesQuery = (deliveries: Collection.Collection<AlertDelivery>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ delivery: deliveries.tanstack })
+      .orderBy(({ delivery }) => delivery.updatedAt, "desc")
+      .limit(RECEIPTS_SHOWN)
+      .select(({ delivery }) => delivery)
+  )
+
+/** This tab's saves that haven't landed. */
+export const savesQuery = (saves: Collection.Collection<ChannelSave, string>) =>
+  LiveQuery.make((q) => q.from({ save: saves.tanstack }).select(({ save }) => save))

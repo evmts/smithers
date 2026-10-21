@@ -1,7 +1,7 @@
 // A run's page as a frontend draws it (src/features/runs/page.ts, decision 0014 §5): the steps a person reads, the
 // selected one, the journal with what More read, the acts a run offers, and the list's rows.
 import { describe, expect, test } from "vitest"
-import { actsOf, journalOf, listRows, retriesOf, selectedStep, STALLED_AFTER_MS, stepsOf, stepStateOf } from "./page"
+import { actsOf, journalOf, listRows, retriesOf, selectedStep, STALLED_AFTER_MS } from "./page"
 import type { Inspection, RunRow } from "./schema"
 
 const value = (text: string) => ({ text, bytes: text.length, clipped: false })
@@ -68,49 +68,14 @@ const inspection = (overrides: Partial<Inspection> = {}): Inspection => ({
   ...overrides,
 })
 
-describe("stepsOf", () => {
-  test("the action calls and child boundaries, and the runs it started, in the order they started", () => {
-    const steps = stepsOf(inspection())
-    expect(steps.map((step) => step.row.id)).toEqual([
-      "step:root.flow.load",
-      "step:root.flow.prompt",
-      "run:run-1/child",
-    ])
-    expect(steps[0]).toMatchObject({
-      row: { label: "flow/run/load", depth: 0, attempts: 2, failedAttempts: 1, state: "completed", endedAtMs: 1_100 },
-      input: null,
-      output: value('{"name":"hello"}'),
-      href: null,
-    })
-    expect(steps[2]).toMatchObject({
-      row: { label: "flow/run/prompt", kind: "run", depth: 1, state: "waiting" },
-      input: value('{"input":""}'),
-      output: null,
-      wait: { kind: "human", sinceMs: null, wakeAtMs: 9_000 },
-      href: "/app/runs/run-1%2Fchild",
-    })
-  })
-
-  test("a step with no action reads as its kind", () => {
-    const [step] = stepsOf(inspection({
-      steps: [{ nodeId: "a", action: null, kind: "ActionCall", status: "running", scheduledAtMs: 1, settledAtMs: null, seq: 1, output: null, attempts: [] }],
-      children: [{ ...inspection().children[0]!, waiting: null }],
-    }))
-    expect(step!.row.label).toBe("ActionCall")
-    expect(stepsOf(inspection({ steps: [], children: [{ ...inspection().children[0]!, waiting: null }] }))[0]!.wait).toBeNull()
-  })
-
-  test("a child's status as a step's", () => {
-    expect(["pending", "running", "suspended", "completed", "failed", "cancelled"].map((status) => stepStateOf(status as never)))
-      .toEqual(["running", "running", "waiting", "completed", "failed", "failed"])
-  })
-})
-
 describe("selectedStep", () => {
-  test("the selected step, else the latest; none without steps", () => {
-    const steps = stepsOf(inspection())
-    expect(selectedStep(steps, "step:root.flow.load")?.row.id).toBe("step:root.flow.load")
-    expect(selectedStep(steps, null)?.row.id).toBe("run:run-1/child")
+  test("explicit selection wins, otherwise follow live work, then the latest settled step", () => {
+    const step = (id: string, state: import("@smthrs/ui").StepState): import("./page").PageStep => ({ row: { id, label: id, state, kind: "step", startedAtMs: 0, endedAtMs: null, depth: 0, attempts: 0, failedAttempts: 0 }, input: null, output: null, attempts: [], wait: null, href: null })
+    const steps = [step("a", "completed"), step("b", "running"), step("c", "pending")]
+    expect(selectedStep(steps, "a")?.row.id).toBe("a")
+    expect(selectedStep(steps, null)?.row.id).toBe("b")
+    expect(selectedStep([steps[0]!, steps[2]!], null)?.row.id).toBe("a")
+    expect(selectedStep([steps[2]!], null)?.row.id).toBe("c")
     expect(selectedStep([], null)).toBeUndefined()
   })
 })

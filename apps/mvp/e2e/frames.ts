@@ -30,14 +30,16 @@ export interface Frame {
 }
 
 /**
- * How a plan paces its output, in frames: a quiet stretch's most, a cut-short scene's least, the end hold, and the
- * least a chapter shows.
+ * How a plan paces its output, in frames: a quiet stretch's most, an idle stretch's most (`cutIdle`), a cut-short
+ * scene's least, the end hold, the least a chapter shows, and the title card (`titleCardOf`).
  */
 export interface Pace {
   readonly quiet: number
+  readonly idle: number
   readonly scene: number
   readonly hold: number
   readonly chapter: number
+  readonly title: number
 }
 
 /**
@@ -56,10 +58,19 @@ export interface Chapter {
   readonly label: string
 }
 
-/** The video Will reviews: waits shortened, never skipped. */
-export const VIDEO_PACE: Pace = { quiet: 3 * FPS, scene: 1.5 * FPS, hold: 2 * FPS, chapter: 1 * FPS }
+/**
+ * The video Will reviews: waits shortened hard, never skipped. Will, 2026-10-20, on the branch workspace's recordings:
+ * "most of the recording looks like an empty screen"; a quiet wait now plays in 1.5 s and an idle one in 2 s.
+ */
+export const VIDEO_PACE: Pace = { quiet: 1.5 * FPS, idle: 2 * FPS, scene: 1.5 * FPS, hold: 2 * FPS, chapter: 1 * FPS, title: 2 * FPS }
 /** The GIF preview: shorter still. */
-export const GIF_PACE: Pace = { quiet: 1.5 * FPS, scene: 1 * FPS, hold: 1.5 * FPS, chapter: 0.5 * FPS }
+export const GIF_PACE: Pace = { quiet: 1 * FPS, idle: 1.5 * FPS, scene: 1 * FPS, hold: 1.5 * FPS, chapter: 0.5 * FPS, title: 1.5 * FPS }
+
+/**
+ * Fewer changed pixels than this and a frame is idle: a spinner, typing dots, a caret, one line of output (1% of the
+ * measured picture). An idle stretch is waiting, however long, even when it is never quite still.
+ */
+export const IDLE_CHANGE = Math.round(MEASURE_WIDTH * MEASURE_HEIGHT * 0.01)
 
 /** Over this many bytes a GIF is too heavy to review. */
 export const MAX_GIF_BYTES = 5 * 1024 * 1024
@@ -161,6 +172,32 @@ export const plan = (frames: ReadonlyArray<Frame>, pace: Pace) => {
 }
 
 /**
+ * `repeat` (a `plan`) with each idle stretch, consecutive frames that each changed less than IDLE_CHANGE, cut to at most
+ * `pace.idle` shown frames, picked evenly and ending on its last, which keeps any scene or end hold it carried. A wait
+ * that a spinner or a blinking caret keeps from being quiet still plays fast.
+ */
+export const cutIdle = (repeat: ReadonlyArray<number>, frames: ReadonlyArray<Frame>, pace: Pace) => {
+  const cut = [...repeat]
+  let run: Array<number> = []
+  const endRun = () => {
+    const shown = run.filter((index) => cut[index]! > 0)
+    run = []
+    if (shown.length <= pace.idle) return
+    const last = shown.at(-1)!
+    const extra = cut[last]! - 1
+    for (const index of shown) cut[index] = 0
+    for (let pick = 1; pick <= pace.idle; pick++) cut[shown[Math.round((pick * shown.length) / pace.idle) - 1]!] = 1
+    cut[last]! += extra
+  }
+  for (const [index, frame] of frames.entries()) {
+    if (!isBlank(frame) && frame.changed < IDLE_CHANGE) run.push(index)
+    else endRun()
+  }
+  endRun()
+  return cut
+}
+
+/**
  * `repeat` with every chapter shown at least `least` frames, so a viewer can read each step: a chapter that would show
  * less holds its last shown frame longer, and one whose frames a quiet stretch dropped shows its first frame. A
  * chapter of blank frames only (a page load), or one that starts on the same frame as the next, stays empty. `found`
@@ -205,8 +242,9 @@ export const RECORDING_LAG = 0.15
 
 /**
  * A recording's chapters, from what its test did: every helper `step`, and every action outside one, at its seconds
- * from `startedAt` (the recording's first frame) less RECORDING_LAG, never before 0. What happens inside a step, an action or a nested
- * step, is part of its chapter. A repeated label, such as a retried click or typing, is one chapter.
+ * from `startedAt` (the recording's first frame) less RECORDING_LAG, never before 0, named in product words
+ * (`plainLabel`). What happens inside a step, an action or a nested step, is part of its chapter. A repeated label,
+ * such as a retried click or typing, is one chapter; an action with nothing to say (a click on the page) is none.
  */
 export const chaptersOf = (marks: ReadonlyArray<Mark>, startedAt: number) => {
   // Earlier first; of two that start together, the longer, which holds the other.
@@ -218,7 +256,9 @@ export const chaptersOf = (marks: ReadonlyArray<Mark>, startedAt: number) => {
   const found: Array<Chapter> = []
   for (const [index, mark] of sorted.entries()) {
     if (inside(mark, index)) continue
-    const next = { t: Math.max(0, Number(((mark.start - startedAt) / 1000 - RECORDING_LAG).toFixed(3))), label: mark.label }
+    const label = plainLabel(mark.label)
+    if (label === "") continue
+    const next = { t: Math.max(0, Number(((mark.start - startedAt) / 1000 - RECORDING_LAG).toFixed(3))), label }
     if (found.at(-1)?.label !== next.label) found.push(next)
   }
   return found
@@ -285,3 +325,152 @@ export const problems = (frames: ReadonlyArray<Frame>, bytes: number) => {
   if (bytes > MAX_GIF_BYTES) found.push(`too big: ${(bytes / 1024 / 1024).toFixed(1)} MB`)
   return found
 }
+
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
+
+/** Where a path in the app goes, in product words: `/octocat/Spoon-Knife/tree/main?terminal=me` is "the terminal on main". */
+export const placeOfPath = (target: string): string => {
+  const url = new URL(target, "http://app")
+  const parts = url.pathname.split("/").filter((part) => part !== "").map(decodeURIComponent)
+  const terminal = url.searchParams.get("terminal")
+  if (parts.length === 0) return "Smithers"
+  if (parts[0] === "app") {
+    if (parts[1] === "views") return "a view full screen"
+    // The app's own pages under /app: its runs and flows (src/router.tsx), named as at the top level.
+    if (parts[1] === "runs" || parts[1] === "flows") return placeOfPath(`/${parts.slice(1).map(encodeURIComponent).join("/")}`)
+    return "the home conversation"
+  }
+  if (parts[0] === "flows") return parts.length === 1 ? "flows" : "a flow"
+  if (parts[0] === "runs") return parts.length === 1 ? "runs" : "a run"
+  if (parts.length === 1) return parts[0]!
+  const repo = `${parts[0]}/${parts[1]}`
+  const [section, ref, ...path] = parts.slice(2)
+  if (section === undefined) return repo
+  if (section === "issues") return ref === undefined ? `${repo}'s issues` : ref === "new" ? "a new issue" : `issue #${ref}`
+  if (section === "stack") return `${repo}'s stack`
+  if ((section === "tree" || section === "blob" || section === "raw") && ref !== undefined) {
+    if (terminal !== null) return `the terminal on ${ref}`
+    return path.length === 0 ? `branch ${ref}` : `${path.join("/")} on ${ref}`
+  }
+  return `${repo} ${parts.slice(2).join("/")}`.replace(UUID, "…")
+}
+
+const FIELDS: Record<string, string> = { "Message Smithers": "the composer", "Terminal input": "the terminal" }
+const fieldOf = (name: string) => FIELDS[name] ?? name
+
+/**
+ * A chapter's label in product words for the caption and the timeline, never code: a navigation names the place
+ * (`placeOfPath`), not its URL; `Click "Share" button` is `Click Share`; Enter in the composer is `Send`; typing in a
+ * field names the field; a click on the page says nothing (""), so it is no chapter. Ids never show. A device's name
+ * before the action (`Maya: `) stays. Anything else, such as a helper's step, keeps its words.
+ */
+export const plainLabel = (label: string): string => {
+  const match = /^((?:[^:"]{1,40}): )?(.*)$/s.exec(label)!
+  const who = match[1] ?? ""
+  const action = match[2]!
+  const plain = (() => {
+    const open = /^Open (\/\S*)$/.exec(action)
+    if (open) return `Open ${placeOfPath(open[1]!)}`
+    if (/^Click (the page|frame|"Terminal" frame)$/.test(action)) return action.endsWith("frame") ? "Click the terminal" : ""
+    const click = /^Click "(.+)" (?:button|link|toggle|menu|field|option|combobox|tab|checkbox|radio)$/.exec(action)
+    if (click) return `Click ${click[1]}`
+    const typed = /^Type in "(.+)" field$/.exec(action)
+    if (typed) return typed[1] === "Message Smithers" ? "Type a message" : `Type in ${fieldOf(typed[1]!)}`
+    const pressed = /^Press (\S+) in "(.+)" field$/.exec(action)
+    if (pressed) return pressed[1] === "Enter" && pressed[2] === "Message Smithers" ? "Send" : `Press ${pressed[1]} in ${fieldOf(pressed[2]!)}`
+    return action
+  })()
+  return plain === "" ? "" : `${who}${plain}`.replace(UUID, "…")
+}
+
+/** What a recording's title card says: the feature, the test's name, and one line saying what the test proves. */
+export interface TitleCard {
+  readonly feature: string
+  readonly name: string
+  readonly line: string
+}
+
+const sentence = (text: string) => {
+  const trimmed = text.trim()
+  return trimmed === "" ? "" : `${trimmed[0]!.toUpperCase()}${trimmed.slice(1)}`
+}
+
+/**
+ * The title card a recording opens on (e2e/gifs.mjs, `pace.title` frames): the feature is the test's describe blocks,
+ * else its spec's name (`branch-workspace` is "Branch workspace"); the name is its title up to the first colon; the
+ * line is the spec's `summary` annotation, else the title after the colon, as a sentence.
+ */
+export const titleCardOf = (test: {
+  readonly spec: string
+  readonly title: string
+  readonly describe?: ReadonlyArray<string> | undefined
+  readonly summary?: string | undefined
+}): TitleCard => {
+  const feature = test.describe !== undefined && test.describe.length > 0 ? test.describe.join(" · ") : sentence(test.spec.replace(/[-_]+/g, " "))
+  const colon = test.title.indexOf(":")
+  const name = sentence(colon < 0 ? test.title : test.title.slice(0, colon))
+  const rest = sentence(colon < 0 ? "" : test.title.slice(colon + 1))
+  const line = test.summary !== undefined && test.summary.trim() !== "" ? sentence(test.summary) : rest === "" ? "" : /[.!?]$/.test(rest) ? rest : `${rest}.`
+  return { feature, name, line }
+}
+
+/** The app's two modes, as its theme setting names them (src/features/theme/contract.ts). */
+export type Theme = "light" | "dark"
+
+/**
+ * The mode a test records in: about half the recordings are dark (Will, 2026-10-20: "half of them should be dark
+ * mode"), chosen by a hash of the spec and the test's title, so a test re-recorded keeps its mode. A test whose
+ * assertions depend on the mode it starts in names it with a `theme` annotation (`{ type: "theme", description:
+ * "light" }`), which wins.
+ */
+export const themeFor = (spec: string, title: string, annotations: ReadonlyArray<{ readonly type: string; readonly description?: string | undefined }> = []): Theme => {
+  const named = annotations.find((annotation) => annotation.type === "theme")?.description
+  if (named === "light" || named === "dark") return named
+  // FNV-1a, 32 bits, then MurmurHash3's finalizer, which spreads every input bit into the low bit FNV-1a leaves weak:
+  // stable across runs, machines and Node versions.
+  let hash = 0x811c9dc5
+  for (const char of `${spec}\u0000${title}`) {
+    hash ^= char.codePointAt(0)!
+    hash = Math.imul(hash, 0x01000193)
+  }
+  hash ^= hash >>> 16
+  hash = Math.imul(hash, 0x85ebca6b)
+  hash ^= hash >>> 13
+  hash = Math.imul(hash, 0xc2b2ae35)
+  hash ^= hash >>> 16
+  return (hash & 1) === 0 ? "light" : "dark"
+}
+
+/** A recording's `<test>.chapters.json`: what it shows, whether its test passed, and its timeline after the title card. */
+export interface ChaptersFile extends TitleCard {
+  readonly title: string
+  /** Playwright's status for the run: `passed`, `failed`, `timedOut`, `skipped` or `interrupted`. */
+  readonly status: string
+  /** The mode the app was recorded in (`themeFor`). */
+  readonly theme: Theme
+  readonly chapters: ReadonlyArray<Chapter>
+}
+
+/**
+ * The chapters file for a video that opens on `card` for `titleFrames` frames, then plays `chapters` (`retime`'s, on
+ * the recording's own output): the card is the first chapter, and every other moves later by its length.
+ */
+export const chaptersFileOf = (
+  card: TitleCard,
+  test: { readonly title: string; readonly status: string | undefined; readonly theme: Theme },
+  titleFrames: number,
+  chapters: ReadonlyArray<Chapter>,
+): ChaptersFile => ({
+  title: test.title,
+  ...card,
+  status: test.status ?? "unknown",
+  theme: test.theme,
+  chapters: [
+    { t: 0, label: card.name },
+    ...chapters.map((chapter) => ({ t: Number((chapter.t + titleFrames / FPS).toFixed(1)), label: chapter.label })),
+  ],
+})
+
+/** The chapters in a `<test>.chapters.json`: the file's `chapters`, or the whole file when it is the older bare list. */
+export const chaptersIn = (file: unknown): ReadonlyArray<Chapter> =>
+  Array.isArray(file) ? file : (file as { readonly chapters?: ReadonlyArray<Chapter> } | null)?.chapters ?? []

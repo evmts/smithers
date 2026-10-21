@@ -1,5 +1,6 @@
 import { test as base, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
+import { DEV_URL } from "../dev/https"
 import { faultyApp, faults } from "./faults"
 import {
   COULDNT_ANSWER,
@@ -12,6 +13,7 @@ import {
   spinnersSeen,
   step,
   SYNC_FAILED,
+  themeOf,
   watchForSpinners,
   writeManifest,
 } from "./fixtures"
@@ -23,8 +25,9 @@ import {
 
 export { COULDNT_ANSWER, expect, NOT_SENT, OFFLINE, PAGE_SIZE, QUEUED, SYNC_FAILED }
 
-// Narrow devices, so two or three fit side by side in one GIF.
-const VIEWPORT = { width: 560, height: 720 }
+// A laptop's window, as on the default page (playwright.config.ts): each device's video is the whole app at 1:1, and
+// e2e/gifs.mjs lays several side by side without scaling them down (Will, 2026-10-20: "video is too zoomed in").
+const VIEWPORT = { width: 1280, height: 800 }
 
 export type Message = { role: string; text: string; state: "pending" | "streaming" | "settled" }
 
@@ -193,7 +196,8 @@ export class Tab {
     page.on("response", (response) => {
       if (!isQuestions(response.url())) return
       const body = response.request().postDataJSON() as { id: string }
-      const asked = this.asked.find(({ questionId }) => questionId === body.id)
+      // A question sent again is posted again: each response or failure goes to the first post of its id still open.
+      const asked = this.asked.find((post) => post.questionId === body.id && post.status === undefined && post.error === undefined)
       if (asked) asked.status = response.status()
       this.log.push(`${at()} response: ${response.status()} POST /api/questions ${body.id}`)
     })
@@ -201,7 +205,7 @@ export class Tab {
       const error = request.failure()?.errorText
       if (isQuestions(request.url())) {
         const body = request.postDataJSON() as { id: string }
-        const asked = this.asked.find(({ questionId }) => questionId === body.id)
+        const asked = this.asked.find((post) => post.questionId === body.id && post.status === undefined && post.error === undefined)
         if (asked) asked.error = error
       }
       this.log.push(`${at()} requestfailed: ${request.method()} ${new URL(request.url()).pathname} ${error}`)
@@ -448,10 +452,16 @@ class Devices {
       names.map(async (name) => {
         const context = await this.browser.newContext({
           viewport: VIEWPORT,
+          // The test's mode, from the first frame (e2e/fixtures.ts `themeOf`).
+          colorScheme: themeOf(this.testInfo),
           recordVideo: { dir: this.testInfo.outputPath("videos"), size: VIEWPORT },
         })
         if (cookie !== undefined) {
-          await context.addCookies([{ ...cookie, url: this.testInfo.project.use.baseURL ?? "http://localhost:1337" }])
+          // Over HTTPS, as the dev server and production serve the app, ChatApi reads the `__Host-` name, which a
+          // browser keeps only when it is Secure (worker/SignIn.ts `cookieNames`).
+          const url = this.testInfo.project.use.baseURL ?? DEV_URL
+          const secure = url.startsWith("https:")
+          await context.addCookies([{ name: `${secure ? "__Host-" : ""}${cookie.name}`, value: cookie.value, url, secure }])
         }
         const device = new Device(name, context, faulty)
         this.all.push(device)

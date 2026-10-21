@@ -1,4 +1,6 @@
-import { Effect, Metric, Option } from "effect"
+import { Effect, Exit, Metric, Option } from "effect"
+import { FlowDispatch } from "../../flows/dispatch"
+import type { AlertChannelName } from "./schema"
 import { hidden, SpendStore } from "./store"
 
 // What an Admin does about a spend alert (docs/features/spend-alerts.md): Hide, which marks it and every earlier alert
@@ -25,5 +27,32 @@ export const hide = (id: string) =>
     )
   }).pipe(
     // A device collection refuses only a row its own schema rejects, which these never are: a bug, not a state.
+    Effect.orDie,
+  )
+
+/**
+ * Sets where spend alerts go on `channel`: `destinations`, none to turn it off. It returns at once; the tab shows the
+ * save until `alert/channel` (door `button`) ends, then the synced row, or the save failed, to be saved again.
+ */
+export const setChannel = (channel: AlertChannelName, destinations: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const { saves, scope } = yield* SpendStore
+    const flows = yield* FlowDispatch
+    const held = yield* saves.get(channel)
+    if (Option.isSome(held)) yield* saves.update(channel, (draft) => void (draft.state = "saving"))
+    else yield* saves.insert({ channel, state: "saving" })
+    yield* flows.dispatch("alert/channel", { channel, destinations: [...destinations] }, { door: "button" }).pipe(
+      Effect.exit,
+      // Done removes the save; ChatApi's refusal, or a flow that couldn't run, leaves it failed.
+      Effect.flatMap((exit) =>
+        Exit.isSuccess(exit) && exit.value._tag === "Done"
+          ? saves.delete(channel)
+          : saves.update(channel, (draft) => void (draft.state = "failed"))
+      ),
+      Effect.ignore,
+      Effect.forkIn(scope),
+    )
+  }).pipe(
+    // A local collection refuses only a row its own schema rejects, which these never are: a bug, not a state.
     Effect.orDie,
   )

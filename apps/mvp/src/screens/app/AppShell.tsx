@@ -1,4 +1,6 @@
+import { NotificationsBell } from "../../features/attention/components/NotificationsBell"
 import { Account } from "../../features/auth/components/Account"
+import { SettingsLink } from "../../features/auth/components/SettingsLink"
 import { ComposerGate } from "../../features/auth/components/ComposerGate"
 import { ConnectionPill } from "../../features/chat/components/ConnectionPill"
 import { Composer } from "../../features/chat/components/Composer"
@@ -21,11 +23,14 @@ export function AppShell() {
         <div className="app-shell-connection" role="status" aria-label="Connection" aria-live="polite">
           <ConnectionPill />
         </div>
-        {/* Your own flows and this device's runs (decision 0014 §5). */}
+        {/* Your own flows and this device's runs (decision 0014 §5), and an Admin's settings. */}
         <nav className="app-shell-nav" aria-label="Pages">
           <Link to="/app/flows">Flows</Link>
           <Link to="/app/runs">Runs</Link>
+          <SettingsLink />
         </nav>
+        {/* Your notifications (decision 0009): the unread count, and the panel it opens. */}
+        <NotificationsBell />
         <ThemeButton />
         <Account />
       </header>

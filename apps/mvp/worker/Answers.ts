@@ -4,7 +4,7 @@ import { SqlClient } from "effect/sql"
 import { MAX_ANSWER_BODY_BYTES } from "../src/features/agent/contract.ts"
 import { AnswerWrite, type Turn } from "../src/features/agent/schema.ts"
 import { agentLiveSeconds } from "../src/features/model/contract.ts"
-import { type Actor, canAsk, Sessions } from "./Actor.ts"
+import { type Actor, boundTo, canAsk, Sessions } from "./Actor.ts"
 import { branchAccess, canEdit } from "./branch/Access.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
@@ -228,6 +228,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           if (Option.isNone(actor)) return refusal(401, "authentication")
           // A Guest, or a person with no role, may not ask, so may not write an answer either.
           if (!canAsk(actor.value)) return refusal(403, "forbidden")
+          // A run's credential writes only the answer its chain started from (decision 0017 slice 0).
+          if (!boundTo(actor.value, answerId.toLowerCase())) return refusal(403, "other_run")
           if (!(yield* mayEdit(actor.value, answerId).pipe(Effect.provide(database)))) {
             fields.errorCode = "view_only"
             return refusal(403, "forbidden")

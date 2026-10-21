@@ -24,7 +24,8 @@ export const CRITERIA: Readonly<Record<string, string>> = {
   words:
     "Is the answer free of the app's internal machinery: flow names such as app/theme/set, ctx.call, cells, JSON " +
     "payloads, error codes or execution ids? Slash commands such as /theme are the product's own words.",
-  brief: "Is the answer brief and plain: a few short sentences at most, with no filler?",
+  brief: "Is the answer brief and plain: a few short sentences at most, with no filler? A list counts as brief when " +
+    "the person asked about a list and it gives one short line per item they gave.",
 }
 
 /** How the judge reads the state: what each field is, and that only the answer is judged. */

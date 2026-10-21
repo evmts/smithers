@@ -1,7 +1,8 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
+import { WebPage } from "@smthrs/views"
 import { Schema } from "effect"
-import { KNOWN_DOCS, MAX_URL_LENGTH, WEB_MODES } from "./contract"
+import { KNOWN_DOCS, MAX_URL_LENGTH, SHOWN, WEB_MODES } from "./contract"
 import { REFUSALS } from "./url"
 
 // `app/web/open { url, mode? }` (docs/features/web-pages.md): opens an outside web page for the person, from a person's
@@ -9,8 +10,11 @@ import { REFUSALS } from "./url"
 // conversation, which every device in it shows with the page's origin above it.
 //
 //   app/web/check: the URL against the host's policy (src/features/web/url.ts), and the view's id, sealed
-//     ─▶ app/web/show: adds the view through ChatApi: `webpage` (embed: the page in a sandboxed frame) or `link`
-//        (tab: a card whose Open button, a person's click, opens it in a new tab)
+//     ─▶ app/web/preview: ChatApi asks the page, from the server, whether a frame would show it, and reads its title,
+//        description and icon (`@smthrs/views`' `WebPage.check`): a browser can't read why a frame stays blank
+//     ─▶ app/web/show: adds the view through ChatApi: `webpage` (embed of a page that allows it: the page in a
+//        sandboxed frame) or `link` (tab, or embed of a page that refuses or couldn't be checked: a card whose Open in
+//        new tab button, a person's click, opens it in a new tab)
 //
 // Browsers open a tab only from a person's click or key, and this flow runs in the engine worker, so `tab` is a card. A
 // person's own `/web … tab` opens the tab straight from their keypress when the browser still allows it, and runs this
@@ -34,8 +38,19 @@ export class WebPageUnavailable extends Schema.TaggedError<WebPageUnavailable>()
   {},
 ) {}
 
-/** What `app/web/open` answers: the view it added, the origin the person sees, and how it shows the page. */
-export const WebPageOpened = Schema.Struct({ viewId: Schema.String, origin: Schema.String, mode: Mode })
+/**
+ * What `app/web/open` answers: the view it added, the origin the person sees, the mode asked for, what the person sees
+ * (`shown`: the page itself, or a card that opens it in a new tab), whether a frame would show the page (`framing`:
+ * `refused` when the site refuses to be embedded, `unknown` when it couldn't be checked) and the page's title.
+ */
+export const WebPageOpened = Schema.Struct({
+  viewId: Schema.String,
+  origin: Schema.String,
+  mode: Mode,
+  shown: Schema.Literals(SHOWN),
+  framing: Schema.Literals(WebPage.FRAMINGS),
+  title: Schema.optional(Schema.String),
+})
 export type WebPageOpened = typeof WebPageOpened.Type
 
 /** A page the policy allowed, with the id its view gets. */
@@ -68,7 +83,10 @@ export const CheckPage = Action.make("app/web/check", {
   tier: "sealed",
 })
 
-/** How long `app/web/show` keeps trying while ChatApi is unreachable: 500 ms doubling to 8 s, for at most 2 minutes. */
+/**
+ * How long `app/web/preview` and `app/web/show` keep trying while ChatApi is unreachable: 500 ms doubling to 8 s, for
+ * at most 2 minutes.
+ */
 export const SHOW_RETRY = RetryPolicy.make({
   initialMs: 500,
   factor: 2,
@@ -77,9 +95,28 @@ export const SHOW_RETRY = RetryPolicy.make({
   nonRetryable: ["@smthrs/mvp/web/WebPageRefused", "@smthrs/mvp/web/WebPageForbidden"],
 })
 
-/** The step: adds the view to the conversation. ChatApi checks the page again, and refuses what it won't keep. */
-export const ShowPage = Action.make("app/web/show", {
+/**
+ * The step: ChatApi requests the page as a frame would and answers whether a frame shows it, with the title,
+ * description and icon a card shows. A page that can't be read is an answer (`unknown`), never a failure; ChatApi
+ * refusing the URL, or the person, is.
+ */
+export const PreviewPage = Action.make("app/web/preview", {
   payload: CheckedPage.fields,
+  success: WebPage.Checked,
+  error: Schema.Union([WebPageRefused, WebPageForbidden, WebPageUnavailable]),
+  retryPolicy: SHOW_RETRY,
+})
+
+/** A checked page, and what its check found. */
+export const PreviewedPage = Schema.Struct({ page: CheckedPage, preview: WebPage.Checked })
+export type PreviewedPage = typeof PreviewedPage.Type
+
+/**
+ * The step: adds the view to the conversation, the page itself only for an `embed` a frame shows, else a card. ChatApi
+ * checks the page again, and refuses what it won't keep.
+ */
+export const ShowPage = Action.make("app/web/show", {
+  payload: PreviewedPage.fields,
   success: WebPageOpened,
   error: Schema.Union([WebPageRefused, WebPageForbidden, WebPageUnavailable]),
   retryPolicy: SHOW_RETRY,
@@ -88,16 +125,23 @@ export const ShowPage = Action.make("app/web/show", {
 /** `app/web/open`: shows an outside web page in the conversation, or as a card that opens it in a new tab. */
 export const OpenWebPage = Flow.make("app/web/open", {
   description: "Open an outside web page (an https URL) for the person. mode \"embed\", the default, shows the page " +
-    "inside the chat with its origin above it; mode \"tab\" adds a card whose Open button opens it in a new browser " +
-    "tab. Use it when the person asks to see, show, open or visit a page or a site's docs. For these docs open exactly " +
-    `this page: ${Object.entries(KNOWN_DOCS).map(([name, url]) => `${name} ${url}`).join(", ")}. For another site, ` +
-    "pick its URL yourself. Answers { viewId, origin, mode }.",
+    "inside the chat with its origin above it; mode \"tab\" adds a card whose Open in new tab button opens it in a " +
+    "new browser tab. Use it when the person asks to see, show, open or visit a page or a site's docs. For these docs " +
+    `open exactly this page: ${Object.entries(KNOWN_DOCS).map(([name, url]) => `${name} ${url}`).join(", ")}. For ` +
+    "another site, pick its URL yourself. Many sites refuse to be embedded, so the page is checked first. Answers " +
+    "{ viewId, origin, mode, shown, framing, title? }: shown \"page\" means the page is in the chat; shown \"card\" " +
+    "means a card with an Open in new tab button was added instead, because the site refuses embedding (framing " +
+    "\"refused\") or couldn't be checked (framing \"unknown\"). Then say you added a card that opens it in a new " +
+    "tab, never that the page is shown in the chat.",
   modelInvocable: true,
   payload,
   success: WebPageOpened,
   error: Schema.Union([WebPageRefused, WebPageForbidden, WebPageUnavailable]),
-  body: Node.capture({ check: CheckPage.name, show: ShowPage.name }, (page) =>
+  body: Node.capture({ check: CheckPage.name, preview: PreviewPage.name, show: ShowPage.name }, (page) =>
     CheckPage.call(page).pipe(
-      Node.bindPlanned(Node.capture({ show: ShowPage.name }, (checked) => ShowPage.call(checked))),
+      Node.bindPlanned(Node.capture({ preview: PreviewPage.name, show: ShowPage.name }, (checked) =>
+        PreviewPage.call(checked).pipe(
+          Node.bindPlanned(Node.capture({ show: ShowPage.name }, (preview) => ShowPage.call({ page: checked, preview }))),
+        ))),
     )),
 }).annotate(Flow.Placement, Placement.client())

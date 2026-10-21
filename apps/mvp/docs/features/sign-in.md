@@ -55,6 +55,53 @@ The return path is a path on this site; anything else, including `//host` and `/
 - A session ends at its age, at sign-out, when signing in again in the same browser, or when GitHub refuses its tokens. Ended sessions keep their row with `revoked_at` and `revoked_reason`. A session GitHub refused, or whose tokens no longer open, forgets its GitHub tokens at once; a signed-out one keeps them sealed until `auth/RevokeGitHubToken` revokes them on GitHub and forgets them ([Signing out](#signing-out)).
 - `Sessions.resolve` reads the row on every request, so a revocation applies to the next request. Postgres unreachable is `SessionsUnavailable`: the model endpoint answers `503 provider_internal`, not a sign-in prompt.
 
+## Run credentials
+
+The server tells the person from the agent, a flow or a plugin acting for them ([decision 0017](../decisions/0017-everything-is-a-plugin.md#run-credentials-telling-the-person-from-the-agent-slice-0), slice 0). Only the person's own press runs with their session: a root run of a person's flow (the registry's `acts` unset) that the tab started through a person door (`button`, `slash`, `composer`). Every other run, every nested one included, sends a credential the server minted for that run, and never the session cookie.
+
+```
+tab ── dispatch(flow, door) ──▶ engine (src/flows/credentials.ts), on each request a run makes to /api/
+   root run of a person's flow? ──▶ ask the tab that started it: which door?  (src/flows/doors.ts)
+        a person door ──▶ the session cookie, as before
+   anything else ──▶ POST /api/runs/<run>/credential {flow, ceiling?}
+                       a root: in the person's session    a nested run: with its parent's credential
+                     ◀── {token, act, expiresAt}  or 403 person_only / capability_exceeded, 401 signed out
+                 ──▶ the request with Authorization: Bearer <token>, credentials: "omit"
+ChatApi: Sessions.resolve ── a bearer token? ──▶ verify: signature, expiry, the session still live ──▶ Actor + act
+                                                  never the cookie's person, even when it doesn't verify
+         a person-only route ── act set? ──▶ 403 person_only, counted
+```
+
+- **The server sets `act`, never the request.** A chain the person's session starts is `agent` when the registry marks its flow an agent (`chat/Answer`, `flow/new`, `flow/run/prompt`: `worker/Actor.ts` `AGENT_FLOWS`), else `flow`. A nested call keeps its caller's kind, and becomes `agent` inside an agent. `app` (a frame's dispatch) and `sandbox` are the other kinds.
+- **Authority narrows at every hop.** A credential holds its root run, the chain of flows from it (at most 16) and its ceiling. A nested call's ceiling is the caller's intersected with the callee's declared `Flow.make` capabilities (`Flow.intersectCeilings`); a callee whose declared ceiling the caller's doesn't cover is refused `capability_exceeded` (`Flow.ceilingWithin`). A declared ceiling only narrows.
+- **No credential for a person-only act.** A flow whose route is person-only gets none, nested or not: `403 person_only`. The engine hands that refusal to the step as its request's answer, and sends nothing.
+- **A run's parent** is the one the engine recorded, else the run it is named after (`requesterOf`: the agent's calls are `<answer>/…/call/…`, an answer's close `<answer>/close`) when the engine holds one; `ack/…` and `deliver/…` name no run, so theirs are roots.
+- **The token** is `SessionKeys.sign("run", base64url(claims))`: HMAC-SHA256 under `SESSION_SECRET`, a purpose no cookie shares. Claims: the person, the session it was minted under, `act`, the run, its root, the chain, the ceiling and the end, 15 minutes on (`CREDENTIAL_TTL_MS`); the engine mints the next a minute before. Without sign-in configured, local development's people sign theirs with `SESSION_SECRET` when Alchemy bound one, so a credential outlives the dev server reloading ChatApi, and with a key the Worker draws when it starts otherwise. A request a credential went with that comes back `401` makes the engine ask for every credential again, once (`auth.run_credential` `outcome: stale`).
+- **It ends with its session.** Verifying reads the session by id, so a credential replayed after sign-out, or for a person no longer signed in, reads as nobody (`401`). A forged, tampered or expired one reads as nobody too, never as the cookie beside it.
+- **Bound to its run.** The runs report route and the answer write route take a credential only for the run its chain started from (`403 other_run`); a sandbox call names an answer only as that run.
+- **The tab's outbox.** A write the agent queues in the tab, an issue write, carries its run's credential, and the tab sends it with that and without the cookie; a run with no credential to send queues nothing (`no_credential`). The git writes route reads who acts (`via`) from the request alone: the body names nobody.
+- **Signed out**, a run sends its requests with no credential and no cookie.
+- **The Node host** (`src/test/agent.ts`) runs the same credentials; with no tab, every root run its tests start is the person's own press.
+
+**Person-only acts.** `PERSON_ONLY_FLOWS` in `worker/Actor.ts` holds every registry flow with a `userOnlyReason`, and the compiler refuses one missing or one too many; each says how it stays the person's: its `route` refuses an `act`, only the person `starts` it there (`chat/Answer`: asking), or it reaches no server route (`device`, with why). `PROTECTED_ACTS` holds the server's own: a secret's write and merging a pull request; approving, pre-approving, members, roles and plugin grants join it with their routes. Each route calls `refusesPersonOnly(actor, act)`.
+
+| Act | Route | Refusal |
+|---|---|---|
+| `chat/Answer` (asking) | `POST /api/questions` | `403 { message }` |
+| `run/answer` | `POST /api/runs/<id>/answer` | `403 person_only` |
+| `flow/answer` | `POST /api/flow-drafts/<id>/answers` | `403 person_only` |
+| `branch/share` | `POST /api/branches/<id>/shares` | `403 person_only` |
+| `terminal/open` | `POST /api/terminals` | `403 person_only` |
+| `notification/ack` | `POST /api/notifications/ack` | `403 person_only` |
+| `alert/channel` | `POST /api/alert-channels` | `403 person_only` |
+| `issue/triage`, `triage/run`, `triage/enable`, `triage/pause`, `issue/commitment`, `pr/merge` | `POST /api/repos/<owner>/<name>/writes` | `403 forbidden`, the route's own contract |
+| `todo/commit`, `todo/drop` | `POST /api/repos/<owner>/<name>/stack` | `403 forbidden`, the route's own contract |
+| `secret` | `PUT`, `DELETE /api/repos/<owner>/<name>/secrets/<name>` | `403 forbidden`, the route's own contract |
+
+`POST /api/runs/<run>/credential` answers `200 { token, act, expiresAt }`; `400 invalid` for a body that isn't `{ flow, ceiling? }`; `401` signed out; `403 forbidden` for another person's answer (`chat/Answer`'s run is the answer's id); `403 person_only`, `capability_exceeded` or `too_deep`; `404` for a run id that isn't one; `413` past 16 KiB.
+
+Not built yet: confirmation receipts and the host's confirm dialog for protected acts (decision 0017 slice 0); the runs a remote host starts mint their own credentials once a remote flow acts for a person; a plugin installation as a credential's subject (slice 2).
+
 ## Roles and role checks
 
 The role is the person's permission on `GITHUB_REPOSITORY` (`GET /repos/<owner>/<name>` with their token), mapped as decision 0007 §9 says, never with more power than GitHub gives:
@@ -133,7 +180,7 @@ Migration `0005_sign_in`. None of these tables is synced to browsers.
 
 ChatApi and the `FlowExecution` Durable Object read them with Effect `Config`. Set the App's two in the deploying environment; Alchemy binds them to the Worker as secrets ([infrastructure.md](../infrastructure.md#credentials)).
 
-**Callback URLs.** The GitHub App must list `<origin>/api/auth/callback` for every origin people sign in from: `http://localhost:1337/api/auth/callback` for `pnpm dev`, and the deployed site's `url` plus `/api/auth/callback`. GitHub refuses any other redirect URI (`redirect_uri_mismatch`, logged as `exchange_misconfigured`). On a loopback host GitHub ignores the port: with only `http://localhost:1337/api/auth/callback` listed, it takes `http://localhost:1338/api/auth/callback` and `http://127.0.0.1:1338/api/auth/callback`, and refuses `http://localhost:1337/other` (checked 2026-10-20). So a second `alchemy dev`, which takes the next free port, signs in for real too.
+**Callback URLs.** The GitHub App must list `<origin>/api/auth/callback` for every origin people sign in from: `http://localhost:1337/api/auth/callback` for `pnpm dev`, and the deployed site's `url` plus `/api/auth/callback`. GitHub refuses any other redirect URI (`redirect_uri_mismatch`, logged as `exchange_misconfigured`). On a loopback host GitHub ignores the port: with only `http://localhost:1337/api/auth/callback` listed, it takes `http://localhost:1338/api/auth/callback` and `http://127.0.0.1:1338/api/auth/callback`, and refuses `http://localhost:1337/other` (checked 2026-10-20). So a second `alchemy dev`, which takes the next free port, signs in for real too. The dev server's HTTPS and HTTP/2 URL, `https://localhost:1443` ([infrastructure.md](../infrastructure.md#https-and-http2)), is another scheme: list `https://localhost:1443/api/auth/callback` too to sign in for real there.
 
 ## Local development
 
@@ -183,6 +230,9 @@ Run with the compose Postgres up (`pnpm db:up`). GitHub is the second scripted s
 | `worker/GitHubAuth.live.test.ts` | the real GitHub: the App's credentials, a callback URL, and a real user token's person and role; each case skips naming the variables it needs |
 | `src/wipe.test.ts` | the browser's wipe on Node's Web Locks and BroadcastChannel, with stand-ins for OPFS and IndexedDB: a page still holding the data holds the wipe off, and the wipe then deletes both stores and clears the mark; it waits for the leading engine worker's lock; two pages booting at once delete once; a delete another connection holds off finishes when it closes; a failed delete keeps the mark and opens unwiped; every page, the signing-out one included, stops its program and loads again once; an unwiped page's stores are memory and its engine is unavailable with `WipeUnfinished` |
 | `e2e/sign-in.spec.ts` | in a real browser: signing out wipes the device (the unsent question gone, the outbox empty, the shape from offset -1); with two tabs, a tab slow to unload holds the other's wipe off, then both open as visitors with nothing of the session, the mark cleared |
+| `worker/RunCredentials.test.ts` | who a credential says acts: an agent's chain, a flow's, nested calls growing the chain, keeping the root and staying the agent's; no credential for a person-only flow; a wider callee refused, a narrower one intersected; a chain stopped at its depth; property tests that every hop narrows and no chain acts as the person or for anyone else; forged, tampered, another purpose's, expired and ended credentials reading as nobody, never as the cookie beside them; through ChatApi: the agent's `run/answer` refused, nested and with its own credential, and the person's press taking it; a plugin's wider callee refused; another person's run, another run, forged and expired credentials refused; replayed after sign-out, refused; without sign-in configured, a credential outliving a reload under `SESSION_SECRET`, and not without it |
+| `worker/PersonOnly.test.ts` | every person-only flow with a route and every protected act, keyed by the list itself: an agent's, a flow's and a frame's request refused `403` and counted |
+| `src/flows/credentials.test.ts` | on the Node engine against ChatApi's routes: the agent's run sends its credential and no cookie, and its nested `run/answer` is refused before anything is sent; the person's press goes in their session, while the same flow from a page's own door or a tab that's gone is refused; one credential however many requests; a declared ceiling sent; signed out, no credential and no cookie; a mint unreachable or not a credential, and a lineage unreadable, send nothing; a run with no recorded parent nested in the run it is named after; a credential the server no longer reads asked for again once; a run's credential for the tab's outbox |
 | `src/features/auth/auth.test.ts` | the tab on a Node device: signed out, signed in through GitHub, signing out, sign-in off, ChatApi unreachable, refused or silent; `composerAccess` for every status and role; a Member reloading offline or before ChatApi answers still asking; a Guest or no role seeing the line; ChatApi saying signed out forgetting the confirmed session; a sign-out ChatApi takes leaving no stored rows and an empty outbox, a failed one leaving both; a wipe the host couldn't do counted; no login in its log lines |
 
 The browser half of signing in, pressing Approve on GitHub, belongs to the end-to-end suite with the `codeplanesmithers` test account (decision 0008, E2).

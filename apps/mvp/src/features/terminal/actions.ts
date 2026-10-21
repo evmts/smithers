@@ -69,8 +69,8 @@ const mirrorTabs = (rows: ReadonlyArray<TerminalRow>) =>
 
 /**
  * Shows branch `branchId`'s terminal panel: `watching`, a terminal to watch (anyone's), or else the person's own open
- * one, or else the first live terminal on the branch, attached once it is open; otherwise Open terminal. Its tabs
- * follow the branch's live terminals while it shows. `null` shows none, and lets go of the socket. Answers the
+ * one, or else the first live terminal on the branch, attached once it is open; otherwise Open terminal, until such a
+ * terminal turns up. Its tabs follow the branch's live terminals while it shows. `null` shows none, and lets go of the socket. Answers the
  * terminal it shows, if any.
  */
 export const show = (branchId: string | null, watching?: string) =>
@@ -88,20 +88,33 @@ export const show = (branchId: string | null, watching?: string) =>
     yield* terminals.preload.pipe(Effect.timeoutOption("10 seconds"), Effect.ignore)
     const rows = yield* terminals.toArray
     yield* mirrorTabs(rows)
+    const pick = (rows: ReadonlyArray<TerminalRow>) =>
+      Effect.map(loginNow, (login) => mineOf(rows, login) ?? rows.find((row) => row.status === "open" || row.status === "opening"))
+    const showRow = (shown: TerminalRow) =>
+      Effect.gen(function* () {
+        yield* setPanel({ branchId, terminalId: shown.id, phase: shown.status === "open" ? "connecting" : phaseOf(shown), access: null })
+        if (shown.status === "opening") yield* Effect.forkIn(awaitOpen(branchId, shown.id, undefined), store.scope)
+      })
+    // The tabs follow the rows. A panel that found nothing to show, because the branch had no live terminal or its rows
+    // came after the preload's deadline (a reload on a loaded machine), shows the first that turns up, so the Terminal
+    // view is never left blank beside a live terminal.
     yield* FiberHandle.run(
       store.follower,
-      terminals.changes().pipe(Stream.runForEach(() => Effect.flatMap(terminals.toArray, mirrorTabs))),
+      terminals.changes().pipe(Stream.runForEach(() =>
+        Effect.gen(function* () {
+          const now = yield* terminals.toArray
+          yield* mirrorTabs(now)
+          if (watching !== undefined) return
+          const panel = yield* panelNow
+          if (panel.branchId !== branchId || panel.terminalId !== null || panel.phase !== "idle") return
+          const found = yield* pick(now)
+          if (found !== undefined) yield* showRow(found)
+        })
+      )),
     )
-    const shown = watching === undefined
-      ? mineOf(rows, yield* loginNow) ?? rows.find((row) => row.status === "open" || row.status === "opening")
-      : rows.find((row) => row.id === watching)
-    yield* setPanel({
-      branchId,
-      terminalId: shown?.id ?? null,
-      phase: shown === undefined ? "idle" : shown.status === "open" ? "connecting" : phaseOf(shown),
-      access: null,
-    })
-    if (shown?.status === "opening") yield* Effect.forkIn(awaitOpen(branchId, shown.id, undefined), store.scope)
+    const shown = watching === undefined ? yield* pick(rows) : rows.find((row) => row.id === watching)
+    if (shown === undefined) yield* setPanel({ branchId, terminalId: null, phase: "idle", access: null })
+    else yield* showRow(shown)
     return shown?.id ?? null
   }).pipe(Effect.annotateLogs({ feature: "terminal" }))
 

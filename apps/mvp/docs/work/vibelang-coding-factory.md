@@ -3,9 +3,26 @@ title: VibeLang coding factory
 status: in-progress
 area: process
 owner: Codex tracker curator; execution assigned by lead
-updated: 2026-10-20
+updated: 2026-10-20 22:44 PDT
 links: [vibelang-release-docs.md, vibelang-0-0-2-publish.md, maintainer-app-plugins.md]
 ---
+
+## Tracker reconciliation — 2026-10-20, 22:44 PDT
+
+**What:** Deliver the simpler issue-to-POC-to-TODO-to-person-merged-PR lifecycle.
+
+**Why:** Will requested reproduction, discussion acceptance, maintainer commitment and a playable generated POC.
+
+**Current state:** At 22:38 PDT a fresh coding-factory builder takes over saved edits after the previous builder exhausted context. Last tests are unfinished. TODO-to-pull-request execution must remain switched off behind a flag until Cloudflare runtime proof exists; sandbox bundling must also preserve dev-server startup. No completed end-to-end factory receipt is reported.
+
+**Next step:** Finish retained tests, prove the sandbox on Cloudflare, check clean dev startup and hand the files to the lander. Keep the unproven execution path disabled.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human messages and lead text replies, approximately 20:44–22:44 PDT, session 6253ecf2; notifications and tool blocks excluded. Current rulings and queue answers (latest 19:38 PDT) prevail over historical briefs and designs. Product receipts are lead-reported; this tracker verifies the maintainer-site build. Execution owners and statuses retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 19:56 PDT
 

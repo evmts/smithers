@@ -7,6 +7,57 @@ updated: 2026-10-20
 links: [../rulings.md, effect-code-conversion.md]
 ---
 
+## Tracker reconciliation — 2026-10-20, 22:15 PDT
+
+**What:** Prepare and publish VibeLang 0.0.2 with installable packages and current public README links.
+
+**Why:** The public repository move and docs publication must lead to a usable release.
+
+**Current state:** At 22:14 the lead reports npm latest still 0.0.1 and npm README pages pointing to dead effeck.dev links; this was sent to the separate VibeLang session. Repository docs are live, but Fable’s fix-first review and repository settings remain unresolved. No 0.0.2 npm publication receipt exists.
+
+**Next step:** Correct package README links, finish release review and clean-install proof, then retain the authorized publication receipt.
+
+**Open questions for Will:** Repository settings approval remains queue 975; retain the previously recorded person-owned publication step.
+
+Evidence: script-filtered user-typed text and lead text replies from session 6253ecf2, approximately 20:15–22:15 PDT; synthetic notifications, relayed agents and compaction summaries excluded. Rulings and all 75 queue answers (latest 19:38 PDT) take precedence over historical shared briefs, panel designs, decisions, proposals, TODOs and rules. Execution ownership and status retained; Codex tracker curator reconciles documentation only. Product results are reported evidence; this pass validates the site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 21:43 PDT
+
+**What:** Prepare VibeLang 0.0.2 from its public repository, with reviewed docs and installable packages.
+
+**Why:** Will selected smithersai/vibelang and requested publish readiness.
+
+**Current state:** At 21:36 PDT the lead reports the repository move complete: smithersai/vibelang holds the language code and the prototype is tagged prototype-final. A new Opus owner is landing docs, issue templates, SECURITY.md and package metadata after an Astra review. This is a repository-move receipt, not an npm 0.0.2 publication receipt.
+
+**Next step:** Finish the reviewed docs/metadata handoff, verify a clean install and retain publication receipts. The previously recorded person-owned npm publish step still applies.
+
+**Open questions for Will:** Publication and any repository settings or labels requiring Will remain with him; no new choice is introduced.
+
+Evidence: lead text replies and human-typed messages extracted by script from session 6253ecf2 for 19:43–21:43 PDT; synthetic notifications and compaction summaries excluded. Rulings and queue answers through 19:38 PDT take precedence over older briefs, designs, decisions, proposals, TODOs and rules. Product results are reported receipts; this tracker validates the site build. Execution ownership is retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 20:02 PDT
+
+**What:** Prepare publication from smithersai/vibelang, preserving prototype history and website source.
+
+**Why:** Will chose the smithersai public home and requested publish readiness.
+
+**Current state:** The release owner is preparing the append-only move and scanning the previously private history. At 20:02 the lead stopped the suspected docs-resync session after Will’s Telegram reply; continuity monitoring continues. npm remains reported at 0.0.1, with no move, public push or 0.0.2 publication receipt.
+
+**Next step:** Verify website preservation and absence of stale resync, complete the move and reviewed docs handoff, then retain clean-install and publication receipts. The lead says npm publishing waits for Will’s command.
+
+**Open questions for Will:** No remaining redirect-versus-stop question. Publication still waits for the person-owned release step.
+
+Evidence: script-filtered user-typed text and assistant text replies in session 6253ecf2, 18:02–20:02 PDT; queue answers through 19:38 PDT; rulings, decisions 0001–0020, proposals, TODOs, rules and shared feature/host/panel briefs and designs. Timeline validation also uses its builder report. Latest Will text and queue answers prevail. Product receipts are reported evidence; this tracker verifies the site build. Execution owner retained; reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
 ## Current specification — 2026-10-20, 19:56 PDT
 
 **What:** Prepare VibeLang for publication from smithersai/vibelang while preserving repository and website history.

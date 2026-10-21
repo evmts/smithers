@@ -1,11 +1,28 @@
 ---
-title: Maintainer queue, tracker and review as main-app plugins (P2)
-status: todo
+title: Maintainer tracker and notes as a future wiki plugin
+status: idea
 area: app
 owner: plugin builders after slice 0
-updated: 2026-10-20
+updated: 2026-10-21 00:06 PDT
 links: [../rulings.md, everything-is-a-plugin.md, will-decision-queue.md, maintainer-site.md, chaptered-review-videos.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 00:06 PDT
+
+**What:** Defer the tracker and notes migration to the future wiki.
+
+**Why:** PLUGIN-5 narrows the earlier P2 request; PLUGIN-4 promotes the review queue separately.
+
+**Current state:** Will’s latest words keep the maintainer tracker and notes punted. They will likely become the wiki, which does not exist in the app. The product review queue is a separate active design stream.
+
+**Next step:** Leave tracker/wiki implementation unscheduled; use product-review-queue.md for the promoted queue feature.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human text and lead replies from the last two session hours, through 00:05 PDT; queue answers through 00:05:48 PDT; current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Product checks are reported receipts, not checks executed by this tracker. Existing execution owners and history retained; Codex curates documentation only.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 18:18 PDT
 

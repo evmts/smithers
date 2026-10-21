@@ -13,8 +13,13 @@ import type { RepoUpstream } from "../RepoUpstream.ts"
 // a public GitHub repository into Code Storage and records it in `repositories`. `cloneId` is the attempt's own id: it
 // names the execution (`repo-clone:<id>:<cloneId>`), and only the attempt with that id may write the row.
 //
-//   repo/Inspect ─ admitted ─▶ repo/Import ─▶ repo/Pull ─▶ repo/AwaitSync ─▶ repo/Settle
-//                └ refused or failed ──────────────────────────────────────▶ repo/Settle
+//   repo/Inspect ─ admitted ─▶ repo/Import ─▶ repo/Pull ─▶ repo/AwaitSync ─▶ repo/Index ─▶ repo/Settle
+//                └ refused or failed ────────────────────────────────────────────────────▶ repo/Settle
+//
+// The row's `stage` follows it, and with it the feed of the person who asked (worker/CloneFeed.ts): `requested` when
+// RepoApi takes it, `fetching` once admitted, `indexing` once Code Storage has the head commit, then ready or failed.
+// Index reads the file list at the head into the shared cache, so the first visit's tree is already there, and asks
+// whether the Smithers GitHub App is installed on the repository: a ready copy without it is reclaimable.
 //
 // It runs remotely because it needs the Code Storage organization key (decision 0011 §2), on the per-execution Durable
 // Object (worker/ExecutionHost.ts), and on the Node host in the tests. Nothing here names a host: the host injects
@@ -143,9 +148,31 @@ export const AwaitSync = Action.make("repo/AwaitSync", {
   retryPolicy: SYNC_RETRY,
 })
 
+/**
+ * What Index found: how many files the head commit has (`null` when its list couldn't be read), and whether the Smithers
+ * GitHub App is installed on the repository.
+ */
+export const Indexed = Schema.Struct({ files: Schema.NullOr(Schema.Number), installed: Schema.Boolean })
+export type Indexed = typeof Indexed.Type
+
+/** Index's answer when nothing was synced, or it couldn't run: no files read, and no App known. */
+export const NOT_INDEXED: Indexed = { files: null, installed: false }
+
+/**
+ * Once the head commit is in: moves the row to stage `indexing`, reads the file list at the head into the shared cache
+ * (best effort), and asks whether the App is installed. A sync that isn't ready, or an attempt that no longer owns its
+ * row, answers `NOT_INDEXED` and changes nothing.
+ */
+export const Index = Action.make("repo/Index", {
+  payload: { id: Schema.String, owner: Schema.String, name: Schema.String, cloneId: CloneId, synced: Synced },
+  success: Indexed,
+  error: CloneUnavailable,
+  retryPolicy: STEP_RETRY,
+})
+
 /** Writes how the clone ended, only while this attempt owns a `cloning` row. */
 export const Settle = Action.make("repo/Settle", {
-  payload: { id: Schema.String, cloneId: CloneId, inspection: Inspection, synced: Synced },
+  payload: { id: Schema.String, cloneId: CloneId, inspection: Inspection, synced: Synced, indexed: Indexed },
   success: Schema.Struct({ status: Schema.Literals(["ready", "failed", "capacity"]), settled: Schema.Boolean }),
   error: CloneUnavailable,
   retryPolicy: SETTLE_RETRY,
@@ -160,7 +187,14 @@ export const Clone = Flow.make("repo/Clone", {
   success: Settle.successSchema,
   error: CloneUnavailable,
   body: Node.capture(
-    { inspect: Inspect.name, import: Import.name, pull: Pull.name, await: AwaitSync.name, settle: Settle.name },
+    {
+      inspect: Inspect.name,
+      import: Import.name,
+      pull: Pull.name,
+      await: AwaitSync.name,
+      index: Index.name,
+      settle: Settle.name,
+    },
     (request) =>
       Inspect.call(request).pipe(
         Node.catch({ onFailure: Node.capture({ inspection: "unavailable" }, () => Node.succeed(INSPECTION_UNAVAILABLE)) }),
@@ -178,11 +212,21 @@ export const Clone = Flow.make("repo/Clone", {
                 AwaitSync.call({ id: request.id, defaultBranch: inspection.defaultBranch, requestedAt: request.requestedAt }),
               ),
               Node.catch({ onFailure: Node.capture({ synced: "unavailable" }, () => Node.succeed(UNAVAILABLE)) }),
-              Node.bindPlanned(Node.capture({ settle: Settle.name }, (synced) =>
-                Settle.call({ id: request.id, cloneId: request.cloneId, inspection, synced }))),
+              Node.bindPlanned(Node.capture({ index: Index.name, settle: Settle.name }, (synced) =>
+                Index.call({
+                  id: request.id,
+                  owner: request.owner,
+                  name: request.name,
+                  cloneId: request.cloneId,
+                  synced,
+                }).pipe(
+                  Node.catch({ onFailure: Node.capture({ indexed: "none" }, () => Node.succeed(NOT_INDEXED)) }),
+                  Node.bindPlanned(Node.capture({ settle: Settle.name }, (indexed) =>
+                    Settle.call({ id: request.id, cloneId: request.cloneId, inspection, synced, indexed }))),
+                ))),
             )),
           else: Node.capture({ synced: "skipped" }, (inspection) =>
-            Settle.call({ id: request.id, cloneId: request.cloneId, inspection, synced: SKIPPED })),
+            Settle.call({ id: request.id, cloneId: request.cloneId, inspection, synced: SKIPPED, indexed: NOT_INDEXED })),
         }),
       ),
   ),
@@ -197,6 +241,13 @@ export interface Services<E = unknown, R = never> {
   readonly budgets: Repos.Budgets
   /** How long after the request the sync may take (`REPO_CLONE_DEADLINE`, default 10 minutes). */
   readonly deadline: Duration.Duration
+  /**
+   * Reads `owner/name`'s file list at `sha` into the shared cache, as RepoApi's tree read does, and answers how many
+   * files it has.
+   */
+  readonly index: (owner: string, name: string, sha: string) => Effect.Effect<number, CloneUnavailable, R>
+  /** Whether the Smithers GitHub App is installed on `owner/name`: `false` for a deployment without the App. */
+  readonly installed: (owner: string, name: string) => Effect.Effect<boolean, CloneUnavailable>
 }
 
 /** Reads `REPO_CLONE_DEADLINE`. */
@@ -309,9 +360,27 @@ export const steps = <E, R>(services: Services<E, R>) => {
       return yield* new SyncPending(wait === undefined ? {} : { retryAfterMillis: wait })
     }).pipe(Effect.withSpan("repo.clone.await_sync", { attributes: { "smithers.repo.id": payload.id } }))
 
+  const index = (payload: typeof Index.payloadSchema.Type) =>
+    Effect.gen(function* () {
+      const head = payload.synced.head
+      if (payload.synced.status !== "ready" || head === null) return NOT_INDEXED
+      const owned = yield* Repos.indexing({ id: payload.id, cloneId: payload.cloneId }).pipe(
+        Effect.provide(database),
+        Effect.mapError(() => new CloneUnavailable()),
+      )
+      if (!owned) return NOT_INDEXED
+      // Best effort: a list that can't be read now is read by the first visit instead.
+      const files = yield* services.index(payload.owner, payload.name, head.sha).pipe(
+        Effect.catch(() => Effect.succeed(null)),
+      )
+      const installed = yield* services.installed(payload.owner, payload.name)
+      yield* record("index", { id: payload.id, files: files ?? -1, installed })
+      return { files, installed } satisfies Indexed
+    }).pipe(Effect.withSpan("repo.clone.index", { attributes: { "smithers.repo.id": payload.id } }))
+
   const settle = (payload: typeof Settle.payloadSchema.Type) =>
     Effect.gen(function* () {
-      const outcome = outcomeOf(payload.inspection, payload.synced)
+      const outcome = outcomeOf(payload.inspection, payload.synced, payload.indexed)
       const written = yield* Repos.settle({ id: payload.id, cloneId: payload.cloneId }, outcome, budgets).pipe(
         Effect.provide(database),
         Effect.tapError((error) =>
@@ -345,11 +414,11 @@ export const steps = <E, R>(services: Services<E, R>) => {
       return { status: outcome.status, settled: written.settled }
     }).pipe(Effect.withSpan("repo.clone.settle", { attributes: { "smithers.repo.id": payload.id } }))
 
-  return { inspect, importRepo, pull, awaitSync, settle }
+  return { inspect, importRepo, pull, awaitSync, index, settle }
 }
 
-/** How a clone ended, from what Inspect decided and how the sync went. */
-export const outcomeOf = (inspection: Inspection, synced: Synced): Repos.Outcome => {
+/** How a clone ended, from what Inspect decided, how the sync went, and what Index found. */
+export const outcomeOf = (inspection: Inspection, synced: Synced, indexed: Indexed = NOT_INDEXED): Repos.Outcome => {
   if (inspection.outcome === "capacity") {
     return {
       status: "capacity",
@@ -360,7 +429,12 @@ export const outcomeOf = (inspection: Inspection, synced: Synced): Repos.Outcome
   }
   if (inspection.outcome === "failed") return { status: "failed", failure: inspection.failure! }
   if (synced.status === "ready") {
-    return { status: "ready", defaultBranch: inspection.defaultBranch!, head: synced.head! }
+    return {
+      status: "ready",
+      defaultBranch: inspection.defaultBranch!,
+      head: synced.head!,
+      reclaimable: !indexed.installed,
+    }
   }
   return { status: "failed", failure: synced.status === "timed_out" ? "timed_out" : "unavailable" }
 }
@@ -375,6 +449,7 @@ export const registration = <E, R>(services: Services<E, R>) => {
       Import.toLayer(implementation.importRepo),
       Pull.toLayer(implementation.pull),
       AwaitSync.toLayer(implementation.awaitSync),
+      Index.toLayer(implementation.index),
       Settle.toLayer(implementation.settle),
     ),
   ).pipe(Layer.provideMerge(Action.layerImplementations))

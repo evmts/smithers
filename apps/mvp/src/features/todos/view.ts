@@ -2,12 +2,12 @@ import type { IssuesViewIssue, IssuesViewLink, ItemConversationEvent, ItemStateK
 import { mayAsk, type Role } from "../auth/contract"
 import { viewerOf } from "../commands/catalog"
 import { issuePath } from "../issues/contract"
+import { githubPullUrl } from "../pulls/contract"
 import { hrefFor } from "../repo/paths"
 import {
   COMMITTED,
   DROP,
   dropTitle,
-  githubPullUrl,
   MAKE_TODO,
   NOT_SENT_COPY,
   type NotSentReason,

@@ -34,7 +34,7 @@ const steps = (row: Row | undefined, flow: string): Array<string> => {
   return list.filter((part) => part.kind === "step" && part.flow === flow).map((part) => part.status)
 }
 
-test("clone by slash: /clone octocat/Hello-World runs repo/clone, and the repository opens ready", async ({ devices }) => {
+test("clone by slash: /clone octocat/Hello-World runs repo/clone, and the repository opens ready", { annotation: { type: "summary", description: "/clone clones a repository, and it opens ready." } }, async ({ devices }) => {
   const logs = local ? await LogTail.start() : undefined
   const [a] = await devices.open("A")
   await expect(a.chatButton).toBeVisible({ timeout: 30_000 })
@@ -55,7 +55,7 @@ test("clone by slash: /clone octocat/Hello-World runs repo/clone, and the reposi
   await expect(a.page.getByRole("button", { name: "master", exact: true })).toBeVisible()
 })
 
-test("clone by the agent: asked to clone octocat/Spoon-Knife, it calls repo/clone", async ({ devices, request }) => {
+test("clone by the agent: asked to clone octocat/Spoon-Knife, it calls repo/clone", { annotation: { type: "summary", description: "Asked to clone a repository, the agent runs the same clone flow." } }, async ({ devices, request }) => {
   const word = devices.word
   const [a] = await devices.open("A")
   const question = `Clone octocat/Spoon-Knife, then reply with the word clone-${word}.`

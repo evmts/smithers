@@ -220,6 +220,147 @@ describe("on a host that runs TODOs", () => {
   })
 })
 
+describe("a run's reports", () => {
+  /** Commits TODOs on a host that runs them, and answers the first one's attempt. */
+  const started = async (count = 1) => {
+    const receipts = []
+    for (let index = 0; index < count; index++) receipts.push(await applyOn(commit(), true))
+    const first = receipts[0]!
+    if (first.kind !== "applied") throw new Error("not applied")
+    const start = first.receipt.starts[0]!
+    return { attemptId: start.attemptId, todoId: start.todoId, repoId: REPO, ordinal: start.ordinal }
+  }
+  const reportOn = (attempt: Stack.RunAttempt, event: Stack.RunEvent, runs = true, observed = observe()) =>
+    runtime.runPromise(
+      Effect.gen(function* () {
+        const { database } = yield* TestDatabase.Scratch
+        return yield* observed.provide(Stack.report(attempt, event, { runs })).pipe(Effect.provide(database))
+      }),
+    )
+  const row = async () =>
+    (await sql<{
+      state: string
+      step: string | null
+      branch: string | null
+      baseSha: string | null
+      headSha: string | null
+      prNumber: number | null
+      failure: string | null
+      note: string | null
+      mergeSha: string | null
+      position: number | null
+      settled: boolean
+    }>(`
+      SELECT state, step, branch, base_sha AS "baseSha", head_sha AS "headSha", pr_number AS "prNumber", failure, note,
+        merge_sha AS "mergeSha", position, settled_at IS NOT NULL AS settled
+      FROM todos WHERE repo_id = '${REPO}' ORDER BY number LIMIT 1`))[0]!
+  const BASE = "a".repeat(40)
+  const HEAD = "b".repeat(40)
+  const MERGE = "c".repeat(40)
+
+  test("step, branch and published change the row; merged settles it, frees the lane and starts the next", async () => {
+    const attempt = await started(2)
+    expect(await reportOn(attempt, { kind: "step", step: "implement" })).toEqual({ outcome: "applied", starts: [] })
+    expect(await reportOn(attempt, { kind: "branch", branch: "smithers/t1-retry", baseSha: BASE }))
+      .toEqual({ outcome: "applied", starts: [] })
+    expect(await row()).toMatchObject({ state: "working", step: "implement", branch: "smithers/t1-retry", baseSha: BASE })
+    const observed = observe()
+    await reportOn(attempt, { kind: "published", headSha: HEAD, prNumber: 7 }, true, observed)
+    expect(await row()).toMatchObject({ state: "in_review", step: "await", headSha: HEAD, prNumber: 7 })
+    expect(observed.count(Stack.transitions, { from: "working", to: "in_review" })).toBe(1)
+    // Published again, as a retried step does: the row stands, and nothing counts twice.
+    const again = observe()
+    await reportOn(attempt, { kind: "published", headSha: HEAD, prNumber: 7 }, true, again)
+    expect(again.count(Stack.transitions, { from: "working", to: "in_review" })).toBe(0)
+    const merged = await reportOn(attempt, { kind: "finished", state: "merged", note: "merged_on_github", mergeSha: MERGE })
+    expect(merged).toMatchObject({ outcome: "applied", starts: [{ number: 2, ordinal: 1, repoId: REPO }] })
+    expect(await row()).toMatchObject({
+      state: "merged",
+      step: null,
+      position: null,
+      settled: true,
+      note: "merged_on_github",
+      mergeSha: MERGE,
+    })
+    expect((await todos()).map(({ state, position }) => [state, position])).toEqual([["merged", null], ["working", 1]])
+    expect(await sql(`SELECT status, settled_at IS NOT NULL AS settled FROM todo_attempts ORDER BY created_at`))
+      .toEqual([{ status: "settled", settled: true }, { status: "running", settled: false }])
+  })
+
+  test("failed keeps the TODO's place with its code; a stale report changes nothing and is logged", async () => {
+    const attempt = await started()
+    await reportOn(attempt, { kind: "finished", state: "failed", failure: "implement" })
+    expect(await row()).toMatchObject({ state: "failed", failure: "implement", position: 1, settled: false })
+    expect(await sql(`SELECT status FROM todo_attempts`)).toEqual([{ status: "failed" }])
+    const observed = observe()
+    expect(await reportOn(attempt, { kind: "step", step: "publish" }, true, observed)).toEqual({
+      outcome: "stale",
+      starts: [],
+    })
+    expect(observed.count(Stack.reports, { kind: "step", outcome: "stale" })).toBe(1)
+    expect(observed.lines.at(-1)).toMatchObject({ message: "stack.report", annotations: { outcome: "stale" } })
+    expect(await reportOn({ ...attempt, ordinal: 9 }, { kind: "step", step: "publish" })).toMatchObject({ outcome: "stale" })
+    expect(await reportOn({ ...attempt, repoId: "github/no/where" }, { kind: "step", step: "publish" }))
+      .toMatchObject({ outcome: "stale" })
+  })
+
+  test("an ending moves only what it must: failed leaves the rest in place, merged closes the gap behind it", async () => {
+    const attempt = await started(4)
+    const failed = await reportOn(attempt, { kind: "finished", state: "failed", failure: "implement" })
+    const places = async () => (await todos()).map(({ state, position }) => [state, position])
+    expect(await places()).toEqual([["failed", 1], ["working", 2], ["queued", 3], ["queued", 4]])
+    const next = failed.starts[0]!
+    await reportOn({ attemptId: next.attemptId, todoId: next.todoId, repoId: REPO, ordinal: next.ordinal }, {
+      kind: "finished",
+      state: "merged",
+    })
+    expect(await places()).toEqual([["failed", 1], ["merged", null], ["working", 2], ["queued", 3]])
+  })
+
+  test("a PR closed on GitHub drops the TODO; a dropped TODO's run is stale; with no runs nothing starts", async () => {
+    const attempt = await started(2)
+    await applyOn(drop(1), true)
+    expect(await reportOn(attempt, { kind: "finished", state: "merged" })).toMatchObject({ outcome: "stale" })
+    const second = (await sql<{ id: string; todoId: string }>(
+      `SELECT id, todo_id AS "todoId" FROM todo_attempts WHERE id <> '${attempt.attemptId}'`,
+    ))[0]!
+    const next = { attemptId: second.id, todoId: second.todoId, repoId: REPO, ordinal: 1 }
+    expect(await reportOn(next, { kind: "finished", state: "dropped", note: "closed_on_github" }, false)).toEqual({
+      outcome: "applied",
+      starts: [],
+    })
+    expect((await todos()).map(({ state }) => state)).toEqual(["dropped", "dropped"])
+  })
+
+  test("attemptTodo reads the attempt's TODO and the prompt revision it works on", async () => {
+    const attempt = await started()
+    const read = await runtime.runPromise(
+      Effect.gen(function* () {
+        const { database } = yield* TestDatabase.Scratch
+        return yield* Stack.attemptTodo(attempt).pipe(Effect.provide(database))
+      }),
+    )
+    expect(read._tag === "Some" && read.value).toMatchObject({
+      number: 1,
+      title: "Retry webhook delivery",
+      prompt: "Retry a failed delivery **three** times.",
+      acceptance: [],
+      issueNumber: null,
+      createdBy: "person-maya",
+      createdLogin: "maya",
+      state: "working",
+      attempt: 1,
+    })
+    const none = await runtime.runPromise(
+      Effect.gen(function* () {
+        const { database } = yield* TestDatabase.Scratch
+        return yield* Stack.attemptTodo({ ...attempt, attemptId: uuid() }).pipe(Effect.provide(database))
+      }),
+    )
+    expect(none._tag).toBe("None")
+  })
+})
+
 describe("observability", () => {
   test("each change is a span, a log line and a count, with ids and numbers only: never a title or a prompt", async () => {
     const observed = observe()

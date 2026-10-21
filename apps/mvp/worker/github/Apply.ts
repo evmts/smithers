@@ -8,12 +8,14 @@ import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.ts"
 import * as Metrics from "./Metrics.ts"
 import { readIssue } from "./Project.ts"
+import { readPull } from "./Pulls.ts"
 import * as Store from "./Store.ts"
 import type { GitHubTokens } from "./Tokens.ts"
 
 // `github/Apply { deliveryId, repo, number, event }` (decision 0012 §2, docs/features/issues.md#the-webhook):
 // a webhook rang the bell for issue `number`; this reads the issue and its comments from GitHub with an installation
-// token and upserts them under the newer-than guard. A payload names a subject; it never sets state. It runs remotely
+// token and upserts them under the newer-than guard. For a pull request event it also reads the pull request, its
+// commits and its reviews (docs/features/pulls.md). A payload names a subject; it never sets state. It runs remotely
 // because it must happen while every device is off (decision 0011 §2), one execution per delivery, and on the Node host
 // in the tests. Retries belong to the engine: the step's policy, which honors GitHub's `Retry-After`. A delivery whose
 // subject stays unreadable past the retries ends `unavailable`, and Reconcile covers it.
@@ -45,6 +47,9 @@ export const Applied = Schema.Struct({
 export type Applied = typeof Applied.Type
 
 const UNAVAILABLE: Applied = { outcome: "unavailable", changed: 0 }
+
+/** The events whose subject is a pull request: re-read with its commits and reviews (worker/github/Pulls.ts). */
+export const PULL_EVENTS: ReadonlySet<string> = new Set(["pull_request", "pull_request_review"])
 
 /** The step: re-read the subject and upsert it. */
 export const Read = Action.make("github/Apply/read", {
@@ -84,7 +89,8 @@ export const read = <E, R>(services: Services<E, R>) => (request: typeof Read.pa
   Effect.gen(function* () {
     const repository = repositoryOf(request.repo)
     const fields = { deliveryId: request.deliveryId, repoId: repository.id, number: request.number, event: request.event }
-    const token = yield* services.tokens.forInstallation(repository, "read").pipe(Effect.result)
+    const pull = PULL_EVENTS.has(request.event)
+    const token = yield* services.tokens.forInstallation(repository, pull ? "pulls" : "read").pipe(Effect.result)
     if (token._tag === "Failure") {
       if (token.failure.reason === "app_not_installed" || token.failure.reason === "not_allowed") {
         yield* Metric.update(Metric.withAttributes(Metrics.applies, { outcome: "not_installed" }), 1)
@@ -95,7 +101,7 @@ export const read = <E, R>(services: Services<E, R>) => (request: typeof Read.pa
         token.failure.retryAfterMillis === undefined ? {} : { retryAfterMillis: token.failure.retryAfterMillis },
       )
     }
-    const projected = yield* readIssue(repository, request.number).pipe(
+    const projected = yield* (pull ? readPull(repository, request.number) : readIssue(repository, request.number)).pipe(
       withToken(token.success, services.apiBaseUrl),
       Effect.tapError((error) =>
         Effect.logWarning("github.apply").pipe(Effect.annotateLogs({ ...fields, outcome: "failed", errorCode: codeOf(error) }))

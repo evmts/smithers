@@ -3,9 +3,122 @@ title: Land finished work on main (the lander)
 status: in-progress
 area: process
 owner: lander; finished app round reported on main
-updated: 2026-10-20
-links: [land-and-deploy-mvp.md, code-reviews.md, decisions-for-will.md, app-wiring.md, repo-checks-green.md, old-app-feature-gaps.md, fable-review-2-fixes.md, plan-identity-minified-builds.md, slash-commands.md, navigate-flow.md, web-page-flow.md, agent-jev.md, agent-status.md, repo-view-branches-raw-clone.md, ../../../../AGENTS.md, site-deployment-test.md, api-baseline-rerecord.md, dev-stack-hygiene.md, plan-identity-minified-builds.md, review-round-4.md, docs-check-flow-outcome.md, model-step.md, cloudflare-flow-host.md, effect-tanstack-db-and-effect-electric.md, library-catalog.md, issues.md, chat-message-controls.md, flow-authoring.md, model-endpoint.md, plan-identity-across-deploys.md, second-build-machine.md]
+updated: 2026-10-20 23:44 PDT
+links: [land-and-deploy-mvp.md, code-reviews.md, decisions-for-will.md, app-wiring.md, repo-checks-green.md, old-app-feature-gaps.md, fable-review-2-fixes.md, plan-identity-minified-builds.md, slash-commands.md, navigate-flow.md, web-page-flow.md, agent-jev.md, agent-status.md, repo-view-branches-raw-clone.md, ../../../../AGENTS.md, site-deployment-test.md, api-baseline-rerecord.md, dev-stack-hygiene.md, plan-identity-minified-builds.md, review-round-4.md, docs-check-flow-outcome.md, model-step.md, cloudflare-flow-host.md, effect-tanstack-db-and-effect-electric.md, library-catalog.md, issues.md, chat-message-controls.md, flow-authoring.md, model-endpoint.md, plan-identity-across-deploys.md, second-build-machine.md, device-data-migrations.md]
 ---
+
+## Tracker reconciliation — 2026-10-20 23:44 PDT
+
+**What:** Land validated current slices with their proof.
+
+**Why:** Keep the release moving without shipping unproven execution.
+
+**Current state:** The lead reports rounds 4a/4b plus API baseline at 80b1220e by 23:30. Round 4c awaits corrected migration upgrade proof. Round 4d collects remaining handoffs after the first deploy. The stale MacBook test lock was removed at 23:41.
+
+**Next step:** Check upgrade receipt and land 4c; check each 4d handoff’s actual proof. Keep TODO execution off until runtime proof.
+
+**Open questions for Will:** None.
+
+Evidence: user-typed text and lead text replies extracted by script from session 6253ecf2, approximately 21:44–23:44 PDT; queue answers through 23:38:44, current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Synthetic notifications and tool content excluded. Later rulings supersede retained history. Product receipts are lead-reported; this tracker validates the maintainer-site build. Execution ownership retained; documentation reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20, 22:54 PDT
+
+**Current state:** Round 4a is reported on main at 22:46 PDT: six commits ending fbf7e89c, including the app features, SDK/UI packages and decision queue. This supersedes the earlier no-landing receipt. Round 4b (GitHub-style TODOs) is still under full validation; device migrations follow as 4c.
+
+**Next step:** Finish 4b validation and landing, then 4c upgrade proof; retain pushed-revision receipts before deployment.
+
+**Open questions for Will:** No new question; existing person-owned decisions remain open.
+
+Evidence: lead text replies extracted by script from session 6253ecf2, approximately 20:54–22:54 PDT; user-typed text only for human messages, synthetic notifications excluded. Rulings and queue answers (latest 19:38 PDT) prevail. Execution ownership retained; Codex tracker curator records reported receipts.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20, 22:05 PDT
+
+**What:** Land verified slices on append-only main through jj.
+
+**Why:** Will requires continuous landing; the current burn-down needs an uncontended validation run.
+
+**Current state:** At 22:04 the lead paused competing tests and told all 21 builders to finish only their current slice, disable or cut unfinished work, and hand proof to the lander. The previous full run was invalid under load 110 and too many database clients. No round-4 pushed receipt is reported. Round 4a precedes GitHub-style TODO round 4b.
+
+**Next step:** Obtain a clean full-suite exit, land 4a then 4b, and pass the pushed revision and receipts to deployment. No new slices start.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human text and lead replies in session 6253ecf2, approximately 20:04–22:04 PDT; synthetic notifications, compaction summaries and tool blocks excluded. Rulings and queue answers through 19:38 prevail over historical briefs, decisions and proposals. Execution ownership retained; Codex curates this note. Product checks are reported evidence; tracker validation is the site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 21:43 PDT
+
+**What:** Land finished verified development on append-only main through jj.
+
+**Why:** Will requires completed changes pushed continuously.
+
+**Current state:** No round-4 pushed revision is reported through 21:43 PDT. At 21:39 the lead reports GitHub-style TODO work handed to the lander, while corrected Drop-icon recordings still wait on the broken mini server. The 21:24 and 21:43 updates invalidate the earlier mini recovery claim. HTTP transport and load-test work remain reported done awaiting landing; timeline redesign remains designing.
+
+**Next step:** Collect final checks and an actual pushed revision, keeping unfinished work distinct. Obtain clean API packaging/startup on both machines and rerun waiting journeys; pass deployment the revision and migration proof.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies and human-typed messages extracted by script from session 6253ecf2 for 19:43–21:43 PDT; synthetic notifications and compaction summaries excluded. Rulings and queue answers through 19:38 PDT take precedence over older briefs, designs, decisions, proposals, TODOs and rules. Product results are reported receipts; this tracker validates the site build. Execution ownership is retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 21:25 PDT
+
+**What:** Land finished, verified work on append-only main.
+
+**Why:** Will wants completed development pushed continuously.
+
+**Current state:** No new round-4 pushed revision is reported through the 21:23 PDT lead updates. The 21:18 mini recovery allows waiting owners to rerun; it is not a landing or whole-suite receipt. The transport and Cerebras work remain reported done and waiting for round 4. The timeline remains designing under FE-16, so its stopped implementation must not be treated as a finished feature.
+
+**Next step:** Collect final checks and an actual pushed revision. Preserve unfinished-work exclusions and pass deployment the revision plus migration gate. Do not interpret queue review availability as approval or completion.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead assistant replies from the last approximately two transcript hours; current rulings, queue answers through 19:38 PDT, shared feature/host/panel briefs and designs, decisions through 0021, proposals, TODOs and rules. Completion checks are reported evidence, not rerun by this tracker. Execution ownership retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 20:57 PDT
+
+**What:** Land finished, verified work on append-only main.
+
+**Why:** Will wants completed development pushed continuously.
+
+**Current state:** Round 4 has no newer pushed revision in the lead replies through 20:57 PDT. The TODO UI is reported built at 20:27 but still rerecording; test-farm startup later blocks waiting browser runs. A lead report that agents resumed after reset is not a landing receipt.
+
+**Next step:** Collect final checks and the actual pushed revision. Preserve exclusions for unfinished work and unpublished VibeLang dependencies; pass deployment its revision and migration gate.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human messages and lead text replies from session 6253ecf2, approximately 18:57–20:57 PDT; current rulings and queue answers, decisions through 0021, proposals and shared briefs/designs. Transport details additionally use its final builder report. Product checks are reported evidence; this pass runs the maintainer-site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 20:14 PDT
+
+**What:** Land finished work on append-only main.
+
+**Why:** Will wants completed work pushed continuously.
+
+**Current state:** At 20:04 the lead reports round 4 still running tests, without a pushed revision. The next deploy now separately waits for device migration safety; this does not supply a landing receipt. Previous rounds remain completed history.
+
+**Next step:** Collect round-4 checks and the actual pushed revision, preserving exclusions for unfinished work and unpublished VibeLang links. Hand the revision to deployment with its migration gate.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and assistant replies in session 6253ecf2, 18:15–20:14 PDT on 2026-10-20; queue answers through 19:38 PDT; current rulings, decisions 0001–0020, proposals, TODOs, rules and shared briefs/designs. Later Will text and queue answers prevail. Product checks are reported receipts; this tracker validates the site build. Execution ownership is retained.
+
+## Earlier tracker history (retained)
 
 ## Current specification — 2026-10-20, 19:44 PDT
 

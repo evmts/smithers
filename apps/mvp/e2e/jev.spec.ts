@@ -1,10 +1,12 @@
 import type { BrowserContext } from "@playwright/test"
 import { allServerRows, expect, type Row, test } from "./devices"
+import { step } from "./fixtures"
 
-// Jev in the agent's hands, end to end (docs/features/jev.md): a real browser asks Smithers which of three short items
-// are bug reports. Its agent calls `app/jev/classify` on the device's own engine, the judgment goes through ChatApi's
-// metered endpoint as role `judge` (`POST /api/model/judge`, the real model), and the answer gives a verdict per item.
-// No mocks. One question: a few agent calls and one judge call, since Cerebras rate-limits concurrent calls.
+// Jev in the agent's hands, end to end (docs/features/jev.md): a real browser asks Smithers to sort issue titles and
+// never names Jev. The agent picks `app/jev/classify` on its own, from the flow's description in its catalog, and the
+// judgment goes through ChatApi's metered endpoint as role `judge` (`POST /api/model/judge`, the real model). The
+// answer's debug info opens the run that answered it: its flow view shows the Jev step, whose output holds the
+// verdicts, and the step's own run holds its input. No mocks. One question: a few agent calls and one judge call.
 
 /** Every model call this browser context made, by role: the engine worker's requests to the model endpoint. */
 const modelCalls = (context: BrowserContext) => {
@@ -24,22 +26,109 @@ const stepsOf = (rows: Array<Row>, question: string): Array<{ flow: string; stat
   return (parts as Array<{ kind: string; flow: string; status: string }>).filter((part) => part.kind === "step")
 }
 
-test("jev: asking which items are bugs classifies them through the judge role, and the answer gives each a verdict", async ({ devices, request }) => {
-  const word = devices.word
+/** Nine issue titles: three bugs (1, 4, 7), three features (2, 5, 8) and three questions (3, 6, 9). */
+const TITLES = [
+  "Crash when saving a file with an emoji in its name",
+  "Add a dark mode to the settings page",
+  "How do I connect my GitHub account?",
+  "Login button does nothing on Safari",
+  "Support exporting reports as CSV",
+  "Is there a limit on repository size?",
+  "Search results still show deleted issues",
+  "Let me pin conversations to the sidebar",
+  "Which browsers are supported?",
+]
+
+/**
+ * The ask, which never names Jev; the agent eval `jev-sort` sorts the same titles (evals/cases.ts `SORT_TITLES`). The
+ * milestone is the test's own word, so the question is this run's in the shared conversation.
+ */
+const sortTitles = (milestone: string) =>
+  `Sort these issue titles from milestone ${milestone} into bug, feature and question: ` +
+  TITLES.map((title, i) => `${i + 1}. ${title}`).join(" ")
+
+test("jev: asked to sort issue titles, the agent uses Jev unasked, and debug info shows its step", {
+  annotation: { type: "summary", description: "The agent picks Jev on its own; debug info shows the Jev step, its output and its input." },
+}, async ({ devices, request }) => {
+  test.setTimeout(240_000)
   const [a] = await devices.open("A")
   const calls = modelCalls(a.device.context)
-  const question =
-    `Which of these are bug reports? 1. "The app crashes when I click Save" 2. "Please add a dark mode" ` +
-    `3. "Sign-in fails with a 500 error". Ask Jev with app/jev/classify, then reply with one line per item, ` +
-    `"<number>: <verdict>" using Jev's verdicts, and a last line jev-${word}.`
-  await a.askAndWaitTaken(question)
-  await a.expectAnswered(question, `jev-${word}`, 90_000)
+  const question = sortTitles(devices.word)
+  const answer = a.answerTo(question)
+  const graph = a.page.getByRole("group", { name: "Run graph" })
+  const inspector = a.page.locator('[data-slot="step-inspector"]')
 
-  // The answer shows a verdict for each of the three items.
-  const text = (await a.answerTo(question).textContent()) ?? ""
-  for (const item of [1, 2, 3]) expect(text, `item ${item}'s verdict`).toMatch(new RegExp(`${item}:\\s*\\**(yes|no|unsure)`, "i"))
-  // The agent called the flow once, and it settled; its judgment went through the endpoint's `judge` role.
-  expect(stepsOf(await allServerRows(request), question)).toEqual([expect.objectContaining({ flow: "app/jev/classify", status: "done" })])
-  expect(calls.filter((role) => role === "judge")).toHaveLength(1)
-  expect(new Set(calls)).toEqual(new Set(["agent", "judge"]))
+  await step("Ask to sort the titles, without naming Jev", async () => {
+    await a.askAndWaitTaken(question)
+  })
+
+  await step("See the answer", async () => {
+    await expect(answer, "the answer settles").toHaveAttribute("data-state", "done", { timeout: 180_000 })
+    await expect(answer.locator('[data-slot="message-response"]')).toHaveAttribute("data-streaming", "false")
+    await expect(answer).toContainText(/bug/i)
+    await expect(answer).toContainText(/feature/i)
+    await expect(answer).toContainText(/question/i)
+    // The agent called Jev once and it settled; its judgment went through the endpoint's `judge` role, once.
+    expect(stepsOf(await allServerRows(request), question)).toEqual([expect.objectContaining({ flow: "app/jev/classify", status: "done" })])
+    expect(calls.filter((role) => role === "judge")).toHaveLength(1)
+  })
+
+  await step("Open debug info", async () => {
+    // Debug info shows only while the pointer is over the answer (FE-13).
+    await a.page.mouse.move(4, 4)
+    await expect(answer.locator(".sui-chat-message-actions")).toHaveCSS("opacity", "0")
+    await answer.hover()
+    await expect(answer.locator(".sui-chat-message-actions")).toHaveCSS("opacity", "1")
+    await answer.getByRole("link", { name: "Debug info" }).click()
+    const { answerId } = a.asked.find((asked) => asked.text === question)!
+    await expect(a.page).toHaveURL(new RegExp(`/app/runs/${encodeURIComponent(answerId)}$`))
+    await expect(graph).toBeVisible({ timeout: 30_000 })
+  })
+
+  const jev = graph.getByRole("button", { name: /^app\/jev\/classify\/judge, Done$/ })
+  await step("See the Jev step in the flow view", async () => {
+    await expect(jev, "the flow view shows the Jev step").toBeVisible({ timeout: 30_000 })
+    // Down moves the highlight through the steps in order, from the answer's own to the Jev step its call ran.
+    await graph.focus()
+    for (const label of ["chat/LoadTurn", "chat/Respond", "chat/Settle", "app/jev/classify/judge"]) {
+      await a.page.keyboard.press("ArrowDown")
+      await expect(graph.getByRole("button", { name: `${label}, Done` }), `${label} is highlighted`).toHaveAttribute("data-selected", "true")
+    }
+    await expect(jev, "the Jev step is highlighted").toHaveAttribute("data-selected", "true")
+    await a.page.keyboard.press("Enter")
+  })
+
+  await step("Open the Jev step's output", async () => {
+    await expect(inspector).toHaveAttribute("aria-label", "Inspect app/jev/classify/judge")
+    await inspector.getByRole("tab", { name: "Output" }).click()
+    const output = inspector.locator('[data-slot="json-value"]').filter({ hasText: "Output" })
+    await expect(output).toContainText('"verdicts"')
+    const verdicts = JSON.parse((await output.locator("pre").textContent())!) as { verdicts: Array<{ verdict: string }> }
+    expect(verdicts.verdicts, "one verdict per title").toHaveLength(TITLES.length)
+    // Scroll through the nine verdicts, the Jev step still highlighted beside them.
+    const pre = output.locator("pre")
+    const scrolled = () => pre.evaluate((element) => {
+      let node: Element | null = element
+      while (node !== null && node.scrollHeight <= node.clientHeight) node = node.parentElement
+      return node?.scrollTop ?? 0
+    })
+    await pre.hover()
+    for (let turn = 1; turn <= 2; turn++) {
+      const before = await scrolled()
+      await a.page.mouse.wheel(0, 150)
+      await expect.poll(scrolled, "the verdicts scroll").toBeGreaterThan(before)
+    }
+    await expect(jev).toHaveAttribute("data-selected", "true")
+  })
+
+  await step("Open the Jev step's input", async () => {
+    // An action records no input; the step's own run, app/jev/classify, holds what the agent asked Jev.
+    await inspector.getByRole("link", { name: "Open" }).click()
+    await expect(a.page.getByRole("main", { name: "Run" })).toContainText("app/jev/classify", { timeout: 30_000 })
+    const input = a.page.locator('[data-slot="json-value"]').filter({ hasText: /^Input/ }).first()
+    await input.locator("summary").click()
+    for (const title of TITLES) await expect(input, `the input holds "${title}"`).toContainText(title)
+    await expect(input).toContainText('"labels"')
+    await expect(a.page.locator('[data-slot="json-value"]').filter({ hasText: /^Result/ }).first()).toContainText('"verdicts"')
+  })
 })

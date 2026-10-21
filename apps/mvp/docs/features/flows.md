@@ -70,6 +70,7 @@ Its laws, enforced by `src/flows/registry.test.ts`:
 - **Every flow runs here.** Each declaration's `Flow.Placement` annotation is `client`. A flow that needs something the device lacks is a remote flow, which the route that admits it starts ([no remote door](remote-flows.md#no-remote-door)). How long a flow takes never decides (`flows.local-first-placement` in [rules.md](../rules.md)).
 - **One namespace.** App flows are named under `app/`, `chat/`, `repo/`, `ui/` and `view/`, and each is registered under its own tag.
 - **One declaration per flow.** `declarations.ts` has exactly the registry's names, in its order, and each declaration carries the very tag and schema objects of its entry's reference.
+- **One person-only list.** The server's person-only flows (`worker/Actor.ts` `PERSON_ONLY_FLOWS`) are exactly the entries with a `userOnlyReason`, and its agents (`AGENT_FLOWS`) exactly those marked `acts: "agent"`; the compiler and the test hold both.
 
 ## Dispatch
 
@@ -78,7 +79,7 @@ Its laws, enforced by `src/flows/registry.test.ts`:
 - `Failed { error }`: a client flow's declared failure, as a value;
 - or fails with `DispatchFailed { flow, reason, refusal? }`: `refused` (the engine refused it, or nothing answered), `unavailable` (this tab's engine worker failed), `invalid` (its payload doesn't encode), `defect` or `interrupted`. A run the engine's interpreter refused died with its code as `refusal` (`Interpreter.refusalCode` from `@smthrs/flow`), such as `plan_changed` for a run parked under one build of the app and resumed under the next. An engine in this process (`ClientEngine.layerRuntime`) answers its own refusals as `refused` with their code, never as the flow's failure: a start of an execution again with another input is `refused` `execution_identity_conflict`, and a run that ends with a failure its flow doesn't declare is `refused` with that failure's code, such as `flow_cycle_detected`.
 
-The execution id is minted once per dispatch unless the caller passes one. A door is `button`, `slash`, `view`, `composer` or `agent`. `admitted`, a `Deferred`, completes once the engine recorded the run, or fails with the dispatch's `DispatchFailed` (`interrupted` when the dispatch was interrupted first), so a caller can wait for the run to exist without waiting for it to end: chat's outbox keeps a question until the run that answers it is recorded ([state.md](../state.md#chat-2026-10-20)).
+The execution id is minted once per dispatch unless the caller passes one. A door is `button`, `slash`, `view`, `composer`, `agent` or `sync`. The person's doors (`PERSON_DOORS`) are `button`, `slash` and `composer`: a root run of a person's flow started through one runs with the person's session, and every other run, nested ones included, with a credential the server mints for it, which the tab answers for on `<name>/door` ([run credentials](sign-in.md#run-credentials)). An entry's `acts` mark says who its run is when nobody pressed it: `agent` (`chat/Answer`, `flow/new`, `flow/run/prompt`) or `flow` (`run/deliver`); absent, the person's. `admitted`, a `Deferred`, completes once the engine recorded the run, or fails with the dispatch's `DispatchFailed` (`interrupted` when the dispatch was interrupted first), so a caller can wait for the run to exist without waiting for it to end: chat's outbox keeps a question until the run that answers it is recorded ([state.md](../state.md#chat-2026-10-20)).
 
 ## The theme
 
@@ -172,7 +173,7 @@ Editing a drafted flow's instructions, description or calls in code still makes 
   flow/new/write  the flow.ts it makes, the static checks, the row: ready, needs_you (a blocking question) or failed
 /app/flows/drafts/<id>: the draft card ─ Answer ─▶ flow/answer ─▶ records them, starts <draftId>:<round + 1>
                                        ─ Save ───▶ flow/save ─▶ POST /api/flows/save ─▶ flows + flow_revisions
-/app/flows: Code ─▶ /app/flows/code/<name> ─ loader ─▶ flow/read { name } ─▶ GET /api/flows/source
+/app/flows: Code ─▶ /app/flows/code/<name> ─ beforeLoad ─▶ flow/read { name } ─▶ GET /api/flows/source
                     the flow.ts to edit; Needs a sandbox once it isn't the drafted module
                   ─ Save ─▶ flow/write { name, revision, source } ─▶ POST /api/flows/write ─▶ next revision
 /app/flows: Run ─▶ flow/run { name, input?, revision } ─▶ /app/runs/<runId>
@@ -230,7 +231,7 @@ Navigation's records come from the engine worker, where its step runs, and never
 | Test | Proves |
 |---|---|
 | `src/flows/registry.test.ts` | The parity law, every flow on this device, the UI's dispatched names, the namespaces, one declaration per flow with its reference's schemas, and the agent's catalog |
-| `src/flows/tab.test.ts` | The tab's module graph (esbuild, from `src/main.tsx`, the `?faults` entry included) reaches no `@smthrs/agent`, `@smthrs/std` or Node built-in; the engine worker's registrations do |
+| `src/flows/tab.test.ts` | The tab's module graph (esbuild, from `src/main.tsx`, the `?faults` entry included) reaches no `@smthrs/agent` or Node built-in, and `@smthrs/std` only through code intelligence's `LanguageServer` seam; the engine worker's registrations reach the agent |
 | `src/flows/dispatch.test.ts` | The theme on the Node host's engine over the compose Postgres; declared failures, defects, interrupts and refusals by injected faults; every record without the payload (a sentinel) |
 | `src/flows/engine.test.ts` | The browser's architecture in Node: a tab's `BrowserEngine` and the leader's engine worker over Node's Web Locks and `BroadcastChannel`, the tab port over a `MessageChannel`. A person's button and the agent both set the theme through `app/theme/set`. `tabEngine` builds with nothing of the tab, and `tabAnswers` answers only while attached |
 | `src/flows/tabPort.test.ts` | Calls, refusals, unknown methods, timeouts and stray messages over a real `MessageChannel` |

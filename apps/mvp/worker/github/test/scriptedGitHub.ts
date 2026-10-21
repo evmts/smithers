@@ -58,6 +58,35 @@ export interface ScriptedComment {
   malformed?: boolean
 }
 
+/** A commit as the scripted GitHub keeps it: its message, parent, author and the whole tree of files it holds. */
+export interface ScriptedCommit {
+  readonly sha: string
+  readonly message: string
+  readonly parents: ReadonlyArray<string>
+  readonly login: string | null
+  readonly at: number
+  readonly files: ReadonlyMap<string, string>
+}
+
+/** A pull request as the scripted GitHub keeps it, beside the issue of the same number GitHub keeps for it. */
+export interface ScriptedPull {
+  readonly number: number
+  readonly head: string
+  readonly base: string
+  readonly draft: boolean
+  merged: boolean
+  mergeSha: string | null
+  mergedBy: string | null
+  readonly reviews: Array<{
+    readonly id: number
+    readonly login: string | null
+    readonly event: string
+    readonly body: string
+    readonly commitId: string
+    readonly at: number
+  }>
+}
+
 /** A one-shot fault on the next request that `match`es: GitHub's `status`, or `lost` (applied, then no answer). */
 export interface Fault {
   readonly match: (method: string, path: string) => boolean
@@ -120,6 +149,28 @@ export interface ScriptedGitHub {
   readonly removeComment: (id: number) => void
   /** Requests GitHub saw for `method` and a path matching `pattern`. */
   readonly seen: (method: string, pattern: RegExp) => ReadonlyArray<Call>
+  /** The Pull requests permission the App was granted: a token asking for more is refused 422. */
+  pullsGranted: "read" | "write" | "none"
+  /** Each branch's head, by name: `main` starts at a commit holding `files`. */
+  readonly refs: Map<string, string>
+  /** Every commit, by SHA. */
+  readonly commits: Map<string, ScriptedCommit>
+  /** Every pull request, by number. */
+  readonly pulls: Map<number, ScriptedPull>
+  /** Whether GitHub refuses to merge any pull request: a required check it ran failed (405). */
+  unmergeable: boolean
+  /** Runs right after a pull request is opened, such as a person merging it on github.com. */
+  onPullOpened: ((number: number) => void) | undefined
+  /** Someone pushes `files` onto `branch` (made from main when new) as one commit; null deletes; answers its SHA. */
+  readonly push: (branch: string, files: Readonly<Record<string, string | null>>, login?: string) => string
+  /** A person merges pull request `number` on github.com, squashing it onto its base. */
+  readonly merge: (number: number, login?: string) => string
+  /** A person closes pull request `number` on github.com without merging it. */
+  readonly close: (number: number) => void
+  /** The files of branch `name`'s head. */
+  readonly tree: (name: string) => ReadonlyMap<string, string>
+  /** Someone opens a pull request from `head` into `main` on github.com. */
+  readonly openPull: (head: string, title?: string, login?: string | null) => ScriptedPull
 }
 
 const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z")
@@ -135,7 +186,7 @@ const decoder = new TextDecoder()
 /** A scripted GitHub at `https://api.github.test` with the repository `owner/name`, the App installed and granted write. */
 export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub => {
   const userTokens = new Map<string, string>()
-  const installationTokens = new Map<string, "read" | "write" | "contents">()
+  const installationTokens = new Map<string, Readonly<Record<string, string>>>()
   let ids = 1_000
   let numbers = 0
   let users = 0
@@ -214,24 +265,38 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     if (path === `/app/installations/${INSTALLATION_ID}/access_tokens` && method === "POST") {
       if (token !== "jwt") return { response: json({ message: "A JSON web token could not be decoded" }, 401) }
       if (!github.installed) return { response: json({ message: "Not Found" }, 404) }
-      const permissions = (body as { readonly permissions?: { readonly issues?: string; readonly contents?: string } })
-        .permissions
-      const contents = permissions?.contents !== undefined
-      const asked = permissions?.issues ?? "read"
-      const allowed = contents
-        ? github.contentsGranted
-        : github.granted === "write" || (github.granted === "read" && asked === "read")
+      const permissions: Readonly<Record<string, string>> =
+        (body as { readonly permissions?: Record<string, string> }).permissions ?? { issues: "read" }
+      const within = (granted: "read" | "write" | "none", asked: string) =>
+        granted === "write" || (granted === "read" && asked === "read")
+      const allowed = Object.entries(permissions).every(([name, asked]) =>
+        name === "issues"
+          ? within(github.granted, asked)
+          : name === "contents"
+          ? github.contentsGranted
+          : name === "pull_requests"
+          ? within(github.pullsGranted, asked)
+          : false
+      )
       if (!allowed) return { response: json({ message: "The permissions requested are not granted to this installation." }, 422) }
       const minted = `ghs_scripted_${github.minted.length + 1}`
-      installationTokens.set(minted, contents ? "contents" : asked === "write" ? "write" : "read")
+      installationTokens.set(minted, permissions)
       github.minted.push({ token: minted, body })
       return { response: json({ token: minted, expires_at: iso(github.now + 3_600_000) }, 201) }
+    }
+    if (path === "/graphql" && method === "POST") {
+      if (token === "none" || login === undefined) return { response: json({ message: "Bad credentials" }, 401) }
+      return graphql(body, login)
     }
     if (!path.startsWith(apiPath)) return { response: json({ message: "Not Found" }, 404) }
     if (token === "none" || login === undefined) return { response: json({ message: "Bad credentials" }, 401) }
     const rest = path.slice(apiPath.length)
     const live = [...github.issues.values()].filter((issue) => !issue.gone)
-    if (rest === "" && method === "GET") return { response: json({ id: REPOSITORY_ID, private: github.private }) }
+    if (rest === "" && method === "GET") {
+      return { response: json({ id: REPOSITORY_ID, private: github.private, default_branch: "main" }) }
+    }
+    const pulled = pullsAnswer(method, url, rest, login, body)
+    if (pulled !== undefined) return pulled
     if (rest === "/labels" && method === "POST") {
       const input = body as { readonly name: string; readonly color: string }
       if (github.labels.has(input.name.toLowerCase())) {
@@ -353,12 +418,303 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     return { response: json({ message: "Not Found" }, 404) }
   }
 
+  // Git: commits hold their whole tree, so a branch's files and a comparison read from them.
+  let commitIds = 0
+  const commit = (message: string, parents: ReadonlyArray<string>, files: ReadonlyMap<string, string>, login: string | null) => {
+    const sha = (commitIds += 1).toString(16).padStart(40, "c")
+    github.commits.set(sha, { sha, message, parents, login, at: tick(), files: new Map(files) })
+    return sha
+  }
+  const headFiles = (name: string) => github.commits.get(github.refs.get(name) ?? "")?.files ?? new Map<string, string>()
+  const changedBetween = (from: ReadonlyMap<string, string>, to: ReadonlyMap<string, string>) => {
+    const paths = [...new Set([...from.keys(), ...to.keys()])].sort()
+    return paths.flatMap((path) => {
+      const before = from.get(path)
+      const after = to.get(path)
+      if (before === after) return []
+      const removed = before === undefined ? [] : before.split("\n").filter((line) => line !== "")
+      const added = after === undefined ? [] : after.split("\n").filter((line) => line !== "")
+      return [{
+        sha: "blob",
+        filename: path,
+        status: before === undefined ? "added" : after === undefined ? "removed" : "modified",
+        additions: added.length,
+        deletions: removed.length,
+        changes: added.length + removed.length,
+        patch: `@@ -1,${removed.length} +1,${added.length} @@\n${[...removed.map((line) => `-${line}`), ...added.map((line) => `+${line}`)].join("\n")}`,
+      }]
+    })
+  }
+  const refJson = (name: string) => ({ ref: `refs/heads/${name}`, object: { sha: github.refs.get(name)!, type: "commit" } })
+
+  const graphql = (body: unknown, login: string): { readonly response: Response; readonly apply?: () => void } => {
+    const input = (body as { readonly variables: { readonly input: unknown } }).variables.input as {
+      readonly branch: { readonly repositoryNameWithOwner: string; readonly branchName: string }
+      readonly expectedHeadOid: string
+      readonly message: { readonly headline: string; readonly body?: string }
+      readonly fileChanges: {
+        readonly additions: ReadonlyArray<{ readonly path: string; readonly contents: string }>
+        readonly deletions: ReadonlyArray<{ readonly path: string }>
+      }
+    }
+    if (input.branch.repositoryNameWithOwner.toLowerCase() !== `${owner}/${name}`.toLowerCase()) {
+      return { response: json({ data: null, errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }] }) }
+    }
+    const head = github.refs.get(input.branch.branchName)
+    if (head === undefined) return { response: json({ data: null, errors: [{ type: "NOT_FOUND", message: "No branch" }] }) }
+    if (head !== input.expectedHeadOid) {
+      return {
+        response: json({
+          data: { createCommitOnBranch: null },
+          errors: [{ type: "STALE_DATA", message: `Expected branch to point to "${input.expectedHeadOid}" but it did not.` }],
+        }),
+      }
+    }
+    const files = new Map(github.commits.get(head)!.files)
+    for (const addition of input.fileChanges.additions) {
+      files.set(addition.path, new TextDecoder().decode(Uint8Array.from(atob(addition.contents), (c) => c.charCodeAt(0))))
+    }
+    for (const deletion of input.fileChanges.deletions) files.delete(deletion.path)
+    const message = input.message.body === undefined ? input.message.headline : `${input.message.headline}\n\n${input.message.body}`
+    const sha = (commitIds + 1).toString(16).padStart(40, "c")
+    return {
+      response: json({ data: { createCommitOnBranch: { commit: { oid: sha } } } }),
+      apply: () => {
+        commit(message, [head], files, login)
+        github.refs.set(input.branch.branchName, sha)
+      },
+    }
+  }
+
+  const pullJson = (pull: ScriptedPull) => {
+    const issue = github.issues.get(pull.number)!
+    const headSha = github.refs.get(pull.head) ?? ""
+    const baseSha = github.refs.get(pull.base) ?? ""
+    const changed = changedBetween(headFiles(pull.base), headFiles(pull.head))
+    return {
+      id: 9_000 + pull.number,
+      node_id: `PR_${pull.number}`,
+      number: pull.number,
+      title: issue.title,
+      body: issue.body,
+      state: issue.state,
+      draft: pull.draft,
+      merged: pull.merged,
+      merged_at: pull.merged ? iso(issue.closedAt ?? github.now) : null,
+      merge_commit_sha: pull.mergeSha,
+      merged_by: user(pull.mergedBy),
+      mergeable_state: pull.draft ? "draft" : github.unmergeable ? "blocked" : "clean",
+      user: user(issue.login),
+      head: { ref: pull.head, sha: headSha },
+      base: { ref: pull.base, sha: baseSha },
+      commits: 1,
+      additions: changed.reduce((sum, file) => sum + file.additions, 0),
+      deletions: changed.reduce((sum, file) => sum + file.deletions, 0),
+      changed_files: changed.length,
+      created_at: iso(issue.createdAt),
+      updated_at: iso(issue.updatedAt),
+      closed_at: issue.closedAt === null ? null : iso(issue.closedAt),
+    }
+  }
+
+  const squash = (pull: ScriptedPull, login: string, title?: string) => {
+    const issue = github.issues.get(pull.number)!
+    const sha = commit(title ?? `${issue.title} (#${pull.number})`, [github.refs.get(pull.base)!], headFiles(pull.head), login)
+    github.refs.set(pull.base, sha)
+    pull.merged = true
+    pull.mergeSha = sha
+    pull.mergedBy = login
+    issue.state = "closed"
+    issue.closedAt = tick()
+    issue.updatedAt = github.now
+    return sha
+  }
+
+  /** The pull request, branch, commit and comparison endpoints, or `undefined` for any other path. */
+  const pullsAnswer = (
+    method: string,
+    url: URL,
+    rest: string,
+    login: string,
+    body: unknown,
+  ): { readonly response: Response; readonly apply?: () => void } | undefined => {
+    const ref = /^\/git\/ref\/heads\/(.+)$/.exec(rest)
+    if (ref !== null && method === "GET") {
+      return { response: github.refs.has(ref[1]!) ? json(refJson(ref[1]!)) : json({ message: "Not Found" }, 404) }
+    }
+    if (rest === "/git/refs" && method === "POST") {
+      const input = body as { readonly ref: string; readonly sha: string }
+      const branch = input.ref.replace(/^refs\/heads\//, "")
+      if (github.refs.has(branch)) return { response: json({ message: "Reference already exists" }, 422) }
+      return {
+        response: json({ ref: input.ref, object: { sha: input.sha, type: "commit" } }, 201),
+        apply: () => void github.refs.set(branch, input.sha),
+      }
+    }
+    const gitCommit = /^\/git\/commits\/([0-9a-f]{40})$/.exec(rest)
+    if (gitCommit !== null && method === "GET") {
+      const found = github.commits.get(gitCommit[1]!)
+      if (found === undefined) return { response: json({ message: "Not Found" }, 404) }
+      return {
+        response: json({
+          sha: found.sha,
+          message: found.message,
+          tree: { sha: `tree-${found.sha}` },
+          parents: found.parents.map((sha) => ({ sha })),
+        }),
+      }
+    }
+    const compared = /^\/compare\/([0-9a-f]{40})\.\.\.([0-9a-f]{40})$/.exec(rest)
+    if (compared !== null && method === "GET") {
+      const from = github.commits.get(compared[1]!)
+      const to = github.commits.get(compared[2]!)
+      if (from === undefined || to === undefined) return { response: json({ message: "Not Found" }, 404) }
+      return { response: json({ ahead_by: 1, behind_by: 0, total_commits: 1, files: changedBetween(from.files, to.files) }) }
+    }
+    if (rest === "/pulls" && method === "GET") {
+      const head = url.searchParams.get("head")
+      const state = url.searchParams.get("state") ?? "open"
+      const listed = [...github.pulls.values()]
+        .filter((pull) => head === null || `${owner}:${pull.head}`.toLowerCase() === head.toLowerCase())
+        .filter((pull) => state === "all" || github.issues.get(pull.number)!.state === state)
+        .sort((a, b) => b.number - a.number)
+        .map((pull) => {
+          const { merged: _merged, merged_by: _by, mergeable_state: _state, commits: _commits, ...listing } = pullJson(pull)
+          return listing
+        })
+      return { response: paged(url, listed) }
+    }
+    if (rest === "/pulls" && method === "POST") {
+      const input = body as { readonly head: string; readonly base: string; readonly title: string; readonly body: string; readonly draft?: boolean }
+      if (!github.refs.has(input.head)) return { response: json({ message: "Validation Failed", errors: [{ field: "head" }] }, 422) }
+      if (changedBetween(headFiles(input.base), headFiles(input.head)).length === 0) {
+        return { response: json({ message: `No commits between ${input.base} and ${input.head}` }, 422) }
+      }
+      const open = [...github.pulls.values()].some((pull) =>
+        pull.head === input.head && pull.base === input.base && github.issues.get(pull.number)!.state === "open"
+      )
+      if (open) return { response: json({ message: "A pull request already exists" }, 422) }
+      const issue: ScriptedIssue = {
+        id: (ids += 1),
+        number: (numbers += 1),
+        title: input.title,
+        body: input.body,
+        state: "open",
+        login,
+        createdAt: tick(),
+        updatedAt: github.now,
+        closedAt: null,
+        pull: true,
+        gone: false,
+        comments: [],
+        labels: [],
+      }
+      const pull: ScriptedPull = {
+        number: issue.number,
+        head: input.head,
+        base: input.base,
+        draft: input.draft === true,
+        merged: false,
+        mergeSha: null,
+        mergedBy: null,
+        reviews: [],
+      }
+      github.issues.set(issue.number, issue)
+      github.pulls.set(pull.number, pull)
+      const answered = json(pullJson(pull), 201)
+      github.issues.delete(issue.number)
+      github.pulls.delete(pull.number)
+      return {
+        response: answered,
+        apply: () => {
+          github.issues.set(issue.number, issue)
+          github.pulls.set(pull.number, pull)
+          github.onPullOpened?.(pull.number)
+        },
+      }
+    }
+    const one = /^\/pulls\/(\d+)(\/[a-z]+)?$/.exec(rest)
+    if (one === null) return undefined
+    const pull = github.pulls.get(Number(one[1]))
+    if (pull === undefined) return { response: json({ message: "Not Found" }, 404) }
+    const issue = github.issues.get(pull.number)!
+    const tail = one[2]
+    if (tail === undefined && method === "GET") return { response: json(pullJson(pull)) }
+    if (tail === undefined && method === "PATCH") {
+      return {
+        response: json({ ...pullJson(pull), state: "closed" }),
+        apply: () => {
+          if (issue.state === "closed") return
+          issue.state = "closed"
+          issue.closedAt = tick()
+          issue.updatedAt = github.now
+        },
+      }
+    }
+    if (tail === "/merge" && method === "PUT") {
+      const input = body as { readonly sha: string; readonly merge_method: string; readonly commit_title?: string }
+      if (pull.merged || issue.state === "closed" || pull.draft || github.unmergeable) {
+        return { response: json({ message: "Pull Request is not mergeable" }, 405) }
+      }
+      if (github.refs.get(pull.head) !== input.sha) {
+        return { response: json({ message: "Head branch was modified. Review and try the merge again." }, 409) }
+      }
+      const sha = (commitIds + 1).toString(16).padStart(40, "c")
+      return {
+        response: json({ sha, merged: true, message: "Pull Request successfully merged" }),
+        apply: () => void squash(pull, login, input.commit_title),
+      }
+    }
+    if (tail === "/commits" && method === "GET") {
+      const head = github.commits.get(github.refs.get(pull.head) ?? "")
+      return {
+        response: paged(url, head === undefined ? [] : [{
+          sha: head.sha,
+          // A commit no account made carries no author at all, as GitHub's `commit.author` may be null.
+          commit: { message: head.message, author: head.login === null ? null : { name: head.login, date: iso(head.at) } },
+          author: user(head.login),
+        }]),
+      }
+    }
+    if (tail === "/reviews" && method === "GET") {
+      return {
+        response: paged(url, pull.reviews.map((review) => ({
+          id: review.id,
+          node_id: `PRR_${review.id}`,
+          user: user(review.login),
+          body: review.body,
+          state: review.event === "COMMENT" ? "COMMENTED" : review.event === "APPROVE" ? "APPROVED" : "CHANGES_REQUESTED",
+          commit_id: review.commitId,
+          submitted_at: iso(review.at),
+        }))),
+      }
+    }
+    if (tail === "/reviews" && method === "POST") {
+      const input = body as { readonly commit_id: string; readonly event: string; readonly body: string }
+      const review = { id: (ids += 1), login, event: input.event, body: input.body, commitId: input.commit_id, at: tick() }
+      return {
+        response: json({
+          id: review.id,
+          node_id: `PRR_${review.id}`,
+          user: user(login),
+          body: review.body,
+          state: review.event === "COMMENT" ? "COMMENTED" : review.event === "APPROVE" ? "APPROVED" : "CHANGES_REQUESTED",
+          commit_id: review.commitId,
+          submitted_at: iso(review.at),
+        }),
+        apply: () => void pull.reviews.push(review),
+      }
+    }
+    return { response: json({ message: "Not Found" }, 404) }
+  }
+
   /** Who a request's `Authorization` names: the App's JWT, an installation token, a user, or nobody. */
   const caller = (authorization: string | undefined): { readonly token: Call["token"] | "installation-contents"; readonly login?: string } => {
     const bearer = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : undefined
     if (bearer === undefined) return { token: "none" }
-    if (installationTokens.get(bearer) === "contents") return { token: "installation-contents", login: BOT_LOGIN }
-    if (installationTokens.has(bearer)) return { token: "installation", login: BOT_LOGIN }
+    const permissions = installationTokens.get(bearer)
+    if (permissions?.["contents"] !== undefined) return { token: "installation-contents", login: BOT_LOGIN }
+    if (permissions !== undefined) return { token: "installation", login: BOT_LOGIN }
     const login = userTokens.get(bearer)
     if (login !== undefined) return { token: "user", login }
     const parts = bearer.split(".")
@@ -383,11 +739,19 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
           HttpClientResponse.fromWeb(request, json({ message: "scripted fault" }, armed.status ?? 502, { ...armed.headers })),
         )
       }
-      // An installation token writes only with the permission it was minted with.
-      const writing = method === "POST" || method === "DELETE"
-      if ((who.token === "installation" || who.token === "installation-contents") && writing && url.pathname.startsWith(apiPath)) {
+      // An installation token writes only with the permission it was minted with: issues and labels need Issues, branches
+      // and commits Contents, pull requests and their reviews Pull requests.
+      const writing = method === "POST" || method === "DELETE" || method === "PATCH" || method === "PUT"
+      const scoped = url.pathname.startsWith(apiPath) || url.pathname === "/graphql"
+      if ((who.token === "installation" || who.token === "installation-contents") && writing && scoped) {
         const bearer = request.headers["authorization"]!.slice("Bearer ".length)
-        if (installationTokens.get(bearer) !== "write") {
+        const rest = url.pathname.slice(apiPath.length)
+        const scope = url.pathname === "/graphql" || rest.startsWith("/git/")
+          ? "contents"
+          : rest.startsWith("/pulls")
+          ? "pull_requests"
+          : "issues"
+        if (installationTokens.get(bearer)?.[scope] !== "write") {
           return Effect.succeed(
             HttpClientResponse.fromWeb(request, json({ message: "Resource not accessible by integration" }, 403)),
           )
@@ -484,7 +848,65 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       }
     },
     seen: (method, pattern) => github.calls.filter((call) => call.method === method && pattern.test(call.path)),
+    pullsGranted: "write",
+    refs: new Map(),
+    commits: new Map(),
+    pulls: new Map(),
+    unmergeable: false,
+    onPullOpened: undefined,
+    push: (branch, files, login = "octocat") => {
+      // A new branch starts from main, as a person's `git push` of a branch made from it does.
+      if (!github.refs.has(branch)) github.refs.set(branch, github.refs.get("main")!)
+      const tree = new Map(headFiles(branch))
+      for (const [path, text] of Object.entries(files)) {
+        if (text === null) tree.delete(path)
+        else tree.set(path, text)
+      }
+      const parents = github.refs.has(branch) ? [github.refs.get(branch)!] : []
+      const sha = commit(`Update ${Object.keys(files).join(", ")}`, parents, tree, login)
+      github.refs.set(branch, sha)
+      return sha
+    },
+    merge: (number, login = "octocat") => squash(github.pulls.get(number)!, login),
+    close: (number) => {
+      const issue = github.issues.get(number)!
+      issue.state = "closed"
+      issue.closedAt = tick()
+      issue.updatedAt = github.now
+    },
+    tree: (branch) => headFiles(branch),
+    openPull: (head, title = "A change", login = "octocat") => {
+      const issue: ScriptedIssue = {
+        id: (ids += 1),
+        number: (numbers += 1),
+        title,
+        body: "",
+        state: "open",
+        login,
+        createdAt: tick(),
+        updatedAt: github.now,
+        closedAt: null,
+        pull: true,
+        gone: false,
+        comments: [],
+        labels: [],
+      }
+      const pull: ScriptedPull = {
+        number: issue.number,
+        head,
+        base: "main",
+        draft: false,
+        merged: false,
+        mergeSha: null,
+        mergedBy: null,
+        reviews: [],
+      }
+      github.issues.set(issue.number, issue)
+      github.pulls.set(pull.number, pull)
+      return pull
+    },
   }
+  github.refs.set("main", commit("Initial commit", [], new Map([["README.md", "# Widgets\n"]]), "octocat"))
   return github
 }
 

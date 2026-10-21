@@ -1,6 +1,7 @@
 import { Inbox } from "@smthrs/notifications"
 import { noticeDismissDelay, workNoticeVisible } from "@smthrs/ui"
 import { mayAsk } from "../auth/contract"
+import { cloneDetail } from "../repo/contract"
 import type { Session } from "../auth/schema"
 import { HOME_HREF, LISTED_FOR_MS } from "./contract"
 import type { Entry, Notice, NoticeState, Pending } from "./schema"
@@ -49,6 +50,8 @@ export const wordsOf = (notice: Notice): { readonly word: string | null; readonl
     return { word: "main", detail: join(" ", notice.ref === null ? null : notice.ref.slice(0, SHORT_SHA), notice.title) }
   }
   if (notice.kind === "release") return { word: "Release", detail: notice.title ?? notice.ref }
+  // The person's clone: which repository, and how far it came or why it stopped (worker/CloneFeed.ts).
+  if (notice.kind === "clone") return { word: "Clone", detail: join(" · ", notice.title, cloneDetail(notice.ref)) }
   return { word: null, detail: notice.mine ? notice.title : join(" · ", notice.actor, notice.title) }
 }
 
@@ -108,8 +111,16 @@ export const feedOf = (
       state: notice.state,
       mine: notice.mine,
       runId: notice.runId,
+      conversationId: notice.conversationId,
+      actor: notice.actor,
+      // When it happened, as the row says: GitHub's time for a repository's event, the latest report for a run.
+      atMs: timeOf(notice.occurredAt) || updatedAtMs,
       ...wordsOf(notice),
-      action: notice.kind === "run" && notice.mine && notice.state === "needs_you" ? "answer" : "open",
+      action: notice.kind === "run" && notice.mine && notice.state === "needs_you"
+        ? "answer"
+        : notice.kind === "clone" && notice.mine && notice.state === "failed"
+        ? "retry"
+        : "open",
       href: notice.href,
       version: notice.version,
       unread: listed && Inbox.isUnread(notice),
@@ -123,6 +134,16 @@ export const feedOf = (
   }
   return { entries: entries.sort((left, right) => left.order - right.order), nextAt }
 }
+
+/** The newest of the person's own runs waiting on them, in the list: where the panel opens. `null` when none waits. */
+export const newestNeed = (entries: ReadonlyArray<Entry>): string | null =>
+  entries.reduce<Entry | null>(
+    (newest, entry) =>
+      entry.listed && entry.mine && entry.state === "needs_you" && (newest === null || entry.atMs > newest.atMs)
+        ? entry
+        : newest,
+    null,
+  )?.id ?? null
 
 /**
  * The acts on their way that the synced row already shows: done waiting, so the device forgets them. An act whose row

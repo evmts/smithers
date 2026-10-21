@@ -18,9 +18,15 @@ links: [land-to-main.md, ../decisions/0014-flows-authoring-debugging-and-home-vi
 - Built: sections and audiences (`everyone`, `contributor`, `maintainer`, and `"contributors": "anyone"`) in `@smthrs/views`, now published and the one format `@smthrs/targets` writes; `RepositoryHome` restyled with `hero`, `code`, `cards`, `stats`, `releases`, `action` and the live `issues`, `stack`, `runs`, `flows` blocks; ChatApi's `GET /api/repos/<owner>/<name>/home` deciding the audience and serving curated homes from data (`worker/home/curated/`); Effect's curated home; New branch (`branch/create`, `/branch.new`, Code Storage `createBranch`).
 - VibeLang's home is drafted at [design/repo-home/vibelang.home.json](../design/repo-home/vibelang.home.json) for the VibeLang session to commit; it reads as a home in `view.test.ts`.
 
-**Next step:** e2e recordings of Effect's three audiences and New branch; the issue lifecycle's chain (repro, accepted, commitment, POC) once its decision lands; who is on which branch once a branches shape exists.
+**Proof:** `e2e/home-effect.spec.ts` passed on the mini at 23:30 (visitor, contributor, maintainer; New branch skipped), with chaptered recordings in `~/Desktop/smithers-mvp/videos/home-effect/` and GIFs `home-effect-{visitor,contributor,maintainer}.gif`.
 
-**Open questions for Will:** None.
+**Next step:** the follow-ups below.
+
+**Follow-ups (status: todo), cut at the burn-down, 2026-10-20 22:00:**
+- New branch's e2e skips locally: this machine has no `CODE_STORAGE_ORG` or `CODE_STORAGE_KEY`. Run it against the deployment (`BASE_URL`), which has both; `worker/branch/Branches.test.ts` and `src/features/home/live.test.ts` cover it on scripted Code Storage.
+- Re-record the public API baseline for `@smthrs/views` and `@smthrs/targets` (`check-api-baseline.mjs --build-declarations --update`).
+- Build the issue lifecycle's chain from the mock (repro, accepted, commitment, POC, TODO) once its decision record lands.
+- The audience comes from the person's app-wide role; per-repository roles and who is on which branch wait for those shapes.
 
 ## Prior tracker record (retained)
 

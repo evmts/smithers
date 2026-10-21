@@ -526,6 +526,37 @@ describe("the panel", () => {
     expect(tab.tabs()).toEqual([])
   }, WITHIN)
 
+  // The branch terminal's reload on a loaded machine (2026-10-20): the branch's rows came after the preload's deadline,
+  // so the panel showed nothing, and the Terminal view stayed blank beside the person's live terminal.
+  test("a panel that found no terminal shows the first that turns up: the person's own, waiting while it opens", async () => {
+    const tab = await open()
+    const branchId = await tab.track("feature/one")
+    expect(await tab.actions.show(branchId)).toBeNull()
+    expect(tab.panel()).toMatchObject({ branchId, terminalId: null, phase: "idle" })
+
+    const mine = crypto.randomUUID()
+    await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening" })
+    await until(() => expect(tab.panel()).toMatchObject({ branchId, terminalId: mine, phase: "opening" }))
+    await tab.settle(mine, "open")
+    await until(() => expect(tab.panel()).toMatchObject({ terminalId: mine, phase: "connecting" }))
+
+    // Once it shows one, another terminal turning up doesn't take the panel over.
+    const theirs = crypto.randomUUID()
+    await tab.insert({ id: theirs, branchId, ownerId: other, status: "open" })
+    await until(async () => expect(await tab.synced(branchId, theirs)).toBe("open"))
+    expect(tab.panel()).toMatchObject({ terminalId: mine })
+  }, WITHIN)
+
+  test("watching a terminal that isn't there waits for nothing else; another branch's panel ignores this one's rows", async () => {
+    const tab = await open()
+    const branchId = await tab.track("feature/one")
+    expect(await tab.actions.show(branchId, crypto.randomUUID())).toBeNull()
+    const theirs = crypto.randomUUID()
+    await tab.insert({ id: theirs, branchId, ownerId: other, status: "open" })
+    await until(async () => expect(await tab.synced(branchId, theirs)).toBe("open"))
+    expect(tab.panel()).toMatchObject({ branchId, terminalId: null, phase: "idle" })
+  }, WITHIN)
+
   test("a terminal that opens after the person left the branch doesn't take the panel over", async () => {
     const tab = await open()
     const branchId = await tab.track("feature/one")

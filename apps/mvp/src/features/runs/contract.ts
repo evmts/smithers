@@ -13,8 +13,11 @@ export const RUN_LIST_LIMIT = 50
 /** How many journal events one read of a run's page takes: the engine's page bound. */
 export const JOURNAL_PAGE = 500
 
-/** Whether a run of `flow` is work a person lists: an act on a run (`run/*`) isn't. */
-export const listed = (flow: string): boolean => !flow.startsWith("run/")
+/**
+ * Whether a run of `flow` is work a person lists: an act on a run (`run/*`) isn't, nor the host's own work on the
+ * device, such as preparing its store for a new build (`device/prepare`, decision 0021).
+ */
+export const listed = (flow: string): boolean => !flow.startsWith("run/") && !flow.startsWith("device/")
 
 /** The engine's settled states: a run in one never changes again. */
 export const SETTLED = ["completed", "failed", "cancelled"] as const

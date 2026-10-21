@@ -1,6 +1,6 @@
 import { Effect, Option } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
-import type { AnswerValue, Local } from "./schema"
+import { type AnswerValue, isOpen, type Local } from "./schema"
 import { StatusStore } from "./store"
 
 // What a person does about the agent's status (decision 0015): answer its open question, keep a draft, and ask the card
@@ -25,13 +25,22 @@ const touch = (id: string, version: number, change: (row: Local) => Partial<Loca
     Effect.orDie,
   )
 
-/** The open question of run `id`, as the conversation has it, if it is open. */
+/**
+ * The open question of run `id`, if it is open: as the conversation has it, or, for a run whose answer this tab doesn't
+ * show, such as one on a branch the notifications panel answers, as its own row has it.
+ */
 const openQuestion = (id: string) =>
   Effect.gen(function* () {
-    const { statuses } = yield* StatusStore
+    const { statuses, runs } = yield* StatusStore
     const row = (yield* statuses.toArray).find((status) => status.id === id)
     // A run that needs the person has a row with its question: Postgres' CHECK holds `wait` to `needs_you`.
-    return row?.state === "needs_you" ? Option.some({ version: row.version!, execution: row.wait!.execution }) : Option.none()
+    if (row !== undefined) {
+      return row.state === "needs_you" ? Option.some({ version: row.version!, execution: row.wait!.execution }) : Option.none()
+    }
+    return Option.map(Option.filter(yield* runs.get(id), isOpen), (run) => ({
+      version: run.version,
+      execution: run.wait!.execution,
+    }))
   })
 
 /** Keeps the field's text for run `id`'s open question. */
@@ -49,13 +58,6 @@ export const focus = (id: string) =>
     if (Option.isNone(open)) return
     yield* touch(id, open.value.version, (row) => ({ focus: row.focus + 1 }))
   })
-
-/** Focuses the oldest question that needs the person: the header's pill. */
-export const focusFirst = Effect.gen(function* () {
-  const { needs } = yield* StatusStore
-  const [first] = yield* needs.toArray
-  if (first !== undefined) yield* focus(first.id)
-})
 
 /**
  * Answers run `id`'s open question with `value`: dispatches `run/answer` (door `button`) in the background, which

@@ -1,0 +1,6 @@
+{
+  "apps/mvp/bench/cerebras-load/run.ts": "2963ccde11aa3d0977cbd963bad0e14b8e1f0490389a083965ddfd49913f63da",
+  "apps/mvp/bench/cerebras-load/stats.ts": "b89195502bb8f4ca21fbd90e56f33d26172720b29b855c237d71a80924b7e473",
+  "apps/mvp/bench/cerebras-load/report.ts": "aa7a425f6078264f8968fe1520cba647fc0a55c5da8a2f32828b0432531e8333",
+  ".smithers/flows/cerebras-load/flow.ts": "fd047dd1993382840f055a8eeabd4820b1be3bbfcadbdb77c001ffbd8a9243b7"
+}

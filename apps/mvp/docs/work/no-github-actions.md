@@ -3,9 +3,26 @@ title: No GitHub Actions; a PR's checks are Smithers workflow runs
 status: done
 area: process
 owner: docs agent (Claude Opus), finished 13:32:34 on 2026-10-20 (0012, `rules.md`, a `PACKAGE.test.ts` scan); spec agent finished 13:39:22 (`.specs/product/mvp.md` M-52); the lead fixed the root `AGENTS.md` line (13:39:41). Nothing committed. Until 13:46: docs agent (Claude Opus), started by the lead at 13:23:25 on 2026-10-20; decision 0012 and `rules.md` unchanged at 13:27
-updated: 2026-10-20
+updated: 2026-10-20 23:44 PDT
 links: [../decisions/0012-git-end-to-end.md, ../rules.md, pull-request-list-and-tabs.md, pr-review-and-merge.md, github-source-of-truth.md, todos-and-stack.md, notifications-and-live-work.md, agent-status.md, issue-triage.md, decisions-for-will.md, import-rules-and-jev-lint.md, ../../../../.specs/product/mvp.md, ../../../../AGENTS.md]
 ---
+
+## Tracker reconciliation — 2026-10-20 23:44 PDT
+
+**What:** Keep checks and work on Smithers, with the two explicit GitHub exceptions.
+
+**Why:** Keep the policy note consistent with Will’s latest rulings.
+
+**Current state:** GH-9 allows npm/JSR provenance publishing to remain on GitHub Actions. GH-10 allows write-only smithers/<flow> commit statuses. The absolute bans in the retained original note are superseded; Smithers still never reads or displays Actions. Downstream docs/lint reconciliation remains work outside this tracker’s edit scope.
+
+**Next step:** Apply the exceptions to docs, permissions and lint during the parity implementation; retain the promotion/deployment warning.
+
+**Open questions for Will:** None.
+
+Evidence: user-typed text and lead text replies extracted by script from session 6253ecf2, approximately 21:44–23:44 PDT; queue answers through 23:38:44, current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Synthetic notifications and tool content excluded. Later rulings supersede retained history. Product receipts are lead-reported; this tracker validates the maintainer-site build. Execution ownership retained; documentation reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
 
 ## What
 

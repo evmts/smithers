@@ -1,26 +1,78 @@
 /* Page layout only; components and colors come from @smthrs/ui. */
+
+/*
+ * The workspace: the repository's header and the branch's chrome across the top, then the branch's view (Code or
+ * Terminal) beside its conversation. A fixed height, so the view and the conversation each scroll inside and the
+ * composer stays at the conversation's foot. A ref that isn't a workspace (a tag, a commit) is the view alone.
+ */
 .branch-screen {
-  min-height: 100dvh;
-  max-width: 80rem;
+  height: 100dvh;
+  max-width: 96rem;
   margin: 0 auto;
   padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 26rem);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-areas: "repo repo" "branch branch" "view side";
+  gap: 0.75rem 1rem;
 }
+.branch-screen[data-workspace="false"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "repo" "branch" "view";
+}
+.branch-screen > .repo-header { grid-area: repo; }
+.branch-screen > .branch-header { grid-area: branch; }
 
-.branch-header { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; }
-.branch-header-name { margin-right: auto; overflow-wrap: anywhere; }
+/* The branch's chrome: its name and access, the people on it and Share, then the Code and Terminal tabs. */
+.branch-header { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; min-height: 2.25rem; }
+.branch-header-name { font-size: 1.125rem; font-weight: 650; overflow-wrap: anywhere; }
+.branch-header-presence { display: flex; align-items: center; gap: 0.75rem; margin-left: auto; }
+.branch-header-views { display: flex; align-items: center; gap: 1rem; }
+.branch-header-views > a[aria-current="page"] { font-weight: 650; text-decoration-thickness: 2px; text-underline-offset: 0.4rem; }
+.branch-header-views > a:not([aria-current="page"]) { text-decoration: none; }
 
-.branch-screen-view { min-height: 0; }
+.branch-screen-view { grid-area: view; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 
-/* The terminal takes the view's room: a fixed height, so the frame can fit its rows. */
-.terminal-panel { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
-.terminal-panel-frame { align-self: stretch; height: 28rem; }
+/* The terminal fills the view: its tabs and state above, its screen below. */
+.terminal-panel { flex: 1; min-height: 20rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.terminal-panel-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; min-height: 2rem; }
 .terminal-panel-tabs { display: flex; flex-wrap: wrap; gap: 1rem; }
+/* Scoped to the screen so it outweighs the card's own padding and alignment. */
+.branch-screen .terminal-panel-screen { flex: 1; min-height: 18rem; padding: 0; overflow: hidden; display: grid; }
+.branch-screen .terminal-panel-screen:not([data-screen="frame"]) { place-content: center; }
+/* The terminal fills its screen: the frame's height comes from the flex column, not a percentage of an auto row. */
+.branch-screen .terminal-panel-screen[data-screen="frame"] { display: flex; flex-direction: column; }
+.terminal-panel-frame { flex: 1; min-height: 18rem; }
+.terminal-panel-open { position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 0.5rem; }
 
-.branch-screen-conversation { max-height: 40dvh; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+/* A file in the live editor fills the view: its path and Save above, the editor below. */
+.shared-file { flex: 1; min-height: 20rem; padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.shared-file-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 2.5rem; padding: 0.25rem 0.75rem; }
+.shared-file-path { font-family: var(--font-mono); overflow-wrap: anywhere; }
+.shared-file-editor { flex: 1; min-height: 0; overflow: auto; }
 
-.branch-screen-composer { display: flex; justify-content: center; position: sticky; bottom: 0; }
+/* The conversation column: the messages scroll inside it, and the composer sits at its foot. */
+.branch-screen-side { grid-area: side; min-height: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.branch-screen .branch-screen-conversation { flex: 1; min-height: 0; padding: 0; display: flex; flex-direction: column; }
+.branch-screen-conversation .sui-chat-messages { padding: 1rem 0.75rem; }
+.branch-screen .branch-screen-denied { flex: 1; align-content: center; }
+.branch-screen-composer { display: flex; justify-content: center; }
 .branch-screen-composer > * { flex: 1; }
 .branch-screen-composer > button { flex: none; }
+
+/* Narrow windows stack the view over the conversation, and the page scrolls. */
+@media (max-width: 60rem) {
+  .branch-screen,
+  .branch-screen[data-workspace="false"] {
+    height: auto;
+    min-height: 100dvh;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    grid-template-areas: "repo" "branch" "view" "side";
+    align-content: start;
+  }
+  .branch-screen-view { overflow-y: visible; }
+  .terminal-panel { min-height: 24rem; }
+  .branch-screen-side { min-height: 20rem; }
+  .branch-screen-conversation { max-height: 60dvh; }
+}

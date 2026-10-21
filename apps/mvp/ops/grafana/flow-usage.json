@@ -1,0 +1,540 @@
+{
+  "uid": "smithers-flow-usage",
+  "title": "Smithers: flow usage",
+  "description": "Which flows run, and how: runs, success, duration, doors, placements, failures and model tokens per flow. Reads the engine's flow.run.started, flow.run.settled and flow.model.call log lines (@smthrs/flow RunMetrics) and the model endpoint's model.spend lines from Loki.",
+  "tags": [
+    "smithers",
+    "flows",
+    "usage"
+  ],
+  "editable": false,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "refresh": "5m",
+  "timezone": "utc",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Loki",
+        "type": "datasource",
+        "query": "loki",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "regex": "",
+        "options": []
+      },
+      {
+        "name": "stream",
+        "label": "Stream",
+        "type": "textbox",
+        "query": "{service_name=~\".+\"}",
+        "current": {
+          "text": "{service_name=~\".+\"}",
+          "value": "{service_name=~\".+\"}"
+        },
+        "hide": 0,
+        "description": "The Loki stream selector that holds the Workers' log lines."
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "bargauge",
+      "title": "Top flows by runs",
+      "datasource": {
+        "type": "loki",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "topk(15, sum by (flow) (count_over_time($stream |= \"flow.run.started\" | json flow=\"annotations.flow\" | __error__=\"\" [$__range])))",
+          "queryType": "instant",
+          "legendFormat": "{{flow}}"
+        }
+      ],
+      "description": "Runs admitted per flow tag (flow.run.started).",
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "namePlacement": "left",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "bargauge",
+      "title": "Success rate by flow",
+      "datasource": {
+        "type": "loki",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (flow) (count_over_time($stream |= \"flow.run.settled\" | json flow=\"annotations.flow\", outcome=\"annotations.outcome\" | __error__=\"\" | outcome=\"succeeded\" [$__range])) / sum by (flow) (count_over_time($stream |= \"flow.run.settled\" | json flow=\"annotations.flow\" | __error__=\"\" [$__range]))",
+          "queryType": "instant",
+          "legendFormat": "{{flow}}"
+        }
+      ],
+      "description": "Settled runs that succeeded, per flow (flow.run.settled).",
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.9
+              },
+              {
+                "color": "green",
+                "value": 0.99
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Duration p50 and p95 by flow",
+      "datasource": {
+        "type": "loki",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "quantile_over_time(0.5, $stream |= \"flow.run.settled\" | json flow=\"annotations.flow\", durationMs=\"annotations.durationMs\" | __error__=\"\" | durationMs != \"\" | unwrap durationMs [$__range]) by (flow)",
+          "queryType": "instant",
+          "legendFormat": "{{flow}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "quantile_over_time(0.95, $stream |= \"flow.run.settled\" | json flow=\"annotations.flow\", durationMs=\"annotations.durationMs\" | __error__=\"\" | durationMs != \"\" | unwrap durationMs [$__range]) by (flow)",
+          "queryType": "instant",
+          "legendFormat": "{{flow}}"
+        }
+      ],
+      "description": "From admission to settlement (flow.run.settled durationMs).",
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value #A": "p50",
+              "Value #B": "p95"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "p95",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "piechart",
+      "title": "Doors",
+      "datasource": {
+        "type": "loki",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 6,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (door) (count_over_time($stream |= \"flow.run.started\" | json door=\"annotations.door\" | __error__=\"\" [$__range]))",
+          "queryType": "instant",
+          "legendFormat": "{{door}}"
+        }
+      ],
+      "description": "What started each run: button, slash, view, composer, agent, api, event, schedule, sync, flow.",
+      "options": {
+        "pieType": "donut",
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "piechart",
+      "title": "Placements",
+      "datasource": {
+        "type": "loki",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 9,
+        "w": 6,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (placement) (count_over_time($stream |= \"flow.run.started\" | json placement=\"annotations.placement\" | __error__=\"\" [$__range]))",
+          "queryType": "instant",
+          "legendFormat": "{{placement}}"
+        }
+      ],
+      "description": "Where each run ran: browser, cloudflare, sandbox, local.",
+      "options": {
+        "pieType": "donut",
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Failures by code",
+      "datasource": {
+        "type": "loki",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (flow, outcome, code) (count_over_time($stream |= \"flow.run.settled\" | json flow=\"annotations.flow\", outcome=\"annotations.outcome\", code=\"annotations.code\" | __error__=\"\" | outcome!=\"succeeded\" [$__range]))",
+          "queryType": "instant",
+          "legendFormat": ""
+        }
+      ],
+      "description": "Runs that did not succeed, by flow, outcome (failed, refused, cancelled, lost) and code. Never a message.",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value": "runs"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "runs",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Model tokens by flow",
+      "datasource": {
+        "type": "loki",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (flow) (sum_over_time($stream |= \"flow.model.call\" | json flow=\"annotations.flow\", inputTokens=\"annotations.inputTokens\" | __error__=\"\" | unwrap inputTokens [$__range]))",
+          "queryType": "instant",
+          "legendFormat": "{{flow}} input"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (flow) (sum_over_time($stream |= \"flow.model.call\" | json flow=\"annotations.flow\", outputTokens=\"annotations.outputTokens\" | __error__=\"\" | unwrap outputTokens [$__range]))",
+          "queryType": "instant",
+          "legendFormat": "{{flow}} output"
+        }
+      ],
+      "description": "Tokens the model calls of each flow's steps reported (flow.model.call). Replayed steps call no model.",
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "namePlacement": "left",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Metered tokens and spend by role",
+      "datasource": {
+        "type": "loki",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (role) (sum_over_time($stream |= \"model.spend\" | json message=\"message\", role=\"annotations.role\", tokens=\"annotations.tokens\" | __error__=\"\" | message=\"model.spend\" | unwrap tokens [$__range]))",
+          "queryType": "instant",
+          "legendFormat": ""
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (role) (sum_over_time($stream |= \"model.spend\" | json message=\"message\", role=\"annotations.role\", costUsd=\"annotations.costUsd\" | __error__=\"\" | message=\"model.spend\" | costUsd != \"\" | unwrap costUsd [$__range]))",
+          "queryType": "instant",
+          "legendFormat": ""
+        }
+      ],
+      "description": "The model endpoint's metering (model.spend). On the app a flow's model is its role, so this joins Model tokens by flow by role.",
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value #A": "tokens",
+              "Value #B": "USD"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "USD"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

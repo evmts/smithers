@@ -1,0 +1,37 @@
+import { BrowserLanguageServer } from "@smthrs/platform-browser"
+import { LanguageServer } from "@smthrs/std"
+import { Context, Effect, Layer, type Scope } from "effect"
+
+// Where language servers come from (decision: docs/design/code-intelligence/DESIGN.md): the browser's, TypeScript in a
+// dedicated worker (`@smthrs/platform-browser`'s `BrowserLanguageServer`), started per repository and commit. The
+// branch box's servers join as another layer of the same service; the feature only sees `@smthrs/std`'s
+// `LanguageServer`.
+
+/** A workspace a server reads: every file's path at the commit, and a way to read one. */
+export type Workspace = BrowserLanguageServer.Workspace
+
+export class LanguageServers extends Context.Service<
+  LanguageServers,
+  {
+    /** The `file:` URI of a workspace's root, as the server's answers name files. */
+    readonly root: string
+    /** Starts a server for `workspace`, stopped when the scope closes. */
+    readonly open: (workspace: Workspace) => Effect.Effect<LanguageServer.LanguageServer, never, Scope.Scope>
+  }
+>()("@smthrs/mvp/code-intel/LanguageServers") {
+  /** TypeScript in a dedicated worker that `worker` starts (main.tsx: src/features/code-intel/language.worker.ts). */
+  static readonly layerBrowser = (worker: () => BrowserLanguageServer.WorkerLike) =>
+    Layer.succeed(
+      LanguageServers,
+      LanguageServers.of({
+        root: BrowserLanguageServer.uriOf("/"),
+        open: (workspace) => BrowserLanguageServer.make({ worker, workspace }),
+      }),
+    )
+
+  /** No language server, for a host that starts no worker: every request answers `unsupported`. */
+  static readonly layerNone = Layer.succeed(
+    LanguageServers,
+    LanguageServers.of({ root: "file:///", open: () => Effect.succeed(LanguageServer.makeNoop()) }),
+  )
+}

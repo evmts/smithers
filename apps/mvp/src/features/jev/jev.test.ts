@@ -13,8 +13,12 @@ import { contents, harness, stop, testFile, usage } from "../../../worker/test/h
 import { jev } from "../../flows/registrations"
 import { BROWSER_TELEMETRY } from "../../telemetry"
 import { answerRow, cell, type Engine, member, openAgent } from "../../test/agent"
+import { debugRunOf } from "../chat/view"
+import { JOURNAL_PAGE, runPath } from "../runs/contract"
+import { graphOf } from "../runs/graph"
+import type { Inspection, RunPage } from "../runs/schema"
 import { JEV_TELEMETRY, MAX_CRITERIA, MAX_ITEMS, MAX_LABELS } from "./contract"
-import { Classify, Evaluate, JudgeFailed } from "./flows"
+import { Classify, Evaluate, JudgeFailed, type Verdicts } from "./flows"
 import { judgments, verdicts } from "./metrics"
 
 const runtime = testFile("jev")
@@ -287,15 +291,21 @@ describe("the payload", () => {
 })
 
 describe("the agent", () => {
+  /** An answer takes several sealed model steps and a judgment; under a loaded machine one test may take minutes. */
+  const SLOW = 240_000
   const engines: Array<Engine> = []
   afterEach(async () => {
     for (const engine of engines.splice(0)) await engine.kill()
   })
 
-  test("a cell's ctx.call classifies items as a journaled step, its judgment through the judge role", async () => {
+  /** The cell's call: three items, one question, no labels. */
+  const ITEMS = ["The app crashes on save", "Please add dark mode", "Search feels slow sometimes"]
+
+  /** The agent answers "Which of these are bugs?" by classifying `ITEMS` in its first cell, then answers. */
+  const classified = async () => {
     const cells = [
       `const r = await ctx.call("app/jev/classify", { question: "Is this a bug report?", ` +
-      `items: ["The app crashes on save", "Please add dark mode", "Search feels slow sometimes"] })\n` +
+      `items: ${JSON.stringify(ITEMS)} })\n` +
       `console.log(JSON.stringify(r.verdicts.map((v) => v.verdict)))`,
       `ctx.done("Bug: the crash. Not a bug: dark mode. Unsure: slow search.")`,
     ]
@@ -308,8 +318,29 @@ describe("the agent", () => {
     engines.push(engine)
     const before = await served("judge")
     const answerId = await agent.ask("Which of these are bugs?")
-
     expect(await agent.answer(engine, answerId)).toEqual(Exit.succeed({ status: "done" }))
+    return { agent, engine, answerId, before }
+  }
+
+  /**
+   * The page `/app/runs/<runId>` shows, read as the browser's engine reads it for the run screen
+   * (src/features/runs/store.ts `readRun`): the run, and every run under it.
+   */
+  const runPage = async (engine: Engine, runId: string): Promise<RunPage> => {
+    const read = (id: string) => Effect.runPromise(engine.inspection.inspect(id, { limit: JOURNAL_PAGE }))
+    const inspection = await read(runId)
+    const descendants: Array<Awaited<ReturnType<typeof read>>> = []
+    const pending = inspection.children.map((child) => child.runId)
+    for (const id of pending) {
+      const child = await read(id)
+      descendants.push(child)
+      pending.push(...child.children.map((grandchild) => grandchild.runId))
+    }
+    return { id: runId, state: "read", inspection, more: [], hasMore: inspection.journal.hasMore, descendants }
+  }
+
+  test("a cell's ctx.call classifies items as a journaled step, its judgment through the judge role", async () => {
+    const { agent, answerId, before } = await classified()
 
     const answer = await answerRow(runtime, answerId)
     expect(answer).toMatchObject({ status: "done", text: "Bug: the crash. Not a bug: dark mode. Unsure: slow search." })
@@ -318,5 +349,36 @@ describe("the agent", () => {
     // The agent's next frame read the verdicts the cell printed.
     const second = agent.h.requests.filter((request) => !isJudge(request))[1]!
     expect(contents(second).join("\n")).toContain(`["yes","no","unsure"]`)
-  })
+  }, SLOW)
+
+  test("the answer's debug info opens the run that answered it, whose flow view shows the Jev step's input and output", async () => {
+    const { engine, answerId } = await classified()
+
+    // Debug info on the answer opens its own run; a question has none (src/features/chat/view.ts).
+    const runId = debugRunOf({ id: answerId, role: "assistant" })!
+    expect(runId).toBe(answerId)
+    expect(debugRunOf({ id: answerId, role: "user" })).toBeUndefined()
+
+    const page = await runPage(engine, runId)
+    expect((page.inspection as Inspection).run).toMatchObject({ flowName: "chat/Answer", status: "completed" })
+    // The cell's call is a run of its own under the answer's: Jev's input and its verdicts.
+    const call = (page.descendants as ReadonlyArray<Inspection>).find((read) => read.run.flowName === "app/jev/classify")!
+    expect(JSON.parse(call.run.input.text)).toEqual({ question: "Is this a bug report?", items: ITEMS })
+    const verdictsOf = (text: string) => (JSON.parse(text) as Verdicts).verdicts.map((verdict) => verdict.verdict)
+    expect(verdictsOf(call.run.result!.text)).toEqual(["yes", "no", "unsure"])
+
+    // The flow view: the answer's own steps, and the Jev step its call ran, done, with the verdicts as its output and a
+    // link to the call's own run, whose page holds the input.
+    const graph = graphOf(page, null, Date.now())
+    expect(graph.nodes.map((node) => [node.label, node.state])).toEqual([
+      ["chat/LoadTurn", "done"],
+      ["chat/Respond", "done"],
+      ["chat/Settle", "done"],
+      ["app/jev/classify/judge", "done"],
+    ])
+    const judge = graph.steps.find((step) => step.row.label === "app/jev/classify/judge")!
+    expect(judge.row.state).toBe("completed")
+    expect(verdictsOf(judge.output!.text)).toEqual(["yes", "no", "unsure"])
+    expect(judge.href).toBe(runPath(call.run.runId))
+  }, SLOW)
 })

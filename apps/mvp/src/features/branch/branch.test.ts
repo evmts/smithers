@@ -235,6 +235,7 @@ const trackedBody = {
   name: "feature/one",
   mode: "open",
   access: "owner",
+  shared: false,
 }
 
 describe("the branch client", () => {

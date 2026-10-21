@@ -14,6 +14,7 @@ import { testFile } from "../test/harness.ts"
 import * as Apply from "./Apply.ts"
 import * as GitHubConfig from "./Config.ts"
 import * as Host from "./Host.ts"
+import * as Merge from "./Merge.ts"
 import * as Reconcile from "./Reconcile.ts"
 import { admit, database, judgeSeat, judging, keys, reset, signedIn, writeRow } from "./test/fixtures.ts"
 import { APP_ID, appKey, SCRIPTED_API, scriptedGitHub } from "./test/scriptedGitHub.ts"
@@ -128,7 +129,7 @@ describe("Host", () => {
         ),
       ),
     )
-    expect(flows.flows.slice(-4)).toEqual([Apply.Apply, Reconcile.Reconcile, Write.Write, Triage.TriageRun])
+    expect(flows.flows.slice(-5)).toEqual([Apply.Apply, Reconcile.Reconcile, Write.Write, Triage.TriageRun, Merge.Merge])
     const values = new Map<string, unknown>()
     const storage: ExecutionHost.Storage = {
       get: <A>(storageKey: string) => Effect.sync(() => structuredClone(values.get(storageKey)) as A | undefined),

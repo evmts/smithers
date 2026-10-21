@@ -18,6 +18,7 @@ import {
   writeExecutionId,
   writesRoute,
 } from "../../src/features/issues/contract.ts"
+import { NEEDS_REPRO_COMMENT, NEEDS_REPRO_LABEL } from "../../src/features/issues/lifecycle.ts"
 import type * as Actor from "../Actor.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
@@ -125,6 +126,128 @@ const githubComments = (github: ReturnType<typeof repository>, number: number) =
   github.issues.get(number)!.comments.map((comment) => ({ login: comment.login, body: comment.body }))
 
 describe("triage/Run", () => {
+  test("a bug without code asks for a reproduction once across independent runs, without calling the judge", async () => {
+    const github = repository()
+    await enable()
+    github.open("[bug] Crash", "Steps: open, submit.")
+    const { value, requests } = await judged(github, judging("accept"))
+    for (let i = 0; i < 2; i++) {
+      expect((await triage(value, 1)).exit).toEqual(Exit.succeed({ outcome: "skipped", decisionId: null }))
+    }
+    expect(github.issues.get(1)!.labels).toEqual([NEEDS_REPRO_LABEL])
+    expect(githubComments(github, 1)).toEqual([{ login: BOT_LOGIN, body: expect.stringContaining(NEEDS_REPRO_COMMENT) }])
+    github.open("[bug] Empty reproduction", "```ts\n```\nSome prose\n```")
+    expect((await triage(value, 2)).exit).toEqual(Exit.succeed({ outcome: "skipped", decisionId: null }))
+    expect(github.issues.get(2)!.labels).toEqual([NEEDS_REPRO_LABEL])
+    expect(githubComments(github, 2)).toEqual([{ login: BOT_LOGIN, body: expect.stringContaining(NEEDS_REPRO_COMMENT) }])
+    expect(requests).toHaveLength(0)
+    expect(await decisions()).toEqual([])
+  })
+
+  test.each(["permission", "demoted"])("missing reproduction cannot write after %s loss", async (loss) => {
+    const github = repository()
+    await enable()
+    github.open("[bug] Crash", "No code")
+    if (loss === "permission") github.granted = "read"
+    else github.roles.set(SAM.login, "write")
+    const { value, requests } = await judged(github, judging("accept"))
+    expect((await triage(value, 1)).exit).toEqual(Exit.succeed({ outcome: "skipped", decisionId: null }))
+    expect(github.issues.get(1)!.labels).toEqual([])
+    expect(githubComments(github, 1)).toEqual([])
+    expect(requests).toHaveLength(0)
+    if (loss === "demoted") expect(await settings()).toMatchObject({ paused: true, pausedReason: "enabler_demoted" })
+  })
+
+  test.each(["snippet", "not_bug", "gone"])("rechecks the missing reproduction before publication: %s", async (change) => {
+    const github = repository()
+    await enable()
+    github.open("[bug] Crash", "No code")
+    let reads = 0
+    github.faults.push({ match: (method, path) => {
+      if (method === "GET" && /\/issues\/1$/.test(path) && ++reads === 2) {
+        if (change === "snippet") github.comment(1, "```sh\nfalse\n```", "reporter")
+        else if (change === "not_bug") github.retitle(1, "An improvement")
+        else github.remove(1)
+      }
+      return false
+    } })
+    const { value, requests } = await judged(github, judging("accept"))
+    expect((await triage(value, 1)).exit).toEqual(Exit.succeed({ outcome: "skipped", decisionId: null }))
+    expect(github.issues.get(1)!.labels).toEqual([])
+    expect(githubComments(github, 1).filter((comment) => comment.body.includes(NEEDS_REPRO_COMMENT))).toEqual([])
+    expect(requests).toHaveLength(0)
+  })
+
+  test("an incomplete conversation cannot prove the repro request was never posted", async () => {
+    const github = repository()
+    await enable()
+    github.open("[bug] Crash", "No code")
+    for (let index = 0; index <= 1_000; index++) github.comment(1, "Still investigating", "reporter")
+    const { value, requests } = await judged(github, judging("accept"))
+    const exit = await Effect.runPromiseExit(Triage.steps(value).read({ repo: REPO, number: 1, trigger: "opened", key: "k" }).pipe(
+      Effect.provideService(FlowRuntime.FlowInstance, { executionId: "e" } as never),
+    ))
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBeInstanceOf(Triage.TriageUnavailable)
+    expect(github.issues.get(1)!.labels).toEqual([NEEDS_REPRO_LABEL])
+    expect(githubComments(github, 1).filter((comment) => comment.body.includes(NEEDS_REPRO_COMMENT))).toEqual([])
+    expect(requests).toHaveLength(0)
+  })
+
+  test("a null issue body and deleted comment text still need a reproduction", async () => {
+    const github = repository()
+    await enable()
+    github.open("[bug] Crash", null)
+    Object.assign(github.comment(1, "", null), { body: null })
+    const { value, requests } = await judged(github, judging("accept"))
+    expect((await triage(value, 1)).exit).toEqual(Exit.succeed({ outcome: "skipped", decisionId: null }))
+    expect(github.issues.get(1)!.labels).toEqual([NEEDS_REPRO_LABEL])
+    expect(githubComments(github, 1).filter((comment) => comment.login === BOT_LOGIN))
+      .toEqual([{ login: BOT_LOGIN, body: expect.stringContaining(NEEDS_REPRO_COMMENT) }])
+    expect(requests).toHaveLength(0)
+  })
+
+  test.each(["permission", "demoted"])("a candidate cannot clear the repro label after %s loss", async (loss) => {
+    const github = repository()
+    await enable()
+    github.open("[bug] Crash", null)
+    Object.assign(github.comment(1, "", null), { body: null })
+    github.comment(1, "```sh\nfalse\n```", "reporter")
+    github.relabel(1, [NEEDS_REPRO_LABEL])
+    if (loss === "permission") github.granted = "read"
+    else github.roles.set(SAM.login, "write")
+    const { value, requests } = await judged(github, judging("accept"))
+    const read = await Effect.runPromise(Triage.steps(value).read({ repo: REPO, number: 1, trigger: "opened", key: "k" }).pipe(
+      Effect.provideService(FlowRuntime.FlowInstance, { executionId: "e" } as never),
+    ))
+    expect(read.status).toBe("ready")
+    expect(github.issues.get(1)!.labels).toEqual([NEEDS_REPRO_LABEL])
+    expect(github.seen("DELETE", /\/labels\//)).toHaveLength(0)
+    expect(requests).toHaveLength(0)
+  })
+
+  test("a reproduction added in a comment clears needs-repro and unblocks the judge", async () => {
+    const github = repository()
+    await enable()
+    github.open("[bug] Crash", "Steps only")
+    const { value, requests } = await judged(github, judging("accept"))
+    await triage(value, 1)
+    github.comment(1, "```ts\nthrow Error('reproduction')\n```", "reporter")
+    expect((await triage(value, 1)).exit).toEqual(Exit.succeed({ outcome: "labeled", decisionId: expect.any(String) }))
+    expect(github.issues.get(1)!.labels).toEqual([ACCEPTED_LABEL])
+    expect(requests).toHaveLength(1)
+    expect(githubComments(github, 1).filter((comment) => comment.body.includes(NEEDS_REPRO_COMMENT))).toHaveLength(1)
+  })
+
+  test("a candidate reproduction reaches the judge without claiming sandbox verification", async () => {
+    const github = repository()
+    await enable()
+    github.open("[bug] Crash", "```ts\nthrow new Error('repro')\n```")
+    const { value, requests } = await judged(github, judging("accept"))
+    expect((await triage(value, 1)).exit).toEqual(Exit.succeed({ outcome: "labeled", decisionId: expect.any(String) }))
+    expect(github.issues.get(1)!.labels).toEqual([ACCEPTED_LABEL])
+    expect(requests).toHaveLength(1)
+  })
+
   test("rejects a spam issue: one label as the App, one comment naming the reason and the enabler, the issue stays open", async () => {
     const github = repository()
     await enable()
@@ -175,6 +298,8 @@ describe("triage/Run", () => {
     const { value, requests } = await judged(github, judging("accept"))
     const key = crypto.randomUUID()
     expect((await triage(value, 1, key)).exit).toEqual(Exit.succeed({ outcome: "labeled", decisionId: expect.any(String) }))
+    expect(asked(requests[0]!)).toContain("accept this issue for discussion")
+    expect(asked(requests[0]!)).toContain("Acceptance makes no commitment")
     expect(github.issues.get(1)!.labels).toEqual([ACCEPTED_LABEL])
     expect(github.issues.get(1)!.comments).toEqual([])
     // GitHub had no such label: the App made it, in green.
@@ -561,7 +686,7 @@ describe("triage/Run", () => {
   test("the same run again after its journal was lost: a dropped decision stays dropped; a posted comment isn't posted twice", async () => {
     const github = repository()
     await enable()
-    github.open("Relabeled", "Body")
+    github.open("Relabeled", "```ts\nthrow Error()\n```")
     github.open("Spam", "Body")
     const { services: base } = await services(runtime, github)
     await project(base)
@@ -719,6 +844,42 @@ describe("a person's triage", () => {
     return { ...person, actor: { ...member(person.personId, person.sessionId), role, login: "maya" } satisfies Actor.Actor }
   }
 
+  test("a Maintainer sets every commitment on an accepted issue, replacing the previous GitHub label", async () => {
+    const github = repository()
+    github.open("Accepted for discussion", "Body")
+    github.relabel(1, [ACCEPTED_LABEL, "unrelated"])
+    const person = await maya(github, "maintainer")
+    github.roles.set("maya", "maintain")
+    const h = await githubHarness(runtime, { actor: person.actor, run: true, github })
+    for (const commitment of ["now", "next", "later", "none"]) {
+      const writeId = crypto.randomUUID()
+      expect((await h.fetch(writesRoute(REPOSITORY.owner, REPOSITORY.name), post({ writeId, op: "issue/commitment", number: 1, commitment }))).status).toBe(202)
+      await h.settled()
+      expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done", itemNumber: 1 })
+      expect(github.issues.get(1)!.labels).toEqual([ACCEPTED_LABEL, "unrelated", `smithers:commit-${commitment}`])
+      expect(await sql(runtime, `SELECT commitment FROM items WHERE number = 1`)).toEqual([{ commitment }])
+    }
+    expect(githubComments(github, 1)).toHaveLength(0)
+  })
+
+  test("commitment refuses Members, demoted Maintainers, unaccepted issues and agent credentials", async () => {
+    const github = repository()
+    github.open("Still proposed", "Body")
+    const person = await maya(github)
+    const h = await githubHarness(runtime, { actor: person.actor, run: true, github })
+    expect((await h.fetch(writesRoute(REPOSITORY.owner, REPOSITORY.name), post({ writeId: crypto.randomUUID(), op: "issue/commitment", number: 1, commitment: "now" }))).status).toBe(403)
+    const writer = await githubHarness(runtime, { actor: { ...person.actor, role: "maintainer" }, run: true, github })
+    for (const accepted of [false, true]) {
+      github.relabel(1, accepted ? [ACCEPTED_LABEL] : [])
+      github.roles.set("maya", accepted ? "write" : "maintain")
+      const writeId = crypto.randomUUID()
+      expect((await writer.fetch(writesRoute(REPOSITORY.owner, REPOSITORY.name), post({ writeId, op: "issue/commitment", number: 1, commitment: "now" }))).status).toBe(202)
+      await writer.settled()
+      expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "not_allowed" })
+      expect(github.issues.get(1)!.labels).toEqual(accepted ? [ACCEPTED_LABEL] : [])
+    }
+  })
+
   test("Not accepted with a reason: labels and comments as the person, pins the issue, records their decision", async () => {
     const github = repository()
     github.open("Flaky", "Sometimes")
@@ -855,8 +1016,9 @@ describe("a person's triage", () => {
   test("the agent never triages, enables or pauses: 403 even for an Admin", async () => {
     const github = repository()
     const person = await maya(github, "admin")
-    const h = await githubHarness(runtime, { actor: person.actor, github })
+    const h = await githubHarness(runtime, { actor: { ...person.actor, act: { kind: "agent", id: "triage-test-agent" } }, github })
     for (const write of [
+      { op: "issue/commitment", number: 1, commitment: "now" },
       { op: "issue/triage", number: 1, decision: "reject" },
       { op: "triage/run", number: 1 },
       { op: "triage/enable" },

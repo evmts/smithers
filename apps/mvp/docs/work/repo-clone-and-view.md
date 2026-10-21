@@ -7,6 +7,22 @@ updated: 2026-10-20
 links: [review-round-4.md, repo-follow-ups.md, repo-view-package-split.md, agent-root-browser-safe.md, dev-stack-hygiene.md, app-wiring.md, sign-in.md, one-sqlite-one-leader.md, ../decisions/0006-repo-clone-and-view.md, code-storage-spend-caps.md, platform-cloudflare-edge-cache.md, integrations-browser-safe-root.md, ../proposals/mvp-gaps.md, ../../../../docs/libraries.md, repo-open-states.md, deep-import-migration.md, durable-answering.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, cloudflare-flow-host.md, code-reviews.md, gitremote-unicode-branches.md, web-standard-globals-rule.md, integrations-effect-httpclient.md, flows-root-platform-neutral.md, local-first.md, navigate-flow.md, agent-repo-navigation.md, fable-review-2-fixes.md, repo-view-branches-raw-clone.md, ../rulings.md, chaptered-review-videos.md]
 ---
 
+## Current specification — 2026-10-20, 21:54 PDT
+
+**What:** Finish the repository-browsing feedback with docs, tests and recordings.
+
+**Why:** Will requested a polished repository reading and cloning experience.
+
+**Current state:** At 21:48 the browsing agent exhausted context while finishing the repositories feature doc. A fresh agent continues from its existing edits and must finish documentation, tests and recordings before handing work to round 4. Existing recordings alone do not establish completion.
+
+**Next step:** Collect the continuation report, green checks and recording quality receipts, then hand off to the lander.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user text and lead replies from session 6253ecf2, approximately 19:54–21:54 PDT; compaction summaries, tool blocks and relayed agent messages excluded. Current rulings and queue answers take precedence over historical briefs, decisions and proposals. Execution ownership retained; reconciliation by Codex tracker curator. Product receipts are reported evidence; tracker validation is the maintainer-site build.
+
+## Earlier tracker history (retained)
+
 ## Current specification — 2026-10-20, 18:26 PDT
 
 **What:** Clone repositories and present a useful, full repository browse page.

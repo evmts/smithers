@@ -388,13 +388,16 @@ describe("who may write", () => {
     expect(await writtenAt(second)).toBe(before)
   })
 
-  test("an agent acting for the asker writes as the asker", async () => {
+  test("an agent acting for the asker writes as the asker, and only the answer its run is", async () => {
     const asker = await open()
     const answerId = await ask(asker, "Hello")
-    const agent = await open({ actor: { ...member, act: { kind: "agent", id: "agent-run-1" } } })
+    const other = await ask(asker, "Hello again")
+    const agent = await open({ actor: { ...member, act: { kind: "agent", id: `${answerId}/call/0.1`, root: answerId } } })
 
     expect((await turn(agent, answerId)).status).toBe(200)
     expect((await write(agent, answerId, { status: "done", text: "Hi." })).status).toBe(200)
+    // The asker's other answer isn't this run's.
+    expect((await write(agent, other, { status: "done", text: "Hi." })).status).toBe(403)
   })
 
   test("an answer whose question records no asker is refused to everyone", async () => {

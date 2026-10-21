@@ -2,13 +2,14 @@ import { expect } from "@playwright/test"
 import { open, readdir, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { DEV_URL } from "../dev/https"
 
 // The local Workers' logs, for the e2e tests that read what ChatApi recorded (docs/observability.md). Locally
 // `alchemy dev` writes each Worker's log under `.alchemy/log/dev_<user>/<Worker>/`, and ChatApi's log also holds the
 // browser's and the engine worker's OTLP records it relayed (`otlp.signal`). A deployment's logs are in Workers Logs,
 // which these helpers can't read, so a test that uses them runs locally only (`local`).
 
-const baseURL = process.env.BASE_URL ?? "http://localhost:1337"
+const baseURL = process.env.BASE_URL ?? DEV_URL
 
 /** Whether the tests run against the local `alchemy dev`, whose logs these helpers read. */
 export const local = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(baseURL)

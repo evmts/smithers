@@ -35,7 +35,7 @@ export const WriteModel = Action.make("admin/WriteModel", {
 
 /** `admin/SetModel`: sets the model a role uses and records who changed it. */
 export const SetModel = Flow.make("admin/SetModel", {
-  description: "Set the model a role (agent, renderer or judge) uses; an Admin acting in person only.",
+  description: "Set the model a role (agent, renderer, judge or summary) uses; an Admin acting in person only.",
   capabilities: ["db:write:model_roles"],
   modelInvocable: false,
   payload,

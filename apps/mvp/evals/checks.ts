@@ -89,6 +89,9 @@ export const failedWith = (t: Trial, failure: string): Check =>
 export const mentions = (t: Trial, text: string): Check =>
   check(`mentions ${text}`, t.text.toLowerCase().includes(text.toLowerCase()))
 
+/** The answer shows no value it failed to read: a flow's answer pasted whole, `[object Object]`. */
+export const readValues = (t: Trial): Check => check("read values", !t.text.includes("[object Object]"))
+
 /** The agent called no flow. */
 export const noCalls = (t: Trial): Check => check("no calls", t.calls.length === 0)
 

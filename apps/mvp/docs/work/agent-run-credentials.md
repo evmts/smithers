@@ -3,11 +3,41 @@ title: Agent-run credentials and server-enforced person-only actions
 status: in-progress
 area: app
 owner: slice 0 credential builder, started by lead at 17:56 PDT
-updated: 2026-10-20
+updated: 2026-10-20 22:35 PDT
 links: [auth.md, todos-and-stack.md, pr-review-and-merge.md, ../rulings.md]
 ---
 
-## Current specification — 2026-10-20, 18:04 PDT
+## Tracker reconciliation — 2026-10-20, 22:35 PDT
+
+**What:** Enforce server-minted, run-bound authority and refuse delegated credentials for person-only actions.
+
+**Why:** Agent requests must never impersonate a person.
+
+**Current state:** At 22:29 the lead reports handoff to the lander and 15 affected server suites passing; e2e waits for the test pause. Missing Needs you questions and 403 run refusals are suspected regressions to check before landing. The builder’s 22:30 record below retains unbuilt confirmation receipts and documentation-sync follow-ups.
+
+**Next step:** Check both regressions against this change, then obtain run-credential e2e and full coverage receipts before claiming the slice works.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human text and lead text replies from session 6253ecf2, approximately 20:35–22:35 PDT; automated notifications and tool blocks excluded. Current rulings and queue answers (latest 19:38 PDT) prevail over historical briefs and proposals. Execution ownership retained; Codex tracker curator reconciles documentation only. Product receipts are lead-reported; tracker verification is the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 22:30 PDT
+
+**What:** Run credentials (decision 0017 slice 0) are built: server-minted, run-bound bearer tokens whose `act` the server sets from the registry's `acts` mark; one person-only list derived from the registry (`worker/Actor.ts`); authority narrowed at each nested call (`Flow.intersectCeilings`, `Flow.ceilingWithin` in `@smthrs/flow`); the engine sends every non-person run's requests with its credential and no cookie; the git writes route reads `via` from the request, never the body. Docs: [sign-in.md](../features/sign-in.md#run-credentials).
+
+**Current state:** Unit and integration suites pass (worker credential, person-only, runs, answers, git writes, stack, secrets, notifications, shares, terminals, sandbox calls, sign-in, personal flows, chat, model endpoint; the engine's credential client; flow ceilings). Landing goes through the round 4 lander.
+
+**Follow-ups (status: todo):**
+- Run `e2e/run-credentials.spec.ts` and its GIF once the test pause lifts; then the full app suite with coverage.
+- `pnpm docs:sync` and `pnpm docs:check` fail here with "Cannot load flow docs-sync: Operation not permitted" (environment); run them where the docs-sync flow loads, for `@smthrs/flow`'s reference page.
+- Not built: confirmation receipts and the host's confirm dialog for protected acts (0017 slice 0's second half); a remote host minting its own runs' credentials; a plugin installation as a credential's subject (slice 2).
+
+**Open questions for Will:** None.
+
+## Earlier specification — 2026-10-20, 18:04 PDT
 
 **What:** Issue server-enforced run credentials and derive person-only actions from the flow registry.
 

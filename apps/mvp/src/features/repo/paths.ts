@@ -104,6 +104,17 @@ export const hrefFor = (
   return `${at}?L=${location.line}${end}`
 }
 
+/**
+ * The branch workspace's live editor of file `path` at `revision` (docs/features/coedit.md#files): its directory's page
+ * with `?edit=` naming the file, JSON-quoted as the router reads a search value, so a path that reads as a number stays
+ * a path.
+ */
+export const editHrefFor = (repository: { readonly owner: string; readonly name: string }, revision: string, path: string) => {
+  const directory = path.split("/").slice(0, -1).join("/")
+  const at = `/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/tree/${encodePath(revision)}`
+  return `${at}${directory === "" ? "" : `/${encodePath(directory)}`}?edit=${encodeURIComponent(JSON.stringify(path))}`
+}
+
 /** What a route opens: the repository, a directory or a file, the URL's ref and path, and the file's line anchor. */
 export interface Target {
   readonly owner: string

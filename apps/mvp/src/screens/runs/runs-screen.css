@@ -13,3 +13,8 @@
 .run-page-values { display: flex; flex-direction: column; gap: 0.5rem; }
 .run-page-steps { display: grid; grid-template-columns: minmax(14rem, 1fr) 2fr; gap: 1rem; align-items: start; }
 @media (max-width: 640px) { .run-page-steps { grid-template-columns: 1fr; } }
+
+.run-page,.runs-screen { min-width:0; }
+.run-page-graph { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,340px); gap:12px; align-items:start; }
+.run-page-graph[data-inspector=false] { grid-template-columns:minmax(0,1fr); }
+@media(max-width:760px) { .run-page-graph { grid-template-columns:minmax(0,1fr); } }

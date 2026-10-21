@@ -2,6 +2,7 @@
 // db/TestDatabase.ts). The model is the only stand-in: a scripted `Model` through HostModel. ChatApi starts remote
 // flows through a `FlowStarter` that records each start, unless a test sets one. Every log line, span and metric the
 // handler records is kept for the test.
+import { ImmutableCache } from "@smthrs/artifacts"
 import { Model, type ModelEvent, type ModelRequest } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
 import { Logger as StructuredLogger } from "@smthrs/observability"
@@ -14,6 +15,8 @@ import {
   Logger,
   ManagedRuntime,
   Metric,
+  Option,
+  Redacted,
   Stream,
   Tracer,
 } from "effect"
@@ -22,6 +25,8 @@ import { SqlClient } from "effect/sql"
 import { afterAll, beforeAll, beforeEach } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../Actor.ts"
+import * as RunCredentials from "../RunCredentials.ts"
+import * as SessionKeys from "../SessionKeys.ts"
 import * as Conversations from "../branch/Conversations.ts"
 import * as Chat from "../Chat.ts"
 import * as Flows from "../Flows.ts"
@@ -66,7 +71,10 @@ interface HarnessOptions {
   readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
   /** Where ChatApi starts a remote flow: one that records each start in `starts` unless set. */
   readonly starter?: Flows.FlowStarter["Service"]
-  /** The fetch ChatApi calls Electric with: the global one unless set. */
+  /**
+   * The fetch ChatApi calls Electric, the model's provider and outside pages with: the global one unless set. A test
+   * that checks pages passes `outsideWeb` (worker/test/pages.ts), so it never reaches the internet.
+   */
   readonly fetch?: typeof globalThis.fetch
   /** Who is signed in on every request: nobody unless set, as in production before sign-in is configured. */
   readonly actor?: Actor.Actor
@@ -137,14 +145,21 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
     start: (flow, { executionId, payload }) =>
       Effect.sync(() => void starts.push({ flow: flow._tag, executionId, payload })),
   })
+  // One cache for the harness's life, so a page checked twice is answered from it the second time.
+  const webCache = Layer.succeed(
+    ImmutableCache.ImmutableCache,
+    ImmutableCache.make(ImmutableCache.makeMemoryWebCache(), { backend: "memory" }),
+  )
   const handler = HttpEffect.toWebHandler(
     observed(
       chat.fetch.pipe(
         Effect.provideService(Flows.FlowStarter, starter),
         Effect.provide(
-          options.sessions ?? (options.actor === undefined ? Actor.signedOut : signedIn(options.actor)),
+          options.sessions ?? (options.actor === undefined ? signedOut : signedIn(options.actor)),
         ),
-        Effect.provide(FetchHttpClient.layer),
+        // Sessions that bring no run credentials of their own, such as a faulty test's, get credentials for nobody.
+        Effect.provide(credentialsFor([])),
+        Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),
         Effect.provideService(FetchHttpClient.Fetch, options.fetch ?? globalThis.fetch),
       ),
     ),
@@ -185,9 +200,32 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
 
 type Harness = Awaited<ReturnType<typeof harness>>
 
-/** Sessions where every request is `actor`: how a test, or local development, provides who is signed in. */
+/** The secret a test's run credentials are signed with: a sentinel no record may carry. */
+export const RUN_CREDENTIAL_SECRET = "run-credential-secret-sentinel-".padEnd(64, "5")
+
+/**
+ * Run credentials signed with the test's key (worker/RunCredentials.ts): a credential reads as its person while they
+ * are one of `people`, as a live session would.
+ */
+export const credentialsFor = (people: ReadonlyArray<Actor.Actor>) =>
+  Layer.effect(
+    RunCredentials.RunCredentials,
+    Effect.map(SessionKeys.make(Redacted.make(RUN_CREDENTIAL_SECRET)), (keys) =>
+      RunCredentials.make({
+        keys,
+        person: (claims) => Effect.succeed(Option.fromNullishOr(people.find((who) => who.subject.id === claims.sub))),
+      })),
+  )
+
+/**
+ * Sessions where every request is `actor`, unless it carries a run credential, which reads as its run acting for them
+ * (worker/RunCredentials.ts): how a test, or local development, provides who is signed in. With the credentials.
+ */
 export const signedIn = (actor: Actor.Actor) =>
-  Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.succeedSome(actor) }))
+  RunCredentials.sessionsWith(Effect.succeedSome(actor)).pipe(Layer.provideMerge(credentialsFor([actor])))
+
+/** Every request signed out, with run credentials for nobody: what ChatApi resolves before sign-in is configured. */
+export const signedOut = Layer.merge(Actor.signedOut, credentialsFor([]))
 
 /**
  * Everything a harness recorded that an exporter sends, as one string to search: log lines, span attributes, events

@@ -3,6 +3,7 @@ import { Effect, Metric, Option } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
 import { ask, setDraft } from "../chat/actions"
+import type { DraftSelection } from "../chat/sharedPrompt"
 import { COMPOSER } from "../chat/schema"
 import { ChatStore } from "../chat/store"
 import { pinConversation } from "../sandbox/actions"
@@ -56,8 +57,8 @@ const list = (draft: string, refusal: string | null = null) =>
     })
   })
 
-/** Typing: the composer's draft becomes `text`, and the menu lists what it completes to. */
-export const type = (text: string) => Effect.andThen(setDraft(text), list(text))
+/** Typing: the composer's draft becomes `text`, with `selection` after, and the menu lists what it completes to. */
+export const type = (text: string, selection?: DraftSelection) => Effect.andThen(setDraft(text, selection), list(text))
 
 /** The arrows or the pointer moved the highlight to row `index`. */
 export const highlight = (index: number) => write({ highlighted: index })

@@ -1,5 +1,5 @@
 import type { Flow as FlowTypes } from "@smthrs/flow"
-import { FlowRuntime, Interpreter } from "@smthrs/flow"
+import { FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Cause, Clock, Context, Deferred, Effect, Exit, Layer, Metric, Option, Schema } from "effect"
 import type { DOORS } from "./contract"
@@ -149,6 +149,14 @@ export interface DispatchOptions {
   readonly admitted?: Deferred.Deferred<void, DispatchFailed>
 }
 
+/**
+ * The kind of actor behind a door, as the engine's usage metrics count it (`RunMetrics`): a person presses a button, runs
+ * a slash command, uses a view or the composer; the agent acts through its door; sync is the app acting on a row another
+ * device wrote.
+ */
+export const actorOf = (door: Door): RunMetrics.Actor =>
+  door === "agent" ? "agent" : door === "sync" ? "app" : "person"
+
 /** Dispatches, by `flow`, `door` and `outcome`. */
 export const dispatches = Metric.counter("smithers_flow_dispatches", {
   description: "Flows the app dispatched, by flow, door and outcome",
@@ -183,7 +191,11 @@ export const makeDispatch = <Entries extends Readonly<Record<string, Entry>>>(en
         yield* requests.add(executionId, options.door)
         const fields: Record<string, string | number> = { flow: name, door: options.door, executionId }
         const run = { executionId, payload }
-        const started = engine.start(entry.flow, run).pipe(Effect.onExit(admit))
+        // The engine labels the run's usage metrics with the door and its actor kind, never who.
+        const started = engine.start(entry.flow, run).pipe(
+          RunMetrics.withOrigin({ door: options.door, actor: actorOf(options.door) }),
+          Effect.onExit(admit),
+        )
         const dispatched = yield* Effect.result(
           started.pipe(
             Effect.andThen(engine.result(entry.flow, run)),
@@ -236,7 +248,7 @@ const codeOf = (error: unknown): { readonly refusal?: string } =>
     : {}
 
 /** A client flow's end as dispatch answers it: its value, its declared failure, or `DispatchFailed`. */
-const settled = (name: string, exit: Exit.Exit<unknown, unknown>): Effect.Effect<Dispatched<never>, DispatchFailed> => {
+const settled =(name: string, exit: Exit.Exit<unknown, unknown>): Effect.Effect<Dispatched<never>, DispatchFailed> => {
   if (Exit.isSuccess(exit)) return Effect.succeed({ _tag: "Done", value: exit.value as never })
   const error = Cause.findErrorOption(exit.cause)
   if (Option.isSome(error)) return Effect.succeed({ _tag: "Failed", error: error.value as never })

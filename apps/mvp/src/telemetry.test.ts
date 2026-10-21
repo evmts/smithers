@@ -219,6 +219,17 @@ describe("the contract", () => {
       "execute_tool issue/comment": "`execute_tool ${call.flowName}`",
       "execute_tool todo/draft": "`execute_tool ${call.flowName}`",
       "execute_tool chat/copy": "`execute_tool ${call.flowName}`",
+      // Code intelligence names a span after its act, and the browser language server after its method.
+      "code.hover": "`code.${act}`",
+      "code.definition": "`code.${act}`",
+      "code.references": "`code.${act}`",
+      "code.problems": "`code.${act}`",
+      "code.outline": "`code.${act}`",
+      "browser.language_server.hover": "`browser.language_server.${method}`",
+      "browser.language_server.definition": "`browser.language_server.${method}`",
+      "browser.language_server.references": "`browser.language_server.${method}`",
+      "browser.language_server.documentSymbols": "`browser.language_server.${method}`",
+      "browser.language_server.diagnostics": "`browser.language_server.${method}`",
       // `@smthrs/observability`'s metrics are named after a prefix.
       flows_run_throughput: "`${prefix}run_throughput`",
       flows_seat_active: "`${prefix}seat_active`",

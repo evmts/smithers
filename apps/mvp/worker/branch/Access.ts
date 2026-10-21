@@ -91,6 +91,11 @@ export interface BranchAccess {
   readonly mode: Mode
   readonly createdBy: string | null
   readonly access: Access | "none"
+  /**
+   * Whether its owner shared it, by name or by link: its prompt is then typed together (docs/features/coedit.md). The
+   * team's branches have no owner, so nobody shared them.
+   */
+  readonly shared: boolean
 }
 
 const Row = Schema.Struct({
@@ -102,6 +107,7 @@ const Row = Schema.Struct({
   createdBy: Schema.NullOr(Schema.String),
   person: Schema.NullOr(Schema.Literals(SHARE_ACCESSES)),
   repository: Schema.NullOr(Schema.Literals(SHARE_ACCESSES)),
+  anyShare: Schema.Boolean,
 })
 const decodeRow = Schema.decodeUnknownEffect(Row)
 
@@ -121,14 +127,15 @@ export const branchAccess = (actor: Option.Option<Actor>, id: string, by: "branc
         b.created_by AS "createdBy",
         (SELECT access FROM branch_shares s WHERE s.branch_id = b.id AND s.grantee = ${person}
           AND ${person} <> ${REPOSITORY_GRANTEE}) AS person,
-        (SELECT access FROM branch_shares s WHERE s.branch_id = b.id AND s.grantee = ${REPOSITORY_GRANTEE}) AS repository
+        (SELECT access FROM branch_shares s WHERE s.branch_id = b.id AND s.grantee = ${REPOSITORY_GRANTEE}) AS repository,
+        EXISTS (SELECT 1 FROM branch_shares s WHERE s.branch_id = b.id) AS "anyShare"
       FROM branches b JOIN conversations c ON c.branch_id = b.id
       WHERE ${by === "branch" ? sql`b.id = ${id}` : sql`c.id = ${id}`} AND b.deleted_at IS NULL`
     if (rows[0] === undefined) return undefined
     const row = yield* decodeRow(rows[0]).pipe(Effect.orDie)
     const access = accessOf(actor, { createdBy: row.createdBy, person: row.person, repository: row.repository })
-    const { person: _person, repository: _repository, ...branch } = row
-    return { ...branch, access } satisfies BranchAccess
+    const { person: _person, repository: _repository, anyShare, ...branch } = row
+    return { ...branch, access, shared: row.createdBy !== null && anyShare } satisfies BranchAccess
   })
 
 /** Branch `branchId`'s whole permission list, as `underPolicy` applies it. */

@@ -41,8 +41,8 @@ items, comments ◀── Electric ◀── Postgres ◀──┘
 | The triage flow's label and comment | the flow, under the Maintainer who enabled it, re-checked at every write | the App's installation token |
 
 - **Reading.** A signed-out request, or a person with no role, is refused (`401`, `403`) until `github/Reconcile` has recorded that GitHub says the repository is public (`github_repositories.private`). The read still starts the sync, so a public repository opens to visitors within one walk. Decision 0012 keeps private repositories to people GitHub lets see them until shapes are authorized per request (0007 phase 2).
-- **A Guest never writes as the bot.** A Guest has no agent, so the route refuses `via: "agent"` from a Guest (`403`): their write goes as themselves, or not at all.
-- **The device says which door.** A step whose execution is the agent's call (`requesterOf(executionId) !== executionId`) sends `via: "agent"`; every other door sends `via: "person"`.
+- **A Guest never writes as the bot.** A Guest has no agent, so the route refuses an agent's write for a Guest (`403`): their write goes as themselves, or not at all.
+- **The request says who acts, never the body** ([run credentials](sign-in.md#run-credentials)). A write the person pressed goes in their session (`via: "person"`); a write the agent's run queued carries that run's credential, which the tab sends with it and without the cookie (`via: "agent"`). A run with no credential to send queues nothing (`IssueWriteRefused`, `no_credential`). Triage's writes, setting a commitment and merging refuse anyone acting for the person (`403`, counted as `auth.person_only`).
 
 ## Routes
 
@@ -58,7 +58,7 @@ items, comments ◀── Electric ◀── Postgres ◀──┘
 | `GET /api/shapes/triage-settings` | its `triage_settings` row with `TRIAGE_SETTINGS_COLUMNS` (never who enabled it) |
 | `GET /api/shapes/github-writes` | the signed-in person's own `github_writes`, status only (`WRITE_COLUMNS`); signed out, none; sessions unreadable, `503` with `Retry-After: 5` |
 
-The writes route's body is `{ writeId, via, op: "issue/create", title, body }`, `{ writeId, via, op: "issue/comment", number, body }`, or one of triage's: `{ writeId, via, op: "issue/triage", number, decision: "accept" | "reject", reason? }`, `{ writeId, via, op: "triage/run", number }`, `{ writeId, via, op: "triage/enable", dailyTokens? }`, `{ writeId, via, op: "triage/pause" }`. A UUID write id, a title of 1 to 256 characters not blank, a body up to 65,000 characters (a comment's not blank), a reason of 1 to 300 characters not blank, a daily budget of 1 to 10,000,000 tokens, a number of 1 to 2,147,483,647, and at most `MAX_WRITE_BYTES`. Triage's writes are `via: "person"` only, at the minimums in [triage](#triage). Its refusals are `{ code }`, `Cache-Control: no-store`:
+The writes route's body is `{ writeId, op: "issue/create", title, body }`, `{ writeId, op: "issue/comment", number, body }`, or one of triage's: `{ writeId, op: "issue/triage", number, decision: "accept" | "reject", reason? }`, `{ writeId, op: "triage/run", number }`, `{ writeId, op: "triage/enable", dailyTokens? }`, `{ writeId, op: "triage/pause" }`. A UUID write id, a title of 1 to 256 characters not blank, a body up to 65,000 characters (a comment's not blank), a reason of 1 to 300 characters not blank, a daily budget of 1 to 10,000,000 tokens, a number of 1 to 2,147,483,647, and at most `MAX_WRITE_BYTES`. Triage's writes are the person's only, at the minimums in [triage](#triage). Its refusals are `{ code }`, `Cache-Control: no-store`:
 
 | Status | `code` | When |
 |---|---|---|
@@ -156,7 +156,7 @@ Buttons show only to a Member and above; Run triage again also only while triage
 | `writes.ts` | `issue-sending` (the outbox's optimistic rows) and `issue-requested` (kept on the device: taken, or refused with why); the outbox's `issue-write` mutation posts to the writes route and never waits for Electric, so chat's questions never queue behind it |
 | `store.ts` | Electric collections `issue-items`, `issue-comments`, `issue-sync`, `issue-writes`, kept on the device; `issue-drafts`, `issue-view`, `issue-access`; followers that drop a requested write once GitHub's row carries its id, and read the shape's refusal (`401` sign in, `403` forbidden) |
 | `queries.ts` | the list (`items ∪ (requested − items) ∪ (sending − requested − items)`), the issue, its conversation, the sync, the access |
-| `actions.ts`, `issues.ts` | `open` (route loaders), drafts, Create issue and Comment (door `button`), Edit and Discard on a write Not sent |
+| `actions.ts`, `issues.ts` | `open` (the routes), `warm` (a link's hover: starts the sync), drafts, Create issue and Comment (door `button`), Edit and Discard on a write Not sent |
 | `view.ts` | the props of `IssuesView`, `ItemConversation` and `IssueForm` from the queries' rows |
 
 Screens: `/$owner/$repo/issues`, `/$owner/$repo/issues/new` and `/$owner/$repo/issues/$number` (`src/screens/issues/`), and an Issues link in the repository's header. Each issue shows the TODOs made from it, on its row and in its page's side column, and a Member gets Make TODO in an open issue's `⋯` menu and on its page, key `t`, while none of its TODOs is open ([TODOs from an issue](todos.md#from-an-issue)); the issue routes open the repository's stack for it. The device's outbox is chat's, extended by `OutboxWrites` (`src/outbox.ts`).
@@ -194,9 +194,9 @@ ChatApi and the `FlowExecution` Durable Object read them with Effect `Config`, s
 
 What the App needs, set by its owner in the App's settings on GitHub; each installation owner then accepts the new permissions:
 
-- **Repository permissions:** Issues: Read and write. Contents: Read-only (triage's guidelines; without it, triage decides with none). Metadata: Read-only (always on; triage re-checks the enabler's role with it).
+- **Repository permissions:** Issues: Read and write. Contents: Read and write (triage's guidelines; a TODO's branch and commit, [TODOs](todos.md#the-run)). Pull requests: Read and write (a TODO's pull request, a person's merge, the review check's comment, [pull requests](pulls.md)). Metadata: Read-only (always on; triage re-checks the enabler's role with it).
 - **Webhook:** active, URL `<deployment url>/api/github/webhook` (for local development, a tunnel to `http://localhost:1337/api/github/webhook`), content type `application/json`, a secret that is also `GITHUB_WEBHOOK_SECRET`.
-- **Subscribe to events:** Issues, Issue comment. (0012 §2's other events wait for pull requests and branches.)
+- **Subscribe to events:** Issues, Issue comment, Pull request, Pull request review. (0012 §2's other events wait for branches.)
 - **Secrets:** the App ID as `GITHUB_APP_ID` and a generated private key as `GITHUB_APP_PRIVATE_KEY`.
 - **Installation:** on `GITHUB_REPOSITORY`, and on the scratch repository the live tests use.
 
@@ -220,7 +220,7 @@ Every route, step and token logs, traces and counts itself; no record carries a 
 | `github_write_requests{op,outcome}`, `github_writes{op,outcome,token}`, `github_write_ms{op}`, `github_write_unknown{op}` | counters, histogram | |
 | `github_applies{outcome}`, `github_reconciles{outcome}`, `github_reconcile_changed{kind}`, `github_sync_age_seconds` | counters, gauge | |
 | `github_token_mints{kind,outcome}`, `github_shape_requests{table,status,live}` | counters | |
-| `issues.write.queue`, `issues.write.send`, `issues.pending`; `smithers_issue_writes`, `smithers_issue_write_sends`, `smithers_issue_pending_actions` | browser logs, spans, counters | `op`, `door`, `via`, `outcome`, `status`, `writeId`, `reason`, `action` |
+| `issues.write.queue`, `issues.write.send`, `issues.pending`; `smithers_issue_writes`, `smithers_issue_write_sends`, `smithers_issue_pending_actions` | browser logs, spans, counters | `op`, `door`, `outcome`, `status`, `writeId`, `reason`, `action` |
 
 ## Tests
 
@@ -262,3 +262,20 @@ The live run found two defects, each fixed with a regression test:
 - `GITHUB_SYNC_MAX_ITEMS` and the 24-hour full listing that tombstones deleted issues GitHub stops listing; a webhook's `issues.deleted` re-read tombstones them today.
 - The `installation` and `installation_repositories` events, and a cron for Reconcile (`@smthrs/triggers` on Cloudflare, W9).
 - Per-request shape authorization (0007 phase 2): one repository, the one sign-in reads roles on.
+
+
+## Issue lifecycle (0018, implementation in progress)
+
+[Decision 0018](../decisions/0018-issue-lifecycle.md) separates discussion from implementation. `smithers:accepted` means **Accepted for discussion**; it grants no implementation or merge authority.
+
+Before judging a bug (a `bug`/`type:bug` label, or an explicit `[bug]`/`Bug:` title), `triage/Run/read` checks the issue and comments for a nonempty fenced snippet. Without a candidate it adds `smithers:needs-repro`, posts the fixed App request once per issue using a deterministic write marker, and skips the judge. Reruns search the marker from issue creation; an incomplete conversation fails closed before another comment. A later snippet clears the missing-reproduction label. Empty fenced blocks do not count, including prose between empty blocks. This gate checks presence only; sandbox verification is deferred.
+
+A Maintainer's `issue/commitment` flow uses the existing durable asking-tab/outbox/write path. Its four GitHub labels are `smithers:commit-now`, `smithers:commit-next`, `smithers:commit-later` and `smithers:commit-none`. The route is person-only and Maintainer-only. The remote write rechecks GitHub permission and the accepted label, adds the selected label and removes the other commitment labels, retaining unrelated labels. Demotion or an unaccepted/conflicting issue refuses the write. Projection derives `items.commitment` on every read; conflicting commitment labels stay a visible conflict. The issue page contributes a control and chip; the list uses `?commitment=now|next|later|none`. Failed writes remain visible and can be replaced through the control after a new queue receipt.
+
+Migration `0032_issue_commitment` adds the derived column and write operation; the device's item persistence version is 3. Telemetry reuses `issues.write.queue`, `issues.write.send` and `github.write`, with `op=issue/commitment`, and `triage.read` records `why=needs_repro`; no issue content is logged.
+
+Validation so far: the lifecycle policy has 100% statements/branches/functions/lines and all seven policy tests pass. The real-browser specs are `e2e/issue-lifecycle.spec.ts`, with the shared chapter/video helpers. No passing live receipt or GIF is claimed. Auto-POC, its repository setting, budget, expiry, preview and factory handoff are proposed in 0018 and not implemented.
+
+## Deferred at burn-down
+
+Sandbox reproduction verification, automatic POC generation, playable previews, token budgets, expiry, the repository switch and POC-to-TODO context are todo. Their draft files remain in the shared checkout but are outside this landing. `issue/Prototype` is not registered by the execution host; no preview or repository-switch UI is exposed. Needs-repro checks snippet presence only.

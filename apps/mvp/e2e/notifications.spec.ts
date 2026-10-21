@@ -10,31 +10,43 @@ import { expect, type Tab, test } from "./devices"
 const PROMPT = "Which branch should I deploy?"
 
 /**
- * How long another device takes to show a change. Under the dev server's HTTP/1.1 a tab's live shapes share six
- * connections, more than six hold a long poll each, and a change waits for one to come back: up to about 20 s, twice.
+ * How long another device takes to show a change. Every shape's long poll waits at Electric at once over HTTP/2, which
+ * the dev server speaks as production does (docs/infrastructure.md#https-and-http2), so a change comes back with the
+ * next response.
  */
-const SYNCED_WITHIN = 90_000
+const SYNCED_WITHIN = 15_000
 
 /** The stack on `tab`: the inline one over the home conversation, or the floating one on any other page. */
 const stack = (tab: Tab) => tab.page.getByRole("region", { name: "Smithers" })
 
-/** The toast or list entry about `subject` on `tab`. */
+/** The toast about `subject` on `tab`. */
 const entry = (tab: Tab, subject: string) => stack(tab).locator(`[data-slot="toast"][data-subject="${subject}"]`)
 
-/** `+N`, which opens the person's list in place. */
-const more = (tab: Tab) => stack(tab).getByRole("button", { name: /^\+\d+$/ })
+/** The notifications panel on `tab`. */
+const panel = (tab: Tab) => tab.page.getByRole("dialog", { name: "Notifications" })
+
+/** The header's bell, which opens and closes the panel. */
+const bell = (tab: Tab) => tab.page.getByRole("button", { name: /^Notifications/ })
+
+/** The panel's entry about `subject` on `tab`. */
+const notification = (tab: Tab, subject: string) =>
+  panel(tab).locator(`[data-slot="notification"][data-entry="${subject}"]`)
+
+/** A key pressed on `tab`, as its own chapter of the video. */
+const press = (tab: Tab, key: string, label: string) =>
+  test.step(`${tab.name}: ${label} (${key})`, () => tab.page.keyboard.press(key))
 
 /**
- * Checks `check` on `tab` with the person's list open, opening it first whenever it is closed: under the dev server,
- * another change to the app's sources reloads the page, and a reloaded stack starts closed.
+ * Checks `check` on `tab` with the panel open, opening it from the bell whenever it is closed: under the dev server,
+ * another change to the app's sources reloads the page, and a reloaded panel starts closed.
  */
-const inList = (tab: Tab, check: () => Promise<void>, timeout = SYNCED_WITHIN) =>
+const inPanel = (tab: Tab, check: () => Promise<void>, timeout = SYNCED_WITHIN) =>
   expect(async () => {
-    if (await more(tab).isVisible()) await more(tab).click()
+    if (!(await panel(tab).isVisible())) await bell(tab).click()
     await check()
   }).toPass({ timeout, intervals: [250, 500, 1_000] })
 
-test("live work: Ann's run toasts for Ben on her branch, and her feed follows her across devices", async ({ devices }) => {
+test("live work: Ann's run toasts for Ben on her branch, and her notifications follow her across devices", async ({ devices }) => {
   test.setTimeout(480_000)
   const word = devices.word
   const [a1, a2] = await devices.open("Ann", "Ann 2")
@@ -64,17 +76,35 @@ test("live work: Ann's run toasts for Ben on her branch, and her feed follows he
   })
   await expect(entry(b, subject)).toContainText(word)
   await expect(entry(b, subject).getByRole("button", { name: "Answer" })).toHaveCount(0)
+  // His top bar has the bell on this page too.
+  await expect(bell(b)).toBeVisible()
+  // Clicking the toast takes him to her run, in the conversation.
+  await entry(b, subject).locator('[data-slot="toast-open"]').click()
+  await expect(b.page).toHaveURL(new RegExp(`/app#${answerId}$`))
+  await expect(b.page.locator(`[id="${answerId}"]`), "Ben: at her run").toBeInViewport()
 
-  // Hide on Ann's second device hides the toast on both; the entry stays in her list.
-  await entry(a2, subject).getByRole("button", { name: "Hide" }).click()
+  // Ann 2 hides the toast by key: Alt+T focuses it, H hides it on both devices; the entry stays in her list.
+  await press(a2, "Alt+KeyT", "focus the toast")
+  await expect(entry(a2, subject).locator('[data-slot="toast-open"]')).toBeFocused()
+  await press(a2, "h", "hide it")
   for (const tab of [a1, a2]) await expect(entry(tab, subject), `${tab.name}: hidden`).toHaveCount(0, { timeout: SYNCED_WITHIN })
-  // She answers from her list: the question's card takes focus.
-  const field = a1.page.locator(`[data-slot="needs-you"][data-run="${answerId}"]`).getByRole("textbox", { name: "Your answer" })
-  await inList(a1, async () => {
-    await expect(entry(a1, subject), "Ann: still in her list").toContainText(`Needs you · ${PROMPT}`, { timeout: 2_000 })
-    await entry(a1, subject).getByRole("button", { name: "Answer" }).click({ timeout: 2_000 })
-    await expect(field).toBeFocused({ timeout: 2_000 })
+
+  // Ann's top bar says a run waits on her. One click on it opens her notifications at that run, expanded with its
+  // question; clicking the entry collapses it and again expands it; A focuses the field, and she answers there.
+  await expect(bell(a1), "Ann: the top bar says she is needed").toContainText("Needs you")
+  await inPanel(a1, async () => {
+    await expect(notification(a1, subject), "Ann: in her list").toContainText(`Needs you · ${PROMPT}`, { timeout: 2_000 })
+    await expect(notification(a1, subject)).toHaveAttribute("data-expanded", "", { timeout: 2_000 })
+    await expect(notification(a1, subject).getByRole("button", { name: "docs-v2" })).toBeVisible({ timeout: 2_000 })
   })
+  await notification(a1, subject).locator('[data-slot="notification-row"]').click()
+  await expect(notification(a1, subject)).not.toHaveAttribute("data-expanded", "")
+  await notification(a1, subject).locator('[data-slot="notification-row"]').click()
+  await expect(notification(a1, subject).getByRole("button", { name: "docs-v2" })).toBeVisible()
+  await notification(a1, subject).locator('[data-slot="notification-row"]').focus()
+  await press(a1, "a", "answer")
+  const field = notification(a1, subject).getByRole("textbox", { name: "Your answer" })
+  await expect(field).toBeFocused()
   await field.fill("docs-v2")
   await field.press("Enter")
   await a1.expectAnswered(question, "Deploying docs-v2.", 120_000)
@@ -82,24 +112,36 @@ test("live work: Ann's run toasts for Ben on her branch, and her feed follows he
   // Done: Ben's toast settles and goes by itself (4 s after the run finished; the rule is src/features/attention's
   // tests'); it never joins his list.
   await expect(entry(b, subject), "Ben: it goes once the run is done").toHaveCount(0, { timeout: SYNCED_WITHIN })
-  await inList(b, () => expect(entry(b, subject), "Ben: never in his list").toHaveCount(0, { timeout: 2_000 }))
+  await inPanel(b, () => expect(notification(b, subject), "Ben: never in his list").toHaveCount(0, { timeout: 2_000 }))
 
-  // Ann: it shows in her conversation, not as a toast; her list has it unread on both devices.
+  // Ann 2: Alt+N opens her notifications; the run is done and unread, newest first. R reads it on both devices, E
+  // expands it to the answer, and O opens it there.
+  await press(a2, "Alt+KeyN", "open notifications")
+  await expect(panel(a2)).toBeVisible()
+  await expect(notification(a2, subject), "Ann 2: done, unread").toContainText("Done", { timeout: SYNCED_WITHIN })
+  await expect(notification(a2, subject)).toHaveAttribute("data-unread", "")
+  await notification(a2, subject).locator('[data-slot="notification-row"]').focus()
+  await press(a2, "r", "mark it read")
   for (const tab of [a1, a2]) {
-    await inList(tab, async () => {
-      await expect(entry(tab, subject), `${tab.name}: done, unread`).toContainText("Done", { timeout: 2_000 })
-      await expect(entry(tab, subject)).toHaveAttribute("data-unread", "", { timeout: 2_000 })
-    })
+    await inPanel(tab, () =>
+      expect(notification(tab, subject), `${tab.name}: read`).not.toHaveAttribute("data-unread", "", { timeout: 2_000 })
+    )
   }
-  // Opening it on her second device reads it on both.
-  await inList(a2, () => entry(a2, subject).getByRole("button", { name: "Open" }).click({ timeout: 2_000 }))
+  await notification(a2, subject).locator('[data-slot="notification-row"]').focus()
+  await press(a2, "e", "expand it")
+  await expect(notification(a2, subject).locator('[data-slot="notification-body"]')).toContainText("Deploying docs-v2.")
+  await press(a2, "o", "open it")
+  await expect(panel(a2)).toHaveCount(0)
+  await expect(a2.page).toHaveURL(new RegExp(`/app#${answerId}$`))
+
+  // Ann: `+1` opens her notifications too; Dismiss closes the entry on both devices.
+  await expect(async () => {
+    if (await panel(a1).isVisible()) await a1.page.keyboard.press("Escape")
+    await stack(a1).getByRole("button", { name: /^\+\d+$/ }).click({ timeout: 2_000 })
+    await notification(a1, subject).getByRole("button", { name: "Dismiss" }).click({ timeout: 2_000 })
+  }).toPass({ timeout: SYNCED_WITHIN, intervals: [250, 500, 1_000] })
   for (const tab of [a1, a2]) {
-    await inList(tab, () => expect(entry(tab, subject), `${tab.name}: read`).not.toHaveAttribute("data-unread", "", { timeout: 2_000 }))
-  }
-  // Dismiss on her first device closes it on both.
-  await inList(a1, () => entry(a1, subject).getByRole("button", { name: "Dismiss" }).click({ timeout: 2_000 }))
-  for (const tab of [a1, a2]) {
-    await expect(entry(tab, subject), `${tab.name}: dismissed`).toHaveCount(0, { timeout: SYNCED_WITHIN })
+    await inPanel(tab, () => expect(notification(tab, subject), `${tab.name}: dismissed`).toHaveCount(0, { timeout: 2_000 }))
   }
 })
 
@@ -144,16 +186,20 @@ test("repository events: `main` moving and a new release reach both people as en
   })
   const [owner, name] = repository.toLowerCase().split("/")
   for (const tab of [a, b]) {
-    await inList(tab, async () => {
-      await expect(entry(tab, `main:github/${owner}/${name}`)).toContainText(`main · ${sha.slice(0, 7)} Ship ${devices.word}`, {
-        timeout: 2_000,
-      })
-      await expect(entry(tab, `release:github/${owner}/${name}:${tag}`)).toContainText(`Release · Release ${devices.word}`, {
-        timeout: 2_000,
-      })
+    await inPanel(tab, async () => {
+      await expect(notification(tab, `main:github/${owner}/${name}`)).toContainText(
+        `main · ${sha.slice(0, 7)} Ship ${devices.word}`,
+        { timeout: 2_000 },
+      )
+      await expect(notification(tab, `release:github/${owner}/${name}:${tag}`)).toContainText(
+        `Release · Release ${devices.word}`,
+        { timeout: 2_000 },
+      )
     })
   }
-  // Opening main takes Ben to the repository.
-  await inList(b, () => entry(b, `main:github/${owner}/${name}`).getByRole("button", { name: "Open" }).click({ timeout: 2_000 }))
+  // Expanded, main says who pushed; Open takes Ben to the repository.
+  await notification(b, `main:github/${owner}/${name}`).locator('[data-slot="notification-row"]').click()
+  await expect(notification(b, `main:github/${owner}/${name}`).locator('[data-slot="notification-body"]')).toContainText("dana")
+  await notification(b, `main:github/${owner}/${name}`).getByRole("button", { name: "Open" }).click()
   await expect(b.page).toHaveURL(new RegExp(`/${owner}/${name}$`, "i"))
 })

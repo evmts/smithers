@@ -1,6 +1,6 @@
 import { Badge, Button, EmptyState, IssuesView } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { Link, useNavigate, useParams } from "@tanstack/react-router"
+import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useIssues } from "../../features/issues/components/IssuesContext"
@@ -15,6 +15,7 @@ import {
   NOT_FOUND,
   PAUSE_TRIAGE,
 } from "../../features/issues/contract"
+import { COMMITMENTS, COMMITMENT_COPY, filterCommitment } from "../../features/issues/lifecycle"
 import { listProps, mayManageTriage, mayWrite, triageSwitchOf } from "../../features/issues/view"
 import "./issues-screen.css"
 
@@ -38,7 +39,8 @@ export function IssuesScreen() {
   const todosRepoId = todosView?.repoId ?? ""
   const { data: todoRows } = useLiveQuery(todos.queries.stack(todosRepoId).todos)
   const navigate = useNavigate()
-  const list = listProps(rows ?? [], synced, access, triage !== undefined && !triage.paused)
+  const search = useSearch({ from: "/$owner/$repo/issues" })
+  const list = listProps(filterCommitment(rows ?? [], search.commitment), synced, access, triage !== undefined && !triage.paused)
   const triageSwitch = triageSwitchOf(triage, triagePending ?? [])
   // A repository whose issues this person may not read: sign in, or nothing to show.
   if (list.refused === "sign_in") return <main className="issues-screen" aria-label="Issues"><SignInButton /></main>
@@ -47,6 +49,15 @@ export function IssuesScreen() {
   }
   return (
     <main className="issues-screen" aria-label="Issues">
+      <nav aria-label="Commitment">
+        {[undefined, ...COMMITMENTS].map((commitment) => (
+          <Button key={commitment ?? "all"} variant={search.commitment === commitment ? "secondary" : "ghost"} size="sm" asChild>
+            <Link to="/$owner/$repo/issues" params={{ owner, repo }} search={{ commitment }} aria-current={search.commitment === commitment ? "page" : undefined}>
+              {commitment === undefined ? "All" : COMMITMENT_COPY[commitment]}
+            </Link>
+          </Button>
+        ))}
+      </nav>
       <IssuesView
         repo={`${owner}/${repo}`}
         size="full"

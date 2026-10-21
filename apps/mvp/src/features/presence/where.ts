@@ -19,8 +19,8 @@ const fits = (state: string) => encoder.encode(state).byteLength <= PresenceProt
 export const encodeWhere = (where: Where): string => {
   if (where.view === "terminal") return JSON.stringify(where)
   let path = where.path.slice(0, MAX_WHERE_PATH)
-  while (!fits(JSON.stringify({ view: "code", path }))) path = path.slice(0, -16)
-  return JSON.stringify({ view: "code", path })
+  while (!fits(JSON.stringify({ view: where.view, path }))) path = path.slice(0, -16)
+  return JSON.stringify({ view: where.view, path })
 }
 
 /** The place a room state names, or `null`. */

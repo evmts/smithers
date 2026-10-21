@@ -11,14 +11,14 @@ import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { cloneExecutionId } from "../../src/features/repo/contract.ts"
+import { cloneExecutionId, cloneSubject } from "../../src/features/repo/contract.ts"
 import * as RepoMetrics from "../RepoMetrics.ts"
 import * as Repos from "../Repos.ts"
 import { UpstreamUnavailable } from "../RepoUpstream.ts"
 import { fixture, type Scripted, scripted } from "../test/codeStorage.ts"
 import { build, runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
-import { repositoryRow, resetRepos, usageRow } from "../test/repos.ts"
+import { notificationRow, repositoryRow, resetRepos, usageRow } from "../test/repos.ts"
 import * as RepoClone from "./RepoClone.ts"
 
 const runtime = testFile("repo_clone")
@@ -43,22 +43,47 @@ const limits = (overrides: Partial<Repos.Budgets> = {}): Repos.Budgets => ({
 
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>
 
-/** The clone's services over this file's schema, recording logs and metrics. */
+/** Who asks for every clone in this file, the person its feed row goes to. */
+const ASKER = "octocat"
+
+/** The heads Index read the file list at, and the repositories it asked the App about, in order. */
+const indexed: Array<string> = []
+beforeEach(() => void indexed.splice(0))
+
+/**
+ * The clone's services over this file's schema, recording logs and metrics. Index counts the scripted repository's files
+ * at the head and records it; the App is installed only when `installed` says so, and `index` or `installed` set to
+ * `"failing"` refuse.
+ */
 const services = async (
   provider: Scripted,
-  options: { readonly budgets?: Partial<Repos.Budgets>; readonly deadline?: Duration.Input; readonly database?: RepoClone.Services["database"] } = {},
-) => ({
+  options: {
+    readonly budgets?: Partial<Repos.Budgets>
+    readonly deadline?: Duration.Input
+    readonly database?: RepoClone.Services["database"]
+    readonly installed?: boolean | "failing"
+    readonly index?: "failing"
+  } = {},
+): Promise<RepoClone.Services<unknown>> => ({
   database: options.database ?? (await scratch()).database,
   codeStorage: provider.client,
   upstream: provider.upstream,
   budgets: limits(options.budgets),
   deadline: Duration.fromInputUnsafe(options.deadline ?? "10 minutes"),
+  index: (owner, name, sha) =>
+    options.index === "failing"
+      ? Effect.fail(new RepoClone.CloneUnavailable())
+      : Effect.sync(() => (indexed.push(`${owner}/${name}@${sha}`), Object.keys(fixture().files).length)),
+  installed: (owner, name) =>
+    options.installed === "failing"
+      ? Effect.fail(new RepoClone.CloneUnavailable())
+      : Effect.sync(() => (indexed.push(`installed? ${owner}/${name}`), options.installed === true)),
 })
 
-/** Asks for a clone of `owner/name` as RepoApi does, and answers the flow's payload. */
+/** Asks for a clone of `owner/name` as RepoApi does, for `ASKER`, and answers the flow's payload. */
 const request = async (owner: string, name: string, budgets = limits()) => {
   const id = `github/${owner}/${name}`.toLowerCase()
-  const requested = await runtime.runPromise(Repos.request({ id, owner, name }, budgets))
+  const requested = await runtime.runPromise(Repos.request({ id, owner, name }, budgets, ASKER))
   if (requested.kind === "limit") throw new Error("over the repository limit")
   return { id, owner, name, cloneId: requested.cloneId, requestedAt: requested.requestedAt }
 }
@@ -78,6 +103,10 @@ const clone = async (provider: Scripted, payload: Awaited<ReturnType<typeof requ
   return { ...ran, count }
 }
 
+/** The steps over `provider`, with `database` in place of the file's schema when set. */
+const stepsOf = async (provider: Scripted, options: Parameters<typeof services>[1] = {}) =>
+  RepoClone.steps(await services(provider, options))
+
 describe("repo/Clone on the Node host", () => {
   test("clones to ready, with the head commit, and meters what it imported", async () => {
     const provider = scripted({ syncPolls: 2 })
@@ -96,6 +125,76 @@ describe("repo/Clone on the Node host", () => {
     expect(provider.calls.filter((call) => call.startsWith("listCommits"))).toHaveLength(3)
     expect(ran.count(RepoMetrics.clones, { outcome: "ready", reason: "none" })).toBe(1)
     expect((await usageRow(runtime))!.imported).toBe(640 * 1024)
+  })
+
+  test("the person who asked sees the clone in their feed: requested, fetching with its size, indexing, then done", async () => {
+    const provider = scripted({ syncPolls: 0 })
+    provider.publish("octocat", "Spoon-Knife")
+    const payload = await request("octocat", "Spoon-Knife")
+    const subject = cloneSubject(payload.id)
+    expect(await repositoryRow(runtime, payload.id)).toMatchObject({ stage: "requested", requestedBy: ASKER })
+    expect(await notificationRow(runtime, ASKER, subject)).toMatchObject({
+      kind: "clone",
+      state: "working",
+      mine: true,
+      title: "octocat/Spoon-Knife",
+      ref: "requested",
+      href: "/octocat/Spoon-Knife",
+      version: 1,
+    })
+    // Step by step, as the flow runs them.
+    const steps = await stepsOf(provider)
+    const inspection = await Effect.runPromise(steps.inspect(payload))
+    expect(await repositoryRow(runtime, payload.id)).toMatchObject({ stage: "fetching" })
+    expect(await notificationRow(runtime, ASKER, subject)).toMatchObject({ ref: `fetching:${640 * 1024}`, version: 1 })
+    await Effect.runPromise(steps.importRepo({ id: payload.id, owner: "octocat", name: "Spoon-Knife", defaultBranch: "main" }))
+    await Effect.runPromise(steps.pull({ id: payload.id }))
+    const synced = await Effect.runPromise(
+      steps.awaitSync({ id: payload.id, defaultBranch: "main", requestedAt: payload.requestedAt }),
+    )
+    const indexedAt = await Effect.runPromise(steps.index({ ...payload, synced }))
+    expect(await notificationRow(runtime, ASKER, subject)).toMatchObject({
+      state: "working",
+      ref: `indexing:${640 * 1024}`,
+      version: 1,
+    })
+    await Effect.runPromise(steps.settle({ id: payload.id, cloneId: payload.cloneId, inspection, synced, indexed: indexedAt }))
+    expect(await repositoryRow(runtime, payload.id)).toMatchObject({ status: "ready", stage: null, reclaimable: true })
+    // Done needs the person's attention again: the row's version goes up, so it shows on every device.
+    expect(await notificationRow(runtime, ASKER, subject)).toMatchObject({ state: "done", ref: "ready", version: 2 })
+  })
+
+  test("the whole flow marks a copy reclaimable unless the Smithers App is installed on it", async () => {
+    const provider = scripted()
+    provider.publish("octocat", "Spoon-Knife")
+    provider.publish("octocat", "Installed")
+    await clone(provider, await request("octocat", "Spoon-Knife"))
+    await clone(provider, await request("octocat", "Installed"), { installed: true })
+    expect(await repositoryRow(runtime, "github/octocat/spoon-knife")).toMatchObject({ status: "ready", reclaimable: true })
+    expect(await repositoryRow(runtime, "github/octocat/installed")).toMatchObject({ status: "ready", reclaimable: false })
+    expect(indexed).toContain(`octocat/Installed@${fixture().commit.sha}`)
+  })
+
+  test("a failed clone's entry says why, and Try again's new attempt raises it again", async () => {
+    const provider = scripted()
+    const payload = await request("octocat", "Gone")
+    await clone(provider, payload)
+    const subject = cloneSubject(payload.id)
+    expect(await notificationRow(runtime, ASKER, subject)).toMatchObject({ state: "failed", ref: "failed:not_found", version: 2 })
+    await sql(`UPDATE notifications SET dismissed_version = 2 WHERE subject = '${subject}'`)
+    await request("octocat", "Gone")
+    expect(await notificationRow(runtime, ASKER, subject)).toMatchObject({
+      state: "working",
+      ref: "requested",
+      version: 3,
+      dismissedVersion: 2,
+    })
+    provider.publish("octocat", "Big", fixture({ sizeKb: 2_000_000 }))
+    await clone(provider, await request("octocat", "Big"))
+    expect(await notificationRow(runtime, ASKER, cloneSubject("github/octocat/big"))).toMatchObject({
+      state: "failed",
+      ref: "capacity:too_large",
+    })
   })
 
   test("a repository GitHub doesn't have, or with no commits, fails with no Code Storage call", async () => {
@@ -260,9 +359,6 @@ describe("repo/Clone on the Node host", () => {
 })
 
 describe("the steps alone", () => {
-  /** The steps over `provider`, with `database` in place of the file's schema when set. */
-  const stepsOf = async (provider: Scripted, options: Parameters<typeof services>[1] = {}) =>
-    RepoClone.steps(await services(provider, options))
 
   const failureOf = <A, E>(exit: Exit.Exit<A, E>) => (Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined)
 
@@ -346,6 +442,7 @@ describe("the steps alone", () => {
         cloneId: crypto.randomUUID(),
         inspection: RepoClone.INSPECTION_UNAVAILABLE,
         synced: { status: "skipped", head: null },
+        indexed: RepoClone.NOT_INDEXED,
       }).pipe(Effect.provide(Logger.layer([Logger.make((log) => void logs.push(StructuredLogger.formatStructured.log(log)))]))),
     )
     expect(failureOf(exit)).toBeInstanceOf(RepoClone.CloneUnavailable)
@@ -354,12 +451,57 @@ describe("the steps alone", () => {
     })
   })
 
-  test("how a clone ends, from Inspect and the sync", () => {
+  test("how a clone ends, from Inspect, the sync and Index", () => {
     const admitted = { ...RepoClone.INSPECTION_UNAVAILABLE, outcome: "admitted" as const, defaultBranch: "main", failure: null }
     expect(RepoClone.outcomeOf(admitted, { status: "timed_out", head: null })).toEqual({ status: "failed", failure: "timed_out" })
     expect(RepoClone.outcomeOf(admitted, { status: "unavailable", head: null })).toEqual({
       status: "failed",
       failure: "unavailable",
     })
+    const head = { sha: "a".repeat(40), message: "m", author: "a", at: "2026-10-20T12:00:00Z" }
+    // Without Index's answer, or with the App unknown, a ready copy is reclaimable; with the App installed, it isn't.
+    expect(RepoClone.outcomeOf(admitted, { status: "ready", head })).toMatchObject({ status: "ready", reclaimable: true })
+    expect(RepoClone.outcomeOf(admitted, { status: "ready", head }, { files: 3, installed: true })).toMatchObject({
+      reclaimable: false,
+    })
+  })
+
+  test("Index: only a ready sync that still owns its row moves to indexing; its list and the App are best effort", async () => {
+    const provider = scripted()
+    provider.publish("octocat", "Spoon-Knife")
+    const payload = await request("octocat", "Spoon-Knife")
+    const head = { sha: fixture().commit.sha, message: "m", author: "a", at: "2026-10-20T12:00:00Z" }
+    const target = { id: payload.id, owner: "octocat", name: "Spoon-Knife", cloneId: payload.cloneId }
+    const steps = await stepsOf(provider, { installed: true })
+    // Nothing synced: nothing to index, and the row stays where it was.
+    expect(await Effect.runPromise(steps.index({ ...target, synced: { status: "timed_out", head: null } }))).toEqual(
+      RepoClone.NOT_INDEXED,
+    )
+    expect(indexed).toEqual([])
+    expect(await Effect.runPromise(steps.index({ ...target, synced: { status: "ready", head } }))).toEqual({
+      files: Object.keys(fixture().files).length,
+      installed: true,
+    })
+    expect(indexed).toEqual([`octocat/Spoon-Knife@${head.sha}`, "installed? octocat/Spoon-Knife"])
+    expect(await repositoryRow(runtime, payload.id)).toMatchObject({ status: "cloning", stage: "indexing" })
+    // A list that can't be read is read by the first visit instead.
+    const noList = await stepsOf(provider, { index: "failing" })
+    expect(await Effect.runPromise(noList.index({ ...target, synced: { status: "ready", head } }))).toEqual({
+      files: null,
+      installed: false,
+    })
+    // GitHub not answering about the App is retried by the step's policy.
+    const noApp = await stepsOf(provider, { installed: "failing" })
+    expect(failureOf(await Effect.runPromiseExit(noApp.index({ ...target, synced: { status: "ready", head } })))).toBeInstanceOf(
+      RepoClone.CloneUnavailable,
+    )
+    // A stale attempt doesn't own the row: it indexes nothing.
+    expect(
+      await Effect.runPromise(steps.index({ ...target, cloneId: crypto.randomUUID(), synced: { status: "ready", head } })),
+    ).toEqual(RepoClone.NOT_INDEXED)
+    const down = await stepsOf(provider, { database: unreachable })
+    expect(failureOf(await Effect.runPromiseExit(down.index({ ...target, synced: { status: "ready", head } })))).toBeInstanceOf(
+      RepoClone.CloneUnavailable,
+    )
   })
 })

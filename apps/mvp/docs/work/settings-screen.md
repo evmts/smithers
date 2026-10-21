@@ -18,6 +18,7 @@ Old app:
 - Personal: theme, input mode and notification permission.
 
 New app:
+- `/app/settings` exists, for Admins, with one section: where spend alerts go, email and Telegram ([spend alerts](../features/spend-alerts.md#channels), 2026-10-20). The header's Settings link shows only to an Admin.
 - The theme button.
 - `admin/SetModel` exists with no screen; [model endpoint](model-endpoint.md) says "from the CLI or an admin view".
 - Sandbox limits are planned as admin settings changed without a deploy ([sandbox budgets](sandbox-budgets.md)).

@@ -12,13 +12,14 @@ import {
   type ShareAccess,
 } from "../../src/features/branch/contract.ts"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
-import { type Actor, type Role, Sessions } from "../Actor.ts"
+import { type Actor, refusesPersonOnly, type Role, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
 import { branchAccess, canView, type Policy, policyOf, underPolicy } from "./Access.ts"
 import { Directory } from "./People.ts"
 import { Rooms } from "./Rooms.ts"
+import { enforceRooms } from "./Texts.ts"
 import { type Revoked, TerminalSockets } from "./Sandboxes.ts"
 
 // Sharing a branch, Google Docs style (decision 0013 §2 and §4, docs/features/branch-workspace.md#sharing):
@@ -182,6 +183,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
           const actor = yield* (yield* Sessions).resolve
           if (Option.isNone(actor)) return refuse(fields, 401, "authentication")
+          // Sharing is the owner's own act; the agent never grants access (decision 0017 slice 0).
+          if (yield* refusesPersonOnly(actor.value, "branch/share")) return refuse(fields, 403, "person_only")
           const body = yield* readBounded(request, MAX_SHARE_BODY_BYTES).pipe(Effect.result)
           if (body._tag === "Failure") return refuse(fields, body.failure.reason === "too_large" ? 413 : 400, "invalid")
           const decoded = yield* decodeChange(body.success).pipe(Effect.option)
@@ -213,6 +216,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           const revoked = yield* revokedUnder(id, policy).pipe(Effect.provide(database))
           yield* (yield* TerminalSockets).enforce(id, policy, revoked)
           yield* (yield* Rooms).enforce(id, policy)
+          yield* enforceRooms(id, policy).pipe(Effect.provide(database))
           const ended = yield* endRevoked(revoked).pipe(Effect.provide(database))
           if (ended > 0) yield* Metric.update(revocations, ended)
           fields.outcome = written.success === null ? "unchanged" : "changed"

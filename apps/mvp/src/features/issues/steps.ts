@@ -2,10 +2,13 @@ import { Uuid } from "@smthrs/crypto"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Clock, Context, type Duration, Effect, Layer, Metric, Option } from "effect"
 import { asker } from "../../flows/askingTab"
+import { RunCredentials } from "../../flows/credentials"
 import type { Door } from "../../flows/dispatch"
 import { requesterOf } from "../../flows/requests"
-import { issuesChannel, QUEUE_WITHIN, type TriageDecision, WRITE_ID_NAMESPACE, type WriteVia } from "./contract"
+import { issuesChannel, QUEUE_WITHIN, type TriageDecision, WRITE_ID_NAMESPACE } from "./contract"
 import {
+  IssueCommitment,
+  QueueCommitment,
   IssueComment,
   IssueCreate,
   IssueTriage,
@@ -69,10 +72,11 @@ export class TabIssues extends Context.Service<
 }
 
 /** How a step ended: queued by its tab, or why not. */
-export type QueueOutcome = "queued" | "not_admitted" | "tab_gone"
+export type QueueOutcome = "queued" | "not_admitted" | "tab_gone" | "no_credential"
 
 /** A write's text by operation, as the step reads it from its payload. */
 type Text =
+  | { readonly op: "issue/commitment"; readonly repo: string; readonly number: number; readonly commitment: import("./lifecycle").Commitment }
   | { readonly op: "issue/create"; readonly repo: string; readonly title: string; readonly body?: string | undefined }
   | { readonly op: "issue/comment"; readonly repo: string; readonly number: number; readonly body: string }
   | {
@@ -88,23 +92,24 @@ type Text =
 
 /**
  * What `issue/create/queue` and `issue/comment/queue` do: derive the write's id from the run, ask the tab that started
- * it to queue the write, and answer `requested`. The agent's call (an execution that isn't its own requester) acts
- * `via: "agent"`, so the server writes it as the App, for the person; a person's own door acts `via: "person"`.
- * Records the step as a span `issues.write.queue`, a log line and a count of `writes` by operation, door and outcome,
- * never the text. A tab gone, or an outbox that wouldn't take it, fails `IssueWriteRefused`.
+ * it to queue the write, and answer `requested`. A run that isn't the person's own press, the agent's call among them,
+ * hands the tab its run credential with the write, so the server reads who acts from that, and writes the agent's as
+ * the App, for the person (decision 0017 slice 0). Records the step as a span `issues.write.queue`, a log line and a
+ * count of `writes` by operation, door and outcome, never the text. A tab gone, an outbox that wouldn't take it, or a
+ * run with no credential to send fails `IssueWriteRefused`.
  */
 export const queueWrite = (text: Text) =>
   Effect.gen(function* () {
     const startedAt = yield* Clock.currentTimeMillis
     const { executionId } = yield* FlowRuntime.FlowInstance
     const requester = requesterOf(executionId)
-    const via: WriteVia = executionId !== requester ? "agent" : "person"
+    const credential = yield* Effect.result((yield* RunCredentials).bearer)
     const writeId = yield* Uuid.v5(WRITE_ID_NAMESPACE, executionId).pipe(Effect.orDie)
     const write: QueuedWrite = {
       id: writeId,
       repo: text.repo,
       op: text.op,
-      via,
+      ...(credential._tag === "Success" && Option.isSome(credential.success) ? { credential: credential.success.value } : {}),
       title: text.op === "issue/create" ? text.title.trim() : "",
       number: "number" in text ? text.number : 0,
       body: text.op === "issue/create" || text.op === "issue/comment"
@@ -113,21 +118,28 @@ export const queueWrite = (text: Text) =>
         ? text.reason ?? ""
         : "",
       ...(text.op === "issue/triage" ? { decision: text.decision } : {}),
+      ...(text.op === "issue/commitment" ? { commitment: text.commitment } : {}),
       ...(text.op === "triage/enable" && text.dailyTokens !== undefined ? { dailyTokens: text.dailyTokens } : {}),
     }
-    const reply = yield* (yield* TabIssues).queue({ requester, write })
-    // The agent's call belongs to the answer its tab asked for; a tab's own dispatch names its door in its reply.
-    const door: Door | "unknown" = via === "agent"
+    // A run that has no credential to send queues nothing: its write never goes in the person's session.
+    const reply = credential._tag === "Failure" ? Option.none() : yield* (yield* TabIssues).queue({ requester, write })
+    // A run's write belongs to the answer its tab asked for; the person's own dispatch names its door in its reply.
+    const door: Door | "unknown" = write.credential !== undefined
       ? "agent"
       : Option.match(reply, { onNone: () => "unknown" as const, onSome: (answered) => answered.door })
-    const outcome: QueueOutcome = Option.isNone(reply) ? "tab_gone" : reply.value.queued ? "queued" : "not_admitted"
+    const outcome: QueueOutcome = credential._tag === "Failure"
+      ? "no_credential"
+      : Option.isNone(reply)
+      ? "tab_gone"
+      : reply.value.queued
+      ? "queued"
+      : "not_admitted"
     yield* Metric.update(Metric.withAttributes(writes, { op: text.op, door, outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ writeId, op: text.op, via, door, outcome })
+    yield* Effect.annotateCurrentSpan({ writeId, op: text.op, door, outcome })
     yield* Effect.logWithLevel(outcome === "queued" ? "Info" : "Warn")("issues.write.queue").pipe(
       Effect.annotateLogs({
         writeId,
         op: text.op,
-        via,
         door,
         outcome,
         durationMs: (yield* Clock.currentTimeMillis) - startedAt,
@@ -143,6 +155,7 @@ export const queueWrite = (text: Text) =>
  * `triage/pause` with their steps, queueing through the host's `TabIssues`.
  */
 export const registration = Layer.mergeAll(
+  Interpreter.layerWithImplementations(IssueCommitment, QueueCommitment.toLayer((payload) => queueWrite({ op: "issue/commitment", ...payload }))),
   Interpreter.layerWithImplementations(
     IssueCreate,
     QueueCreate.toLayer((payload) => queueWrite({ op: "issue/create", ...payload })),

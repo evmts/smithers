@@ -3,9 +3,93 @@ title: TODO draft, commit and drop (slice 1)
 status: in-progress
 area: app
 owner: TODO UI builder assigned by lead
-updated: 2026-10-20
+updated: 2026-10-20 23:34 PDT
 links: [todos-and-stack.md, agent-run-credentials.md, land-to-main.md, ../decisions/0016-todos-and-the-stack.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-20 23:34 PDT
+
+**What:** Keep the issues-style TODO UI and expose its actual implementation work.
+
+**Why:** A TODO should make active implementation visible.
+
+**Current state:** Round 4b landed at 1f758104 with GitHub-style TODOs and Make TODO from an issue; reported suite, docs, imports and typecheck pass. Will requested changes at 23:33: link to the running flow, slow-blinking activity, and watching/steering (TODO-3). TODO-to-PR execution remains switched off.
+
+**Next step:** Keep this slice in progress for the new review request; implement the linked active-run view after the execution prerequisite is proven.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead text replies in session 6253ecf2, approximately 21:34–23:34 PDT; queue answers through 23:33:36, current rulings, decisions, proposals, TODOs, rules and shared briefs/designs. Notifications and teammate messages excluded from human evidence. Product receipts are lead-reported; this tracker verifies the site build. Existing execution ownership retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20 23:25 PDT
+
+**What:** Provide GitHub-style TODO lists, detail, Commit and confirmed Drop.
+
+**Why:** Follow Will’s issue-style UI request.
+
+**Current state:** At 23:25 the lead reports round 4b on main at 1f758104 with GitHub-style TODOs and Make TODO from an issue. The suite exits green and docs:check, import rules and typecheck pass. Earlier returned walkthrough still awaits Will’s verification; a broad suite receipt does not replace the previously missing live issue-journey proof.
+
+**Next step:** Retain landing receipts and obtain targeted live issue-to-TODO and recording verification; track disabled coding execution separately.
+
+**Open questions for Will:** Verify the returned TODO walkthrough.
+
+Evidence: script-filtered human messages and lead text replies through 23:25 PDT; queue answers through 23:16, current rulings, decisions, proposals and shared briefs/designs. Automated notifications excluded. Product receipts are lead-reported; tracker validation is the site build. Execution owner retained; Codex curates the note.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-20, 22:05 PDT
+
+**What:** Provide GitHub-style TODO Open/Closed lists, issue pages and confirmed Drop.
+
+**Why:** Will requested the familiar issue layout and a visible, usable walkthrough.
+
+**Current state:** At 21:56–21:58 the lead returns the revised walkthrough to the queue at priority 968. The stack header now renders immediately; Drop sits behind a confirming menu. The old recording was overwritten, so before shows only the original note. Broader execution and issue-to-TODO proof remain separate.
+
+**Next step:** Collect Will’s verification and the round-4b pushed receipt; finish the live issue journey separately without claiming a skipped test passed.
+
+**Open questions for Will:** Verify the returned TODO walkthrough.
+
+Evidence: script-filtered human text and lead replies in session 6253ecf2, approximately 20:04–22:04 PDT; synthetic notifications, compaction summaries and tool blocks excluded. Rulings and queue answers through 19:38 prevail over historical briefs, decisions and proposals. Execution ownership retained; Codex curates this note. Product checks are reported evidence; tracker validation is the site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 21:43 PDT
+
+**What:** Provide an issues-style TODO list and detail page with draft, Commit and Drop.
+
+**Why:** Will requested GitHub-issues-style UI after rejecting the empty-screen recording.
+
+**Current state:** At 21:39 PDT the lead reports the GitHub-style TODO changes handed to the round-4 lander. Two Drop-icon recordings still wait on the mini dev-server fix. The earlier shared outbox failure and missing successful corrected browser receipts remain limitations; a handoff is not completion.
+
+**Next step:** Obtain passing keyboard and commit/drop journeys and both corrected recordings, resolving any remaining outbox failure before declaring the slice done.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies and human-typed messages extracted by script from session 6253ecf2 for 19:43–21:43 PDT; synthetic notifications and compaction summaries excluded. Rulings and queue answers through 19:38 PDT take precedence over older briefs, designs, decisions, proposals, TODOs and rules. Product results are reported receipts; this tracker validates the site build. Execution ownership is retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 20:57 PDT
+
+**What:** Provide an issues-style TODO list and detail page for draft, commit and drop.
+
+**Why:** Will rejected the empty-screen recording and requested GitHub-issues-style UI.
+
+**Current state:** At 20:27 PDT the lead reports the redesign built: Open/Closed tabs, an issue-style TODO page and Make TODO. Two videos are being rerecorded with the new Drop icon before lander handoff. The builder’s earlier record retains a commit-drop failure on an unregistered co-edit outbox mutation. No later passing browser/recording receipt is evidenced; the latest mini startup blocker delays waiting recordings.
+
+**Next step:** Obtain passing keyboard and commit/drop journeys, fix any remaining shared outbox failure, and produce the two corrected recordings before declaring the slice done.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human messages and lead text replies from session 6253ecf2, approximately 18:57–20:57 PDT; current rulings and queue answers, decisions through 0021, proposals and shared briefs/designs. Transport details additionally use its final builder report. Product checks are reported evidence; this pass runs the maintainer-site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
 
 ## Current specification — 2026-10-20, 17:55 PDT
 

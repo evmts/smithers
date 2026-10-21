@@ -81,11 +81,11 @@ describe("migrateAndReport", () => {
       expect(lines).toEqual([
         {
           message: ["db:migrate: applied"],
-          applied: "1_messages, 2_answer_attempts, 3_paired_positions, 4_model_roles, 5_sign_in, 6_answer_parts, " +
-            "7_repositories, 8_browser_answering, 9_clone_ids, 10_views, 11_question_askers, 12_model_reservations, " +
-            "13_runs, 14_branch_workspace, 15_flows, 16_github_issues, 17_model_charges, 18_triage, 19_spend_alerts, " +
-            "20_notifications, 21_secrets, 22_todos, 23_branch_sharing, 24_sandbox_calls, 25_flow_source, 26_text_updates, " +
-            "27_todo_issue",
+          // Every migration the migrator loads, in order, as `<id>_<name>`: `0028_clone_progress` logs `28_clone_progress`.
+          applied: Object.keys(Database.migrations)
+            .sort()
+            .map((key) => `${Number(key.slice(0, 4))}_${key.slice(5)}`)
+            .join(", "),
         },
         { message: ["db:migrate: up to date"], applied: "" },
       ])
@@ -692,5 +692,56 @@ describe("0025_flow_source", () => {
       const failure = await on(through("0025")).then(() => "applied", (error: unknown) => String(error))
       expect(failure).toContain(`0025_flow_source: flow ${flowId} revision 1 doesn't read`)
       expect(failure).not.toContain("canary")
+    }))
+})
+
+describe("0028_clone_progress", () => {
+  test("ready copies are reclaimable unless the App is known installed; a running clone is fetching; clone entries fit", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0027"))
+      await on(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        yield* sql`INSERT INTO repositories (id, owner, name, status, head_sha, settled_at) VALUES
+          ('github/a/plain', 'a', 'plain', 'ready', ${"a".repeat(40)}, now()),
+          ('github/a/installed', 'a', 'installed', 'ready', ${"b".repeat(40)}, now())`
+        yield* sql`INSERT INTO repositories (id, owner, name, status) VALUES ('github/a/running', 'a', 'running', 'cloning')`
+        yield* sql`INSERT INTO repositories (id, owner, name, status, failure, settled_at) VALUES
+          ('github/a/failed', 'a', 'failed', 'failed', 'not_found', now())`
+        yield* sql`INSERT INTO github_repositories (repo_id, installation_id) VALUES ('github/a/installed', 77)`
+      }))
+
+      const applied = await on(through("0028"))
+
+      expect(applied.map(([id, name]) => `${id}_${name}`)).toEqual(["28_clone_progress"])
+      const rows = await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly id: string; readonly stage: string | null; readonly reclaimable: boolean }>`
+          SELECT id, stage, reclaimable FROM repositories ORDER BY id`))
+      expect(rows).toEqual([
+        { id: "github/a/failed", stage: null, reclaimable: false },
+        { id: "github/a/installed", stage: null, reclaimable: false },
+        { id: "github/a/plain", stage: null, reclaimable: true },
+        { id: "github/a/running", stage: "fetching", reclaimable: false },
+      ])
+      // A clone's feed entry has a run's states; the repository events stay updates; nothing else is a kind.
+      const insert = (kind: string, state: string) =>
+        on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql`INSERT INTO notifications (recipient, subject, kind, state, href)
+            VALUES ('ann', ${`${kind}:${state}:${crypto.randomUUID()}`}, ${kind}, ${state}, '/a/b')`)).then(
+            () => "taken",
+            () => "refused",
+          )
+      expect(await insert("clone", "working")).toBe("taken")
+      expect(await insert("clone", "failed")).toBe("taken")
+      expect(await insert("clone", "update")).toBe("refused")
+      expect(await insert("main", "update")).toBe("taken")
+      expect(await insert("main", "done")).toBe("refused")
+      expect(await insert("tour", "update")).toBe("refused")
+      // A stage only names how far a clone has come.
+      const staged = await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`UPDATE repositories SET stage = 'pushing' WHERE id = 'github/a/running'`)).then(() => "taken", () => "refused")
+      expect(staged).toBe("refused")
     }))
 })

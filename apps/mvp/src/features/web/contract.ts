@@ -24,6 +24,22 @@ export const KNOWN_DOCS = {
 export const MAX_URL_LENGTH = 2_048
 
 /**
+ * ChatApi's route that checks a page before the conversation shows it: `POST { url, mode }`, answered with whether a
+ * frame would show it and what a card shows instead (`@smthrs/views`' `WebPage.Checked`). A browser can't read why a
+ * frame stays blank, so a server asks the page first (docs/features/web-pages.md#before-a-page-is-framed).
+ */
+export const WEB_PREVIEW_ROUTE = "/api/web/preview"
+
+/** The largest `POST /api/web/preview` body: 4 KiB. */
+export const MAX_PREVIEW_BODY_BYTES = 4 * 1024
+
+/**
+ * What the person sees once `app/web/open` answers: the page itself in the conversation (`page`), or a card whose
+ * button opens it in a new tab (`card`).
+ */
+export const SHOWN = ["page", "card"] as const
+
+/**
  * The composer's line when a person's `/web` names a page the app won't open, by why (src/features/web/url.ts
  * `Refusal`): what to do instead, never the URL.
  */
@@ -63,8 +79,10 @@ export const WEB_TELEMETRY = {
     "door",
     "outcome",
     "reason",
+    "web_framing",
     "smithers.web.mode",
     "smithers.web.door",
     "smithers.web.outcome",
+    "smithers.web.framing",
   ],
 } as const

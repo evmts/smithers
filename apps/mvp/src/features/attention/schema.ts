@@ -28,8 +28,8 @@ export const Refusal = Schema.Struct({ code: Schema.String })
 export const NoticeState = Schema.Literals(["working", "waiting", "needs_you", "failed", "done", "update"])
 export type NoticeState = typeof NoticeState.Type
 
-/** What raised it: a run, `main` moving, or a new release. */
-export const NoticeKind = Schema.Literals(["run", "main", "release"])
+/** What raised it: a run, the person's own clone of a repository, `main` moving, or a new release. */
+export const NoticeKind = Schema.Literals(["run", "clone", "main", "release"])
 export type NoticeKind = typeof NoticeKind.Type
 
 /**
@@ -73,8 +73,11 @@ export const Pending = Schema.Struct({
 })
 export type Pending = typeof Pending.Type
 
-/** An entry's one action: Answer the person's own question, or Open where it happened. */
-export const EntryAction = Schema.Literals(["answer", "open"])
+/**
+ * An entry's one action: Answer the person's own question, Try again on the person's own failed clone, or Open where it
+ * happened.
+ */
+export const EntryAction = Schema.Literals(["answer", "retry", "open"])
 export type EntryAction = typeof EntryAction.Type
 
 /**
@@ -84,6 +87,7 @@ export type EntryAction = typeof EntryAction.Type
  * they need the person). `listed` says it is in the person's list behind `+N`; `here` that it is a run of the
  * conversation the tab shows; `settled` that it is done, failed or an update, which the list's × dismisses; `unread` that
  * it is listed and the person hasn't opened this version. `order` sorts both: needs you, failed, live, done, updates; the newest first within each.
+ * The notifications panel lists the `listed` ones newest first, by `atMs`.
  */
 export const Entry = Schema.Struct({
   id: Schema.String,
@@ -91,6 +95,12 @@ export const Entry = Schema.Struct({
   state: NoticeState,
   mine: Schema.Boolean,
   runId: Schema.NullOr(Schema.String),
+  /** The conversation a run works in. */
+  conversationId: Schema.NullOr(Schema.String),
+  /** Who started the run, pushed to `main` or published the release, when the row says. */
+  actor: Schema.NullOr(Schema.String),
+  /** When it last happened, in epoch ms: the panel's order, newest first, and its time. */
+  atMs: Schema.Number,
   word: Schema.NullOr(Schema.String),
   detail: Schema.NullOr(Schema.String),
   action: EntryAction,
@@ -106,3 +116,50 @@ export const Entry = Schema.Struct({
 })
 export type Entry = typeof Entry.Type
 
+
+/** The notifications panel's one row on this tab. */
+export const PANEL = "panel"
+
+/**
+ * This tab's notifications panel: whether it shows, the entry expanded in it (`null`: none), the entry that takes focus
+ * when it opens (`null`: the first), and how many times A asked its question's field to take focus (`answer`).
+ */
+export const Panel = Schema.Struct({
+  id: Schema.Literal(PANEL),
+  open: Schema.Boolean,
+  expanded: Schema.NullOr(Schema.String),
+  focus: Schema.NullOr(Schema.String),
+  answer: Schema.Number,
+})
+export type Panel = typeof Panel.Type
+
+/** One of a run's steps as an expanded entry shows it: the flow it called and how that went. */
+export const DetailStep = Schema.Struct({
+  id: Schema.String,
+  label: Schema.String,
+  state: Schema.Literals(["running", "done", "failed"]),
+})
+
+/** The question an expanded entry asks the person, with this tab's draft of the answer and whether it is on its way. */
+export const DetailQuestion = Schema.Struct({
+  kind: Schema.Literals(["question", "approval"]),
+  prompt: Schema.String,
+  options: Schema.Array(Schema.String),
+  draft: Schema.String,
+  sending: Schema.Boolean,
+})
+
+/**
+ * What the expanded entry shows besides its row, keyed by its subject: who (`meta`), the run's last steps, a `note` (a
+ * finished answer's text, or why it failed), its open question, and whether Retry shows (the person's failed run in the
+ * conversation the tab shows).
+ */
+export const Detail = Schema.Struct({
+  id: Schema.String,
+  meta: Schema.NullOr(Schema.String),
+  steps: Schema.Array(DetailStep),
+  note: Schema.NullOr(Schema.String),
+  question: Schema.NullOr(DetailQuestion),
+  retry: Schema.Boolean,
+})
+export type Detail = typeof Detail.Type

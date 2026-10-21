@@ -1,5 +1,13 @@
-import { Effect } from "effect"
+import { Persistence } from "@smthrs/effect-tanstack-db"
+import { Effect, Layer } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
+import { TextsClient } from "./features/coedit/api"
+import { TEXT_UPDATE, TextWrites } from "./features/coedit/writes"
+import { IssuesClient } from "./features/issues/api"
+import { ISSUE_WRITE, IssueWrites } from "./features/issues/writes"
+import { StackClient } from "./features/todos/api"
+import { StackWrites, TODO_OP } from "./features/todos/writes"
 import { OutboxWrites } from "./outbox"
 
 // How features hand their writes to the device's one outbox (src/outbox.ts): a second feature adds its own to the
@@ -24,5 +32,31 @@ describe("OutboxWrites.adding", () => {
     )
     expect(Object.keys(added.mutations).sort()).toEqual(["first", "second", "shared"])
     expect(added.mutations.shared).toBe(mutation)
+  })
+})
+
+describe("the device's writes", () => {
+  // As src/boot.ts stacks them below chat's store: co-editing's, then the issues', then the TODOs'. A feature that hands
+  // over its writes in place of the ones below drops theirs, and the outbox then fails every stored write of theirs as
+  // an unknown mutation (2026-10-20: the issues' writes dropped co-editing's `text-update`).
+  test("every feature's mutation reaches the one outbox, whatever its place in the stack", async () => {
+    const clients = { origin: "http://localhost", within: "1 second" } as const
+    const writes = StackWrites.layer.pipe(
+      Layer.provideMerge(IssueWrites.layer),
+      Layer.provideMerge(TextWrites.layer),
+      Layer.provide(
+        Layer.mergeAll(TextsClient.layer(clients), IssuesClient.layer(clients), StackClient.layer(clients)).pipe(
+          Layer.provide(FetchHttpClient.layer),
+        ),
+      ),
+      Layer.provide(Persistence.memory),
+    )
+    const mutations = await Effect.runPromise(
+      Effect.gen(function* () {
+        const handed = yield* OutboxWrites
+        return Object.keys(handed.mutations)
+      }).pipe(Effect.provide(writes)),
+    )
+    expect(mutations.sort()).toEqual([ISSUE_WRITE, TEXT_UPDATE, TODO_OP].sort())
   })
 })

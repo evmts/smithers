@@ -3,8 +3,8 @@ import { Collection } from "@smthrs/effect-tanstack-db"
 import { Context, Duration, Effect, FiberHandle, Layer, Option, type Schedule, Stream } from "effect"
 import { AuthStore } from "../auth/store"
 import { REPOSITORIES_SHAPE_ROUTE } from "./contract"
-import { fileQuery, readmeQuery, refsQuery, treeQuery, viewQuery } from "./queries"
-import { BlobRow, CloneRow, emptyView, RefsRow, TreeRow, VIEW, ViewRow } from "./rows"
+import { aboutQuery, fileQuery, manifestQuery, readmeQuery, refsQuery, treeQuery, viewQuery } from "./queries"
+import { AboutRow, BlobRow, CloneRow, emptyView, RefsRow, TreeRow, VIEW, ViewRow } from "./rows"
 import { Repository } from "./schema"
 
 // The repository feature's state on this tab (docs/features/repo.md#the-browser): the repositories Postgres has, synced
@@ -17,6 +17,11 @@ export interface RepoConfig {
   readonly origin: string
   /** How long Electric gets to deliver the row of a clone RepoApi took before the request shows as failed. Default 15 s. */
   readonly confirmWithin?: Duration.Input
+  /**
+   * How long a navigation keeps the previous page while the next one's files load, before it shows the next page with
+   * skeletons where they will be. Default 1 s.
+   */
+  readonly pageWait?: Duration.Input
   /** How long a failed shape request waits before it is sent again. Default `SyncPolicy.defaultPolicy`. */
   readonly retry?: Schedule.Schedule<unknown, ShapeSource.RequestFailed>
 }
@@ -31,8 +36,8 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
     schema: Repository,
     getKey: (row) => row.id,
     syncMode: "eager",
-    // Version 2 added `cloneId` (migration 0009).
-    persist: { schemaVersion: 2 },
+    // Version 2 added `cloneId` (migration 0009); version 3 `stage` and `reclaimable` (migration 0028).
+    persist: { schemaVersion: 3 },
     shape: {
       url: `${config.origin}${REPOSITORIES_SHAPE_ROUTE}`,
       columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -44,6 +49,7 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
   const trees = yield* Collection.local<TreeRow, string>({ id: "repo-trees", schema: TreeRow, getKey: (row) => row.key })
   const blobs = yield* Collection.local<BlobRow, string>({ id: "repo-blobs", schema: BlobRow, getKey: (row) => row.key })
   const refs = yield* Collection.local<RefsRow, string>({ id: "repo-refs", schema: RefsRow, getKey: (row) => row.key })
+  const abouts = yield* Collection.local<AboutRow, string>({ id: "repo-abouts", schema: AboutRow, getKey: (row) => row.key })
   const view = yield* Collection.local<ViewRow, string>({
     id: "repo-view",
     schema: ViewRow,
@@ -78,8 +84,11 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
     trees,
     blobs,
     refs,
+    abouts,
     view,
     viewState: yield* viewQuery(view, repositories, clones),
+    aboutState: yield* aboutQuery(view, abouts),
+    manifestState: yield* manifestQuery(view, blobs),
     refsState: yield* refsQuery(view, refs),
     treeState: yield* treeQuery(view, trees),
     fileState: yield* fileQuery(view, blobs),
@@ -90,6 +99,7 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
     scope: yield* Effect.scope,
     origin: config.origin,
     confirmWithin: config.confirmWithin ?? Duration.seconds(15),
+    pageWait: config.pageWait ?? Duration.seconds(1),
   }
 })
 
@@ -99,6 +109,7 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
  * - `clones`: clones this tab asked for that Postgres doesn't show yet, or that RepoApi refused.
  * - `trees`, `blobs`: the file lists and files this tab loaded, by commit.
  * - `refs`: the branches and tags this tab loaded, by repository and sync.
+ * - `abouts`: what GitHub says of each repository this tab opened, by id.
  * - `view`: where the routed view is, one row.
  * - the live queries frontends read (queries.ts), `loader`, `scope`, and the settings.
  */

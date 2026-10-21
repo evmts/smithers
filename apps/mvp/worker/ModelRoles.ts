@@ -1,12 +1,12 @@
 import type { Model } from "@smthrs/model"
 import { HostModel, HostModelUnusable } from "@smthrs/model-host"
-import { Effect, Schema } from "effect"
+import { Config, Effect, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { MODEL_ROLES, type ModelRole } from "../src/features/model/contract.ts"
 
 // Which model answers each role (docs/features/model-endpoint.md#roles): the model an admin set in `model_roles`, read
-// on every call, else the deployment's default (`HostModel`, from the `CHAT_MODEL` configuration). Changing a role
-// needs no deploy.
+// on every call, else the deployment's default (`HostModel`, from the `CHAT_MODEL` configuration). The summary role's
+// default is its own (`SUMMARY_MODEL`), never the agent's. Changing a role needs no deploy.
 
 /** One of the model roles, as a schema. */
 export const Role = Schema.Literals(MODEL_ROLES)
@@ -48,15 +48,31 @@ export interface Resolved {
 const decodeRecord = Schema.decodeUnknownEffect(ModelRecord)
 
 /**
+ * The summary role's model when no admin set one: `SUMMARY_MODEL`, a model record as JSON, such as a cheap model for
+ * the timeline's summaries. Unset, the role has no model.
+ */
+export const summaryModel = Config.option(Config.schema(Schema.fromJsonString(ModelRecord), "SUMMARY_MODEL"))
+
+/**
  * The model `role` uses: its `model_roles` row, built with the key the Worker holds, or the deployment default when
- * the role has no row. A row this Worker can't use fails with `HostModelUnusable` and the planner's reason (`invalid`
- * for a row that isn't a record).
+ * the role has no row: `SUMMARY_MODEL` for the summary role, `HostModel` for every other. A row or default this Worker
+ * can't use fails with `HostModelUnusable` and the planner's reason (`invalid` for a row that isn't a record,
+ * `unconfigured` for a summary role with neither a row nor `SUMMARY_MODEL`, `config` for one that doesn't parse).
  */
 export const resolve = (role: ModelRole) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<{ readonly model: unknown }>`SELECT model FROM model_roles WHERE role = ${role}`
     if (row === undefined) {
+      // Auxiliary navigation must not silently spend on the main agent model: only its own default answers it.
+      if (role === "summary") {
+        const configured = yield* summaryModel.pipe(
+          Effect.mapError(() => new HostModelUnusable({ reason: "config" })),
+        )
+        if (Option.isNone(configured)) return yield* new HostModelUnusable({ reason: "unconfigured" })
+        const built = yield* HostModel.make(configured.value)
+        return { source: "default", modelId: built.modelId, model: built.model } satisfies Resolved
+      }
       const fallback = yield* HostModel
       return { source: "default", modelId: fallback.modelId, model: fallback.model } satisfies Resolved
     }

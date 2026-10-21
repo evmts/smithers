@@ -3,9 +3,26 @@ title: Prevent configuration diagnostics from exposing secrets
 status: idea
 area: process
 owner: lead proposes settings hook; Will decides
-updated: 2026-10-20
+updated: 2026-10-20 22:35 PDT
 links: [exposed-credentials-rotation.md, code-storage-key-rotation.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-20, 22:35 PDT
+
+**What:** Block diagnostics that print secret values, including another process’s environment.
+
+**Why:** At 22:15 the lead reports a third disclosure: ALCHEMY_PASSWORD entered a tool result during dev-sync work.
+
+**Current state:** The lead has added a no-process-environment-reading rule to builder briefs and again requested permission for a personal settings hook. No answer or installed-hook receipt exists. Credential rotation remains separate and urgent.
+
+**Next step:** Keep diagnostics value-free now; implement and verify the proposed hook only after Will answers, documenting bypass limits.
+
+**Open questions for Will:** Approve the proposed ~/.claude/settings.json hook blocking environment dumps and shell-configuration reads?
+
+Evidence: script-filtered human text and lead text replies from session 6253ecf2, approximately 20:35–22:35 PDT; automated notifications and tool blocks excluded. Current rulings and queue answers (latest 19:38 PDT) prevail over historical briefs and proposals. Execution ownership retained; Codex tracker curator reconciles documentation only. Product receipts are lead-reported; tracker verification is the maintainer-site build.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 19:07 PDT
 

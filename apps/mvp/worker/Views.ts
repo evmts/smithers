@@ -18,8 +18,9 @@ import * as ShapeAccess from "./ShapeAccess.ts"
 // person who may ask (Member or above, decision 0007) adds a view, as only they may ask: a view is the browser's
 // agent's or their own `/web`. A view is added once by the id its writer chose, so a step run again changes nothing.
 //
-// The route checks the page again, as `app/web/open` does (src/features/web/url.ts), against the host the request
-// came to: no row ever holds a `javascript:`, `data:`, `file:` or `blob:` URL, one with a name or password, a page of
+// A view's props are the page's URL and what the flow's check read from its head: a title, a description and an
+// `https:` icon, each bounded (src/features/views/schema.ts). The route checks the page again, as `app/web/open` does
+// (src/features/web/url.ts), against the host the request came to: no row ever holds a `javascript:`, `data:`, `file:` or `blob:` URL, one with a name or password, a page of
 // the app itself, or a `webpage` that isn't `https:` on another site. A `link` may be `http:` on `localhost` only where
 // `WEB_PAGES_LOCAL_HTTP` says so: `alchemy dev` (worker/DevChatApi.ts), never a deployment unless it is set. Whatever
 // a row holds, the browser checks it again before it renders (`@smthrs/ui`'s `WebPageView` and `WebLinkCard`).
@@ -46,7 +47,7 @@ export const localHttpConfig = (localHttp: boolean) =>
   Config.Boolean("WEB_PAGES_LOCAL_HTTP").pipe(Config.withDefault(localHttp))
 
 /** The policy for `request`: the app is the origin it came to (its absolute URL, as Workers and `fetch` get it). */
-const policyFor = (request: HttpServerRequest.HttpServerRequest, localHttp: boolean) => ({
+export const policyFor = (request: HttpServerRequest.HttpServerRequest, localHttp: boolean) => ({
   localHttp,
   appOrigin: new URL(request.originalUrl).origin,
 })
@@ -189,7 +190,9 @@ export const make = <E, R>(
         if (!canEdit(found.access)) return refusal(403, "forbidden")
         const conversationId = found.conversationId
         fields.conversationId = conversationId
-        const stored = { id: write.id, template: write.template, props: { url: page.page.href } }
+        // The page's own title, description and https icon, as the flow's check read them (ViewWrite bounds each).
+        const { url: _url, ...preview } = write.props
+        const stored = { id: write.id, template: write.template, props: { url: page.page.href, ...preview } }
         const txid = yield* insert(stored, conversationId).pipe(Effect.provide(database))
         if (txid !== undefined) return HttpServerResponse.jsonUnsafe({ txid }, { status: 202, headers: noStore })
         if (yield* landed(stored, conversationId).pipe(Effect.provide(database))) {

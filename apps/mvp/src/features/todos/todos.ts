@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setPrompt, setTitle } from "./actions"
+import { commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setPrompt, setTitle, warm } from "./actions"
 import { type RepoStack, TodosStore } from "./store"
 
 // TODOs as a frontend sees it: live queries to read and plain functions to act, with no Effect in sight. React renders
@@ -31,8 +31,10 @@ export interface TodosQueries {
 
 /** What a person does, as plain functions. Each returns at once. */
 export interface TodosActions {
-  /** What a stack route's loader calls: resolves once the stack is open, so its queries have its rows. */
+  /** What a stack route calls on a navigation: resolves once the stack is open, so its queries have its rows. */
   readonly open: (owner: string, name: string, number?: number) => Promise<void>
+  /** What a stack route calls on a link's hover or focus: starts syncing the stack without showing it. */
+  readonly warm: (owner: string, name: string) => Promise<void>
   /** New TODO: an empty draft; answers its id. */
   readonly newDraft: (owner: string, name: string) => string
   readonly setTitle: (draftId: string, title: string) => void
@@ -75,6 +77,7 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
         },
         actions: {
           open: (owner, name, number) => runAsync(open(owner, name, number)),
+          warm: (owner, name) => runAsync(warm(owner, name)),
           newDraft: (owner, name) => run(newDraft(owner, name)),
           setTitle: (draftId, title) => run(setTitle(draftId, title)),
           setPrompt: (draftId, prompt) => run(setPrompt(draftId, prompt)),

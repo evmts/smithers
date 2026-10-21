@@ -1,5 +1,6 @@
 import { Effect, Metric } from "effect"
 import type { Door } from "../../flows/dispatch"
+import type { WebPage } from "@smthrs/views"
 import type { WebMode, WebOutcome } from "./contract"
 import type { Refusal } from "./url"
 
@@ -8,7 +9,10 @@ import type { Refusal } from "./url"
 // person's by the tab that dispatched it, once the flow answers, or at once when their own `/web` opened the tab. Never a
 // URL, an origin or a path.
 
-/** Pages opened, by `web_mode` (`embed` or `tab`), `door` and `outcome`. */
+/**
+ * Pages opened, by `web_mode` (`embed` or `tab`), `door` and `outcome`, and `web_framing` (`allowed`, `refused`,
+ * `unknown`) once the page was checked.
+ */
 export const pagesOpened = Metric.counter("smithers_web_pages_opened", {
   description: "Web pages app/web/open opened, by mode, door and outcome",
   incremental: true,
@@ -20,6 +24,8 @@ export interface Opening {
   readonly door: Door
   readonly outcome: WebOutcome
   readonly reason?: Refusal
+  /** Whether a frame would show the page, once ChatApi checked it. */
+  readonly framing?: WebPage.Framing
 }
 
 /**
@@ -28,13 +34,24 @@ export interface Opening {
  */
 export const recordOpening = (opening: Opening) =>
   Effect.gen(function* () {
-    const { mode, door, outcome, reason } = opening
+    const { mode, door, outcome, reason, framing } = opening
+    const checked: Record<string, string> = framing === undefined ? {} : { web_framing: framing }
     // `web_mode`, not `mode`: the relay keeps a field by name for every record, and `mode` is the theme flow's input.
-    yield* Metric.update(Metric.withAttributes(pagesOpened, { web_mode: mode, door, outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ "smithers.web.outcome": outcome })
+    yield* Metric.update(Metric.withAttributes(pagesOpened, { web_mode: mode, door, outcome, ...checked }), 1)
+    yield* Effect.annotateCurrentSpan({
+      "smithers.web.outcome": outcome,
+      ...(framing === undefined ? {} : { "smithers.web.framing": framing }),
+    })
     const shown = outcome === "embedded" || outcome === "card" || outcome === "opened"
     yield* Effect.logWithLevel(shown ? "Info" : "Warn")("web.page.open").pipe(
-      Effect.annotateLogs({ web_mode: mode, door, outcome, ...(reason === undefined ? {} : { reason }), feature: "web" }),
+      Effect.annotateLogs({
+        web_mode: mode,
+        door,
+        outcome,
+        ...(reason === undefined ? {} : { reason }),
+        ...checked,
+        feature: "web",
+      }),
     )
   })
 

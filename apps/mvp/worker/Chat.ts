@@ -14,9 +14,15 @@ import {
 import { ANSWERS_ROUTE } from "../src/features/agent/contract.ts"
 import { MODEL_ROLES, MODEL_ROUTE, type ModelRole } from "../src/features/model/contract.ts"
 import { VIEWS_ROUTE, VIEWS_SHAPE_ROUTE } from "../src/features/views/contract.ts"
+import { WEB_PREVIEW_ROUTE } from "../src/features/web/contract.ts"
 import { RUNS_ROUTE, RUNS_SHAPE_ROUTE } from "../src/features/status/contract.ts"
 import { ACK_ROUTE, NOTIFICATIONS_SHAPE_ROUTE, WATCHES_ROUTE } from "../src/features/attention/contract.ts"
-import { SPEND_ALERTS_SHAPE_ROUTE } from "../src/features/spend/contract.ts"
+import {
+  ALERT_CHANNELS_ROUTE,
+  ALERT_CHANNELS_SHAPE_ROUTE,
+  ALERT_DELIVERIES_SHAPE_ROUTE,
+  SPEND_ALERTS_SHAPE_ROUTE,
+} from "../src/features/spend/contract.ts"
 import {
   FLOW_DRAFTS_ROUTE,
   FLOW_DRAFTS_SHAPE_ROUTE,
@@ -24,7 +30,7 @@ import {
   FLOWS_SHAPE_ROUTE,
 } from "../src/features/flows-ui/contract.ts"
 import { BROWSER_TELEMETRY } from "../src/telemetry.ts"
-import { type Actor, canAsk, Sessions } from "./Actor.ts"
+import { type Actor, canAsk, refusesPersonOnly, Sessions } from "./Actor.ts"
 import * as Answers from "./Answers.ts"
 import { branchAccess, canEdit, canView } from "./branch/Access.ts"
 import * as Conversations from "./branch/Conversations.ts"
@@ -39,8 +45,10 @@ import * as Notifications from "./Notifications.ts"
 import * as PersonalFlows from "./PersonalFlows.ts"
 import * as Runs from "./Runs.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
+import * as AlertChannels from "./AlertChannels.ts"
 import * as SpendAlerts from "./SpendAlerts.ts"
 import * as Views from "./Views.ts"
+import * as WebPreview from "./WebPreview.ts"
 
 // ChatApi's routes (docs/features/chat.md#contract). ChatApi.ts runs them on Cloudflare; the tests run them as they
 // are. ChatApi only stores a question and its empty `streaming` answer: the browser's agent answers it, through the
@@ -120,8 +128,9 @@ class Refusal extends Data.TaggedError("Refusal")<{
 
 /**
  * Reads the configuration (`ShapeProxy.config`, `ModelEndpoint.make`, with `spendAlerts` as `MODEL_SPEND_ALERTS`'
- * default, `Answers.make`, `Views.make`, with `localHttp` as `WEB_PAGES_LOCAL_HTTP`'s default) and returns ChatApi's `fetch`
- * handler. `database` opens a Postgres client for the scope that builds it: one per request. `fetch` reads who is
+ * default, `Answers.make`, `Views.make` and `WebPreview.make`, with `localHttp` as `WEB_PAGES_LOCAL_HTTP`'s default) and
+ * returns ChatApi's `fetch` handler, which checks pages through the host's `HttpClient` and keeps their answers in its
+ * `ImmutableCache`. `database` opens a Postgres client for the scope that builds it: one per request. `fetch` reads who is
  * asking from `Sessions`, and starts each answer's `chat/Expire` through `Flows.FlowStarter`.
  */
 export const make = <E, R>(
@@ -139,6 +148,8 @@ export const make = <E, R>(
     const answers = yield* Answers.make(database)
     // POST /api/views and GET /api/shapes/views: the conversation's views (docs/features/web-pages.md).
     const views = yield* Views.make(database, options)
+    // POST /api/web/preview: a page checked before it is framed (docs/features/web-pages.md#before-a-page-is-framed).
+    const webPreview = yield* WebPreview.make(options)
     // POST /api/runs/<id>[/answer] and GET /api/shapes/runs: agent status (docs/features/agent-status.md).
     const runs = yield* Runs.make(database)
     // POST /api/watches, POST /api/notifications/ack and GET /api/shapes/notifications: the personal feed
@@ -146,6 +157,9 @@ export const make = <E, R>(
     const notifications = yield* Notifications.make(database)
     // GET /api/shapes/spend-alerts: the model spend alerts, for Admins (docs/features/spend-alerts.md).
     const spendAlerts = yield* SpendAlerts.make
+    // POST /api/alert-channels and the channels' and receipts' shapes: where Admins send spend alerts outside the app
+    // (docs/features/spend-alerts.md#channels).
+    const alertChannels = yield* AlertChannels.make(database)
     // /api/flows, /api/flow-drafts and their shapes: a person's own flows (docs/features/flows.md#your-own-flows).
     const personalFlows = yield* PersonalFlows.make(database)
     // GET /api/shapes/messages?conversation=<id>: one conversation's `messages` (decision 0013 §1), which the browser
@@ -198,6 +212,10 @@ export const make = <E, R>(
       const response = yield* Effect.gen(function* () {
         if (request.method !== "POST") return yield* new Refusal({ status: 405, errorCode: "method" })
         const asker = yield* mayAsk
+        // Asking starts the agent's run, and the agent never asks itself (decision 0017 slice 0).
+        if (yield* refusesPersonOnly(asker, "chat/Answer")) {
+          return yield* new Refusal({ status: 403, errorCode: "person_only", explanation: "Only the person asks." })
+        }
         const body = yield* readBody(request, fields)
         const decoded = yield* decodeQuestion(body).pipe(
           Effect.mapError(() => new Refusal({ status: 400, errorCode: "invalid", explanation: invalid })),
@@ -309,11 +327,15 @@ export const make = <E, R>(
       if (path === SHAPE_ROUTE) return yield* shape
       if (path === VIEWS_ROUTE) return yield* views.add
       if (path === VIEWS_SHAPE_ROUTE) return yield* views.shape
+      if (path === WEB_PREVIEW_ROUTE) return yield* webPreview.preview
       if (path === RUNS_SHAPE_ROUTE) return yield* runs.shape
       if (path === NOTIFICATIONS_SHAPE_ROUTE) return yield* notifications.shape
       if (path === WATCHES_ROUTE) return yield* notifications.watch
       if (path === ACK_ROUTE) return yield* notifications.ack
       if (path === SPEND_ALERTS_SHAPE_ROUTE) return yield* spendAlerts
+      if (path === ALERT_CHANNELS_ROUTE) return yield* alertChannels.set
+      if (path === ALERT_CHANNELS_SHAPE_ROUTE) return yield* alertChannels.channels
+      if (path === ALERT_DELIVERIES_SHAPE_ROUTE) return yield* alertChannels.deliveries
       if (path === FLOWS_SHAPE_ROUTE) return yield* personalFlows.flowsShape
       if (path === FLOW_DRAFTS_SHAPE_ROUTE) return yield* personalFlows.draftsShape
       if (path === FLOWS_ROUTE) return yield* personalFlows.flows("")

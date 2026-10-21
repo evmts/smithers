@@ -215,10 +215,6 @@ export const todoPath = (owner: string, name: string, number: number): string =>
 /** A stack route's `?state=` as the list it names: `closed`, or else the open list. */
 export const stackFilterOf = (state: unknown): StackFilter => (state === "closed" ? "closed" : "open")
 
-/** A TODO's pull request on GitHub. */
-export const githubPullUrl = (owner: string, name: string, number: number): string =>
-  `https://github.com/${owner}/${name}/pull/${number}`
-
 /** A stack route's `$number` as the TODO number it names, or `undefined` for anything but 1 to `MAX_TODO_NUMBER`. */
 export const todoNumberOf = (text: string): number | undefined => {
   if (!/^[1-9][0-9]{0,9}$/.test(text)) return undefined

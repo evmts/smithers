@@ -17,10 +17,10 @@ const MAYA = "local-developer"
 const MACHINE = 200_000
 
 /**
- * A change runs as a flow on the owner's engine, then comes back through Electric, which a laptop running many suites
- * against one Electric has been seen to hold back for more than 30 seconds.
+ * A change runs as a flow on the owner's engine, then comes back through Electric. Every shape's long poll waits at
+ * Electric at once over HTTP/2, which the dev server speaks as production does (docs/infrastructure.md#https-and-http2).
  */
-const SYNC = 90_000
+const SYNC = 30_000
 
 /**
  * Maya's branch, as she tracks it, with nobody else on its list: the first run tracks it as hers, and every run starts
@@ -48,6 +48,8 @@ const workspace = (tab: Tab) =>
   })
 
 const noAccess = (tab: Tab) => tab.page.getByText("No access", { exact: true })
+/** The branch's chrome: its name, what this person may do on it (`Owner`, `Can edit`, `Can view`) and who is there. */
+const chrome = (tab: Tab) => tab.page.getByRole("navigation", { name: "Branch" })
 const conversation = (page: Page) => page.getByRole("region", { name: "Conversation", exact: true })
 const avatar = (tab: Tab, name: string) =>
   tab.page.getByRole("list", { name: "People here" }).getByRole("button", { name, exact: true })
@@ -85,7 +87,12 @@ const openTerminal = async (maya: Tab) => {
   }).toPass({ timeout: MACHINE })
 }
 
-test("branch sharing: shared to view, Ben watches Maya's terminal and can't type; to edit, he types and asks; removed, he is out at once", async ({ devices }) => {
+test("branch sharing: shared to view, Ben watches Maya's terminal and can't type; to edit, he types and asks; removed, he is out at once", {
+  annotation: {
+    type: "summary",
+    description: "Maya shares her branch with Ben: to view, he watches her terminal; to edit, he types and asks; removed, he is out at once.",
+  },
+}, async ({ devices }) => {
   test.setTimeout(8 * 60_000)
   const word = devices.word
   const [maya] = await devices.open("Maya")
@@ -95,6 +102,7 @@ test("branch sharing: shared to view, Ben watches Maya's terminal and can't type
   // Private to Maya until she shares it.
   await visit(maya!)
   await workspace(maya!)
+  await expect(chrome(maya!), "Maya owns the branch").toContainText("Owner")
   await visit(ben!)
   await expect(noAccess(ben!), "Ben: not shared with him yet").toBeVisible({ timeout: 30_000 })
   await expect(ben!.page.getByRole("navigation", { name: "Branch" })).toHaveCount(0)
@@ -109,9 +117,13 @@ test("branch sharing: shared to view, Ben watches Maya's terminal and can't type
   // Ben opens it: the workspace, read-only, and each sees the other in the header.
   await visit(ben!)
   await workspace(ben!)
+  await expect(chrome(ben!), "Ben's chrome says he can view").toContainText("Can view")
   await expect(avatar(ben!, MAYA), "Ben sees Maya").toBeVisible({ timeout: 30_000 })
+  await expect(avatar(ben!, BEN), "Ben sees himself").toBeVisible()
   await expect(avatar(maya!, BEN), "Maya sees Ben").toBeVisible({ timeout: 30_000 })
-  await expect(ben!.composer).toHaveCount(0)
+  // He sees the branch's prompt as it is typed, and can't change or send it (docs/features/coedit.md).
+  await expect(ben!.composer).not.toBeEditable()
+  await expect(ben!.page.getByRole("button", { name: "Send message" })).toHaveCount(0)
   await expect(ben!.chatButton).toHaveCount(0)
 
   // Maya's shell; Ben's Terminal view shows it, read-only.
@@ -157,12 +169,13 @@ test("branch sharing: shared to view, Ben watches Maya's terminal and can't type
   await expect(frame(maya!.page), "Maya sees what Ben typed").toContainText(`ben-${word}`, { timeout: 30_000 })
 
   // Ben asks in the branch's conversation; Maya sees it live.
+  await expect(chrome(ben!), "Ben's chrome says he can edit, without a reload").toContainText("Can edit", { timeout: 30_000 })
   await expect(ben!.chatButton, "Ben may ask now").toBeVisible({ timeout: 30_000 })
   const question = `Ben's question ${word}`
   await ben!.chatButton.click()
   await ben!.composer.fill(question)
   await ben!.composer.press("Enter")
-  await expect(conversation(maya!.page).getByText(question), "Maya sees Ben's question").toBeVisible({ timeout: 60_000 })
+  await expect(conversation(maya!.page).getByText(question), "Maya sees Ben's question").toBeVisible({ timeout: SYNC })
 
   // Maya removes Ben: his open page is out at once, the terminal gone, and the conversation's shape serves him nothing.
   await visit(maya!)
@@ -181,7 +194,12 @@ test("branch sharing: shared to view, Ben watches Maya's terminal and can't type
   await expect(avatar(maya!, BEN), "Ben left Maya's header").toHaveCount(0, { timeout: 30_000 })
 })
 
-test("branch sharing: anyone in the repository with the link reaches Ben but never Gus, a Guest, who views only when named", async ({ devices }) => {
+test("branch sharing: anyone in the repository with the link reaches Ben but never Gus, a Guest, who views only when named", {
+  annotation: {
+    type: "summary",
+    description: "Shared with anyone in the repository, Ben opens Maya's branch; Gus, a Guest, never does by link and only views when named.",
+  },
+}, async ({ devices }) => {
   test.setTimeout(5 * 60_000)
   const [maya] = await devices.open("Maya")
   const [ben] = await devices.openTeammate("Ben")
@@ -212,9 +230,10 @@ test("branch sharing: anyone in the repository with the link reaches Ben but nev
   await named.getByRole("button", { name: "Done" }).click()
   await visit(gus!)
   await workspace(gus!)
+  await expect(chrome(gus!), "a Guest shared to edit views").toContainText("Can view")
   await expect(avatar(gus!, MAYA)).toBeVisible({ timeout: 30_000 })
   await expect(gus!.chatButton).toHaveCount(0)
-  await expect(gus!.composer).toHaveCount(0)
+  await expect(gus!.composer).not.toBeEditable()
 
   // Restricted again: Ben, on the page, is out at once; Gus, named, stays.
   const restrict = await shareDialog(maya!)

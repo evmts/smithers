@@ -206,10 +206,11 @@ interface Outbox {
 - **E9b (added 2026-10-20):** kill the page after ChatApi took the question, before the engine recorded its run: the page opened again sends it again and the agent answers (`e2e/local-first.spec.ts` "closed before its run started").
 - **E3b (added 2026-10-20):** two tabs online: a question asked in the tab that didn't lead is answered with the other tab still open, and asking back in the first works too (`e2e/local-first.spec.ts` "two tabs").
 - **E10:** a back/forward-cache restore reloads and shows the same state.
+- **Conflicts (added 2026-10-20, Will: "I'd prefer to see all of them"):** `e2e/local-first-conflicts.spec.ts`, one test per class, on two devices or two tabs: one question id from two writers (E5, 409); one TODO dropped on two devices offline; two devices back in either order (E4); a duplicate send after a lost reply (200); a stale tab that leads again (`sent_elsewhere`); Edit taking a question out of another tab's outbox before it is sent; a new build refusing a parked answer (`payload_changed`); a device clock a day behind. Marked broken: Edit after ChatApi took a question the device hasn't seen arrive (both taken back and answered); a question taken back in one tab still `Queued` in the tab that led; and a clock stepping back between two offline asks (the next question shown twice, writes ordered by that clock). Still to come: access lost while offline (403). Not classes here: an edit against a delete (a stored message is never edited or deleted; Amend on a TODO is slice 2 of 0016), and a co-edited draft, until co-editing lands.
 
 **No-spinner proof:**
 - With every remote request held open, the shell, the conversation, the composer and a new ask render and stay interactive.
-- In every e2e test, an init-script `MutationObserver` records any `[aria-busy=true]`, `[role=progressbar]` or Suspense fallback; only `[data-answer=streaming]` is allowed.
+- In every e2e test, an init-script `MutationObserver` records any `[aria-busy=true]`, `[role=progressbar]` or Suspense fallback once a frame paints it; only `[data-answer=streaming]` and the router's navigation bar are allowed. Since [0020](0020-one-loading-pattern.md), every loading state stays unpainted for its first 300 ms, so one that ends sooner never counts.
 - `pnpm bench`: input-to-row p95 under 50 ms; first frame from OPFS at 1k and 10k messages, p95 under 150 ms; drain time of 50 queued asks.
 
 ## 8. Migration and what is deleted
@@ -235,7 +236,7 @@ interface Outbox {
 | offline-transactions 1.1.3: followers are online-only; `WebLocksLeader` never queues, so no tab takes over when the leader leaves; the `AbortError` and substring retry rules | `Outbox.lockLeader` with `take`, no online-only path, error mapping and regression tests; file both issues with TanStack |
 | Eager first open of a long conversation | Accept it at chat sizes; switch to `progressive` if first open takes over 1 s at 10k messages |
 | Storage eviction (Safari clears script storage after 7 days without use) | Call `navigator.storage.persist()` at boot and record the grant as a metric |
-| An app update while asks are queued | Stable mutation names, collection ids and row `v`; a test queues on build N and sends from build N+1 |
+| An app update while asks are queued | Stable mutation names, collection ids and row `v`; a test queues on build N and sends from build N+1. Since 2026-10-20, every stored collection and outbox payload declares its versions and migrations, and the new build brings them forward before it reads them ([0021](0021-local-first-migrations.md)) |
 | Text kept on the device | Fine while signed out. With auth, one database per account, wiped on sign-out |
 | Abuse of the open, signed-out endpoint | Existing input bounds, plus per-conversation admission limits in the flow |
 

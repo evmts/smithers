@@ -1,0 +1,10 @@
+{
+  "id": "timeline",
+  "version": "1.0.0",
+  "title": "Timeline",
+  "contributes": {
+    "slots": [{ "slot": "chat.rail", "view": "timeline.rail" }],
+    "views": [{ "id": "timeline.rail", "entry": "./TimelineContribution.tsx" }],
+    "flows": [{ "name": "timeline/summarize", "entry": "./flow.ts" }]
+  }
+}

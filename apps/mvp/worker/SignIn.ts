@@ -15,6 +15,7 @@ import { codeOf } from "./ErrorCode.ts"
 import * as Flows from "./Flows.ts"
 import { RevokeGitHubToken, revokeExecutionId } from "./flows/RevokeGitHubToken.ts"
 import { GitHubAuth, type GitHubRefused, roleOf } from "./GitHubAuth.ts"
+import * as RunCredentials from "./RunCredentials.ts"
 import * as SessionKeys from "./SessionKeys.ts"
 import * as SessionStore from "./SessionStore.ts"
 
@@ -532,15 +533,70 @@ export const make = <E, R>(
     })
 
     /** `Actor.Sessions` from the session cookie, with the host's `RoleChecks` and what `database` needs. */
-    const sessions = Layer.effect(
-      Actor.Sessions,
-      Effect.map(Effect.context<RoleChecks | R>(), (context) =>
-        Actor.Sessions.of({
-          resolve: current.pipe(
-            Effect.map(Option.map((signed) => ({ ...signed.actor, login: signed.login }))),
-            Effect.provide(context),
+    // Run credentials (worker/RunCredentials.ts) are signed with sign-in's keys, under their own purpose. Without sign-in
+    // configured, local development's people sign theirs with SESSION_SECRET when Alchemy bound one, so a credential
+    // outlives the dev server reloading this Worker, and with a key the Worker draws when it starts otherwise.
+    const devSecret = Option.isSome(setup)
+      ? Option.none()
+      : Option.filter(
+        yield* Config.option(Config.Redacted("SESSION_SECRET")),
+        (secret) => Redacted.value(secret).length >= SessionKeys.MIN_SECRET_LENGTH,
+      )
+    const runKeys = Option.isSome(setup)
+      ? setup.value.keys
+      : yield* SessionKeys.make(Option.getOrElse(devSecret, () => Redacted.make(Core.Pkce.createCodeVerifier(48))))
+    const local = [options.fallback, ...Object.values(options.teammates ?? {})]
+
+    /** A credential's person as their session stands now: none once it ended, and with the role it has now. */
+    const personOf = (claims: RunCredentials.Claims): Effect.Effect<Option.Option<Actor.Actor>, Actor.SessionsUnavailable, R> =>
+      Option.isNone(setup)
+        ? Effect.succeed(
+          Option.fromNullishOr(local.find((signed) => signed?.actor.subject.id === claims.sub)).pipe(
+            Option.map((signed) => ({ ...signed.actor, login: signed.login })),
           ),
-        })),
+        )
+        : claims.sid === undefined
+        ? Effect.succeedNone
+        : SessionStore.findLiveById(claims.sid).pipe(
+          Effect.provide(database),
+          Effect.map(Option.filter((live) => live.personId === claims.sub)),
+          Effect.map(Option.map((live): Actor.Actor => ({
+            subject: { kind: "person", id: live.personId },
+            role: live.role,
+            session: live.id,
+            login: live.login,
+          }))),
+          Effect.tapError((error) =>
+            Effect.logError("auth.session").pipe(Effect.annotateLogs({ outcome: "error", errorCode: codeOf(error) }))
+          ),
+          Effect.mapError(() => new Actor.SessionsUnavailable()),
+        )
+
+    /**
+     * `Actor.Sessions` and `RunCredentials`: a request carrying a run credential is that run's, and never falls back to
+     * its cookie; any other is the person behind its session cookie.
+     */
+    const sessions = Layer.effectContext(
+      Effect.map(Effect.context<RoleChecks | R>(), (context) => {
+        const credentials = RunCredentials.make({
+          keys: runKeys,
+          person: (claims) => personOf(claims).pipe(Effect.provide(context)),
+        })
+        return Context.make(RunCredentials.RunCredentials, credentials).pipe(
+          Context.add(
+            Actor.Sessions,
+            Actor.Sessions.of({
+              resolve: RunCredentials.resolveWith(
+                credentials,
+                current.pipe(
+                  Effect.map(Option.map((signed) => ({ ...signed.actor, login: signed.login }))),
+                  Effect.provide(context),
+                ),
+              ),
+            }),
+          ),
+        )
+      }),
     )
 
     return { fetch, sessions, configured: setup }

@@ -25,7 +25,7 @@ another device's answer ─▶ Electric ─▶ the device that holds the run: ru
 |---|---|---|
 | Working | the run's turn came; a question was answered | the answer streaming; the header's `◌ Working` while it is the latest |
 | Waiting | an earlier answer holds its turn | `○ Waiting` under the answer and in the header |
-| Needs you | `app/agent/ask` is open and unanswered | the card, `◆ Needs you` in the header (a count above 1), a toast with Answer, `(N) Smithers` |
+| Needs you | `app/agent/ask` is open and unanswered | the card, `◆ Needs you` on the top bar's bell (a count above 1; [notifications.md](notifications.md#the-top-bar)), a toast with Answer, `(N) Smithers` |
 | Failed | the answer settled failed | `Couldn't answer` and Retry, as before; `✕ Failed` in the header while it is the latest |
 | Done | the answer settled done | the answer; nothing else |
 
@@ -49,14 +49,15 @@ CHECKs hold the shape: `waiting` is set exactly while `waiting` or `needs_you`; 
 
 ## The routes
 
-`worker/Runs.ts`, in ChatApi. Only the person who asked the answer's question may report or answer, while they may still ask (Member or above); an agent acting for them is them.
+`worker/Runs.ts`, in ChatApi. Only the person who asked the answer's question may report or answer, while they may still ask (Member or above). The agent's run reports with its run credential, for its own run only; only the person answers ([run credentials](sign-in.md#run-credentials)).
 
 | Route | Answers |
 |---|---|
 | `POST /api/runs/<id>` `{ status, waiting?, wait? }` | `200 { txid }`; `200 { txid: null }` when it changes nothing: the same report again, the same question again, a question already answered, or any report to a settled run. A question with a new `execution` bumps `version` and clears the answer |
-| `POST /api/runs/<id>/answer` `{ version, value }` | `200 { txid }` for the first answer to the open question; `200 { txid: null }` for the same answer again; `409 { code: "not_open" }` once it is answered, closed or replaced; `400` for words to an approval or a decision to a question |
+| `POST /api/runs/<id>/answer` `{ version, value }` | `200 { txid }` for the first answer to the open question; `200 { txid: null }` for the same answer again; `409 { code: "not_open" }` once it is answered, closed or replaced; `400` for words to an approval or a decision to a question; `403 { code: "person_only" }` for anyone acting for the person |
+| `POST /api/runs/<run>/credential` `{ flow, ceiling? }` | a run's credential ([run credentials](sign-in.md#run-credentials)) |
 | `GET /api/shapes/runs` | Electric's `runs` where `launched_by` is the signed-in person, without that column. Signed out, no one's rows; when sessions can't be read, `503` with `Retry-After: 5`, so the device keeps its rows and retries |
-| all | `401` signed out; `403 { code: "forbidden" }` for a Guest, no role, or anyone but the asker (logged `not_launcher`); `404` for an id that isn't an answer or a run; `405` for another method; `413` over 16 KiB; `503 { code: "unavailable" }` when Postgres can't be reached |
+| all | `401` signed out; `403 { code: "forbidden" }` for a Guest, no role, or anyone but the asker (logged `not_launcher`); `403 { code: "other_run" }` for a run credential of another run; `404` for an id that isn't an answer or a run; `405` for another method; `413` over 16 KiB; `503 { code: "unavailable" }` when Postgres can't be reached |
 
 ## Flows
 
@@ -84,10 +85,10 @@ CHECKs hold the shape: `waiting` is set exactly while `waiting` or `needs_you`; 
 | `status-local` | this tab's rows about each run's latest question: `draft`, `sending`, `focus`; a row for an older `version` counts as none |
 | `statuses` | each answer's state, question, answer, draft and focus: `messages` left-joined to `runs` and `status-local` |
 | `needs`, `latest` | the open questions, oldest first; and the latest answer's state |
-| `answer(id, value)`, `setDraft`, `focus`, `focusFirst` | the card's Answer, its field, a toast's Answer, and the header pill |
+| `answer(id, value)`, `setDraft`, `focus` | the card's Answer (or the notifications panel's), its field, a toast's Answer |
 | followers | delivery (`run/deliver` per answered question), the title (`TabTitle`, the host's `document.title`), and `agent.status.shown` |
 
-The views are `@smthrs/ui`'s `AgentStatusPill` and `NeedsYouCard` (`components/`): `AnswerStatus` under each answer, and `HeaderStatus` first in the header row. The question's toast is the feed's ([notifications.md](notifications.md)): its row for the run's launcher reads `needs_you` with the question, its Answer runs `focus`, and Hide is synced to the person's other devices. It sits in the shell's one stack under the header (`src/screens/app/Toasts.tsx`, `ToastStack`'s `inline` placement): the open composer docks over the column's foot, so a toast there would hide behind it. A toast fades in after 300 ms, so a question answered at once never flashes.
+The views are `@smthrs/ui`'s `AgentStatusPill` and `NeedsYouCard` (`components/`): `AnswerStatus` under each answer, and `HeaderStatus` first in the header row: the latest answer's Working, Waiting or Failed. Needs you shows on the top bar's bell instead, the one way in to what waits on the person, which opens the notifications panel at it (Will, 2026-10-20: "a notification type ui ux in the top bar of the app in general to bring us here"). The question's toast is the feed's ([notifications.md](notifications.md)): its row for the run's launcher reads `needs_you` with the question, its Answer runs `focus`, and Hide is synced to the person's other devices. It sits in the shell's one stack under the header (`src/screens/app/Toasts.tsx`, `ToastStack`'s `inline` placement): the open composer docks over the column's foot, so a toast there would hide behind it. A toast fades in after 300 ms, so a question answered at once never flashes.
 
 ## Observability
 
@@ -123,4 +124,4 @@ No record carries a question, an option or an answer (tests read the logs for th
 | `src/features/status/api.test.ts`, `reporter.test.ts` | Every answer `RunsClient` reads; what the reporter sends, skips and fails with |
 | `worker/Runs.test.ts` | Every route and status, the CHECK-backed transitions, the shape's filter and columns, records without the question or answer |
 | `packages/smithers/ui/tests/agent-status.test.tsx` | The pill, the card, the toasts and the title |
-| `e2e/status.spec.ts` | In real browsers: the scripted agent asks; the card, header, toast and title show it on two devices; the second device answers from the toast; the first device's run goes on; and one live run where the real model asks |
+| `e2e/status.spec.ts` | In real browsers: the scripted agent asks; the card, the top bar's bell, toast and title show it on two devices; the second device answers from the toast; the first device's run goes on; and one live run where the real model asks |

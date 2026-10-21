@@ -246,6 +246,14 @@ State is flux: route state lives in the URL through TanStack Router, and all oth
 - **Enforced:** `ImportRules` `forbidNames` `useReducer`, `useLayoutEffect`, `useInsertionEffect`, `useSyncExternalStore` from `react` in `.tsx`, and `forbid` other stores (`zustand`, `jotai`, `redux`, `@reduxjs/**`, `react-redux`, `mobx`, `mobx-react`, `mobx-react-lite`, `valtio`, `recoil`, `xstate`, `@xstate/**`, `@tanstack/react-query`, `@tanstack/query-core`, `swr`). Jev for module-level stores and refs used as state.
 - **Jev asks:** Does this file keep application or UI state, meaning values that change as a person uses the app, outside the URL route and TanStack DB collections, for example in React state hooks, refs used as a store, module-level variables that are reassigned, or a hand-written store or event emitter? Constants, configuration, a DOM root, a runtime and a scope are not state.
 
+### data.device-schemas-versioned
+
+Every collection a device keeps and every outbox payload declares its versions; a stored row's schema changes only with a new version, and data only the device has changes only with a migration to it.
+
+- **Will:** "when we deploy to prod we will have a frontend migration to do and in fact need a generalized way of handling migrations of our local first data that should be robust and make messing up hard" (2026-10-20, about 20:05, Telegram).
+- **Scope:** `apps/mvp/src/**`.
+- **Enforced:** test: `src/device/schemas.test.ts` checks `src/device/registry.ts` against `src/device/schemas.lock.json` (`Migrations.check`); the app's `Persistence` refuses a persisted collection the registry doesn't declare at that version (`Migrations.Undeclared`); `Migrations.local` and `Migrations.payload` refuse a version without a migration as the module loads. Decision [0021](decisions/0021-local-first-migrations.md).
+
 ### ui.tanstack-router
 
 Routing is TanStack Router, declared in `src/router.tsx`. Never hand-roll routing.

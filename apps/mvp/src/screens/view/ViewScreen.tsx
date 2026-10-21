@@ -16,7 +16,13 @@ export function ViewScreen() {
       <header className="view-screen-header">
         <Link to="/app">Back to chat</Link>
       </header>
-      {view === undefined ? null : <WebPageView url={view.url} size="full" />}
+      {view === undefined ? null : (
+        <WebPageView
+          url={view.url}
+          size="full"
+          preview={{ title: view.title, description: view.description, icon: view.icon }}
+        />
+      )}
     </main>
   )
 }

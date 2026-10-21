@@ -1,9 +1,11 @@
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
 import type { Flow, FlowRuntime } from "@smthrs/flow"
+import type { Channels } from "@smthrs/notifications"
 import { CloudflareRuntime, ExecutionObject } from "@smthrs/platform-cloudflare"
 import { Effect, Layer } from "effect"
 import type { SqlClient } from "effect/sql"
+import * as Checks from "./flows/Checks.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as Pause from "./flows/Pause.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
@@ -16,6 +18,8 @@ import * as SpendAlert from "./flows/SpendAlert.ts"
 import * as TerminalOpen from "./flows/TerminalOpen.ts"
 import type { Machines } from "./branch/Machines.ts"
 import type { Sandboxes } from "./branch/Sandboxes.ts"
+import * as Todo from "./flows/Todo.ts"
+import type { Implement } from "./flows/TodoAgent.ts"
 import * as GitHubHost from "./github/Host.ts"
 import type * as Triage from "./github/Triage.ts"
 
@@ -39,14 +43,15 @@ export interface Flows<ROut, E, R> {
 /**
  * The deployed remote flows: `probe/Pause`, whose steps log, `chat/Expire` over `app`: the app's own tables (not
  * the engine's schema) and how old a streaming answer gets before it settles (docs/features/agent.md#settling), and
- * `ops/SpendAlert` over the app's tables (docs/features/spend-alerts.md).
+ * `ops/SpendAlert` over the app's tables, sending through `channels`, the deployment's email and Telegram providers
+ * (none by default; docs/features/spend-alerts.md#channels).
  */
-export const remote = <E, R>(app: Expire.Services<E, R>) => ({
+export const remote = <E, R>(app: Expire.Services<E, R>, channels?: Layer.Layer<Channels.Channels>) => ({
   flows: [Pause.Pause, Expire.Expire, SpendAlert.SpendAlert],
   registration: Layer.mergeAll(
     Pause.registration(Pause.logged),
     Expire.registration(app),
-    SpendAlert.registration(app.database),
+    SpendAlert.registration(app.database, channels),
   ),
 })
 
@@ -55,8 +60,12 @@ export const remote = <E, R>(app: Expire.Services<E, R>) => ({
  * `auth/RevokeGitHubToken` over the app's tables and sign-in's services (docs/features/sign-in.md#role-checks,
  * #signing-out).
  */
-export const remoteWithSignIn = <E, R>(app: Expire.Services<E, R>, services: RecheckRole.Services) => {
-  const base = remote(app)
+export const remoteWithSignIn = <E, R>(
+  app: Expire.Services<E, R>,
+  services: RecheckRole.Services,
+  channels?: Layer.Layer<Channels.Channels>,
+) => {
+  const base = remote(app, channels)
   return {
     flows: [...base.flows, RecheckRole.RecheckRole, RevokeGitHubToken.RevokeGitHubToken],
     registration: Layer.mergeAll(
@@ -87,6 +96,28 @@ export const withGitHub = <ROut, E, R, GE, GR, SE, SR>(
 ) => ({
   flows: [...flows.flows, ...GitHubHost.flows],
   registration: Layer.merge(flows.registration, Layer.unwrap(Effect.map(services, GitHubHost.registration))),
+})
+
+/**
+ * `flows`, plus the coding factory's `todo` run and a pull request head's `checks/Run` (decision 0016, the factory
+ * simplified; docs/features/todos.md#the-run) over `services`, the branches' machines (`machines`) and the agent's
+ * `implement` (worker/flows/TodoAgent.ts `registration`), when this deployment has the GitHub App. `services` is built
+ * when each execution's registration is, as `withGitHub`'s is.
+ */
+export const withTodos = <ROut, E, R, SE, SR, DE, DR, ME, MR, IE, IR>(
+  flows: Flows<ROut, E, R>,
+  services: Effect.Effect<Todo.Services<DE, DR> & Checks.Services<DE, DR>, SE, SR>,
+  machines: Layer.Layer<Machines, ME, MR>,
+  implement: Layer.Layer<Layer.Success<typeof Implement.layer>, IE, IR>,
+) => ({
+  flows: [...flows.flows, Todo.Todo, Checks.ChecksRun],
+  registration: Layer.mergeAll(
+    flows.registration,
+    Layer.unwrap(Effect.map(services, (built) =>
+      Layer.mergeAll(Todo.registration(built, implement), Checks.registration(built))
+        .pipe(Layer.provide(machines))
+    )),
+  ),
 })
 
 /**

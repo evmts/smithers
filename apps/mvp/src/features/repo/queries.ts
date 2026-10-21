@@ -2,7 +2,7 @@ import type { ElectricCollection } from "@smthrs/effect-electric"
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { Effect, Option } from "effect"
 import { blobKey, readmeOf, treeKey } from "./paths"
-import type { BlobRow, CloneRow, RefsRow, TreeRow, ViewRow } from "./rows"
+import type { AboutRow, BlobRow, CloneRow, RefsRow, TreeRow, ViewRow } from "./rows"
 import type { Repository } from "./schema"
 
 // What every frontend reads. The live queries follow the routed view's one row, so React renders them with
@@ -40,6 +40,24 @@ export const refsQuery = (view: Rows<ViewRow>, refs: Rows<RefsRow>) =>
     q
       .from({ view: view.tanstack })
       .leftJoin({ refs: refs.tanstack }, ({ view, refs }) => Query.eq(view.refsKey, refs.key))
+      .findOne(),
+  )
+
+/** The view, with what GitHub says of its repository when this tab has loaded or is loading it. */
+export const aboutQuery = (view: Rows<ViewRow>, abouts: Rows<AboutRow>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ view: view.tanstack })
+      .leftJoin({ about: abouts.tanstack }, ({ view, about }) => Query.eq(view.repoId, about.key))
+      .findOne(),
+  )
+
+/** The view, with the repository's generated-files manifest at its commit, when it has one. */
+export const manifestQuery = (view: Rows<ViewRow>, blobs: Rows<BlobRow>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ view: view.tanstack })
+      .leftJoin({ manifest: blobs.tanstack }, ({ view, manifest }) => Query.eq(view.manifestKey, manifest.key))
       .findOne(),
   )
 

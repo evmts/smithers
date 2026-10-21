@@ -1,0 +1,85 @@
+// What the Terminal view shows (src/features/terminal/view.ts, docs/features/branch-workspace.md#the-page).
+import { describe, expect, test } from "vitest"
+import type { Panel, Tab } from "./schema"
+import { NO_TERMINALS, panelViewOf } from "./view"
+
+const panel = (fields: Partial<Panel> = {}): Panel => ({
+  id: "panel",
+  branchId: "b-1",
+  terminalId: null,
+  phase: "idle",
+  access: null,
+  ...fields,
+})
+
+const tab = (fields: Partial<Tab> = {}): Tab => ({
+  id: "t-1",
+  ownerId: "maya",
+  ownerLogin: "maya",
+  mine: false,
+  status: "open",
+  createdAt: "2026-10-20T12:00:00Z",
+  ...fields,
+})
+
+describe("panelViewOf", () => {
+  test("nothing for a page that shows no branch yet", () => {
+    expect(panelViewOf(undefined, [], true)).toBeUndefined()
+    expect(panelViewOf(panel({ branchId: null }), [], true)).toBeUndefined()
+  })
+
+  // The branch terminal's recordings showed a small button over a blank page, then seconds of nothing while the
+  // machine woke (Will, 2026-10-20): the screen is always there, with Open terminal in its middle.
+  test("an editor without a terminal gets Open terminal in the screen; disabled with a spinner while the machine wakes", () => {
+    expect(panelViewOf(panel(), [], true)).toEqual({ badge: undefined, open: "button", screen: { kind: "open" } })
+    expect(panelViewOf(panel({ phase: "opening", terminalId: "t-9" }), [], true)).toEqual({
+      badge: undefined,
+      open: "opening",
+      screen: { kind: "open" },
+    })
+    // Their terminal is still opening in the tabs: the button stays, disabled, until it attaches.
+    expect(panelViewOf(panel({ phase: "opening" }), [tab({ mine: true, status: "opening" })], true)!.open).toBe("opening")
+    // A terminal that failed to open, or ended, offers Open terminal again, under its badge.
+    expect(panelViewOf(panel({ phase: "failed" }), [], true)).toEqual({ badge: undefined, open: "button", screen: { kind: "open" } })
+    expect(panelViewOf(panel({ phase: "ended", terminalId: "t-1" }), [], true)).toEqual({
+      badge: "Ended",
+      open: "button",
+      screen: { kind: "open" },
+    })
+  })
+
+  test("an attached terminal fills the screen, read-only for a viewer; Open terminal moves above it", () => {
+    expect(panelViewOf(panel({ phase: "open", terminalId: "t-1", access: "write" }), [tab({ mine: true })], true)).toEqual({
+      badge: undefined,
+      open: undefined,
+      screen: { kind: "frame", terminalId: "t-1", readOnly: false },
+    })
+    expect(panelViewOf(panel({ phase: "connecting", terminalId: "t-1" }), [tab()], false)).toEqual({
+      badge: undefined,
+      open: undefined,
+      screen: { kind: "frame", terminalId: "t-1", readOnly: false },
+    })
+    expect(panelViewOf(panel({ phase: "offline", terminalId: "t-1", access: "read" }), [tab()], false)).toEqual({
+      badge: "Offline",
+      open: undefined,
+      screen: { kind: "frame", terminalId: "t-1", readOnly: true },
+    })
+    // An editor watching someone else's terminal can still open their own.
+    expect(panelViewOf(panel({ phase: "open", terminalId: "t-1", access: "write" }), [tab()], true)!.open).toBe("button")
+  })
+
+  test("someone who can't open a terminal sees No terminals on a branch with none, and only the badge otherwise", () => {
+    expect(panelViewOf(panel(), [], false)).toEqual({
+      badge: undefined,
+      open: undefined,
+      screen: { kind: "empty", text: NO_TERMINALS },
+    })
+    expect(panelViewOf(panel({ phase: "no_access", terminalId: "t-1" }), [], false)).toEqual({
+      badge: "No access",
+      open: undefined,
+      screen: { kind: "empty", text: undefined },
+    })
+    // Live terminals to pick from in the tabs: the screen waits for one, without saying there are none.
+    expect(panelViewOf(panel({ phase: "failed" }), [tab()], false)!.screen).toEqual({ kind: "empty", text: undefined })
+  })
+})

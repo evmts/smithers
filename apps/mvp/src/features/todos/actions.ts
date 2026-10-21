@@ -10,7 +10,14 @@ import { TodosStore } from "./store"
 // and Drop are the flows `todo/commit` and `todo/drop`, dispatched with door `button` in the store's scope: the press
 // returns at once, and a committed draft goes once its change is queued. Sending runs in the outbox, never in an action.
 
-/** What a stack route's loader calls: shows `owner/name`'s stack, and, with `number`, that TODO; and syncs the stack. */
+/**
+ * What a stack route calls on a link's hover or focus (the router's intent preload): starts syncing `owner/name`'s
+ * stack without showing it, so the page the click opens has its rows.
+ */
+export const warm = (owner: string, name: string) =>
+  Effect.flatMap(TodosStore, (store) => Effect.asVoid(store.stackOf(repoId(owner, name))))
+
+/** What a stack route calls on a navigation: shows `owner/name`'s stack, and, with `number`, that TODO; and syncs the stack. */
 export const open = (owner: string, name: string, number?: number) =>
   Effect.gen(function* () {
     const store = yield* TodosStore

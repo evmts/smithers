@@ -1,11 +1,94 @@
 ---
 title: Mac mini test farm
-status: done
+status: in-progress
 area: infra
 owner: test-farm setup agent; lead coordinates suite use
-updated: 2026-10-20
+updated: 2026-10-20 23:04 PDT
 links: [second-build-machine.md, dev-stack-hygiene.md, e2e-suite-and-gifs.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-20, 23:04 PDT
+
+**What:** Provide serialized capacity for real browser suites and recordings.
+
+**Why:** Shared load and startup failures have blocked feature proof.
+
+**Current state:** The lead lifted the test pause at 23:01. At 23:02 thirteen builders were resumed with mini e2e allowed from 23:18, one run at a time; at 23:03 the Effect home builder is waiting for that slot. This is active farm coordination, not proof that every waiting suite passed. Earlier startup failures remain historical evidence.
+
+**Next step:** Run the queued serialized journeys and retain fresh mini startup and suite receipts. Keep Cloudflare sandbox-runtime proof separate.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, 21:03–23:03 PDT; synthetic notifications and tool blocks excluded. Current rulings and queue answers (latest 19:38 PDT) prevail over historical briefs/designs. Execution ownership is retained; Codex tracker curator reconciles documentation only. Product receipts are lead-reported; this pass verifies the site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 21:54 PDT
+
+**What:** Keep the Mac mini farm ready for browser suites and recordings.
+
+**Why:** Heavy tests need reliable capacity.
+
+**Current state:** At 21:46 the lead reports the QuickJS default build avoids startup WebAssembly loading. At 21:51 the shared dev server restarted cleanly; no explicit fresh mini startup and waiting-suite receipt is reported. The earlier mini failure remains unresolved evidence, so status stays blocked. Cloudflare local-runtime sandbox proof is also pending.
+
+**Next step:** Obtain a clean mini server start and rerun the waiting recordings; retain the bundled sandbox runtime proof separately.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user text and lead replies from session 6253ecf2, approximately 19:54–21:54 PDT; compaction summaries, tool blocks and relayed agent messages excluded. Current rulings and queue answers take precedence over historical briefs, decisions and proposals. Execution ownership retained; reconciliation by Codex tracker curator. Product receipts are reported evidence; tracker validation is the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 21:34 PDT
+
+**What:** Keep the four-slot Mac mini test farm usable for suites and recordings.
+
+**Why:** Heavy checks need reliable capacity away from the shared MacBook.
+
+**Current state:** The lead corrected the recovery claim at 21:24 and again at 21:33 PDT: Node loading improved, but API-server packaging still cannot read the WebAssembly file and the mini dev server cannot start. The coding-factory owner is fixing it. The earlier 21:16 passing journey does not establish a recovered farm.
+
+**Next step:** Obtain clean dev-server startup and API bundling receipts on both mini and MacBook, then rerun the waiting suites. The HTTP/2 owner uses the MacBook meanwhile; the Effect-home owner also awaits its heavy-test lock.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human text and lead assistant replies from session 6253ecf2, approximately 19:34–21:34 PDT; rulings, queue answers through 19:38, shared feature/host/panel briefs and designs, decisions through 0021, proposals, TODOs and rules. Execution ownership retained; reconciled by Codex tracker curator. Product checks are reported evidence; this pass validates the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 21:25 PDT
+
+**What:** Keep the four-slot Mac mini test farm usable for suites and recordings.
+
+**Why:** Heavy checks need reliable capacity away from the shared MacBook.
+
+**Current state:** At 21:18 PDT the lead reports the coding-factory owner moved WebAssembly loading inside the Cloudflare worker layer and a mini slash-commands run passed around 21:16. Four waiting owners were told to rerun. This supersedes the 20:57 startup blocker in the lead updates; one passing journey does not establish that every waiting suite works. The live test database may receive the owner’s latest migration; shared dev stays at 0028 until landing.
+
+**Next step:** Collect fresh startup, bundling and browser receipts from all waiting owners, including the Effect home, branch recordings and sweep. If a fresh run still fails, retain its failure and reopen the blocker. Keep dependency edits and the lockfile synchronized.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead assistant replies from the last approximately two transcript hours; current rulings, queue answers through 19:38 PDT, shared feature/host/panel briefs and designs, decisions through 0021, proposals, TODOs and rules. Completion checks are reported evidence, not rerun by this tracker. Execution ownership retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 20:57 PDT
+
+**What:** Keep the four-slot Mac mini test farm usable for independent suites and recordings.
+
+**Why:** Heavy checks and browser evidence need reliable capacity away from the shared MacBook.
+
+**Current state:** The lead regenerated the lockfile at 20:27 PDT after a package edit broke strict installation; installs recovered. At 20:57 tests are blocked again: the dev server cannot start because the coding-factory sandbox path loads a WebAssembly module Node cannot read. The lead assigned that fix to the factory owner. Earlier farm setup and parity receipts remain valid history, not current availability.
+
+**Next step:** Fix the Node/WebAssembly boundary, prove the dev server starts, then rerun queued browser journeys. Preserve the lockfile with every dependency edit and report actual suite results.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human messages and lead text replies from session 6253ecf2, approximately 18:57–20:57 PDT; current rulings and queue answers, decisions through 0021, proposals and shared briefs/designs. Transport details additionally use its final builder report. Product checks are reported evidence; this pass runs the maintainer-site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
 
 ## Current specification — 2026-10-20, 16:44 PDT
 

@@ -230,20 +230,26 @@ describe("the header's avatars", () => {
     ...fields,
   })
 
-  test("everyone else once, by their latest tab, titled with where they are", () => {
+  test("this person first, by this tab, then everyone else once, by their latest tab, titled with where they are", () => {
     const participants = [
-      row({ id: "c-1", principal: "maya", self: true }),
       row({ id: "c-2", principal: "maya", where: { view: "terminal", terminalId: null } }),
+      row({ id: "c-1", principal: "maya", self: true }),
       row({ id: "c-3", principal: "ben", where: { view: "code", path: "src" } }),
       row({ id: "c-4", principal: "ben", where: { view: "terminal", terminalId: "t-1" } }),
       row({ id: "c-5", principal: "gus", name: "gus" }),
       row({ id: "c-6", principal: "ann", where: { view: "code", path: "" } }),
     ]
     expect(avatarsOf(participants)).toEqual([
+      { id: "c-1", name: "maya", title: "maya (you)" },
       { id: "c-4", name: "ben", title: "ben · Terminal" },
       { id: "c-5", name: "gus", title: "gus" },
       { id: "c-6", name: "ann", title: "ann · Code" },
     ])
+    // Alone on the branch, the header still shows who is there: this person. Before the room answers, nobody.
+    expect(avatarsOf([row({ id: "c-1", principal: "maya", self: true })])).toEqual([{ id: "c-1", name: "maya", title: "maya (you)" }])
+    expect(avatarsOf([])).toEqual([])
+    // A roster without this tab (it hasn't joined yet) shows everyone in it.
+    expect(avatarsOf([row({ id: "c-3", principal: "ben" })])).toEqual([{ id: "c-3", name: "ben", title: "ben" }])
     expect(placeOf({ view: "code", path: "src/app.ts" })).toBe("src/app.ts")
     expect(placeOf(null)).toBeUndefined()
   })

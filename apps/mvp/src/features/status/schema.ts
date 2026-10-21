@@ -82,6 +82,10 @@ export const Run = Schema.Struct({
 })
 export type Run = typeof Run.Type
 
+/** Whether a run's row holds a question still open: it needs the person, and nobody has answered it. */
+export const isOpen = (run: Pick<Run, "status" | "answeredAt">): boolean =>
+  run.status === "needs_you" && run.answeredAt === null
+
 /**
  * This tab's own row about a run's latest question, keyed by the run's id: the question's `version`, the field's
  * `draft`, whether an answer is on its way (`sending`), and how many times Answer asked the card to take focus

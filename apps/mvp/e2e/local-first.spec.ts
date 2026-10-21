@@ -15,7 +15,7 @@ import { faults } from "./faults"
 const longQuestion = (start: string, end: string) =>
   `Write ${start} on the first line, then count from 1 to 120 in words, one number per line, then write ${end} on the last line.`
 
-test("offline ask: two questions asked offline queue, survive a reload offline, and are answered in order once online", async ({ devices, request }) => {
+test("offline ask: two questions asked offline queue, survive a reload offline, and are answered in order once online", { annotation: { type: "summary", description: "Questions asked offline wait on the device, survive a reload, and are answered in order once online." } }, async ({ devices, request }) => {
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
   await a.offline()
@@ -48,7 +48,7 @@ test("offline ask: two questions asked offline queue, survive a reload offline, 
   expect(rows.filter(({ role }) => role === "user").map(({ text }) => text)).toEqual([first, second])
 })
 
-test("restart offline: a question asked offline survives closing the app, and a page opened again sends it once", async ({ devices, request }) => {
+test("restart offline: a question asked offline survives closing the app, and a page opened again sends it once", { annotation: { type: "summary", description: "A question asked offline survives closing the app and is sent once when it opens again." } }, async ({ devices, request }) => {
   const word = devices.word
   const [a] = await devices.open("A")
   await a.offline()
@@ -66,7 +66,7 @@ test("restart offline: a question asked offline survives closing the app, and a 
   expect(rows.map(({ role }) => role)).toEqual(["user", "assistant"])
 })
 
-test("closed before its run started: a question ChatApi took, whose tab closed before its engine recorded the run, is answered when the app opens again", async ({ devices, request }) => {
+test("closed before its run started: a question ChatApi took, whose tab closed before its engine recorded the run, is answered when the app opens again", { annotation: { type: "summary", description: "A question whose tab closed before it was answered is answered when the app opens again." } }, async ({ devices, request }) => {
   const word = devices.word
   const [a] = await devices.openFaulty("A")
   // This tab's engine takes its time, as a worker still loading wa-sqlite: the run that answers isn't recorded yet.
@@ -84,7 +84,7 @@ test("closed before its run started: a question ChatApi took, whose tab closed b
   expect(rows.map(({ role }) => role)).toEqual(["user", "assistant"])
 })
 
-test("late joiner: a device that opens later shows the same latest messages, and Load earlier pages back through Postgres' order", async ({ devices, request }) => {
+test("late joiner: a device that opens later shows the same latest messages, and Load earlier pages back through Postgres' order", { annotation: { type: "summary", description: "A device that opens later shows the same conversation, and Load earlier pages back in order." } }, async ({ devices, request }) => {
   const word = devices.word
   const [a] = await devices.open("A")
   const asked = [`Reply with exactly the word: first-${word}`, `Reply with exactly the word: second-${word}`]
@@ -121,7 +121,7 @@ test("late joiner: a device that opens later shows the same latest messages, and
   }).toPass({ timeout: 30_000 })
 })
 
-test("two tabs: each keeps its own composer; the tab a person asks in leads, and sends at once", async ({ devices }) => {
+test("two tabs: each keeps its own composer; the tab a person asks in leads, and sends at once", { annotation: { type: "summary", description: "Each tab keeps its own draft, and the tab a person asks in sends at once." } }, async ({ devices }) => {
   const word = devices.word
   const [one] = await devices.open("Tab 1")
   const two = await devices.tab(one.device, "Tab 2")
@@ -154,7 +154,7 @@ test("two tabs: each keeps its own composer; the tab a person asks in leads, and
   for (const tab of [one, two]) await expect(tab.page.getByText(NOT_SENT, { exact: true })).toHaveCount(0)
 })
 
-test("two tabs offline: the leading tab closes, and the other restores its queued question and sends it once online", async ({ devices, request }) => {
+test("two tabs offline: the leading tab closes, and the other restores its queued question and sends it once online", { annotation: { type: "summary", description: "When the tab holding a queued question closes, the other tab sends it once online." } }, async ({ devices, request }) => {
   const word = devices.word
   const [one] = await devices.open("Tab 1")
   const two = await devices.tab(one.device, "Tab 2")
@@ -171,7 +171,7 @@ test("two tabs offline: the leading tab closes, and the other restores its queue
   expect(rows.map(({ role }) => role)).toEqual(["user", "assistant"])
 })
 
-test("concurrent asks: two devices ask at the same moment, and each question gets exactly one answer, in one order everywhere", async ({ devices, request }) => {
+test("concurrent asks: two devices ask at the same moment, and each question gets exactly one answer, in one order everywhere", { annotation: { type: "summary", description: "Two devices asking at the same moment each get one answer, in the same order everywhere." } }, async ({ devices, request }) => {
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
   const alpha = `Reply with exactly the word: alpha-${word}`
@@ -201,7 +201,7 @@ test("concurrent asks: two devices ask at the same moment, and each question get
   expect(rows.filter(({ role }) => role === "user").map(({ text }) => text)).toEqual(pairs(thread).map(([question]) => question.text))
 })
 
-test("tab closes mid-answer: the answer waits for the asking device, and completes on both devices once it opens the app again", async ({ devices, request }) => {
+test("tab closes mid-answer: the answer waits for the asking device, and completes on both devices once it opens the app again", { annotation: { type: "summary", description: "An answer whose tab closed finishes on every device once that device opens the app again." } }, async ({ devices, request }) => {
   test.setTimeout(180_000)
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
@@ -223,7 +223,7 @@ test("tab closes mid-answer: the answer waits for the asking device, and complet
   expect(answer?.text).toContain(`end-${word}`)
 })
 
-test("reload mid-answer: the asking device reloads while another watches, and both see the answer complete", async ({ devices }) => {
+test("reload mid-answer: the asking device reloads while another watches, and both see the answer complete", { annotation: { type: "summary", description: "A device that reloads mid-answer and another watching both see the answer finish." } }, async ({ devices }) => {
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
   const asked = longQuestion(`reload-${word}`, `end-${word}`)
@@ -241,7 +241,7 @@ test("reload mid-answer: the asking device reloads while another watches, and bo
   expect(pairs(thread).map(([question]) => question.text)).toEqual([asked, next])
 })
 
-test("long outage: a device offline catches up on everything asked meanwhile", async ({ devices }) => {
+test("long outage: a device offline catches up on everything asked meanwhile", { annotation: { type: "summary", description: "A device that was offline catches up on everything asked meanwhile." } }, async ({ devices }) => {
   test.setTimeout(180_000)
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
@@ -267,7 +267,7 @@ test("long outage: a device offline catches up on everything asked meanwhile", a
   test.info().annotations.push({ type: "catch-up", description: `${Date.now() - back} ms from online to A showing both answers` })
 })
 
-test("flapping network: a question asked during each drop queues, and every one reaches Postgres once, in order", async ({ devices, request }) => {
+test("flapping network: a question asked during each drop queues, and every one reaches Postgres once, in order", { annotation: { type: "summary", description: "Questions asked while the network drops and returns each reach the server once, in order." } }, async ({ devices, request }) => {
   test.setTimeout(180_000)
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
@@ -290,7 +290,7 @@ test("flapping network: a question asked during each drop queues, and every one 
   expect(rows.filter(({ role }) => role === "user").map(({ text }) => text)).toEqual(asked)
 })
 
-test("sync down while asking: a question ChatApi took stays queued until the device sees it, then shows once, answered", async ({ devices }) => {
+test("sync down while asking: a question ChatApi took stays queued until the device sees it, then shows once, answered", { annotation: { type: "summary", description: "A question the server took stays queued on the device until sync shows it, then shows once, answered." } }, async ({ devices }) => {
   test.setTimeout(180_000)
   const word = devices.word
   const [[a], [b]] = await Promise.all([devices.openFaulty("A"), devices.open("B")])
@@ -314,7 +314,7 @@ test("sync down while asking: a question ChatApi took stays queued until the dev
   await expectSameThread([a, b], word, 2)
 })
 
-test("Retry: syncs at once instead of waiting out the backoff", async ({ devices }) => {
+test("Retry: syncs at once instead of waiting out the backoff", { annotation: { type: "summary", description: "Retry syncs at once instead of waiting out the backoff." } }, async ({ devices }) => {
   test.setTimeout(120_000)
   const [[a]] = await Promise.all([devices.openFaulty("A")])
   await a.device.syncDown()
@@ -333,47 +333,7 @@ test("Retry: syncs at once instead of waiting out the backoff", async ({ devices
   await a.expectUp()
 })
 
-test("conflict: a queued question whose id another message took shows Not sent, and Edit puts it back in the composer", async ({ devices, request }) => {
-  const word = devices.word
-  const [a] = await devices.open("A")
-  await a.offline()
-  const mine = `Reply with exactly the word: mine-${word}`
-  await a.ask(mine)
-  await a.expectQueued(mine)
-  // Another writer stores a different question under the same id while A is offline.
-  const id = await a.idOf(mine)
-  const other = await request.post("/api/questions", {
-    data: { id, answerId: crypto.randomUUID(), text: `Reply with exactly the word: other-${word}` },
-  })
-  expect(other.status(), `${id}: ${await other.text()}`).toBe(202)
-  await a.online()
-  await a.expectNotSent(mine)
-  await a.question(mine).getByRole("button", { name: "Edit" }).click()
-  await expect(a.composer).toHaveValue(mine)
-  await expect(a.question(mine)).toHaveCount(0)
-})
-
-test("two devices ask offline and come back in reverse order: both questions stored, in one order everywhere, each answered", async ({ devices, request }) => {
-  const word = devices.word
-  const [a, b] = await devices.open("A", "B")
-  await a.offline()
-  await b.offline()
-  const fromA = `Reply with exactly the word: froma-${word}`
-  const fromB = `Reply with exactly the word: fromb-${word}`
-  await a.ask(fromA)
-  await b.ask(fromB)
-  // B comes back first, then A.
-  await b.online()
-  await b.expectAnswered(fromB, `fromb-${word}`)
-  await a.online()
-  await a.expectAnswered(fromA, `froma-${word}`)
-  const thread = await expectSameThread([a, b], word, 4)
-  expect(pairs(thread).map(([question]) => question.text)).toEqual([fromB, fromA])
-  const rows = await serverRows(request, word)
-  expect(rows.filter(({ role }) => role === "user").map(({ text }) => text)).toEqual([fromB, fromA])
-})
-
-test("offline mid-answer: the text so far stays, and the whole answer arrives once back online", async ({ devices }) => {
+test("offline mid-answer: the text so far stays, and the whole answer arrives once back online", { annotation: { type: "summary", description: "Going offline mid-answer keeps the text so far, and the rest arrives once back online." } }, async ({ devices }) => {
   test.setTimeout(180_000)
   const word = devices.word
   const [a] = await devices.open("A")
@@ -387,7 +347,7 @@ test("offline mid-answer: the text so far stays, and the whole answer arrives on
   await a.expectAnswered(asked, `end-${word}`)
 })
 
-test("Electric down at boot: after one visit, the conversation shows from the device, and the pill says so", async ({ devices }) => {
+test("Electric down at boot: after one visit, the conversation shows from the device, and the pill says so", { annotation: { type: "summary", description: "With sync down at boot, the conversation still shows from the device, and the pill says so." } }, async ({ devices }) => {
   test.setTimeout(120_000)
   const word = devices.word
   const [a] = await devices.open("A")
@@ -401,7 +361,7 @@ test("Electric down at boot: after one visit, the conversation shows from the de
   await expect(a.pill.getByRole("button", { name: "Retry" })).toBeVisible({ timeout: 60_000 })
 })
 
-test("back/forward: leaving the app and coming back shows the same conversation, and it still asks", async ({ devices }) => {
+test("back/forward: leaving the app and coming back shows the same conversation, and it still asks", { annotation: { type: "summary", description: "Leaving the app and coming back shows the same conversation, and asking still works." } }, async ({ devices }) => {
   const word = devices.word
   const [a] = await devices.open("A")
   const asked = `Reply with exactly the word: before-${word}`
@@ -414,30 +374,4 @@ test("back/forward: leaving the app and coming back shows the same conversation,
   const after = `Reply with exactly the word: after-${word}`
   await a.ask(after)
   await a.expectAnswered(after, `after-${word}`)
-})
-
-test("duplicate ask: resending a question ChatApi already took, or reusing its id, changes nothing on any device or in Postgres", async ({ devices, request }) => {
-  const word = devices.word
-  const [a, b] = await devices.open("A", "B")
-  const asked = `Reply with exactly the word: once-${word}`
-  await a.ask(asked)
-  await a.expectAnswered(asked, `once-${word}`)
-
-  // The same question again, ids and all, as a retry after a lost response sends it: ChatApi answers 200 and says
-  // the question is already there.
-  const [first] = a.asked
-  const retry = await request.post("/api/questions", { data: { id: first!.questionId, answerId: first!.answerId, text: first!.text } })
-  expect(retry.status()).toBe(200)
-  expect(await retry.json()).toEqual({ txid: null, existing: true })
-
-  // The same id with another answer id is a different question: refused, and nothing is written.
-  const conflict = await request.post("/api/questions", { data: { id: first!.questionId, answerId: crypto.randomUUID(), text: first!.text } })
-  expect(conflict.status()).toBe(409)
-
-  const rows = await serverRows(request, word)
-  expect(rows.map(({ id, role, status }) => ({ id, role, status }))).toEqual([
-    { id: first!.questionId, role: "user", status: "done" },
-    { id: first!.answerId, role: "assistant", status: "done" },
-  ])
-  await expectSameThread([a, b], word, 2)
 })

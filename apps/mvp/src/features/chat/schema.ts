@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { Part } from "../agent/schema"
 import { COPY_ANSWERS, EDIT_ANSWERS } from "./contract"
 import { copyPayload, editPayload } from "./flows"
 
@@ -27,6 +28,11 @@ export const Message = Schema.Struct({
   updatedAt: Schema.String,
   /** The branch's conversation the row belongs to (decision 0013 §1); a row synced before it existed has none. */
   conversationId: Schema.optional(Schema.String),
+  /**
+   * An answer's steps, as the agent took them (docs/features/agent.md#parts), which the notifications panel shows. A
+   * row the device kept from before the app read them has none until it changes.
+   */
+  parts: Schema.optional(Schema.Array(Part)),
 })
 export type Message = typeof Message.Type
 
@@ -72,8 +78,9 @@ export const Unsent = Schema.Struct({
 export type Unsent = typeof Unsent.Type
 
 /**
- * This tab's composer: open or hidden, the unsent draft, and whether the device has stored that draft (`saved`), so a
- * reload finds it. One row.
+ * This tab's composer: open or hidden, the unsent draft, and whether the device has stored it (`saved`). On a branch its
+ * owner shared, the draft is the branch's prompt, which its people type together (docs/features/coedit.md#the-prompt);
+ * anywhere else it is this person's alone, kept on this device for the conversation (`chat-drafts`). One row.
  */
 export const COMPOSER = "composer"
 export const Composer = Schema.Struct({
@@ -116,19 +123,20 @@ export type History = typeof History.Type
 
 /**
  * Which conversation this tab shows and asks in: a branch's (decision 0013 §1), or, `null`, the home conversation `/app`
- * shows. The route that shows a branch sets it. One row.
+ * shows; and whether its prompt is `shared`, typed together, which it is only on a branch its owner shared. The route
+ * that shows a branch sets it. One row.
  */
 export const PLACE = "place"
-export const Place = Schema.Struct({ id: Schema.Literal(PLACE), conversationId: Schema.NullOr(Schema.String) })
+export const Place = Schema.Struct({
+  id: Schema.Literal(PLACE),
+  conversationId: Schema.NullOr(Schema.String),
+  shared: Schema.Boolean,
+})
 export type Place = typeof Place.Type
 
-/**
- * The draft the composer had in a conversation, kept on the device so a reload finds it: keyed by the conversation's
- * id, or `HOME_DRAFT` for the home conversation. A row exists only while its draft isn't empty.
- */
+/** The key the device keeps the home conversation's draft under (`chat-drafts`); a branch's is its conversation's id. */
 export const HOME_DRAFT = "home"
-export const Draft = Schema.Struct({ id: Schema.String, text: Schema.String })
-export type Draft = typeof Draft.Type
+
 
 // What `chat/copy`'s and `chat/edit`'s steps ask the tab that started their run, and what it answers
 // (src/features/chat/steps.ts, src/flows/askingTab.ts).

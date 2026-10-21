@@ -39,3 +39,49 @@ export type SpendAlert = typeof SpendAlert.Type
  */
 export const Seen = Schema.Struct({ kind: Schema.String, through: Schema.String })
 export type Seen = typeof Seen.Type
+
+/** A channel spend alerts go out on: email or Telegram (`@smthrs/notifications` `Channels.Channel`). */
+export const AlertChannelName = Schema.Literals(["email", "telegram"])
+export type AlertChannelName = typeof AlertChannelName.Type
+
+/**
+ * One row of Postgres `alert_channels` as Electric delivers it: a channel an Admin turned on, its destinations (email
+ * addresses, or one Telegram chat id) and when it changed.
+ */
+export const AlertChannel = Schema.Struct({
+  channel: AlertChannelName,
+  destinations: Schema.Array(Schema.String),
+  updatedAt: Schema.String,
+})
+export type AlertChannel = typeof AlertChannel.Type
+
+/**
+ * One row of Postgres `alert_deliveries`: an alert's receipt on one channel. `sent`; `refused` for good, with its
+ * `code`, the provider's short `reason` and the `httpStatus`; or `failed`, retried by the server until it is sent or a
+ * day passes.
+ */
+export const AlertDelivery = Schema.Struct({
+  alertId: Schema.String,
+  channel: AlertChannelName,
+  status: Schema.Literals(["sent", "refused", "failed"]),
+  code: Schema.NullOr(Schema.String),
+  reason: Schema.NullOr(Schema.String),
+  httpStatus: Schema.NullOr(Schema.Number),
+  attempts: Schema.Number,
+  updatedAt: Schema.String,
+})
+export type AlertDelivery = typeof AlertDelivery.Type
+
+/** This tab's last save of a channel: still `saving`, or `failed` and to be saved again. A save that lands is removed. */
+export const ChannelSave = Schema.Struct({
+  channel: AlertChannelName,
+  state: Schema.Literals(["saving", "failed"]),
+})
+export type ChannelSave = typeof ChannelSave.Type
+
+/** `POST /api/alert-channels`'s body. */
+export const SetChannelRequest = Schema.Struct({
+  channel: AlertChannelName,
+  destinations: Schema.Array(Schema.String),
+})
+export type SetChannelRequest = typeof SetChannelRequest.Type

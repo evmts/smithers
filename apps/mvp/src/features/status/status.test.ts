@@ -92,7 +92,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     // This tab's own rows: a draft and Answer's focus, neither of which another tab or device sees.
     a.status.actions.setDraft(answerId, "docs")
     a.status.actions.focus(answerId)
-    a.status.actions.focusFirst()
+    a.status.actions.focus(answerId)
     expect(a.statusOf(answerId)).toMatchObject({ draft: "docs", focus: 2 })
     expect(b.statusOf(answerId)).toMatchObject({ draft: "", focus: 0 })
     expect(b.needs()).toEqual([expect.objectContaining({ id: answerId })])
@@ -123,7 +123,6 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     a.status.actions.answer(answerId, true)
     a.status.actions.setDraft(answerId, "x")
     a.status.actions.focus(answerId)
-    a.status.actions.focusFirst()
     const first = await Effect.runPromise(api.answerTo("Clean up old previews"))
     first.cell(askCell(`{ kind: "approval", prompt: "Delete the stale preview docs-v1?" }`))
     await until(() => expect(a.statusOf(answerId)?.state).toBe("needs_you"))

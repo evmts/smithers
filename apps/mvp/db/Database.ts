@@ -1,3 +1,7 @@
+import timelineSummaryRole from "./migrations/0030_timeline_summary_role.ts"
+import pulls from "./migrations/0031_pulls.ts"
+import pullWrites from "./migrations/0033_pull_writes.ts"
+import issueCommitment from "./migrations/0032_issue_commitment.ts"
 import { PgClient } from "@effect/sql-pg"
 import { Config, Effect, Layer, Redacted } from "effect"
 import { Migrator } from "effect/sql"
@@ -28,6 +32,8 @@ import sandboxCalls from "./migrations/0024_sandbox_calls.ts"
 import flowSource from "./migrations/0025_flow_source.ts"
 import textUpdates from "./migrations/0026_text_updates.ts"
 import todoIssue from "./migrations/0027_todo_issue.ts"
+import cloneProgress from "./migrations/0028_clone_progress.ts"
+import alertChannels from "./migrations/0029_alert_channels.ts"
 
 /** The compose Postgres (`docker-compose.yml`): what `DATABASE_URL` defaults to, and the only one tests use. */
 export const LOCAL_URL = "postgresql://smithers:smithers@localhost:54321/smithers"
@@ -64,6 +70,7 @@ export const layer = <E, R>(connectionString: Effect.Effect<Redacted.Redacted<st
 
 /** Every migration in `db/migrations`, by `<id>_<name>`. */
 export const migrations = {
+  "0032_issue_commitment": issueCommitment,
   "0001_messages": messages,
   "0002_answer_attempts": answerAttempts,
   "0003_paired_positions": pairedPositions,
@@ -91,6 +98,11 @@ export const migrations = {
   "0025_flow_source": flowSource,
   "0026_text_updates": textUpdates,
   "0027_todo_issue": todoIssue,
+  "0028_clone_progress": cloneProgress,
+  "0029_alert_channels": alertChannels,
+  "0030_timeline_summary_role": timelineSummaryRole,
+  "0031_pulls": pulls,
+  "0033_pull_writes": pullWrites,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

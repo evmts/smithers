@@ -10,6 +10,7 @@ import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import * as Conversations from "../../../worker/branch/Conversations.ts"
 import { shaOf } from "../../../worker/test/branch.ts"
+import { framable } from "../../../worker/test/pages.ts"
 import { member, nodeDevice, openFaultyApp, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { QuestionFaults } from "../../test/faults"
 import { AuthStore, SESSION } from "../auth/store"
@@ -386,8 +387,12 @@ describe("delivering to a branch's conversation", () => {
 })
 
 describe("pages in a branch's conversation", () => {
+  /** The app with example.com's pages on the outside web, framed when opened (worker/test/pages.ts). */
+  const openWithPages = () =>
+    tabOn(openTestApp({}, { pages: { "https://example.com/": framable(), "https://example.com/docs": framable() } }))
+
   test("a person's /web lands in the branch they sent it from, even when the tab moves before its step runs", async () => {
-    const tab = await openChat()
+    const tab = await openWithPages()
     const [from, to] = [await tab.branch("feature/from"), await tab.branch("feature/to")]
     await tab.chat.actions.show(to)
     await tab.chat.actions.show(from)
@@ -406,7 +411,7 @@ describe("pages in a branch's conversation", () => {
   }, WITHIN)
 
   test("the full-screen route shows a branch's view from that branch, and home's for none or one never opened", async () => {
-    const tab = await openChat()
+    const tab = await openWithPages()
     const [branch, other] = [await tab.branch("feature/one"), await tab.branch("feature/two")]
     await tab.chat.actions.show(branch)
     tab.commands.actions.type("/web https://example.com/docs")
@@ -436,7 +441,7 @@ describe("pages in a branch's conversation", () => {
   }, WITHIN)
 
   test("the agent's page lands in its answer's conversation, however the asking tab moved", async () => {
-    const tab = await openChat()
+    const tab = await openWithPages()
     const [asking, moved] = [await tab.branch("feature/asking"), await tab.branch("feature/moved")]
     await tab.chat.actions.show(moved)
     await tab.chat.actions.show(asking)

@@ -1,12 +1,21 @@
 import { Interpreter } from "@smthrs/flow"
 import { Clock, Effect, Layer, Metric } from "effect"
 import { BranchClient, type TrackRefused } from "./api"
-import { BranchTrack, BranchTrackRefused, BranchTrackUnavailable, type TrackFailure, TrackBranch } from "./flows"
+import {
+  BranchCreate,
+  BranchTrack,
+  BranchTrackRefused,
+  BranchTrackUnavailable,
+  CreateBranch,
+  type TrackFailure,
+  TrackBranch,
+} from "./flows"
 import { tracks } from "./metrics"
 import { parts } from "../repo/flows"
 
-// `branch/track`'s step (docs/features/branch-workspace.md#tracking-a-branch): one `POST /api/branches` through
-// `BranchClient`. A person opening a branch's page and the agent's call run this one step on this device's engine.
+// `branch/track`'s and `branch/create`'s steps (docs/features/branch-workspace.md#tracking-a-branch): one
+// `POST /api/branches` through `BranchClient`, `create: true` for a new branch. A person opening a branch's page, a
+// home's New branch and the agent's call run them on this device's engine.
 
 /** What ChatApi's refusal means to the flow. */
 export const trackFailure = (refused: TrackRefused): TrackFailure =>
@@ -18,6 +27,8 @@ export const trackFailure = (refused: TrackRefused): TrackFailure =>
     ? new BranchTrackRefused({ reason: "forbidden" })
     : refused.status === 400 || refused.status === 413
     ? new BranchTrackRefused({ reason: "invalid" })
+    : refused.code === "not_configured"
+    ? new BranchTrackRefused({ reason: "not_configured" })
     : new BranchTrackUnavailable()
 
 /**
@@ -25,11 +36,13 @@ export const trackFailure = (refused: TrackRefused): TrackFailure =>
  * outcome and ChatApi's status, and a count of `tracks` by outcome: `tracked`, the refusal's reason, or `unavailable`.
  * Never the branch's name.
  */
-export const requestTrack = ({ repo, branch }: { readonly repo: string; readonly branch: string }) =>
+export const requestTrack = ({ repo, branch }: { readonly repo: string; readonly branch: string }, create = false) =>
   Effect.gen(function* () {
     const startedAt = yield* Clock.currentTimeMillis
     const [owner, name] = parts(repo)
-    const answer = yield* Effect.result((yield* BranchClient).track({ owner, name, ref: branch }))
+    const answer = yield* Effect.result(
+      (yield* BranchClient).track({ owner, name, ref: branch, ...(create ? { create: true as const } : {}) }),
+    )
     const outcome = answer._tag === "Success"
       ? "tracked"
       : (() => {
@@ -44,14 +57,21 @@ export const requestTrack = ({ repo, branch }: { readonly repo: string; readonly
         ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
         durationMs: (yield* Clock.currentTimeMillis) - startedAt,
         feature: "branch",
+        ...(create ? { create } : {}),
       }),
     )
     if (answer._tag === "Success") return answer.success
     return yield* Effect.fail(trackFailure(answer.failure))
   }).pipe(Effect.withSpan("branch.track"))
 
-/** Registers `branch/track` with its step, asking through the host's `BranchClient`. */
-export const registration = Interpreter.layerWithImplementations(BranchTrack, TrackBranch.toLayer(requestTrack))
+/** `branch/create/request`: the same request, making the branch first. */
+export const requestCreate = (request: { readonly repo: string; readonly branch: string }) => requestTrack(request, true)
 
-/** `branch/track`, asking ChatApi on `origin`. Needs the host's `HttpClient`. */
+/** Registers `branch/track` and `branch/create` with their steps, asking through the host's `BranchClient`. */
+export const registration = Layer.merge(
+  Interpreter.layerWithImplementations(BranchTrack, TrackBranch.toLayer((request) => requestTrack(request))),
+  Interpreter.layerWithImplementations(BranchCreate, CreateBranch.toLayer(requestCreate)),
+)
+
+/** `branch/track` and `branch/create`, asking ChatApi on `origin`. Needs the host's `HttpClient`. */
 export const registrationAt = (origin: string) => registration.pipe(Layer.provide(BranchClient.layer({ origin })))

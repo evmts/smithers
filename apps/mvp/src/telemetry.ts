@@ -8,6 +8,7 @@ import { ATTENTION_TELEMETRY } from "./features/attention/contract"
 import { AUTH_TELEMETRY } from "./features/auth/contract"
 import { BRANCH_TELEMETRY } from "./features/branch/contract"
 import { CHAT_TELEMETRY } from "./features/chat/contract"
+import { CODE_INTEL_TELEMETRY } from "./features/code-intel/contract"
 import { ISSUES_TELEMETRY } from "./features/issues/contract"
 import { TODOS_TELEMETRY } from "./features/todos/contract"
 import { JEV_TELEMETRY } from "./features/jev/contract"
@@ -24,6 +25,7 @@ import { SPEND_TELEMETRY } from "./features/spend/contract"
 import { STATUS_TELEMETRY } from "./features/status/contract"
 import { TERMINAL_TELEMETRY } from "./features/terminal/contract"
 import { PRESENCE_TELEMETRY } from "./features/presence/contract"
+import { COEDIT_TELEMETRY } from "./features/coedit/contract"
 import { SHARING_TELEMETRY } from "./features/sharing/contract"
 import { SANDBOX_TELEMETRY } from "./features/sandbox/contract"
 
@@ -118,6 +120,7 @@ const features: ReadonlyArray<Telemetry> = [
   THEME_TELEMETRY,
   NAVIGATION_TELEMETRY,
   REPO_TELEMETRY,
+  CODE_INTEL_TELEMETRY,
   WEB_TELEMETRY,
   JEV_TELEMETRY,
   ISSUES_TELEMETRY,
@@ -128,6 +131,7 @@ const features: ReadonlyArray<Telemetry> = [
   BRANCH_TELEMETRY,
   SHARING_TELEMETRY,
   PRESENCE_TELEMETRY,
+  COEDIT_TELEMETRY,
   TERMINAL_TELEMETRY,
   SANDBOX_TELEMETRY,
   SPEND_TELEMETRY,

@@ -6,6 +6,7 @@
 import { Effect, type ManagedRuntime, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
+import { framable, refusing } from "../../../worker/test/pages.ts"
 import { CHATAPI_ORIGIN, member, nodeDevice, openTab, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { FlowDispatch } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
@@ -40,8 +41,15 @@ type App = ManagedRuntime.ManagedRuntime<
  * The app as `actor` (a Member unless `null`), with its conversation and full-screen view started as React starts them,
  * and the session row set as sign-in's `load` sets it, so the composer offers `/web`.
  */
+/** The outside web these tests open: example.com's pages allow framing, refuses.example refuses it (worker/test/pages.ts). */
+const PAGES = {
+  "https://example.com/": framable("Example"),
+  "https://example.com/docs": framable("Example docs"),
+  "https://refuses.example/": refusing("Refuses"),
+}
+
 const open = async (options: TabOptions = {}, actor: Actor | null = member) => {
-  const runtime: App = openTestApp(options, { actor })
+  const runtime: App = openTestApp(options, { actor, pages: PAGES })
   runtimes.push(runtime)
   const chat = await runtime.runPromise(Effect.service(Chat))
   const views = await runtime.runPromise(Effect.service(Views))
@@ -71,6 +79,11 @@ const open = async (options: TabOptions = {}, actor: Actor | null = member) => {
     conversation: () =>
       chat.queries.conversation.toArray.map((row) => (row.role === "view" ? `view ${row.template} ${row.url}` : row.role)),
     viewIds: () => chat.queries.conversation.toArray.flatMap((row) => (row.role === "view" ? [row.id] : [])),
+    /** Each view's preview, as its card or frame shows it. */
+    preview: () =>
+      chat.queries.conversation.toArray.flatMap((row) =>
+        row.role === "view" ? [{ title: row.title, description: row.description, icon: row.icon }] : []
+      ),
     draft: () => chatStore.composerState.tanstack.toArray[0]?.draft,
     count: (attributes: Record<string, string>) =>
       runtime.runSync(Metric.value(Metric.withAttributes(pagesOpened, attributes))).count,
@@ -93,7 +106,12 @@ describe("/web <url>", () => {
 
     await until(() => expect(tab.conversation()).toEqual(["user", "assistant", "view webpage https://example.com/"]))
     // Counted once the flow answers the dispatch, which can come after Electric delivers the row.
-    await until(() => expect(tab.count({ web_mode: "embed", door: "slash", outcome: "embedded" })).toBe(1))
+    await until(() =>
+      expect(tab.count({ web_mode: "embed", door: "slash", outcome: "embedded", web_framing: "allowed" })).toBe(1)
+    )
+    expect(tab.preview()).toEqual([
+      { title: "Example", description: "A page that lets others frame it.", icon: "https://example.com/icon.png" },
+    ])
     // Another device of the same conversation shows it from its own synced row.
     const other = openTab(tab.api)
     runtimes.push(other)
@@ -110,7 +128,9 @@ describe("/web <url>", () => {
     const card = await open({ answers: true })
     send(card, "/web https://example.com/ tab")
     await until(() => expect(card.conversation()).toEqual(["view link https://example.com/"]))
-    await until(() => expect(card.count({ web_mode: "tab", door: "slash", outcome: "card" })).toBe(1))
+    await until(() =>
+      expect(card.count({ web_mode: "tab", door: "slash", outcome: "card", web_framing: "allowed" })).toBe(1)
+    )
 
     const opened: Array<string> = []
     const direct = await open({
@@ -122,7 +142,25 @@ describe("/web <url>", () => {
     expect(opened).toEqual(["https://example.com/docs"])
     expect(direct.count({ web_mode: "tab", door: "slash", outcome: "opened" })).toBe(1)
     // No flow ran: the person sees the tab they opened, and nothing claims one more.
-    expect(direct.count({ web_mode: "tab", door: "slash", outcome: "card" })).toBe(0)
+    expect(direct.count({ web_mode: "tab", door: "slash", outcome: "card", web_framing: "allowed" })).toBe(0)
+  }, WITHIN)
+
+  test("a page that refuses framing is a card with its title, description and icon, never a blank frame", async () => {
+    const tab = await open({ answers: true })
+
+    send(tab, "/web https://refuses.example/")
+
+    await until(() => expect(tab.conversation()).toEqual(["view link https://refuses.example/"]))
+    expect(tab.preview()).toEqual([
+      {
+        title: "Refuses",
+        description: "A page that never shows in a frame.",
+        icon: "https://refuses.example/favicon.ico",
+      },
+    ])
+    await until(() =>
+      expect(tab.count({ web_mode: "embed", door: "slash", outcome: "card", web_framing: "refused" })).toBe(1)
+    )
   }, WITHIN)
 
   test("a refused page stays in the composer saying why, adds nothing, and the tab counts it by its door", async () => {

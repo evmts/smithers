@@ -1,5 +1,6 @@
+import { Summarize } from "../features/timeline/flow"
 import type { BrowserEngine } from "@smthrs/platform-browser"
-import { BranchTrack } from "../features/branch/flows"
+import { BranchCreate, BranchTrack } from "../features/branch/flows"
 import { BranchShare } from "../features/sharing/flows"
 import { TerminalOpenRequest } from "../features/terminal/flows"
 import {
@@ -27,11 +28,12 @@ import {
   FlowSaveReference,
   FlowWriteReference,
 } from "../features/flows-ui/reference"
-import { IssueComment, IssueCreate, IssueTriage, TriageEnable, TriagePause, TriageRunAgain } from "../features/issues/flows"
+import { IssueCommitment, IssueComment, IssueCreate, IssueTriage, TriageEnable, TriagePause, TriageRunAgain } from "../features/issues/flows"
 import { Classify, Evaluate } from "../features/jev/flows"
 import { Cancel, Inspect, List, Resume, Retry } from "../features/runs/flows"
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
+import { AlertChannelSet } from "../features/spend/flows"
 import { SetTheme } from "../features/theme/flows"
 import { TodoCommit, TodoDraft, TodoDrop, TodoIssue } from "../features/todos/flows"
 import { OpenWebPage } from "../features/web/flows"
@@ -78,6 +80,14 @@ export interface Entry {
   /** Why the agent may not run it; absent when it may. */
   readonly userOnlyReason?: string
   /**
+   * Who its run acts as when nobody pressed it (decision 0017, slice 0): `agent` for a run that is an agent, such as
+   * `chat/Answer`; `flow` for a run only a device or another flow starts. Absent, it is the person's: a person's own
+   * press runs it with their session, and any other run of it, a nested one included, gets a server-minted run
+   * credential (docs/features/sign-in.md#run-credentials). The server reads the agents among them from here
+   * (worker/Actor.ts `AGENT_FLOWS`), never from a request.
+   */
+  readonly acts?: "agent" | "flow"
+  /**
    * What running it changes, in the person's words, for a flow the agent may run that changes something; absent for
    * a read. The agent's catalog shows it beside the flow, and the agent runs such a flow only when the person asked for
    * that effect (src/flows/catalog.ts). src/flows/registry.test.ts holds every model-invocable flow to one or the other.
@@ -94,6 +104,7 @@ export interface Entry {
 
 /** Every flow the app declares, by name. */
 export const registry = {
+  "timeline/summarize": { flow: Summarize, acts: "flow", userOnlyReason: "The conversation projection requests summaries; the agent does not summarize itself." },
   "app/theme/set": { flow: SetTheme, changes: "sets this device's theme", slash: { command: "theme", minimum: "anyone" } },
   "app/navigate": { flow: Navigate, changes: "moves the person's tab", slash: { command: "navigate", minimum: "anyone" } },
   // Adding a view writes the shared conversation, which only a Member or above may (decision 0007).
@@ -105,6 +116,7 @@ export const registry = {
   },
   "chat/Answer": {
     flow: AnswerReference,
+    acts: "agent",
     userOnlyReason: "Asking starts it, and the agent is the one answering; it never asks itself.",
   },
   "chat/Close": {
@@ -137,11 +149,13 @@ export const registry = {
   "run/answer": { flow: AnswerRun, userOnlyReason: "Only the person answers what the agent asks them." },
   "run/deliver": {
     flow: Deliver,
+    acts: "flow",
     userOnlyReason: "The device that holds a run delivers an answer already recorded; nobody runs it by hand.",
   },
   // Your own flows (decision 0014 §2): drafting one costs model calls, so only a Member or above drafts or runs one.
   "flow/new": {
     flow: FlowNewReference,
+    acts: "agent",
     changes: "drafts a flow for the person to review, which spends model calls",
     slash: { command: "flow.new", minimum: "member" },
   },
@@ -164,6 +178,7 @@ export const registry = {
   },
   "flow/run/prompt": {
     flow: FlowPromptReference,
+    acts: "agent",
     userOnlyReason: "flow/run starts it with the revision it pinned; nobody starts it by hand.",
   },
   "flow/delete": { flow: FlowDeleteReference, changes: "deletes the person's flow", confirm: "Delete this flow?" },
@@ -176,6 +191,13 @@ export const registry = {
   "run/inspect": { flow: Inspect },
   // The branch workspace (decision 0013): a page opening a branch runs branch/track, and the agent can too.
   "branch/track": { flow: BranchTrack, changes: "tracks the branch for the person" },
+  // A home's New branch (docs/features/branch-workspace.md#new-branch): makes a branch and tracks it; `/branch.new`
+  // and the agent can too.
+  "branch/create": {
+    flow: BranchCreate,
+    changes: "makes a new branch of the repository and tracks it for the person",
+    slash: { command: "branch.new", minimum: "member", fields: ["repo", "branch"] },
+  },
   "branch/share": {
     flow: BranchShare,
     userOnlyReason: "Sharing a branch is its owner's own act; the agent never grants access (decision 0008).",
@@ -196,6 +218,7 @@ export const registry = {
     // `/triage owner/repo <n> accept|reject <reason>`: the reason, the last text field, takes the rest of the line.
     slash: { command: "triage", minimum: "member" },
   },
+  "issue/commitment": { flow: IssueCommitment, userOnlyReason: "A Maintainer sets the implementation commitment.", slash: { command: "issue.commitment", minimum: "maintainer" } },
   "triage/run": {
     flow: TriageRunAgain,
     userOnlyReason: "Handing an issue back to the triage flow is a person's call, never the agent's.",
@@ -236,6 +259,11 @@ export const registry = {
   "notification/ack": {
     flow: Ack,
     userOnlyReason: "Read, Dismiss and Hide record what the person saw and chose; the agent never acts for them.",
+  },
+  // Spend alerts' channels (docs/features/spend-alerts.md#channels): where an Admin's alerts go outside the app.
+  "alert/channel": {
+    flow: AlertChannelSet,
+    userOnlyReason: "Where spend alerts go is an Admin's own choice; the agent never redirects them.",
   },
   // The sandbox tools (decision 0005 §5, docs/features/sandbox-tools.md): what the agent's hands are on a branch's
   // machine, and a person's slash commands alike. Each runs as the person who asked, who must be able to edit the

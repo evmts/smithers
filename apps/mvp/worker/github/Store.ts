@@ -1,3 +1,4 @@
+import { COMMITMENTS, commitmentOf } from "../../src/features/issues/lifecycle.ts"
 import { GitHub } from "@smthrs/integrations"
 import { Effect, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
@@ -11,6 +12,7 @@ import {
   type WriteStatus,
   type WriteVia,
 } from "../../src/features/issues/contract.ts"
+import { MERGE_METHODS } from "../../src/features/pulls/contract.ts"
 import { Sealed } from "../SessionStore.ts"
 
 // The git loop's rows in Postgres (docs/features/issues.md#postgres, migration 0016_github_issues). GitHub is the truth:
@@ -41,28 +43,29 @@ export const upsertIssue = (repoId: string, issue: Issue, fetchedAt: number) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const triage = triageOf(issue.labels.map((label) => label.name))
+    const commitment = commitmentOf(issue.labels.map((label) => label.name))
     const rows = yield* sql`
       INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state, state_reason, author_login, comments,
-        created_at, updated_at, closed_at, deleted_at, write_id, triage, source_updated_at, fetched_at)
+        created_at, updated_at, closed_at, deleted_at, write_id, triage, commitment, source_updated_at, fetched_at)
       VALUES (${itemId(repoId, issue.number)}, ${repoId}, ${issue.number},
         ${issue.pull_request === undefined ? "issue" : "pull"}, ${issue.id}, ${issue.title}, ${shownBody(issue.body)},
         ${issue.state}, ${issue.state_reason}, ${issue.user?.login ?? null}, ${issue.comments},
         ${issue.created_at}::timestamptz, ${issue.updated_at}::timestamptz, ${issue.closed_at}::timestamptz, NULL,
-        ${markedWrite(issue.body)}::uuid, ${triage}, ${issue.updated_at}::timestamptz,
+        ${markedWrite(issue.body)}::uuid, ${triage}, ${commitment}, ${issue.updated_at}::timestamptz,
         ${new Date(fetchedAt).toISOString()}::timestamptz)
       ON CONFLICT (id) DO UPDATE SET
         kind = EXCLUDED.kind, github_id = EXCLUDED.github_id, title = EXCLUDED.title, body = EXCLUDED.body,
         state = EXCLUDED.state, state_reason = EXCLUDED.state_reason, author_login = EXCLUDED.author_login,
         comments = EXCLUDED.comments, created_at = EXCLUDED.created_at, updated_at = EXCLUDED.updated_at,
         closed_at = EXCLUDED.closed_at, deleted_at = NULL, write_id = COALESCE(EXCLUDED.write_id, items.write_id),
-        triage = EXCLUDED.triage, source_updated_at = EXCLUDED.source_updated_at, fetched_at = EXCLUDED.fetched_at
+        commitment = EXCLUDED.commitment, triage = EXCLUDED.triage, source_updated_at = EXCLUDED.source_updated_at, fetched_at = EXCLUDED.fetched_at
       WHERE (items.source_updated_at, items.fetched_at) < (EXCLUDED.source_updated_at, EXCLUDED.fetched_at)
         AND (items.kind, items.github_id, items.title, items.body, items.state, items.state_reason, items.author_login,
           items.comments, items.created_at, items.updated_at, items.closed_at, items.deleted_at,
-          COALESCE(EXCLUDED.write_id, items.write_id), items.triage)
+          COALESCE(EXCLUDED.write_id, items.write_id), items.triage, items.commitment)
         IS DISTINCT FROM (EXCLUDED.kind, EXCLUDED.github_id, EXCLUDED.title, EXCLUDED.body, EXCLUDED.state,
           EXCLUDED.state_reason, EXCLUDED.author_login, EXCLUDED.comments, EXCLUDED.created_at, EXCLUDED.updated_at,
-          EXCLUDED.closed_at, NULL::timestamptz, items.write_id, EXCLUDED.triage)
+          EXCLUDED.closed_at, NULL::timestamptz, items.write_id, EXCLUDED.triage, EXCLUDED.commitment)
       RETURNING id`
     return rows.length > 0
   })
@@ -149,6 +152,7 @@ export const receivedAt = (deliveryId: string) =>
 
 /** A write's payload as the route admitted it, by operation. */
 export const WritePayload = Schema.Union([
+  Schema.Struct({ op: Schema.Literal("issue/commitment"), number: Schema.Int, commitment: Schema.Literals(COMMITMENTS) }),
   Schema.Struct({ op: Schema.Literal("issue/create"), title: Schema.String, body: Schema.String }),
   Schema.Struct({ op: Schema.Literal("issue/comment"), number: Schema.Int, body: Schema.String }),
   Schema.Struct({
@@ -160,6 +164,13 @@ export const WritePayload = Schema.Union([
   Schema.Struct({ op: Schema.Literal("triage/run"), number: Schema.Int }),
   Schema.Struct({ op: Schema.Literal("triage/enable"), dailyTokens: Schema.Int }),
   Schema.Struct({ op: Schema.Literal("triage/pause") }),
+  Schema.Struct({
+    op: Schema.Literal("pr/merge"),
+    number: Schema.Int,
+    headSha: Schema.String,
+    baseSha: Schema.String,
+    method: Schema.Literals(MERGE_METHODS),
+  }),
 ])
 export type WritePayload = typeof WritePayload.Type
 const decodePayload = Schema.decodeUnknownSync(WritePayload)

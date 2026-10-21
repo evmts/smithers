@@ -1,11 +1,13 @@
 // `ops/SpendAlert` (worker/flows/SpendAlert.ts, docs/features/spend-alerts.md) on the Node host
 // (worker/test/flowHost.ts) and as its alert step alone, over this file's schema of the compose Postgres. The ledger
 // rows are written as the model endpoint writes them; worker/ModelSpend.test.ts proves the endpoint starts the flow.
+import { Channels } from "@smthrs/notifications"
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Cause, Effect, Exit, Logger, Metric } from "effect"
+import { Cause, Effect, Exit, Layer, Logger, Metric, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
-import { beforeEach, describe, expect, test } from "vitest"
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
+import { type AlertProviders, startAlertProviders } from "../test/alertProviders.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as SpendAlert from "./SpendAlert.ts"
@@ -14,7 +16,10 @@ const runtime = testFile("spend_alert")
 
 beforeEach(() =>
   runtime.runPromise(
-    Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE model_usage, model_budget_days, spend_alerts`),
+    Effect.flatMap(
+      SqlClient.SqlClient,
+      (sql) => sql`TRUNCATE model_usage, model_budget_days, spend_alerts, alert_channels, alert_deliveries`,
+    ),
   )
 )
 
@@ -116,7 +121,12 @@ describe("ops/SpendAlert on the Node host", () => {
     const agentUsd = usd(QWEN, 1_000_000, 500_000) + usd(QWEN, 0, 1_000_000)
     const judgeUsd = usd(OSS, 2_000, 1_000)
     expect(ran.status).toBe("completed")
-    expect(Exit.isSuccess(ran.exit) && ran.exit.value).toMatchObject({ outcome: "recorded", calls: 3, tokens: 2_503_000 })
+    expect(Exit.isSuccess(ran.exit) && ran.exit.value).toMatchObject({
+      alert: { outcome: "recorded", calls: 3, tokens: 2_503_000 },
+      // No Admin set a channel: the alert stays in the app.
+      email: { outcome: "off" },
+      telegram: { outcome: "off" },
+    })
     const [alert] = await alertRows()
     expect(alert).toMatchObject({
       id: SpendAlert.executionId(window),
@@ -240,5 +250,257 @@ describe("the alert step", () => {
     expect(left).toBeGreaterThan(59_000)
     expect(left).toBeLessThanOrEqual(60_000)
     expect(await Effect.runPromise(SpendAlert.alertIn({ until: now - 1 }))).toBe(0)
+  })
+})
+
+// Delivering an alert outside the app (docs/features/spend-alerts.md#channels): the real `Channels` against the local
+// providers (worker/test/alertProviders.ts), and a faulty `Channels` injected for a provider that is down.
+
+const BOT_TOKEN = "123456:SYNTHETIC_ALERT_BOT"
+const API_KEY = "re_SYNTHETIC_ALERT_KEY"
+const ADDRESSES = ["will@example.com", "ops@example.com"]
+const CHAT = "-1001234567890"
+
+let providers: AlertProviders
+beforeAll(async () => {
+  providers = await startAlertProviders()
+})
+afterAll(() => providers.close())
+beforeEach(() => void providers.received.splice(0))
+
+/** The deployment's channels, both at the local providers. */
+const channels = () =>
+  Channels.layer({
+    email: { apiKey: Redacted.make(API_KEY), from: "Smithers <alerts@example.com>", url: providers.url },
+    telegram: { token: Redacted.make(BOT_TOKEN), url: providers.url },
+  })
+
+/** A provider that is down: every send fails as `failure`. */
+const down = (failure: Channels.DeliveryFailed) =>
+  Layer.succeed(Channels.Channels)({ available: ["email", "telegram"], send: () => Effect.fail(failure) })
+
+/** An Admin's setting for `channel`, as `POST /api/alert-channels` writes it. */
+const setChannel = (channel: "email" | "telegram", destinations: ReadonlyArray<string>) =>
+  sql(`
+    INSERT INTO alert_channels (channel, destinations, app_url, updated_by)
+    VALUES ('${channel}', '${JSON.stringify(destinations)}'::jsonb, 'https://smithers.test/app', 'person-admin')`)
+
+const receipts = () =>
+  sql<Record<string, unknown>>(`
+    SELECT alert_id AS "alertId", channel, status, code, reason, http_status AS "httpStatus", provider_id AS "providerId",
+      attempts
+    FROM alert_deliveries ORDER BY channel`)
+
+/** One recorded alert, for a window that ended a second ago: its request for `channel`. */
+const recordedAlert = async (channel: "email" | "telegram") => {
+  const window = ended()
+  await call("call-1", { input: 12_000, output: 340, charged: 12_340 })
+  await runtime.runPromise(SpendAlert.record(window))
+  return { alertId: SpendAlert.executionId(window), channel, outcome: "recorded" as const }
+}
+
+/** The delivery step alone, as the engine runs it, keeping its log lines and counts. */
+const deliver = async (request: SpendAlert.DeliverRequest, layer: Layer.Layer<Channels.Channels> = channels()) =>
+  observed(SpendAlert.observedDeliver(request, await database()).pipe(Effect.provide(layer)))
+
+describe("ops/SpendAlert delivers outside the app", () => {
+  test("once the window ends, one email and one Telegram message, each with its receipt", async () => {
+    await setChannel("email", ADDRESSES)
+    await setChannel("telegram", [CHAT])
+    await call("agent", { input: 12_000, output: 0, charged: 12_000 })
+    await call("judge", { role: "judge", model: "gpt-oss-120b", input: 340, output: 0, charged: 340 })
+    const window = ended()
+
+    const ran = await runFlow(SpendAlert.SpendAlert, window, SpendAlert.registration(await database(), channels()))
+
+    expect(ran.status).toBe("completed")
+    expect(Exit.isSuccess(ran.exit) && ran.exit.value).toEqual({
+      alert: expect.objectContaining({ outcome: "recorded", calls: 2, tokens: 12_340 }),
+      email: { outcome: "sent" },
+      telegram: { outcome: "sent" },
+    })
+    const id = SpendAlert.executionId(window)
+    const email = providers.received.find((request) => request.provider === "email")
+    const telegram = providers.received.find((request) => request.provider === "telegram")
+    expect(providers.received).toHaveLength(2)
+    expect(email!.headers.authorization).toBe(`Bearer ${API_KEY}`)
+    expect(email!.headers["idempotency-key"]).toBe(id)
+    const cost = usd(QWEN, 12_000, 0) + usd(OSS, 340, 0)
+    const subject = `Model spend · 12,340 tokens · $${cost.toFixed(2)}`
+    const start = new Date(window.from).toISOString()
+    const end = new Date(window.until).toISOString()
+    const text = [
+      start.slice(0, 10) === end.slice(0, 10)
+        ? `${start.slice(11, 16)}–${end.slice(11, 16)} UTC, ${start.slice(0, 10)}`
+        : `${start.slice(0, 10)} ${start.slice(11, 16)} – ${end.slice(0, 10)} ${end.slice(11, 16)} UTC`,
+      "agent 12,000 · judge 340",
+      "https://smithers.test/app",
+    ].join("\n")
+    expect(email!.body).toEqual({ from: "Smithers <alerts@example.com>", to: ADDRESSES, subject, text })
+    expect(telegram!.path).toBe(`/bot${BOT_TOKEN}/sendMessage`)
+    expect(telegram!.body).toEqual({
+      chat_id: CHAT,
+      text: `${subject}\n\n${text}`,
+      link_preview_options: { is_disabled: true },
+    })
+    // Each receipt keeps the provider's id for its message: the email's id, or the Telegram message's number.
+    const sent = { alertId: id, status: "sent", code: null, reason: null, httpStatus: null, attempts: 1 }
+    const emailAt = providers.received.indexOf(email!) + 1
+    const telegramAt = providers.received.indexOf(telegram!) + 1
+    expect(await receipts()).toEqual([
+      { ...sent, channel: "email", providerId: `email-${emailAt}` },
+      { ...sent, channel: "telegram", providerId: String(telegramAt) },
+    ])
+  })
+
+  test("a window with nothing to carry sends nothing", async () => {
+    await setChannel("email", ADDRESSES)
+
+    const ran = await runFlow(SpendAlert.SpendAlert, ended(), SpendAlert.registration(await database(), channels()))
+
+    expect(Exit.isSuccess(ran.exit) && ran.exit.value).toMatchObject({
+      alert: { outcome: "none" },
+      email: { outcome: "none" },
+      telegram: { outcome: "none" },
+    })
+    expect(providers.received).toEqual([])
+    expect(await receipts()).toEqual([])
+  })
+})
+
+describe("the delivery step", () => {
+  test("a channel no Admin set is off: no send, no receipt", async () => {
+    const step = await deliver(await recordedAlert("telegram"))
+
+    expect(Exit.isSuccess(step.exit) && step.exit.value).toEqual({ outcome: "off" })
+    expect(providers.received).toEqual([])
+    expect(await receipts()).toEqual([])
+    expect(step.lines).toMatchObject([{ message: "spend.alert.delivery", level: "INFO", annotations: { outcome: "off" } }])
+  })
+
+  test("an alert that isn't recorded sends nothing", async () => {
+    await setChannel("email", ADDRESSES)
+    const none = await deliver({ alertId: "spend-alert-900000-0", channel: "email", outcome: "none" })
+    const missing = await deliver({ alertId: "spend-alert-900000-0", channel: "email", outcome: "recorded" })
+
+    expect(Exit.isSuccess(none.exit) && none.exit.value).toEqual({ outcome: "none" })
+    expect(Exit.isSuccess(missing.exit) && missing.exit.value).toEqual({ outcome: "none" })
+    expect(providers.received).toEqual([])
+  })
+
+  test("run again after it sent, it sends nothing more", async () => {
+    await setChannel("email", ADDRESSES)
+    const request = await recordedAlert("email")
+
+    await deliver(request)
+    const again = await deliver(request)
+
+    expect(Exit.isSuccess(again.exit) && again.exit.value).toEqual({ outcome: "existing" })
+    expect(providers.received).toHaveLength(1)
+    expect(await receipts()).toMatchObject([{ status: "sent", attempts: 1 }])
+  })
+
+  test("a provider that refuses is recorded with its reason and not tried again; nothing names the chat", async () => {
+    await setChannel("telegram", [CHAT])
+    providers.answer({ status: 400, json: { ok: false, error_code: 400, description: "Bad Request: chat not found" } })
+    const request = await recordedAlert("telegram")
+
+    const refused = await deliver(request)
+    const again = await deliver(request)
+
+    expect(Exit.isSuccess(refused.exit) && refused.exit.value).toEqual({ outcome: "refused" })
+    expect(Exit.isSuccess(again.exit) && again.exit.value).toEqual({ outcome: "existing" })
+    expect(await receipts()).toEqual([{
+      alertId: request.alertId,
+      channel: "telegram",
+      status: "refused",
+      code: "rejected",
+      reason: "Bad Request: chat not found",
+      httpStatus: 400,
+      providerId: null,
+      attempts: 1,
+    }])
+    expect(refused.lines).toMatchObject([{ level: "WARN", annotations: { channel: "telegram", outcome: "refused" } }])
+    const text = JSON.stringify(refused.lines)
+    expect(text).not.toContain(CHAT)
+    expect(text).not.toContain("SYNTHETIC_ALERT_BOT")
+  })
+
+  test("a channel the deployment has no provider for is recorded unconfigured", async () => {
+    await setChannel("telegram", [CHAT])
+
+    const step = await deliver(await recordedAlert("telegram"), SpendAlert.noChannels)
+
+    expect(Exit.isSuccess(step.exit) && step.exit.value).toEqual({ outcome: "refused" })
+    expect(await receipts()).toMatchObject([{ status: "refused", code: "unconfigured", httpStatus: null }])
+    expect(providers.received).toEqual([])
+  })
+
+  test("a stored destination the channel can't take is recorded, never sent", async () => {
+    await setChannel("email", ["not an address"])
+
+    const step = await deliver(await recordedAlert("email"))
+
+    expect(Exit.isSuccess(step.exit) && step.exit.value).toEqual({ outcome: "refused" })
+    expect(await receipts()).toMatchObject([{ status: "refused", code: "rejected", reason: "invalid_destination" }])
+    expect(providers.received).toEqual([])
+  })
+
+  test("a provider that is down fails the step for the engine to retry, recorded; the next attempt sends", async () => {
+    await setChannel("email", ADDRESSES)
+    const request = await recordedAlert("email")
+    const failure = new Channels.DeliveryFailed({
+      channel: "email",
+      code: "rate_limited",
+      status: 429,
+      retryAfterMillis: 7_000,
+    })
+
+    const failed = await deliver(request, down(failure))
+
+    // The engine reads the provider's wait off the failure.
+    const error = Exit.isFailure(failed.exit) ? Cause.squash(failed.exit.cause) : undefined
+    expect(error).toEqual(failure)
+    expect(Object.getOwnPropertyDescriptor(error, "retryAfterMillis")?.value).toBe(7_000)
+    expect(await receipts()).toMatchObject([{ status: "failed", code: "rate_limited", httpStatus: 429, attempts: 1 }])
+    expect(failed.lines).toMatchObject([{
+      level: "WARN",
+      annotations: { channel: "email", outcome: "failed", errorCode: "rate_limited", status: 429 },
+    }])
+
+    const sent = await deliver(request)
+
+    expect(Exit.isSuccess(sent.exit) && sent.exit.value).toEqual({ outcome: "sent" })
+    expect(await receipts()).toMatchObject([{ status: "sent", code: null, httpStatus: null, attempts: 2 }])
+  })
+
+  test("a failure without a status is recorded without one", async () => {
+    await setChannel("email", ADDRESSES)
+    const failed = await deliver(
+      await recordedAlert("email"),
+      down(new Channels.DeliveryFailed({ channel: "email", code: "unreachable" })),
+    )
+
+    expect(failed.lines[0]!.annotations).not.toHaveProperty("status")
+    expect(await receipts()).toMatchObject([{ status: "failed", code: "unreachable", httpStatus: null }])
+  })
+
+  test("Postgres failing fails the step with DeliverUnavailable, logged by its code", async () => {
+    await setChannel("email", ADDRESSES)
+    const request = await recordedAlert("email")
+    await sql(`ALTER TABLE alert_channels RENAME TO alert_channels_away`)
+    try {
+      const failed = await deliver(request)
+      expect(Exit.isFailure(failed.exit) && Cause.squash(failed.exit.cause)).toEqual(
+        new SpendAlert.DeliverUnavailable({ reason: "database" }),
+      )
+      expect(failed.lines).toMatchObject([{
+        level: "WARN",
+        annotations: { outcome: "failed", errorCode: expect.stringMatching(/^sql:/) },
+      }])
+    } finally {
+      await sql(`ALTER TABLE alert_channels_away RENAME TO alert_channels`)
+    }
+    expect(providers.received).toEqual([])
   })
 })

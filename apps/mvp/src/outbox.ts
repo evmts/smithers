@@ -15,6 +15,11 @@ export class OutboxWrites extends Context.Service<
     // restores rows into it by name.
     readonly collections: Readonly<Record<string, Collection.Collection<any, any, any>>>
     readonly mutations: Readonly<Record<string, Outbox.Mutation<never>>>
+    /**
+     * What shows a parked write of each mutation, one an older build stored that this build can't send as it meant
+     * (decision 0021 §4): the feature's own Not sent row. `true` when it took the write.
+     */
+    readonly parked?: Readonly<Record<string, (write: Outbox.Parked) => Effect.Effect<boolean>>>
   }
 >()("@smthrs/mvp/OutboxWrites") {
   /**
@@ -23,10 +28,11 @@ export class OutboxWrites extends Context.Service<
    */
   static readonly adding = (writes: OutboxWrites["Service"]) =>
     Effect.map(Effect.serviceOption(OutboxWrites), (below) => {
-      const earlier = Option.getOrElse(below, () => ({ collections: {}, mutations: {} }))
+      const earlier = Option.getOrElse(below, () => ({ collections: {}, mutations: {}, parked: {} }))
       return OutboxWrites.of({
         collections: { ...writes.collections, ...earlier.collections },
         mutations: { ...writes.mutations, ...earlier.mutations },
+        parked: { ...writes.parked, ...earlier.parked },
       })
     })
 }

@@ -1,6 +1,7 @@
 import { Metric } from "effect"
 
-// The feed's usage metrics (docs/observability.md#notifications): the engine's watches and acts, and what the tab showed.
+// The feed's usage metrics (docs/observability.md#notifications): the engine's watches and acts, what the tab showed, and
+// what the person does in the notifications panel.
 
 /** `watch/set` requests, by `outcome`: `sent`, `refused`, `unsent`. */
 export const watches = Metric.counter("smithers_notification_watches", {
@@ -17,5 +18,11 @@ export const acks = Metric.counter("smithers_notification_acks", {
 /** Notifications that came to show as a toast in a tab, once per version, by `state`. */
 export const shown = Metric.counter("smithers_notifications_shown", {
   description: "Notifications shown as a toast, once per version per tab, by state",
+  incremental: true,
+})
+
+/** What the person does in the notifications panel, by `act` (`open`, `expand`, `retry`) and, opening it, `via`. */
+export const panel = Metric.counter("smithers_notifications_panel", {
+  description: "Notifications panel opens, expanded entries and retries, by act",
   incremental: true,
 })

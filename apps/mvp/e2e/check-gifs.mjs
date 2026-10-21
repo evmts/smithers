@@ -9,7 +9,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { changedBetween, FPS, measure, MEASURE_HEIGHT, MEASURE_WIDTH, problems, videoProblems } from "./frames.ts"
+import { changedBetween, chaptersIn, FPS, measure, MEASURE_HEIGHT, MEASURE_WIDTH, problems, videoProblems } from "./frames.ts"
 
 const SIZE = MEASURE_WIDTH * MEASURE_HEIGHT
 
@@ -35,10 +35,10 @@ export const measuredFrames = (file, crop, corner) => {
 /** What is wrong with one GIF: empty when it is fine to review. */
 export const checkGif = (file) => problems(measuredFrames(file), statSync(file).size)
 
-/** What is wrong with one video: its chapters, beside it as <name>.chapters.json. */
+/** What is wrong with one video: its chapters, beside it as <name>.chapters.json (the file, or an older bare list). */
 export const checkVideo = (file) => {
   const chaptersFile = file.replace(/\.mp4$/, ".chapters.json")
-  const chapters = existsSync(chaptersFile) ? JSON.parse(readFileSync(chaptersFile, "utf8")) : []
+  const chapters = existsSync(chaptersFile) ? chaptersIn(JSON.parse(readFileSync(chaptersFile, "utf8"))) : []
   let seconds
   try {
     seconds = Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file], { stdio: "pipe" }).toString().trim())

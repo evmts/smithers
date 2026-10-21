@@ -1,5 +1,5 @@
 import type { Room } from "../presence/schema"
-import type { Access } from "./contract"
+import { type Access, ACCESS_LABELS } from "./contract"
 import type { Current } from "./schema"
 
 // What a branch's page lets this person do right now (docs/features/branch-workspace.md#sharing): what `branch/track`
@@ -24,3 +24,11 @@ export const accessNow = (
 
 /** Whether `access` writes: asks in the conversation and types in the terminals. */
 export const writes = (access: Access | "none" | undefined): boolean => access === "owner" || access === "edit"
+
+/**
+ * The badge beside the branch's name: what this person may do on it now (`Owner`, `Can edit`, `Can view`), which
+ * changes live as the owner shares it. Nothing until the branch is ready, or once it was taken away: the page then says
+ * No access.
+ */
+export const statusOf = (access: Access | "none" | undefined): string | undefined =>
+  access === undefined || access === "none" ? undefined : ACCESS_LABELS[access]

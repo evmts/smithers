@@ -1,0 +1,237 @@
+import { Keys } from "@smthrs/flows"
+import { InspectionJournal, RunTrace } from "@smthrs/gateway"
+import type { GraphEdge, GraphNode, JsonValueData, StepRow } from "@smthrs/ui"
+import { Option, Schema } from "effect"
+import { runPath } from "./contract"
+import { journalOf, type PageStep } from "./page"
+import type { Inspection, RunPage } from "./schema"
+
+const record = (value: unknown): Record<string, unknown> =>
+  typeof value === "object" && value !== null ? value as Record<string, unknown> : {}
+const parsed = (value: JsonValueData): unknown => {
+  if (value.clipped) return undefined
+  try {
+    return JSON.parse(value.text)
+  } catch {
+    return undefined
+  }
+}
+const asValue = (value: unknown): JsonValueData => {
+  const text = typeof value === "string" ? value : JSON.stringify(value)
+  return { text, bytes: new TextEncoder().encode(text).length, clipped: false }
+}
+/** Personal runs name the recorded flow reference, while engine tags remain unchanged. */
+export const runTitle = (run: Inspection["run"]): string => {
+  const name = record(parsed(run.input)).name
+  return run.flowName === "flow/run" && typeof name === "string" && name.length > 0 ? name : run.flowName
+}
+export const graphOf = (page: RunPage, at: number | null, now: number) => {
+  const inspection = page.inspection as Inspection
+  const descendants = (page.descendants ?? []) as ReadonlyArray<Inspection>
+  const inspections = [inspection, ...descendants]
+  const forest = InspectionJournal.inspectionForest(
+    inspections.map((read, index) => ({
+      runId: read.run.runId,
+      events: index === 0 ? journalOf(page) : read.journal.events
+    }))
+  )
+  const events = forest.events
+  const run = { runId: inspection.run.runId, flowId: runTitle(inspection.run), status: inspection.run.status }
+  const records = forest.records
+  const monitor = RunTrace.monitorFromJournal(run, records, at ?? undefined, { childBoundaries: true })
+  const trace = RunTrace.traceFromJournal(
+    { ...run, status: at === null ? run.status : "running" },
+    at === null ? records : records.filter((r) => r.sequence! <= at)
+  )
+  const attempt = monitor.attempts[0]!
+  const title = runTitle(inspection.run)
+  const label = (text: string) =>
+    inspection.run.flowName === "flow/run" ? text.replace(/^flow\/run(?:\/|$)/, `${title}/`).replace(/\/$/, "") : text
+  const depthOf = (id: string): number => {
+    let depth = 0, current = inspections.find((read) => read.run.runId === id)
+    const seen = new Set<string>()
+    while (current?.run.parentRunId != null && !seen.has(current.run.runId)) {
+      seen.add(current.run.runId)
+      depth++
+      current = inspections.find((read) => read.run.runId === current!.run.parentRunId)
+    }
+    return depth
+  }
+  const nodes: GraphNode[] = attempt.graph.map((n) => ({ ...n, label: label(n.label) }))
+  // Edge reasons are optional evidence. Never infer a value or failure edge from dependency alone.
+  const reasons = new Map<string, GraphEdge["kind"]>()
+  for (const event of events) {
+    if (at !== null && event.seq > at) continue
+    const payload = record(parsed(event.payload))
+    const graph = record(payload.graph)
+    if (!Array.isArray(graph.edges)) continue
+    const generation = typeof payload.generation === "number" ? payload.generation : 0
+    const prefix = `engine-node:${encodeURIComponent(`${encodeURIComponent(event.runId)}:${generation}`)}:`
+    for (const value of graph.edges) {
+      const edge = record(value)
+      if (edge.reason === "value" || edge.reason === "continuation" || edge.reason === "failure") {
+        reasons.set(
+          `${prefix}${encodeURIComponent(String(edge.from))}\n${prefix}${encodeURIComponent(String(edge.to))}`,
+          edge.reason
+        )
+      }
+    }
+  }
+  const edges: GraphEdge[] = attempt.graph.flatMap((n) =>
+    n.deps.map((from) => ({ from, to: n.id, kind: reasons.get(`${from}\n${n.id}`) }))
+  )
+  const time = at === null ? now : events.filter((e) => e.seq <= at).at(-1)?.emittedAtMs ?? inspection.run.createdAtMs
+  const logsByDispatch = new Map<string, JsonValueData[]>()
+  const dispatchId = (owner: unknown, generation: unknown, digest: unknown) =>
+    JSON.stringify([owner, generation, digest])
+  const generations = new Map(records.map((row) => [row.sequence, record(row.payload).generation]))
+  for (const event of events) {
+    if (event.eventType !== "telemetry.log" || (at !== null && event.seq > at)) continue
+    const annotations = record(record(parsed(event.payload)).annotations)
+    const key = Schema.decodeUnknownOption(Keys.StoredKey)(annotations.stepKey)
+    if (Option.isNone(key) || annotations.runId !== event.runId) continue
+    const id = dispatchId(event.runId, generations.get(event.seq), Keys.digest(key.value))
+    const values = logsByDispatch.get(id) ?? []
+    values.push(event.payload)
+    logsByDispatch.set(id, values)
+  }
+  for (const cell of trace.rows) {
+    if (cell.kind !== "cell" || cell.detail.printed === undefined) continue
+    const step = record(record(cell.detail.fields).step)
+    const id = dispatchId(step.executionId, step.generation, step.stepId)
+    const values = logsByDispatch.get(id) ?? []
+    values.push(asValue(cell.detail.printed))
+    logsByDispatch.set(id, values)
+  }
+  const steps: PageStep[] = nodes.map((node) => {
+    const calls = attempt.steps.filter((s) => s.id === node.id)
+    const latest = calls.at(-1)
+    const source = trace.rows.find((r) => r.id === latest?.key)
+    const nativeId = decodeURIComponent(node.id.slice(node.id.lastIndexOf(":") + 1))
+    const coordinate = decodeURIComponent(node.id.split(":")[1]!)
+    const ownerId = decodeURIComponent(coordinate.slice(0, coordinate.lastIndexOf(":")))
+    const owner = inspections.find((read) => read.run.runId === ownerId)!
+    const native = owner.steps.find((step) => step.nodeId === nativeId)
+    const nodeFields = record(source?.detail.fields)
+    const nodePayload = record(nodeFields.payload)
+    const result = record(nodePayload.result)
+    const output = typeof result.preview === "string" && typeof result.bytes === "number"
+      ? { text: result.preview, bytes: result.bytes, clipped: result.truncated === true }
+      : null
+    const digests = Array.isArray(nodePayload.stepKeyDigests) ? nodePayload.stepKeyDigests : []
+    const logs = digests.flatMap((digest) =>
+      logsByDispatch.get(dispatchId(ownerId, nodeFields.generation, digest)) ?? []
+    )
+    const state: StepRow["state"] = node.state === "done"
+      ? "completed"
+      : node.state === "current"
+      ? "running"
+      : node.state === "next"
+      ? latest?.state === "skipped" ? "skipped" : "pending"
+      : node.state
+    const recordedAttempts = at === null ?
+      native?.attempts.map((attempt) => ({
+        attempt: attempt.attempt,
+        state: attempt.state,
+        startedAtMs: attempt.startedAtMs,
+        finishedAtMs: attempt.finishedAtMs,
+        error: attempt.error
+      })) :
+      trace.rows.filter((span) => {
+        const fields = record(span.detail.fields)
+        return span.kind === "attempt" && fields.executionId === ownerId &&
+          fields.generation === nodeFields.generation && Array.isArray(nodePayload.stepKeyDigests) &&
+          nodePayload.stepKeyDigests.includes(record(fields.payload).stepKeyDigest)
+      }).map((span) => ({
+        attempt: Number(record(record(span.detail.fields).payload).attempt),
+        state: span.status,
+        startedAtMs: span.startedAt,
+        finishedAtMs: span.endedAt ?? null,
+        error: span.status === "failed" ? "failed" : null
+      }))
+    const attempts = recordedAttempts !== undefined && recordedAttempts.length > 0
+      ? recordedAttempts
+      : calls.map((call) => ({
+        attempt: call.k,
+        state: call.state,
+        startedAtMs: Date.parse(call.started_at),
+        finishedAtMs: call.ended_at === undefined ? null : Date.parse(call.ended_at),
+        error: call.state === "failed" ? "failed" : null
+      }))
+    return {
+      row: {
+        id: node.id,
+        label: node.label,
+        kind: native?.kind === "FlowCall" ? "Flow" : "Step",
+        state,
+        startedAtMs: latest === undefined ? time : Date.parse(latest.started_at),
+        endedAtMs: latest?.ended_at === undefined ? null : Date.parse(latest.ended_at),
+        depth: depthOf(ownerId),
+        attempts: attempts.length,
+        failedAttempts: attempts.filter((s) => s.state === "failed").length
+      },
+      input: latest?.input === undefined ? null : asValue(latest.input),
+      output,
+      attempts,
+      wait: null,
+      href: ownerId === run.runId ? null : runPath(ownerId),
+      logs
+    }
+  })
+  const cells: PageStep[] = trace.rows.filter((row) => row.kind === "cell").map((cell) => ({
+    row: {
+      id: cell.id,
+      label: cell.label,
+      kind: "cell",
+      state: cell.status === "failed" ? "failed" : cell.endedAt === undefined ? "running" : "completed",
+      startedAtMs: cell.startedAt,
+      endedAtMs: cell.endedAt ?? null,
+      depth: cell.depth,
+      attempts: 0,
+      failedAttempts: 0
+    },
+    input: cell.detail.source === undefined ? null : asValue(cell.detail.source),
+    output: null,
+    logs: cell.detail.printed === undefined ? [] : [asValue(cell.detail.printed)],
+    attempts: [],
+    wait: null,
+    href: null
+  }))
+  const waits: PageStep[] = monitor.waits.map((wait) => ({
+    row: {
+      id: wait.id,
+      label: wait.label,
+      kind: wait.kind,
+      state: wait.settled === undefined ? "waiting" : "completed",
+      startedAtMs: Date.parse(wait.since),
+      endedAtMs: wait.settled === undefined ? null : Date.parse(wait.settled.at),
+      depth: 1,
+      attempts: 0,
+      failedAttempts: 0
+    },
+    input: null,
+    output: null,
+    logs: [],
+    attempts: [],
+    wait: { kind: wait.kind, sinceMs: Date.parse(wait.since), wakeAtMs: null },
+    href: null
+  }))
+  const timeline = [...steps.filter((step) => step.attempts.length > 0), ...cells, ...waits]
+  const segments = [
+    ...steps.flatMap((step) =>
+      step.attempts.map((a) => ({
+        stepId: step.row.id,
+        startedAtMs: a.startedAtMs,
+        endedAtMs: a.finishedAtMs,
+        state: a.state
+      }))
+    ),
+    ...waits.map((wait) => ({
+      stepId: wait.row.id,
+      startedAtMs: wait.row.startedAtMs,
+      endedAtMs: wait.row.endedAtMs,
+      state: "waiting"
+    }))
+  ]
+  return { nodes, edges, steps: [...steps, ...cells, ...waits], timeline, segments, events, time, trace }
+}

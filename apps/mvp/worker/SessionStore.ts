@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect"
-import { SqlClient } from "effect/sql"
+import { SqlClient, type Statement } from "effect/sql"
 import type { Role } from "../src/features/auth/contract.ts"
 
 // Sign-in's rows in Postgres (docs/features/sign-in.md#postgres): people, sign-ins in progress and sessions. Postgres'
@@ -99,20 +99,26 @@ export interface Live {
   readonly roleCheckedAt: number
 }
 
-/** The live session whose token has `tokenDigest`: not signed out, not revoked and not past its end. */
-export const findLive = (tokenDigest: string) =>
+/** The live session `which` picks: not signed out, not revoked and not past its end. */
+const findLiveBy = (which: (sql: SqlClient.SqlClient) => Statement.Fragment) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<Omit<Live, "roleCheckedAt"> & { readonly roleCheckedAt: string }>`
       SELECT s.id, s.person_id AS "personId", p.github_login AS login, s.role,
         (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt"
       FROM sessions s JOIN people p ON p.id = s.person_id
-      WHERE s.token_digest = ${tokenDigest} AND s.revoked_at IS NULL AND s.expires_at > now()`
+      WHERE ${which(sql)} AND s.revoked_at IS NULL AND s.expires_at > now()`
     return Option.map(Option.fromNullishOr(row), (found): Live => ({
       ...found,
       roleCheckedAt: Number(found.roleCheckedAt),
     }))
   })
+
+/** The live session whose token has `tokenDigest`: not signed out, not revoked and not past its end. */
+export const findLive = (tokenDigest: string) => findLiveBy((sql) => sql`s.token_digest = ${tokenDigest}`)
+
+/** The live session `id`, as a run credential minted under it names it: none once it ended. */
+export const findLiveById = (id: string) => findLiveBy((sql) => sql`s.id = ${id}`)
 
 /**
  * Ends the session with this id for `reason`. Returns its id when it ended now, `None` when it had ended already. A

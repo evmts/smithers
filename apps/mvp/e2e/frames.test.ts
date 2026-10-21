@@ -3,11 +3,15 @@ import {
   BLANK_DETAIL,
   CAPTION_ROWS,
   chapterAt,
+  chaptersFileOf,
+  chaptersIn,
   chaptersOf,
   combine,
+  cutIdle,
   type Frame,
   GIF_PACE,
   holdChapters,
+  IDLE_CHANGE,
   isBlank,
   type Mark,
   MAX_GIF_BYTES,
@@ -16,11 +20,15 @@ import {
   MEASURE_WIDTH,
   measure,
   outputStarts,
+  placeOfPath,
+  plainLabel,
   plan,
   problems,
   QUIET_CHANGE,
   RECORDING_LAG,
   retime,
+  themeFor,
+  titleCardOf,
   VIDEO_PACE,
   videoProblems,
 } from "./frames.ts"
@@ -90,7 +98,7 @@ describe("plan", () => {
     const kept = repeat.flatMap((count, index) => (count > 0 && index > 0 && index < 101 ? [index] : []))
     expect(kept).toHaveLength(VIDEO_PACE.quiet)
     expect(kept.at(-1)).toBe(100)
-    expect(kept[0]).toBe(3)
+    expect(kept[0]).toBe(Math.round(100 / VIDEO_PACE.quiet))
     // A short quiet stretch plays whole.
     expect(plan([cut, still, still, cut], GIF_PACE)).toEqual([1, 1, 1, 1 + GIF_PACE.scene - 4 + GIF_PACE.hold])
   })
@@ -103,6 +111,35 @@ describe("plan", () => {
   it("shows nothing of a recording that is blank throughout", () => {
     expect(plan(Array(30).fill(blank), VIDEO_PACE)).toEqual(Array(30).fill(0))
     expect(plan([], VIDEO_PACE)).toEqual([])
+  })
+})
+
+describe("cutIdle", () => {
+  // Will, 2026-10-20, on the branch terminal's recording: "most of the recording looks like an empty screen". The 12 s
+  // wait for the machine kept animating (the wordmark, a spinner), so it was never quiet and played in full.
+  it("plays an idle stretch, small changes however long, in at most pace.idle frames, evenly, ending on its last", () => {
+    const frames = [cut, ...Array(120).fill(shown(IDLE_CHANGE - 1)), cut]
+    const repeat = cutIdle(plan(frames, VIDEO_PACE), frames, VIDEO_PACE)
+    const kept = repeat.flatMap((count, index) => (count > 0 && index > 0 && index < 121 ? [index] : []))
+    expect(kept).toHaveLength(VIDEO_PACE.idle)
+    expect(kept.at(-1)).toBe(120)
+    // The frames around it, a new screen each, stay; the last holds the end.
+    expect([repeat[0], repeat[121]]).toEqual([1, 1 + VIDEO_PACE.hold])
+  })
+
+  it("keeps a short idle stretch, change a viewer follows, and the scene or end hold its last frame carries", () => {
+    const short = [cut, ...Array(VIDEO_PACE.idle - 1).fill(shown(IDLE_CHANGE - 1)), cut]
+    expect(cutIdle(plan(short, VIDEO_PACE), short, VIDEO_PACE)).toEqual(plan(short, VIDEO_PACE))
+    const busy = [cut, ...Array(60).fill(shown(IDLE_CHANGE))]
+    expect(cutIdle(plan(busy, VIDEO_PACE), busy, VIDEO_PACE)).toEqual(plan(busy, VIDEO_PACE))
+    // An idle stretch that ends the recording: its last frame still holds the end.
+    const ending = [cut, ...Array(80).fill(shown(IDLE_CHANGE - 1))]
+    const repeat = cutIdle(plan(ending, GIF_PACE), ending, GIF_PACE)
+    expect(repeat.at(-1)).toBe(1 + GIF_PACE.hold)
+    expect(shownFrames(repeat)).toBe(1 + GIF_PACE.idle + GIF_PACE.hold)
+    // Blank frames split stretches and stay dropped.
+    const split = [cut, ...Array(30).fill(shown(1)), blank, ...Array(30).fill(shown(1))]
+    expect(cutIdle(plan(split, VIDEO_PACE), split, VIDEO_PACE)[31]).toBe(0)
   })
 })
 
@@ -149,8 +186,8 @@ describe("chaptersOf", () => {
     ]
     // Each at its seconds from the recording's start, less the picture's lead on the test's clock.
     expect(chaptersOf(marks, at(-RECORDING_LAG))).toEqual([
-      { t: 1, label: "Open /octocat/Spoon-Knife" },
-      { t: 3, label: 'Click "Open terminal" button' },
+      { t: 1, label: "Open octocat/Spoon-Knife" },
+      { t: 3, label: "Click Open terminal" },
       { t: 4, label: 'A: ask "hello"' },
       { t: 6, label: "Press Escape" },
     ])
@@ -164,6 +201,154 @@ describe("chaptersOf", () => {
     expect(chaptersOf([action("Click A", 2), step("Step", 2, 3)], at(-RECORDING_LAG))).toEqual([{ t: 2, label: "Step" }])
     expect(chaptersOf([step("Step", 2, 3), action("Click A", 2)], at(-RECORDING_LAG))).toEqual([{ t: 2, label: "Step" }])
     expect(chaptersOf([action("Click A", 2), action("Press B", 2)], at(0))).toHaveLength(2)
+  })
+})
+
+describe("plainLabel", () => {
+  // Will, 2026-10-20: "I don't even know what I'm looking at here". The captions named URLs, ids and field roles.
+  it("names a navigation's place, a control by its name and the composer's Enter as Send; keeps a device's name", () => {
+    expect(plainLabel("Open /octocat/Spoon-Knife/tree/test-branch")).toBe("Open branch test-branch")
+    expect(plainLabel("Maya: Open /octocat/Hello-World/tree/test?terminal=me")).toBe("Maya: Open the terminal on test")
+    expect(plainLabel("Open /app/views/cbd4c649-0f2f-4f41-9120-3e3d1c4f41fe?conversation=6e2ad834-f5e2-57b8-9757-d44d6058971f")).toBe(
+      "Open a view full screen",
+    )
+    expect(plainLabel('Maya: Click "Share" button')).toBe("Maya: Click Share")
+    expect(plainLabel('Click "Remove local-teammate" button')).toBe("Click Remove local-teammate")
+    expect(plainLabel('Ben: Type in "Message Smithers" field')).toBe("Ben: Type a message")
+    expect(plainLabel('Press Enter in "Message Smithers" field')).toBe("Send")
+    expect(plainLabel('Maya: Press Enter in "Terminal input" field')).toBe("Maya: Press Enter in the terminal")
+    expect(plainLabel('Type in "Add people" field')).toBe("Type in Add people")
+    expect(plainLabel('Click "Terminal" frame')).toBe("Click the terminal")
+  })
+
+  it("says nothing of a click on the page, never shows an id, and keeps a step's own words", () => {
+    expect(plainLabel("Maya: Click the page")).toBe("")
+    expect(plainLabel("Click the page")).toBe("")
+    expect(plainLabel("Open the terminal")).toBe("Open the terminal")
+    expect(plainLabel('Ask "Reply with exactly the word: branch-1"')).toBe('Ask "Reply with exactly the word: branch-1"')
+    expect(plainLabel("Ben: open the composer")).toBe("Ben: open the composer")
+    expect(plainLabel("Run 3f2a9c1e-0000-4000-8000-000000000000")).toBe("Run …")
+  })
+
+  it("places every route in product words", () => {
+    expect(
+      [
+        "/",
+        "/app",
+        "/flows",
+        "/flows/new",
+        "/runs",
+        "/runs/r-1",
+        "/octocat",
+        "/octocat/Spoon-Knife",
+        "/octocat/Spoon-Knife/issues",
+        "/octocat/Spoon-Knife/issues/new",
+        "/octocat/Spoon-Knife/issues/12",
+        "/octocat/Spoon-Knife/stack",
+        "/octocat/Spoon-Knife/blob/main/src/a.ts",
+        "/octocat/Spoon-Knife/tree/main/src",
+        "/octocat/Spoon-Knife/settings/x",
+        "/app/runs",
+        "/app/runs/abc%2Fchat%2FRespond%40x%3A1%230%2Fcall%2F0.0",
+        "/app/flows/new",
+      ].map(placeOfPath),
+    ).toEqual([
+      "Smithers",
+      "the home conversation",
+      "flows",
+      "a flow",
+      "runs",
+      "a run",
+      "octocat",
+      "octocat/Spoon-Knife",
+      "octocat/Spoon-Knife's issues",
+      "a new issue",
+      "issue #12",
+      "octocat/Spoon-Knife's stack",
+      "src/a.ts on main",
+      "src on main",
+      "octocat/Spoon-Knife settings/x",
+      "runs",
+      "a run",
+      "a flow",
+    ])
+  })
+})
+
+describe("titleCardOf", () => {
+  it("names the feature from the describe blocks or the spec, the test up to its colon, and what it proves after it", () => {
+    expect(
+      titleCardOf({ spec: "branch-workspace", title: "branch conversation: a question asked on a branch is stored in that branch's conversation only" }),
+    ).toEqual({
+      feature: "Branch workspace",
+      name: "Branch conversation",
+      line: "A question asked on a branch is stored in that branch's conversation only.",
+    })
+    expect(titleCardOf({ spec: "chat", title: "shortcut", describe: ["Composer", "keys"] })).toEqual({
+      feature: "Composer · keys",
+      name: "Shortcut",
+      line: "",
+    })
+  })
+
+  it("prefers the spec's summary, as a sentence; a line that ends a sentence keeps its mark", () => {
+    expect(titleCardOf({ spec: "home", title: "declared: it renders.", summary: "  a repository's own home renders first." }).line).toBe(
+      "A repository's own home renders first.",
+    )
+    expect(titleCardOf({ spec: "home", title: "declared: does it render?", summary: " " }).line).toBe("Does it render?")
+  })
+})
+
+describe("themeFor", () => {
+  // Will, 2026-10-20: "you should randomly do the gif in dark mode or light mode half of them should be dark mode".
+  it("records about half the tests dark, the same test always in the same mode", () => {
+    const titles = Array.from({ length: 400 }, (_, index) => `test ${index}: proves ${index}`)
+    const dark = titles.filter((title) => themeFor("spec", title) === "dark").length
+    expect(dark).toBeGreaterThan(160)
+    expect(dark).toBeLessThan(240)
+    expect(titles.map((title) => themeFor("spec", title))).toEqual(titles.map((title) => themeFor("spec", title)))
+    // The spec is part of the choice: one title in two specs need not share a mode.
+    expect(new Set(["a", "b", "c", "d", "e", "f"].map((spec) => themeFor(spec, "same title"))).size).toBe(2)
+  })
+
+  it("lets a test whose assertions need a mode name it", () => {
+    const title = titlesThatAre("dark")
+    expect(themeFor("spec", title, [{ type: "theme", description: "light" }])).toBe("light")
+    expect(themeFor("spec", titlesThatAre("light"), [{ type: "summary", description: "x" }, { type: "theme", description: "dark" }])).toBe("dark")
+    // Anything else in the annotation leaves the hash's choice.
+    expect(themeFor("spec", title, [{ type: "theme", description: "sepia" }])).toBe("dark")
+  })
+})
+
+/** A title the hash records in `mode`. */
+const titlesThatAre = (mode: "light" | "dark") =>
+  Array.from({ length: 50 }, (_, index) => `t${index}`).find((title) => themeFor("spec", title) === mode)!
+
+describe("chaptersFileOf", () => {
+  it("opens on the title card, moves every chapter after it, and says whether the run passed", () => {
+    const card = { feature: "Branch workspace", name: "Branch terminal", line: "A reload keeps the shell." }
+    expect(chaptersFileOf(card, { title: "branch terminal: …", status: "passed", theme: "dark" }, VIDEO_PACE.title, [{ t: 0, label: "Open branch main" }, { t: 3.4, label: "Type \"ls\"" }])).toEqual({
+      title: "branch terminal: …",
+      feature: "Branch workspace",
+      name: "Branch terminal",
+      line: "A reload keeps the shell.",
+      status: "passed",
+      theme: "dark",
+      chapters: [
+        { t: 0, label: "Branch terminal" },
+        { t: 2, label: "Open branch main" },
+        { t: 5.4, label: "Type \"ls\"" },
+      ],
+    })
+    expect(chaptersFileOf(card, { title: "t", status: undefined, theme: "light" }, 0, []).status).toBe("unknown")
+  })
+
+  it("reads the chapters of a file and of the older bare list", () => {
+    const chapters = [{ t: 0, label: "a" }]
+    expect(chaptersIn(chapters)).toEqual(chapters)
+    expect(chaptersIn({ status: "failed", chapters })).toEqual(chapters)
+    expect(chaptersIn({ status: "failed" })).toEqual([])
+    expect(chaptersIn(null)).toEqual([])
   })
 })
 

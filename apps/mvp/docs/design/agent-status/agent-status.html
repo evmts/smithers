@@ -39,6 +39,8 @@ header .quiet { color:var(--text-muted); font-size:12px; }
 .msg.user { align-self:flex-end; background:var(--inverse-bg); color:var(--inverse-text); }
 .msg.assistant { align-self:flex-start; background:var(--surface-2); color:var(--text); }
 .answer { align-self:flex-start; display:flex; flex-direction:column; gap:6px; max-width:88%; }
+/* A bubble in an answer takes the answer's width: 80% of a column that shrinks to fit is narrower than the dots. */
+.answer > .msg { max-width:none; }
 .meta { display:flex; gap:6px; align-items:center; }
 .dots { display:inline-flex; gap:4px; padding:4px 0; }
 .dots i { width:6px; height:6px; border-radius:50%; background:var(--text-muted); animation:dot 1.2s infinite; }
@@ -49,6 +51,11 @@ header .quiet { color:var(--text-muted); font-size:12px; }
 .composer kbd { font:11px var(--font-sans); color:var(--text-muted); margin-left:6px; }
 
 /* AgentStatusPill: glyph, tone and one word. */
+/* The top bar's bell (docs/features/notifications.md#the-top-bar): the unread count, and Needs you in gold. */
+.bell { position:relative; display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 6px; border:1px solid transparent; border-radius:999px; background:transparent; color:var(--text); font:inherit; }
+.bell[data-needs] { padding:0 8px; border-color:var(--warning-border); background:var(--warning-soft); color:var(--warning); font-size:12px; font-weight:650; }
+.bell .g { font-size:11px; line-height:1; }
+.bell .count { position:absolute; top:-3px; right:-3px; min-width:16px; height:16px; padding:0 4px; box-sizing:border-box; border-radius:999px; background:var(--brand); color:var(--inverse-text); font-size:10px; font-weight:650; line-height:16px; text-align:center; }
 .pill { display:inline-flex; align-items:center; gap:6px; height:24px; padding:0 10px 0 8px; border-radius:999px; font-size:12px; font-weight:650; border:1px solid transparent; white-space:nowrap; }
 button.pill { font-family:inherit; cursor:pointer; }
 .pill .g { font-size:11px; line-height:1; }
@@ -102,8 +109,8 @@ button.pill { font-family:inherit; cursor:pointer; }
 <script>
 const STATES = {
   working: { label: "Working", note: "The answer streams. Header: Working, pulsing brand. No pill on the answer itself: the streaming answer is enough." },
-  waiting: { label: "Waiting", note: "A second question waits its turn behind the first, which needs you. The header shows the most urgent state: Needs you. The waiting answer carries a quiet Waiting pill." },
-  needs_you: { label: "Needs you", note: "The agent asked (agent/ask, kind question). The card holds the question in the agent's words, its options and a field. Header pill and toast are gold; the title counts open questions." },
+  waiting: { label: "Waiting", note: "A second question waits its turn behind the first, which needs you. The top bar's bell shows Needs you. The waiting answer carries a quiet Waiting pill." },
+  needs_you: { label: "Needs you", note: "The agent asked (agent/ask, kind question). The card holds the question in the agent's words, its options and a field. The top bar's bell reads Needs you in gold and opens the notifications at it; the toast is gold; the title counts open questions." },
   approval: { label: "Approval", note: "kind approval: Approve or Deny. The toast's one action is still Answer, which scrolls to and focuses the card." },
   answered: { label: "Answered", note: "The card collapses to the answer. The run reports working again, so the header shows Working and the toast is gone on every device." },
   failed: { label: "Failed", note: "Settled failed. The answer keeps 0002's Couldn't answer and Retry; the header shows Failed until a newer question." },
@@ -134,27 +141,31 @@ const toast = (text) => `<div class="stack" role="region" aria-label="Notificati
 </div>`
 
 function view() {
-  const header = (p) => `<header>${p}<span class="grow"></span><span aria-hidden="true">◐</span><span class="who">ben</span><span class="quiet">Sign out</span></header>`
-  let body = "", hp = "", title = "Smithers", stack = ""
+  const icon = `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5a4 4 0 0 1 8 0c0 3.5 1.5 4.5 1.5 4.5h-11S4 10 4 6.5Z"/><path d="M6.5 13.5a1.6 1.6 0 0 0 3 0"/></svg>`
+  const bell = (needs, unread) => needs > 0
+    ? `<button class="bell" data-needs aria-label="Notifications: ${needs} needs you, ${unread} unread"><span aria-hidden="true"><span class="g">◆</span> Needs you</span>${icon}<span class="count" aria-hidden="true">${unread}</span></button>`
+    : `<button class="bell" aria-label="Notifications">${icon}</button>`
+  const header = (p) => `<header>${p}<span class="grow"></span>${bell(needs, needs)}<span aria-hidden="true">◐</span><span class="who">ben</span><span class="quiet">Sign out</span></header>`
+  let body = "", hp = "", title = "Smithers", stack = "", needs = 0
   switch (state) {
     case "working":
       hp = headerPill("working", "Working")
       body = `${question}<div class="answer"><div class="msg assistant"><span class="dots" aria-label="Smithers is answering"><i></i><i></i><i></i></span></div></div>`
       break
     case "waiting":
-      hp = headerPill("needs_you", "Needs you", 1); title = "(1) Smithers"
+      needs = 1; title = "(1) Smithers"
       body = `${question}<div class="answer">${card}</div>
         <div class="msg user">Also bump the docs version.</div>
         <div class="answer"><div class="msg assistant"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></div><div class="meta">${pill("waiting", "Waiting")}</div></div>`
       stack = toast("Which branch should I deploy?")
       break
     case "needs_you":
-      hp = headerPill("needs_you", "Needs you", 1); title = "(1) Smithers"
+      needs = 1; title = "(1) Smithers"
       body = `${question}<div class="answer">${card}</div>`
       stack = toast("Which branch should I deploy?")
       break
     case "approval":
-      hp = headerPill("needs_you", "Needs you", 1); title = "(1) Smithers"
+      needs = 1; title = "(1) Smithers"
       body = `<div class="msg user">Clean up old previews.</div><div class="answer">${approval}</div>`
       stack = toast("Delete the stale preview docs-v1?")
       break

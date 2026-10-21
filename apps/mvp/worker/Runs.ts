@@ -1,14 +1,15 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
-import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
+import { Cause, Clock, Effect, type Layer, Metric, Option, Result, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
 import { MAX_RUN_BODY_BYTES, RUNS_TABLE } from "../src/features/status/contract.ts"
 import { type Report, Report as ReportSchema, type RunAnswer, RunAnswer as RunAnswerSchema } from "../src/features/status/schema.ts"
-import { canAsk, Sessions } from "./Actor.ts"
+import { type Actor, boundTo, canAsk, refusesPersonOnly, Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as Notifications from "./Notifications.ts"
+import * as RunCredentials from "./RunCredentials.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 
 // Agent status in ChatApi (decision 0015, docs/features/agent-status.md#the-routes): the `runs` rows a run's own steps
@@ -19,13 +20,21 @@ import * as ShapeAccess from "./ShapeAccess.ts"
 //   A settled row (`done`, `failed`) never changes; a new question bumps `version` and clears the answer; a report
 //   that changes nothing writes nothing.
 // - `POST /api/runs/<id>/answer`: the person answers the open question `version` names. The first accepted answer
-//   settles it; the same answer again is taken as landed; anything else is `409 not_open`.
+//   settles it; the same answer again is taken as landed; anything else is `409 not_open`. Only the person answers:
+//   anyone acting for them is `403 person_only`.
+// - `POST /api/runs/<run>/credential {flow, ceiling?}`: the run credential of run `<run>` (its execution id,
+//   percent-encoded), minted for the person's session or, nested, for the caller's credential (worker/RunCredentials.ts).
 // - `GET /api/shapes/runs`: the signed-in person's rows, without `launched_by`. Signed out, no rows.
+//
+// A run credential reports and answers only for the run its chain started from: any other is `403 other_run`.
 //
 // A report or an answer that writes the row routes it to the feed in the same transaction (worker/Notifications.ts,
 // decision 0009): the run's launcher and the people on its branch.
 
-/** Runs route requests, by `route` (`report`, `answer`) and `status`. */
+/** The largest `POST /api/runs/<run>/credential` body: a flow's name and its declared ceiling. */
+export const MAX_CREDENTIAL_BODY_BYTES = 16 * 1024
+
+/** Runs route requests, by `route` (`report`, `answer`, `credential`) and `status`. */
 export const requests = Metric.counter("smithers_run_requests", {
   description: "Requests to the runs routes, by route and status",
   incremental: true,
@@ -58,8 +67,19 @@ const AGENT_RUN_FLOW = "chat/Answer"
 const NOBODY = ""
 
 const decodeReport = Schema.decodeUnknownEffect(Schema.fromJsonString(ReportSchema))
+const decodeMint = Schema.decodeUnknownEffect(Schema.fromJsonString(RunCredentials.MintRequest))
 const decodeAnswer = Schema.decodeUnknownEffect(Schema.fromJsonString(RunAnswerSchema))
 const isUuid = Schema.is(Schema.String.check(Schema.isUUID()))
+
+/** A credential's run from its percent-encoded path segment, or none when it isn't one. */
+const decodedRun = (segment: string): string | undefined => {
+  try {
+    const run = decodeURIComponent(segment)
+    return /^[\x21-\x7e]{1,256}$/.test(run) ? run : undefined
+  } catch {
+    return undefined
+  }
+}
 
 type Fields = Record<string, string | number | boolean>
 
@@ -236,20 +256,34 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
     const route = (rest: string) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        const [runId = "", tail, ...more] = rest.split("/")
-        const kind = tail === undefined ? "report" : "answer"
+        const [segment = "", tail, ...more] = rest.split("/")
+        const kind = tail === undefined ? "report" : tail === "credential" ? "credential" : "answer"
+        // A credential's run is any execution id, so its segment is percent-encoded; a report's and an answer's is an
+        // answer's id.
+        const runId = kind === "credential" ? decodedRun(segment) : segment
         const startedAt = yield* Clock.currentTimeMillis
-        const fields: Fields = { runId }
+        const fields: Fields = { runId: runId ?? "" }
         const response = yield* Effect.gen(function* () {
-          if ((tail !== undefined && tail !== "answer") || more.length > 0 || !isUuid(runId)) {
+          if (
+            (tail !== undefined && tail !== "answer" && tail !== "credential") || more.length > 0 || runId === undefined ||
+            (kind !== "credential" && !isUuid(runId))
+          ) {
             return refusal(404, "not_found")
           }
           if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
           const actor = yield* (yield* Sessions).resolve
           if (Option.isNone(actor)) return refusal(401, "authentication")
+          if (kind === "credential") return yield* credential(request, runId, actor.value, fields).pipe(Effect.provide(database))
           // A Guest, or a person with no role, may not ask, so has no runs to report or answer.
           if (!canAsk(actor.value)) return refusal(403, "forbidden")
           const id = runId.toLowerCase()
+          if (actor.value.act !== undefined) fields.act = actor.value.act.kind
+          // Only the person answers what the agent asked them (decision 0017 slice 0).
+          if (kind === "answer" && (yield* refusesPersonOnly(actor.value, "run/answer"))) {
+            return refusal(403, "person_only")
+          }
+          // A run's credential reports only for the run its chain started from.
+          if (!boundTo(actor.value, id)) return refusal(403, "other_run")
           const handled = kind === "report"
             ? report(request, id, actor.value.subject.id, actor.value.login, fields)
             : answer(request, id, actor.value.subject.id, actor.value.login, fields)
@@ -267,10 +301,57 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         yield* Metric.update(Metric.withAttributes(requests, { route: kind, status: String(response.status) }), 1)
         yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
         yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
-          `agent.status.${kind}`,
+          kind === "credential" ? "auth.credential" : `agent.status.${kind}`,
         ).pipe(Effect.annotateLogs(fields))
         return response
       }).pipe(Effect.withSpan("agent.status.request", { kind: "server", attributes: { "smithers.run.id": rest.split("/")[0] } }))
+
+    /**
+     * `POST /api/runs/<run>/credential`: the run credential of run `runId` for `actor`. The person's agent run is their
+     * own answer: `chat/Answer`'s run is the answer's id, whose question they asked. Each mint is a log line
+     * `auth.credential` and a count, with the flow, the act and the depth, never the payload.
+     */
+    const credential = (request: HttpServerRequest.HttpServerRequest, runId: string, actor: Actor, fields: Fields) =>
+      Effect.gen(function* () {
+        const body = yield* readBounded(request, MAX_CREDENTIAL_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
+          Effect.result,
+        )
+        if (body._tag === "Failure") {
+          return body.failure.reason === "too_large" ? refusal(413, "too_large") : refusal(400, "invalid")
+        }
+        const decoded = yield* decodeMint(body.success).pipe(Effect.option)
+        if (Option.isNone(decoded)) return refusal(400, "invalid")
+        const { flow } = decoded.value
+        fields.flow = flow
+        fields.by = actor.act?.kind ?? "person"
+        if (actor.act === undefined && flow === AGENT_RUN_FLOW) {
+          const askedBy = isUuid(runId) ? yield* askerOf(runId.toLowerCase()) : undefined
+          if (askedBy === undefined) return refusal(404, "not_found")
+          if (askedBy !== actor.subject.id) {
+            fields.errorCode = "not_launcher"
+            return refusal(403, "forbidden")
+          }
+        }
+        const claims = RunCredentials.claimsFor(actor, runId, decoded.value, yield* Clock.currentTimeMillis)
+        if (Result.isFailure(claims)) {
+          yield* Metric.update(
+            Metric.withAttributes(RunCredentials.credentials, { op: "mint", outcome: claims.failure, act: "none" }),
+            1,
+          )
+          return refusal(403, claims.failure)
+        }
+        fields.act = claims.success.act
+        fields.depth = claims.success.chain.length
+        const token = yield* (yield* RunCredentials.RunCredentials).sign(claims.success)
+        yield* Metric.update(
+          Metric.withAttributes(RunCredentials.credentials, { op: "mint", outcome: "minted", act: claims.success.act }),
+          1,
+        )
+        return HttpServerResponse.jsonUnsafe(
+          { token, act: claims.success.act, expiresAt: claims.success.exp },
+          { headers: noStore },
+        )
+      })
 
     /** `GET /api/shapes/runs`: the signed-in person's rows; signed out, none; sessions unreadable, 503 (ShapeAccess). */
     const shape = ShapeProxy.make({

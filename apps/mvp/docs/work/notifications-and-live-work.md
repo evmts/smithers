@@ -21,6 +21,12 @@ links: [agent-status.md, flow-debugging.md, ../decisions/0009-notifications-and-
 
 Evidence: latest two session hours extracted by script as human text/lead replies; queue answers through 2026-10-21 01:24:15 UTC, current rulings, shared briefs/designs, decisions, proposals, TODOs and rules. Latest rulings override historical proposals. Product results are reported receipts; this pass verifies the maintainer-site build only.
 
+## Follow-up (todo) — 2026-10-20, 22:15 PDT
+
+Built by the notifications builder: clicking a toast opens its subject (a run's conversation at `#<run id>`); the notifications panel (newest first, unread dots, scrolls; an entry expands to its last steps, its question with Answer, or its failure with Retry); the top bar's bell on every page, with the unread count and `◆ Needs you`, replacing agent status's header pill; keys Alt+T, Alt+N, O, E, A, H, R. Proof: the attention and status suites pass on the Mac mini (36 of 36), 100% of the new lines; `@smthrs/ui`'s tests and a phone-width browser probe pass; `pnpm docs:check` passed.
+
+- **todo:** the updated `e2e/notifications.spec.ts` and `e2e/status.spec.ts` haven't passed yet: the shared dev server and the mini's Worker bundle were broken by other work, then the 22:05 test pause began. Run them after the pause, then `pnpm e2e:gifs`. A failed run at 21:37 overwrote `~/Desktop/smithers-mvp/gifs/notifications-live-work.gif` and its video; the passing run replaces them.
+
 ## Earlier tracker history (retained)
 
 

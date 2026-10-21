@@ -7,6 +7,40 @@ updated: 2026-10-20
 links: [../rulings.md, will-decision-queue.md, e2e-suite-and-gifs.md, repository-declared-home.md, branch-terminal.md, flow-authoring.md, branch-workspace-clarity.md, effect-repository-home.md, todos-draft-commit-drop.md]
 ---
 
+## Tracker reconciliation — 2026-10-20, 22:24 PDT
+
+**What:** Re-record readable chaptered walkthroughs at 1:1, with both themes and preserved review revisions.
+
+**Why:** Will needs legible evidence and before/after comparisons.
+
+**Current state:** At 22:16 the sweep reports 47 passing chaptered walkthroughs and about 30 remaining after the test pause. Navigate and agent return for verification. Three discovered bugs remain: cross-tab draft leakage, missing needs-you work, and summary-model retries.
+
+**Next step:** Resume remaining recordings after the lander releases the pause; pass the quality gate before queueing. Keep failed media and route product bugs to their existing owners.
+
+**Open questions for Will:** None; recording format is decided.
+
+Evidence: script-extracted human text and lead replies, approximately 20:24–22:24 PDT; synthetic notifications excluded. Latest Will text, rulings and queue answers supersede older briefs and proposals. Execution ownership retained; Codex tracker curator updates documentation only. Product checks above are reported receipts; this pass validates the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 20:02 PDT
+
+**What:** Replace legacy recordings with readable full-window chaptered videos in both themes.
+
+**Why:** Will repeatedly rejected zoomed, empty or unclear walkthroughs.
+
+**Current state:** At 19:56 the lead reports the shared recording helper finished and the full rerecord started, prioritizing returned walkthroughs. Captures are 1280×800 per device at full size, with title cards, plain captions, shortened waits and deterministic roughly half-dark themes. The zoom problem was squeezing each device into a 560-pixel strip; the lead reports the app layout was fine. No completion receipt for the whole rerecord exists.
+
+**Next step:** Finish passing replacement recordings and scenario scripts, return product-change items only after fixes pass, and preserve prior media until replacements are ready.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and assistant text replies in session 6253ecf2, 18:02–20:02 PDT; queue answers through 19:38 PDT; rulings, decisions 0001–0020, proposals, TODOs, rules and shared feature/host/panel briefs and designs. Timeline validation also uses its builder report. Latest Will text and queue answers prevail. Product receipts are reported evidence; this tracker verifies the site build. Execution owner retained; reconciled by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
 ## Current specification — 2026-10-20, 18:26 PDT
 
 **What:** Capture full-size readable videos with chapters and controls, across light and dark themes.

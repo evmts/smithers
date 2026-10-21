@@ -70,6 +70,7 @@ describe("POST /api/branches", () => {
       name: SENTINEL,
       mode: "open",
       access: "owner",
+      shared: false,
     })
     expect(await rows()).toEqual([
       { id: branch.branchId, name: SENTINEL, mode: "open", baseSha: shaOf(SENTINEL), conversationId: branch.conversationId },
@@ -124,7 +125,7 @@ describe("POST /api/branches", () => {
     // The default branch is the team's: its tracker edits it as everyone does, and owns nothing.
     expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "main" }))).toEqual([
       201,
-      expect.objectContaining({ name: "main", mode: "locked", access: "edit" }),
+      expect.objectContaining({ name: "main", mode: "locked", access: "edit", shared: false }),
     ])
     expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "feat" }))).toEqual([
       404,
@@ -264,14 +265,14 @@ describe("POST /api/branches", () => {
     const body = { owner: "octocat", name: "Spoon-Knife", ref: "feature" }
     expect(await json(await track(h, body))).toEqual([403, { code: "forbidden" }])
     await shared(runtime, known.branchId, "person-member", "view")
-    expect(await json(await track(h, body))).toEqual([200, { ...known, access: "view" }])
+    expect(await json(await track(h, body))).toEqual([200, { ...known, access: "view", shared: true }])
     await shared(runtime, known.branchId, "person-member", "edit")
-    expect(await json(await track(h, body))).toEqual([200, { ...known, access: "edit" }])
+    expect(await json(await track(h, body))).toEqual([200, { ...known, access: "edit", shared: true }])
     // A Guest it is shared with by name opens it, to view only; one it isn't shared with doesn't.
     const guest = await open({ actor: { subject: { kind: "person", id: "person-guest" }, role: "guest" } })
     expect(await json(await track(guest, body))).toEqual([403, { code: "forbidden" }])
     await shared(runtime, known.branchId, "person-guest", "edit")
-    expect(await json(await track(guest, body))).toEqual([200, { ...known, access: "view" }])
+    expect(await json(await track(guest, body))).toEqual([200, { ...known, access: "view", shared: true }])
     expect(h.github.seen).toEqual([])
   })
 
@@ -320,8 +321,99 @@ describe("POST /api/branches", () => {
     const h = await open()
     expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "feature" }))).toEqual([
       200,
-      { ...known, access: "edit" },
+      { ...known, access: "edit", shared: false },
     ])
     expect(h.github.seen).toEqual([])
+  })
+})
+
+/** A fresh ES256 key, as Code Storage's Keys page hands one out: a PKCS#8 PEM. */
+const pem = async () => {
+  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])
+  const der = new Uint8Array(await crypto.subtle.exportKey("pkcs8", pair.privateKey))
+  return `-----BEGIN PRIVATE KEY-----\n${btoa(String.fromCharCode(...der)).replace(/(.{64})/g, "$1\n")}\n-----END PRIVATE KEY-----\n`
+}
+
+describe("POST /api/branches with create: a new branch", () => {
+  /** The routes with Code Storage as the forge: the scripted mirror of GitHub's copy (worker/test/branch.ts). */
+  const onCodeStorage = async (options: Parameters<typeof branchHarness>[1] = {}) =>
+    open({ config: { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: await pem() }, ...options })
+
+  const create = (h: BranchHarness, ref: string, owner = "octocat") =>
+    track(h, { owner, name: "Spoon-Knife", ref, create: true })
+
+  test("makes the branch on Code Storage at the default branch's head and records it open, the Member's; again, 200", async () => {
+    const h = await onCodeStorage()
+    const [status, body] = await json(await create(h, "maya/k3f9q2"))
+    expect(status).toBe(201)
+    expect(body).toMatchObject({ name: "maya/k3f9q2", mode: "open", access: "owner", repoId: "github/octocat/spoon-knife" })
+    expect(h.forge.created).toEqual([{ repo: "github/octocat/spoon-knife", from: "main", branch: "maya/k3f9q2" }])
+    expect((await rows()).find((row) => row.name === "maya/k3f9q2")).toMatchObject({ mode: "open", baseSha: shaOf("main") })
+    expect(h.only("branch.track").annotations).toMatchObject({ outcome: "tracked", created: "created", status: 201 })
+    // Pressed again, or retried after a lost answer: the branch it made, at once, and nothing made twice.
+    expect(await json(await create(h, "maya/k3f9q2"))).toEqual([200, body])
+    expect(h.forge.created).toHaveLength(1)
+  })
+
+  test("a branch the forge has that the app doesn't track is tracked as it is", async () => {
+    const h = await onCodeStorage()
+    const [status, body] = await json(await create(h, "feature"))
+    expect([status, (body as { readonly name: string }).name]).toEqual([201, "feature"])
+    expect((await rows()).find((row) => row.name === "feature")?.baseSha).toBe(shaOf("feature"))
+    expect(h.forge.created).toEqual([])
+    expect(h.only("branch.track").annotations).toMatchObject({ created: "exists" })
+  })
+
+  test("Code Storage refusing or failing: 404 for no mirror or start, 503 otherwise; nothing recorded", async () => {
+    const h = await onCodeStorage()
+    h.forge.fail(Response.json({ code: "repository_not_found" }, { status: 404 }))
+    expect(await json(await create(h, "maya/a"))).toEqual([404, { code: "not_found" }])
+    h.forge.fail(Response.json({ code: "internal_error" }, { status: 500 }))
+    expect(await json(await create(h, "maya/b"))).toEqual([503, { code: "unavailable" }])
+    expect(await rows()).toEqual([])
+    // A repository the forge doesn't have at all.
+    expect(await json(await create(h, "maya/c", "nobody"))).toEqual([404, { code: "not_found" }])
+  })
+
+  test("a repository whose HEAD names no branch, or that has none, has nothing to start from: 404", async () => {
+    const pkt = (line: string) => `${(line.length + 4).toString(16).padStart(4, "0")}${line}`
+    const advertisement = (refs: string) =>
+      new Response(`${pkt("# service=git-upload-pack\n")}0000${refs}0000`, {
+        headers: { "content-type": "application/x-git-upload-pack-advertisement" },
+      })
+    const h = await onCodeStorage()
+    h.github.fail("GET", advertisement(pkt(`${shaOf("main")} HEAD\0multi_ack\n`)))
+    expect(await json(await create(h, "maya/g"))).toEqual([404, { code: "not_found" }])
+    h.github.fail("GET", advertisement(pkt(`${"0".repeat(40)} capabilities^{}\0multi_ack\n`)))
+    expect(await json(await create(h, "maya/h"))).toEqual([404, { code: "not_found" }])
+    expect(h.forge.created).toEqual([])
+  })
+
+  test("the default branch's read failing is 503 unavailable, and nothing is made", async () => {
+    const h = await onCodeStorage()
+    h.github.fail("GET", new Response("busy", { status: 503 }))
+    expect(await json(await create(h, "maya/d"))).toEqual([503, { code: "unavailable" }])
+    expect(h.forge.created).toEqual([])
+  })
+
+  test("GitHub as the forge can't make a branch: 503 not_configured, and nothing is recorded", async () => {
+    const h = await open()
+    expect(await json(await create(h, "maya/k3f9q2"))).toEqual([503, { code: "not_configured" }])
+    expect(await rows()).toEqual([])
+    expect(h.only("branch.track").annotations).toMatchObject({ created: "not_configured", status: 503 })
+  })
+
+  test("only a Member or above makes one: 401 signed out, 403 for a Guest", async () => {
+    const signedOut = await onCodeStorage({ actor: undefined, sessions: Layer.succeed(Sessions, Sessions.of({ resolve: Effect.succeedNone })) })
+    expect((await create(signedOut, "maya/e")).status).toBe(401)
+    const guest = await onCodeStorage({ actor: { subject: { kind: "person", id: "person-guest" }, role: "guest" } })
+    expect(await json(await create(guest, "maya/e"))).toEqual([403, { code: "forbidden" }])
+    expect(guest.forge.created).toEqual([])
+  })
+
+  test("refuses a create that isn't `true`", async () => {
+    const h = await onCodeStorage()
+    expect((await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "maya/f", create: "yes" })).status).toBe(400)
+    expect((await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "maya/f", create: false })).status).toBe(400)
   })
 })

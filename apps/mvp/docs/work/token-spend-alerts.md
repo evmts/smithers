@@ -2,10 +2,39 @@
 title: Token-spend alerts
 status: in-progress
 area: infra
-owner: spend alerts builder
+owner: spend alert channels builder (Claude Opus)
 updated: 2026-10-20
 links: [repo-follow-ups.md, ../todo.md, sandbox-budgets.md, ../observability.md, ../decisions/0008-auth.md, code-storage-spend-caps.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, sandboxes.md, notifications-and-live-work.md, dev-stack-hygiene.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-20, 22:15 PDT
+
+**What:** Deliver configurable model-spend alerts in the app, by email and by Telegram through durable channel steps.
+
+**Why:** Will requested configurable email and Telegram destinations.
+
+**Current state:** At 22:08 the lead reports channel code handed to the lander but no passing end-to-end test. Broken lockfile, dev build failure and the test pause prevented proof; built code does not establish working delivery.
+
+**Next step:** Resume real delivery tests after the landing test pause lifts; retain channel receipts, failure/recovery proof and configuration checks.
+
+**Open questions for Will:** Provide a Resend account/API key for email and personally enter the Telegram chat ID in Settings. These are later setup items, not urgent burn-down decisions; never record key values here.
+
+Evidence: script-filtered user-typed text and lead text replies from session 6253ecf2, approximately 20:15–22:15 PDT; synthetic notifications, relayed agents and compaction summaries excluded. Rulings and all 75 queue answers (latest 19:38 PDT) take precedence over historical shared briefs, panel designs, decisions, proposals, TODOs and rules. Execution ownership and status retained; Codex tracker curator reconciles documentation only. Product results are reported evidence; this pass validates the site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 20:00 PDT
+
+**What:** Alert Admins on any model spend, at most once per 15-minute window, in the app and by email and Telegram.
+
+**Why:** AUTH-4 requires alerts while there are no users. Will, 2026-10-20, to "Where should spend alerts reach you?": "configurable but atm i think alerts to email make sense but telegram too would be useful".
+
+**Current state:** Channels built ([spend-alerts.md](../features/spend-alerts.md#channels)): `@smthrs/notifications` `Channels` (Resend email, Telegram Bot API), an Admin's Settings with email addresses and a Telegram chat (`alert/channel`, `POST /api/alert-channels`, migration `0029_alert_channels`), and `ops/DeliverSpendAlert`, one durable step per channel with an `alert_deliveries` receipt. Deployments need `ALERT_EMAIL_API_KEY` and `ALERT_TELEGRAM_BOT_TOKEN`.
+
+**Next step:** Set the two keys on the deployment and an Admin's address and chat in Settings; deliver the Code Storage alert through the same channels.
+
+**Open questions for Will:** none.
 
 ## Current specification — 2026-10-20, 18:33 PDT
 
@@ -130,4 +159,4 @@ Until 13:22 on 2026-10-20 the next step was: pick the alert channel, then wire t
 
 ## Questions for Will
 
-- Where should the alert reach you outside the app: Telegram, email or something else? The answer also routes the Code Storage budget alerts. (From 13:22 on 2026-10-20 the first slice delivers to Admins in the app, so this no longer blocks building.)
+- Answered about 18:40 on 2026-10-20: email and Telegram, configurable. Built as Settings' alert channels.

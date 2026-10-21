@@ -11,7 +11,7 @@ import {
 } from "../src/features/attention/contract.ts"
 import { AckRequest, WatchRequest } from "../src/features/attention/schema.ts"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
-import { type Actor, Sessions } from "./Actor.ts"
+import { type Actor, refusesPersonOnly, Sessions } from "./Actor.ts"
 import { branchAccess, canView, isMember, policyOf, underPolicy } from "./branch/Access.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "./Body.ts"
@@ -465,6 +465,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
     /** `POST /api/notifications/ack`: Read, Dismiss or Hide at a version. */
     const ack = route("ack", (body, actor, fields) =>
       Effect.gen(function* () {
+        // Read, Dismiss and Hide record what the person saw and chose (decision 0017 slice 0).
+        if (yield* refusesPersonOnly(actor.value, "notification/ack")) return refusal(403, "person_only")
         const decoded = yield* decodeAck(body).pipe(Effect.option)
         if (Option.isNone(decoded)) return refusal(400, "invalid")
         fields.subject = decoded.value.subject

@@ -22,7 +22,7 @@ const openChat = async (page: Page, path = "/app") => {
 
 const isQuestions = (request: Request) => new URL(request.url()).pathname === "/api/questions"
 
-test("correlation: the browser's ask, its agent's dispatch and ChatApi's chat.question and chat.answer.write records share the answer id; the ask shares one trace", async ({ page }) => {
+test("correlation: the browser's ask, its agent's dispatch and ChatApi's chat.question and chat.answer.write records share the answer id; the ask shares one trace", { annotation: { type: "summary", description: "One ask's records, in the browser and on the server, share its answer id and one trace." } }, async ({ page }) => {
   const logs = await LogTail.start()
   const { composer, conversation } = await openChat(page)
   const word = `trace-${Date.now()}`
@@ -78,7 +78,7 @@ test("correlation: the browser's ask, its agent's dispatch and ChatApi's chat.qu
   expect.soft(traceIdOf(chatQuestion), "ChatApi's chat.question record carries the ask's trace id").toBe(traceId)
 })
 
-test("redaction: a sentinel word in questions never appears in ChatApi's log or the browser's relayed records", async ({ page }) => {
+test("redaction: a sentinel word in questions never appears in ChatApi's log or the browser's relayed records", { annotation: { type: "summary", description: "A word from a question never appears in the server's log or the browser's relayed records." } }, async ({ page }) => {
   const logs = await LogTail.start()
   // The app on its faulty services (e2e/faults.ts): the real ones until the lost question below.
   const { composer, conversation } = await openChat(page, faultyApp())

@@ -11,12 +11,25 @@
 
 .repo-header { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; }
 .repo-header-name { margin: 0; margin-right: auto; font-size: 1.25rem; overflow-wrap: anywhere; }
+.repo-header-name a { color: inherit; text-decoration: none; }
 
 .repo-page { flex: 1; min-height: 0; }
+/* Not cloned or Cloning, in the files' place until the repository is ready; Cloning runs a bar along its top edge. */
+/* Scoped to the screens so it outweighs the card's own alignment. */
+.repo-screen .repo-page-empty,
+.branch-screen .repo-page-empty { position: relative; overflow: hidden; flex: 1; min-height: 16rem; align-content: center; }
+/* The files or the home still loading: a skeleton in their place, the size of the Not cloned card. */
+.repo-page-loading { flex: 1; min-height: 16rem; }
 
 .repo-commit { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
 .repo-commit > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.repo-commit-count { margin-left: auto; }
+
+/* The picker with the branch and tag counts beside it, and the reclaim note's line under the about panel. */
+.repo-revision { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; }
+.repo-counts { display: inline-flex; gap: 0.75rem; }
+.repo-reclaim { display: grid; justify-items: start; gap: 0.5rem; margin: 0; }
 
 /* A repository's own home (decision 0014 §4): its Home and Code tabs, the line over the tree, and the home itself. */
-.home-tabs { display: flex; align-items: center; gap: 1rem; }
+.home-tabs { margin-top: -0.25rem; }
 .home-page { flex: 1; min-height: 0; }

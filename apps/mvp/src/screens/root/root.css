@@ -1,0 +1,2 @@
+/* Page layout only: the top bar's bell at the window's top-right, on every page whose header doesn't hold it. */
+.root-bell { position: fixed; z-index: 30; top: 0.625rem; right: 0.75rem; }

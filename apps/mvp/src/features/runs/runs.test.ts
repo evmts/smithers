@@ -1,3 +1,4 @@
+import { InspectionJournal } from "@smthrs/gateway"
 // The acts on runs and the run reads (src/features/runs, decision 0014 §2 and §6, docs/features/runs.md#acts), on this
 // device's engine as the browser's engine worker registers them, over the compose Postgres, against ChatApi's real
 // handler. A person's flow is the run they act on; the model is the only scripted seam.
@@ -94,7 +95,7 @@ const until = async (d: Device, runId: string, check: (run: Awaited<ReturnType<t
 }
 
 /** Runs `statement` in the engine's own schema, whose triggers name its tables unqualified. */
-const inEngine = (d: Device, statement: (sql: SqlClient.SqlClient) => Effect.Effect<unknown, unknown>) =>
+const inEngine = <A>(d: Device, statement: (sql: SqlClient.SqlClient) => Effect.Effect<A, unknown>) =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.andThen(sql`SET LOCAL search_path TO ${sql(d.engine.schema)}`, statement(sql)))))
 
@@ -253,3 +254,16 @@ describe("run/resume", () => {
       .toBe("not_here")
   }, SLOW)
 })
+
+test("a real completed personal flow journal lights its graph as completed", async () => {
+  const d = await device()
+  const runId = crypto.randomUUID()
+  expect(await d.run(d.engine.flows.execute(FlowRun, { executionId: runId, payload: { name: "hello" } }))).toEqual(Exit.succeed("Hello."))
+  const events = await inEngine(d, (sql) => sql<{ seq: number; event_type: string; emitted_at_ms: string; payload_json: string }>`SELECT seq, event_type, emitted_at_ms, payload_json FROM flows_journal_events WHERE run_id = ${runId} ORDER BY seq`)
+  const journal = events.map((event) => ({ seq: Number(event.seq), eventType: event.event_type, emittedAtMs: Number(event.emitted_at_ms), payload: { text: event.payload_json, bytes: new TextEncoder().encode(event.payload_json).length, clipped: false } }))
+  const monitor = InspectionJournal.monitorFromInspection({ runId, flowId: "hello", status: "completed" }, journal)
+  const nodes = monitor.attempts[0]!.graph
+  const settlements = journal.filter((e) => e.eventType.endsWith("node-settled")).map((e) => JSON.parse(e.payload.text))
+  expect(nodes.length).toBeGreaterThan(0)
+  expect(nodes.map((node) => node.state), JSON.stringify(settlements)).toEqual(nodes.map(() => "done"))
+}, SLOW)

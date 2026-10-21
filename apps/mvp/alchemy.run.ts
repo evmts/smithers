@@ -1,7 +1,7 @@
 /**
  * Alchemy stack for the from-scratch app. Importing it deploys nothing.
  *
- * Production (`pnpm deploy`, stage `prod`) declares every dependency:
+ * Production (`pnpm run deploy`, stage `prod`) declares every dependency:
  * - Postgres: a Neon project with logical replication on (infra/Postgres.ts), migrated by a deploy step.
  * - Hyperdrive: the `ChatDatabase` config in front of Postgres, created after the migrations ran (infra/ChatDatabase.ts).
  * - Electric: `electricsql/electric:1.8.1` in a Cloudflare Container behind the ElectricGateway Worker, which answers
@@ -23,7 +23,7 @@
  *
  * Dev:     pnpm dev        (alchemy dev: Vite + both Workers in local workerd, state in .alchemy/)
  * Plan:    pnpm plan       (alchemy plan --stage prod; read-only)
- * Deploy:  pnpm deploy     (the credentials in docs/infrastructure.md#credentials)
+ * Deploy:  pnpm run deploy (the credentials in docs/infrastructure.md#credentials; `pnpm deploy` is pnpm's own command)
  * Destroy: pnpm destroy    (keeps the Neon project)
  *
  * ChatApi reads its settings with Effect Config; see docs/features/chat.md#configuration.

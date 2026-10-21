@@ -3,7 +3,7 @@
 // and an engine that can't be reached would take a real engine minutes to produce. The real engine's answers are proved
 // in src/features/flows-ui/tab.test.ts.
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Effect, Layer, ManagedRuntime, Option, PubSub, Stream } from "effect"
+import { Deferred, Effect, Layer, ManagedRuntime, Option, PubSub, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Inspection } from "./schema"
 import { VIEW } from "./schema"
@@ -63,7 +63,7 @@ const open = (answers: Answers) => {
   return {
     store,
     page,
-    run: <A>(effect: Effect.Effect<A>) => runtime.runPromise(effect),
+    run: <A, E>(effect: Effect.Effect<A, E>) => runtime.runPromise(effect),
     publish: (executionId: string) => Effect.runSync(PubSub.publish(events, { executionId, eventType: "x" })),
   }
 }
@@ -71,7 +71,7 @@ const open = (answers: Answers) => {
 const refused = (error: string) => Effect.fail(new BrowserEngine.RequestRefused({ request: "Inspect", error }))
 
 describe("readRun and readMore", () => {
-  test("keeps the pages More read while the first page still has more, and reads from the last event it has", async () => {
+  test("loads the complete journal snapshot, retains later pages and reads More from the last event", async () => {
     const afters: Array<number | undefined> = []
     let first = [event(0), event(1)]
     let more = true
@@ -85,13 +85,13 @@ describe("readRun and readMore", () => {
       list: () => Effect.succeed({ runs: [], cursor: null }),
     })
     await t.run(t.store.readRun("a"))
-    expect(t.page("a")).toMatchObject({ state: "read", more: [], hasMore: true })
+    expect(t.page("a")).toMatchObject({ state: "read", more: [event(2)], hasMore: false })
     await t.run(t.store.readMore("a"))
-    expect(t.page("a")).toMatchObject({ more: [event(2)], hasMore: false })
-    expect(afters).toEqual([undefined, 1])
+    expect(t.page("a")).toMatchObject({ more: [event(2), event(3)], hasMore: false })
+    expect(afters).toEqual([undefined, 1, 2])
     // Read again while its first page still has more: what More read stays.
     await t.run(t.store.readRun("a"))
-    expect(t.page("a")?.more).toEqual([event(2)])
+    expect(t.page("a")?.more).toEqual([event(2), event(3)])
     // Once the first page holds it all, More's pages go.
     more = false
     await t.run(t.store.readRun("a"))
@@ -174,4 +174,58 @@ describe("readList and following the engine", () => {
     await vi.waitFor(() => expect(reads).toEqual(["b"]))
     expect((await t.run(t.store.runs.toArray)).map((row) => row.id).sort()).toEqual(["b", "c"])
   })
+})
+
+test("replay freezes the forest when a child appears; returning live loads its own journal", async () => {
+  let childAppeared = false
+  const reads: string[] = []
+  const t = open({
+    inspect: (runId) => {
+      reads.push(runId)
+      const read = inspection(runId, [event(0), event(1)], false)
+      return Effect.succeed(runId === "r" && childAppeared ? { ...read, children: [{ ...summary("child"), parentRunId: "r", input: value("{}"), result: null }] } : read)
+    },
+    list: () => Effect.succeed({ runs: [], cursor: null }),
+  })
+  await t.run(t.store.readRun("r"))
+  const snapshot = t.page("r")
+  await t.run(t.store.view.update(VIEW, (draft) => { draft.runId = "r"; draft.at = 1 }))
+  childAppeared = true
+  await t.run(t.store.readRun("r"))
+  await t.run(t.store.readMore("r"))
+  expect(reads).toEqual(["r"])
+  expect(t.page("r")).toEqual(snapshot)
+  await t.run(t.store.view.update(VIEW, (draft) => { draft.at = null }))
+  await t.run(t.store.readRun("r"))
+  expect(reads).toEqual(["r", "r", "child"])
+  expect((t.page("r")!.descendants as Inspection[])[0]!.run.runId).toBe("child")
+})
+
+test("More already awaiting the engine cannot overwrite a replay snapshot", async () => {
+  const started = Effect.runSync(Deferred.make<void>())
+  const pending = Effect.runSync(Deferred.make<Inspection>())
+  const t = open({
+    inspect: (id, options) => options?.afterSeq === undefined ? Effect.succeed(inspection(id, [event(0)], false)) : Effect.andThen(Deferred.succeed(started, undefined), Deferred.await(pending)),
+    list: () => Effect.succeed({ runs: [], cursor: null }),
+  })
+  await t.run(t.store.readRun("r"))
+  await t.run(t.store.view.update(VIEW, (draft) => { draft.runId = "r"; draft.at = null }))
+  const snapshot = t.page("r")
+  const reading = t.run(t.store.readMore("r"))
+  await t.run(Deferred.await(started))
+  await t.run(t.store.view.update(VIEW, (draft) => { draft.at = 0 }))
+  await t.run(Deferred.succeed(pending, inspection("r", [event(1)], false)))
+  await reading
+  expect(t.page("r")).toEqual(snapshot)
+})
+
+test("continuous engine events refresh the page before the stream goes quiet", async () => {
+  let reads = 0
+  const t = open({ inspect: (id) => { reads++; return Effect.succeed(inspection(id, [], false)) }, list: () => Effect.succeed({ runs: [], cursor: null }) })
+  await t.run(t.store.view.update(VIEW, (draft) => { draft.runId = "r" }))
+  // An event every 50 ms, which never goes quiet: a read comes while they continue, where a trailing debounce makes none.
+  await vi.waitFor(() => {
+    t.publish("r")
+    expect(reads).toBeGreaterThan(0)
+  }, { timeout: 5_000, interval: 50 })
 })

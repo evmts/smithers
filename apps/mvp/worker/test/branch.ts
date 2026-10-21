@@ -12,6 +12,7 @@ import { FetchHttpClient, HttpEffect, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { SHARES_TABLE } from "../../src/features/branch/contract.ts"
+import { TEXT_UPDATES_TABLE } from "../../src/features/coedit/contract.ts"
 import { TERMINALS_TABLE } from "../../src/features/terminal/contract.ts"
 import * as Actor from "../Actor.ts"
 import * as BranchApi from "../branch/BranchApi.ts"
@@ -142,6 +143,9 @@ export const gitHost = () => {
     /** Puts `repository` on GitHub as `owner/name`. */
     publish: (owner: string, name: string, repository: GitHubRepository) =>
       void repositories.set(`${owner}/${name}`.toLowerCase(), repository),
+    /** The repository GitHub has as `owner/name`, if any. */
+    repository: (owner: string, name: string): GitHubRepository | undefined =>
+      repositories.get(`${owner}/${name}`.toLowerCase()),
     /** The next `method` requests get these answers, one each, instead of the repository's. */
     fail: (method: "GET" | "POST", ...answers: ReadonlyArray<Response | "throw">) => void faults[method].push(...answers),
     hold: () => {
@@ -156,6 +160,48 @@ export const gitHost = () => {
 }
 
 export type GitHost = ReturnType<typeof gitHost>
+
+/**
+ * Code Storage as a branch's forge sees it, scripted over the git host `github` (a third-party service, scripted like
+ * the model): each repository's mirror `github/<owner>/<name>` serves git from GitHub's copy at
+ * `https://<org>.code.storage/github/<owner>/<name>.git`, and `POST https://api.<org>.code.storage/api/repos/<repo>/
+ * branches/create` makes a branch there at the commit `base_ref` names, as Code Storage does: `409 conflict` when it
+ * exists, `404 ref_not_found` for a start it doesn't have, `404 repository_not_found` for no mirror. `fail` answers the
+ * next create with a `Response` instead. Every create it took is in `created`.
+ */
+export const codeStorageGit = (github: GitHost) => {
+  const faults: Array<Response> = []
+  const created: Array<{ readonly repo: string; readonly from: string; readonly branch: string }> = []
+  const problem = (status: number, code: string) => Response.json({ code }, { status })
+  const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const request = new Request(input, init)
+    const url = new URL(request.url)
+    if (url.hostname.startsWith("api.")) {
+      const route = /^\/api\/repos\/([^/]+)\/branches\/create$/.exec(url.pathname)
+      if (route === null || request.method !== "POST") return problem(404, "route_not_found")
+      const fault = faults.shift()
+      if (fault !== undefined) return fault
+      const repo = decodeURIComponent(route[1]!)
+      const { base_ref, target_branch } = (await request.json()) as { base_ref: string; target_branch: string }
+      const [, owner = "", name = ""] = repo.split("/")
+      const repository = github.repository(owner, name)
+      if (repository === undefined) return problem(404, "repository_not_found")
+      const sha = repository.branches[base_ref]
+      if (sha === undefined) return problem(404, "ref_not_found")
+      if (repository.branches[target_branch] !== undefined) return problem(409, "conflict")
+      github.publish(owner, name, { ...repository, branches: { ...repository.branches, [target_branch]: sha } })
+      created.push({ repo, from: base_ref, branch: target_branch })
+      return Response.json({ message: "created", target_branch, target_is_ephemeral: false, commit_sha: sha })
+    }
+    // The mirror's git: GitHub's copy, as Code Storage serves its sync.
+    const mirrored = /^\/github\/([^/]+)\/([^/]+\.git\/.*)$/.exec(url.pathname)
+    if (mirrored === null) return new Response("Repository not found.", { status: 404 })
+    const forwarded = new Request(`https://github.com/${mirrored[1]}/${mirrored[2]}${url.search}`, request)
+    forwarded.headers.delete("authorization")
+    return github.fetch(forwarded)
+  }
+  return { fetch, created, fail: (...answers: ReadonlyArray<Response>) => void faults.push(...answers) }
+}
 
 /**
  * A branch's machine as the terminal routes reach it: every `attach`, `alive` and `enforce` call, in order. `alive`
@@ -272,12 +318,16 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
   const starts: Array<{ readonly flow: string; readonly executionId: string; readonly payload: unknown }> = []
   /** Every request sent to Electric, as sent, before the table is pointed at the file's schema. */
   const electric: Array<URL> = []
+  const forge = codeStorageGit(github)
   const fetch: typeof globalThis.fetch = (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input))
     if (url.hostname === "github.com") return github.fetch(input, init)
+    if (url.hostname.endsWith(".code.storage")) return forge.fetch(input, init)
     electric.push(new URL(url))
     const table = url.searchParams.get("table")
-    if (table === TERMINALS_TABLE || table === SHARES_TABLE) url.searchParams.set("table", `${scratch.name}.${table}`)
+    if (table === TERMINALS_TABLE || table === SHARES_TABLE || table === TEXT_UPDATES_TABLE) {
+      url.searchParams.set("table", `${scratch.name}.${table}`)
+    }
     return globalThis.fetch(url, init)
   }
   const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -311,6 +361,8 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
   return {
     fetch: (path: string, init?: RequestInit) => handler(new Request(`http://chat.test${path}`, init)),
     github,
+    /** The scripted Code Storage over `github`, the forge when `config` names an organization and a key. */
+    forge,
     sockets,
     rooms: room,
     starts,
@@ -347,6 +399,7 @@ export const resetBranches = (runtime: Runtime) =>
     const home = yield* Conversations.home
     yield* sql`DELETE FROM terminal_sessions`
     yield* sql`DELETE FROM sandbox_calls`
+    yield* sql`DELETE FROM text_updates`
     yield* sql`DELETE FROM branch_shares WHERE branch_id NOT IN (SELECT branch_id FROM conversations WHERE id = ${home!})`
     yield* sql`DELETE FROM conversations WHERE id <> ${home!}`
     yield* sql`DELETE FROM branches WHERE id NOT IN (SELECT branch_id FROM conversations)`

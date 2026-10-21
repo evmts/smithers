@@ -53,3 +53,9 @@ export const copies = Metric.counter("smithers_web_repo_copies", {
   description: "Copies to the clipboard, by what, door and outcome",
   incremental: true,
 })
+
+/** Milliseconds what GitHub says of a repository took to load, by `outcome`: `ready`, `missing` or `failed`. */
+export const aboutLoadMs = Metric.histogram("smithers_web_repo_about_load_ms", {
+  description: "Milliseconds what GitHub says of a repository took to load, by outcome",
+  boundaries: loadBoundaries,
+})

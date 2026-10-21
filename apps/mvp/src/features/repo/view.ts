@@ -1,6 +1,12 @@
-import { CAPACITY_COPY, FAILURE_COPY, githubRawUrl, rawRoute, SIGN_IN_TO_CLONE } from "./contract"
-import type { BlobRow, CloneRow, RefsRow, TreeRow } from "./rows"
-import type { Ref, Repository } from "./schema"
+import { CAPACITY_COPY, CLONING, FAILURE_COPY, formatBytes, githubRawUrl, NOT_CLONED, rawRoute, SIGN_IN_TO_CLONE } from "./contract"
+import { Option } from "effect"
+import { folderOf } from "../generated/contract"
+import { generatedFiles } from "../generated/contribution"
+import { parseManifest } from "../generated/detect"
+import { type GeneratedLinks, generatedLinksOf } from "../generated/view"
+import { hrefFor } from "./paths"
+import type { AboutRow, BlobRow, CloneRow, RefsRow, TreeRow } from "./rows"
+import type { About, Ref, Repository } from "./schema"
 
 // What the view shows, from the rows the queries read (decision 0006 §2): pure functions, so a component only renders
 // their result and a TUI can show the same.
@@ -81,7 +87,7 @@ export const fileProps = (row: BlobRow | undefined): FileProps => {
 /**
  * What the repository's header shows besides its name:
  * - `clone`: the Clone button; `sign_in`: the sign-in link in its place;
- * - `cloning`: one spinner, from Clone pressed until the clone settles;
+ * - `cloning`: nothing, from Clone pressed until the clone settles: the person's feed follows it;
  * - `refused`: why the clone failed or was refused, and Try again;
  * - `ready`: nothing.
  */
@@ -90,17 +96,7 @@ export type Header =
   | { readonly kind: "sign_in"; readonly text: string }
   | { readonly kind: "refused"; readonly text: string }
 
-/** Bytes in the largest whole unit, one decimal past KB: `512 B`, `1.2 MB`. */
-export const formatBytes = (bytes: number): string => {
-  const units = ["B", "KB", "MB", "GB", "TB"]
-  let value = bytes
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit++
-  }
-  return unit === 0 ? `${value} B` : `${value.toFixed(1)} ${units[unit]}`
-}
+export { formatBytes } from "./contract"
 
 /** A timestamp as Postgres prints it (`2026-10-20 15:40:00+00`), or ISO, in epoch milliseconds. */
 export const parseTimestamp = (value: string): number =>
@@ -157,6 +153,14 @@ export const headerOf = (
   }
 }
 
+/**
+ * What the Code view says in place of the files while the repository isn't ready, from its `header`, so the view is
+ * never a blank page: `Cloning` while it clones, else `Not cloned` beside the header's Clone, sign-in link or reason.
+ * Nothing while the device can't tell yet (`unknown`) or once it is `ready`.
+ */
+export const codeEmptyOf = (header: Header): string | undefined =>
+  header.kind === "unknown" || header.kind === "ready" ? undefined : header.kind === "cloning" ? CLONING : NOT_CLONED
+
 /** The head commit's row: its message's first line, its author, its short SHA and when it was made. */
 export interface Commit {
   readonly message: string
@@ -178,4 +182,158 @@ export const commitOf = (repository: Repository | undefined, sha?: string | null
     shortSha: repository.headSha.slice(0, 7),
     at: parseTimestamp(repository.headAt),
   }
+}
+
+/** Whether the view is a repository's top level: its home, or the root of a branch, tag or commit. */
+export const atRoot = (view: { readonly kind: "tree" | "blob"; readonly path: string }): boolean =>
+  view.kind === "tree" && view.path === ""
+
+/** The about answer an about row holds, once it is ready. */
+export const aboutOf = (row: AboutRow | undefined): About | undefined =>
+  row?.state === "ready" && row.about !== null ? row.about : undefined
+
+/** Epoch milliseconds of an ISO time, or `undefined` for none or one that doesn't read. */
+const instant = (iso: string | null | undefined): number | undefined => {
+  const at = iso === null || iso === undefined ? Number.NaN : Date.parse(iso)
+  return Number.isNaN(at) ? undefined : at
+}
+
+/** GitHub's page of a repository, a release or a person. */
+const githubPage = (path: string) => `https://github.com/${path}`
+
+/**
+ * The about panel's props for `RepoAbout` (`@smthrs/ui`) from what GitHub says: times in epoch ms, and links to
+ * GitHub's own pages for the release and each contributor. `loading` while the answer is on its way.
+ */
+export const aboutProps = (row: AboutRow | undefined) => {
+  const about = aboutOf(row)
+  if (about === undefined) return { loading: row === undefined || row.state === "loading" }
+  return {
+    loading: false,
+    description: about.description,
+    homepage: about.homepage,
+    topics: about.topics,
+    stars: about.stars,
+    watchers: about.watchers,
+    forks: about.forks,
+    license: about.license,
+    release: about.release === null ? null : {
+      tag: about.release.tag,
+      name: about.release.name,
+      publishedAt: instant(about.release.publishedAt) ?? null,
+      href: githubPage(`${about.name}/releases/tag/${encodeURIComponent(about.release.tag)}`),
+    },
+    releases: about.releases,
+    contributors: about.contributors.map((person) => ({
+      login: person.login,
+      avatarUrl: person.avatarUrl,
+      href: githubPage(encodeURIComponent(person.login)),
+    })),
+    contributorCount: about.contributorCount,
+    languages: about.languages,
+  }
+}
+
+/**
+ * The top level GitHub lists before a clone, as `RepoView` takes a file list: the files as paths and the folders as
+ * directories known without their files. `undefined` until GitHub's answer has one.
+ */
+export const previewTreeOf = (about: About | undefined) => {
+  if (about?.root == null) return undefined
+  return {
+    state: "ready" as const,
+    paths: about.root.filter((entry) => entry.kind === "file").map((entry) => entry.name),
+    directories: about.root.filter((entry) => entry.kind === "dir").map((entry) => entry.name),
+    truncated: false,
+  }
+}
+
+/** GitHub's README before a clone, as `RepoView` takes a directory's README; `undefined` without one. */
+export const previewReadmeOf = (about: About | undefined) =>
+  about?.readme == null ? undefined : {
+    path: about.readme.path,
+    file: { state: "text" as const, contents: about.readme.text, size: new TextEncoder().encode(about.readme.text).length },
+  }
+
+/** The newest commit GitHub names, as the commit row shows it; `undefined` without one. */
+export const previewCommitOf = (about: About | undefined): Commit | undefined => {
+  const at = instant(about?.head?.at)
+  if (about?.head == null || at === undefined) return undefined
+  return {
+    message: about.head.message.split("\n", 1)[0]!,
+    author: about.head.author,
+    shortSha: about.head.sha.slice(0, 7),
+    at,
+  }
+}
+
+/** How many branches, tags and commits the page shows beside the picker; each `undefined` when nothing says. */
+export interface Counts {
+  readonly branches?: number
+  readonly tags?: number
+  readonly commits?: number
+}
+
+/**
+ * The counts beside the picker: the branches and tags of the repository's own sync once its refs loaded (what the
+ * picker lists), else what GitHub says; the commits only GitHub counts.
+ */
+export const countsOf = (refs: RefsRow | undefined, about: About | undefined): Counts => {
+  const synced = refs?.state === "ready" && !refs.truncated ? refs : undefined
+  const branches = synced?.branches.length ?? about?.branches ?? undefined
+  const tags = synced?.tags.length ?? about?.tags ?? undefined
+  const commits = about?.commits ?? undefined
+  return {
+    ...(branches === undefined || branches === null ? {} : { branches }),
+    ...(tags === undefined || tags === null ? {} : { tags }),
+    ...(commits === undefined || commits === null ? {} : { commits }),
+  }
+}
+
+/** A count and its noun: `1 Branch`, `3 Branches`, `0 Tags`. */
+export const countLabel = (count: number, one: string, many: string): string =>
+  `${count.toLocaleString("en-US")} ${count === 1 ? one : many}`
+
+/**
+ * The quiet note on a cloned repository whose copy storage may reclaim: until the Smithers GitHub App is installed on
+ * it. `installUrl` is where Install goes. `undefined` for any other repository.
+ */
+export const reclaimNoteOf = (repository: Repository | undefined, about: About | undefined) =>
+  repository?.status === "ready" && repository.reclaimable === true ? { installUrl: about?.installUrl ?? null } : undefined
+
+/**
+ * The Generated mark's links for the file at `path`, read as `contents` (the view's file, or the branch's working copy
+ * in its editor), from the generated-files manifest nearest it at the view's commit (`manifestPath`, as `manifest`) and
+ * the repository's file list there; `undefined` for a file a person writes. Links go to the view's revision.
+ */
+export const generatedLinksFor = (
+  view: {
+    readonly owner: string
+    readonly name: string
+    readonly revision: string | null
+    readonly manifestPath: string | null
+  },
+  repository: Repository | undefined,
+  path: string,
+  contents: string | undefined,
+  manifest: BlobRow | undefined,
+  tree: TreeRow | undefined,
+): GeneratedLinks | undefined => {
+  const folder = view.manifestPath === null ? "" : folderOf(view.manifestPath)
+  // With no manifest near the view, only a header marker marks a file.
+  const inFolder = view.manifestPath !== null && (folder === "" || path.startsWith(`${folder}/`))
+  const generated = generatedFiles.detect(
+    folder === "" ? path : path.slice(folder.length + 1),
+    contents,
+    inFolder ? parseManifest(manifest?.state === "text" ? manifest.contents ?? undefined : undefined) : Option.none(),
+  )
+  if (generated === undefined || repository === undefined) return undefined
+  const revision = view.revision ?? repository.defaultBranch ?? ""
+  const paths = new Set(tree?.state === "ready" ? tree.paths : [])
+  return generatedLinksOf(
+    generated,
+    (file) => hrefFor(repository, revision, { kind: "blob", path: file }),
+    (file) => paths.has(file),
+    folder,
+  )
 }

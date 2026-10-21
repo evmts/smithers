@@ -2,11 +2,14 @@ import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Context, Effect, Layer } from "effect"
 import { requesterOf } from "../../flows/requests"
 import { ViewsClient } from "../views/api"
+import { PreviewClient } from "./api"
 import type { WebOutcome } from "./contract"
 import {
   CheckPage,
   type CheckedPage,
   OpenWebPage,
+  type PreviewedPage,
+  PreviewPage,
   ShowPage,
   WebPageForbidden,
   type WebPageOpened,
@@ -16,8 +19,8 @@ import {
 import { type Opening, recordOpening, withOpenSpan } from "./metrics"
 import { checkUrl, type Policy } from "./url"
 
-// What `app/web/open`'s steps run on (docs/features/web-pages.md#the-flow): the host's URL policy (`WebPolicy`) and
-// ChatApi's views route (`ViewsClient`). Each step runs in a span `web.page.open`. The agent's openings are counted and
+// What `app/web/open`'s steps run on (docs/features/web-pages.md#the-flow): the host's URL policy (`WebPolicy`), ChatApi's
+// page check (`PreviewClient`) and ChatApi's views route (`ViewsClient`). Each step runs in a span `web.page.open`. The agent's openings are counted and
 // logged here, by outcome; a person's by the tab that dispatched them, which knows their door (src/features/web/web.ts).
 // The agent's call is a child execution of the answer's run, so its id isn't its own requester (src/flows/requests.ts).
 
@@ -70,7 +73,7 @@ const conversationOf = (page: CheckedPage) =>
     return page.conversationId === undefined ? {} : { conversationId: page.conversationId }
   })
 
-/** What a refused add means to the step, and the outcome it is counted as. */
+/** What a refused request to ChatApi means to the step, and the outcome it is counted as. */
 const failureOf = (status: number | undefined) =>
   status === 400
     ? { error: new WebPageRefused({ reason: "invalid" }), outcome: "refused" as const }
@@ -79,29 +82,64 @@ const failureOf = (status: number | undefined) =>
     : { error: new WebPageUnavailable(), outcome: "unavailable" as const }
 
 /**
- * `app/web/show`: adds the view, a `webpage` for `embed` and a `link` card for `tab`. ChatApi refusing the page is
- * `WebPageRefused`, a person who may not add to the conversation `WebPageForbidden`, and anything else
+ * `app/web/preview`: ChatApi checks the page, as a frame would request it, and answers whether a frame shows it and
+ * what a card shows instead. ChatApi refusing the page is `WebPageRefused`, a person who may not add to the conversation
+ * `WebPageForbidden`, and anything else `WebPageUnavailable`, which the step's retry policy tries again; each failed
+ * attempt of the agent's is recorded.
+ */
+export const preview = (page: CheckedPage) =>
+  Effect.gen(function* () {
+    const checked = yield* (yield* PreviewClient).check({ url: page.href, mode: page.mode }).pipe(Effect.result)
+    if (checked._tag === "Success") {
+      yield* Effect.annotateCurrentSpan({ "smithers.web.framing": checked.success.framing })
+      return checked.success
+    }
+    const failed = failureOf(checked.failure.status)
+    yield* Effect.annotateCurrentSpan({ "smithers.web.outcome": failed.outcome })
+    yield* recordAgentOpening({ mode: page.mode, outcome: failed.outcome })
+    return yield* Effect.fail(failed.error)
+  }).pipe(withOpenSpan(page.mode))
+
+/** What a card or a framed page shows of the page while it loads: its title, description and icon, when it has them. */
+const previewProps = ({ title, description, icon }: PreviewedPage["preview"]) => ({
+  ...(title === undefined ? {} : { title }),
+  ...(description === undefined ? {} : { description }),
+  ...(icon === undefined ? {} : { icon }),
+})
+
+/**
+ * `app/web/show`: adds the view: a `webpage` for an `embed` a frame shows, and a `link` card for `tab` or for an `embed`
+ * of a page that refuses framing or couldn't be checked, so the person never sees a blank frame. ChatApi refusing the
+ * page is `WebPageRefused`, a person who may not add to the conversation `WebPageForbidden`, and anything else
  * `WebPageUnavailable`, which the step's retry policy tries again.
  */
-export const show = (page: CheckedPage) =>
+export const show = ({ page, preview }: PreviewedPage) =>
   Effect.gen(function* () {
+    const framed = page.mode === "embed" && preview.framing === "allowed"
     const added = yield* (yield* ViewsClient).add({
       id: page.viewId,
-      template: page.mode === "embed" ? "webpage" : "link",
-      props: { url: page.href },
+      template: framed ? "webpage" : "link",
+      props: { url: page.href, ...previewProps(preview) },
       ...(yield* conversationOf(page)),
     }).pipe(Effect.result)
     const outcome: WebOutcome = added._tag === "Success"
-      ? page.mode === "embed" ? "embedded" : "card"
+      ? framed ? "embedded" : "card"
       : failureOf(added.failure.status).outcome
     yield* Effect.annotateCurrentSpan({ "smithers.web.outcome": outcome })
-    yield* recordAgentOpening({ mode: page.mode, outcome })
+    yield* recordAgentOpening({ mode: page.mode, outcome, framing: preview.framing })
     if (added._tag === "Failure") return yield* Effect.fail(failureOf(added.failure.status).error)
-    return { viewId: page.viewId, origin: page.origin, mode: page.mode } satisfies WebPageOpened
+    return {
+      viewId: page.viewId,
+      origin: page.origin,
+      mode: page.mode,
+      shown: framed ? "page" : "card",
+      framing: preview.framing,
+      ...(preview.title === undefined ? {} : { title: preview.title }),
+    } satisfies WebPageOpened
   }).pipe(withOpenSpan(page.mode))
 
-/** Registers `app/web/open` with its steps, over the host's `WebPolicy` and `ViewsClient`. */
+/** Registers `app/web/open` with its steps, over the host's `WebPolicy`, `PreviewClient` and `ViewsClient`. */
 export const registration = Interpreter.layerWithImplementations(
   OpenWebPage,
-  Layer.merge(CheckPage.toLayer(check), ShowPage.toLayer(show)),
+  Layer.mergeAll(CheckPage.toLayer(check), PreviewPage.toLayer(preview), ShowPage.toLayer(show)),
 )

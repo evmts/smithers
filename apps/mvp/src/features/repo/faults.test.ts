@@ -39,6 +39,8 @@ const cloning = (answer: () => Effect.Effect<{ txid: number; id: string; attempt
       tree: () => Effect.die(new Error("no reads in this test")),
       blob: () => Effect.die(new Error("no reads in this test")),
       refs: () => Effect.die(new Error("no reads in this test")),
+      // Opening a repository asks what GitHub says of it; this client has no network for it.
+      about: () => Effect.fail(new RepoRefused({})),
     }),
   )
   return { calls, layer }

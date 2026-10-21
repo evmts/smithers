@@ -34,10 +34,35 @@ export const MAX_TITLE_LENGTH = 80
 /** Where the stack shows: over a conversation, whose own runs show in it, or on any other page. */
 export type Surface = "conversation" | "page"
 
+/** The routes that show a conversation and place their own stack: the home conversation and a branch's page. */
+export const CONVERSATION_ROUTES: ReadonlySet<string> = new Set(["/app", "/$owner/$repo/tree/$ref/$"])
+
+/** Where the route `routeId` shows the feed: over a conversation, or on a page. */
+export const surfaceOf = (routeId: string | undefined): Surface =>
+  routeId !== undefined && CONVERSATION_ROUTES.has(routeId) ? "conversation" : "page"
+
+/**
+ * The routes whose screen's header holds the top bar's bell: the home conversation's, and the repository header of a
+ * repository's home, a branch, a file and its raw view.
+ */
+export const BELL_ROUTES: ReadonlySet<string> = new Set([
+  "/app",
+  "/$owner/$repo",
+  "/$owner/$repo/tree/$ref/$",
+  "/$owner/$repo/blob/$ref/$",
+  "/$owner/$repo/raw/$ref/$",
+])
+
+/** Whether the route `routeId` needs the top bar's bell floated at the window's top-right: its header doesn't hold it. */
+export const floatsBell = (routeId: string | undefined): boolean => routeId !== undefined && !BELL_ROUTES.has(routeId)
+
+/** How a person reached the notifications panel: the header's bell, a toast's E, `+N`, or Alt+N. */
+export type PanelVia = "bell" | "toast" | "more" | "key"
+
 /**
  * What the feed records in the browser, by name, and the attributes they carry (docs/observability.md#notifications):
- * the engine worker's watches and acks, and the tab's record of each notification shown. None carries a title, an
- * actor or a ref. src/telemetry.ts merges them into what ChatApi's relay keeps.
+ * the engine worker's watches and acks, the tab's record of each notification shown, and what the person does in the
+ * notifications panel. None carries a title, an actor or a ref. src/telemetry.ts merges them into what ChatApi's relay keeps.
  */
 export const ATTENTION_TELEMETRY = {
   records: [
@@ -47,6 +72,8 @@ export const ATTENTION_TELEMETRY = {
     "smithers_notification_watches",
     "smithers_notification_acks",
     "smithers_notifications_shown",
+    "notifications.panel",
+    "smithers_notifications_panel",
   ],
-  fields: ["subject", "act", "outcome", "status", "surface", "state", "kind", "version", "errorCode"],
+  fields: ["subject", "act", "outcome", "status", "surface", "state", "kind", "version", "errorCode", "via"],
 } as const

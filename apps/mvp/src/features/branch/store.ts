@@ -1,5 +1,5 @@
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Layer, type Scope } from "effect"
+import { Context, Effect, FiberHandle, Layer, type Scope } from "effect"
 import { CURRENT, Current } from "./schema"
 
 // The branch this tab's route shows (docs/features/branch-workspace.md#the-page), as one local row: what the page
@@ -9,12 +9,17 @@ import { CURRENT, Current } from "./schema"
 export const currentQuery = (current: Collection.Collection<Current, string>) =>
   LiveQuery.make((q) => q.from({ current: current.tanstack }).findOne())
 
-/** The branch workspace's state for one tab: the route's branch, and the scope its work runs in. */
+/**
+ * The branch workspace's state for one tab: the route's branch, what follows whether its owner shares it, and the scope
+ * its work runs in.
+ */
 export class BranchStore extends Context.Service<
   BranchStore,
   {
     readonly current: Collection.Collection<Current, string>
     readonly currentState: Effect.Success<ReturnType<typeof currentQuery>>
+    /** Follows the shown branch's permission list for its owner: only the latest branch's. */
+    readonly follower: FiberHandle.FiberHandle<void, never>
     readonly scope: Scope.Scope
   }
 >()("@smthrs/mvp/branch/BranchStore") {
@@ -38,7 +43,12 @@ export class BranchStore extends Context.Service<
           access: null,
         }],
       })
-      return BranchStore.of({ current, currentState: yield* currentQuery(current), scope: yield* Effect.scope })
+      return BranchStore.of({
+        current,
+        currentState: yield* currentQuery(current),
+        follower: yield* FiberHandle.make<void, never>(),
+        scope: yield* Effect.scope,
+      })
     }),
   )
 }

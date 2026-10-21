@@ -14,13 +14,14 @@ export type ReadResult =
 /**
  * The home `.smithers/home.json`'s read declares: `absent` when the repository has no such file (404); `invalid` when
  * it is over RepoApi's 512 KiB (`too_large`), binary, or not a home (`Home.read`'s reason); `unreadable` when RepoApi
- * couldn't answer; else `declared` with its blocks.
+ * couldn't answer; else `declared` with its sections.
  */
 export const homeRowOf = (key: string, result: ReadResult): HomeRow => {
   const row = (state: HomeRow["state"], reason: string | null = null): HomeRow => ({
     key,
     state,
-    blocks: [],
+    sections: [],
+    contributors: "role",
     skipped: 0,
     reason,
   })
@@ -33,7 +34,14 @@ export const homeRowOf = (key: string, result: ReadResult): HomeRow => {
   const read = Home.read(text)
   return read._tag === "Invalid"
     ? row("invalid", read.reason)
-    : { key, state: "declared", blocks: read.blocks, skipped: read.skipped, reason: null }
+    : {
+      key,
+      state: "declared",
+      sections: read.sections,
+      contributors: read.contributors,
+      skipped: read.skipped,
+      reason: null,
+    }
 }
 
 /** A Markdown block's file as its read left it: its text, or failed (missing, binary, too large, unreadable). */
@@ -44,7 +52,9 @@ export const fileRowOf = (key: string, home: string, path: string, result: ReadR
     : { key, home, path, state: "text", text }
 }
 
-/** The distinct files a home's Markdown blocks name, in order. */
-export const markdownPaths = (blocks: ReadonlyArray<Home.Block>): ReadonlyArray<string> => [
-  ...new Set(blocks.flatMap((block) => (block.type === "markdown" ? [block.path] : []))),
+/** The distinct files a home's Markdown blocks name, in every section, in order. */
+export const markdownPaths = (sections: ReadonlyArray<Home.Section>): ReadonlyArray<string> => [
+  ...new Set(
+    sections.flatMap((section) => section.blocks.flatMap((block) => (block.type === "markdown" ? [block.path] : []))),
+  ),
 ]

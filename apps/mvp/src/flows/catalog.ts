@@ -50,7 +50,8 @@ export const agentFlows: ReadonlyArray<FlowName> = names.filter(modelInvocable)
  * more. The slash menu and the drafting agent read the declaration's own description.
  */
 export const catalogDescription = (name: FlowName): string => {
-  const description = declarationOf(name).description ?? ""
+  // Every registered flow describes itself (src/flows/registry.test.ts), though `Flow.make` leaves it optional.
+  const description = declarationOf(name).description as string
   const { changes } = entryOf(name)
   return changes === undefined ? description : `${description} Side effect: ${changes}; only when the person asks for that.`
 }

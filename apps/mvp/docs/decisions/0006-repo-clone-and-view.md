@@ -330,4 +330,13 @@ Registries to change outside feature 2's files:
 2. **Heavy UI adapters vs root imports.** `CodeFileView` (about 10 MB with Shiki) and `MarkdownEditor` (about 2.9 MB) live behind `@smthrs/ui/adapters/*` subpaths so the base barrel stays light, and `RepoView` joins them. `apps/mvp` allows only root imports. Recommended: allow `@smthrs/ui/adapters/*` as the one exception. The alternative is to move each heavy renderer into its own package with a root entry. **Answered 2026-10-20: the alternative.** Will: "Yes move code viewer to it's own package". `RepoView`, `CodeFileView`, `PierreDiffView` and `MarkdownEditor` are `@smthrs/repo-view`, `TerminalFrame` is `@smthrs/terminal-frame`, and the app imports both from their roots with no exception.
 3. **Markdown: view or edit?** Recommended for now: the WYSIWYG renders read-only. Saving an edit means a commit to the Code Storage mirror, which then diverges from GitHub (public mode is one-way) and needs the auth design to say who may write.
 
+## Revisions after Will's review (2026-10-20, evening)
+
+Will, about 18:22: the first visit was empty, the clone showed a spinner instead of notifying, a clone should say it may be reclaimed until the Smithers app is installed, Markdown should be WYSIWYG and HTML viewable as CodePen does. Decided, as [repo.md](../features/repo.md) describes:
+
+1. **The page reads GitHub before any clone.** `GET /api/repos/<owner>/<name>/about` answers what GitHub's REST API says (about, counts, newest commit, top folder, README), cached in the immutable cache per hour-long window, so a repository costs GitHub's quota once an hour. Only the repository must answer; a rate limit fails the whole read uncached. The top level is laid out as GitHub's repository page, cloned or not.
+2. **The clone is a workflow in its asker's feed.** A new step, `repo/Index`, joins `repo/Clone`. Each write to a clone's row folds into the asker's `notifications` row (`clone:<repo id>`) in the same transaction, a new kind beside `run`, `main` and `release`; who asked lives in `clone_requests`, never in the synced row (migration 0028). The header shows no spinner.
+3. **Reclaimable means not installed.** Index asks GitHub, as the App, whether it is installed; Settle writes `reclaimable`. Nothing deletes a copy until a durable reclaim flow exists, and it re-checks the App first (question 3 is unchanged: the view stays read-only; a person who may edit a branch edits in its workspace).
+4. **An HTML file previews in a sandboxed frame** with no network and an opaque origin, under 0017's app-frame policy.
+
 [HOST-PLAN] the lead's durable-answering plan, 2026-10-19: `@smthrs/platform-cloudflare`, the per-execution Durable Object, the engine journal in Postgres, and fencing (§5).

@@ -31,6 +31,7 @@ type Store = ChatStore["Service"]
 export interface ChatQueries {
   /** The window of the conversation, oldest first. */
   readonly conversation: Store["shown"]["tanstack"]
+  readonly summaries: Store["summaries"]["tanstack"]
   /** Questions queued on this device that Postgres doesn't have yet. */
   readonly queued: Store["queued"]["tanstack"]
   readonly composer: Store["composerState"]["tanstack"]
@@ -106,6 +107,7 @@ export class Chat extends Context.Service<Chat, { readonly queries: ChatQueries;
       )
       return Chat.of({
         queries: {
+          summaries: store.summaries.tanstack,
           conversation: store.shown.tanstack,
           queued: store.queued.tanstack,
           composer: store.composerState.tanstack,

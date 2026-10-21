@@ -50,6 +50,9 @@ export type ShareAccess = (typeof SHARE_ACCESSES)[number]
 export const ACCESSES = ["owner", "edit", "view"] as const
 export type Access = (typeof ACCESSES)[number]
 
+/** What the branch's chrome says a person may do on it, in the share dialog's words. */
+export const ACCESS_LABELS: Readonly<Record<Access, string>> = { owner: "Owner", edit: "Can edit", view: "Can view" }
+
 /**
  * Whether `login` can be a GitHub login: 1 to 39 letters, digits and single hyphens, neither first nor last. GitHub
  * compares logins ignoring case.
@@ -96,7 +99,16 @@ export const isBranchName = (name: string): boolean =>
  * `forbidden` (403: not a Member), `not_found` (404: GitHub has no such repository or branch), `locked` (409: the
  * branch is locked), and `unavailable` (503).
  */
-export const REFUSALS = ["invalid", "authentication", "forbidden", "not_found", "locked", "unavailable"] as const
+export const REFUSALS = [
+  "invalid",
+  "authentication",
+  "forbidden",
+  "not_found",
+  "locked",
+  "unavailable",
+  // `POST /api/branches` with `create: true` on a forge that can't make a branch (GitHub, read with no credential).
+  "not_configured",
+] as const
 export type Refusal = (typeof REFUSALS)[number]
 
 /**

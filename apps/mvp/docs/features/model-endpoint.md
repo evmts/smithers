@@ -11,8 +11,8 @@ browser agent (a durable ModelStep) ── ModelProxy.layerClient ── POST /a
                                 └ Guest, no role ──▶ 403 authentication
               bound the request ─ bad ──▶ 400 invalid_request      (over MODEL_MAX_REQUEST_BYTES: 413, before prepare)
                 (caps: maxTokens a whole number above 0, thinkingBudget one of at least 0)
-              model_roles[role] ─ row ──▶ HostModel.make(row) ─ unusable ──▶ 503 no_route
-                                └ none ─▶ HostModel (CHAT_MODEL)
+              model_roles[role] ─ row ──▶ HostModel.make(row) ─ unusable ──▶ 409 no_route
+                                └ none ─▶ HostModel (CHAT_MODEL); summary: SUMMARY_MODEL, else 409 no_route
               reserve bytes + caps, one statement:
                 today's committed ≥ budget ──▶ 429 quota_exceeded
                 else committed += reservation; model_usage row by the invocation id, expiring in an hour
@@ -64,7 +64,7 @@ An admin changes a role with the flow `admin/SetModel { role, model }`. `model` 
 - **Who may run it:** only a person with the Admin role acting in person. An agent, flow or sandbox acting for an Admin is refused (`NotAllowed`, reason `delegated`), and so is anyone else (`not_admin`). The step decides before it writes.
 - **What it writes:** the `model_roles` row and a `model_role_changes` row naming who changed it, in one transaction. A replayed step finds its change by its invocation key and records it once.
 - **Where it runs:** on any host; the host that starts it provides `CurrentActor`, never the payload. Its tests run it on the Node host. Starting it from the CLI or an admin view comes with sign-in.
-- **A row the Worker can't use,** such as one naming a credential the Worker doesn't hold or one that isn't a record, makes that role's calls fail with `503` and code `no_route`. The `model.endpoint` log line names the reason (`unusable:<reason>`).
+- **A row the Worker can't use,** such as one naming a credential the Worker doesn't hold or one that isn't a record, makes that role's calls fail with `409` and code `no_route`. The `model.endpoint` log line names the reason (`unusable:<reason>`). It is a `409`, not a `503`, because waiting doesn't change a setting: a model step seals it as the call's answer, where a `503` was a capacity refusal the engine retried six times.
 
 ## Budget
 
@@ -93,7 +93,7 @@ Every refusal is a JSON body `{ code, message, requestId }` with a `ModelError` 
 | `405` | `invalid_request` | not a `POST` |
 | `413` | `invalid_request` | the body is over `MODEL_MAX_REQUEST_BYTES` |
 | `429` | `quota_exceeded` | today's budget is spent |
-| `503` | `no_route` | the role's setting can't be used here |
+| `409` | `no_route` | the role's setting can't be used here, or the summary role has no model |
 | `503` | `provider_internal` | Postgres couldn't be read |
 
 ## Postgres
@@ -118,7 +118,8 @@ Migrations `0004_model_roles`, `0012_model_reservations` and `0017_model_charges
 | `MODEL_SPEND_ALERTS` | on; off under `alchemy dev` | whether any model spend alerts the Admins ([spend-alerts.md](spend-alerts.md#settings)) |
 | `MODEL_SPEND_ALERT_WINDOW` | `15 minutes` | a duration of at least a second: one spend alert per window at most |
 | `MODEL_RESERVATION_EXPIRY` | `1 hour` | a duration: how long a call's reservation lasts before it is final. The longest call the caps allow writes 16,000 tokens, about 27 minutes at 10 tokens a second |
-| `CHAT_MODEL` | Cerebras `qwen-3.8-27b` | the default model for every role without a setting; see [chat.md](chat.md#configuration) |
+| `CHAT_MODEL` | Cerebras `qwen-3.8-27b` | the default model for every role without a setting but `summary`; see [chat.md](chat.md#configuration) |
+| `SUMMARY_MODEL` | none | the `summary` role's model when no admin set one: a model record as JSON, such as a cheap model. Unset, the role has no model (`unusable:unconfigured`); a value that isn't a record is `unusable:config` |
 | `ANSWER_TURN_LIVE_SECONDS` | `30` | the `agent` role's liveness bound: how long a live run of the role may go without writing its answer, read beside the roles (`src/features/model/contract.ts`); the evidence for the default is in [agent.md](agent.md#turn-by-turn) |
 | a setting's credential | none | the key a `model_roles` record names, for example `CEREBRAS_API_KEY`; a custom credential `NAME` reads `SMITHERS_MODEL_KEY_NAME` and `SMITHERS_MODEL_KEY_NAME_ORIGIN` |
 
@@ -135,7 +136,9 @@ Migrations `0004_model_roles`, `0012_model_reservations` and `0017_model_charges
 - Clean refusals (the regression from the agent evals, 2026-10-20): a call refused `rate_limited` or with a 4xx before any output settles to what the provider reported, 0 when nothing, logged and counted `refused`; 25 refused calls against a budget of one reservation leave the next call served; a transport failure, a `503` or a timeout before output, and a `429` after output, keep their reservation. The same for a server flow's own calls (`ModelEndpoint.local`).
 - Unknown usage (the regressions from Codex review 4, P1): a call cancelled after its text, before usage, and one that fails there, keep their whole reservation; partial usage, complete usage before a failure, and a report larger than the reservation keep the reservation or the report; a call that ends normally without both counts keeps its reservation; calls cancelled before usage spend the budget until the third is refused `429`.
 - Expiry (Opus review 4, P2-6): a reservation that never settles counts in full, a settle after its expiry changes nothing, and admission still counts it; a call whose settle comes after its reservation expired is `expired`, logged and counted; the expiry is an hour unless set; each call's `charged_tokens` add up to the day's `committed`.
-- Postgres unreachable, and a role lookup Postgres refuses, are `503 provider_internal`; an unusable setting is `503 no_route`.
+- Postgres unreachable, and a role lookup Postgres refuses, are `503 provider_internal`; an unusable setting is `409 no_route`.
 - No exported log line, span or metric carries the prompt, the answer, the provider's error text or the key (a sentinel test).
 
 The SDK's own suite (`packages/smithers/agent/model/test/ModelProxy.test.ts`) covers the wire format, the client's typed failures, cancellation, `onEnd` finishing when the client goes away while it runs, request ids, a fresh invocation id for every served call when callers repeat a request id, the `Admission` `prepare` receives: the same invocation id `onEnd` gets, and the body's bytes; and what `End` says of a failure (its code, its provider status, whether the model produced output) and which failures `refusedCleanly` reads as clean. `db/Database.test.ts` covers `0012_model_reservations`: earlier rows become settled and seed their days' counters; and `0017_model_charges`: earlier rows are charged what they settled to, or their reservation while open, and expire an hour after they were made.
+
+The optional `summary` role is for conversation navigation. It is answered by an Admin's model setting, else by `SUMMARY_MODEL`, and never falls back to the main agent model. Calls use the same reservations and metering; see [timeline](timeline.md).

@@ -4,8 +4,24 @@ status: idea
 area: infra
 owner: unassigned; deferred by Will at 13:31:14 on 2026-10-20 ("Built for hosted only now yes cut scope in that way"); a docs agent records the ruling (the lead, 13:32:34). Until 13:46: unassigned
 updated: 2026-10-20
-links: [old-app-feature-gaps.md, web-first-desktop-later.md, host-agnostic-flows.md, infrastructure-as-code.md, settings-screen.md, ../decisions/0010-web-first-desktop-later.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../../../../AGENTS.md, decisions-for-will.md, ../../../../.specs/product/mvp.md, mvp-scope-cut.md, ../todo.md, docs-truth-pass.md, will-decision-queue.md]
+links: [old-app-feature-gaps.md, web-first-desktop-later.md, host-agnostic-flows.md, infrastructure-as-code.md, settings-screen.md, ../decisions/0010-web-first-desktop-later.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../../../../AGENTS.md, decisions-for-will.md, ../../../../.specs/product/mvp.md, mvp-scope-cut.md, ../todo.md, docs-truth-pass.md, will-decision-queue.md, native-app-di-plan.md]
 ---
+
+## Current specification — 2026-10-20, 20:14 PDT
+
+**What:** Keep the deferred install history and track the newly requested native-app design separately.
+
+**Why:** Will’s latest native planning request warrants design work while the hosted app remains the current implementation.
+
+**Current state:** The earlier 13:31 hosted-only ruling remains the baseline. At 20:13 the lead starts native-app planning after Will’s Telegram request, quoted in the shared native brief. Sol is planning; Opus and the merge are queued. No native build or install receipt exists.
+
+**Next step:** Use native-app-di-plan.md for the active DI design. Reconcile its merged decisions with hosted-only docs before any implementation; do not extend old app product code.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and assistant replies in session 6253ecf2, 18:15–20:14 PDT on 2026-10-20; queue answers through 19:38 PDT; current rulings, decisions 0001–0020, proposals, TODOs, rules and shared briefs/designs. Later Will text and queue answers prevail. Product checks are reported receipts; this tracker validates the site build. Execution ownership is retained.
+
+## Earlier tracker history (retained)
 
 ## What
 

@@ -58,3 +58,31 @@ describe("the repository contract", () => {
     expect(textOf(lateNul)).toBe(new TextDecoder().decode(lateNul))
   })
 })
+
+describe("the clone's feed row and what GitHub says", () => {
+  test("a clone's ref carries its stage, with the size once known; its detail says it in words", async () => {
+    const { cloneDetail, cloneRef, cloneSubject } = await import("./contract")
+    expect(cloneSubject("github/a/b")).toBe("clone:github/a/b")
+    expect(cloneRef("requested", 10)).toBe("requested")
+    expect(cloneRef("fetching")).toBe("fetching")
+    expect(cloneRef("fetching", 2048)).toBe("fetching:2048")
+    expect(cloneRef("indexing", 0)).toBe("indexing:0")
+    expect(cloneDetail("requested")).toBe("Requested")
+    expect(cloneDetail("fetching:2048")).toBe("Fetching 2.0 KB")
+    expect(cloneDetail("fetching:abc")).toBe("Fetching")
+    expect(cloneDetail("indexing:-1")).toBe("Indexing")
+    expect(cloneDetail("failed:empty")).toBe("Empty repository")
+    expect(cloneDetail("failed:whatever")).toBe("Couldn't clone")
+    expect(cloneDetail("capacity:too_large")).toBe("Too large to import")
+    expect(cloneDetail("capacity:size_unknown")).toBe("Can't check its size")
+    expect(cloneDetail("capacity:whatever")).toBe("Imports paused")
+    expect(cloneDetail("ready")).toBeNull()
+    expect(cloneDetail(null)).toBeNull()
+  })
+
+  test("the about route and the App's installation path", async () => {
+    const { aboutRoute, installUrl } = await import("./contract")
+    expect(aboutRoute("octo cat", "a/b")).toBe("/api/repos/octo%20cat/a%2Fb/about")
+    expect(installUrl("smithers")).toBe("https://github.com/apps/smithers/installations/new")
+  })
+})

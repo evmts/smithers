@@ -1,6 +1,7 @@
 import type { Collection } from "@smthrs/effect-tanstack-db"
 import { Clock, Effect, FiberHandle, Metric, Option, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
+import { nearestManifest } from "../generated/detect"
 import { RepoClient, type RepoRefused } from "./api"
 import {
   BUSY,
@@ -13,9 +14,9 @@ import {
   repoId,
   textOf,
 } from "./contract"
-import { blobLoadMs, cloneClicks, opens, refsLoadMs, treeLoadMs } from "./metrics"
+import { aboutLoadMs, blobLoadMs, cloneClicks, opens, refsLoadMs, treeLoadMs } from "./metrics"
 import { blobKey, copyPayloadOf, readmeOf, refsKey, resolveRef, type Target, treeKey } from "./paths"
-import type { BlobRow, CloneRow, RefsRow, TreeRow, ViewRow } from "./rows"
+import type { AboutRow, BlobRow, CloneRow, RefsRow, TreeRow, ViewRow } from "./rows"
 import { VIEW } from "./rows"
 import type { Repository } from "./schema"
 import { RepoStore } from "./store"
@@ -117,13 +118,16 @@ const readFailure = (refused: RepoRefused): string =>
     ? BUSY
     : COULDNT_LOAD
 
-/** Loads `owner/name`'s file list at `sha` unless this tab has it or is loading it; a failed one loads again. */
-const ensureTree = (repository: Repository, sha: string) =>
+/**
+ * Loads `owner/name`'s file list at `sha` unless this tab has it or is loading it. A failed one loads again when
+ * `again`: a navigation's warm asks again, and the page it then opens shows what that answered.
+ */
+const ensureTree = (repository: Repository, sha: string, again: boolean) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     const key = treeKey(repository.id, sha)
     const found = yield* store.trees.get(key)
-    if (Option.isSome(found) && found.value.state !== "failed") return
+    if (Option.isSome(found) && (found.value.state !== "failed" || !again)) return
     yield* put<TreeRow>(store.trees, key, { key, state: "loading", paths: [], truncated: false, message: null })
     const load = Effect.gen(function* () {
       const startedAt = yield* Clock.currentTimeMillis
@@ -165,13 +169,37 @@ const ensureRefs = (repository: Repository, key: string) =>
     yield* Effect.forkIn(load, store.scope, { startImmediately: true })
   })
 
-/** Loads a file at `sha` unless this tab has it or is loading it; a failed one loads again. */
-const ensureBlob = (repository: Repository, sha: string, path: string) =>
+/**
+ * Loads what GitHub says of `owner/name` unless this tab has it or is loading it; a failed one loads again. It needs no
+ * clone, so the page shows it from the first visit: the about panel, and before a clone the top folder and README.
+ */
+const ensureAbout = (owner: string, name: string, id: string) =>
+  Effect.gen(function* () {
+    const store = yield* RepoStore
+    const found = yield* store.abouts.get(id)
+    if (Option.isSome(found) && found.value.state !== "failed") return
+    yield* put<AboutRow>(store.abouts, id, { key: id, state: "loading", about: null, message: null })
+    const load = Effect.gen(function* () {
+      const startedAt = yield* Clock.currentTimeMillis
+      const result = yield* Effect.result((yield* RepoClient).about(owner, name))
+      const row: AboutRow = result._tag === "Success"
+        ? { key: id, state: "ready", about: result.success, message: null }
+        : result.failure.status === 404
+        ? { key: id, state: "missing", about: null, message: NOT_FOUND }
+        : { key: id, state: "failed", about: null, message: COULDNT_LOAD }
+      yield* put(store.abouts, id, row)
+      yield* observeLoad("repo.about.load", aboutLoadMs, row.state, startedAt, result)
+    })
+    yield* Effect.forkIn(load, store.scope, { startImmediately: true })
+  })
+
+/** Loads a file at `sha` unless this tab has it or is loading it; a failed one loads again when `again`, as a tree. */
+const ensureBlob = (repository: Repository, sha: string, path: string, again: boolean) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     const key = blobKey(repository.id, sha, path)
     const found = yield* store.blobs.get(key)
-    if (Option.isSome(found) && found.value.state !== "failed") return
+    if (Option.isSome(found) && (found.value.state !== "failed" || !again)) return
     yield* put<BlobRow>(store.blobs, key, { key, state: "loading", contents: null, size: null, message: null })
     const load = Effect.gen(function* () {
       const startedAt = yield* Clock.currentTimeMillis
@@ -223,14 +251,15 @@ const observeLoad = (
     )
   })
 
+/** Whether a repository's row is ready, with its head: Settle writes a ready row's head with its status. */
+export const isReady = (row: Option.Option<Repository>): row is Option.Some<Repository & { readonly headSha: string }> =>
+  Option.isSome(row) && row.value.status === "ready" && row.value.headSha !== null
+
 /** Waits until the repository is ready on this device, with its head: Electric delivers it, or the device has it. */
 export const ready = (id: string) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     yield* startSync
-    // Settle writes a ready row's head with its status.
-    const isReady = (row: Option.Option<Repository>): row is Option.Some<Repository & { readonly headSha: string }> =>
-      Option.isSome(row) && row.value.status === "ready" && row.value.headSha !== null
     const now = yield* store.repositories.get(id)
     if (isReady(now)) return now.value
     // With the rows the device has as the first batch, so a row that arrived since the read above isn't missed.
@@ -261,36 +290,126 @@ const until = <A extends object>(collection: Collection.Collection<A, string>, k
 /** Whether a load has ended: loaded or failed. */
 const loaded = (row: { readonly state: string }) => row.state !== "loading"
 
+/** Where a location is in a ready repository: its ref resolved to a commit, the ref's load failed, or no such ref. */
+type Location =
+  | { readonly _tag: "Located"; readonly revision: string; readonly sha: string; readonly path: string }
+  | { readonly _tag: "Failed"; readonly message: string | null }
+  | { readonly _tag: "Missing" }
+
 /**
- * The routed view's load: once the repository is ready, loads its branches and tags, resolves the URL's ref (waiting
- * for the branches and tags only when the ref is neither the default branch nor a SHA), then loads the file list and
- * the file, or for a directory its README.
+ * Resolves `target`'s ref in a ready repository: loads its branches and tags, and waits for them only when the ref is
+ * neither the default branch nor a SHA.
+ */
+const locate = (repository: Repository & { readonly headSha: string }, target: Target) =>
+  Effect.gen(function* () {
+    const store = yield* RepoStore
+    const refs = refsKey(repository.id, repository.headSha)
+    yield* ensureRefs(repository, refs)
+    let resolved = resolveRef(repository, target.ref, target.path)
+    if (resolved === undefined) {
+      const known = yield* until(store.refs, refs, loaded)
+      if (known.state === "failed") return { _tag: "Failed", message: known.message } satisfies Location
+      resolved = resolveRef(repository, target.ref, target.path, known)
+    }
+    if (resolved === undefined) return { _tag: "Missing" } satisfies Location
+    return { _tag: "Located", ...resolved } satisfies Location
+  })
+
+/**
+ * Once the file list at `sha` has loaded, loads the generated-files manifest nearest `path` (a file, or a directory's
+ * page for the branch's editor over it), when a folder on the way has one (docs/features/repo.md#generated-files).
+ */
+const ensureManifest = (repository: Repository, sha: string, path: string, kind: "tree" | "blob") =>
+  Effect.gen(function* () {
+    const store = yield* RepoStore
+    const tree = yield* until(store.trees, treeKey(repository.id, sha), loaded)
+    if (tree.state !== "ready") return
+    const manifest = nearestManifest(new Set(tree.paths), kind === "tree" ? `${path === "" ? "" : `${path}/`}-` : path)
+    if (manifest === undefined) return
+    yield* changeView({ manifestPath: manifest, manifestKey: blobKey(repository.id, sha, manifest) })
+    yield* ensureBlob(repository, sha, manifest, false)
+  })
+
+/**
+ * The routed view's load: once the repository is ready, resolves the URL's ref (`locate`), then the file list and the
+ * file, or for a directory its README. It reads what `warm` loaded and asks for what isn't loading yet; a failed load
+ * stays failed, since the navigation's warm just asked again.
  */
 const load = (target: Target, id: string) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     const repository = yield* ready(id)
-    const refs = refsKey(id, repository.headSha)
-    yield* changeView({ refsKey: refs })
-    yield* ensureRefs(repository, refs)
-    let resolved = resolveRef(repository, target.ref, target.path)
-    if (resolved === undefined) {
-      const known = yield* until(store.refs, refs, loaded)
-      if (known.state === "failed") return yield* changeView({ failure: known.message })
-      resolved = resolveRef(repository, target.ref, target.path, known)
-    }
-    if (resolved === undefined) return yield* changeView({ missing: true })
-    const { revision, sha, path } = resolved
+    yield* changeView({ refsKey: refsKey(id, repository.headSha) })
+    const location = yield* locate(repository, target)
+    if (location._tag === "Failed") return yield* changeView({ failure: location.message })
+    if (location._tag === "Missing") return yield* changeView({ missing: true })
+    const { revision, sha, path } = location
     const fileKey = target.kind === "blob" ? blobKey(id, sha, path) : null
     yield* changeView({ revision, sha, path, treeKey: treeKey(id, sha), fileKey })
-    yield* ensureTree(repository, sha)
-    if (target.kind === "blob") return yield* ensureBlob(repository, sha, path)
+    yield* ensureTree(repository, sha, false)
+    if (target.kind === "blob") {
+      yield* ensureBlob(repository, sha, path, false)
+      return yield* ensureManifest(repository, sha, path, "blob")
+    }
     const tree = yield* until(store.trees, treeKey(id, sha), loaded)
+    // The branch's editor opens a file over a directory's page, and marks it generated from the manifest too.
+    yield* ensureManifest(repository, sha, path, "tree")
     const readme = tree.state === "ready" ? readmeOf(tree.paths, path) : undefined
     if (readme === undefined) return
     yield* changeView({ readmeKey: blobKey(id, sha, readme), readmePath: readme })
-    yield* ensureBlob(repository, sha, readme)
+    yield* ensureBlob(repository, sha, readme, false)
   })
+
+/**
+ * The repository a page will show files of, once the device can tell: its row when it is ready, or none when the page
+ * says why not instead (not cloned, cloning, failed or refused). A repository the device has no row for waits for the
+ * repositories' shape to finish its first sync, or to fail.
+ */
+export const shownRepository = (id: string) =>
+  Effect.gen(function* () {
+    const store = yield* RepoStore
+    const now = yield* store.repositories.get(id)
+    if (Option.isSome(now)) return isReady(now) ? Option.some(now.value) : Option.none()
+    yield* Effect.ignore(store.repositories.preload)
+    const synced = yield* store.repositories.get(id)
+    return isReady(synced) ? Option.some(synced.value) : Option.none()
+  })
+
+/**
+ * Loads what `target`'s page shows into this tab without opening it: what GitHub says of the repository, then the file
+ * list and the file, or the directory's README; for a repository nobody cloned, only what GitHub says. Ends once they
+ * have loaded or failed, or after the store's `pageWait`, whichever is first; a request still on its way finishes in
+ * the store's scope. A failed load loads again. A link's hover or focus runs it (the router's intent preload), and so does every navigation before it
+ * opens the page, which then shows it complete.
+ */
+export const warm = (target: Target) =>
+  Effect.gen(function* () {
+    if (!isRepository(target.owner, target.name)) return
+    const store = yield* RepoStore
+    const id = repoId(target.owner, target.name)
+    yield* ensureAbout(target.owner, target.name, id)
+    const repository = yield* shownRepository(id)
+    // Not cloned: the page shows what GitHub says of it, so that is what to wait for.
+    if (Option.isNone(repository)) return yield* Effect.asVoid(until(store.abouts, id, loaded))
+    const location = yield* locate(repository.value, target)
+    if (location._tag !== "Located") return
+    const { sha, path } = location
+    yield* ensureTree(repository.value, sha, true)
+    if (target.kind === "blob") {
+      yield* ensureBlob(repository.value, sha, path, true)
+      return yield* Effect.asVoid(until(store.blobs, blobKey(id, sha, path), loaded))
+    }
+    const tree = yield* until(store.trees, treeKey(id, sha), loaded)
+    const readme = tree.state === "ready" ? readmeOf(tree.paths, path) : undefined
+    if (readme === undefined) return
+    yield* ensureBlob(repository.value, sha, readme, true)
+    yield* until(store.blobs, blobKey(id, sha, readme), loaded)
+  }).pipe(
+    (warming) => Effect.flatMap(RepoStore, (store) => Effect.timeoutOption(warming, store.pageWait)),
+    Effect.asVoid,
+    Effect.withSpan("repo.warm", { attributes: { "smithers.repo.kind": target.kind } }),
+    Effect.annotateLogs({ feature: "repo" }),
+  )
 
 /**
  * Opens `target` in the routed view: the view row says where at once, and the tab loads what it needs in its scope,
@@ -321,10 +440,14 @@ export const open = (target: Target) =>
       fileKey: null,
       readmeKey: null,
       readmePath: null,
+      manifestPath: null,
+      manifestKey: null,
     })
     yield* Metric.update(Metric.withAttributes(opens, { kind: target.kind }), 1)
     yield* Effect.logInfo("repo.open").pipe(Effect.annotateLogs({ kind: target.kind }))
     if (id === null) return yield* FiberHandle.clear(store.loader)
+    // What GitHub says loads at once, cloned or not: the page is never empty while the clone isn't ready.
+    yield* ensureAbout(target.owner, target.name, id)
     yield* FiberHandle.run(store.loader, load(target, id), { startImmediately: true })
   }).pipe(
     Effect.withSpan("repo.open", { attributes: { "smithers.repo.kind": target.kind } }),

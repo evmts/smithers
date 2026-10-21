@@ -1,0 +1,13 @@
+# Conversation timeline
+
+A desktop rail beside the conversation maps recorded asks and answers to transcript anchors. Clicking jumps. Arrow keys, J/K and Home/End move and jump; Escape focuses the transcript entry. The visible band follows scrolling and resize, including in branch conversations. Narrow screens and conversation columns below 600 pixels hide the rail, so a branch side pane cannot overlap its code view. Rows keep a fixed height while labels arrive. `@smthrs/ui` supplies `ChatTimeline` and the public `ChatTranscript.rail` slot.
+
+Settled nonempty messages launch `timeline/summarize` on the browser durable engine, independently of answering. `timeline/SummarizeEntry` calls `ModelStep` through `/api/model/summary`, with at most 8,000 input characters and 40 output tokens. The cheap `summary` role is an Admin's setting (`admin/SetModel`), else the Worker's `SUMMARY_MODEL`; with neither, the endpoint refuses the call `409 no_route`, and the step fails once, never retried. Streaming, failures and waits display honest state labels. The role uses the existing endpoint's permissions, reservations, metering and quotas.
+
+Successful summaries persist on the device in TanStack DB. Full-content SHA-256 identities invalidate changed entries, and deterministic run ids replay sealed model results after reload. A stale result cannot overwrite a changed entry. Each changed settled entry costs one model request at the configured tariff; unchanged cached entries cost zero. Cross-device shared summaries are not implemented. Provider acceptance before sealing retains ModelStep's documented at-least-once charge window.
+
+`timeline.summary` logs/spans expose role, ready outcome and replay status; `smithers_timeline_summary_calls` counts successful summaries. Projection failures log only `timeline.summary.unavailable`. No transcript text or summaries are logged. The engine journal retains model input/output as private run data rather than telemetry.
+
+The compiled first-party contribution lives in `src/features/timeline`; its intended manifest declares `chat.rail`. Until decision 0017's new Manifest/PluginHost loader lands, chat explicitly mounts the contribution. There is no separate private data interface. [Design and limitations](../design/timeline/DESIGN.md), [interactive mock](../design/timeline/timeline.html).
+
+Validation sources: `summary.test.ts` (bounds, content identities, safe labels), `view.test.ts` (states and stale summaries), `engine.test.ts` (real durable engine and replay), UI `chat-timeline.test.tsx` (keys/rendering), and `e2e/timeline.spec.ts` (real app scroll, keys, arriving summaries, phone). Receipts live in the work note; configured coverage is not executed coverage.

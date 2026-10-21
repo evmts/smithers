@@ -1,6 +1,6 @@
 // What a branch's page lets this person do right now (src/features/branch/view.ts, docs/features/branch-workspace.md#sharing).
 import { describe, expect, test } from "vitest"
-import { accessNow, writes } from "./view"
+import { accessNow, statusOf, writes } from "./view"
 
 describe("accessNow", () => {
   test("nothing until the branch is ready; what tracking answered until the room says otherwise", () => {
@@ -31,5 +31,15 @@ describe("writes", () => {
       false,
       false,
     ])
+  })
+})
+
+describe("statusOf", () => {
+  // Will couldn't tell what the branch page was from its recordings (2026-10-20): the chrome now says what this person
+  // may do on the branch, in the share dialog's words.
+  test("the person's access in the share dialog's words; nothing before it is known or after it was taken away", () => {
+    expect([statusOf("owner"), statusOf("edit"), statusOf("view")]).toEqual(["Owner", "Can edit", "Can view"])
+    expect(statusOf("none")).toBeUndefined()
+    expect(statusOf(undefined)).toBeUndefined()
   })
 })

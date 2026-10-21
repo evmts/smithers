@@ -14,6 +14,7 @@ import {
   HOME_DRAFT,
   PLACE,
 } from "./schema"
+import { type DraftSelection, SharedPrompt } from "./sharedPrompt"
 import { ChatStore, keepUnsent, timeFirstText } from "./store"
 
 // What a person does, as Effects that finish synchronously. The chat layer (chat.ts) binds each to a plain function
@@ -52,17 +53,29 @@ export const closeComposer = changeComposer((composer) => {
 export const toggleComposer = (via: Via) =>
   Effect.flatMap(composerNow, ({ open }) => (open ? closeComposer : openComposer(via)))
 
+/** Which conversation this tab shows, and whether its prompt is shared. */
+const placeRow = Effect.flatMap(ChatStore, ({ place }) => Effect.map(place.get(PLACE), Option.getOrThrow))
+
 /**
- * The composer's draft becomes `draft`, and the device keeps it for the conversation this tab shows, so a reload finds
- * it (`restoreDraft`). An empty draft is forgotten.
+ * The person made the composer's draft `draft`, with `selection` after. On a branch its owner shared, the draft is the
+ * branch's prompt (`SharedPrompt`, docs/features/coedit.md#the-prompt): the change goes to everyone typing it, and the
+ * prompt keeps it across reloads. Anywhere else the draft is this person's alone, and the device keeps it for the
+ * conversation (`keepDraft`), as Slack, Linear and GitHub keep a draft per person.
  */
-export const setDraft = (draft: string) =>
-  Effect.andThen(
-    changeComposer((composer) => {
-      composer.draft = draft
-    }),
-    keepDraft(draft),
-  )
+export const setDraft = (draft: string, selection?: DraftSelection) =>
+  Effect.gen(function* () {
+    const base = (yield* composerNow).draft
+    yield* mirrorDraft(draft)
+    const shared = yield* Effect.serviceOption(SharedPrompt)
+    if (Option.isSome(shared) && (yield* placeRow).shared) return yield* shared.value.set(draft, { base, selection })
+    yield* keepDraft(draft)
+  })
+
+/** The composer's draft becomes `draft`, as the shared prompt now reads with everyone's typing in it. */
+export const mirrorDraft = (draft: string) =>
+  changeComposer((composer) => {
+    composer.draft = draft
+  })
 
 /**
  * Keeps `draft` on the device for the conversation this tab shows, or forgets it when it is empty. The composer is
@@ -80,16 +93,18 @@ const keepDraft = (draft: string) =>
       : draft === ""
       ? undefined
       : yield* drafts.insert({ id: key, text: draft })
-    if (write === undefined) return
-    yield* changeComposer((composer) => {
-      composer.saved = false
-    })
-    yield* write.persisted.pipe(
-      Effect.andThen(changeComposer((composer) => {
-        if (composer.draft === draft) composer.saved = true
-      })),
-      Effect.ignore,
-      Effect.forkIn(scope),
+    // Nothing to write leaves the composer as saved as it was.
+    yield* write === undefined ? Effect.void : Effect.andThen(
+      changeComposer((composer) => {
+        composer.saved = false
+      }),
+      write.persisted.pipe(
+        Effect.andThen(changeComposer((composer) => {
+          if (composer.draft === draft) composer.saved = true
+        })),
+        Effect.ignore,
+        Effect.forkIn(scope),
+      ),
     )
   }).pipe(Effect.orDie)
 
@@ -102,16 +117,29 @@ const keptDraft = Effect.gen(function* () {
 
 /**
  * Puts the draft the device kept for the conversation this tab shows into the composer, unless the person has already
- * typed there: what a reload finds.
+ * typed there: what a reload finds. A shared prompt takes it in as it opens (`followPrompt`).
  */
 export const restoreDraft = Effect.gen(function* () {
   const draft = yield* keptDraft
   if (draft === "" || (yield* composerNow).draft !== "") return
-  yield* changeComposer((composer) => {
-    composer.draft = draft
-  })
+  yield* mirrorDraft(draft)
   yield* Effect.logInfo("chat draft restored").pipe(Effect.annotateLogs({ "draft.length": draft.length }))
 }).pipe(Effect.annotateLogs({ feature: "chat" }))
+
+/**
+ * Whether the prompt of the branch this tab shows is shared: its owner shared the branch (`true`), or took the last
+ * share away (`false`). The composer keeps what it shows: shared, the device's draft goes into the prompt
+ * (`followPrompt`, src/features/coedit/actions.ts); no longer shared, the device keeps the composer's draft as this
+ * person's own.
+ */
+export const share = (shared: boolean) =>
+  Effect.gen(function* () {
+    const { place } = yield* ChatStore
+    if ((yield* placeRow).shared === shared) return
+    yield* place.update(PLACE, (row) => void (row.shared = shared)).pipe(Effect.orDie)
+    if (!shared) yield* keepDraft((yield* composerNow).draft)
+    yield* Effect.logInfo("chat prompt shared").pipe(Effect.annotateLogs({ shared }))
+  }).pipe(Effect.annotateLogs({ feature: "chat" }))
 
 // A question the outbox couldn't take stays on the device as unsent, so it is never lost.
 const notAdmitted = (row: Asking) =>
@@ -166,21 +194,21 @@ const windowNow = Effect.gen(function* () {
 
 /**
  * Shows a branch's conversation in this tab, and asks there from now on (decision 0013 §1); `null` shows the home
- * conversation. It opens the conversation first, so a frontend reading it finds it opened. Nothing already asked moves:
- * a question keeps the conversation it was asked in. The composer shows the draft kept for that conversation.
+ * conversation. `shared` says its owner shared the branch, which makes its prompt one its people type together. It
+ * opens the conversation first, so a frontend reading it finds it opened. Nothing already asked moves: a question keeps
+ * the conversation it was asked in. The composer shows that conversation's draft.
  */
-export const show = (conversationId: string | null) =>
+export const show = (conversationId: string | null, shared = false) =>
   Effect.gen(function* () {
     const store = yield* ChatStore
     if (conversationId !== null) yield* store.open(conversationId)
-    const now = Option.getOrThrow(yield* store.place.get(PLACE))
-    if (now.conversationId === conversationId) return
-    yield* store.place.update(PLACE, (row) => void (row.conversationId = conversationId)).pipe(Effect.orDie)
-    // The composer shows the draft of the conversation shown; the one it had stays kept with its own conversation.
-    const draft = yield* keptDraft
-    yield* changeComposer((composer) => {
-      composer.draft = draft
-    })
+    // The home conversation's prompt is never shared.
+    const place = { conversationId, shared: conversationId !== null && shared }
+    if ((yield* placeRow).conversationId === conversationId) return yield* share(place.shared)
+    yield* store.place.update(PLACE, (row) => void Object.assign(row, place)).pipe(Effect.orDie)
+    // The composer shows the draft the device kept for the conversation shown; a shared prompt takes it in as it opens,
+    // and brings its own text. The draft it had stays with its own conversation.
+    yield* mirrorDraft(yield* keptDraft)
     yield* Effect.logInfo("chat conversation shown").pipe(
       Effect.annotateLogs({ conversation: conversationId === null ? "home" : "branch" }),
     )

@@ -1,6 +1,6 @@
 # Repositories: clone and view
 
-A signed-in Member or above clones a public GitHub repository into Code Storage, and anyone browses a cloned one: its file tree, a directory with its README, and a file as highlighted code or rendered Markdown, at any branch, tag or commit. A file opens raw or downloads; Copy puts a permalink, a path, a file's text or the clone URL on the clipboard. The URLs are GitHub's: swapping `github.com` for the app's domain opens the same thing, raw files included. Every action is a registered flow that a person and the agent run alike: `repo/clone`, `repo/copy`, `repo/refs`, `repo/tree`, `repo/read`, and `app/navigate` to open a location. Decision: [0006](../decisions/0006-repo-clone-and-view.md).
+A signed-in Member or above clones a public GitHub repository into Code Storage, and anyone browses a cloned one: its file tree, a directory with its README, and a file as highlighted code or rendered Markdown, at any branch, tag or commit. A file opens raw or downloads; Copy puts a permalink, a path, a file's text or the clone URL on the clipboard. The URLs are GitHub's: swapping `github.com` for the app's domain opens the same thing, raw files included. Every action is a registered flow that a person and the agent run alike: `repo/clone`, `repo/copy`, `repo/refs`, `repo/tree`, `repo/read`, and `app/navigate` to open a location. The first visit uses the page as GitHub's repository page does, before anyone clones: the top folder, the README, and the about panel from GitHub ([About](#about)). A clone reports its stages in the person's feed ([the clone in the feed](#the-clone-in-the-feed)), and a copy without the Smithers app is reclaimable ([reclaiming](#reclaiming)). Decision: [0006](../decisions/0006-repo-clone-and-view.md).
 
 ## How it works
 
@@ -16,16 +16,18 @@ Clone, /clone, the agent
                                                Import ── POST /api/repos {upstream: public} ────▶ Code Storage
                                                Pull ──── POST /upstream/pull
                                                AwaitSync GET /commits?limit=1 until synced or the deadline
+                                               Index ─── the file list into the cache; the App installed?
                                                Settle ── UPDATE repositories … WHERE clone_id = $2 AND status = 'cloning'
 repositories ◀── GET /api/shapes/repositories (ShapeProxy) ◀── Electric ◀── Postgres
 tree, file   ◀── GET /api/repos/<o>/<n>/tree/<sha> · /blob/<sha>/<path> ◀── immutable cache ◀── Code Storage
 raw          ◀── GET /api/repos/<o>/<n>/raw/<sha>/<path> (text/plain)    ◀── the same cached file
 refs         ◀── GET /api/repos/<o>/<n>/refs ◀── Postgres head ── immutable cache (by head) ◀── Code Storage
+about        ◀── GET /api/repos/<o>/<n>/about ◀── immutable cache (by hour) ◀── GitHub's REST API, cloned or not
 ```
 
 - **Cloning runs remotely** because it needs the Code Storage organization key, which a person must not hold ([0011](../decisions/0011-the-agent-runs-in-the-browser.md) §2). It is the durable flow `repo/Clone` on the per-execution Durable Object ([remote flows](remote-flows.md)).
 - **Reading runs anywhere.** The tree and file bodies stay in Code Storage and are read at a commit SHA, so an answer never changes: RepoApi keeps it in the immutable cache, and the browser's HTTP cache keeps it too (`Cache-Control: public, max-age=31536000, immutable`).
-- **Libraries** (`docs/libraries.md`): `@smthrs/effect-code-storage` (`CodeStorage`, `GitRemote`), `@smthrs/artifacts` (`ImmutableCache`) with `@smthrs/platform-cloudflare`'s `EdgeCache.layer`, `@smthrs/integrations` (`GitHub.GitHubClient`) for the size call, `@smthrs/flow` for the flows, `@smthrs/effect-electric` (`ShapeProxy`, `ElectricCollection`), `@smthrs/effect-tanstack-db`, and `@smthrs/repo-view`'s `RepoView`, imported from its root ([rules](../rules.md#sdkroot-imports-only)).
+- **Libraries** (`docs/libraries.md`): `@smthrs/effect-code-storage` (`CodeStorage`, `GitRemote`), `@smthrs/artifacts` (`ImmutableCache`) with `@smthrs/platform-cloudflare`'s `EdgeCache.layer`, `@smthrs/integrations` (`GitHub.GitHubClient`, its `count` new for this) for the size call and the about read, `@smthrs/ui`'s `RepoAbout` and `GeneratedChip`, `@smthrs/flow` for the flows, `@smthrs/effect-electric` (`ShapeProxy`, `ElectricCollection`), `@smthrs/effect-tanstack-db`, and `@smthrs/repo-view`'s `RepoView`, imported from its root ([rules](../rules.md#sdkroot-imports-only)).
 
 ## RepoApi
 
@@ -38,6 +40,7 @@ refs         ◀── GET /api/repos/<o>/<n>/refs ◀── Postgres head ─�
 | `GET /api/repos/<owner>/<name>/tree/<sha>` | anyone | `{ paths, truncated }`: every file's path, in pages of 5,000, up to `REPO_TREE_MAX_PATHS` |
 | `GET /api/repos/<owner>/<name>/blob/<sha>/<path>` | anyone | the file's bytes (`application/octet-stream`, `x-blob-sha`) |
 | `GET /api/repos/<owner>/<name>/raw/<sha>/<path>` | anyone | the same bytes as a page shows them: `text/plain; charset=utf-8` for text, `application/octet-stream` for a binary, with `x-content-type-options: nosniff` and `content-security-policy: default-src 'none'; sandbox`, so a file is never sniffed or run |
+| `GET /api/repos/<owner>/<name>/about` | anyone | what GitHub says of the repository, cloned or not ([About](#about)); `Cache-Control: public, max-age=` the seconds left in its window |
 | `GET /api/repos/<owner>/<name>/refs` | anyone | `{ defaultBranch, head, branches, tags, truncated }`: the ready row's default branch and head commit, and every branch and tag as `{ name, sha }`, in pages of 100 up to `REPO_MAX_REFS` each; `Cache-Control: no-cache`, since it follows the row |
 
 Refusals are `{ code }` JSON with `Cache-Control: no-store`:
@@ -57,11 +60,12 @@ Refusals are `{ code }` JSON with `Cache-Control: no-store`:
 
 ## Postgres
 
-Migrations `0007_repositories` and `0009_clone_ids`.
+Migrations `0007_repositories`, `0009_clone_ids` and `0028_clone_progress`.
 
 | Table | Columns | |
 |---|---|---|
-| `repositories` | `id` (key: `github/<owner>/<name>`, lowercased; also the Code Storage name), `owner`, `name`, `status` (`cloning`, `ready`, `failed`, `capacity`), `failure` (`not_found`, `empty`, `unavailable`, `timed_out`), `capacity` (`paused`, `storage`, `reads`, `too_large`, `size_unknown`), `stored_bytes`, `retry_at`, `default_branch`, `head_sha`, `head_message`, `head_author`, `head_at`, `attempt` (1, then 2 after Try again), `clone_id` (the attempt's own id, a UUID drawn when the attempt is created), `requested_at`, `settled_at` | synced to every device by Electric; `REPLICA IDENTITY FULL` |
+| `repositories` | `id` (key: `github/<owner>/<name>`, lowercased; also the Code Storage name), `owner`, `name`, `status` (`cloning`, `ready`, `failed`, `capacity`), `failure` (`not_found`, `empty`, `unavailable`, `timed_out`), `capacity` (`paused`, `storage`, `reads`, `too_large`, `size_unknown`), `stored_bytes`, `retry_at`, `default_branch`, `head_sha`, `head_message`, `head_author`, `head_at`, `attempt` (1, then 2 after Try again), `clone_id` (the attempt's own id, a UUID drawn when the attempt is created), `requested_at`, `settled_at`, `stage` (`requested`, `fetching`, `indexing` while `cloning`, else null), `reclaimable` (a ready copy without the Smithers app) | synced to every device by Electric; `REPLICA IDENTITY FULL` |
+| `clone_requests` | `repo_id` (key), `clone_id`, `requested_by`, `requested_at` | who asked for each repository's current attempt: the person its feed row goes to. Not synced |
 | `repo_imports` | `id` (always 1), `paused`, `changed_at` | the pause switch admission reads; its row lock serializes requests and admission |
 | `code_storage_usage` | `month` (key), `bytes_read`, `bytes_imported`, `alerted_pct` | what Code Storage served and imported each UTC month, and the highest spend alert raised |
 
@@ -75,11 +79,29 @@ Migrations `0007_repositories` and `0009_clone_ids`.
 | `repo/Import` | `CodeStorage.createRepo` with the public GitHub upstream; one that exists is fine, one with another upstream is refused | the same |
 | `repo/Pull` | `CodeStorage.pullUpstream`; `sync_in_progress` is fine | the same |
 | `repo/AwaitSync` | `CodeStorage.listCommits(id, { ref: defaultBranch, limit: 1 })`: the head commit once synced; `timed_out` once `REPO_CLONE_DEADLINE` has passed since the request; otherwise `SyncPending`, retried | 2 s doubling to 30 s, after Code Storage's `Retry-After` when it sends one; an hour at most |
-| `repo/Settle` | writes the outcome only while this attempt owns a `cloning` row (`clone_id` is its `cloneId`); a `ready` clone adds its size to this month's imported bytes | 1 s doubling to a minute, 30 minutes |
+| `repo/Index` | once the head commit is in: the row's stage becomes `indexing`; reads the file list at the head through RepoApi's own tree read, into the immutable cache, so the first visit's tree is a hit (best effort); asks GitHub, as the App, whether the Smithers app is installed on the repository (`false` without the App) | as Inspect |
+| `repo/Settle` | writes the outcome only while this attempt owns a `cloning` row (`clone_id` is its `cloneId`), with `reclaimable` for a ready copy the app isn't installed on; a `ready` clone adds its size to this month's imported bytes | 1 s doubling to a minute, 30 minutes |
 
 - Inspect's failure past its retries settles `failed` `unavailable`; so does any failure of Import, Pull or AwaitSync. A refusal by a budget skips straight to Settle as `capacity`. A stale attempt's Settle changes nothing.
 - AwaitSync is a step with a retry policy rather than `Poll.make` (0006 named a poll): a poll's backoff can't cap at 30 s, and a step's attempts and expiration are persisted the same way.
 - The flow runs on the Node host in its tests and on the Durable Object when deployed: the host injects Postgres, Code Storage and GitHub (`RepoClone.registration`, `ExecutionHost.withRepoClone`).
+
+### The clone in the feed
+
+A clone is a workflow the person who asked watches in their feed (decision [0009](../decisions/0009-notifications-and-live-work.md)), not a spinner. Every write to a clone's row folds it into that person's `notifications` row, `clone:<repo id>`, in the same transaction (`worker/CloneFeed.ts`): RepoApi's request (`requested`), admission (`fetching`, with the size), Index (`indexing`), and Settle (done, or failed with why). The row's `ref` carries the stage and size (`fetching:<bytes>`) or the outcome (`failed:not_found`, `capacity:too_large`); its version goes up for done, failed and a new attempt, so a dismissed entry shows again.
+
+```
+Clone ─▶ POST /api/repos ─▶ requested ─▶ Inspect: fetching 640.0 KB ─▶ Index: indexing ─▶ Settle: done
+                                                                                   └─▶ failed · Not found · [Try again]
+```
+
+The toast reads `◌ Clone · octocat/Spoon-Knife · Fetching 640.0 KB`, then `✓ Clone · octocat/Spoon-Knife`. A failed clone's toast and list entry offer Try again, which runs `repo/clone` again (`src/features/attention/actions.ts`); Open goes to the repository. The header shows no spinner while it clones: Clone gives way to nothing until the clone settles, or to why it stopped with Try again.
+
+### Reclaiming
+
+A cloned copy of a repository the Smithers GitHub App isn't installed on is reclaimable: Index asks GitHub as the App, and Settle writes `reclaimable`. Rows ready before migration 0028 are reclaimable unless their installation was known (`github_repositories`). The page shows the quiet note under the about panel, "Until the Smithers app is installed, this copy may be reclaimed for space.", with Install, which opens `https://github.com/apps/<GITHUB_APP_SLUG>/installations/new`.
+
+Nothing deletes a copy yet. Reclaiming waits for a durable flow that frees storage when the budgets need room, and for clearing the mark when the App is installed later; both are in [not built yet](#not-built-yet).
 
 ### Execution ids
 
@@ -96,6 +118,14 @@ In Inspect, after the size, one transaction holds `repo_imports`' row, so two im
 ### Spend
 
 Every write to `code_storage_usage` recomputes this month's estimate in its transaction: stored GB × $3.60 + read GB × $0.15 + imported GB × $0.06. Crossing 50%, 80% or 100% of `REPO_BUDGET_USD` above `alerted_pct` raises it and logs `repo.spend.alert` at Error once a month per threshold; the gauges `repo_stored_bytes` and `repo_spend_estimate_usd` follow every write. Delivering that line to Will is the token-spend alert's job ([todo.md](../todo.md#alerts-on-token-spend)).
+
+## About
+
+`GET /api/repos/<owner>/<name>/about` (`worker/RepoAbout.ts`) answers what GitHub says of a repository, cloned or not: its description, homepage (an `http(s)` URL only), topics, stars, watchers, forks and license; its languages by bytes; the latest release and how many there are; the first 12 contributors and how many there are; how many commits, branches and tags; the newest commit; the top folder; the README's text (512 KiB at most, text only); and where the Smithers app is installed. It is eleven GitHub calls at once through `@smthrs/integrations`' `GitHubClient` (with `GITHUB_TOKEN` when set); the counts are `GitHubClient.count`, one request each.
+
+- **Only the repository must answer.** GitHub's 404, or a private repository, is `404 not_found`; any other refusal of it is `503 unavailable`. A part GitHub refuses is left out (`null`, or empty), unless GitHub is rate limiting, when the whole read fails `503` with its `Retry-After` and nothing is cached.
+- **One read a window.** The answer is kept in the immutable cache under `repo.about`, the repository and the window it was read in (`REPO_ABOUT_FRESH_MINUTES`, 60), so a repository costs GitHub's quota once a window; the browser keeps it to the window's end.
+- **The browser** loads it once per tab when a repository opens, and when a link to one is warmed: `abouts`, keyed by the repository's id, `loading`, `ready`, `missing` or `failed`.
 
 ## Reads
 
@@ -140,19 +170,45 @@ Its step runs in the leader tab's engine worker, which has no clipboard, so it a
 
 | Piece | What it is |
 |---|---|
-| `repositories` | Electric collection over `/api/shapes/repositories`, decoded by `schema.ts` `Repository`, kept on the device (`schemaVersion` 2 since `cloneId`) |
+| `repositories` | Electric collection over `/api/shapes/repositories`, decoded by `schema.ts` `Repository`, kept on the device (`schemaVersion` 3 since `stage` and `reclaimable`, which a database before migration 0028 lacks and the device reads as none) |
 | `trees`, `blobs` | local-only collections keyed `<id>@<sha>` and `<id>@<sha>:<path>`, in the states `RepoView` takes |
 | `clones` | this tab's clone requests while they are on their way or were refused |
+| `abouts` | local-only, keyed by the repository's id: what GitHub says of it ([About](#about)), `loading`, `ready`, `missing` or `failed` |
 | `refs` | local-only, keyed `<id>@<head sha>`: the branches and tags as of the repository's sync, loaded once per tab through `GET /refs`, for the picker and for resolving a ref |
 | `clone(owner, name)`, `retryClone` | validate, show `cloning` at once, dispatch `repo/clone` (door `button`), wait for Electric to deliver the row. Not chat's outbox: RepoApi takes a clone idempotently, and it needs the network and sign-in anyway |
-| `openRoute(kind, params, search)` | the route loaders' action: loads the branches and tags, resolves the ref, then loads the tree at its commit, the file, or the directory's README, each once |
+| `warmRoute(kind, params, search)` | what a route calls first, on a link's hover or focus and before every navigation ([navigation](navigation.md)): loads what GitHub says of the repository, then, once it is ready, its branches and tags, the ref, the tree at its commit, and the file or the directory's README, without opening the view; ends once they loaded or failed, or after `pageWait` (1 s). A failed load loads again |
+| `openRoute(kind, params, search)` | what a route calls once warm: opens the location in the view, reading what the warm loaded and asking for what isn't loading yet; a failure stays as the warm left it |
 | `copy(what)` | dispatches `repo/copy` for what the view shows (`copyPayloadOf`), door `button`; resolves once the text is on the clipboard, rejects `NotCopied` otherwise |
 | `navigate(to)` | a ref chosen in the picker: dispatches `app/navigate` to the same location at that ref, door `button` |
-| `rawRoute(params)` | the raw route's loader: once the ref resolves, RepoApi's raw route of the file at its commit |
+| `rawRoute(params)` | the raw route's navigation: once the ref resolves, RepoApi's raw route of the file at its commit |
 
 Screens: `/$owner/$repo` (`src/screens/repo/RepoHomeScreen.tsx`: the repository's own home when it declares one, else this view; [home.md](home.md)), `/$owner/$repo/tree/$ref/$` (the branch workspace) and `/$owner/$repo/blob/$ref/$` (`src/screens/repo/RepoScreen.tsx`), with `?L=<n>` or `?L=<a>-<b>` marking lines. `$ref` is a branch, a tag or a full SHA, resolved as GitHub does (`resolveRef`, `paths.ts`): a SHA reads at itself and the default branch at its head at once; any other name waits for the branches and tags, and a name with a `/` arrives split across `$ref` and the path, so the longest name leading them wins, a branch over a tag of the same name. A ref the repository doesn't have shows Not found; branches and tags that couldn't load show why. `/$owner/$repo/raw/$ref/$`, GitHub's raw path, opens the file's view, and once the ref resolves loads RepoApi's raw route in place of the app (TanStack Router's `redirect` with `reloadDocument`).
 
-The page (`RepoPage.tsx`) shows, beside the path trail, `@smthrs/ui`'s `RefPicker` (the branches and tags counted on their tabs, a filter, each commit's short SHA, a full SHA typed in the filter offered too; every choice a link, a plain click `navigate`), **Code** (a `Popover` with the clone URL in a `Snippet`, whose Copy runs `repo/copy`), and **Copy permalink**. A file's toolbar adds **Raw** (a new tab; a file over 512 KiB opens GitHub's raw URL), **Download** (the raw route, saved under the file's name), **Copy path** and **Copy** for a text file's contents. Each Copy is a `CopyButton`, which shows Copied once the flow says so. The head commit's row shows only at the head; another commit's details aren't on the device. `src/router.tsx` keeps only `?L=` in each route's search (`validateSearch: lineSearch`, `paths.ts`), makes it the route's `loaderDeps`, and gives it a loader that calls `openRoute("tree" | "blob", params, deps)` on the repository layer in the router's context (`createRootRouteWithContext<{ repo: RepoView }>`), which main.tsx passes to `RouterProvider`; preloading is off. In `appLayer` (`src/boot.ts`) the repository layer sits beside chat, sign-in and the theme: `Repo.layer` over `RepoStore.layer({ origin })`, which reads sign-in's own `AuthStore` row, `RepoClient.layer({ origin, within: REQUEST_WITHIN })` and `FlowDispatch`; beside navigation's answers, `tabClipboard` answers the engine's clipboard channel over `Clipboard.layer(host.clipboard)`; main.tsx's clipboard is `navigator.clipboard.writeText`. The header shows `owner / name`, a link to `/$owner/$repo`, and Clone, once the repositories' shape has answered (its rows or a failure; before that a repository this device hasn't seen offers nothing, since its row may be on its way); one spinner while cloning; "Sign in to clone" for a signed-out person; or why a clone failed or was refused, with Try again. A missing repository or file shows "Not found".
+**The top level** (`/$owner/$repo`, or a ref's root) is laid out as GitHub's repository page: no tree on the left, the folder's listing with its README under it, and the about panel on the right (`RepoAside.tsx`: `@smthrs/ui`'s `RepoAbout` and, for a reclaimable copy, the [reclaim note](#reclaiming)), moving under the files when the page is narrow. Beside the picker it counts the branches and tags (the clone's own once its refs loaded whole, else GitHub's), and the commit row ends with GitHub's commit count. **Before the clone is ready**, the same page shows what GitHub says: its top folder (`RepoView`'s `directories` for folders it lists without their files), its README, the default branch, the counts, the newest commit, Code and the about panel; the header offers Clone. While GitHub's answer is on its way the page keeps that layout with skeletons in its places; GitHub's 404 says Not found; a failure falls back to the Not cloned card. Below the top level, a repository that isn't ready shows that card.
+
+**A file's view:** a Markdown file opens as a read-only WYSIWYG document (Milkdown), its source one press of Code away and Raw beside it; a person who may edit a branch edits it in the branch workspace's live editor ([coedit](coedit.md#files)). An HTML file opens as code with Code, Preview and Split, as CodePen shows it: the page runs in `@smthrs/repo-view`'s `HtmlPreview`, a frame sandboxed to `allow-scripts` alone (an opaque origin: no app, storage or cookies) under a policy with no network, and a page that navigates itself is put back. A [generated file](#generated-files) carries the Generated chip.
+
+The page (`RepoPage.tsx`) shows, beside the path trail, `@smthrs/ui`'s `RefPicker` (the branches and tags counted on their tabs, a filter, each commit's short SHA, a full SHA typed in the filter offered too; every choice a link, a plain click `navigate`), **Code** (a `Popover` with the clone URL in a `Snippet`, whose Copy runs `repo/copy`), and **Copy permalink**. A file's toolbar adds **Raw** (a new tab; a file over 512 KiB opens GitHub's raw URL), **Download** (the raw route, saved under the file's name), **Copy path** and **Copy** for a text file's contents. Each Copy is a `CopyButton`, which shows Copied once the flow says so. The head commit's row shows only at the head; another commit's details aren't on the device. `src/router.tsx` keeps only `?L=` in each route's search (`validateSearch: lineSearch`, `paths.ts`), and gives it a `beforeLoad` that warms the location (`warmRoute`), then opens it (`openRoute("tree" | "blob", params, search)`) on the repository layer in the router's context (`createRootRouteWithContext<RouterContext>`), which main.tsx passes to `RouterProvider`; a link's hover or focus only warms it ([navigation](navigation.md)). In `appLayer` (`src/boot.ts`) the repository layer sits beside chat, sign-in and the theme: `Repo.layer` over `RepoStore.layer({ origin })`, which reads sign-in's own `AuthStore` row, `RepoClient.layer({ origin, within: REQUEST_WITHIN })` and `FlowDispatch`; beside navigation's answers, `tabClipboard` answers the engine's clipboard channel over `Clipboard.layer(host.clipboard)`; main.tsx's clipboard is `navigator.clipboard.writeText`. The header shows `owner / name`, a link to `/$owner/$repo`, and Clone, once the repositories' shape has answered (its rows or a failure; before that a repository this device hasn't seen offers nothing, since its row may be on its way); nothing while cloning, when the files' place says Cloning with a calm bar along its top; "Sign in to clone" for a signed-out person; or why a clone failed or was refused, with Try again. A missing repository or file shows "Not found".
+
+## Generated files
+
+A file a flow produced, such as a cached build step's output, carries a quiet Generated chip in its toolbar (`@smthrs/ui`'s `GeneratedChip`, `src/features/repo/components/FileMarks.tsx`). Pressed, it opens the flow that produced it (the manifest's `source`, else `.smithers/flows/<tag>/flow.ts`), its last run (`/app/runs/<run>`), and its inputs, each a link at the view's commit where the repository has it. The branch workspace's editor of a generated file shows one warning over it, with a link to the source to edit instead.
+
+What counts as generated (`src/features/generated/detect.ts`), first match wins:
+
+1. **The nearest manifest**, `.smithers/generated.json`, read at the view's commit (256 KiB at most). The repository's root and any project folder inside it may hold one; the view reads the one in the file's own folder, else the nearest folder above it (`nearestManifest`), and a manifest marks only files under its folder, by their paths from it. `docs/generate` writes one (`docs/design/vibelang-readme/docgen/.smithers/generated.json`):
+
+   ```json
+   { "version": 1, "outputs": { "out/CONTRIBUTING.md": {
+       "flow": "docs/generate", "source": ".smithers/flows/docs/flow.ts",
+       "inputs": [{ "path": "project.ts", "sha256": "6bd0…" }, "render.ts"],
+       "cacheKey": "7211…", "sha256": "cdca…", "run": "r-91" } } }
+   ```
+
+   Each output names its flow's tag, and optionally the flow's source file, its inputs (a path, or a path with the hash the build saw), its build's cache key, the output's own hash and the run that last produced it. Anything else a generator records, such as its toolchain, is ignored. A manifest that doesn't read, or has another `version`, marks nothing.
+2. **A header marker** in a file's first five lines: `@generated`, or Go's `Code generated … DO NOT EDIT`, in any comment style. It names no flow, so the chip is plain.
+
+It is a contribution to the repository's file view (`src/features/generated/contribution.ts`: an id, the place it draws, `repo.file`, and the pure decision), as data a plugin manifest can declare once the plugin host of decision [0017](../decisions/0017-everything-is-a-plugin.md) lands.
 
 ## Configuration
 
@@ -161,7 +217,10 @@ The page (`RepoPage.tsx`) shows, beside the path trail, `@smthrs/ui`'s `RefPicke
 | `CODE_STORAGE_ORG` | none | the Code Storage organization (`smithers`); without it, or without the key, the deployment clones nothing (`503 not_configured`) |
 | `CODE_STORAGE_KEY` | none | the organization's ES256 key, a PKCS#8 PEM; a redacted secret |
 | `CODE_STORAGE_API_URL` | `https://api.<org>.code.storage` | |
-| `GITHUB_TOKEN` | none | a GitHub App or bot token for the size call: 5,000 calls an hour instead of 60 per IP address |
+| `GITHUB_TOKEN` | none | a GitHub App or bot token for the size call and the about read: 5,000 calls an hour instead of 60 per IP address |
+| `GITHUB_API_URL` | `https://api.github.com` | where the about read reaches GitHub |
+| `GITHUB_APP_SLUG` | `smithers` | the Smithers GitHub App's name in its URL: where Install goes |
+| `REPO_ABOUT_FRESH_MINUTES` | `60` | how long one about read serves before GitHub is read again |
 | `REPO_MAX_REPOSITORIES` | `100` | `cloning` and `ready` rows |
 | `REPO_MAX_STORED_GB` | `3` | their stored bytes together |
 | `REPO_MAX_READ_GB_PER_MONTH` | `40` | Code Storage reads this UTC month |
@@ -177,26 +236,33 @@ ChatApi and the Durable Object read them with Effect `Config` (`worker/RepoConfi
 
 | Test | Proves |
 |---|---|
-| `worker/RepoApi.test.ts` | every route and refusal through RepoApi's real handler over the compose Postgres and Electric, with each clone's intent on an in-memory Durable Object storage and its run on the Node host: 202 then `ready`, a second request starting nothing, Try again's attempt 2 under a new id, a database reset that kept the Durable Objects (attempt 1 again starts and settles), a conflicting start settling its attempt `failed`, sign-in, a Guest's and a role-less person's 403, bounds, `repository_limit`, Postgres down and a start refused; trees page by page and truncated; files, binaries, 413 with and without a size, 404; raw files as plain text or bytes, never sniffed, sharing the file's cached read; the branches and tags cached under the head, paged and truncated at `REPO_MAX_REFS`, 404 before ready, 503 with `Retry-After`; the cache serving repeats and reads over budget; `Retry-After`; the meter; spend alerts once per threshold; the agent's flows over the server reads; the shape; and no file content, commit message or Code Storage text in telemetry |
-| `worker/flows/RepoClone.test.ts` | `repo/Clone` on the Node host: ready with its head and metered import; `not_found` and `empty` with no Code Storage call; each budget's `capacity`; two imports for the last headroom; `timed_out`; a conflicting upstream; a stale attempt; a run from before a reset, also attempt 1, writing nothing to the new row; a run killed mid-step resumed by a new engine with no second create; each step's transient and refused failures |
-| `db/Database.test.ts` | `0009_clone_ids`: every row gets its own UUID, a `cloning` row settles `failed` `unavailable`, the others keep their status |
+| `worker/RepoApi.test.ts` | the about route over a scripted GitHub (`worker/test/githubRest.ts`): every part, cached for its window, parts GitHub refuses left out, a rate limit failing the whole read uncached, 404 for missing or private, 503 for GitHub down; every route and refusal through RepoApi's real handler over the compose Postgres and Electric, with each clone's intent on an in-memory Durable Object storage and its run on the Node host: 202 then `ready`, a second request starting nothing, Try again's attempt 2 under a new id, a database reset that kept the Durable Objects (attempt 1 again starts and settles), a conflicting start settling its attempt `failed`, sign-in, a Guest's and a role-less person's 403, bounds, `repository_limit`, Postgres down and a start refused; trees page by page and truncated; files, binaries, 413 with and without a size, 404; raw files as plain text or bytes, never sniffed, sharing the file's cached read; the branches and tags cached under the head, paged and truncated at `REPO_MAX_REFS`, 404 before ready, 503 with `Retry-After`; the cache serving repeats and reads over budget; `Retry-After`; the meter; spend alerts once per threshold; the agent's flows over the server reads; the shape; and no file content, commit message or Code Storage text in telemetry |
+| `worker/flows/RepoClone.test.ts` | `repo/Clone` on the Node host: the asker's feed row through requested, fetching with its size, indexing and done; a failure's reason and Try again raising it again; reclaimable unless the App is installed; Index only for a ready sync that owns its row, its list and the App best effort; ready with its head and metered import; `not_found` and `empty` with no Code Storage call; each budget's `capacity`; two imports for the last headroom; `timed_out`; a conflicting upstream; a stale attempt; a run from before a reset, also attempt 1, writing nothing to the new row; a run killed mid-step resumed by a new engine with no second create; each step's transient and refused failures |
+| `db/Database.test.ts` | `0009_clone_ids`: every row gets its own UUID, a `cloning` row settles `failed` `unavailable`, the others keep their status; `0028_clone_progress`: ready copies reclaimable unless the App was known installed, a running clone at `fetching`, `clone` feed rows with a run's states, and stages bounded |
 | `worker/ExecutionHost.test.ts` | the Durable Object's handlers run `repo/Clone` to the end over the app's tables (`withRepoClone`) |
 | `worker/RepoUpstream.test.ts` | HEAD and size from the real GitHub; the token sent only when configured; rate limits as `size_unknown` until GitHub's reset; 404 and 5xx |
-| `worker/RepoConfig.test.ts` | no organization or key clones nothing; a bad key is logged by code, never printed; the clone's services from `Config` |
+| `worker/RepoConfig.test.ts` | no organization or key clones nothing; a bad key is logged by code, never printed; the clone's services from `Config`, Index retried when nothing answers; whether the App is installed: yes, 404 as no, anything else retried |
 | `worker/RepoClone.live.test.ts` | the whole clone of `octocat/Spoon-Knife` into the real organization, then its tree and README through the GET routes; skips without `CODE_STORAGE_ORG` and `CODE_STORAGE_KEY` |
 | `packages/effect-code-storage/test/Live.test.ts` | the real organization's mirror of `octocat/Spoon-Knife` lists every branch, the default one at GitHub's head |
-| `src/features/repo/*.test.ts` | the browser's machine through its actions and queries against RepoApi's real handler and Electric on two tabs, each tab dispatching to an engine of its own on the Node host (`src/test/repoDevice.ts`): Clone through `repo/clone`; a branch, a tag and a name with a slash read at their commits; refs that couldn't load; the picker's `app/navigate`; GitHub's raw path; each Copy through `repo/copy` onto the tab's clipboard, a refusing clipboard and a binary's contents; the agent's `repo/refs`, `repo/clone` (signed out, a Guest) and `repo/copy` (no tab to answer, nothing to copy) as the engine worker registers them (`repoFlows`); the clipboard channel's door for the agent's call, and stray replies (`copy.test.ts`); faults through a faulty `RepoClient` and an engine that refuses every dispatch |
+| `src/features/repo/*.test.ts` | the browser's machine through its actions and queries against RepoApi's real handler and Electric on two tabs, each tab dispatching to an engine of its own on the Node host (`src/test/repoDevice.ts`): Clone through `repo/clone`; a branch, a tag and a name with a slash read at their commits; refs that couldn't load; the picker's `app/navigate`; GitHub's raw path; each Copy through `repo/copy` onto the tab's clipboard, a refusing clipboard and a binary's contents; the agent's `repo/refs`, `repo/clone` (signed out, a Guest) and `repo/copy` (no tab to answer, nothing to copy) as the engine worker registers them (`repoFlows`); the clipboard channel's door for the agent's call, and stray replies (`copy.test.ts`); faults through a faulty `RepoClient` and an engine that refuses every dispatch; what GitHub says of a repository nobody cloned (its folder, README and about at once, loaded once per tab), one GitHub doesn't have, one GitHub can't answer loading again; the generated-files manifest beside a file and a directory, linking its flow and sources |
+| `src/features/repo/view.test.ts`, `contract.test.ts` | the first visit's pure parts: the about panel's props and links, GitHub's folder, README and newest commit, the counts, the reclaim note, generated links; the clone's `ref` and its words |
+| `src/features/generated/*.test.ts` | the manifest's shape and bounds; header markers in the first five lines only; the manifest winning over a marker; the chip's and the warning's links |
+| `src/features/attention/entries.test.ts`, `detail.test.ts`, `attention.test.ts` | a clone's entry: `Clone · <repository> · <stage>`, Try again on the person's failed clone, which runs `repo/clone` from the person's button |
+| `packages/smithers/ui/tests/repo-about.test.tsx`, `generated-chip.test.tsx`; `repo-view/test/repo-view-first-visit.test.tsx` | `RepoAbout`'s parts and links; `GeneratedChip`'s plain and linked forms; `RepoView`'s about column with no tree, folders known by name, file badges, Code, Preview and Split, and `HtmlPreview`'s policy, sandbox and remount on navigation |
 | `src/boot.test.ts` | the app's own layer: `boot` renders the repository layer; a route opened through it syncs `repositories` from the app's RepoApi and Electric, shows "Sign in to clone" from sign-in's own row, and Copy permalink runs `repo/copy` on the device's leading engine, which writes the host's clipboard |
 | `src/flows/registry.test.ts` | `repo/tree`, `repo/read`, `repo/refs`, `repo/clone` and `repo/copy` are client flows in the agent's catalog |
 | `packages/smithers/ui/tests/ref-picker.test.tsx`, `copy-button.test.tsx` | `RefPicker`'s list, counts, filter, SHA, keys, links and states; `CopyButton`'s copied, failed and in-flight states |
 | `e2e/repo.spec.ts` | in real browsers: two devices see the cloned repository; a file from the listing, a line anchor across a reload, Copy permalink at the head commit; Not found for a missing repository and file. It skips locally without `CODE_STORAGE_*` |
 | `e2e/repo-extras.spec.ts` | on `octocat/Spoon-Knife`: the picker lists its three branches, filters and opens `test-branch`; GitHub's file URL on the branch; Raw as plain text in a new tab, Download, and GitHub's raw path by domain swap; Copy permalink, Copy path, Copy and the clone URL on the clipboard |
+| `e2e/repo-browse.spec.ts` | in a real browser: a repository nobody cloned (`octocat/linguist`) shows GitHub's folder, README, about panel, counts and newest commit at once, never the Not cloned card; and, with Code Storage, a clone's toast through Not found and Try again, the reclaim note with Install, a Markdown file as a read-only document with Code one press away, and an HTML file's Preview and Split whose frame reaches neither the app nor the network |
 | `e2e/repo-clone.spec.ts` | `/clone octocat/Hello-World` runs `repo/clone` (its relayed `repo.clone` line) and the repository opens ready; asking the agent to clone `octocat/Spoon-Knife` settles an answer with a `repo/clone` step |
 
 Code Storage and GitHub are third-party providers, scripted like the model (`worker/test/codeStorage.ts`); the live tests use the real ones.
 
 ## Not built yet
 
+- Reclaiming: a durable flow that frees a reclaimable copy when the storage budget needs room, re-checking the App first; and clearing `reclaimable` when the App is installed on a repository later (its installation webhook). Today the copy is marked, and nothing deletes it ([work note](../work/repo-clone-reclaim.md)).
+- Editing a Markdown file from the repository view: a person who may edit a branch edits it in the branch workspace's live editor ([coedit](coedit.md#files)); the view stays read-only.
 - `repo/SetImports`, the operator's pause switch as a flow (`repo_imports.paused` is read; nothing writes it yet).
 - Delivering `repo.spend.alert` to Will, with the token-spend alert.
 - The chat embed (0006 §2, feature 3's `repo` template) and range highlights.

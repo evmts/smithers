@@ -15,12 +15,12 @@ export const BranchName = Schema.String.check(Schema.makeFilter(isBranchName))
 
 /**
  * ChatApi didn't track the branch: GitHub has no such repository or branch (`not_found`), signed out (`sign_in`), a
- * branch this person may not open, or a new one only a Member may track (`forbidden`), or a name that can't be one
- * (`invalid`).
+ * branch this person may not open, or a new one only a Member may track (`forbidden`), a name that can't be one
+ * (`invalid`), or, for a new branch, a forge that can't make one (`not_configured`: GitHub, read with no credential).
  */
 export class BranchTrackRefused extends Schema.TaggedError<BranchTrackRefused>()(
   "@smthrs/mvp/branch/BranchTrackRefused",
-  { reason: Schema.Literals(["not_found", "sign_in", "forbidden", "invalid"]) },
+  { reason: Schema.Literals(["not_found", "sign_in", "forbidden", "invalid", "not_configured"]) },
 ) {}
 
 /** ChatApi couldn't track the branch now: unreachable, or GitHub or Postgres didn't answer. */
@@ -66,4 +66,29 @@ export const BranchTrack = Flow.make("branch/track", {
   success: Tracked,
   error: TrackFailure,
   body: Node.capture({ action: TrackBranch.name }, (request) => TrackBranch.call(request)),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `branch/create`'s step: ask ChatApi to make the branch on the forge, then track it. */
+export const CreateBranch = Action.make("branch/create/request", {
+  payload,
+  success: Tracked,
+  error: TrackFailure,
+  retryPolicy: TRACK_RETRY,
+})
+
+/**
+ * `branch/create { repo, branch }` (docs/features/branch-workspace.md#new-branch): makes a new branch at the default
+ * branch's head on the repository's forge, Code Storage's mirror, and tracks it with its conversation, as the
+ * person's own; a page then opens its workspace. A repository's home's New branch runs it, `/branch.new` and the agent
+ * can too. Asking again for a branch it made answers that branch.
+ */
+export const BranchCreate = Flow.make("branch/create", {
+  description: "Make a new branch of a GitHub repository (owner/name) at its default branch's head, and track it with " +
+    "its conversation as the person's own. Answers { branchId, conversationId, repoId, name, mode, access }. " +
+    "BranchTrackRefused says why not: not_found, sign_in, forbidden, invalid or not_configured.",
+  modelInvocable: true,
+  payload,
+  success: Tracked,
+  error: TrackFailure,
+  body: Node.capture({ action: CreateBranch.name }, (request) => CreateBranch.call(request)),
 }).annotate(Flow.Placement, Placement.client())

@@ -5,7 +5,6 @@ import { describe, expect, test } from "vitest"
 import {
   clipPrompt,
   draftFromIssue,
-  githubPullUrl,
   isAcceptance,
   isPrompt,
   isTitle,
@@ -275,7 +274,6 @@ describe("the contract", () => {
     expect(stackPath("octo", "hello")).toBe("/octo/hello/stack")
     expect(stackPath("octo", "hello", "open")).toBe("/octo/hello/stack")
     expect(stackPath("octo", "hello", "closed")).toBe("/octo/hello/stack?state=closed")
-    expect(githubPullUrl("octo", "hello", 42)).toBe("https://github.com/octo/hello/pull/42")
     expect(todoPath("octo", "hello", 4)).toBe("/octo/hello/stack/4")
     expect(todosChannel("engine")).toBe("engine/todos")
   })

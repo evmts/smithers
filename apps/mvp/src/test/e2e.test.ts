@@ -102,6 +102,7 @@ test.each([
   window.faults!.shapes.stall("live")
   window.faults!.shapes.corrupt("live")
   window.faults!.questions.failNext("refused")
+  window.faults!.engine.refuseResults("chat/Answer", "payload_changed")
   window.faults!.shapes.heal()
   await stop()
 })

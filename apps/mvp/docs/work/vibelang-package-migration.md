@@ -7,6 +7,39 @@ updated: 2026-10-20
 links: [../rulings.md, vibelang-0-0-2-publish.md, second-build-machine.md]
 ---
 
+## Current specification — 2026-10-20, 21:34 PDT
+
+**What:** Migrate Effect packages to idiomatic VibeLang one package at a time, with tests and Will’s review.
+
+**Why:** Will requires working packages and a review gate before broadening the migration.
+
+**Current state:** At 21:32 PDT the lead verified VibeLang main commit f7f786c5 and reports live syntax answers recorded as D278–D283. The curator closed the five syntax items: error constructors D278, schema errors D279, literal-union schemas D280, value services D281, same-file hatches D282–D283. The fs/errors rewrite review remains queued at priority 970. Reported 100% tests remain evidence from the owner, not a fresh tracker run.
+
+**Next step:** Use the recorded syntax decisions rather than re-asking them. Finish Will’s fs/errors review and verify published dependencies and a clean install before landing or expanding the migration.
+
+**Open questions for Will:** Review the idiomatic fs/errors rewrite; the five syntax decisions are settled.
+
+Evidence: script-filtered human text and lead assistant replies from session 6253ecf2, approximately 19:34–21:34 PDT; rulings, queue answers through 19:38, shared feature/host/panel briefs and designs, decisions through 0021, proposals, TODOs and rules. Execution ownership retained; reconciled by Codex tracker curator. Product checks are reported evidence; this pass validates the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 20:14 PDT
+
+**What:** Migrate Effect packages to idiomatic VibeLang and pause for Will’s review.
+
+**Why:** Will requires working tests and a review before expanding the migration.
+
+**Current state:** At 20:11 the lead reports a review of @smthrs/fs and @smthrs/errors in the queue, with tests passing at 100% coverage. Five syntax choices accompany it: error constructors, schema-backed errors, literal-union schemas, plain-value services and same-file function hatches. This supersedes the earlier absence of a passing report; no review approval, clean published install or landing receipt is reported.
+
+**Next step:** Relay Will’s five syntax answers to the migration owner, complete the queued package review, retain test receipts and replace unpublished local links before landing. Preserve the first-package review gate before broader migration.
+
+**Open questions for Will:** Review the fs/errors rewrite and answer its five syntax decisions in the queue.
+
+Evidence: script-filtered user-typed text and assistant replies in session 6253ecf2, 18:15–20:14 PDT on 2026-10-20; queue answers through 19:38 PDT; current rulings, decisions 0001–0020, proposals, TODOs, rules and shared briefs/designs. Later Will text and queue answers prevail. Product checks are reported receipts; this tracker validates the site build. Execution ownership is retained.
+
+## Earlier tracker history (retained)
+
 ## Current specification — 2026-10-20, 17:34 PDT
 
 **What:** Migrate Effect code one package at a time and pause for review.

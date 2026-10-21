@@ -115,7 +115,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     getKey: (row) => row.id,
     shape: shape(ITEMS_SHAPE_ROUTE),
     syncMode: "eager",
-    persist: { schemaVersion: 2 },
+    persist: { schemaVersion: 3 },
   })
   const comments = yield* ElectricCollection.make<Comment>({
     id: "issue-comments",
@@ -200,7 +200,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
         ...write,
         repoId: repoIdOf(write.repo),
         queuedAt: yield* Clock.currentTimeMillis,
-        v: 1,
+        v: 2,
       }
       const admitted = yield* chat.outbox
         .transact(ISSUE_WRITE, { idempotencyKey: write.id }, Effect.asVoid(sending.insert(row)))

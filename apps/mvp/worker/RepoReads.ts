@@ -174,6 +174,13 @@ export const make = <E, R>(services: Services<E, R>) => {
     ).pipe(Effect.map((entry) => entry.bytes))
   }
 
+  /** How many files `owner/name` has at `sha`, read as `tree` reads them, so the list is cached for the first visit. */
+  const files = (owner: string, name: string, sha: string) =>
+    tree(owner, name, sha).pipe(
+      Effect.flatMap((bytes) => Effect.orDie(decodeListing(decoder.decode(bytes)))),
+      Effect.map((listing) => listing.paths.length),
+    )
+
   /** One file of `owner/name` at `sha`: its bytes, and its git blob id when Code Storage sent one. */
   const blob = (owner: string, name: string, sha: string, path: string) => {
     const id = repoId(owner, name)
@@ -217,7 +224,7 @@ export const make = <E, R>(services: Services<E, R>) => {
     })
   }
 
-  return { tree, blob, refs }
+  return { tree, files, blob, refs }
 }
 
 /** A read's refusal as the flows declare it. */
@@ -262,7 +269,7 @@ export const reader = (reads: ReturnType<typeof make<unknown, never>>, cache: La
   )
 
 /** Counts a read RepoApi answered, by kind and status, and the bytes it returned. */
-export const counted = (kind: "tree" | "blob" | "raw" | "refs", status: number, bytes: number) =>
+export const counted = (kind: "tree" | "blob" | "raw" | "refs" | "about", status: number, bytes: number) =>
   Effect.andThen(
     Metric.update(Metric.withAttributes(RepoMetrics.reads, { kind, status: String(status) }), 1),
     Metric.update(RepoMetrics.readBytes, bytes),

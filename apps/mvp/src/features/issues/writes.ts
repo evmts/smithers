@@ -1,8 +1,8 @@
 import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
-import { Clock, Context, Effect, Layer, Metric, Option } from "effect"
+import { Clock, Context, Effect, Layer, Metric, Option, Schema } from "effect"
 import { OutboxWrites } from "../../outbox"
 import { IssuesClient, type WriteRequest } from "./api"
-import { type NotSentReason, refusalOf } from "./contract"
+import { type NotSentReason, refusalOf, type WriteOp } from "./contract"
 import { sends } from "./metrics"
 import { Requested, Sending } from "./schema"
 
@@ -39,16 +39,17 @@ export class IssueWrites extends Context.Service<
         id: "issue-requested",
         schema: Requested,
         getKey: (row) => row.id,
-        schemaVersion: 1,
+        schemaVersion: 2,
       })
       const context = yield* Effect.context<IssuesClient>()
       const mutation: Outbox.Mutation<never> = (params) => send(requested, params).pipe(Effect.provideContext(context))
-      return Context.make(IssueWrites, IssueWrites.of({ sending, requested })).pipe(
-        Context.add(
-          OutboxWrites,
-          OutboxWrites.of({ collections: { [SENDING]: sending }, mutations: { [ISSUE_WRITE]: mutation } }),
-        ),
-      )
+      // Added to the writes a layer below handed over (co-editing's), never in their place.
+      const writes = yield* OutboxWrites.adding({
+        collections: { [SENDING]: sending },
+        mutations: { [ISSUE_WRITE]: mutation },
+        parked: { [ISSUE_WRITE]: (write) => keepParked(requested, write) },
+      })
+      return Context.make(IssueWrites, IssueWrites.of({ sending, requested })).pipe(Context.add(OutboxWrites, writes))
     }),
   )
 }
@@ -71,11 +72,11 @@ export const keep = (
         repo: row.repo,
         repoId: row.repoId,
         op: row.op,
-        via: row.via,
         title: row.title,
         number: row.number,
         body: row.body,
         ...(row.decision === undefined ? {} : { decision: row.decision }),
+        ...(row.commitment === undefined ? {} : { commitment: row.commitment }),
         ...(row.dailyTokens === undefined ? {} : { dailyTokens: row.dailyTokens }),
         queuedAt: row.queuedAt,
         status,
@@ -88,18 +89,53 @@ export const keep = (
     yield* Effect.ignore(kept.persisted)
   }).pipe(Effect.orDie)
 
-/** The route's body for `row`. */
-export const requestOf = (row: Sending): WriteRequest => {
-  const { id: writeId, via } = row
+/** What a parked write's row must still say to show as Not sent: its id, repository, operation and text. */
+const ParkedWrite = Schema.Struct({
+  id: Schema.String,
+  repo: Schema.String,
+  repoId: Schema.String,
+  op: Sending.fields.op,
+  title: Schema.String,
+  number: Schema.Number,
+  body: Schema.String,
+  queuedAt: Schema.Number,
+})
+
+/**
+ * Shows a write the outbox parked (decision 0021 §4), one an older build stored that this build can't send as it
+ * meant, as Not sent (`not_allowed`), which Edit and Discard act on: true once it is kept, false when its row doesn't
+ * say enough to show, so it stays parked.
+ */
+export const keepParked = (requested: Collection.Collection<Requested, string>, write: Outbox.Parked) =>
+  Effect.gen(function* () {
+    const row = Schema.decodeUnknownOption(ParkedWrite)(write.rows[0])
+    if (Option.isNone(row)) return false
+    yield* keep(requested, { ...row.value, v: 2 }, "not_sent", "not_allowed")
+    yield* Effect.logWarning("issue write parked").pipe(
+      Effect.annotateLogs({ feature: "issues", reason: write.reason, writeId: row.value.id, op: row.value.op }),
+    )
+    return true
+  })
+
+/**
+ * A write the outbox holds: any operation but a merge, which a person's press sends at once in their own session and
+ * the device never queues (docs/features/pulls.md#merge).
+ */
+type Queued = Sending & { readonly op: Exclude<WriteOp, "pr/merge"> }
+
+/** The route's body for `row`. It names nobody: who acts is the session's or the run credential's to say. */
+export const requestOf = (row: Queued): WriteRequest => {
+  const { id: writeId } = row
   switch (row.op) {
+    case "issue/commitment":
+      return { writeId, op: row.op, number: row.number, commitment: row.commitment! }
     case "issue/create":
-      return { writeId, via, op: row.op, title: row.title, body: row.body }
+      return { writeId, op: row.op, title: row.title, body: row.body }
     case "issue/comment":
-      return { writeId, via, op: row.op, number: row.number, body: row.body }
+      return { writeId, op: row.op, number: row.number, body: row.body }
     case "issue/triage":
       return {
         writeId,
-        via,
         op: row.op,
         number: row.number,
         // The step sets a decision on every `issue/triage` write (steps.ts).
@@ -107,26 +143,27 @@ export const requestOf = (row: Sending): WriteRequest => {
         ...(row.body === "" ? {} : { reason: row.body }),
       }
     case "triage/run":
-      return { writeId, via, op: row.op, number: row.number }
+      return { writeId, op: row.op, number: row.number }
     case "triage/enable":
-      return { writeId, via, op: row.op, ...(row.dailyTokens === undefined ? {} : { dailyTokens: row.dailyTokens }) }
+      return { writeId, op: row.op, ...(row.dailyTokens === undefined ? {} : { dailyTokens: row.dailyTokens }) }
     case "triage/pause":
-      return { writeId, via, op: row.op }
+      return { writeId, op: row.op }
   }
 }
 
 /**
- * Sends one queued write. ChatApi took it (202, or 200 for one it had): Requested, and done. A refusal (400, 401, 403,
+ * Sends one queued write, as the run that wrote it when it carries that run's credential, else in the person's
+ * session. ChatApi took it (202, or 200 for one it had): Requested, and done. A refusal (400, 401, 403,
  * 404, 409, 413): Not sent with why, and never sent again. Anything else (no answer, a deadline, 429, 5xx) is sent
  * again. Records the send as a span `issues.write.send`, a log line and a count of `sends` by operation and outcome,
  * never the text.
  */
 const send = (requested: Collection.Collection<Requested, string>, { rows }: { readonly rows: ReadonlyArray<unknown> }) => {
-  const row = rows[0] as Sending
+  const row = rows[0] as Queued
   return Effect.gen(function* () {
     const startedAt = yield* Clock.currentTimeMillis
     const [owner, name] = row.repo.split("/") as [string, string]
-    const answer = yield* Effect.result((yield* IssuesClient).write(owner, name, requestOf(row)))
+    const answer = yield* Effect.result((yield* IssuesClient).write(owner, name, requestOf(row), row.credential))
     const status = answer._tag === "Success" ? undefined : answer.failure.status
     const reason = answer._tag === "Success" ? undefined : refusalOf(status)
     const outcome = answer._tag === "Success"
@@ -148,7 +185,7 @@ const send = (requested: Collection.Collection<Requested, string>, { rows }: { r
     yield* keep(requested, row, "not_sent", reason)
     return yield* new Outbox.Refused({ status: status! })
   }).pipe(
-    Effect.annotateLogs({ feature: "issues", writeId: row.id, op: row.op, via: row.via }),
-    Effect.withSpan("issues.write.send", { attributes: { writeId: row.id, op: row.op, via: row.via } }),
+    Effect.annotateLogs({ feature: "issues", writeId: row.id, op: row.op }),
+    Effect.withSpan("issues.write.send", { attributes: { writeId: row.id, op: row.op } }),
   )
 }

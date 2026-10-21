@@ -411,6 +411,18 @@ describe("loading", () => {
   }, WITHIN)
 })
 
+describe("a link's warm", () => {
+  test("starts the issues' sync without moving the page shown; the page then opens on what synced", async () => {
+    const tab = await open()
+    tab.actions.warm()
+    expect(tab.view()?.owner ?? "").toBe("")
+    await server(tab.api).synced()
+    await until(() => expect(tab.issues.queries.access.toArray[0]?.status).not.toBe("unknown"))
+    tab.actions.open(OWNER, NAME)
+    await until(() => expect(tab.list()).toEqual({ issues: [], loading: false, notSent: [] }))
+  }, WITHIN)
+})
+
 describe("who reads a repository's issues", () => {
   test("a visitor only once GitHub said the repository is public; a person with no role gets Not found", async () => {
     const visitor = await open({}, null)
@@ -524,12 +536,12 @@ describe("sending", () => {
     tab.actions.create(OWNER, NAME)
     const writeId = await pendingIssue(tab)
     await until(() => expect(tab.count(sends, { op: "issue/create", outcome: "retry" })).toBeGreaterThan(0))
-    expect(tab.store.sending.tanstack.get(writeId)).toMatchObject({ title: "Offline issue", via: "person" })
+    expect(tab.store.sending.tanstack.get(writeId)).toMatchObject({ title: "Offline issue" })
     expect(tab.list().issues).toEqual([expect.objectContaining({ id: writeId, number: null, pending: "requested" })])
 
     // A step asking again for a write the outbox holds finds it queued.
     const again = await tab.runtime.runPromise(
-      tab.store.queue({ id: writeId, repo: TEST_REPOSITORY, op: "issue/create", via: "person", title: "x", number: 0, body: "" }),
+      tab.store.queue({ id: writeId, repo: TEST_REPOSITORY, op: "issue/create", title: "x", number: 0, body: "" }),
     )
     expect(again).toEqual({ queued: true })
 
@@ -545,7 +557,7 @@ describe("sending", () => {
     await until(() => expect(tab.store.requested.tanstack.get(writeId)).toBeDefined())
     expect(
       await tab.runtime.runPromise(
-        tab.store.queue({ id: writeId, repo: TEST_REPOSITORY, op: "issue/create", via: "person", title: "x", number: 0, body: "" }),
+        tab.store.queue({ id: writeId, repo: TEST_REPOSITORY, op: "issue/create", title: "x", number: 0, body: "" }),
       ),
     ).toEqual({ queued: true })
   }, WITHIN)
@@ -726,6 +738,29 @@ describe("triage", () => {
     expect(triageSwitchOf(triage(), pending(tab))).toEqual({ action: "pause", disabled: false })
   }, WITHIN)
 
+  test("a Maintainer's commitment queues through the person-only durable write", async () => {
+    const sam: Actor = { ...maya, role: "maintainer", login: "sam" }
+    const tab = await open({}, sam)
+    await Effect.runPromise(tab.api.github.run(Store.upsertIssue(REPO_ID, issue(9, "Discuss", "Body", "ben", [ACCEPTED_LABEL]), Date.now())))
+    tab.actions.open(OWNER, NAME, 9)
+    tab.actions.setCommitment(OWNER, NAME, 9, "next")
+    await until(() => expect(pending(tab)).toHaveLength(1))
+    const writeId = pending(tab)[0]!.id
+    await until(async () => expect(await server(tab.api).write(writeId)).toMatchObject({
+      _tag: "Some", value: { via: "person", payload: { op: "issue/commitment", number: 9, commitment: "next" } },
+    }))
+    await server(tab.api).refused(writeId, "unavailable")
+    await until(() => expect(pending(tab)).toContainEqual(expect.objectContaining({ id: writeId, pending: "not_sent" })))
+    tab.actions.setCommitment(OWNER, NAME, 9, "later", writeId)
+    await until(() => {
+      expect(pending(tab)).toHaveLength(1)
+      expect(pending(tab)[0]!.id).not.toBe(writeId)
+    })
+    await until(async () => expect(await server(tab.api).write(pending(tab)[0]!.id)).toMatchObject({
+      _tag: "Some", value: { payload: { op: "issue/commitment", number: 9, commitment: "later" } },
+    }))
+  }, WITHIN)
+
   test("a Maintainer's Enable and Pause go to the outbox; a Member's are refused and stay Not sent", async () => {
     const sam: Actor = { ...maya, subject: { kind: "person", id: "person-sam" }, role: "maintainer", login: "sam" }
     const tab = await open({}, sam)
@@ -795,6 +830,7 @@ describe("records", () => {
   test("carry ids, operations and outcomes, never a title or a body", async () => {
     const secret = sentinel()
     const tab = await open()
+    await signIn(tab.runtime, maya)
     await server(tab.api).seed(2, "Seeded", null)
     tab.actions.open(OWNER, NAME)
     tab.actions.setNewTitle(OWNER, NAME, `Title ${secret}`)
@@ -808,7 +844,7 @@ describe("records", () => {
 
     const records = read(tab.api.telemetry)
     expect(records.span("issues.write.send")).toContainEqual(
-      expect.objectContaining({ attributes: expect.objectContaining({ writeId, op: "issue/create", via: "person", outcome: "started" }) }),
+      expect.objectContaining({ attributes: expect.objectContaining({ writeId, op: "issue/create", outcome: "started" }) }),
     )
     expect(records.log("issues.write.send")).toContainEqual(
       expect.objectContaining({ attributes: expect.objectContaining({ writeId, outcome: "started", feature: "issues" }) }),

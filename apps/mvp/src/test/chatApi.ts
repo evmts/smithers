@@ -23,9 +23,12 @@ import {
   Tracer,
 } from "effect"
 import { FetchHttpClient, type HttpClient, HttpEffect, HttpServerRequest } from "effect/http"
+import * as Socket from "effect/socket/Socket"
 import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../../worker/Actor.ts"
+import * as RunCredentials from "../../worker/RunCredentials.ts"
+import { credentialsFor } from "../../worker/test/harness.ts"
 import * as Chat from "../../worker/Chat.ts"
 import * as Flows from "../../worker/Flows.ts"
 import * as RepoApi from "../../worker/RepoApi.ts"
@@ -36,7 +39,16 @@ import { Directory } from "../../worker/branch/People.ts"
 import { Rooms } from "../../worker/branch/Rooms.ts"
 import * as GitHubApi from "../../worker/github/Api.ts"
 import { repositoryOf } from "../../worker/github/Config.ts"
-import { type GitHost, gitHost, rooms, type Sockets, terminalSockets, type TestRooms } from "../../worker/test/branch.ts"
+import {
+  codeStorageGit,
+  type GitHost,
+  gitHost,
+  rooms,
+  type Sockets,
+  terminalSockets,
+  type TestRooms,
+} from "../../worker/test/branch.ts"
+import { outsideWeb, type Page } from "../../worker/test/pages.ts"
 import { Outbox } from "@smthrs/effect-tanstack-db"
 import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
 import { BrowserEngine, BrowserRuntime, StoragePersistence, TabChannel, WebLock } from "@smthrs/platform-browser"
@@ -50,16 +62,20 @@ import { faultyServices } from "./faults"
 import { LOCAL_ELECTRIC_URL, MESSAGES_TABLE, QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "../features/chat/contract"
 import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE, REPOSITORIES_TABLE } from "../features/repo/contract"
 import { RUNS_TABLE } from "../features/status/contract"
-import { SPEND_ALERTS_TABLE } from "../features/spend/contract"
+import { ALERT_CHANNELS_TABLE, ALERT_DELIVERIES_TABLE, SPEND_ALERTS_TABLE } from "../features/spend/contract"
 import { NOTIFICATIONS_TABLE } from "../features/attention/contract"
 import { COMMENTS_TABLE, ITEMS_TABLE, SYNC_TABLE, TRIAGE_SETTINGS_TABLE, WRITES_TABLE } from "../features/issues/contract"
 import type { IssuesClient } from "../features/issues/api"
 import type { StackClient } from "../features/todos/api"
+import type { TextsClient } from "../features/coedit/api"
 import { TODO_REQUESTS_TABLE, TODOS_TABLE } from "../features/todos/contract"
 import * as StackApi from "../../worker/stack/Api.ts"
+import * as HomeApi from "../../worker/home/Api.ts"
+import type { CuratedFile } from "../../worker/home/Curated.ts"
 import { VIEWS_TABLE } from "../features/views/contract"
 import { TERMINALS_TABLE } from "../features/terminal/contract"
 import { SHARES_TABLE } from "../features/branch/contract"
+import { TEXT_UPDATES_TABLE } from "../features/coedit/contract"
 import type { ThemeMode } from "../features/theme/contract"
 import { clientFlows } from "../flows/declarations"
 import { workerRegistrations } from "../flows/registrations"
@@ -109,12 +125,24 @@ export const TEST_REPOSITORY = "octo/hello"
  */
 export interface ChatApiOptions {
   readonly actor?: Actor.Actor | null
+  /** The curated homes ChatApi answers (worker/home/Curated.ts): the real ones unless set. */
+  readonly homes?: ReadonlyArray<CuratedFile>
+  /**
+   * The branches' forge: GitHub, read with no credential, unless `code-storage`: Code Storage scripted over the same git
+   * host (worker/test/branch.ts `codeStorageGit`), which can make a new branch.
+   */
+  readonly forge?: "github" | "code-storage"
   readonly origin?: string
   /**
    * Other people a test's devices may be, by name: a request carrying `x-test-person: <name>` is signed in as them
    * (`asPerson`), so one ChatApi serves two people's devices.
    */
   readonly people?: Readonly<Record<string, Actor.Actor>>
+  /**
+   * The outside web ChatApi checks pages against (worker/test/pages.ts): these pages answer, and any other outside
+   * `https:` page is unreachable, so no test reaches the internet. None unless set.
+   */
+  readonly pages?: Readonly<Record<string, Page>>
 }
 
 /** The header a test device's requests name their person with (`ChatApiOptions.people`). */
@@ -130,6 +158,7 @@ export interface Started {
 /** The tables whose shapes the test's Electric reads from the ChatApi's own schema. */
 const SCHEMA_TABLES: ReadonlySet<string> = new Set([
   MESSAGES_TABLE,
+  TEXT_UPDATES_TABLE,
   REPOSITORIES_TABLE,
   VIEWS_TABLE,
   RUNS_TABLE,
@@ -144,6 +173,8 @@ const SCHEMA_TABLES: ReadonlySet<string> = new Set([
   TERMINALS_TABLE,
   SHARES_TABLE,
   SPEND_ALERTS_TABLE,
+  ALERT_CHANNELS_TABLE,
+  ALERT_DELIVERIES_TABLE,
   TODOS_TABLE,
   TODO_REQUESTS_TABLE,
 ])
@@ -154,6 +185,13 @@ export interface EngineStore {
   readonly schema: string
   /** Keeps a leader so it is interrupted, at the latest, when the ChatApi closes. */
   readonly keep: (leader: Fiber.Fiber<never, unknown>) => void
+}
+
+/** A fresh ES256 key, as Code Storage's Keys page hands one out: a PKCS#8 PEM. */
+const codeStorageKey = async () => {
+  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])
+  const der = new Uint8Array(await crypto.subtle.exportKey("pkcs8", pair.privateKey))
+  return `-----BEGIN PRIVATE KEY-----\n${btoa(String.fromCharCode(...der)).replace(/(.{64})/g, "$1\n")}\n-----END PRIVATE KEY-----\n`
 }
 
 export class TestChatApi extends Context.Service<
@@ -225,17 +263,17 @@ export class TestChatApi extends Context.Service<
         const { name: schema, database } = yield* TestDatabase.Scratch
         const actor = options.actor === undefined ? member : options.actor
         const people = options.people ?? {}
+        // A request carrying a run credential is that run's, as sign-in reads it (worker/RunCredentials.ts); any other
+        // is its device's person.
+        const credentials = credentialsFor(actor === null ? [] : [actor, ...Object.values(people)])
         const sessions = actor === null
-          ? Actor.signedOut
-          : Layer.succeed(
-            Actor.Sessions,
-            Actor.Sessions.of({
-              resolve: Effect.map(HttpServerRequest.HttpServerRequest, (request) => {
-                const named = request.headers[PERSON_HEADER]
-                return Option.some(named !== undefined && Object.hasOwn(people, named) ? people[named]! : actor)
-              }),
+          ? Layer.merge(Actor.signedOut, credentials)
+          : RunCredentials.sessionsWith(
+            Effect.map(HttpServerRequest.HttpServerRequest, (request) => {
+              const named = request.headers[PERSON_HEADER]
+              return Option.some(named !== undefined && Object.hasOwn(people, named) ? people[named]! : actor)
             }),
-          )
+          ).pipe(Layer.provideMerge(credentials))
 
         // Device engine stores: dropped when this ChatApi closes, after their leaders stop and every connection a
         // leader left open (named for its store) is ended, so the drop never waits on a write.
@@ -283,7 +321,12 @@ export class TestChatApi extends Context.Service<
             return span
           },
         })
-        const config = ConfigProvider.fromUnknown({ ELECTRIC_URL: LOCAL_ELECTRIC_URL })
+        const config = ConfigProvider.fromUnknown({
+          ELECTRIC_URL: LOCAL_ELECTRIC_URL,
+          ...(options.forge === "code-storage"
+            ? { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: yield* Effect.promise(codeStorageKey) }
+            : {}),
+        })
         const chat = yield* Chat.make(database).pipe(
           Effect.provide(
             Layer.succeed(
@@ -305,6 +348,8 @@ export class TestChatApi extends Context.Service<
           Effect.provideService(ConfigProvider.ConfigProvider, config),
         )
         const repoCache = yield* Layer.build(ImmutableCache.layerMemory())
+        // Pages' answers, kept for as long as this ChatApi lives (worker/WebPreview.ts).
+        const webCache = ImmutableCache.make(ImmutableCache.makeMemoryWebCache(), { backend: "memory" })
 
         // The git loop, as ChatApi routes it (worker/ChatApi.ts), with a GitHub App configured: no remote host runs
         // here, so a write's `github/Write`, a stale read's `github/Reconcile` and Run triage again's `triage/Run` are
@@ -322,6 +367,8 @@ export class TestChatApi extends Context.Service<
         }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         // The stack's routes, as ChatApi routes them (worker/ChatApi.ts): no host runs a TODO, so every TODO stays Queued.
         const stack = yield* StackApi.make(database).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
+        // A repository's home, as ChatApi routes it (worker/ChatApi.ts): the curated homes a test gives, else the real ones.
+        const home = HomeApi.make(options.homes)
         const starts: Array<Started> = []
         const recording = Flows.FlowStarter.of({
           start: (flow, { executionId, payload }) => Effect.sync(() => void starts.push({ flow: flow._tag, executionId, payload })),
@@ -331,6 +378,7 @@ export class TestChatApi extends Context.Service<
         // `terminal/Open` recorded and never run, and a test `TerminalSockets` for the branches' machines.
         const branchApi = yield* BranchApi.make(database).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         const branchGitHub = gitHost()
+        const branchForge = codeStorageGit(branchGitHub)
         const sockets = terminalSockets()
         const branchRooms = rooms()
         const directory = Directory.layer(
@@ -353,10 +401,14 @@ export class TestChatApi extends Context.Service<
             }),
         })
 
-        // Electric, as ChatApi calls it: the table in this schema. The forge's reads go to the scripted GitHub.
+        // Electric, as ChatApi calls it: the table in this schema. The forge's reads go to the scripted GitHub, and a page
+        // ChatApi checks before it is framed to the scripted outside web.
+        const outside = outsideWeb(options.pages ?? {})
         const electric: typeof globalThis.fetch = (input, init) => {
           const upstream = new URL(input instanceof Request ? input.url : String(input))
           if (upstream.hostname === "github.com") return branchGitHub.fetch(input, init)
+          if (upstream.hostname.endsWith(".code.storage")) return branchForge.fetch(input, init)
+          if (upstream.protocol === "https:") return outside(input, init)
           const table = upstream.searchParams.get("table")
           if (table !== null && SCHEMA_TABLES.has(table)) upstream.searchParams.set("table", `${schema}.${table}`)
           return globalThis.fetch(upstream, init)
@@ -374,14 +426,19 @@ export class TestChatApi extends Context.Service<
               Effect.provideService(TerminalSockets, sockets.service),
               Effect.provideService(Rooms, branchRooms.service),
               Effect.provide(directory),
-              Effect.provide(Forge.gitHub),
+              Effect.provide(options.forge === "code-storage" ? Forge.layerConfig : Forge.gitHub),
             )
           }
           if (GitHubApi.handles(path)) return github.fetch.pipe(Effect.provideService(Flows.FlowStarter, recording))
           if (StackApi.handles(path)) return stack.fetch
+          if (HomeApi.handles(path)) return home.fetch
           return path === REPOS_ROUTE || path.startsWith(`${REPOS_ROUTE}/`) || path === REPOSITORIES_SHAPE_ROUTE
             ? Effect.provideContext(repos.fetch, repoCache)
-            : chat.fetch.pipe(Effect.provideService(Flows.FlowStarter, expiries))
+            : chat.fetch.pipe(
+              Effect.provideService(Flows.FlowStarter, expiries),
+              Effect.provideService(ImmutableCache.ImmutableCache, webCache),
+              Effect.provide(credentials),
+            )
         })
 
         const handler = HttpEffect.toWebHandler(
@@ -566,6 +623,10 @@ export type DeviceOptions = Partial<Host> & {
    * this device dispatches runs.
    */
   readonly agent?: TestChatApi["Service"]
+  /** The device's SQLite file, such as one an older build's store was written to; a new one unless set. */
+  readonly file?: string
+  /** The device's outbox storage, such as one holding an older build's writes; empty unless set. */
+  readonly outboxEntries?: Map<string, string>
 }
 
 /**
@@ -646,9 +707,9 @@ const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineSt
  * device runs its `agent`. A tab opened again on the same device is a reload: it restores what the last one stored.
  * Each device has its own locks, as each browser has its own Web Locks.
  */
-export const nodeDevice = ({ agent, ...overrides }: DeviceOptions = {}): NodeDevice => {
-  const path = join(tmpdir(), `mvp-device-${crypto.randomUUID()}.sqlite`)
-  const entries = new Map<string, string>()
+export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceOptions = {}): NodeDevice => {
+  const path = file ?? join(tmpdir(), `mvp-device-${crypto.randomUUID()}.sqlite`)
+  const entries = outboxEntries ?? new Map<string, string>()
   const storage = {
     get: async (key: string) => entries.get(key) ?? null,
     set: async (key: string, value: string) => void entries.set(key, value),
@@ -780,16 +841,25 @@ const sqliteFile = (path: string, turn: ReturnType<typeof deviceTurn>) => {
  */
 export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">> & {
   readonly answers?: boolean
-  /** A client in place of the real one, for an unhappy path: a faulty `IssuesClient` or `StackClient` (test.faults-by-injection). */
+  /** The WebSocket a tab's rooms dial, in place of the global one: a room host on loopback (src/test/rooms.ts). */
+  readonly webSocket?: Socket.WebSocketConstructor["Service"]
+  /**
+   * A client in place of the real one, for an unhappy path: a faulty `IssuesClient`, `StackClient` or `TextsClient`
+   * (test.faults-by-injection).
+   */
   readonly replace?:
     | Layer.Layer<IssuesClient, never, HttpClient.HttpClient>
     | Layer.Layer<StackClient, never, HttpClient.HttpClient>
+    | Layer.Layer<TextsClient, never, HttpClient.HttpClient>
 }
 
 /** Switches a faulty tab throws on its shape source before it syncs. */
 export type StartFaults = (switches: ShapeSource.Switches) => Effect.Effect<void>
 
-const app = (api: TestChatApi["Service"], { answers, host, replace: _replace, ...options }: TabOptions): AppOptions => ({
+const app = (
+  api: TestChatApi["Service"],
+  { answers, host, replace: _replace, webSocket: _webSocket, ...options }: TabOptions,
+): AppOptions => ({
   ...options,
   origin: api.origin,
   fetch: api.fetch,
@@ -800,13 +870,19 @@ const app = (api: TestChatApi["Service"], { answers, host, replace: _replace, ..
 /** The browser app on `api` (`appLayer`, as main.tsx's `start` builds it), with the real services. */
 export const tabLayer = (api: TestChatApi["Service"], options: TabOptions = {}) => {
   const tab = app(api, options)
-  return appLayer(tab, Layer.merge(realServices(tab), options.replace ?? Layer.empty))
+  const layer = appLayer(tab, Layer.merge(realServices(tab), options.replace ?? Layer.empty))
+  return options.webSocket === undefined
+    ? layer
+    : layer.pipe(Layer.provide(Layer.succeed(Socket.WebSocketConstructor, options.webSocket)))
 }
 
 /** The browser app on `api` with the faulty services and their switches (src/test/faults.ts). */
 export const faultyTabLayer = (api: TestChatApi["Service"], options: TabOptions = {}, start?: StartFaults) => {
   const tab = app(api, options)
-  return appLayer(tab, faultyServices(tab, start))
+  const layer = appLayer(tab, faultyServices(tab, start))
+  return options.webSocket === undefined
+    ? layer
+    : layer.pipe(Layer.provide(Layer.succeed(Socket.WebSocketConstructor, options.webSocket)))
 }
 
 const withChatApi = <A, E>(tab: (api: TestChatApi["Service"]) => Layer.Layer<A, E>, chatApi: ChatApiOptions) =>

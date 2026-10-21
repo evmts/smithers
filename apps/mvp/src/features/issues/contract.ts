@@ -49,6 +49,7 @@ export const ITEM_COLUMNS = [
   "write_id",
   "triage",
   "triage_pinned",
+  "commitment",
 ] as const
 
 /** The `comments` columns a device syncs. */
@@ -89,9 +90,11 @@ export const WRITE_OPS = [
   "issue/create",
   "issue/comment",
   "issue/triage",
+  "issue/commitment",
   "triage/run",
   "triage/enable",
   "triage/pause",
+  "pr/merge",
 ] as const
 export type WriteOp = (typeof WRITE_OPS)[number]
 
@@ -137,6 +140,13 @@ export const WRITE_FAILURES = [
   "invalid",
   "app_not_installed",
   "unavailable",
+  // A merge's own (docs/features/pulls.md#merge): the head or base moved, a draft, GitHub refused, or already settled.
+  "head_moved",
+  "base_moved",
+  "draft",
+  "not_mergeable",
+  "merged",
+  "closed",
 ] as const
 export type WriteFailure = (typeof WRITE_FAILURES)[number]
 
@@ -278,7 +288,7 @@ export const ISSUES_TELEMETRY = {
     "execute_tool issue/create",
     "execute_tool issue/comment",
   ],
-  fields: ["op", "door", "via", "outcome", "status", "writeId", "durationMs", "reason", "action"],
+  fields: ["op", "door", "outcome", "status", "writeId", "durationMs", "reason", "action"],
 } as const
 
 // Triage (decision 0012 §5, docs/features/issues.md#triage): two GitHub labels carry an issue's triage state, which is

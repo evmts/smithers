@@ -9,7 +9,7 @@ import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
-import { blobRoute, cloneExecutionId, rawRoute, refsRoute, treeRoute } from "../src/features/repo/contract.ts"
+import { aboutRoute, blobRoute, cloneExecutionId, rawRoute, refsRoute, treeRoute } from "../src/features/repo/contract.ts"
 import * as RepoFlows from "../src/features/repo/flows.ts"
 import * as Actor from "./Actor.ts"
 import { FlowStarter, StartConflict, StartUnavailable } from "./Flows.ts"
@@ -18,6 +18,7 @@ import * as Repos from "./Repos.ts"
 import { fixture, scripted, shaOf } from "./test/codeStorage.ts"
 import { runFlow } from "./test/flowHost.ts"
 import { recorded, testFile } from "./test/harness.ts"
+import { spoonKnife } from "./test/githubRest.ts"
 import { repoHarness, repositoryRow, resetRepos, usageRow } from "./test/repos.ts"
 
 const runtime = testFile("repo_api")
@@ -77,7 +78,13 @@ describe("POST /api/repos", () => {
       outcome: "started",
       status: 202,
     })
-    expect(h.line("repo.clone.step").map((log) => log.annotations.step)).toEqual(["inspect", "import", "pull", "await_sync"])
+    expect(h.line("repo.clone.step").map((log) => log.annotations.step)).toEqual([
+      "inspect",
+      "import",
+      "pull",
+      "await_sync",
+      "index",
+    ])
     expect(h.only("repo.clone.settle").annotations).toMatchObject({
       id: "github/octocat/spoon-knife",
       cloneId: row!.cloneId,
@@ -288,6 +295,7 @@ describe("reads", () => {
     })
     const second = await h.fetch(treeRoute("octocat", "Spoon-Knife", headSha))
     expect(second.status).toBe(200)
+    // The clone's Index listed it once into the cache, so even the first visit cost Code Storage nothing.
     expect(h.scripted.calls.filter((call) => call.startsWith("listFiles"))).toHaveLength(1)
     expect(h.count(RepoMetrics.reads, { kind: "tree", status: "200" })).toBe(2)
     expect(h.line("repo.tree")[0]!.annotations).toMatchObject({ repoId: "github/octocat/spoon-knife", sha: headSha })
@@ -393,7 +401,8 @@ describe("reads", () => {
     expect(busy.headers.get("retry-after")).toBe("3")
     expect(await busy.json()).toEqual({ code: "unavailable" })
     h.scripted.fail("listFiles", h.scripted.error("listFiles", "internal_error", 500))
-    const failed = await h.fetch(treeRoute("octocat", "Spoon-Knife", headSha))
+    // The head's file list is cached since the clone indexed it: another commit's is a miss.
+    const failed = await h.fetch(treeRoute("octocat", "Spoon-Knife", shaOf("uncached")))
     expect(failed.status).toBe(503)
     expect(failed.headers.get("retry-after")).toBeNull()
     expect((await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "README.md"))).status).toBe(200)
@@ -585,7 +594,7 @@ describe("the agent's reads on the server", () => {
     const busy = await Effect.runPromiseExit(reader.read("octocat", "Spoon-Knife", headSha, "README.md"))
     expect(Exit.isFailure(busy) && Cause.squash(busy.cause)).toEqual(new RepoFlows.RepoReadUnavailable({ retryAfterMillis: 700 }))
     h.scripted.fail("listFiles", h.scripted.error("listFiles", "internal_error", 500))
-    const failed = await Effect.runPromiseExit(reader.tree("octocat", "Spoon-Knife", headSha))
+    const failed = await Effect.runPromiseExit(reader.tree("octocat", "Spoon-Knife", shaOf("uncached")))
     expect(Exit.isFailure(failed) && Cause.squash(failed.cause)).toEqual(new RepoFlows.RepoReadUnavailable({}))
     await sql(`UPDATE code_storage_usage SET bytes_read = 1000000`)
     const paused = await Effect.runPromiseExit(reader.read("octocat", "Spoon-Knife", headSha, "docs/guide.md"))
@@ -628,12 +637,156 @@ describe("spend", () => {
   })
 })
 
+describe("GET /api/repos/<owner>/<name>/about", () => {
+  test("what GitHub says, before any clone, cached for the window it was read in", async () => {
+    const h = await repoHarness(runtime, { actor: null })
+    h.github.publish("octocat", "Spoon-Knife")
+    const response = await h.fetch(aboutRoute("octocat", "Spoon-Knife"))
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toMatch(/^public, max-age=\d+$/)
+    expect(await response.json()).toEqual({
+      name: "octocat/Spoon-Knife",
+      description: "This repo is for demonstration purposes only.",
+      homepage: null,
+      topics: ["demo", "forking"],
+      stars: 14126,
+      forks: 160292,
+      watchers: 908,
+      license: "MIT",
+      defaultBranch: "main",
+      archived: false,
+      languages: [{ name: "HTML", bytes: 355 }, { name: "CSS", bytes: 256 }],
+      release: { tag: "v1.0.0", name: "First", publishedAt: "2026-10-01T12:00:00Z" },
+      releases: 2,
+      // A contributor GitHub names without a login (an anonymous email) isn't shown.
+      contributors: [{ login: "octocat", avatarUrl: "https://avatars.githubusercontent.com/u/583231?v=4" }],
+      contributorCount: 1,
+      commits: 1,
+      branches: 3,
+      tags: 0,
+      head: {
+        sha: "d0dd1f61b33d64e29d8bc1372a94ef6a2fee76a9",
+        message: "Pointing to the guide for forking",
+        author: "octocat",
+        at: "2014-02-12T23:20:44Z",
+      },
+      root: [{ name: "README.md", kind: "file" }, { name: "index.html", kind: "file" }, { name: "docs", kind: "dir" }],
+      readme: { path: "README.md", text: "### Well hello there!\n\nFork me.\n" },
+      installUrl: "https://github.com/apps/smithers/installations/new",
+    })
+    // Eleven reads of GitHub, once: the second request is the cache's.
+    expect(h.github.calls).toHaveLength(11)
+    expect((await h.fetch(aboutRoute("octocat", "spoon-knife"))).status).toBe(200)
+    expect(h.github.calls).toHaveLength(11)
+    expect(h.line("repo.about").map((line) => line.annotations)).toEqual([
+      expect.objectContaining({ repoId: "github/octocat/spoon-knife", status: 200, cached: "miss" }),
+      expect.objectContaining({ repoId: "github/octocat/spoon-knife", status: 200, cached: "hit" }),
+    ])
+    expect(h.count(RepoMetrics.reads, { kind: "about", status: "200" })).toBe(2)
+  })
+
+  test("only the repository must answer: parts GitHub refuses are left out; its license and homepage as it has them", async () => {
+    const h = await repoHarness(runtime, { config: { GITHUB_APP_SLUG: "smithers-dev" } })
+    h.github.publish("octocat", "Sparse", spoonKnife({
+      fullName: "octocat/Sparse",
+      homepage: "https://example.com/docs/",
+      license: { spdx: "NOASSERTION", name: "Other" },
+      release: null,
+      releases: 0,
+      contributors: null,
+      readme: { path: "README.md", text: "big", size: 600 * 1024 },
+      root: null,
+      commits: [],
+      topics: [],
+    }))
+    h.github.fail("/languages", 500)
+    const sparse = await (await h.fetch(aboutRoute("octocat", "Sparse"))).json()
+    expect(sparse).toMatchObject({
+      homepage: "https://example.com/docs/",
+      license: "Other",
+      languages: [],
+      release: null,
+      releases: 0,
+      contributors: [],
+      commits: 0,
+      head: null,
+      root: null,
+      readme: null,
+      installUrl: "https://github.com/apps/smithers-dev/installations/new",
+    })
+    h.github.clear()
+    h.github.publish("octocat", "Odd", spoonKnife({
+      fullName: "octocat/Odd",
+      homepage: "javascript:alert(1)",
+      license: null,
+      description: "   ",
+      readme: { path: "README.md", text: "\u0000binary" },
+      root: [{ name: "lib", type: "submodule" }, { name: "link", type: "symlink" }, { name: "x", type: "unknown" }],
+    }))
+    expect(await (await h.fetch(aboutRoute("octocat", "Odd"))).json()).toMatchObject({
+      homepage: null,
+      license: null,
+      description: null,
+      readme: null,
+      root: [{ name: "lib", kind: "dir" }, { name: "link", kind: "file" }],
+    })
+  })
+
+  test("GitHub rate limiting fails the whole read with its wait, and caches nothing; the next read answers", async () => {
+    const h = await repoHarness(runtime)
+    h.github.publish("octocat", "Spoon-Knife")
+    h.github.fail("/tags", "rate_limited")
+    const limited = await h.fetch(aboutRoute("octocat", "Spoon-Knife"))
+    expect(limited.status).toBe(503)
+    expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0)
+    expect(await limited.json()).toEqual({ code: "unavailable" })
+    h.github.clear()
+    h.github.fail("", "rate_limited")
+    expect((await h.fetch(aboutRoute("octocat", "Spoon-Knife"))).status).toBe(503)
+    h.github.clear()
+    expect((await h.fetch(aboutRoute("octocat", "Spoon-Knife"))).status).toBe(200)
+  })
+
+  test("a repository GitHub doesn't have, or keeps private, is 404; GitHub down is 503; bad input is refused", async () => {
+    const h = await repoHarness(runtime)
+    expect((await h.fetch(aboutRoute("octocat", "Gone"))).status).toBe(404)
+    h.github.publish("octocat", "Secret", spoonKnife({ fullName: "octocat/Secret", private: true }))
+    expect(await (await h.fetch(aboutRoute("octocat", "Secret"))).json()).toEqual({ code: "not_found" })
+    h.github.publish("octocat", "Down")
+    h.github.fail("", 502)
+    const down = await h.fetch(aboutRoute("octocat", "Down"))
+    expect(down.status).toBe(503)
+    expect(down.headers.get("retry-after")).toBeNull()
+    expect((await h.fetch("/api/repos/app/x/about")).status).toBe(404)
+    expect((await h.fetch("/api/repos/%E0%A4%A/x/about")).status).toBe(404)
+    expect((await h.fetch(aboutRoute("octocat", "Gone"), { method: "POST" })).status).toBe(405)
+    expect(h.line("repo.about").map((line) => line.annotations.errorCode).filter(Boolean)).toEqual([
+      "not_found",
+      "not_found",
+      "unavailable",
+    ])
+  })
+
+  test("a deployment whose GitHub URL isn't one answers 503, logged by the defect's name", async () => {
+    const h = await repoHarness(runtime, { config: { GITHUB_API_URL: "not a url" } })
+    const broken = await h.fetch(aboutRoute("octocat", "Spoon-Knife"))
+    expect(broken.status).toBe(503)
+    expect(await broken.json()).toEqual({ code: "unavailable" })
+    expect(h.only("repo.about").annotations).toMatchObject({ status: 503, errorCode: expect.any(String) })
+  })
+})
+
 describe("GET /api/shapes/repositories", () => {
   test("serves Electric's repositories, whole, with no subset requests", async () => {
     const h = await repoHarness(runtime, { actor: null })
-    await sql(`INSERT INTO repositories (id, owner, name, status) VALUES ('github/a/b', 'a', 'b', 'cloning')`)
+    await sql(`INSERT INTO repositories (id, owner, name, status, stage) VALUES ('github/a/b', 'a', 'b', 'cloning', 'requested')`)
     const response = await h.fetch("/api/shapes/repositories?offset=-1&table=messages&where=true")
     expect(response.status).toBe(200)
+    // The stage and the reclaim mark sync with the row; who asked for the clone is in a table of its own, never synced.
+    const rows = (await response.clone().json() as ReadonlyArray<{ readonly value?: Record<string, unknown> }>)
+      .flatMap((message) => (message.value === undefined ? [] : [message.value]))
+    expect(rows).toEqual([expect.objectContaining({ id: "github/a/b", stage: "requested", reclaimable: "false" })])
+    expect(Object.keys(rows[0]!).some((column) => column.includes("request") && column !== "requested_at")).toBe(false)
     expect(response.headers.get("electric-handle")).toEqual(expect.any(String))
     // No browser or CDN keeps it: Electric's `public, max-age=604800` is replaced.
     expect(response.headers.get("cache-control")).toBe("private, no-store")

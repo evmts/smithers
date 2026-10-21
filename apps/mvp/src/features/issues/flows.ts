@@ -1,6 +1,7 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { Schema } from "effect"
+import { COMMITMENTS } from "./lifecycle"
 import { RepoName } from "../repo/flows"
 import {
   MAX_BODY_LENGTH,
@@ -44,11 +45,11 @@ export const WriteRequested = Schema.Struct({ writeId: Schema.String, status: Sc
 export type WriteRequested = typeof WriteRequested.Type
 
 /**
- * The write wasn't queued: the tab that asked is gone (`tab_gone`), or its outbox wouldn't take the write
- * (`not_admitted`).
+ * The write wasn't queued: the tab that asked is gone (`tab_gone`), its outbox wouldn't take the write (`not_admitted`),
+ * or the run that wrote it has no credential to send it with (`no_credential`, decision 0017 slice 0).
  */
 export class IssueWriteRefused extends Schema.TaggedError<IssueWriteRefused>()("@smthrs/mvp/issues/IssueWriteRefused", {
-  reason: Schema.Literals(["tab_gone", "not_admitted"]),
+  reason: Schema.Literals(["tab_gone", "not_admitted", "no_credential"]),
 }) {}
 
 /** How long a step keeps asking its tab: 1 s doubling to 8 s, for at most 30 s. */
@@ -72,7 +73,7 @@ export const QueueComment = Action.make("issue/comment/queue", {
 
 const requested = "Answers { writeId, status: \"requested\" }: requested, never done; it shows on the repository's " +
   "issues page (/<owner>/<repo>/issues) once GitHub numbers it. IssueWriteRefused when the person's tab is gone " +
-  "(tab_gone) or couldn't queue the write (not_admitted)."
+  "(tab_gone), couldn't queue the write (not_admitted), or the run has no credential to send it with (no_credential)."
 
 /** `issue/create { repo, title, body? }`: opens an issue on GitHub. */
 export const IssueCreate = Flow.make("issue/create", {
@@ -198,4 +199,16 @@ export const TriagePause = Flow.make("triage/pause", {
   success: WriteRequested,
   error: IssueWriteRefused,
   body: Node.capture({ action: QueuePause.name }, (payload) => QueuePause.call(payload)),
+}).annotate(Flow.Placement, Placement.client())
+
+/** A Maintainer's timeline, independent of acceptance for discussion. */
+export const commitmentPayload = { repo: RepoName, number: IssueNumber, commitment: Schema.Literals(COMMITMENTS) }
+export const QueueCommitment = Action.make("issue/commitment/queue", {
+  payload: commitmentPayload, success: WriteRequested, error: IssueWriteRefused, retryPolicy: QUEUE_RETRY,
+})
+export const IssueCommitment = Flow.make("issue/commitment", {
+  description: "Set a Maintainer's commitment on an issue accepted for discussion: now, next, later or none.",
+  modelInvocable: false,
+  payload: commitmentPayload, success: WriteRequested, error: IssueWriteRefused,
+  body: Node.capture({ action: QueueCommitment.name }, (payload) => QueueCommitment.call(payload)),
 }).annotate(Flow.Placement, Placement.client())

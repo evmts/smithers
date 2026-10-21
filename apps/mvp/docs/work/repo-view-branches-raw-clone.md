@@ -2,10 +2,23 @@
 title: Repo view extras (branch picker, branch count, raw, copy file, clone menu)
 status: in-progress
 area: app
-owner: none; reported done 10:52:10 on 2026-10-20 by the repo view extras agent, uncommitted (lands with the next landing round). Queued cleanup with the review round 4 fixes: one `src/flows` helper for the "ask the tab that asked" channel that `app/navigate` and `repo/copy` each implement. Until 10:52: repo view extras agent, resumed by the lead at 10:42 on 2026-10-20 from where it stopped (the Claude usage limit stopped it from about 08:15 to 10:40); unreported by 10:44. Until 10:42: repo view extras agent (started 06:42:16 on 2026-10-20); from 07:06 to 07:07 also `/clone`, a local `repo/clone` flow over the checked `POST /api/repos`. By 07:20 on disk: `repo/refs`, `repo/clone`, `repo/copy`, raw and refs routes, `@smthrs/ui` `RefPicker` and `CopyButton`; no e2e change, GIF or report. Until 07:06: repo view extras agent, started 06:42:16 on 2026-10-20 by the lead; owns `src/features/repo/**`, `src/screens/repo/**` and `worker/Repo*.ts`; unreported. Until 06:42: unassigned
+owner: repo browsing builder (lead's brief, 2026-10-20 18:22); the first-arrival page, clone in the feed, reclaim mark, Markdown and HTML views, generated files
 updated: 2026-10-20
-links: [review-round-4.md, old-app-feature-gaps.md, repo-clone-and-view.md, repo-open-states.md, repo-view-package-split.md, navigate-flow.md, pull-request-list-and-tabs.md, sandboxes.md, command-palette.md, land-to-main.md, e2e-suite-and-gifs.md, ../decisions/0006-repo-clone-and-view.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../features/repo.md, slash-commands.md, fable-review-2-fixes.md, flows-and-agent.md, agent-jev.md]
+links: [repo-clone-reclaim.md, generated-file-provenance.md, review-round-4.md, old-app-feature-gaps.md, repo-clone-and-view.md, repo-open-states.md, repo-view-package-split.md, navigate-flow.md, pull-request-list-and-tabs.md, sandboxes.md, command-palette.md, land-to-main.md, e2e-suite-and-gifs.md, ../decisions/0006-repo-clone-and-view.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../features/repo.md, slash-commands.md, fable-review-2-fixes.md, flows-and-agent.md, agent-jev.md]
 ---
+
+## Built — 2026-10-20, 21:02 PDT
+
+- **First arrival:** `GET /api/repos/<owner>/<name>/about` (GitHub, cached per hour) fills the page before any clone: folder, README, about panel (`@smthrs/ui` `RepoAbout`), counts, newest commit, Code. Cloned, the top level drops the tree and keeps the panel, as GitHub's page. SDK: `GitHubClient.count` in `@smthrs/integrations`.
+- **Clone as a workflow:** `repo/Index` joins `repo/Clone`; each stage folds into the asker's feed (`clone:<repo id>`, migration 0028); toasts say requested, fetching with the size, indexing, done or why it failed, with Try again. No spinner.
+- **Reclaim:** `repositories.reclaimable` set at Settle from the App's installation; the note and Install under the panel. Reclaiming itself and clearing the mark on a later install are follow-ups in [repo.md](../features/repo.md#not-built-yet).
+- **Files:** Markdown read-only WYSIWYG with Code one press away (writers edit in coedit's live editor); HTML Code, Preview and Split in a sandboxed frame (`HtmlPreview`); the Generated chip from `.smithers/generated.json` or a header marker, and a warning over the editor.
+- **Tests:** unit and UI tests listed in [repo.md](../features/repo.md#tests); `e2e/repo-browse.spec.ts`.
+- **Generated files, 22:05:** the manifest nearest the file (`.smithers/generated.json` in its folder or one above), so a project's own manifest, such as `docs/generate`'s, marks its files; the manifest's `source`, hashed inputs and `version` read as `docs/generate` writes them.
+
+**Next step (22:05):** run the repo e2e specs and re-record them once the burn-down's test pause lifts; the handover agent owns it.
+
+**Follow-ups:** reclaiming copies and clearing the mark on a later install ([repo-clone-reclaim.md](repo-clone-reclaim.md), todo); an e2e for the Generated chip, which needs a small public repository that carries a manifest or a header marker.
 
 ## Current specification — 2026-10-20, 18:26 PDT
 

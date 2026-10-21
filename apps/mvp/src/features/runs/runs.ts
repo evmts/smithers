@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { more, openList, openRun, resume, retry, RunsNavigation, select, showTab, stop } from "./actions"
+import { more, openList, openRun, resume, retry, RunsNavigation, scrub, inspectStep, showInspector, select, showTab, stop } from "./actions"
 import type { RunTab } from "./schema"
 import { RunsStore } from "./store"
 
@@ -20,6 +20,9 @@ export interface RunsQueries {
 export interface RunsActions {
   readonly openList: () => Promise<void>
   readonly openRun: (runId: string) => Promise<void>
+  readonly scrub: (at: number | null) => void
+  readonly inspectStep: (stepId: string) => void
+  readonly showInspector: (open: boolean) => void
   readonly select: (stepId: string) => void
   readonly showTab: (tab: RunTab) => void
   readonly more: () => void
@@ -45,6 +48,9 @@ export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries;
         actions: {
           openList: () => promise(openList),
           openRun: (runId) => promise(openRun(runId)),
+          scrub: (at) => fork(scrub(at)),
+          inspectStep: (stepId) => fork(inspectStep(stepId)),
+          showInspector: (open) => fork(showInspector(open)),
           select: (stepId) => fork(select(stepId)),
           showTab: (tab) => fork(showTab(tab)),
           more: () => fork(more),

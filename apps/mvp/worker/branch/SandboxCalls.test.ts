@@ -142,7 +142,8 @@ describe("POST /api/sandbox/calls", () => {
     const elsewhere = await tracked(runtime, REPO, "feature/y")
     const mine = await asked(branch.conversationId, "person-member")
     const theirs = await asked(elsewhere.conversationId, "person-other")
-    const h = await open()
+    // The agent's call comes with its run credential, whose chain started from the answer.
+    const h = await open({ ...member, act: { kind: "agent", id: `${mine.answerId}/call/0.1`, root: mine.answerId } })
 
     const callId = crypto.randomUUID()
     expect(await json(await post(h, { callId, call: { tool: "status" }, answerId: mine.answerId.toUpperCase() })))
@@ -151,12 +152,26 @@ describe("POST /api/sandbox/calls", () => {
     expect(h.starts[0]).toMatchObject({ payload: { branch: { branchId: branch.branchId }, call: { tool: "status" } } })
     expect(h.only("sandbox.call").annotations).toMatchObject({ door: "agent", tool: "status" })
 
-    const call = (answerId: string) => post(h, { callId: crypto.randomUUID(), call: run, answerId })
-    expect(await json(await call(theirs.answerId))).toEqual([403, { code: "forbidden" }])
-    expect(await json(await call(crypto.randomUUID()))).toEqual([404, { code: "not_found" }])
-    // A question's id is no answer.
-    expect(await json(await call(mine.id))).toEqual([404, { code: "not_found" }])
+    // Any answer but its own run's is refused.
+    const call = (on: BranchHarness, answerId: string) => post(on, { callId: crypto.randomUUID(), call: run, answerId })
+    for (const answerId of [theirs.answerId, crypto.randomUUID(), mine.id]) {
+      expect(await json(await call(h, answerId))).toEqual([403, { code: "other_run" }])
+    }
     expect(h.starts).toHaveLength(1)
+    // The person, in their own session, may name their own answer, as a resumed run with no credential does.
+    expect((await call(await open(), mine.answerId)).status).toBe(202)
+  })
+
+  test("an agent's call for an answer that isn't the person's, or isn't there, is refused", async () => {
+    const elsewhere = await tracked(runtime, REPO, "feature/y")
+    const theirs = await asked(elsewhere.conversationId, "person-other")
+    const missing = crypto.randomUUID()
+    const call = async (answerId: string) => {
+      const h = await open({ ...member, act: { kind: "agent", id: answerId, root: answerId } })
+      return json(await post(h, { callId: crypto.randomUUID(), call: run, answerId }))
+    }
+    expect(await call(theirs.answerId)).toEqual([403, { code: "forbidden" }])
+    expect(await call(missing)).toEqual([404, { code: "not_found" }])
   })
 
   test("only someone who may edit an unlocked branch calls: 401, 403 forbidden, 409 locked, 404 for no conversation", async () => {

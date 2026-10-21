@@ -1,14 +1,18 @@
 import { Logger } from "@smthrs/observability"
-import type { ExecutionObject } from "@smthrs/platform-cloudflare"
+import { EdgeCache, type ExecutionObject } from "@smthrs/platform-cloudflare"
 import { RuntimeContext } from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
+import type { Flow } from "@smthrs/flow"
 import { Cause, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import * as Database from "../db/Database.ts"
+import * as AlertChannels from "./AlertChannels.ts"
 import * as BranchSandboxes from "./BranchSandboxes.ts"
 import { codeOf } from "./ErrorCode.ts"
+import * as AgentSandbox from "./AgentSandbox.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Expire from "./flows/Expire.ts"
+import * as TodoAgent from "./flows/TodoAgent.ts"
 import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
 import * as GitHubHost from "./github/Host.ts"
@@ -39,8 +43,13 @@ export class FlowExecution extends Cloudflare.DurableObject<FlowExecution, FlowE
 /**
  * The object's implementation over `connection`, the Hyperdrive config the engine reaches Postgres through. Its id is
  * the engine's host id, the same for every incarnation of the object, so a new incarnation takes over its run at once.
+ * `dev` (`alchemy dev` only) lets an alert provider pointed at a local fake send without its key
+ * (worker/AlertChannels.ts `channelsConfig`).
  */
-export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>) =>
+export const live = <E, R>(
+  connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
+  options: { readonly dev?: boolean } = {},
+) =>
   FlowExecution.make(
     Effect.gen(function* () {
       const state = yield* Cloudflare.DurableObjectState
@@ -60,12 +69,22 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
       // `chat/Expire` settles answers their devices left streaming (docs/features/agent.md#settling).
       const app = { database: appDatabase, expiry: yield* Expire.expiry.pipe(Effect.orDie) }
       // `repo/Clone` runs here when this deployment has a Code Storage organization (docs/features/repo.md#the-clone).
-      const repoClone = yield* RepoConfig.cloneServices(appDatabase).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
+      // Its Index reads the file list into the same immutable cache RepoApi reads from.
+      const repoClone = yield* RepoConfig.cloneServices(appDatabase, EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)).pipe(
+        Effect.provide(FetchHttpClient.layer),
+        Effect.orDie,
+      )
       // The git loop's flows (`github/Apply`, `github/Reconcile`, `github/Write`, `triage/Run`) run here when the GitHub
       // App is configured (docs/features/issues.md#remote-flows). Triage decides with the `judge` model role, admitted
       // and metered in process as the model endpoint's calls are (docs/features/issues.md#triage).
       const github = yield* GitHubHost.ready(appDatabase).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
-      const judge = (yield* ModelEndpoint.local(appDatabase).pipe(Effect.orDie))("judge")
+      const seats = yield* ModelEndpoint.local(appDatabase).pipe(Effect.orDie)
+      const judge = seats("judge")
+      // The `todo` run's agent writes with the `agent` role, admitted and metered as the endpoint's calls are.
+      const agent = seats("agent")
+      // `ops/SpendAlert` sends by email and Telegram through the deployment's providers, from its secrets
+      // (docs/features/spend-alerts.md#channels).
+      const alertChannels = yield* AlertChannels.channelsConfig(options).pipe(Effect.orDie)
       // `terminal/Open` wakes a branch's machine, its `SandboxObject` (docs/features/branch-workspace.md#opening-a-terminal).
       const sandboxObjects = (yield* BranchSandboxes.SandboxObject) as Cloudflare.DurableObject<
         BranchSandboxes.SandboxObjectShape
@@ -102,7 +121,9 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
         const base = ExecutionHost.withSecrets(
           ExecutionHost.withSandboxTools(
             ExecutionHost.withTerminals(
-              Option.isSome(signIn) ? ExecutionHost.remoteWithSignIn(app, signIn.value) : ExecutionHost.remote(app),
+              Option.isSome(signIn)
+                ? ExecutionHost.remoteWithSignIn(app, signIn.value, alertChannels)
+                : ExecutionHost.remote(app, alertChannels),
               appDatabase,
               BranchSandboxes.sandboxesLayer(sandboxObjects, keep),
             ),
@@ -132,9 +153,38 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
               },
             }, judge)
           })
+        // The coding factory's `todo` run and a head's checks (docs/features/todos.md#the-run) need the App: they make
+        // branches, commits and pull requests. They start what they start (the next TODO's run, a head's checks) on
+        // their own objects, and the agent writes on the branches' machines.
+        const machines = BranchSandboxes.machinesLayer(sandboxObjects, keep)
+        const todoServices = <GE, GR>(ready: GitHubHost.Ready<GE, GR>) =>
+          Effect.gen(function* () {
+            const runtime = yield* RuntimeContext
+            const built = yield* githubServices(ready)
+            return {
+              ...built,
+              start: (flow: Flow.Any, options: { readonly executionId: string; readonly payload: unknown }) =>
+                ExecutionHost.intent(flow, { executionId: options.executionId, payload: options.payload as never }).pipe(
+                  Effect.flatMap((intent) => executions.getByName(options.executionId).start(intent)),
+                  Effect.provideService(RuntimeContext, runtime),
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("todo.start").pipe(
+                      Effect.annotateLogs({ flow: flow._tag, outcome: "not_started", errorCode: codeOf(Cause.squash(cause)) }),
+                    )
+                  ),
+                ),
+            }
+          })
         const withGitHub = <ROut, FE, FR>(flows: ExecutionHost.Flows<ROut, FE, FR>) =>
           Option.isSome(github)
-            ? hostFor(ExecutionHost.withGitHub(flows, githubServices(github.value)))
+            ? hostFor(
+              ExecutionHost.withTodos(
+                ExecutionHost.withGitHub(flows, githubServices(github.value)),
+                todoServices(github.value),
+                machines,
+                TodoAgent.registration(agent, appDatabase, AgentSandbox.layer),
+              ),
+            )
             : hostFor(flows)
         const host = Option.isSome(repoClone)
           ? withGitHub(ExecutionHost.withRepoClone(base, repoClone.value))

@@ -1,4 +1,4 @@
-import { Context, Effect, Option } from "effect"
+import { Context, Effect, Metric, Option } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { retryActId, runPath } from "./contract"
 import { retriesOf } from "./page"
@@ -33,7 +33,7 @@ export const openList = Effect.gen(function* () {
 /** A run's route loader: shows `runId` with nothing selected, and reads it. */
 export const openRun = (runId: string) =>
   Effect.gen(function* () {
-    yield* setView({ runId, listOpen: false, selected: null, tab: "steps", acting: null, refusal: null })
+    yield* setView({ runId, listOpen: false, selected: null, at: null, inspectorOpen: true, tab: "steps", acting: null, refusal: null })
     yield* (yield* RunsStore).readRun(runId)
   })
 
@@ -119,3 +119,18 @@ export const retry = (version: "pinned" | "current") =>
       ;(yield* RunsNavigation).navigate(runPath(dispatched.value.runId))
       return Option.none()
     }))
+
+/** Read-only replay position and inspector visibility, local to this tab. */
+export const replaySelections = Metric.counter("smithers_run_replay_selections", { description: "Read-only journal selections", incremental: true })
+export const scrub = (at: number | null) => Effect.gen(function* () {
+  yield* setView({ at })
+  if (at === null) {
+    const store = yield* RunsStore
+    const current = Option.getOrThrow(yield* store.view.get(VIEW))
+    if (current.runId !== null) yield* store.readRun(current.runId)
+  }
+  yield* Metric.update(Metric.withAttributes(replaySelections, { mode: at === null ? "live" : "replay" }), 1)
+  yield* Effect.logDebug("run.replay.selected").pipe(Effect.annotateLogs({ mode: at === null ? "live" : "replay", sequence: at }))
+}).pipe(Effect.withSpan("run.replay.select"))
+export const inspectStep = (stepId: string) => setView({ selected: stepId, inspectorOpen: true })
+export const showInspector = (inspectorOpen: boolean) => setView({ inspectorOpen })

@@ -11,7 +11,7 @@ import { expect, type Tab, test } from "./devices"
 const local = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(process.env.BASE_URL ?? "http://localhost:1337")
 test.skip(!local, "signing in on a deployment goes through GitHub; these run against alchemy dev's local developer")
 
-test("signed out: the composer is gated, ChatApi refuses an ask, and signing in brings the composer back", async ({ devices }) => {
+test("signed out: the composer is gated, ChatApi refuses an ask, and signing in brings the composer back", { annotation: { type: "summary", description: "Signed out, a person can't ask, the server refuses an ask, and signing in brings the composer back." } }, async ({ devices }) => {
   const [a] = await devices.open("A")
   const page = a.page
   await expect(a.chatButton).toBeVisible({ timeout: 30_000 })
@@ -35,7 +35,7 @@ test("signed out: the composer is gated, ChatApi refuses an ask, and signing in 
   await expect(page.getByText(SIGN_IN_TO_ASK)).toBeHidden()
 })
 
-test("sign out wipes the device: its unsent questions go, and the conversation syncs again from scratch", async ({ devices }) => {
+test("sign out wipes the device: its unsent questions go, and the conversation syncs again from scratch", { annotation: { type: "summary", description: "Signing out deletes the device's unsent questions, and the conversation syncs again from scratch." } }, async ({ devices }) => {
   const word = devices.word
   const [a] = await devices.openFaulty("A")
   const page = a.page
@@ -68,7 +68,7 @@ test("sign out wipes the device: its unsent questions go, and the conversation s
   expect(await outboxSize(page), "the outbox holds nothing").toBe(0)
 })
 
-test("sign out wipes the device for every tab: a tab still holding the data holds the wipe off, and no tab opens on the session's data", async ({ devices }) => {
+test("sign out wipes the device for every tab: a tab still holding the data holds the wipe off, and no tab opens on the session's data", { annotation: { type: "summary", description: "Signing out wipes the device only once no tab holds its data, and no tab reopens on it." } }, async ({ devices }) => {
   test.setTimeout(240_000)
   const word = devices.word
   const [one] = await devices.openFaulty("Tab 1")

@@ -5,7 +5,7 @@ Every flow this device runs is a run of its durable engine. `/app/runs` lists th
 ## Where a run is read
 
 ```
-/app/runs/<runId> ─ loader ─▶ openRun ─▶ BrowserEngine.inspect(runId, { limit: 500 })
+/app/runs/<runId> ─ beforeLoad ─▶ openRun ─▶ BrowserEngine.inspect(runId, { limit: 500 })
    the leader tab's engine worker ─▶ RunInspection (@smthrs/engine-store) over SQLite on OPFS
    every value: Redaction, Schema.Redacted as <redacted>, a value its schema won't read as <withheld>, cut at 16 KiB
 BrowserEngine.events ─ debounced 200 ms ─▶ the open run, and the list while it shows, read again
@@ -16,6 +16,10 @@ BrowserEngine.events ─ debounced 200 ms ─▶ the open run, and the list whil
 - **Live.** Every event the leader commits reads the open run, and the list while it shows, again, at most once per 200 ms. Nothing polls.
 - **Not built in this slice:** runs of other devices and of Cloudflare (0009's `runs` rows, `GET /api/runs/:id/trace`), a repository's runs at `/$owner/$repo/actions`, the read-only scrubber, and Answer in place: a run waiting on a person links to the conversation, where the agent's question is (decision 0015).
 
+## Flows
+
+Above the list, one line per flow on this device: its runs, the share of its settled runs that succeeded (`Success`), and the 95th percentile of their durations from admission to settlement (`p95`, `–` until one settles). Acts on runs (`run/*`) are left out. It reads the same `runs` collection the list does, the engine's newest 50 runs (`flowSummary`, `src/features/runs/summary.ts`); across devices and hosts, the engine's usage metrics count the same things ([flow usage](../observability.md#flow-usage)).
+
 ## The run page
 
 | Part | What it shows |
@@ -25,6 +29,8 @@ BrowserEngine.events ─ debounced 200 ms ─▶ the open run, and the list whil
 | Steps | The plan's action calls and child boundaries, and the runs this run started (an agent's cell calls, a person's flow's pinned child), in the order they started. The selected one's input, output, attempts (`1 ✕ FlowsUnavailable · 2 ✓`) and wait; a child links to its own page |
 | Timeline | One bar per step on a shared axis |
 | Journal | Sequence, type and time of each event, its payload on demand, and More for the next 500 |
+
+An answer's debug info in the conversation opens its run's page, `/app/runs/<answer id>`, since an answer's id is its run's ([chat](chat.md#message-controls)).
 
 The pure model of the page is `src/features/runs/page.ts`; the components come from `@smthrs/ui` (`RunHeader`, `SpanTree`, `SpanDetail`, `RunWaterfall`, `RunJournal`, `JsonValue`, `RunList`).
 
@@ -43,7 +49,7 @@ Each act is a registered flow on this device's engine, model-invocable, so a per
 
 ## The browser
 
-`src/features/runs/` follows the [state rules](../state.md): `RunsStore` holds the list (`runs`), each open run's read (`run-pages`) and the run view (`run-view`: the run shown, the step selected, the tab, an act in flight and why one was refused), all local collections; `Runs` binds them for frontends. The routes' loaders call `openList` and `openRun`; Stop, Retry and Resume dispatch through `FlowDispatch`, door `button`. Nothing is kept on the device: a reload reads the engine again.
+`src/features/runs/` follows the [state rules](../state.md): `RunsStore` holds the list (`runs`), each open run's read (`run-pages`) and the run view (`run-view`: the run shown, the step selected, the tab, an act in flight and why one was refused), all local collections; `Runs` binds them for frontends. The routes call `openList` and `openRun` ([navigation](navigation.md)); Stop, Retry and Resume dispatch through `FlowDispatch`, door `button`. Nothing is kept on the device: a reload reads the engine again.
 
 ## Observability
 
@@ -64,8 +70,22 @@ No record carries a value of a run.
 | `packages/smithers/flows/engine-store/test/RunInspection.test.ts` | One read on SQLite and Postgres: redaction, the 16 KiB cut, no `Schema.Redacted` value at any depth (a sentinel), `<withheld>` for a value its schema won't read, closed failure codes, gap-free paging while the run appends, `RunNotFound`, and the list |
 | `packages/smithers/flows/platform-browser/test/RunReads.test.ts` | `inspect` and `list` through the real worker protocol, the sentinel never on the wire |
 | `src/features/runs/runs.test.ts` | Every act on the Node host's engine: Stop on a live run and on a settled one, a stale fence, Retry once per act, pinned and current, every refusal, Resume of a run whose engine died, and runs of a flow the engine doesn't run |
+| `src/features/runs/summary.test.ts` | The flows summary: runs, success over settled runs, p95 by nearest rank, no rate or p95 before a run settles, acts left out, the order |
 | `src/features/runs/page.test.ts` | The steps, the selected step, the journal with More, the acts a run offers, and the list's rows |
 | `src/features/flows-ui/tab.test.ts` | The run page from a tab following a run to its answer, Retry opening the new run, the list, Stop, and Resume refused |
+| `e2e/flow-usage.spec.ts` | In a real browser, no model or sign-in: the theme button runs `app/theme/set`, and the Runs page's flows summary counts it at 100% |
 | `e2e/flows.spec.ts` | In a real browser: create a flow, run it, watch its run page, stop a run and retry it; open a drafted flow's code, run it, relabel its step, and see Run refused with `Needs a sandbox` |
 
 Run them with the compose Postgres and Electric up (`pnpm db:up`): `pnpm exec vitest run src/features/runs src/features/flows-ui`.
+
+## Read-only graph (flows UI slice 1)
+
+The Steps pane draws `FlowGraph` above `RunWaterfall`, with `StepInspector` beside it (below it on a phone). `JournalScrubber` selects a read-only journal prefix: graph states, output, attempts and timeline share that prefix. The Journal pane remains available. Arrow keys follow graph dependencies, `[` and `]` move by event, Shift with either moves by step boundary, `L` follows live, `i` or Enter opens the inspector and Escape closes it. Whole-run Stop, Retry, Retry latest and Resume retain their existing flows. No step retry is offered.
+
+The app adapts redacted engine events through `@smthrs/gateway`'s `InspectionJournal`, then uses `RunTrace.monitorFromJournal`; there is no second state fold, table or engine event. Child calls are represented once as a boundary and link to their own run. A personal `flow/run` run uses its recorded input's flow name for its header and step labels; engine tags remain intact. Missing or clipped evidence never becomes invented data. Action inputs absent from the journal are left absent.
+
+The public `@smthrs/ui` components accept data and callbacks and have no app registry, plugin name, or mutation dependency. Future `runs` and `flows` plugins can use them directly on decision 0017's public surface. Graph layout uses PLAN.md's small-DAG exception, because the library catalog contains no graph renderer and xyflow would introduce an independent node-state store.
+
+The page loads descendant journals by execution identity and merges their recorded evidence through `inspectionForest`. No child is joined by its display name. Each child's steps link to its own run; agent cells become nested timeline rows and canonical waits become hatched rows. Replay freezes that read snapshot until Live, including when new children appear. Attempt settlement during replay requires prefix journal evidence, so events sharing a millisecond cannot disclose a later completion. Replay selection logs and counts mode and sequence only (`smithers_run_replay_selections`, `run.replay.select`); values never enter diagnostics.
+
+Step logs join the engine's real `runId` and validated `stepKey` annotations to recorded dispatch digests, alongside the canonical agent-cell output. The evidence projection is memoized independently of the presentation clock. Live event batches refresh during a continuous stream; unchanged descendants and previously loaded journal tails are reused.

@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { COMMITMENTS } from "./lifecycle"
 import {
   NOT_SENT_REASONS,
   PAUSED_REASONS,
@@ -7,7 +8,6 @@ import {
   WRITE_FAILURES,
   WRITE_OPS,
   WRITE_STATUSES,
-  WRITE_VIAS,
 } from "./contract"
 
 // The issues feature's rows (decision 0012 §6, docs/features/issues.md), as the Effect Schemas their collections check
@@ -37,6 +37,7 @@ export const Item = Schema.Struct({
   triage: Schema.Literals(TRIAGE_STATES),
   /** A person triaged it: the flow never re-decides it until a person presses Run triage again. */
   triagePinned: Schema.Boolean,
+  commitment: Schema.NullOr(Schema.Literals([...COMMITMENTS, "conflict"])),
 })
 export type Item = typeof Item.Type
 
@@ -95,22 +96,30 @@ export const TriageSettings = Schema.Struct({
 export type TriageSettings = typeof TriageSettings.Type
 
 /**
- * A write as a step asks the tab to queue it: the write id the run derived, the repository (`owner/name`), who it acts
- * for, and its text. `title` is an issue's (empty otherwise), `number` the issue a comment or triage acts on (0 for a new
- * issue and the repository's triage settings), `body` a comment's text or a person's reason for Not accepted (empty for
- * none). `decision` is a person's Accept or Not accepted; `dailyTokens` the budget Enable triage sets, when it names one.
+ * A write's text: the write id the run derived, the repository (`owner/name`), and what it says. `title` is an issue's
+ * (empty otherwise), `number` the issue a comment or triage acts on (0 for a new issue and the repository's triage
+ * settings), `body` a comment's text or a person's reason for Not accepted (empty for none). `decision` is a person's
+ * Accept or Not accepted; `dailyTokens` the budget Enable triage sets, when it names one. It names nobody: who acts is
+ * the server's to read from the request.
  */
-export const QueuedWrite = Schema.Struct({
+const WriteText = {
   id: Schema.String,
   repo: Schema.String,
   op: Schema.Literals(WRITE_OPS),
-  via: Schema.Literals(WRITE_VIAS),
   title: Schema.String,
   number: Schema.Number,
   body: Schema.String,
   decision: Schema.optional(Schema.Literals(TRIAGE_DECISIONS)),
   dailyTokens: Schema.optional(Schema.Number),
-})
+  commitment: Schema.optional(Schema.Literals(COMMITMENTS)),
+}
+
+/**
+ * A write as a step asks the tab to queue it: its text, and the run credential of the run that wrote it unless that run
+ * is the person's own press (decision 0017 slice 0). The tab sends it with that credential and without the session
+ * cookie, so the agent's write goes as the agent; it never keeps the credential past the send.
+ */
+export const QueuedWrite = Schema.Struct({ ...WriteText, credential: Schema.optional(Schema.String) })
 export type QueuedWrite = typeof QueuedWrite.Type
 
 /**
@@ -121,7 +130,7 @@ export const Sending = Schema.Struct({
   ...QueuedWrite.fields,
   repoId: Schema.String,
   queuedAt: Schema.Number,
-  v: Schema.Literal(1),
+  v: Schema.Literal(2),
 })
 export type Sending = typeof Sending.Type
 
@@ -133,7 +142,7 @@ export const NotSentReason = Schema.Literals(NOT_SENT_REASONS)
  * GitHub's row with its write id arrives, or the person edits or discards it.
  */
 export const Requested = Schema.Struct({
-  ...QueuedWrite.fields,
+  ...WriteText,
   repoId: Schema.String,
   queuedAt: Schema.Number,
   status: Schema.Literals(["requested", "not_sent"]),

@@ -42,6 +42,9 @@ export const QUEUED = "Queued"
 /** The badge on a question the server refused, or the outbox couldn't store. */
 export const NOT_SENT = "Not sent"
 
+/** An empty conversation on a branch's page, where the wordmark would crowd its column. */
+export const NO_MESSAGES = "No messages yet"
+
 // Message controls (docs/features/chat.md#message-controls).
 
 /** Copy's label on a message; the button says "Copied" once the text is on the clipboard. */
@@ -49,6 +52,9 @@ export const COPY = "Copy"
 
 /** Edit's label on a question that Smithers doesn't have yet. */
 export const EDIT = "Edit"
+
+/** The label of an answer's debug info: the icon that opens the run that answered it, its flows and steps. */
+export const DEBUG_INFO = "Debug info"
 
 /** How long `chat/copy`'s and `chat/edit`'s steps wait for the tab that asked: a tab that is open answers at once. */
 export const ASK_TAB_WITHIN = "5 seconds"
@@ -113,7 +119,9 @@ export const CHAT_TELEMETRY = {
     "smithers_web_message_copies",
     "smithers_web_question_edits",
     "queued question taken back",
+    // The composer's draft: restored from the device, and whether the shown conversation's prompt is shared.
     "chat draft restored",
+    "chat prompt shared",
     // The outbox every write goes through, and the device store (@smthrs/effect-tanstack-db).
     "outbox.send",
     "outbox.withdraw",
@@ -155,5 +163,6 @@ export const CHAT_TELEMETRY = {
     "smithers.chat.door",
     "smithers.chat.outcome",
     "draft.length",
+    "shared",
   ],
 } as const

@@ -13,6 +13,7 @@ import { type Duration, Effect, Layer, Logger, ManagedRuntime, Metric, type Sche
 import { FetchHttpClient } from "effect/http"
 import { build } from "../../worker/test/flowHost.ts"
 import type { AuthStore } from "../features/auth/store"
+import { HomeClient } from "../features/home/api"
 import { Home } from "../features/home/home"
 import { HomeStore } from "../features/home/store"
 import * as Navigation from "../features/navigation/flows"
@@ -26,6 +27,9 @@ import * as RepoSteps from "../features/repo/steps"
 import { RepoStore } from "../features/repo/store"
 import { tabClipboard } from "../features/repo/tab"
 import { ClientEngine, FlowDispatch } from "../flows/dispatch"
+import { CodeIntel } from "../features/code-intel/codeIntel"
+import type { LanguageServers } from "../features/code-intel/session"
+import { CodeIntelStore } from "../features/code-intel/store"
 
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>
 
@@ -36,18 +40,24 @@ export interface DeviceOptions {
   readonly fetch?: typeof globalThis.fetch
   /** The client in place of the real one, for an unhappy path: the tab's and its engine's. */
   readonly client?: Layer.Layer<RepoClient>
+  /** The home's client in place of the real one (ChatApi's home route on `origin`), for an unhappy path. */
+  readonly homeClient?: Layer.Layer<HomeClient>
   /** `down`: every shape request fails on the network, as offline. */
   readonly shapes?: "real" | "down"
   /** How long a failed shape request waits: the store's default unless set. */
   readonly retry?: Schedule.Schedule<unknown, ShapeSource.RequestFailed>
   /** How long Electric gets to deliver a clone's row: the store's default unless set. */
   readonly confirmWithin?: Duration.Input
+  /** How long a navigation's warm waits for the files: the store's default unless set. */
+  readonly pageWait?: Duration.Input
   /** The clipboard's write: kept in `copied` unless set. */
   readonly writeText?: (text: string) => Promise<void>
   /** Sign-in's store, when the app has sign-in. */
   readonly auth?: Layer.Layer<AuthStore>
   /** `refusing`: this tab's engine refuses every dispatch, as an engine that can't start a run does. */
   readonly engine?: "running" | "refusing"
+  /** Code intelligence over these language servers (src/test/languageServer.ts); none unless set. */
+  readonly languageServers?: Layer.Layer<LanguageServers>
 }
 
 /** The flows this device's engine runs, as the registry names them. */
@@ -79,11 +89,18 @@ export const openTab = async (options: DeviceOptions) => {
   )
   const engine = Layer.effectContext(Effect.map(build(registration, { maxConnections: 2 }), ({ context }) => context))
   const runtime = ManagedRuntime.make(
-    Layer.merge(Repo.layer, Home.layer.pipe(Layer.provide(HomeStore.layer))).pipe(
+    Layer.mergeAll(
+      Repo.layer,
+      Home.layer.pipe(Layer.provide(HomeStore.layer)),
+      options.languageServers === undefined
+        ? Layer.empty
+        : CodeIntel.layer.pipe(Layer.provide(CodeIntelStore.layer), Layer.provide(options.languageServers)),
+    ).pipe(
       Layer.provideMerge(
         RepoStore.layer({
           origin: options.origin,
           ...(options.confirmWithin === undefined ? {} : { confirmWithin: options.confirmWithin }),
+          ...(options.pageWait === undefined ? {} : { pageWait: options.pageWait }),
           ...(options.retry === undefined ? {} : { retry: options.retry }),
         }),
       ),
@@ -102,6 +119,12 @@ export const openTab = async (options: DeviceOptions) => {
       Layer.provideMerge(shapes),
       Layer.provideMerge(Persistence.memory),
       Layer.provideMerge(client),
+      Layer.provideMerge(
+        options.homeClient ??
+          HomeClient.layer({ origin: options.origin, within: "10 seconds" }).pipe(
+            Layer.provide(FetchHttpClient.layer),
+          ),
+      ),
       Layer.provideMerge(Clipboard.layer(options.writeText ?? (async (text) => void copied.push(text)))),
       Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetch)),
       Layer.provideMerge(Layer.succeed(Metric.MetricRegistry, registry)),
@@ -113,7 +136,15 @@ export const openTab = async (options: DeviceOptions) => {
   )
   const repo = await runtime.runPromise(Effect.service(Repo))
   const home = await runtime.runPromise(Effect.service(Home))
-  for (const query of [...Object.values(repo.queries), ...Object.values(home.queries)]) query.startSyncImmediate()
+  const codeIntel = options.languageServers === undefined
+    ? undefined
+    : await runtime.runPromise(Effect.service(CodeIntel) as Effect.Effect<CodeIntel["Service"]>)
+  codeIntel?.queries.state.startSyncImmediate()
+  // What React's live queries start on first render; the home's stack is a function of the repository, started by its
+  // own reader.
+  for (const query of [...Object.values(repo.queries), ...Object.values(home.queries)]) {
+    if (typeof query !== "function") query.startSyncImmediate()
+  }
   const count = (
     metric: Metric.Metric<number, Metric.CounterState<number>>,
     attributes: Record<string, string> = {},
@@ -132,6 +163,7 @@ export const openTab = async (options: DeviceOptions) => {
   return {
     repo,
     home,
+    codeIntel,
     runtime,
     logs,
     copied,
@@ -146,6 +178,8 @@ export const openTab = async (options: DeviceOptions) => {
     tree: () => repo.queries.tree.toArray[0]!,
     file: () => repo.queries.file.toArray[0]!,
     readme: () => repo.queries.readme.toArray[0]!,
+    about: () => repo.queries.about.toArray[0]!,
+    manifest: () => repo.queries.manifest.toArray[0]!,
     dispose: () => runtime.dispose(),
   }
 }

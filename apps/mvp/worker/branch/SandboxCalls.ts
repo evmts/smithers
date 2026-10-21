@@ -4,7 +4,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { callExecutionId, MAX_CALL_BODY_BYTES, SANDBOX_CALLS_ROUTE } from "../../src/features/sandbox/contract.ts"
 import type { Actor } from "../Actor.ts"
-import { Sessions } from "../Actor.ts"
+import { boundTo, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
@@ -144,8 +144,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
         const callId = decoded.value.callId.toLowerCase()
         fields.callId = callId
         fields.tool = call.tool
-        fields.door = answerId === undefined ? "person" : "agent"
+        // Who calls is the request's to say (decision 0017 slice 0): the person, or the run its credential names, which
+        // targets only the answer its chain started from.
+        fields.door = actor.value.act?.kind ?? "person"
         if ((answerId === undefined) === (decoded.value.conversationId === undefined)) return refuse(fields, 400, "invalid")
+        if (answerId !== undefined && !boundTo(actor.value, answerId)) return refuse(fields, 403, "other_run")
         const conversationId = answerId === undefined
           ? decoded.value.conversationId!.toLowerCase()
           : yield* answerConversation(answerId.toLowerCase(), actor.value).pipe(Effect.provide(database))

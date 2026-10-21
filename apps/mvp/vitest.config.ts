@@ -16,6 +16,10 @@ export default defineConfig({
       "evals/**/*.test.ts",
       // The e2e media scripts' pure parts (e2e/frames.ts); Playwright runs only e2e/*.spec.ts.
       "e2e/**/*.test.ts",
+      // The dev server's HTTPS and HTTP/2 front (dev/https.ts).
+      "dev/**/*.test.ts",
+      // Dashboards as code (ops/grafana/README.md) against the telemetry contract.
+      "ops/**/*.test.ts",
     ],
     environment: "node",
     // A finite budget that survives coverage-instrumented load, so a genuine hang still fails the run.
@@ -62,6 +66,10 @@ export default defineConfig({
         "db/migrations/0007_repositories.ts",
         // A clone attempt's own id (docs/features/repo.md#the-clone).
         "db/migrations/0009_clone_ids.ts",
+        // What GitHub says of a repository, the clone in its asker's feed, and the reclaim mark (docs/features/repo.md).
+        "worker/RepoAbout.ts",
+        "worker/CloneFeed.ts",
+        "db/migrations/0028_clone_progress.ts",
         // Who asked each question, which the answer routes require (docs/features/agent.md#the-answer-routes).
         "worker/Messages.ts",
         "db/migrations/0011_question_askers.ts",
@@ -69,6 +77,7 @@ export default defineConfig({
         "worker/Throttle.ts",
         // The conversation's views and web pages (docs/features/web-pages.md).
         "worker/Views.ts",
+        "worker/WebPreview.ts",
         "db/migrations/0010_views.ts",
         // Budget reservations (docs/features/model-endpoint.md#budget).
         "db/migrations/0012_model_reservations.ts",
@@ -83,6 +92,9 @@ export default defineConfig({
         "worker/ModelSpend.ts",
         "worker/SpendAlerts.ts",
         "db/migrations/0019_spend_alerts.ts",
+        // Where spend alerts go outside the app, and their receipts (docs/features/spend-alerts.md#channels).
+        "worker/AlertChannels.ts",
+        "db/migrations/0029_alert_channels.ts",
         // Agent status: the runs routes and table (docs/features/agent-status.md).
         "worker/Runs.ts",
         "db/migrations/0013_runs.ts",
@@ -110,6 +122,8 @@ export default defineConfig({
         "db/migrations/0023_branch_sharing.ts",
         // The sandbox tools: their calls on a branch's machine (docs/features/sandbox-tools.md).
         "db/migrations/0024_sandbox_calls.ts",
+        // Co-editing: the texts people edit together (docs/features/coedit.md).
+        "db/migrations/0026_text_updates.ts",
         // What the Electric gateway lets through (docs/infrastructure.md).
         "infra/ElectricAccess.ts",
         // A shape request the server can't decide is refused, never narrowed (docs/features/chat.md).
@@ -122,10 +136,19 @@ export default defineConfig({
         "evals/report.ts",
         // How a flow's video and GIF are paced, captioned and checked (e2e/gifs.mjs, e2e/check-gifs.mjs).
         "e2e/frames.ts",
+        // The dev server over HTTPS and HTTP/2, as production serves the app (docs/infrastructure.md#https-and-http2).
+        "dev/https.ts",
       ],
       // src/flows/engine.worker.ts is a program boundary, like src/main.tsx: src/flows/engine.test.ts proves what it
       // registers, and a browser proves the rest.
-      exclude: ["src/**/*.test.ts", "src/test/**", "worker/**/*.test.ts", "src/flows/engine.worker.ts"],
+      // src/features/code-intel/language.worker.ts is one too: src/test/languageServer.ts runs the same server in Node.
+      exclude: [
+        "src/**/*.test.ts",
+        "src/test/**",
+        "worker/**/*.test.ts",
+        "src/flows/engine.worker.ts",
+        "src/features/code-intel/language.worker.ts",
+      ],
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },
     },
   },

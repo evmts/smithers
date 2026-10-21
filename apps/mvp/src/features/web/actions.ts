@@ -81,14 +81,15 @@ export const dispatchOpen = (page: { readonly url: string; readonly mode: WebMod
       conversationId === undefined ? page : { ...page, conversationId },
       { door },
     ).pipe(Effect.result)
+    const opened = dispatched._tag === "Success" && dispatched.success._tag === "Done" ? dispatched.success.value : undefined
     const outcome: WebOutcome = dispatched._tag === "Failure"
       ? dispatched.failure.reason === "invalid" ? "refused" : "unavailable"
       : dispatched.success._tag === "Failed"
       ? failedAs(dispatched.success.error._tag)
-      : page.mode === "embed"
+      : opened?.shown === "page"
       ? "embedded"
       : "card"
-    yield* recordOpening({ mode: page.mode, door, outcome })
+    yield* recordOpening({ mode: page.mode, door, outcome, ...(opened === undefined ? {} : { framing: opened.framing }) })
   }).pipe(withOpenSpan(page.mode))
 
 /**

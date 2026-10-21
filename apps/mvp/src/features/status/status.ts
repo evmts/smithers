@@ -1,19 +1,19 @@
 import { Context, Effect, Layer } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { answer, focus, focusFirst, setDraft } from "./actions"
+import { answer, focus, setDraft } from "./actions"
 import type { AnswerValue } from "./schema"
 import { StatusStore } from "./store"
 
 // Agent status as a frontend sees it (decision 0015): live queries to read and plain functions to act, with no Effect
-// in sight. The conversation renders each answer's state and question from `statuses`; the header and the tab title
-// read `needs` and `latest`. The toast stack reads the feed (decision 0009, src/features/attention/).
+// in sight. The conversation renders each answer's state and question from `statuses`; the header reads `latest`. The
+// tab title follows the store's `needs`. The toast stack and the top bar's bell read the feed (decision 0009,
+// src/features/attention/).
 
 type Store = StatusStore["Service"]
 
 /** What a frontend reads live. */
 export interface StatusQueries {
   readonly statuses: Store["statuses"]["tanstack"]
-  readonly needs: Store["needs"]["tanstack"]
   readonly latest: Store["latest"]["tanstack"]
 }
 
@@ -24,8 +24,6 @@ export interface StatusActions {
   readonly setDraft: (id: string, text: string) => void
   /** Brings run `id`'s question card into view and focuses it: a toast's Answer. */
   readonly focus: (id: string) => void
-  /** The same for the oldest question that needs the person: the header's pill. */
-  readonly focusFirst: () => void
 }
 
 export class Status extends Context.Service<Status, { readonly queries: StatusQueries; readonly actions: StatusActions }>()(
@@ -38,12 +36,11 @@ export class Status extends Context.Service<Status, { readonly queries: StatusQu
       const store = yield* StatusStore
       const run = Effect.runSyncWith(yield* Effect.context<StatusStore | FlowDispatch>())
       return Status.of({
-        queries: { statuses: store.statuses.tanstack, needs: store.needs.tanstack, latest: store.latest.tanstack },
+        queries: { statuses: store.statuses.tanstack, latest: store.latest.tanstack },
         actions: {
           answer: (id, value) => run(answer(id, value)),
           setDraft: (id, text) => run(setDraft(id, text)),
           focus: (id) => run(focus(id)),
-          focusFirst: () => run(focusFirst),
         },
       })
     }),

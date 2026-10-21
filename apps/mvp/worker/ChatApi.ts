@@ -10,6 +10,7 @@ import * as Electric from "../infra/Electric.ts"
 import * as SecretsInfra from "../infra/Secrets.ts"
 import * as SignInSecret from "../infra/SignIn.ts"
 import { AUTH_ROUTE } from "../src/features/auth/contract.ts"
+import { todoExecutionId } from "../src/features/pulls/contract.ts"
 import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE } from "../src/features/repo/contract.ts"
 import * as BranchApi from "./branch/BranchApi.ts"
 import { Forge } from "./branch/Forge.ts"
@@ -24,6 +25,7 @@ import * as Executions from "./Executions.ts"
 import * as Flows from "./Flows.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
 import * as GitHubApi from "./github/Api.ts"
+import * as HomeApi from "./home/Api.ts"
 import * as GitHubConfig from "./github/Config.ts"
 import { DEFAULT_CHAT_MODEL } from "./ModelRoles.ts"
 import * as RepoApi from "./RepoApi.ts"
@@ -32,6 +34,8 @@ import * as SecretsApi from "./secrets/Api.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as SignIn from "./SignIn.ts"
 import * as StackApi from "./stack/Api.ts"
+import * as Stack from "./stack/Stack.ts"
+import * as Todo from "./flows/Todo.ts"
 import * as Throttle from "./Throttle.ts"
 
 /**
@@ -70,7 +74,8 @@ export const props = {
  * (`worker/DevChatApi.ts`). The model endpoint refuses a call with no actor. `localHttp`, which only `alchemy dev` sets,
  * keeps links to `http:` pages on `localhost` (`WEB_PAGES_LOCAL_HTTP`'s default, worker/Views.ts). `spendAlerts`,
  * which only `alchemy dev` sets, to `false`, is `MODEL_SPEND_ALERTS`' default: a deploy alerts on any model spend
- * unless its environment says otherwise (docs/features/spend-alerts.md).
+ * unless its environment says otherwise (docs/features/spend-alerts.md). `dev`, which only `alchemy dev` sets, lets an
+ * alert provider pointed at a local fake send without its key (docs/features/spend-alerts.md#channels).
  */
 export const program = (
   options: {
@@ -78,6 +83,7 @@ export const program = (
     readonly teammates?: Readonly<Record<string, SignIn.Signed>>
     readonly localHttp?: boolean
     readonly spendAlerts?: boolean
+    readonly dev?: boolean
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -121,9 +127,31 @@ export const program = (
       app: yield* GitHubConfig.configured,
     })
     // TODOs and the stack (docs/features/todos.md): the one route that changes a stack, through its one writer, and the
-    // TODOs' shapes. No host runs a TODO yet (decision 0016 Track B), so every TODO stays Queued.
+    // TODOs' shapes.
     const stack = yield* StackApi.make(database)
+    const githubApp = yield* GitHubConfig.configured
+    const runTodos = yield* Todo.enabled
+    /**
+     * The `todo` runs the stack's writer starts (decision 0016 Track B): each attempt's run on its own Durable Object,
+     * `todo:<attempt id>`, the same start again a no-op. Stop has nothing to send: a dropped TODO's run finds it at its
+     * next report to the writer, or at its next read of its pull request, and closes what it opened.
+     */
+    const todoRuns = (starter: Flows.FlowStarter["Service"]) =>
+      Stack.TodoRuns.of({
+        start: (attempt) =>
+          starter.start(Todo.Todo, { executionId: todoExecutionId(attempt.attemptId), payload: attempt }).pipe(
+            Effect.catch((error) =>
+              error._tag === "@smthrs/mvp/flows/StartConflict"
+                ? Effect.void
+                : Effect.fail(new Stack.RunsUnavailable({ errorCode: error.errorCode }))
+            ),
+          ),
+        stop: () => Effect.void,
+      })
+    // A repository's home (docs/features/home.md): who the asker is on it, and Smithers' curated home for it.
+    const home = HomeApi.make()
     const repoCache = EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)
+    const webCache = EdgeCache.layer({ name: "web" }).pipe(Layer.orDie)
     const logs = Logger.layerStructuredJson()
     // ChatApi hosts the remote flow executions' Durable Object (worker/Executions.ts, docs/features/remote-flows.md).
     const executions = yield* Executions.FlowExecution
@@ -223,8 +251,16 @@ export const program = (
         if (GitHubApi.handles(path)) {
           return yield* github.fetch.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(signedIn))
         }
-        // Before the repository routes too: a change is `/api/repos/<owner>/<name>/stack`.
-        if (StackApi.handles(path)) return yield* stack.fetch.pipe(Effect.provide(signedIn))
+        // Before the repository routes too: a change is `/api/repos/<owner>/<name>/stack`. With the GitHub App and
+        // `TODO_RUNS` on, this host runs TODOs: each attempt the writer starts runs `todo` on its own Durable Object
+        // (decision 0016).
+        if (StackApi.handles(path)) {
+          return yield* (Option.isSome(githubApp) && runTodos
+            ? stack.fetch.pipe(Effect.provideService(Stack.TodoRuns, todoRuns(starter)))
+            : stack.fetch).pipe(Effect.provide(signedIn))
+        }
+        // And a home, `/api/repos/<owner>/<name>/home` (docs/features/home.md): who the asker is and the curated home.
+        if (HomeApi.handles(path)) return yield* home.fetch.pipe(Effect.provide(signedIn))
         if (path === REPOS_ROUTE || path.startsWith(`${REPOS_ROUTE}/`) || path === REPOSITORIES_SHAPE_ROUTE) {
           return yield* repos.fetch.pipe(
             Effect.provideService(Flows.FlowStarter, starter),
@@ -232,11 +268,17 @@ export const program = (
             Effect.provide(repoCache),
           )
         }
-        return yield* chat.fetch.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(signedIn))
+        // Pages checked before they are framed are requested through the Worker's fetch, which reaches public addresses
+        // only, and their answers kept in this Worker's Cache API (worker/WebPreview.ts).
+        return yield* chat.fetch.pipe(
+          Effect.provideService(Flows.FlowStarter, starter),
+          Effect.provide(signedIn),
+          Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),
+        )
       }).pipe(Effect.provide(logs)),
     }
   }).pipe(
-    Effect.provide(Executions.live(ChatDatabase)),
+    Effect.provide(Executions.live(ChatDatabase, options.dev === true ? { dev: true } : {})),
     Effect.provide(BranchSandboxes.live(ChatDatabase)),
     Effect.provide(BranchRooms.live),
     Effect.provide(

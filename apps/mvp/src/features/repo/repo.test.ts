@@ -13,9 +13,9 @@ import { RepoClient, RepoRefused } from "./api"
 import { BUSY, COULDNT_LOAD, NOT_FOUND, rawRoute, READING_PAUSED } from "./contract"
 import { TabClipboard } from "./copy"
 import { RepoCloneRequest, RepoCopy, RepoCopyRefused, RepoRead, RepoRefs, RepoTree } from "./flows"
-import { blobLoadMs, clones, copies, refsLoadMs, treeLoadMs } from "./metrics"
+import { aboutLoadMs, blobLoadMs, clones, copies, refsLoadMs, treeLoadMs } from "./metrics"
 import { NotCopied } from "./repo"
-import { headerOf } from "./view"
+import { aboutOf, generatedLinksFor, headerOf, previewReadmeOf, previewTreeOf } from "./view"
 
 // The repository state machine on a tab, driven as React drives it, with no React: through the `Repo` layer's plain
 // actions, reading its live queries. The tab reaches RepoApi's real handler (worker/RepoApi.ts) over the compose
@@ -235,16 +235,21 @@ describe("reading a ready repository", () => {
     expect(tab.lines("repo.copy")[0]!.annotations).toMatchObject({ outcome: "failed" })
   })
 
-  test("a list Code Storage couldn't give fails busy, and opening it again loads it again", async () => {
+  test("a list Code Storage couldn't give fails busy, and navigating to it again loads it again", async () => {
     const h = await repoHarness(server)
+    // The clone's Index lists the head's files into the cache: the first failure is its, which it shrugs off, so the
+    // list isn't cached; the second is the tab's.
+    const failure = h.scripted.error("listFiles", "internal_error", 500)
+    h.scripted.fail("listFiles", failure, failure)
     const { headSha } = await h.seed("octocat", "Spoon-Knife")
-    h.scripted.fail("listFiles", h.scripted.error("listFiles", "internal_error", 500))
     const tab = await open(h)
     tab.repo.actions.open(root("octocat", "Spoon-Knife"))
     await waitFor(() => expect(tab.tree().tree).toMatchObject({ state: "failed", message: BUSY }))
     expect(tab.histogramCount(treeLoadMs, { outcome: "failed" })).toBe(1)
     expect(tab.lines("repo.tree.load")[0]!.annotations).toMatchObject({ outcome: "failed", status: 503 })
-    tab.repo.actions.open(root("octocat", "Spoon-Knife"))
+    // A navigation warms the page before it opens it, and the warm asks again for a list that failed.
+    await tab.repo.actions.warmRoute("tree", { owner: "octocat", repo: "Spoon-Knife" }, {})
+    tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Spoon-Knife" }, {})
     await waitFor(() => expect(tab.tree().tree?.state).toBe("ready"))
     expect(tab.view().view.sha).toBe(headSha)
   })
@@ -444,5 +449,85 @@ describe("the agent's repository flows on this device", () => {
     const missing = await runFlow(RepoRead, { repo: "octocat/Spoon-Knife", revision: headSha, path: "gone.md" }, reads)
     expect(Exit.isFailure(missing.exit)).toBe(true)
     expect(missing.status).toBe("failed")
+  })
+})
+
+describe("what GitHub says, cloned or not", () => {
+  test("a repository nobody cloned shows GitHub's top folder, README and about at once, with no clone", async () => {
+    const h = await repoHarness(server)
+    h.github.publish("octocat", "Spoon-Knife")
+    const tab = await open(h)
+    tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Spoon-Knife" }, {})
+    await waitFor(() => expect(tab.about().about?.state).toBe("ready"))
+    const about = aboutOf(tab.about().about)
+    expect(previewTreeOf(about)).toEqual({ state: "ready", paths: ["README.md", "index.html"], directories: ["docs"], truncated: false })
+    expect(previewReadmeOf(about)?.file).toMatchObject({ state: "text", contents: expect.stringContaining("Well hello there!") })
+    expect(tab.view().repository).toBeUndefined()
+    expect(h.started()).toEqual([])
+    expect(tab.histogramCount(aboutLoadMs, { outcome: "ready" })).toBe(1)
+    // Loaded once per tab: opening it again asks nothing more of GitHub.
+    const calls = h.github.calls.length
+    tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Spoon-Knife" }, {})
+    expect(h.github.calls).toHaveLength(calls)
+  })
+
+  test("one GitHub doesn't have is missing; one GitHub can't answer fails, and loads again when opened again", async () => {
+    const h = await repoHarness(server)
+    const tab = await open(h)
+    tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Gone" }, {})
+    await waitFor(() => expect(tab.about().about).toMatchObject({ state: "missing", message: NOT_FOUND }))
+    h.github.publish("octocat", "Spoon-Knife")
+    h.github.fail("", 502)
+    tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Spoon-Knife" }, {})
+    await waitFor(() => expect(tab.about().about).toMatchObject({ state: "failed", message: COULDNT_LOAD }))
+    h.github.clear()
+    tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Spoon-Knife" }, {})
+    await waitFor(() => expect(tab.about().about?.state).toBe("ready"))
+  })
+
+  test("a file the repository's manifest lists: the manifest loads beside it, and links its flow and sources", async () => {
+    const h = await repoHarness(server)
+    const manifest = JSON.stringify({ outputs: { "docs/guide.md": { flow: "docs/build", inputs: ["src/index.ts"] } } })
+    await h.seed("octocat", "Spoon-Knife", fixture({
+      files: { ...fixture().files, ".smithers/generated.json": manifest, ".smithers/flows/docs/build/flow.ts": "x" },
+    }))
+    const tab = await open(h)
+    at(tab, "blob", "main", "docs/guide.md")
+    await waitFor(() => expect(tab.manifest().manifest?.state).toBe("text"))
+    await waitFor(() => expect(tab.file().file?.state).toBe("text"))
+    const { view, repository } = tab.view()
+    expect(generatedLinksFor(view, repository, view.path, tab.file().file?.contents ?? undefined, tab.manifest().manifest, tab.tree().tree))
+      .toEqual({
+        flow: { label: "docs/build", href: "/octocat/Spoon-Knife/blob/main/.smithers/flows/docs/build/flow.ts" },
+        sources: [{ label: "src/index.ts", href: "/octocat/Spoon-Knife/blob/main/src/index.ts" }],
+      })
+    expect(view.manifestPath).toBe(".smithers/generated.json")
+    // A directory's page loads it too, for the branch's editor over it; a repository without one has none.
+    at(tab, "tree", "main", "docs")
+    await waitFor(() => expect(tab.manifest().manifest?.state).toBe("text"))
+    // A project's own manifest is nearer than the root's, for its files and its folders alike.
+    const nested = await repoHarness(server)
+    await nested.seed("octocat", "Nested", fixture({
+      files: {
+        ...fixture().files,
+        ".smithers/generated.json": manifest,
+        "tools/docgen/.smithers/generated.json": JSON.stringify({ version: 1, outputs: { "out/a.md": { flow: "docs/generate" } } }),
+        "tools/docgen/out/a.md": "# A",
+      },
+    }))
+    const project = await open(nested)
+    project.repo.actions.openRoute("blob", { owner: "octocat", repo: "Nested", ref: "main", _splat: "tools/docgen/out/a.md" }, {})
+    await waitFor(() => expect(project.view().view.manifestPath).toBe("tools/docgen/.smithers/generated.json"))
+    project.repo.actions.openRoute("tree", { owner: "octocat", repo: "Nested", ref: "main", _splat: "tools/docgen" }, {})
+    await waitFor(() => expect(project.view().view.path).toBe("tools/docgen"))
+    await waitFor(() => expect(project.view().view.manifestPath).toBe("tools/docgen/.smithers/generated.json"))
+    const plain = await repoHarness(server)
+    await plain.seed("octocat", "Plain")
+    const other = await open(plain)
+    other.repo.actions.openRoute("blob", { owner: "octocat", repo: "Plain", ref: "main", _splat: "README.md" }, {})
+    await waitFor(() => expect(other.file().file?.state).toBe("text"))
+    await waitFor(() => expect(other.tree().tree?.state).toBe("ready"))
+    expect(other.view().view.manifestKey).toBeNull()
+    expect(other.view().view.manifestPath).toBeNull()
   })
 })

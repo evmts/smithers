@@ -185,12 +185,11 @@ describe("keeping a write on the device", () => {
       repo: "octo/hello",
       repoId: "github/octo/hello",
       op: "issue/comment",
-      via: "person",
       title: "",
       number: 7,
       body: "Hi",
       queuedAt: 1,
-      v: 1,
+      v: 2,
     }
     const rows = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const requested = yield* Collection.local<Requested, string>({
@@ -203,7 +202,7 @@ describe("keeping a write on the device", () => {
       yield* keep(requested, write, "not_sent", "conflict")
       return [first, yield* requested.toArray]
     })))
-    const kept = { id: "w", repo: "octo/hello", repoId: "github/octo/hello", op: "issue/comment", via: "person", title: "", number: 7, body: "Hi", queuedAt: 1 }
+    const kept = { id: "w", repo: "octo/hello", repoId: "github/octo/hello", op: "issue/comment", title: "", number: 7, body: "Hi", queuedAt: 1 }
     expect(rows).toMatchObject([
       [{ ...kept, status: "requested", reason: null }],
       [{ ...kept, status: "not_sent", reason: "conflict" }],
@@ -306,4 +305,12 @@ describe("triage", () => {
     // Offline, the role sign-in last confirmed stands.
     expect(mayManageTriage({ status: "unreachable", role: null }, { role: "maintainer" })).toBe(true)
   })
+})
+
+
+test("commitment chips reflect GitHub labels and preserve a conflict", () => {
+  for (const [commitment, word] of [["now", "Now"], ["next", "Next"], ["later", "Later"], ["none", "No commitment"], ["conflict", "Commitment conflict"]]) {
+    expect(issueOf({ ...synced, commitment }).labels).toEqual([word])
+  }
+  for (const commitment of [null, undefined, "wrong"]) expect(issueOf({ ...synced, commitment }).labels).toBeUndefined()
 })

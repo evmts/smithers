@@ -23,6 +23,7 @@ const client = (answers: {
       tree: () => answers.tree ?? Effect.die(new Error("unused")),
       blob: () => answers.blob ?? Effect.die(new Error("unused")),
       refs: () => answers.refs ?? Effect.die(new Error("unused")),
+      about: () => Effect.die(new Error("unused")),
     }),
   )
 

@@ -18,7 +18,11 @@ export function PresenceAvatars() {
     void navigate({
       to: "/$owner/$repo/tree/$ref/$",
       params: { owner: params.owner ?? "", repo: params.repo ?? "", ref: params.ref ?? "", _splat: target.path },
-      search: target.terminal === undefined ? {} : { terminal: target.terminal },
+      search: target.terminal !== undefined
+        ? { terminal: target.terminal }
+        : target.edit !== undefined
+        ? { edit: target.edit }
+        : {},
     })
   }
   return <AvatarStack className="branch-header-people" people={people} onSelect={follow} />

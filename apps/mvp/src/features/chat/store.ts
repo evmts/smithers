@@ -1,3 +1,4 @@
+import { makeSummaries, followSummaries, summaryQuery } from "../timeline/store"
 import { ElectricCollection, type ShapeSource } from "@smthrs/effect-electric"
 import { Collection, Outbox, Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
@@ -13,11 +14,14 @@ import {
   Option,
   Ref,
   type Schedule,
+  Schema,
   Scope,
   Semaphore,
   Stream,
 } from "effect"
 import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
+import { ChatDraftsStore, outboxUpgrade } from "../../device/registry"
+import type { ChatDraftV1 } from "../../device/history"
 import { OutboxWrites } from "../../outbox"
 import { ViewsStore } from "../views/store"
 import { ChatClient, type Taken } from "./api"
@@ -39,7 +43,6 @@ import {
   Composer,
   CONNECTION,
   Connection,
-  Draft,
   HISTORY,
   History,
   Message,
@@ -112,7 +115,8 @@ export interface ConversationState {
  * - `messages`: the conversation in Postgres, synced by Electric and kept on the device; read-only.
  * - `asking`: questions the outbox holds, as the optimistic rows of their writes; in memory, restored by the outbox.
  * - `unsent`: questions the server refused or the outbox couldn't take; kept on the device.
- * - `drafts`: the composer's draft in each conversation; kept on the device, so a reload finds it.
+ * - `drafts`: the composer's draft in each conversation whose prompt isn't shared; kept on the device, so a reload finds
+ *   it.
  * - `composer`, `connection`, `history`: this tab's own state, in memory.
  * - `outbox`: the durable outbox every ask goes through.
  * - the live queries frontends read (queries.ts), and `scope`, where background work an action starts runs.
@@ -123,7 +127,7 @@ export class ChatStore extends Context.Service<
     readonly messages: ElectricCollection.ElectricCollection<Message>
     readonly asking: Collection.Collection<Asking, string>
     readonly unsent: Collection.Collection<Unsent, string>
-    readonly drafts: Collection.Collection<Draft, string>
+    readonly drafts: Collection.Collection<ChatDraftV1, string>
     readonly composer: Collection.Collection<Composer, string>
     readonly connection: Collection.Collection<Connection, string>
     readonly history: Collection.Collection<History, string>
@@ -131,6 +135,7 @@ export class ChatStore extends Context.Service<
     readonly conversation: Query<typeof conversationQuery>
     readonly latest: Query<typeof latestQuery>
     readonly shown: Query<typeof shownQuery>
+    readonly summaries: Query<typeof summaryQuery>
     readonly queued: Query<typeof queuedQuery>
     readonly composerState: Query<typeof composerQuery>
     readonly connectionState: Query<typeof connectionQuery>
@@ -196,6 +201,28 @@ export const keepUnsent = (unsent: Collection.Collection<Unsent, string>, row: A
     return Effect.orDie(kept.persisted)
   }).pipe(Effect.orDie)
 
+/** What a parked question's row must still say for Retry to ask it again: its ids, its text and when it was asked. */
+const ParkedQuestion = Schema.Struct({
+  id: Schema.String,
+  answerId: Schema.String,
+  text: Schema.String,
+  queuedAt: Schema.Number,
+  conversationId: Schema.optional(Schema.String),
+})
+
+/**
+ * Shows a question the outbox parked as Not sent, with Retry and Discard (`not_admitted`): true once it is kept, false
+ * when its row doesn't say enough to ask it again, so it stays parked.
+ */
+export const keepParked = (unsent: Collection.Collection<Unsent, string>, write: Outbox.Parked) =>
+  Effect.gen(function* () {
+    const row = Schema.decodeUnknownOption(ParkedQuestion)(write.rows[0])
+    if (Option.isNone(row)) return false
+    yield* Effect.flatten(keepUnsent(unsent, { ...row.value, v: 1 }, "not_admitted"))
+    yield* Effect.logWarning("question parked").pipe(Effect.annotateLogs({ reason: write.reason, questionId: row.value.id }))
+    return true
+  })
+
 /**
  * What the connection pill follows, besides the questions queued: the browser's `offline` event, the last shape request
  * (`pending` until one is answered), why Electric stopped the shape, whether sends are failing, and whether failures
@@ -218,6 +245,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   const unreachableAfter = config.unreachableAfter ?? Duration.seconds(10)
   const pageSize = config.pageSize ?? PAGE_SIZE
 
+  const summaries = yield* makeSummaries
   const composer = yield* Collection.local<Composer, string>({
     id: "chat-composer",
     schema: Composer,
@@ -241,7 +269,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     id: "chat-place",
     schema: Place,
     getKey: (row) => row.id,
-    initialData: [{ id: PLACE, conversationId: null }],
+    initialData: [{ id: PLACE, conversationId: null, shared: false }],
   })
   const unsent = yield* Collection.persisted<Unsent, string>({
     id: "chat-unsent",
@@ -249,19 +277,14 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     getKey: (row) => row.id,
     schemaVersion: 1,
   })
-  const drafts = yield* Collection.persisted<Draft, string>({
-    id: "chat-drafts",
-    schema: Draft,
-    getKey: (row) => row.id,
-    schemaVersion: 1,
-  })
+  const drafts = yield* Collection.persisted(ChatDraftsStore)
   const messages = yield* ElectricCollection.make<Message>({
     id: "chat-messages",
     schema: Message,
     getKey: (row) => row.id,
     syncMode: "eager",
     // 2: `attempts` is gone (server answering went with it) and an answer can fail `unfinished`.
-    persist: { schemaVersion: 2 },
+    persist: { schemaVersion: 3 },
     shape: {
       url: config.shapeUrl,
       columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -365,6 +388,10 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         leader,
         collections: { ...others.collections, asking },
         mutations: { ...others.mutations, ask: send },
+        // Writes an older build stored are upgraded before the outbox loads them, or parked (decision 0021 §4): a
+        // parked question shows Not sent, with Retry and Discard.
+        upgrade: outboxUpgrade,
+        parked: { ...others.parked, ask: (write) => keepParked(unsent, write) },
       }),
     ),
     Outbox.Outbox,
@@ -390,7 +417,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         schema: Message,
         getKey: (row) => row.id,
         syncMode: "eager",
-        persist: { schemaVersion: 2 },
+        persist: { schemaVersion: 3 },
         shape: {
           url: `${config.shapeUrl}?conversation=${encodeURIComponent(conversationId)}`,
           columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -399,6 +426,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         ...(config.retry === undefined ? {} : { retry: config.retry }),
       })
       const branchViews = yield* viewsStore.forConversation(conversationId)
+      yield* followSummaries(branchMessages, summaries, flows).pipe(Effect.forkIn(scope))
       const branchHistory = yield* Collection.local<History, string>({
         id: `chat-history:${conversationId}`,
         schema: History,
@@ -554,7 +582,9 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     }
   }
 
+  yield* followSummaries(messages, summaries, flows).pipe(Effect.forkIn(scope))
   const store = ChatStore.of({
+    summaries: yield* summaryQuery(summaries),
     messages,
     asking,
     unsent,

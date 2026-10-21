@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router"
+import { FlowSummaryView } from "../../features/runs/components/FlowSummaryView"
 import { RunListView } from "../../features/runs/components/RunListView"
 import "./runs-screen.css"
 
@@ -10,6 +11,7 @@ export function RunsScreen() {
         <Link to="/app">Back to chat</Link>
         <h1>Runs</h1>
       </header>
+      <FlowSummaryView />
       <RunListView />
     </main>
   )

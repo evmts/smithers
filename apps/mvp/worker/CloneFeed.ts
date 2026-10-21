@@ -1,0 +1,77 @@
+import { Inbox } from "@smthrs/notifications"
+import { Effect, Metric } from "effect"
+import { SqlClient } from "effect/sql"
+import { cloneRef, cloneSubject } from "../src/features/repo/contract.ts"
+import { routed } from "./Notifications.ts"
+
+// A clone in its person's feed (decision 0009, docs/features/repo.md#the-clone-in-the-feed): the person who asked for
+// the attempt gets one `notifications` row, `clone:<repo id>`, that follows the `repositories` row through requested,
+// fetching (with the size once admission knows it), indexing, and ready or failed. Every write to the row folds it here
+// in the same transaction, so the feed never says what the row doesn't, and a replay writes nothing twice. The toast
+// stack and the feed list are views of that row; nothing in the browser polls the clone.
+
+/** The row's columns the fold reads. */
+interface Row {
+  readonly owner: string
+  readonly name: string
+  readonly status: "cloning" | "ready" | "failed" | "capacity"
+  readonly stage: "requested" | "fetching" | "indexing" | null
+  readonly storedBytes: string | null
+  readonly failure: string | null
+  readonly capacity: string | null
+  readonly requestedBy: string | null
+}
+
+/** What the feed row says for a repository row: its state, and the stage or outcome its detail shows. */
+const stateOf = (row: Row): { readonly state: Inbox.RunState; readonly ref: string } => {
+  switch (row.status) {
+    case "cloning":
+      // A row cloning since before migration 0028 has no stage of its own: it reads as requested.
+      return {
+        state: "working",
+        ref: cloneRef(row.stage ?? "requested", row.storedBytes === null ? undefined : Number(row.storedBytes)),
+      }
+    case "ready":
+      return { state: "done", ref: "ready" }
+    // The table's checks hold a failed row's `failure` and a refused row's `capacity`.
+    case "failed":
+      return { state: "failed", ref: `failed:${row.failure!}` }
+    case "capacity":
+      return { state: "failed", ref: `capacity:${row.capacity!}` }
+  }
+}
+
+/**
+ * Folds repository `id`'s row into the feed of the person who asked for its attempt, inside the caller's transaction.
+ * The row's version goes up when the clone needs attention again: a new row, done, failed, or a new attempt after one
+ * settled, so a dismissed entry shows again. A row that would say the same thing is left alone. Answers how many rows it
+ * wrote: 0 or 1. Records `smithers_notifications_routed` by state; never the repository's name.
+ */
+export const fold = (id: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    // Who asked for the row's current attempt; an attempt nobody's request names (a row from before) goes to no one.
+    const [row] = yield* sql<Row>`
+      SELECT r.owner, r.name, r.status, r.stage, r.stored_bytes::text AS "storedBytes", r.failure, r.capacity,
+        c.requested_by AS "requestedBy"
+      FROM repositories r LEFT JOIN clone_requests c ON c.repo_id = r.id AND c.clone_id = r.clone_id
+      WHERE r.id = ${id}`
+    if (row === undefined || row.requestedBy === null) return 0
+    const subject = cloneSubject(id)
+    const { state, ref } = stateOf(row)
+    const [old] = yield* sql<{ readonly state: Inbox.RunState; readonly ref: string | null; readonly version: number }>`
+      SELECT state, ref, version FROM notifications WHERE recipient = ${row.requestedBy} AND subject = ${subject}
+      FOR UPDATE`
+    if (old !== undefined && old.state === state && old.ref === ref) return 0
+    const again = old !== undefined && state === "working" && (old.state === "done" || old.state === "failed")
+    const version = old === undefined ? 1 : Inbox.raises(old.state, state) || again ? old.version + 1 : old.version
+    yield* sql`
+      INSERT INTO notifications (recipient, subject, kind, state, mine, quiet, repo_id, title, ref, href, version)
+      VALUES (${row.requestedBy}, ${subject}, 'clone', ${state}, true, false, ${id}, ${`${row.owner}/${row.name}`},
+        ${ref}, ${`/${row.owner}/${row.name}`}, ${version})
+      ON CONFLICT (recipient, subject) DO UPDATE SET
+        state = EXCLUDED.state, title = EXCLUDED.title, ref = EXCLUDED.ref, href = EXCLUDED.href,
+        version = EXCLUDED.version, occurred_at = now(), updated_at = now()`
+    yield* Metric.update(Metric.withAttributes(routed, { kind: "clone", state }), 1)
+    return 1
+  }).pipe(Effect.withSpan("repo.clone.feed", { attributes: { "smithers.repo.id": id } }))

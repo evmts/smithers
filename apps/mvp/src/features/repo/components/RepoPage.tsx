@@ -1,18 +1,24 @@
 import {
+  Badge,
   Button,
+  Card,
   CopyButton,
   EmptyState,
+  LoadingBar,
   Popover,
   PopoverContent,
   PopoverTrigger,
   RefPicker,
   RelativeTime,
+  Skeleton,
   Snippet,
 } from "@smthrs/ui"
 import { RepoView, type RepoViewLocation } from "@smthrs/repo-view"
+import type { ReactNode } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate } from "@tanstack/react-router"
 import {
+  CLONING,
   cloneUrl,
   CODE,
   COPY_CLONE_URL,
@@ -23,32 +29,173 @@ import {
   NOT_FOUND,
   RAW,
 } from "../contract"
-import { hrefFor } from "../paths"
-import { commitOf, fileLinksOf, fileProps, refsProps, revisionLabel, treeProps } from "../view"
+import { editHrefFor, hrefFor } from "../paths"
+import {
+  aboutOf,
+  atRoot,
+  codeEmptyOf,
+  type Commit,
+  commitOf,
+  countLabel,
+  type Counts,
+  countsOf,
+  fileLinksOf,
+  fileProps,
+  headerOf,
+  previewCommitOf,
+  previewReadmeOf,
+  previewTreeOf,
+  refsProps,
+  revisionLabel,
+  treeProps,
+} from "../view"
+import { codeIntelParts, useCodeIntelRow } from "../../code-intel/components/CodeIntelView"
+import { GeneratedFileChip } from "./FileMarks"
+import { RepoAside } from "./RepoAside"
 import { useRepo } from "./RepoContext"
+
+/** The commit row: its first line, its author, its short SHA, when, and how many commits there are. */
+function CommitRow({ commit, commits }: { readonly commit: Commit | undefined; readonly commits: number | undefined }) {
+  if (commit === undefined) return null
+  return (
+    <span className="repo-commit" aria-label="Head commit">
+      <span>{commit.message}</span>
+      <span>{commit.author}</span>
+      <code>{commit.shortSha}</code>
+      <RelativeTime ts={commit.at} />
+      {commits === undefined ? null : <span className="repo-commit-count">{countLabel(commits, "Commit", "Commits")}</span>}
+    </span>
+  )
+}
+
+/** Beside the picker: how many branches and tags there are, as GitHub's repository page says. */
+function RefCounts({ counts }: { readonly counts: Counts }) {
+  if (counts.branches === undefined && counts.tags === undefined) return null
+  return (
+    <span className="repo-counts">
+      {counts.branches === undefined ? null : <span>{countLabel(counts.branches, "Branch", "Branches")}</span>}
+      {counts.tags === undefined ? null : <span>{countLabel(counts.tags, "Tag", "Tags")}</span>}
+    </span>
+  )
+}
+
+/** Code: the menu with the URL `git clone` takes, whose Copy runs `repo/copy`. */
+function CodeMenu({ owner, name, onCopy }: {
+  readonly owner: string
+  readonly name: string
+  readonly onCopy: () => Promise<void>
+}): ReactNode {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm">{CODE}</Button>
+      </PopoverTrigger>
+      <PopoverContent align="end">
+        <Snippet code={cloneUrl(owner, name)} copyLabel={COPY_CLONE_URL} onCopyCode={onCopy} />
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 // The repository at the routed location, once it is ready: the branch and tag picker, the file tree, the directory
 // with its README or the file, the head commit, Code (the clone URL), Copy permalink, and a file's Raw, Download, Copy
-// path and Copy. Every link is a real link to the app's GitHub-shaped URL; a plain click navigates through the router,
-// and a ref chosen in the picker runs `app/navigate`. Each Copy runs `repo/copy`.
-export function RepoPage() {
+// path and Copy. The top level is laid out as GitHub's repository page: no tree, the about panel on the right, the
+// branch and tag counts. Until the clone is ready, the top level shows what GitHub says (its folder, README and about)
+// and anything deeper `Not cloned` or `Cloning` (`codeEmptyOf`), or a skeleton while the device can't tell yet, never a blank page. Every link is a real link to the app's GitHub-shaped URL; a plain click navigates through the router,
+// and a ref chosen in the picker runs `app/navigate`. Each Copy runs `repo/copy`. With `editFiles`, in a branch's workspace
+// for someone who may edit it, a file opens in the live editor of the branch's working copy instead
+// (docs/features/coedit.md#files).
+export function RepoPage({ editFiles = false }: { readonly editFiles?: boolean } = {}) {
   const { queries, actions } = useRepo()
   const { data: current } = useLiveQuery(queries.view)
   const { data: refs } = useLiveQuery(queries.refs)
   const { data: tree } = useLiveQuery(queries.tree)
   const { data: file } = useLiveQuery(queries.file)
   const { data: readme } = useLiveQuery(queries.readme)
+  const { data: aboutRow } = useLiveQuery(queries.about)
+  const codeIntel = useCodeIntelRow()
   const navigate = useNavigate()
-  if (current === undefined) return null
+  // The live query's first read: a skeleton in the files' place, so the body is never blank.
+  if (current === undefined) return <Skeleton className="repo-page-loading" />
   const { view, repository } = current
-  if (view.missing) return <EmptyState title={NOT_FOUND} />
+  const about = aboutOf(aboutRow?.about)
+  const root = atRoot(view)
+  const cloned = repository?.status === "ready"
+  // GitHub has no such public repository, and no copy of one is here: there is nothing to show or clone.
+  if (view.missing || (!cloned && aboutRow?.about?.state === "missing")) return <EmptyState title={NOT_FOUND} />
   if (view.failure !== null) return <EmptyState title={view.failure} />
-  if (repository?.status !== "ready") return null
+  const aboutLoading = aboutRow?.about === null || aboutRow?.about === undefined || aboutRow.about.state === "loading"
+  if (!cloned && root && aboutLoading) {
+    // GitHub's answer on its way: the page's own layout, with skeletons in its places, so it fills in without a jump.
+    return (
+      <RepoView
+        className="repo-page"
+        name={view.name}
+        tree={{ state: "loading" }}
+        location={{ kind: "tree", path: "" }}
+        href={() => `/${encodeURIComponent(view.owner)}/${encodeURIComponent(view.name)}`}
+        onNavigate={() => undefined}
+        fileTree={false}
+        aside={<RepoAside about={aboutRow?.about} repository={repository} />}
+      />
+    )
+  }
+  const preview = cloned || !root ? undefined : previewTreeOf(about)
+  if (preview !== undefined && about !== undefined) {
+    // Before the clone is ready, the top level as GitHub has it: the folder, the README and the about panel, with
+    // the header's Clone. Every link is the app's own, as it will be once the repository is cloned.
+    const location = { kind: "tree" as const, path: "" }
+    const at = (target: RepoViewLocation) =>
+      hrefFor({ owner: view.owner, name: view.name, defaultBranch: about.defaultBranch }, about.defaultBranch, target)
+    return (
+      <RepoView
+        className="repo-page"
+        name={view.name}
+        tree={preview}
+        location={location}
+        readme={previewReadmeOf(about)}
+        href={at}
+        onNavigate={(target) => void navigate({ href: at(target) })}
+        fileTree={false}
+        aside={<RepoAside about={aboutRow?.about} repository={repository} />}
+        revision={
+          <span className="repo-revision">
+            <Badge variant="outline">{about.defaultBranch}</Badge>
+            <RefCounts counts={countsOf(undefined, about)} />
+          </span>
+        }
+        actions={<CodeMenu owner={view.owner} name={view.name} onCopy={() => actions.copy("clone-url")} />}
+        summary={<CommitRow commit={previewCommitOf(about)} commits={about.commits ?? undefined} />}
+      />
+    )
+  }
+  if (repository?.status !== "ready") {
+    // In place of the files, until they are ready: what the header's Clone or reason is about, with a calm bar while
+    // it clones; a skeleton while the device can't tell yet.
+    const empty = codeEmptyOf(headerOf(repository, current.clone, view.signedIn, view.answered))
+    return empty === undefined ? <Skeleton className="repo-page-loading" /> : (
+      <Card className="repo-page-empty">
+        {empty === CLONING ? <LoadingBar loading placement="inline" /> : null}
+        <EmptyState title={empty} />
+      </Card>
+    )
+  }
   const revision = view.revision ?? repository.defaultBranch ?? ""
-  const href = (location: RepoViewLocation) => hrefFor(repository, revision, location)
+  const href = (location: RepoViewLocation) =>
+    editFiles && location.kind === "blob"
+      ? editHrefFor(repository, revision, location.path)
+      : hrefFor(repository, revision, location)
   const at = (ref: string) => hrefFor(repository, ref, { kind: view.kind, path: view.path })
   const commit = commitOf(repository, view.sha)
   const links = fileLinksOf(view, file?.file)
+  const counts = countsOf(refs?.refs, about)
+  // A TypeScript or JavaScript file's language server: its marks, hover card and keys, the Symbols pane, its toolbar.
+  const intel = codeIntelParts(
+    codeIntel,
+    view.kind === "blob" ? view.path : undefined,
+    href,
+    (location) => void navigate({ href: href(location) }),
+  )
   return (
     <RepoView
       className="repo-page"
@@ -66,35 +213,35 @@ export function RepoPage() {
         : undefined}
       href={href}
       onNavigate={(location) => void navigate({ href: href(location) })}
+      // The top level, as GitHub's repository page: no tree beside the listing, the about panel on the right.
+      fileTree={!root}
+      aside={root ? <RepoAside about={aboutRow?.about} repository={repository} /> : intel.aside}
+      code={intel.code}
       revision={
-        <RefPicker
-          current={revisionLabel(revision)}
-          selected={revision}
-          refs={refsProps(refs?.refs)}
-          defaultBranch={repository.defaultBranch ?? undefined}
-          href={at}
-          onSelect={(ref) => actions.navigate(at(ref))}
-        />
+        <span className="repo-revision">
+          <RefPicker
+            current={revisionLabel(revision)}
+            selected={revision}
+            refs={refsProps(refs?.refs)}
+            defaultBranch={repository.defaultBranch ?? undefined}
+            href={at}
+            onSelect={(ref) => actions.navigate(at(ref))}
+          />
+          {root ? <RefCounts counts={counts} /> : null}
+        </span>
       }
       actions={
         <>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm">{CODE}</Button>
-            </PopoverTrigger>
-            <PopoverContent align="end">
-              <Snippet
-                code={cloneUrl(view.owner, view.name)}
-                copyLabel={COPY_CLONE_URL}
-                onCopyCode={() => actions.copy("clone-url")}
-              />
-            </PopoverContent>
-          </Popover>
+          <CodeMenu owner={view.owner} name={view.name} onCopy={() => actions.copy("clone-url")} />
           <CopyButton variant="outline" size="sm" onCopy={() => actions.copy("permalink")}>{COPY_PERMALINK}</CopyButton>
         </>
       }
+      fileBadges={view.kind === "blob"
+        ? <GeneratedFileChip path={view.path} contents={file?.file?.state === "text" ? file.file.contents ?? undefined : undefined} />
+        : undefined}
       fileActions={
         <>
+          {intel.toolbar}
           {links.raw === undefined ? null : (
             <Button asChild variant="ghost" size="sm">
               <a href={links.raw} target="_blank" rel="noopener noreferrer">{RAW}</a>
@@ -111,14 +258,9 @@ export function RepoPage() {
             : null}
         </>
       }
-      summary={commit === undefined ? undefined : (
-        <span className="repo-commit" aria-label="Head commit">
-          <span>{commit.message}</span>
-          <span>{commit.author}</span>
-          <code>{commit.shortSha}</code>
-          <RelativeTime ts={commit.at} />
-        </span>
-      )}
+      summary={commit === undefined
+        ? undefined
+        : <CommitRow commit={commit} commits={root && view.sha === about?.head?.sha ? about?.commits ?? undefined : undefined} />}
     />
   )
 }

@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
 import {
+  setCommitment,
   comment,
   create,
   discard,
@@ -8,6 +9,7 @@ import {
   enableTriage,
   open,
   pauseTriage,
+  warm,
   runTriageAgain,
   setCommentDraft,
   setNewBody,
@@ -44,8 +46,11 @@ export interface IssuesQueries {
 
 /** What a person does, as plain functions. Each returns at once. */
 export interface IssuesActions {
-  /** What an issue route's loader calls. */
+  readonly setCommitment: (owner: string, name: string, number: number, commitment: import("./lifecycle").Commitment, previousWriteId?: string) => void
+  /** What an issue route calls on a navigation. */
   readonly open: (owner: string, name: string, number?: number) => void
+  /** What an issue route calls on a link's hover or focus: starts the issues' sync without showing a page. */
+  readonly warm: () => void
   readonly setNewTitle: (owner: string, name: string, title: string) => void
   readonly setNewBody: (owner: string, name: string, body: string) => void
   readonly setCommentDraft: (owner: string, name: string, number: number, body: string) => void
@@ -87,7 +92,9 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
           triagePending: store.triagePending.tanstack,
         },
         actions: {
+          setCommitment: (owner, name, number, commitment, previousWriteId) => run(setCommitment(owner, name, number, commitment, previousWriteId)),
           open: (owner, name, number) => run(open(owner, name, number)),
+          warm: () => run(warm),
           setNewTitle: (owner, name, title) => run(setNewTitle(owner, name, title)),
           setNewBody: (owner, name, body) => run(setNewBody(owner, name, body)),
           setCommentDraft: (owner, name, number, body) => run(setCommentDraft(owner, name, number, body)),

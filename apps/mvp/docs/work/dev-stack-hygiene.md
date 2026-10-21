@@ -3,9 +3,58 @@ title: Dev stack hygiene for the agent fleet
 status: in-progress
 area: infra
 owner: lead and dev transport owner to assign
-updated: 2026-10-20
+updated: 2026-10-20 22:44 PDT
 links: [will-decision-queue.md, cerebras-rate-limits.md, flow-authoring.md, chat-message-controls.md, review-round-4.md, decisions-for-will.md, navigate-flow.md, site-deployment-test.md, docs-check-flow-outcome.md, land-to-main.md, disk-space.md, app-wiring.md, model-endpoint.md, sign-in.md, repo-clone-and-view.md, code-reviews.md, e2e-suite-and-gifs.md, second-build-machine.md, issues.md, connect-agents-sandboxes-forge.md, branch-sharing.md, self-hosted-grafana.md, ../rulings.md, local-dev-sync-connections.md, mac-mini-test-farm.md]
 ---
+
+## Tracker reconciliation — 2026-10-20, 22:44 PDT
+
+**What:** Keep the shared dev server stable and timeline summaries configured through the model service.
+
+**Why:** Builders and recordings require a usable dev stack.
+
+**Current state:** At 22:39 PDT the lead reports a clean 22:37 restart with the cheap default Cerebras summary model configured. No build errors or summary refusals followed, but no timeline summary has run during the test pause. This is a shared-server receipt, not fresh proof of the Mac mini farm. At 22:43 MacBook load remains 86; the lead asked the VibeLang session to stop its high-CPU gopls process.
+
+**Next step:** Verify summaries with a real conversation after the pause; obtain fresh mini startup/test receipts separately and resolve resource contention.
+
+**Open questions for Will:** None; the requested secret-output hook has no recorded approval and is not applied by this tracker.
+
+Evidence: script-filtered human messages and lead text replies, approximately 20:44–22:44 PDT, session 6253ecf2; notifications and tool blocks excluded. Current rulings and queue answers (latest 19:38 PDT) prevail over historical briefs and designs. Product receipts are lead-reported; this tracker verifies the maintainer-site build. Execution owners and statuses retained; reconciliation by Codex tracker curator.
+
+## Earlier tracker history (retained)
+
+
+## Current specification — 2026-10-20, 21:54 PDT
+
+**What:** Keep shared development services usable without applying unfinished migrations.
+
+**Why:** Builders need stable services and reproducible failures.
+
+**Current state:** The shared dev server restarted cleanly at 21:51. The restart now skips migrations and leaves the database at 0028; its previous behavior applied unfinished migrations. The coding-factory owner is switching the TODO sandbox to the bundled QuickJS build.
+
+**Next step:** Prove the sandbox in Cloudflare local runtime and collect mini startup receipts before clearing that blocker. Apply later migrations only with owner readiness.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user text and lead replies from session 6253ecf2, approximately 19:54–21:54 PDT; compaction summaries, tool blocks and relayed agent messages excluded. Current rulings and queue answers take precedence over historical briefs, decisions and proposals. Execution ownership retained; reconciliation by Codex tracker curator. Product receipts are reported evidence; tracker validation is the maintainer-site build.
+
+## Earlier tracker history (retained)
+
+## Current specification — 2026-10-20, 20:57 PDT
+
+**What:** Keep shared dev services and remote test environments ready for the active builders.
+
+**Why:** Environment failures must not masquerade as feature failures or successful verification.
+
+**Current state:** At 20:29 PDT the lead applied stable migrations through 0028: co-editing text, issue-to-TODO links and clone progress; cloning on :1337 works again. Migrations 0029–0033 were still in progress and left unapplied then. Mini installs recovered after the 20:27 lockfile repair, but the 20:57 update reports a new Node/WebAssembly startup blocker there.
+
+**Next step:** Coordinate the factory startup fix through mac-mini-test-farm.md, then restart waiting recordings. Apply later database migrations only once their owners confirm readiness.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human messages and lead text replies from session 6253ecf2, approximately 18:57–20:57 PDT; current rulings and queue answers, decisions through 0021, proposals and shared briefs/designs. Transport details additionally use its final builder report. Product checks are reported evidence; this pass runs the maintainer-site build. Execution ownership retained.
+
+## Earlier tracker history (retained)
 
 ## Current specification — 2026-10-20, 17:14 PDT
 

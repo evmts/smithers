@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { AuthStore } from "../auth/store"
+import type { DraftSelection } from "../chat/sharedPrompt"
 import type { ChatStore } from "../chat/store"
 import { choose, dismiss, highlight, submit, type } from "./actions"
 import { CommandsStore } from "./store"
@@ -18,7 +19,8 @@ export interface CommandsQueries {
 /** What a person does in the composer, as plain functions. Each finishes before it returns. */
 export interface CommandsActions {
   /** The composer's text changed. */
-  readonly type: (text: string) => void
+  /** Typing, with where the selection is after it. */
+  readonly type: (text: string, selection?: DraftSelection) => void
   /** The arrows or the pointer moved the highlight. */
   readonly highlight: (index: number) => void
   /** Enter or a click (`accept`) or Tab (`complete`) on a row. */
@@ -45,7 +47,7 @@ export class Commands extends Context.Service<
       return Commands.of({
         queries: { menu: store.menuState.tanstack },
         actions: {
-          type: (text) => run(type(text)),
+          type: (text, selection) => run(type(text, selection)),
           highlight: (index) => run(highlight(index)),
           choose: (index, how) => run(choose(index, how)),
           dismiss: () => run(dismiss),

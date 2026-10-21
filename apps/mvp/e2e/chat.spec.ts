@@ -2,7 +2,7 @@ import { answerTo, expect, test } from "./fixtures"
 
 // Real browser, Workers, Postgres, Electric and model: no mocks. Runs locally, or against a deployment with BASE_URL.
 
-test("shortcut: ⌘K opens and hides chat, and Esc and the Hide button hide it too", async ({ page }) => {
+test("shortcut: ⌘K opens and hides chat, and Esc and the Hide button hide it too", { annotation: { type: "summary", description: "⌘K opens and hides chat; Esc and Hide hide it too." } }, async ({ page }) => {
   await page.goto("/app")
   await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
   const composer = page.getByRole("textbox", { name: "Message Smithers" })
@@ -30,7 +30,7 @@ test("shortcut: ⌘K opens and hides chat, and Esc and the Hide button hide it t
   await expect(composer).toBeHidden()
 })
 
-test("ask: a user asks Smithers and gets a streamed answer", async ({ page }) => {
+test("ask: a user asks Smithers and gets a streamed answer", { annotation: { type: "summary", description: "A question gets a streamed answer." } }, async ({ page }) => {
   await page.goto("/app")
   await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
   await page.keyboard.press("ControlOrMeta+k")
@@ -45,7 +45,7 @@ test("ask: a user asks Smithers and gets a streamed answer", async ({ page }) =>
   await expect(answerTo(conversation, `Reply with exactly the word: ${word}`)).toContainText(word, { timeout: 60_000 })
 })
 
-test("reload mid-answer: the browser's agent resumes the answer after the reload and completes it, and the composer works", async ({ page }) => {
+test("reload mid-answer: the browser's agent resumes the answer after the reload and completes it, and the composer works", { annotation: { type: "summary", description: "A reload mid-answer loses nothing: the answer finishes and the composer still works." } }, async ({ page }) => {
   await page.goto("/app")
   await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
   await page.keyboard.press("ControlOrMeta+k")
@@ -82,7 +82,7 @@ test("reload mid-answer: the browser's agent resumes the answer after the reload
 
 // What a person sees, not just what is in the page: `toBeInViewport`, where `toBeVisible` passes for an element
 // scrolled out of sight. The conversation keeps its newest message in view, as the transcript's bottom anchor intends.
-test("in view: opening chat shows the newest message and the Chat button, and a new question and its answer stay in view", async ({ page }) => {
+test("in view: opening chat shows the newest message and the Chat button, and a new question and its answer stay in view", { annotation: { type: "summary", description: "The newest message and its answer stay in view." } }, async ({ page }) => {
   await page.goto("/app")
   const chatButton = page.getByRole("button", { name: /Chat/ })
   await expect(chatButton).toBeVisible({ timeout: 30_000 })
@@ -104,7 +104,7 @@ test("in view: opening chat shows the newest message and the Chat button, and a 
 
 // A message is one element from the moment it shows: a question syncing and its answer settling change it in place, so
 // its fade-in plays once, not again at each change of status.
-test("steady: a question and its answer keep their elements as the question syncs and the answer settles", async ({ page }) => {
+test("steady: a question and its answer keep their elements as the question syncs and the answer settles", { annotation: { type: "summary", description: "A question and its answer don't flicker as they sync and settle." } }, async ({ page }) => {
   await page.goto("/app")
   await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
   await page.keyboard.press("ControlOrMeta+k")
