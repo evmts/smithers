@@ -132,7 +132,7 @@ const synced = [
   Migrations.synced({ id: "spend-alerts", version: 1, schema: SpendAlert }),
   Migrations.synced({ id: "alert-channels", version: 1, schema: AlertChannel }),
   Migrations.synced({ id: "alert-deliveries", version: 1, schema: AlertDelivery }),
-  Migrations.synced({ id: "todos", version: 2, schema: Todo, family: true }),
+  Migrations.synced({ id: "todos", version: 3, schema: Todo, family: true }),
   Migrations.synced({ id: "todo-requests", version: 1, schema: TodoRequest, family: true }),
   Migrations.synced({ id: "text-updates", version: 1, schema: TextUpdate, family: true }),
   Migrations.synced({ id: "pull-rows", version: 1, schema: PullRow }),

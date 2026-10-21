@@ -2,6 +2,7 @@ import timelineSummaryRole from "./migrations/0030_timeline_summary_role.ts"
 import pulls from "./migrations/0031_pulls.ts"
 import pullWrites from "./migrations/0033_pull_writes.ts"
 import todoReportReceipts from "./migrations/0035_todo_report_receipts.ts"
+import todoRun from "./migrations/0036_todo_run.ts"
 import issueCommitment from "./migrations/0032_issue_commitment.ts"
 import pullDefaultBranch from "./migrations/0037_pull_default_branch.ts"
 import { PgClient } from "@effect/sql-pg"
@@ -108,6 +109,7 @@ export const migrations = {
   "0031_pulls": pulls,
   "0033_pull_writes": pullWrites,
   "0035_todo_report_receipts": todoReportReceipts,
+  "0036_todo_run": todoRun,
   "0037_pull_default_branch": pullDefaultBranch,
 }
 

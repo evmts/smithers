@@ -96,7 +96,7 @@ ChatApi's tests (`worker/`, `db/`) use the compose Postgres and Electric and not
 - `ChatPostgres` (`infra/Postgres.ts`) is a Neon project on Postgres 17 in `aws-us-east-1`, with logical replication on, which sets `wal_level=logical`. Its region and version can't change after creation.
 - It keeps six hours of restore history (`HISTORY_RETENTION_SECONDS`), the most Neon's Free plan allows. Alchemy's default, a day, fails the deploy on that plan.
 - The project's owner role has the `REPLICATION` attribute Electric needs and owns `messages`.
-- Electric works only on tables with `REPLICA IDENTITY FULL`: Electric 1.8 refuses any other ("Electric cannot function with replica identity mode set to something other than FULL"). The first migration sets it.
+- Electric works only on tables with `REPLICA IDENTITY FULL`: Electric 1.8 refuses any other ("Electric cannot function with replica identity mode set to something other than FULL"). The first migration sets it. The one table of the engine's schema a device follows, `smithers_flows.flows_run_changes` ([a run on Cloudflare](features/runs.md#a-run-on-cloudflare)), the engine makes on its first alarm, and Electric sets it there itself, since the role it connects as owns the engine's tables too.
 - `pnpm destroy` keeps the project: its removal policy is `retain`. Delete it in Neon's console.
 
 ### Migrations

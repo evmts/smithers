@@ -1,13 +1,15 @@
 // The runs store's reads (src/features/runs/store.ts): what it keeps of the engine's answers. The engine's answers are a
 // test implementation of the tab's `BrowserEngine` (test.faults-by-injection): a journal longer than a page, a refusal
 // and an engine that can't be reached would take a real engine minutes to produce. The real engine's answers are proved
-// in src/features/flows-ui/tab.test.ts.
+// in src/features/flows-ui/tab.test.ts. A run on Cloudflare's answers are a test `RemoteRunsClient` here, for each
+// refusal ChatApi can answer; ChatApi's real ones, and following a run live, are proved in remote.test.ts.
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Deferred, Effect, Layer, ManagedRuntime, Option, PubSub, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { RemoteReadFailed, RemoteRunsClient } from "./api"
 import type { Inspection } from "./schema"
 import { VIEW } from "./schema"
-import { RunsStore } from "./store"
+import { RunsStore, stateOf } from "./store"
 
 const value = (text: string) => ({ text, bytes: text.length, clipped: false })
 
@@ -33,10 +35,11 @@ const inspection = (runId: string, events: ReadonlyArray<ReturnType<typeof event
   journal: { events, afterSeq: -1, nextSeq: events.at(-1)?.seq ?? -1, hasMore },
 })
 
-/** What the engine answers: set by each test. */
+/** What the engine answers, and ChatApi for a run on Cloudflare: set by each test. */
 interface Answers {
   inspect: (runId: string, options?: { readonly afterSeq?: number }) => Effect.Effect<Inspection, BrowserEngine.RequestRefused | BrowserEngine.EngineUnavailable>
   list: () => Effect.Effect<{ runs: ReadonlyArray<ReturnType<typeof summary>>; cursor: null }, BrowserEngine.RequestRefused>
+  remote?: (runId: string, options?: { readonly afterSeq?: number }) => Effect.Effect<Inspection, RemoteReadFailed>
 }
 
 const runtimes: Array<ManagedRuntime.ManagedRuntime<unknown, unknown>> = []
@@ -56,7 +59,12 @@ const open = (answers: Answers) => {
     events: Stream.fromPubSub(events),
     unavailable: Effect.never,
   }))
-  const runtime = ManagedRuntime.make(RunsStore.layer.pipe(Layer.provide(engine)))
+  const remote = Layer.succeed(RemoteRunsClient, RemoteRunsClient.of({
+    inspect: (runId, options) => answers.remote === undefined ? Effect.die("unused") : answers.remote(runId, options),
+  }))
+  const runtime = ManagedRuntime.make(
+    RunsStore.layer({ origin: "http://chat.test" }).pipe(Layer.provide(Layer.merge(engine, remote))),
+  )
   runtimes.push(runtime as never)
   const store = runtime.runSync(Effect.service(RunsStore))
   const page = (runId: string) => Option.getOrUndefined(runtime.runSync(store.pages.get(runId)))
@@ -141,6 +149,79 @@ describe("readRun and readMore", () => {
     refuse = true
     await t.run(t.store.readMore("a"))
     expect(t.page("a")).toMatchObject({ more: [], hasMore: true })
+  })
+})
+
+describe("a run on Cloudflare", () => {
+  const RUN = "todo:6f1c2a7e-3b4d-4c5e-8f90-1a2b3c4d5e6f"
+  const runId = (n: number) => `todo:6f1c2a7e-3b4d-4c5e-8f90-1a2b3c4d5e${n.toString(16).padStart(2, "0")}`
+
+  test("reads through ChatApi, page after page, never this device's engine, and never joins this device's list", async () => {
+    const engine: Array<string> = []
+    const remote: Array<[string, number | undefined]> = []
+    const t = open({
+      inspect: (id) => {
+        engine.push(id)
+        return Effect.succeed(inspection(id, [], false))
+      },
+      list: () => Effect.succeed({ runs: [], cursor: null }),
+      remote: (id, options) => {
+        remote.push([id, options?.afterSeq])
+        return Effect.succeed(
+          options?.afterSeq === undefined
+            ? {
+              ...inspection(id, [event(0), event(1)], true),
+              // A run it started is read from where the run is too.
+              children: [{ ...summary("child"), parentRunId: id, input: value("{}"), result: null }],
+            }
+            : inspection(id, [event(options.afterSeq + 1)], false),
+        )
+      },
+    })
+    await t.run(t.store.readRun(RUN))
+    expect(t.page(RUN)).toMatchObject({ state: "read", more: [event(2)], hasMore: false })
+    expect((t.page(RUN)!.descendants as ReadonlyArray<Inspection>).map((read) => read.run.runId)).toEqual(["child"])
+    await t.run(t.store.readMore(RUN))
+    expect(remote).toEqual([[RUN, undefined], [RUN, 1], ["child", undefined], ["child", 1], [RUN, 2]])
+    expect(engine).toEqual([])
+    expect(await t.run(t.store.runs.toArray)).toEqual([])
+    // Following a run of this device's engine needs no shape: it does nothing.
+    await t.run(t.store.follow("local-run"))
+  })
+
+  test("ChatApi's refusals: not started, not found for one this person may not read, else unavailable", async () => {
+    const answers: ReadonlyArray<RemoteReadFailed> = [
+      new RemoteReadFailed({ status: 404, code: "not_started" }),
+      new RemoteReadFailed({ status: 404, code: "not_found" }),
+      new RemoteReadFailed({ status: 403, code: "forbidden" }),
+      new RemoteReadFailed({ status: 401, code: "authentication" }),
+      new RemoteReadFailed({ status: 503, code: "unavailable" }),
+      new RemoteReadFailed({ status: 400 }),
+      new RemoteReadFailed({}),
+    ]
+    const t = open({
+      inspect: () => Effect.die("unused"),
+      list: () => Effect.succeed({ runs: [], cursor: null }),
+      remote: (id) => Effect.fail(answers[Number.parseInt(id.slice(-2), 16)]!),
+    })
+    for (let n = 0; n < answers.length; n++) await t.run(t.store.readRun(runId(n)))
+    expect(answers.map((_, n) => t.page(runId(n))?.state)).toEqual([
+      "not_started",
+      "not_found",
+      "not_found",
+      "not_found",
+      "unavailable",
+      "unavailable",
+      "unavailable",
+    ])
+  })
+
+  test("a page's state from a failure: the engine's not-found, ChatApi's, and anything else", () => {
+    expect(stateOf(new BrowserEngine.RequestRefused({ request: "Inspect", error: "@smthrs/engine-store/RunNotFound" })))
+      .toBe("not_found")
+    expect(stateOf(new BrowserEngine.RequestRefused({ request: "Inspect", error: "SchemaError" }))).toBe("unavailable")
+    expect(stateOf(new RemoteReadFailed({ status: 404, code: "not_started" }))).toBe("not_started")
+    expect(stateOf(new Error("x"))).toBe("unavailable")
   })
 })
 

@@ -141,7 +141,7 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
         getKey: byId,
         shape: shape(TODOS_SHAPE_ROUTE, id),
         syncMode: "eager",
-        persist: { schemaVersion: 2 },
+        persist: { schemaVersion: 3 },
       })
       const requests = yield* ElectricCollection.make<TodoRequest>({
         id: `todo-requests:${id}`,

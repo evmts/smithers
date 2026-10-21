@@ -7,6 +7,48 @@ export const RUNS_PATH = "/app/runs"
 /** The route of one run's page. */
 export const runPath = (runId: string): string => `${RUNS_PATH}/${encodeURIComponent(runId)}`
 
+/**
+ * `GET <route>/<runId>?afterSeq=<n>&limit=<n>`: a run Smithers runs on Cloudflare, as the engine's `RunInspection` reads
+ * it, for a person who may read the TODO it works on (ruling TODO-3).
+ */
+export const REMOTE_RUNS_ROUTE = "/api/remote-runs"
+
+/** That route for one run. */
+export const remoteRunRoute = (runId: string): string => `${REMOTE_RUNS_ROUTE}/${encodeURIComponent(runId)}`
+
+/** `GET ...?run=<runId>`: Electric's row of that run in the engine's change feed, which moves with the run. */
+export const REMOTE_RUN_SHAPE_ROUTE = "/api/shapes/remote-runs"
+
+/**
+ * The engine's change feed (`@smthrs/run-store` migration `0003_execution_revisions`): one row per run, whose
+ * `revision` moves on every change of the run's row (a step's attempt starting or ending, a wait, its settling).
+ */
+export const RUN_CHANGES_TABLE = "flows_run_changes"
+
+/** The change feed's columns a device syncs: the run and its revision. */
+export const RUN_CHANGE_COLUMNS = ["run_id", "revision"] as const
+
+/** A TODO's run's execution id: `todo:<attempt id>` (src/features/pulls/contract.ts `todoExecutionId`). */
+const TODO_RUN = /^todo:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/** Whether this device reads `runId` from Cloudflare, not its own engine: a TODO's run. */
+export const isRemoteRun = (runId: string): boolean => TODO_RUN.test(runId)
+
+/**
+ * Why the remote runs route refused a read, as `{ code }`: `invalid` (400), `authentication` (401), `forbidden` (403:
+ * not a Member), `not_found` (404: no TODO's run has that id), `not_started` (404: its attempt is recorded and the
+ * engine hasn't begun it yet) and `unavailable` (503).
+ */
+export const REMOTE_READ_REFUSALS = [
+  "invalid",
+  "authentication",
+  "forbidden",
+  "not_found",
+  "not_started",
+  "unavailable",
+] as const
+export type RemoteReadRefusal = (typeof REMOTE_READ_REFUSALS)[number]
+
 /** How many runs the list shows: the newest. */
 export const RUN_LIST_LIMIT = 50
 
@@ -65,6 +107,10 @@ export const THIS_DEVICE = "This device"
 export const NO_RUNS = "No runs yet"
 export const COULDNT_READ = "Couldn't read this run"
 export const ON_ANOTHER_DEVICE = "On another device"
+export const NOT_FOUND = "Not found"
+export const NOT_STARTED = "Not started"
+/** Where a run Smithers runs on Cloudflare runs, as its header says. */
+export const CLOUD = "Cloud"
 
 /** What a refused act reads as on the run page, by its code. */
 export const REFUSAL_WORDS: Readonly<Record<string, string>> = {

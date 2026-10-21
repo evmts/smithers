@@ -799,8 +799,8 @@ type IssuesViewIssue = {
 }
 
 type ItemStateKind = "open" | "closed" | "requested" | "queued" | "running" | "needs_you" | "in_review" | "merged" | "dropped" | "failed"
-type ItemStatus = { kind: ItemStateKind; label: string }
-type ItemStateIconProps = Omit<ComponentProps<"svg">, "children"> & { kind: ItemStateKind; label: string }
+type ItemStatus = { kind: ItemStateKind; label: string; live?: boolean }   // live: work under way now
+type ItemStateIconProps = Omit<ComponentProps<"svg">, "children"> & { kind: ItemStateKind; label: string; live?: boolean }
 const ITEM_STATE_VARIANTS: Readonly<Record<ItemStateKind, "success" | "muted" | "outline" | "default" | "warning" | "destructive">>
 
 type IssuesViewTriage = "proposed" | "accepted" | "not_accepted" | "conflict"
@@ -822,7 +822,10 @@ the number: `Proposed` outline, `Accepted for discussion` success, `Not accepted
 
 Lists as GitHub draws them: each row (`data-slot="issues-row"`, `data-state`,
 `data-status`) leads with `ItemStateIcon`, a 16-pixel image named by
-`status.label` and colored for its kind (`ITEM_STATE_VARIANTS`); the meta line
+`status.label` and colored for its kind (`ITEM_STATE_VARIANTS`). A `live`
+status marks work under way that a person can go and watch: the row carries
+`data-live` and its icon blinks slowly, one calm 2-second cycle, and holds
+steady under `prefers-reduced-motion: reduce`. The meta line
 ends with `links`, an `http(s)` one in a new tab and an in-app one calling
 `onNavigate` on a plain click; `menu` adds an `ActionMenu` named
 `<number> actions`. With `href`, ArrowDown, ArrowUp, Home and End move focus

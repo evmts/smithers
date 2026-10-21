@@ -61,6 +61,7 @@ import { Repo, type RepoView } from "./features/repo/repo"
 import { RepoStore } from "./features/repo/store"
 import { RunsNavigation } from "./features/runs/actions"
 import { Runs, type RunsView } from "./features/runs/runs"
+import { RemoteRunsClient } from "./features/runs/api"
 import { RunsStore } from "./features/runs/store"
 import { Status, type StatusView } from "./features/status/status"
 import { Terminal, type TerminalView } from "./features/terminal/terminal"
@@ -202,7 +203,7 @@ export const appLayer = <S = never>(
     // Chat's Copy and Edit, answered by the tab that asked, from its conversation, clipboard and composer.
     tabChat({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
     // Your own flows and this device's runs (decision 0014): their pages, and the router's navigate their acts open.
-    Layer.merge(Runs.layer.pipe(Layer.provide(RunsStore.layer)), FlowsUi.layer.pipe(Layer.provide(FlowsUiStore.layer({
+    Layer.merge(Runs.layer.pipe(Layer.provide(RunsStore.layer({ origin }))), FlowsUi.layer.pipe(Layer.provide(FlowsUiStore.layer({
       origin,
       ...(chat.confirmWithin === undefined ? {} : { confirmWithin: chat.confirmWithin }),
     }))))
@@ -266,6 +267,8 @@ export const appLayer = <S = never>(
         TextsClient.layer({ origin, within: REQUEST_WITHIN }),
         RepoClient.layer({ origin, within: REQUEST_WITHIN }),
         HomeClient.layer({ origin, within: REQUEST_WITHIN }),
+        // A TODO's run, read from Cloudflare (ruling TODO-3).
+        RemoteRunsClient.layer({ origin, within: REQUEST_WITHIN }),
       ),
     ),
     Layer.provideMerge(Clipboard.layer(host.clipboard)),

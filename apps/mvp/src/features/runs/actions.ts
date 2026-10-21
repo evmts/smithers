@@ -30,11 +30,13 @@ export const openList = Effect.gen(function* () {
   yield* (yield* RunsStore).readList
 })
 
-/** A run's route loader: shows `runId` with nothing selected, and reads it. */
+/** A run's route loader: shows `runId` with nothing selected, reads it, and follows it when it runs on Cloudflare. */
 export const openRun = (runId: string) =>
   Effect.gen(function* () {
     yield* setView({ runId, listOpen: false, selected: null, at: null, inspectorOpen: true, tab: "steps", acting: null, refusal: null })
-    yield* (yield* RunsStore).readRun(runId)
+    const store = yield* RunsStore
+    yield* store.readRun(runId)
+    yield* store.follow(runId)
   })
 
 /** Selects a step. */

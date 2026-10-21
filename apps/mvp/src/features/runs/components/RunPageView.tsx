@@ -17,19 +17,8 @@ import {
 } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
-import {
-  ANSWER,
-  COULDNT_READ,
-  ON_ANOTHER_DEVICE,
-  OPEN,
-  REFUSAL_WORDS,
-  RESUME,
-  RETRY,
-  RETRY_LATEST,
-  STOP,
-  THIS_DEVICE,
-} from "../contract"
-import { actsOf, journalOf, selectedStep } from "../page"
+import { ANSWER, OPEN, REFUSAL_WORDS, RESUME, RETRY, RETRY_LATEST, STOP } from "../contract"
+import { actsOf, hostOf, journalOf, missingOf, selectedStep } from "../page"
 import { graphOf, runTitle } from "../graph"
 import type { RunsActions } from "../runs"
 import type { Inspection, RunTab, RunPage, RunView } from "../schema"
@@ -37,15 +26,14 @@ import { useRuns } from "./RunsContext"
 
 // One run's page (decision 0014 §5): its header with Stop, Retry and Resume, then its steps with each one's input and
 // output, its timeline and its journal. Every value is text the engine redacted and cut to 16 KiB before it left the
-// engine; nothing here renders a value as markup.
+// engine; nothing here renders a value as markup. A run on Cloudflare (a TODO's, ruling TODO-3) reads the same, with
+// `Cloud` in its header and no acts.
 export function RunPageView() {
   const { queries, actions } = useRuns()
   const { data } = useLiveQuery(queries.page)
   if (data === undefined) return null
   const { view, page } = data
-  if (page.state !== "read") {
-    return <EmptyState title={page.state === "not_found" ? ON_ANOTHER_DEVICE : COULDNT_READ} />
-  }
+  if (page.state !== "read") return <EmptyState title={missingOf(page)} />
   return <ReadRunPage page={page} view={view} actions={actions} />
 }
 
@@ -81,7 +69,7 @@ function ReadRunPage({ page, view, actions }: { page: RunPage; view: RunView; ac
         startedAtMs={run.startedAtMs ?? run.createdAtMs}
         finishedAtMs={run.finishedAtMs}
         now={now}
-        host={THIS_DEVICE}
+        host={hostOf(run.runId)}
         actions={
           <>
             {acts.stop ? <Button variant="outline" disabled={busy} onClick={actions.stop}>{STOP}</Button> : null}

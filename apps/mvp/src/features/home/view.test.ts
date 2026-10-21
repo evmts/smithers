@@ -291,6 +291,7 @@ const todo = (fields: Partial<Todo>): Todo => ({
   updatedAt: "2026-10-20 10:00:00+00",
   settledAt: null,
   issueNumber: null,
+  runId: null,
   ...fields,
 })
 

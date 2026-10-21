@@ -50,4 +50,7 @@ export const issuesViewCss = `
 .sui-state-icon[data-kind='running'], .sui-state-icon[data-kind='merged'] { color:${t.primary}; }
 .sui-state-icon[data-kind='needs_you'] { color:${t.warning}; }
 .sui-state-icon[data-kind='failed'] { color:${t.destructive}; }
+/* Live work: one calm 2 s blink. The document-wide reduced-motion policy (reducedMotionCss) ends it at once, steady. */
+.sui-state-icon[data-live] { animation:sui-state-live 2s ease-in-out infinite; }
+@keyframes sui-state-live { 50% { opacity:.3; } }
 `;

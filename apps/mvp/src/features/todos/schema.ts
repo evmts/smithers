@@ -35,6 +35,8 @@ export const Todo = Schema.Struct({
   settledAt: Schema.NullOr(Schema.String),
   /** The issue in the same repository it was made from (migration `0027_todo_issue`). */
   issueNumber: Schema.NullOr(Schema.Number),
+  /** Its latest attempt's `todo` run, `todo:<attempt id>`, once one started (migration `0036_todo_run`). */
+  runId: Schema.NullOr(Schema.String),
 })
 export type Todo = typeof Todo.Type
 

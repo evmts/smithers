@@ -4,18 +4,22 @@ import { viewerOf } from "../commands/catalog"
 import { issuePath } from "../issues/contract"
 import { pullPath } from "../pulls/contract"
 import { hrefFor } from "../repo/paths"
+import { runPath } from "../runs/contract"
 import {
   COMMITTED,
   DROP,
   dropTitle,
+  LIVE_STATE,
   MAKE_TODO,
   NOT_SENT_COPY,
   type NotSentReason,
   REQUESTED,
+  RUNNING_STATES,
   SETTLED_STATES,
   TODO_STATE_WORDS,
   type TodoState,
   todoPath,
+  WATCH,
 } from "./contract"
 import type { Access, Draft, Requested, Sending, Todo, TodoRequest } from "./schema"
 
@@ -132,6 +136,7 @@ export interface TodoCardProps {
   readonly branch: string | null
   readonly prNumber: number | null
   readonly issueNumber: number | null
+  readonly runId: string | null
   readonly pending?: "requested" | "not_sent"
 }
 
@@ -161,6 +166,7 @@ export const todoCardOf = (
     branch: todo.branch,
     prNumber: todo.prNumber,
     issueNumber: todo.issueNumber,
+    runId: todo.runId,
     ...(pending === undefined ? {} : { pending }),
   }
 }
@@ -177,9 +183,20 @@ export const STATE_KINDS: Readonly<Record<TodoState, ItemStateKind>> = {
 
 const isSettled = (state: TodoState): boolean => (SETTLED_STATES as ReadonlyArray<TodoState>).includes(state)
 
-/** A TODO's icon and word: `Requested` until the stack numbers it, then its state's. */
+/**
+ * A TODO's icon and word: `Requested` until the stack numbers it, then its state's. Working is live: its icon blinks
+ * while the agent works (ruling TODO-3).
+ */
 export const statusOf = (number: number | null, state: TodoState): ItemStatus =>
-  number === null ? { kind: "requested", label: REQUESTED } : { kind: STATE_KINDS[state], label: TODO_STATE_WORDS[state] }
+  number === null
+    ? { kind: "requested", label: REQUESTED }
+    : { kind: STATE_KINDS[state], label: TODO_STATE_WORDS[state], ...(state === LIVE_STATE ? { live: true } : {}) }
+
+/** The run a running TODO links to (ruling TODO-3): its page, while the TODO is Working or In review. */
+export const runLinkOf = (todo: Pick<Todo, "state" | "runId">): IssuesViewLink | undefined =>
+  todo.runId !== null && (RUNNING_STATES as ReadonlyArray<TodoState>).includes(todo.state)
+    ? { label: WATCH, href: runPath(todo.runId) }
+    : undefined
 
 /** Postgres's `2026-10-20 10:00:00.123+00` as ISO 8601, which every browser reads. */
 export const isoOf = (at: string): string => at.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00")
@@ -188,12 +205,19 @@ export const isoOf = (at: string): string => at.replace(" ", "T").replace(/([+-]
 export const isDroppable = (todo: Pick<StackRow, "number" | "state" | "pending">): boolean =>
   todo.number !== null && !isSettled(todo.state) && todo.pending === undefined
 
-/** A TODO's issue and branch, in the app, and its pull request, on GitHub, when it has them. */
+/**
+ * A TODO's issue and branch, in the app, its pull request, on GitHub, when it has them, and its run while it runs.
+ */
 const linksOf = (
-  todo: Pick<Todo, "branch" | "prNumber" | "issueNumber">,
+  todo: Pick<Todo, "branch" | "prNumber" | "issueNumber" | "state" | "runId">,
   owner: string,
   name: string,
-): { readonly issue?: IssuesViewLink; readonly branch?: IssuesViewLink; readonly pullRequest?: IssuesViewLink } => ({
+): {
+  readonly issue?: IssuesViewLink
+  readonly branch?: IssuesViewLink
+  readonly pullRequest?: IssuesViewLink
+  readonly run?: IssuesViewLink
+} => ({
   ...(todo.issueNumber === null
     ? {}
     : { issue: { label: `#${todo.issueNumber}`, href: issuePath(owner, name, todo.issueNumber) } }),
@@ -207,7 +231,14 @@ const linksOf = (
     }),
   // The pull request's page in the app (docs/features/pulls.md), as an issue's link is.
   ...(todo.prNumber === null ? {} : { pullRequest: { label: `#${todo.prNumber}`, href: pullPath(owner, name, todo.prNumber) } }),
+  ...withRun(todo),
 })
+
+/** A running TODO's run link, as `linksOf` spreads it. */
+const withRun = (todo: Pick<Todo, "state" | "runId">): { readonly run?: IssuesViewLink } => {
+  const run = runLinkOf(todo)
+  return run === undefined ? {} : { run }
+}
 
 /** One stack row as `IssuesView` shows it, and whether a person may drop it from its menu. */
 export interface StackItem extends IssuesViewIssue {
@@ -230,7 +261,7 @@ export const stackItemsOf = (
   return rows.map((row) => {
     const todo = byId.get(row.id)
     const links = todo === undefined ? {} : linksOf(todo, owner, name)
-    const shown = [links.issue, links.branch, links.pullRequest].filter((link) => link !== undefined)
+    const shown = [links.issue, links.branch, links.pullRequest, links.run].filter((link) => link !== undefined)
     return {
       id: row.id,
       number: row.number,
@@ -280,6 +311,8 @@ export interface TodoPage {
   readonly issue?: IssuesViewLink
   readonly branch?: IssuesViewLink
   readonly pullRequest?: IssuesViewLink
+  /** Its run's page while it runs (ruling TODO-3). */
+  readonly run?: IssuesViewLink
   readonly pending?: "requested" | "not_sent"
   readonly droppable: boolean
 }

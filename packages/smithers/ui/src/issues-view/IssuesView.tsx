@@ -261,8 +261,9 @@ export function IssuesView({
                 data-state={issue.state}
                 data-status={status.kind}
                 data-pending={issue.pending}
+                data-live={status.live === true ? "" : undefined}
               >
-                <ItemStateIcon kind={status.kind} label={status.label} className="sui-issues-state" />
+                <ItemStateIcon kind={status.kind} label={status.label} live={status.live} className="sui-issues-state" />
                 <div className="sui-issues-main">
                   <div className="sui-issues-title-line">
                     {link === undefined ? (

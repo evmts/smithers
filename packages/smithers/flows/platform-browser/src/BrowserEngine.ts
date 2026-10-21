@@ -204,6 +204,25 @@ export class BrowserEngine extends Context.Service<BrowserEngine, Service>()(
 ) {}
 
 /**
+ * One run as `inspect` answers it, `@smthrs/engine-store`'s
+ * `RunInspection.Inspection`, as a schema a tab decodes with. A tab that reads
+ * a run from elsewhere, such as a server inspecting its own engine, decodes
+ * that answer with it too, without loading `@smthrs/engine-store`.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Inspection = RunReads.Inspection
+
+/**
+ * A page of runs as `list` answers it, `RunInspection.RunList`, as a schema.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const RunList = RunReads.RunList
+
+/**
  * Requests this tab sent, by `request` and `outcome` (`replied` or `refused`).
  *
  * @category metrics

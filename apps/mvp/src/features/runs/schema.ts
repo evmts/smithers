@@ -28,11 +28,12 @@ export type RunRow = typeof RunRow.Type
 
 /**
  * One run's page as the engine last read it (`runTraces`): `read` with its inspection, or why there is none: the engine
- * doesn't hold it (`not_found`, shown as `On another device`) or couldn't be reached (`unavailable`).
+ * doesn't hold it (`not_found`: on another device, or for a run on Cloudflare, none this person may read), hasn't
+ * begun it (`not_started`, a run on Cloudflare its TODO just started) or couldn't be reached (`unavailable`).
  */
 export const RunPage = Schema.Struct({
   id: Schema.String,
-  state: Schema.Literals(["read", "not_found", "unavailable"]),
+  state: Schema.Literals(["read", "not_found", "not_started", "unavailable"]),
   inspection: Schema.NullOr(Schema.Unknown),
   /** The journal events read past the first page, by More. */
   more: Schema.Array(Schema.Unknown),
@@ -65,3 +66,10 @@ export type RunView = typeof RunView.Type
 
 /** The one row of `RunView`. */
 export const VIEW = "view"
+
+/**
+ * A run's row of the engine's change feed on Cloudflare (`flows_run_changes`, `RUN_CHANGE_COLUMNS`): its revision moves
+ * whenever the run does. Postgres `numeric`, which Electric sends as text.
+ */
+export const RunChange = Schema.Struct({ runId: Schema.String, revision: Schema.String })
+export type RunChange = typeof RunChange.Type

@@ -1,14 +1,32 @@
+import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Clock, Context, Duration, Effect, Layer, Metric, Option, Stream } from "effect"
-import { JOURNAL_PAGE, RUN_LIST_LIMIT } from "./contract"
-import { type Inspection, RunPage, RunRow, RunView, VIEW } from "./schema"
+import { Clock, Context, Duration, Effect, Layer, Metric, Option, Scope, Semaphore, Stream } from "effect"
+import { RemoteReadFailed, RemoteRunsClient } from "./api"
+import { isRemoteRun, JOURNAL_PAGE, REMOTE_RUN_SHAPE_ROUTE, RUN_LIST_LIMIT } from "./contract"
+import { type Inspection, RunChange, RunPage, RunRow, RunView, VIEW } from "./schema"
 
 // Runs on this tab (decision 0014 §1 and §3, docs/features/runs.md#the-browser): the list of this device's runs, each
 // open run's read, and the run view, all local collections read from this device's engine through `BrowserEngine`. A
 // run's page follows the engine as it works: every event the leader commits reads the open run, and the list while it
 // shows, again, at most once per `FOLLOW_EVERY`; nothing polls. No value of a run reaches a record: a read is counted and
 // logged by its outcome, its event count and its size.
+//
+// A run Smithers runs on Cloudflare, a TODO's (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare), reads the
+// same way from ChatApi (`RemoteRunsClient`), which reads the engine there, and is followed through Electric: its row
+// of the engine's change feed, whose revision moves with the run, reads the open run again on each change, at most once
+// per `FOLLOW_EVERY`. It is never one of this device's runs, so the list never shows it.
+
+/** A read of one run, a page of its journal at a time, from where its page reads runs. */
+type Reader = (
+  runId: string,
+  read: { readonly afterSeq?: number; readonly limit: number },
+) => Effect.Effect<Inspection, RemoteReadFailed | BrowserEngine.RequestRefused | BrowserEngine.EngineUnavailable>
+
+/** Where a run on Cloudflare is followed from: ChatApi's origin. */
+export interface RunsConfig {
+  readonly origin: string
+}
 
 /** How often an open run, and the list, are read again while the engine works. */
 export const FOLLOW_EVERY = Duration.millis(200)
@@ -90,13 +108,29 @@ export class RunsStore extends Context.Service<
     readonly readRun: (runId: string) => Effect.Effect<void>
     readonly readList: Effect.Effect<void>
     readonly readMore: (runId: string) => Effect.Effect<void>
+    /**
+     * Follows a run on Cloudflare (`isRemoteRun`) for as long as the store lives: each change of its row in the
+     * engine's change feed reads it again while the page shows it. Once per run; a local run needs none.
+     */
+    readonly follow: (runId: string) => Effect.Effect<void>
   }
 >()("@smthrs/mvp/runs/RunsStore") {
-  /** The store over this tab's `BrowserEngine`, following its events from when it is built until its scope closes. */
-  static readonly layer = Layer.effect(
+  /**
+   * The store over this tab's `BrowserEngine` and ChatApi at `config.origin`, following the engine's events from when it
+   * is built, and each run on Cloudflare once opened, until its scope closes.
+   */
+  static readonly layer = (config: RunsConfig) => Layer.effect(
     RunsStore,
     Effect.gen(function* () {
+      const scope = yield* Effect.scope
       const engine = yield* BrowserEngine.BrowserEngine
+      const remote = yield* RemoteRunsClient
+      /**
+       * Where the page of run `rootId` reads a run, it or one it started: ChatApi when the root runs on Cloudflare,
+       * else this device's engine.
+       */
+      const reader = (rootId: string): Reader => (id, read) =>
+        isRemoteRun(rootId) ? remote.inspect(id, read) : engine.inspect(id, read)
       const runs = yield* Collection.local<RunRow, string>({ id: "runs", schema: RunRow, getKey: (row) => row.id })
       const pages = yield* Collection.local<RunPage, string>({ id: "run-pages", schema: RunPage, getKey: (row) => row.id })
       const view = yield* Collection.local<RunView, string>({
@@ -111,7 +145,8 @@ export class RunsStore extends Context.Service<
           const held = Option.getOrThrow(yield* view.get(VIEW))
           if (held.runId === runId && held.at != null) return
           const startedAt = yield* Clock.currentTimeMillis
-          const read = yield* Effect.result(engine.inspect(runId, { limit: JOURNAL_PAGE }))
+          const source = reader(runId)
+          const read = yield* Effect.result(source(runId, { limit: JOURNAL_PAGE }))
           const afterRead = Option.getOrThrow(yield* view.get(VIEW))
           if (afterRead.runId === runId && afterRead.at != null) return
           if (read._tag === "Success") {
@@ -129,7 +164,7 @@ export class RunsStore extends Context.Service<
             // An earlier fully read page can have new events beyond it now.
             if (inspection.run.lastSeq > after && inspection.journal.hasMore) kept = { ...kept, hasMore: true }
             while (kept.hasMore && after < inspection.run.lastSeq) {
-              const next = yield* Effect.result(engine.inspect(runId, { afterSeq: after, limit: JOURNAL_PAGE }))
+              const next = yield* Effect.result(source(runId, { afterSeq: after, limit: JOURNAL_PAGE }))
               if (next._tag === "Failure") break
               const fresh = next.success.journal.events.filter((event) => event.seq > after)
               if (fresh.length === 0) break
@@ -150,7 +185,7 @@ export class RunsStore extends Context.Service<
                 pending.push(...previous.children.map((child) => child.runId))
                 continue
               }
-              const child = yield* Effect.result(engine.inspect(childId, { limit: JOURNAL_PAGE }))
+              const child = yield* Effect.result(source(childId, { limit: JOURNAL_PAGE }))
               if (child._tag === "Failure") continue
               const firstEnd = child.success.journal.nextSeq
               const retained = child.success.journal.hasMore && previous !== undefined ? previous.journal.events.filter((event) => event.seq > firstEnd) : []
@@ -158,7 +193,7 @@ export class RunsStore extends Context.Service<
               let cursor = events.at(-1)?.seq ?? firstEnd
               let hasMore = child.success.journal.hasMore && cursor < child.success.run.lastSeq
               while (hasMore && cursor < child.success.run.lastSeq) {
-                const next = yield* Effect.result(engine.inspect(childId, { afterSeq: cursor, limit: JOURNAL_PAGE }))
+                const next = yield* Effect.result(source(childId, { afterSeq: cursor, limit: JOURNAL_PAGE }))
                 if (next._tag === "Failure") break
                 const fresh = next.success.journal.events.filter((event) => event.seq > cursor)
                 if (fresh.length === 0) break
@@ -170,12 +205,11 @@ export class RunsStore extends Context.Service<
             const latestView = Option.getOrThrow(yield* view.get(VIEW))
             if (latestView.runId === runId && latestView.at != null) return
             yield* put(pages, { id: runId, state: "read", inspection, ...kept, descendants })
-            yield* put(runs, rowOf(inspection.run))
+            // A run on Cloudflare is never one of this device's runs.
+            if (!isRemoteRun(runId)) yield* put(runs, rowOf(inspection.run))
             return yield* recordRead("run", "read", startedAt, inspection.journal.events.length)
           }
-          const notFound = read.failure._tag === "@smthrs/platform-browser/RequestRefused" &&
-            read.failure.error === "@smthrs/engine-store/RunNotFound"
-          const state = notFound ? "not_found" : "unavailable"
+          const state = stateOf(read.failure)
           yield* put(pages, { id: runId, state, inspection: null, more: [], hasMore: false })
           yield* recordRead("run", state, startedAt)
         }).pipe(Effect.orDie)
@@ -189,7 +223,7 @@ export class RunsStore extends Context.Service<
           const page = current.value
           const events = [...(page.inspection as Inspection).journal.events, ...(page.more as Inspection["journal"]["events"])]
           const afterSeq = events.at(-1)?.seq ?? -1
-          const read = yield* Effect.result(engine.inspect(runId, { afterSeq, limit: JOURNAL_PAGE }))
+          const read = yield* Effect.result(reader(runId)(runId, { afterSeq, limit: JOURNAL_PAGE }))
           if (read._tag === "Failure") return
           const latestView = Option.getOrThrow(yield* view.get(VIEW))
           if (latestView.runId === runId && latestView.at != null) return
@@ -234,6 +268,36 @@ export class RunsStore extends Context.Service<
         Effect.forkScoped,
       )
 
+      // Each run on Cloudflare this tab opened, followed once: its row of the engine's change feed through Electric.
+      const followed = new Set<string>()
+      const following = yield* Semaphore.make(1)
+      const follow = (runId: string) =>
+        Semaphore.withPermits(following, 1)(Effect.gen(function* () {
+          if (!isRemoteRun(runId) || followed.has(runId)) return
+          followed.add(runId)
+          const changes = yield* ElectricCollection.make<RunChange>({
+            id: `remote-run:${runId}`,
+            schema: RunChange,
+            getKey: (row) => row.runId,
+            syncMode: "eager",
+            shape: {
+              url: `${config.origin}${REMOTE_RUN_SHAPE_ROUTE}?run=${encodeURIComponent(runId)}`,
+              columnMapper: ElectricCollection.snakeCamelMapper(),
+            },
+          }).pipe(Scope.provide(scope))
+          // The run moved on Cloudflare: read it again while the page shows it.
+          yield* changes.changes().pipe(
+            Stream.groupedWithin(Number.MAX_SAFE_INTEGER, FOLLOW_EVERY),
+            Stream.runForEach(() =>
+              Effect.gen(function* () {
+                const current = Option.getOrThrow(yield* view.get(VIEW))
+                if (current.runId === runId) yield* readRun(runId)
+              })
+            ),
+            Effect.forkIn(scope, { startImmediately: true }),
+          )
+        }))
+
       return RunsStore.of({
         runs,
         pages,
@@ -244,7 +308,22 @@ export class RunsStore extends Context.Service<
         readRun,
         readList,
         readMore,
+        follow,
       })
     }),
   )
+}
+
+/**
+ * A page's state from why its run couldn't be read: one no TODO started, or this person may not read, or this engine
+ * never held, is `not_found`; one on Cloudflare its TODO just started, `not_started`; anything else, `unavailable`.
+ */
+export const stateOf = (failure: unknown): "not_found" | "not_started" | "unavailable" => {
+  if (failure instanceof RemoteReadFailed) {
+    if (failure.code === "not_started") return "not_started"
+    return failure.status === 401 || failure.status === 403 || failure.status === 404 ? "not_found" : "unavailable"
+  }
+  return failure instanceof BrowserEngine.RequestRefused && failure.error === "@smthrs/engine-store/RunNotFound"
+    ? "not_found"
+    : "unavailable"
 }

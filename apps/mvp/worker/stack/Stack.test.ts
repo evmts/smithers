@@ -213,10 +213,24 @@ describe("on a host that runs TODOs", () => {
     expect((await todos()).map(({ state, position }) => [state, position])).toEqual([["dropped", null], ["working", 1]])
   })
 
+  test("each attempt's start records its run on the TODO, todo:<attempt id>, and a dropped TODO keeps its last", async () => {
+    const first = await applyOn(commit(), true)
+    await applyOn(commit(), true)
+    const attemptOf = (applied: Stack.Applied) => (applied.kind === "applied" ? applied.receipt.starts[0]!.attemptId : "")
+    const runs = () => sql<{ number: number; runId: string | null }>(`SELECT number, run_id AS "runId" FROM todos ORDER BY number`)
+    expect(await runs()).toEqual([{ number: 1, runId: `todo:${attemptOf(first)}` }, { number: 2, runId: null }])
+    const dropped = await applyOn(drop(1), true)
+    expect(await runs()).toEqual([
+      { number: 1, runId: `todo:${attemptOf(first)}` },
+      { number: 2, runId: `todo:${attemptOf(dropped)}` },
+    ])
+  })
+
   test("without runs, nothing starts: every TODO stays Queued", async () => {
     await applyOn(commit(), false)
     expect((await todos())[0]).toMatchObject({ state: "queued", attempt: 0 })
     expect(await sql(`SELECT id FROM todo_attempts`)).toEqual([])
+    expect(await sql(`SELECT run_id AS "runId" FROM todos`)).toEqual([{ runId: null }])
   })
 })
 
@@ -274,6 +288,11 @@ describe("a run's reports", () => {
     expect(again.count(Stack.transitions, { from: "working", to: "in_review" })).toBe(0)
     const merged = await reportOn(attempt, { kind: "finished", state: "merged", note: "merged_on_github", mergeSha: MERGE })
     expect(merged).toMatchObject({ outcome: "applied", starts: [{ number: 2, ordinal: 1, repoId: REPO }] })
+    // The next TODO's start records its run; the merged one keeps the run that took it to its merge.
+    expect(await sql(`SELECT number, run_id AS "runId" FROM todos ORDER BY number`)).toEqual([
+      { number: 1, runId: `todo:${attempt.attemptId}` },
+      { number: 2, runId: `todo:${merged.starts[0]!.attemptId}` },
+    ])
     expect(await row()).toMatchObject({
       state: "merged",
       step: null,

@@ -1,7 +1,7 @@
 // A run's page as a frontend draws it (src/features/runs/page.ts, decision 0014 §5): the steps a person reads, the
 // selected one, the journal with what More read, the acts a run offers, and the list's rows.
 import { describe, expect, test } from "vitest"
-import { actsOf, journalOf, listRows, retriesOf, selectedStep, STALLED_AFTER_MS } from "./page"
+import { actsOf, hostOf, journalOf, listRows, missingOf, retriesOf, selectedStep, STALLED_AFTER_MS } from "./page"
 import type { Inspection, RunRow } from "./schema"
 
 const value = (text: string) => ({ text, bytes: text.length, clipped: false })
@@ -102,6 +102,29 @@ describe("actsOf", () => {
     expect(actsOf(inspection({ run: run({ status: "suspended" }) }), 0).resume).toBe(true)
     const silent = inspection({ run: run({ status: "running" }), journal: { ...inspection().journal, events: [] } })
     expect(actsOf(silent, 1_000 + STALLED_AFTER_MS).resume).toBe(true)
+  })
+})
+
+describe("a run on Cloudflare", () => {
+  const TODO_RUN = "todo:6f1c2a7e-3b4d-4c5e-8f90-1a2b3c4d5e6f"
+
+  test("offers no acts, whatever its state: each act runs on this device's engine", () => {
+    for (const status of ["running", "suspended", "completed", "failed"] as const) {
+      expect(actsOf(inspection({ run: run({ runId: TODO_RUN, status }) }), 1_000 + STALLED_AFTER_MS))
+        .toEqual({ stop: false, retry: false, resume: false })
+    }
+  })
+
+  test("its header says Cloud; this device's says This device", () => {
+    expect([hostOf(TODO_RUN), hostOf("run-1"), hostOf("todo:not-an-attempt")]).toEqual(["Cloud", "This device", "This device"])
+  })
+
+  test("a page without a run says why: Not started, Not found, On another device, or Couldn't read this run", () => {
+    expect(missingOf({ id: TODO_RUN, state: "not_started" })).toBe("Not started")
+    expect(missingOf({ id: TODO_RUN, state: "not_found" })).toBe("Not found")
+    expect(missingOf({ id: "run-1", state: "not_found" })).toBe("On another device")
+    expect(missingOf({ id: TODO_RUN, state: "unavailable" })).toBe("Couldn't read this run")
+    expect(missingOf({ id: "run-1", state: "unavailable" })).toBe("Couldn't read this run")
   })
 })
 

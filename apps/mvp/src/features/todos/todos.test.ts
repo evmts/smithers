@@ -211,6 +211,7 @@ describe("a commit", () => {
         branch: null,
         prNumber: null,
         issueNumber: null,
+        runId: null,
       })
     )
   }, WITHIN)

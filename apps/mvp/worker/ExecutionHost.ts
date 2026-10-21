@@ -193,6 +193,13 @@ export const database = (url: string, schema: string): Layer.Layer<SqlClient.Sql
   PostgresDatabase.layer({ url, driver: Pg, schema })
 
 /**
+ * A reader of the engine's `schema` on the Postgres at `url`, for a route that shows a run (worker/RemoteRuns.ts): it
+ * never creates the schema or takes the engine's writer lock, and every transaction is `READ ONLY`.
+ */
+export const readDatabase = (url: string, schema: string): Layer.Layer<SqlClient.SqlClient> =>
+  PostgresDatabase.layer({ url, driver: Pg, schema, readOnly: true })
+
+/**
  * The handlers of one execution's Durable Object over its `storage`:
  * - `start` records the intent and wakes the object at once (`ExecutionObject.start`); the same intent again is a
  *   no-op, and a different one fails with `IntentConflict`.

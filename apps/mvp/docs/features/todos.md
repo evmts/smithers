@@ -23,7 +23,7 @@ Drop ─▶ todo/drop ─▶ the same outbox and route
 - **A person commits; the agent drafts** (0016 §3). `todo/draft` is the agent's; `todo/commit` and `todo/drop` are a person's only. The agent's catalog lists neither, the step refuses a run that is the agent's call before it asks any tab, and the route takes who acts from the session (`Actor.act`), never from the request: a body that claims a door claims nothing.
 - **One route.** Buttons, slash commands, the agent's drafts once a person commits them, and the API all change a stack through `POST /api/repos/<owner>/<name>/stack`.
 - **The run starts from the writer.** The writer starts an attempt only when the host provides `TodoRuns` (`worker/stack/Stack.ts`): `start(attempt)` and `stop(attempt)`, idempotent by attempt id. ChatApi provides it when the GitHub App is configured and `TODO_RUNS` isn't `false`: each attempt runs `todo` on its own Durable Object, `todo:<attempt id>`. Without it the writer works with no lanes and every TODO stays Queued.
-- **Libraries** (`docs/libraries.md`): `@smthrs/flow` (the flows), `@smthrs/effect-electric` (`ShapeProxy` with its default `no-store`, `ElectricCollection`), `@smthrs/effect-tanstack-db` (`Outbox`, collections, live queries, `Persistence`), `@smthrs/crypto` (`Uuid.v5`, `digestSync`), `@smthrs/ui` (`IssuesView`, `ItemConversation`, `ItemAsideSection`, `ConfirmButton`, `TodoDraftCard`, `Breadcrumbs`), and Effect's own `Arbitrary` for the property tests.
+- **Libraries** (`docs/libraries.md`): `@smthrs/flow` (the flows), `@smthrs/effect-electric` (`ShapeProxy` with its default `no-store`, `ElectricCollection`), `@smthrs/effect-tanstack-db` (`Outbox`, collections, live queries, `Persistence`), `@smthrs/crypto` (`Uuid.v5`, `digestSync`), `@smthrs/ui` (`IssuesView`, `ItemConversation`, `ItemAsideSection`, `ItemStatus.live`, `ConfirmButton`, `TodoDraftCard`, `Breadcrumbs`), `@smthrs/engine-store` (`RunInspection`, watching the run), and Effect's own `Arbitrary` for the property tests.
 
 ## Who reads, who writes
 
@@ -95,8 +95,8 @@ octocat/Spoon-Knife / Stack                      octocat/Spoon-Knife / Stack / T
 └───────────────────────────────────────────┘
 ```
 
-- **`/$owner/$repo/stack`** is `IssuesView`, as GitHub's issue list. Open (the stack in merge order, then this device's commits the stack hasn't numbered) and Closed (merged and dropped, latest first) are tabs with counts, `?state=closed` in the URL. Each row has its state icon (Requested, Queued, Working, In review, Merged, Dropped, Failed), its title, `T<n>`, who committed it and when, its issue, branch and pull request, and Drop in its `⋯` menu, which asks `Drop T4?` first. ArrowUp and ArrowDown move between rows. This device's drafts show above the list, and its changes that weren't sent below, with Edit and Discard.
-- **`/$owner/$repo/stack/$number`** is `ItemConversation`, as GitHub's issue page: the title and `T<n>`, the state pill, who committed it and when, the prompt and its acceptance criteria, a timeline (committed, then the state it is in), and a side column with its issue, branch and pull request, and Drop.
+- **`/$owner/$repo/stack`** is `IssuesView`, as GitHub's issue list. Open (the stack in merge order, then this device's commits the stack hasn't numbered) and Closed (merged and dropped, latest first) are tabs with counts, `?state=closed` in the URL. Each row has its state icon (Requested, Queued, Working, In review, Merged, Dropped, Failed; Working's blinks), its title, `T<n>`, who committed it and when, its issue, branch and pull request, Watch while it runs ([watching the run](#watching-the-run)), and Drop in its `⋯` menu, which asks `Drop T4?` first. ArrowUp and ArrowDown move between rows. This device's drafts show above the list, and its changes that weren't sent below, with Edit and Discard.
+- **`/$owner/$repo/stack/$number`** is `ItemConversation`, as GitHub's issue page: the title and `T<n>`, the state pill, who committed it and when, the prompt and its acceptance criteria, a timeline (committed, then the state it is in), and a side column with its issue, branch and pull request, its Run while it runs, and Drop.
 - The page's frame (breadcrumbs, tabs, New TODO) paints at once. Until the device restored or synced the stack, the list shows no rows and no counts: never the empty state, and never a loading state. Commit on a draft opens its stack, where it shows `T–` and Requested until the stack numbers it. A commit the stack refused shows Not sent with why, Edit (back to a draft) and Discard.
 
 ## From an issue
@@ -135,6 +135,20 @@ todo/Fail       any step that gave up ─▶ writer: failed with its code (imple
 - **The machine** is the attempt's own branch machine, `todo-<attempt id>`, checking out the attempt's branch, its tools running as the person who committed the TODO (`worker/flows/TodoMachine.ts`).
 - **The agent's sandbox on Cloudflare** (`worker/AgentSandbox.ts`): `Agent.layerDefaultsWithVariant` over QuickJS's separate-`.wasm` build. workerd compiles no WebAssembly from bytes, so the single-file build `Agent.layerDefaults` uses fails there ("Wasm code generation disallowed by embedder"). The `.wasm` file arrives as `#quickjs.wasm`, a package.json `imports` name ending in `.wasm`, which Alchemy's bundler uploads as a CompiledWasm module and hands the Worker as a `WebAssembly.Module`. The import is dynamic, inside the layer: `alchemy dev` imports the stack in Node, where a static `.wasm` import fails ("Cannot find package 'a'").
 
+### Watching the run
+
+A TODO starts the work through to a mergeable pull request; while it runs, it shows that it is working and links to its run, so a person can watch the agent (ruling TODO-3, decision [0026](../decisions/0026-watching-a-todo-run.md)).
+
+```
+◔ Retry webhook delivery                ⋯        Retry webhook delivery T4
+  T4 · ann · 2m ago · smithers/t4-… · Watch      (◔ Working) ann · 2m ago        Run    Watch
+```
+
+- **The indicator.** A Working TODO's icon blinks slowly, one calm 2-second cycle, on its row and in its page's state pill (`ItemStatus.live`, `@smthrs/ui`). It holds steady for a person who prefers reduced motion. In review stays steady: the run waits on a person's merge, not on work.
+- **The link.** A Working or In review TODO links to its run: Watch at the end of its row, and a Run section in its page's side column. It opens the run's page, `/app/runs/todo:<attempt id>`, which reads the run from Cloudflare and follows it live ([a run on Cloudflare](runs.md#a-run-on-cloudflare)). Queued, Merged, Dropped and Failed TODOs link to none.
+- **How the link knows the run.** The writer records each attempt's run on its TODO, `todos.run_id` = `todo:<attempt id>`, in the transaction that records the attempt (migration `0036_todo_run`). It syncs with the rest of the row, to Members, as everything of a TODO does; `todo_attempts` still never syncs. A run started before the column existed got it from its attempt.
+- **Who watches.** A Member or above, as the TODO itself: the run's routes refuse anyone else, and a run no TODO started.
+
 | Test | Proves |
 |---|---|
 | `worker/flows/Todo.test.ts` | on the Node host's engine with the scripted GitHub, a test machine and a scripted agent: a TODO from an issue to a squash-merged pull request with "Fixes #n" and the next TODO started; closed on GitHub; an empty change; an agent that never answers; no App; dropped before and while waiting; a name taken; a lost commit and a lost pull request adopted; each step's refusals and retries |
@@ -142,17 +156,19 @@ todo/Fail       any step that gave up ─▶ writer: failed with its code (imple
 | `worker/flows/TodoRecovery.test.ts` | merged, dropped and failed reports recover from admission failure in the same process and after a Durable Object host restart; report committed before launch; target accepted before acknowledgment lost; repeated execution stays singular |
 | `worker/AgentSandbox.workerd.test.ts` | in local workerd, bundled with Alchemy's own bundler and Cloudflare plugins as ChatApi is: the bundle carries QuickJS as one compiled WebAssembly module, and an agent's cell lists, reads and writes the checkout through the run's sandbox tools as the TODO's committer. Fails on `Agent.layerDefaults` with workerd's refusal |
 | `e2e/factory.spec.ts` | live: against an instance with the GitHub App on a scratch repository the test account administers (`E2E_FACTORY_REPOSITORY`, `E2E_SESSION_COOKIE`, `BASE_URL`; it skips without them), a person asks Smithers for a TODO and commits it; the run branches on GitHub, the agent writes the change on the branch's machine with the deployment's model, and the TODO reaches In review with an open, mergeable pull request on its `smithers/t<n>-` branch. It never merges |
-| `worker/stack/Stack.test.ts` | the writer's reports: step, branch, published, finished; stale reports; the next TODO started |
+| `worker/stack/Stack.test.ts` | the writer's reports: step, branch, published, finished; stale reports; the next TODO started; each attempt's run recorded on its TODO |
+| `src/features/todos/view.test.ts` | a Working TODO's icon live; Watch on a Working or In review TODO's row and page, and none on any other |
+| `src/features/runs/remote.test.ts`, `worker/RemoteRuns.test.ts` | watching a TODO's run ([a run on Cloudflare](runs.md#a-run-on-cloudflare)) |
 | `src/features/todos/stack.test.ts` | the rules' `finish`: merged and dropped leave the stack, failed keeps its place, a stale finish changes nothing |
 
 ## Postgres
 
-Migrations `0022_todos`, `0027_todo_issue` and `0035_todo_report_receipts`. Synced tables are `REPLICA IDENTITY FULL`.
+Migrations `0022_todos`, `0027_todo_issue`, `0035_todo_report_receipts` and `0036_todo_run`. Synced tables are `REPLICA IDENTITY FULL`.
 
 | Table | | |
 |---|---|---|
 | `stacks` | `repo_id`, `next_number`, `version`, `lanes` (1), `max_open` (50), `updated_at` | never synced; the row the writer locks |
-| `todos` | `id`, `repo_id`, `number`, `title`, `state`, `step`, `position`, `revision`, `attempt`, `branch`, SHAs, `pr_number`, `pr_draft`, `failure`, `note`, `created_by`, `created_login`, `settled_by`, times, `issue_number` (`0027_todo_issue`) | `(repo_id, number)` unique; `(repo_id, position)` unique at each statement's end; settled exactly when merged or dropped, and then unplaced |
+| `todos` | `id`, `repo_id`, `number`, `title`, `state`, `step`, `position`, `revision`, `attempt`, `branch`, SHAs, `pr_number`, `pr_draft`, `failure`, `note`, `created_by`, `created_login`, `settled_by`, times, `issue_number` (`0027_todo_issue`), `run_id` (`0036_todo_run`: its latest attempt's run, `todo:<attempt id>`) | `(repo_id, number)` unique; `(repo_id, position)` unique at each statement's end; settled exactly when merged or dropped, and then unplaced |
 | `todo_requests` | `todo_id`, `revision`, `repo_id`, `prompt`, `acceptance`, `by_login`, `created_at` | each revision of a prompt, never changed |
 | `todo_attempts` | `id` (the run's id), `todo_id`, `ordinal`, `revision`, `base_sha`, `status` (`running`, `published`, `settled`, `failed`), `finished_report` (terminal event and starts) | the run's; written only when a host runs TODOs; terminal receipt never synced |
 | `stack_ops` | `id` (the op id), `repo_id`, `actor_id`, `via` (from the session), `op`, `payload_hash`, `outcome`, `result` | never synced: the receipt a repeated op answers from |
@@ -189,5 +205,6 @@ Run with the compose Postgres and Electric up (`pnpm db:up`).
 
 ## Not built yet
 
-- The run's step strip and Run on a TODO's page.
+- The run's step strip on a TODO's page.
+- Steering the running agent from the run's page (ruling TODO-3): its messages kept in Postgres, and the todo agent's `Steering.Source` reading them at its next boundary.
 - Slice 2: Before Tn and Amend, Move, two lanes, forward updates, out-of-order merges.

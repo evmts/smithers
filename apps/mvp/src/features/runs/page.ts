@@ -1,5 +1,16 @@
 import type { AttemptRow, JsonValueData, JournalRow, RunRow as UiRunRow, StepRow, WaitData } from "@smthrs/ui"
-import { listed, runPath, settled } from "./contract"
+import {
+  CLOUD,
+  COULDNT_READ,
+  isRemoteRun,
+  listed,
+  NOT_FOUND,
+  NOT_STARTED,
+  ON_ANOTHER_DEVICE,
+  runPath,
+  settled,
+  THIS_DEVICE,
+} from "./contract"
 import { retryable } from "./retry"
 import type { Inspection, RunPage, RunRow } from "./schema"
 
@@ -41,9 +52,11 @@ export const STALLED_AFTER_MS = 60_000
 /**
  * Which acts the page offers on a run at `now`: Stop while it hasn't settled and no stop was asked; Retry once it
  * settled, when its flow is retried; Resume while it waits, or runs but has recorded nothing for `STALLED_AFTER_MS`.
+ * Each act runs on this device's engine, so a run on Cloudflare offers none: a TODO's run stops when its TODO drops.
  */
 export const actsOf = (inspection: Inspection, now: number) => {
   const { run } = inspection
+  if (isRemoteRun(run.runId)) return { stop: false, retry: false, resume: false }
   const last = inspection.journal.events.at(-1)?.emittedAtMs ?? run.createdAtMs
   return {
     stop: !settled(run.status) && run.cancelRequestedAtMs === null,
@@ -51,6 +64,17 @@ export const actsOf = (inspection: Inspection, now: number) => {
     resume: run.status === "suspended" || (run.status === "running" && now - last >= STALLED_AFTER_MS),
   }
 }
+
+/** Where a run runs, as its header says: this device, or Cloudflare. */
+export const hostOf = (runId: string): string => (isRemoteRun(runId) ? CLOUD : THIS_DEVICE)
+
+/** What a page says when it has no run to show, by why. */
+export const missingOf = (page: Pick<RunPage, "id" | "state">): string =>
+  page.state === "not_started"
+    ? NOT_STARTED
+    : page.state === "not_found"
+    ? isRemoteRun(page.id) ? NOT_FOUND : ON_ANOTHER_DEVICE
+    : COULDNT_READ
 
 /** The runs a person's list shows, newest first: work, never an act on a run. */
 export const listRows = (runs: ReadonlyArray<RunRow>): ReadonlyArray<UiRunRow> =>

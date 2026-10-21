@@ -3,7 +3,7 @@ import { Logger } from "@smthrs/observability"
 import { EdgeCache } from "@smthrs/platform-cloudflare"
 import { RuntimeContext } from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Cause, Effect, Layer, Option, Predicate } from "effect"
+import { Cause, Effect, Layer, Option, Predicate, Redacted } from "effect"
 import { FetchHttpClient, HttpServerRequest } from "effect/http"
 import * as Database from "../db/Database.ts"
 import * as Electric from "../infra/Electric.ts"
@@ -29,6 +29,7 @@ import * as HomeApi from "./home/Api.ts"
 import * as GitHubConfig from "./github/Config.ts"
 import { DEFAULT_CHAT_MODEL } from "./ModelRoles.ts"
 import * as RepoApi from "./RepoApi.ts"
+import * as RemoteRuns from "./RemoteRuns.ts"
 import * as RepoConfig from "./RepoConfig.ts"
 import * as SecretsApi from "./secrets/Api.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
@@ -129,6 +130,18 @@ export const program = (
     // TODOs and the stack (docs/features/todos.md): the one route that changes a stack, through its one writer, and the
     // TODOs' shapes.
     const stack = yield* StackApi.make(database)
+    // A TODO's run, watched from its page (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare): the engine's own
+    // read of it, from the engine's schema, and its row of the engine's change feed through Electric.
+    const remoteRuns = yield* RemoteRuns.make(database, {
+      database: Layer.unwrap(
+        Effect.map(
+          hyperdrive.connectionString,
+          (url) => ExecutionHost.readDatabase(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA),
+        ),
+      ),
+      schema: ExecutionHost.ENGINE_SCHEMA,
+      flows: [Todo.Todo],
+    })
     const githubApp = yield* GitHubConfig.configured
     const runTodos = yield* Todo.enabled
     /**
@@ -259,6 +272,7 @@ export const program = (
             ? stack.fetch.pipe(Effect.provideService(Stack.TodoRuns, todoRuns(starter)))
             : stack.fetch).pipe(Effect.provide(signedIn))
         }
+        if (RemoteRuns.handles(path)) return yield* remoteRuns.fetch.pipe(Effect.provide(signedIn))
         // And a home, `/api/repos/<owner>/<name>/home` (docs/features/home.md): who the asker is and the curated home.
         if (HomeApi.handles(path)) return yield* home.fetch.pipe(Effect.provide(signedIn))
         if (path === REPOS_ROUTE || path.startsWith(`${REPOS_ROUTE}/`) || path === REPOSITORIES_SHAPE_ROUTE) {

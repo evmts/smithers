@@ -45,6 +45,7 @@ export const TODO_COLUMNS = [
   "updated_at",
   "settled_at",
   "issue_number",
+  "run_id",
 ] as const
 
 /** The `todo_requests` columns a device syncs: each revision of a TODO's prompt. */
@@ -63,6 +64,18 @@ export const SETTLED_STATES = ["merged", "dropped"] as const satisfies ReadonlyA
 
 /** The states that hold one of the stack's lanes: started and not yet settled or failed. */
 export const LANE_STATES = ["working", "in_review"] as const satisfies ReadonlyArray<TodoState>
+
+/**
+ * The states whose run a TODO links to (ruling TODO-3): its lane's, while the run works (Working) or waits for a
+ * person's merge (In review).
+ */
+export const RUNNING_STATES = LANE_STATES
+
+/**
+ * The state whose icon blinks (ruling TODO-3): Working, while the agent writes and publishes the change. In review
+ * waits on a person, so it stays steady.
+ */
+export const LIVE_STATE = "working" satisfies TodoState
 
 /**
  * The `todo` run's steps (decision 0016, the factory simplified): `implement` (the branch, and the agent writing the
@@ -278,6 +291,8 @@ export const NOT_FOUND = "Not found"
 export const NO_TODOS = "No TODOs"
 export const BRANCH = "Branch"
 export const PULL_REQUEST = "Pull request"
+export const RUN = "Run"
+export const WATCH = "Watch"
 export const ISSUE = "Issue"
 export const TODO = "TODO"
 export const MAKE_TODO = "Make TODO"

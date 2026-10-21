@@ -106,6 +106,21 @@ describe("ItemStateIcon", () => {
     expect(new Set(icons.map((icon) => icon.innerHTML)).size).toBe(KINDS.length);
   });
 
+  test("a live icon carries data-live and blinks once every 2 s; others don't", async () => {
+    await render(
+      <div>
+        <ItemStateIcon kind="running" label="Working" live />
+        <ItemStateIcon kind="running" label="Working" />
+        <ItemStateIcon kind="in_review" label="In review" live={false} />
+      </div>,
+    );
+    const icons = [...container!.querySelectorAll<SVGElement>("svg")];
+    expect(icons.map((icon) => icon.hasAttribute("data-live"))).toEqual([true, false, false]);
+    expect(issuesViewCss).toContain(".sui-state-icon[data-live] { animation:sui-state-live 2s ease-in-out infinite; }");
+    // Reduced motion is the document-wide policy's (reducedMotionCss), which ends it at once: proved in browser/.
+    expect(issuesViewCss).not.toContain("prefers-reduced-motion");
+  });
+
   test("each kind has a pill variant, and the sheet colors the icon of each kind that isn't muted", () => {
     expect(Object.keys(ITEM_STATE_VARIANTS).sort()).toEqual([...KINDS].sort());
     for (const kind of KINDS.filter((kind) => ITEM_STATE_VARIANTS[kind] !== "muted")) {
@@ -126,6 +141,21 @@ describe("IssuesView: state icons and the host's order", () => {
       "Dropped",
     ]);
     expect(rows().map((row) => row.dataset.state)).toEqual(["open", "open", "open", "closed", "closed"]);
+  });
+
+  test("a live status blinks its row's icon and marks the row data-live; every other row is steady", async () => {
+    const live = STACK.map((issue, index) =>
+      index === 0 ? { ...issue, status: { kind: "running" as const, label: "Working", live: true } } : issue
+    );
+    await render(<IssuesView repo="o/r" issues={live} numberPrefix="T" ordered />);
+    expect(rows().map((row) => row.hasAttribute("data-live"))).toEqual([true, false, false, false, false]);
+    expect(rows().map((row) => row.querySelector(".sui-issues-state")!.hasAttribute("data-live"))).toEqual([
+      true,
+      false,
+      false,
+      false,
+      false,
+    ]);
   });
 
   test("ordered rows are an ol in the host's order; numbers take the view's prefix, T– before numbering", async () => {

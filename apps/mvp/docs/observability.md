@@ -575,6 +575,15 @@ The stack's route, its one writer, its shapes and the browser's TODO steps and s
 
 A refused commit or drop of the agent's (`outcome: agent`) is the defense the catalog already holds; a nonzero count means a flow call reached the step that the catalog should have refused.
 
+Watching a TODO's run ([runs.md](features/runs.md#a-run-on-cloudflare)): ChatApi reads the run from the engine's schema and serves its row of the engine's change feed. Ids, sizes and outcomes only; never a value of the run. `worker/RemoteRuns.test.ts` asserts them and a sentinel.
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `run.inspect` | log, span | ChatApi, each `GET /api/remote-runs/<run id>` | `host` (`remote`), `runId`, `outcome` (`read`, or the refusal's code), `events`, `bytes`, `clipped`, `status`, `durationMs`, `errorCode` |
+| `smithers_remote_run_reads` | counter | ChatApi | `outcome` |
+| `runs.shape.remote`; `smithers_remote_run_shape_requests` | log, span; counter | ChatApi | `status`, `live` |
+| `run.read`, `smithers_run_reads` | browser | the tab | as for this device's runs, `outcome` also `not_started` |
+
 ### Flow usage
 
 Which flows run, and how (Will, 2026-10-20: "Everything is a flow so the most obvious metrics are just what flows are being ran and how"). The durable engine records them for every run on every host, so a flow gets them without declaring anything: `@smthrs/flow` `RunMetrics`, recorded by `@smthrs/engine-store` and by `@smthrs/agent`'s model steps ([its API](../../../packages/smithers/flows/flow/docs/api.md#runmetrics)).

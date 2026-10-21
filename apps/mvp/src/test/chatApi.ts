@@ -19,9 +19,11 @@ import {
   Queue,
   Redacted,
   Schedule,
+  Scope,
   Stream,
   Tracer,
 } from "effect"
+import { FlowRuntime } from "@smthrs/flow"
 import { FetchHttpClient, type HttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import * as Socket from "effect/socket/Socket"
 import { SqlClient } from "effect/sql"
@@ -80,6 +82,11 @@ import type { StackClient } from "../features/todos/api"
 import type { TextsClient } from "../features/coedit/api"
 import { TODO_REQUESTS_TABLE, TODOS_TABLE } from "../features/todos/contract"
 import * as StackApi from "../../worker/stack/Api.ts"
+import * as Stack from "../../worker/stack/Stack.ts"
+import * as RemoteRuns from "../../worker/RemoteRuns.ts"
+import * as Pause from "../../worker/flows/Pause.ts"
+import { build as buildEngine } from "../../worker/test/flowHost.ts"
+import { todoExecutionId } from "../features/pulls/contract"
 import * as HomeApi from "../../worker/home/Api.ts"
 import type { CuratedFile } from "../../worker/home/Curated.ts"
 import { VIEWS_TABLE } from "../features/views/contract"
@@ -280,6 +287,16 @@ export class TestChatApi extends Context.Service<
       readonly refuseStarts: (count: number) => void
       readonly run: <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => Effect.Effect<A>
     }
+    /**
+     * Runs on Cloudflare, as ChatApi serves them (worker/RemoteRuns.ts): an engine on a schema of its own, built on first
+     * use, that runs `probe/Pause` as the Durable Object would, with no host that runs TODOs. `todoRun` commits a TODO as
+     * a host that runs TODOs does and answers its run's id, `todo:<attempt id>`, which nothing runs yet; `start` runs
+     * `probe/Pause` under that id until this ChatApi closes.
+     */
+    readonly remote: {
+      readonly todoRun: (title: string) => Effect.Effect<string>
+      readonly start: (runId: string, payload: { readonly label: string; readonly pauseMs: number }) => Effect.Effect<void>
+    }
   }
 >()("@smthrs/mvp/test/TestChatApi") {
   /** ChatApi on a scratch schema, every request signed in as `options.actor`: `member` unless set. */
@@ -445,6 +462,30 @@ export class TestChatApi extends Context.Service<
           return globalThis.fetch(upstream, init)
         }
 
+        // Runs on Cloudflare (worker/RemoteRuns.ts): an engine on a schema named now and made on first use, read by the
+        // routes as ChatApi reads the deployed one, read-only. Dropped with the device stores when this ChatApi closes,
+        // after the engine's connections.
+        const remoteSchema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+        stores.push(remoteSchema)
+        const layerScope = yield* Effect.scope
+        const remoteEngine = yield* Effect.cached(
+          buildEngine(Pause.registration((label) => Effect.succeed(label)), { schema: remoteSchema }).pipe(
+            Scope.provide(layerScope),
+            Effect.orDie,
+          ),
+        )
+        const remoteRuns = yield* RemoteRuns.make(database, {
+          database: PostgresDatabase.layer({
+            url: server,
+            driver: Pg,
+            schema: remoteSchema,
+            readOnly: true,
+            postgres: { maxConnections: 2, applicationName: remoteSchema },
+          }),
+          schema: remoteSchema,
+          flows: [Pause.Pause],
+        }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
+
         // ChatApi acknowledges an ask only once its answer's expiry started, so the chat routes' host takes every start,
         // as a Durable Object would, and runs none: no answer here lives 25 minutes.
         const expiries = Flows.FlowStarter.of({ start: () => Effect.void })
@@ -462,6 +503,7 @@ export class TestChatApi extends Context.Service<
           }
           if (GitHubApi.handles(path)) return github.fetch.pipe(Effect.provideService(Flows.FlowStarter, recording))
           if (StackApi.handles(path)) return stack.fetch
+          if (RemoteRuns.handles(path)) return remoteRuns.fetch
           if (HomeApi.handles(path)) return home.fetch
           return path === REPOS_ROUTE || path.startsWith(`${REPOS_ROUTE}/`) || path === REPOSITORIES_SHAPE_ROUTE
             ? Effect.provideContext(repos.fetch, repoCache)
@@ -626,6 +668,29 @@ export class TestChatApi extends Context.Service<
               refusing = count
             },
             run: (effect) => effect.pipe(Effect.provide(database), Effect.orDie),
+          },
+          remote: {
+            todoRun: (title) =>
+              Effect.gen(function* () {
+                yield* remoteEngine
+                const applied = yield* Stack.apply({
+                  opId: crypto.randomUUID(),
+                  repoId: `github/${TEST_REPOSITORY}`,
+                  actor: { id: (actor ?? member).subject.id, login: (actor ?? member).login ?? "maya" },
+                  via: "person",
+                  op: { kind: "commit", title, prompt: title, acceptance: [] },
+                }, { runs: true }).pipe(Effect.provide(database), Effect.orDie)
+                return applied.kind === "applied" ? todoExecutionId(applied.receipt.starts[0]!.attemptId) : ""
+              }),
+            start: (runId, payload) =>
+              Effect.gen(function* () {
+                const { context } = yield* remoteEngine
+                const flows = Context.get(context, FlowRuntime.FlowRuntime)
+                yield* Effect.forkIn(
+                  Effect.ignore(flows.execute(Pause.Pause, { executionId: runId, payload }).pipe(Effect.provide(context))),
+                  layerScope,
+                )
+              }),
           },
         })
         return service

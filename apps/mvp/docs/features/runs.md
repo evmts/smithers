@@ -1,6 +1,6 @@
 # Runs
 
-Every flow this device runs is a run of its durable engine. `/app/runs` lists them, and a run's page shows what it did: its steps with each one's input and output, its timeline and its journal, with Stop, Retry and Resume. Decision: [0014](../decisions/0014-flows-authoring-debugging-and-home-view.md) §3, §5 and §6.
+Every flow this device runs is a run of its durable engine. `/app/runs` lists them, and a run's page shows what it did: its steps with each one's input and output, its timeline and its journal, with Stop, Retry and Resume. A TODO's run on Cloudflare has the same page, live ([a run on Cloudflare](#a-run-on-cloudflare)). Decision: [0014](../decisions/0014-flows-authoring-debugging-and-home-view.md) §3, §5 and §6.
 
 ## Where a run is read
 
@@ -14,7 +14,45 @@ BrowserEngine.events ─ debounced 200 ms ─▶ the open run, and the list whil
 - **The engine holds the journal.** No journal is copied into Postgres: the page reads this device's engine through `BrowserEngine.inspect` and `list`, which `@smthrs/platform-browser` answers from the leader's `RunInspection`. A run the engine doesn't hold reads `On another device`; an engine that can't be reached, `Couldn't read this run`.
 - **Values are content.** The leader releases every value through `@smthrs/journal`'s `Redaction`, renders it through its flow's or step's own schema so a `Schema.Redacted` value reads as `<redacted>` at any depth, withholds one its schema no longer decodes (`<withheld>`), reduces a failure to its closed code, and cuts it to 16 KiB. The page shows values as text, collapsed. The engine records no input for an action step; a child run's input is its step's input.
 - **Live.** Every event the leader commits reads the open run, and the list while it shows, again, at most once per 200 ms. Nothing polls.
-- **Not built in this slice:** runs of other devices and of Cloudflare (0009's `runs` rows, `GET /api/runs/:id/trace`), a repository's runs at `/$owner/$repo/actions`, the read-only scrubber, and Answer in place: a run waiting on a person links to the conversation, where the agent's question is (decision 0015).
+- **Not built in this slice:** runs of other devices, and of Cloudflare beyond a TODO's ([a run on Cloudflare](#a-run-on-cloudflare)); a repository's runs at `/$owner/$repo/actions`, the read-only scrubber, and Answer in place: a run waiting on a person links to the conversation, where the agent's question is (decision 0015).
+
+## A run on Cloudflare
+
+A TODO's `todo` run works on Cloudflare, not on any device ([the run](todos.md#the-run)). While it runs, its TODO links to its page, `/app/runs/todo:<attempt id>`, and the page reads it from there: a person watches the agent work, live (ruling TODO-3, decision [0026](../decisions/0026-watching-a-todo-run.md)).
+
+```
+/app/runs/todo:<attempt> ─ beforeLoad ─▶ openRun ─▶ RemoteRunsClient.inspect ─▶ GET /api/remote-runs/<run id>
+   ChatApi: signed in, a Member or above, a TODO's attempt started this run ─▶ RunInspection (@smthrs/engine-store)
+   over the engine's schema, smithers_flows, read-only ─▶ the same read a device's engine answers its run page with
+openRun ─▶ follow ─▶ Electric: GET /api/shapes/remote-runs?run=<run id> ─▶ smithers_flows.flows_run_changes, the run's row
+   its revision moves whenever the run's row does (each step's attempt, each model turn and tool call, a wait, settling)
+   each change, at most once per 200 ms, while the page shows it ─▶ the run read again
+```
+
+- **Which runs.** A run whose id is a TODO's, `todo:<attempt id>` (`isRemoteRun`), reads from Cloudflare; every other run from this device's engine. The routes serve only a run some TODO's attempt started (`todo_attempts`), to a signed-in Member or above, as the TODO itself ([who reads](todos.md#who-reads-who-writes)).
+- **The same read.** ChatApi's read is the engine's own `RunInspection` over the engine's Postgres schema, through a read-only client (`ExecutionHost.readDatabase`): every value redacted, rendered through its flow's or step's schema (`<redacted>`, `<withheld>`), a failure reduced to its code, cut to 16 KiB. The browser decodes it with the engine's wire shape (`BrowserEngine.Inspection`), so the page, its steps, timeline and journal, is the one a device's run gets. The agent's model turns and tool calls are attempts and call facts of `todo/Implement`.
+- **Live, with no polling.** The engine keeps a change feed, `flows_run_changes`: one row per run whose revision moves whenever the run's row is written. The tab follows the run's row through Electric, as it follows every synced table, and reads the run again on each change. A settled run changes no more, so nothing reads it again. Electric sets the table's `REPLICA IDENTITY FULL` itself, as the owner of the engine's tables.
+- **What it shows.** Its header says `Cloud` where a device's says `This device`, and it offers no acts: Stop, Retry and Resume run on this device's engine. A TODO's run stops when its TODO is dropped. Until the engine begins a run its TODO started, the page reads `Not started`; a run no TODO started, or one this person may not read, `Not found`. It is never one of this device's runs, so the list doesn't show it.
+
+### Routes
+
+`worker/RemoteRuns.ts`; ChatApi routes these paths to it.
+
+| Route | Answers |
+|---|---|
+| `GET /api/remote-runs/<run id>?afterSeq=<n>&limit=<n>` | `200` the run as `RunInspection` reads it: the page of its journal after `afterSeq` (`-1` unless set), at most `limit` events (1 to 500, 500 unless set). Never cached |
+| `GET /api/shapes/remote-runs?run=<run id>` | the run's row of `flows_run_changes`: `run_id`, `revision`. Signed out `401`; not a Member, or a run no TODO started, `403`; sessions or Postgres unreadable `503` |
+
+The read's refusals are `{ code }`, `Cache-Control: no-store`:
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `invalid` | `afterSeq` below `-1`, or `limit` outside 1 to 500, or either not a whole number |
+| 401 | `authentication` | signed out |
+| 403 | `forbidden` | not a Member |
+| 404 | `not_found` | no TODO's attempt started this run |
+| 404 | `not_started` | its attempt is recorded and the engine hasn't begun it |
+| 503 | `unavailable` | sessions, Postgres or the engine couldn't answer; `Retry-After: 5` |
 
 ## Flows
 
@@ -60,8 +98,11 @@ Each act is a registered flow on this device's engine, model-invocable, so a per
 | `smithers_run_reads` | counter (tab) | `read`, `outcome` |
 | `run.act` | log (engine worker) | `act` (`cancel`, `retry`, `resume`), `runId`, `outcome` (`requested`, `settled`, `retried`, `resumed`, or the refusal's code) |
 | `smithers_run_acts` | counter | `act`, `host`, `outcome` |
+| `run.inspect` | log, span (ChatApi, [a run on Cloudflare](#a-run-on-cloudflare)) | `host` (`remote`), `runId`, `outcome` (`read`, or the refusal's code), `events`, `bytes`, `clipped`, `status`, `durationMs`, `errorCode` |
+| `smithers_remote_run_reads` | counter (ChatApi) | `outcome` |
+| `runs.shape.remote`, `smithers_remote_run_shape_requests` | log, span; counter (ChatApi) | `status`, `live` |
 
-No record carries a value of a run.
+A read of a run on Cloudflare is the tab's `run.read` with `outcome` `read`, `not_found`, `not_started` or `unavailable`. No record carries a value of a run.
 
 ## Tests
 
@@ -71,7 +112,11 @@ No record carries a value of a run.
 | `packages/smithers/flows/platform-browser/test/RunReads.test.ts` | `inspect` and `list` through the real worker protocol, the sentinel never on the wire |
 | `src/features/runs/runs.test.ts` | Every act on the Node host's engine: Stop on a live run and on a settled one, a stale fence, Retry once per act, pinned and current, every refusal, Resume of a run whose engine died, and runs of a flow the engine doesn't run |
 | `src/features/runs/summary.test.ts` | The flows summary: runs, success over settled runs, p95 by nearest rank, no rate or p95 before a run settles, acts left out, the order |
-| `src/features/runs/page.test.ts` | The steps, the selected step, the journal with More, the acts a run offers, and the list's rows |
+| `src/features/runs/page.test.ts` | The steps, the selected step, the journal with More, the acts a run offers, and the list's rows; a run on Cloudflare's header, its empty states and no acts |
+| `worker/RemoteRuns.test.ts` | Through the real handler, over a real engine on its own schema: a Member reads a TODO's run as `RunInspection` reads it, a page at a time, a `Redacted` sentinel never sent and a long value cut; every refusal; `503` when sessions, Postgres or the engine can't answer; the shape's table, filter and columns, its refusals, and a live request answered when the run's next step begins; records without values |
+| `src/features/runs/remote.test.ts` | A tab on ChatApi's real handler and Electric: a TODO's run reads `Not started`, then each step as the engine takes it, then done, read again only when its change-feed row moves; a Guest reads `Not found` |
+| `src/features/runs/store.test.ts` | The store's reads over a test engine and a test remote runs client: pages, More, refusals, the list, following events; a run on Cloudflare read from ChatApi with the runs it started, never this device's engine or list, and each of ChatApi's refusals as the page's state |
+| `src/features/runs/api.test.ts` | The remote runs client against a local server: the route and its paging, a refusal's status and code, a body that isn't a run, a stalled body and nothing listening |
 | `src/features/flows-ui/tab.test.ts` | The run page from a tab following a run to its answer, Retry opening the new run, the list, Stop, and Resume refused |
 | `e2e/flow-usage.spec.ts` | In a real browser, no model or sign-in: the theme button runs `app/theme/set`, and the Runs page's flows summary counts it at 100% |
 | `e2e/flows.spec.ts` | In a real browser: create a flow, run it, watch its run page, stop a run and retry it; open a drafted flow's code, run it, relabel its step, and see Run refused with `Needs a sandbox` |

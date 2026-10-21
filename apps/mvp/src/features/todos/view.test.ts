@@ -33,6 +33,7 @@ import {
   mayChange,
   mayMakeTodo,
   notSentRows,
+  runLinkOf,
   STATE_KINDS,
   stackItemsOf,
   stackRows,
@@ -66,6 +67,7 @@ const todo = (fields: Partial<Todo> & Pick<Todo, "id" | "number">): Todo => ({
   updatedAt: "2026-10-20 10:00:00+00",
   settledAt: null,
   issueNumber: null,
+  runId: null,
   ...fields,
 })
 
@@ -185,6 +187,7 @@ describe("todoCardOf", () => {
       branch: null,
       prNumber: null,
       issueNumber: null,
+      runId: null,
       pending: "requested",
     })
     expect(todoCardOf(1, [], todos, [request({ revision: 2 })])).not.toHaveProperty("pending")
@@ -312,12 +315,12 @@ describe("the stack as GitHub's issue list", () => {
   const OWNER = "octo"
   const NAME = "hello"
 
-  test("every state has an icon; Working runs; a TODO not numbered yet is Requested", () => {
+  test("every state has an icon; Working runs, live; a TODO not numbered yet is Requested", () => {
     expect(Object.keys(STATE_KINDS)).toEqual([...TODO_STATES])
     expect(STATE_KINDS.working).toBe("running")
     expect(TODO_STATES.map((state) => statusOf(1, state))).toEqual([
       { kind: "queued", label: "Queued" },
-      { kind: "running", label: "Working" },
+      { kind: "running", label: "Working", live: true },
       { kind: "in_review", label: "In review" },
       { kind: "merged", label: "Merged" },
       { kind: "dropped", label: "Dropped" },
@@ -389,6 +392,32 @@ describe("the stack as GitHub's issue list", () => {
     ])
   })
 
+  test("a running TODO links to its run: Watch while Working or In review; never Queued, settled, Failed or without one", () => {
+    const RUN = "todo:6f1c2a7e-3b4d-4c5e-8f90-1a2b3c4d5e6f"
+    const watch = { label: "Watch", href: `/app/runs/${encodeURIComponent(RUN)}` }
+    expect(TODO_STATES.map((state) => runLinkOf({ state, runId: RUN }))).toEqual([
+      undefined,
+      watch,
+      watch,
+      undefined,
+      undefined,
+      undefined,
+    ])
+    expect(runLinkOf({ state: "working", runId: null })).toBeUndefined()
+    const todos = [
+      todo({ id: "a", number: 4, position: 1, state: "working", branch: "smithers/t4-retry", runId: RUN }),
+      todo({ id: "b", number: 5, position: 2, runId: null }),
+    ]
+    const items = stackItemsOf(stackRows(REPO, todos, [], []), todos, OWNER, NAME)
+    expect(items.map((item) => [item.status, item.links])).toEqual([
+      [
+        { kind: "running", label: "Working", live: true },
+        [{ label: "smithers/t4-retry", href: "/octo/hello/tree/smithers/t4-retry" }, watch],
+      ],
+      [{ kind: "queued", label: "Queued" }, undefined],
+    ])
+  })
+
   test("Drop goes in the menu of each droppable row, only for a person who may change the stack; it asks first", () => {
     const todos = [todo({ id: "a", number: 4, position: 1 }), todo({ id: "b", number: 2, position: null, state: "merged" })]
     const items = stackItemsOf(stackRows(REPO, todos, [], []), todos, OWNER, NAME)
@@ -421,6 +450,7 @@ describe("a TODO's page as GitHub's issue page", () => {
     branch: null,
     prNumber: null,
     issueNumber: null,
+    runId: null,
     ...fields,
   })
 
@@ -455,6 +485,18 @@ describe("a TODO's page as GitHub's issue page", () => {
       "requested",
       false,
     ])
+  })
+
+  test("a Working TODO's page blinks its pill and links its run; In review links it steady; a merged one links none", () => {
+    const RUN = "todo:6f1c2a7e-3b4d-4c5e-8f90-1a2b3c4d5e6f"
+    const watch = { label: "Watch", href: `/app/runs/${encodeURIComponent(RUN)}` }
+    const working = todoPageOf(card({ state: "working", runId: RUN }), "octo", "hello")
+    expect([working.status, working.run]).toEqual([{ kind: "running", label: "Working", live: true }, watch])
+    const review = todoPageOf(card({ state: "in_review", runId: RUN, prNumber: 42 }), "octo", "hello")
+    expect([review.status, review.run]).toEqual([{ kind: "in_review", label: "In review" }, watch])
+    const merged = todoPageOf(card({ state: "merged", runId: RUN, settledAt: "2026-10-20 11:00:00+00" }), "octo", "hello")
+    expect(merged).not.toHaveProperty("run")
+    expect(todoPageOf(card({ state: "working" }), "octo", "hello")).not.toHaveProperty("run")
   })
 
   test("the route shows the page once the device has it, Not found once the stack answered without it, else waits", () => {

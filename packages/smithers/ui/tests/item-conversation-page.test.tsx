@@ -67,6 +67,14 @@ describe("ItemConversation: any item's page", () => {
     expect(article().querySelector<HTMLElement>(".sui-item-conv-state")!.className).toContain("sui-badge-default");
   });
 
+  test("a live status blinks the pill's icon; a status that isn't live leaves it steady", async () => {
+    await render(<ItemConversation {...TODO} status={{ kind: "running", label: "Working", live: true }} />);
+    const icon = () => article().querySelector<SVGElement>(".sui-item-conv-state svg")!
+    expect([icon().hasAttribute("data-live"), icon().dataset.kind]).toEqual([true, "running"]);
+    await act(async () => root!.render(<ItemConversation {...TODO} status={{ kind: "in_review", label: "In review" }} />));
+    expect(icon().hasAttribute("data-live")).toBe(false);
+  });
+
   test("events show after the body as a timeline: icon, author, text and when, in the host's order", async () => {
     await render(<ItemConversation {...TODO} events={EVENTS} comments={[{ id: "c", body: "Looks right" }]} />);
     const timeline = article().querySelector<HTMLElement>("ol[aria-label=Timeline]")!;

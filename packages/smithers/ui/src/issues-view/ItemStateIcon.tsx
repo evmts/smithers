@@ -21,8 +21,12 @@ export type ItemStateKind =
   | "dropped"
   | "failed";
 
-/** An item's state as a list row or page shows it: the icon to draw and the word it stands for. */
-export type ItemStatus = { readonly kind: ItemStateKind; readonly label: string };
+/**
+ * An item's state as a list row or page shows it: the icon to draw, the word it
+ * stands for, and whether work is under way on it now that a person can go and
+ * watch (`live`), which makes the icon blink slowly.
+ */
+export type ItemStatus = { readonly kind: ItemStateKind; readonly label: string; readonly live?: boolean };
 
 /** The Badge variant each kind's pill takes on an item's page; the icon takes the same color in a list. */
 export const ITEM_STATE_VARIANTS: Readonly<
@@ -108,13 +112,19 @@ export type ItemStateIconProps = Omit<ComponentProps<"svg">, "children"> & {
   kind: ItemStateKind;
   /** The state's word: the icon's accessible name. */
   label: string;
+  /**
+   * Work is under way now: the icon blinks slowly, one 2-second cycle, and
+   * holds steady when the person prefers reduced motion.
+   */
+  live?: boolean;
 };
 
 /**
  * An item's state as a 16-pixel icon, as GitHub's lists draw one: an image
- * named `label`, colored for its kind (`ITEM_STATE_VARIANTS`).
+ * named `label`, colored for its kind (`ITEM_STATE_VARIANTS`). A `live` icon
+ * carries `data-live` and blinks slowly while the work goes on.
  */
-export function ItemStateIcon({ kind, label, className, ...props }: ItemStateIconProps) {
+export function ItemStateIcon({ kind, label, live = false, className, ...props }: ItemStateIconProps) {
   useInjectUiCss();
   return (
     <svg
@@ -125,6 +135,7 @@ export function ItemStateIcon({ kind, label, className, ...props }: ItemStateIco
       height="16"
       data-slot="item-state-icon"
       data-kind={kind}
+      data-live={live ? "" : undefined}
       className={cn("sui-state-icon", className)}
       {...props}
     >

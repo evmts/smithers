@@ -1,6 +1,7 @@
 import { digestSync } from "@smthrs/crypto"
 import { Clock, Context, Effect, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
+import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import {
   STACK_OUTCOMES,
   type StackOutcome,
@@ -115,6 +116,13 @@ export const transitions = Metric.counter("smithers_todo_transitions", {
 export const payloadHash = (change: Change): string =>
   digestSync(JSON.stringify({ repoId: change.repoId, via: change.via, ...change.op }))
 
+/**
+ * Records on the TODO the run its new attempt starts, `todo:<attempt id>` (`todos.run_id`, ruling TODO-3), in the
+ * transaction that records the attempt: the TODO links to the run that works on it.
+ */
+const recordRun = (sql: SqlClient.SqlClient, start: AttemptStart) =>
+  sql`UPDATE todos SET run_id = ${todoExecutionId(start.attemptId)} WHERE id = ${start.todoId}::uuid`
+
 /** One loaded TODO row. */
 interface Loaded extends Row {
   readonly attemptId: string | null
@@ -213,6 +221,7 @@ export const apply = (change: Change, options: { readonly runs: boolean }) =>
           INSERT INTO todo_attempts (id, todo_id, repo_id, ordinal, revision, status)
           VALUES (${start.attemptId}::uuid, ${start.todoId}::uuid, ${change.repoId}, ${start.ordinal},
             ${start.revision}, 'running')`
+        yield* recordRun(sql, start)
       }
       const [stack] = yield* sql<{ readonly version: string; readonly txid: string }>`
         UPDATE stacks SET next_number = ${after.nextNumber}, version = version + 1, updated_at = now()
@@ -405,6 +414,7 @@ export const report = (attempt: RunAttempt, event: RunEvent, options: { readonly
           INSERT INTO todo_attempts (id, todo_id, repo_id, ordinal, revision, status)
           VALUES (${start.attemptId}::uuid, ${start.todoId}::uuid, ${attempt.repoId}, ${start.ordinal},
             ${start.revision}, 'running')`
+        yield* recordRun(sql, start)
       }
       yield* sql`UPDATE stacks SET version = version + 1, updated_at = now() WHERE repo_id = ${attempt.repoId}`
       for (const row of changed) {

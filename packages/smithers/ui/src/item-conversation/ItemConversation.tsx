@@ -209,7 +209,7 @@ export function ItemConversation({
         </Heading>
         <div className="sui-item-conv-meta">
           <Badge variant={ITEM_STATE_VARIANTS[shown.kind]} className="sui-item-conv-state" data-status={shown.kind}>
-            <ItemStateIcon kind={shown.kind} label={shown.label} aria-hidden />
+            <ItemStateIcon kind={shown.kind} label={shown.label} live={shown.live} aria-hidden />
             {shown.label}
           </Badge>
           <PendingChip pending={pending} />

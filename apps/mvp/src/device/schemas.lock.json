@@ -1,5 +1,5 @@
 {
-  "epoch": 53,
+  "epoch": 54,
   "stores": {
     "chat-unsent": {
       "kind": "local",
@@ -174,7 +174,8 @@
     "todos": {
       "kind": "synced",
       "versions": {
-        "2": "836adaeaec60ebbd"
+        "2": "836adaeaec60ebbd",
+        "3": "a8aa59aaa4528a72"
       }
     },
     "todo-requests": {

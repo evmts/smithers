@@ -179,6 +179,26 @@ describe("BrowserEngine.inspect", () => {
     }).pipe(Effect.scoped))
 })
 
+describe("BrowserEngine.Inspection and RunList", () => {
+  it.live("decode a run read that arrived as JSON from elsewhere, as inspect and list answer it; refuse anything else", () =>
+    Effect.gen(function*() {
+      const { engine } = yield* setup
+      yield* engine.start(Steps, { executionId: "wire-1", payload: { prefix: "w" } })
+      yield* engine.result(Steps, "wire-1")
+      const read = yield* engine.inspect("wire-1")
+      const listed = yield* engine.list()
+      // As a server would send them: the engine's own reads, through JSON.
+      const decodeInspection = Schema.decodeUnknownEffect(BrowserEngine.Inspection)
+      const decodeList = Schema.decodeUnknownEffect(BrowserEngine.RunList)
+      expect(yield* decodeInspection(JSON.parse(JSON.stringify(read)))).toEqual(read)
+      expect(yield* decodeList(JSON.parse(JSON.stringify(listed)))).toEqual(listed)
+      expect((yield* decodeInspection({ ...read, journal: { events: "none" } }).pipe(Effect.flip))._tag).toBe(
+        "SchemaError"
+      )
+      expect((yield* decodeList({ runs: 1 }).pipe(Effect.flip))._tag).toBe("SchemaError")
+    }).pipe(Effect.scoped))
+})
+
 describe("BrowserEngine.list", () => {
   it.live("lists runs newest first, a page at a time, roots unless asked for every run", () =>
     Effect.gen(function*() {

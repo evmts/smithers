@@ -4,14 +4,14 @@ import { useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useTodos } from "../../features/todos/components/TodosContext"
-import { BRANCH, DROP, ISSUE, NOT_FOUND, PULL_REQUEST, STACK, stackPath } from "../../features/todos/contract"
+import { BRANCH, DROP, ISSUE, NOT_FOUND, PULL_REQUEST, RUN, STACK, stackPath } from "../../features/todos/contract"
 import { accessFor, dropConfirm, mayChange, stackRows, todoCardOf, todoScreenOf } from "../../features/todos/view"
 import "./stack-screen.css"
 
 // /$owner/$repo/stack/$number (decision 0016 §4): one TODO as GitHub's issue page. Its title and T<n>, its state pill,
-// who committed it and when; its prompt and acceptance criteria; a timeline of what happened to it; and a side column
-// with the issue it was made from, its branch and pull request when it has them, and Drop for a Member or above while
-// it is on the stack. Until
+// whose icon blinks while it is Working; who committed it and when; its prompt and acceptance criteria; a timeline of
+// what happened to it; and a side column with the issue it was made from, its branch and pull request when it has
+// them, its run while it runs (Watch, ruling TODO-3), and Drop for a Member or above while it is on the stack. Until
 // the device has the TODO, the page's frame only; once the stack answered without it, Not found. A stack this person
 // may not read shows sign-in, or Not found.
 export function TodoScreen() {
@@ -59,7 +59,7 @@ export function TodoScreen() {
           comments={[]}
           {...(screen.page.pending === undefined ? {} : { pending: screen.page.pending })}
           aside={screen.page.issue === undefined && screen.page.branch === undefined &&
-              screen.page.pullRequest === undefined && !(may && screen.page.droppable)
+              screen.page.pullRequest === undefined && screen.page.run === undefined && !(may && screen.page.droppable)
             ? undefined
             : (
               <>
@@ -71,6 +71,9 @@ export function TodoScreen() {
                 )}
                 {screen.page.pullRequest === undefined ? null : (
                   <ItemAsideSection title={PULL_REQUEST} links={[screen.page.pullRequest]} onNavigate={(href) => void navigate({ href })} />
+                )}
+                {screen.page.run === undefined ? null : (
+                  <ItemAsideSection title={RUN} links={[screen.page.run]} onNavigate={(href) => void navigate({ href })} />
                 )}
                 {may && screen.page.droppable ? (
                   <ConfirmButton
