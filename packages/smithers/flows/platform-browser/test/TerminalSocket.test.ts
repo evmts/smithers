@@ -9,18 +9,21 @@
  * is read after the close, never after a wait.
  */
 import { describe, expect, it } from "@effect/vitest"
+import { RetryPolicy } from "@smthrs/flow"
 import { TerminalProtocol } from "@smthrs/sandbox"
 import type * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import * as Queue from "effect/Queue"
 import * as Socket from "effect/socket/Socket"
 import * as Stream from "effect/Stream"
 import * as TestClock from "effect/testing/TestClock"
 import { WebSocket as NodeWsClient, type WebSocket as Peer, WebSocketServer } from "ws"
 import { TerminalSocket } from "../src/index.ts"
+import * as Telemetry from "./fixtures/Telemetry.ts"
 
 interface Frame {
   readonly binary: boolean
@@ -256,6 +259,84 @@ describe("TerminalSocket", () => {
       yield* TestClock.adjust("1 hour")
       expect(dials.count).toBe(11)
     }).pipe(Effect.scoped))
+
+  it("redials on the protocol's backoff, as a flow RetryPolicy: 1 s doubling to 30 s, ten redials", () => {
+    for (let attempt = 1; attempt <= TerminalProtocol.reconnect.maxAttempts + 2; attempt++) {
+      expect(RetryPolicy.nextDelay(TerminalSocket.reconnect, attempt)).toEqual(
+        Option.fromUndefinedOr(TerminalProtocol.reconnectDelay(attempt))
+      )
+    }
+  })
+
+  it.effect("redials as the RetryPolicy it is given decides, and closes when that policy gives up", () =>
+    Effect.gen(function*() {
+      const { peers, url } = yield* serve
+      const dials = { count: 0 }
+      const reconnect = RetryPolicy.make({ initialMs: 100, factor: 1, maxMs: 100, maxAttempts: 3 })
+      const connection = yield* TerminalSocket.connect(url, { ...quiet, reconnect }).pipe(
+        Effect.provide(counted(dials))
+      )
+      const all = yield* Effect.forkChild(statuses(connection, (status) => status._tag === "Closed"))
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const { peer } = yield* Queue.take(peers)
+        yield* Effect.sync(() => peer.terminate())
+        if (attempt < 3) {
+          yield* connection.status.pipe(
+            Stream.filter((status) => status._tag === "Offline" && status.attempt === attempt),
+            Stream.take(1),
+            Stream.runDrain
+          )
+          yield* TestClock.adjust(100)
+        }
+      }
+      expect(yield* Fiber.join(all)).toEqual([
+        { _tag: "Connecting" },
+        { _tag: "Offline", attempt: 1, code: 1006 },
+        { _tag: "Connecting" },
+        { _tag: "Offline", attempt: 2, code: 1006 },
+        { _tag: "Connecting" },
+        { _tag: "Closed", code: 1006 }
+      ])
+      yield* TestClock.adjust("1 hour")
+      expect(dials.count).toBe(3)
+    }).pipe(Effect.scoped))
+
+  it.effect.each([
+    { thrown: new Error("the frame is gone"), type: "Error" },
+    { thrown: "the frame is gone", type: "unknown" }
+  ])("closes as failed, hangs up and logs it when the output callback throws ($type), and never redials", ({
+    thrown,
+    type
+  }) => {
+    const telemetry = Telemetry.make()
+    return telemetry.observed(
+      Effect.gen(function*() {
+        const { peers, url } = yield* serve
+        const dials = { count: 0 }
+        const connection = yield* TerminalSocket.connect(url, {
+          onOutput: () => {
+            throw thrown
+          }
+        }).pipe(Effect.provide(counted(dials)))
+        const all = yield* Effect.forkChild(statuses(connection, (status) => status._tag === "Closed"))
+        const { closed, peer } = yield* Queue.take(peers)
+        yield* control(peer, { type: "ready", access: "write" })
+        yield* reach(connection, "Open")
+        yield* Effect.sync(() => peer.send(Buffer.from("output")))
+        expect(yield* Fiber.join(all)).toEqual([
+          { _tag: "Connecting" },
+          { _tag: "Open", access: "write" },
+          { _tag: "Closed", code: TerminalProtocol.CloseCode.failed }
+        ])
+        expect(yield* Deferred.await(closed)).toBe(1000)
+        yield* TestClock.adjust("1 hour")
+        expect(dials.count).toBe(1)
+        expect(telemetry.lines("browser.terminal.closed").map((line) => line.annotations)).toEqual([
+          { outcome: "defect", "error.type": type }
+        ])
+      }).pipe(Effect.scoped)
+    )
+  })
 
   it.effect("counts attempts from one again after a connection reached ready", () =>
     Effect.gen(function*() {

@@ -166,7 +166,7 @@ full walkthrough.
 | `WebLock`, `TabChannel`      | The Web Lock that elects the leader, taken with `steal` by a focused tab, and the `BroadcastChannel` tabs use.    |
 | `StoragePersistence`         | `persist`: asks the browser for persistent storage, so it does not clear the engine's store.                      |
 | `BrowserCache`               | `layer({ name?, maxEntryBytes? })`: `@smthrs/artifacts`' `ImmutableCache` over the origin's Cache Storage.        |
-| `TerminalSocket`             | `connect(url, { onOutput })`: the reconnecting socket a page holds to a terminal, over `TerminalProtocol`.        |
+| `TerminalSocket`             | `connect(url, { onOutput })`: a page's socket to a terminal over `TerminalProtocol`; redials on a `RetryPolicy`.  |
 | `BrowserLanguageServer`      | `make({ worker, workspace })` in a tab and `serve` in its worker: `@smthrs/std`'s `LanguageServer` on TypeScript. |
 
 Three properties are worth knowing before you compose them.

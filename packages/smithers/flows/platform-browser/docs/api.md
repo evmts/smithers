@@ -298,8 +298,13 @@ redialing.
 ```ts
 const connect: (
   url: string,
-  options: { readonly onOutput: (bytes: Uint8Array) => void }
+  options: {
+    readonly onOutput: (bytes: Uint8Array) => void
+    readonly reconnect?: RetryPolicy.RetryPolicy | undefined
+  }
 ) => Effect.Effect<Connection, never, Scope.Scope | Socket.WebSocketConstructor>
+
+const reconnect: RetryPolicy.RetryPolicy // 1 s doubling to 30 s, at most 11 dials
 
 interface Connection {
   readonly send: (data: string | Uint8Array) => Effect.Effect<void>
@@ -325,8 +330,16 @@ const layerWebSocket: Layer.Layer<Socket.WebSocketConstructor>
 | `ready`       | Opens the terminal with the host's access, and resets the reconnect count.                                                                                                 |
 | `ended`       | Ends the terminal with the host's reason and closes the socket with 1000. It never redials.                                                                                |
 | Final close   | 1000, 1003, 1008 and 1009 close it for good as `Closed`.                                                                                                                   |
-| Other close   | 1006, 1011 and any other code go `Offline` and redial after 1 s, doubling to 30 s, at most 10 times in a row; then `Closed` with the last code.                            |
+| Other close   | 1006, 1011 and any other code go `Offline` and redial as `reconnect` decides: 1 s doubling to 30 s, 10 times; then `Closed`.                                               |
+| Output throws | An `onOutput` that throws ends it as `Closed` with 1011 and logs `browser.terminal.closed`. It never redials.                                                              |
 | Status stream | Starts with the current status and ends when the scope closes.                                                                                                             |
+
+The redial is the flow engine's retry decision, not a loop of the socket's
+own: `TerminalSocket.reconnect` is `TerminalProtocol.reconnect` as a
+`RetryPolicy` from `@smthrs/flow`, and `RetryPolicy.schedule` decides each
+delay and when to give up, as the engine decides an action's. No durable step
+holds the socket, because it lives in the page that shows its bytes. The count
+starts over when the host sends `ready`. Pass `reconnect` for another policy.
 
 The socket comes from Effect's `Socket.WebSocketConstructor`, and
 `TerminalSocket.layerWebSocket` provides the browser's own `WebSocket`. Delays

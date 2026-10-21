@@ -258,6 +258,24 @@ than handing a caller a negative or `NaN` duration. `RetryPolicy.nextDelayEffect
 and `RetryPolicy.decideEffect` are the variants that sample the `Random` service
 for jitter.
 
+Work no durable step can hold, such as a socket a page keeps open, retries on
+the same decision with `RetryPolicy.schedule`, an Effect `Schedule` for
+`Effect.retry` and `Stream.retry`. Each failure is decided by `decideEffect`:
+the schedule waits the delay, or ends when the policy gives up, and the retry
+fails with that failure. Its output is the attempt that just failed, and
+`elapsedMs` counts from the first failure. Nothing is persisted, so write this
+only where the work dies with its scope; durable work belongs in an action.
+
+```ts
+const session: Stream.Stream<"ready", Dropped> = dial(url)
+
+const connected = session.pipe(
+  // `Stream.retry` starts the count over each time the stream emits.
+  Stream.retry(RetryPolicy.schedule(RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 30_000, maxAttempts: 11 }))),
+  Stream.runDrain
+)
+```
+
 ## Related pages
 
 - [Attach an implementation to an action](./implement-an-action.md): the tiers a

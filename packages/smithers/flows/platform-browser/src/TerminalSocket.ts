@@ -13,12 +13,16 @@
  *   because input whose delivery is unknown is not safe to repeat.
  * - **Only the latest size is kept.** `resize` remembers it and writes it once
  *   the terminal opens with write access, and again only when it changes.
- * - **Reconnects follow the protocol.** A final close (`TerminalProtocol.isFinal`)
- *   or an `ended` frame never redials. Any other close redials after
- *   `TerminalProtocol.reconnectDelay(attempt)` on Effect's clock, until the
- *   attempts run out; reaching `ready` resets the count.
+ * - **Reconnects follow the protocol, as the flow engine decides them.** A
+ *   final close (`TerminalProtocol.isFinal`) or an `ended` frame never
+ *   redials. Any other close redials on {@link reconnect}, the protocol's
+ *   backoff as a `RetryPolicy` from `@smthrs/flow`: `RetryPolicy.schedule`
+ *   decides each delay and when to give up, as the engine decides an
+ *   action's, on Effect's clock; reaching `ready` resets the count. A socket
+ *   lives in the page that shows its bytes, so no durable step holds it.
  * - **The scope owns it.** Closing the scope closes the socket and stops
- *   redialing.
+ *   redialing. An `onOutput` that throws ends the connection, `Closed` with
+ *   `TerminalProtocol.CloseCode.failed`.
  *
  * The socket comes from Effect's `Socket.WebSocketConstructor` service;
  * {@link layerWebSocket} provides the browser's own `WebSocket`.
@@ -26,14 +30,16 @@
  * @since 1.0.0
  */
 
+import { RetryPolicy } from "@smthrs/flow"
 import { TerminalProtocol } from "@smthrs/sandbox"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import * as PubSub from "effect/PubSub"
 import * as Queue from "effect/Queue"
+import * as Schedule from "effect/Schedule"
 import type * as Scope from "effect/Scope"
 import * as Socket from "effect/socket/Socket"
-import type * as Stream from "effect/Stream"
+import * as Stream from "effect/Stream"
 import * as SubscriptionRef from "effect/SubscriptionRef"
 
 /**
@@ -81,7 +87,24 @@ export interface Connection {
 export interface Options {
   /** Each binary frame from the host, in order, as a fresh array the callee may keep or transfer. */
   readonly onOutput: (bytes: Uint8Array) => void
+  /** How the terminal redials after a close that is not final; {@link reconnect} by default. */
+  readonly reconnect?: RetryPolicy.RetryPolicy | undefined
 }
+
+/**
+ * The protocol's backoff (`TerminalProtocol.reconnect`) as a flow
+ * `RetryPolicy`: the first dial, then up to ten redials, after 1 s doubling to
+ * 30 s.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const reconnect: RetryPolicy.RetryPolicy = RetryPolicy.make({
+  initialMs: TerminalProtocol.reconnect.initialMs,
+  factor: 2,
+  maxMs: TerminalProtocol.reconnect.maxMs,
+  maxAttempts: TerminalProtocol.reconnect.maxAttempts + 1
+})
 
 /**
  * Provides `Socket.WebSocketConstructor` with the browser's own `WebSocket`.
@@ -95,9 +118,17 @@ type Event =
   | { readonly _tag: "Message"; readonly data: unknown }
   | { readonly _tag: "Close"; readonly code: number }
 
-type Outcome =
-  | { readonly _tag: "Ended" }
-  | { readonly _tag: "Closed"; readonly code: number; readonly ready: boolean }
+/** A close that is not final: the connection redials as its policy decides. */
+class Dropped {
+  readonly _tag = "@smthrs/platform-browser/TerminalDropped"
+  readonly code: number
+  constructor(code: number) {
+    this.code = code
+  }
+}
+
+/** What one event does to its connection: nothing to report, the host's `ready`, or the connection's end. */
+type Step = "continue" | "ready" | "end"
 
 interface Size {
   readonly cols: number
@@ -187,46 +218,68 @@ export const connect = (
       }
     }
 
-    /** One connection, from dialing to its close or its `ended`. */
-    const session: Effect.Effect<Outcome> = Effect.scoped(Effect.gen(function*() {
+    /**
+     * One connection, from dialing to its end: it emits when the host's `ready`
+     * opens the terminal, ends at the host's `ended` or a final close, and fails
+     * with `Dropped` at any other close.
+     */
+    const session: Stream.Stream<"ready", Dropped> = Stream.unwrap(Effect.gen(function*() {
+      if ((yield* SubscriptionRef.get(status))._tag !== "Connecting") {
+        yield* SubscriptionRef.set(status, { _tag: "Connecting" })
+      }
       const events = yield* Queue.unbounded<Event>()
       yield* Effect.acquireRelease(Effect.sync(() => dial(events)), (hangUp) => Effect.sync(hangUp))
-      let ready = false
-      while (true) {
-        const event = yield* Queue.take(events)
-        if (event._tag === "Close") return { _tag: "Closed", code: event.code, ready } as const
+      const step = (event: Event): Effect.Effect<Step, Dropped> => {
+        if (event._tag === "Close") {
+          return TerminalProtocol.isFinal(event.code)
+            ? Effect.as(SubscriptionRef.set(status, { _tag: "Closed", code: event.code }), "end")
+            : Effect.fail(new Dropped(event.code))
+        }
         if (typeof event.data !== "string") {
-          options.onOutput(yield* bytesOf(event.data))
-          continue
+          return Effect.map(bytesOf(event.data), (bytes) => {
+            options.onOutput(bytes)
+            return "continue"
+          })
         }
         const control = TerminalProtocol.decodeServerControl(event.data)
         if (control?.type === "ready") {
-          ready = true
           live.access = control.access
           writeSize()
-          yield* SubscriptionRef.set(status, { _tag: "Open", access: control.access })
-        } else if (control?.type === "ended") {
-          live.access = undefined
-          yield* SubscriptionRef.set(status, { _tag: "Ended", reason: control.reason })
-          return { _tag: "Ended" } as const
+          return Effect.as(SubscriptionRef.set(status, { _tag: "Open", access: control.access }), "ready")
         }
+        if (control?.type === "ended") {
+          live.access = undefined
+          return Effect.as(SubscriptionRef.set(status, { _tag: "Ended", reason: control.reason }), "end")
+        }
+        return Effect.succeed("continue")
       }
+      return Stream.fromQueue(events).pipe(
+        Stream.mapEffect(step),
+        Stream.takeWhile((step) => step !== "end"),
+        Stream.filter((step): step is "ready" => step === "ready")
+      )
     }))
 
-    const run = Effect.gen(function*() {
-      let attempt = 0
-      while (true) {
-        const outcome = yield* session
-        if (outcome._tag === "Ended") return
-        attempt = outcome.ready ? 1 : attempt + 1
-        const delay = TerminalProtocol.isFinal(outcome.code) ? undefined : TerminalProtocol.reconnectDelay(attempt)
-        if (delay === undefined) return yield* SubscriptionRef.set(status, { _tag: "Closed", code: outcome.code })
-        yield* SubscriptionRef.set(status, { _tag: "Offline", attempt, code: outcome.code })
-        yield* Effect.sleep(delay)
-        yield* SubscriptionRef.set(status, { _tag: "Connecting" })
-      }
-    })
-    yield* Effect.forkScoped(run)
+    const redial = RetryPolicy.schedule<Dropped>(options.reconnect ?? reconnect).pipe(
+      Schedule.tap(({ input, output }) =>
+        SubscriptionRef.set(status, { _tag: "Offline", attempt: output, code: input.code })
+      )
+    )
+    yield* session.pipe(
+      // Each emit is a `ready`, which starts the count over.
+      Stream.retry(redial),
+      Stream.runDrain,
+      // The policy gave up: closed with the last close's code.
+      Effect.catch((dropped) => SubscriptionRef.set(status, { _tag: "Closed", code: dropped.code })),
+      // A defect, such as an `onOutput` that throws, ends the connection as failed.
+      Effect.catchDefect((defect) =>
+        Effect.logWarning("browser.terminal.closed").pipe(
+          Effect.annotateLogs({ outcome: "defect", "error.type": RetryPolicy.errorTag(defect) ?? "unknown" }),
+          Effect.andThen(SubscriptionRef.set(status, { _tag: "Closed", code: TerminalProtocol.CloseCode.failed }))
+        )
+      ),
+      Effect.forkScoped
+    )
 
     return {
       send: (data) =>

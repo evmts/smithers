@@ -23,9 +23,11 @@
  */
 
 import * as Cause from "effect/Cause"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Random from "effect/Random"
+import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 
 /**
@@ -605,3 +607,30 @@ export const decideEffect = (
   policy.jitterRatio === undefined || policy.jitterRatio <= 0
     ? Effect.sync(() => decide(policy, options))
     : Effect.map(Random.next, (random) => decide(policy, { ...options, random }))
+
+/**
+ * The engine's retry decision as an Effect `Schedule`, for work that no
+ * durable step can hold because it is bound to its caller's scope, such as a
+ * connection a page keeps open: `Effect.retry` and `Stream.retry` take it.
+ *
+ * Each failure is the schedule's input and is decided by {@link decideEffect},
+ * as the engine decides an action's: the schedule waits the decided delay, or
+ * ends when the policy gives up, so the retry fails with that failure. Its
+ * output is the attempt that just failed, one for the first. `elapsedMs`
+ * counts from the first failure. Nothing is persisted: the count lives as
+ * long as the retry, and `Stream.retry` starts it over once the stream emits
+ * again.
+ *
+ * @category attempts
+ * @since 1.0.0
+ */
+export const schedule = <E>(policy: RetryPolicy): Schedule.Schedule<number, E> =>
+  Schedule.fromStepWithMetadata(Effect.succeed((meta: Schedule.InputMetadata<E>) =>
+    Effect.flatMap(
+      decideEffect(policy, { attempt: meta.attempt, error: meta.input, elapsedMs: meta.elapsed }),
+      (decision) =>
+        decision._tag === "GiveUp"
+          ? Cause.done(meta.attempt)
+          : Effect.succeed([meta.attempt, Duration.millis(decision.delayMs)] as [number, Duration.Duration])
+    )
+  ))
