@@ -123,6 +123,21 @@ export const importRules: ReadonlyArray<ImportRule> = [
       "apps/mvp/docs/rules.md."
   },
   {
+    kind: "forbidCalls",
+    files: appSources,
+    callees: [
+      "GitHub.Refs.createBranch",
+      "GitHub.Commits.createOnBranch",
+      "GitHub.Commits.getCommit",
+      "GitHub.Pulls.createPull",
+      "GitHub.Pulls.findPullByHead"
+    ],
+    because: "durable.external-writes-once: a branch, commit or pull request a step makes goes through Action.once " +
+      "with a GitHub.Once adapter, which keys it by the step and finds it by that key; never adopt one because its " +
+      "name, message or parent looks like yours. See apps/mvp/docs/rules.md and " +
+      "apps/mvp/docs/proposals/durable-external-effects.md."
+  },
+  {
     kind: "forbid",
     modules: [
       "openai",
@@ -368,6 +383,19 @@ export const jevRules: ReadonlyArray<JevRule> = [
       "fencing or a work queue.",
     compliant: "The file has none of that machinery; at most it calls a library or flow step that provides it, or " +
       "sets one deadline on one request."
+  },
+  {
+    id: "durable.external-writes-once",
+    files: workerSources,
+    lookFor: "After a write to another service (GitHub, Code Storage, email, a message, a container) may already " +
+      "have happened, does this code decide whether it happened by searching for an object by its title, message, " +
+      "name, parent commit, a time window back from now or 'the latest', or by reading back the service's state, " +
+      "instead of calling Action.once with an adapter that finds the write by the step's own key?",
+    violation: "A step recognizes its own earlier write by what it looks like or when it happened, so it can adopt " +
+      "someone else's object or miss its own and write twice.",
+    compliant: "Every write that may repeat goes through Action.once, or looks itself up only by an identity chosen " +
+      "and recorded before the write (a write id stored with the request), across the whole listing; or the file " +
+      "makes no such write."
   },
   {
     id: "flows.local-first-placement",

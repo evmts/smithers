@@ -52,6 +52,16 @@ A durable model call keeps the provider's prompt cache: a retried or resumed ste
 - **Will:** "Get the model working durably. Make sure we even have a test working that makes sure we are properly using it without breaking the cache." (19:41).
 - **Enforced:** test: the durable model step's caching tests (step key stable across processes and key order, one call per sealed step, identical bodies on retry). Process only until those tests exist; a file cannot show it.
 
+### durable.external-writes-once
+
+A step that writes to another service finds its own earlier write only by an identity the step owns: `Action.once` with an adapter keyed by `Action.effectKey`, or a write id chosen and recorded before the write. It never adopts an object because its title, message, name or parent looks like its own, and never searches a time window back from now.
+
+- **Will:** "for that bug you found you should have the agent think hard about durability what is the clean way to use smithers to make issues like that not an issue" (2026-10-21 10:37).
+- **Scope:** `apps/mvp/{src,worker,db}/**`, tests excluded.
+- **Enforced:** `ImportRules` `forbidCalls` `GitHub.Refs.createBranch`, `GitHub.Commits.createOnBranch`, `GitHub.Commits.getCommit`, `GitHub.Pulls.createPull` and `GitHub.Pulls.findPullByHead` across the app: `GitHub.Once` makes those objects. Jev for the shapes no call names: a time window, "the latest", or a state read standing in for identity. Design: [durable external effects](proposals/durable-external-effects.md).
+- **Jev asks:** After a write to another service (GitHub, Code Storage, email, a message, a container) may already have happened, does this code decide whether it happened by searching for an object by its title, message, name, parent commit, a time window back from now or "the latest", or by reading back the service's state, instead of calling `Action.once` with an adapter that finds the write by the step's own key?
+- **Limit:** an alias (`const { createPull } = GitHub.Pulls`) escapes `forbidCalls`; the Jev item covers it until `ImportRules` checks member access.
+
 ### durable.no-substitute-runtime
 
 Never use another durable runtime or agent framework in place of `@smthrs/flow`: no Cloudflare Workflows, Temporal, Inngest, Trigger.dev, the Vercel AI SDK, LangChain or Mastra. A missing host is SDK work.
