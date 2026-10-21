@@ -16599,6 +16599,10 @@ the primary outcome. Reading a completed trampoline lineage whose terminal
 flow is unregistered dies with `FlowEngine.FlowNotRegistered`, carrying the
 missing `flowName`, so callers can classify the registration defect.
 
+### External heartbeat receipts
+
+The process driver dispatches `Interpreter.ExecutionOptions.onHeartbeat` after confirmed ownership pulses, including a successful lease reconfirmation. A callback receives its execution's `FlowInstance`; one bounded callback may run at a time, and a round's completion, suspension, cancellation or lease loss interrupts it. Callback failures log only `run heartbeat receipt failed` and the run id; `flows_engine_heartbeat_receipts` counts completed, skipped and failed dispatches. Remote delivery never blocks local lease renewal. Hosted rounds that do not renew periodic leases emit no receipts.
+
 ---
 
 # @smthrs/errors
@@ -37939,6 +37943,8 @@ scope. See [Test against the real stores](https://github.com/smithersai/smithers
 - [Durable values](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/concepts/durable-values.md) for the admission boundary.
 - [`@smthrs/journal`](/docs/reference/api/journal/) for the history half of durability, and
   [`@smthrs/engine-store`](/docs/reference/api/engine-store/) for the composed storage ladder.
+
+`Ownership.heartbeatLoop` accepts `onPulse`, called only after a successful fenced heartbeat or reconfirmation. It must return promptly: a host dispatching external receipts forks them under its owned round, bounds their duration and prevents overlap. Lost fences and failed writes never emit this receipt.
 
 ---
 
