@@ -96,7 +96,6 @@ describe("RunMetrics labels", () => {
     const cleaned = RunMetrics.makeLabels(1)
     expect([cleaned.of("x y"), cleaned.of("x_y"), cleaned.of("z")]).toEqual(["x_y", "x_y", "other"])
   })
-
 })
 
 describe("RunMetrics.settlement", () => {
@@ -111,7 +110,10 @@ describe("RunMetrics.settlement", () => {
       code: "Usage/Tagged"
     })
     expect(RunMetrics.settlement(Exit.fail("SENTINEL text"))).toEqual({ outcome: "failed", code: "failed" })
-    expect(RunMetrics.settlement(Exit.fail({ code: "has spaces SENTINEL" }))).toEqual({ outcome: "failed", code: "failed" })
+    expect(RunMetrics.settlement(Exit.fail({ code: "has spaces SENTINEL" }))).toEqual({
+      outcome: "failed",
+      code: "failed"
+    })
     class Named extends Error {
       override name = "QuotaError"
     }
@@ -120,7 +122,11 @@ describe("RunMetrics.settlement", () => {
     expect(RunMetrics.settlement(Exit.die("SENTINEL"))).toEqual({ outcome: "failed", code: "defect" })
     expect(RunMetrics.settlement(Exit.failCause(Cause.interrupt()))).toEqual({ outcome: "lost", code: "interrupted" })
     expect(
-      RunMetrics.settlement(Exit.die(new Interpreter.InterpreterError({ code: "plan_changed", flow: "x/flow", node: "root", message: "SENTINEL" })))
+      RunMetrics.settlement(
+        Exit.die(
+          new Interpreter.InterpreterError({ code: "plan_changed", flow: "x/flow", node: "root", message: "SENTINEL" })
+        )
+      )
     ).toEqual({ outcome: "refused", code: "plan_changed" })
   })
 })
@@ -129,7 +135,13 @@ describe("RunMetrics recorders", () => {
   it.effect("records a start and a settlement as metrics and log lines with the same fields", () =>
     Effect.gen(function*() {
       const { lines, snapshot } = yield* observe(Effect.gen(function*() {
-        const labels = { flow: "chat/Respond", door: "slash", actor: "person", placement: "browser", executionId: "e-1" }
+        const labels = {
+          flow: "chat/Respond",
+          door: "slash",
+          actor: "person",
+          placement: "browser",
+          executionId: "e-1"
+        }
         yield* RunMetrics.recordStarted(labels)
         yield* RunMetrics.recordSettled({ ...labels, outcome: "succeeded", code: "none", durationMs: 1_250 })
         yield* RunMetrics.recordSettled({ ...labels, door: "nope", outcome: "failed", code: "quota_exceeded" })
@@ -140,9 +152,30 @@ describe("RunMetrics recorders", () => {
         state: { count: 1, incremental: true }
       }])
       expect(series(snapshot, "flows_runs_settled").map((entry) => entry.attributes)).toEqual([
-        { flow: "chat/Respond", door: "slash", actor: "person", placement: "browser", outcome: "succeeded", code: "none" },
-        { flow: "chat/Respond", door: "other", actor: "person", placement: "browser", outcome: "failed", code: "quota_exceeded" },
-        { flow: "chat/Respond", door: "slash", actor: "person", placement: "browser", outcome: "cancelled", code: "cancelled" }
+        {
+          flow: "chat/Respond",
+          door: "slash",
+          actor: "person",
+          placement: "browser",
+          outcome: "succeeded",
+          code: "none"
+        },
+        {
+          flow: "chat/Respond",
+          door: "other",
+          actor: "person",
+          placement: "browser",
+          outcome: "failed",
+          code: "quota_exceeded"
+        },
+        {
+          flow: "chat/Respond",
+          door: "slash",
+          actor: "person",
+          placement: "browser",
+          outcome: "cancelled",
+          code: "cancelled"
+        }
       ])
       const durations = series(snapshot, "flows_run_duration_ms")
       expect(durations.map((entry) => entry.attributes)).toEqual([
@@ -204,8 +237,12 @@ describe("RunMetrics recorders", () => {
       }))
       const firstStep = series(snapshot, "flows_run_first_step_ms")
       expect(firstStep.map((entry) => entry.attributes)).toEqual([{ flow: "repo/clone", placement: "cloudflare" }])
-      expect((firstStep[0]!.state as Metric.HistogramState)).toMatchObject({ count: 2, sum: 40, min: 0, max: 40 })
-      expect(series(snapshot, "flows_steps").map((entry) => [entry.attributes, (entry.state as Metric.CounterState<number>).count]))
+      expect(firstStep[0]!.state as Metric.HistogramState).toMatchObject({ count: 2, sum: 40, min: 0, max: 40 })
+      expect(
+        series(snapshot, "flows_steps").map((
+          entry
+        ) => [entry.attributes, (entry.state as Metric.CounterState<number>).count])
+      )
         .toEqual([
           [{ flow: "repo/clone", outcome: "failed" }, 1],
           [{ flow: "repo/clone", outcome: "succeeded" }, 1],
@@ -247,8 +284,14 @@ describe("RunMetrics recorders", () => {
         { flow: "chat/Respond", model: "agent", outcome: "interrupted" }
       ])
       expect(series(snapshot, "flows_model_tokens")).toEqual([
-        { attributes: { flow: "chat/Respond", model: "agent", direction: "input" }, state: { count: 1_200, incremental: true } },
-        { attributes: { flow: "chat/Respond", model: "agent", direction: "output" }, state: { count: 80, incremental: true } }
+        {
+          attributes: { flow: "chat/Respond", model: "agent", direction: "input" },
+          state: { count: 1_200, incremental: true }
+        },
+        {
+          attributes: { flow: "chat/Respond", model: "agent", direction: "output" },
+          state: { count: 80, incremental: true }
+        }
       ])
       expect(lines.map((line) => line.annotations)).toEqual([
         { flow: "chat/Respond", model: "agent", outcome: "sealed", inputTokens: 1_200, outputTokens: 80 },
@@ -303,7 +346,10 @@ describe("RunMetrics caps", () => {
     const labelled = tags.map(RunMetrics.flow)
     expect(new Set(labelled).size).toBeLessThanOrEqual(RunMetrics.maxFlows + 1)
     expect(labelled.at(-1)).toBe("other")
-    const models = Array.from({ length: RunMetrics.maxModels + 5 }, (_, index) => RunMetrics.model(`cap-model-${index}`))
+    const models = Array.from(
+      { length: RunMetrics.maxModels + 5 },
+      (_, index) => RunMetrics.model(`cap-model-${index}`)
+    )
     expect(models.at(-1)).toBe("other")
     const codes = Array.from({ length: RunMetrics.maxCodes + 5 }, (_, index) => RunMetrics.code(`cap_code_${index}`))
     expect(codes.at(-1)).toBe("other")

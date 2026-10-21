@@ -206,17 +206,23 @@ describe("transported ceilings", () => {
   })
 
   it.effect("the intersection allows exactly what both sides allow", () =>
-    property(Arbitrary.all([ceilings, ceilings]), ([left, right]) =>
-      CAPABILITIES.every((wanted) =>
-        allows(Flow.intersectCeilings(left, right), wanted) === (allows(left, wanted) && allows(right, wanted))
-      )))
+    property(
+      Arbitrary.all([ceilings, ceilings]),
+      ([left, right]) =>
+        CAPABILITIES.every((wanted) =>
+          allows(Flow.intersectCeilings(left, right), wanted) === (allows(left, wanted) && allows(right, wanted))
+        )
+    ))
 
   it.effect("the intersection is commutative, associative and idempotent, with [] its identity", () =>
     property(Arbitrary.all([ceilings, ceilings, ceilings]), ([a, b, c]) => {
       const same = (x: ReadonlyArray<ReadonlyArray<string>>, y: ReadonlyArray<ReadonlyArray<string>>) =>
         JSON.stringify(x) === JSON.stringify(y)
       return same(Flow.intersectCeilings(a, b), Flow.intersectCeilings(b, a)) &&
-        same(Flow.intersectCeilings(Flow.intersectCeilings(a, b), c), Flow.intersectCeilings(a, Flow.intersectCeilings(b, c))) &&
+        same(
+          Flow.intersectCeilings(Flow.intersectCeilings(a, b), c),
+          Flow.intersectCeilings(a, Flow.intersectCeilings(b, c))
+        ) &&
         same(Flow.intersectCeilings(a, a), Flow.intersectCeilings(a, [])) &&
         same(Flow.intersectCeilings(Flow.intersectCeilings(a, []), []), Flow.intersectCeilings(a, []))
     }))

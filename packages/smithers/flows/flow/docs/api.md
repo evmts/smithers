@@ -389,18 +389,18 @@ The package's [`examples/retry-and-stall.ts`](https://github.com/smithersai/smit
 
 Usage metrics for every flow run: which flows run, and how. The durable engine (`@smthrs/engine-store`) records them for every run, and `@smthrs/agent`'s model steps record their calls, so a flow gets them without declaring anything. Each record is a metric and a log line with the same fields, so a store that keeps only logs counts and percentiles them too.
 
-| Metric                    | Kind      | Attributes                                                 | Log line                                |
-| ------------------------- | --------- | ---------------------------------------------------------- | --------------------------------------- |
-| `flows_runs_started`      | counter   | `flow`, `door`, `actor`, `placement`                       | `flow.run.started`, with `executionId`  |
-| `flows_runs_settled`      | counter   | `flow`, `outcome`, `code`, `door`, `actor`, `placement`    | `flow.run.settled`, with `durationMs`   |
-| `flows_run_duration_ms`   | histogram | `flow`, `outcome`, `placement`                             |                                         |
-| `flows_run_first_step_ms` | histogram | `flow`, `placement`                                        |                                         |
-| `flows_steps`             | counter   | `flow`, `outcome` (`succeeded`, `failed`, `interrupted`)   |                                         |
-| `flows_step_retries`      | counter   | `flow`                                                     |                                         |
-| `flows_waits`             | counter   | `flow`, `kind`                                             |                                         |
-| `flows_wait_ms`           | histogram | `flow`, `kind`                                             |                                         |
-| `flows_model_calls`       | counter   | `flow`, `model`, `outcome`                                 | `flow.model.call`, with token counts    |
-| `flows_model_tokens`      | counter   | `flow`, `model`, `direction` (`input`, `output`)           |                                         |
+| Metric                    | Kind      | Attributes                                               | Log line                               |
+| ------------------------- | --------- | -------------------------------------------------------- | -------------------------------------- |
+| `flows_runs_started`      | counter   | `flow`, `door`, `actor`, `placement`                     | `flow.run.started`, with `executionId` |
+| `flows_runs_settled`      | counter   | `flow`, `outcome`, `code`, `door`, `actor`, `placement`  | `flow.run.settled`, with `durationMs`  |
+| `flows_run_duration_ms`   | histogram | `flow`, `outcome`, `placement`                           |                                        |
+| `flows_run_first_step_ms` | histogram | `flow`, `placement`                                      |                                        |
+| `flows_steps`             | counter   | `flow`, `outcome` (`succeeded`, `failed`, `interrupted`) |                                        |
+| `flows_step_retries`      | counter   | `flow`                                                   |                                        |
+| `flows_waits`             | counter   | `flow`, `kind`                                           |                                        |
+| `flows_wait_ms`           | histogram | `flow`, `kind`                                           |                                        |
+| `flows_model_calls`       | counter   | `flow`, `model`, `outcome`                               | `flow.model.call`, with token counts   |
+| `flows_model_tokens`      | counter   | `flow`, `model`, `direction` (`input`, `output`)         |                                        |
 
 - **A run** is counted when the engine admits it and when its lineage settles: a round that hands off to the next is not a settlement. Its duration runs from the first round's admission to the settlement; `flows_run_first_step_ms` from admission to the engine first starting it. A step answered from its record, and a model step replayed, are not counted again.
 - **Outcomes:** `succeeded`, `failed` (a declared failure or a defect), `refused` (an interpreter refusal such as `plan_changed` or `payload_changed`, or a round the engine would not run), `cancelled`, and `lost` (interrupted with no cancellation asked). `settlement(exit)` classifies an exit; its `code` is `none`, the refusal's code, a typed failure's `code` or tag, a defect's tag or name, `defect` or `interrupted`, never a message.

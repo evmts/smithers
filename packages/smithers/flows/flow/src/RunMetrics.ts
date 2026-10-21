@@ -25,8 +25,8 @@ import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
-import * as Layer from "effect/Layer"
 import { dual } from "effect/Function"
+import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Interpreter from "./Interpreter.ts"
@@ -135,7 +135,7 @@ export type WaitKind = (typeof waitKinds)[number]
 const closed = <const Values extends ReadonlyArray<string>>(values: Values) => {
   const known: ReadonlySet<string> = new Set(values)
   return (value: string | undefined): Values[number] | "other" =>
-    value === undefined ? "unknown" as Values[number] : known.has(value) ? value as Values[number] : "other"
+    value === undefined ? "unknown" : known.has(value) ? value : "other"
 }
 
 /**
