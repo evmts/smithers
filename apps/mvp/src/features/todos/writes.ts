@@ -53,8 +53,8 @@ export class StackWrites extends Context.Service<
 
 /**
  * Keeps `row` on the device as `status`, with `reason` when Not sent and the stack's number when taken: inserted, or,
- * when a send replayed after a crash finds it there, its status replaced. Waits until the device stored it; a store that
- * fails leaves it in memory, and the send still settles.
+ * when a send replayed after a crash finds it there, its status replaced. The send settles only once the device stored
+ * it: a store that fails sends it again (`Outbox.Retry`).
  */
 export const keep = (
   requested: Collection.Collection<Requested, string>,
@@ -65,15 +65,17 @@ export const keep = (
 ) =>
   Effect.gen(function* () {
     const { v: _, ...fields } = row
-    const kept = Option.isNone(yield* requested.get(row.id))
-      ? yield* requested.insert({ ...fields, status, reason, taken })
-      : yield* requested.update(row.id, (draft) => {
+    const kept = yield* (Option.isNone(yield* requested.get(row.id))
+      ? requested.insert({ ...fields, status, reason, taken })
+      : requested.update(row.id, (draft) => {
         draft.status = status
         draft.reason = reason
         draft.taken = taken
-      })
-    yield* Effect.ignore(kept.persisted)
-  }).pipe(Effect.orDie)
+      })).pipe(Effect.orDie)
+    // A record the device couldn't store would be gone at the next reload while the outbox let its write go: the send
+    // is settled only once it is stored, and sent again otherwise (the route answers a repeated op as it did).
+    yield* kept.persisted.pipe(Effect.mapError(() => new Outbox.Retry({})))
+  })
 
 /** The route's body for `row`. */
 export const requestOf = (row: Sending): ChangeRequest =>
