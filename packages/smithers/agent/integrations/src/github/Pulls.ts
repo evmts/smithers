@@ -44,6 +44,21 @@ import { IssueNumber, requireRepositoryPath } from "./Repository.ts"
 export const PullEnd = Schema.Struct({ ref: Schema.String, sha: Schema.String })
 
 /**
+ * A pull request's base: its branch and commit, and the repository it merges
+ * into with that repository's default branch. `repo` decodes as `null` when
+ * GitHub's answer leaves it out.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const PullBase = Schema.Struct({
+  ...PullEnd.fields,
+  repo: Schema.NullOr(Schema.Struct({ default_branch: Schema.String })).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null))
+  )
+})
+
+/**
  * A pull request as GitHub's REST API returns it, narrowed to the fields
  * Smithers reads. A listing omits the merge and size fields, which then
  * decode as `false`, `null` or `0`.
@@ -66,7 +81,7 @@ export const PullRequest = Schema.Struct({
   mergeable_state: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   user: IssueUser,
   head: PullEnd,
-  base: PullEnd,
+  base: PullBase,
   commits: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
   additions: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
   deletions: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),

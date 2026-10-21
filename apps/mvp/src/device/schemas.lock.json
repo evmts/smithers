@@ -1,5 +1,5 @@
 {
-  "epoch": 49,
+  "epoch": 53,
   "stores": {
     "chat-unsent": {
       "kind": "local",
@@ -187,6 +187,30 @@
       "kind": "synced",
       "versions": {
         "1": "53adcabcae2e43cf"
+      }
+    },
+    "pull-rows": {
+      "kind": "synced",
+      "versions": {
+        "1": "de6fb2b71ede2300"
+      }
+    },
+    "pull-commits": {
+      "kind": "synced",
+      "versions": {
+        "1": "1d582590f2a46905"
+      }
+    },
+    "pull-reviews": {
+      "kind": "synced",
+      "versions": {
+        "1": "949e0620b2784b5c"
+      }
+    },
+    "pull-checks": {
+      "kind": "synced",
+      "versions": {
+        "1": "08c8ce91e2a65800"
       }
     }
   },

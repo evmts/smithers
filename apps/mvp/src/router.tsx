@@ -4,6 +4,8 @@ import type { FlowsUiView } from "./features/flows-ui/flowsUi"
 import type { HomeView } from "./features/home/home"
 import { issueNumberOf } from "./features/issues/contract"
 import type { IssuesLayer } from "./features/issues/issues"
+import { PULL_TABS, type PullTab } from "./features/pulls/contract"
+import type { PullsLayer } from "./features/pulls/pulls"
 import { type StackFilter, stackFilterOf, todoNumberOf } from "./features/todos/contract"
 import type { TodosView } from "./features/todos/todos"
 import { lineSearch } from "./features/repo/paths"
@@ -18,6 +20,8 @@ import { DraftScreen } from "./screens/flows/DraftScreen"
 import { FlowsScreen } from "./screens/flows/FlowsScreen"
 import { NewFlowScreen } from "./screens/flows/NewFlowScreen"
 import { IssueScreen } from "./screens/issues/IssueScreen"
+import { PullScreen } from "./screens/pulls/PullScreen"
+import { PullsScreen } from "./screens/pulls/PullsScreen"
 import { StackScreen } from "./screens/stack/StackScreen"
 import { TodoScreen } from "./screens/stack/TodoScreen"
 import { commitmentSearch } from "./features/issues/lifecycle"
@@ -42,7 +46,7 @@ import { ViewScreen } from "./screens/view/ViewScreen"
 // files are still on their way after a second shows with skeletons in their place, never blank.
 
 /**
- * What every route gets: the repository, its home, views, branch, terminal, issues, runs and flows layers, from
+ * What every route gets: the repository, its home, views, branch, terminal, issues, pull requests, runs and flows layers, from
  * main.tsx's `RouterProvider`.
  */
 export interface RouterContext {
@@ -52,6 +56,7 @@ export interface RouterContext {
   readonly branch: BranchView
   readonly terminal: TerminalView
   readonly issues: IssuesLayer
+  readonly pulls: PullsLayer
   readonly todos: TodosView
   readonly runs: RunsView
   readonly flows: FlowsUiView
@@ -332,6 +337,66 @@ const issueRoute = createRoute({
     ),
 })
 
+/** `/$owner/$repo/pulls`: the repository's pull requests (decision 0012 §6). */
+const pullsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$owner/$repo/pulls",
+  component: PullsScreen,
+  beforeLoad: ({ context, params, ...load }) =>
+    enter(load, () => context.pulls.actions.warm(), () => context.pulls.actions.open(params.owner, params.repo)),
+})
+
+/** A pull request's number in its path, as an issue's is; any other matches no route. */
+const pullParams = {
+  parse: (params: { readonly owner: string; readonly repo: string; readonly number: string }) => {
+    const number = issueNumberOf(params.number)
+    return number === undefined ? false as const : { ...params, number }
+  },
+  stringify: (params: { readonly owner: string; readonly repo: string; readonly number: number }) => ({
+    ...params,
+    number: String(params.number),
+  }),
+}
+
+/** `/$owner/$repo/pull/$number`: one pull request's conversation, with Merge for a Maintainer. */
+const pullRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$owner/$repo/pull/$number",
+  component: () => <PullScreen tab="conversation" />,
+  params: pullParams,
+  beforeLoad: ({ context, params, ...load }) =>
+    enter(load, () => context.pulls.actions.warm(), () => context.pulls.actions.open(params.owner, params.repo, params.number)),
+})
+
+/** `/$owner/$repo/pull/$number/$tab`: its commits, its checks (the Smithers runs on its head), or its files. */
+const pullTabRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$owner/$repo/pull/$number/$tab",
+  component: function PullTab() {
+    const { tab } = pullTabRoute.useParams()
+    return <PullScreen tab={tab} />
+  },
+  params: {
+    parse: (params: { readonly owner: string; readonly repo: string; readonly number: string; readonly tab: string }) => {
+      const number = issueNumberOf(params.number)
+      const tab = (PULL_TABS as ReadonlyArray<string>).includes(params.tab) && params.tab !== "conversation"
+        ? params.tab as PullTab
+        : undefined
+      return number === undefined || tab === undefined ? false as const : { ...params, number, tab }
+    },
+    stringify: (params: { readonly owner: string; readonly repo: string; readonly number: number; readonly tab: PullTab }) => ({
+      ...params,
+      number: String(params.number),
+    }),
+  },
+  beforeLoad: ({ context, params, ...load }) =>
+    enter(
+      load,
+      () => context.pulls.actions.warm(),
+      () => context.pulls.actions.open(params.owner, params.repo, params.number, params.tab),
+    ),
+})
+
 /**
  * `/$owner/$repo/stack`: the repository's stack of TODOs (decision 0016 §4), as GitHub's issue list: the open TODOs in
  * merge order, or with `?state=closed` the merged and dropped ones.
@@ -389,6 +454,9 @@ export const router = createRouter({
     issuesRoute,
     newIssueRoute,
     issueRoute,
+    pullsRoute,
+    pullRoute,
+    pullTabRoute,
     stackRoute,
     todoRoute,
   ]),
@@ -403,6 +471,7 @@ export const router = createRouter({
     branch: undefined!,
     terminal: undefined!,
     issues: undefined!,
+    pulls: undefined!,
     todos: undefined!,
     runs: undefined!,
     flows: undefined!,

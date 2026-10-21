@@ -13,6 +13,7 @@ import { BranchProvider } from "./features/branch/components/BranchContext"
 import { CodeIntelProvider } from "./features/code-intel/components/CodeIntelContext"
 import { CommandsProvider } from "./features/commands/components/CommandsContext"
 import { IssuesProvider } from "./features/issues/components/IssuesContext"
+import { PullsProvider } from "./features/pulls/components/PullsContext"
 import { RepoProvider } from "./features/repo/components/RepoContext"
 import { RunsProvider } from "./features/runs/components/RunsContext"
 import { FlowsUiProvider } from "./features/flows-ui/components/FlowsUiContext"
@@ -217,6 +218,7 @@ const render: BootOptions["render"] = (
   attention,
   todos,
   codeIntel,
+  pulls,
 ) =>
   root.render(
     <StrictMode>
@@ -236,6 +238,7 @@ const render: BootOptions["render"] = (
                             {/* The routes' loaders open what they show through `repo`, `views`, `branch` and `terminal`
                                 (src/router.tsx). */}
                             <IssuesProvider value={issues}>
+                              <PullsProvider value={pulls}>
                               <TodosProvider value={todos}>
                               <RunsProvider value={runs}>
                                 <FlowsUiProvider value={flows}>
@@ -244,13 +247,14 @@ const render: BootOptions["render"] = (
                                     <AttentionProvider value={attention}>
                                       <RouterProvider
                                         router={router}
-                                        context={{ repo, home, views, branch, terminal, issues, todos, runs, flows }}
+                                        context={{ repo, home, views, branch, terminal, issues, pulls, todos, runs, flows }}
                                       />
                                     </AttentionProvider>
                                   </HomeProvider>
                                 </FlowsUiProvider>
                               </RunsProvider>
                               </TodosProvider>
+                              </PullsProvider>
                             </IssuesProvider>
                           </TerminalProvider>
                         </BranchProvider>

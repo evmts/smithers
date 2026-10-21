@@ -47,28 +47,29 @@ export const upsertPull = (repoId: string, pull: GitHub.Pulls.PullRequest, fetch
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const rows = yield* sql`
-      INSERT INTO pulls (item_id, repo_id, number, head_ref, head_sha, base_ref, base_sha, draft, merged, merged_at,
-        merged_by, merge_sha, mergeable_state, additions, deletions, changed_files, commit_count, source_updated_at,
-        fetched_at)
+      INSERT INTO pulls (item_id, repo_id, number, head_ref, head_sha, base_ref, base_sha, default_branch, draft, merged,
+        merged_at, merged_by, merge_sha, mergeable_state, additions, deletions, changed_files, commit_count,
+        source_updated_at, fetched_at)
       VALUES (${itemId(repoId, pull.number)}, ${repoId}, ${pull.number}, ${pull.head.ref}, ${pull.head.sha},
-        ${pull.base.ref}, ${pull.base.sha}, ${pull.draft}, ${pull.merged}, ${pull.merged_at}::timestamptz,
-        ${pull.merged_by?.login ?? null}, ${pull.merged ? pull.merge_commit_sha : null}, ${pull.mergeable_state},
-        ${pull.additions}, ${pull.deletions}, ${pull.changed_files}, ${pull.commits}, ${pull.updated_at}::timestamptz,
-        ${iso(fetchedAt)}::timestamptz)
+        ${pull.base.ref}, ${pull.base.sha}, ${pull.base.repo?.default_branch ?? null}, ${pull.draft}, ${pull.merged},
+        ${pull.merged_at}::timestamptz, ${pull.merged_by?.login ?? null}, ${pull.merged ? pull.merge_commit_sha : null},
+        ${pull.mergeable_state}, ${pull.additions}, ${pull.deletions}, ${pull.changed_files}, ${pull.commits},
+        ${pull.updated_at}::timestamptz, ${iso(fetchedAt)}::timestamptz)
       ON CONFLICT (item_id) DO UPDATE SET
         head_ref = EXCLUDED.head_ref, head_sha = EXCLUDED.head_sha, base_ref = EXCLUDED.base_ref,
-        base_sha = EXCLUDED.base_sha, draft = EXCLUDED.draft, merged = EXCLUDED.merged, merged_at = EXCLUDED.merged_at,
-        merged_by = EXCLUDED.merged_by, merge_sha = EXCLUDED.merge_sha, mergeable_state = EXCLUDED.mergeable_state,
-        additions = EXCLUDED.additions, deletions = EXCLUDED.deletions, changed_files = EXCLUDED.changed_files,
-        commit_count = EXCLUDED.commit_count, source_updated_at = EXCLUDED.source_updated_at,
-        fetched_at = EXCLUDED.fetched_at
+        base_sha = EXCLUDED.base_sha, default_branch = EXCLUDED.default_branch, draft = EXCLUDED.draft,
+        merged = EXCLUDED.merged, merged_at = EXCLUDED.merged_at, merged_by = EXCLUDED.merged_by,
+        merge_sha = EXCLUDED.merge_sha, mergeable_state = EXCLUDED.mergeable_state, additions = EXCLUDED.additions,
+        deletions = EXCLUDED.deletions, changed_files = EXCLUDED.changed_files, commit_count = EXCLUDED.commit_count,
+        source_updated_at = EXCLUDED.source_updated_at, fetched_at = EXCLUDED.fetched_at
       WHERE (pulls.source_updated_at, pulls.fetched_at) < (EXCLUDED.source_updated_at, EXCLUDED.fetched_at)
-        AND (pulls.head_ref, pulls.head_sha, pulls.base_ref, pulls.base_sha, pulls.draft, pulls.merged, pulls.merged_at,
-          pulls.merged_by, pulls.merge_sha, pulls.mergeable_state, pulls.additions, pulls.deletions,
-          pulls.changed_files, pulls.commit_count)
-        IS DISTINCT FROM (EXCLUDED.head_ref, EXCLUDED.head_sha, EXCLUDED.base_ref, EXCLUDED.base_sha, EXCLUDED.draft,
-          EXCLUDED.merged, EXCLUDED.merged_at, EXCLUDED.merged_by, EXCLUDED.merge_sha, EXCLUDED.mergeable_state,
-          EXCLUDED.additions, EXCLUDED.deletions, EXCLUDED.changed_files, EXCLUDED.commit_count)
+        AND (pulls.head_ref, pulls.head_sha, pulls.base_ref, pulls.base_sha, pulls.default_branch, pulls.draft,
+          pulls.merged, pulls.merged_at, pulls.merged_by, pulls.merge_sha, pulls.mergeable_state, pulls.additions,
+          pulls.deletions, pulls.changed_files, pulls.commit_count)
+        IS DISTINCT FROM (EXCLUDED.head_ref, EXCLUDED.head_sha, EXCLUDED.base_ref, EXCLUDED.base_sha,
+          EXCLUDED.default_branch, EXCLUDED.draft, EXCLUDED.merged, EXCLUDED.merged_at, EXCLUDED.merged_by,
+          EXCLUDED.merge_sha, EXCLUDED.mergeable_state, EXCLUDED.additions, EXCLUDED.deletions, EXCLUDED.changed_files,
+          EXCLUDED.commit_count)
       RETURNING item_id`
     return rows.length > 0
   })

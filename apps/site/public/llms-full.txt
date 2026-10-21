@@ -21643,7 +21643,7 @@ person saw; a lost merge is read back with `getPull`. Closing is idempotent.
 | `listCommits`, `listReviews` | `(owner, repo, number, options?: { maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>` | Oldest first; at most 3 pages unless `maxPages` says otherwise. |
 | `createReview` | `(owner, repo, number, { commitId, event, body }) => Effect<Review, IntegrationError, GitHubClient>` | `POST .../reviews` against head `commitId`. `event` is `COMMENT`, `APPROVE` or `REQUEST_CHANGES`; `COMMENT` needs a body. A lost answer fails `outcomeUnknown`. |
 | `findReviewByWrite` | `(owner, repo, number, { writeId }) => Effect<Option<Review>, IntegrationError, GitHubClient>` | The review whose body carries the marker. |
-| `PullRequest`, `PullEnd`, `PullCommit`, `Review` | schemas | GitHub's JSON narrowed to the fields Smithers reads. A listing's missing merge and size fields decode as `false`, `null` or `0`. |
+| `PullRequest`, `PullEnd`, `PullBase`, `PullCommit`, `Review` | schemas | GitHub's JSON narrowed to the fields Smithers reads. A listing's missing merge and size fields decode as `false`, `null` or `0`. `PullBase.repo.default_branch` is the base repository's default branch; `repo` decodes as `null` when GitHub leaves it out. |
 | `MergeMethod`, `ReviewEvent`, `Merged` | types | `squash`, `merge`, `rebase`; the review events; `{ sha, merged }`. |
 
 ### GitHub.Refs

@@ -40,6 +40,13 @@ import { Rooms } from "../../worker/branch/Rooms.ts"
 import * as GitHubApi from "../../worker/github/Api.ts"
 import { repositoryOf } from "../../worker/github/Config.ts"
 import {
+  APP_ID,
+  appKey,
+  SCRIPTED_API,
+  type ScriptedGitHub,
+  scriptedGitHub,
+} from "../../worker/github/test/scriptedGitHub.ts"
+import {
   codeStorageGit,
   type GitHost,
   gitHost,
@@ -66,7 +73,9 @@ import { RUNS_TABLE } from "../features/status/contract"
 import { ALERT_CHANNELS_TABLE, ALERT_DELIVERIES_TABLE, SPEND_ALERTS_TABLE } from "../features/spend/contract"
 import { NOTIFICATIONS_TABLE } from "../features/attention/contract"
 import { COMMENTS_TABLE, ITEMS_TABLE, SYNC_TABLE, TRIAGE_SETTINGS_TABLE, WRITES_TABLE } from "../features/issues/contract"
+import { PULL_COMMITS_TABLE, PULLS_TABLE, REVIEWS_TABLE } from "../features/pulls/contract"
 import type { IssuesClient } from "../features/issues/api"
+import type { PullsClient } from "../features/pulls/api"
 import type { StackClient } from "../features/todos/api"
 import type { TextsClient } from "../features/coedit/api"
 import { TODO_REQUESTS_TABLE, TODOS_TABLE } from "../features/todos/contract"
@@ -178,6 +187,9 @@ const SCHEMA_TABLES: ReadonlySet<string> = new Set([
   ALERT_DELIVERIES_TABLE,
   TODOS_TABLE,
   TODO_REQUESTS_TABLE,
+  PULLS_TABLE,
+  PULL_COMMITS_TABLE,
+  REVIEWS_TABLE,
 ])
 
 /** A Postgres schema for one device's engine store, and where the device keeps the engine's leaders. */
@@ -247,6 +259,8 @@ export class TestChatApi extends Context.Service<
     readonly github: {
       readonly starts: ReadonlyArray<Started>
       readonly run: <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => Effect.Effect<A>
+      /** GitHub as the routes' own reads meet it (the compare route's): `TEST_REPOSITORY`, the App installed. */
+      readonly scripted: ScriptedGitHub
     }
     /**
      * The branch workspace's routes (worker/branch/BranchApi.ts), as ChatApi routes them: the forge is GitHub, read with
@@ -367,17 +381,20 @@ export class TestChatApi extends Context.Service<
 
         // The git loop, as ChatApi routes it (worker/ChatApi.ts), with a GitHub App configured: no remote host runs
         // here, so a write's `github/Write`, a stale read's `github/Reconcile` and Run triage again's `triage/Run` are
-        // recorded in `starts`, never run. A test writes their rows itself, through `github.run`.
+        // recorded in `starts`, never run. A test writes their rows itself, through `github.run`. The routes' own reads
+        // (a comparison's files) reach the scripted GitHub as the App.
         const repository = repositoryOf(TEST_REPOSITORY)
+        const scripted = scriptedGitHub(repository.owner, repository.name)
         const github = yield* GitHubApi.make(database, {
           repository,
           app: Option.some({
-            appId: "1",
-            privateKey: Redacted.make("no key"),
+            appId: APP_ID,
+            privateKey: yield* Effect.promise(harnessAppKey),
             webhookSecret: Option.none(),
             repository,
-            apiBaseUrl: "http://github.test",
+            apiBaseUrl: SCRIPTED_API,
           }),
+          http: scripted.http,
         }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         // The stack's routes, as ChatApi routes them (worker/ChatApi.ts): no host runs a TODO, so every TODO stays Queued.
         const stack = yield* StackApi.make(database).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
@@ -598,6 +615,7 @@ export class TestChatApi extends Context.Service<
           github: {
             starts,
             run: (effect) => effect.pipe(Effect.provide(database), Effect.orDie),
+            scripted,
           },
           branches: {
             github: branchGitHub,
@@ -880,14 +898,19 @@ export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">
   /** The WebSocket a tab's rooms dial, in place of the global one: a room host on loopback (src/test/rooms.ts). */
   readonly webSocket?: Socket.WebSocketConstructor["Service"]
   /**
-   * A client in place of the real one, for an unhappy path: a faulty `IssuesClient`, `StackClient` or `TextsClient`
-   * (test.faults-by-injection).
+   * A client in place of the real one, for an unhappy path: a faulty `IssuesClient`, `StackClient`, `TextsClient` or
+   * `PullsClient` (test.faults-by-injection).
    */
   readonly replace?:
     | Layer.Layer<IssuesClient, never, HttpClient.HttpClient>
+    | Layer.Layer<PullsClient, never, HttpClient.HttpClient>
     | Layer.Layer<StackClient, never, HttpClient.HttpClient>
     | Layer.Layer<TextsClient, never, HttpClient.HttpClient>
 }
+
+/** The scripted GitHub App's key: one per test file, since making an RSA key takes a while. */
+let appKeyMade: Promise<Redacted.Redacted<string>> | undefined
+const harnessAppKey = () => (appKeyMade ??= appKey())
 
 /** Switches a faulty tab throws on its shape source before it syncs. */
 export type StartFaults = (switches: ShapeSource.Switches) => Effect.Effect<void>

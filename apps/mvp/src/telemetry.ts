@@ -10,6 +10,7 @@ import { BRANCH_TELEMETRY } from "./features/branch/contract"
 import { CHAT_TELEMETRY } from "./features/chat/contract"
 import { CODE_INTEL_TELEMETRY } from "./features/code-intel/contract"
 import { ISSUES_TELEMETRY } from "./features/issues/contract"
+import { PULLS_TELEMETRY } from "./features/pulls/contract"
 import { TODOS_TELEMETRY } from "./features/todos/contract"
 import { JEV_TELEMETRY } from "./features/jev/contract"
 import { COMMANDS_TELEMETRY } from "./features/commands/contract"
@@ -124,6 +125,7 @@ const features: ReadonlyArray<Telemetry> = [
   WEB_TELEMETRY,
   JEV_TELEMETRY,
   ISSUES_TELEMETRY,
+  PULLS_TELEMETRY,
   TODOS_TELEMETRY,
   FLOWS_UI_TELEMETRY,
   RUNS_TELEMETRY,

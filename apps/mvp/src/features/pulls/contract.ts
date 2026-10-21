@@ -2,6 +2,7 @@
 // `checks/Run`), the browser and the tests (decision 0012 §4 and §6, decision 0016's factory simplified,
 // docs/features/pulls.md): the one home of every value they share. Nothing here imports a library, so every side can.
 
+import type { WriteFailure } from "../issues/contract"
 import { REPOS_ROUTE } from "../repo/contract"
 
 /** Electric shape proxies: one repository's rows, `GET ...?repo=<owner>/<name>` or the synced repository's. */
@@ -26,6 +27,7 @@ export const PULL_COLUMNS = [
   "head_sha",
   "base_ref",
   "base_sha",
+  "default_branch",
   "draft",
   "merged",
   "merged_at",
@@ -74,6 +76,36 @@ export const MERGE_METHODS = ["squash", "merge", "rebase"] as const
 export type MergeMethod = (typeof MERGE_METHODS)[number]
 export const DEFAULT_MERGE_METHOD: MergeMethod = "squash"
 
+/**
+ * Why a merge didn't happen, besides the writes' shared failures: the head or base moved since the person saw them, a
+ * draft, GitHub's own refusal (`not_mergeable`, with GitHub's state), or it was merged or closed already.
+ */
+export const MERGE_FAILURES = [
+  "head_moved",
+  "base_moved",
+  "draft",
+  "not_mergeable",
+  "merged",
+  "closed",
+] as const satisfies ReadonlyArray<WriteFailure>
+export type MergeFailure = (typeof MERGE_FAILURES)[number]
+
+/** What a refused merge says, by its reason, on a pull request into `base`. */
+export const MERGE_FAILURE_COPY: Readonly<Record<MergeFailure, (base: string) => string>> = {
+  head_moved: () => "New commits",
+  base_moved: (base) => `${base} moved`,
+  draft: () => "Draft",
+  not_mergeable: () => "Can't merge",
+  merged: () => "Merged",
+  closed: () => "Closed",
+}
+
+/**
+ * Ruling GH-9: merging into the repository's default branch on GitHub is a deploy, while production work (checks and
+ * runs) happens on Smithers. The merge box says it beside Merge, naming the branch.
+ */
+export const deployWarningOf = (base: string): string => `Merging into ${base} deploys it.`
+
 /** `GET /api/repos/<owner>/<name>/compare/<base>...<head>`: two SHAs' changed files, kept forever. */
 export const COMPARE_SEGMENT = "compare"
 export const compareRoute = (owner: string, name: string, base: string, head: string): string =>
@@ -82,9 +114,37 @@ export const compareRoute = (owner: string, name: string, base: string, head: st
 /** A commit's SHA: 40 lowercase hex digits. */
 export const SHA = /^[0-9a-f]{40}$/
 
+/** The pages (GitHub's paths, decision 0012 §6). */
+export const pullsPath = (owner: string, name: string): string => `/${owner}/${name}/pulls`
+export const pullPath = (owner: string, name: string, number: number): string => `/${owner}/${name}/pull/${number}`
+export const PULL_TABS = ["conversation", "commits", "checks", "files"] as const
+export type PullTab = (typeof PULL_TABS)[number]
+export const pullTabPath = (owner: string, name: string, number: number, tab: PullTab): string =>
+  tab === "conversation" ? pullPath(owner, name, number) : `${pullPath(owner, name, number)}/${tab}`
+
 /** A pull request on GitHub. */
 export const githubPullUrl = (owner: string, name: string, number: number): string =>
   `https://github.com/${owner}/${name}/pull/${number}`
+
+/** A pull request's state as its list and page show it. */
+export type PullState = "open" | "draft" | "merged" | "closed"
+export const pullStateOf = (pull: { readonly state: string; readonly draft: boolean; readonly merged: boolean }): PullState =>
+  pull.merged ? "merged" : pull.state === "closed" ? "closed" : pull.draft ? "draft" : "open"
+export const PULL_STATE_WORDS: Readonly<Record<PullState, string>> = {
+  open: "Open",
+  draft: "Draft",
+  merged: "Merged",
+  closed: "Closed",
+}
+
+/** A check's state words, from its run's status (decision 0009's words). */
+export const CHECK_STATUS_WORDS: Readonly<Record<string, string>> = {
+  working: "Running",
+  waiting: "Waiting",
+  needs_you: "Needs you",
+  failed: "Failed",
+  done: "Passed",
+}
 
 /** The repository's checks: each `.smithers/checks/<name>.sh` is one check, run on the branch's machine at the head. */
 export const CHECKS_DIRECTORY = ".smithers/checks"
@@ -109,6 +169,16 @@ export const checkExecutionId = (repoId: string, sha: string, name: string): str
 
 /** The namespace a check run's `runs` id is a version 5 UUID of its execution id in. */
 export const CHECK_RUN_NAMESPACE = "3c1e9a52-7b0d-4f6e-8a21-5d9c4b7e2f10"
+
+/**
+ * What the pull request pages record (docs/observability.md), by name, and the attributes they carry: never a title, a
+ * body, a diff or a login. A person's merge (`pulls.merge.post`, `smithers_web_pull_merges` by `outcome`) and a
+ * comparison's files (`pulls.compare.get`).
+ */
+export const PULLS_TELEMETRY = {
+  records: ["pulls.merge.post", "pulls.compare.get", "smithers_web_pull_merges"],
+  fields: ["outcome"],
+} as const
 
 /** The longest diff patch one file shows, in characters; GitHub leaves larger ones out. */
 export const MAX_PATCH_CHARS = 200_000

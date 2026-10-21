@@ -1,0 +1,286 @@
+import type { Role } from "../auth/contract"
+import { NOT_SENT_COPY, type NotSentReason } from "../issues/contract"
+import { refusedOf } from "../issues/view"
+import {
+  CHECK_STATUS_WORDS,
+  deployWarningOf,
+  githubPullUrl,
+  MERGE_FAILURE_COPY,
+  type MergeFailure,
+  PULL_STATE_WORDS,
+  pullPath,
+  pullStateOf,
+} from "./contract"
+import type { ChangedFile } from "./schema"
+
+// What the pull request pages show, from the queries' rows (decision 0012 §6, docs/features/pulls.md#the-browser):
+// framework-free, so the web app and later the TUI share it. Every word is a product word, and a control the person
+// can't use isn't shown.
+
+/** A row of the pull request list (queries.ts `listQuery`). */
+export interface ListRow {
+  readonly id: string
+  readonly number: number
+  readonly title: string
+  readonly state: string
+  readonly author: string
+  readonly comments: number
+  readonly updatedAt: string
+  readonly draft: boolean
+  readonly merged: boolean
+  readonly headRef: string
+}
+
+/** The icon kind and word of a pull request's state. */
+export const statusOf = (row: { readonly state: string; readonly draft: boolean; readonly merged: boolean }) => {
+  const state = pullStateOf(row)
+  return {
+    kind: state === "merged" ? "merged" as const : state === "closed" ? "closed" as const : "open" as const,
+    label: PULL_STATE_WORDS[state],
+  }
+}
+
+/** The list's rows as `IssuesView` shows them: Open or Closed by GitHub's state, with the word and the head branch. */
+export const listProps = (rows: ReadonlyArray<ListRow>, owner: string, name: string) =>
+  rows.map((row) => ({
+    id: row.id,
+    number: row.number,
+    title: row.title,
+    state: row.state === "closed" ? "closed" as const : "open" as const,
+    status: statusOf(row),
+    author: row.author,
+    comments: row.comments,
+    updatedAt: row.updatedAt,
+    href: pullPath(owner, name, row.number),
+  }))
+
+/**
+ * The list page: its rows, whether it is loading (never "No pull requests" before the repository's first complete sync,
+ * and never loading once the shape refused this person), and why it was refused (sign in, or not allowed).
+ */
+export const listPageOf = (
+  rows: ReadonlyArray<ListRow>,
+  repository: { readonly owner: string; readonly name: string },
+  synced: unknown,
+  access: { readonly status: string } | undefined,
+) => ({
+  refused: refusedOf(access),
+  pulls: listProps(rows, repository.owner, repository.name),
+  loading: refusedOf(access) === undefined && synced === undefined && rows.length === 0,
+})
+
+/** Who is at the page, as sign-in says: signed in, and their role on the repository, confirmed when known. */
+const roleOf = (
+  session: { readonly status: string; readonly role: Role | null },
+  confirmed: { readonly role: Role | null } | undefined,
+): Role | null => (session.status !== "signed_in" ? null : confirmed?.role ?? session.role)
+
+/** The routed pull request as its page reads it (queries.ts `pullQuery`). */
+export interface Pull {
+  readonly number: number
+  readonly title: string
+  readonly body: string
+  readonly state: string
+  readonly author: string | null
+  readonly createdAt: string
+  readonly synced: number
+  readonly headRef: string
+  readonly headSha: string
+  readonly baseRef: string
+  readonly baseSha: string
+  /** The base repository's default branch; `""` until GitHub named it. */
+  readonly defaultBranch: string
+  readonly draft: boolean
+  readonly merged: boolean
+  readonly mergedBy: string
+  readonly mergeSha: string
+  readonly mergeableState: string
+  readonly additions: number
+  readonly deletions: number
+  readonly changedFiles: number
+  readonly commitCount: number
+}
+
+/**
+ * Whether the person at the page sees Merge: a Maintainer or above (decision 0007 `repo:merge`), on an open pull request
+ * that isn't a draft, whose head this device has. A person's own press only: the agent has no Merge.
+ */
+export const mayMerge = (
+  session: { readonly status: string; readonly role: Role | null },
+  confirmed: { readonly role: Role | null } | undefined,
+  pull: Pull,
+): boolean => {
+  const role = roleOf(session, confirmed)
+  return (role === "admin" || role === "maintainer") && pull.state === "open" && !pull.draft && !pull.merged &&
+    pull.synced > 0 && pull.headSha !== ""
+}
+
+/** A conversation row: a comment, or a review with its findings. */
+export interface ConversationRow {
+  readonly id: string
+  readonly author: string
+  readonly createdAt: string
+  readonly body: string
+}
+
+/** A review row (queries.ts `reviewsQuery`). */
+export interface ReviewRow {
+  readonly id: string
+  readonly author: string
+  readonly state: string
+  readonly body: string
+  readonly submittedAt: string
+}
+
+/** A review's word: GitHub's state, as a person reads it. */
+export const REVIEW_WORDS: Readonly<Record<string, string>> = {
+  COMMENTED: "reviewed",
+  APPROVED: "approved",
+  CHANGES_REQUESTED: "requested changes",
+  DISMISSED: "review dismissed",
+}
+
+/** The page's `ItemConversation` props: the pull request, its comments and its reviews' findings, and its state. */
+export const conversationProps = (
+  pull: Pull,
+  comments: ReadonlyArray<ConversationRow>,
+  reviews: ReadonlyArray<ReviewRow>,
+  repository: { readonly owner: string; readonly name: string },
+) => ({
+  title: pull.title,
+  number: pull.number,
+  state: pull.state === "closed" ? "closed" as const : "open" as const,
+  status: statusOf(pull),
+  author: pull.author ?? undefined,
+  createdAt: pull.createdAt,
+  body: pull.body,
+  comments: [
+    ...comments.map((comment) => ({
+      id: comment.id,
+      author: comment.author === "" ? undefined : comment.author,
+      createdAt: comment.createdAt,
+      body: comment.body,
+    })),
+    ...reviews.filter((review) => review.body.trim() !== "").map((review) => ({
+      id: review.id,
+      author: review.author === "" ? undefined : review.author,
+      createdAt: review.submittedAt === "" ? undefined : review.submittedAt,
+      body: review.body,
+    })),
+  ].sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? "")),
+  events: reviews.filter((review) => review.body.trim() === "").map((review) => ({
+    id: review.id,
+    kind: review.state === "APPROVED" ? "merged" as const : "open" as const,
+    ...(review.author === "" ? {} : { author: review.author }),
+    text: REVIEW_WORDS[review.state] ?? "reviewed",
+    ...(review.submittedAt === "" ? {} : { createdAt: review.submittedAt }),
+  })),
+  externalHref: githubPullUrl(repository.owner, repository.name, pull.number),
+})
+
+/** A check row (queries.ts `checksQuery`). */
+export interface CheckRow {
+  readonly id: string
+  readonly flow: string
+  readonly status: string
+  readonly createdAt: string
+  readonly updatedAt: string
+}
+
+/** A run's state, as `RunList` draws it, from a `runs` row's status. */
+export const runStateOf = (status: string) =>
+  status === "done"
+    ? "completed" as const
+    : status === "failed"
+    ? "failed" as const
+    : status === "working"
+    ? "running" as const
+    : "suspended" as const
+
+/** The Checks tab's rows as `RunList` shows them: each run on the head, its state, when it started and how long. */
+export const checkRows = (rows: ReadonlyArray<CheckRow>) =>
+  rows.map((row) => {
+    const state = runStateOf(row.status)
+    const startedAtMs = Date.parse(isoOf(row.createdAt))
+    return {
+      id: row.id,
+      flow: row.flow,
+      state,
+      startedAtMs,
+      finishedAtMs: state === "running" || state === "suspended" ? null : Date.parse(isoOf(row.updatedAt)),
+      href: `/app/runs/${row.id}`,
+    }
+  })
+
+/** The checks' summary: how many passed of how many, and whether any failed or runs. */
+export const checksSummaryOf = (rows: ReadonlyArray<CheckRow>) => ({
+  total: rows.length,
+  passed: rows.filter((row) => row.status === "done").length,
+  failed: rows.filter((row) => row.status === "failed").length,
+  running: rows.filter((row) => row.status === "working" || row.status === "waiting").length,
+  words: rows.map((row) => CHECK_STATUS_WORDS[row.status] ?? row.status),
+})
+
+/** A Postgres timestamp (`2026-10-20 10:00:00+00`) as ISO 8601. */
+export const isoOf = (value: string): string =>
+  value.includes("T") ? value : value.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00")
+
+/** A file's patch as a unified diff its parser reads: the headers GitHub's compare leaves off, then the hunks. */
+export const unifiedOf = (file: ChangedFile): string => {
+  const from = file.status === "added" ? "/dev/null" : `a/${file.previous_filename ?? file.filename}`
+  const to = file.status === "removed" ? "/dev/null" : `b/${file.filename}`
+  return `--- ${from}\n+++ ${to}\n${file.patch ?? ""}`
+}
+
+/** A file's status as the diff view names it. */
+export const fileStatusOf = (status: string) =>
+  status === "added"
+    ? "added" as const
+    : status === "removed"
+    ? "deleted" as const
+    : status === "renamed"
+    ? "renamed" as const
+    : "modified" as const
+
+/** This person's merge of the routed pull request, as the view query reads it. */
+export interface MergeView {
+  readonly mergeStatus: string
+  readonly mergeFailure: string
+  readonly mergeRefused: string | null
+  readonly merging: boolean
+}
+
+/** Copy for a merge that ended without merging: GitHub's or our refusal, by its reason. */
+const refusalCopyOf = (failure: string, base: string): string =>
+  failure in MERGE_FAILURE_COPY
+    ? MERGE_FAILURE_COPY[failure as MergeFailure](base)
+    : NOT_SENT_COPY[failure as NotSentReason] ?? "Couldn't merge"
+
+/** What the merge box says: merged, merging, or why the merge didn't happen. */
+export const mergeNoticeOf = (view: MergeView | undefined, pull: Pull): string | undefined => {
+  if (pull.merged) return "Merged"
+  if (view === undefined) return undefined
+  if (view.merging || view.mergeStatus === "pending" || view.mergeStatus === "done") return "Merging"
+  if (view.mergeRefused === "forbidden") return "Not allowed"
+  if (view.mergeRefused === "sign_in") return "Sign in"
+  if (view.mergeRefused !== null) return "Couldn't merge"
+  if (view.mergeStatus === "refused" || view.mergeStatus === "failed") return refusalCopyOf(view.mergeFailure, pull.baseRef)
+  return undefined
+}
+
+/**
+ * The merge box: what it says, whether Merge shows, and, beside Merge on a pull request into the repository's default
+ * branch, that merging deploys it (ruling GH-9). No warning where the person can't merge, or while the device doesn't
+ * know the default branch.
+ */
+export const mergeBoxOf = (
+  session: { readonly status: string; readonly role: Role | null } | undefined,
+  confirmed: { readonly role: Role | null } | undefined,
+  pull: Pull,
+  view: MergeView | undefined,
+): { readonly notice: string | undefined; readonly merge: boolean; readonly warning: string | undefined } => {
+  const notice = mergeNoticeOf(view, pull)
+  const merge = session !== undefined && mayMerge(session, confirmed, pull) && notice !== "Merging"
+  const intoDefault = pull.defaultBranch !== "" && pull.baseRef === pull.defaultBranch
+  return { notice, merge, warning: merge && intoDefault ? deployWarningOf(pull.baseRef) : undefined }
+}

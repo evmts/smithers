@@ -364,7 +364,7 @@ describe("the stack as GitHub's issue list", () => {
         updatedAt: "2026-10-20T10:00:00+00:00",
         links: [
           { label: "smithers/t4-retry", href: "/octo/hello/tree/smithers/t4-retry" },
-          { label: "#42", href: "https://github.com/octo/hello/pull/42" },
+          { label: "#42", href: "/octo/hello/pull/42" },
         ],
       },
       {
@@ -451,7 +451,7 @@ describe("a TODO's page as GitHub's issue page", () => {
     const page = todoPageOf(card({ branch: "smithers/t4-retry", prNumber: 42, pending: "requested" }), "octo", "hello")
     expect([page.branch, page.pullRequest, page.pending, page.droppable]).toEqual([
       { label: "smithers/t4-retry", href: "/octo/hello/tree/smithers/t4-retry" },
-      { label: "#42", href: "https://github.com/octo/hello/pull/42" },
+      { label: "#42", href: "/octo/hello/pull/42" },
       "requested",
       false,
     ])

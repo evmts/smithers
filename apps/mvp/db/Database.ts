@@ -3,6 +3,7 @@ import pulls from "./migrations/0031_pulls.ts"
 import pullWrites from "./migrations/0033_pull_writes.ts"
 import todoReportReceipts from "./migrations/0035_todo_report_receipts.ts"
 import issueCommitment from "./migrations/0032_issue_commitment.ts"
+import pullDefaultBranch from "./migrations/0037_pull_default_branch.ts"
 import { PgClient } from "@effect/sql-pg"
 import { Config, Effect, Layer, Redacted } from "effect"
 import { Migrator } from "effect/sql"
@@ -107,6 +108,7 @@ export const migrations = {
   "0031_pulls": pulls,
   "0033_pull_writes": pullWrites,
   "0035_todo_report_receipts": todoReportReceipts,
+  "0037_pull_default_branch": pullDefaultBranch,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

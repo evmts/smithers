@@ -506,7 +506,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       mergeable_state: pull.draft ? "draft" : github.unmergeable ? "blocked" : "clean",
       user: user(issue.login),
       head: { ref: pull.head, sha: headSha },
-      base: { ref: pull.base, sha: baseSha },
+      base: { ref: pull.base, sha: baseSha, repo: { default_branch: "main" } },
       commits: 1,
       additions: changed.reduce((sum, file) => sum + file.additions, 0),
       deletions: changed.reduce((sum, file) => sum + file.deletions, 0),

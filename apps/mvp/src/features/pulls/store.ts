@@ -1,0 +1,126 @@
+import { ElectricCollection } from "@smthrs/effect-electric"
+import { Collection } from "@smthrs/effect-tanstack-db"
+import { Context, Effect, Layer, type Scope } from "effect"
+import { IssuesStore } from "../issues/store"
+import { CHECKS_SHAPE_ROUTE, PULL_COMMITS_SHAPE_ROUTE, PULLS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE } from "./contract"
+import {
+  checksQuery,
+  commentsQuery,
+  commitsQuery,
+  filesQuery,
+  listQuery,
+  pullQuery,
+  reviewsQuery,
+  viewQuery,
+} from "./queries"
+import { CheckRow, commitKey, FilesRow, PullCommitRow, PullRow, PullsView, ReviewRow, VIEW } from "./schema"
+
+// Pull requests on this tab (decision 0012 §6, docs/features/pulls.md#the-browser): the repository's pull requests,
+// their commits, reviews and checks in Postgres, synced by Electric and kept on the device, beside the issues' store's
+// `items` and `comments`, which hold a pull request's title, body and conversation; the comparisons this tab read; and
+// what the route shows.
+
+/** Where pull requests sync from: ChatApi's origin. */
+export interface PullsConfig {
+  readonly origin: string
+}
+
+type Query<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>>
+
+/** The pull requests' state for one tab, and the live queries frontends read. */
+export class PullsStore extends Context.Service<
+  PullsStore,
+  {
+    readonly pulls: ElectricCollection.ElectricCollection<PullRow>
+    readonly commits: ElectricCollection.ElectricCollection<PullCommitRow>
+    readonly reviews: ElectricCollection.ElectricCollection<ReviewRow>
+    readonly checks: ElectricCollection.ElectricCollection<CheckRow>
+    readonly files: Collection.Collection<FilesRow, string>
+    readonly view: Collection.Collection<PullsView, string>
+    readonly list: Query<typeof listQuery>
+    readonly pull: Query<typeof pullQuery>
+    readonly comments: Query<typeof commentsQuery>
+    readonly reviewList: Query<typeof reviewsQuery>
+    readonly commitList: Query<typeof commitsQuery>
+    readonly checkList: Query<typeof checksQuery>
+    readonly fileList: Query<typeof filesQuery>
+    readonly viewState: Query<typeof viewQuery>
+    readonly scope: Scope.Scope
+  }
+>()("@smthrs/mvp/pulls/PullsStore") {
+  /** The store; its collections cleaned up and its shapes closed when the scope closes. Needs the issues' store. */
+  static readonly layer = (config: PullsConfig) => Layer.effect(PullsStore, make(config))
+}
+
+const make = Effect.fnUntraced(function* (config: PullsConfig) {
+  const scope = yield* Effect.scope
+  const issues = yield* IssuesStore
+  const shape = (route: string) => ({
+    url: `${config.origin}${route}`,
+    columnMapper: ElectricCollection.snakeCamelMapper(),
+    parser: { int8: (value: string) => Number(value) },
+  })
+  const kept = { syncMode: "eager", persist: { schemaVersion: 1 } } as const
+  const pulls = yield* ElectricCollection.make<PullRow>({
+    id: "pull-rows",
+    schema: PullRow,
+    getKey: (row) => row.itemId,
+    shape: shape(PULLS_SHAPE_ROUTE),
+    ...kept,
+  })
+  const commits = yield* ElectricCollection.make<PullCommitRow>({
+    id: "pull-commits",
+    schema: PullCommitRow,
+    getKey: commitKey,
+    shape: shape(PULL_COMMITS_SHAPE_ROUTE),
+    ...kept,
+  })
+  const reviews = yield* ElectricCollection.make<ReviewRow>({
+    id: "pull-reviews",
+    schema: ReviewRow,
+    getKey: (row) => row.id,
+    shape: shape(REVIEWS_SHAPE_ROUTE),
+    ...kept,
+  })
+  const checks = yield* ElectricCollection.make<CheckRow>({
+    id: "pull-checks",
+    schema: CheckRow,
+    getKey: (row) => row.id,
+    shape: shape(CHECKS_SHAPE_ROUTE),
+    ...kept,
+  })
+  const files = yield* Collection.local<FilesRow, string>({ id: "pull-files", schema: FilesRow, getKey: (row) => row.id })
+  const view = yield* Collection.local<PullsView, string>({
+    id: "pull-view",
+    schema: PullsView,
+    getKey: (row) => row.id,
+    initialData: [{
+      id: VIEW,
+      owner: "",
+      name: "",
+      repoId: "",
+      number: null,
+      tab: "conversation",
+      merging: false,
+      mergeWriteId: null,
+      mergeRefused: null,
+    }],
+  })
+  return PullsStore.of({
+    pulls,
+    commits,
+    reviews,
+    checks,
+    files,
+    view,
+    list: yield* listQuery(view, issues.items, pulls),
+    pull: yield* pullQuery(view, issues.items, pulls),
+    comments: yield* commentsQuery(view, issues.items, issues.comments),
+    reviewList: yield* reviewsQuery(view, issues.items, reviews),
+    commitList: yield* commitsQuery(view, issues.items, commits),
+    checkList: yield* checksQuery(view, issues.items, pulls, checks),
+    fileList: yield* filesQuery(files),
+    viewState: yield* viewQuery(view, issues.writes),
+    scope,
+  })
+})

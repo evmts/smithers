@@ -70,7 +70,7 @@ export function TodoScreen() {
                   <ItemAsideSection title={BRANCH} links={[screen.page.branch]} onNavigate={(href) => void navigate({ href })} />
                 )}
                 {screen.page.pullRequest === undefined ? null : (
-                  <ItemAsideSection title={PULL_REQUEST} links={[screen.page.pullRequest]} />
+                  <ItemAsideSection title={PULL_REQUEST} links={[screen.page.pullRequest]} onNavigate={(href) => void navigate({ href })} />
                 )}
                 {may && screen.page.droppable ? (
                   <ConfirmButton

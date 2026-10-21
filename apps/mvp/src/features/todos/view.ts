@@ -2,7 +2,7 @@ import type { IssuesViewIssue, IssuesViewLink, ItemConversationEvent, ItemStateK
 import { mayAsk, type Role } from "../auth/contract"
 import { viewerOf } from "../commands/catalog"
 import { issuePath } from "../issues/contract"
-import { githubPullUrl } from "../pulls/contract"
+import { pullPath } from "../pulls/contract"
 import { hrefFor } from "../repo/paths"
 import {
   COMMITTED,
@@ -205,7 +205,8 @@ const linksOf = (
         href: hrefFor({ owner, name, defaultBranch: null }, todo.branch, { kind: "tree", path: "" }),
       },
     }),
-  ...(todo.prNumber === null ? {} : { pullRequest: { label: `#${todo.prNumber}`, href: githubPullUrl(owner, name, todo.prNumber) } }),
+  // The pull request's page in the app (docs/features/pulls.md), as an issue's link is.
+  ...(todo.prNumber === null ? {} : { pullRequest: { label: `#${todo.prNumber}`, href: pullPath(owner, name, todo.prNumber) } }),
 })
 
 /** One stack row as `IssuesView` shows it, and whether a person may drop it from its menu. */

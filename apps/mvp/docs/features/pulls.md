@@ -13,6 +13,7 @@ GET /api/repos/<o>/<n>/compare/<base>...<head> ─▶ the files two commits diff
 ```
 
 - **One row per pull request, beside its issue row.** A pull request is an `items` row of kind `pull` (title, body, state, author, conversation) and a `pulls` row with its head, base, draft, merge and size. `github/Apply` reads it with its commits and reviews (`worker/github/Pulls.ts`), under the same newer-than guard as an issue.
+- **Merging into the default branch is a deploy** (ruling GH-9). Beside Merge on a pull request into the repository's default branch, the page says `Merging into <branch> deploys it.`, with the branch's real name. Production work, checks and runs, happens on Smithers.
 - **A person merges, bound to what they saw.** The writes route takes `pr/merge` only from a person's own session, Maintainer or Admin, never from a run credential (the agent, a flow, a frame or a sandbox; `PROTECTED_ACTS`, worker/Actor.ts). `pr/Merge` re-reads the pull request and refuses a moved head or base, a draft, or one already merged or closed, then merges with the person's own GitHub token at the head they saw, squash by default. GitHub's refusal, a required check included, is `not_mergeable`. A lost answer is read back: merged at that head is this merge.
 - **Checks are Smithers runs.** `checks/Run` runs once per head. Each `.smithers/checks/<name>.sh` runs with `sh` on the attempt's branch machine, synced to the head, and the `review` check reads the diff with the `judge` role and posts one comment review as the App, never an approval. Each is a `runs` row with the head's SHA. Checks never gate the merge: GitHub's branch protection does.
 - **Libraries** (`docs/libraries.md`): "Touch GitHub" (`@smthrs/integrations`: `GitHub.Pulls`, `GitHub.Refs`, `GitHub.Commits`, `GitHub.AppAuth`), `@smthrs/flow`, `@smthrs/agent` (`ModelStep` for the review), `@smthrs/sandbox` (`SandboxTools` on the branch machine), `@smthrs/effect-electric` (`ShapeProxy`).
@@ -36,17 +37,44 @@ GET /api/repos/<o>/<n>/compare/<base>...<head> ─▶ the files two commits diff
 | `GET /api/shapes/pulls`, `/api/shapes/pull-commits`, `/api/shapes/reviews` | the repository's rows, `PULL_COLUMNS`, `PULL_COMMIT_COLUMNS`, `REVIEW_COLUMNS` |
 | `GET /api/shapes/checks` | the repository's `runs` with a commit (`CHECK_COLUMNS`): never who launched them |
 
+## The browser
+
+`src/features/pulls/`, framework-free logic beside React views ([state.md](../state.md)), over the issues' store: a pull request's title, body, state and conversation are its `items` and `comments` rows.
+
+| Piece | What it is |
+|---|---|
+| `store.ts` | Electric collections `pull-rows`, `pull-commits`, `pull-reviews`, `pull-checks`, kept on the device (`src/device/registry.ts`); `pull-files` (the comparisons this tab read) and `pull-view` (the route, and this person's merge), in memory |
+| `queries.ts` | the list (newest first), the pull request, its comments, reviews, commits and checks (the runs on its head), the files, the view joined to the merge's write |
+| `actions.ts`, `pulls.ts` | `open` (the routes; the Files tab reads its comparison once the head is on the device), `warm` (a link's hover), `loadFiles` (once per two SHAs; a failed read is read again), `merge` (a person's press, sent at once in their session, never queued) |
+| `api.ts` | `PullsClient`: the merge write and the compare route, one deadline each |
+| `view.ts` | the props of `IssuesView`, `ItemConversation` and `RunList`; `listPageOf`: the list, loading or refused; `mergeBoxOf`: the notice (Merging, Merged, or why not), whether Merge shows, and the deploy warning |
+
+Screens (`src/screens/pulls/`), at GitHub's paths:
+
+```
+/$owner/$repo/pulls                 the list: Open, Draft, Merged or Closed, newest first
+/$owner/$repo/pull/$n               Conversation: body, comments, reviews; main ← smithers/t1-add  [Merging into main deploys it.] [Squash and merge]
+/$owner/$repo/pull/$n/commits       Commits: headline, author, SHA
+/$owner/$repo/pull/$n/checks        Checks: the Smithers runs on the head (RunList), never GitHub's
+/$owner/$repo/pull/$n/files         Files: each file's diff (DiffHunks), from the compare route
+```
+
+- **Merge** shows only to a Maintainer or Admin, on an open pull request that isn't a draft, once the device has its head. It sends `pr/merge` at the head and base the page shows; the page says Merging, then Merged, or why not (`New commits`, `<base> moved`, `Can't merge`, `Not allowed`, `Sign in`).
+- **The deploy warning** shows beside Merge, and only there, when the base is the repository's default branch. `pulls.default_branch` is the base repository's default branch as GitHub's last read named it; until a read names it, no warning shows.
+- Until the repository's first complete sync the list and the page are loading, never empty. A person whose read the shape refused gets Sign in with GitHub, or Not found, as on the issue pages; so does a pull request number the synced repository doesn't have.
+- A TODO's pull request link opens its page here ([TODOs](todos.md)).
+
 ## Merge
 
 `pr/Merge { writeId }` (`worker/github/Merge.ts`): `pr/Merge/send` (1 s doubling to 15 s, 5 minutes), then `pr/Merge/give-up` settles `failed unavailable`. Its write settles `done`, or `refused` with `head_moved`, `base_moved`, `draft`, `merged`, `closed`, `not_mergeable`, `sign_in_required`, `not_found`, `invalid` or `not_allowed`. `github/Write` refuses a `pr/merge` write it is handed: only `pr/Merge` merges.
 
 ## Postgres
 
-Migrations `0031_pulls` and `0033_pull_writes`.
+Migrations `0031_pulls`, `0033_pull_writes` and `0037_pull_default_branch`.
 
 | Table | | |
 |---|---|---|
-| `pulls` | `item_id` (`<repo_id>#<number>`), head and base refs and SHAs, `draft`, `merged`, `merged_at`, `merged_by`, `merge_sha`, `mergeable_state`, sizes | synced without the guard's times |
+| `pulls` | `item_id` (`<repo_id>#<number>`), head and base refs and SHAs, `default_branch` (GitHub's `base.repo.default_branch`; `NULL` until a read names it), `draft`, `merged`, `merged_at`, `merged_by`, `merge_sha`, `mergeable_state`, sizes | synced without the guard's times |
 | `pull_commits` | `item_id`, `position`, `sha`, `headline`, `author_login`, `authored_at` | rewritten whole when the list changes |
 | `reviews` | `id` (`<repo_id>/review/<GitHub id>`), `item_id`, `author_login`, `state`, `commit_sha`, `body` without the marker, `write_id` | |
 | `runs.sha` | the commit a run works on | a pull request's Checks read the runs on its head |
@@ -61,6 +89,7 @@ Migrations `0031_pulls` and `0033_pull_writes`.
 | `github.compare`, `smithers_github_compares{outcome}` | log, span, counter | `outcome`, `files` |
 | `checks.script`, `checks.review`, `checks.sync`; `smithers_checks{check,outcome}` | logs, spans, counter | `repoId`, `sha`, `check`, `prNumber`, `outcome` |
 | `github.apply` | log, span | as issues' (`event` `pull_request` or `pull_request_review`) |
+| `pulls.merge.post`, `pulls.compare.get`; `smithers_web_pull_merges{outcome}` | browser spans, counter | `outcome`: `sent`, the route's status, or `unreachable` |
 
 No record carries a title, a body, a diff, a finding, a command's output or a login.
 
@@ -72,8 +101,10 @@ No record carries a title, a body, a diff, a finding, a command's output or a lo
 | `worker/github/Merge.test.ts` | `pr/Merge` on the Node host against the scripted GitHub: as the person, each refusal, a lost answer adopted, a run again, give-up |
 | `worker/github/PullsApi.test.ts` | the merge write's admission (a Maintainer only; never the agent or a flow), the pull request webhooks and Apply's projection, the compare route, the shapes |
 | `worker/flows/Checks.test.ts` | script checks pass and fail, the review's one comment as the App, a lost review adopted, a failing judge, no App |
+| `src/features/pulls/pulls.test.ts` | the browser's layer on a Node device against ChatApi's real routes and Electric: the list, a pull request's tabs, the checks on its head only, the files through the compare route on the scripted GitHub, a Maintainer's merge followed to its write's refusal, a Member's, a signed-out person's and an unreachable ChatApi's |
+| `src/features/pulls/view.test.ts`, `contract.test.ts`, `api.test.ts` | the pages' words and the merge box, the deploy warning (into the default branch only, never without Merge), the paths, and the client against a local server |
 
 ## Not built yet
 
-- The pull request pages (`/$owner/$repo/pulls`, `/pull/$n` with Conversation, Commits, Checks and Files) and their Merge button: built, held back until their chaptered recording passes ([pull requests](../work/pull-request-list-and-tabs.md)).
+- The pages' end-to-end run with its chaptered recording, against a live instance with the GitHub App ([pull requests](../work/pull-request-list-and-tabs.md)).
 - Opening a pull request by hand from a branch, Update branch and the branches page: cut by decision 0016's simplified factory.

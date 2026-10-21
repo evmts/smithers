@@ -41,6 +41,9 @@ import { Issues, type IssuesLayer } from "./features/issues/issues"
 import { IssuesStore } from "./features/issues/store"
 import { tabIssues } from "./features/issues/tab"
 import { IssueWrites } from "./features/issues/writes"
+import { PullsClient } from "./features/pulls/api"
+import { Pulls, type PullsLayer } from "./features/pulls/pulls"
+import { PullsStore } from "./features/pulls/store"
 import { StackClient } from "./features/todos/api"
 import { TodosStore } from "./features/todos/store"
 import { tabTodos } from "./features/todos/tab"
@@ -188,6 +191,9 @@ export const appLayer = <S = never>(
     Terminal.layer({ origin }),
     // Git issues (decision 0012): the issue pages, and this tab's answers to the issue writes' steps it started.
     Issues.layer,
+    // Pull requests (decision 0012 §6): the list and one pull request's tabs, over the issues' store, and a person's
+    // merge and a comparison's files through ChatApi (`PullsClient`, below).
+    Pulls.layer.pipe(Layer.provide(PullsStore.layer({ origin }))),
     tabIssues({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
     // TODOs and the stack (decision 0016): the stack pages, the drafts, and this tab's answers to the TODO steps it
     // started.
@@ -251,10 +257,11 @@ export const appLayer = <S = never>(
     Layer.provideMerge(tabAnswers),
     Layer.provideMerge(ThemeStore.layer(host.theme)),
     Layer.provideMerge(services),
-    // Below `services`, so a test's services may give a faulty `IssuesClient` or `StackClient` in its place.
+    // Below `services`, so a test's services may give a faulty `IssuesClient`, `StackClient` or `PullsClient` in its place.
     Layer.provideMerge(
       Layer.mergeAll(
         IssuesClient.layer({ origin, within: REQUEST_WITHIN }),
+        PullsClient.layer({ origin, within: REQUEST_WITHIN }),
         StackClient.layer({ origin, within: REQUEST_WITHIN }),
         TextsClient.layer({ origin, within: REQUEST_WITHIN }),
         RepoClient.layer({ origin, within: REQUEST_WITHIN }),
@@ -351,6 +358,7 @@ export interface BootOptions {
     attention: AttentionView,
     todos: TodosView,
     codeIntel: CodeIntelView,
+    pulls: PullsLayer,
   ) => void
 }
 
@@ -380,6 +388,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const attention = yield* Attention
     const todos = yield* Todos
     const codeIntel = yield* CodeIntel
+    const pulls = yield* Pulls
     const store = yield* ChatStore
     yield* bindSessionConnectivity(options.target)
     yield* Effect.sync(() =>
@@ -402,6 +411,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         attention,
         todos,
         codeIntel,
+        pulls,
       )
     )
     yield* chatShortcuts(options.target)

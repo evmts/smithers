@@ -15,6 +15,7 @@ import {
   TriageSettings,
   WriteRow,
 } from "../features/issues/schema"
+import { CheckRow, PullCommitRow, PullRow, ReviewRow } from "../features/pulls/schema"
 import { Repository } from "../features/repo/schema"
 import { AlertChannel, AlertDelivery, Seen, SpendAlert } from "../features/spend/schema"
 import { Run } from "../features/status/schema"
@@ -134,6 +135,10 @@ const synced = [
   Migrations.synced({ id: "todos", version: 2, schema: Todo, family: true }),
   Migrations.synced({ id: "todo-requests", version: 1, schema: TodoRequest, family: true }),
   Migrations.synced({ id: "text-updates", version: 1, schema: TextUpdate, family: true }),
+  Migrations.synced({ id: "pull-rows", version: 1, schema: PullRow }),
+  Migrations.synced({ id: "pull-commits", version: 1, schema: PullCommitRow }),
+  Migrations.synced({ id: "pull-reviews", version: 1, schema: ReviewRow }),
+  Migrations.synced({ id: "pull-checks", version: 1, schema: CheckRow }),
 ]
 
 // --- The outbox's payloads, by the collection key each write names ---

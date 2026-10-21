@@ -7,7 +7,7 @@
  * head and marker, a merge is fenced by the head the person saw, and a commit
  * is fenced by the branch's expected head.
  */
-import { Effect, Option } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import type { IntegrationError } from "../src/core/IntegrationError.ts"
 import * as Commits from "../src/github/Commits.ts"
@@ -68,7 +68,7 @@ const rawPull = (number: number, input: Raw): Raw => {
     mergeable_state: "clean",
     user: USER,
     head: { ref: input["head"], sha: github!.refs.get(input["head"] as string) },
-    base: { ref: input["base"], sha: github!.refs.get(input["base"] as string) },
+    base: { ref: input["base"], sha: github!.refs.get(input["base"] as string), repo: { default_branch: "main" } },
     commits: 1,
     additions: 1,
     deletions: 0,
@@ -440,6 +440,7 @@ describe("Pulls", () => {
     })
     const read = await run(Pulls.getPull("o", "r", 1))
     expect([read.merged, read.mergeable_state, read.changed_files]).toEqual([false, "clean", 1])
+    expect(read.base.repo).toEqual({ default_branch: "main" })
     const all = await run(Pulls.listPulls("o", "r"))
     expect([all.items.length, all.truncated, all.items[0]!.merged, all.items[0]!.commits]).toEqual([1, false, false, 0])
     expect(github!.fixture.requests.at(-1)!.url).toBe("/repos/o/r/pulls?state=all&sort=updated&direction=desc&per_page=100")
@@ -452,6 +453,26 @@ describe("Pulls", () => {
     expect(github!.fixture.requests.at(-1)!.url).toContain("head=o%3Anothing")
     const open = await run(Pulls.listPulls("o", "r", { state: "open", maxPages: 1 }))
     expect(open.items).toHaveLength(1)
+  })
+
+  it("reads the base repository's default branch, and none when GitHub leaves the repository out", () => {
+    const pull = {
+      id: 1,
+      node_id: "PR_1",
+      number: 1,
+      title: "T",
+      body: null,
+      state: "open",
+      user: null,
+      head: { ref: "t1", sha: "a".repeat(40) },
+      base: { ref: "trunk", sha: "b".repeat(40), repo: { default_branch: "trunk" } },
+      created_at: "2026-10-21T00:00:00Z",
+      updated_at: "2026-10-21T00:00:00Z",
+      closed_at: null
+    }
+    const decode = Schema.decodeUnknownSync(Pulls.PullRequest)
+    expect(decode(pull).base).toEqual({ ref: "trunk", sha: "b".repeat(40), repo: { default_branch: "trunk" } })
+    expect(decode({ ...pull, base: { ref: "trunk", sha: "b".repeat(40) } }).base.repo).toBeNull()
   })
 
   it("adopts the earliest of two pull requests carrying the marker", async () => {

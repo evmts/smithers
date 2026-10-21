@@ -19,6 +19,7 @@ import * as Actor from "../Actor.ts"
 import { testFile } from "../test/harness.ts"
 import { handles } from "./Api.ts"
 import * as Compare from "./Compare.ts"
+import { upsertPull } from "./Pulls.ts"
 import { REPOSITORY, reset, signedIn, sql } from "./test/fixtures.ts"
 import { app, delivery, githubHarness, member } from "./test/harness.ts"
 import { appKey, BOT_LOGIN, scriptedGitHub } from "./test/scriptedGitHub.ts"
@@ -158,8 +159,13 @@ describe("pull request webhooks", () => {
     await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("pull_request", payload))
     await h.settled()
     expect(await sql(runtime, `SELECT kind, title FROM items`)).toEqual([{ kind: "pull", title: "Add A" }])
-    expect(await sql(runtime, `SELECT head_ref AS "headRef", head_sha AS "headSha", changed_files AS "files" FROM pulls`))
-      .toEqual([{ headRef: "feature", headSha: head, files: 1 }])
+    expect(
+      await sql(
+        runtime,
+        `SELECT head_ref AS "headRef", head_sha AS "headSha", default_branch AS "defaultBranch", changed_files AS "files"
+           FROM pulls`,
+      ),
+    ).toEqual([{ headRef: "feature", headSha: head, defaultBranch: "main", files: 1 }])
     expect(await sql(runtime, `SELECT sha FROM pull_commits`)).toEqual([{ sha: head }])
     expect(await sql(runtime, `SELECT author_login AS "author", state, body FROM reviews`)).toEqual([
       { author: "ben", state: "COMMENTED", body: "Looks fine." },
@@ -168,6 +174,42 @@ describe("pull request webhooks", () => {
     await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("pull_request", payload))
     await h.settled()
     expect(await sql(runtime, `SELECT count(*)::int AS n FROM pull_commits`)).toEqual([{ n: 1 }])
+  })
+
+  test("a pull request whose answer leaves out its base repository keeps no default branch (ruling GH-9)", async () => {
+    const at = "2026-10-21T00:00:00Z"
+    const pull = {
+      id: 7_002,
+      node_id: "PR_2",
+      number: 2,
+      title: "T2",
+      body: null,
+      state: "open" as const,
+      draft: false,
+      merged: false,
+      merged_at: null,
+      merge_commit_sha: null,
+      merged_by: null,
+      mergeable_state: "clean",
+      user: null,
+      head: { ref: "feature", sha: SHA_A },
+      base: { ref: "main", sha: SHA_B, repo: null },
+      commits: 1,
+      additions: 1,
+      deletions: 0,
+      changed_files: 1,
+      created_at: at,
+      updated_at: at,
+      closed_at: null,
+    }
+    expect(await runtime.runPromise(upsertPull(REPOSITORY.id, pull, Date.now()))).toBe(true)
+    expect(await sql(runtime, `SELECT base_ref AS "baseRef", default_branch AS "defaultBranch" FROM pulls`)).toEqual([
+      { baseRef: "main", defaultBranch: null },
+    ])
+    // A later read that names it is a change, and the row takes it.
+    const named = { ...pull, base: { ...pull.base, repo: { default_branch: "main" } } }
+    expect(await runtime.runPromise(upsertPull(REPOSITORY.id, named, Date.now() + 1_000))).toBe(true)
+    expect(await sql(runtime, `SELECT default_branch AS "defaultBranch" FROM pulls`)).toEqual([{ defaultBranch: "main" }])
   })
 
   test("a pull request GitHub no longer has is tombstoned, as an issue is", async () => {
