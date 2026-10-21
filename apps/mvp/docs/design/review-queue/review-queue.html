@@ -1,0 +1,1030 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Review queue mock</title>
+<style>
+/* Decision 0022 mock. The app's Paper palette (packages/smithers/ui/ui-styleguide/src/themes/paper.ts)
+   with the maintainer queue's layout (apps/maintainer-site/client/queue.css). */
+:root {
+  --bg: #f7f4ee; --side: #f2eee6; --surface: #fffefa; --surface2: #efeae0; --hover: #efeae0;
+  --text: #211d18; --muted: #665f54; --faint: #8a8377;
+  --border: rgba(33, 29, 24, 0.08); --border-strong: rgba(33, 29, 24, 0.16); --border-solid: #e4ddcf;
+  --brand: #0f766e; --brand-soft: color-mix(in srgb, #0f766e 11%, #fffefa); --on-brand: #fffefa;
+  --warning: #8c5a08; --warning-soft: color-mix(in srgb, #8c5a08 11%, #fffefa);
+  --danger: #a4442a; --danger-soft: color-mix(in srgb, #a4442a 10%, #fffefa);
+  --success: #0b5b57; --info: #3c6879;
+  --mark: #f6e7b8; --code: #fbf9f4; --code-line: rgba(33, 29, 24, 0.035);
+  --k-approval: #8c5a08; --k-changeset: #0f766e; --k-code: #7a4f9e; --k-decision: #3c6879;
+  --k-recording: #a4442a; --k-design: #9a5b1e; --k-updates: #5d6b2f; --k-question: #2b7d8a; --k-failed: #a4442a;
+  --t-c: #8a8377; --t-s: #2f7a3e; --t-k: #7a4f9e; --t-t: #3c6879; --t-f: #9a5b1e; --t-n: #a4442a;
+  --shadow: 0 1px 2px rgb(33 29 24 / 0.05), 0 12px 32px rgb(33 29 24 / 0.10);
+  --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --move: 160ms; --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1514; --side: #111a19; --surface: #131b1a; --surface2: #1a2422; --hover: #1a2422;
+    --text: #ece7db; --muted: #a8a193; --faint: #857f73;
+    --border: rgba(236, 231, 219, 0.09); --border-strong: rgba(236, 231, 219, 0.18); --border-solid: #293532;
+    --brand: #45c4b2; --brand-soft: color-mix(in srgb, #45c4b2 14%, #131b1a); --on-brand: #0d1514;
+    --warning: #f0c169; --warning-soft: color-mix(in srgb, #f0c169 13%, #131b1a);
+    --danger: #d97757; --danger-soft: color-mix(in srgb, #d97757 13%, #131b1a);
+    --success: #7fbfb3; --info: #82a8b8;
+    --mark: #4a3f14; --code: #101917; --code-line: rgba(236, 231, 219, 0.04);
+    --k-approval: #f0c169; --k-changeset: #45c4b2; --k-code: #c49be0; --k-decision: #82a8b8;
+    --k-recording: #e58b72; --k-design: #e3a467; --k-updates: #a6c27c; --k-question: #6fcad8; --k-failed: #d97757;
+    --t-c: #7f8a86; --t-s: #a6d27c; --t-k: #c49be0; --t-t: #82c4d8; --t-f: #e3a467; --t-n: #ee8b95;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px rgb(0 0 0 / 0.4);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1514; --side: #111a19; --surface: #131b1a; --surface2: #1a2422; --hover: #1a2422;
+  --text: #ece7db; --muted: #a8a193; --faint: #857f73;
+  --border: rgba(236, 231, 219, 0.09); --border-strong: rgba(236, 231, 219, 0.18); --border-solid: #293532;
+  --brand: #45c4b2; --brand-soft: color-mix(in srgb, #45c4b2 14%, #131b1a); --on-brand: #0d1514;
+  --warning: #f0c169; --warning-soft: color-mix(in srgb, #f0c169 13%, #131b1a);
+  --danger: #d97757; --danger-soft: color-mix(in srgb, #d97757 13%, #131b1a);
+  --success: #7fbfb3; --info: #82a8b8;
+  --mark: #4a3f14; --code: #101917; --code-line: rgba(236, 231, 219, 0.04);
+  --k-approval: #f0c169; --k-changeset: #45c4b2; --k-code: #c49be0; --k-decision: #82a8b8;
+  --k-recording: #e58b72; --k-design: #e3a467; --k-updates: #a6c27c; --k-question: #6fcad8; --k-failed: #d97757;
+  --t-c: #7f8a86; --t-s: #a6d27c; --t-k: #c49be0; --t-t: #82c4d8; --t-f: #e3a467; --t-n: #ee8b95;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px rgb(0 0 0 / 0.4);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 var(--font); -webkit-font-smoothing: antialiased; overflow: hidden; }
+button { font: inherit; color: inherit; }
+code { font: 0.88em var(--mono); background: var(--surface2); padding: 1px 4px; border-radius: 4px; }
+kbd { display: inline-block; min-width: 1.6em; font: 600 11px/1 var(--mono); text-align: center; padding: 3px 5px; border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 4px; color: var(--muted); background: var(--surface); }
+
+/* The chat shell: the host's header, the view, the chat button. */
+.app { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr auto; height: 100vh; height: 100dvh; }
+.host { display: flex; align-items: center; gap: 18px; padding: 10px 24px; font-size: 14px; }
+.host .sp { flex: 1; }
+.host a { color: var(--brand); text-decoration: none; }
+.host .who { color: var(--text); }
+.host .out { color: var(--muted); font-size: 13px; }
+.nav-q { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px 2px 8px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+.nav-q b { font-variant-numeric: tabular-nums; }
+.bell { position: relative; width: 18px; height: 18px; display: inline-block; color: var(--muted); }
+.bell svg { width: 18px; height: 18px; }
+.bell i { position: absolute; top: -5px; right: -7px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--brand); color: var(--on-brand); font: 600 10px/15px var(--font); font-style: normal; text-align: center; }
+.mode { border: 0; background: none; cursor: pointer; padding: 0; width: 18px; height: 18px; color: var(--text); }
+
+.qbar { display: flex; align-items: center; gap: 16px; padding: 8px 24px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--surface); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 0; }
+.qbar b { color: var(--text); font-weight: 600; }
+.qbar .brand { font-weight: 650; color: var(--text); font-size: 14px; }
+.kinds { display: flex; gap: 12px; overflow: hidden; }
+.kind { display: inline-flex; align-items: center; gap: 4px; }
+.kind::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--kc, var(--faint)); }
+.qbar .sp { flex: 1; }
+.cov { display: inline-flex; align-items: center; gap: 8px; }
+.cov .bar { width: 64px; height: 5px; border-radius: 3px; background: var(--surface2); overflow: hidden; }
+.cov .bar i { display: block; height: 100%; background: var(--brand); }
+.k-approval { --kc: var(--k-approval); } .k-changeset { --kc: var(--k-changeset); } .k-code { --kc: var(--k-code); }
+.k-decision { --kc: var(--k-decision); } .k-recording { --kc: var(--k-recording); } .k-design { --kc: var(--k-design); }
+.k-updates { --kc: var(--k-updates); } .k-failed { --kc: var(--k-failed); } .k-question { --kc: var(--k-question); }
+
+/* The stage: one item fills it. */
+.stage { position: relative; min-height: 0; overflow: hidden; }
+.card { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 760px); justify-content: center; transition: transform var(--move) var(--ease), opacity var(--move) var(--ease); }
+.card.wide { grid-template-columns: minmax(360px, 430px) minmax(0, 1fr); justify-content: stretch; }
+.card.wide.story { grid-template-columns: 212px minmax(360px, 420px) minmax(0, 1fr); }
+.card.enter { transform: translateY(26px); opacity: 0; transition: none; }
+.card.leave { transform: translateY(-26px); opacity: 0; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .card { transition: none; } }
+
+/* The storyline rail. */
+.rail { border-right: 1px solid var(--border); padding: 20px 14px 16px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; font-size: 13px; background: var(--bg); }
+.rail h2 { margin: 0 0 2px; font-size: 13px; font-weight: 650; }
+.rail .pr { color: var(--faint); font: 12px var(--mono); margin-bottom: 10px; }
+.step { display: grid; grid-template-columns: 14px 1fr; gap: 2px 8px; padding: 7px 8px; border-radius: 7px; color: var(--muted); }
+.step.on { background: var(--brand-soft); color: var(--text); }
+.step .n { grid-row: span 2; width: 14px; height: 14px; margin-top: 3px; border-radius: 50%; border: 1.5px solid var(--border-strong); }
+.step.done .n { background: var(--brand); border-color: var(--brand); }
+.step.on .n { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+.step .t { font-weight: 600; color: inherit; }
+.step .dots { display: flex; gap: 4px; flex-wrap: wrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--kc); }
+.dot.done { background: var(--kc); }
+.dot.cur { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--kc); }
+.rail .foot { margin-top: auto; padding-top: 12px; color: var(--faint); }
+
+/* The item. */
+.side { display: flex; flex-direction: column; gap: 13px; padding: 24px 26px 18px; overflow-y: auto; min-height: 0; }
+.card:not(.wide) .side { padding-top: 5vh; }
+.card.wide .side { border-right: 1px solid var(--border); background: var(--side); }
+.meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--faint); }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-weight: 650; color: var(--kc); text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--kc); }
+.area { font-family: var(--mono); }
+.prio { margin-left: auto; font-variant-numeric: tabular-nums; }
+.title { margin: 0; font-size: 22px; line-height: 1.25; font-weight: 650; letter-spacing: -0.01em; text-wrap: balance; }
+.card:not(.wide) .title { font-size: 26px; }
+.why { margin: -5px 0 0; color: var(--muted); font-size: 14px; }
+.conf { display: flex; gap: 10px; align-items: baseline; padding: 9px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); font-size: 13.5px; }
+.conf .pct { font: 700 18px/1 var(--font); color: var(--brand); font-variant-numeric: tabular-nums; }
+.conf.mid .pct { color: var(--warning); }
+.conf p { margin: 0; color: var(--muted); }
+.conf p b { color: var(--text); font-weight: 600; }
+.md { font-size: 14.5px; }
+.md h3 { margin: 12px 0 3px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); font-weight: 650; }
+.md h3:first-child { margin-top: 0; }
+.md p { margin: 0 0 6px; }
+.md ul { margin: 0 0 6px; padding-left: 18px; }
+.md li { margin: 2px 0; }
+.md pre { margin: 4px 0 8px; padding: 10px 12px; background: var(--code); border: 1px solid var(--border); border-radius: 8px; font: 11.5px/1.45 var(--mono); overflow-x: auto; color: var(--muted); }
+.md pre b { color: var(--brand); font-weight: 600; }
+.ref { color: var(--brand); text-decoration: none; cursor: pointer; }
+.said { margin: 0; padding: 9px 13px; border-left: 3px solid var(--brand); background: var(--surface2); border-radius: 0 6px 6px 0; font-size: 14px; }
+.said span { display: block; font-size: 12px; color: var(--faint); }
+.links { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.links li { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border-strong); border-radius: 6px; padding: 3px 8px; font-size: 12.5px; color: var(--brand); background: var(--surface); }
+.options { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.option { width: 100%; display: flex; align-items: flex-start; gap: 12px; text-align: left; padding: 11px 13px; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--surface); cursor: pointer; }
+.option:hover { background: var(--hover); }
+.option.rec { border-color: color-mix(in srgb, var(--brand) 55%, transparent); }
+.option.picked { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+.option .ol { font-weight: 600; display: block; }
+.option .od { color: var(--muted); font-size: 13.5px; display: block; }
+.rec-tag { font-size: 11px; font-weight: 650; color: var(--brand); background: var(--brand-soft); padding: 1px 7px; border-radius: 10px; margin-left: 6px; vertical-align: 1px; font-variant-numeric: tabular-nums; }
+
+/* The host's action strip: the note and the person's buttons. */
+.strip { position: sticky; bottom: -18px; margin-top: auto; display: grid; gap: 9px; padding: 10px 0 18px; background: linear-gradient(to bottom, transparent, var(--side) 14px); }
+.card:not(.wide) .strip { background: linear-gradient(to bottom, transparent, var(--bg) 14px); }
+.scope { display: none; font-size: 12px; color: var(--brand); }
+.scope-all .scope { display: block; }
+.note { width: 100%; resize: vertical; min-height: 66px; font: 14px/1.5 var(--font); color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 9px; padding: 9px 12px; }
+.note:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+.note::placeholder { color: var(--faint); }
+.acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.act { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); cursor: pointer; font-size: 14px; font-weight: 550; }
+.act:hover { background: var(--hover); }
+.act.primary { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
+.act.primary kbd { background: transparent; color: inherit; border-color: color-mix(in srgb, var(--on-brand) 45%, transparent); }
+.act.deny { color: var(--danger); }
+.hint { margin-left: auto; font-size: 12px; color: var(--faint); }
+.host-label { font-size: 11px; color: var(--faint); letter-spacing: 0.02em; }
+
+/* Later: the chooser replaces the buttons until a preset or Esc. */
+.later { display: none; border: 1px solid var(--border-strong); background: var(--surface); border-radius: 10px; padding: 10px; gap: 6px; box-shadow: var(--shadow); }
+.choosing .later { display: grid; }
+.choosing .acts { display: none; }
+.later h4 { margin: 0 0 2px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); display: flex; justify-content: space-between; }
+.later h4 span { text-transform: none; letter-spacing: 0; color: var(--warning); font-weight: 600; }
+.preset { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 7px 9px; border-radius: 7px; border: 1px solid transparent; background: none; text-align: left; cursor: pointer; }
+.preset:hover, .preset.sel { background: var(--hover); border-color: var(--border); }
+.preset .at { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.preset.off { opacity: 0.45; cursor: default; }
+.preset.off .at { color: var(--warning); }
+.typed { display: flex; gap: 8px; align-items: center; padding: 4px 9px 2px; font-size: 13px; color: var(--faint); }
+.typed input { flex: 1; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--bg); color: var(--text); font: 13px var(--font); padding: 5px 8px; }
+
+/* The subject. */
+.subject { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--bg); }
+.tabs { display: flex; align-items: stretch; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--border); flex: none; overflow-x: auto; }
+.tab { border: 1px solid transparent; border-bottom: none; background: none; padding: 6px 12px; border-radius: 7px 7px 0 0; font: 12.5px var(--mono); color: var(--muted); cursor: pointer; white-space: nowrap; margin-bottom: -1px; }
+.tab.on { background: var(--code); border-color: var(--border); color: var(--text); }
+.tabs .tk { margin-left: auto; align-self: center; display: inline-flex; gap: 3px; padding-bottom: 6px; }
+.fhead { display: flex; align-items: center; gap: 12px; padding: 7px 16px; font: 12px var(--mono); color: var(--muted); border-bottom: 1px solid var(--border); flex: none; min-width: 0; background: var(--code); }
+.fhead .path { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fhead .rev { margin-left: auto; color: var(--faint); }
+.fhead .tools { display: inline-flex; gap: 10px; color: var(--faint); }
+.fhead .tools .on { color: var(--brand); }
+.fnote { margin: 0; padding: 8px 16px; font-size: 13.5px; background: color-mix(in srgb, var(--mark) 55%, var(--bg)); border-bottom: 1px solid var(--border); flex: none; }
+.codewrap { flex: 1; min-height: 0; display: flex; }
+.code { flex: 1; overflow: auto; background: var(--code); font: 12.5px/1.6 var(--mono); padding: 6px 0 40px; }
+.ln { display: flex; white-space: pre; }
+.ln:hover { background: var(--code-line); }
+.ln .no { flex: none; width: 52px; padding-right: 10px; text-align: right; color: var(--faint); user-select: none; cursor: pointer; }
+.ln .fold { flex: none; width: 16px; color: var(--faint); cursor: pointer; text-align: center; user-select: none; }
+.ln .lc { padding-right: 24px; }
+.ln.mark { background: color-mix(in srgb, var(--brand) 9%, transparent); box-shadow: inset 3px 0 0 var(--brand); }
+.ln.add { background: color-mix(in srgb, var(--success) 9%, transparent); }
+.ln.add .no::after { content: " +"; color: var(--success); }
+.code:focus, .map:focus, .evid:focus, .subject:focus, .side:focus { outline: none; }
+.fhead .new { color: var(--success); font-weight: 600; }
+.ln .chip { margin-left: 10px; font: 600 10.5px var(--font); color: var(--brand); background: var(--brand-soft); border-radius: 9px; padding: 0 7px; }
+.ln.folded .lc::after { content: "⋯ " attr(data-hidden); color: var(--faint); background: var(--surface2); border-radius: 4px; padding: 0 5px; margin-left: 6px; font-size: 11px; }
+.tc { color: var(--t-c); font-style: italic; } .ts { color: var(--t-s); } .tk { color: var(--t-k); } .tt { color: var(--t-t); } .tf { color: var(--t-f); } .tn { color: var(--t-n); }
+.outline { width: 220px; flex: none; border-left: 1px solid var(--border); background: var(--side); padding: 12px; font-size: 13px; overflow-y: auto; display: none; }
+.outline.open { display: block; }
+.outline h4 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); }
+.outline input { width: 100%; margin-bottom: 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--text); padding: 4px 7px; font: 12px var(--font); }
+.sym { display: flex; justify-content: space-between; gap: 8px; padding: 4px 6px; border-radius: 5px; font-family: var(--mono); font-size: 12px; cursor: pointer; }
+.sym:hover, .sym.on { background: var(--hover); }
+.sym span { color: var(--faint); }
+
+/* Storyline map (the overview's subject). */
+.map { flex: 1; overflow: auto; padding: 22px 26px 40px; display: grid; gap: 12px; align-content: start; }
+.map .row { display: grid; grid-template-columns: 34px 1fr; gap: 12px; }
+.map .num { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 650; font-size: 13px; background: var(--surface); border: 1px solid var(--border-strong); color: var(--muted); }
+.map .row.done .num { background: var(--brand); color: var(--on-brand); border-color: var(--brand); }
+.scard { border: 1px solid var(--border-strong); background: var(--surface); border-radius: 11px; padding: 12px 14px; }
+.scard h4 { margin: 0; font-size: 15px; display: flex; justify-content: space-between; gap: 10px; }
+.scard h4 span { font: 12px var(--mono); color: var(--faint); font-weight: 400; }
+.scard p { margin: 2px 0 9px; color: var(--muted); font-size: 13.5px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ichip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; background: var(--bg); border: 1px solid var(--border); font-size: 12.5px; }
+.ichip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--kc); }
+.ichip.done { color: var(--faint); text-decoration: line-through; text-decoration-color: var(--border-strong); }
+.ichip b { color: var(--brand); font-weight: 650; }
+.map .verdict .scard { border-style: dashed; }
+
+/* Recording player. */
+.player { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.screen { flex: 1; min-height: 0; margin: 16px 20px 0; border-radius: 10px; background: #0b1110; position: relative; overflow: hidden; display: grid; place-items: center; }
+.scene { width: min(92%, 860px); aspect-ratio: 16 / 9; display: grid; grid-template-columns: 1.55fr 1fr; gap: 14px; }
+.dev { background: #f7f4ee; border-radius: 8px; position: relative; overflow: hidden; color: #211d18; font-size: 10px; padding: 9px 11px; display: flex; flex-direction: column; gap: 6px; }
+.dev.dark { background: #0d1514; color: #ece7db; }
+.dev .lab { position: absolute; bottom: 6px; right: 8px; font-size: 9px; opacity: 0.55; }
+.dev .mini-h { display: flex; justify-content: flex-end; gap: 8px; opacity: 0.6; font-size: 9px; }
+.dev .mini-card { background: rgba(127, 127, 127, 0.1); border-radius: 6px; padding: 7px 9px; display: grid; gap: 4px; }
+.dev .mini-card b { font-size: 11px; }
+.dev .mini-btns { display: flex; gap: 5px; }
+.dev .mini-btns i { font-style: normal; padding: 2px 6px; border-radius: 4px; background: rgba(127, 127, 127, 0.16); font-size: 9px; }
+.dev .mini-btns i.p { background: #0f766e; color: #fff; }
+.dev .toast { position: absolute; left: 8px; right: 8px; top: 30px; background: #fffefa; color: #211d18; border-left: 3px solid #8c5a08; border-radius: 6px; padding: 6px 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25); font-size: 10px; opacity: 0; transform: translateY(-6px); transition: all 240ms; }
+.scene.s4 .toast { opacity: 1; transform: none; }
+.scene .lap-empty, .scene .ph-item, .scene .ph-done { display: none; }
+.scene.s3 .lap-item { display: none; } .scene.s3 .lap-empty { display: grid; }
+.scene.s4 .ph-empty, .scene.s5 .ph-empty { display: none; } .scene.s4 .ph-item { display: grid; } .scene.s5 .ph-done { display: grid; }
+.scene.s5 .lap-item .mini-btns { display: none; }
+.dev .clock { position: absolute; top: 8px; left: 10px; font: 600 10px var(--mono); opacity: 0.6; }
+.scene .later-mini { display: none; }
+.scene.s2 .later-mini { display: grid; }
+.scene.s5 .ans { display: inline-block; }
+.ans { display: none; font-size: 9px; color: #0f766e; font-weight: 700; }
+.badge-run { position: absolute; top: 10px; left: 12px; font: 600 11px var(--mono); color: #7fbfb3; }
+.timeline { flex: none; padding: 12px 20px 0; }
+.tbar { position: relative; height: 6px; border-radius: 3px; background: var(--border-strong); cursor: pointer; }
+.tfill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--brand); }
+.thead { position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%; background: var(--brand); border: 2px solid var(--bg); transform: translate(-50%, -50%); }
+.ttick { position: absolute; top: -5px; width: 2px; height: 16px; background: var(--muted); border-radius: 1px; }
+.tpin { position: absolute; top: -14px; width: 11px; height: 11px; border-radius: 50% 50% 50% 0; background: var(--warning); transform: translateX(-50%) rotate(-45deg); }
+.segs { position: relative; height: 26px; margin-top: 10px; }
+.seg { position: absolute; top: 0; height: 26px; padding: 0 8px; border: 0; border-left: 2px solid var(--border-strong); background: none; font-size: 12px; color: var(--muted); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.seg.on { color: var(--text); font-weight: 600; background: var(--brand-soft); border-left-color: var(--brand); }
+.transport { flex: none; display: flex; align-items: center; gap: 16px; padding: 8px 20px 14px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.transport b { color: var(--text); }
+.transport .pp { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface); cursor: pointer; min-width: 96px; }
+.transport .sp { flex: 1; }
+.status { color: var(--success); font-weight: 650; }
+
+/* Design frame. */
+.dframe { flex: 1; min-height: 0; margin: 14px 18px 18px; border: 1px solid var(--border-strong); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; background: var(--surface); }
+.dframe .bar { flex: none; display: flex; justify-content: space-between; padding: 6px 12px; font-size: 11.5px; color: var(--faint); border-bottom: 1px solid var(--border); }
+.dframe .body { flex: 1; display: grid; grid-template-columns: 1fr 1fr; }
+.dpane { display: grid; place-items: center; padding: 18px; }
+.dpane.l { background: #f7f4ee; color: #211d18; }
+.dpane.d { background: #0d1514; color: #ece7db; }
+.dpane .lbl { font-size: 11px; opacity: 0.6; margin-bottom: 8px; text-align: center; }
+.chooser { width: 270px; border-radius: 11px; padding: 10px; border: 1px solid rgba(127, 127, 127, 0.25); display: grid; gap: 4px; font-size: 13px; }
+.dpane.l .chooser { background: #fffefa; box-shadow: 0 10px 28px rgba(33, 29, 24, 0.12); }
+.dpane.d .chooser { background: #131b1a; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); }
+.chooser .h { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.6; display: flex; justify-content: space-between; }
+.chooser .p { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; padding: 6px 7px; border-radius: 7px; align-items: center; }
+.chooser .p.s { background: rgba(127, 127, 127, 0.12); }
+.chooser .p em { font-style: normal; opacity: 0.6; font-size: 12px; }
+.chooser .k { font: 600 10px var(--mono); border: 1px solid rgba(127, 127, 127, 0.4); border-bottom-width: 2px; border-radius: 4px; text-align: center; padding: 2px 0; opacity: 0.8; }
+.chooser .p.x { opacity: 0.45; }
+.chooser .p.x em { color: #b27a16; opacity: 1; }
+
+/* Evidence panel (approval) and update list (notification). */
+.evid { flex: 1; overflow: auto; padding: 20px 24px 40px; display: grid; gap: 14px; align-content: start; }
+.box { border: 1px solid var(--border-strong); border-radius: 11px; background: var(--surface); overflow: hidden; }
+.box h4 { margin: 0; padding: 9px 14px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; }
+.box h4 span { text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: 400; }
+.kv { display: grid; grid-template-columns: 130px 1fr 1fr; font-size: 13.5px; }
+.kv > div { padding: 8px 14px; border-bottom: 1px solid var(--border); }
+.kv .h { color: var(--faint); font-size: 12px; }
+.kv .b { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+.kv .a { font-family: var(--mono); font-size: 12.5px; }
+.kv .a.chg { background: color-mix(in srgb, var(--success) 9%, transparent); }
+.checks { list-style: none; margin: 0; padding: 4px 0; }
+.checks li { display: flex; gap: 10px; align-items: center; padding: 6px 14px; font-size: 13.5px; }
+.checks li .ok { color: var(--success); font-weight: 700; width: 14px; }
+.checks li .bad { color: var(--danger); font-weight: 700; width: 14px; }
+.checks li span.r { margin-left: auto; color: var(--faint); font: 12px var(--mono); }
+.ups { list-style: none; margin: 0; padding: 0; }
+.ups li { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 14px; }
+.ups li:last-child { border-bottom: 0; }
+.ups li .g { font-weight: 700; text-align: center; }
+.ups li .g.f { color: var(--danger); } .ups li .g.d { color: var(--success); } .ups li .g.u { color: var(--info); }
+.ups li small { display: block; color: var(--faint); font-size: 12px; }
+.ups li .w { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ups li.fail { background: var(--danger-soft); }
+
+/* Key bar, sheet, toast. */
+.keys { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; padding: 8px 24px 10px; border-top: 1px solid var(--border); background: var(--surface); font-size: 12.5px; color: var(--muted); }
+.keys .sp { flex: 1; }
+.keys .chat { color: var(--text); font-weight: 550; }
+.sheet { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 55%, transparent); display: grid; place-items: center; z-index: 20; backdrop-filter: blur(2px); }
+.sheet[hidden] { display: none; }
+.sheet .boxs { width: min(620px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 14px; box-shadow: var(--shadow); padding: 18px 20px; }
+.sheet h2 { margin: 0 0 10px; font-size: 16px; }
+.sheet dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; font-size: 13.5px; }
+.sheet dt { text-align: right; }
+.sheet dd { margin: 0; color: var(--muted); }
+.slist { display: grid; gap: 2px; }
+.slist .sh { margin: 10px 0 2px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); }
+.slist button { display: flex; align-items: center; gap: 10px; text-align: left; padding: 7px 9px; border-radius: 7px; border: 0; background: none; cursor: pointer; font-size: 14px; }
+.slist button.on, .slist button:hover { background: var(--hover); }
+.slist button .ichip { padding: 0; border: 0; background: none; }
+.slist button em { margin-left: auto; font-style: normal; color: var(--faint); font-size: 12px; }
+.toast-q { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 9px; font-size: 13.5px; z-index: 30; box-shadow: var(--shadow); }
+.toast-q[hidden] { display: none; }
+
+/* Inline: the same item as a card in the conversation (f). */
+.inline .stage { overflow-y: auto; }
+.inline .card { position: static; display: block; max-width: 680px; margin: 22px auto; }
+.inline .card .rail, .inline .card .subject { display: none; }
+.inline .card .side { border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface); padding: 18px 20px; overflow: visible; }
+.inline .bubble { display: block; }
+.bubble { display: none; max-width: 680px; margin: 26px auto 0; text-align: right; }
+.bubble span { display: inline-block; background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 16px; font-size: 14.5px; }
+.inline .qbar .kinds, .inline .keys { display: none; }
+
+/* Phone. */
+.only-phone { display: none; }
+@media (max-width: 760px) {
+  body { overflow: auto; }
+  .app { height: auto; min-height: 100dvh; }
+  .host { padding: 10px 16px; gap: 12px; }
+  .host .hide-phone { display: none; }
+  .qbar { padding: 8px 16px; gap: 10px; }
+  .qbar .kinds, .qbar .done, .keys { display: none; }
+  .stage { overflow: visible; }
+  .card, .card.wide, .card.wide.story { position: static; display: flex; flex-direction: column; }
+  .rail { display: none; }
+  .stage { padding-bottom: 150px; }
+  .subject { order: -1; height: 36vh; border-bottom: 1px solid var(--border); }
+  .card:not(.wide) .side, .side { padding: 16px 16px 8px; overflow: visible; }
+  .card.wide .side { border-right: 0; background: var(--bg); }
+  .strip { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; gap: 8px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--side); border-top: 1px solid var(--border); box-shadow: 0 -8px 24px rgb(0 0 0 / 0.08); }
+  .card:not(.wide) .strip { background: var(--side); }
+  .note { min-height: 40px; height: 40px; resize: none; }
+  .acts { flex-wrap: nowrap; overflow-x: auto; }
+  .act { flex: none; }
+  .box h4 span { display: none; }
+  .preset { grid-template-columns: 1fr auto; }
+  .fhead .tools, .fhead .rev, .tabs .tk { display: none; }
+  .kv .a, .kv .b { word-break: break-all; }
+  .act kbd, .hint, .option kbd, .preset kbd { display: none; }
+  .only-phone { display: inline-flex; }
+  .scene { grid-template-columns: 1fr; width: 92%; }
+  .scene .dev.dark { display: none; }
+  .dframe .body { grid-template-columns: 1fr; }
+  .dpane.d { display: none; }
+  .kv { grid-template-columns: 96px 1fr 1fr; font-size: 12.5px; }
+  .ln .no { width: 38px; }
+  .title { font-size: 20px; }
+  .card:not(.wide) .title { font-size: 22px; }
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="host">
+    <span class="sp"></span>
+    <a class="hide-phone" href="#">Flows</a>
+    <a class="hide-phone" href="#">Runs</a>
+    <a class="hide-phone" href="#">Settings</a>
+    <span class="nav-q" title="Queue (g q)">Queue <b id="nav-count">8</b></span>
+    <span class="bell" title="Notifications (Alt+N)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><i>2</i></span>
+    <button class="mode" id="mode" title="Light or dark" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+    <span class="who">will</span>
+    <span class="out hide-phone">Sign out</span>
+  </header>
+  <div class="qbar">
+    <span class="brand">Queue</span>
+    <span><b id="at">1</b> / <b id="total">8</b></span>
+    <span class="kinds" id="kinds"></span>
+    <span class="sp"></span>
+    <span class="cov" id="cov"></span>
+    <span class="done"><b id="done">31</b> done today</span>
+  </div>
+  <main class="stage" id="stage" aria-live="polite"><div class="bubble"><span>What's waiting on me?</span></div></main>
+  <footer class="keys" id="keys"></footer>
+</div>
+<div class="sheet" id="sheet" hidden></div>
+<div class="toast-q" id="toast" role="status" hidden></div>
+
+<script>
+"use strict"
+;(() => {
+  const $ = (id) => document.getElementById(id)
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c])
+  const kbd = (k) => `<kbd>${esc(k)}</kbd>`
+  const params = new URLSearchParams(location.search)
+  if (params.get("theme")) document.documentElement.dataset.theme = params.get("theme")
+  $("mode").onclick = () => {
+    const dark = document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches)
+    document.documentElement.dataset.theme = dark ? "light" : "dark"
+  }
+
+  // ------------------------------------------------------------------------------------------------
+  // Syntax colour for the mock's TypeScript: comments, strings, numbers, keywords, types, calls.
+  const KW = new Set("as async await break case catch class const continue default else export extends false for from function if import in let new null of return satisfies true try type typeof undefined while yield".split(" "))
+  const RE = /(\/\/[^\n]*|\/\*\*?[^\n]*?\*\/)|("(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)|(\b\d+\b)|([A-Za-z_$][\w$]*)/g
+  const color = (line) => {
+    let out = "", last = 0, m
+    RE.lastIndex = 0
+    while ((m = RE.exec(line))) {
+      out += esc(line.slice(last, m.index))
+      const cls = m[1] ? "tc" : m[2] ? "ts" : m[3] ? "tn" : KW.has(m[4]) ? "tk" : /^[A-Z]/.test(m[4]) ? "tt" : line[RE.lastIndex] === "(" ? "tf" : ""
+      out += cls ? `<span class="${cls}">${esc(m[0])}</span>` : esc(m[0])
+      last = RE.lastIndex
+    }
+    return out + esc(line.slice(last))
+  }
+
+  // ------------------------------------------------------------------------------------------------
+  // The files under review: PR #42 "Later in the queue", head 9f3c1e.
+  const REMIND = `// attention/remind: brings a snoozed entry back on every device when its time comes.
+// Remote by need (DUR-5): it must fire while every device is off.
+import { Effect, Schema } from "effect"
+import { Flow, Sleep } from "@smthrs/flow"
+import { Attention } from "../attention/Attention"
+
+/** What a snooze asks for: whose row, which version, and when. */
+export const RemindPayload = Schema.Struct({
+  recipient: Schema.String,
+  subject: Schema.String,
+  version: Schema.Int,
+  until: Schema.DateTimeUtc,
+})
+
+/** One execution per snooze, so a retried request admits nothing twice. */
+export const remindId = (payload: typeof RemindPayload.Type) =>
+  \`remind/\${payload.recipient}/\${payload.subject}/\${payload.version}\`
+
+export default Flow.make("attention/remind", {
+  description: "Bring a snoozed entry back when its time comes",
+  capabilities: [],
+  effects: ["db:write"],
+  modelInvocable: false,
+  payload: RemindPayload,
+  success: Schema.Struct({ raised: Schema.Boolean }),
+  body: (payload) =>
+    Flow.sequence(
+      // Parks durably; the Durable Object's alarm wakes it at \`until\`.
+      Sleep.action.call({ until: payload.until }),
+      Flow.step("raise", () =>
+        Effect.gen(function* () {
+          const attention = yield* Attention
+          // A newer snooze, an answer or a dismissal makes this a no-op.
+          const raised = yield* attention.raiseIfSnoozed({
+            recipient: payload.recipient,
+            subject: payload.subject,
+            version: payload.version,
+          })
+          yield* Effect.annotateCurrentSpan("smithers.remind.raised", raised)
+          return { raised }
+        }),
+      ),
+    ),
+})`
+  const NOTIFICATIONS = `// Snooze: the person's own row, this version, until a time. Read as a pure function:
+// a row is snoozed while snoozed_version = version and now < snoozed_until.
+export const applySnooze = (who: Person, snooze: Snooze) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    return yield* sql.withTransaction(
+      Effect.gen(function* () {
+        const rows = yield* sql\`
+          UPDATE notifications
+             SET snoozed_until = \${snooze.until},
+                 snoozed_zone = \${snooze.zone},
+                 snoozed_version = \${snooze.version},
+                 updated_at = now()
+           WHERE recipient = \${who.id}
+             AND subject = \${snooze.subject}
+             AND version = \${snooze.version}
+             AND dismissed_version < version
+          RETURNING version\`
+        if (rows.length === 0) return { txid: null }
+        // Same transaction: the timer exists exactly when the snooze does.
+        yield* Executions.admit(Remind, {
+          id: remindId({ recipient: who.id, ...snooze }),
+          payload: { recipient: who.id, subject: snooze.subject, version: snooze.version, until: snooze.until },
+        })
+        return { txid: yield* currentTxid }
+      }),
+    )
+  })`
+  const LATER = `// The Later chooser's presets, resolved in the person's own time zone.
+import { DateTime } from "effect"
+
+export const PRESETS = [
+  { key: "1", label: "In 1 hour", at: (now: DateTime.Zoned) => DateTime.add(now, { hours: 1 }) },
+  { key: "2", label: "This evening", at: (now: DateTime.Zoned) => at(now, 0, 18), offeredUntil: 17 },
+  { key: "3", label: "Tomorrow", at: (now: DateTime.Zoned) => at(now, 1, 9) },
+  { key: "4", label: "Next week", at: (now: DateTime.Zoned) => at(nextMonday(now), 0, 9) },
+] as const
+
+/** A preset past the wait's deadline is shown disabled, with the deadline. */
+export const offered = (now: DateTime.Zoned, deadline: DateTime.Utc | null) =>
+  PRESETS.map((preset) => ({
+    ...preset,
+    open: deadline === null || DateTime.lessThan(preset.at(now), deadline),
+  }))`
+
+  const FILES = {
+    remind: { path: "apps/mvp/worker/flows/Remind.ts", tab: "Remind.ts", from: 1, text: REMIND, range: "L1–44", note: "The whole flow. Read the id (L16), the sleep (L29) and the guard (L34).",
+      marks: { 16: "1", 29: "2", 34: "3" }, folds: [[8, 13], [19, 44], [26, 43], [31, 41]], isNew: true,
+      symbols: [["RemindPayload", 8], ["remindId", 16], ["attention/remind", 19], ["raise", 30]] },
+    notif: { path: "apps/mvp/worker/Notifications.ts", tab: "Notifications.ts", from: 380, text: NOTIFICATIONS, range: "L380–407", note: "The snooze route's write; reviewed at 9f3c1e.",
+      marks: { 399: "4" }, folds: [[383, 407], [386, 405]], addedLines: [380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 391, 392, 393, 394, 395, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405, 406, 407], symbols: [["applySnooze", 382]] },
+    later: { path: "apps/mvp/plugins/queue/src/later.ts", tab: "later.ts", from: 1, text: LATER, range: "L1–16", note: "The four presets and the deadline rule.",
+      marks: { 6: "", 15: "" }, folds: [[4, 9], [12, 16]], isNew: true, symbols: [["PRESETS", 4], ["offered", 12]] },
+  }
+
+  // ------------------------------------------------------------------------------------------------
+  // The storyline of PR #42, and the queue's seven items in priority order.
+  const STORY = {
+    title: "Later in the queue", pr: "#42 · T12 · 9f3c1e", reviewed: 3, total: 9,
+    steps: [
+      { id: "s1", t: "Data", d: "Snooze columns on the feed row", items: [["code", "0036_notification_snooze.ts", true], ["code", "Snooze schema", true]] },
+      { id: "s2", t: "The reminder", d: "A durable timer raises the row once", items: [["code", "Notifications.ts L380–407", true], ["code", "Remind.ts", false, "code"], ["decision", "Four presets?", false, "decision"]] },
+      { id: "s3", t: "The queue", d: "The Later chooser", items: [["code", "later.ts", false], ["design", "The chooser, light and dark", false, "design"]] },
+      { id: "s4", t: "Proof", d: "Later returns on a second device", items: [["recording", "4 recordings", false, "recording"]] },
+    ],
+    verdict: ["approval", "Merge #42", false],
+  }
+
+  const ITEMS = [
+    { id: "approval", kind: "approval", label: "Approval", area: "deploy", prio: 940, wide: true,
+      title: "Deploy smithers-mvp 5a1d07 to production?",
+      why: "Asked by <b>deploy/production</b>, started by you at 23:51 · waits until Thu 12:00",
+      conf: { pct: 86, why: "Every check passed on 5a1d07, both migrations only add columns, and the last deploy rolls back in one step." },
+      context: `<p>Ships #40 and #41 from <code>main</code>. Two migrations run first.</p>`,
+      acts: [["a", "Approve", "primary"], ["r", "Deny", "deny"], ["l", "Later", ""]],
+      deadline: "Thu 12:00" },
+    { id: "storyline", kind: "changeset", label: "Changeset", area: "smithersai/smithers", prio: 880, wide: true, story: "overview",
+      title: "#42 Later in the queue: 4 steps, 9 items",
+      why: "T12 by the todo run · +412 −38 · 14 files · checks 4 of 4",
+      context: `<h3>What</h3><p>Later on any feed entry: a time on the row, and a remote timer that raises it once.</p>
+<h3>Diagram</h3><pre>l 2 ─▶ notification/snooze ─▶ feed row
+         └─▶ attention/remind (remote)
+               Sleep ─▶ <b>raise if still snoozed</b>
+                          └─▶ every device</pre>`,
+      acts: [["a", "Start", "primary"], ["r", "Changes", ""], ["l", "Later", ""]] },
+    { id: "failed", kind: "failed", label: "Failed", area: "smithersai/vibelang", prio: 810, wide: true,
+      title: "checks/Run · unit failed on 3e0aa1",
+      why: "T7's pull request #19 · timed out after 10 minutes · 00:04",
+      context: ``,
+      acts: [["x", "Retry", "primary"], ["o", "Open", ""], ["d", "Dismiss", ""], ["l", "Later", ""]] },
+    { id: "code", kind: "code", label: "Code", area: "attention", prio: 760, wide: true, story: "s2", files: ["remind", "notif"],
+      title: "The reminder fires once, then raises the row",
+      why: "Step 2 of 4 · the durable timer · new in #42",
+      context: `<h3>What</h3><p>A remote flow that sleeps until the snooze ends, then raises the feed row so it returns on every device.</p>
+<h3>Why</h3><p>Later must fire with every device off (DUR-5); a browser timer can't. 0009 §3: "Snooze is a time".</p>
+<h3>How</h3><ul><li>One execution per snooze version: <a class="ref" data-line="16">Remind.ts:16</a></li><li>Parks on <code>Sleep</code>; the alarm wakes it: <a class="ref" data-line="29">Remind.ts:29</a></li><li>Raises only if still snoozed: <a class="ref" data-line="34">Remind.ts:34</a></li></ul>
+<h3>Diagram</h3><pre>snooze route ──tx──▶ feed row
+     └─admit─▶ <b>[THIS] attention/remind</b>
+                 Sleep ─▶ raiseIfSnoozed
+                            └─▶ version + 1</pre>
+<h3>Ask</h3><ul><li>Can a resnooze between the wake and the raise lose the newer snooze?</li><li>Does a dismissal before the wake leave the row closed?</li></ul>`,
+      acts: [["a", "Looks good", "primary"], ["r", "Changes", ""], ["l", "Later", ""]] },
+    { id: "decision", kind: "decision", label: "Decision", area: "queue", prio: 720, wide: true, story: "s2", files: ["later"],
+      title: "Later's presets: 1 hour, this evening, tomorrow, next week?",
+      why: "Raised by the guide for later.ts · step 2 of 4",
+      conf: { pct: 72, why: "You named \"1 hour\" and \"tomorrow\"; keys 1–4 fit four presets; evening and next week are what Gmail and Slack offer." },
+      context: `<p>Each preset resolves in your time zone. A preset past the wait's deadline is shown disabled.</p>`,
+      options: [
+        { label: "Yes, those four", detail: "1 hour · this evening 18:00 · tomorrow 9:00 · next week Mon 9:00", rec: true },
+        { label: "Only 1 hour and tomorrow", detail: "Two presets; type anything else" },
+        { label: "Add \"in 3 hours\"", detail: "Five presets; keys 1–5" },
+        { label: "Other (type it)", detail: "" },
+      ],
+      acts: [["r", "Other", ""], ["l", "Later", ""]] },
+    { id: "recording", kind: "recording", label: "Recording", area: "e2e", prio: 690, wide: true, story: "s4",
+      title: "Later returns on the phone",
+      why: "Step 4 of 4 · e2e/queue-later.spec.ts · passed · 1 of 4 recordings",
+      context: `<p><b>Scenario:</b> Ann, a laptop and a phone, one approval waiting.</p>
+<ul><li>Snooze for an hour: <a class="ref" data-t="3">[0:03 l 1]</a> <a class="ref" data-t="5">[0:05 Later · 1 hour]</a></li>
+<li>The clock moves an hour: <a class="ref" data-t="8">[0:08 Clock +1 h]</a></li>
+<li>The phone gets it back: <a class="ref" data-t="10">[0:10 Toast]</a> <a class="ref" data-t="12">[0:12 Answer]</a></li></ul>
+<p><b>Working:</b> the item returns once, on both devices.</p>`,
+      chapters: [[0, "Title"], [2, "Open the queue"], [3, "l 1: in 1 hour"], [8, "Clock +1 h"], [10, "Phone: toast"], [12, "Answer"]], duration: 14,
+      acts: [["a", "Looks good", "primary"], ["r", "Changes", ""], ["l", "Later", ""]] },
+    { id: "design", kind: "design", label: "Design", area: "queue", prio: 610, wide: true, story: "s3",
+      title: "The Later chooser, light and dark",
+      why: "Step 3 of 4 · marked done by its author at 23:40",
+      context: `<p>Opens in the action strip on <code>l</code>. A preset past the deadline shows the deadline instead of its time.</p>`,
+      links: ["docs/design/review-queue/later.html"],
+      acts: [["a", "Looks good", "primary"], ["r", "Changes", ""], ["l", "Later", ""]] },
+    { id: "notification", kind: "updates", label: "Updates", area: "smithersai/vibelang", prio: 420, wide: true,
+      title: "smithersai/vibelang: 3 updates",
+      why: "Since you looked at 21:10",
+      context: ``,
+      acts: [["d", "Dismiss all", "primary"], ["o", "Open", ""], ["l", "Later", ""]] },
+  ]
+
+  // ------------------------------------------------------------------------------------------------
+  // State: route state lives in the hash, as the app's would in the URL.
+  let index = 0, fileIndex = 0, hideComments = false, outlineOpen = false, folded = new Set(), scopeAll = false
+  let done = 31, playing = false, t = 0, raf = 0, last = 0
+  const answered = new Set()
+  const current = () => ITEMS[index]
+  const visible = () => ITEMS.filter((it) => !answered.has(it.id))
+
+  function header() {
+    const list = visible()
+    $("at").textContent = String(Math.max(1, list.indexOf(current()) + 1))
+    $("total").textContent = String(list.length)
+    $("nav-count").textContent = String(list.length)
+    $("done").textContent = String(done)
+    const counts = {}
+    for (const it of list) counts[it.kind] = (counts[it.kind] ?? 0) + 1
+    const LBL = { approval: "approval", changeset: "changeset", failed: "failed", code: "code", decision: "decision", recording: "recording", design: "design", updates: "update" }
+    $("kinds").innerHTML = Object.entries(counts).map(([k, n]) => `<span class="kind k-${k}"><b>${n}</b> ${LBL[k]}</span>`).join("")
+    const it = current()
+    $("cov").innerHTML = it.story ? `<span>#42</span><span class="bar"><i style="width:${(100 * STORY.reviewed) / STORY.total}%"></i></span><span><b>${STORY.reviewed}</b> of ${STORY.total} reviewed</span>` : `<span><b>18%</b> of smithersai/smithers reviewed</span>`
+  }
+
+  function rail(it) {
+    const stepOn = it.story
+    const dots = (items) => items.map(([k, , d, cur]) => `<span class="dot k-${k}${d ? " done" : ""}${cur === it.id ? " cur" : ""}"></span>`).join("")
+    return `<nav class="rail" aria-label="Storyline">
+      <h2>${esc(STORY.title)}</h2><div class="pr">${esc(STORY.pr)}</div>
+      <div class="step${stepOn === "overview" ? " on" : ""} done"><span class="n"></span><span class="t">Overview</span><span class="dots"></span></div>
+      ${STORY.steps.map((s, i) => `<div class="step${stepOn === s.id ? " on" : ""}${s.items.every((x) => x[2]) ? " done" : ""}"><span class="n"></span><span class="t">${i + 1} ${esc(s.t)}</span><span class="dots">${dots(s.items)}</span></div>`).join("")}
+      <div class="step"><span class="n"></span><span class="t">Verdict</span><span class="dots">${dots([STORY.verdict])}</span></div>
+      <div class="foot">${kbd("s")} storyline</div>
+    </nav>`
+  }
+
+  function strip(it) {
+    const options = it.options && !it.wide ? optionsHtml(it) : ""
+    const later = `<div class="later" role="listbox" aria-label="Later">
+      <h4>Later <span>${it.deadline ? `waits until ${esc(it.deadline)}` : ""}</span></h4>
+      ${[["1", "In 1 hour", "01:12"], ["2", "This evening", "18:00"], ["3", "Tomorrow", "Thu 9:00"], ["4", "Next week", it.deadline ? `after ${it.deadline}` : "Mon 9:00", Boolean(it.deadline)]]
+        .map(([k, l, at, off], i) => `<button class="preset${off ? " off" : ""}${i === 2 ? " sel" : ""}" data-preset="${k}" ${off ? "disabled" : ""}>${kbd(k)}<span>${l}</span><span class="at">${at}</span></button>`).join("")}
+      <div class="typed">${kbd("l")} tomorrow <input placeholder="in 3h, fri 2pm" aria-label="A time"></div>
+    </div>`
+    return `<div class="strip">
+      ${it.hostLabel ? `<span class="host-label">${esc(it.hostLabel)}</span>` : ""}
+      <span class="scope">${kbd("g")} Applies to every ${esc(it.label.toLowerCase())} in this repository</span>
+      ${options}
+      <textarea class="note" rows="3" placeholder="Note (i)" aria-label="Note"></textarea>
+      <div class="acts">${it.wide && it.options ? optionsKeys(it) : ""}${it.acts.map(([k, l, cls]) => `<button class="act ${cls}" data-key="${k}">${kbd(k)} ${esc(l)}</button>`).join("")}<span class="hint">${kbd("⌘↵")} send</span></div>
+      ${later}
+    </div>`
+  }
+  const optionsHtml = (it) => `<ol class="options">${it.options.map((o, i) => `<li><button class="option${o.rec ? " rec" : ""}" data-key="${i + 1}">${kbd(String(i + 1))}<span><span class="ol">${esc(o.label)}${o.rec ? ` <span class="rec-tag">recommended · ${it.conf.pct}%</span>` : ""}</span>${o.detail ? `<span class="od">${esc(o.detail)}</span>` : ""}</span></button></li>`).join("")}</ol>`
+  const optionsKeys = () => ""
+
+  function side(it) {
+    const conf = it.conf ? `<div class="conf${it.conf.pct < 85 ? " mid" : ""}"><span class="pct">${it.conf.pct}%</span><p><b>Recommended: ${it.kind === "approval" ? "Approve" : String(it.options.findIndex((o) => o.rec) + 1)}.</b> ${esc(it.conf.why)}</p></div>` : ""
+    const links = it.links ? `<ul class="links">${it.links.map((l, i) => `<li>${i === 0 ? kbd("o") : ""}${esc(l)}</li>`).join("")}</ul>` : ""
+    const storyChip = it.story ? `<span class="only-phone ichip k-changeset" style="font-size:12px">#42 · ${it.story === "overview" ? "overview" : "step " + it.story.slice(1) + " of 4"}</span>` : ""
+    return `<section class="side">
+      <div class="meta"><span class="pill k-${it.kind}">${esc(it.label)}</span><span class="area">${esc(it.area)}</span>${storyChip}<span class="prio" title="Priority">${it.prio}</span></div>
+      <h1 class="title">${esc(it.title)}</h1>
+      <p class="why">${it.why}</p>
+      ${conf}
+      ${it.options ? optionsHtml(it) : ""}
+      ${it.context ? `<div class="md">${it.context}</div>` : ""}
+      ${links}
+      ${strip(it)}
+    </section>`
+  }
+
+  function codeHtml(file) {
+    const lines = file.text.split("\n")
+    const hiddenBy = new Map()
+    for (const [a, b] of file.folds) if (folded.has(`${file.tab}:${a}`)) for (let n = a + 1; n <= b; n++) if (!hiddenBy.has(n)) hiddenBy.set(n, a)
+    const rows = []
+    lines.forEach((text, i) => {
+      const n = file.from + i
+      if (hiddenBy.has(n)) return
+      const comment = /^\s*(\/\/|\/\*\*)/.test(text)
+      if (hideComments && comment) return
+      const shown = hideComments ? text.replace(/\s+\/\/.*$/, "") : text
+      const fold = file.folds.find(([a]) => a === n)
+      const isFolded = fold && folded.has(`${file.tab}:${n}`)
+      const mark = file.marks[n] !== undefined
+      const add = file.addedLines?.includes(n)
+      rows.push(`<div class="ln${mark ? " mark" : ""}${add ? " add" : ""}${isFolded ? " folded" : ""}" data-n="${n}"><a class="no">${n}</a><span class="fold" data-fold="${fold ? n : ""}">${fold ? (isFolded ? "▸" : "▾") : ""}</span><span class="lc"${isFolded ? ` data-hidden="${fold[1] - fold[0]} lines${(() => { const m = Object.keys(file.marks).filter((x) => x > fold[0] && x <= fold[1]).length; return m ? ` · ${m} to read` : "" })()}"` : ""}>${color(shown) || " "}${mark && file.marks[n] ? `<span class="chip">read ${file.marks[n]}</span>` : ""}</span></div>`)
+    })
+    return rows.join("")
+  }
+
+  function codeSubject(it) {
+    const keys = it.files
+    fileIndex = Math.min(fileIndex, keys.length - 1)
+    const file = FILES[keys[fileIndex]]
+    return `<nav class="tabs">${keys.map((k, i) => `<button class="tab${i === fileIndex ? " on" : ""}" data-file="${i}">${esc(FILES[k].tab)}</button>`).join("")}${keys.length > 1 ? `<span class="tk">${kbd("J")}${kbd("K")}</span>` : ""}</nav>
+      <div class="fhead"><span class="path">${esc(file.path)}</span><span>${esc(file.range)}</span>${file.isNew ? `<span class="new">new file</span>` : ""}<span class="rev">9f3c1e</span><span class="tools"><span class="${hideComments ? "on" : ""}">${kbd("c")} comments</span><span>${kbd("z")} fold</span><span class="${outlineOpen ? "on" : ""}">${kbd("O")} outline</span></span></div>
+      <p class="fnote">${esc(file.note)}</p>
+      <div class="codewrap"><div class="code" id="codepane">${codeHtml(file)}</div>
+      <aside class="outline${outlineOpen ? " open" : ""}"><h4>Outline</h4><input placeholder="Filter" aria-label="Filter symbols">${file.symbols.map(([s, n], i) => `<div class="sym${i === 0 ? " on" : ""}" data-jump="${n}">${esc(s)}<span>${n}</span></div>`).join("")}</aside></div>`
+  }
+
+  function mapSubject() {
+    const chip = ([k, l, d, cur]) => `<span class="ichip k-${k}${d ? " done" : ""}">${esc(l)}${k === "decision" ? " <b>72%</b>" : ""}</span>`
+    return `<div class="map">
+      ${STORY.steps.map((s, i) => `<div class="row${s.items.every((x) => x[2]) ? " done" : ""}"><span class="num">${i + 1}</span><div class="scard"><h4>${esc(s.t)}<span>${s.items.length} item${s.items.length > 1 ? "s" : ""}</span></h4><p>${esc(s.d)}</p><div class="chips">${s.items.map(chip).join("")}</div></div></div>`).join("")}
+      <div class="row verdict"><span class="num">✓</span><div class="scard"><h4>Verdict<span>Maintainers</span></h4><p>Merge #42 at 9f3c1e, with the host's confirm</p><div class="chips">${chip(STORY.verdict)}</div></div></div>
+    </div>`
+  }
+
+  function playerSubject(it) {
+    const at = (s) => `${Math.min(100, (100 * s) / it.duration)}%`
+    return `<div class="player">
+      <div class="screen"><span class="badge-run">passed · 1:1 · light and dark</span>
+        <div class="scene" id="scene">
+          <div class="dev"><span class="clock" id="clk-a">00:12</span><div class="mini-h">Flows Runs Queue · ann</div>
+            <div class="mini-card lap-empty" style="margin-top:14px"><b>Queue</b><span style="opacity:.6">Nothing waiting · 1 later, 01:12</span></div>
+            <div class="mini-card lap-item" style="margin-top:14px"><span style="opacity:.6;font-size:9px">APPROVAL · deploy</span><b>Deploy smithers-mvp 5a1d07 to production?</b>
+              <div class="mini-btns"><i class="p">a Approve</i><i>r Deny</i><i>l Later</i></div>
+              <div class="later-mini" style="gap:3px;margin-top:4px"><i style="font-style:normal">1 In 1 hour · 01:12</i><i style="font-style:normal;opacity:.6">3 Tomorrow · 9:00</i></div>
+              <span class="ans">Approved by Ann on the phone</span></div>
+            <span class="lab">laptop · light</span></div>
+          <div class="dev dark"><span class="clock" id="clk-b">00:12</span><div class="mini-h">Queue</div>
+            <div class="toast"><b>◆ Back from Later</b> · Deploy smithers-mvp?</div>
+            <div class="mini-card ph-empty" style="margin-top:46px"><b>Queue</b><span style="opacity:.6">Nothing waiting</span></div>
+            <div class="mini-card ph-item" style="margin-top:46px"><span style="opacity:.6;font-size:9px">APPROVAL · deploy</span><b>Deploy smithers-mvp 5a1d07?</b><div class="mini-btns"><i class="p">Approve</i><i>Deny</i><i>Later</i></div></div>
+            <div class="mini-card ph-done" style="margin-top:46px"><b>Queue</b><span style="opacity:.6">Nothing waiting</span><span style="color:#45c4b2;font-weight:700;font-size:9px">Approved</span></div>
+            <span class="lab">phone · dark</span></div>
+        </div>
+      </div>
+      <div class="timeline"><div class="tbar"><div class="tfill" id="tfill"></div>${it.chapters.slice(1).map(([s]) => `<span class="ttick" style="left:${at(s)}"></span>`).join("")}<div class="thead" id="thead"></div></div>
+        <div class="segs">${it.chapters.map(([s, l], i) => `<button class="seg" data-i="${i}" data-t="${s}" style="left:${at(s)};width:${(100 * ((it.chapters[i + 1]?.[0] ?? it.duration) - s)) / it.duration}%">${esc(l)}</button>`).join("")}</div></div>
+      <div class="transport"><button class="pp" id="pp">${kbd("space")} <span id="ppl">Play</span></button><span id="clock"><b>00:00</b> / 00:14</span><span id="chap"></span><span class="sp"></span><span>${kbd("[")}${kbd("]")} chapter</span><span>${kbd("<")} <b>1×</b> ${kbd(">")}</span></div>
+    </div>`
+  }
+
+  function designSubject() {
+    const ch = (dark) => `<div class="chooser"><div class="h"><span>Later</span><span style="color:${dark ? "#f0c169" : "#8c5a08"};text-transform:none;letter-spacing:0">waits until Thu 12:00</span></div>
+      <div class="p"><span class="k">1</span>In 1 hour<em>01:12</em></div><div class="p"><span class="k">2</span>This evening<em>18:00</em></div>
+      <div class="p s"><span class="k">3</span>Tomorrow<em>Thu 9:00</em></div><div class="p x"><span class="k">4</span>Next week<em>after Thu 12:00</em></div>
+      <div class="p" style="grid-template-columns:22px 1fr;opacity:.7"><span class="k">l</span>tomorrow 9:00 · or type a time</div></div>`
+    return `<div class="dframe"><div class="bar"><span>docs/design/review-queue/later.html · sandboxed frame</span><span>light and dark</span></div>
+      <div class="body"><div class="dpane l"><div><div class="lbl">Light</div>${ch(false)}</div></div><div class="dpane d"><div><div class="lbl">Dark</div>${ch(true)}</div></div></div></div>`
+  }
+
+  function approvalSubject() {
+    return `<div class="evid">
+      <div class="box"><h4>What will happen <span>checked again when you press</span></h4>
+        <div class="kv"><div class="h"></div><div class="h">Before</div><div class="h">After</div>
+          <div class="h">Worker</div><div class="b">7b96f878</div><div class="a chg">5a1d07e3</div>
+          <div class="h">Postgres</div><div class="b">0034_prototypes</div><div class="a chg">0036_notification_snooze (2 added)</div>
+          <div class="h">Device stores</div><div class="b">epoch 41</div><div class="a chg">epoch 42 · notifications resync</div>
+          <div class="h">Who asked</div><div class="b" style="grid-column:span 2">deploy/production, started by you · 23:51</div></div></div>
+      <div class="box"><h4>Evidence <span>on 5a1d07</span></h4><ul class="checks">
+        <li><span class="ok">✓</span>unit<span class="r">2,418 tests · 100%</span></li>
+        <li><span class="ok">✓</span>e2e, local and live<span class="r">38 recordings</span></li>
+        <li><span class="ok">✓</span>typecheck and lint<span class="r">0 problems</span></li>
+        <li><span class="ok">✓</span>review<span class="r">1 comment · judge</span></li>
+        <li><span class="ok">✓</span>#40 and #41 reviewed in the queue<span class="r">14 of 14</span></li></ul></div>
+    </div>`
+  }
+
+  function failedSubject() {
+    return `<div class="evid">
+      <div class="box"><h4>checks/Run · unit <span>3e0aa1 · 10:00 · attempt 3 of 3</span></h4><ul class="checks">
+        <li><span class="ok">✓</span>Sync the branch machine to 3e0aa1<span class="r">0:09</span></li>
+        <li><span class="ok">✓</span>pnpm install<span class="r">0:41</span></li>
+        <li><span class="bad">✕</span>.smithers/checks/unit.sh<span class="r">timed out at 10:00</span></li></ul></div>
+      <div class="box"><h4>Last output <span>unit.sh</span></h4><pre style="margin:0;padding:10px 14px;font:12px/1.5 var(--mono);color:var(--muted);white-space:pre-wrap">✓ parser › effect handlers (212 tests)
+✓ checker › rows and services (480 tests)
+… vibe-lsp › hover waits for the language worker
+Timed out after 600 s</pre></div>
+    </div>`
+  }
+
+  function updatesSubject() {
+    return `<div class="evid"><div class="box"><h4>smithersai/vibelang <span>3 entries</span></h4><ul class="ups">
+      <li><span class="g u">↑</span><span>main · 3 pushes<small>3e0aa1 Parse effect handlers in .vibe files</small></span><span class="w">23:58</span></li>
+      <li><span class="g u">◇</span><span>Release v0.3.0<small>published by will</small></span><span class="w">22:40</span></li>
+      <li><span class="g d">✓</span><span>Clone smithersai/vibelang-examples<small>2.1 MB · indexed</small></span><span class="w">21:12</span></li></ul></div></div>`
+  }
+
+  function subject(it) {
+    if (it.kind === "changeset") return mapSubject()
+    if (it.files) return codeSubject(it)
+    if (it.kind === "recording") return playerSubject(it)
+    if (it.kind === "design") return designSubject()
+    if (it.kind === "approval") return approvalSubject()
+    if (it.kind === "updates") return updatesSubject()
+    if (it.kind === "failed") return failedSubject()
+    return ""
+  }
+
+  function render(it) {
+    const el = document.createElement("article")
+    el.className = `card${it.wide ? " wide" : ""}${it.story ? " story" : ""}${scopeAll ? " scope-all" : ""}`
+    el.dataset.id = it.id
+    el.innerHTML = `${it.story ? rail(it) : ""}${side(it)}${it.wide ? `<section class="subject">${subject(it)}</section>` : ""}`
+    return el
+  }
+
+  function footer() {
+    const it = current()
+    const p = []
+    if (it.options) p.push(["1–4", "choose"])
+    for (const [k, l] of it.acts) p.push([k, l.toLowerCase()])
+    p.push(["g", "applies to all"], ["u", "undo"], ["i", "note"], ["⌘↵", "send"], ["j k", "scroll"])
+    if (it.files) { if (it.files.length > 1) p.push(["J K", "file"]); p.push(["c", "comments"], ["z Z", "fold"], ["O", "outline"]) }
+    if (it.kind === "recording") p.push(["space", "play"], ["← →", "2 s"], ["[ ]", "chapter"], ["< >", "speed"])
+    if (it.story) p.push(["s", "storyline"])
+    if (it.links) p.push(["o", "open"])
+    p.push(["f", "inline"], ["?", "keys"])
+    $("keys").innerHTML = p.map(([k, l]) => `<span>${k.split(" ").map(kbd).join(" ")} ${esc(l)}</span>`).join("") + `<span class="sp"></span><span class="chat">Chat ${kbd("⌘K")}</span>`
+  }
+
+  let card = null
+  function show(i, animate = true) {
+    stop()
+    index = i
+    fileIndex = 0
+    folded = new Set()
+    const old = card
+    card = render(current())
+    if (animate) card.classList.add("enter")
+    $("stage").append(card)
+    if (old) { old.classList.add("leave"); setTimeout(() => old.remove(), 200) }
+    if (animate) requestAnimationFrame(() => requestAnimationFrame(() => card.classList.remove("enter")))
+    header()
+    footer()
+    if (current().kind === "recording") { t = 0; paint() }
+    history.replaceState(null, "", `${location.search}#${current().id}${chooserOpen() ? "-later" : ""}`)
+  }
+  const rerender = () => {
+    const fresh = render(current())
+    card.replaceWith(fresh)
+    card = fresh
+    footer()
+    if (current().kind === "recording") paint()
+  }
+  const box = () => card?.querySelector(".note")
+  const chooserOpen = () => Boolean(card?.classList.contains("choosing"))
+
+  // ------------------------------------------------------------------------------------------------
+  // The player.
+  function paint() {
+    const it = current()
+    const f = Math.min(1, t / it.duration)
+    const fill = $("tfill"), head = $("thead")
+    if (!fill) return
+    fill.style.width = `${f * 100}%`
+    head.style.left = `${f * 100}%`
+    $("clock").innerHTML = `<b>00:${String(Math.floor(t)).padStart(2, "0")}</b> / 00:${String(it.duration).padStart(2, "0")}`
+    let ci = 0
+    it.chapters.forEach(([s], i) => { if (s <= t + 0.001) ci = i })
+    for (const s of card.querySelectorAll(".seg")) s.classList.toggle("on", Number(s.dataset.i) === ci)
+    $("chap").textContent = it.chapters[ci][1]
+    const scene = $("scene")
+    scene.className = `scene s${ci}`
+    const clock = ci >= 3 ? "01:12" : "00:12"
+    $("clk-a").textContent = clock
+    $("clk-b").textContent = clock
+    $("ppl").textContent = playing ? "Pause" : "Play"
+  }
+  function loop(now) {
+    if (!playing) return
+    t += (now - last) / 1000
+    last = now
+    if (t >= current().duration) { t = current().duration; playing = false }
+    paint()
+    if (playing) raf = requestAnimationFrame(loop)
+  }
+  function toggle() { playing = !playing; last = performance.now(); if (playing) raf = requestAnimationFrame(loop); paint() }
+  function stop() { playing = false; cancelAnimationFrame(raf) }
+  function seek(s) { t = Math.max(0, Math.min(current().duration, s)); paint() }
+  function chapter(step) {
+    const ch = current().chapters
+    let ci = 0
+    ch.forEach(([s], i) => { if (s <= t + 0.001) ci = i })
+    seek(ch[Math.max(0, Math.min(ch.length - 1, ci + step))][0])
+  }
+
+  // ------------------------------------------------------------------------------------------------
+  // Answering: an empty note sends at once; the item slides away and the next one comes up.
+  let toastTimer = 0
+  function say(text) { const el = $("toast"); el.textContent = text; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => (el.hidden = true), 2000) }
+  function answer(word) {
+    const it = current()
+    answered.add(it.id)
+    if (word !== "Later") done++
+    if (it.story && word === "Looks good") STORY.reviewed = Math.min(STORY.total, STORY.reviewed + 1)
+    say(word)
+    const list = visible()
+    const next = list.find((x) => ITEMS.indexOf(x) > ITEMS.indexOf(it)) ?? list[0]
+    if (next) show(ITEMS.indexOf(next))
+    else { answered.clear(); show(0) }
+  }
+  function act(key) {
+    const it = current()
+    const a = it.acts.find(([k]) => k === key)
+    if (key === "l") { card.classList.add("choosing"); history.replaceState(null, "", `${location.search}#${it.id}-later`); return }
+    if (key === "r" && !box().value.trim()) { box().focus(); return }
+    if (a) return answer(a[1])
+    if (/^[1-4]$/.test(key) && it.options) return answer(it.options[Number(key) - 1].label)
+  }
+  function preset(k) {
+    const p = card.querySelector(`[data-preset="${k}"]`)
+    if (!p || p.disabled) return
+    card.classList.remove("choosing")
+    answer(`Later: ${p.querySelector("span").textContent}, ${p.querySelector(".at").textContent}`)
+  }
+
+  function sheet(kind) {
+    const el = $("sheet")
+    if (kind === "keys") {
+      const rows = [["1–4", "Choose an option; in Later, a preset"], ["a", "Looks good, or Approve"], ["r", "Changes, or Deny (types in the note)"], ["l", "Later: 1 hour, this evening, tomorrow, next week"], ["u", "Undo the last answer"], ["g", "The note applies to every item of this kind here"], ["i  /", "Type in the note"], ["Esc", "Leave the note"], ["⌘ Enter", "Send with the note"], ["j k", "Scroll"], ["J K", "Next or previous file"], ["n p", "Next or previous media"], ["c", "Hide comments"], ["z Z", "Fold the body at the cursor, fold all"], ["O", "Outline"], ["b", "Before, after, both"], ["space", "Play or pause"], ["[ ]", "Previous or next chapter"], ["s", "The storyline"], ["d x o", "Dismiss, retry, open"], ["f", "Full screen or inline in the conversation"], ["?", "This sheet"]]
+      el.innerHTML = `<div class="boxs" role="dialog" aria-label="Keys"><h2>Keys</h2><dl>${rows.map(([k, l]) => `<dt>${k.split(/\s+/).map(kbd).join(" ")}</dt><dd>${esc(l)}</dd>`).join("")}</dl></div>`
+    } else {
+      const cur = current()
+      const entries = [["Overview", "storyline", "changeset", true]]
+      STORY.steps.forEach((s, i) => { entries.push([`${i + 1} ${s.t}`, null]); s.items.forEach(([k, l, d, id]) => entries.push([l, id ?? null, k, d])) })
+      entries.push(["Verdict", null], ["Merge #42", null, "approval", false])
+      el.innerHTML = `<div class="boxs" role="dialog" aria-label="Storyline"><h2>#42 Later in the queue <span style="color:var(--faint);font-weight:400;font-size:13px">· ${STORY.reviewed} of ${STORY.total} reviewed</span></h2><div class="slist">${entries
+        .map(([l, id, k, d]) => (k ? `<button class="${id === cur.id ? "on" : ""}" ${id ? `data-go="${id}"` : "disabled"}><span class="ichip k-${k}${d ? " done" : ""}">${esc(l)}</span><em>${d ? "reviewed" : id === cur.id ? "here" : id ? "" : "later"}</em></button>` : `<div class="sh">${esc(l)}</div>`))
+        .join("")}</div><p style="color:var(--faint);font-size:12.5px;margin:12px 0 0">${kbd("j")} ${kbd("k")} move · ${kbd("Enter")} go · ${kbd("Esc")} close</p></div>`
+    }
+    el.hidden = false
+  }
+
+  // ------------------------------------------------------------------------------------------------
+  // Keys and clicks. Every button has a key.
+  document.addEventListener("keydown", (e) => {
+    const typing = e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); const it = current(); return answer(box()?.value.trim() ? (it.acts.find(([k]) => k === "r")?.[1] ?? "Sent") : "Sent") }
+    if (typing) { if (e.key === "Escape") e.target.blur(); return }
+    if (e.metaKey || e.ctrlKey || e.altKey) return
+    if (!$("sheet").hidden) { if (e.key === "Escape" || e.key === "?" || e.key === "s") $("sheet").hidden = true; return }
+    const it = current()
+    if (chooserOpen()) {
+      if (/^[1-4]$/.test(e.key)) return preset(e.key)
+      if (e.key === "l") return preset("3")
+      if (e.key === "Escape") { card.classList.remove("choosing"); return }
+      return
+    }
+    if (it.kind === "recording") {
+      const pk = { " ": toggle, ArrowLeft: () => seek(t - 2), ArrowRight: () => seek(t + 2), "[": () => chapter(-1), "]": () => chapter(1), "0": () => seek(0) }[e.key]
+      if (pk) { e.preventDefault(); return pk() }
+    }
+    const k = e.key
+    const scroller = card.querySelector(".code, .map, .evid") ?? card.querySelector(".side")
+    const handlers = {
+      a: () => act("a"), r: () => act("r"), l: () => act("l"), x: () => act("x"), d: () => act("d"), o: () => (it.acts.some(([key]) => key === "o") ? act("o") : say("Opens inline")),
+      i: () => box()?.focus(), "/": () => box()?.focus(), j: () => scroller?.scrollBy({ top: 66 }), k: () => scroller?.scrollBy({ top: -66 }),
+      J: () => { if (it.files?.length > 1) { fileIndex = (fileIndex + 1) % it.files.length; rerender() } },
+      K: () => { if (it.files?.length > 1) { fileIndex = (fileIndex + it.files.length - 1) % it.files.length; rerender() } },
+      c: () => { if (it.files) { hideComments = !hideComments; rerender() } },
+      z: () => { if (!it.files) return; const f = FILES[it.files[fileIndex]]; const open = f.folds.find(([a]) => !folded.has(`${f.tab}:${a}`) && a !== f.folds[0][0]) ?? f.folds[0]; const key = `${f.tab}:${open[0]}`; folded.has(key) ? folded.delete(key) : folded.add(key); rerender() },
+      Z: () => { if (!it.files) return; const f = FILES[it.files[fileIndex]]; const all = f.folds.every(([a]) => folded.has(`${f.tab}:${a}`)); for (const [a] of f.folds) all ? folded.delete(`${f.tab}:${a}`) : folded.add(`${f.tab}:${a}`); rerender() },
+      O: () => { if (it.files) { outlineOpen = !outlineOpen; rerender() } },
+      g: () => { scopeAll = !scopeAll; card.classList.toggle("scope-all", scopeAll) },
+      u: () => { const lastId = [...answered].pop(); if (!lastId) return say("Nothing to undo"); answered.delete(lastId); done--; show(ITEMS.findIndex((x) => x.id === lastId)); say("Undone") },
+      s: () => { if (it.story) sheet("story") },
+      f: () => { $("app").classList.toggle("inline") },
+      "?": () => sheet("keys"),
+    }
+    if (/^[1-4]$/.test(k) && it.options) { e.preventDefault(); return act(k) }
+    const h = handlers[k]
+    if (h) { e.preventDefault(); h() }
+  })
+  document.addEventListener("click", (e) => {
+    const el = e.target instanceof Element ? e.target : null
+    if (!el) return
+    if (el === $("sheet")) { $("sheet").hidden = true; return }
+    const go = el.closest("[data-go]"); if (go) { $("sheet").hidden = true; return show(ITEMS.findIndex((x) => x.id === go.dataset.go)) }
+    const pre = el.closest("[data-preset]"); if (pre) return preset(pre.dataset.preset)
+    const key = el.closest("[data-key]"); if (key && card.contains(key)) return act(key.dataset.key)
+    const tab = el.closest("[data-file]"); if (tab) { fileIndex = Number(tab.dataset.file); return rerender() }
+    const fold = el.closest("[data-fold]"); if (fold && fold.dataset.fold) { const f = FILES[current().files[fileIndex]]; const k2 = `${f.tab}:${fold.dataset.fold}`; folded.has(k2) ? folded.delete(k2) : folded.add(k2); return rerender() }
+    const jump = el.closest("[data-jump], [data-line]"); if (jump) { const n = jump.dataset.jump ?? jump.dataset.line; card.querySelector(`.ln[data-n="${n}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }); return }
+    const seg = el.closest("[data-t]"); if (seg && current().kind === "recording") return seek(Number(seg.dataset.t))
+    if (el.closest("#pp")) return toggle()
+    const no = el.closest(".no"); if (no) { const b = box(); b.value += `${b.value && !b.value.endsWith("\n") ? "\n" : ""}L${no.textContent}: `; b.focus() }
+  })
+
+  // ------------------------------------------------------------------------------------------------
+  // Start at the hash: #approval, #approval-later, #storyline, #failed, #code, #decision, #recording, #design, #notification.
+  const hash = decodeURIComponent(location.hash.slice(1))
+  const [want, later] = hash.split("-")
+  const start = Math.max(0, ITEMS.findIndex((x) => x.id === want))
+  show(start, false)
+  if (params.get("inline")) $("app").classList.add("inline")
+  if (later === "later") card.classList.add("choosing")
+  if (params.get("t") && current().kind === "recording") seek(Number(params.get("t")))
+  if (params.get("outline") && current().files) { outlineOpen = true; rerender() }
+  if (params.get("fold") && current().files) { folded.add(`${FILES[current().files[0]].tab}:${FILES[current().files[0]].folds[2]?.[0] ?? FILES[current().files[0]].folds[0][0]}`); rerender() }
+})()
+</script>
+</body>
+</html>

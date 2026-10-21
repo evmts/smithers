@@ -51,7 +51,7 @@ Within a band, rank by how recently something landed, how much depends on it, an
 Nothing reaches the reviewer until it is ready to be judged. An item that fails the gate stays out of the visible queue and is still tracked. It enters on its own once it passes.
 
 - **Recordings:**
-  - The recording comes from a passing test run. Read the run's status from its metadata. If the status is missing, look for a failure marker in the recording itself.
+  - The recording comes from a passing test run. Read the run's status from its metadata. A recording without a recorded status is unknown, never passing ([0022](../../decisions/0022-review-queue.md#4-the-curator-as-a-flow)).
   - It has a video with a non-empty chapter timeline. A GIF alone is not enough.
   - It was captured after the latest known fix to the capture pipeline, for example readable size and no blank stretches.
   - It belongs to a walkthrough that has a scripted description (section 6).
@@ -108,7 +108,7 @@ When the reviewer says a recording is unclear, the fix is a better recording (re
 
 A changeset is too big to review at once. Split it into a storyline:
 
-1. **Slices.** Partition every source file into slices of related files, each about 150 to 400 lines and one coherent unit: a module and its test, one feature's state and view, or one flow. Every file belongs to exactly one slice, and a very large file is cut into consecutive line ranges.
+1. **Slices.** Partition every source file into slices of related files, each about 150 to 400 lines and one coherent unit: a module and its test, one feature's state and view, or one flow. Every file belongs to exactly one slice, and a very large file is cut into consecutive line ranges. Cut slices from landed code, the main branch's current commit, never from a shared working copy, and record that commit on the item, so the slice, its guide and what the reviewer sees all read the same text.
 2. **Reading order.** Put each package's architecture overview just before its first slice. Then show its public entry points, then the internals that depend on them, then the tests.
 3. **Risk order:**
    - the project's core first, whatever the product is built on;
@@ -148,8 +148,9 @@ Never rewrite or delete the reviewer's answers. Read them; they are rulings.
   - `| assigned <time>: <who and what>` means the work is under way.
   - `| fix: <commit or note>` means it landed. A fix marker counts as done even if nobody ticked the box.
   - `| no verify: <why>` means there is nothing for the reviewer to check, for example a decision that was recorded but needs no fix.
+- **Never ask whether something works.** Tests and recordings prove that before an item reaches the reviewer; the reviewer judges quality, design and product decisions. A verify item may ask "Is this what you wanted?" with the evidence attached, never "Does it work?". A fix with nothing to judge beyond working, such as a tool behavior its tests cover, gets `| no verify: proven by tests (<test files>)` instead of a verify item.
 - **Verify items:**
-  - A fix marker creates a verify item. Its context quotes what the reviewer said and the fix line, and it ends with "Does it do what you meant?"
+  - A fix marker creates a verify item. Its context quotes what the reviewer said and the fix line, attaches the evidence (recordings, code, test files), and ends with "Is this what you wanted?"
   - A complaint that was only about a recording returns as a verify item on its own once a newer passing recording exists. Examples: blank, glitching, no timeline, too small. A request to change the product waits for the fix marker.
   - Each walkthrough gets one verify item, listing every open note for it. One answer closes all of them.
   - A verify item shows only passing recordings, and only once every recording in its group passes.
@@ -233,13 +234,28 @@ The queue is the one place where anything that needs the reviewer arrives. Notif
 
 - The snooze key offers presets: `1` in one hour, `2` this evening, `3` tomorrow morning, `4` next week. Custom text such as "in 3 hours" or "monday 9am" also works.
 - A snooze is a durable timer in the flow engine, so it survives restarts and fires exactly once. It is never a client-side timeout or a polling loop.
-- When a snooze ends, the item returns with a small priority boost and a "snoozed since" note. An item snoozed three times is flagged for a decision: do it, delegate it, or drop it.
+- When a snooze ends, the item returns with a small priority boost and a "snoozed since" note.
 - Snoozing an approval doesn't release what it holds. The waiting flow keeps waiting and shows "snoozed by <person> until <time>" to everyone.
-- **Quiet hours:** notifications and snooze returns that fall in the reviewer's quiet hours wait until the hours end. Alerts don't wait.
+- No quiet hours and no "snoozed three times" flag until the reviewer asks for them ([0022](../../decisions/0022-review-queue.md#9-questions-for-will)).
 
 ### Policy
 
 Who is notified about what is a repository flow, such as `notification.route`, that the repository owns and can change. The system flows behind approvals, merges and secrets can't be overridden. A notification's content never includes a secret's value or a user's private data.
+
+## 16. Measure the queue
+
+On every pass, measure the queue from the reviewer's answers alone, per item kind and per confidence band, and record the measures beside coverage (ruling PLUGIN-6). They hold counts and ids, never the text of a note.
+
+| Measure | What it counts |
+|---|---|
+| Notes | the share of answers with a typed note |
+| Quick approvals | approvals with no note, given in under a fifth of the item's reading time: its words at about 240 a minute, plus its recordings' length, or about a second per line of code |
+| Recommendations | how often the recommended option was chosen |
+| Sent back | how often an answer asked for changes |
+| Calibration | each confidence band's acceptance rate (85 to 100, 60 to 84, below 60) against the band's mean confidence |
+
+- **Rubber-stamp streaks:** after about ten quick approvals in a row, tell the reviewer once, gently, in a line on the next item, for example "Your last 12 approvals took about 2 s each." Never block, hide or reorder anything because of it, and don't repeat it in the same sitting.
+- **Calibration drift:** when a band's acceptance rate is more than 15 points from its mean confidence over at least 10 answers, move the scores you give in that band by the drift. Read the notes on the answers that missed: a recommendation that doesn't match the reviewer's own words is a cause to fix, not noise.
 
 ## Appendix: where each rule came from
 
@@ -258,6 +274,8 @@ All dates are 2026-10-20, Pacific time. Quotes are the reviewer's own words.
 | Code guides with what, why, how and diagrams (§8.4) | 18:27: "code review like this should come with better descriptions and maybe make a diagram or something visually of how we architected the code"; 18:28: "make it easier to review diagrams more description why how what etc."; 18:29: "make it super easy to review and know what I'm looking at" |
 | Code-view tools (§13) | 23:47: "There is a feature in the vscode where you can remove comments … collapse bodies like a function body … an outline feature that allows you to jump to parts in the file" |
 | Readable code before review (§4) | 2026-10-21 00:05, on a flow-engine file: "This code is generally complex and hard to read and can be made better imo before I review ti"; 00:06: "feels like this could be easier to read we have a lot of nesting and indentation in it I think make it easier to read before i review it" |
+| Measure the queue (§16) | 2026-10-21 01:14, approving decision 0022 with a change: "We need to make sure we eval this stuff too heavily we want to eval if user types something if the user is just rubber stamping everything if our recomendations are good etc." |
+| Never ask whether something works (§10) | 2026-10-21 00:15, on a verify item for the code-view tools: "i have no idea if it works don't ask me just add tests" |
 | Confidence scores (§7) | 23:14: "give a confidence score. Show me how confident you think you are that you have the perfect default decision made … if your confidence is high I'm more likely to rubber stamp if it's low I know I might need to ask more questions" |
 | Plain, answerable questions (§5, §7) | 18:19: "I don't understand the question can you rephrase it more clearly" |
 | Settle micro choices; ask only about what is built now (§4) | 13:31: "you should be able to use common sense and how other collaboration tools to figure it out without asking me questions"; 2026-10-19 22:56: "whatever asked the question is doing too much we haven't gottent hat far yet" |
