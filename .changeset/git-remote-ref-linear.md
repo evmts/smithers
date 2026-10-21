@@ -1,5 +1,5 @@
 ---
-"@smthrs/effect-code-storage": minor
+"@smthrs/effect-code-storage": patch
 ---
 
 `GitRemote.ref` reads an `ls-refs` answer one packet at a time as it arrives

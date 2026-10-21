@@ -24,7 +24,7 @@
  * @since 0.1.0
  */
 
-import { FetchError, isChangeMessage, type Row, type ShapeStreamOptions } from "@electric-sql/client"
+import { FetchError, isChangeMessage, type Message, type Row, type ShapeStreamOptions } from "@electric-sql/client"
 import { Collection, type Persistence } from "@smthrs/effect-tanstack-db"
 import {
   electricCollectionOptions,
@@ -87,13 +87,14 @@ export class AwaitTimeout extends Data.TaggedError("AwaitTimeout") {}
 /**
  * One step of the shape's sync, in order:
  * - `Sent`: a shape request went out;
- * - `Succeeded`: it was answered with a 2xx;
- * - `Failed`: it failed on the network (no `status`) or with a 5xx or 429, and
- *   waits for the sync policy before it is sent again;
+ * - `Succeeded`: it was answered with a 2xx and a whole batch;
+ * - `Failed`: it failed on the network (no `status`), its body breaking off
+ *   included, or with a 5xx or 429, and waits for the sync policy before it
+ *   is sent again;
  * - `Stopped`: Electric gave up on the shape, and it waits for `reconnect`.
  *
- * A request Electric aborts, and a 4xx before `Stopped`, report neither
- * `Succeeded` nor `Failed`.
+ * A request Electric aborts, and a 4xx or a batch that isn't whole before
+ * `Stopped`, report neither `Succeeded` nor `Failed`.
  *
  * @category models
  * @since 0.1.0
@@ -214,6 +215,19 @@ export interface Options<A extends object, E, R> {
  * columns only, so rows are decoded column by column: each column present
  * must decode. A row that doesn't stops the shape (`Stopped`, with no status).
  *
+ * A 2xx batch of the shape's log (every response but progressive mode's
+ * subset snapshots) is read in full before Electric sees it, because Electric
+ * takes a response's offset before it reads the body. A body that breaks off failed
+ * on the network, and the sync policy sends the request again. A body that
+ * ends but isn't a whole batch (cut short, empty, or not Electric's) stops the
+ * shape, with no status, before Electric takes its offset, so `reconnect`
+ * sends the same request again and no row is skipped.
+ *
+ * Each request records one span, `electric.shape.request`, with no row
+ * content: the collection's id, whether it is live, the offset it asked from,
+ * the status, and for a 2xx the shape's handle and offset, the body's bytes,
+ * whether the batch was whole and, if it was, how many rows it changes.
+ *
  * @category constructors
  * @since 0.1.0
  */
@@ -247,31 +261,65 @@ export function make<A extends Row<unknown>, E = never, R = never>(
     )
     const source = yield* ShapeSource
 
-    const attempt = (input: RequestInfo | URL, init: RequestInit | undefined) =>
+    // One request: Electric's response, with a 2xx body read in full and checked first. Electric 1.5.28 takes a
+    // response's handle and offset from its headers before it parses the body, so a batch it then can't read would be
+    // skipped when the shape restarts (electric-client-offset-bug.md). Such a batch is answered `Unreadable`.
+    const attempt = (url: URL, init: RequestInit | undefined) =>
       Effect.gen(function*() {
         yield* publish({ _tag: "Sent" })
-        const response = yield* source.request(String(input), { ...init }).pipe(
+        const response = yield* source.request(url.href, { ...init }).pipe(
           Effect.tapError(() => publish({ _tag: "Failed" }))
         )
+        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
         if (response.status >= 500 || response.status === 429) {
           // Its body is read only to free the connection; a body that fails to read changes nothing.
           yield* Effect.tryPromise(() => response.arrayBuffer()).pipe(Effect.ignore)
           yield* publish({ _tag: "Failed", status: response.status })
           return yield* new RequestFailed({ status: response.status })
         }
-        if (response.ok) yield* publish({ _tag: "Succeeded" })
-        return response
-      })
+        // Electric reads a 4xx itself.
+        if (!response.ok) return response
+        // Older Electric servers answered 204, with no body, when nothing was new. A subset snapshot (`subset__`
+        // parameters, in progressive mode) answers an object, which Electric parses before it takes anything from it.
+        if (response.status === 204 || [...url.searchParams.keys()].some((key) => key.startsWith("subset__"))) {
+          yield* publish({ _tag: "Succeeded" })
+          return response
+        }
+        // A body that breaks off failed on the network.
+        const body = yield* Effect.tryPromise({ try: () => response.arrayBuffer(), catch: () => new RequestFailed({}) })
+          .pipe(Effect.tapError(() => publish({ _tag: "Failed" })))
+        const rows = rowsIn(new TextDecoder().decode(body))
+        // Content-free: Electric's handle and offset, and counts.
+        yield* Effect.annotateCurrentSpan({
+          "electric.shape.handle": response.headers.get("electric-handle"),
+          "electric.shape.offset": response.headers.get("electric-offset"),
+          "electric.shape.bytes": body.byteLength,
+          "electric.shape.complete": rows !== undefined,
+          ...(rows === undefined ? {} : { "electric.shape.rows": rows })
+        })
+        if (rows === undefined) return new Unreadable({ status: response.status, bytes: body.byteLength })
+        yield* publish({ _tag: "Succeeded" })
+        return new Response(body, response)
+      }).pipe(Effect.withSpan("electric.shape.request", {
+        kind: "client",
+        attributes: {
+          "electric.collection": options.id,
+          "electric.shape.live": url.searchParams.get("live") === "true",
+          "electric.shape.request_offset": url.searchParams.get("offset")
+        }
+      }))
 
-    // A request the policy gave up on goes back to Electric as it failed, so Electric stops the shape.
+    // A request the policy gave up on goes back to Electric as it failed, so Electric stops the shape. So does an
+    // unreadable batch, before Electric takes its offset: `reconnect` sends the same request again.
     const request = (input: RequestInfo | URL, init: RequestInit | undefined) =>
-      attempt(input, init).pipe(
+      attempt(new URL(String(input)), init).pipe(
         Effect.retry(policy),
         Effect.catch((failure) =>
           failure.status === undefined
             ? Effect.fail(failure)
             : Effect.succeed(new Response(null, { status: failure.status }))
-        )
+        ),
+        Effect.flatMap((answer) => answer instanceof Unreadable ? Effect.fail(answer) : Effect.succeed(answer))
       )
 
     const stopped = (error: Error) =>
@@ -284,8 +332,12 @@ export function make<A extends Row<unknown>, E = never, R = never>(
     const decode = Schema.decodeUnknownSync(columnwise(options.schema))
     const shapeOptions: ShapeStreamOptions = {
       ...options.shape,
-      fetchClient: (input, init) =>
-        run(request(input, init), init?.signal ? AbortSignal.any([closing.signal, init.signal]) : closing.signal),
+      // Electric types its client as `typeof fetch`, to which Bun's globals add `preconnect`; Electric only calls it.
+      fetchClient: ((input: RequestInfo | URL, init?: RequestInit) =>
+        run(
+          request(input, init),
+          init?.signal ? AbortSignal.any([closing.signal, init.signal]) : closing.signal
+        )) as typeof fetch,
       // The sync policy retries; Electric's own backoff never waits, and gives a failure straight to `onError`.
       backoffOptions: { initialDelay: 0, maxDelay: 0, multiplier: 1, maxRetries: 0 },
       // An object restarts the shape where it stopped (ShapeStreamOptions.onError).
@@ -359,6 +411,20 @@ export const statusOf = (failure: unknown): Option.Option<number> => {
 
 const syncFailed = (cause: Error): SyncFailed =>
   new SyncFailed(cause instanceof FetchError ? { cause, status: cause.status } : { cause })
+
+// A 2xx whose body isn't a whole batch: cut short, empty, or not Electric's.
+class Unreadable extends Data.TaggedError("Unreadable")<{ readonly status: number; readonly bytes: number }> {}
+
+// The rows a whole batch changes, or undefined for a body that isn't a JSON array of Electric's messages. A prefix of
+// a JSON array never parses, so a batch cut short at any byte is undefined.
+const rowsIn = (body: string): number | undefined => {
+  try {
+    const batch: unknown = JSON.parse(body)
+    return Array.isArray(batch) ? batch.filter((message) => isChangeMessage(message as Message)).length : undefined
+  } catch {
+    return undefined
+  }
+}
 
 // The schema with every field optional: an update carries only the columns that changed.
 const columnwise = (schema: RowSchema<unknown>): Schema.Codec<unknown> =>

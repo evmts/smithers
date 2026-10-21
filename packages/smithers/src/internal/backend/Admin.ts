@@ -282,11 +282,12 @@ for (const op of operations) {
     const path = op.path.replace("{target}", esc(target)) + query(pick(o, op.query ?? []))
     let body = op.body || op.fixed ? { ...op.fixed, ...pick(o, op.body ?? []) } : undefined
     if (op.name === "users set-synthetic") body = { synthetic: o.value === "true" }
+    const headers: Record<string, string> = op.method === "GET" ? {} : { "X-Confirm": target || str(o["display-name"]) }
     const options = op.observe
       ? {
         origin: observeOrigin(str(c.session.config().observe_url)),
         token: (await c.session.require()).token,
-        headers: op.method === "GET" ? {} : { "X-Confirm": target || str(o["display-name"]) }
+        headers
       }
       : undefined
     return c.request(op.method, path, body, options)

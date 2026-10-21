@@ -15,6 +15,8 @@
  * - `ContainerTerminal`: a browser terminal over `@smthrs/sandbox`'s
  *   `TerminalProtocol`, one tmux session per terminal in the container and
  *   one tmux client per socket.
+ * - `ContainerSession`: the container as a `Sandbox.Session`, so
+ *   `@smthrs/sandbox`'s `SandboxTools` and `Sandbox.layerHost` run on it.
  *
  * ```ts
  * import { CloudflareRuntime, EdgeCache, ExecutionObject } from "@smthrs/platform-cloudflare"
@@ -61,6 +63,13 @@ export * as EdgeCache from "./EdgeCache.ts"
  * @since 1.0.0-rc.17
  */
 export * as ContainerTerminal from "./ContainerTerminal.ts"
+
+/**
+ * A container Durable Object's container as a `Sandbox.Session`.
+ *
+ * @since 1.0.0-rc.17
+ */
+export * as ContainerSession from "./ContainerSession.ts"
 
 /**
  * The container Durable Object's wake: start, inactivity timeout and outbound

@@ -11,17 +11,23 @@ failure.
 
 ## What counts as a failure
 
-A request that fails on the network, or that Electric or a proxy answers with a
-5xx or 429, is a failure. The collection publishes `Failed` on `sync` (with the
+A request that fails on the network, its body breaking off included, or that
+Electric or a proxy answers with a 5xx or 429, is a failure. The collection publishes `Failed` on `sync` (with the
 `status` when there was one), steps the policy with a `ShapeSource.RequestFailed`, waits
 the delay the policy returns, and sends the request again.
 
 A 4xx other than 429, or a response that can't be read or decoded, is not
-retried: Electric stops the shape (`Stopped`) until `reconnect`. One exception:
-`@electric-sql/client` 1.5.28 never restarts a shape stopped by a response
-without Electric's headers (`MissingHeadersError`), such as an HTML page from a
-gateway, so `reconnect` can't restart it either. A request Electric aborts
-itself is neither a success nor a failure.
+retried: Electric stops the shape (`Stopped`) until `reconnect`. A 2xx whose
+body ends but isn't a whole batch (cut short, empty, or not Electric's, such as
+a gateway's HTML page) stops it too, with no status. The collection reads every
+2xx batch of the shape's log in full before Electric sees it, because Electric takes a response's
+offset from its headers before it reads the body, and would skip that batch
+when the shape restarts. So the shape stops before Electric takes the offset,
+and `reconnect` sends the same request again: no row is skipped. One
+exception: `@electric-sql/client` 1.5.28 never restarts a shape stopped by a
+2xx whose batch is whole but which lacks Electric's headers
+(`MissingHeadersError`), so `reconnect` can't restart it either. A request
+Electric aborts itself is neither a success nor a failure.
 
 ## The policy is a `Schedule`
 
@@ -72,7 +78,7 @@ built after the shape stopped still shows it stopped:
 | Event                     | Means                                                   | A UI can show                |
 | ------------------------- | ------------------------------------------------------- | ---------------------------- |
 | `Sent`                    | a request went out                                      | nothing new                  |
-| `Succeeded`               | a request was answered with a 2xx                       | up to date                   |
+| `Succeeded`               | a request was answered with a 2xx and a whole batch     | up to date                   |
 | `Failed` without `status` | the network failed; the request waits on the policy     | offline                      |
 | `Failed` with `status`    | a 5xx or 429; the request waits on the policy           | reconnecting                 |
 | `Stopped`                 | Electric gave up on the shape; it waits for `reconnect` | stopped, with a retry action |

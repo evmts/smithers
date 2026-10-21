@@ -18,6 +18,9 @@ describe("@smthrs/sync barrel", () => {
       "BranchRpcs",
       "BranchServer",
       "BranchShare",
+      "PresenceProtocol",
+      "PresenceRoom",
+      "PresenceSocket",
       "RunCatalog",
       "SyncAuth",
       "SyncClient",
@@ -48,6 +51,9 @@ describe("@smthrs/sync barrel", () => {
     expect(Sync.WorkspaceShare).toBe(await import("../src/WorkspaceShare.ts"))
     expect(Sync.SyncPrincipal).toBe(await import("../src/SyncPrincipal.ts"))
     expect(Sync.SyncAuth).toBe(await import("../src/SyncAuth.ts"))
+    expect(Sync.PresenceProtocol).toBe(await import("../src/PresenceProtocol.ts"))
+    expect(Sync.PresenceRoom).toBe(await import("../src/PresenceRoom.ts"))
+    expect(Sync.PresenceSocket).toBe(await import("../src/PresenceSocket.ts"))
   })
 
   it("maps a branch onto exactly one journal run, reversibly", () => {
@@ -74,6 +80,7 @@ describe("@smthrs/sync barrel", () => {
       "CauseText.ts",
       "JournalErrorCode.ts",
       "PolicyOptions.ts",
+      "PresenceWire.ts",
       "ProtocolVersion.ts",
       "ShareSigner.ts",
       "SnapshotBoundary.ts"

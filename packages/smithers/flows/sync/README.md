@@ -187,6 +187,9 @@ each one.
 | `BranchProjection` | The fold from branch commands to a document view.                                                               |
 | `BranchRpcs`       | The branch collaboration wire group.                                                                            |
 | `BranchServer`     | The handler layer that projects the branch services onto that group.                                            |
+| `PresenceProtocol` | The presence wire: state and roster frames, limits, close codes, and the reconnect backoff.                     |
+| `PresenceRoom`     | The host side of a presence room, kept entirely in its sockets' attachments.                                    |
+| `PresenceSocket`   | The page's reconnecting socket to a presence room.                                                              |
 
 Public test subpaths are `@smthrs/sync/test/TestSocket` (`FrameFilter`,
 `TestFaults`, `Pair`, `makePair`) and `@smthrs/sync/test/TestSync`
@@ -199,6 +202,7 @@ Public test subpaths are `@smthrs/sync/test/TestSocket` (`FrameFilter`,
 - [Scopes and cursors](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/concepts/scopes-and-cursors.md)
 - [Replay then follow](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/concepts/replay-then-follow.md)
 - [Authorization](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/concepts/authorization.md)
+- [Presence rooms](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/concepts/presence.md)
 - [Follow a run](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/guides/follow-a-run.md)
 - [Serve the read path](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/guides/serve-the-read-path.md)
 - [Wire protocol](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/protocol.md)

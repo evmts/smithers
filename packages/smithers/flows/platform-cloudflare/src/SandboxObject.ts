@@ -37,6 +37,8 @@ export interface Machine<F, E = never, R = never> {
   start(options: { readonly enableInternet: false }): Effect.Effect<void, E, R>
   setInactivityTimeout(durationMs: number): Effect.Effect<void, E, R>
   interceptOutboundHttp(addr: string, binding: F): Effect.Effect<void, E, R>
+  interceptAllOutboundHttp(binding: F): Effect.Effect<void, E, R>
+  interceptOutboundHttps(addr: string, binding: F): Effect.Effect<void, E, R>
 }
 
 /**
@@ -60,6 +62,11 @@ export interface Intercept<F> {
  * - `inactivityTimeoutMs`: how long the container runs with no activity on
  *   its Durable Object before Cloudflare stops it. Defaults to
  *   {@link defaultInactivityTimeoutMs}.
+ * - `egress`: where every other outbound request goes, HTTP and HTTPS
+ *   alike: an egress that decides each one outside the box, such as
+ *   `@smthrs/secrets`' `Egress.forward`. Without it, the box reaches only
+ *   its intercepted hosts. HTTPS reaches it decrypted through the
+ *   container's per-instance CA, which the box must trust.
  *
  * @category models
  * @since 1.0.0-rc.17
@@ -67,6 +74,7 @@ export interface Intercept<F> {
 export interface WakeOptions<F> {
   readonly intercepts: ReadonlyArray<Intercept<F>>
   readonly inactivityTimeoutMs?: number | undefined
+  readonly egress?: F | undefined
 }
 
 /**
@@ -105,7 +113,9 @@ export const wakes = Metric.counter("smithers_cloudflare_sandbox_wakes", {
  *    reaches nothing but the intercepted hosts.
  * 2. Arms its inactivity timeout, `inactivityTimeoutMs`. A restarted Durable
  *    Object loses the timeout, so every wake sets it again.
- * 3. Registers each intercept, in order. Intercepts must be registered again
+ * 3. Registers each intercept, in order, then, with `egress`, every other
+ *    HTTP request (`interceptAllOutboundHttp`) and every HTTPS request
+ *    (`interceptOutboundHttps("*")`). Intercepts must be registered again
  *    after each start; registering them on every wake also repairs an object
  *    that died between its start and its registration, which would otherwise
  *    leave a running box with no way out.
@@ -125,11 +135,18 @@ export const wake = <F, E, R>(machine: Machine<F, E, R>, options: WakeOptions<F>
     for (const intercept of options.intercepts) {
       yield* machine.interceptOutboundHttp(intercept.host, intercept.fetcher)
     }
+    if (options.egress !== undefined) {
+      yield* machine.interceptAllOutboundHttp(options.egress)
+      yield* machine.interceptOutboundHttps("*", options.egress)
+    }
     return running ? "running" as const : "started" as const
   }).pipe((effect) =>
     Observed.observed(effect, {
       span: "sandbox.wake",
-      attributes: { "smithers.sandbox.intercepts": options.intercepts.length },
+      attributes: {
+        "smithers.sandbox.intercepts": options.intercepts.length,
+        "smithers.sandbox.egress": options.egress !== undefined
+      },
       attribute: "smithers.sandbox.wake",
       counter: wakes,
       log: "cloudflare.sandbox.wake"

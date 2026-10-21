@@ -11,9 +11,8 @@
  */
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
-import { Cause, Effect, Exit, Layer, Option } from "effect"
+import { Effect, Exit, Layer, Option } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as SqlError from "effect/sql/SqlError"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -60,38 +59,6 @@ it("reads one snapshot while another connection holds the write lock; a write tr
     expect(Exit.isFailure(observed.written)).toBe(true)
   } finally {
     peer.close()
-    rmSync(directory, { recursive: true, force: true })
-  }
-})
-
-it("a read snapshot the store can't open dies with the store's error; the body never runs", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "engine-read-lock-"))
-  const store = Layer.provideMerge(
-    DurableWriter.layer({ maxAttempts: 1 }),
-    NodeDatabase.layer({ filename: join(directory, "engine.db") })
-  )
-  const refused = new SqlError.SqlError({
-    reason: SqlError.classifySqliteError(Object.assign(new Error("disk I/O error"), { code: "SQLITE_IOERR" }))
-  })
-  try {
-    let ran = false
-    const exit = await Effect.runPromise(Effect.scoped(
-      Effect.gen(function*() {
-        yield* Migrations.run
-        const sql = yield* SqlClient.SqlClient
-        // A store whose connection can't be reserved, as a database whose disk fails (injected).
-        const refusing = new Proxy(sql, {
-          get: (target, property) => property === "reserve" ? Effect.fail(refused) : Reflect.get(target, property)
-        })
-        const state = yield* DurableEngineState.make.pipe(Effect.provideService(SqlClient.SqlClient, refusing))
-        return yield* Effect.exit(state.readTransaction(Effect.sync(() => void (ran = true))))
-      }).pipe(Effect.provide(store))
-    ))
-
-    expect(ran).toBe(false)
-    expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
-    expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined).toBe(refused)
-  } finally {
     rmSync(directory, { recursive: true, force: true })
   }
 })

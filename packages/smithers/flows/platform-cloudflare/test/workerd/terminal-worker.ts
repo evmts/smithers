@@ -50,6 +50,8 @@ interface RawContainer {
   exec(cmd: Array<string>, options?: Record<string, unknown>): Promise<RawProcess>
   setInactivityTimeout(durationMs: number): Promise<void>
   interceptOutboundHttp(addr: string, binding: RawFetcher): Promise<void>
+  interceptAllOutboundHttp(binding: RawFetcher): Promise<void>
+  interceptOutboundHttps(addr: string, binding: RawFetcher): Promise<void>
 }
 
 interface State {
@@ -121,7 +123,11 @@ const machineOf = (raw: RawContainer): SandboxObject.Machine<RawFetcher, Contain
   start: (options) => Effect.try({ try: () => raw.start({ ...options, image: raw.images.sandbox! }), catch: failure }),
   setInactivityTimeout: (ms) => Effect.tryPromise({ try: () => raw.setInactivityTimeout(ms), catch: failure }),
   interceptOutboundHttp: (addr, fetcher) =>
-    Effect.tryPromise({ try: () => raw.interceptOutboundHttp(addr, fetcher), catch: failure })
+    Effect.tryPromise({ try: () => raw.interceptOutboundHttp(addr, fetcher), catch: failure }),
+  interceptAllOutboundHttp: (fetcher) =>
+    Effect.tryPromise({ try: () => raw.interceptAllOutboundHttp(fetcher), catch: failure }),
+  interceptOutboundHttps: (addr, fetcher) =>
+    Effect.tryPromise({ try: () => raw.interceptOutboundHttps(addr, fetcher), catch: failure })
 })
 
 /** A pkt-line: four hex digits of length, then the payload. */

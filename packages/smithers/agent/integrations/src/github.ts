@@ -23,10 +23,22 @@ export * as Actions from "./github/Actions.ts"
 export * as AppAuth from "./github/AppAuth.ts"
 
 /**
+ * @category getters
+ * @since 1.0.0
+ */
+export * as Collaborators from "./github/Collaborators.ts"
+
+/**
  * @category constructors
  * @since 1.0.0
  */
 export * as Config from "./github/Config.ts"
+
+/**
+ * @category getters
+ * @since 1.0.0
+ */
+export * as Contents from "./github/Contents.ts"
 
 /**
  * @category services

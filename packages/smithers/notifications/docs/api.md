@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/notifications: the queue service and its layers, the notification and event schemas, the pure state machine, the steering vocabulary, and the alert policy."
+description: "Every public export of @smthrs/notifications: the queue service and its layers, the notification and event schemas, the pure state machine, the steering vocabulary, the alert policy, and the per-person inbox rules."
 ---
 
 Every module is importable as a namespace from the root entry point and from its
@@ -334,6 +334,45 @@ other, so the shape they have to agree on belongs beneath both.
 | -------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `decode` | `(notification: Notification) => SteerPayload \| undefined` | The steering item a notification carries, or `undefined` when it carries none. A `system-event` is never a steer. Inside a human notification, a record with a `body` string and no `kind` reads as a message. |
 | `encode` | `(item: SteerPayload) => SteerPayload`                      | The record the item is stored as. Every item is written with its `kind`, including a message. The result is assignable to `Notification.payload` and shares no mutable structure with `item`.                  |
+
+## Inbox
+
+Pure routing and acknowledgement rules for per-person notices about runs.
+Import from `@smthrs/notifications/Inbox`. See
+[Who hears about a run](./concepts/inbox.md).
+
+### Models
+
+| Export          | Shape                                                                                                                                                                                               |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Level`         | `Schema`: `"all" \| "attention" \| "muted"`. How closely a principal follows a subject.                                                                                                             |
+| `DEFAULT_LEVEL` | `"attention"`. The level of a watch nobody chose a level for.                                                                                                                                       |
+| `RunState`      | `Schema`: `"working" \| "waiting" \| "needs_you" \| "failed" \| "done"`. A run's state as a notice reads it.                                                                                        |
+| `Act`           | `Schema`: `"read" \| "dismiss" \| "hide"`. Read records that the person opened the notice, Dismiss closes it, Hide removes its toast and keeps its entry.                                           |
+| `Watcher`       | `{ principal: string; level: Level }`. One principal following a subject.                                                                                                                           |
+| `Delivery`      | `{ recipient: string; mine: boolean; state: RunState; quiet: boolean }`. One person's notice about a run. `quiet` means a toast while it lives and never a list entry.                              |
+| `RunFact`       | `{ launcher: string \| undefined; state: RunState; watchers: ReadonlyArray<Watcher>; mayRead?: (principal: string) => boolean }`. What `route` reads about one run. `mayRead` defaults to everyone. |
+| `Versions`      | `{ version: number; readVersion: number; dismissedVersion: number; hiddenVersion: number }`. A notice's versions.                                                                                   |
+
+### Routing
+
+| Export     | Signature                                                                                               | Returns                                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `route`    | `(fact: RunFact) => ReadonlyArray<Delivery>`                                                            | The launcher first, when defined, with the run's own state, `mine: true` and `quiet: false`, even if the launcher's watch is muted. Then every other watcher that is not muted and may read the run, in input order, with `mine: false`; `needs_you` reads as `waiting`, and an `attention` watcher is `quiet`. Each recipient once; a principal listed twice is decided by its first entry. |
+| `audience` | `(watchers: ReadonlyArray<Watcher>, mayRead?: (principal: string) => boolean) => ReadonlyArray<string>` | Who hears about a subject's event that is not a run, such as `main` moving or a new release: every watcher that is not muted and may read it, each once, in input order, decided by its first entry.                                                                                                                                                                                         |
+
+### Versions
+
+| Export     | Signature                                                              | Returns                                                                                                                                                                                                                                              |
+| ---------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `raises`   | `(before: RunState \| undefined, after: RunState) => boolean`          | Whether the notice needs attention again, so its version goes up. True for a new notice, and when `after` is `needs_you`, `failed` or `done` and differs from `before`. False otherwise.                                                             |
+| `ack`      | `<V extends Versions>(notice: V, act: Act, version: number) => V`      | The notice with the act's field set to `max(current, min(version, notice.version))`, the merge of Postgres' `greatest()`. Other fields are kept. A call that changes nothing, including a `NaN` version, returns `notice` itself. Order-independent. |
+| `isOpen`   | `(notice: Pick<Versions, "version" \| "dismissedVersion">) => boolean` | `dismissedVersion < version`.                                                                                                                                                                                                                        |
+| `isUnread` | `(notice: Pick<Versions, "version" \| "readVersion">) => boolean`      | `readVersion < version`.                                                                                                                                                                                                                             |
+| `isHidden` | `(notice: Pick<Versions, "version" \| "hiddenVersion">) => boolean`    | `hiddenVersion >= version`.                                                                                                                                                                                                                          |
+
+Each predicate reads only the two fields it compares, so any row carrying them
+can be passed.
 
 ## Alerts
 

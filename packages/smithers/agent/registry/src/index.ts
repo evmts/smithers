@@ -42,6 +42,12 @@ export * as Discovery from "./Discovery.ts"
 export * as MarkdownFlow from "./MarkdownFlow.ts"
 
 /**
+ * @category modules
+ * @since 1.0.0-rc.16
+ */
+export * as ModuleFlow from "./ModuleFlow.ts"
+
+/**
  * @category markdown
  * @since 1.0.0-rc.1
  */

@@ -26,16 +26,22 @@
  * {@link RECONCILE_PAGES} pages; an item beyond that budget is not found, so
  * keep `since` close to the first attempt.
  *
+ * **Labels.** {@link addLabels}, {@link removeLabel} and {@link createLabel}
+ * are idempotent at GitHub: adding a label the issue has, removing one it
+ * lacks, or creating one the repository has changes nothing. So they classify
+ * a 5xx or a dropped connection as `retryable`, not `outcomeUnknown`, and a
+ * step's retry policy repeats them without looking first.
+ *
  * Every coordinate is validated before it becomes a request path, as
- * `Repository.repositoryPath` does, so a hostile owner, repository or number
- * cannot walk the token-bearing request to another endpoint.
+ * `Repository.repositoryPath` does, so a hostile owner, repository, number or
+ * label name cannot walk the token-bearing request to another endpoint.
  *
  * @since 1.0.0
  */
 
 import { Effect, Option, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
-import { RECONCILE_PAGES } from "./Actions.ts"
+import { LabelName, RECONCILE_PAGES } from "./Actions.ts"
 import { GitHubClient } from "./GitHubClient.ts"
 import { IssueNumber, requireRepositoryPath } from "./Repository.ts"
 
@@ -49,9 +55,27 @@ import { IssueNumber, requireRepositoryPath } from "./Repository.ts"
 export const IssueUser = Schema.NullOr(Schema.Struct({ id: Schema.Number, login: Schema.String }))
 
 /**
+ * A label on an issue, narrowed to its name. GitHub's other label fields are
+ * dropped.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const IssueLabel = Schema.Struct({ name: Schema.String })
+
+/**
+ * A decoded {@link IssueLabel}.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type IssueLabel = typeof IssueLabel.Type
+
+/**
  * An issue as GitHub's REST API returns it, narrowed to the fields Smithers
  * reads. GitHub's other fields are dropped. `pull_request` is present when the
- * issue is a pull request.
+ * issue is a pull request. A missing `state_reason` decodes as `null` and
+ * missing `labels` as none.
  *
  * @category schemas
  * @since 1.0.0
@@ -65,6 +89,7 @@ export const Issue = Schema.Struct({
   state: Schema.Literals(["open", "closed"]),
   state_reason: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   user: IssueUser,
+  labels: Schema.Array(IssueLabel).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   comments: Schema.Number,
   created_at: Schema.String,
   updated_at: Schema.String,
@@ -206,6 +231,89 @@ const requireSince = (since: string | undefined): Effect.Effect<string | undefin
         retryable: false
       })
     )
+
+const requireLabelName = (name: unknown): Effect.Effect<string, IntegrationError> =>
+  Schema.is(LabelName)(name) ? Effect.succeed(name) : Effect.fail(
+    new IntegrationError("invalid-config", "A GitHub label name must be 1 to 50 characters.", {
+      field: "name",
+      name: typeof name === "string" ? name.slice(0, 64) : typeof name,
+      retryable: false
+    })
+  )
+
+const requireLabelNames = (
+  names: ReadonlyArray<string>
+): Effect.Effect<ReadonlyArray<string>, IntegrationError> =>
+  Array.isArray(names) && names.length > 0
+    ? Effect.forEach(names, requireLabelName)
+    : Effect.fail(
+      new IntegrationError("invalid-config", "Name at least one GitHub label to add.", {
+        field: "names",
+        retryable: false
+      })
+    )
+
+// `encodeURIComponent` leaves dots alone and the URL parser resolves `.` and
+// `..` segments, so a label named either would address the issue itself.
+const requireLabelSegment = (name: string): Effect.Effect<string, IntegrationError> =>
+  Effect.flatMap(requireLabelName(name), (valid) =>
+    valid === "." || valid === ".."
+      ? Effect.fail(
+        new IntegrationError("invalid-config", "A GitHub label named `.` or `..` cannot be part of a request path.", {
+          field: "name",
+          name: valid,
+          retryable: false
+        })
+      )
+      : Effect.succeed(encodeURIComponent(valid)))
+
+/**
+ * What a label color may be: six hex digits, without `#`.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const LABEL_COLOR_PATTERN = /^[0-9A-Fa-f]{6}$/
+
+/**
+ * The longest label description GitHub accepts.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const MAX_LABEL_DESCRIPTION = 100
+
+const requireNewLabel = (
+  input: { readonly name: string; readonly color: string; readonly description?: string | undefined }
+): Effect.Effect<{ readonly name: string; readonly color: string; readonly description?: string }, IntegrationError> =>
+  Effect.gen(function*() {
+    const name = yield* requireLabelName(input.name)
+    if (typeof input.color !== "string" || !LABEL_COLOR_PATTERN.test(input.color)) {
+      return yield* Effect.fail(
+        new IntegrationError("invalid-config", "A GitHub label color must be six hex digits, without `#`.", {
+          field: "color",
+          color: typeof input.color === "string" ? input.color.slice(0, 16) : typeof input.color,
+          retryable: false
+        })
+      )
+    }
+    const description = input.description
+    if (
+      description !== undefined &&
+      (typeof description !== "string" || description.length > MAX_LABEL_DESCRIPTION)
+    ) {
+      return yield* Effect.fail(
+        new IntegrationError(
+          "invalid-config",
+          `A GitHub label description must be at most ${MAX_LABEL_DESCRIPTION} characters.`,
+          { field: "description", retryable: false }
+        )
+      )
+    }
+    return description === undefined ? { name, color: input.color } : { name, color: input.color, description }
+  })
+
+const hasStatus = (status: number) => (error: IntegrationError): boolean => error.details?.["status"] === status
 
 const decodeFailed = (path: string, cause: unknown): IntegrationError =>
   new IntegrationError("decode-failed", `GitHub response for GET ${path} failed schema validation.`, {
@@ -411,3 +519,92 @@ export const findCommentByWrite = (
     const found = page.items.find((item) => markedWith(item, writeId))
     return found === undefined ? Option.none() : Option.some(yield* decodeOne(IssueComment, found, path))
   }).pipe(Effect.withSpan("GitHub.Issues.findCommentByWrite", { attributes: spanAttributes(owner, repo, number) }))
+
+/**
+ * Adds labels to issue or pull request `number`, keeping the ones it has:
+ * `POST /repos/{owner}/{repo}/issues/{number}/labels`. Answers every label
+ * the issue carries afterwards.
+ *
+ * Each name is 1 to 50 characters. GitHub creates a label the repository
+ * lacks. Adding a label the issue already has changes nothing, so a lost
+ * answer fails `retryable` and the step repeats the call.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const addLabels = (
+  owner: string,
+  repo: string,
+  number: number,
+  names: readonly [string, ...Array<string>]
+): Effect.Effect<ReadonlyArray<IssueLabel>, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const issue = yield* requireIssueNumber(number)
+    const labels = yield* requireLabelNames(names)
+    return yield* client.request("POST", `/repos/${repository}/issues/${issue}/labels`, { labels }, {
+      schema: Schema.Array(IssueLabel),
+      retryUnsafeWrites: true
+    })
+  }).pipe(Effect.withSpan("GitHub.Issues.addLabels", { attributes: spanAttributes(owner, repo, number) }))
+
+/**
+ * Removes label `name` from issue or pull request `number`:
+ * `DELETE /repos/{owner}/{repo}/issues/{number}/labels/{name}`. Answers
+ * `true` when GitHub removed it and `false` when GitHub answers 404, which it
+ * does for a label the issue lacks, and also for an issue or repository the
+ * token cannot see.
+ *
+ * `name` is 1 to 50 characters and not `.` or `..`, which no request path
+ * can address. Removing twice changes nothing, so a lost answer fails
+ * `retryable`.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const removeLabel = (
+  owner: string,
+  repo: string,
+  number: number,
+  name: string
+): Effect.Effect<boolean, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const issue = yield* requireIssueNumber(number)
+    const label = yield* requireLabelSegment(name)
+    return yield* client.request("DELETE", `/repos/${repository}/issues/${issue}/labels/${label}`, undefined, {
+      retryUnsafeWrites: true
+    }).pipe(
+      Effect.as(true),
+      Effect.catchIf(hasStatus(404), () => Effect.succeed(false))
+    )
+  }).pipe(Effect.withSpan("GitHub.Issues.removeLabel", { attributes: spanAttributes(owner, repo, number) }))
+
+/**
+ * Creates a repository label: `POST /repos/{owner}/{repo}/labels`. Answers
+ * `true` when GitHub created it and `false` when GitHub answers 422, which,
+ * with the input validated first, means a label of that name exists.
+ *
+ * `name` is 1 to 50 characters, `color` six hex digits without `#`, and
+ * `description` at most {@link MAX_LABEL_DESCRIPTION} characters. A repeat
+ * finds the label made, so a lost answer fails `retryable`.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const createLabel = (
+  owner: string,
+  repo: string,
+  input: { readonly name: string; readonly color: string; readonly description?: string | undefined }
+): Effect.Effect<boolean, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const label = yield* requireNewLabel(input)
+    return yield* client.request("POST", `/repos/${repository}/labels`, label, { retryUnsafeWrites: true }).pipe(
+      Effect.as(true),
+      Effect.catchIf(hasStatus(422), () => Effect.succeed(false))
+    )
+  }).pipe(Effect.withSpan("GitHub.Issues.createLabel", { attributes: spanAttributes(owner, repo) }))

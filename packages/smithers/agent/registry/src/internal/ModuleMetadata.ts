@@ -55,6 +55,12 @@ export interface Metadata {
    * name it has to warn about rather than as no name at all.
    */
   readonly declaredName: Option.Option<string>
+  /**
+   * The tag `Flow.make("<tag>", { ... })` declares as its first argument,
+   * when it is a readable string literal. A record declaration, or a tag this
+   * reader cannot evaluate, has none.
+   */
+  readonly tag: Option.Option<string>
   readonly warnings: ReadonlyArray<MetadataWarning>
 }
 
@@ -62,6 +68,8 @@ interface FlowObject {
   readonly record: boolean
   readonly start: number
   readonly end: number
+  /** The constructor's first argument, when it is one string literal followed by a comma. */
+  readonly tag: string | undefined
 }
 
 /**
@@ -476,6 +484,9 @@ const findFlowObject = (source: string): FlowObject | undefined => {
     const constructor = tokens[index + 2]?.value === "Flow" && tokens[index + 3]?.value === "." &&
       tokens[index + 4]?.value === "make" && tokens[index + 5]?.value === "("
     if (!record && !constructor) continue
+    const tag = constructor && tokens[index + 6]?.kind === "string" && tokens[index + 7]?.value === ","
+      ? stringLiteral(tokens[index + 6]!.value)
+      : undefined
 
     let parentheses = 1
     for (
@@ -507,7 +518,7 @@ const findFlowObject = (source: string): FlowObject | undefined => {
         } else if (objectToken?.value === "}") {
           braces--
           if (braces === 0) {
-            return { start: token.start, end: objectToken.start, record }
+            return { start: token.start, end: objectToken.start, record, tag }
           }
         }
       }
@@ -1074,6 +1085,7 @@ export const parse = (source: string): Metadata => {
       modelInvocable: true,
       declaresName: false,
       declaredName: Option.none(),
+      tag: Option.none(),
       warnings: [{ message: "Could not statically read the default Flow.make declaration" }]
     }
   }
@@ -1184,6 +1196,7 @@ export const parse = (source: string): Metadata => {
     ...budget === undefined ? {} : { budget },
     declaresName: properties.has("name"),
     declaredName: Option.fromUndefinedOr(stringLiteral(properties.get("name"))),
+    tag: Option.fromUndefinedOr(flowObject.tag),
     warnings
   }
 }

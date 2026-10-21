@@ -22,14 +22,11 @@ import * as Option from "effect/Option"
 import * as Path from "effect/Path"
 import * as Result from "effect/Result"
 import {
-  BodyRefModule,
   DiscoveryWarning,
   FlowDescriptor,
   type ModuleImport,
   Provenance,
   retiredRootMessage,
-  SchemaRefModule,
-  SchemaRefNone,
   type Source,
   SourceScan
 } from "./Descriptor.ts"
@@ -39,6 +36,7 @@ import * as ModuleClosure from "./internal/ModuleClosure.ts"
 import * as ModuleMetadata from "./internal/ModuleMetadata.ts"
 import * as Names from "./internal/Names.ts"
 import * as MarkdownFlow from "./MarkdownFlow.ts"
+import * as ModuleFlow from "./ModuleFlow.ts"
 import type { DiscoveryError } from "./RegistryError.ts"
 import { discoveryError } from "./RegistryError.ts"
 
@@ -83,18 +81,18 @@ const hostReservedRootDirectories = new Set(["channels", "connections"])
  */
 const statConcurrency = 16
 
+// A scan's own warnings name a path, never a flow: the entry warnings that name one come from
+// `MarkdownFlow.fromMarkdown` and `ModuleFlow.fromModule`.
 const warning = (
   code: DiscoveryWarning["code"],
   path: string,
   message: string,
-  name?: string,
   cause?: unknown
 ): DiscoveryWarning =>
   new DiscoveryWarning({
     code,
     path,
     message,
-    ...(name === undefined ? {} : { name }),
     ...(cause === undefined ? {} : { cause })
   })
 
@@ -276,7 +274,6 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
               "outside_root",
               location,
               `Path "${location}" could not be resolved inside confinement root "${realRoot.success}"`,
-              undefined,
               realLocation.failure
             ))
             return false
@@ -411,99 +408,18 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
             })
           }
 
-          const metadata = ModuleMetadata.parse(contents.text)
-          // A root-level entry in a path-named source is refused before the
-          // read, so a module reaching here always has a path name; a
-          // frontmatter-named source names it after its directory instead.
-          const name = Option.getOrElse(
-            source.naming === "path" ? pathName : Option.none<string>(),
-            () => path.basename(directory)
-          )
-          const warnings: Array<DiscoveryWarning> = []
-          for (const item of metadata.warnings) {
-            warnings.push(warning(
-              "unsupported_module_metadata",
-              location,
-              item.line === undefined ? item.message : `${item.message} at ${location}:${item.line}`,
-              name
-            ))
-          }
-          // `Flow.make` requires a name, because the name is the tag the flow,
-          // its action, and every plan that records a call carry. In a
-          // path-named source the registry name is the path, so a module that
-          // declares the same string is saying one thing twice and nothing is
-          // ignored. A module that declares a different one is: the path still
-          // wins, and the author has to be told which name the registry
-          // answers to. A name this reader cannot evaluate is warned about for
-          // the same reason, because it cannot be shown to agree.
-          if (
-            source.naming === "path" && metadata.declaresName &&
-            !Option.contains(metadata.declaredName, name)
-          ) {
-            warnings.push(
-              warning(
-                "name_field_ignored",
-                location,
-                "Ignoring Flow.make name because this source uses path-derived names",
-                name
-              )
-            )
-          }
-          const budget = metadata.budget === undefined
-            ? undefined
-            : MarkdownFlow.deriveBudget({ budget: metadata.budget }, location, warnings, "Flow.make budget")
-          if (metadata.description === undefined) {
-            warnings.push(
-              warning(
-                "missing_description",
-                location,
-                "Module flows require a literal description in the default Flow.make value",
-                name
-              )
-            )
-            return { descriptor: Option.none(), warnings }
-          }
-          return {
-            descriptor: Option.some(
-              new FlowDescriptor({
-                name,
-                description: metadata.description,
-                body: new BodyRefModule({
-                  path: location,
-                  contentDigest: contents.contentDigest,
-                  ...(metadata.prompt === true ? { prompt: true } : {}),
-                  // Absent, not empty, when the entry loads nothing beside
-                  // itself: such a module keeps the identity it had before a
-                  // closure was recorded at all.
-                  ...(imports.length === 0 ? {} : { imports }),
-                  ...(hostImports.length === 0 ? {} : { hostImports })
-                }),
-                input: metadata.hasInput
-                  ? new SchemaRefModule({
-                    path: location,
-                    field: "input",
-                    ...metadata.inputDocument === undefined
-                      ? {} :
-                      { document: metadata.inputDocument }
-                  })
-                  : new SchemaRefNone({}),
-                output: metadata.hasOutput
-                  ? new SchemaRefModule({ path: location, field: "output" })
-                  : new SchemaRefNone({}),
-                model: metadata.model,
-                flows: metadata.flows,
-                capabilities: metadata.capabilities,
-                effects: metadata.effects,
-                placement: metadata.placement,
-                modelInvocable: metadata.modelInvocable,
-                ...budget === undefined ? {} : { budget },
-                path: location,
-                frontmatter: {},
-                provenance
-              })
-            ),
-            warnings
-          }
+          const projected = ModuleFlow.fromModule({
+            text: contents.text,
+            contentDigest: contents.contentDigest,
+            path: location,
+            naming: source.naming,
+            name: pathName,
+            dirBasename: path.basename(directory),
+            provenance,
+            imports,
+            hostImports
+          })
+          return { descriptor: projected.descriptor, warnings: projected.warnings }
         }
 
         const visit: (
@@ -540,7 +456,6 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
                   "unreadable",
                   directory,
                   `Could not read directory "${directory}"`,
-                  undefined,
                   directoryEntries.failure
                 )
               )
@@ -567,7 +482,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
               const location = path.join(directory, entry)
               if (Result.isFailure(info)) {
                 warnings.push(
-                  warning("unreadable", location, `Could not inspect "${location}"`, undefined, info.failure)
+                  warning("unreadable", location, `Could not inspect "${location}"`, info.failure)
                 )
                 continue
               }
@@ -627,7 +542,6 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
                       "unreadable",
                       location,
                       `Could not read entry metadata from "${location}"`,
-                      undefined,
                       contents.failure
                     )
                   )

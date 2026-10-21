@@ -59,6 +59,8 @@ export const BROWSER_SAFE = [
   { name: "@smthrs/effect-electric", entry: "packages/effect-electric/src/index.ts" },
   // Pierre's git hosting for repository import and reads (apps/mvp's Worker and the agent's repo flows).
   { name: "@smthrs/effect-code-storage", entry: "packages/effect-code-storage/src/index.ts" },
+  // The secrets egress (apps/mvp's Worker, decision 0005 §4): placeholders, bindings, substitution and scrubbing.
+  { name: "@smthrs/secrets", entry: "packages/smithers/flows/secrets/src/index.ts" },
   // The GitHub client, webhook verification and OAuth PKCE the repository-clone flow runs on the Cloudflare host.
   { name: "@smthrs/integrations", entry: "packages/smithers/agent/integrations/src/index.ts" },
   // Generated views (decision 0004): the checker, the QuickJS presentation realm and the frame bridge, which the

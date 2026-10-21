@@ -11,6 +11,12 @@
 export * as Alerts from "./Alerts.ts"
 
 /**
+ * @category routing
+ * @since 1.0.0
+ */
+export * as Inbox from "./Inbox.ts"
+
+/**
  * @category models
  * @since 0.1.0
  */

@@ -155,6 +155,7 @@ each guarantee and what proves it.
 | `EdgeCache`         | `layer({ name?, maxEntryBytes? })`: `@smthrs/artifacts`' `ImmutableCache` over the Workers Cache API, `caches.default` or a named cache.                                                  |
 | `SandboxObject`     | `wake(container, { intercepts, inactivityTimeoutMs? })`: start a container Durable Object's container offline, re-arm its inactivity timeout, register its outbound HTTP intercepts.      |
 | `ContainerTerminal` | `ensureSession` and `attach`: a browser terminal over `@smthrs/sandbox`'s `TerminalProtocol`, one tmux session per terminal and one tmux client per WebSocket; readers' input is dropped. |
+| `ContainerSession`  | `make(container, { id, workdir, user?, env? })`: the container as `@smthrs/sandbox`'s `Sandbox.Session`, so `SandboxTools` and `Sandbox.layerHost` run on it.                    |
 
 ## A terminal in a container
 

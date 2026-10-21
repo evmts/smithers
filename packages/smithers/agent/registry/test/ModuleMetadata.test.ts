@@ -411,6 +411,22 @@ describe("ModuleMetadata", () => {
     expect(Option.getOrThrow(metadata.placement)).toBe("sandbox")
   })
 
+  it("reads the tag Flow.make declares as its first argument, and no tag it cannot read", () => {
+    const tagOf = (source: string) => ModuleMetadata.parse(source).tag
+    expect(tagOf("export default Flow.make(\"release-notes\", { description: \"Notes.\", body })")).toEqual(
+      Option.some("release-notes")
+    )
+    expect(tagOf("export default Flow.make('it\\'s', { description: \"Notes.\", body })")).toEqual(Option.some("it's"))
+    // A computed tag, a tag with a substitution, and a record declare none the reader can show.
+    expect(tagOf("export default Flow.make(name, { description: \"Notes.\", body })")).toEqual(Option.none())
+    expect(tagOf("export default Flow.make(`${name}`, { description: \"Notes.\", body })")).toEqual(Option.none())
+    expect(tagOf("export default Flow.make(\"a\" + \"b\", { description: \"Notes.\", body })")).toEqual(Option.none())
+    expect(tagOf("export default ({ name: \"notes\", description: \"Notes.\" })")).toEqual(Option.none())
+    // A declaration cut off after its tag declares nothing the reader can show.
+    expect(tagOf("export default Flow.make(\"release-notes\"")).toEqual(Option.none())
+    expect(tagOf("export default Flow.make(")).toEqual(Option.none())
+  })
+
   it("matches the real /core Flow.make effects contract", () => {
     expect(discoveredFlow.effects?.tier).toBe("irreversible")
     expect(
@@ -619,6 +635,7 @@ describe("ModuleMetadata", () => {
       modelInvocable: true,
       declaresName: false,
       declaredName: Option.none(),
+      tag: Option.none(),
       warnings: [{ message: "Could not statically read the default Flow.make declaration" }]
     })
   })
@@ -683,6 +700,7 @@ describe("ModuleMetadata", () => {
       modelInvocable: true,
       declaresName: false,
       declaredName: Option.none(),
+      tag: Option.none(),
       warnings: [{ message: "Could not statically read the default Flow.make declaration" }]
     })
   })

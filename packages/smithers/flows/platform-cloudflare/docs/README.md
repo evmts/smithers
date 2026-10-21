@@ -35,6 +35,9 @@ run and comes back when it stops. This package supplies that host:
 - `ContainerTerminal` gives that container browser terminals: one tmux session
   per terminal and one tmux client per WebSocket, where the owner types and
   everyone else watches.
+- `ContainerSession` is that container as `@smthrs/sandbox`'s
+  `Sandbox.Session`, so its `SandboxTools` (run a command, read, write and list
+  files, git status and diff) run in it as one user.
 
 ## Install
 

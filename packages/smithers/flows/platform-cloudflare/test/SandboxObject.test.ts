@@ -38,15 +38,33 @@ describe("SandboxObject.wake", () => {
       ])
     }))
 
-  it.effect.each(["start", "timeout", "intercept"] as const)(
+  it.effect("with an egress, every other HTTP and HTTPS request goes to it, after the hosts' own intercepts", () =>
+    Effect.gen(function*() {
+      const { calls, machine } = MemoryContainer.machine(true)
+      expect(yield* SandboxObject.wake(machine, { intercepts, egress: "egress" })).toBe("running")
+      expect(calls).toEqual([
+        { _tag: "timeout", ms: 30 * 60 * 1000 },
+        { _tag: "intercept", host: "forge.smithers.internal", fetcher: "forge" },
+        { _tag: "intercept", host: "sandbox.smithers.internal:8080", fetcher: "lifecycle" },
+        { _tag: "interceptAll", fetcher: "egress" },
+        { _tag: "interceptHttps", host: "*", fetcher: "egress" }
+      ])
+    }))
+
+  it.effect.each(["start", "timeout", "intercept", "interceptAll", "interceptHttps"] as const)(
     "a failed %s fails the wake and stops there",
     (fail) =>
       Effect.gen(function*() {
         const { calls, machine } = MemoryContainer.machine(false, fail)
-        const error = yield* Effect.flip(SandboxObject.wake(machine, { intercepts }))
+        const error = yield* Effect.flip(SandboxObject.wake(machine, { intercepts, egress: "egress" }))
         expect(error).toBeInstanceOf(MemoryContainer.ContainerFailure)
         expect(calls.at(-1)?._tag).toBe(fail)
-        expect(calls.filter((call) => call._tag === "intercept").length).toBeLessThanOrEqual(1)
+        // Nothing after the failed call: a failed intercept stops the hosts' and the egress's that follow it.
+        const after = ["start", "timeout", "intercept", "interceptAll", "interceptHttps"].slice(
+          ["start", "timeout", "intercept", "interceptAll", "interceptHttps"].indexOf(fail) + 1
+        )
+        expect(calls.filter((call) => after.includes(call._tag) && call._tag !== "intercept")).toEqual([])
+        expect(calls.filter((call) => call._tag === "intercept").length).toBe(fail === "intercept" ? 1 : fail === "start" || fail === "timeout" ? 0 : 2)
       })
   )
 
@@ -54,7 +72,7 @@ describe("SandboxObject.wake", () => {
     const t = Telemetry.make()
     return Effect.gen(function*() {
       yield* SandboxObject.wake(MemoryContainer.machine(false).machine, { intercepts })
-      yield* SandboxObject.wake(MemoryContainer.machine(true).machine, { intercepts: [] })
+      yield* SandboxObject.wake(MemoryContainer.machine(true).machine, { intercepts: [], egress: "egress" })
       yield* Effect.exit(SandboxObject.wake(MemoryContainer.machine(false, "start").machine, { intercepts }))
     }).pipe(
       t.observed,
@@ -64,9 +82,14 @@ describe("SandboxObject.wake", () => {
         expect(t.count(SandboxObject.wakes, { outcome: "failed" })).toBe(1)
         const spans = t.named("sandbox.wake")
         expect(spans.map((span) => Object.fromEntries(span.attributes))).toEqual([
-          { "smithers.sandbox.intercepts": 2, "smithers.sandbox.wake": "started" },
-          { "smithers.sandbox.intercepts": 0, "smithers.sandbox.wake": "running" },
-          { "smithers.sandbox.intercepts": 2, "smithers.sandbox.wake": "failed", "error.type": "ContainerFailure" }
+          { "smithers.sandbox.intercepts": 2, "smithers.sandbox.egress": false, "smithers.sandbox.wake": "started" },
+          { "smithers.sandbox.intercepts": 0, "smithers.sandbox.egress": true, "smithers.sandbox.wake": "running" },
+          {
+            "smithers.sandbox.intercepts": 2,
+            "smithers.sandbox.egress": false,
+            "smithers.sandbox.wake": "failed",
+            "error.type": "ContainerFailure"
+          }
         ])
         for (const span of spans) expect(span.status).toMatchObject({ _tag: "Ended", exit: { _tag: "Success" } })
         expect(t.lines("cloudflare.sandbox.wake").map((line) => line.annotations)).toEqual(

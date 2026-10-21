@@ -131,7 +131,13 @@ Three options record usage where the host knows what it means:
   reservation it holds stays counted. Usage the model never reported is
   unknown, not zero: a call that failed or was interrupted may have spent
   tokens nobody reported, so keep its reservation rather than settle it to
-  the usage you have.
+  the usage you have. The exception is a clean refusal,
+  `ModelProxy.refusedCleanly(end)`: the call failed before the model
+  produced any output (`end.produced` is false), `rate_limited` or with a
+  provider 4xx status (`end.errorCode`, `end.httpStatus`). It spent nothing
+  beyond the usage reported, so settle it to that, 0 when none; otherwise a
+  provider outage spends a day's budget on reservations while the provider
+  spends nothing.
 - Key spend on `invocationId`, which the server mints for every call it
   admits. `requestId` is the caller's: it may send one id on any number of
   calls, and each call still runs the model, so spend keyed on it counts only

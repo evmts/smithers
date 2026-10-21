@@ -47,6 +47,7 @@ Every namespace below is also its own import subpath.
 | `CloudflareSandbox`         | `@smthrs/sandbox/CloudflareSandbox`         | The Cloudflare Durable Object provider.                                       |
 | `SandboxHealth`             | `@smthrs/sandbox/SandboxHealth`             | Sandbox health-check contracts.                                               |
 | `SandboxSupervision`        | `@smthrs/sandbox/SandboxSupervision`        | Heartbeat supervision over a remote sandbox session.                          |
+| `SandboxTools`              | `@smthrs/sandbox/SandboxTools`              | Typed tools on a working copy: run, read, write, list, git status and diff.   |
 
 `DirectorySandbox` requires `sh` on `PATH`, including on Windows.
 

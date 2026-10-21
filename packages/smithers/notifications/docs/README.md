@@ -138,6 +138,8 @@ is the one Smithers ships, and it drains this queue at every boundary.
   why replay never re-decides, and what a projection may assume.
 - [How alerting decides](./concepts/alerting.md): why an alert is a function of
   journal time, and why delivery is at-least-once.
+- [Who hears about a run](./concepts/inbox.md): routing a run's state to its
+  launcher and watchers, and why acks from several devices never conflict.
 - [Steer a run](./guides/steer-a-run.md) and
   [Drain at a turn boundary](./guides/drain-at-a-turn-boundary.md): the writing
   half and the reading half.

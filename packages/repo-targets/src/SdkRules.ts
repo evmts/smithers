@@ -28,7 +28,8 @@ import type { JevRule, JevRulesTarget } from "./JevRules.ts"
  *   but `sdk.generic-libraries` applies.
  * - `host`: a `@smthrs/platform-*` package, which owns platform code. Every
  *   rule but `sdk.platform-neutral` applies.
- * - `components`: `@smthrs/ui`, which renders React. Only
+ * - `components`: `@smthrs/ui`, `@smthrs/repo-view` and
+ *   `@smthrs/terminal-frame`, which render React. Only
  *   `sdk.root-imports-only`, `sdk.no-dead-code` and `test.behavioral` apply.
  *
  * @category models

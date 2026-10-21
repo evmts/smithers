@@ -194,6 +194,8 @@ export type Call =
   | { readonly _tag: "start"; readonly options: unknown }
   | { readonly _tag: "timeout"; readonly ms: number }
   | { readonly _tag: "intercept"; readonly host: string; readonly fetcher: string }
+  | { readonly _tag: "interceptAll"; readonly fetcher: string }
+  | { readonly _tag: "interceptHttps"; readonly host: string; readonly fetcher: string }
 
 /** A container client's lifecycle half, recording each call; `fail` names the call that fails. */
 export const machine = (
@@ -212,7 +214,9 @@ export const machine = (
       running: Effect.sync(() => running),
       start: (options) => record({ _tag: "start", options }),
       setInactivityTimeout: (ms) => record({ _tag: "timeout", ms }),
-      interceptOutboundHttp: (host, fetcher) => record({ _tag: "intercept", host, fetcher })
+      interceptOutboundHttp: (host, fetcher) => record({ _tag: "intercept", host, fetcher }),
+      interceptAllOutboundHttp: (fetcher) => record({ _tag: "interceptAll", fetcher }),
+      interceptOutboundHttps: (host, fetcher) => record({ _tag: "interceptHttps", host, fetcher })
     }
   }
 }

@@ -26,6 +26,7 @@ declaration values a discovered body carries, see the
 | [`Descriptor`](#descriptor)               | The serializable `FlowDescriptor` and every value it is built from.       |
 | [`Discovery`](#discovery)                 | The service that walks one source root and returns a `SourceScan`.        |
 | [`MarkdownFlow`](#markdownflow)           | Markdown and Agent Skills compatibility.                                  |
+| [`ModuleFlow`](#moduleflow)               | A `flow.ts` module's descriptor and tag, read without importing it.       |
 | [`Registry`](#registry)                   | The refreshable, first-found-wins catalog and its layers.                 |
 | [`Disclosure`](#disclosure)               | The compact projections a model and an autocomplete list are shown.       |
 | [`Executable`](#executable)               | Turning a descriptor into a runnable `@smthrs/flow` value.                |
@@ -665,6 +666,57 @@ Projects a descriptor into the one authoring value
 registry-to-core adapter boundary: metadata crosses it once and is not
 independently reinterpreted downstream. `Executable` uses it to lower a loaded
 markdown body into its annotations.
+
+## ModuleFlow
+
+Discovery for `flow.ts` modules, whose default export is `Flow.make("<tag>", { ... })`.
+
+### ModuleFlow.fromModule
+
+```ts
+interface FromModuleOptions {
+  readonly text: string
+  readonly contentDigest?: string | undefined
+  readonly path: string
+  readonly naming: "path" | "frontmatter"
+  readonly name: Option.Option<string>
+  readonly dirBasename: string
+  readonly provenance: Provenance
+  readonly imports?: ReadonlyArray<ModuleImport> | undefined
+  readonly hostImports?: ReadonlyArray<string> | undefined
+}
+
+interface FromModuleResult {
+  readonly descriptor: Option.Option<FlowDescriptor>
+  readonly tag: Option.Option<string>
+  readonly warnings: ReadonlyArray<DiscoveryWarning>
+}
+
+const fromModule: (options: FromModuleOptions) => FromModuleResult
+```
+
+Derives a module flow descriptor from already-read source text without
+importing or evaluating it. `Discovery` calls it for every `flow.ts` entry with
+a metadata prefix, the digest of the whole file and the module's closure; a
+host that keeps a flow's source outside a file system, such as a database row
+or an editor buffer, calls it with the complete text, and the digest of `text`
+is used.
+
+The description, payload and success schemas, `flows`, `capabilities`,
+`effects`, `model`, `modelInvocable`, `budget` and a leading placement
+directive (`"use sandbox"`) come from the literal declaration. `tag` is the
+string literal `Flow.make` takes as its first argument; it is `Option.none()`
+for a record declaration or a tag the reader can't evaluate, such as a
+variable or a template with a substitution. The descriptor's `name` is the
+path-derived `name` in a path-named source and `dirBasename` otherwise, so a
+caller that requires the tag to match the name compares the two itself.
+
+`descriptor` is `Option.none()` when the declaration has no literal
+description (`missing_description`). Metadata the reader can't project is
+reported as `unsupported_module_metadata`, with the line when it has one, and
+projected conservatively. In a path-named source, a `name` field that differs
+from the path is reported as `name_field_ignored`. Report `warnings` whether or
+not a descriptor was produced.
 
 ## Registry
 

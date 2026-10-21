@@ -38,6 +38,7 @@
     "./internal/*": null,
     "./*/index": null,
     "./Alerts": "./src/Alerts.ts",
+    "./Inbox": "./src/Inbox.ts",
     "./Notification": "./src/Notification.ts",
     "./NotificationEvent": "./src/NotificationEvent.ts",
     "./NotificationQueue": "./src/NotificationQueue.ts",
@@ -84,6 +85,16 @@
         "require": {
           "types": "./dist/cjs/Alerts.d.ts",
           "default": "./dist/cjs/Alerts.js"
+        }
+      },
+      "./Inbox": {
+        "import": {
+          "types": "./dist/esm/Inbox.d.ts",
+          "default": "./dist/esm/Inbox.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Inbox.d.ts",
+          "default": "./dist/cjs/Inbox.js"
         }
       },
       "./Notification": {

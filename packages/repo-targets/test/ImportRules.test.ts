@@ -69,7 +69,7 @@ describe("validateRules", () => {
     ["no modules", [{ kind: "forbid", because }], "ImportRules rule 0: `modules` must be a non-empty array of strings"],
     ["a non-string name", [{ kind: "forbidNames", modules: ["react"], names: [1], because }], "ImportRules rule 0: `names` must hold only non-empty strings"],
     ["no packages", [{ kind: "rootImportsOnly", packages: [], because }], "ImportRules rule 0: `packages` must be a non-empty array of strings"],
-    ["an empty allow list", [{ kind: "rootImportsOnly", packages: ["@smthrs/*"], allow: [], because }], "ImportRules rule 0: `allow` must be a non-empty array of strings"],
+    ["an allow list on rootImportsOnly", [{ kind: "rootImportsOnly", packages: ["@smthrs/*"], allow: ["@smthrs/cli/*"], because }], "ImportRules rule 0: rootImportsOnly does not take `allow`"],
     ["an allow list on forbid", [{ kind: "forbid", modules: ["effect"], allow: ["effect/Schema"], because }], "ImportRules rule 0: forbid does not take `allow`"],
     ["no callees", [{ kind: "forbidCalls", because }], "ImportRules rule 0: `callees` must be a non-empty array of strings"],
     ...["*", "*.", "*route", "page.*", "*.page.route", "*.route()", "**.route"].map((entry): [string, unknown, string] => [
@@ -206,23 +206,6 @@ describe("check: rootImportsOnly", () => {
       'worker/Answer.ts:3 imports "effect/Schema", not the root "effect" (rootImportsOnly) #0',
       'worker/Answer.ts:10 re-exports "@smthrs/rpc/ConfiguredModel", not the root "@smthrs/rpc" (rootImportsOnly) #0'
     ])
-  })
-
-  it("lets through only the deep imports its allow globs name", () => {
-    const source = {
-      "src/Page.tsx": [
-        'import { RepoView } from "@smthrs/ui/adapters/repo-view"',
-        'import { Deep } from "@smthrs/ui/adapters/repo-view/internal"',
-        'import { Button } from "@smthrs/ui/components/Button"',
-        'import { Schema } from "effect/Schema"'
-      ].join("\n")
-    }
-    expect(violations([{ ...rule, allow: ["@smthrs/ui/adapters/*"] }], source)).toEqual([
-      'src/Page.tsx:2 imports "@smthrs/ui/adapters/repo-view/internal", not the root "@smthrs/ui" (rootImportsOnly) #0',
-      'src/Page.tsx:3 imports "@smthrs/ui/components/Button", not the root "@smthrs/ui" (rootImportsOnly) #0',
-      'src/Page.tsx:4 imports "effect/Schema", not the root "effect" (rootImportsOnly) #0'
-    ])
-    expect(violations([rule], source)).toHaveLength(4)
   })
 
   it("lets a type-only deep import through only when the rule allows it", () => {

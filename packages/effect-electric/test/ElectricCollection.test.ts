@@ -371,6 +371,247 @@ describe.skipIf(!electricUp)("sync status and the sync policy", () => {
   })
 })
 
+// A live batch Electric's client can't read. It takes the response's offset from its headers before it parses the
+// body (@electric-sql/client 1.5.28, electric-client-offset-bug.md), so a batch handed to it cut short was skipped when
+// the shape restarted: the row in it never reached the device.
+describe.skipIf(!electricUp)("a live batch that isn't whole", () => {
+  const offsets = (urls: ReadonlyArray<URL>) => urls.map((url) => url.searchParams.get("offset"))
+
+  test("cut short, it stops the shape before Electric takes its offset, and reconnect asks for that batch again", async () => {
+    const result = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      const { faults, collection: notes } = yield* faulty(notesOf(table))
+      const events = yield* record(notes)
+      yield* write({ id: "a", text: "one", n: 1 })
+      yield* notes.preload
+      const mark = events.length
+      yield* faults.corrupt("live")
+      yield* write({ id: "b", text: "two", n: 2 })
+      yield* eventually(() => events.includes("Stopped:none"))
+      yield* faults.heal
+      const cut = (yield* faults.sent).at(-1)!
+      const before = (yield* faults.sent).length
+      yield* notes.reconnect
+      yield* write({ id: "c", text: "three", n: 3 })
+      yield* notes.awaitMatch(changeTo("c"), "5 seconds")
+      return {
+        rows: ids(yield* notes.toArray).sort(),
+        events: events.slice(mark),
+        resumed: offsets(yield* faults.sent)[before],
+        cut: cut.searchParams.get("offset")
+      }
+    }))
+    expect(result.rows).toEqual(["a", "b", "c"])
+    expect(result.events.filter((event) => event !== "Sent")[0]).toBe("Stopped:none")
+    expect(result.resumed).toBe(result.cut)
+  })
+
+  test("broken off, it failed on the network: the policy sends the same request again, with no stop", async () => {
+    const result = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      const { faults, collection: notes } = yield* faulty(notesOf(table))
+      const events = yield* record(notes)
+      yield* notes.preload
+      const mark = events.length
+      const before = (yield* faults.sent).length
+      yield* faults.drop(40, "live")
+      yield* write({ id: "a", text: "one", n: 1 })
+      yield* eventually(() => events.slice(mark).includes("Failed:network"))
+      yield* faults.heal
+      yield* notes.awaitMatch(changeTo("a"), "5 seconds")
+      return {
+        events: events.slice(mark).filter((event) => event !== "Sent"),
+        asked: (yield* faults.sent).slice(before)
+      }
+    }))
+    expect(result.events.at(-1)).toBe("Succeeded")
+    expect(new Set(result.events.slice(0, -1))).toEqual(new Set(["Failed:network"]))
+    // Every request from the fault to the one that brought the row asked from one offset.
+    expect(new Set(offsets(result.asked.slice(0, -1))).size).toBe(1)
+  })
+
+  // A seeded fuzz over where a live batch of one row (about 365 bytes here) is cut or breaks off: every point falls
+  // inside it, and a negative one counts back from its end. Set CUT_SEED to explore other points; a failure names them.
+  const seed = Number(process.env.CUT_SEED ?? 20_261_020)
+  const random = (() => {
+    let state = seed
+    return () => {
+      state = (state + 0x6d2b79f5) | 0
+      let t = Math.imul(state ^ (state >>> 15), state | 1)
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+      return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296
+    }
+  })()
+  const points = [0, 1, 2, -1, -2, ...Array.from({ length: 15 }, () => Math.floor(random() * 720) - 360)]
+  const cases = points.flatMap((bytes) => [["cut", bytes], ["drop", bytes]] as const)
+
+  test(
+    `wherever a live batch is cut or breaks off, every row reaches the device exactly once (seed ${seed})`,
+    async () => {
+      const result = await run(Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const { table, write } = yield* scratchTable
+        const { faults, collection: notes } = yield* faulty(notesOf(table))
+        const events = yield* record(notes)
+        const inserts = new Map<string, number>()
+        const watching = notes.tanstack.subscribeChanges((changes) => {
+          for (const change of changes) {
+            if (change.type === "insert") inserts.set(String(change.key), (inserts.get(String(change.key)) ?? 0) + 1)
+          }
+        })
+        yield* Effect.addFinalizer(() => Effect.sync(() => watching.unsubscribe()))
+        yield* notes.preload
+        const lost: Array<string> = []
+        for (const [index, [how, bytes]] of cases.entries()) {
+          const id = `r${index}`
+          const mark = events.length
+          yield* faults[how](bytes, "live")
+          yield* write({ id, text: `${how} at ${bytes}`, n: index })
+          // The fault has met the batch: the shape stopped, the request failed or, had the batch been taken, succeeded.
+          yield* eventually(() => events.slice(mark).some((event) => event !== "Sent"))
+          yield* faults.heal
+          yield* notes.reconnect
+          const arrived = yield* notes.awaitMatch(changeTo(id), "3 seconds").pipe(
+            Effect.as(true),
+            Effect.catchTag("AwaitTimeout", () => Effect.succeed(false))
+          )
+          if (!arrived) lost.push(`${how} at ${bytes}`)
+        }
+        const stored = yield* sql<{ id: string }>`select id from ${sql(table)}`
+        return {
+          lost,
+          device: ids(yield* notes.toArray).sort(),
+          postgres: stored.map(({ id }) => id).sort(),
+          duplicated: [...inserts].filter(([, count]) => count > 1).map(([key]) => key)
+        }
+      }))
+      expect(result.lost).toEqual([])
+      expect(result.duplicated).toEqual([])
+      expect(result.device).toEqual(result.postgres)
+      expect(result.device).toHaveLength(cases.length)
+    },
+    120_000
+  )
+
+  // A source that answers the first live response its own way, then is the real source; `answered` says it has.
+  const firstLive = (answer: (response: Response, url: URL) => Response) => {
+    const state = { answered: false }
+    const source: ShapeSource.Source = {
+      request: (url, init) =>
+        Effect.map(ShapeSource.fetchSource.request(url, init), (response) => {
+          const parsed = new URL(url)
+          if (state.answered || parsed.searchParams.get("live") !== "true") return response
+          state.answered = true
+          return answer(response, parsed)
+        })
+    }
+    return { source, answered: () => state.answered }
+  }
+
+  test("a 2xx that isn't Electric's, such as a portal's page, stops the shape before Electric takes an offset", async () => {
+    const result = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      const notes = yield* notesOf(table).pipe(
+        Effect.provideService(
+          ShapeSource.ShapeSource,
+          firstLive(() => new Response("<html>signed out</html>", { status: 200 })).source
+        )
+      )
+      const events = yield* record(notes)
+      yield* notes.preload
+      yield* write({ id: "a", text: "one", n: 1 })
+      const stop = yield* notes.sync.pipe(Stream.filter((event) => event._tag === "Stopped"), Stream.runHead)
+      yield* notes.reconnect
+      yield* notes.awaitMatch(changeTo("a"), "5 seconds")
+      return { stop, events }
+    }))
+    expect(result.stop).toMatchObject(
+      Option.some({ _tag: "Stopped", error: { _tag: "SyncFailed", cause: { _tag: "Unreadable", status: 200 } } })
+    )
+    expect(Option.getOrThrow(result.stop)._tag === "Stopped" && Option.getOrThrow(result.stop).error.status)
+      .toBeUndefined()
+    expect(result.events).not.toContain("Failed:network")
+  })
+
+  test("a JSON body that isn't a batch stops the shape too", async () => {
+    const stop = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      const notes = yield* notesOf(table).pipe(
+        Effect.provideService(
+          ShapeSource.ShapeSource,
+          firstLive((response) => new Response(`{"rows":[]}`, response)).source
+        )
+      )
+      yield* notes.preload
+      yield* write({ id: "a", text: "one", n: 1 })
+      return yield* notes.sync.pipe(Stream.filter((event) => event._tag === "Stopped"), Stream.runHead)
+    }))
+    expect(stop).toMatchObject(Option.some({ _tag: "Stopped", error: { cause: { _tag: "Unreadable" } } }))
+  })
+
+  test("a 204, which older Electric servers sent when nothing was new, goes to Electric as it is", async () => {
+    const result = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      // Nothing new: the 204 says the offset the poll asked from.
+      const older = firstLive((response, url) => {
+        const headers = new Headers(response.headers)
+        headers.set("electric-offset", url.searchParams.get("offset")!)
+        return new Response(null, { status: 204, headers })
+      })
+      const notes = yield* notesOf(table).pipe(Effect.provideService(ShapeSource.ShapeSource, older.source))
+      const events = yield* record(notes)
+      yield* notes.preload
+      yield* write({ id: "a", text: "one", n: 1 })
+      yield* notes.awaitMatch(changeTo("a"), "5 seconds")
+      return { answered: older.answered(), events }
+    }))
+    expect(result.answered).toBe(true)
+    expect(new Set(result.events)).toEqual(new Set(["Sent", "Succeeded"]))
+  })
+
+  test("each request records the shape's handle, offset and row count on a span, and no row content", async () => {
+    const spans: Array<Tracer.NativeSpan> = []
+    const tracer = Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options)
+        if (options.name === "electric.shape.request") spans.push(span)
+        return span
+      }
+    })
+    const id = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      const { faults, collection: notes } = yield* faulty(notesOf(table)).pipe(
+        Effect.provideService(Tracer.Tracer, tracer)
+      )
+      yield* notes.preload
+      yield* write({ id: "a", text: "words of one note", n: 1 })
+      yield* notes.awaitMatch(changeTo("a"), "5 seconds")
+      yield* faults.corrupt("live")
+      yield* write({ id: "b", text: "words of another", n: 2 })
+      yield* eventually(() => spans.some((span) => span.attributes.get("electric.shape.complete") === false))
+      return notes.id
+    }))
+    const attributes = spans.map((span) => Object.fromEntries(span.attributes))
+    const live = attributes.filter((span) => span["electric.shape.live"] === true)
+    expect(live[0]).toEqual({
+      "electric.collection": id,
+      "electric.shape.live": true,
+      "electric.shape.request_offset": expect.any(String),
+      "http.response.status_code": 200,
+      "electric.shape.handle": expect.any(String),
+      "electric.shape.offset": expect.any(String),
+      "electric.shape.bytes": expect.any(Number),
+      "electric.shape.complete": true,
+      "electric.shape.rows": 1
+    })
+    // The next live request asks from the offset the batch brought.
+    expect(live[1]!["electric.shape.request_offset"]).toBe(live[0]!["electric.shape.offset"])
+    expect(live.at(-1)).toMatchObject({ "electric.shape.complete": false })
+    expect(live.at(-1)).not.toHaveProperty("electric.shape.rows")
+    expect(JSON.stringify(attributes)).not.toMatch(/words of|"a"|"b"/)
+  })
+})
+
 describe.skipIf(!electricUp)("progressive", () => {
   test("loads what a query asks for first, then the whole shape, and follows later writes", async () => {
     const result = await run(Effect.gen(function*() {

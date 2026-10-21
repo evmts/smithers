@@ -1180,6 +1180,36 @@ with `HttpClient.ResolveHostUnavailable`; a composition that installs a pinning
 client without this layer gets that refusal, which the web tools report as
 `unsupported`.
 
+## A model provider's fetch
+
+`EgressHttpClient.providerFetch(environment, { connect? })` is the `fetch` a Node
+model host passes as `HostModel`'s `fetch` option. It is Undici's `fetch` over a
+pool of its own, in the caller's scope, that follows the environment's proxy
+variables as `dispatcher` does and speaks HTTP/1.1 only. `connect` carries TLS
+options such as a private provider's `ca`.
+
+```ts
+import { EgressHttpClient } from "@smthrs/platform-node"
+import { HostModel } from "@smthrs/model-host"
+import { Effect, Layer } from "effect"
+
+const model = Layer.unwrap(Effect.map(
+  EgressHttpClient.providerFetch(process.env),
+  (fetch) => HostModel.layerConfig("CHAT_MODEL", undefined, { fetch })
+))
+```
+
+Node's own `fetch` and Undici 8 negotiate HTTP/2 when an origin offers it. Once
+a provider's edge tears an HTTP/2 session down, every later request to that
+origin fails within milliseconds with `ERR_HTTP2_INVALID_SESSION` until the
+process restarts: on Node 26.10 against `api.cerebras.ai`, about two minutes into
+a stream of agent-sized calls, after a TLS `bad record mac` alert (2026-10-20).
+Over HTTP/1.1 a socket the provider closed fails the one request on it
+(`UND_ERR_SOCKET`), which the provider route retries on a fresh connection.
+
+`EgressHttpClient.dispatcher(environment, { allowH2?, connect? })` takes the same
+pool options; without them the pool is Undici's default.
+
 ## FetchTransport
 
 `FetchTransport.observe(origin)` reports how far each `fetch` to one origin got

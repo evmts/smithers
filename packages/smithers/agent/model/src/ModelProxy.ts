@@ -298,7 +298,73 @@ export interface End {
   readonly outcome: "success" | "failed" | "interrupted"
   readonly modelId: string
   readonly usage: Usage
+  /**
+   * Whether the model sent any output before the call ended: an event other
+   * than `usage` and `retry`. A call that failed with none was refused before
+   * the provider produced anything.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly produced: boolean
+  /**
+   * For a `failed` call, the `ModelError` code it failed with (`unknown` for
+   * any other failure); absent otherwise.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly errorCode?: ModelErrorCode | undefined
+  /**
+   * For a `failed` call whose provider answered an HTTP error, that status;
+   * absent otherwise.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly httpStatus?: number | undefined
 }
+
+/**
+ * Whether a served call ended in a clean refusal: it failed before the model
+ * produced any output, `rate_limited` or with a provider 4xx status. Such a
+ * call spent nothing beyond the usage its provider reported, so a host that
+ * reserved spend for it settles to that usage, and to 0 when none was
+ * reported. Any other failure, a transport failure or a 5xx before any output
+ * included, may have spent tokens nobody reported.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export const refusedCleanly = (end: End): boolean =>
+  end.outcome === "failed" && !end.produced &&
+  (end.errorCode === "rate_limited" || (end.httpStatus !== undefined && end.httpStatus >= 400 && end.httpStatus < 500))
+
+/**
+ * What a failure tells {@link End}: its `ModelError` code (`unknown` for any
+ * other failure) and the provider's HTTP status when it had one.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export const failureOf = (
+  cause: Cause.Cause<unknown>
+): { readonly errorCode: ModelErrorCode; readonly httpStatus?: number | undefined } => {
+  const found = Cause.findError(cause)
+  const modelError = Result.isSuccess(found) && found.success instanceof ModelError ? found.success : undefined
+  return {
+    errorCode: modelError?.code ?? "unknown",
+    ...(modelError?.httpStatus === undefined ? {} : { httpStatus: modelError.httpStatus })
+  }
+}
+
+/**
+ * Whether a model event is output, as {@link End}'s `produced` counts it:
+ * anything but `usage` and `retry`, which report on the call rather than
+ * answer it. For a host that meters a call it runs in process and builds its
+ * own `End`.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export const producesOutput = (event: ModelEvent): boolean => event.type !== "usage" && event.type !== "retry"
 
 /**
  * What {@link serve} lets a host decide before the model runs, and hear after
@@ -428,7 +494,21 @@ export const serve = <R = never>(
       Effect.uninterruptible(Effect.suspend(() => {
         if (ended || onEnd === undefined) return Effect.void
         ended = true
-        return onEnd({ requestId, invocationId, outcome, modelId: prepared.modelId, usage: call.usage })
+        return onEnd({
+          requestId,
+          invocationId,
+          outcome,
+          modelId: prepared.modelId,
+          usage: call.usage,
+          produced: call.produced,
+          ...(outcome === "failed"
+            ? {
+              // `call.failure` recorded the code before the stream reached its failed terminal line.
+              errorCode: call.errorCode,
+              ...(call.failureStatus === undefined ? {} : { httpStatus: call.failureStatus })
+            }
+            : {})
+        })
       }))
     // The terminal line follows the host's `onEnd`, so a host that meters there has recorded the call before the
     // client reads the end of it, and before a Worker's response, and with it the invocation, ends.
@@ -847,6 +927,10 @@ class Call {
   events = 0
   firstEventMs: number | undefined
   usage: Usage = {}
+  /** Whether the model sent any output: an event other than `usage` and `retry`. */
+  produced = false
+  /** The provider's HTTP status of the failure, when it was an HTTP error. */
+  failureStatus: number | undefined
   /** The host's attributes, added to this request's metrics and log line; none on the client side. */
   readonly attributes: Readonly<Record<string, string>>
 
@@ -869,6 +953,7 @@ class Call {
     return Effect.map(Clock.currentTimeMillis, (now) => {
       this.events += 1
       this.firstEventMs ??= now - this.startedAt
+      if (producesOutput(event)) this.produced = true
       if (event.type === "retry") this.usage = {}
       if (event.type === "usage") {
         const { type: _, ...counters } = event
@@ -888,8 +973,9 @@ class Call {
   failure(cause: Cause.Cause<unknown>): ErrorLine {
     const found = Cause.findError(cause)
     const modelError = Result.isSuccess(found) && found.success instanceof ModelError ? found.success : undefined
-    const code = modelError?.code ?? "unknown"
+    const { errorCode: code, httpStatus } = failureOf(cause)
     this.errorCode = code
+    this.failureStatus = httpStatus
     this.errorTag = Result.isSuccess(found) ? tagOf(found.success) : "defect"
     return {
       type: "error",

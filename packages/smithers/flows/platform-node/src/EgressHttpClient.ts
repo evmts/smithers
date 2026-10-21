@@ -97,6 +97,19 @@ const loadUndici = Effect.promise(
 )
 
 /**
+ * How a pool {@link dispatcher} opens speaks and connects: whether it may
+ * negotiate HTTP/2 (Undici's default is yes), and the TLS options each
+ * connection takes.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export interface PoolOptions {
+  readonly allowH2?: boolean | undefined
+  readonly connect?: Undici.buildConnector.BuildOptions | undefined
+}
+
+/**
  * An Undici dispatcher that routes through the egress proxy the supplied
  * environment names, or a direct one when it names none.
  *
@@ -108,12 +121,18 @@ const loadUndici = Effect.promise(
  * acquired in the caller's scope and destroyed with it, so a composition that
  * builds several still owns every pool it opened.
  *
+ * `options` reach Undici's pool as they are: `allowH2: false` keeps it on
+ * HTTP/1.1 (see {@link providerFetch}), and `connect` carries TLS options such
+ * as a private `ca`. Without them the pool is Undici's default.
+ *
  * @param environment the environment record whose proxy variables decide the route
+ * @param options the pool's protocol and connection options
  * @category constructors
  * @since 1.0.0-rc.0
  */
 export const dispatcher = (
-  environment: Readonly<Record<string, string | undefined>>
+  environment: Readonly<Record<string, string | undefined>>,
+  options: PoolOptions = {}
 ): Effect.Effect<Undici.Dispatcher, never, Scope.Scope> =>
   Effect.suspend(() => {
     const httpProxy = environment.http_proxy ?? environment.HTTP_PROXY ?? ""
@@ -132,10 +151,65 @@ export const dispatcher = (
     return Effect.acquireRelease(
       Effect.map(
         loadUndici,
-        (undici) => new undici.EnvHttpProxyAgent({ httpProxy, httpsProxy, noProxy })
+        (undici) =>
+          new undici.EnvHttpProxyAgent({
+            httpProxy,
+            httpsProxy,
+            noProxy,
+            ...(options.allowH2 === undefined ? {} : { allowH2: options.allowH2 }),
+            ...(options.connect === undefined ? {} : { connect: options.connect })
+          })
       ),
       (dispatcher) => Effect.promise(() => dispatcher.destroy())
     )
+  })
+
+/**
+ * A `fetch` for a Node process's model provider calls, to pass as
+ * `HostModel`'s `fetch` option: Undici's `fetch` over a pool of its own that
+ * follows the environment's egress proxy, as {@link dispatcher} does, and
+ * speaks HTTP/1.1 only.
+ *
+ * Node's own `fetch` and Undici 8 negotiate HTTP/2 when the origin offers it.
+ * When a provider's edge tears an HTTP/2 session down, every later request to
+ * that origin fails within milliseconds with `ERR_HTTP2_INVALID_SESSION`
+ * ("The session has been destroyed"), and keeps failing until the process
+ * restarts: measured against `api.cerebras.ai` on Node 26.10 on 2026-10-20,
+ * after a TLS alert (`bad record mac`) about two minutes into a stream of
+ * agent-sized calls, which a model host retried as `transport` failures until
+ * it spent its day's budget on reservations. Over HTTP/1.1 a socket the
+ * provider closed fails the one request on it (`UND_ERR_SOCKET`, which the
+ * provider route retries), and the pool dials a fresh one: 7 such failures in
+ * 188 calls over the same 200 seconds, none of them lasting.
+ *
+ * The pool lives in the caller's scope and is destroyed with it. `connect`
+ * carries TLS options, such as a private provider's `ca`.
+ *
+ * @example
+ * ```ts
+ * import { EgressHttpClient } from "@smthrs/platform-node"
+ * import { Effect } from "effect"
+ *
+ * const program = Effect.scoped(Effect.gen(function*() {
+ *   const fetch = yield* EgressHttpClient.providerFetch(process.env)
+ *   return (yield* Effect.promise(() => fetch("https://example.com"))).status
+ * }))
+ * ```
+ *
+ * @param environment the environment record whose proxy variables decide the route
+ * @param options TLS options for each connection
+ * @category constructors
+ * @since 1.0.0-rc.17
+ */
+export const providerFetch = (
+  environment: Readonly<Record<string, string | undefined>>,
+  options: { readonly connect?: Undici.buildConnector.BuildOptions | undefined } = {}
+): Effect.Effect<typeof globalThis.fetch, never, Scope.Scope> =>
+  Effect.gen(function*() {
+    const pool = yield* dispatcher(environment, { allowH2: false, ...options })
+    const undici = yield* loadUndici
+    return ((input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) =>
+      undici.fetch(input as never, { ...init, dispatcher: pool } as never)) as unknown as typeof globalThis.fetch
   })
 
 /**

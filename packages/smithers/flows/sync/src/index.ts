@@ -105,3 +105,21 @@ export * as BranchServer from "./BranchServer.ts"
  * @since 0.1.0
  */
 export * as BranchIds from "./BranchIds.ts"
+
+/**
+ * @category protocol
+ * @since 1.0.0-rc.17
+ */
+export * as PresenceProtocol from "./PresenceProtocol.ts"
+
+/**
+ * @category services
+ * @since 1.0.0-rc.17
+ */
+export * as PresenceRoom from "./PresenceRoom.ts"
+
+/**
+ * @category services
+ * @since 1.0.0-rc.17
+ */
+export * as PresenceSocket from "./PresenceSocket.ts"

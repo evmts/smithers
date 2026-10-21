@@ -820,8 +820,80 @@ describe("ModelProxy prepare", () => {
       invocationId: server.annotations.invocationId,
       outcome: "success",
       modelId: "host-model",
-      usage: { inputTokens: 7, outputTokens: 3 }
+      usage: { inputTokens: 7, outputTokens: 3 },
+      produced: true
     }])
+  })
+
+  // A provider outage refuses calls before they produce anything. A host that reserved spend for each call reads
+  // `End` to tell that clean refusal, which spent nothing beyond the usage reported, from a failure whose spend is
+  // unknown (apps/mvp's budget, docs/features/model-endpoint.md#budget).
+  const failing = (events: ReadonlyArray<ModelEvent>, error: ModelError) =>
+    Model.make({ stream: () => Stream.fromIterable(events).pipe(Stream.concat(Stream.fail(error))) })
+  const endOf = async (model: Model.Model) => {
+    const ends: Array<ModelProxy.End> = []
+    const h = harness({ onEnd: (end) => Effect.sync(() => ends.push(end)), model })
+    await h.call()
+    return ends[0]!
+  }
+
+  it("hands onEnd a failure's code and HTTP status, and that the model produced nothing, for a refusal", async () => {
+    const end = await endOf(
+      failing([], new ModelError({ code: "rate_limited", message: "slow down", httpStatus: 429, retryAfterMillis: 5 }))
+    )
+
+    expect(end).toMatchObject({ outcome: "failed", produced: false, errorCode: "rate_limited", httpStatus: 429 })
+    expect(ModelProxy.refusedCleanly(end)).toBe(true)
+  })
+
+  it("reads a refusal as clean only when nothing was produced and it was rate_limited or a provider 4xx", async () => {
+    const retry: ModelEvent = { type: "retry", attempt: 1, code: "rate_limited", delayMillis: 0 }
+    const cases: ReadonlyArray<readonly [string, ReadonlyArray<ModelEvent>, ModelError, boolean]> = [
+      // A route that retried a 429 and gave up produced nothing either; its usage is reported, not output.
+      ["429 after a retry", [retry, { type: "usage", inputTokens: 3 }], new ModelError({ code: "rate_limited", message: "x" }), true],
+      ["400", [], new ModelError({ code: "invalid_request", message: "x", httpStatus: 400 }), true],
+      ["401", [], new ModelError({ code: "authentication", message: "x", httpStatus: 401 }), true],
+      ["429 after text", [{ type: "text-delta", id: "t", text: "paid" }], new ModelError({ code: "rate_limited", message: "x", httpStatus: 429 }), false],
+      ["503", [], new ModelError({ code: "provider_internal", message: "x", httpStatus: 503 }), false],
+      ["transport", [], new ModelError({ code: "transport", message: "reset" }), false],
+      ["call_timeout", [], new ModelError({ code: "call_timeout", message: "x" }), false]
+    ]
+    const read = await Promise.all(cases.map(async ([name, events, error]) => [name, ModelProxy.refusedCleanly(await endOf(failing(events, error)))]))
+
+    expect(read).toEqual(cases.map(([name, , , clean]) => [name, clean]))
+  })
+
+  it("hands onEnd code unknown and no status for a failure that isn't a ModelError, and never reads it as clean", async () => {
+    const end = await endOf(Model.make({ stream: () => Stream.die(new Error("boom")) }))
+
+    expect(end).toMatchObject({ outcome: "failed", produced: false, errorCode: "unknown" })
+    expect(end.httpStatus).toBeUndefined()
+    expect(ModelProxy.refusedCleanly(end)).toBe(false)
+  })
+
+  it("hands onEnd no failure fields for a call that succeeded, and never reads it as a refusal", async () => {
+    const end = await endOf(echo)
+
+    expect(end.errorCode).toBeUndefined()
+    expect(end.httpStatus).toBeUndefined()
+    expect(ModelProxy.refusedCleanly(end)).toBe(false)
+  })
+
+  it("producesOutput counts every event but usage and retry", () => {
+    expect([
+      ModelProxy.producesOutput({ type: "usage", inputTokens: 1 }),
+      ModelProxy.producesOutput({ type: "retry", attempt: 1, code: "transport", delayMillis: 0 }),
+      ModelProxy.producesOutput({ type: "text-start", id: "t" }),
+      ModelProxy.producesOutput({ type: "settle", stopReason: "stop" })
+    ]).toEqual([false, false, true, true])
+  })
+
+  it("failureOf reads a ModelError's code and status, and unknown for anything else", () => {
+    expect(ModelProxy.failureOf(Cause.fail(new ModelError({ code: "rate_limited", message: "x", httpStatus: 429 }))))
+      .toEqual({ errorCode: "rate_limited", httpStatus: 429 })
+    expect(ModelProxy.failureOf(Cause.fail(new ModelError({ code: "transport", message: "x" }))))
+      .toEqual({ errorCode: "transport" })
+    expect(ModelProxy.failureOf(Cause.die("boom"))).toEqual({ errorCode: "unknown" })
   })
 
   it("sends the terminal line only after onEnd finished", async () => {

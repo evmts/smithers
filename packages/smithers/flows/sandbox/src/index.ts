@@ -29,6 +29,9 @@ export * as TerminalProtocol from "./TerminalProtocol/index.ts"
 /** The provisioned-machine contract and its projections. */
 export * as Sandbox from "./Sandbox/index.ts"
 
+/** Typed tools on a sandbox's working copy: run a command, read, write and list files, git status and diff. */
+export * as SandboxTools from "./SandboxTools/index.ts"
+
 /** Lands a session's captured work in a host jj repository. */
 export * as SandboxMerge from "./SandboxMerge/index.ts"
 

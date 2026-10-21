@@ -36,6 +36,29 @@ A collection synced from an Electric shape, cleaned up when the scope closes.
   provides another source.
 - A request that fails on the network, or with a 5xx or 429, waits on `retry`
   and is sent again. See [The sync policy](sync-policy.md).
+- A 2xx batch of the shape's log (every response but progressive mode's
+  subset snapshots) is read in full before Electric sees it, because Electric
+  takes a response's offset before it reads the body. One that breaks off failed on
+  the network. One that ends but isn't a whole batch (cut short, empty, or
+  not Electric's) stops the shape, with no status, before Electric takes its
+  offset, so `reconnect` sends the same request again and no row is skipped.
+- Each request records one span, `electric.shape.request`, with no row
+  content:
+
+  | Attribute                       | Is                                                |
+  | ------------------------------- | ------------------------------------------------- |
+  | `electric.collection`           | The collection's `id`.                            |
+  | `electric.shape.live`           | Whether it is a live request.                     |
+  | `electric.shape.request_offset` | The offset it asked from.                         |
+  | `http.response.status_code`     | The status.                                       |
+  | `electric.shape.handle`         | A 2xx's shape handle.                             |
+  | `electric.shape.offset`         | A 2xx's offset: where the next request asks from. |
+  | `electric.shape.bytes`          | A 2xx's body size.                                |
+  | `electric.shape.complete`       | Whether a 2xx's body was a whole batch.           |
+  | `electric.shape.rows`           | The rows a whole batch changes.                   |
+
+  A row that never reached the device shows as a request whose
+  `request_offset` is the `offset` of a batch that wasn't `complete`.
 - With `persist`, the collection keeps its rows and Electric's resume state
   (the shape's handle and offset) on the device through
   `@smthrs/effect-tanstack-db`'s `Persistence`. The next program restores the
@@ -116,12 +139,12 @@ type SyncEvent =
 | Event       | When                                                                                                                           |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `Sent`      | A shape request went out.                                                                                                      |
-| `Succeeded` | It was answered with a 2xx.                                                                                                    |
-| `Failed`    | It failed on the network (no `status`) or with a 5xx or 429, and waits on the policy.                                          |
+| `Succeeded` | It was answered with a 2xx and a whole batch.                                                                                  |
+| `Failed`    | It failed on the network (no `status`), its body breaking off included, or with a 5xx or 429, and waits on the policy.         |
 | `Stopped`   | Electric gave up on the shape: a 4xx, a response it couldn't read or decode, or a policy that ended. It waits for `reconnect`. |
 
-A request Electric aborts, and a 4xx before `Stopped`, report neither
-`Succeeded` nor `Failed`.
+A request Electric aborts, and a 4xx or a batch that isn't whole before
+`Stopped`, report neither `Succeeded` nor `Failed`.
 
 ### `ElectricCollection.Delivered<A>`
 
@@ -202,11 +225,11 @@ const fetchSource: Source
 class RequestFailed extends Data.TaggedError("RequestFailed")<{ readonly status?: number }> {}
 ```
 
-| Export          | Is                                                                                                                                                                                                                         |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ShapeSource`   | The service, a `Context.Reference` whose default is `fetchSource`.                                                                                                                                                         |
-| `fetchSource`   | The real source: each request sent with the `fetch` in Effect's `FetchHttpClient.Fetch`, the global one unless a program provides one, with `cache: "no-store"`, so the HTTP cache never answers or keeps a shape request. |
-| `RequestFailed` | A shape request failed on the network (no `status`) or with a 5xx or 429. The sync policy is stepped with it.                                                                                                              |
+| Export          | Is                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ShapeSource`   | The service, a `Context.Reference` whose default is `fetchSource`.                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `fetchSource`   | The real source: each request sent with the `fetch` in Effect's `FetchHttpClient.Fetch`, the global one unless a program provides one, with `cache: "no-store"`, so the HTTP cache never answers or keeps a shape request. A live request (a long poll) is sent with `priority: "low"`, so on a page whose shapes hold all six of a browser's HTTP/1.1 connections to an origin, its other requests take the next free connection instead of queueing behind the long polls. |
+| `RequestFailed` | A shape request failed on the network (no `status`) or with a 5xx or 429. The sync policy is stepped with it.                                                                                                                                                                                                                                                                                                                                                                |
 
 ### Testing unhappy paths: `layerFaulty` and `Faults`
 
@@ -217,6 +240,8 @@ interface Switches {
   readonly refuse: (status?: number, requests?: Requests) => Effect.Effect<void>
   readonly stall: (requests?: Requests) => Effect.Effect<void>
   readonly corrupt: (requests?: Requests) => Effect.Effect<void>
+  readonly cut: (bytes: number, requests?: Requests) => Effect.Effect<void>
+  readonly drop: (bytes: number, requests?: Requests) => Effect.Effect<void>
   readonly heal: Effect.Effect<void>
   readonly sent: Effect.Effect<ReadonlyArray<URL>>
 }
@@ -236,13 +261,16 @@ collection asks the faulty source, as it asks the real one.
 | `refuse`  | Requests are answered with `status` (default 400) and never reach Electric, as by a gateway. |
 | `stall`   | Responses that arrive from Electric, a long poll's included, are held until `heal`.          |
 | `corrupt` | Responses come back with Electric's status and headers and a body cut short.                 |
+| `cut`     | Responses keep Electric's status and headers; the body ends after its first `bytes` bytes.   |
+| `drop`    | Responses keep Electric's status and headers; reading the body fails after `bytes` bytes.    |
 | `heal`    | Back to the real source; held responses go through.                                          |
 | `sent`    | Every request's URL, in order.                                                               |
 
 `requests` narrows a fault to live requests: the long polls that follow the
-shape.
-`down` and `refuse` act when a request starts; `stall` and `corrupt` when its
-response arrives. `start` throws switches before anything uses the source, for
+shape. A negative `bytes` counts back from the body's end, so `cut(-1)` drops
+only the closing `]`.
+`down` and `refuse` act when a request starts; `stall`, `corrupt`, `cut` and
+`drop` when its response arrives. `start` throws switches before anything uses the source, for
 a program that must open with sync already failing.
 
 ```ts

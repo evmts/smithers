@@ -65,7 +65,7 @@ Every rule takes:
 | `forbid` | `modules`: specifier globs (`effect` is the root, `effect/*` one level, `effect/**` every subpath) | A static import, a re-export, `import x = require()`, `import()`, `require()` or an `import()` type of a matching module. |
 | `forbidHostModules` | none | A parsed import of a Node builtin or a Node/Bun module scheme. |
 | `forbidNames` | `modules`, and `names`: exported names matched exactly | A named import or re-export of a name, a default import (`default`), or a member read through a namespace or default binding, such as `React.useState`. |
-| `rootImportsOnly` | `packages`: package-name globs, such as `@smthrs/*`; optional `allow`: subpath specifier globs let through, such as `@smthrs/ui/adapters/*` | A specifier naming a subpath of a matching package, such as `@smthrs/model/ModelError`, unless an `allow` glob matches it. |
+| `rootImportsOnly` | `packages`: package-name globs, such as `@smthrs/*` | A specifier naming a subpath of a matching package, such as `@smthrs/model/ModelError`. |
 | `forbidCalls` | `callees`: callee texts matched exactly, such as `Model.stream`, or `*.<member>`, such as `*.route` | A call whose callee reads as an exact entry, or ends in an entry's `<member>` whatever the receiver. See [Callees](#callees). |
 
 ### Callees

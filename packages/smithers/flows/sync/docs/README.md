@@ -113,6 +113,14 @@ path and nothing mounts the branch procedures, so treat those modules as a
 library surface waiting for a host. [Branch collaboration](./concepts/branches.md)
 describes what they guarantee.
 
+## Presence
+
+`PresenceRoom` and `PresenceSocket` show who is on a page, and where, live. A
+room keeps every connection in its socket's attachment, so a hibernating
+Durable Object holds one with no storage, and a page's socket reconnects and
+resends its latest state. Nothing about presence is journalled. See
+[Presence rooms](./concepts/presence.md).
+
 ## Where this sits
 
 `@smthrs/sync` is one package of the Smithers durable flow engine, and it owns
@@ -147,6 +155,8 @@ project directory without your composing any of this by hand.
   subscription and the bounds on each.
 - [Authorization](./concepts/authorization.md): the two fail-closed boundaries
   and why a subscription carries its own expiry.
+- [Presence rooms](./concepts/presence.md): who is on a page and where, over a
+  room that keeps no state of its own.
 - [Follow a run](./guides/follow-a-run.md): the follower above, with cursors
   you persist and the failures that reach you.
 - [Test a follower](./guides/test-a-follower.md): drop, stall, and corrupt

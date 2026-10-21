@@ -16,6 +16,12 @@ let answerSlow = () => {}
 let close = () => Promise.resolve()
 beforeAll(async () => {
   const server = createServer((request, response) => {
+    // A body that breaks off: the connection drops after its first bytes.
+    if (request.url?.startsWith("/broken") === true) {
+      response.writeHead(200, { "content-type": "application/json", "content-length": "100" })
+      response.write("[{", () => response.destroy())
+      return
+    }
     if (request.url?.startsWith("/slow") === true) {
       slowWaiting = true
       answerSlow = () => response.end("[]", () => (answered += 1))
@@ -59,6 +65,28 @@ describe("the real source", () => {
     )
     expect(JSON.parse(text)).toEqual({ url: "/v1/shape?offset=-1" })
     expect(sent).toEqual([expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) })])
+  })
+
+  test("sends a live request at low priority and every other request at the default, so long polls never queue a page's requests", async () => {
+    // A browser opens at most six HTTP/1.1 connections to one origin. On a page whose shapes long-poll on all six,
+    // its other requests (a write, a sign-out) waited for a whole long poll, 20 s, and missed their own deadlines
+    // forever; a request at a higher priority takes the next free connection first.
+    const sent: Array<RequestInit | undefined> = []
+    const recording: typeof globalThis.fetch = (input, init) => {
+      sent.push(init)
+      return globalThis.fetch(input, init)
+    }
+    const send = (path: string, init: RequestInit = {}) =>
+      Effect.runPromise(
+        Effect.gen(function*() {
+          const source = yield* ShapeSource.ShapeSource
+          return yield* Effect.flatMap(source.request(`${origin}${path}`, init), body)
+        }).pipe(Effect.provideService(FetchHttpClient.Fetch, recording))
+      )
+    await send("/v1/shape?offset=0_0&handle=h&live=true")
+    await send("/v1/shape?offset=-1")
+    await send("/v1/shape?offset=0_0&handle=h&live=false", { priority: "high" })
+    expect(sent.map((init) => init?.priority)).toEqual(["low", undefined, "high"])
   })
 
   test("fails with RequestFailed, without a status, when nothing answers", async () => {
@@ -176,6 +204,60 @@ describe("the faulty source", () => {
       "1_0",
       "[{"
     ])
+  })
+
+  test("cut ends a body after its first bytes, or its last when negative, keeping the status and headers", async () => {
+    const whole = JSON.stringify({ url: "/v1/shape?offset=-1" })
+    const result = await faulty((faults) =>
+      Effect.gen(function*() {
+        yield* faults.cut(5)
+        const head = yield* request("/v1/shape?offset=-1")
+        yield* faults.cut(-2)
+        const tail = yield* Effect.flatMap(request("/v1/shape?offset=-1"), body)
+        yield* faults.cut(0, "live")
+        const empty = yield* Effect.flatMap(request("/v1/shape?offset=1_0&live=true"), body)
+        const plain = yield* Effect.flatMap(request("/v1/shape?offset=1_0"), body)
+        return { head: [head.status, head.headers.get("electric-offset"), yield* body(head)], tail, empty, plain }
+      })
+    )
+    expect(result).toEqual({
+      head: [200, "1_0", whole.slice(0, 5)],
+      tail: whole.slice(0, -2),
+      empty: "",
+      plain: JSON.stringify({ url: "/v1/shape?offset=1_0" })
+    })
+  })
+
+  test("drop answers with the status and headers, and reading the body fails after its first bytes", async () => {
+    const result = await faulty((faults) =>
+      Effect.gen(function*() {
+        yield* faults.drop(3)
+        const response = yield* request("/v1/shape?offset=-1")
+        const reader = response.body!.getReader()
+        const first = yield* Effect.promise(() => reader.read())
+        const then = yield* Effect.flip(Effect.tryPromise(() => reader.read()))
+        return {
+          status: response.status,
+          offset: response.headers.get("electric-offset"),
+          first: new TextDecoder().decode(first.value),
+          then: then._tag
+        }
+      })
+    )
+    expect(result).toEqual({ status: 200, offset: "1_0", first: `{"u`, then: "UnknownError" })
+  })
+
+  test("cut and drop fail on the network when Electric's own body breaks off", async () => {
+    const result = await faulty((faults) =>
+      Effect.gen(function*() {
+        yield* faults.cut(1)
+        const cut = yield* Effect.flip(request("/broken"))
+        yield* faults.drop(1)
+        const dropped = yield* Effect.flip(request("/broken"))
+        return [cut, dropped].map((error) => [error._tag, error.status])
+      })
+    )
+    expect(result).toEqual([["RequestFailed", undefined], ["RequestFailed", undefined]])
   })
 
   test("interrupting a stalled request ends it", async () => {

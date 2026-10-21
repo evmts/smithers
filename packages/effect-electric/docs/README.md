@@ -27,6 +27,12 @@ plus what syncing needs.
   429, waits on the collection's sync policy, an Effect `Schedule`, and is sent
   again. Electric's own backoff is off. `reconnect` ends every wait at once and
   restarts a stopped shape. See [The sync policy](sync-policy.md).
+- **No skipped batch.** Every 2xx batch of the shape's log is read in full and
+  checked before Electric sees it. A batch cut short stops the shape before Electric takes its
+  offset, so `reconnect` asks for the same batch again.
+- **Traced.** Each shape request records one span, `electric.shape.request`,
+  with the shape's handle and offset and the batch's row count, and no row
+  content.
 - **Sync status as a stream.** `sync` streams each request's outcome and the
   shape stopping, beginning with the latest event.
 - **Write confirmation.** `awaitTxId` waits for a Postgres transaction to
@@ -41,7 +47,7 @@ plus what syncing needs.
 
 Every shape request goes through the `ShapeSource` service. Its test
 implementation, `ShapeSource.layerFaulty`, is the real source behind switches
-that make it down, refuse or stall on command, so a test of what a program does
+that make it down, refuse, stall or cut its responses short on command, so a test of what a program does
 when sync fails provides it instead of intercepting requests. Happy-path tests
 use the real source. See the [API reference](api.md#testing-unhappy-paths-layerfaulty-and-faults).
 

@@ -42,6 +42,7 @@
     "./Discovery": "./src/Discovery.ts",
     "./Executable": "./src/Executable.ts",
     "./MarkdownFlow": "./src/MarkdownFlow.ts",
+    "./ModuleFlow": "./src/ModuleFlow.ts",
     "./Pack": "./src/Pack.ts",
     "./Registry": "./src/Registry.ts",
     "./RegistryError": "./src/RegistryError.ts",
@@ -128,6 +129,16 @@
         "require": {
           "types": "./dist/cjs/MarkdownFlow.d.ts",
           "default": "./dist/cjs/MarkdownFlow.js"
+        }
+      },
+      "./ModuleFlow": {
+        "import": {
+          "types": "./dist/esm/ModuleFlow.d.ts",
+          "default": "./dist/esm/ModuleFlow.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ModuleFlow.d.ts",
+          "default": "./dist/cjs/ModuleFlow.js"
         }
       },
       "./Pack": {

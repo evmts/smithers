@@ -1,0 +1,139 @@
+/**
+ * `ContainerSession` over a container whose commands are real local
+ * processes (`fixtures/ProcessContainer.ts`), so `@smthrs/sandbox`'s
+ * `SandboxTools` run their real scripts through it, with the container's
+ * faults injected through the fixture's options.
+ */
+import { describe, expect, it } from "@effect/vitest"
+import { SandboxTools } from "@smthrs/sandbox"
+import * as Effect from "effect/Effect"
+import * as Stream from "effect/Stream"
+import { execFileSync } from "node:child_process"
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { afterAll } from "vitest"
+import { ContainerSession } from "../src/index.ts"
+import * as ProcessContainer from "./fixtures/ProcessContainer.ts"
+
+const root = realpathSync(mkdtempSync(join(tmpdir(), "smthrs-container-session-")))
+afterAll(() => rmSync(root, { recursive: true, force: true }))
+
+const git = (cwd: string, ...args: Array<string>) =>
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", ...args], {
+    cwd,
+    encoding: "utf8"
+  })
+
+const text = (stream: Stream.Stream<Uint8Array, unknown>) => Stream.mkString(Stream.decodeText(stream))
+
+describe("ContainerSession", () => {
+  it.effect("runs commands as its user in its workdir, with its environment under the command's", () =>
+    Effect.gen(function*() {
+      const { commands, container } = ProcessContainer.make()
+      const session = yield* ContainerSession.make(container, {
+        id: "branch-1",
+        workdir: root,
+        user: "p0123",
+        env: { SHARED: "session", KEPT: "kept" }
+      })
+      expect(session).toMatchObject({ id: "branch-1", remoteId: "branch-1", workdir: root })
+      const out = yield* Effect.scoped(Effect.gen(function*() {
+        const process = yield* session.spawn("pwd; echo $SHARED $KEPT; cat", {
+          env: { SHARED: "command", DROPPED: undefined },
+          stdin: new TextEncoder().encode("fed")
+        })
+        return { stdout: yield* text(process.stdout), code: yield* process.exitCode }
+      }))
+      expect(out).toEqual({ stdout: `${root}\ncommand kept\nfed`, code: 0 })
+      expect(commands[0]).toEqual({
+        argv: ["sh", "-c", "pwd; echo $SHARED $KEPT; cat"],
+        options: {
+          user: "p0123",
+          cwd: root,
+          env: { SHARED: "command", KEPT: "kept" },
+          stdin: "pipe",
+          stdout: "pipe",
+          stderr: "pipe"
+        }
+      })
+      // A relative cwd is under the workdir; an absolute one is itself.
+      const where = (cwd: string) =>
+        Effect.scoped(Effect.flatMap(session.spawn("pwd", { cwd }), (process) => text(process.stdout)))
+      execFileSync("mkdir", ["-p", join(root, "sub")])
+      expect(yield* where("sub")).toBe(`${root}/sub\n`)
+      expect(yield* where("/")).toBe("/\n")
+      expect(commands.at(-1)!.options.user).toBe("p0123")
+    }))
+
+  it.effect("reads and writes files byte for byte, making directories, and reports an absent one", () =>
+    Effect.gen(function*() {
+      const { container } = ProcessContainer.make()
+      const session = yield* ContainerSession.make(container, { id: "files", workdir: root })
+      const bytes = new Uint8Array([0, 1, 2, 255, 10])
+      yield* session.writeFile(join(root, "deep/dir/blob.bin"), bytes)
+      expect([...readFileSync(join(root, "deep/dir/blob.bin"))]).toEqual([...bytes])
+      expect([...(yield* session.readFile(join(root, "deep/dir/blob.bin")))]).toEqual([...bytes])
+      const absent = yield* Effect.flip(session.readFile(join(root, "absent")))
+      expect(absent).toMatchObject({ code: "not_found" })
+      const directory = yield* Effect.flip(session.readFile(root))
+      expect(directory).toMatchObject({ code: "not_found" })
+      writeFileSync(join(root, "a-file"), "")
+      const blocked = yield* Effect.flip(session.writeFile(join(root, "a-file/below"), bytes))
+      expect(blocked).toMatchObject({ code: "unknown" })
+      yield* session.ping!
+    }))
+
+  it.effect("carries SandboxTools: a command at most once, a file, the status and the diff", () =>
+    Effect.gen(function*() {
+      const workdir = join(root, "repo")
+      execFileSync("mkdir", ["-p", workdir])
+      git(workdir, "init", "-q", "-b", "main")
+      writeFileSync(join(workdir, "README.md"), "hello\n")
+      git(workdir, "add", ".")
+      git(workdir, "commit", "-q", "-m", "first")
+      const { container } = ProcessContainer.make()
+      const session = yield* ContainerSession.make(container, { id: "tools", workdir })
+      const options = { callId: "call-1", callsDirectory: join(root, "calls") }
+      const call = { tool: "run", command: "echo ran >> runs.log; cat runs.log" } as const
+      const first = yield* SandboxTools.execute(session, call, options)
+      expect(yield* SandboxTools.execute(session, call, options)).toEqual(first)
+      expect(first).toMatchObject({ exitCode: 0, stdout: "ran\n" })
+      yield* SandboxTools.execute(session, { tool: "write", path: "hello.txt", content: "hi\n" }, options)
+      expect(yield* SandboxTools.execute(session, { tool: "status" }, options)).toMatchObject({
+        branch: "main",
+        entries: [{ path: "hello.txt", index: "?", worktree: "?" }, { path: "runs.log", index: "?", worktree: "?" }]
+      })
+      const diff = yield* SandboxTools.execute(session, { tool: "diff", paths: ["hello.txt"] }, options)
+      expect(diff).toMatchObject({ tool: "diff", truncated: false })
+      expect((diff as typeof SandboxTools.DiffResult.Type).diff).toContain("+hi")
+    }))
+
+  it.effect("fails unavailable when the container can't run a command or gives it no streams", () =>
+    Effect.gen(function*() {
+      const over = (faults: ProcessContainer.Faults) =>
+        ContainerSession.make(ProcessContainer.make(faults).container, { id: "faulty", workdir: root })
+      const failing = yield* over({ exec: true })
+      expect(yield* Effect.flip(Effect.scoped(failing.spawn("true", {})))).toMatchObject({
+        code: "unavailable",
+        message: "container session: exec failed"
+      })
+      expect(yield* Effect.flip(failing.ping!)).toMatchObject({ code: "unavailable" })
+      const silent = yield* over({ noStdout: true })
+      expect(yield* Effect.flip(Effect.scoped(silent.spawn("true", {})))).toMatchObject({ code: "unavailable" })
+      const deaf = yield* over({ noStdin: true })
+      expect(yield* Effect.flip(Effect.scoped(deaf.spawn("cat", { stdin: new Uint8Array([1]) })))).toMatchObject({
+        code: "unavailable"
+      })
+      // Without input asked for, a missing stdin is no fault.
+      expect(yield* Effect.scoped(Effect.flatMap(deaf.spawn("echo ok", {}), (process) => text(process.stdout)))).toBe(
+        "ok\n"
+      )
+      const sick = yield* over({ exitCode: 1 })
+      expect(yield* Effect.flip(sick.ping!)).toMatchObject({
+        code: "unavailable",
+        message: "container session: ping failed (1)"
+      })
+      expect(yield* Effect.flip(sick.readFile(join(root, "a-file")))).toMatchObject({ code: "unknown" })
+    }))
+})

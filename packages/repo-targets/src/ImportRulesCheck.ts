@@ -100,12 +100,6 @@ export interface RootImportsOnlyRule extends RuleScope, TypeOnlyOption {
   readonly kind: "rootImportsOnly"
   /** Package-name globs, such as `@smthrs/*` or `effect`. */
   readonly packages: ReadonlyArray<string>
-  /**
-   * Subpath specifier globs the rule lets through, such as
-   * `@smthrs/ui/adapters/*` for a package that ships its heavy renderers
-   * behind subpaths. Default: none.
-   */
-  readonly allow?: ReadonlyArray<string>
 }
 
 /**
@@ -208,7 +202,7 @@ const kindKeys: Readonly<Record<ImportRule["kind"], ReadonlyArray<string>>> = {
   forbid: ["modules", "allowTypeOnly"],
   forbidHostModules: ["allowTypeOnly"],
   forbidNames: ["modules", "names", "allowTypeOnly"],
-  rootImportsOnly: ["packages", "allow", "allowTypeOnly"],
+  rootImportsOnly: ["packages", "allowTypeOnly"],
   forbidCalls: ["callees"]
 }
 
@@ -268,7 +262,6 @@ export const validateRules = (rules: unknown): ReadonlyArray<ImportRule> => {
         if (rule[key] !== undefined && typeof rule[key] !== "boolean") refuse("`allowTypeOnly` must be a boolean")
         continue
       }
-      if (key === "allow" && rule[key] === undefined) continue
       const list = stringList(rule, key)
       if (typeof list === "string") refuse(list)
       if (key !== "callees") continue
@@ -371,7 +364,7 @@ const breaches = (
       continue
     }
     const name = packageName(specifier)
-    if (name !== undefined && name !== specifier && matchesAny(name, rule.packages) && !matchesAny(specifier, rule.allow ?? [])) {
+    if (name !== undefined && name !== specifier && matchesAny(name, rule.packages)) {
       found.push({ line: reference.line, usage: `${verb(reference)} "${specifier}", not the root "${name}"` })
     }
   }

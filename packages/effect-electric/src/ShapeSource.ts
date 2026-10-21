@@ -13,7 +13,8 @@
  * later.
  *
  * `layerFaulty` is the test implementation: the source a program would use,
- * behind switches (`Faults`) that make it down, refuse or stall on command.
+ * behind switches (`Faults`) that make it down, refuse, stall or cut its
+ * responses short on command.
  * Use it to test what a program does when sync fails. Happy paths run on the
  * real source, so the test source is only ever the variation, never the
  * evidence that sync works.
@@ -54,6 +55,15 @@ export interface Source {
  * The real source: each request sent with the `fetch` in
  * `FetchHttpClient.Fetch`, past the HTTP cache (`cache: "no-store"`).
  *
+ * A live request (`live=true`, a long poll that waits at Electric for a
+ * change) is sent with `priority: "low"`. A browser opens at most six
+ * HTTP/1.1 connections to an origin, so on a page with six or more shapes
+ * every connection can be waiting at Electric; at the same priority, the
+ * page's other requests queue behind long polls that are themselves sent
+ * again as they end, and wait a whole long poll or more. At low priority, a
+ * long poll never takes a connection another request is waiting for. Over
+ * HTTP/2 there is no such limit, and a runtime without priorities ignores it.
+ *
  * @category constructors
  * @since 0.1.0
  */
@@ -61,8 +71,9 @@ export const fetchSource: Source = {
   request: (url, init) =>
     Effect.gen(function*() {
       const fetch = yield* FetchHttpClient.Fetch
+      const live = new URL(url).searchParams.get("live") === "true"
       return yield* Effect.tryPromise({
-        try: (signal) => fetch(url, { ...init, cache: "no-store", signal }),
+        try: (signal) => fetch(url, { ...init, ...(live ? { priority: "low" } : {}), cache: "no-store", signal }),
         catch: () => new RequestFailed({})
       })
     })
@@ -106,6 +117,16 @@ export interface Switches {
   readonly stall: (requests?: Requests) => Effect.Effect<void>
   /** Responses that arrive from Electric come back with its status and headers but a body cut short. */
   readonly corrupt: (requests?: Requests) => Effect.Effect<void>
+  /**
+   * Responses that arrive from Electric keep their status and headers, and their body ends after its first `bytes`
+   * bytes, as when a proxy closes a response early. A negative `bytes` counts back from the body's end.
+   */
+  readonly cut: (bytes: number, requests?: Requests) => Effect.Effect<void>
+  /**
+   * Responses that arrive from Electric keep their status and headers, and reading their body fails after its first
+   * `bytes` bytes, as when the connection drops. A negative `bytes` counts back from the body's end.
+   */
+  readonly drop: (bytes: number, requests?: Requests) => Effect.Effect<void>
   /** Back to the real source; stalled responses go through. */
   readonly heal: Effect.Effect<void>
   /** Every request's URL, in the order sent. */
@@ -123,8 +144,21 @@ export class Faults extends Context.Service<Faults, Switches>()("@smthrs/effect-
 type Fault =
   | { readonly _tag: "Down" | "Stall" | "Corrupt"; readonly requests: Requests }
   | { readonly _tag: "Refuse"; readonly requests: Requests; readonly status: number }
+  | { readonly _tag: "Cut" | "Drop"; readonly requests: Requests; readonly bytes: number }
 
 const applies = (requests: Requests, url: URL): boolean => requests === "all" || url.searchParams.get("live") === "true"
+
+// A body that gives `bytes`, then fails as a dropped connection does.
+const breaksOff = (bytes: Uint8Array): ReadableStream<Uint8Array> => {
+  let given = false
+  return new ReadableStream({
+    pull: (controller) => {
+      if (given) return controller.error(new TypeError("terminated"))
+      given = true
+      controller.enqueue(bytes)
+    }
+  })
+}
 
 /**
  * The test implementation of `ShapeSource`: the source in place when the
@@ -145,8 +179,8 @@ export const layerFaulty = (
     const sent = yield* Ref.make<ReadonlyArray<URL>>([])
     const set = (next: Fault) => Effect.andThen(healed.close, Ref.set(fault, next))
 
-    // Down and refuse act when a request starts; stall and corrupt when its response arrives, so a stall also holds a
-    // long poll that was already waiting at Electric.
+    // Down and refuse act when a request starts; stall, corrupt, cut and drop when its response arrives, so a stall also
+    // holds a long poll that was already waiting at Electric.
     const source: Source = {
       request: (url, init) =>
         Effect.gen(function*() {
@@ -163,6 +197,17 @@ export const layerFaulty = (
           if (after?._tag === "Corrupt" && applies(after.requests, parsed)) {
             return new Response("[{", { status: response.status, headers: response.headers })
           }
+          if ((after?._tag === "Cut" || after?._tag === "Drop") && applies(after.requests, parsed)) {
+            const body = yield* Effect.tryPromise({
+              try: () => response.arrayBuffer(),
+              catch: () => new RequestFailed({})
+            })
+            const kept = new Uint8Array(body).slice(0, after.bytes)
+            return new Response(after._tag === "Cut" ? kept : breaksOff(kept), {
+              status: response.status,
+              headers: response.headers
+            })
+          }
           return response
         })
     }
@@ -171,6 +216,8 @@ export const layerFaulty = (
       refuse: (status = 400, requests = "all") => set({ _tag: "Refuse", requests, status }),
       stall: (requests = "all") => set({ _tag: "Stall", requests }),
       corrupt: (requests = "all") => set({ _tag: "Corrupt", requests }),
+      cut: (bytes, requests = "all") => set({ _tag: "Cut", requests, bytes }),
+      drop: (bytes, requests = "all") => set({ _tag: "Drop", requests, bytes }),
       heal: Effect.andThen(Ref.set(fault, undefined), healed.open).pipe(Effect.asVoid),
       sent: Ref.get(sent)
     })

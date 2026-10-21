@@ -45,6 +45,9 @@
     "./BranchRpcs": "./src/BranchRpcs.ts",
     "./BranchServer": "./src/BranchServer.ts",
     "./BranchShare": "./src/BranchShare.ts",
+    "./PresenceProtocol": "./src/PresenceProtocol.ts",
+    "./PresenceRoom": "./src/PresenceRoom.ts",
+    "./PresenceSocket": "./src/PresenceSocket.ts",
     "./RunCatalog": "./src/RunCatalog.ts",
     "./SyncAuth": "./src/SyncAuth.ts",
     "./SyncClient": "./src/SyncClient.ts",
@@ -166,6 +169,36 @@
         "require": {
           "types": "./dist/cjs/BranchShare.d.ts",
           "default": "./dist/cjs/BranchShare.js"
+        }
+      },
+      "./PresenceProtocol": {
+        "import": {
+          "types": "./dist/esm/PresenceProtocol.d.ts",
+          "default": "./dist/esm/PresenceProtocol.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PresenceProtocol.d.ts",
+          "default": "./dist/cjs/PresenceProtocol.js"
+        }
+      },
+      "./PresenceRoom": {
+        "import": {
+          "types": "./dist/esm/PresenceRoom.d.ts",
+          "default": "./dist/esm/PresenceRoom.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PresenceRoom.d.ts",
+          "default": "./dist/cjs/PresenceRoom.js"
+        }
+      },
+      "./PresenceSocket": {
+        "import": {
+          "types": "./dist/esm/PresenceSocket.d.ts",
+          "default": "./dist/esm/PresenceSocket.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PresenceSocket.d.ts",
+          "default": "./dist/cjs/PresenceSocket.js"
         }
       },
       "./RunCatalog": {
