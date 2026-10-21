@@ -72,13 +72,13 @@ Pass `cause` straight through from your options. A `cause` of `undefined` is
 treated as no cause, so the instance gets no own `cause` property and
 `util.inspect` prints no `[cause]` line:
 
-```ts
-class IntegrationError extends SmithersError<"IntegrationError"> {
+```vibe
+error IntegrationError extends SmithersError {
+  reason: Reason
+
   constructor(reason: Reason, message: string, options?: { readonly cause?: unknown }) {
-    super("INTEGRATION_ERROR", message, { reason }, {
-      cause: options?.cause,
-      name: "IntegrationError"
-    })
+    super("INTEGRATION_ERROR", message, { reason }, { cause: options?.cause })
+    this.reason = reason
   }
 }
 ```
@@ -94,14 +94,12 @@ Subclass `SmithersError` when your adapter has fields a caller reads by name.
 
 Two rules make a subclass behave:
 
-1. Extend `SmithersError<"YourError">` and pass `{ name: "YourError" }`. The
-   constructor installs the name and the matching Effect `_tag` as
-   non-enumerable own properties, so the stack starts with your name,
-   `Effect.catchTag("YourError")` routes to your handler, and `Object.keys`
-   and `JSON.stringify` stay clean.
-2. Set your own fields after `super(...)`. The constructor restores the
-   subclass prototype through `new.target`, so `instanceof` works even under a
-   transpiled target.
+1. Declare it `error YourError extends SmithersError`. It is tagged with its
+   own name, which it reports and its stack starts with, so
+   `Effect.catchTag("YourError")` routes to your handler.
+2. Declare your fields in its body and set them after `super(...)` in its
+   constructor; a subclass without fields inherits `SmithersError`'s
+   constructor.
 
 ## Ship a refinement with the subclass
 

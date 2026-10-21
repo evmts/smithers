@@ -1,9 +1,11 @@
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { defineConfig } from "vitest/config"
+import vibelang from "vibelang-vite"
+import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
+  plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
     globalSetup: [
       fileURLToPath(new URL("../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
@@ -15,6 +17,7 @@ export default defineConfig({
     // while a genuine hang still fails the run.
     testTimeout: 30_000,
     hookTimeout: 30_000,
+    include: [...configDefaults.include, "test/**/*.test.vibe"],
     coverage: {
       enabled: true,
       provider: "v8",

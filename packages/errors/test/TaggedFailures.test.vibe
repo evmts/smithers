@@ -1,0 +1,91 @@
+import { describe, expect, it } from "@effect/vitest"
+import { hasSmithersErrorShape, isSmithersError, SmithersError } from "../src/SmithersError.vibe"
+import { failureOf } from "./helpers.vibe"
+
+// An adapter's subclass, tagged with its own name (D278).
+error AdapterError extends SmithersError
+
+// A subclass with a field and its own constructor, as @smthrs/integrations'
+// IntegrationError is.
+error IntegrationError extends SmithersError {
+  reason: string
+
+  constructor(reason: string, options?: { readonly cause?: unknown }) {
+    super("INTEGRATION_ERROR", "poll failed", { reason }, { cause: options?.cause })
+    this.reason = reason
+  }
+}
+
+function raise<E>(error: E): never!E {
+  throw error
+}
+
+// Routing by tag is the behavior under test, so these use Effect.catchTag
+// rather than a catch that matches by class. A SmithersError may be a
+// subclass, so its tag type is string and catching "SmithersError" leaves
+// SmithersError in the failure type.
+function recover(error: SmithersError | AdapterError): string!SmithersError {
+  return raise(error)
+    // @vibelang-diagnostics-next-line EK4835:off — tag routing is the behavior under test.
+    |> Effect.catchTag(%, "AdapterError", (caught) => `adapter:${caught.summary}`)
+    // @vibelang-diagnostics-next-line EK4835:off — tag routing is the behavior under test.
+    |> Effect.catchTag(%, "SmithersError", (caught) => `base:${caught.code}`)
+}
+
+describe("tagged failures", () => {
+  it.effect("routes a base instance and a subclass to their own catchTag handler") {
+    expect(recover(new SmithersError("INVALID_INPUT", "x"))).toBe("base:INVALID_INPUT")
+    expect(recover(new AdapterError("INTEGRATION_ERROR", "adapter failed"))).toBe("adapter:adapter failed")
+  }
+
+  it.effect("matches a subclass by class in a catch") {
+    const caught = raise(new AdapterError("INTEGRATION_ERROR", "adapter failed")) catch (error) => match (error) {
+      when AdapterError: error.summary;
+    }
+    expect(caught).toBe("adapter failed")
+  }
+
+  it.effect("fails the surrounding effect with the instance when thrown") {
+    expect(failureOf(raise(new AdapterError("INTEGRATION_ERROR", "adapter failed")))).toBeInstanceOf(AdapterError)
+  }
+
+  it("tags each subclass with its own name, which it reports and its stack starts with", () => {
+    const error = new AdapterError("UNSUPPORTED", "x")
+    expect(error._tag).toBe("AdapterError")
+    expect(error.name).toBe("AdapterError")
+    expect(Object.hasOwn(error, "name")).toBe(false)
+    expect(error.stack?.startsWith("AdapterError: ")).toBe(true)
+  })
+
+  it("keeps the tag enumerable and in JSON, as Data.TaggedError does", () => {
+    const error = new AdapterError("UNSUPPORTED", "x")
+    expect(Object.keys(error)).toEqual(["code", "summary", "docsUrl", "_tag"])
+    expect(JSON.parse(JSON.stringify(error))).toEqual({
+      code: "UNSUPPORTED",
+      summary: "x",
+      docsUrl: error.docsUrl,
+      _tag: "AdapterError"
+    })
+  })
+
+  it("lets a subclass always spell the optional cause key", () => {
+    const withoutCause = new IntegrationError("poll-failed")
+    expect(Object.hasOwn(withoutCause, "cause")).toBe(false)
+
+    const cause = new Error("root")
+    const withCause = new IntegrationError("poll-failed", { cause })
+    expect(Object.hasOwn(withCause, "cause")).toBe(true)
+    expect(withCause.cause).toBe(cause)
+  })
+
+  it("keeps the subclass prototype, so instanceof, is, and the refinements accept it", () => {
+    const error = new IntegrationError("poll-failed")
+    expect(error).toBeInstanceOf(IntegrationError)
+    expect(error is SmithersError).toBe(true)
+    expect(isSmithersError(error)).toBe(true)
+    expect(hasSmithersErrorShape(error)).toBe(true)
+    expect(error.reason).toBe("poll-failed")
+    expect(error.details).toEqual({ reason: "poll-failed" })
+    expect(isSmithersError(new Error("plain"))).toBe(false)
+  })
+})

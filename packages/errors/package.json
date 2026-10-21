@@ -34,7 +34,7 @@
     "./internal/*": null,
     "./*/index": null,
     "./ErrorCode": "./src/ErrorCode.ts",
-    "./SmithersError": "./src/SmithersError.ts",
+    "./SmithersError": "./src/SmithersError.vibe",
     "./index": "./src/index.ts"
   },
   "publishConfig": {
@@ -89,6 +89,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -103,16 +104,20 @@
     "lint": "eslint src examples --max-warnings=0 && dprint check",
     "format": "dprint fmt",
     "build": "node scripts/build.mjs",
-    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "check": "vibelang -p tsconfig.json --noEmit && vibelang -p tsconfig.test.json --noEmit",
     "circular": "node scripts/circular.mjs",
     "test": "vitest",
     "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "vibelang-runtime": "0.0.3"
   },
   "peerDependencies": {
     "effect": "4.0.5"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
+    "@effect/vitest": "4.0.5",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
@@ -127,6 +132,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
+    "vibelang": "0.0.3",
+    "vibelang-vite": "0.0.3",
     "vitest": "5.0.0"
   }
 }

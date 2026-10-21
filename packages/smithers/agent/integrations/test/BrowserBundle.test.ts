@@ -17,11 +17,14 @@ import { build } from "esbuild"
 import { createHash, createHmac } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { createContext, runInContext } from "node:vm"
+import vibelang from "vibelang-unplugin/esbuild"
 import { afterEach, describe, expect, it } from "vitest"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
 
 const root = fileURLToPath(new URL("..", import.meta.url))
 const conditions = ["workerd", "worker", "browser", "import", "default"]
+// The root reaches @smthrs/errors, whose source is VibeLang.
+const plugins = [vibelang({ root })]
 
 /** The root entry, plus the `effect` modules a caller runs it with. */
 type Realm =
@@ -84,6 +87,7 @@ const loadRealm = async (): Promise<Realm> => {
     format: "iife",
     globalName: "realm",
     target: "es2022",
+    plugins,
     write: false,
     logLevel: "silent"
   })
@@ -114,6 +118,7 @@ describe("the root entry", () => {
       platform: "browser",
       conditions,
       format: "esm",
+      plugins,
       write: false,
       logLevel: "silent",
       metafile: true

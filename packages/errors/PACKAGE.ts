@@ -7,7 +7,10 @@ const cwd = "packages/errors"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
+  tests: Input.glob("test/**/*.test.{ts,vibe}"),
+  testSources: Input.glob("test/**/*.{ts,vibe}"),
+  compiler: "vibelang",
   cwd
 })
 
@@ -25,7 +28,7 @@ const securityReview = Smithers.SecurityReview({
         "The constructor interpolating details or cause into message or summary instead of storing them in separate fields.",
         "details stored by reference instead of the shallow Object.freeze({ ...details }) copy, letting a caller mutate it after a redaction check."
       ],
-      paths: ["src/SmithersError.ts"]
+      paths: ["src/SmithersError.vibe"]
     },
     {
       id: "shape-refinement-forgery",
@@ -38,7 +41,7 @@ const securityReview = Smithers.SecurityReview({
         "A code, summary, docsUrl, or details test that accepts values outside the closed code set or non-plain details (arrays, null).",
         "Docs or JSDoc that present hasSmithersErrorShape or the name field as proof an error came from Smithers rather than a structural match."
       ],
-      paths: ["src/SmithersError.ts", "docs/guides/detect-an-error-across-module-copies.md"]
+      paths: ["src/ErrorShape.ts", "docs/guides/detect-an-error-across-module-copies.md"]
     },
     {
       id: "closed-code-table",
@@ -50,7 +53,7 @@ const securityReview = Smithers.SecurityReview({
         "smithersErrorDefinitions, a nested definition, or smithersErrorCodes left unfrozen after module load.",
         "ERROR_REFERENCE_URL or docsUrl derived from caller input or served over a non-https URL, since it is appended to every user-visible message."
       ],
-      paths: ["src/ErrorCode.ts", "src/SmithersError.ts"]
+      paths: ["src/ErrorCode.ts", "src/SmithersError.vibe"]
     },
     {
       id: "docs-redaction-examples",

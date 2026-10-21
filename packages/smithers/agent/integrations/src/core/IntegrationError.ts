@@ -68,7 +68,12 @@ export const isReason = (value: unknown): value is Reason => reasons.includes(va
  * @category errors
  * @since 1.0.0
  */
-export class IntegrationError extends SmithersError<"IntegrationError"> {
+export class IntegrationError extends SmithersError {
+  /**
+   * The Effect tag: the class's own name, as an `error` declaration's
+   * subclass is tagged (VibeLang D278).
+   */
+  declare readonly _tag: "IntegrationError"
   /** The machine-readable classification. */
   readonly reason: Reason
 
@@ -78,13 +83,14 @@ export class IntegrationError extends SmithersError<"IntegrationError"> {
     details?: Record<string, unknown>,
     options?: { readonly cause?: unknown }
   ) {
-    super("INTEGRATION_ERROR", message, { reason, ...details }, {
-      cause: options?.cause,
-      name: "IntegrationError"
-    })
+    super("INTEGRATION_ERROR", message, { reason, ...details }, { cause: options?.cause })
+    this._tag = "IntegrationError"
     this.reason = reason
   }
 }
+
+// The error reports its tag as its name, as Data.TaggedError's classes do.
+IntegrationError.prototype.name = "IntegrationError"
 
 /**
  * Whether `error` is an {@link IntegrationError}.

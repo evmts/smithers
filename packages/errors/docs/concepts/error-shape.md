@@ -5,19 +5,22 @@ sidebar:
   order: 2
 ---
 
-`SmithersError` extends `Error` and adds four own fields. Every one of them
+`SmithersError` extends `Error` and adds five own fields. Every one of them
 exists because a different reader needs it, and each carries a guarantee the
 constructor enforces.
 
 ## The fields
 
-| Field     | Type                                               | Guarantee                                                                                                   |
-| --------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `code`    | `SmithersErrorCode`                                | One of five string literals; any other value throws a `TypeError`. The classification a caller branches on. |
-| `summary` | `string`                                           | The message with every trailing documentation URL removed.                                                  |
-| `docsUrl` | `string`                                           | Always `ERROR_REFERENCE_URL`.                                                                               |
-| `details` | `Readonly<Record<string, unknown>>` or `undefined` | An own property only when the constructor received one. Copied and frozen at the top level.                 |
-| `name`    | `string`                                           | A non-enumerable own property, like `Error.prototype.name`. Defaults to `"SmithersError"`.                  |
+| Field     | Type                                               | Guarantee                                                                                            |
+| --------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `code`    | `SmithersErrorCode`                                | One of five string literals, closed by the type. The classification a caller branches on.            |
+| `summary` | `string`                                           | The message with every trailing documentation URL removed.                                           |
+| `docsUrl` | `string`                                           | Always `ERROR_REFERENCE_URL`.                                                                        |
+| `details` | `Readonly<Record<string, unknown>>` or `undefined` | An own property only when the constructor received one. Copied and frozen at the top level.          |
+| `_tag`    | `string`                                           | The Effect tag: the class's own name, `"SmithersError"` or a subclass's. Enumerable, as Effect's is. |
+
+`name` reports the tag too, and comes from the class's prototype, like
+`Error.prototype.name`.
 
 `message` and `cause` are inherited from `Error`. `message` is `summary` plus
 the documentation URL; `cause` is present only when the caller supplied one.
@@ -83,13 +86,10 @@ A `cause` of `undefined` is treated as no cause, so the instance has no own
 `cause` property and inspection prints no `[cause]` line. A subclass can
 therefore always spell the key and let the caller decide:
 
-```ts
-class IntegrationError extends SmithersError<"IntegrationError"> {
+```vibe
+error IntegrationError extends SmithersError {
   constructor(options?: { readonly cause?: unknown }) {
-    super("INTEGRATION_ERROR", "poll failed", undefined, {
-      cause: options?.cause,
-      name: "IntegrationError"
-    })
+    super("INTEGRATION_ERROR", "poll failed", undefined, { cause: options?.cause })
   }
 }
 ```
@@ -119,30 +119,25 @@ The consequence for a caller: `details` from a Smithers integration adapter is
 already provider-safe and can go straight into a log. `details` on an error you
 constructed yourself is only as safe as you made it.
 
-## Subclasses keep working
+## Subclasses are error declarations
 
-The constructor restores the subclass prototype through `new.target`, so
-`instanceof` holds for a subclass even under a transpiled target, where `Error`
-would otherwise reset it:
+A subclass is an error declaration that extends `SmithersError`. It keeps the
+base's constructor, so `instanceof` holds for both classes, and it is tagged
+with its own name, which it reports and its stack starts with:
 
-```ts
-class AdapterError extends SmithersError {}
+```vibe
+error AdapterError extends SmithersError
 
 const error = new AdapterError("TELEGRAM_API_ERROR", "bad request")
 error instanceof AdapterError // true
-error instanceof SmithersError // true
+error is SmithersError // true
+error.name // "AdapterError"
 ```
-
-The reported `name` is a separate decision. A subclass that passes
-`{ name: "AdapterError" }` reports that name and its stack starts with it; one
-that passes nothing reports `"SmithersError"`. Either way the name stays
-non-enumerable, so it never shows up in `Object.keys` or `JSON.stringify`.
 
 ## The tag is the name
 
-`SmithersError` is an Effect tagged error. Its `_tag` is the reported `name`,
-installed as a non-enumerable own property, so `Effect.catchTag` routes each
-adapter's failures to their own handler:
+`SmithersError` is an Effect tagged error. Each class's `_tag` is its own
+name, so `Effect.catchTag` routes each adapter's failures to their own handler:
 
 ```ts
 Effect.fail(error).pipe(
@@ -151,10 +146,11 @@ Effect.fail(error).pipe(
 )
 ```
 
-A subclass passes its tag as the type argument and the same string as
-`name`: `class AdapterError extends SmithersError<"AdapterError">` with
-`{ name: "AdapterError" }`. The type argument defaults to `string`, so
-`SmithersError` alone still means any instance, subclasses included.
+A `SmithersError` may be any subclass, so its `_tag` is typed `string`, while a
+subclass's is its own name. Catching `"IntegrationError"` therefore removes
+`IntegrationError` from the failure type, and catching `"SmithersError"`
+handles base instances and leaves `SmithersError` in it. To handle the whole
+family, match by class: `x catch (e) => match (e) { when SmithersError: … }`.
 
 [Raise a SmithersError from an adapter](../guides/raise-an-error.md) shows the
 two real subclasses and what they add.

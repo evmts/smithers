@@ -1,5 +1,4 @@
 import { getSmithersErrorDefinition, hasSmithersErrorShape, SmithersError } from "@smthrs/errors"
-import { Effect } from "effect"
 
 /**
  * Constructs a failure containing safe context and a cause without credentials.
@@ -7,8 +6,8 @@ import { Effect } from "effect"
  * @returns The tagged failure, ready to raise or inspect.
  * @since 1.0.0
  */
-export const makeFailure = (): SmithersError<"SmithersError"> =>
-  new SmithersError<"SmithersError">(
+export const makeFailure = (): SmithersError =>
+  new SmithersError(
     "INTEGRATION_ERROR",
     "Provider unavailable",
     { reason: "transport", retryable: true },
@@ -26,12 +25,20 @@ export const describeFailure = (failure: unknown): string | undefined =>
   hasSmithersErrorShape(failure) ? getSmithersErrorDefinition(failure.code)?.when : undefined
 
 /**
- * Recovers an Effect failure by its tag and reads its machine-readable code.
+ * Fails with the failure {@link makeFailure} constructs.
  *
- * @returns A successful Effect containing the classified code.
  * @since 1.0.0
  */
-export const recoverFailure = (): Effect.Effect<string> =>
-  Effect.fail(makeFailure()).pipe(
-    Effect.catchTag("SmithersError", (failure) => Effect.succeed(`Recovered ${failure.code}`))
-  )
+export function raiseFailure(): never!SmithersError {
+  throw makeFailure()
+}
+
+/**
+ * Recovers the failure and reads its machine-readable code.
+ *
+ * @returns The classified code; nothing escapes.
+ * @since 1.0.0
+ */
+export function recoverFailure(): string!! {
+  return raiseFailure() catch (failure) => `Recovered ${failure.code}`
+}

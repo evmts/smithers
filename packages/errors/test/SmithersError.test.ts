@@ -1,4 +1,3 @@
-import { Effect, Exit } from "effect"
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
@@ -13,13 +12,11 @@ import {
   type SmithersErrorDefinition,
   smithersErrorDefinitions
 } from "../src/ErrorCode.ts"
-import { hasSmithersErrorShape, isSmithersError, SmithersError } from "../src/SmithersError.ts"
+import { hasSmithersErrorShape, isSmithersError, SmithersError } from "../src/SmithersError.vibe"
 
 describe("SmithersError", () => {
   it("keeps its public fields readonly", () => {
     const pin = (error: SmithersError): void => {
-      // @ts-expect-error SmithersError.name must remain readonly.
-      error.name = "mutated"
       // @ts-expect-error SmithersError.details must remain readonly.
       error.details = undefined
     }
@@ -134,13 +131,9 @@ describe("SmithersError", () => {
     expect(error.stack?.startsWith(`${error.name}: ${error.message}`)).toBe(true)
   })
 
-  it("carries a cause, a name, and caller-supplied details", () => {
+  it("carries a cause and caller-supplied details", () => {
     const cause = new Error("socket hang up")
-    const error = new SmithersError("INTEGRATION_ERROR", "poll failed", { reason: "poll-failed" }, {
-      cause,
-      name: "IntegrationError"
-    })
-    expect(error.name).toBe("IntegrationError")
+    const error = new SmithersError("INTEGRATION_ERROR", "poll failed", { reason: "poll-failed" }, { cause })
     expect(error.cause).toBe(cause)
     expect(error.details).toEqual({ reason: "poll-failed" })
   })
@@ -149,24 +142,19 @@ describe("SmithersError", () => {
     const withoutDetails = new SmithersError("INVALID_INPUT", "x")
     const withDetails = new SmithersError("INVALID_INPUT", "x", { reason: "r" })
 
-    expect(Object.keys(withoutDetails)).toEqual(["code", "summary", "docsUrl"])
-    expect(Object.keys(withDetails)).toEqual(["code", "summary", "docsUrl", "details"])
+    expect(Object.keys(withoutDetails)).toEqual(["code", "summary", "docsUrl", "_tag"])
+    expect(Object.keys(withDetails)).toEqual(["code", "summary", "docsUrl", "details", "_tag"])
     expect(Object.hasOwn(withoutDetails, "details")).toBe(false)
     expect(Object.hasOwn(withDetails, "details")).toBe(true)
   })
 
-  it("installs name as a non-enumerable own property", () => {
-    const descriptor = {
-      enumerable: false,
-      writable: true,
-      configurable: true
-    }
+  it("reports its tag as its name from the prototype, as Data.TaggedError does", () => {
     const error = new SmithersError("INVALID_INPUT", "x")
-    const renamed = new SmithersError("INVALID_INPUT", "x", undefined, { name: "IntegrationError" })
 
-    expect(Object.getOwnPropertyDescriptor(error, "name")).toEqual({ value: "SmithersError", ...descriptor })
-    expect(Object.getOwnPropertyDescriptor(renamed, "name")).toEqual({ value: "IntegrationError", ...descriptor })
-    expect(Object.keys(renamed)).not.toContain("name")
+    expect(error._tag).toBe("SmithersError")
+    expect(error.name).toBe("SmithersError")
+    expect(Object.hasOwn(error, "name")).toBe(false)
+    expect(Object.keys(error)).not.toContain("name")
   })
 
   it("keeps absent details and the error name out of inspection and JSON", () => {
@@ -178,7 +166,8 @@ describe("SmithersError", () => {
     expect(JSON.parse(JSON.stringify(withoutDetails))).toEqual({
       code: "INVALID_INPUT",
       summary: "x",
-      docsUrl: ERROR_REFERENCE_URL
+      docsUrl: ERROR_REFERENCE_URL,
+      _tag: "SmithersError"
     })
   })
 
@@ -187,7 +176,7 @@ describe("SmithersError", () => {
       cause: new Error("cause marker")
     })
 
-    expect(Object.keys(JSON.parse(JSON.stringify(error)))).toEqual(["code", "summary", "docsUrl", "details"])
+    expect(Object.keys(JSON.parse(JSON.stringify(error)))).toEqual(["code", "summary", "docsUrl", "details", "_tag"])
     const rendered = inspect(error)
     expect(rendered.startsWith(`SmithersError: ${error.message}`)).toBe(true)
     expect(rendered).toMatch(/\n\s+at /)
@@ -195,45 +184,14 @@ describe("SmithersError", () => {
     expect(rendered).toContain("[cause]: Error: cause marker")
   })
 
-  it("keeps subclass names out of enumerable fields and at the start of the stack", () => {
-    class Sub extends SmithersError {
-      constructor() {
-        super("UNSUPPORTED", "x", undefined, { name: "Sub" })
-      }
-    }
-
-    const error = new Sub()
-    expect(error.name).toBe("Sub")
-    expect(Object.keys(error)).not.toContain("name")
-    expect(error.stack?.startsWith("Sub: ")).toBe(true)
-  })
-
   it("only installs an own cause property when cause is supplied", () => {
     expect(Object.hasOwn(new SmithersError("INVALID_INPUT", "x"), "cause")).toBe(false)
-    expect(Object.hasOwn(new SmithersError("INVALID_INPUT", "x", undefined, { name: "X" }), "cause")).toBe(false)
+    expect(Object.hasOwn(new SmithersError("INVALID_INPUT", "x", undefined, { includeDocsUrl: false }), "cause")).toBe(
+      false
+    )
     expect(Object.hasOwn(new SmithersError("INVALID_INPUT", "x", undefined, { cause: new Error("root") }), "cause"))
       .toBe(true)
     expect(Object.hasOwn(new SmithersError("INVALID_INPUT", "x", undefined, { cause: undefined }), "cause")).toBe(false)
-  })
-
-  it("lets subclasses always spell the optional cause key", () => {
-    class IntegrationError extends SmithersError {
-      constructor(options?: { readonly cause?: unknown }) {
-        super("INTEGRATION_ERROR", "poll failed", undefined, {
-          cause: options?.cause,
-          name: "IntegrationError"
-        })
-      }
-    }
-
-    const withoutCause = new IntegrationError()
-    expect(Object.hasOwn(withoutCause, "cause")).toBe(false)
-    expect(inspect(withoutCause)).not.toContain("[cause]")
-
-    const cause = new Error("root")
-    const withCause = new IntegrationError({ cause })
-    expect(Object.hasOwn(withCause, "cause")).toBe(true)
-    expect(withCause.cause).toBe(cause)
   })
 
   it("preserves a cause chain", () => {
@@ -404,70 +362,15 @@ describe("SmithersError", () => {
     }
     expect(caught).toBe(failure)
   })
-
-  it("keeps the subclass prototype so instanceof works", () => {
-    class Subclass extends SmithersError {
-      constructor() {
-        super("TELEGRAM_API_ERROR", "bad request")
-      }
-    }
-    const error = new Subclass()
-    expect(error).toBeInstanceOf(Subclass)
-    expect(isSmithersError(error)).toBe(true)
-    expect(isSmithersError(new Error("plain"))).toBe(false)
-  })
-})
-
-describe("tagged failures", () => {
-  class AdapterError extends SmithersError<"AdapterError"> {
-    constructor() {
-      super("INTEGRATION_ERROR", "adapter failed", undefined, { name: "AdapterError" })
-    }
-  }
-
-  const recover = (error: SmithersError<"SmithersError"> | AdapterError) =>
-    Effect.fail(error).pipe(
-      Effect.catchTag("AdapterError", (caught) => Effect.succeed(`adapter:${caught.summary}`)),
-      Effect.catchTag("SmithersError", (caught) => Effect.succeed(`base:${caught.code}`))
-    )
-
-  it("routes a base instance and a subclass to their own catchTag handler", () => {
-    expect(Effect.runSync(recover(new SmithersError<"SmithersError">("INVALID_INPUT", "x")))).toBe("base:INVALID_INPUT")
-    expect(Effect.runSync(recover(new AdapterError()))).toBe("adapter:adapter failed")
-  })
-
-  it("tags with the reported name so a renamed instance routes by that name", () => {
-    const renamed = new SmithersError("INTEGRATION_ERROR", "x", undefined, { name: "AdapterError" })
-    const routed = Effect.runSync(
-      Effect.fail(renamed).pipe(Effect.catchTag("AdapterError", () => Effect.succeed("adapter")))
-    )
-    expect(routed).toBe("adapter")
-  })
-
-  it("fails the surrounding effect with the instance when yielded", () => {
-    const exit = Effect.runSyncExit(Effect.gen(function*() {
-      return yield* new AdapterError()
-    }))
-    expect(Exit.isFailure(exit)).toBe(true)
-    const failure = Exit.isFailure(exit) ? exit.cause.reasons[0] : undefined
-    expect(failure?._tag === "Fail" ? failure.error : undefined).toBeInstanceOf(AdapterError)
-  })
-
-  it("keeps the tag out of enumerable fields and JSON", () => {
-    const error = new AdapterError()
-    expect(Object.keys(error)).not.toContain("_tag")
-    expect(JSON.stringify(error)).not.toContain("_tag")
-  })
 })
 
 describe("error refinements", () => {
-  class Subclass extends SmithersError {}
-
-  it("accepts real and subclass instances", () => {
-    for (const error of [new SmithersError("INVALID_INPUT", "x"), new Subclass("INVALID_INPUT", "x")]) {
-      expect(isSmithersError(error)).toBe(true)
-      expect(hasSmithersErrorShape(error)).toBe(true)
-    }
+  // TaggedFailures.test.vibe holds the subclass rows: a subclass is an error
+  // declaration, which a .ts file cannot write.
+  it("accepts a real instance", () => {
+    const error = new SmithersError("INVALID_INPUT", "x")
+    expect(isSmithersError(error)).toBe(true)
+    expect(hasSmithersErrorShape(error)).toBe(true)
   })
 
   it("rejects plain errors, forged names, non-errors, and plain shaped objects", () => {
@@ -491,14 +394,6 @@ describe("error refinements", () => {
       expect(isSmithersError(error)).toBe(false)
       expect(hasSmithersErrorShape(error)).toBe(true)
     }
-  })
-
-  it("refuses to construct with a code outside the closed vocabulary", () => {
-    for (const code of ["NOT_A_CODE", "toString", "__proto__", "", 42, undefined]) {
-      expect(() => new SmithersError(code as SmithersErrorCode, "x")).toThrow(TypeError)
-    }
-    class Subclass extends SmithersError {}
-    expect(() => new Subclass("NOT_A_CODE" as SmithersErrorCode, "x")).toThrow(TypeError)
   })
 
   it("rejects an Error carrying an unknown code", () => {

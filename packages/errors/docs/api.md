@@ -38,32 +38,37 @@ package.
 
 ### class SmithersError
 
-```ts
-class SmithersError<Tag extends string = string> extends Data.Error<SmithersErrorFields> {
+```vibe
+error SmithersError {
+  _tag: string
+  message: string
+  code: SmithersErrorCode
+  summary: string
+  docsUrl: string
+  details?: Readonly<Record<string, unknown>>
+
   constructor(
     code: SmithersErrorCode,
     summary: string,
     details?: Record<string, unknown>,
-    options?: SmithersErrorOptions<Tag>
+    options?: SmithersErrorOptions
   )
 
-  declare readonly _tag: Tag
-  declare readonly name: string
-  readonly code: SmithersErrorCode
-  readonly summary: string
-  readonly docsUrl: string
-  declare readonly details: Readonly<Record<string, unknown>> | undefined
+  override toJSON(): Record<string, unknown>
 }
 ```
 
+An error declaration (VibeLang D278): the class extends Effect's
+`Data.TaggedError`, and every field is readonly.
+
 Constructor parameters:
 
-| Parameter | Type                      | Meaning                                                                                                                         |
-| --------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `code`    | `SmithersErrorCode`       | The machine-readable classification. Required, and closed over the five documented codes; any other value throws a `TypeError`. |
-| `summary` | `string`                  | The message a person reads, without the documentation URL. Required.                                                            |
-| `details` | `Record<string, unknown>` | Caller-supplied context. Optional. Omitting it leaves the instance with no own `details` property.                              |
-| `options` | `SmithersErrorOptions`    | The cause, the reported name, and the documentation-URL switch. Optional.                                                       |
+| Parameter | Type                      | Meaning                                                                                               |
+| --------- | ------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `code`    | `SmithersErrorCode`       | The machine-readable classification. Required, and closed by its type over the five documented codes. |
+| `summary` | `string`                  | The message a person reads, without the documentation URL. Required.                                  |
+| `details` | `Record<string, unknown>` | Caller-supplied context. Optional. Omitting it leaves the instance with no own `details` property.    |
+| `options` | `SmithersErrorOptions`    | The cause and the documentation-URL switch. Optional.                                                 |
 
 Fields:
 
@@ -73,45 +78,39 @@ Fields:
 | `summary` | `string`                                           | The summary with every trailing `" See <docsUrl>"` removed, including copies separated by whitespace.                                                            |
 | `docsUrl` | `string`                                           | Always `ERROR_REFERENCE_URL`.                                                                                                                                    |
 | `details` | `Readonly<Record<string, unknown>>` or `undefined` | A frozen shallow copy of the record passed in, or absent as an own property when none was passed. Nested values are shared by reference and are not deep-frozen. |
-| `name`    | `string`                                           | `options.name`, or `"SmithersError"`. Installed as a non-enumerable, writable, configurable own property.                                                        |
-| `_tag`    | `Tag`                                              | The Effect tag, equal to `name`. Installed as a non-enumerable own property, so `Effect.catchTag(name)` catches the instance.                                    |
+| `_tag`    | `string`                                           | The Effect tag: the class's own name, `"SmithersError"` or a subclass's. An enumerable own property, as `Data.TaggedError` sets it.                              |
+| `name`    | `string`                                           | The tag, from the class's prototype, as `Data.TaggedError` sets it.                                                                                              |
 | `message` | `string`                                           | Inherited from `Error`: `summary` plus `" See <docsUrl>"`, unless `includeDocsUrl` is `false` or `summary` is blank.                                             |
 | `cause`   | `unknown`                                          | Inherited from `Error`, and an own property only when `options.cause` is not `undefined`. Stored verbatim.                                                       |
 
-Enumerable own properties are `code`, `summary`, `docsUrl`, and, when supplied,
-`details`, in that order. `Object.keys` and `JSON.stringify` therefore show
+Enumerable own properties are `code`, `summary`, `docsUrl`, `details` when
+supplied, and `_tag`, in that order, then a subclass's own fields. `Object.keys` and `JSON.stringify` therefore show
 those and nothing else. `util.inspect`, and so `console.log`, formats the
 instance as an `Error`: the stack headed by `name` and `message`, the
 enumerable fields, and a `[cause]` entry when a cause is supplied. Redact a
 cause before attaching it.
 
-The constructor restores the subclass prototype through `new.target`, so
-`instanceof` holds for a subclass under a transpiled target.
-
 `SmithersError` is an Effect tagged error: yielding an instance inside
 `Effect.gen` fails the effect with it, and `Effect.catchTag` routes by `_tag`.
-A subclass passes its tag as the type argument and the same string as
-`options.name`, as `IntegrationError extends SmithersError<"IntegrationError">`
-does. The type argument defaults to `string`, so `SmithersError` alone types
-any instance, subclasses included. Name a literal, as in
-`new SmithersError<"SmithersError">(...)`, when a `catchTag` must narrow a base
-instance.
+A subclass is an error declaration, `error IntegrationError extends
+SmithersError`, tagged with its own name. Since a `SmithersError` may be any
+subclass, its `_tag` is typed `string`: `catchTag("SmithersError")` handles
+base instances and leaves `SmithersError` in the failure type, and a match by
+class, `when SmithersError:`, handles the whole family.
 
 ### SmithersErrorOptions
 
 ```ts
-interface SmithersErrorOptions<Tag extends string = string> {
+interface SmithersErrorOptions {
   readonly cause?: unknown
   readonly includeDocsUrl?: boolean
-  readonly name?: Tag
 }
 ```
 
-| Field            | Default           | Meaning                                                                                                                           |
-| ---------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `cause`          | none              | Stored verbatim and not redacted. `undefined` is treated as no cause, so a subclass may always spell the key.                     |
-| `includeDocsUrl` | `true`            | Set `false` to leave the documentation URL out of `message`. The suffix is still stripped from a summary that already carried it. |
-| `name`           | `"SmithersError"` | The name the error reports, its Effect `_tag`, and the name its stack starts with.                                                |
+| Field            | Default | Meaning                                                                                                                           |
+| ---------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `cause`          | none    | Stored verbatim and not redacted. `undefined` is treated as no cause, so a subclass may always spell the key.                     |
+| `includeDocsUrl` | `true`  | Set `false` to leave the documentation URL out of `message`. The suffix is still stripped from a summary that already carried it. |
 
 ### isSmithersError
 

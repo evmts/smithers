@@ -1,6 +1,6 @@
-import { Effect } from "effect"
-import { expect, it } from "vitest"
-import { describeFailure, makeFailure, recoverFailure } from "../examples/handling.ts"
+import { expect, it } from "@effect/vitest"
+import { describeFailure, makeFailure, raiseFailure, recoverFailure } from "../examples/handling.vibe"
+import { failureOf } from "./helpers.vibe"
 
 it("constructs a tagged failure with safe context and a separately retained cause", () => {
   const failure = makeFailure()
@@ -14,7 +14,8 @@ it("constructs a tagged failure with safe context and a separately retained caus
     code: "INTEGRATION_ERROR",
     summary: "Provider unavailable",
     docsUrl: failure.docsUrl,
-    details: { reason: "transport", retryable: true }
+    details: { reason: "transport", retryable: true },
+    _tag: "SmithersError"
   })
 })
 
@@ -24,6 +25,10 @@ it("looks up a recognized failure and leaves unrelated values unclassified", () 
   expect(describeFailure(null)).toBeUndefined()
 })
 
-it("recovers the tagged Effect through the public error code", () => {
-  expect(Effect.runSync(recoverFailure())).toBe("Recovered INTEGRATION_ERROR")
-})
+it.effect("fails with the constructed failure") {
+  expect(failureOf(raiseFailure())).toMatchObject({ code: "INTEGRATION_ERROR", _tag: "SmithersError" })
+}
+
+it.effect("recovers the tagged failure through the public error code") {
+  expect(recoverFailure()).toBe("Recovered INTEGRATION_ERROR")
+}

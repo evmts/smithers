@@ -1,0 +1,83 @@
+/**
+ * The action-boundary failures in VibeLang's declaration forms, beside the
+ * Schema classes the journal persists today: `schema error` (D279) for
+ * `IntegrationFailure` and a schema alias (D280) for `Reason`. Production
+ * code keeps the classes until journals written under the qualified tag stay
+ * readable; these tests pin what the move changes.
+ *
+ * @since 1.0.0
+ */
+
+import { describe, expect, it } from "@effect/vitest"
+import { IntegrationFailure as Persisted, MessageId, Reason, RetryAfterMillis } from "../src/core/ActionFailure.ts"
+import { type Reason as ReasonType, reasons } from "../src/core/IntegrationError.ts"
+
+// The class's fields, tagged with the bare class name.
+schema error IntegrationFailure {
+  reason: Reason
+  message: string
+  retryable: boolean
+  outcomeUnknown?: boolean
+  deliveredMessageIds?: MessageId[]
+  retryAfterMillis?: RetryAfterMillis
+}
+
+// The reasons as one name for the schema and its type.
+schema Reasons =
+  | "invalid-config"
+  | "invalid-signature"
+  | "decode-failed"
+  | "poll-failed"
+  | "delivery-failed"
+  | "credentials-missing"
+  | "permission-denied"
+  | "listener-conflict"
+  | "rate-limited"
+
+const payload = {
+  reason: "rate-limited" as const,
+  message: "slow down",
+  retryable: true,
+  deliveredMessageIds: [7],
+  retryAfterMillis: 500
+}
+
+describe("IntegrationFailure as a schema error", () => {
+  it("encodes the persisted class's fields under its bare tag", () => {
+    const { _tag: persistedTag, ...persisted } = Schema.encodeSync(Persisted)(new Persisted(payload))
+    const { _tag: declaredTag, ...declared } = Schema.encodeSync(IntegrationFailure)(new IntegrationFailure(payload))
+    expect(declared).toEqual(persisted)
+    expect(persistedTag).toBe("/integrations/IntegrationFailure")
+    expect(declaredTag).toBe("IntegrationFailure")
+  })
+
+  it("keeps the class's checks on its fields", () => {
+    const decode = Schema.decodeUnknownOption(IntegrationFailure)
+    expect(decode({ _tag: "IntegrationFailure", ...payload }).isSome()).toBe(true)
+    expect(decode({ _tag: "IntegrationFailure", ...payload, deliveredMessageIds: [0] }).isNone()).toBe(true)
+    expect(decode({ _tag: "IntegrationFailure", ...payload, reason: "unknown" }).isNone()).toBe(true)
+  })
+
+  it("reads a journal entry written under the qualified tag only once that tag is accepted", () => {
+    const entry = Schema.encodeSync(Persisted)(new Persisted(payload))
+    const decode = Schema.decodeUnknownOption(IntegrationFailure)
+    expect(decode(entry).isNone()).toBe(true)
+    expect(decode({ ...entry, _tag: "IntegrationFailure" }).isSome()).toBe(true)
+  })
+})
+
+describe("Reason as a schema alias", () => {
+  it("accepts exactly the reasons the runtime list holds", () => {
+    for (const reason of reasons) {
+      expect(Schema.is(Reasons)(reason)).toBe(true)
+      expect(Schema.is(Reason)(reason)).toBe(true)
+    }
+    expect(Schema.is(Reasons)("unknown")).toBe(false)
+  })
+
+  it("names the same type as the list", () => {
+    const fromList: Reasons = "poll-failed" satisfies ReasonType
+    const toList: ReasonType = fromList
+    expect(toList).toBe("poll-failed")
+  })
+})

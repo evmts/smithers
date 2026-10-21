@@ -84,15 +84,20 @@ describe("readJsonPath", () => {
 
 describe("IntegrationError", () => {
   it("routes each adapter failure to its own catchTag handler", () => {
-    const recover = (error: IntegrationError | SmithersError<"SmithersError">) =>
+    // A SmithersError may be any subclass, so its tag type is string and the
+    // IntegrationError handler's parameter keeps SmithersError; routing is
+    // by the run-time tag.
+    const recover = (error: IntegrationError | SmithersError) =>
       Effect.fail(error).pipe(
-        Effect.catchTag("IntegrationError", (caught) => Effect.succeed(`integration:${caught.reason}`)),
-        Effect.catchTag("SmithersError", (caught) => Effect.succeed(`base:${caught.code}`))
+        Effect.catchTag("IntegrationError", (caught) =>
+          Effect.succeed(`integration:${(caught as IntegrationError).reason}`)),
+        Effect.catchTag("SmithersError", (caught) =>
+          Effect.succeed(`base:${caught.code}`))
       )
     expect(Effect.runSync(recover(new IntegrationError("poll-failed", "getUpdates failed")))).toBe(
       "integration:poll-failed"
     )
-    expect(Effect.runSync(recover(new SmithersError<"SmithersError">("UNSUPPORTED", "no Ed25519")))).toBe(
+    expect(Effect.runSync(recover(new SmithersError("UNSUPPORTED", "no Ed25519")))).toBe(
       "base:UNSUPPORTED"
     )
   })

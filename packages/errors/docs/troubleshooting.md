@@ -59,15 +59,15 @@ mutating a nested object you attached **does** change what the error reports,
 because nested values are shared by reference. Attach values you will not touch
 again.
 
-## Assigning to error.details or error.name is a type error
+## Assigning to error.details is a type error
 
-**Symptom.** `error.name = "MyError"` fails to compile.
+**Symptom.** `error.details = { ... }` fails to compile.
 
-**Cause.** Both fields are readonly, and the package pins that with a type test
+**Cause.** Every field is readonly, and the package pins that with a type test
 so it cannot regress.
 
-**Fix.** Set the name at construction: `new SmithersError(code, summary,
-details, { name: "MyError" })`. A subclass does the same through `super`.
+**Fix.** Pass the details at construction. For a name and a tag of its own,
+declare a subclass: `error MyError extends SmithersError`.
 
 ## The message has no documentation URL
 
