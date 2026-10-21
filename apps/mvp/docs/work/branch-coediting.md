@@ -2,10 +2,30 @@
 title: Shared branch prompt and file co-editing
 status: in-progress
 area: app
-owner: co-editing builder (Opus, lead session 6253ecf2)
-updated: 2026-10-21 02:06 PDT
+owner: coedit merger and builder (Opus, lead session 6253ecf2)
+updated: 2026-10-21 16:30 PDT
 links: [../features/coedit.md, branch-sharing.md, branch-terminal.md, branch-workspace-clarity.md, ../decisions/0013-branch-workspace.md, ../rulings.md]
 ---
+
+## Saves reach Saved for both: 2026-10-21 16:30 PDT
+
+**What:** Two people (or one person's two devices) edit a branch's file at once, and one Save says `Saved` on both.
+
+**Why it failed:** The Mac mini sweep at main 10ec5f4d saw "Save never reaches Saved (240 s, twice)". The panel's traces (mini Postgres, engine journal, dev log) show attempt 1 spent about 312 s inside the container start, which no record explained; attempt 2 saved in 12 s, but Maya clicked Save 1.6 s before Ben's last keystroke reached her, so her text differed from what was written and the button honestly read Save. And Ben's tab could never read Saved: `saved` was the saving tab's own field.
+
+**Current state:**
+- `@smthrs/sync` gains `SharedText.mark` and `SharedText.marks` (dec3bbdaf6). A Save marks `<length>:<SHA-256>` of what it wrote in the text's own document; every tab reads Saved from it ([Saved](../features/coedit.md#saved)).
+- The button reads Saving…, Saved, or Retry save after a failure.
+- Wake records: `cloudflare.sandbox.wake` has `durationMs`; `sandbox.wake` logs each step's time on success.
+- `e2e/coedit.spec.ts` has a two-device file test with no dev-only need, so it runs on a deployment; both tests wait for exact convergence before Save and check Saved on both screens.
+- Merged plan and disagreements: the panel's MERGED.md (scratchpad, 2026-10-21).
+- Production before the fix (16:56 PDT, against the build deployed then): the two-device test made the file in the terminal, both devices opened it through `sandbox/read`, typed at once with each other's carets, converged, and A's Save reached Saved through `sandbox/write`; it failed at "B says Saved too", as the old build does.
+- Known gaps, in [coedit.md](../features/coedit.md#saved): overlapping Saves can leave the wrong mark; a reload during a Save leaves no mark.
+
+**Next step:** Land, deploy, run coedit.spec locally and in production, record the GIF.
+
+**Open questions for Will:** A second GitHub test account, so the two-person test runs in production (today it is local only).
+
 
 ## Tracker reconciliation — 2026-10-21 02:06 PDT
 

@@ -62,7 +62,10 @@ A change of sharing holds the rooms of the branch's texts to the new list, as it
 
 A Save marks what it wrote in the text itself: `SharedText.mark("saved", "<length>:<SHA-256>")`, sent through the outbox like any edit. Every replica gets the mark with the text, so every editor, on every device and after a reload, says `Saved` while its text is what was written, and `Save` once anyone edits it. A Save that missed an edit arriving while it ran marks what it wrote, which isn't the text: nobody's screen says `Saved`. `saving` and a failure are the saving tab's own.
 
-Two Saves of different text that finish within a second of each other, before either tab has heard the other's mark, can leave the mark of the one whose write landed first; the screens then say `Saved` for text the working copy doesn't hold until the next edit. Fencing the mark by the machine's write order would close it; nobody has seen it happen.
+What isn't covered yet:
+
+- **Overlapping Saves.** The last mark wins, by when each saving tab heard its write was done, not by when the write reached the disk. Two Saves of different text running at once can leave the mark of the write that landed first, so the screens say `Saved` for text the working copy doesn't hold, until the next edit. Ordering the mark by the machine's write order closes it.
+- **A reload during a Save.** The write still finishes, durably, but the mark comes from the tab that asked, so nobody's screen says `Saved` until someone saves again.
 
 ## The page
 
