@@ -489,8 +489,9 @@ Tracking a branch, its conversation, its terminals, its machine, sharing it and 
 | `terminal.open.wake`, `terminal.open` | log | the `FlowExecution` Durable Object | `branchId`, `generation`, `terminalId`, `outcome`, `recorded`, `errorCode` |
 | `sandbox.wake`, `terminal.session`, `terminal.open` | span | the `FlowExecution` Durable Object | `smithers.branch.id`, `smithers.terminal.id` |
 | `smithers_terminal_opens` | counter | the `FlowExecution` Durable Object | `outcome` (`open`, `unavailable`, `checkout`) |
-| `sandbox.object.wake` (span), `sandbox.checkout`, `sandbox.wake` (logs) | | `SandboxObject` | `smithers.branch.id`, `exitCode`, `errorCode` |
-| `smithers_cloudflare_terminal_connects`, `_sessions_open`, `_bytes`, `_sessions`, `smithers_cloudflare_sandbox_wakes` | counters | `SandboxObject` (`@smthrs/platform-cloudflare`) | `access`, `outcome`, `direction` |
+| `sandbox.object.wake` (span), `sandbox.checkout`, `sandbox.wake`, `sandbox.forge`, `sandbox.object.session` (logs, JSON) | | `SandboxObject` | `smithers.branch.id`, `branchId`, `stage` (`start`, `checkout`, `restore`, `placeholders`), `exitCode`, `failure` (`forge`, `branch`, `clone`, `other`), `status`, `outcome`, `errorCode` |
+| `sandbox.box_request` (log) | | ChatApi | `errorCode`: a box's request that couldn't reach its object (502) |
+| `smithers_cloudflare_terminal_connects`, `_sessions_open`, `_bytes`, `_sessions`, `smithers_cloudflare_sandbox_wakes`, `smithers_cloudflare_sandbox_rearms` | counters | `SandboxObject` (`@smthrs/platform-cloudflare`) | `access`, `outcome`, `direction` |
 | `git.proxy` (log), `GitProxy.uploadPack` (span), `git_proxy_requests` | | `SandboxObject` (`@smthrs/effect-code-storage`) | `service`, `outcome`, `status`, `durationMs` |
 | `branch.track`, `branch.open`, `smithers_web_branch_tracks`, `smithers_web_branch_opens`, `chat conversation opened`, `chat conversation shown` | browser | the engine worker and the tab | `outcome`, `status`, `durationMs`, `conversation`, `conversationId` |
 | `terminal.open`, `terminal.open.press`, `terminal.connect`, `smithers_web_terminal_opens`, `terminal_open_ms`, `terminal_reconnects`, `terminal_bytes`, `terminal_ended` | browser | the engine worker and the tab | `outcome`, `status`, `terminalId`, `branchId`, `durationMs`, `code`, `direction`, `reason` |

@@ -1,4 +1,5 @@
 import { GitProxy } from "@smthrs/effect-code-storage"
+import { Logger } from "@smthrs/observability"
 import { ContainerSession, ContainerTerminal, SandboxObject as SandboxHost } from "@smthrs/platform-cloudflare"
 import { SandboxTools } from "@smthrs/sandbox"
 import { RuntimeContext } from "alchemy"
@@ -11,7 +12,7 @@ import { ROLES } from "../src/features/auth/contract.ts"
 import { FORGE_HOST, SANDBOX_USER, WORKSPACE } from "../src/features/terminal/contract.ts"
 import type { Role } from "./Actor.ts"
 import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.ts"
-import { checkoutArgv, forgeRemote } from "./branch/Checkout.ts"
+import { CHECKOUT_FAILURES, checkoutArgv, forgeRemote } from "./branch/Checkout.ts"
 import * as Machine from "./branch/Machine.ts"
 import { Machines, type SleepOutcome, type ToolOutcome } from "./branch/Machines.ts"
 import { envOf, idOf, provisionArgv, userOf } from "./branch/Users.ts"
@@ -32,8 +33,11 @@ import * as SandboxEgress from "./secrets/SandboxEgress.ts"
 // Branch sandboxes on Cloudflare (decision 0013 §3, decision 0005 §2, docs/features/branch-workspace.md#the-machine):
 // `SandboxObject`, one Durable Object per branch, named by the branch's id, owns that branch's container
 // (infra/BranchSandbox.ts). It wakes the box, checks the branch out, starts terminal sessions, attaches sockets to them,
-// and is the box's forge: the box's only way out is `http://forge.smithers.internal`, which the object intercepts and
-// answers with the read-only git proxy, adding the read credential the box never holds. ChatApi hosts it; the flows and
+// and is the box's forge: the box's only way out is `http://forge.smithers.internal`, whose requests the container
+// sends to ChatApi's own entrypoint (`ctx.exports.default` with `props` naming the object, Cloudflare's documented
+// intercept target; a Durable Object's stub is not one, and in production a box's requests never reached it). ChatApi
+// hands each back to the object (`answerBox`), which answers it with the read-only git proxy, adding the read
+// credential the box never holds. ChatApi hosts it; the flows and
 // routes reach it through `Sandboxes` and `TerminalSockets`, and the sandbox tools through `Machines`
 // (docs/features/sandbox-tools.md), which this file provides from its namespace.
 
@@ -118,6 +122,23 @@ const variablesOf = (environment: string): Record<string, string> =>
 const roleOf = (value: string | undefined): Role | null =>
   (ROLES as ReadonlyArray<string>).includes(value ?? "") ? (value as Role) : null
 
+/**
+ * The `ctx.props` key of ChatApi's own entrypoint that marks a request a branch's box sent, naming its object by id.
+ * Only this Worker's own code can set `props` (`ctx.exports`); a request from anywhere else has none.
+ */
+export const BOX_PROP = "sandboxObject"
+
+/** The id of the object whose box sent the request with these `props`; nothing for any other request. */
+export const boxOf = (props: unknown): string | undefined => {
+  const value = typeof props === "object" && props !== null ? (props as Record<string, unknown>)[BOX_PROP] : undefined
+  return typeof value === "string" && value !== "" ? value : undefined
+}
+
+/** The loopback to ChatApi's own default entrypoint a Durable Object's `ctx.exports` holds, with `props`. */
+interface Loopback {
+  readonly exports: { readonly default: (options: { readonly props: Record<string, string> }) => Fetcher }
+}
+
 /** What `wake` answers: the machine's generation, or why it couldn't wake. */
 export type Woken =
   | { readonly _tag: "Woken"; readonly generation: number }
@@ -156,13 +177,16 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
   Effect.gen(function* () {
     const box = yield* BranchSandbox
     const state = yield* Cloudflare.DurableObjectState
-    const self = (yield* Cloudflare.DurableObject) as Cloudflare.DurableObject<SandboxObjectShape>
     const forge = yield* Effect.service(Forge).pipe(Effect.provide(Forge.layerConfig), Effect.provide(FetchHttpClient.layer))
     const secretsOn = yield* sandboxSecrets.pipe(Effect.orDie)
     const instance = yield* sandboxInstance.pipe(Effect.orDie)
     const secretKeys = yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layerConfig), Effect.orDie)
     const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(connection)
     const database = Database.layer(hyperdrive.connectionString)
+    // Workers Logs keeps every JSON line, as it does ChatApi's and FlowExecution's. Without it this object's lines
+    // (`sandbox.wake`, `sandbox.checkout`, `sandbox.forge`) never reached a log or a tail.
+    const logs = Logger.layerStructuredJson()
+    const logged = <A, E, RE>(effect: Effect.Effect<A, E, RE>) => Effect.provide(effect, logs)
     return Effect.gen(function* () {
       // This incarnation's own scope: each socket's pump runs in it for as long as its socket is open, and the object
       // stays in memory while an accepted socket is (no hibernation, which would drop the tmux client's handle).
@@ -171,7 +195,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
       const rearm = Effect.ignore(SandboxHost.rearm(box))
       // A restarted object has no inactivity timeout, and Cloudflare stops its container soon after it goes idle, even
       // while a process runs: re-arm it now, in the constructor, as Cloudflare's docs say (`SandboxHost.rearm`).
-      yield* rearm
+      yield* logged(rearm)
       // Every socket attached now, with who attached it, so a change of the branch's sharing reaches it (`enforce`).
       const attached = new Map<
         WebSocket,
@@ -182,9 +206,12 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           readonly fiber: Fiber.Fiber<unknown>
         }
       >()
-      // The box's forge requests come back to this very object, which answers them as the forge proxy; with the egress
-      // on, every other request it makes does too, and the object answers it as the secrets egress.
-      const own = self.get(state.id) as unknown as Cloudflare.Fetcher
+      // The box's forge requests go to ChatApi's own entrypoint with props naming this object, and come back to it
+      // (`answerBox`), which answers them as the forge proxy; with the egress on, every other request it makes does
+      // too, and the object answers it as the secrets egress.
+      const own = Cloudflare.fromCloudflareFetcher(
+        (state.raw as unknown as Loopback).exports.default({ props: { [BOX_PROP]: state.id.toString() } }),
+      )
       const intercepts = [{ host: FORGE_HOST, fetcher: own }]
       const egressTo = secretsOn ? own : undefined
       // One-use tickets ChatApi took for the sockets it is about to hand this object (TICKET_HEADER).
@@ -219,7 +246,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
             const exit = yield* run(checkoutArgv(branch.branch, forgeRemote(branch.owner, branch.name)), SANDBOX_USER)
             if (exit !== 0) {
               yield* Effect.logWarning("sandbox.checkout").pipe(
-                Effect.annotateLogs({ branchId: branch.branchId, exitCode: exit }),
+                Effect.annotateLogs({ branchId: branch.branchId, exitCode: exit, failure: CHECKOUT_FAILURES[exit] ?? "other" }),
               )
               return { _tag: "CheckoutFailed" } as const
             }
@@ -401,14 +428,28 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
         )
       })
 
-      /** A request from the box to its forge: the read-only git proxy, with the read credential added here. */
+      /**
+       * A request from the box to its forge: the read-only git proxy, with the read credential added here. Each logs
+       * `sandbox.forge` with its status, never its path or body.
+       */
       const egress = (request: HttpServerRequest.HttpServerRequest) =>
         Effect.gen(function* () {
           const branch = yield* branchOf
-          if (branch === undefined) return HttpServerResponse.empty({ status: 403 })
+          if (branch === undefined) {
+            yield* Effect.logWarning("sandbox.forge").pipe(Effect.annotateLogs({ status: 403, outcome: "no_branch" }))
+            return HttpServerResponse.empty({ status: 403 })
+          }
           const upstream = yield* forgeOf(forge, branch).upstream({ owner: branch.owner, name: branch.name })
-          return yield* GitProxy.uploadPack(request, upstream).pipe(Effect.provide(FetchHttpClient.layer))
-        })
+          const response = yield* GitProxy.uploadPack(request, upstream).pipe(Effect.provide(FetchHttpClient.layer))
+          yield* Effect.logInfo("sandbox.forge").pipe(
+            Effect.annotateLogs({ branchId: branch.branchId, status: response.status, outcome: "answered" }),
+          )
+          return response
+        }).pipe(
+          Effect.tapCause((cause) =>
+            Effect.logWarning("sandbox.forge").pipe(Effect.annotateLogs({ outcome: "failed", ...failureFields(cause) }))
+          ),
+        )
 
       /**
        * Holds every attached socket to the branch's permission list as it now stands: a viewer who lost the branch is
@@ -446,20 +487,22 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           Effect.withSpan("sandbox.object.enforce"),
         )
 
+      // Every method logs as JSON (`logs`).
       return {
-        wake,
-        session,
-        alive,
-        enforce,
-        tool,
-        sleepIfIdle,
+        wake: (branch: SandboxBranch) => logged(wake(branch)),
+        session: (terminalId: string, ownerId: string) => logged(session(terminalId, ownerId)),
+        alive: (terminalId: string, ownerId: string) => logged(alive(terminalId, ownerId)),
+        enforce: (policy: Policy, revoked: ReadonlyArray<Revoked>) => logged(enforce(policy, revoked)),
+        tool: (branch: SandboxBranch, ownerId: string, callId: string, call: SandboxTools.Call) =>
+          logged(tool(branch, ownerId, callId, call)),
+        sleepIfIdle: (generation: number, idleMs: number) => logged(sleepIfIdle(generation, idleMs)),
         ticket: () =>
           Effect.sync(() => {
             const ticket = crypto.randomUUID()
             tickets.add(ticket)
             return ticket
           }),
-        fetch: Effect.gen(function* () {
+        fetch: logged(Effect.gen(function* () {
           const request = yield* HttpServerRequest.HttpServerRequest
           const host = new URL(request.originalUrl).host
           if (host === FORGE_HOST) return yield* egress(request)
@@ -467,7 +510,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           if (tickets.delete(request.headers[TICKET_HEADER] ?? "")) return yield* attach(request)
           if (egressTo !== undefined) return yield* egressOut
           return HttpServerResponse.empty({ status: 404 })
-        }),
+        })),
       }
     })
   }),
@@ -545,6 +588,26 @@ export const terminalSocketsOver = (objects: Objects) => Effect.gen(function* ()
       ),
   })
 })
+
+/**
+ * ChatApi's answer to a request a branch's box sent (`boxOf` its `props`): handed back to that box's own object, which
+ * answers it as the box's forge, or with the egress on, as its secrets egress. 502 when the object can't be reached.
+ */
+export const answerBox = (objects: Objects, objectId: string) =>
+  Effect.gen(function* () {
+    const runtime = yield* RuntimeContext
+    const request = yield* HttpServerRequest.HttpServerRequest
+    return yield* objects.get(objects.idFromString(objectId)).fetch(request).pipe(
+      Effect.provideService(RuntimeContext, runtime),
+    )
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.as(
+        Effect.logWarning("sandbox.box_request").pipe(Effect.annotateLogs(failureFields(cause))),
+        HttpServerResponse.empty({ status: 502 }),
+      )
+    ),
+  )
 
 /** `Sandboxes` as a layer, built in the runtime that runs the flows (`RuntimeContext`). */
 export const sandboxesLayer = (objects: Objects, keep: Keep = noKeep) =>

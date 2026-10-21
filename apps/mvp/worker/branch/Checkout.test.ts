@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
 import { WORKSPACE } from "../../src/features/terminal/contract.ts"
-import { checkoutArgv, DEPTH, forgeRemote } from "./Checkout.ts"
+import { CHECKOUT_FAILURES, checkoutArgv, DEPTH, forgeRemote } from "./Checkout.ts"
 
 const root = mkdtempSync(join(tmpdir(), "checkout-"))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
@@ -31,10 +31,34 @@ const remote = (() => {
 })()
 
 /** Runs the checkout with /workspace replaced by `workspace`, as the machine's shell would. */
-const checkout = (workspace: string, branch: string) => {
-  const [shell, flag, script, name, ...args] = checkoutArgv(branch, remote)
+const checkout = (workspace: string, branch: string, from = remote) => {
+  const [shell, flag, script, name, ...args] = checkoutArgv(branch, from)
   return execFileSync(shell!, [flag!, script!.replaceAll(WORKSPACE, workspace), name!, ...args], { encoding: "utf8" })
 }
+
+/** The checkout's exit code, or 0. */
+const exitOf = (run: () => unknown) => {
+  try {
+    run()
+    return 0
+  } catch (error) {
+    return (error as { readonly status: number }).status
+  }
+}
+
+describe("checkoutArgv failures", () => {
+  test("say where the checkout broke: a forge that doesn't answer, a branch it lacks, a branch whose name only starts alike", () => {
+    const workspace = join(root, "failures")
+    mkdirSync(workspace)
+    expect(exitOf(() => checkout(workspace, "main", `file://${join(root, "no-such-forge")}`))).toBe(70)
+    expect(exitOf(() => checkout(workspace, "no-such-branch"))).toBe(71)
+    // `feature/x` is there; `feature` alone, a prefix of it, isn't.
+    expect(exitOf(() => checkout(workspace, "feature"))).toBe(71)
+    expect(CHECKOUT_FAILURES).toEqual({ 70: "forge", 71: "branch", 72: "clone" })
+    // Nothing was cloned.
+    expect(exitOf(() => git(workspace, "rev-parse", "HEAD"))).not.toBe(0)
+  })
+})
 
 describe("checkoutArgv", () => {
   test("clones the one branch into an empty workspace, shallow", () => {

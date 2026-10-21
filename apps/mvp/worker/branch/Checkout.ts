@@ -11,13 +11,21 @@ export const DEPTH = 50
 export const forgeRemote = (owner: string, name: string): string =>
   `http://${FORGE_HOST}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
 
+/**
+ * Why a checkout failed, by its exit code, so a failure says where it broke without its output: the forge didn't
+ * answer the ref list (`forge`), it answered without the branch (`branch`), or the clone itself failed (`clone`).
+ */
+export const CHECKOUT_FAILURES: Readonly<Record<number, "forge" | "branch" | "clone">> = { 70: "forge", 71: "branch", 72: "clone" }
+
 const script = [
   "set -e",
   // Files the clone writes are the `workspace` group's to change too: every person's shell shares the checkout.
   "umask 002",
   `if git -C ${WORKSPACE} rev-parse --verify -q HEAD >/dev/null 2>&1; then exit 0; fi`,
   `find ${WORKSPACE} -mindepth 1 -delete`,
-  `git clone --quiet --depth ${DEPTH} --branch "$1" --single-branch "$2" ${WORKSPACE}`,
+  `refs=$(git ls-remote --heads "$2" 2>/dev/null) || exit 70`,
+  `printf '%s\\n' "$refs" | awk -v ref="refs/heads/$1" '$2 == ref { found = 1 } END { exit !found }' || exit 71`,
+  `git clone --quiet --depth ${DEPTH} --branch "$1" --single-branch "$2" ${WORKSPACE} || exit 72`,
 ].join("\n")
 
 /**

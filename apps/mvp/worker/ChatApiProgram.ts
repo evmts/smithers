@@ -194,6 +194,10 @@ export const program = (options: ProgramOptions = {}) =>
 
     return {
       fetch: Effect.gen(function* () {
+        // A branch's box reaches its forge through this Worker's own entrypoint, with props naming its object
+        // (worker/BranchSandboxes.ts): handed straight back to that object, never routed as a person's request.
+        const box = BranchSandboxes.boxOf((yield* Cloudflare.WorkerExecutionContext).raw.props)
+        if (box !== undefined) return yield* BranchSandboxes.answerBox(sandboxObjects, box)
         const request = yield* HttpServerRequest.HttpServerRequest
         const runtime = yield* RuntimeContext
         const limited = yield* Throttle.make({
