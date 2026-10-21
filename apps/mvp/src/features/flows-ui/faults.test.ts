@@ -1,6 +1,6 @@
 // Your own flows and runs from a tab whose engine refuses what it is asked to start (src/test/faults.ts `EngineFaults`,
 // test.faults-by-injection): nothing opens a page for a run that never started, unsent answers stay, a refused Save
-// says it couldn't, and a refused act on a run says the engine couldn't be reached. Everything else is the real app.
+// says it couldn't, and a refused act on a run says it was refused. Everything else is the real app.
 import { ShapeSource } from "@smthrs/effect-electric"
 import { Effect, type ManagedRuntime, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -136,7 +136,7 @@ describe("an engine that refuses a start", () => {
     expect(t.flows.queries.code.toArray[0]).toMatchObject({ name: "hello", state: "unavailable" })
   }, 180_000)
 
-  test("an act on a run the engine won't start says the engine couldn't be reached", async () => {
+  test("an act on a run the engine refuses to start says it was refused", async () => {
     const t = await open()
     t.flows.actions.setName("hello")
     t.flows.actions.setRequest("Say hello")
@@ -150,7 +150,8 @@ describe("an engine that refuses a start", () => {
     await until(() => expect(t.runs.queries.page.toArray[0]?.page.state).toBe("read"))
     await t.refuse("run/retry")
     t.runs.actions.retry("pinned")
-    await until(() => expect(t.runs.queries.page.toArray[0]?.view).toMatchObject({ acting: null, refusal: "unavailable" }))
+    // A refused start reads as refused, not as an engine that couldn't be reached.
+    await until(() => expect(t.runs.queries.page.toArray[0]?.view).toMatchObject({ acting: null, refusal: "refused" }))
   }, 180_000)
 })
 

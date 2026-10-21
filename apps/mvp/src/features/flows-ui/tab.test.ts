@@ -252,7 +252,8 @@ describe("a flow of your own, from a tab", () => {
     await until(() => expect(t.page()?.view).toMatchObject({ acting: null, refusal: "not_settled" }))
     t.runs.actions.stop()
     await until(() => expect(t.inspection()?.run.status).toBe("cancelled"))
-    expect(t.page()?.view).toMatchObject({ acting: null, refusal: null })
+    // The engine's events can show the run cancelled before Stop's own flow has answered; then the act clears.
+    await until(() => expect(t.page()?.view).toMatchObject({ acting: null, refusal: null }))
     t.runs.actions.resume()
     await until(() => expect(t.page()?.view.refusal).toBe("settled"))
     // A run this device's engine never held reads as on another device.

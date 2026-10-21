@@ -64,6 +64,7 @@ export const RunView = Schema.Struct({
   inspectorOpen: Schema.optionalKey(Schema.Boolean),
   tab: Schema.Literals(["steps", "timeline", "journal"]),
   acting: Acting,
+  actToken: Schema.optionalKey(Schema.NullOr(Schema.String)),
   refusal: Schema.NullOr(Schema.String),
   /** What the steer composer holds (docs/features/runs.md#steering): kept with the view, never on the device. */
   steerDraft: Schema.optionalKey(Schema.String),

@@ -60,10 +60,10 @@ export const STALLED_AFTER_MS = 60_000
  * settled, when its flow is retried; Resume while it waits, or runs but has recorded nothing for `STALLED_AFTER_MS`.
  * Each act runs on this device's engine, so a run on Cloudflare offers none: a TODO's run stops when its TODO drops.
  */
-export const actsOf = (inspection: Inspection, now: number) => {
+export const actsOf = (inspection: Inspection, now: number, events: ReadonlyArray<Pick<JournalRow, "emittedAtMs">> = inspection.journal.events) => {
   const { run } = inspection
   if (isRemoteRun(run.runId)) return { stop: false, retry: false, resume: false }
-  const last = inspection.journal.events.at(-1)?.emittedAtMs ?? run.createdAtMs
+  const last = events.at(-1)?.emittedAtMs ?? run.createdAtMs
   return {
     stop: !settled(run.status) && run.cancelRequestedAtMs === null,
     retry: settled(run.status) && retryable(run.flowName),

@@ -1,4 +1,5 @@
 import { LiveQuery } from "@smthrs/effect-tanstack-db"
+import type { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Effect, Layer } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
 import {
@@ -72,9 +73,9 @@ export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries;
       const writes = yield* SteerWrites
       const steerSending = yield* sendingQuery(writes)
       const steerSent = yield* sentQuery(writes)
-      const context = yield* Effect.context<RunsStore | FlowDispatch | RunsNavigation>()
+      const context = yield* Effect.context<RunsStore | FlowDispatch | RunsNavigation | BrowserEngine.BrowserEngine>()
       const promise = Effect.runPromiseWith(context)
-      const fork = (effect: Effect.Effect<void, never, RunsStore | FlowDispatch | RunsNavigation>) =>
+      const fork = (effect: Effect.Effect<void, never, RunsStore | FlowDispatch | RunsNavigation | BrowserEngine.BrowserEngine>) =>
         void Effect.runForkWith(context)(effect)
       return Runs.of({
         queries: {

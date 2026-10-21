@@ -37,6 +37,12 @@ export const reads = Metric.counter("smithers_run_reads", {
   incremental: true,
 })
 
+/** Remote change batches received, including those ignored while their run is hidden. No run content is recorded. */
+export const followChanges = Metric.counter("smithers_run_follow_changes", {
+  description: "Remote run changes received by whether their run is open",
+  incremental: true,
+})
+
 /** The run of `view`, joined to its read: what the run page shows. */
 export const pageQuery = (view: Collection.Collection<RunView, string>, pages: Collection.Collection<RunPage, string>) =>
   LiveQuery.make((q) =>
@@ -141,13 +147,17 @@ export class RunsStore extends Context.Service<
         initialData: [{ id: VIEW, runId: null, listOpen: false, selected: null, tab: "steps", acting: null, refusal: null }],
       })
 
+      const generations = new Map<string, number>()
       const readRun = (runId: string, changed?: ReadonlySet<string>) =>
         Effect.gen(function* () {
           const held = Option.getOrThrow(yield* view.get(VIEW))
           if (held.runId === runId && held.at != null) return
+          const generation = (generations.get(runId) ?? 0) + 1
+          generations.set(runId, generation)
           const startedAt = yield* Clock.currentTimeMillis
           const source = reader(runId)
           const read = yield* Effect.result(source(runId, { limit: JOURNAL_PAGE }))
+          if (generations.get(runId) !== generation) return
           const afterRead = Option.getOrThrow(yield* view.get(VIEW))
           if (afterRead.runId === runId && afterRead.at != null) return
           if (read._tag === "Success") {
@@ -203,6 +213,7 @@ export class RunsStore extends Context.Service<
               descendants.push({ ...child.success, journal: { ...child.success.journal, events, nextSeq: cursor, hasMore } })
               pending.push(...child.success.children.map((child) => child.runId))
             }
+            if (generations.get(runId) !== generation) return
             const latestView = Option.getOrThrow(yield* view.get(VIEW))
             if (latestView.runId === runId && latestView.at != null) return
             yield* put(pages, { id: runId, state: "read", inspection, ...kept, descendants })
@@ -233,10 +244,19 @@ export class RunsStore extends Context.Service<
           if (read._tag === "Failure") return
           const latestView = Option.getOrThrow(yield* view.get(VIEW))
           if (latestView.runId === runId && latestView.at != null) return
+          // More contributes events to the current page, never its pre-read snapshot.
+          const latest = yield* pages.get(runId)
+          if (Option.isNone(latest) || latest.value.inspection === null) return
+          const inspection = latest.value.inspection as Inspection
+          const more = new Map((latest.value.more as Inspection["journal"]["events"]).map((event) => [event.seq, event]))
+          for (const event of read.success.journal.events) {
+            if (event.seq > inspection.journal.nextSeq) more.set(event.seq, event)
+          }
+          const latestEnd = (latest.value.more as Inspection["journal"]["events"]).at(-1)?.seq ?? inspection.journal.nextSeq
           yield* put(pages, {
-            ...page,
-            more: [...page.more, ...read.success.journal.events],
-            hasMore: read.success.journal.hasMore,
+            ...latest.value,
+            more: [...more.values()].sort((a, b) => a.seq - b.seq),
+            hasMore: latestEnd >= read.success.journal.nextSeq ? latest.value.hasMore : read.success.journal.hasMore,
           })
         }).pipe(Effect.orDie)
 
@@ -312,6 +332,7 @@ export class RunsStore extends Context.Service<
             Stream.runForEach(() =>
               Effect.gen(function* () {
                 const current = Option.getOrThrow(yield* view.get(VIEW))
+                yield* Metric.update(Metric.withAttributes(followChanges, { showing: current.runId === runId ? "true" : "false" }), 1)
                 if (current.runId === runId) yield* readRun(runId)
               })
             ),

@@ -1,6 +1,7 @@
+import { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Effect, Metric, Option } from "effect"
-import { FlowDispatch } from "../../flows/dispatch"
-import { retryActId, runPath } from "./contract"
+import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
+import { RETRY_ID_SEARCH_LIMIT, retriedRunId, retryActId, runPath } from "./contract"
 import { retriesOf } from "./page"
 import type { Inspection, RunTab, RunView } from "./schema"
 import { VIEW } from "./schema"
@@ -36,7 +37,7 @@ export const openList = Effect.gen(function* () {
 /** A run's route loader: shows `runId` with nothing selected, reads it, and follows it when it runs on Cloudflare. */
 export const openRun = (runId: string) =>
   Effect.gen(function* () {
-    yield* setView({ runId, listOpen: false, selected: null, at: null, inspectorOpen: true, tab: "steps", acting: null, refusal: null })
+    yield* setView({ runId, listOpen: false, selected: null, at: null, inspectorOpen: true, tab: "steps", acting: null, actToken: null, refusal: null })
     const store = yield* RunsStore
     yield* store.readRun(runId)
     yield* store.follow(runId)
@@ -72,17 +73,33 @@ type Act = "stop" | "retry" | "resume"
  */
 const acting = (
   act: Act,
-  run: (inspection: Inspection) => Effect.Effect<Option.Option<string>, unknown, FlowDispatch | RunsStore | RunsNavigation>,
+  run: (inspection: Inspection, current: Effect.Effect<boolean, never, RunsStore>) => Effect.Effect<Option.Option<string>, DispatchFailed, FlowDispatch | RunsStore | RunsNavigation | BrowserEngine.BrowserEngine>,
 ) =>
   Effect.gen(function* () {
     const inspection = yield* openInspection
     if (Option.isNone(inspection)) return
-    yield* setView({ acting: act, refusal: null })
-    const refused = yield* run(inspection.value).pipe(
-      Effect.catch(() => Effect.succeed(Option.some("unavailable"))),
-    )
-    yield* setView({ acting: null, refusal: Option.getOrNull(refused) })
-    yield* (yield* RunsStore).readRun(inspection.value.run.runId)
+    const runId = inspection.value.run.runId
+    const token = crypto.randomUUID()
+    const current = Effect.gen(function* () {
+      const view = Option.getOrThrow(yield* (yield* RunsStore).view.get(VIEW))
+      return view.runId === runId && view.actToken === token
+    })
+    // Installing the marker and its finalizer is one uninterruptible acquisition.
+    yield* Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
+      yield* setView({ acting: act, actToken: token, refusal: null })
+      const refresh = yield* restore(Effect.gen(function* () {
+        const refused = yield* run(inspection.value, current).pipe(
+          Effect.catch((error) => Effect.succeed(Option.some(error.reason))),
+        )
+        if (!(yield* current)) return false
+        yield* setView({ refusal: Option.getOrNull(refused) })
+        return true
+      })).pipe(Effect.ensuring(Effect.gen(function* () {
+        if (yield* current) yield* setView({ acting: null, actToken: null })
+      })))
+      // A refresh publishes the result only after the act's finalizer released its indicator.
+      if (refresh) yield* restore((yield* RunsStore).readRun(runId))
+    }))
   })
 
 /** What a dispatched act answers: nothing when it was done, its refusal's code when it was refused. */
@@ -104,24 +121,40 @@ export const resume = acting("resume", (inspection) =>
     ))
 
 /**
- * Retry: `run/retry` on the open run, as the act `retry:<runId>:<n>` for its n-th retry from this device, so a second
- * press before the list moves starts no second run. Its new run's page opens.
+ * Retry: `run/retry` as the next unused `retry:<runId>:<n>`, checked against durable history beyond the bounded list.
+ * Its new run opens only while this view still owns the originating act.
  */
 export const retry = (version: "pinned" | "current") =>
-  acting("retry", (inspection) =>
+  acting("retry", (inspection, current) =>
     Effect.gen(function* () {
       const store = yield* RunsStore
       const runId = inspection.run.runId
       // The list holds this device's earlier retries of the run: read it now, so the act is the next one.
       yield* store.readList
-      const n = retriesOf(yield* store.runs.toArray, runId) + 1
+      const engine = yield* BrowserEngine.BrowserEngine
+      let n = retriesOf(yield* store.runs.toArray, runId) + 1
+      // The list is bounded; existence in the durable engine decides which identity is unused.
+      for (let checked = 0; ; checked++, n++) {
+        if (checked === RETRY_ID_SEARCH_LIMIT) return Option.some("refused")
+        const actId = retryActId(runId, n)
+        let reserved = false
+        // A refused or interrupted act may exist without ever having created its child.
+        for (const id of [retriedRunId(actId), actId]) {
+          const existing = yield* Effect.result(engine.inspect(id, { limit: 1 }))
+          if (existing._tag === "Success") { reserved = true; break }
+          if (!(existing.failure instanceof BrowserEngine.RequestRefused) || existing.failure.error !== "@smthrs/engine-store/RunNotFound") {
+            return Option.some("unavailable")
+          }
+        }
+        if (!reserved) break
+      }
       const dispatched = yield* (yield* FlowDispatch).dispatch("run/retry", { runId, version }, {
         door: "button",
         executionId: retryActId(runId, n),
       })
       if (dispatched._tag === "Failed") return Option.some(dispatched.error.code)
       yield* store.readList
-      ;(yield* RunsNavigation).navigate(runPath(dispatched.value.runId))
+      if (yield* current) (yield* RunsNavigation).navigate(runPath(dispatched.value.runId))
       return Option.none()
     }))
 

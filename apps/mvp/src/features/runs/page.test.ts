@@ -154,3 +154,11 @@ describe("the list", () => {
       .toBe(2)
   })
 })
+
+
+test("stall detection uses the latest event from More as well as the first journal page", () => {
+  const live = inspection({ run: run({ status: "running", finishedAtMs: null }) })
+  const page = { id: "run-1", state: "read" as const, inspection: live, more: [{ seq: 501, eventType: "flows.engine.node-scheduled", emittedAtMs: 50_000, payload: value("{}") }], hasMore: false }
+  expect(actsOf(live, 61_000, journalOf(page)).resume).toBe(false)
+  expect(actsOf(live, 50_000 + STALLED_AFTER_MS, journalOf(page)).resume).toBe(true)
+})

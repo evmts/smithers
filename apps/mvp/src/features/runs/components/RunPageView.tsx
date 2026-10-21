@@ -48,7 +48,7 @@ function ReadRunPage({ page, view, actions }: { page: RunPage; view: RunView; ac
   const graph = { ...frame, time: at === null ? now : frame.time }
   const steps = graph.steps
   const shown = selectedStep(steps, view.selected)
-  const acts = actsOf(inspection, now)
+  const acts = actsOf(inspection, now, journalOf(page))
   const busy = view.acting !== null
   return (
     <div className="run-page" tabIndex={-1} onKeyDown={(event) => {

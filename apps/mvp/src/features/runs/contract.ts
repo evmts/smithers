@@ -118,6 +118,9 @@ export type RemoteReadRefusal = (typeof REMOTE_READ_REFUSALS)[number]
 /** How many runs the list shows: the newest. */
 export const RUN_LIST_LIMIT = 50
 
+/** Maximum durable identities examined before Retry refuses this attempt. */
+export const RETRY_ID_SEARCH_LIMIT = 1_024
+
 /** How many journal events one read of a run's page takes: the engine's page bound. */
 export const JOURNAL_PAGE = 500
 
@@ -166,6 +169,7 @@ export const RUNS_TELEMETRY = {
     "smithers_run_acts",
     "smithers_run_reads",
     "smithers_run_steer_sends",
+    "smithers_run_follow_changes",
   ],
   fields: [
     "runId",
@@ -232,5 +236,9 @@ export const REFUSAL_WORDS: Readonly<Record<string, string>> = {
   not_retryable: "This run can't be retried.",
   not_here: "This device can't run it.",
   not_found: "Not on this device.",
+  invalid: "Invalid action.",
+  refused: "Action refused.",
+  interrupted: "Action interrupted.",
+  defect: "Action failed.",
   unavailable: "Couldn't reach the engine.",
 }

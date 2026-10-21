@@ -1,0 +1,185 @@
+// Latency, interruption and refusal are injected through the action's Effect services.
+import { BrowserEngine } from "@smthrs/platform-browser"
+import { Deferred, Effect, Fiber, Layer, ManagedRuntime, Option, Stream } from "effect"
+import { afterEach, expect, test } from "vitest"
+import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
+import { RemoteRunsClient } from "./api"
+import * as actions from "./actions"
+import { REFUSAL_WORDS } from "./contract"
+import type { Inspection } from "./schema"
+import { VIEW } from "./schema"
+import { RunsStore } from "./store"
+
+const inspection = (runId: string): Inspection => ({
+  run: { runId, flowName: "flow/run", status: "completed", createdAtMs: 0, startedAtMs: 0, finishedAtMs: 1, parentRunId: null, cancelRequestedAtMs: null, waiting: null, lastSeq: 1, input: { text: "{}", bytes: 2, clipped: false }, result: null },
+  steps: [], children: [], journal: { events: [], afterSeq: -1, nextSeq: -1, hasMore: false },
+})
+const opened: Array<{ dispose: () => Promise<void> }> = []
+afterEach(async () => { for (const runtime of opened.splice(0)) await runtime.dispose() })
+const setup = async (options: { dispatch?: Effect.Effect<unknown, DispatchFailed>; exists?: (id: string) => Effect.Effect<Inspection, BrowserEngine.RequestRefused | BrowserEngine.EngineUnavailable> } = {}) => {
+  const started = Effect.runSync(Deferred.make<void>())
+  const pending = Effect.runSync(Deferred.make<unknown, DispatchFailed>())
+  const calls: Array<{ name: string; payload: unknown; executionId?: string }> = []
+  const inspections: string[] = []
+  const navigated: string[] = []
+  const engine = Layer.succeed(BrowserEngine.BrowserEngine, BrowserEngine.BrowserEngine.of({
+    start: () => Effect.die("unused"), result: () => Effect.die("unused"), cancel: () => Effect.die("unused"), signal: () => Effect.die("unused"),
+    inspect: (id) => { inspections.push(id); return options.exists?.(id) ?? (id.includes("retry:") ? Effect.fail(new BrowserEngine.RequestRefused({ request: "Inspect", error: "@smthrs/engine-store/RunNotFound" })) : Effect.succeed(inspection(id))) },
+    list: () => Effect.succeed({ runs: [], cursor: null }), events: Stream.never, unavailable: Effect.never,
+  }))
+  const dispatch = Layer.succeed(FlowDispatch, FlowDispatch.of({ dispatch: ((name: string, payload: unknown, opts: { executionId?: string }) => {
+    calls.push({ name, payload, executionId: opts.executionId })
+    return Effect.andThen(Deferred.succeed(started, undefined), options.dispatch ?? Deferred.await(pending))
+  }) as never }))
+  const runtime = ManagedRuntime.make(Layer.mergeAll(
+    RunsStore.layer({ origin: "http://test" }).pipe(Layer.provide(Layer.merge(engine, Layer.succeed(RemoteRunsClient, RemoteRunsClient.of({ inspect: () => Effect.die("unused"), steer: () => Effect.die("unused") }))))),
+    dispatch, engine, Layer.succeed(actions.RunsNavigation, { navigate: (path) => { navigated.push(path) } }),
+  ))
+  opened.push(runtime)
+  const store = await runtime.runPromise(Effect.service(RunsStore))
+  const view = () => runtime.runPromise(store.view.get(VIEW)).then(Option.getOrThrow)
+  await runtime.runPromise(actions.openRun("a"))
+  return { runtime, store, view, calls, inspections, navigated, started, pending }
+}
+
+test("an earlier act cannot clear a newer run's act or write its refusal", async () => {
+  const t = await setup()
+  const old = t.runtime.runPromise(actions.stop)
+  await t.runtime.runPromise(Deferred.await(t.started))
+  await t.runtime.runPromise(actions.openRun("b"))
+  const newer = t.runtime.runFork(actions.resume)
+  await t.runtime.runPromise(Effect.yieldNow)
+  await t.runtime.runPromise(Deferred.succeed(t.pending, { _tag: "Failed", error: { code: "stale" } }))
+  await old
+  await t.runtime.runPromise(Fiber.join(newer))
+  // The old completion may never refresh a after b has opened.
+  expect(t.inspections).toEqual(["a", "b", "b"])
+  expect(await t.view()).toMatchObject({ runId: "b", acting: null, refusal: "stale" })
+})
+
+test("an older act for the same run cannot clear the newer act", async () => {
+  const t = await setup()
+  const second = Effect.runSync(Deferred.make<unknown>())
+  let count = 0
+  const dispatch = FlowDispatch.of({ dispatch: (() => ++count === 1 ? Deferred.await(t.pending) : Deferred.await(second)) as never })
+  const old = t.runtime.runPromise(actions.stop.pipe(Effect.provideService(FlowDispatch, dispatch)))
+  await t.runtime.runPromise(Effect.yieldNow)
+  const newer = t.runtime.runPromise(actions.resume.pipe(Effect.provideService(FlowDispatch, dispatch)))
+  await t.runtime.runPromise(Effect.yieldNow)
+  await t.runtime.runPromise(Deferred.succeed(t.pending, { _tag: "Failed", error: { code: "stale" } }))
+  await old
+  expect(await t.view()).toMatchObject({ acting: "resume", refusal: null })
+  await t.runtime.runPromise(Deferred.succeed(second, { _tag: "Done", value: {} }))
+  await newer
+  expect((await t.view()).acting).toBeNull()
+})
+
+test.each(["interruption", "defect"])("%s clears the action indicator", async (kind) => {
+  const t = await setup({ dispatch: kind === "defect" ? Effect.die("fault") : Effect.never })
+  const fiber = t.runtime.runFork(actions.stop)
+  await t.runtime.runPromise(Deferred.await(t.started))
+  if (kind === "interruption") await t.runtime.runPromise(Fiber.interrupt(fiber))
+  else await t.runtime.runPromise(Fiber.await(fiber))
+  expect((await t.view()).acting).toBeNull()
+})
+
+test("a late retry stays on the run opened afterward", async () => {
+  const t = await setup()
+  const retrying = t.runtime.runPromise(actions.retry("pinned"))
+  await t.runtime.runPromise(Deferred.await(t.started))
+  await t.runtime.runPromise(actions.openRun("b"))
+  await t.runtime.runPromise(Deferred.succeed(t.pending, { _tag: "Done", value: { runId: "retried" } }))
+  await retrying
+  expect(t.navigated).toEqual([])
+})
+
+test("retry probes the engine past older retries missing from the bounded list", async () => {
+  const t = await setup({ dispatch: Effect.succeed({ _tag: "Done", value: { runId: "retry:a:3/run" } }), exists: (id) => id === "retry:a:3/run" || id === "retry:a:3" ? Effect.fail(new BrowserEngine.RequestRefused({ request: "Inspect", error: "@smthrs/engine-store/RunNotFound" })) : Effect.succeed(inspection(id)) })
+  await t.runtime.runPromise(actions.retry("current"))
+  expect(t.calls[0]?.executionId).toBe("retry:a:3")
+  expect(t.navigated).toEqual(["/app/runs/retry%3Aa%3A3%2Frun"])
+})
+
+test.each(["invalid", "refused", "interrupted", "unavailable"] as const)("dispatch %s keeps its own refusal and copy", async (reason) => {
+  const t = await setup({ dispatch: Effect.fail(new DispatchFailed({ flow: "run/cancel", reason })) })
+  await t.runtime.runPromise(actions.stop)
+  expect((await t.view()).refusal).toBe(reason)
+  expect(REFUSAL_WORDS[reason]).toBeTruthy()
+  expect(new Set(["invalid", "refused", "interrupted", "unavailable"].map((code) => REFUSAL_WORDS[code])).size).toBe(4)
+})
+
+test("local selections, list opening, journal More and returning live use the store", async () => {
+  const t = await setup()
+  await t.runtime.runPromise(actions.openList)
+  await t.runtime.runPromise(actions.select("step"))
+  await t.runtime.runPromise(actions.showTab("journal"))
+  await t.runtime.runPromise(actions.more)
+  await t.runtime.runPromise(actions.scrub(1))
+  expect(await t.view()).toMatchObject({ listOpen: true, selected: "step", tab: "journal", at: 1 })
+  await t.runtime.runPromise(actions.scrub(null))
+  await t.runtime.runPromise(actions.inspectStep("other"))
+  await t.runtime.runPromise(actions.showInspector(false))
+  expect(await t.view()).toMatchObject({ selected: "other", inspectorOpen: false, at: null })
+  await t.runtime.runPromise(t.store.view.update(VIEW, (draft) => { draft.runId = null }))
+  await t.runtime.runPromise(actions.stop)
+  await t.runtime.runPromise(actions.more)
+  await t.runtime.runPromise(actions.scrub(null))
+  expect(t.calls).toEqual([])
+  await t.runtime.runPromise(t.store.view.update(VIEW, (draft) => { draft.runId = "missing" }))
+  await t.runtime.runPromise(actions.resume)
+  await t.runtime.runPromise(t.store.pages.insert({ id: "missing", state: "not_found", inspection: null, more: [], hasMore: false }))
+  await t.runtime.runPromise(actions.stop)
+  expect(t.calls).toEqual([])
+})
+
+test("a refused retry retains its refusal without navigating", async () => {
+  const t = await setup({ dispatch: Effect.succeed({ _tag: "Failed", error: { code: "not_retryable" } }) })
+  await t.runtime.runPromise(actions.retry("pinned"))
+  expect(await t.view()).toMatchObject({ acting: null, refusal: "not_retryable" })
+  expect(t.navigated).toEqual([])
+})
+
+test.each(["engine", "refusal", "exhausted"])("retry fails closed when probing finds %s", async (mode) => {
+  const t = await setup({ exists: (id) => id === "a" || mode === "exhausted" ? Effect.succeed(inspection(id)) : mode === "engine"
+    ? Effect.fail(new BrowserEngine.EngineUnavailable({ reason: "worker-failed", error: "fault" }))
+    : Effect.fail(new BrowserEngine.RequestRefused({ request: "Inspect", error: "not-a-missing-run" })) })
+  await t.runtime.runPromise(actions.retry("pinned"))
+  expect(t.calls).toEqual([])
+  expect((await t.view()).refusal).toBe(mode === "exhausted" ? "refused" : "unavailable")
+})
+
+test("a dispatch defect keeps its failure code", async () => {
+  const t = await setup({ dispatch: Effect.fail(new DispatchFailed({ flow: "run/cancel", reason: "defect" })) })
+  await t.runtime.runPromise(actions.stop)
+  expect((await t.view()).refusal).toBe("defect")
+})
+
+test("a failed retry act reserves its id even when it never created a child run", async () => {
+  const t = await setup({ dispatch: Effect.succeed({ _tag: "Done", value: { runId: "retry:a:2/run" } }), exists: (id) => id === "a" || id === "retry:a:1"
+    ? Effect.succeed({ ...inspection(id), run: { ...inspection(id).run, ...(id === "retry:a:1" ? { flowName: "run/retry", status: "failed" as const } : {}) } })
+    : Effect.fail(new BrowserEngine.RequestRefused({ request: "Inspect", error: "@smthrs/engine-store/RunNotFound" })) })
+  await t.runtime.runPromise(actions.retry("pinned"))
+  expect(t.calls[0]?.executionId).toBe("retry:a:2")
+})
+
+
+test.each(["engine", "refusal"])("retry refuses an unreadable act after its child was absent: %s", async (mode) => {
+  const t = await setup({ exists: (id) => id === "a" ? Effect.succeed(inspection(id)) : id.endsWith("/run")
+    ? Effect.fail(new BrowserEngine.RequestRefused({ request: "Inspect", error: "@smthrs/engine-store/RunNotFound" }))
+    : mode === "engine" ? Effect.fail(new BrowserEngine.EngineUnavailable({ reason: "worker-failed", error: "fault" }))
+    : Effect.fail(new BrowserEngine.RequestRefused({ request: "Inspect", error: "unreadable" })) })
+  await t.runtime.runPromise(actions.retry("pinned"))
+  expect(t.calls).toEqual([])
+  expect((await t.view()).refusal).toBe("unavailable")
+})
+
+test("an act clears its indicator before refreshing the completed run", async () => {
+  const t = await setup({ dispatch: Effect.succeed({ _tag: "Done", value: {} }) })
+  const store = { ...t.store, readRun: (id: string) => Effect.gen(function* () {
+    const view = Option.getOrThrow(yield* t.store.view.get(VIEW))
+    expect(view.acting).toBeNull()
+    expect(view.actToken).toBeNull()
+    yield* t.store.readRun(id)
+  }) }
+  await t.runtime.runPromise(actions.stop.pipe(Effect.provideService(RunsStore, store)))
+})

@@ -4,13 +4,14 @@
 // in src/features/flows-ui/tab.test.ts. A run on Cloudflare's answers are a test `RemoteRunsClient` here, for each
 // refusal ChatApi can answer; ChatApi's real ones, and following a run live, are proved in remote.test.ts.
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Deferred, Effect, Layer, ManagedRuntime, Option, PubSub, Stream } from "effect"
+import { Deferred, Effect, Layer, ManagedRuntime, Metric, Option, PubSub, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { RemoteReadFailed, RemoteRunsClient } from "./api"
 import type { Inspection } from "./schema"
 import { VIEW } from "./schema"
 import { openList } from "./actions"
-import { RunsStore, stateOf } from "./store"
+import { Runs } from "./runs"
+import { followChanges, RunsStore, stateOf } from "./store"
 
 const value = (text: string) => ({ text, bytes: text.length, clipped: false })
 
@@ -491,3 +492,110 @@ test("replay selected while a child is loading keeps the previously shown forest
   await reading
   expect(t.page("r")).toEqual(snapshot)
 })
+
+
+test("More preserves a concurrent live refresh and merges events without duplicates", async () => {
+  const started = Effect.runSync(Deferred.make<void>())
+  const pending = Effect.runSync(Deferred.make<Inspection>())
+  let loadingMore = false
+  let fresh = false
+  const t = open({
+    inspect: (id, options) => loadingMore && options?.afterSeq !== undefined
+      ? Effect.andThen(Deferred.succeed(started, undefined), Deferred.await(pending))
+      : Effect.succeed({ ...inspection(id, fresh ? [event(0), event(1), event(2)] : [event(0)], false), run: { ...inspection(id, [], false).run, lastSeq: fresh ? 2 : 0 } }),
+    list: () => Effect.succeed({ runs: [], cursor: null }),
+  })
+  await t.run(t.store.view.update(VIEW, (draft) => { draft.runId = "r" }))
+  await t.run(t.store.readRun("r"))
+  loadingMore = true
+  const reading = t.run(t.store.readMore("r"))
+  await t.run(Deferred.await(started))
+  fresh = true
+  t.publish("r")
+  await vi.waitFor(() => expect((t.page("r")?.inspection as Inspection).run.lastSeq).toBe(2))
+  await t.run(Deferred.succeed(pending, inspection("r", [event(1)], true)))
+  await reading
+  expect((t.page("r")?.inspection as Inspection).run.lastSeq).toBe(2)
+  expect(t.page("r")?.more).toEqual([])
+  expect(t.page("r")?.hasMore).toBe(false)
+})
+
+test.each(["success", "failure"])("an older overlapping read cannot replace a newer read: %s", async (outcome) => {
+  const started = Effect.runSync(Deferred.make<void>())
+  const pending = Effect.runSync(Deferred.make<Inspection, BrowserEngine.RequestRefused>())
+  let first = true
+  const t = open({
+    inspect: (id) => {
+      if (!first) return Effect.succeed(inspection(id, [event(2)], false))
+      first = false
+      return Effect.andThen(Deferred.succeed(started, undefined), Deferred.await(pending))
+    },
+    list: () => Effect.succeed({ runs: [], cursor: null }),
+  })
+  const older = t.run(t.store.readRun("r"))
+  await t.run(Deferred.await(started))
+  await t.run(t.store.readRun("r"))
+  const newest = t.page("r")
+  await t.run(outcome === "success" ? Deferred.succeed(pending, inspection("r", [event(0)], false)) : Deferred.fail(pending, new BrowserEngine.RequestRefused({ request: "Inspect", error: "unavailable" })))
+  await older
+  expect(t.page("r")).toEqual(newest)
+})
+
+test("a superseded read awaiting a child cannot replace the newer forest", async () => {
+  const started = Effect.runSync(Deferred.make<void>())
+  const child = Effect.runSync(Deferred.make<Inspection>())
+  let withChild = true
+  const t = open({
+    inspect: (id) => id === "child" ? Effect.andThen(Deferred.succeed(started, undefined), Deferred.await(child)) : Effect.succeed({ ...inspection(id, [], false), children: withChild ? [{ ...summary("child"), parentRunId: id, input: value("{}"), result: null }] : [] }),
+    list: () => Effect.succeed({ runs: [], cursor: null }),
+  })
+  const old = t.run(t.store.readRun("r"))
+  await t.run(Deferred.await(started))
+  withChild = false
+  await t.run(t.store.readRun("r"))
+  await t.run(Deferred.succeed(child, inspection("child", [], false)))
+  await old
+  expect((t.page("r")?.inspection as Inspection).children).toEqual([])
+})
+
+test.each(["deleted", "unreadable"])("More discards a reply after the page becomes %s", async (mode) => {
+  const started = Effect.runSync(Deferred.make<void>())
+  const pending = Effect.runSync(Deferred.make<Inspection>())
+  let more = false
+  const t = open({ inspect: (id) => more ? Effect.andThen(Deferred.succeed(started, undefined), Deferred.await(pending)) : Effect.succeed(inspection(id, [], false)), list: () => Effect.succeed({ runs: [], cursor: null }) })
+  await t.run(t.store.readRun("r"))
+  more = true
+  const reading = t.run(t.store.readMore("r"))
+  await t.run(Deferred.await(started))
+  if (mode === "deleted") await t.run(t.store.pages.delete("r"))
+  else await t.run(t.store.pages.update("r", (draft) => { draft.inspection = null; draft.state = "unavailable" }))
+  const snapshot = t.page("r")
+  await t.run(Deferred.succeed(pending, inspection("r", [event(0)], false)))
+  await reading
+  expect(t.page("r")).toEqual(snapshot)
+})
+
+test("a followed remote run is ignored while another run is open", async () => {
+  const { nodeDevice, openTab, openTestApp, TestChatApi } = await import("../../test/chatApi")
+  const app = openTestApp({})
+  let tab: ReturnType<typeof openTab> | undefined
+  try {
+    const api = await app.runPromise(Effect.service(TestChatApi))
+    tab = openTab(api, { host: nodeDevice() })
+    const runs = await tab.runPromise(Effect.service(Runs))
+    const runId = await app.runPromise(api.remote.todoRun("Follow once"))
+    await runs.actions.openRun(runId)
+    await runs.actions.openRun(runId)
+    await runs.actions.openRun("todo:00000000-0000-4000-8000-000000000000")
+    const inspections = api.spans.filter((span) => span.name === "run.inspect").length
+    const hidden = Metric.withAttributes(followChanges, { showing: "false" })
+    const before = (await tab.runPromise(Metric.value(hidden))).count
+    await app.runPromise(api.remote.start(runId, { label: "hidden", pauseMs: 0 }))
+    const device = tab
+    await vi.waitFor(async () => expect((await device.runPromise(Metric.value(hidden))).count).toBeGreaterThan(before), { timeout: 30_000 })
+    expect(api.spans.filter((span) => span.name === "run.inspect")).toHaveLength(inspections)
+  } finally {
+    await tab?.dispose()
+    await app.dispose()
+  }
+}, 120_000)
