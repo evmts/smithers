@@ -1,11 +1,11 @@
 import { describe, expect, expectTypeOf, it } from "@effect/vitest"
 import { Action, ExternalJob, Flow, FlowRuntime, Interpreter, Sleep } from "@smthrs/flow"
 import type { Node } from "@smthrs/plan"
-import { Context, Duration, Effect, Exit, Layer, Option, Schema, Scope } from "effect"
+import { Cause, Context, Duration, Effect, Exit, Layer, Option, Schema, Scope } from "effect"
 import { TestClock } from "effect/testing"
 import { ExecutionMiddleware } from "../src/internal/ExecutionMiddleware.ts"
 import { effectOnTestClock as effect } from "./Harness.ts"
-import { layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
+import { layerWired, makeInstance, makeMemoryState, type MemoryState } from "./MemoryFlowRuntime.ts"
 
 const Job = ExternalJob.make("test/external-job", {
   payload: { value: Schema.String },
@@ -29,7 +29,15 @@ const harness = (
   again = false,
   holdStatus = false,
   startFails = false,
-  probeDelay = 0
+  probeDelay = 0,
+  options: {
+    /** The provider call that never answers once called. */
+    readonly hold?: "start" | "collect"
+    /** Whether the adapter implements `abandon`. */
+    readonly abandon?: boolean
+    /** The durable record a restarted host reads. */
+    readonly state?: MemoryState
+  } = {}
 ) => {
   const calls: Array<string> = []
   const declarations = new Map<string, StoredFlow>()
@@ -37,6 +45,7 @@ const harness = (
     start: (_payload, key) =>
       Effect.suspend(() => {
         calls.push(`start:${key}`)
+        if (options.hold === "start") return Effect.never
         return startFails ? Effect.fail("start failed") : Effect.succeed(key)
       }),
     status: (_handle, key) =>
@@ -51,6 +60,7 @@ const harness = (
     collect: (_handle, key) =>
       Effect.suspend(() => {
         calls.push(`collect:${key}`)
+        if (options.hold === "collect") return Effect.never
         if (again) {
           again = false
           return Effect.fail(new ExternalJob.Again({ message: "retry" }))
@@ -60,7 +70,15 @@ const harness = (
     cancel: (_handle, key) =>
       Effect.sync(() => {
         calls.push(`cancel:${key}`)
-      })
+      }),
+    ...(options.abandon === true
+      ? {
+        abandon: (_payload: { readonly value: string }, key: string) =>
+          Effect.sync(() => {
+            calls.push(`abandon:${key}`)
+          })
+      }
+      : {})
   })
   const registered = Layer.unwrap(
     Effect.map(
@@ -75,7 +93,7 @@ const harness = (
         })))
     )
   )
-  const layer = layerWired(registered)
+  const layer = layerWired(registered, options.state)
   const round = (declaration: Flow.AnyWithProps, payload: unknown, id: string) =>
     Effect.gen(function*() {
       const flow = declaration as unknown as StoredFlow
@@ -93,6 +111,31 @@ const harness = (
       return yield* round(flow, result.payload, id)
     })
   return { calls, declarations, layer, round, next, implementations }
+}
+
+/** The job execution as its stored continuations are: driven by id, with no requirements left to type. */
+const stored = Job as unknown as StoredFlow
+
+/**
+ * What a host that stopped leaves behind. This fixture records an interrupted
+ * dispatch as an outcome; a durable engine keeps no settlement for one, so the
+ * next host runs it again. Dropping those records gives the next host here
+ * the same journal.
+ */
+const forgetInterrupted = (state: MemoryState) => {
+  for (const [id, exit] of state.actions) {
+    if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) state.actions.delete(id)
+  }
+}
+
+/** Asserts a round completed with `ExternalJobTimedOut`. */
+const expectTimedOut = (result: Flow.Result<unknown, unknown>) => {
+  expect(result._tag).toBe("Complete")
+  if (result._tag === "Complete" && Exit.isFailure(result.exit)) {
+    expect(result.exit.cause.reasons).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error: expect.objectContaining({ _tag: "@smthrs/flow/ExternalJobTimedOut" }) })
+    ]))
+  } else expect.unreachable("the round did not fail")
 }
 
 describe("ExternalJob", () => {
@@ -471,5 +514,113 @@ describe("ExternalJob", () => {
       }
       expect(h.calls.filter((call) => call.startsWith("start:"))).toEqual(["start:lost#g1", "start:lost#g2"])
     }).pipe(Effect.provide(h.layer))
+  })
+
+  effect("an interrupted admission abandons the key the provider may have admitted", () => {
+    const h = harness([], false, false, false, 0, { hold: "start", abandon: true })
+    return Effect.gen(function*() {
+      yield* stored.execute({ value: "x" }, { executionId: "admission", discard: true })
+      yield* turns
+      expect(h.calls).toEqual(["start:admission#g1"])
+      yield* stored.interrupt("admission")
+      yield* turns
+      expect(h.calls).toEqual(["start:admission#g1", "abandon:admission#g1"])
+    }).pipe(Effect.provide(h.layer))
+  })
+
+  effect("a failed start abandons its key, since the provider may have admitted it", () => {
+    const h = harness([], false, false, true, 0, { abandon: true })
+    return Effect.gen(function*() {
+      const result = yield* h.round(Job, { value: "x" }, "failed-admission")
+      expect(result._tag).toBe("Complete")
+      if (result._tag === "Complete") expect(Exit.isFailure(result.exit)).toBe(true)
+      expect(h.calls).toEqual(["start:failed-admission#g1", "abandon:failed-admission#g1"])
+    }).pipe(Effect.provide(h.layer))
+  })
+
+  effect("a start still running at the deadline is abandoned before the job times out", () => {
+    const h = harness([], false, false, false, 0, { hold: "start", abandon: true })
+    return Effect.gen(function*() {
+      yield* stored.execute({ value: "x" }, { executionId: "slow-start", discard: true })
+      yield* turns
+      yield* TestClock.adjust("1 second")
+      yield* turns
+      const result = Option.getOrThrow(yield* stored.poll("slow-start"))
+      expectTimedOut(result)
+      expect(h.calls).toEqual(["start:slow-start#g1", "abandon:slow-start#g1"])
+    }).pipe(Effect.provide(h.layer))
+  })
+
+  effect("a host that stops during admission leaves the key, and no start runs after the deadline", () => {
+    const state = makeMemoryState()
+    const before = harness([], false, false, false, 0, { hold: "start", abandon: true, state })
+    const after = harness([], false, false, false, 0, { abandon: true, state })
+    return Effect.gen(function*() {
+      yield* Effect.gen(function*() {
+        yield* stored.execute({ value: "x" }, { executionId: "late-start", discard: true })
+        yield* turns
+      }).pipe(Effect.provide(before.layer))
+      yield* turns
+      expect(before.calls).toEqual(["start:late-start#g1"])
+      forgetInterrupted(state)
+      yield* TestClock.adjust("1 second")
+      const result = yield* after.round(Job, { value: "x" }, "late-start").pipe(Effect.provide(after.layer))
+      expectTimedOut(result)
+      expect(after.calls).toEqual(["abandon:late-start#g1"])
+    })
+  })
+
+  effect("a collect still running at the deadline cancels before the job times out", () => {
+    const h = harness([{ _tag: "Exited", exitCode: 0 }], false, false, false, 0, { hold: "collect" })
+    return Effect.gen(function*() {
+      const initial = yield* h.round(Job, { value: "x" }, "slow-collect")
+      if (initial._tag !== "Handoff") return yield* Effect.die("missing handoff")
+      const observe = h.declarations.get(initial.flow)!
+      yield* observe.execute(initial.payload as never, { executionId: "slow-collect-observe", discard: true })
+      yield* turns
+      yield* TestClock.adjust("1 second")
+      yield* turns
+      const result = Option.getOrThrow(yield* observe.poll("slow-collect-observe"))
+      expectTimedOut(result)
+      expect(h.calls).toEqual([
+        "start:slow-collect#g1",
+        "status:slow-collect#g1",
+        "collect:slow-collect#g1",
+        "cancel:slow-collect#g1"
+      ])
+    }).pipe(Effect.provide(h.layer))
+  })
+
+  effect("a collect reached after the deadline cancels without collecting", () => {
+    const state = makeMemoryState()
+    const before = harness([{ _tag: "Exited", exitCode: 0 }], false, false, false, 0, { hold: "collect", state })
+    const after = harness([], false, false, false, 0, { state })
+    return Effect.gen(function*() {
+      const payload = yield* Effect.gen(function*() {
+        const initial = yield* before.round(Job, { value: "x" }, "late-collect")
+        if (initial._tag !== "Handoff") return yield* Effect.die("missing handoff")
+        yield* before.declarations.get(initial.flow)!.execute(initial.payload as never, {
+          executionId: "late-collect-observe",
+          discard: true
+        })
+        yield* turns
+        return initial.payload
+      }).pipe(Effect.provide(before.layer))
+      yield* turns
+      expect(before.calls).toEqual([
+        "start:late-collect#g1",
+        "status:late-collect#g1",
+        "collect:late-collect#g1"
+      ])
+      forgetInterrupted(state)
+      yield* TestClock.adjust("1 second")
+      const result = yield* Effect.gen(function*() {
+        // Registering the root declaration registers its continuations.
+        yield* after.round(Job, { value: "x" }, "late-collect")
+        return yield* after.round(after.declarations.get("test/external-job/observe")!, payload, "late-collect-observe")
+      }).pipe(Effect.provide(after.layer))
+      expectTimedOut(result)
+      expect(after.calls).toEqual(["cancel:late-collect#g1"])
+    })
   })
 })

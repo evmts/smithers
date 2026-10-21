@@ -310,14 +310,21 @@ Three things make this the durable bound rather than a wall-clock one. The race 
 
 `ExternalJob.make(tag, { payload, handle, success, error?, probe, timeout, restarts? })`
 declares external work using ordinary actions, child boundaries and durable
-handoffs. Its `toLayer` attaches `start`, `status`, `collect` and `cancel`.
+handoffs. Its `toLayer` attaches `start`, `status`, `collect` and `cancel`, and
+optionally `abandon(payload, key)`, which stops a key whose `start` never
+returned a handle.
 `error` declares the full provider failure union. `call` uses a child boundary
 so every job has its own durable identity.
 
 Providers receive `<job execution id>#g<generation>`. Start must create-or-get
 by that key; Status is read-only and keyed per probe; Collect and Cancel are
 idempotent. Probe delays double from `every` up to `max`. The journaled original
-deadline survives handoffs and host restarts. Lost or `Again` completes Cancel
+deadline survives handoffs and host restarts, and bounds every provider call: no
+Start runs after it, a Start still running at it is abandoned, and a Collect
+still running at it is cancelled, each failing `ExternalJobTimedOut`. A run
+cancelled or a Start failed before Start returned a handle abandons the key; a
+provider's `abandon` of a key it has not admitted yet must win over a later
+Start of it. Lost or `Again` completes Cancel
 before replacement; `restarts` defaults to zero. Exhaustion fails
 `ExternalJobLost` (`infra`), while timeout fails `ExternalJobTimedOut`
 (`dependency`). See [Run an external job](./guides/run-an-external-job.md).

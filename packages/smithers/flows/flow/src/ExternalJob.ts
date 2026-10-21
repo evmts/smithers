@@ -85,6 +85,12 @@ const millis = (value: Duration.Input, field: string): number => {
 /**
  * The adapter's full typed failure union belongs in make's error schema.
  *
+ * `abandon` stops the work of a generation key whose `start` never returned a
+ * handle: the run was cancelled, the deadline passed, or `start` failed after
+ * the provider may already have admitted it. A provider that implements it
+ * must let `abandon` of a key it has not admitted yet win over a later `start`
+ * of that key. Without it, such a generation is left to the provider.
+ *
  * @category models
  * @since 1.0.0
  */
@@ -93,12 +99,16 @@ export interface Operations<P, H, A, E, R> {
   readonly status: (handle: H, key: string) => Effect.Effect<Status, E, R>
   readonly collect: (handle: H, key: string, exited: Exited) => Effect.Effect<A, E | Again, R>
   readonly cancel: (handle: H, key: string) => Effect.Effect<void, never, R>
+  readonly abandon?: ((payload: P, key: string) => Effect.Effect<void, never, R>) | undefined
 }
 
 /**
  * Create-or-get by execution id and generation. Private ordinary flows carry
  * journaled state; initial callers cannot supply a key or continuation handle.
- * `restarts` counts replacement generations; zero permits only g1.
+ * `restarts` counts replacement generations; zero permits only g1. The
+ * journaled deadline bounds every provider call: a start or collect still
+ * running at the deadline, or reached after it, cancels or abandons its
+ * generation and fails `ExternalJobTimedOut`, and no start runs after it.
  * @category constructors
  * @since 1.0.0
  */
@@ -150,18 +160,27 @@ export const make = <
   type Observed = typeof observed.Type
   const keyOf = (job: { readonly origin: string; readonly generation: number }) => `${job.origin}#g${job.generation}`
   const captures = { tag, every, maximum, timeout, restarts, version: "external-job/v1" }
-  type Active = { executionId: string; current: { handle: H["Type"]; key: string } | undefined }
+  // The generation a round is responsible for: admitted with a handle, or
+  // being admitted, which an interruption or failure must abandon by key.
+  type Current =
+    | { readonly key: string; readonly started: true; readonly handle: H["Type"] }
+    | { readonly key: string; readonly started: false; readonly input: State["input"] }
+  type Active = { executionId: string; current: Current | undefined }
   const active = Context.Service<Active>(`${tag}/ExternalJobActive`)
+  interface Lifecycle {
+    readonly cancel: (handle: H["Type"], key: string) => Effect.Effect<void>
+    readonly abandon: (input: State["input"], key: string) => Effect.Effect<void>
+  }
   // Registry tables wrap get() for module isolation but retain add(), the
   // scoped registration owner. Anchor lifecycle bindings to that owner.
-  const cancellations = new WeakMap<object, (handle: H["Type"], key: string) => Effect.Effect<void>>()
+  const lifecycles = new WeakMap<object, Lifecycle>()
   const annotations = Context.make(ExecutionMiddleware, {
     wrap: (payload, body) =>
       Effect.gen(function*() {
         const instance = yield* FlowInstance
         const table = yield* Action.Implementations
-        const cancel = cancellations.get(table.add)
-        if (cancel === undefined) {
+        const lifecycle = lifecycles.get(table.add)
+        if (lifecycle === undefined) {
           return yield* Effect.die(
             new Interpreter.InterpreterError({
               code: "unresolved_action",
@@ -174,13 +193,17 @@ export const make = <
         const current: Active = {
           executionId: instance.executionId,
           current: instance.flow._tag === `${tag}/observe`
-            ? { handle: (payload as Observed).handle, key: keyOf(payload as Observed) } :
+            ? { key: keyOf(payload as Observed), started: true, handle: (payload as Observed).handle } :
             undefined
         }
-        yield* Flow.withRollback(Effect.succeed(current), (value, cause) =>
-          Cause.hasInterruptsOnly(cause) && !instance.interrupted && !instance.suspended || value.current === undefined
-            ? Effect.void :
-            cancel(value.current.handle, value.current.key))
+        yield* Flow.withRollback(Effect.succeed(current), (value, cause) => {
+          const job = value.current
+          // A host that stops leaves the external work to the next host.
+          if (Cause.hasInterruptsOnly(cause) && !instance.interrupted && !instance.suspended || job === undefined) {
+            return Effect.void
+          }
+          return job.started ? lifecycle.cancel(job.handle, job.key) : lifecycle.abandon(job.input, job.key)
+        })
         return yield* body.pipe(Effect.provideService(active, current))
       })
   })
@@ -188,7 +211,7 @@ export const make = <
   const Start = Action.make(`${tag}/start`, {
     payload: state,
     success: options.handle,
-    error: providerError,
+    error: Schema.Union([providerError, ExternalJobTimedOut]),
     tier: "irreversible",
     idempotencyKey: keyOf
   })
@@ -210,7 +233,7 @@ export const make = <
   const Collect = Action.make(`${tag}/collect`, {
     payload: { job: observed, exited: Schema.Struct({ _tag: Schema.Literal("Exited"), exitCode: Schema.Int }) },
     success: options.success,
-    error: Schema.Union([providerError, Again]),
+    error: Schema.Union([providerError, Again, ExternalJobTimedOut]),
     tier: "irreversible",
     idempotencyKey: ({ job }) => `${keyOf(job)}/collect`
   })
@@ -329,16 +352,31 @@ export const make = <
     annotations,
     body: Node.capture(captures, (payload) => Initialize.call({ input: payload }).pipe(Node.bindPlanned(launched)))
   })
+  /**
+   * Runs `effect` until the job's journaled deadline: `None` when the deadline
+   * comes first, and without running it at all once the deadline has passed.
+   */
+  const untilDeadline = <B, F, R>(job: { readonly startedAt: number }, effect: Effect.Effect<B, F, R>) =>
+    Effect.flatMap(Clock.currentTimeMillis, (now) => {
+      const remaining = job.startedAt + timeout - Math.floor(now)
+      return remaining <= 0
+        ? Effect.succeedNone :
+        Effect.raceFirst(Effect.asSome(effect), Effect.as(Effect.sleep(remaining), Option.none<B>()))
+    })
   const toLayer = <R>(operations: Operations<typeof input.Type, H["Type"], A["Type"], E["Type"], R>) => {
+    const abandon = (payload: typeof input.Type, key: string): Effect.Effect<void, never, R> =>
+      operations.abandon === undefined ? Effect.void : operations.abandon(payload, key)
     const bindCancellation = Layer.effectDiscard(Effect.gen(function*() {
       const table = yield* Action.Implementations
       const context = yield* Effect.context<R>()
-      const cancel = (handle: H["Type"], key: string) =>
-        operations.cancel(handle, key).pipe(Effect.provideContext(context))
-      cancellations.set(table.add, cancel)
+      const lifecycle: Lifecycle = {
+        cancel: (handle, key) => operations.cancel(handle, key).pipe(Effect.provideContext(context)),
+        abandon: (payload, key) => abandon(payload, key).pipe(Effect.provideContext(context))
+      }
+      lifecycles.set(table.add, lifecycle)
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
-          if (cancellations.get(table.add) === cancel) cancellations.delete(table.add)
+          if (lifecycles.get(table.add) === lifecycle) lifecycles.delete(table.add)
         })
       )
     }))
@@ -360,10 +398,21 @@ export const make = <
         })
       ),
       Start.toLayer((job) =>
-        Effect.tap(operations.start(job.input, keyOf(job)), (handle) =>
-          Effect.map(active, (value) => {
-            value.current = { handle, key: keyOf(job) }
-          }))
+        Effect.gen(function*() {
+          const key = keyOf(job)
+          const execution = yield* active
+          // Recorded before the provider call: from here on the provider may
+          // have admitted the key, so an interruption or failure abandons it.
+          execution.current = { key, started: false, input: job.input }
+          const handle = yield* untilDeadline(job, operations.start(job.input, key))
+          if (Option.isNone(handle)) {
+            yield* abandon(job.input, key)
+            execution.current = undefined
+            return yield* new ExternalJobTimedOut({ key, message: `Job ${key} timed out before it started` })
+          }
+          execution.current = { key, started: true, handle: handle.value }
+          return handle.value
+        })
       ),
       Probe.toLayer((job) =>
         Effect.gen(function*() {
@@ -392,10 +441,18 @@ export const make = <
           }
         }), { implementationVersion: "external-job/status/v1" }),
       Collect.toLayer(({ exited, job }) =>
-        Effect.tap(operations.collect(job.handle, keyOf(job), exited), () =>
-          Effect.map(active, (value) => {
-            value.current = undefined
-          }))
+        Effect.gen(function*() {
+          const key = keyOf(job)
+          const execution = yield* active
+          const collected = yield* untilDeadline(job, operations.collect(job.handle, key, exited))
+          if (Option.isNone(collected)) {
+            yield* operations.cancel(job.handle, key)
+            execution.current = undefined
+            return yield* new ExternalJobTimedOut({ key, message: `Job ${key} timed out while collecting` })
+          }
+          execution.current = undefined
+          return collected.value
+        })
       ),
       Cancel.toLayer((job) =>
         Effect.tap(operations.cancel(job.handle, keyOf(job)), () =>

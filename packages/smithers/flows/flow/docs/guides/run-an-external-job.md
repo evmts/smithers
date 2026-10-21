@@ -66,6 +66,12 @@ job key throughout one generation. Delays double from `probe.every` up to
 `probe.max`, and stop at the original timeout deadline. That deadline is carried
 through every generation and survives a host restart.
 
+The deadline bounds every provider call, not only the probes. A Start reached
+after the deadline, such as an engine retry or a restarted host's replay, never
+calls `start`. A `start` or `collect` still running at the deadline is
+interrupted; the generation is abandoned or cancelled, and the job fails
+`ExternalJobTimedOut`.
+
 ## Replacement and cancellation
 
 Status returns `Running`, `Exited` with `exitCode`, or `Lost`. `Exited` calls
@@ -84,3 +90,15 @@ The actual flow scope retains `Flow.withRollback` cancellation. Timer parking,
 replay and host release preserve the external worker. Explicit cancellation
 cancels it, including a retained parked scope. The rollback is process-local;
 providers still need their retained-machine lease or reaper after a host dies.
+
+## Abandon a key that never returned a handle
+
+A provider can admit a key and then fail to answer `start`: the acknowledgement
+is lost, the run is cancelled, or the deadline passes while `start` is in
+flight. Without a handle there is nothing to `cancel`. Implement
+`abandon(payload, key)` beside `cancel` to stop the work by key.
+
+Abandon runs when the run is cancelled, the deadline passes, or `start` fails
+before it returned a handle. The provider must make `abandon` of a key it has
+not admitted yet win over a later `start` of that key, because that `start` can
+still be in flight. Without `abandon`, such a key is left to the provider.
