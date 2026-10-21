@@ -302,6 +302,7 @@ describe.skipIf(!jjInstalled)("rewind crash recovery over file SQLite", () => {
                 JSON.stringify({
                   version: 1,
                   phase,
+                  generation: 0,
                   originalStatus: "suspended",
                   suffixCount,
                   ...(suffixCount === 0 ? {} : { suffixTailSeq: 1, compensation: { handlerReceipts: [] } }),

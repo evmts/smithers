@@ -323,7 +323,7 @@ it.effect("archives both histories when a rewound run reuses journal sequences",
         { generation: 0, seq: 1, event_type: "original-future" },
         { generation: 1, seq: 1, event_type: "replacement-future" }
       ])
-      expect(yield* store.archivedAt("rewind-twice", 1)).toBe(true)
+      expect(yield* store.archivedAt("rewind-twice", 1, 0)).toBe(true)
     }).pipe(Effect.provide(
       SqlJournal.layer({ capacity: 16, overflow: "reject" }).pipe(
         Layer.provideMerge(Layer.provideMerge(Migrations.layer, TestDatabase.layer))

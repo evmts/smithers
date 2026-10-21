@@ -972,15 +972,20 @@ export const make: Effect.Effect<
             )
           )
       ),
-      archivedAt: Effect.fn("TimeTravelStore.archivedAt")((runId, seq) =>
-        Effect.annotateCurrentSpan({ runId, seq }).pipe(Effect.andThen(
-          sql<{ readonly count: number }>`
-            SELECT COUNT(*) AS count FROM flows_time_travel_archive
-            WHERE run_id = ${runId} AND seq = ${seq}
-          `.pipe(
-            Effect.map((rows) => Number(rows[0]!.count) > 0),
-            Effect.mapError(mapError)
-          )
+      archivedAt: Effect.fn("TimeTravelStore.archivedAt")((runId, seq, generation) =>
+        Effect.annotateCurrentSpan({ runId, seq, generation }).pipe(Effect.andThen(
+          (generation === undefined
+            ? sql<{ readonly count: number }>`
+              SELECT COUNT(*) AS count FROM flows_time_travel_archive
+              WHERE run_id = ${runId} AND seq = ${seq}
+            `
+            : sql<{ readonly count: number }>`
+              SELECT COUNT(*) AS count FROM flows_time_travel_archive
+              WHERE run_id = ${runId} AND seq = ${seq} AND generation = ${generation}
+            `).pipe(
+              Effect.map((rows) => Number(rows[0]!.count) > 0),
+              Effect.mapError(mapError)
+            )
         ))
       ),
       nextForkId: Effect.fn("TimeTravelStore.nextForkId")((parentRunId, frame) =>

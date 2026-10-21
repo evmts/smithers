@@ -355,6 +355,7 @@ describe("Recovery ownership arbitration", () => {
         {
           version: 1,
           phase: "compensated",
+          generation: 0,
           originalStatus: "suspended",
           suffixCount: 1,
           suffixTailSeq: 1,

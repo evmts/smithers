@@ -94,8 +94,8 @@ describe("truncation", () => {
 
       expect(result.archived).toBe(3)
       expect(result.orphaned.map((edge) => edge.childRunId)).toEqual(["detached"])
-      expect(yield* (store.archivedAt("parent", 2))).toBe(true)
-      expect(yield* (store.archivedAt("parent", 0))).toBe(false)
+      expect(yield* (store.archivedAt("parent", 2, 0))).toBe(true)
+      expect(yield* (store.archivedAt("parent", 0, 0))).toBe(false)
       expect(store.state().records.map((record) => record.eventId)).toEqual(["parent-0", "detached-0"])
       expect(store.state().archived.map((record) => record.eventId)).toEqual([
         "parent-2",

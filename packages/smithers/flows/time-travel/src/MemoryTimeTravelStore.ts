@@ -473,9 +473,14 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
           }))
         )
     ),
-    archivedAt: Effect.fn("TimeTravelStore.archivedAt")((runId, seq) =>
-      Effect.annotateCurrentSpan({ runId, seq }).pipe(Effect.andThen(
-        Effect.sync(() => archived.some((record) => record.runId === runId && record.seq === seq))
+    archivedAt: Effect.fn("TimeTravelStore.archivedAt")((runId, seq, generation) =>
+      Effect.annotateCurrentSpan({ runId, seq, generation }).pipe(Effect.andThen(
+        Effect.sync(() =>
+          archived.some((record) =>
+            record.runId === runId && record.seq === seq &&
+            (generation === undefined || record.generation === generation)
+          )
+        )
       ))
     ),
     nextForkId: Effect.fn("TimeTravelStore.nextForkId")((parentRunId, frame) =>

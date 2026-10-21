@@ -160,7 +160,7 @@ describe("Rewind archive commit boundary", () => {
         }
         const live = yield* sql<{ readonly seq: number }>`SELECT seq FROM flows_journal_events WHERE run_id = 'run'`
         expect(live.map((row) => row.seq)).toEqual([0])
-        expect(yield* base.archivedAt("run", 2)).toBe(true)
+        expect(yield* base.archivedAt("run", 2, 0)).toBe(true)
         expect(rollbacks).toEqual([])
         expect(external).toEqual([])
         expect(pointer).toBe("target")
@@ -169,6 +169,7 @@ describe("Rewind archive commit boundary", () => {
           id: "audit",
           status: "in_progress",
           detail: {
+            generation: 0,
             phase: scenario === "journal evidence failure" || scenario === "archive evidence failure"
               ? "compensated"
               : "archive_committed"

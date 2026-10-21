@@ -22,7 +22,8 @@ the process dies at this exact line, what does the next process see?
    that window. A moved tail is `busy`, not a silent truncation of records
    validation would have refused.
 4. **Apply the `Options.rateLimit` limiter and write the audit row**, carrying
-   the decision. The audit exists before anything is compensated or truncated,
+   the decision and the pre-truncation journal `generation` read under the claim.
+   The audit exists before anything is compensated or truncated,
    so a crash always leaves a row recovery can find. A build that supplies no
    limiter allows every rewind and records `{ allowed: true, checkedAtMs }`.
 5. **Read the frame's anchor, the descendants, and the suffix**, and fold the
@@ -64,7 +65,11 @@ Everything before it is reversible, and everything irreversible waits for it.
 
 The archive call and its local commit flag are uninterruptible together. If
 the call fails after committing, rewind checks for an empty live suffix and
-the archived suffix tail before choosing rollback. A durable archive keeps
+the archived suffix tail in the audit's pre-truncation generation before choosing
+rollback. When the audit records a generation, an archive row from an earlier
+generation cannot prove this commit. Audits without one retain the
+generation-agnostic archive check described below.
+A durable archive keeps
 the audit `in_progress` at phase `archive_committed`, with compensation and
 workspace restoration intact for recovery to finish. If the evidence cannot
 be read, the audit stays open and rollback is deferred.
@@ -92,9 +97,21 @@ a caller to remember, and no window in which the service is up but the last
 crash is unresolved.
 
 Recovery decides by evidence, not by assumption. An interrupted rewind whose
-live suffix is gone counts as committed only if the suffix actually landed in
-the archive; an absence on both sides is corruption to roll back, never success
-to assume.
+live suffix is gone checks that its recorded tail landed in the archive. When
+the audit records `generation`, the generation truncated by this rewind,
+`archivedAt(runId, seq, generation)` requires that exact coordinate; an earlier
+rewind can archive the same sequence at the same or a lower frame. An absence on
+both sides or, for a generation-bound audit, a match only in an earlier generation
+is corruption to roll back.
+
+Old persisted version-1 audits without `generation` still decode and retain the
+old evidence rule, as do audits written against journals without generations:
+`archivedAt(runId, seq)` accepts the tail in any generation after confirming the
+live suffix is empty. Without an archive row they roll back. This fallback cannot
+distinguish earlier archives, but rolling back a committed truncation would
+reverse compensation the truncated history no longer explains. Explicit phases
+`archive_committed` and `completed` remain sufficient evidence for both old and
+new audits.
 
 One audit it will not resolve is one whose run a live process still holds. That
 one is declined: it keeps its `in_progress` status, stays in `pendingAudits`,

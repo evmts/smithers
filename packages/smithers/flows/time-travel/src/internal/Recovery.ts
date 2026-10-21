@@ -128,13 +128,12 @@ const archiveCommitted = (
     Effect.mapError((cause) => error("unknown", `could not inspect archive commit for ${audit.id}`, cause)),
     Effect.flatMap((page) => {
       if (page.entries.length > 0) return Effect.succeed(false)
-      // An empty live suffix alone is not commit evidence: the suffix the
-      // audit recorded must actually be IN the archive. A journal missing
-      // rows on both sides is corruption, and recovery rolls it back rather
-      // than declaring an archive that never happened complete.
+      // Audits predating recorded generations, or journals without them, keep
+      // the old evidence rule: rolling back a committed truncation reverses
+      // compensation the truncated history no longer explains.
       return detail.suffixTailSeq === undefined
         ? Effect.succeed(false)
-        : store.archivedAt(audit.runId, detail.suffixTailSeq)
+        : store.archivedAt(audit.runId, detail.suffixTailSeq, detail.generation)
     })
   )
 }

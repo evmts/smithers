@@ -141,11 +141,11 @@ const observe = (store: TimeTravelStore.Service) =>
     const state = yield* store.stateAt("run", frame)
     const attempts = yield* store.attemptsAt("run", frame)
     const descendants = yield* store.descendants("run", frame)
-    const archivedBefore = yield* store.archivedAt("run", 2)
+    const archivedBefore = yield* store.archivedAt("run", 2, 0)
     const refusal = yield* Effect.flip(store.archiveAndTruncate("run", frame, [], stranger))
-    const archivedAfterRefusal = yield* store.archivedAt("run", 2)
+    const archivedAfterRefusal = yield* store.archivedAt("run", 2, 0)
     yield* store.archiveAndTruncate("run", frame, [], owner)
-    const archivedAfter = yield* store.archivedAt("run", 2)
+    const archivedAfter = yield* store.archivedAt("run", 2, 0)
     return {
       snapshot,
       state,
@@ -206,7 +206,7 @@ describe("TimeTravelStore conformance", () => {
             failure: Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined,
             before,
             after: yield* store.stateAt("run", { ...frame, seq: 2 }),
-            archived: [yield* store.archivedAt("run", 0), yield* store.archivedAt("run", 2)]
+            archived: [yield* store.archivedAt("run", 0, 0), yield* store.archivedAt("run", 2, 0)]
           }
         })
       const memory = memorySeed()
@@ -238,7 +238,7 @@ describe("TimeTravelStore conformance", () => {
             const failure = yield* Effect.flip(store.archiveAndTruncate("run", frame, [], rival))
             return {
               failure: { code: failure.code, message: failure.message },
-              archived: yield* store.archivedAt("run", 2)
+              archived: yield* store.archivedAt("run", 2, 0)
             }
           })
         const memory = yield* refuse(memorySeed())

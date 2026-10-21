@@ -129,6 +129,8 @@ export const AuditDetail = Schema.Struct({
   originalStatus: Schema.Literals(["pending", "suspended"]),
   suffixCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   suffixTailSeq: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  /** The pre-truncation journal generation; absent on legacy or append-only journals. */
+  generation: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   targetChangeId: Schema.optionalKey(Schema.NonEmptyString),
   targetOperationId: Schema.optionalKey(Schema.NonEmptyString),
   compensation: Schema.optionalKey(Compensation.Result),
@@ -816,16 +818,19 @@ const preflight = (context: Context, progress: Progress) =>
           )
         )
       }
-      const generation = yield* readGeneration(journal, options.runId)
-      if (generation !== options.expectedTail.generation) {
-        return yield* Effect.fail(error("busy", `journal history was rewritten for ${options.runId}`))
-      }
+    }
+    const generation = yield* readGeneration(journal, options.runId)
+    if (options.expectedTail !== undefined && generation !== options.expectedTail.generation) {
+      return yield* Effect.fail(error("busy", `journal history was rewritten for ${options.runId}`))
     }
 
     const decision: RateLimitDecision = options.rateLimit === undefined
       ? { allowed: true }
       : yield* options.rateLimit({ runId: options.runId, frame: options.frame, nowMs })
-    const auditDetail = initialDetail(context.claimed.row.status)
+    const auditDetail: AuditDetail = {
+      ...initialDetail(context.claimed.row.status),
+      ...(generation === undefined ? {} : { generation })
+    }
     const audit: Audit = {
       id: auditId,
       runId: options.runId,
@@ -1116,7 +1121,11 @@ const settleFailure = (
       // Publication after COMMIT can fail before the call returns. As in
       // Recovery, require both an empty live suffix and its archived tail.
       // An unreadable store leaves the audit open without risking rollback.
+      // Audits predating recorded generations, or journals without them, keep
+      // the old evidence rule: rolling back a committed truncation reverses
+      // compensation the truncated history no longer explains.
       const tailSeq = progress.detail.suffixTailSeq
+      const generation = progress.detail.generation
       const commitExit = yield* journal.entries({
         runId: options.runId as JournalEvent.RunId,
         after: options.frame.seq as JournalEvent.Seq,
@@ -1125,7 +1134,7 @@ const settleFailure = (
         Effect.flatMap((page) =>
           page.entries.length > 0
             ? Effect.succeed(false)
-            : store.archivedAt(options.runId, tailSeq)
+            : store.archivedAt(options.runId, tailSeq, generation)
         ),
         Effect.exit
       )

@@ -479,14 +479,14 @@ export interface Service {
     childOwners?: ReadonlyMap<string, OwnerId> | undefined
   ) => Effect.Effect<ArchiveResult, TimeTravelError>
   /**
-   * Whether the archive holds a record at `(runId, seq)` in any journal
-   * generation. This check is generation-agnostic; recovery uses it only after
-   * confirming the live suffix is empty. This is recovery's commit-point
-   * evidence: an interrupted rewind whose live suffix is gone is
-   * only "committed" if the suffix actually landed in the archive — an absence
-   * on both sides is corruption to roll back, never success to assume.
+   * Whether the archive holds a record at `(runId, seq)`, in any generation
+   * when `generation` is omitted, or at exactly `(runId, generation, seq)`
+   * when supplied. `generation` is the journal generation BEFORE truncation
+   * advances it. Recovery uses the exact match for audits that recorded a
+   * generation and the generation-agnostic match for older audits and
+   * journals without generations, after confirming the live suffix is empty.
    */
-  readonly archivedAt: (runId: string, seq: number) => Effect.Effect<boolean, TimeTravelError>
+  readonly archivedAt: (runId: string, seq: number, generation?: number) => Effect.Effect<boolean, TimeTravelError>
   /**
    * Mints the run id the next fork off `(parentRunId, frame)` will carry and
    * durably reserves it as a {@link ForkIntent}, without creating a run.

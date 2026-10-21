@@ -50,8 +50,9 @@ it("documents ReplayOptions.engineEvents and that inspect cannot supply it", () 
 })
 
 it("keeps the runtime requirement in its own README paragraph", () => {
-  const manifest = JSON.parse(readRaw("../package.json"))
-  expect(readRaw("../README.md")).toContain(`\n\nNode.js ${manifest.engines.node.replace(">=", "")} or later.`)
+  const manifest = JSON.parse(readRaw("../package.json")) as { readonly engines: { readonly node: string } }
+  const minimum = manifest.engines.node.replace(/^>=/, "")
+  expect(readRaw("../README.md")).toContain(`\n\nNode.js ${minimum} or later.`)
 })
 
 it("documents completed-prefix reuse and fresh child actions", () => {
