@@ -10,7 +10,15 @@ opens is receipted at once, inside it. A write outside a transaction is
 refused by SQLite's commit hook and runs again inside a transaction the leader
 opens with the receipt, so all of the request commits or none of it does; a
 read commits nothing and pays for no receipt. A new leader answers a tab's
-first request outside a transaction as committed, with no rows, when its
-receipt names it. When it can't read the receipt, it commits nothing of the
+first request outside a transaction as committed, with the rows it returned
+(kept in `shared_sqlite_replies`), when its receipt names it. When it can't read the receipt, it commits nothing of the
 request (`TransactionUndecided`) and still runs reads. A request that writes
 outside a transaction and opens one of its own fails as a nested `BEGIN` does.
+
+The commit hook also refuses a commit before a request's last statement, so a
+request commits at most once; a rollback to a savepoint that takes the receipt
+writes it again; SQLite's authorizer refuses a tab's statement that would
+change the leader's tables, hang a trigger on them or create a table or view by
+their names, and the leader names them as `main.` tables; replies keep
+infinities; and a receipt is kept,
+however old, until its tab's Web Lock comes free, instead of for a day.

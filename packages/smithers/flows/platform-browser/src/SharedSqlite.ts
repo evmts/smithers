@@ -24,8 +24,10 @@
  *   TanStack DB's persistence needs. If any returns other rows, the tab rolls
  *   the transaction back and the statement fails with a `ConnectionError`. A
  *   statement that committed, a transaction or a write of its own, just as
- *   the old leader ended is answered as committed, with no rows, never run
- *   twice: every change commits with its request's receipt.
+ *   the old leader ended is answered as committed, with the rows it returned,
+ *   never run twice: every change commits with its request's receipt. A
+ *   request commits only with its last statement, so `INSERT ...; COMMIT;
+ *   SELECT ...` in one request fails; send them apart.
  *
  * @since 1.0.0
  */
@@ -155,9 +157,11 @@ const refused = (reply: Extract<Reply, { readonly _tag: "Failed" }>): SqlError =
 export const make = (options: Options): Effect.Effect<Service, never, TabChannel | WebLock | Scope.Scope> =>
   Effect.gen(function*() {
     const client = crypto.randomUUID()
-    // Held while this tab lives: when it ends, the leader can take it, and
-    // rolls back any transaction this tab left open.
-    yield* (yield* WebLock).hold(SqlProtocol.clientLock(options.name, client))
+    // Held while this tab can still be answered: when it ends, or falls the channel's capacity behind, the leader
+    // can take it, and rolls back any transaction this tab left open.
+    const answerable = yield* Scope.make()
+    yield* Effect.addFinalizer(() => Scope.close(answerable, Exit.void))
+    yield* (yield* WebLock).hold(SqlProtocol.clientLock(options.name, client)).pipe(Scope.provide(answerable))
     const port = yield* (yield* TabChannel).open(SqlProtocol.channel(options.name))
     const inbox = yield* port.subscribe
     const turn = yield* Semaphore.make(1)
@@ -189,7 +193,9 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
       Effect.catch((error) =>
         Effect.suspend(() => {
           overflow = error
-          return pending === undefined ? Effect.void : Deferred.succeed(pending.reply, overflowed(pending.id))
+          return (pending === undefined ? Effect.void : Deferred.succeed(pending.reply, overflowed(pending.id))).pipe(
+            Effect.andThen(Scope.close(answerable, Exit.void))
+          )
         })
       ),
       Effect.forkScoped

@@ -14,8 +14,8 @@
  * - A worker that starts serving posts `Ready`, and every tab posts its
  *   unanswered request again. A leader runs each request once. Every change a
  *   request commits carries its receipt ({@link commits}), so a new leader
- *   answers a request the old one committed as committed, with no rows, and
- *   never runs it again.
+ *   answers a request the old one committed as committed, with the rows it
+ *   returned ({@link replies}), and never runs it again.
  *
  * Rows, parameters and SQLite's own messages travel in the replies; none is
  * ever logged.
@@ -145,3 +145,66 @@ export const clientLock = (name: string, client: string): string => `${name}/sql
  * @since 1.0.0
  */
 export const commits = "shared_sqlite_commits"
+
+/**
+ * The leader's table of each tab's last committed reply: the rows the request
+ * named in its receipt returned, written in the transaction that commits it
+ * when it returned any. A new leader answers a request the old one committed
+ * with them.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const replies = "shared_sqlite_replies"
+
+/**
+ * A value as a reply's rows keep it in JSON: SQLite's own, with an integer
+ * past 2^53, a real JSON can't hold (an infinity) and a blob tagged.
+ */
+type Kept =
+  | number
+  | string
+  | null
+  | { readonly integer: string }
+  | { readonly real: string }
+  | { readonly blob: Array<number> }
+
+const keep = (value: unknown): Kept =>
+  typeof value === "bigint" ?
+    { integer: value.toString() }
+    : typeof value === "number" && !Number.isFinite(value) ?
+    { real: String(value) }
+    : value instanceof Uint8Array ?
+    { blob: Array.from(value) }
+    : value as Kept
+
+const restore = (value: Kept): unknown =>
+  value === null || typeof value !== "object" ?
+    value
+    : "integer" in value ?
+    BigInt(value.integer)
+    : "real" in value ?
+    Number(value.real)
+    : new Uint8Array(value.blob)
+
+/**
+ * Encodes rows as {@link replies} keeps them.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const encodeRows = (rows: ReadonlyArray<unknown>): string =>
+  JSON.stringify(
+    rows.map((row) => Object.fromEntries(Object.entries(row as Record<string, unknown>).map(([k, v]) => [k, keep(v)])))
+  )
+
+/**
+ * Decodes rows {@link encodeRows} encoded.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const decodeRows = (text: string): Array<unknown> =>
+  (JSON.parse(text) as Array<Record<string, Kept>>).map((row) =>
+    Object.fromEntries(Object.entries(row).map(([k, v]) => [k, restore(v)]))
+  )

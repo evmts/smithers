@@ -16,5 +16,6 @@ fails with a typed error instead of growing without limit.
   Other subscribers are unaffected.
 - A leader that falls behind stops leading (`browser.runtime.lost` with
   `reason: "overflow"`) and leads again. A tab's `SharedSqlite` fails every
-  statement with a `ConnectionError` naming `TabChannelOverflow`, and its
+  statement with a `ConnectionError` naming `TabChannelOverflow` and lets go
+  of its Web Lock, so the leader rolls back a transaction it left open, and its
   `BrowserEngine` becomes unavailable with the new reason `channel-overflow`.

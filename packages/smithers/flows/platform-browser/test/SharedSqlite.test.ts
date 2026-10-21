@@ -48,6 +48,16 @@ const ownTab = (name: string) =>
   })
 
 /**
+ * Runs `sql` on the shared database over a connection of its own, as another
+ * program on the device could: the leader's tables are no tab's to change.
+ */
+const tamper = (pool: Effect.Success<typeof MemorySqlite.pool>, sql: string) =>
+  Effect.acquireRelease(
+    Effect.promise(() => pool.sqlite3.open_v2(SharedSqlite.filename, undefined, pool.vfs)),
+    (db) => Effect.promise(() => pool.sqlite3.close(db))
+  ).pipe(Effect.flatMap((db) => Effect.promise(() => pool.sqlite3.exec(db, sql))), Effect.scoped)
+
+/**
  * A tab that speaks the protocol by hand under one client id: `send` posts a
  * request and waits for its answer, and `ready` waits for a leader to start
  * serving.
@@ -333,8 +343,8 @@ describe("SharedSqlite", () => {
         yield* raw.send({ id: 1, sql: "INSERT INTO t (id) VALUES (1)", transaction: held, opened: 0 })
         const commit = { id: 2, sql: "COMMIT", transaction: held, opened: 0 }
         expect(yield* raw.send(commit)).toMatchObject({ _tag: "Executed", open: false })
-        // A suspended tab can outlive any wall-clock retention period.
-        yield* tab.execute(`UPDATE ${SqlProtocol.commits} SET at = 0`)
+        // A suspended tab can outlive any wall-clock retention period. Only the leader may change its receipts.
+        yield* tamper(pool, `UPDATE ${SqlProtocol.commits} SET at = 0`)
         yield* Engines.close(leader)
         yield* leaderOver(name, pool)
         yield* raw.ready
@@ -365,14 +375,13 @@ describe("SharedSqlite", () => {
       })
     }).pipe(Effect.scoped))
 
-  it.live("commits nothing it can't record when a table of the tab's own stands where the leader records receipts, and serves reads", () => {
+  it.live("commits nothing it can't record when another table stands where the leader records receipts, and serves reads", () => {
     const telemetry = Telemetry.make()
     return telemetry.observed(
       Effect.gen(function*() {
         const { leader, name, pool, tab } = yield* setup
-        // One request, so its receipt is written to the leader's table before the tab's own replaces it.
-        yield* tab.execute(`DROP TABLE ${SqlProtocol.commits}; CREATE TABLE ${SqlProtocol.commits} (x INTEGER)`)
         yield* Engines.close(leader)
+        yield* tamper(pool, `DROP TABLE ${SqlProtocol.commits}; CREATE TABLE ${SqlProtocol.commits} (x INTEGER)`)
         yield* leaderOver(name, pool)
         // The receipt can't be written, so the transaction is rolled back and the statement that opened it fails.
         const opened = yield* tab.execute("BEGIN IMMEDIATE; INSERT INTO t (id) VALUES (1)").pipe(Effect.flip)
@@ -437,7 +446,7 @@ const faultyLeaderOver = (name: string, pool: Effect.Success<typeof MemorySqlite
             continuing: boolean,
             request?: SqlConnection.Request
           ) =>
-            faults.refuseRecordRead && sql.startsWith(`SELECT opened FROM ${SqlProtocol.commits}`) ?
+            faults.refuseRecordRead && sql.startsWith("SELECT opened") ?
               Effect.fail(Statements.failed({ code: 10, message: "disk I/O error" }, "Failed to read", "execute"))
               : connection.run(owner, sql, params, continuing, request).pipe(
                 Effect.tap(() =>
@@ -474,9 +483,10 @@ describe("SharedSqlite across a handover", () => {
         const first = yield* faultyLeaderOver(name, pool, faults)
         const tab = yield* Engines.sharedTab(name)
         yield* tab.execute("CREATE TABLE log (v TEXT)")
-        // Writing the receipt fails as a full disk would, inside the transaction the tab opens next: its third request.
-        yield* tab.execute(
-          `CREATE TRIGGER refuse_record BEFORE INSERT ON ${SqlProtocol.commits} WHEN NEW.opened = 2 BEGIN SELECT RAISE(ABORT, 'database or disk is full'); END`
+        // Writing the receipt fails as a full disk would, inside the transaction the tab opens next.
+        yield* tamper(
+          pool,
+          `CREATE TRIGGER refuse_record BEFORE INSERT ON ${SqlProtocol.commits} BEGIN SELECT RAISE(ABORT, 'database or disk is full'); END`
         )
         const transaction = (value: string) =>
           Effect.gen(function*() {
@@ -498,7 +508,7 @@ describe("SharedSqlite across a handover", () => {
           reason: { cause: { name: "@smthrs/platform-browser/TransactionUnrecorded" } }
         })
         // Outside a transaction the tab is served, and nothing is left holding the connection.
-        yield* tab.execute("DROP TRIGGER refuse_record")
+        yield* tamper(pool, "DROP TRIGGER refuse_record")
         // Recorded, the same handover lands the transaction exactly once.
         const recorded = yield* Effect.forkChild(transaction("recorded"))
         expect(yield* untilCommitted(recorded, first)).toBe("committed")
@@ -621,6 +631,44 @@ describe("SharedSqlite across a handover, outside a transaction", () => {
     }).pipe(Effect.scoped))
 })
 
+describe("SharedSqlite receipts across leaders", () => {
+  it.live("answers a write the old leader committed with the rows it returned", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const pool = yield* MemorySqlite.pool
+      const write = "INSERT INTO log (v) VALUES ('once') RETURNING v, length(v) AS n"
+      const first = yield* faultyLeaderOver(name, pool, {
+        hangAfterCommit: false,
+        refuseRecordRead: false,
+        hangAfter: write
+      })
+      const tab = yield* Engines.sharedTab(name)
+      yield* tab.execute("CREATE TABLE log (v TEXT)")
+      const work = yield* Effect.forkChild(tab.execute(write))
+      expect(yield* untilCommitted(work, first)).toBe("committed")
+      yield* Engines.close(first.fiber)
+      yield* leaderOver(name, pool)
+      expect(yield* Fiber.join(work)).toEqual([{ v: "once", n: 4 }])
+      expect(yield* tab.execute("SELECT v FROM log")).toEqual([{ v: "once" }])
+    }).pipe(Effect.scoped))
+
+  it.live("keeps a tab's receipt however old while the tab lives, and forgets it once the tab ends", () =>
+    Effect.gen(function*() {
+      const { leader, name, pool, tab } = yield* setup
+      const short = yield* ownTab(name)
+      yield* short.tab.execute("INSERT INTO t (id) VALUES (1)")
+      yield* Engines.close(leader)
+      // Both receipts a week old: age is no reason to forget one a tab may still need.
+      yield* tamper(pool, `UPDATE ${SqlProtocol.commits} SET at = 0`)
+      yield* leaderOver(name, pool)
+      const receipts = Effect.map(tab.execute(`SELECT count(*) AS n FROM ${SqlProtocol.commits}`), (rows) => rows)
+      expect(yield* receipts).toEqual([{ n: 2 }])
+      yield* short.close
+      while ((yield* receipts)[0]?.["n" as never] !== 1) yield* Effect.sleep("5 millis")
+      expect(yield* receipts).toEqual([{ n: 1 }])
+    }).pipe(Effect.scoped, Effect.timeout("10 seconds")))
+})
+
 describe("SharedSqlite.open", () => {
   it.live("resolves once a leader answers, runs statements as Promises, and closes", () =>
     Effect.gen(function*() {
@@ -632,8 +680,12 @@ describe("SharedSqlite.open", () => {
       const refused = yield* Effect.promise(() => database.execute("SELECT * FROM missing").catch((error) => error))
       expect(refused).toMatchObject({ name: "SQLiteError", message: "no such table: missing", code: 1 })
       yield* Effect.promise(() => database.close())
-      const state = yield* Effect.promise(() => navigator.locks.query())
-      expect((state.held ?? []).some((lock) => lock.name?.startsWith(`${name}/sql/`))).toBe(false)
+      // The leader takes the tab's lock for a moment once it comes free, to forget the tab's receipt.
+      const held = Effect.map(
+        Effect.promise(() => navigator.locks.query()),
+        (state) => (state.held ?? []).some((lock) => lock.name?.startsWith(`${name}/sql/`))
+      )
+      while (yield* held) yield* Effect.sleep("5 millis")
     }).pipe(Effect.scoped))
 
   it.live("rejects a statement SQLite refuses with SQLite's own message and code, as wa-sqlite does", () =>

@@ -97,17 +97,26 @@ browser persistence, so it loads one SQLite build and opens one pool.
   statement fails with a `ConnectionError`.
 - Every change a request commits carries the request's receipt, in the same
   SQLite transaction, in the table `shared_sqlite_commits`. A transaction a
-  request opens is receipted at once, inside it. A write outside a
-  transaction would commit on its own, so SQLite's commit hook refuses it and
-  the leader runs the request again inside a transaction it opens with the
-  receipt: all of the request commits, or none of it. A read commits nothing
-  and pays for no receipt.
+  request opens is receipted at once, inside it, and again after a rollback
+  to a savepoint takes the receipt. A write outside a transaction would
+  commit on its own, so SQLite's commit hook refuses it and the leader runs
+  the request again inside a transaction it opens with the receipt: all of
+  the request commits, or none of it. The hook also refuses a commit before a
+  request's last statement, so a request commits at most once. A read commits
+  nothing and pays for no receipt. The rows a committed request returned are
+  kept beside its receipt, in `shared_sqlite_replies`. A tab's statement may
+  not change either table, hang a trigger on it, or create a table or view
+  by its name: SQLite's authorizer refuses it, and the leader names them as
+  `main.` tables.
 - So a handover never runs a committed request twice. A statement that
   committed a transaction just as the old leader ended is answered as
   committed by the new one when the receipt names the request that opened
   the transaction. A tab's first request to the new leader, outside a
-  transaction, is answered as committed, with no rows, when the receipt names
-  it. Receipts do not expire: a suspended tab can resume after any interval.
+  transaction, is answered as committed when the receipt names it. Either is
+  answered with the rows it returned.
+- A tab can send a request again only while it lives, holding its Web Lock,
+  so a receipt is kept, however old, until the tab's lock comes free; then
+  the leader deletes it and its reply.
 - The receipt fails closed. A leader that can't write it rolls the change
   back, and the request fails with `TransactionUnrecorded`. A leader that
   can't read whether an earlier leader committed a request commits nothing of
@@ -119,7 +128,9 @@ browser persistence, so it loads one SQLite build and opens one pool.
   `BEGIN; <refused>`, leaves that transaction open and the tab's: the reply
   says so, and the leader rolls it back if the tab ends.
 - A request that writes outside a transaction and opens one of its own, such
-  as `INSERT ...; BEGIN`, fails as a nested `BEGIN` does. Send them apart.
+  as `INSERT ...; BEGIN`, fails as a nested `BEGIN` does, and one that commits
+  before its last statement, such as `BEGIN; ...; COMMIT; SELECT ...`, fails
+  with `TransactionUnrecorded`. Send them apart.
 
 ## Preparing the app's database before any tab reads it
 
@@ -194,8 +205,9 @@ behind stops leading, logs `browser.runtime.lost` with `reason: overflow`, and
 waits for the lock again; whichever worker leads next announces itself, and
 tabs send it what went unanswered. A tab that falls behind hears no answer
 again: its `SharedSqlite` fails every statement with a `ConnectionError` naming
-`TabChannelOverflow`, and its `BrowserEngine` becomes unavailable with reason
-`channel-overflow`, until it reloads.
+`TabChannelOverflow` and lets go of its Web Lock, so the leader rolls back a
+transaction it left open and other tabs carry on, and its `BrowserEngine`
+becomes unavailable with reason `channel-overflow`, until it reloads.
 
 Payloads, values and results cross the channel as JSON, encoded and decoded
 with the flow's own schemas. The channel is open to every script of the

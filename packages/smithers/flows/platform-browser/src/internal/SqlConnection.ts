@@ -12,13 +12,19 @@
  * can tell whether the request committed and never runs it twice:
  *
  * - A transaction a request opens is receipted inside it at once, after the
- *   statement that opened it.
+ *   statement that opened it, and again after a rollback to a savepoint that
+ *   took the receipt with it.
  * - SQLite's commit hook refuses any commit of a tab's change that carries no
- *   receipt. A request whose change would commit on its own, outside a
- *   transaction, runs again inside a transaction the connection opens with
- *   its receipt, so all of it commits or none does. A request that both does
- *   that and opens a transaction of its own fails as SQLite fails a nested
- *   `BEGIN`.
+ *   receipt, or that comes before the request's last statement, so a request
+ *   commits at most once. A request whose change would commit on its own,
+ *   outside a transaction, runs again inside a transaction the connection
+ *   opens with its receipt, so all of it commits or none does. A request that
+ *   both does that and opens a transaction of its own fails as SQLite fails a
+ *   nested `BEGIN`.
+ * - The rows a committed request returned are kept beside its receipt
+ *   (`SqlProtocol.replies`), so a later leader answers it with them.
+ * - SQLite's authorizer refuses a tab's statement that would change the
+ *   leader's tables or hang a trigger on them.
  * - A read commits nothing, so it never pays for a receipt.
  *
  * @since 1.0.0
@@ -154,17 +160,45 @@ export class SqlConnection extends Context.Service<SqlConnection, Service>()(
   "@smthrs/platform-browser/SqlConnection"
 ) {}
 
-/** The receipt of a transaction a request opened could not be written. */
+/** The receipt of a transaction a request opened, or its reply, could not be written. */
 class ReceiptFailed {
   readonly _tag = "ReceiptFailed"
 }
 
-/** The request running now: whether SQLite's commit hook refused one of its commits, and whether one went through. */
+/**
+ * The tab's request running now, as the commit hook and the authorizer see it: whether the statement stepping is the
+ * request's last, the only one that may commit; whether it ends a transaction; why the hook refused a commit; and
+ * whether a commit went through.
+ */
 interface Guard {
   readonly undecided: boolean
-  vetoed: boolean
-  committed: boolean
+  last: boolean
+  ends: boolean
+  vetoed: "unreceipted" | "early" | "undecided" | undefined
 }
+
+/** SQLite's authorizer action codes this connection reads (https://sqlite.org/c3ref/c_alter_table.html). */
+const action = {
+  createTable: 2,
+  createTempTable: 4,
+  createTempTrigger: 5,
+  createTempView: 6,
+  createTrigger: 7,
+  createView: 8,
+  delete: 9,
+  dropTable: 11,
+  insert: 18,
+  transaction: 22,
+  update: 23,
+  alterTable: 26,
+  createVirtualTable: 29,
+  savepoint: 32
+} as const
+
+/** The leader's own tables, which no tab's statement may change. */
+const leaderTables: ReadonlySet<string> = new Set([SqlProtocol.commits, SqlProtocol.replies])
+
+const isLeaders = (table: string | null) => table !== null && leaderTables.has(table.toLowerCase())
 
 /**
  * Builds the connection's owner bookkeeping over an open database.
@@ -174,7 +208,7 @@ interface Guard {
  */
 export const make = (database: Statements.Database): Effect.Effect<Service, never, Scope.Scope> =>
   Effect.gen(function*() {
-    // One statement at a time; `holder`, `opened` and `guard` change only under it.
+    // One statement at a time; `holder`, `opened`, `guard` and `internal` change only under it.
     const statement = yield* Semaphore.make(1)
     // A rollback SQLite refused: the connection still holds that transaction, so every later statement fails with it.
     let poisoned: SqlError | undefined
@@ -183,40 +217,100 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
         readonly owner: string
         readonly released: Deferred.Deferred<void>
         readonly number: number
+        // The request that opened it, whose receipt it holds.
+        readonly receipt: Request | undefined
         receipted: boolean
       }
       | undefined
     // How many transactions have opened, so a request can tell the one it opened from a later one.
     let opened = 0
     let guard: Guard | undefined
+    // The connection writing a receipt or a reply itself.
+    let internal = false
+    const { db, sqlite3 } = database
 
-    // A tab's change commits only in a transaction that holds its request's receipt, and an undecided one never.
-    database.sqlite3.commit_hook(database.db, () => {
+    // A tab's change commits only with its request's last statement, in a transaction that holds the request's receipt,
+    // and an undecided request's never.
+    sqlite3.commit_hook(db, () => {
       if (guard === undefined) return 0
-      if (!guard.undecided && holder?.receipted === true) {
-        guard.committed = true
-        return 0
-      }
-      guard.vetoed = true
-      return 1
+      guard.vetoed = guard.undecided ?
+        "undecided"
+        : holder?.receipted !== true ?
+        "unreceipted"
+        : guard.last ?
+        undefined
+        : "early"
+      return guard.vetoed === undefined ? 0 : 1
     })
 
-    /** Moves ownership by the autocommit flag, receipting a transaction `request` just opened. Under `statement`. */
+    // A tab's statement may not change the leader's tables or hang a trigger on them. A rollback to a savepoint may
+    // take the transaction's receipt with it, so the receipt is written again after the statement.
+    sqlite3.set_authorizer(db, (_, code, first, second) => {
+      if (guard === undefined || internal) return 0
+      switch (code) {
+        case action.insert:
+        case action.update:
+        case action.delete:
+        case action.dropTable:
+        // A table or view by a leader table's name, temporary or not, would stand in for it.
+        case action.createTable:
+        case action.createTempTable:
+        case action.createView:
+        case action.createTempView:
+        case action.createVirtualTable:
+          return isLeaders(first) ? 1 : 0
+        case action.alterTable:
+        case action.createTrigger:
+        case action.createTempTrigger:
+          return isLeaders(second) ? 1 : 0
+        case action.transaction:
+          if (first === "COMMIT") guard.ends = true
+          return 0
+        case action.savepoint:
+          if (first === "RELEASE") guard.ends = true
+          if (first === "ROLLBACK" && holder !== undefined) holder.receipted = false
+          return 0
+      }
+      return 0
+    }, null)
+
+    /** Writes one of the leader's own rows, which must change exactly one row. Under `statement`. */
+    const write = async (sql: string, params: ReadonlyArray<unknown>) => {
+      internal = true
+      try {
+        await Statements.runAll(database, sql, params, "object")
+        if (sqlite3.changes(db) !== 1) throw new ReceiptFailed()
+      } catch {
+        throw new ReceiptFailed()
+      } finally {
+        internal = false
+      }
+    }
+
+    const writeReply = (owner: string, request: Request, rows: ReadonlyArray<unknown>) =>
+      write(`INSERT OR REPLACE INTO main.${SqlProtocol.replies} (client, request, rows) VALUES (?, ?, ?)`, [
+        owner,
+        request.id,
+        SqlProtocol.encodeRows(rows)
+      ])
+
+    /**
+     * Moves ownership by the autocommit flag, and receipts the owner's transaction when `request` just opened it or a
+     * rollback to a savepoint took its receipt. Under `statement`.
+     */
     const track = async (owner: string, request: Request | undefined) => {
-      const open = database.sqlite3.get_autocommit(database.db) === 0
+      if (guard !== undefined) guard.ends = false
+      const open = sqlite3.get_autocommit(db) === 0
       if (open && holder === undefined) {
-        holder = { owner, released: Deferred.makeUnsafe<void>(), number: ++opened, receipted: false }
-        if (request !== undefined) {
-          await Statements.runAll(
-            database,
-            `INSERT OR REPLACE INTO ${SqlProtocol.commits} (client, opened, at) VALUES (?, ?, ?)`,
-            [owner, request.id, request.at],
-            "object"
-          ).catch(() => {
-            throw new ReceiptFailed()
-          })
-          holder.receipted = true
-        }
+        holder = { owner, released: Deferred.makeUnsafe<void>(), number: ++opened, receipt: request, receipted: false }
+      }
+      if (open && holder !== undefined && !holder.receipted && holder.receipt !== undefined) {
+        await write(`INSERT OR REPLACE INTO main.${SqlProtocol.commits} (client, opened, at) VALUES (?, ?, ?)`, [
+          holder.owner,
+          holder.receipt.id,
+          holder.receipt.at
+        ])
+        holder.receipted = true
       }
       if (!open && holder !== undefined) {
         Deferred.doneUnsafe(holder.released, Exit.void)
@@ -227,7 +321,18 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
     /** Runs `sql` and moves ownership after each statement. Under `statement`. */
     const execute = (owner: string, sql: string, params: ReadonlyArray<unknown>, request?: Request) =>
       Effect.tryPromise({
-        try: () => Statements.runAll(database, sql, params, "object", () => track(owner, request)),
+        try: () =>
+          Statements.runAll(database, sql, params, "object", {
+            before: async ({ last, rows }) => {
+              if (guard === undefined || request === undefined) return
+              guard.last = last
+              // The statement that commits is the request's last: what the earlier ones returned is its reply.
+              if (last && guard.ends && rows.length > 0 && holder?.receipted === true) {
+                await writeReply(owner, request, rows)
+              }
+            },
+            after: () => track(owner, request)
+          }),
         catch: (cause) =>
           cause instanceof ReceiptFailed ? cause : Statements.failed(cause, "Failed to execute statement", "execute")
       }).pipe(
@@ -277,29 +382,37 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
       continuing: boolean,
       request: Request
     ): Effect.Effect<Result, SqlError | TransactionUnrecorded | TransactionUndecided> => {
-      const current: Guard = { undecided: request.undecided, vetoed: false, committed: false }
-      // What a failed request fails with: its own error, or the refusal of a change the commit hook or the receipt
+      const current: Guard = { undecided: request.undecided, last: false, ends: false, vetoed: undefined }
+      // What a failed request fails with: its own error, or the refusal of a change the commit hook or a receipt
       // refused.
       const failure = (error: SqlError | ReceiptFailed): SqlError | TransactionUnrecorded | TransactionUndecided =>
-        error instanceof ReceiptFailed ?
+        current.vetoed === "undecided" ?
+          new TransactionUndecided()
+          : error instanceof ReceiptFailed || current.vetoed !== undefined ?
           new TransactionUnrecorded()
-          : current.vetoed ?
-          (current.undecided ? new TransactionUndecided() : new TransactionUnrecorded())
           : error
       // A refused change is rolled back with the transaction it was in; a statement SQLite refused leaves its
       // transaction as SQLite left it.
       const refused = (error: SqlError | ReceiptFailed) =>
-        error instanceof ReceiptFailed || current.vetoed ?
+        error instanceof ReceiptFailed || current.vetoed !== undefined ?
           rollback(owner).pipe(Effect.andThen(Effect.fail(failure(error))))
           : Effect.fail(error)
       // The request again, in a transaction opened with its receipt and committed at its end if it is still that one:
       // all of it commits, or none of it does.
       const wrapped = Effect.gen(function*() {
-        current.vetoed = false
+        current.vetoed = undefined
         yield* execute(owner, "BEGIN IMMEDIATE", [], request)
         const wrapper = holder?.number
         const result = yield* execute(owner, sql, params, request)
-        if (holder !== undefined && holder.number === wrapper) yield* execute(owner, "COMMIT", [], request)
+        if (holder !== undefined && holder.number === wrapper) {
+          if (result.rows.length > 0) {
+            yield* Effect.tryPromise({
+              try: () => writeReply(owner, request, result.rows),
+              catch: () => new ReceiptFailed()
+            })
+          }
+          yield* execute(owner, "COMMIT", [], request)
+        }
         return { rows: result.rows, open: holder?.owner === owner }
       }).pipe(Effect.catch((error) => rollback(owner).pipe(Effect.andThen(Effect.fail(failure(error))))))
       return Effect.suspend(() => {
@@ -307,8 +420,8 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
         return execute(owner, sql, params, request)
       }).pipe(
         Effect.catch((error) =>
-          // Refused before anything of it committed, outside a transaction it continues: it runs again, wrapped.
-          current.vetoed && !current.undecided && !current.committed && !continuing ?
+          // A write refused for want of a receipt, outside a transaction it continues: it runs again, wrapped.
+          current.vetoed === "unreceipted" && !continuing ?
             rollback(owner).pipe(Effect.andThen(wrapped))
             : refused(error)
         ),

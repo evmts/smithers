@@ -141,6 +141,12 @@ const receipting = Effect.gen(function*() {
     [],
     false
   )
+  yield* service.run(
+    "leader",
+    `CREATE TABLE ${SqlProtocol.replies} (client TEXT PRIMARY KEY, request INTEGER NOT NULL, rows TEXT NOT NULL) WITHOUT ROWID`,
+    [],
+    false
+  )
   return service
 })
 
@@ -212,43 +218,148 @@ describe("SqlConnection receipts", () => {
       expect(yield* receipts(service)).toEqual([])
     }).pipe(Effect.scoped))
 
-  it.effect("commits a wrapped request's own COMMIT with its receipt, and leaves a transaction it opens after that open", () =>
+  it.effect("commits a wrapped request's own COMMIT with its receipt when it is the request's last statement", () =>
     Effect.gen(function*() {
       const service = yield* receipting
       expect(yield* service.run("a", "INSERT INTO t (id) VALUES (1); COMMIT", [], false, decided(0))).toEqual({
         rows: [],
         open: false
       })
-      expect(yield* service.run("a", "INSERT INTO t (id) VALUES (2); COMMIT; SAVEPOINT s", [], false, decided(1)))
-        .toEqual({ rows: [], open: true })
-      yield* service.run("a", "INSERT INTO t (id) VALUES (3); RELEASE s", [], true, decided(2))
-      expect(yield* ids(service)).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }])
-      expect(yield* receipts(service)).toEqual([{ client: "a", opened: 1, at: 1_001 }])
+      expect(yield* ids(service)).toEqual([{ id: 1 }])
+      expect(yield* receipts(service)).toEqual([{ client: "a", opened: 0, at: 1_000 }])
     }).pipe(Effect.scoped))
 
-  it.effect("refuses a change that would commit without a receipt once some of the request committed, and rolls it back", () =>
+  it.effect("commits a request only with its last statement, so a request never commits twice", () =>
     Effect.gen(function*() {
       const service = yield* receipting
-      const outside = yield* tagOf(
-        service.run(
-          "a",
-          "BEGIN; INSERT INTO t (id) VALUES (1); COMMIT; INSERT INTO t (id) VALUES (2)",
-          [],
-          false,
-          decided(0)
+      const unrecorded = "@smthrs/platform-browser/TransactionUnrecorded"
+      expect(
+        yield* tagOf(
+          service.run(
+            "a",
+            "BEGIN; INSERT INTO t (id) VALUES (1); COMMIT; INSERT INTO t (id) VALUES (2)",
+            [],
+            false,
+            decided(0)
+          )
         )
-      )
-      expect(outside).toBe("@smthrs/platform-browser/TransactionUnrecorded")
-      const wrapped = yield* tagOf(
-        service.run("b", "INSERT INTO t (id) VALUES (3); COMMIT; INSERT INTO t (id) VALUES (4)", [], false, decided(0))
-      )
-      expect(wrapped).toBe("@smthrs/platform-browser/TransactionUnrecorded")
+      ).toBe(unrecorded)
+      expect(
+        yield* tagOf(
+          service.run(
+            "b",
+            "INSERT INTO t (id) VALUES (3); COMMIT; INSERT INTO t (id) VALUES (4)",
+            [],
+            false,
+            decided(0)
+          )
+        )
+      ).toBe(unrecorded)
+      // A tab's transaction, committed and followed by another in one request: the receipt could name only one.
       yield* service.run("c", "BEGIN IMMEDIATE", [], false, decided(0))
-      const continuing = yield* tagOf(
-        service.run("c", "INSERT INTO t (id) VALUES (5); COMMIT; INSERT INTO t (id) VALUES (6)", [], true, decided(1))
+      expect(
+        yield* tagOf(
+          service.run(
+            "c",
+            "INSERT INTO t (id) VALUES (5); COMMIT; BEGIN; INSERT INTO t (id) VALUES (6); COMMIT",
+            [],
+            true,
+            decided(1)
+          )
+        )
+      ).toBe(unrecorded)
+      expect(service.isOpen("c")).toBe(false)
+      expect(yield* ids(service)).toEqual([])
+    }).pipe(Effect.scoped))
+
+  it.effect("writes the receipt again when a rollback to a savepoint takes it, so the change commits with it", () =>
+    Effect.gen(function*() {
+      const service = yield* receipting
+      yield* service.run(
+        "a",
+        "SAVEPOINT s; ROLLBACK TO s; INSERT INTO t (id) VALUES (1); RELEASE s",
+        [],
+        false,
+        decided(3)
       )
-      expect(continuing).toBe("@smthrs/platform-browser/TransactionUnrecorded")
-      expect(yield* ids(service)).toEqual([{ id: 1 }, { id: 3 }, { id: 5 }])
+      yield* service.run("b", "SAVEPOINT s", [], false, decided(5))
+      yield* service.run("b", "ROLLBACK TO s", [], true, decided(6))
+      yield* service.run("b", "INSERT INTO t (id) VALUES (2); RELEASE s", [], true, decided(7))
+      expect(yield* ids(service)).toEqual([{ id: 1 }, { id: 2 }])
+      // Each names the request that opened its transaction.
+      expect(yield* receipts(service)).toEqual([
+        { client: "a", opened: 3, at: 1_003 },
+        { client: "b", opened: 5, at: 1_005 }
+      ])
+    }).pipe(Effect.scoped))
+
+  it.effect("refuses a tab's statement that would change the leader's tables or hang a trigger on them", () =>
+    Effect.gen(function*() {
+      const service = yield* receipting
+      yield* service.run("a", "BEGIN IMMEDIATE", [], false, decided(0))
+      for (
+        const sql of [
+          `DELETE FROM ${SqlProtocol.commits}`,
+          `UPDATE ${SqlProtocol.commits} SET opened = 9`,
+          `INSERT INTO ${SqlProtocol.replies} (client, request, rows) VALUES ('a', 1, '[]')`,
+          `ALTER TABLE ${SqlProtocol.commits} ADD COLUMN x INTEGER`,
+          `CREATE TRIGGER quiet BEFORE INSERT ON ${SqlProtocol.commits} BEGIN SELECT RAISE(IGNORE); END`,
+          `CREATE TEMP TRIGGER quiet BEFORE INSERT ON ${SqlProtocol.commits} BEGIN SELECT RAISE(IGNORE); END`,
+          `DROP TABLE ${SqlProtocol.replies}`,
+          // A temporary table or view by a leader table's name would take the leader's unqualified statements.
+          `CREATE TEMP TABLE ${SqlProtocol.commits} (client TEXT PRIMARY KEY, opened INTEGER NOT NULL, at INTEGER NOT NULL)`,
+          `CREATE TEMP VIEW ${SqlProtocol.replies} AS SELECT 1`
+        ]
+      ) {
+        const refused = yield* Effect.flip(service.run("a", sql, [], true, decided(1)))
+        expect(refused._tag).toBe("SqlError")
+      }
+      // A trigger on its own table that reaches the leader's is refused when the statement that fires it is prepared.
+      yield* service.run(
+        "a",
+        `CREATE TRIGGER sneak AFTER INSERT ON t BEGIN DELETE FROM ${SqlProtocol.commits}; END`,
+        [],
+        true,
+        decided(2)
+      )
+      expect((yield* Effect.flip(service.run("a", "INSERT INTO t (id) VALUES (1)", [], true, decided(3))))._tag).toBe(
+        "SqlError"
+      )
+      yield* service.run("a", "DROP TRIGGER sneak; COMMIT", [], true, decided(4))
+      expect(yield* receipts(service)).toEqual([{ client: "a", opened: 0, at: 1_000 }])
+      // The leader's own statements may.
+      yield* service.run("leader", `DELETE FROM ${SqlProtocol.commits}`, [], false)
+      expect(yield* receipts(service)).toEqual([])
+    }).pipe(Effect.scoped))
+
+  it.effect("keeps a committed request's rows as its reply, beside its receipt", () =>
+    Effect.gen(function*() {
+      const service = yield* receipting
+      const blob = new Uint8Array([1, 2, 255])
+      expect(
+        yield* service.run(
+          "a",
+          "INSERT INTO t (id) VALUES (?) RETURNING id, ? AS blob, ? AS big, 1e999 AS high, -1e999 AS low",
+          [1, blob, 2n ** 60n],
+          false,
+          decided(4)
+        )
+      ).toEqual({ rows: [{ id: 1, blob, big: 2n ** 60n, high: Infinity, low: -Infinity }], open: false })
+      yield* service.run("b", "BEGIN; INSERT INTO t (id) VALUES (2) RETURNING id; COMMIT", [], false, decided(8))
+      yield* service.run("c", "BEGIN; INSERT INTO t (id) VALUES (3); COMMIT", [], false, decided(9))
+      const replies = yield* service.run(
+        "reader",
+        `SELECT client, request, rows FROM ${SqlProtocol.replies} ORDER BY client`,
+        [],
+        false
+      )
+      expect(replies.rows.map((row) => {
+        const { client, request, rows } = row as { client: string; request: number; rows: string }
+        return { client, request, rows: SqlProtocol.decodeRows(rows) }
+      })).toEqual([
+        { client: "a", request: 4, rows: [{ id: 1, blob, big: 2n ** 60n, high: Infinity, low: -Infinity }] },
+        { client: "b", request: 8, rows: [{ id: 2 }] }
+      ])
     }).pipe(Effect.scoped))
 
   it.effect("commits nothing of an undecided request, rolling back what it left open, and still runs its reads", () =>
@@ -274,8 +385,31 @@ describe("SqlConnection receipts", () => {
       expect(yield* ids(service)).toEqual([{ id: 3 }])
     }).pipe(Effect.scoped))
 
-  it.effect("rolls back a change whose receipt it can't write, inside a transaction or out", () =>
+  it.effect("rolls back a change whose receipt or reply it can't write, inside a transaction or out", () =>
     Effect.gen(function*() {
+      const replyless = yield* receipting
+      yield* replyless.run("leader", `DROP TABLE ${SqlProtocol.replies}`, [], false)
+      expect(
+        yield* tagOf(replyless.run("a", "INSERT INTO t (id) VALUES (1) RETURNING id", [], false, decided(0)))
+      ).toBe("@smthrs/platform-browser/TransactionUnrecorded")
+      expect(
+        yield* tagOf(
+          replyless.run("a", "BEGIN; INSERT INTO t (id) VALUES (1) RETURNING id; COMMIT", [], false, decided(1))
+        )
+      ).toBe("@smthrs/platform-browser/TransactionUnrecorded")
+      expect(yield* ids(replyless)).toEqual([])
+      // A receipt the database takes without keeping, as a trigger that ignores it does, is no receipt.
+      const ignoring = yield* receipting
+      yield* ignoring.run(
+        "leader",
+        `CREATE TRIGGER quiet BEFORE INSERT ON ${SqlProtocol.commits} BEGIN SELECT RAISE(IGNORE); END`,
+        [],
+        false
+      )
+      expect(yield* tagOf(ignoring.run("a", "INSERT INTO t (id) VALUES (1)", [], false, decided(0)))).toBe(
+        "@smthrs/platform-browser/TransactionUnrecorded"
+      )
+      expect(yield* ids(ignoring)).toEqual([])
       const service = yield* connection
       expect(yield* tagOf(service.run("a", "BEGIN IMMEDIATE", [], false, decided(0)))).toBe(
         "@smthrs/platform-browser/TransactionUnrecorded"

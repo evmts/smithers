@@ -125,18 +125,17 @@ export const make = (
         const subscribers = new Set<Queue.Queue<unknown, TabChannelOverflow>>()
         // Each subscriber the channel ended, once, so the overflow is logged and counted in the program's own services.
         const ended = yield* Queue.unbounded<TabChannelOverflow>()
-        yield* Stream.fromQueue(ended).pipe(
-          Stream.runForEach((overflow) =>
-            Metric.update(Metric.withAttributes(overflows, { channel: overflow.channel }), 1).pipe(
-              Effect.andThen(
-                Effect.logWarning("browser.tab_channel.overflow").pipe(
-                  Effect.annotateLogs({ channel: overflow.channel, capacity: overflow.capacity })
-                )
+        const record = (overflow: TabChannelOverflow) =>
+          Metric.update(Metric.withAttributes(overflows, { channel: overflow.channel }), 1).pipe(
+            Effect.andThen(
+              Effect.logWarning("browser.tab_channel.overflow").pipe(
+                Effect.annotateLogs({ channel: overflow.channel, capacity: overflow.capacity })
               )
             )
-          ),
-          Effect.forkScoped
-        )
+          )
+        // What the channel ended and has not recorded yet, as when the overflow ends the scope, is recorded as it closes.
+        yield* Effect.addFinalizer(() => Effect.flatMap(Queue.clear(ended), Effect.forEach(record, { discard: true })))
+        yield* Stream.fromQueue(ended).pipe(Stream.runForEach(record), Effect.forkScoped)
         const channel = yield* Effect.acquireRelease(
           Effect.sync(() => {
             const channel = construct(name)

@@ -309,30 +309,55 @@ const sqliteDetail = (error: unknown): { readonly code?: number; readonly messag
 }
 
 /**
- * Creates the table of each tab's receipts (`SqlProtocol.commits`).
- * Receipts do not expire: a suspended tab may ask about a commit at any age.
- * A leader that can't create it still serves reads: every change commits
- * only with its receipt, so without the table every request that would
- * change something fails (`TransactionUnrecorded`), and a tab's first write,
- * whose receipt this leader can't read, fails undecided.
+ * Creates the leader's tables in the app's database: each tab's receipt
+ * (`SqlProtocol.commits`) and its last committed reply (`SqlProtocol.replies`),
+ * and answers which tabs hold a receipt. A leader that can't still serves
+ * reads: every change commits only with its receipt, so without the tables
+ * every request that would change something fails (`TransactionUnrecorded`),
+ * and a tab's first write, whose receipt this leader can't read, fails
+ * undecided.
  */
 const prepareCommits = (connection: Connection, leader: string) =>
   Effect.gen(function*() {
     yield* connection.run(
       leader,
-      `CREATE TABLE IF NOT EXISTS ${SqlProtocol.commits} (client TEXT PRIMARY KEY, opened INTEGER NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID`,
+      `CREATE TABLE IF NOT EXISTS main.${SqlProtocol.commits} (client TEXT PRIMARY KEY, opened INTEGER NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID`,
       [],
       false
     )
-    // Validate an existing table without deleting evidence a delayed tab may need.
-    yield* connection.run(leader, `SELECT client, opened, at FROM ${SqlProtocol.commits} LIMIT 0`, [], false)
+    yield* connection.run(
+      leader,
+      `CREATE TABLE IF NOT EXISTS main.${SqlProtocol.replies} (client TEXT PRIMARY KEY, request INTEGER NOT NULL, rows TEXT NOT NULL) WITHOUT ROWID`,
+      [],
+      false
+    )
+    const { rows } = yield* connection.run(
+      leader,
+      `SELECT client, opened, at FROM main.${SqlProtocol.commits}`,
+      [],
+      false
+    )
+    return rows.map((row) => (row as { readonly client: string }).client)
   }).pipe(
     Effect.catch((error) =>
       Effect.logWarning("browser.runtime.statement").pipe(
-        Effect.annotateLogs({ outcome: "unprepared", "error.type": error._tag })
+        Effect.annotateLogs({ outcome: "unprepared", "error.type": error._tag }),
+        Effect.as([])
       )
     )
   )
+
+/** What a request an earlier leader committed answers: its receipt's request, and the rows it returned, if any. */
+const receiptOf = (connection: Connection, client: string, request: number) =>
+  connection.run(
+    client,
+    `SELECT opened, (SELECT rows FROM main.${SqlProtocol.replies} WHERE client = ? AND request = ?) AS rows FROM main.${SqlProtocol.commits} WHERE client = ?`,
+    [client, request, client],
+    false
+  ).pipe(Effect.map(({ rows }) => {
+    const row = rows[0] as { readonly opened: unknown; readonly rows: string | null } | undefined
+    return { opened: row?.opened, rows: row?.rows == null ? [] : SqlProtocol.decodeRows(row.rows) }
+  }))
 
 /**
  * Serves tabs' statements on the app's shared database until the scope
@@ -360,7 +385,30 @@ const serveStatements = (
     const port = yield* (yield* TabChannel).open(SqlProtocol.channel(name))
     const inbox = yield* port.subscribe
     const leader = crypto.randomUUID()
-    if (Option.isSome(database) && fence === undefined) yield* prepareCommits(database.value, leader)
+    const receipted = Option.isSome(database) && fence === undefined
+      ? yield* prepareCommits(database.value, leader)
+      : []
+    // A tab can send a request again only while it lives, holding its lock, so once its lock comes free its receipt
+    // and reply go: every tab that holds one, and every tab this leader serves.
+    const forgotten = new Set<string>()
+    const forget = (client: string) =>
+      Effect.suspend(() => {
+        if (Option.isNone(database) || forgotten.has(client)) return Effect.void
+        forgotten.add(client)
+        const connection = database.value
+        return Effect.scoped(locks.hold(SqlProtocol.clientLock(name, client))).pipe(
+          Effect.andThen(
+            connection.run(leader, `DELETE FROM main.${SqlProtocol.commits} WHERE client = ?`, [client], false)
+          ),
+          Effect.andThen(
+            connection.run(leader, `DELETE FROM main.${SqlProtocol.replies} WHERE client = ?`, [client], false)
+          ),
+          // A receipt left behind costs a row, and the next leader tries again.
+          Effect.ignore,
+          Effect.forkScoped
+        )
+      })
+    yield* Effect.forEach(receipted, forget, { discard: true })
     // The newest request number taken from each tab: a tab sends one at a
     // time, so a number already taken is a request sent again.
     const taken = new Map<string, number>()
@@ -402,18 +450,12 @@ const serveStatements = (
         if (continuing && request.transaction !== leader) {
           // The transaction this statement belongs to ended with the leader that held it. Every earlier statement of it
           // left it open, so it committed only if this one committed it as that leader ended: its record says so.
-          const recorded = yield* connection.run(
-            request.client,
-            `SELECT opened FROM ${SqlProtocol.commits} WHERE client = ?`,
-            [request.client],
-            false
-          ).pipe(
-            Effect.map(({ rows }) => (rows[0] as { readonly opened?: unknown } | undefined)?.opened),
+          const recorded = yield* receiptOf(connection, request.client, request.id).pipe(
             // Taken as absent, the tab would run a transaction that may have committed again.
             Effect.mapError(() => new TransactionUndecided())
           )
-          if (request.opened !== undefined && recorded === request.opened) {
-            return { rows: [], open: false, committed: true }
+          if (request.opened !== undefined && recorded.opened === request.opened) {
+            return { rows: recorded.rows, open: false, committed: true }
           }
           return yield* new TransactionLost()
         }
@@ -422,17 +464,9 @@ const serveStatements = (
         // commits, while a read still runs.
         let undecided = false
         if (!continuing && first) {
-          const recorded = yield* connection.run(
-            request.client,
-            `SELECT opened FROM ${SqlProtocol.commits} WHERE client = ?`,
-            [request.client],
-            false
-          ).pipe(
-            Effect.map(({ rows }) => (rows[0] as { readonly opened?: unknown } | undefined)?.opened),
-            Effect.option
-          )
-          if (Option.isSome(recorded) && recorded.value === request.id) {
-            return { rows: [], open: false, committed: true }
+          const recorded = yield* Effect.option(receiptOf(connection, request.client, request.id))
+          if (Option.isSome(recorded) && recorded.value.opened === request.id) {
+            return { rows: recorded.value.rows, open: false, committed: true }
           }
           undecided = Option.isNone(recorded)
         }
@@ -495,7 +529,8 @@ const serveStatements = (
         if (message?._tag !== "Execute" || (taken.get(message.client) ?? -1) >= message.id) return Effect.void
         const first = !taken.has(message.client)
         taken.set(message.client, message.id)
-        return execute(message, first).pipe(
+        return forget(message.client).pipe(
+          Effect.andThen(execute(message, first)),
           Effect.flatMap((reply) => port.post(SqlProtocol.encode(reply))),
           Effect.forkScoped
         )
