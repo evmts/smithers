@@ -139,6 +139,7 @@ A local `.env` that raises a limit for development, such as `MODEL_DAILY_TOKEN_B
 | `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | for sign-in | ChatApi | the Smithers GitHub App's client; without them nobody can sign in, so nobody can ask ([sign-in.md](features/sign-in.md#configuration)) |
 | `GITHUB_REPOSITORY`, `SESSION_MAX_AGE_DAYS`, `ROLE_RECHECK_MINUTES` | no | ChatApi | [sign-in.md](features/sign-in.md#configuration) |
 | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY` | for issues | ChatApi, FlowExecution | the Smithers GitHub App's ID and private key; without them nothing syncs or writes to GitHub ([issues.md](features/issues.md#configuration)) |
+| `TODO_RUNS` | no | ChatApi | `false` switches the coding factory's `todo` run off, so every TODO stays Queued; on otherwise, with the GitHub App ([todos.md](features/todos.md#the-run)) |
 | `GITHUB_WEBHOOK_SECRET`, `GITHUB_API_URL` | no | ChatApi, FlowExecution | the webhook's secret (without it Reconcile alone keeps issues fresh) and GitHub's API ([issues.md](features/issues.md#configuration)) |
 | `CODE_STORAGE_ORG`, `CODE_STORAGE_KEY` | for cloning | ChatApi, FlowExecution | the Code Storage organization (`smithers`) and its ES256 key; without them the deployment clones nothing and browses only what was cloned ([repo.md](features/repo.md#configuration)) |
 | `ALERT_EMAIL_API_KEY` | for email alerts | FlowExecution | a Resend API key; without it spend alerts send no email, and an Admin's email setting records `unconfigured` ([spend-alerts.md](features/spend-alerts.md#channels)) |

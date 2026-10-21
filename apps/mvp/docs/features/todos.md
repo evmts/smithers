@@ -1,6 +1,6 @@
 # TODOs and the stack
 
-A person asks Smithers for a TODO, or makes one from an issue, edits the draft and commits it to the repository's stack; every Member sees it numbered on every device, and a person drops it. The stack looks like GitHub's issue list, and one TODO like GitHub's issue page. This is decision [0016](../decisions/0016-todos-and-the-stack.md)'s slice 1, Track A, and Track B's durable `todo` run ([the run](#the-run)), which takes a TODO to a pull request a person merges. The run is switched off until its agent is proven on Cloudflare (`TODO_RUNS`): until then every TODO stays Queued.
+A person asks Smithers for a TODO, or makes one from an issue, edits the draft and commits it to the repository's stack; every Member sees it numbered on every device, and a person drops it. The stack looks like GitHub's issue list, and one TODO like GitHub's issue page. This is decision [0016](../decisions/0016-todos-and-the-stack.md)'s slice 1, Track A, and Track B's durable `todo` run ([the run](#the-run)), which takes a TODO to a pull request a person merges. The run is on wherever the GitHub App is configured; `TODO_RUNS=false` switches it off, and every TODO then stays Queued.
 
 ## How it works
 
@@ -22,7 +22,7 @@ Drop ─▶ todo/drop ─▶ the same outbox and route
 - **The rules are one pure function.** `stack.ts` `apply(stack, op)`: a commit takes the next number, which is never reused, and the last position; a drop clears the TODO's position and closes the gap; a full stack (`max_open`) refuses a commit; a merged TODO refuses a drop; dropping a dropped TODO changes nothing. Property tests prove them over random histories.
 - **A person commits; the agent drafts** (0016 §3). `todo/draft` is the agent's; `todo/commit` and `todo/drop` are a person's only. The agent's catalog lists neither, the step refuses a run that is the agent's call before it asks any tab, and the route takes who acts from the session (`Actor.act`), never from the request: a body that claims a door claims nothing.
 - **One route.** Buttons, slash commands, the agent's drafts once a person commits them, and the API all change a stack through `POST /api/repos/<owner>/<name>/stack`.
-- **The run starts from the writer.** The writer starts an attempt only when the host provides `TodoRuns` (`worker/stack/Stack.ts`): `start(attempt)` and `stop(attempt)`, idempotent by attempt id. ChatApi provides it when the GitHub App is configured and `TODO_RUNS` is on (off unless set): each attempt runs `todo` on its own Durable Object, `todo:<attempt id>`. Without it the writer works with no lanes and every TODO stays Queued.
+- **The run starts from the writer.** The writer starts an attempt only when the host provides `TodoRuns` (`worker/stack/Stack.ts`): `start(attempt)` and `stop(attempt)`, idempotent by attempt id. ChatApi provides it when the GitHub App is configured and `TODO_RUNS` isn't `false`: each attempt runs `todo` on its own Durable Object, `todo:<attempt id>`. Without it the writer works with no lanes and every TODO stays Queued.
 - **Libraries** (`docs/libraries.md`): `@smthrs/flow` (the flows), `@smthrs/effect-electric` (`ShapeProxy` with its default `no-store`, `ElectricCollection`), `@smthrs/effect-tanstack-db` (`Outbox`, collections, live queries, `Persistence`), `@smthrs/crypto` (`Uuid.v5`, `digestSync`), `@smthrs/ui` (`IssuesView`, `ItemConversation`, `ItemAsideSection`, `ConfirmButton`, `TodoDraftCard`, `Breadcrumbs`), and Effect's own `Arbitrary` for the property tests.
 
 ## Who reads, who writes
@@ -133,13 +133,15 @@ todo/Fail       any step that gave up ─▶ writer: failed with its code (imple
 - **Terminal reports keep their receipt.** The attempt stores the exact terminal event and successor attempt ids in the same Postgres transaction as the lane change. Replaying that event returns `repeated` with those same starts; another event or attempt stays stale. `todo/Settle` and `todo/Fail` retry admission through the durable engine without expiring. The host propagates a refused or lost admission acknowledgment, including when the successor already accepted its intent, so a restart can admit that same execution again. No retry allocates another successor.
 - **Every GitHub write adopts its own earlier attempt** after a lost answer: the branch by its head, the commit by its parent and message, the pull request by its head and the attempt's marker. Nothing here merges, approves or forces a ref: a person merges ([pull requests](pulls.md#merge)).
 - **The machine** is the attempt's own branch machine, `todo-<attempt id>`, checking out the attempt's branch, its tools running as the person who committed the TODO (`worker/flows/TodoMachine.ts`).
-- **Switched off** (`TODO_RUNS`) until the agent's QuickJS build runs on workerd under Alchemy's bundle and the live end-to-end run passes ([TODOs and the stack](../work/todos-and-stack.md)).
+- **The agent's sandbox on Cloudflare** (`worker/AgentSandbox.ts`): `Agent.layerDefaultsWithVariant` over QuickJS's separate-`.wasm` build. workerd compiles no WebAssembly from bytes, so the single-file build `Agent.layerDefaults` uses fails there ("Wasm code generation disallowed by embedder"). The `.wasm` file arrives as `#quickjs.wasm`, a package.json `imports` name ending in `.wasm`, which Alchemy's bundler uploads as a CompiledWasm module and hands the Worker as a `WebAssembly.Module`. The import is dynamic, inside the layer: `alchemy dev` imports the stack in Node, where a static `.wasm` import fails ("Cannot find package 'a'").
 
 | Test | Proves |
 |---|---|
 | `worker/flows/Todo.test.ts` | on the Node host's engine with the scripted GitHub, a test machine and a scripted agent: a TODO from an issue to a squash-merged pull request with "Fixes #n" and the next TODO started; closed on GitHub; an empty change; an agent that never answers; no App; dropped before and while waiting; a name taken; a lost commit and a lost pull request adopted; each step's refusals and retries |
 | `worker/flows/TodoHost.test.ts` | the Durable Object's handlers with `withTodos`: `checks/Run` driven to the end |
 | `worker/flows/TodoRecovery.test.ts` | merged, dropped and failed reports recover from admission failure in the same process and after a Durable Object host restart; report committed before launch; target accepted before acknowledgment lost; repeated execution stays singular |
+| `worker/AgentSandbox.workerd.test.ts` | in local workerd, bundled with Alchemy's own bundler and Cloudflare plugins as ChatApi is: the bundle carries QuickJS as one compiled WebAssembly module, and an agent's cell lists, reads and writes the checkout through the run's sandbox tools as the TODO's committer. Fails on `Agent.layerDefaults` with workerd's refusal |
+| `e2e/factory.spec.ts` | live: against an instance with the GitHub App on a scratch repository the test account administers (`E2E_FACTORY_REPOSITORY`, `E2E_SESSION_COOKIE`, `BASE_URL`; it skips without them), a person asks Smithers for a TODO and commits it; the run branches on GitHub, the agent writes the change on the branch's machine with the deployment's model, and the TODO reaches In review with an open, mergeable pull request on its `smithers/t<n>-` branch. It never merges |
 | `worker/stack/Stack.test.ts` | the writer's reports: step, branch, published, finished; stale reports; the next TODO started |
 | `src/features/todos/stack.test.ts` | the rules' `finish`: merged and dropped leave the stack, failed keeps its place, a stale finish changes nothing |
 
@@ -187,6 +189,5 @@ Run with the compose Postgres and Electric up (`pnpm db:up`).
 
 ## Not built yet
 
-- The run switched on (`TODO_RUNS`): its agent's QuickJS build on workerd, then the live end-to-end run against the scratch repository with its recording.
 - The run's step strip and Run on a TODO's page.
 - Slice 2: Before Tn and Amend, Move, two lanes, forward updates, out-of-order merges.

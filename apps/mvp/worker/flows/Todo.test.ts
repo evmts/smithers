@@ -355,12 +355,12 @@ describe("the run's steps", () => {
     expect(exit._tag === "Failure" && String(exit.cause)).toContain("StillOpen")
   })
 
-  test("TODO_RUNS: a deployment runs TODOs only when it is set", async () => {
+  test("TODO_RUNS: a deployment runs TODOs unless it is set to false", async () => {
     const read = (env: Record<string, string>) =>
       Effect.runPromise(Effect.gen(function* () {
         return yield* Todo.enabled
       }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env)))))
-    expect(await read({})).toBe(false)
+    expect(await read({})).toBe(true)
     expect(await read({ TODO_RUNS: "false" })).toBe(false)
     expect(await read({ TODO_RUNS: "true" })).toBe(true)
   })

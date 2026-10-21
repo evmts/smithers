@@ -41,10 +41,10 @@ import { machineOf } from "./TodoMachine.ts"
 // merges (decision 0012 decision 6). Records carry ids, numbers and outcomes, never a title, a prompt or a file.
 
 /**
- * `TODO_RUNS`: whether this deployment runs TODOs (false unless set). Until the run's agent is proven on Cloudflare
- * (docs/work/todos-and-stack.md), every TODO stays Queued, as before Track B.
+ * `TODO_RUNS`: whether this deployment runs TODOs: on unless set to `false`. Off, every TODO stays Queued, as before
+ * Track B. The run needs the GitHub App too (worker/ChatApi.ts).
  */
-export const enabled = Config.Boolean("TODO_RUNS").pipe(Config.withDefault(false))
+export const enabled = Config.Boolean("TODO_RUNS").pipe(Config.withDefault(true))
 
 /** The attempt a run is for: what the writer's `AttemptStart` says, so `TodoRuns.start` hands it over as it is. */
 export const TodoRequest = Schema.Struct({
