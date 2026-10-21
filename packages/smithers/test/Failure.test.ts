@@ -133,6 +133,54 @@ describe("Failure.operatorSentence", () => {
   })
 })
 
+describe("Failure.operatorSentence for source that does not load", () => {
+  const diagnostics = [
+    "vibelang: /work/packages/errors/tsconfig.json did not compile",
+    "/work/packages/errors/src/SmithersError.vibe:221:14 - error TS2322: Type 'string' is not assignable to type 'number'."
+  ].join("\n")
+  const compile = Object.assign(new Error(diagnostics), { code: "ERR_VIBELANG_COMPILE" })
+
+  it("prints VibeLang's diagnostics for a module that does not compile", () => {
+    expect(Failure.operatorSentence(compile)).toBe(diagnostics)
+    expect(Failure.isDesigned(compile)).toBe(true)
+  })
+
+  it("finds them under the wrapper an Effect puts around a failed import", () => {
+    class UnknownError extends Error {}
+    const wrapped = new UnknownError("An unknown error occurred", { cause: compile })
+    expect(Failure.operatorSentence(wrapped)).toBe(diagnostics)
+    expect(Failure.operatorReport(wrapped, false)).toBe(diagnostics)
+  })
+
+  it("names the module outside every project", () => {
+    const outside = Object.assign(new Error("vibelang/register: /work/tsconfig.json does not include /tmp/x.vibe"), {
+      code: "ERR_VIBELANG_PROJECT"
+    })
+    expect(Failure.operatorSentence(outside)).toBe(outside.message)
+  })
+
+  it("names the .vibe file and the loader when Node runs VibeLang source without it", () => {
+    const unknown = Object.assign(
+      new TypeError("Unknown file extension \".vibe\" for /work/packages/errors/src/SmithersError.vibe"),
+      { code: "ERR_UNKNOWN_FILE_EXTENSION" }
+    )
+    const stated = Failure.operatorSentence(unknown)
+    expect(stated).toContain("/work/packages/errors/src/SmithersError.vibe")
+    expect(stated).toContain("--import vibelang/register")
+  })
+
+  it("keeps other unknown extensions and terminal controls generic or inert", () => {
+    const other = Object.assign(new TypeError("Unknown file extension \".foo\" for /work/a.foo"), {
+      code: "ERR_UNKNOWN_FILE_EXTENSION"
+    })
+    expect(Failure.operatorSentence(other)).toBe(Failure.unknownSentence)
+    const hostile = Object.assign(new Error("did not compile\u001b[2J\n/work/a.vibe:1:1 - error TS1"), {
+      code: "ERR_VIBELANG_COMPILE"
+    })
+    expect(Failure.operatorSentence(hostile)).toBe("did not compile\n/work/a.vibe:1:1 - error TS1")
+  })
+})
+
 describe("Failure.operatorLine", () => {
   it("names a tagged failure by its class, not its namespace", () => {
     expect(Failure.operatorLine(new ControlError.ClaimLost({ runId: "run-42" }), false))

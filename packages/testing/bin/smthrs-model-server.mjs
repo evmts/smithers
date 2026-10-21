@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 // Serve a recorded model as a local OpenAI-compatible endpoint. See
 // @smthrs/testing/ModelServerCli for the flags.
-import { run } from "@smthrs/testing/ModelServerCli"
+
+// In a checkout the package's exports name its source, and that source's
+// workspace dependencies may be VibeLang, which Node loads through
+// vibelang/register. A published install runs the built JavaScript.
+const entry = import.meta.resolve("@smthrs/testing/ModelServerCli")
+if (/\.(?:[cm]?ts|vibe)$/.test(new URL(entry).pathname)) await import("vibelang/register")
+const { run } = await import(entry)
 
 const stopped = new Promise((resolve) => {
   process.once("SIGINT", resolve)

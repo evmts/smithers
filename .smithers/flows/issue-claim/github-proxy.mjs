@@ -68,6 +68,12 @@ export const proxyIntegrationUrl = (name) => {
 
 /** Serves the proxy until the process is stopped. */
 export const serve = async (env = process.env) => {
+  // In a checkout the integrations' exports name their source, and that source's
+  // workspace dependencies may be VibeLang, which Node loads through
+  // vibelang/register. A published install runs the built JavaScript.
+  if (/\.(?:[cm]?ts|vibe)$/.test(new URL(proxyIntegrationUrl("core/IntegrationError")).pathname)) {
+    await import("vibelang/register")
+  }
   const [{ Effect, Layer }, { FetchHttpClient }, NodeHttpServer, NodeRuntime, { createServer }, { IntegrationError }, Proxy, RateLimit, { appAuth, appConfig, MintLimited }] =
     await Promise.all([
       import("effect"),

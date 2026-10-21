@@ -176,6 +176,27 @@ describe("resolving workspace manifest declarations", () => {
     assertTypecheckPlan(toolchain)
   })
 
+  it.each(
+    [
+      ["a classic Node floor", S.Runtime.Node({ version: ">=26.4.0", imports: ["vibelang/register"] })],
+      ["an exact Node", S.Runtime.Node({ version: "22.19.0", imports: ["vibelang/register"] })],
+      ["a manifest Node", S.Runtime.Node({ manifest: S.file("//package.json"), imports: ["vibelang/register"] })]
+    ] as const
+  )("keeps the preloads %s declares, so Node targets run with them", async (_, runtime) => {
+    const root = await directory()
+    await Fs.writeFile(
+      Path.join(root, "package.json"),
+      JSON.stringify({ engines: { node: ">=26.4.0" }, packageManager: "pnpm@11.25.0" })
+    )
+    const toolchain = await WorkspaceToolchain.resolve(manifestWorkspace({ runtime }), { root })
+    expect(Runtime.run(toolchain.runtime, ["gate.mjs"])).toEqual(["node", "--import=vibelang/register", "gate.mjs"])
+    expect(
+      Runtime.run(WorkspaceToolchain.of(manifestWorkspace({ runtime })).runtime ?? toolchain.runtime, ["gate.mjs"])
+    )
+      .toEqual(["node", "--import=vibelang/register", "gate.mjs"])
+    assertTypecheckPlan(toolchain)
+  })
+
   it("uses an explicit manager requirement while measuring a manifest that omits its pin", async () => {
     const root = await directory()
     const manifest = S.file("//package.json")

@@ -48,13 +48,23 @@
  * patch Node's private CommonJS resolver. CommonJS callers must install their
  * dependencies where ordinary Node resolution can find them.
  *
+ * ## VibeLang sources
+ *
+ * A workspace package's exports name its source, and a migrated package's
+ * source is VibeLang (`.vibe`), which only `vibelang/register` loads. The
+ * resolvers install it first, so its hooks sit innermost. They handle `.vibe`
+ * URLs and a `.vibe` module's own relative imports only, and read neither
+ * tsx's namespace nor the re-parented `parentURL`, so they compose with the
+ * hooks here in either order: an entry that imports `vibelang/register`
+ * before or after these resolvers gets the same modules.
+ *
  * @since 0.1.0
  */
 import { randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
 import { createRequire, isBuiltin, registerHooks } from "node:module"
 import * as NodePath from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { register as registerCommonJs } from "tsx/cjs/api"
 import { register as registerModule } from "tsx/esm/api"
 
@@ -366,6 +376,31 @@ export const importDeclarationModule = async (url, parentURL) => {
 }
 
 /**
+ * Installs `vibelang/register`, this package's optional peer: from this
+ * installation (a checkout, where it is a development dependency), else from
+ * the project in the working directory. Without either, Node refuses a `.vibe`
+ * import with `ERR_UNKNOWN_FILE_EXTENSION`, which names the file.
+ *
+ * The hook module registers itself as it evaluates, and Node loads an ES
+ * module synchronously through `require`, so this runs before the first
+ * declaration resolves. A process that imported it already gets that same
+ * module back.
+ */
+const installVibeLang = () => {
+  for (const base of [cliParentUrl, pathToFileURL(NodePath.join(process.cwd(), "package.json")).href]) {
+    const require = createRequire(base)
+    let hooks
+    try {
+      hooks = require.resolve("vibelang/register")
+    } catch {
+      continue
+    }
+    require(hooks)
+    return
+  }
+}
+
+/**
  * Installs the resolvers once per process.
  * @slop
  */
@@ -378,8 +413,9 @@ export const installEffectResolution = (packages = {}) => {
     globalThis[ownership].set(name, url.href)
   }
   if (globalThis[installation] === true) return
-  // Oldest first, so the format hook ends up behind tsx and the parent hook in
-  // front of it. See the hook-order note above.
+  // Oldest first, so VibeLang's hooks sit innermost, the format hook behind
+  // tsx, and the parent hook in front of it. See the hook-order note above.
+  installVibeLang()
   registerHooks(formatHooks)
   globalThis[registration] = registerHooks(parentHooks)
   // The ESM loader supports ordinary typed CommonJS bridges through Node's

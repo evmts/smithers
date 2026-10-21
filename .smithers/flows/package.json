@@ -5,7 +5,7 @@
   "scripts": {
     "check": "vibelang -p tsconfig.json --noEmit",
     "typecheck": "vibelang -p tsconfig.json --noEmit",
-    "test": "node --experimental-strip-types --test test/*.test.ts test/canary-coding-setup.test.mjs",
+    "test": "node --import vibelang/register --test test/*.test.ts test/canary-coding-setup.test.mjs",
     "lint": "eslint '**/*.ts' --max-warnings=0 && dprint check"
   },
   "dependencies": {

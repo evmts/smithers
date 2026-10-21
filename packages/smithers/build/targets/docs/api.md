@@ -179,6 +179,16 @@ reads `engines.node`; `PackageManager.Pnpm({ manifest, lockfile })` reads
 field while the manifest is still parsed and digested. Requirements use exact
 versions or a single comparator; unsupported compound ranges and tags refuse.
 
+`Runtime.Node({ version, imports })` also names modules Node preloads with
+`--import` before every program the runtime runs: `Runtime.run`,
+`Runtime.test`, and `Runtime.evaluate` put `--import=<specifier>` ahead of the
+program, so every `NodeTest` and `NodeBinary` target gets them. A workspace
+whose packages publish VibeLang source declares
+`imports: ["vibelang/register"]`; a bare specifier resolves from the target's
+working directory. Each specifier is at most 256 printable characters, with no
+whitespace and no leading `-`. A runtime without imports runs exactly as
+before, and `Runtime.preloads` returns the flags.
+
 `Runtime.ResolvedNodeRuntime`, `Runtime.ResolvedBunRuntime`,
 `PackageManager.ResolvedPnpmPackageManager`, and
 `PackageManager.ResolvedBunPackageManager` are tagged schemas and types for the

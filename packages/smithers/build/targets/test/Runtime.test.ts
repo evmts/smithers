@@ -107,4 +107,42 @@ describe("Runtime declarations", () => {
       "console.log(1)"
     ])
   })
+
+  it("preloads a Node runtime's imports before every program it runs", () => {
+    // A workspace whose sources need a loader, such as VibeLang's
+    // vibelang/register for .vibe modules, declares it once here.
+    const runtime = Runtime.Node({ version: ">=26.4.0", imports: ["vibelang/register", "./hooks.mjs"] })
+    expect(runtime.imports).toEqual(["vibelang/register", "./hooks.mjs"])
+    const preloads = ["--import=vibelang/register", "--import=./hooks.mjs"]
+    expect(Runtime.run(runtime, ["build.mjs"])).toEqual(["node", ...preloads, "build.mjs"])
+    expect(Runtime.test(runtime, ["a.test.ts"])).toEqual(["node", ...preloads, "--test", "a.test.ts"])
+    expect(Runtime.evaluate(runtime, "1", ["x"])).toEqual(["node", ...preloads, "-e", "1", "x"])
+    const resolved = Runtime.ResolvedNodeRuntime.make({
+      name: "node",
+      version: "26.4.1",
+      executable: "node",
+      imports: ["vibelang/register"]
+    })
+    expect(Runtime.run(resolved, ["a.mjs"])).toEqual(["node", "--import=vibelang/register", "a.mjs"])
+  })
+
+  it("keeps a runtime without imports exactly as before", () => {
+    expect(Runtime.Node({ version: ">=26.4.0", imports: [] })).toEqual(Runtime.Node({ version: ">=26.4.0" }))
+    expect(Runtime.Node({ version: ">=26.4.0" })).not.toHaveProperty("imports")
+  })
+
+  it("carries imports on the WORKSPACE.ts declaration forms", () => {
+    const declared = Runtime.Node({ version: "26.4.1", imports: ["vibelang/register"] })
+    expect(Runtime.isNodeDeclaration(declared)).toBe(true)
+    expect(declared.imports).toEqual(["vibelang/register"])
+  })
+
+  it("refuses an import that is not one bounded module specifier", () => {
+    for (const specifier of ["", " vibelang/register", "-e", "a b", "x\u0000", "y\n", "z".repeat(257)]) {
+      expect(() => Runtime.Node({ version: ">=26.4.0", imports: [specifier] })).toThrow(/runtime import/)
+    }
+    expect(() => Runtime.Node({ version: ">=26.4.0", imports: "vibelang/register" as never })).toThrow(
+      /runtime imports/
+    )
+  })
 })

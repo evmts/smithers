@@ -63,6 +63,24 @@ export const repositoryRoot = (from: string | URL): string => {
  * @since 1.0.0
  * @category models
  */
+/**
+ * The `--import` flag for VibeLang's loader when this checkout installs it: a
+ * module may import workspace source, and a migrated package's source is
+ * `.vibe`, which Node loads only through `vibelang/register`. It is resolved
+ * with `import.meta.resolve`: the registry pins every flow that imports this
+ * module, and it refuses a module that builds a CommonJS loader.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export const vibeLangLoader = (): ReadonlyArray<string> => {
+  try {
+    return [`--import=${import.meta.resolve("vibelang/register")}`]
+  } catch {
+    return []
+  }
+}
+
 export interface RunModuleOptions {
   /** Extra environment; the child otherwise inherits this process's. */
   readonly env?: Readonly<Record<string, string>>
@@ -79,7 +97,8 @@ export interface RunModuleOptions {
 
 /**
  * Run `node <module> ...args`, or `<interpreter> <module> ...args`, and succeed
- * on exit 0.
+ * on exit 0. Node runs the module with VibeLang's loader when the checkout
+ * installs it.
  *
  * Interrupting the effect stops the child's process group.
  *
@@ -95,7 +114,13 @@ export const runModule = (
   const root = repositoryRoot(module)
   const name = relative(root, path).split("\\").join("/")
   return Effect.callback<void, ModuleFailed>((resume) => {
-    const child = spawn(options.interpreter ?? process.execPath, [...(options.nodeArgs ?? []), path, ...args], {
+    const loaders = options.interpreter === undefined ? vibeLangLoader() : []
+    const child = spawn(options.interpreter ?? process.execPath, [
+      ...loaders,
+      ...(options.nodeArgs ?? []),
+      path,
+      ...args
+    ], {
       cwd: options.cwd ?? process.cwd(),
       env: { ...process.env, ...options.env },
       stdio: ["ignore", "inherit", "inherit"],

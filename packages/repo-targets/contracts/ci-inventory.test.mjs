@@ -249,7 +249,7 @@ test("required CI resolves package, app, script and evaluation suites to real ru
   ]) assert.ok(selected(label, job).length, `${label} must be a required root of ${job}`)
   const inventoryRunner = selected("//packages/repo-targets:ciInventory", "test")[0].runner
   assert.equal(basename(inventoryRunner[0]), "node")
-  assert.deepEqual(inventoryRunner.slice(1), ["--test", "packages/repo-targets/contracts/ci-inventory.test.mjs"])
+  assert.deepEqual(inventoryRunner.slice(1), ["--import=vibelang/register", "--test", "packages/repo-targets/contracts/ci-inventory.test.mjs"])
   const packageTests = inventory.rows.filter((row) => row.job === "packages" && row.required && row.selectedRoot)
   assert.ok(packageTests.length > 100, "the complete package test graph must resolve")
   for (const row of packageTests) assert.ok(selected(row.label, "test").length, `${row.label} must also be selected by ci //packages/...`)
@@ -394,6 +394,6 @@ test("the published documentation gate resolves through the public CLI with matc
   assert.ok(node)
   assert.equal(target.key ?? target.keyPreview, node.key ?? node.keyPreview)
   const runner = runnerFor(node, index.workspace)
-  assert.deepEqual(runner.slice(1), ["--test", "docs-sync/package-docs-redirect.test.mjs", "docs-sync/flow.test.ts"])
+  assert.deepEqual(runner.slice(1), ["--import=vibelang/register", "--test", "docs-sync/package-docs-redirect.test.mjs", "docs-sync/flow.test.ts"])
   assert.equal(node.attrs.cache, false)
 })

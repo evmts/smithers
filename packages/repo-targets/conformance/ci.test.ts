@@ -324,10 +324,10 @@ describe("ci conformance", () => {
       "target-index": "pnpm exec smthrs target '//:targetIndex' --write",
       "lint:jsdoc":
         "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0",
-      "release:answer": "node --experimental-strip-types .smithers/flows/release-support/main.ts answer",
-      "release:content": "node --experimental-strip-types .smithers/flows/release-support/main.ts release-content",
-      "release:status": "node --experimental-strip-types .smithers/flows/release-support/main.ts status",
-      "release:workflow": "node --experimental-strip-types .smithers/flows/release-support/main.ts release",
+      "release:answer": "node --import vibelang/register .smithers/flows/release-support/main.ts answer",
+      "release:content": "node --import vibelang/register .smithers/flows/release-support/main.ts release-content",
+      "release:status": "node --import vibelang/register .smithers/flows/release-support/main.ts status",
+      "release:workflow": "node --import vibelang/register .smithers/flows/release-support/main.ts release",
       test: "pnpm --recursive --if-present run test",
       tui: "bun apps/tui/src/main.tsx",
       "test:jsdoc": "node --test eslint.jsdoc.test.mjs"

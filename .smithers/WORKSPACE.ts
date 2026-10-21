@@ -7,7 +7,9 @@ const workspaceConfig = S.file("//pnpm-workspace.yaml")
 // from this declaration at plan time, and `packages/repo-targets/contracts/check-toolchain-pins.mjs`
 // fails when package.json `engines` and `packageManager`, flake.nix, or the
 // generated CI workflow disagree with what is declared here.
-export const runtime = S.Runtime.Node({ version: ">=26.4.0" })
+// Every Node program a target runs preloads VibeLang's loader: a workspace
+// package's exports name its source, and a migrated package's source is .vibe.
+export const runtime = S.Runtime.Node({ version: ">=26.4.0", imports: ["vibelang/register"] })
 export const packageManager = S.PackageManager.Pnpm({ version: "11.25.0", runtime })
 export const bunRuntime = S.Runtime.Bun({ version: ">=1.4.0" })
 /** Exact Bun release installed by CI and the Nix environment. @since 1.0.0-rc.0 @category configuration */

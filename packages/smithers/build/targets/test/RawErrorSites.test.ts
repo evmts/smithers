@@ -51,7 +51,7 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number]> = [
   ["src/Reference.ts", 1],
   ["src/RemoteCache.ts", 11],
   ["src/RepoTarget.ts", 3],
-  ["src/Runtime.ts", 5],
+  ["src/Runtime.ts", 6],
   ["src/RustToolchain.ts", 3],
   ["src/SafeFs.ts", 27],
   ["src/Secret.ts", 2],

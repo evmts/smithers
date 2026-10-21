@@ -88,6 +88,19 @@ export const BunVersion = Schema.Literals([">=1.4.0"])
 export type BunVersion = typeof BunVersion.Type
 
 /**
+ * Schema for one module a Node runtime preloads with `--import` before every
+ * program it runs: a bounded specifier with no whitespace or control
+ * character, which cannot be read as a flag.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const ImportSpecifier = Schema.NonEmptyString.check(
+  Schema.isMaxLength(256),
+  Schema.isPattern(/^[\x21-\x2c\x2e-\x7e][\x21-\x7e]*$/)
+)
+
+/**
  * Schema for a declared Node runtime.
  *
  * `executable` is what gets spawned; it defaults to the runtime name and is
@@ -99,7 +112,8 @@ export type BunVersion = typeof BunVersion.Type
 export const NodeRuntime = Schema.Struct({
   name: Schema.Literal("node"),
   version: NodeVersion,
-  executable: Schema.NonEmptyString
+  executable: Schema.NonEmptyString,
+  imports: Schema.optional(Schema.Array(ImportSpecifier))
 })
 
 /**
@@ -151,7 +165,8 @@ export const VersionRequirement = Schema.NonEmptyString.check(
 export const ResolvedNodeRuntime = Schema.TaggedStruct("ResolvedNodeRuntime", {
   name: Schema.Literal("node"),
   version: VersionRequirement,
-  executable: Schema.NonEmptyString
+  executable: Schema.NonEmptyString,
+  imports: Schema.optional(Schema.Array(ImportSpecifier))
 })
 
 /**
@@ -212,6 +227,14 @@ export interface Options<Version extends string> {
   readonly version: Version
   /** @default the runtime name */
   readonly executable?: string | undefined
+  /**
+   * Node only: modules preloaded with `--import` before every program the
+   * runtime runs, such as `vibelang/register` for VibeLang sources. A bare
+   * specifier resolves from the program's working directory.
+   *
+   * @default none
+   */
+  readonly imports?: ReadonlyArray<string> | undefined
 }
 
 const controlCharacter = /[\u0000-\u001f\u007f]/
@@ -240,6 +263,23 @@ const usable = (value: unknown, what: string): string => {
 const executableFor = (name: Name, executable: string | undefined): string =>
   executable === undefined ? name : usable(executable, "runtime executable")
 
+const isImportSpecifier = Schema.is(ImportSpecifier)
+
+/** The declared preloads, validated; none is the same as an empty list. */
+const importsFor = (imports: unknown): { readonly imports?: ReadonlyArray<string> } => {
+  if (imports === undefined) return {}
+  if (!Array.isArray(imports)) throw new TypeError("runtime imports must be an array of module specifiers")
+  for (const specifier of imports) {
+    if (!isImportSpecifier(specifier)) {
+      throw new Error(
+        `runtime import ${JSON.stringify(specifier)} must be one module specifier of at most 256 printable ` +
+          "characters, without whitespace, not starting with -"
+      )
+    }
+  }
+  return imports.length === 0 ? {} : { imports: Object.freeze([...imports]) }
+}
+
 /**
  * Schema for the WORKSPACE.ts Node runtime declaration.
  *
@@ -253,7 +293,8 @@ const executableFor = (name: Name, executable: string | undefined): string =>
  */
 export const NodeDeclaration = Schema.TaggedStruct("NodeRuntimeDeclaration", {
   version: Schema.optional(Schema.NonEmptyString),
-  manifest: Schema.optional(Input.File)
+  manifest: Schema.optional(Input.File),
+  imports: Schema.optional(Schema.Array(ImportSpecifier))
 })
 
 /**
@@ -317,24 +358,36 @@ export const isBunDeclaration: (value: unknown) => value is BunDeclaration = Sch
  */
 export function Node(options: Options<NodeVersion>): NodeRuntime
 export function Node(
-  options: { readonly manifest: Input.File; readonly version?: never } | {
-    readonly version: string
-    readonly manifest?: never
-  }
+  options:
+    | {
+      readonly manifest: Input.File
+      readonly version?: never
+      readonly imports?: ReadonlyArray<string> | undefined
+    }
+    | {
+      readonly version: string
+      readonly manifest?: never
+      readonly imports?: ReadonlyArray<string> | undefined
+    }
 ): NodeDeclaration
 export function Node(
-  options: Options<NodeVersion> | { readonly manifest?: Input.File; readonly version?: string }
+  options: Options<NodeVersion> | {
+    readonly manifest?: Input.File
+    readonly version?: string
+    readonly imports?: ReadonlyArray<string> | undefined
+  }
 ): NodeRuntime | NodeDeclaration {
   if (typeof options !== "object" || options === null) {
     throw new TypeError("Runtime.Node options must be an object")
   }
   const manifest = "manifest" in options ? options.manifest : undefined
   const version = "version" in options ? options.version : undefined
+  const imports = importsFor("imports" in options ? options.imports : undefined)
   if (manifest !== undefined && version !== undefined) {
     throw new Error("Runtime.Node accepts a manifest or a version, not both")
   }
   if (manifest !== undefined) {
-    return NodeDeclaration.make({ manifest })
+    return NodeDeclaration.make({ manifest, ...imports })
   }
   if (version === undefined) {
     throw new Error("Runtime.Node requires a manifest or a version")
@@ -343,10 +396,11 @@ export function Node(
     return NodeRuntime.make({
       name: "node",
       version,
-      executable: executableFor("node", (options as Options<NodeVersion>).executable)
+      executable: executableFor("node", (options as Options<NodeVersion>).executable),
+      ...imports
     })
   }
-  return NodeDeclaration.make({ version: usable(version, "runtime version") })
+  return NodeDeclaration.make({ version: usable(version, "runtime version"), ...imports })
 }
 
 /**
@@ -427,6 +481,17 @@ export const required = (runtime: Runtime | undefined): Runtime => {
 }
 
 /**
+ * The `--import` flags a Node runtime's declared preloads become, in order.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const preloads = (runtime: Runtime | undefined): Array<string> =>
+  runtime?.name === "node" && runtime.imports !== undefined
+    ? runtime.imports.map((specifier) => `--import=${specifier}`)
+    : []
+
+/**
  * Builds the argv that runs one script under the declared runtime.
  *
  * @category constructors
@@ -434,6 +499,7 @@ export const required = (runtime: Runtime | undefined): Runtime => {
  */
 export const run = (runtime: Runtime | undefined, args: ReadonlyArray<string>): Array<string> => [
   required(runtime).executable,
+  ...preloads(runtime),
   ...args
 ]
 
@@ -452,7 +518,7 @@ export const evaluate = (
   runtime: Runtime | undefined,
   program: string,
   args: ReadonlyArray<string> = []
-): Array<string> => [required(runtime).executable, "-e", program, ...args]
+): Array<string> => [required(runtime).executable, ...preloads(runtime), "-e", program, ...args]
 
 /**
  * Builds the argv that runs declared test files under the runtime's own test
@@ -475,7 +541,7 @@ export const test = (
   const runtime = required(declared)
   switch (runtime.name) {
     case "node":
-      return [runtime.executable, "--test", ...files]
+      return [runtime.executable, ...preloads(runtime), "--test", ...files]
     case "bun":
       return [runtime.executable, "test", ...(options.isolate === true ? ["--isolate"] : []), ...files]
   }

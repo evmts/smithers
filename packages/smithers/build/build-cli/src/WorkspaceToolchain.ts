@@ -95,7 +95,8 @@ const runtimeOf = (declared: unknown): Runtime.Runtime | undefined => {
     return Runtime.ResolvedNodeRuntime.make({
       name: "node",
       version: requirement(declared.version, "Node version"),
-      executable: "node"
+      executable: "node",
+      ...(declared.imports === undefined ? {} : { imports: declared.imports })
     })
   }
   if (Runtime.isBunDeclaration(declared)) {
@@ -178,7 +179,8 @@ export const resolve = async (
     runtime = Runtime.ResolvedNodeRuntime.make({
       name: "node",
       version: requirement(isRecord(engines) ? engines["node"] : undefined, "manifest engines.node"),
-      executable: "node"
+      executable: "node",
+      ...(workspace.runtime.imports === undefined ? {} : { imports: workspace.runtime.imports })
     })
   }
   let packageManager = managerOf(workspace, runtime)

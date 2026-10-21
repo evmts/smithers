@@ -746,9 +746,16 @@
     "vitest": "5.0.0",
     "@effect/platform-node": "4.0.5",
     "@effect/platform-node-shared": "4.0.5",
-    "effect": "4.0.5"
+    "effect": "4.0.5",
+    "vibelang-runtime": "0.0.3"
   },
   "peerDependencies": {
-    "effect": "4.0.5"
+    "effect": "4.0.5",
+    "vibelang": "0.0.3"
+  },
+  "peerDependenciesMeta": {
+    "vibelang": {
+      "optional": true
+    }
   }
 }

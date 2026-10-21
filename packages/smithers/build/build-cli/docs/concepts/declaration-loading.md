@@ -51,6 +51,22 @@ CommonJS dependencies resolve from the caller's installed packages. build-cli
 does not replace `Module._resolveFilename` or alias CommonJS dependency lookup.
 NodeNext relative `.js` imports use tsx's TypeScript extension handling.
 
+## VibeLang sources
+
+A declaration may import a workspace package whose source is VibeLang
+(`.vibe`). `installEffectResolution` installs `vibelang/register` before its own
+hooks, so a `.vibe` module loads in every declaration graph, flow, and command
+that runs after it. The loader comes from build-cli's own installation when it
+is there (a checkout), else from the project in the working directory;
+`vibelang` is an optional peer dependency. Without it, Node refuses the import
+with `ERR_UNKNOWN_FILE_EXTENSION`, naming the file.
+
+The two sets of hooks compose in either order: an entry point that imports
+`vibelang/register` before or after `installEffectResolution` loads the same
+modules. A `.vibe` module that does not type-check stops the import with the
+compiler's diagnostics. Compiled projects are cached on disk; see the
+`vibelang` package's README for the cache's location and invalidation.
+
 ## Evaluation lifetime
 
 The workspace discovery probe and full package graph use separate tsx

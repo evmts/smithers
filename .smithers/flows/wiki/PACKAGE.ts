@@ -24,7 +24,7 @@ const data = [
 ].map((file) => S.file(`//${file}`))
 const preview = S.Shell.Build({
   bin: S.Runtime.bin,
-  args: ["--experimental-strip-types", ".smithers/flows/wiki/main.ts"],
+  args: ["--import=vibelang/register", ".smithers/flows/wiki/main.ts"],
   data,
   timeout: "10m",
   // main.ts runs from the workspace root and writes --root/.flows/wiki.
@@ -32,13 +32,13 @@ const preview = S.Shell.Build({
 })
 const verify = S.Shell.Run({
   bin: S.Runtime.bin,
-  args: ["--experimental-strip-types", ".smithers/flows/wiki/main.ts", "--verified"],
+  args: ["--import=vibelang/register", ".smithers/flows/wiki/main.ts", "--verified"],
   data,
   timeout: "30m"
 })
 const freshness = S.Shell.Test({
   bin: S.Runtime.bin,
-  args: ["--experimental-strip-types", ".smithers/flows/wiki/main.ts", "--check"],
+  args: ["--import=vibelang/register", ".smithers/flows/wiki/main.ts", "--check"],
   data: [preview, ...data],
   timeout: "5m"
 })

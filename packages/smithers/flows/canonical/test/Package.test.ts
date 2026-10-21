@@ -30,7 +30,8 @@ test("the distribution smoke participates in the test graph after the library bu
   }))
 
   expect(graph).toContainEqual({
-    argv: ["node", "--test", "test/dist-smoke.mjs"],
+    // The workspace runtime preloads VibeLang's loader before every Node program.
+    argv: ["node", "--import=vibelang/register", "--test", "test/dist-smoke.mjs"],
     cwd: "packages/smithers/flows/canonical",
     buildsLibrary: true
   })

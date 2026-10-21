@@ -190,6 +190,35 @@ export const tagOf = (error: unknown): string | undefined => {
 }
 
 /**
+ * The sentence for source that did not load, or `undefined` for any other
+ * failure: a VibeLang module that did not compile (`vibelang/register` throws
+ * `ERR_VIBELANG_COMPILE` with the compiler's diagnostics), one outside every
+ * project (`ERR_VIBELANG_PROJECT`), or a `.vibe` module Node met without that
+ * loader (`ERR_UNKNOWN_FILE_EXTENSION`). The cause chain is searched, because
+ * an Effect that imports a module wraps what the import threw.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const sourceLoadingSentence = (error: unknown): string | undefined => {
+  let current = error
+  for (let depth = 0; depth < 8 && typeof current === "object" && current !== null; depth++) {
+    const code = ownValue(current, "code")
+    const message = ownValue(current, "message")
+    if (typeof message === "string" && message !== "") {
+      if (code === "ERR_VIBELANG_COMPILE" || code === "ERR_VIBELANG_PROJECT") return terminalSafeLines(message)
+      const file = code === "ERR_UNKNOWN_FILE_EXTENSION" ? /\bfor (\S+\.vibe)$/.exec(message)?.[1] : undefined
+      if (file !== undefined) {
+        return `Node cannot load ${terminalSafe(file)}: VibeLang source needs its loader. ` +
+          "Run smthrs from its bin, or start Node with --import vibelang/register."
+      }
+    }
+    current = ownValue(current, "cause")
+  }
+  return undefined
+}
+
+/**
  * Whether a thrown value carries a sentence someone wrote for an operator: a
  * tagged failure, or a plain `Error` this CLI threw on purpose. A runtime bug
  * (`TypeError` and friends), a Node system error, and a non-Error value do
@@ -201,7 +230,7 @@ export const tagOf = (error: unknown): string | undefined => {
  */
 export const isDesigned = (error: unknown): error is Error => {
   try {
-    if (isTagged(error)) return true
+    if (isTagged(error) || sourceLoadingSentence(error) !== undefined) return true
     return error instanceof Error && Object.getPrototypeOf(error) === Error.prototype &&
       ownValue(error, "syscall") === undefined && ownValue(error, "errno") === undefined
   } catch {
@@ -219,6 +248,8 @@ export const isDesigned = (error: unknown): error is Error => {
  * @since 1.0.0-rc.1
  */
 export const operatorSentence = (error: unknown): string => {
+  const loading = sourceLoadingSentence(error)
+  if (loading !== undefined) return loading
   if (!isDesigned(error)) {
     // A decoded refusal can arrive as a plain `{ _tag, message }` record.
     const tag = tagOf(error)

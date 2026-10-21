@@ -10,7 +10,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import { pathToFileURL } from "node:url"
-import { ModuleFailed, runModule } from "./run-module.ts"
+import { ModuleFailed, runModule, vibeLangLoader } from "./run-module.ts"
 
 const inScratch = async <A>(body: (directory: string) => Promise<A>) => {
   // A checkout root of its own, so the module's name is relative to it.
@@ -80,4 +80,21 @@ test("an interpreter that cannot start is a typed failure with no exit code", as
   )
   assert.equal(failure.module, ".smithers/flows/automation/run-module.ts")
   assert.equal(failure.exitCode, null)
+})
+
+test("preloads VibeLang's loader for a Node module when the checkout installs it", async () => {
+  await inScratch(async (directory) => {
+    const module = join(directory, "flags.mjs")
+    writeFileSync(
+      module,
+      "import { writeFileSync } from 'node:fs'\nwriteFileSync(process.argv[2], JSON.stringify(process.execArgv))\n"
+    )
+    const out = join(directory, "out.json")
+    const exit = await Effect.runPromiseExit(runModule(pathToFileURL(module), [out], { nodeArgs: ["--no-warnings"] }))
+    assert.ok(Exit.isSuccess(exit))
+    const [loader = "", ...rest] = JSON.parse(readFileSync(out, "utf8")) as Array<string>
+    assert.deepEqual(rest, ["--no-warnings"])
+    assert.equal(loader, `--import=${import.meta.resolve("vibelang/register")}`)
+    assert.deepEqual(vibeLangLoader(), [loader])
+  })
 })
