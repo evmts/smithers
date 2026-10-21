@@ -7,28 +7,46 @@ import { requires } from "./target"
 // the Flows page, saves it, runs it, watches its run page to its answer, then stops a live run and retries it; and opens
 // a flow's code, runs it, relabels its step and sees Run refused until a sandbox can run that code. No mocks. Each run
 // is a few model calls: Cerebras rate-limits concurrent calls, so the steps go one after another. Drafting asks the
-// agent, a Member's (worker/PersonalFlows.ts `canAsk`).
+// agent, a Member's (worker/PersonalFlows.ts `canAsk`), and waits for the real model (`liveModel`).
 
-requires("member")
+requires("member", "liveModel")
 
 /** The run page's state word, in the header's live region. */
 const runState = (page: Page) => page.locator('[data-slot="run-header"] [role="status"]')
 
+/** The draft card's status line, in its live region. */
+const draftState = (page: Page) => page.locator('[data-slot="flow-draft-view"] [role="status"]')
+
+/**
+ * Waits for the draft's round to end: Ready or Needs you. A round that failed or stopped fails the test at once, with
+ * the card's words for why (the model refused, the budget is spent, its checks failed), so a refusal by the model
+ * reads as one.
+ */
+const roundEnded = async (page: Page) => {
+  const status = draftState(page)
+  await expect(status).toContainText(/Ready|Needs you|Failed|Stopped/, { timeout: 120_000 })
+  const text = (await status.textContent()) ?? ""
+  if (/Failed|Stopped/.test(text)) {
+    const why = await page.locator(".sui-flow-draft-failure").textContent().catch(() => null)
+    throw new Error(`The draft's round ended ${text.trim()}${why === null ? "" : `: ${why.trim()}`}`)
+  }
+  return text
+}
+
 /** Drafts `name` from `request` on the Flows page and saves it: the person's flow, back on the Flows page. */
 const draftAndSave = async (page: Page, name: string, request: string) => {
-  await page.getByRole("navigation", { name: "Pages" }).getByRole("link", { name: "Flows" }).click()
-  await expect(page).toHaveURL(/\/app\/flows$/)
+  // Flows opens by its address: a deployment's device opens on the test account's branch, which has no Pages nav.
+  await page.goto("/app/flows")
   await page.getByRole("link", { name: "New flow" }).click()
   await page.getByLabel("Name").fill(name)
   await page.getByLabel("What it should do").fill(request)
   await page.getByRole("button", { name: "Draft" }).click()
   await expect(page).toHaveURL(/\/app\/flows\/drafts\/[0-9a-f-]{36}$/, { timeout: 30_000 })
-  const status = page.getByRole("status").filter({ hasText: /Ready|Needs you|Failed|Drafting/ }).first()
-  await expect(status).toContainText(/Ready|Needs you/, { timeout: 120_000 })
   // A blocking question the agent asked: take its default and answer, so the next round drafts.
-  if ((await status.textContent())?.includes("Needs you")) {
+  if ((await roundEnded(page)).includes("Needs you")) {
     await page.getByRole("button", { name: "Answer" }).click()
-    await expect(status).toContainText("Ready", { timeout: 120_000 })
+    await expect(draftState(page)).toContainText(/Drafting|Ready/, { timeout: 30_000 })
+    expect(await roundEnded(page)).toContain("Ready")
   }
   // The draft is flow source: one flow.ts module.
   await expect(page.getByText("flow.ts")).toBeVisible()
@@ -36,6 +54,10 @@ const draftAndSave = async (page: Page, name: string, request: string) => {
   await expect(page).toHaveURL(/\/app\/flows$/, { timeout: 90_000 })
   await expect(page.getByRole("button", { name: `Run ${name}` })).toBeVisible()
 }
+
+/** The run graph's node for `name`'s step `step` (`load`, `prompt`), done: the graph names a personal flow's steps by it. */
+const doneStep = (page: Page, name: string, step: string) =>
+  page.getByRole("group", { name: "Run graph" }).getByRole("button", { name: `${name}/${step}, Done`, exact: true })
 
 /** Starts a run of `name` from the Flows page and waits for its run page. */
 const run = async (page: Page, name: string) => {
@@ -57,10 +79,13 @@ test("flows: draft a flow, save it, run it, watch its run page, then stop a run 
     "Write the numbers from one to three hundred as English words, separated by commas, and answer with that list.",
   )
 
-  // Run it and watch its run page follow it to its answer: its steps, the step that loaded the flow, and its result.
+  // Run it and watch its run page follow it to its answer: its graph, the step that loaded the flow and the one that ran
+  // it, and its result.
   await run(page, name)
   await expect(runState(page)).toContainText("Done", { timeout: 120_000 })
-  await expect(page.getByRole("listbox", { name: "Steps" })).toContainText("flow/run/load")
+  await expect(page.getByRole("tab", { name: /^Steps/ })).toBeVisible()
+  await expect(doneStep(page, name, "load")).toBeVisible()
+  await expect(doneStep(page, name, "prompt")).toBeVisible()
   await expect(page.getByText("Result")).toBeVisible()
   await page.getByRole("tab", { name: "Journal" }).click()
   await expect(page.getByRole("table", { name: "Journal" })).toContainText("flows.engine.run-decision")
@@ -84,7 +109,7 @@ test("flows: draft a flow, save it, run it, watch its run page, then stop a run 
   await expect(runState(page)).toContainText("Done", { timeout: 120_000 })
 
   // Runs lists every run of the flow, newest first.
-  await page.getByRole("link", { name: "Runs" }).first().click()
+  await page.goto("/app/runs")
   await expect(page.getByRole("table", { name: "Runs" })).toContainText("flow/run")
 })
 
@@ -105,10 +130,9 @@ test("flows: draft a flow from a prompt, open its code, run it, relabel its step
   await expect(page.getByText("Needs a sandbox", { exact: true })).toHaveCount(0)
 
   // Run it as drafted: its run page follows it to its answer.
-  await page.getByRole("link", { name: "Flows" }).first().click()
   await run(page, name)
   await expect(runState(page)).toContainText("Done", { timeout: 120_000 })
-  await expect(page.getByRole("listbox", { name: "Steps" })).toContainText("flow/run/load")
+  await expect(doneStep(page, name, "load")).toBeVisible()
 
   // Relabel its step in code: the page says it needs a sandbox, and Save keeps it as the next revision.
   await page.goto("/app/flows")
