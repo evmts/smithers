@@ -158,6 +158,25 @@ export const SAVE_REFUSALS: Readonly<Record<string, string>> = {
   unavailable: "Couldn't save. Try again.",
 }
 
+/** Why a draft's round failed, as its card reads it, by its code (./failure.ts); an unknown code reads as itself. */
+export const DRAFT_FAILURE_WORDS: Readonly<Record<string, string>> = {
+  no_model: "No model available",
+  quota: "Model budget spent",
+  rate_limited: "Model busy. Try again.",
+  undecodable: "The draft didn't come out right",
+  frames: "Ran out of steps",
+  model_error: "The model failed",
+  checks: "A check failed",
+  stopped: "Stopped",
+  ended: "Ended before it finished",
+  // Rounds written before the codes: the agent couldn't draft.
+  draft: "Couldn't draft",
+}
+
+/** A draft failure's words. */
+export const draftFailureWords = (code: string): string =>
+  Object.hasOwn(DRAFT_FAILURE_WORDS, code) ? DRAFT_FAILURE_WORDS[code]! : code
+
 /** What a refused write of a flow's code reads as on its page, by its code. */
 export const WRITE_REFUSALS: Readonly<Record<string, string>> = {
   stale: "Changed since you opened it",

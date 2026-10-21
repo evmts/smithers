@@ -34,6 +34,7 @@ import {
   RemoveFlow,
   WriteRound,
 } from "./flows"
+import { type DraftFailure, draftFailure } from "./failure"
 import { recordLoad, recordRound, recordSave, recordWrite } from "./metrics"
 import { roundExecutionId, roundOf } from "./round"
 import { DraftNotReady, FlowInvalid, FlowNeedsSandbox, NameTaken } from "./reference"
@@ -116,20 +117,28 @@ export const open = ({ name, request }: { readonly name: string; readonly reques
     } satisfies Opened
   })
 
-/** What `flow/new/write` writes for a round: the round's status, file, checks and questions. */
+/**
+ * What `flow/new/write` writes for a round: the round's status, file, checks, questions and why it failed. A draft whose
+ * checks fail is a failed round (`checks`), with its file and checks shown; one the agent never drafted failed with
+ * the agent's code (./failure.ts).
+ */
 export const roundOutcome = (input: {
   readonly round: number
   readonly name: string
   readonly drafted: Drafted | null
+  readonly failure?: unknown
 }): {
   readonly status: Exclude<DraftStatus, "drafting" | "saved" | "proposed">
   readonly files: ReadonlyArray<{ readonly path: string; readonly text: string }>
   readonly checks: ReturnType<typeof checkSource>
   readonly questions: ReadonlyArray<DraftQuestion>
   readonly summary: string | null
+  readonly failure: DraftFailure | null
 } => {
   const { drafted } = input
-  if (drafted === null) return { status: "failed", files: [], checks: [], questions: [], summary: null }
+  if (drafted === null) {
+    return { status: "failed", files: [], checks: [], questions: [], summary: null, failure: draftFailure(input.failure) }
+  }
   const text = renderSource({
     name: input.name,
     description: drafted.description,
@@ -142,12 +151,15 @@ export const roundOutcome = (input: {
     assumed: question.assumed,
     blocking: question.blocking,
   }))
+  const checks = checkSource(text, input.name, PROMPT_CALLABLE)
+  const passed = passes(checks)
   return {
-    status: questions.some((question) => question.blocking) ? "needs_you" : "ready",
+    status: !passed ? "failed" : questions.some((question) => question.blocking) ? "needs_you" : "ready",
     files: [{ path: SOURCE_PATH, text }],
-    checks: checkSource(text, input.name, PROMPT_CALLABLE),
+    checks,
     questions,
     summary: drafted.summary === "" ? null : drafted.summary,
+    failure: passed ? null : "checks",
   }
 }
 
@@ -165,13 +177,14 @@ export const write = (input: typeof WriteRound.payloadSchema.Type) =>
       files: outcome.files,
       checks: outcome.checks,
       questions: outcome.questions,
-      failure: input.failure,
+      failure: outcome.failure,
       flowId: input.flowId,
     })
     yield* recordRound({
       draftId: input.draftId,
       round: input.round,
       outcome: outcome.status,
+      failure: outcome.failure,
       checks: outcome.checks.flatMap((check) => (check.ok ? [] : [`${check.check}:${check.code}`])),
       questions: outcome.questions.length,
       durationMs: (yield* Clock.currentTimeMillis) - input.openedAtMs,

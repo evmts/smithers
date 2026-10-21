@@ -4,7 +4,7 @@ import { Effect, Metric } from "effect"
 // one count and the outcome on the span per draft round, per save, per write and per load. Ids, counts and codes only: never a
 // request, a file, a question, an answer, a description or a flow's name.
 
-/** Draft rounds, by `scope` and `outcome` (`ready`, `needs_you`, `failed`). */
+/** Draft rounds, by `scope`, `outcome` (`ready`, `needs_you`, `failed`) and, for a failed one, `failure` (./failure.ts). */
 export const authorRounds = Metric.counter("smithers_flow_author_rounds", {
   description: "Draft rounds flow/new finished, by scope and outcome",
   incremental: true,
@@ -27,6 +27,8 @@ export interface Round {
   readonly draftId: string
   readonly round: number
   readonly outcome: "ready" | "needs_you" | "failed"
+  /** Why it failed (./failure.ts), or null. */
+  readonly failure: string | null
   readonly checks: ReadonlyArray<string>
   readonly questions: number
   readonly durationMs: number
@@ -35,8 +37,18 @@ export interface Round {
 /** Records a finished round: `flow.author`, Warn when it failed, and its count. */
 export const recordRound = (round: Round) =>
   Effect.gen(function* () {
-    yield* Metric.update(Metric.withAttributes(authorRounds, { scope: "person", outcome: round.outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ "smithers.flow.outcome": round.outcome })
+    yield* Metric.update(
+      Metric.withAttributes(authorRounds, {
+        scope: "person",
+        outcome: round.outcome,
+        ...(round.failure === null ? {} : { failure: round.failure }),
+      }),
+      1,
+    )
+    yield* Effect.annotateCurrentSpan({
+      "smithers.flow.outcome": round.outcome,
+      ...(round.failure === null ? {} : { "smithers.flow.failure": round.failure }),
+    })
     yield* Effect.logWithLevel(round.outcome === "failed" ? "Warn" : "Info")("flow.author").pipe(
       Effect.annotateLogs({
         feature: "flows",
@@ -45,6 +57,7 @@ export const recordRound = (round: Round) =>
         scope: "person",
         target: "flow",
         outcome: round.outcome,
+        ...(round.failure === null ? {} : { failure: round.failure }),
         checks: round.checks.join(","),
         questions: round.questions,
         durationMs: round.durationMs,

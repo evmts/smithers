@@ -11,7 +11,7 @@ import type { Inspection } from "../runs/schema"
 import { listRows } from "../runs/page"
 import { Runs } from "../runs/runs"
 import { codeSaveable, formReady, savedRefusal, writtenRefusal } from "./actions"
-import { codePath, FLOWS_PATH, NEW_FLOW_PATH, writeRefusalWords } from "./contract"
+import { codePath, draftFailureWords, FLOWS_PATH, NEW_FLOW_PATH, writeRefusalWords } from "./contract"
 import { FlowsUi } from "./flowsUi"
 import { placementOf, renderSource } from "./source"
 
@@ -115,6 +115,14 @@ describe("the form", () => {
     expect(writeRefusalWords("stale")).toBe("Changed since you opened it")
     expect(writeRefusalWords("teapot")).toBe("teapot")
     expect(codePath("release-notes")).toBe("/app/flows/code/release-notes")
+  })
+
+  test("a failed round reads by its code; one it doesn't know reads as itself", () => {
+    expect(draftFailureWords("rate_limited")).toBe("Model busy. Try again.")
+    expect(draftFailureWords("stopped")).toBe("Stopped")
+    expect(draftFailureWords("draft")).toBe("Couldn't draft")
+    expect(draftFailureWords("toString")).toBe("toString")
+    expect(draftFailureWords("teapot")).toBe("teapot")
   })
 
   test("a refused Save reads by its code", () => {

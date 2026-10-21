@@ -143,7 +143,8 @@ export const WriteRound = Action.make("flow/new/write", {
     request: Schema.String,
     flowId: Schema.NullOr(Schema.String),
     drafted: Schema.NullOr(Drafted),
-    failure: Schema.NullOr(Schema.String),
+    /** The drafting agent's failure as its step journaled it, when it drafted nothing; `write` reads its code. */
+    failure: Schema.Unknown,
     openedAtMs: Schema.Number,
   },
   success: RoundEnded,
@@ -152,9 +153,11 @@ export const WriteRound = Action.make("flow/new/write", {
   retryPolicy: ROUTE_RETRY,
 })
 
-/** How a round's drafting ended: the draft, or why there is none. */
-const Outcome = Schema.Struct({ drafted: Schema.NullOr(Drafted), failure: Schema.NullOr(Schema.String) })
-type Outcome = typeof Outcome.Type
+/** How a round's drafting ended: the draft, or the agent's failure. */
+interface Outcome {
+  readonly drafted: Drafted | null
+  readonly failure: unknown
+}
 
 /** `flow/new`: one round of a draft. Its tag and schemas are its reference's. */
 export const FlowNew = Flow.make(FlowNewReference._tag, {
@@ -175,10 +178,10 @@ export const FlowNew = Flow.make(FlowNewReference._tag, {
             answers: opened.answers,
           }).pipe(
             Node.map(Node.capture({ failure: null }, (drafted: Drafted): Outcome => ({ drafted, failure: null }))),
-            // The agent couldn't draft (the model failed, or its answer never decoded): the round fails, and the
-            // card offers another.
+            // The agent couldn't draft (the model failed, or its answer never decoded): the round fails with the
+            // agent's failure, whose code `flow/new/write` reads (./failure.ts), and the card offers another.
             Node.catch({
-              onFailure: Node.capture({ failure: "draft" }, () => Node.succeed<Outcome>({ drafted: null, failure: "draft" })),
+              onFailure: Node.capture({}, (failure) => Node.succeed({ drafted: null, failure })),
             }),
             Node.bindPlanned(Node.capture({ write: WriteRound.name }, (outcome) =>
               WriteRound.call({

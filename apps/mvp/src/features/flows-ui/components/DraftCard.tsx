@@ -1,6 +1,6 @@
 import { FlowDraftView } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { MINE, SAVE_REFUSALS } from "../contract"
+import { draftFailureWords, MINE, SAVE_REFUSALS } from "../contract"
 import { useFlowsUi } from "./FlowsUiContext"
 
 // One draft at full size (decision 0014 §5): its round's status, questions with the defaults it assumed, its flow.ts
@@ -27,7 +27,7 @@ export function DraftCard() {
         answers={answers}
         files={draft.files}
         checks={draft.checks}
-        failure={draft.failure}
+        failure={draft.failure === null ? null : draftFailureWords(draft.failure)}
         onAnswerChange={(id, value) => actions.setAnswer(draft.id, id, value)}
         onAnswer={actions.answer}
         {...(draft.status === "saved" ? {} : { onSave: actions.save, saveDisabled: !saveable || shown.busy })}

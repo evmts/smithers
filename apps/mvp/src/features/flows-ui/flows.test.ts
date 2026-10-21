@@ -12,6 +12,7 @@ import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { FlowRuntime } from "@smthrs/flow"
+import { ModelError } from "@smthrs/model"
 import { EngineStore } from "@smthrs/flows"
 import { Layer } from "effect"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
@@ -242,7 +243,7 @@ describe("flow/new, more rounds", () => {
       executionId: roundExecutionId(draftId, 0),
       payload: { name: "dark-mode", request: "Switch to dark mode" },
     }))).toEqual(Exit.succeed({ draftId, round: 0, status: "failed", name: "dark-mode" }))
-    expect(await draftRow(draftId)).toMatchObject({ status: "failed", failure: "draft", files: [], checks: [] })
+    expect(await draftRow(draftId)).toMatchObject({ status: "failed", failure: "undecodable", files: [], checks: [] })
     // Answering a failed round drafts again, from no file.
     expect(await d.run(d.engine.flows.execute(FlowAnswer, {
       executionId: crypto.randomUUID(),
@@ -254,16 +255,36 @@ describe("flow/new, more rounds", () => {
     }))).toEqual(Exit.succeed({ draftId, round: 1, status: "failed", name: "dark-mode" }))
   }, SLOW)
 
-  test("a draft that fails a check is ready with the check named, and won't save", async () => {
+  test("a draft that fails a check fails its round, checks named and file shown, and won't save", async () => {
     const d = await device(scripted(() => drafted({ flows: ["repo/write"] })).script)
     const draftId = crypto.randomUUID()
-    await d.run(d.engine.flows.execute(FlowNew, {
+    expect(await d.run(d.engine.flows.execute(FlowNew, {
       executionId: roundExecutionId(draftId, 0),
       payload: { name: "dark-mode", request: "Switch to dark mode" },
-    }))
-    expect((await draftRow(draftId))!.checks).toContainEqual({ check: "calls", ok: false, code: "unknown" })
+    }))).toEqual(Exit.succeed({ draftId, round: 0, status: "failed", name: "dark-mode" }))
+    const row = (await draftRow(draftId))!
+    expect(row).toMatchObject({ status: "failed", failure: "checks" })
+    expect(row.checks).toContainEqual({ check: "calls", ok: false, code: "unknown" })
+    expect(row.files).toHaveLength(1)
     const saved = await d.run(d.engine.flows.execute(FlowSave, { executionId: crypto.randomUUID(), payload: { draftId } }))
-    expect(JSON.stringify(saved)).toContain('"code":"checks"')
+    expect(JSON.stringify(saved)).toContain('"code":"not_ready"')
+  }, SLOW)
+
+  test("a model that refuses the call fails the round no_model, and nothing it said reaches the draft", async () => {
+    const SENTINEL = "SENTINEL-provider-said-this"
+    const d = await device((request) =>
+      drafting(request)
+        ? Stream.fail(new ModelError.ModelError({ code: "no_route", message: SENTINEL, httpStatus: 409 }))
+        : Stream.empty
+    )
+    const draftId = crypto.randomUUID()
+    expect(await d.run(d.engine.flows.execute(FlowNew, {
+      executionId: roundExecutionId(draftId, 0),
+      payload: { name: "dark-mode", request: "Switch to dark mode" },
+    }))).toEqual(Exit.succeed({ draftId, round: 0, status: "failed", name: "dark-mode" }))
+    const row = (await draftRow(draftId))!
+    expect(row).toMatchObject({ status: "failed", failure: "no_model", files: [], checks: [] })
+    expect(JSON.stringify(row)).not.toContain(SENTINEL)
   }, SLOW)
 
   test("a name you have edits that flow: the round starts from its source, and saving makes revision 2", async () => {
@@ -318,6 +339,13 @@ describe("flow/save", () => {
       [{ status: "failed" }, "not_ready"],
       [{ files: [] }, "not_ready"],
       [{ questions: [{ id: "q", text: "Which?", assumed: "a", blocking: true }] }, "needs_you"],
+      // A round written ready whose file no longer passes its checks (a call the catalog dropped since): checked again.
+      [{
+        files: [{
+          path: SOURCE_PATH,
+          text: renderSource({ name: "dark-mode", description: "Dark.", flows: ["repo/write"], instructions: "Go dark." }),
+        }],
+      }, "checks"],
     ]
     for (const [overrides, code] of cases) {
       const draftId = crypto.randomUUID()
