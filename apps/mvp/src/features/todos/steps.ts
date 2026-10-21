@@ -18,11 +18,13 @@ import {
   type ChangeRequested,
   type Drafted,
   KeepDraft,
+  KeepIssueDraft,
   QueueCommit,
   QueueDrop,
   TodoCommit,
   TodoDraft,
   TodoDrop,
+  TodoIssue,
   TodoStepRefused,
 } from "./flows"
 import { drafts, queued } from "./metrics"
@@ -35,10 +37,14 @@ import { Kept, type QueuedOp, type TodosCall } from "./schema"
 // UUIDs of the execution id, so a step run again names the same draft or change, and the tab keeps it once. A tab that
 // doesn't answer within the wait is gone, and the retry policy asks again. Nothing records a title or a prompt.
 
-/** What the tab answered: the door it started the request through, and whether it kept the draft or change. */
+/**
+ * What the tab answered: the door it started the request through, whether it kept the draft or change, and, for a
+ * draft from an issue, whether the device lacks that issue.
+ */
 export interface Reply {
   readonly door: Door
   readonly kept: boolean
+  readonly missing?: boolean
 }
 
 /** The tabs of this browser, as a step reaches them: only the tab that started a request answers. */
@@ -61,14 +67,16 @@ export class TabTodos extends Context.Service<
         })
         return TabTodos.of({
           ask: ({ requester, call }) =>
-            ask(requester, call).pipe(Effect.map(Option.map(({ door, output }) => ({ door, kept: output.kept })))),
+            ask(requester, call).pipe(
+              Effect.map(Option.map(({ door, output }) => ({ door, kept: output.kept, missing: output.issue === "missing" }))),
+            ),
         })
       }),
     )
 }
 
 /** How a step ended: its tab kept it, or why not. */
-export type StepOutcome = "kept" | "not_kept" | "tab_gone" | "agent"
+export type StepOutcome = "kept" | "not_kept" | "issue_not_found" | "tab_gone" | "agent"
 
 /** The run the step belongs to, and who it acts for: the agent's call is an execution that isn't its own requester. */
 const runOf = Effect.map(FlowRuntime.FlowInstance, ({ executionId }) => {
@@ -85,21 +93,29 @@ const askTab = (requester: string, via: StackVia, call: TodosCall) =>
     const door: Door | "unknown" = via === "agent"
       ? "agent"
       : Option.match(reply, { onNone: () => "unknown" as const, onSome: (answered) => answered.door })
-    const outcome: StepOutcome = Option.isNone(reply) ? "tab_gone" : reply.value.kept ? "kept" : "not_kept"
+    const outcome: StepOutcome = Option.isNone(reply)
+      ? "tab_gone"
+      : reply.value.kept
+      ? "kept"
+      : reply.value.missing === true
+      ? "issue_not_found"
+      : "not_kept"
     return { door, outcome }
   })
 
 /**
- * What `todo/draft/keep` does: derives the draft's id from the run, asks the tab that started it to keep the draft on
- * its device, and answers `drafted` with the stack's page. The agent's draft remembers the answer it belongs to, so its
- * card shows there. Records a span `todos.draft`, a log line and a count of `drafts` by door and outcome. A tab gone,
- * or one that couldn't keep it, fails `TodoStepRefused`.
+ * What `todo/draft/keep` and `todo/issue/keep` do: derive the draft's id from the run, ask the tab that started it to
+ * keep the draft on its device, and answer `drafted` with the stack's page. The agent's draft remembers the answer it
+ * belongs to, so its card shows there. A draft from an issue names it, and the tab fills a title or prompt left out
+ * from the issue (src/features/todos/tab.ts). Records a span `todos.draft`, a log line and a count of `drafts` by door
+ * and outcome. A tab gone, one that couldn't keep it, or one whose device lacks the issue fails `TodoStepRefused`.
  */
 export const keepDraft = (payload: {
   readonly repo: string
-  readonly prompt: string
+  readonly prompt?: string | undefined
   readonly title?: string | undefined
   readonly acceptance?: ReadonlyArray<string> | undefined
+  readonly issue?: number | undefined
 }) =>
   Effect.gen(function* () {
     const startedAt = yield* Clock.currentTimeMillis
@@ -112,21 +128,23 @@ export const keepDraft = (payload: {
         id: draftId,
         repo: payload.repo,
         repoId: repoId(owner, name),
-        title: payload.title?.trim() ?? titleOf(payload.prompt),
-        prompt: payload.prompt,
+        title: payload.title?.trim() ?? (payload.prompt === undefined ? "" : titleOf(payload.prompt)),
+        prompt: payload.prompt ?? "",
         acceptance: payload.acceptance ?? [],
         answerId: via === "agent" ? requester : null,
         createdAt: startedAt,
+        ...(payload.issue === undefined ? {} : { issue: payload.issue }),
       },
     })
     yield* Metric.update(Metric.withAttributes(drafts, { door, outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ draftId, via, door, outcome })
+    yield* Effect.annotateCurrentSpan({ draftId, via, door, outcome, fromIssue: payload.issue !== undefined })
     yield* Effect.logWithLevel(outcome === "kept" ? "Info" : "Warn")("todos.draft").pipe(
       Effect.annotateLogs({
         draftId,
         via,
         door,
         outcome,
+        fromIssue: payload.issue !== undefined,
         durationMs: (yield* Clock.currentTimeMillis) - startedAt,
         feature: "todos",
       }),
@@ -143,6 +161,7 @@ type Fields =
     readonly title: string
     readonly prompt: string
     readonly acceptance?: ReadonlyArray<string> | undefined
+    readonly issue?: number | undefined
   }
   | { readonly op: "drop"; readonly repo: string; readonly number: number }
 
@@ -167,6 +186,7 @@ export const queueChange = (fields: Fields) =>
         prompt: fields.prompt,
         acceptance: fields.acceptance ?? [],
         number: 0,
+        ...(fields.issue === undefined ? {} : { issue: fields.issue }),
       }
       : { id: opId, repo: fields.repo, op: "drop", title: "", prompt: "", acceptance: [], number: fields.number }
     const { door, outcome } = via === "agent"
@@ -189,9 +209,13 @@ export const queueChange = (fields: Fields) =>
     return { opId, status: "requested" } satisfies ChangeRequested
   }).pipe(Effect.withSpan("todos.queue"))
 
-/** Registers `todo/draft`, `todo/commit` and `todo/drop` with their steps, asking through the host's `TabTodos`. */
+/**
+ * Registers `todo/draft`, `todo/issue`, `todo/commit` and `todo/drop` with their steps, asking through the host's
+ * `TabTodos`.
+ */
 export const registration = Layer.mergeAll(
   Interpreter.layerWithImplementations(TodoDraft, KeepDraft.toLayer(keepDraft)),
+  Interpreter.layerWithImplementations(TodoIssue, KeepIssueDraft.toLayer(keepDraft)),
   Interpreter.layerWithImplementations(TodoCommit, QueueCommit.toLayer((payload) => queueChange({ op: "commit", ...payload }))),
   Interpreter.layerWithImplementations(TodoDrop, QueueDrop.toLayer((payload) => queueChange({ op: "drop", ...payload }))),
 )

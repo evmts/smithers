@@ -35,10 +35,17 @@ export interface Stack {
   readonly todos: ReadonlyArray<Row>
 }
 
-/** A change: append TODO `id`, or drop TODO `number`. */
+/**
+ * A change: append TODO `id`, drop TODO `number`, or finish TODO `id`'s attempt `ordinal` as its run ended it (merged,
+ * closed on GitHub as dropped, or failed).
+ */
 export type Op =
   | { readonly kind: "commit"; readonly id: string }
   | { readonly kind: "drop"; readonly number: number }
+  | { readonly kind: "finish"; readonly id: string; readonly ordinal: number; readonly state: FinishedState }
+
+/** How a run ends its TODO. */
+export type FinishedState = "merged" | "dropped" | "failed"
 
 /** A TODO that starts an attempt: its run's key is the attempt the writer records for it. */
 export interface Start {
@@ -66,7 +73,13 @@ export type Result =
     readonly stopped: { readonly todoId: string; readonly ordinal: number } | undefined
     readonly starts: ReadonlyArray<Start>
   }
-  | { readonly kind: "refused"; readonly code: "stack_full" | "merged" | "not_found" }
+  | {
+    readonly kind: "finished"
+    readonly number: number
+    readonly state: FinishedState
+    readonly starts: ReadonlyArray<Start>
+  }
+  | { readonly kind: "refused"; readonly code: "stack_full" | "merged" | "not_found" | "stale" }
 
 const settled = (state: TodoState): boolean => (SETTLED_STATES as ReadonlyArray<TodoState>).includes(state)
 const inLane = (state: TodoState): boolean => (LANE_STATES as ReadonlyArray<TodoState>).includes(state)
@@ -88,7 +101,7 @@ const fill = (todos: ReadonlyArray<Row>, lanes: number): { todos: ReadonlyArray<
     if (!starting.has(todo.id)) return todo
     const ordinal = todo.attempt + 1
     starts.push({ todoId: todo.id, number: todo.number, ordinal, revision: todo.revision })
-    return { ...todo, state: "starting" as const, attempt: ordinal }
+    return { ...todo, state: "working" as const, attempt: ordinal }
   })
   return { todos: next, starts }
 }
@@ -112,6 +125,7 @@ export const apply = (stack: Stack, op: Op): { readonly stack: Stack; readonly r
       result: { kind: "committed", number: todo.number, position: todo.position!, starts: filled.starts },
     }
   }
+  if (op.kind === "finish") return finish(stack, op)
   const target = stack.todos.find((todo) => todo.number === op.number)
   if (target === undefined) return { stack, result: { kind: "refused", code: "not_found" } }
   if (target.state === "merged") return { stack, result: { kind: "refused", code: "merged" } }
@@ -136,6 +150,31 @@ export const apply = (stack: Stack, op: Op): { readonly stack: Stack; readonly r
       stopped: inLane(target.state) ? { todoId: target.id, ordinal: target.attempt } : undefined,
       starts: filled.starts,
     },
+  }
+}
+
+/**
+ * A run ends TODO `op.id`'s attempt: only while that attempt holds a lane (a dropped TODO's run, or an earlier attempt's,
+ * is `stale`). Merged and dropped leave the stack and close the gap; failed keeps its place. The lane frees either way.
+ */
+const finish = (stack: Stack, op: Extract<Op, { readonly kind: "finish" }>): { readonly stack: Stack; readonly result: Result } => {
+  const target = stack.todos.find((todo) => todo.id === op.id)
+  if (target === undefined || !inLane(target.state) || target.attempt !== op.ordinal) {
+    return { stack, result: { kind: "refused", code: "stale" } }
+  }
+  const from = target.position!
+  const leaves = op.state !== "failed"
+  const changed = stack.todos.map((todo): Row =>
+    todo.id === target.id
+      ? { ...todo, state: op.state, position: leaves ? null : todo.position }
+      : leaves && todo.position !== null && todo.position > from
+      ? { ...todo, position: todo.position - 1 }
+      : todo
+  )
+  const filled = fill(changed, stack.lanes)
+  return {
+    stack: { ...stack, todos: filled.todos },
+    result: { kind: "finished", number: target.number, state: op.state, starts: filled.starts },
   }
 }
 

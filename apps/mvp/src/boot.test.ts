@@ -267,11 +267,13 @@ test("start is the boundary: it builds the one runtime, renders the chat layer o
   target.dispatchEvent(cmdK())
   expect(chat!.queries.composer.toArray[0]?.open).toBe(true)
   await stop()
-  // Two keydown listeners: ⌘K as the event goes down, Esc as it comes back up (src/features/chat/shortcuts.ts).
+  // Three keydown listeners: ⌘K as the event goes down, Esc as it comes back up (src/features/chat/shortcuts.ts), and a
+  // button's one-key shortcut (src/features/keys/keys.ts).
   expect(unbound.sort()).toEqual([
     "error",
     "focus",
     "focusin",
+    "keydown",
     "keydown",
     "keydown",
     "offline",

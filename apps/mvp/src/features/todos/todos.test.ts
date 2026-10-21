@@ -25,11 +25,13 @@ import { Commands } from "../commands/commands"
 import { repoId } from "../repo/contract"
 import { ChangeNotTaken, StackClient } from "./api"
 import { stackPath } from "./contract"
+import { FlowDispatch } from "../../flows/dispatch"
+import { TodoStepRefused } from "./flows"
 import { pendingActions, sends } from "./metrics"
 import type { Draft, Requested, Sending, Todo, TodoRequest } from "./schema"
 import { TodosStore } from "./store"
 import { Todos } from "./todos"
-import { accessFor, draftsOfAnswer, draftsOfRepo, notSentRows, stackRows, todoCardOf } from "./view"
+import { accessFor, draftsOfAnswer, draftsOfRepo, notSentRows, stackRows, todoCardOf, todosByIssue } from "./view"
 import { keep } from "./writes"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -75,7 +77,7 @@ const faultyClient = () => {
   return { layer, state, next: (...faults: Array<"network" | "drop" | number>) => void plan.push(...faults) }
 }
 
-type App = ManagedRuntime.ManagedRuntime<Todos | TodosStore | ChatStore | Chat | Commands | AuthStore, unknown>
+type App = ManagedRuntime.ManagedRuntime<Todos | TodosStore | ChatStore | Chat | Commands | AuthStore | FlowDispatch, unknown>
 
 /** A tab on `runtime`, with the TODOs layer's queries started as React starts them. */
 const tabOf = async (runtime: App) => {
@@ -122,7 +124,7 @@ type Tab = Awaited<ReturnType<typeof tabOf>>
 /** The app on a fresh ChatApi as `actor` (Maya unless set), its device's engine leading. */
 const open = async (options: TabOptions = {}, actor: Actor | null = maya) => {
   const runtime: ManagedRuntime.ManagedRuntime<
-    Todos | TodosStore | ChatStore | Chat | Commands | AuthStore | TestChatApi,
+    Todos | TodosStore | ChatStore | Chat | Commands | AuthStore | FlowDispatch | TestChatApi,
     unknown
   > = openTestApp(options, { actor })
   runtimes.push(runtime)
@@ -202,6 +204,13 @@ describe("a commit", () => {
         state: "queued",
         prompt: "Retry a failed delivery **three** times.",
         acceptance: [],
+        createdLogin: expect.any(String),
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
+        settledAt: null,
+        branch: null,
+        prNumber: null,
+        issueNumber: null,
       })
     )
   }, WITHIN)
@@ -417,6 +426,92 @@ describe("the agent", () => {
   }, WITHIN)
 })
 
+describe("from an issue", () => {
+  /** Issue `number` of the test repository as GitHub's projection holds it (worker/github/Store.ts writes it). */
+  const issue = (api: TestChatApi["Service"], number: number, title: string, body: string) =>
+    sql(
+      api,
+      `INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state, created_at, updated_at,
+        source_updated_at, fetched_at)
+      VALUES ('${REPO_ID}#${number}', '${REPO_ID}', ${number}, 'issue', ${7000 + number}, '${title}', '${body}', 'open',
+        now(), now(), now(), now())`,
+    )
+
+  test("Make TODO drafts from the issue, linked to it; Commit keeps the link, and the issue shows its TODO", async () => {
+    const tab = await open()
+    const other = await another(tab.api)
+    await issue(tab.api, 7, "Fix the README", "The README says **hello**.")
+    await tab.actions.open(OWNER, NAME)
+    await other.actions.open(OWNER, NAME)
+    // The press answers the stack's page at once; the draft shows once the step kept it, from the issue.
+    expect(tab.actions.fromIssue(OWNER, NAME, 7)).toBe(stackPath(OWNER, NAME))
+    await until(() =>
+      expect(draftsOfRepo(REPO_ID, tab.drafts())).toEqual([
+        expect.objectContaining({ title: "Fix the README", prompt: "The README says **hello**.", issue: 7, answerId: null }),
+      ])
+    )
+    tab.actions.commit(tab.drafts()[0]!.id)
+    await until(() => expect(other.stack().todos).toEqual([expect.objectContaining({ number: 1, issueNumber: 7 })]))
+    expect(await sql(tab.api, `SELECT number, issue_number AS "issue" FROM todos`)).toEqual([{ number: 1, issue: 7 }])
+    // On the other device, the issue lists its TODO, still open, so Make TODO doesn't show there.
+    expect(todosByIssue(REPO_ID, other.stack().todos, OWNER, NAME).get(7)).toEqual({
+      links: [{ label: "T1", href: `/${OWNER}/${NAME}/stack/1` }],
+      open: true,
+    })
+  }, WITHIN)
+
+  test("a TODO from an issue that a full stack refuses keeps its link when Edit brings it back as a draft", async () => {
+    const tab = await open()
+    await issue(tab.api, 9, "Fix the footer", "The footer is wrong.")
+    await tab.actions.open(OWNER, NAME)
+    await committed(tab, "Fills it", 1)
+    await sql(tab.api, `UPDATE stacks SET max_open = 1`)
+
+    tab.actions.fromIssue(OWNER, NAME, 9)
+    await until(() => expect(draftsOfRepo(REPO_ID, tab.drafts())).toEqual([expect.objectContaining({ issue: 9 })]))
+    tab.actions.commit(tab.drafts()[0]!.id)
+    await until(() => expect(tab.notSent()).toEqual([expect.objectContaining({ op: "commit", reason: "Stack full" })]))
+    await until(() => expect(tab.view()?.committing).toEqual([]))
+
+    tab.actions.edit(tab.notSent()[0]!.id)
+    expect(tab.drafts()).toEqual([
+      expect.objectContaining({ title: "Fix the footer", prompt: "The footer is wrong.", issue: 9 }),
+    ])
+  }, WITHIN)
+
+  test("the agent makes one from an issue with its own title and prompt, under its answer; the issue stays linked", async () => {
+    const tab = await open()
+    await issue(tab.api, 8, "Webhooks fail", "They fail.")
+    await tab.actions.open(OWNER, NAME)
+    const chat = await tab.runtime.runPromise(Effect.service(Chat))
+    const question = "Make a TODO from issue 8"
+    const asked = chat.actions.ask(question)
+    if (!asked.asked) throw new Error("not asked")
+    ;(await Effect.runPromise(tab.api.answerTo(question))).cell(
+      `console.log(JSON.stringify(await ctx.call("todo/issue", { repo: "${TEST_REPOSITORY}", issue: 8, ` +
+        `prompt: "# Retry webhook delivery\\n\\nThree tries." })))`,
+    )
+    await until(() =>
+      expect(draftsOfAnswer(asked.answerId, tab.drafts())).toEqual([
+        expect.objectContaining({ title: "Retry webhook delivery", prompt: "# Retry webhook delivery\n\nThree tries.", issue: 8 }),
+      ])
+    )
+    ;(await Effect.runPromise(tab.api.answerTo(question, 1))).cell(`ctx.done("Drafted.")`)
+    expect(await sql(tab.api, `SELECT count(*)::int AS n FROM stack_ops`)).toEqual([{ n: 0 }])
+  }, WITHIN)
+
+  test("an issue the device doesn't have drafts nothing: todo/issue fails issue_not_found", async () => {
+    const tab = await open()
+    await tab.actions.open(OWNER, NAME)
+    const flows = await tab.runtime.runPromise(Effect.service(FlowDispatch))
+    const dispatched = await tab.runtime.runPromise(
+      flows.dispatch("todo/issue", { repo: TEST_REPOSITORY, issue: 99 }, { door: "button" }),
+    )
+    expect(dispatched).toEqual({ _tag: "Failed", error: new TodoStepRefused({ reason: "issue_not_found" }) })
+    expect(tab.drafts()).toEqual([])
+  }, WITHIN)
+})
+
 describe("slash commands", () => {
   test("/todo.new owner/repo <prompt> drafts one; /todo.drop owner/repo <n> drops one", async () => {
     const tab = await open()
@@ -445,6 +540,30 @@ describe("slash commands", () => {
     await until(() => expect(tab.rows()).toEqual([expect.objectContaining({ number: 1 })]))
     send(`/todo.drop ${TEST_REPOSITORY} 1`)
     await until(() => expect(tab.rows()).toEqual([expect.objectContaining({ number: 1, state: "dropped" })]))
+  }, WITHIN)
+
+  test("/todo.issue owner/repo <n> drafts one from issue n, linked to it", async () => {
+    const tab = await open()
+    await tab.actions.open(OWNER, NAME)
+    const commands = await tab.runtime.runPromise(Effect.service(Commands))
+    const auth = await tab.runtime.runPromise(Effect.service(AuthStore))
+    await until(() => expect(auth.session.tanstack.get("session")?.status).not.toBe("loading"))
+    await tab.runtime.runPromise(
+      auth.session.update("session", (row) => void Object.assign(row, { status: "signed_in", login: "maya", role: "member" })),
+    )
+    await sql(
+      tab.api,
+      `INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state, created_at, updated_at,
+        source_updated_at, fetched_at)
+      VALUES ('${REPO_ID}#5', '${REPO_ID}', 5, 'issue', 7005, 'Slow page', 'The home page is slow.', 'open', now(), now(),
+        now(), now())`,
+    )
+    const line = `/todo.issue ${TEST_REPOSITORY} 5`
+    commands.actions.type(line)
+    commands.actions.submit(line)
+    await until(() =>
+      expect(tab.drafts()).toEqual([expect.objectContaining({ title: "Slow page", prompt: "The home page is slow.", issue: 5 })])
+    )
   }, WITHIN)
 })
 

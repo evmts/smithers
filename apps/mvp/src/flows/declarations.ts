@@ -33,7 +33,7 @@ import { RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../fea
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
 import { SetTheme } from "../features/theme/flows"
-import { TodoCommit, TodoDraft, TodoDrop } from "../features/todos/flows"
+import { TodoCommit, TodoDraft, TodoDrop, TodoIssue } from "../features/todos/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { type FlowName, type FlowOf, names } from "./registry"
 
@@ -86,6 +86,7 @@ export const declarations = {
   "triage/enable": TriageEnable,
   "triage/pause": TriagePause,
   "todo/draft": TodoDraft,
+  "todo/issue": TodoIssue,
   "todo/commit": TodoCommit,
   "todo/drop": TodoDrop,
   "watch/set": WatchSet,

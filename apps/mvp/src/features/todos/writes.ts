@@ -78,7 +78,14 @@ export const keep = (
 /** The route's body for `row`. */
 export const requestOf = (row: Sending): ChangeRequest =>
   row.op === "commit"
-    ? { opId: row.id, op: "commit", title: row.title, prompt: row.prompt, acceptance: row.acceptance }
+    ? {
+      opId: row.id,
+      op: "commit",
+      title: row.title,
+      prompt: row.prompt,
+      acceptance: row.acceptance,
+      ...(row.issue === undefined ? {} : { issue: row.issue }),
+    }
     : { opId: row.id, op: "drop", number: row.number }
 
 /**

@@ -760,20 +760,41 @@ export { frameRuntime } from "./generated-view/runtime.generated";
 export { loadPresentationBundle, presentationComponentNames, presentationComponents } from "./presentation";
 export { FlowFormView, flowFormViewCss, type FlowFormSubmission, type FlowFormViewProps } from "./flow-form-view";
 export {
+  ITEM_STATE_VARIANTS,
+  ItemStateIcon,
   IssuesView,
   issuesViewCss,
   TRIAGE_WORDS,
+  type IssuesViewFilter,
   type IssuesViewIssue,
+  type IssuesViewLink,
   type IssuesViewProps,
+  type IssuesViewState,
   type IssuesViewTriage,
+  type ItemStateIconProps,
+  type ItemStateKind,
+  type ItemStatus,
 } from "./issues-view";
+// A quiet `⋯` menu of actions, and a button that confirms before it acts.
+export {
+  ActionMenu,
+  actionMenuCss,
+  ConfirmButton,
+  type ActionConfirm,
+  type ActionMenuItem,
+  type ActionMenuProps,
+  type ConfirmButtonProps,
+} from "./action-menu";
 export {
   IssueForm,
+  ItemAsideSection,
   ItemConversation,
   itemConversationCss,
   type IssueFormProps,
+  type ItemAsideSectionProps,
   type ItemConversationComment,
   type ItemConversationComposer,
+  type ItemConversationEvent,
   type ItemConversationProps,
 } from "./item-conversation";
 export { TriageControl, triageControlCss, type TriageControlProps } from "./triage-control";
@@ -865,22 +886,8 @@ export {
 } from "./flow-draft-view";
 // A repository's home: the blocks its `.smithers/home.json` declares (`Home` in `@smthrs/views`).
 export { RepositoryHome, repositoryHomeCss, type RepositoryHomeFile, type RepositoryHomeProps } from "./repository-home";
-// TODOs and the stack (apps/mvp decision 0016 §4): the stack's rows, one TODO at full size, and the private draft.
-export {
-  StackList,
-  stackCss,
-  TODO_PENDING_WORDS,
-  TODO_STATE_WORDS,
-  TodoCard,
-  TodoDraftCard,
-  todoNumberText,
-  type StackListProps,
-  type StackListTodo,
-  type TodoCardProps,
-  type TodoDraftCardProps,
-  type TodoPending,
-  type TodoState,
-} from "./stack";
+// A TODO's private draft (apps/mvp decision 0016 §3); the stack itself is an `IssuesView`, and one TODO an `ItemConversation`.
+export { TodoDraftCard, todoDraftCardCss, type TodoDraftCardProps } from "./stack";
 // An outside web page: in a sandboxed frame, or as a card that opens a tab.
 export {
   framedPageTarget,

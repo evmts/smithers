@@ -159,7 +159,7 @@ Buttons show only to a Member and above; Run triage again also only while triage
 | `actions.ts`, `issues.ts` | `open` (route loaders), drafts, Create issue and Comment (door `button`), Edit and Discard on a write Not sent |
 | `view.ts` | the props of `IssuesView`, `ItemConversation` and `IssueForm` from the queries' rows |
 
-Screens: `/$owner/$repo/issues`, `/$owner/$repo/issues/new` and `/$owner/$repo/issues/$number` (`src/screens/issues/`), and an Issues link in the repository's header. The device's outbox is chat's, extended by `OutboxWrites` (`src/outbox.ts`).
+Screens: `/$owner/$repo/issues`, `/$owner/$repo/issues/new` and `/$owner/$repo/issues/$number` (`src/screens/issues/`), and an Issues link in the repository's header. Each issue shows the TODOs made from it, on its row and in its page's side column, and a Member gets Make TODO in an open issue's `⋯` menu and on its page, key `t`, while none of its TODOs is open ([TODOs from an issue](todos.md#from-an-issue)); the issue routes open the repository's stack for it. The device's outbox is chat's, extended by `OutboxWrites` (`src/outbox.ts`).
 
 ## Postgres
 

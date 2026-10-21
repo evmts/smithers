@@ -55,7 +55,8 @@ import { jsonValueCss } from "./json-value/jsonValueCss";
 import { runPageCss } from "./run-page/runPageCss";
 import { flowDraftViewCss } from "./flow-draft-view/flowDraftViewCss";
 import { repositoryHomeCss } from "./repository-home/repositoryHomeCss";
-import { stackCss } from "./stack/stackCss";
+import { todoDraftCardCss } from "./stack/todoDraftCardCss";
+import { actionMenuCss } from "./action-menu/actionMenuCss";
 import { avatarStackCss, shareDialogCss } from "./sharingCss";
 import { commandPaletteCss, kbdCss, segmentedControlCss } from "./commandCss";
 
@@ -752,7 +753,8 @@ export const smithersUiCss = [
   runPageCss,
   flowDraftViewCss,
   repositoryHomeCss,
-  stackCss,
+  todoDraftCardCss,
+  actionMenuCss,
   avatarStackCss,
   shareDialogCss,
   kbdCss,

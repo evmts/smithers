@@ -3,6 +3,7 @@ import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
+import { MAX_ISSUE_NUMBER } from "../../src/features/issues/contract.ts"
 import { isRepository, REPOS_ROUTE, repoId } from "../../src/features/repo/contract.ts"
 import {
   isAcceptance,
@@ -60,6 +61,7 @@ const Title = Schema.String.check(Schema.makeFilter(isTitle))
 const Prompt = Schema.String.check(Schema.makeFilter(isPrompt))
 const Acceptance = Schema.Array(Schema.String).check(Schema.makeFilter(isAcceptance))
 const TodoNumber = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MAX_TODO_NUMBER }))
+const IssueNumber = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MAX_ISSUE_NUMBER }))
 
 /**
  * The route's body: a commit or a drop, under its op id. It names no door: who acts is the session's to say, so a body
@@ -72,6 +74,7 @@ const Body = Schema.Union([
     title: Title,
     prompt: Prompt,
     acceptance: Schema.optional(Acceptance),
+    issue: Schema.optional(IssueNumber),
   }),
   Schema.Struct({ opId: Uuid, op: Schema.Literal("drop"), number: TodoNumber }),
 ])
@@ -177,6 +180,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
                   title: admitted.title.trim(),
                   prompt: admitted.prompt,
                   acceptance: admitted.acceptance ?? [],
+                  ...(admitted.issue === undefined ? {} : { issue: admitted.issue }),
                 }
                 : { kind: "drop", number: admitted.number },
             },

@@ -4,7 +4,7 @@ import type { FlowsUiView } from "./features/flows-ui/flowsUi"
 import type { HomeView } from "./features/home/home"
 import { issueNumberOf } from "./features/issues/contract"
 import type { IssuesLayer } from "./features/issues/issues"
-import { todoNumberOf } from "./features/todos/contract"
+import { type StackFilter, stackFilterOf, todoNumberOf } from "./features/todos/contract"
 import type { TodosView } from "./features/todos/todos"
 import { lineSearch } from "./features/repo/paths"
 import type { RepoView } from "./features/repo/repo"
@@ -19,6 +19,7 @@ import { FlowsScreen } from "./screens/flows/FlowsScreen"
 import { NewFlowScreen } from "./screens/flows/NewFlowScreen"
 import { IssueScreen } from "./screens/issues/IssueScreen"
 import { StackScreen } from "./screens/stack/StackScreen"
+import { TodoScreen } from "./screens/stack/TodoScreen"
 import { IssuesScreen } from "./screens/issues/IssuesScreen"
 import { NewIssueScreen } from "./screens/issues/NewIssueScreen"
 import { Landing } from "./screens/landing/Landing"
@@ -218,12 +219,19 @@ const rawRoute = createRoute({
   },
 })
 
-/** `/$owner/$repo/issues`: the repository's issues (decision 0012 §6). */
+/**
+ * `/$owner/$repo/issues`: the repository's issues (decision 0012 §6). The route opens its stack too, so each issue shows
+ * the TODOs made from it.
+ */
 const issuesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/issues",
   component: IssuesScreen,
-  loader: ({ context, params }) => context.issues.actions.open(params.owner, params.repo),
+  loader: ({ context, params }) =>
+    Promise.all([
+      context.issues.actions.open(params.owner, params.repo),
+      context.todos.actions.open(params.owner, params.repo),
+    ]),
 })
 
 /** `/$owner/$repo/issues/new`: the new-issue form. */
@@ -234,7 +242,7 @@ const newIssueRoute = createRoute({
   loader: ({ context, params }) => context.issues.actions.open(params.owner, params.repo),
 })
 
-/** `/$owner/$repo/issues/$number`: one issue; any other `$number` matches no route. */
+/** `/$owner/$repo/issues/$number`: one issue, and the TODOs made from it; any other `$number` matches no route. */
 const issueRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/issues/$number",
@@ -246,22 +254,31 @@ const issueRoute = createRoute({
     },
     stringify: (params) => ({ ...params, number: String(params.number) }),
   },
-  loader: ({ context, params }) => context.issues.actions.open(params.owner, params.repo, params.number),
+  loader: ({ context, params }) =>
+    Promise.all([
+      context.issues.actions.open(params.owner, params.repo, params.number),
+      context.todos.actions.open(params.owner, params.repo),
+    ]),
 })
 
-/** `/$owner/$repo/stack`: the repository's stack of TODOs (decision 0016 §4). */
+/**
+ * `/$owner/$repo/stack`: the repository's stack of TODOs (decision 0016 §4), as GitHub's issue list: the open TODOs in
+ * merge order, or with `?state=closed` the merged and dropped ones.
+ */
 const stackRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/stack",
   component: StackScreen,
+  validateSearch: (search: Record<string, unknown>): { readonly state?: StackFilter } =>
+    stackFilterOf(search.state) === "closed" ? { state: "closed" } : {},
   loader: ({ context, params }) => context.todos.actions.open(params.owner, params.repo),
 })
 
-/** `/$owner/$repo/stack/$number`: the stack with TODO `T<number>` at full size; any other `$number` matches no route. */
+/** `/$owner/$repo/stack/$number`: TODO `T<number>`'s page, as GitHub's issue page; any other `$number` matches no route. */
 const todoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/stack/$number",
-  component: StackScreen,
+  component: TodoScreen,
   params: {
     parse: (params) => {
       const number = todoNumberOf(params.number)

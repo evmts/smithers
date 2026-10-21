@@ -4,7 +4,9 @@ import { Badge } from "../badge";
 import { Button } from "../button";
 import { cn } from "../cn";
 import { Textarea } from "../input";
-import { issueNumberText, PENDING_WORDS, type IssuesViewPending } from "../issues-view/IssuesView";
+import { ITEM_STATE_VARIANTS, ItemStateIcon, type ItemStateKind, type ItemStatus } from "../issues-view/ItemStateIcon";
+import { issueNumberText, PENDING_WORDS, STATE_STATUS, type IssuesViewPending } from "../issues-view/IssuesView";
+import { ItemLink, type ItemLinkTarget } from "../issues-view/ItemLink";
 import { safeHref } from "../internal/safeHref";
 import { Markdown } from "../primitives/markdown";
 import { Skeleton } from "../skeleton";
@@ -27,6 +29,19 @@ export type ItemConversationComment = {
   readonly actions?: ReactNode;
 };
 
+/** Something that happened to the item, in its timeline: who, what and when, with a state icon. */
+export type ItemConversationEvent = {
+  readonly id: string;
+  /** The icon beside it. */
+  readonly kind: ItemStateKind;
+  /** Who did it, bold before `text`; absent: `text` alone. */
+  readonly author?: string;
+  /** What happened, such as `committed` after an author, or `Dropped` alone. */
+  readonly text: string;
+  /** ISO 8601. */
+  readonly createdAt?: string;
+};
+
 /** The comment composer. Controlled: the host owns the draft. */
 export type ItemConversationComposer = {
   readonly draft: string;
@@ -41,6 +56,10 @@ export type ItemConversationProps = Omit<ComponentProps<"article">, "children" |
   title: string;
   number: number | null;
   state: "open" | "closed";
+  /** The state pill's icon and word; default Open or Closed from `state`. */
+  status?: ItemStatus;
+  /** What the number reads after: `#` (default) for `#12`, or `T` for `T4`. */
+  numberPrefix?: string;
   author?: string;
   /** ISO 8601. */
   createdAt?: string;
@@ -48,6 +67,10 @@ export type ItemConversationProps = Omit<ComponentProps<"article">, "children" |
   body: string;
   pending?: IssuesViewPending;
   comments: ReadonlyArray<ItemConversationComment>;
+  /** What happened to the item, in the host's order, between the body and the comments. */
+  events?: ReadonlyArray<ItemConversationEvent>;
+  /** A side column, as GitHub's issue page has: `ItemAsideSection`s and actions. Absent: one column. */
+  aside?: ReactNode;
   /** "Open on GitHub ↗" link target, when known. */
   externalHref?: string;
   /** Rows aren't known yet: a loading state. */
@@ -80,11 +103,33 @@ function PendingChip({ pending }: { readonly pending: IssuesViewPending | undefi
   );
 }
 
+export type ItemAsideSectionProps = Omit<ComponentProps<"section">, "title"> & {
+  /** The section's name, shown above its content, such as `Branch`. */
+  title: string;
+  /** Links under the title, one per line, such as a branch or a pull request: `http(s)` in a new tab, any other in-app. */
+  links?: ReadonlyArray<ItemLinkTarget>;
+  /** Called on a plain left click of an in-app link, after `preventDefault`, so a host router navigates. */
+  onNavigate?: (href: string) => void;
+};
+
+/** One section of an item page's side column: a small heading, its links and its content, as GitHub's sidebar shows. */
+export function ItemAsideSection({ title, links, onNavigate, children, className, ...props }: ItemAsideSectionProps) {
+  useInjectUiCss();
+  return (
+    <section aria-label={title} data-slot="item-aside-section" className={cn("sui-item-aside-section", className)} {...props}>
+      <div className="sui-item-aside-title">{title}</div>
+      {links?.map((link) => <ItemLink key={link.label} link={link} onNavigate={onNavigate} className="sui-item-aside-link" />)}
+      {children}
+    </section>
+  );
+}
+
 /**
- * One issue's page: the title with `#number` (`#–` before GitHub numbers it),
- * an Open or Closed badge, the author, an optional "Open on GitHub ↗" link
- * and the host's `headerActions`; the body; the comments in order as an `<ol>`; and the composer when the
- * person may comment.
+ * One item's page, as GitHub's issue page: the title with `#number` (`#–`
+ * before it's numbered), a state pill (Open or Closed, or the host's
+ * `status`), the author, an optional "Open on GitHub ↗" link and the host's
+ * `headerActions`; the body; its timeline `events`; the comments in order as
+ * an `<ol>`; the composer when the person may comment; and the `aside` column.
  *
  * Bodies and comments render through the light `Markdown` in its `document`
  * variant, as GitHub renders them: HTML comments (issue templates) are dropped
@@ -100,11 +145,15 @@ export function ItemConversation({
   title,
   number,
   state,
+  status,
+  numberPrefix = "#",
   author,
   createdAt,
   body,
   pending,
   comments,
+  events,
+  aside,
   externalHref,
   loading = false,
   composer,
@@ -138,6 +187,7 @@ export function ItemConversation({
   }
 
   const external = externalHref === undefined ? undefined : safeHref(externalHref);
+  const shown = status ?? STATE_STATUS[state];
   const canSubmit = composer !== undefined && composer.disabled !== true && composer.draft.trim() !== "";
   const submit = () => {
     if (canSubmit) composer?.onSubmit();
@@ -147,19 +197,21 @@ export function ItemConversation({
     <article
       data-slot="item-conversation"
       data-state={state}
+      data-status={shown.kind}
       data-pending={pending}
+      data-aside={aside === undefined || aside === null ? undefined : ""}
       aria-labelledby={titleId}
       className={cn("sui-item-conv", className)}
       {...props}
     >
       <header className="sui-item-conv-header">
         <Heading id={titleId} className="sui-item-conv-title">
-          {title} <span className="sui-item-conv-number">{issueNumberText(number)}</span>
+          {title} <span className="sui-item-conv-number">{issueNumberText(number, numberPrefix)}</span>
         </Heading>
         <div className="sui-item-conv-meta">
-          <Badge variant={state === "open" ? "success" : "muted"} className="sui-item-conv-state">
-            <span aria-hidden className="sui-status-dot" />
-            {state === "open" ? "Open" : "Closed"}
+          <Badge variant={ITEM_STATE_VARIANTS[shown.kind]} className="sui-item-conv-state" data-status={shown.kind}>
+            <ItemStateIcon kind={shown.kind} label={shown.label} aria-hidden />
+            {shown.label}
           </Badge>
           <PendingChip pending={pending} />
           {author === undefined ? null : <span className="sui-item-conv-author">{author}</span>}
@@ -174,59 +226,81 @@ export function ItemConversation({
           )}
         </div>
       </header>
-      {body.trim() === "" ? null : (
-        <div className="sui-item-conv-post">
-          <Markdown content={body} variant="document" />
-        </div>
-      )}
-      {comments.length === 0 ? null : (
-        <ol className="sui-item-conv-comments" aria-label="Comments">
-          {comments.map((comment) => (
-            <li key={comment.id} className="sui-item-conv-comment" data-pending={comment.pending}>
-              <div className="sui-item-conv-comment-meta">
-                {comment.author === undefined ? null : <span className="sui-item-conv-author">{comment.author}</span>}
-                <When iso={comment.createdAt} />
-                <PendingChip pending={comment.pending} />
-                {comment.pending === "not_sent" && comment.reason !== undefined ? (
-                  <span className="sui-item-conv-reason">{comment.reason}</span>
-                ) : null}
-              </div>
-              <Markdown content={comment.body} variant="document" />
-              {comment.actions === undefined || comment.actions === null ? null : (
-                <div className="sui-item-conv-comment-actions">{comment.actions}</div>
-              )}
-            </li>
-          ))}
-        </ol>
-      )}
-      {composer === undefined ? null : (
-        <form
-          className="sui-item-conv-composer"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
-          }}
-        >
-          <label htmlFor={draftId} className="sui-sr-only">
-            {composer.label ?? "Comment"}
-          </label>
-          <Textarea
-            id={draftId}
-            value={composer.draft}
-            onChange={(event) => composer.onDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (!isSubmitChord(event)) return;
+      <div className="sui-item-conv-main">
+        {body.trim() === "" ? null : (
+          <div className="sui-item-conv-post">
+            <Markdown content={body} variant="document" />
+          </div>
+        )}
+        {events === undefined || events.length === 0 ? null : (
+          <ol className="sui-item-conv-events" aria-label="Timeline">
+            {events.map((event) => (
+              <li key={event.id} className="sui-item-conv-event" data-kind={event.kind}>
+                <span className="sui-item-conv-event-icon">
+                  <ItemStateIcon kind={event.kind} label={event.text} aria-hidden />
+                </span>
+                <span className="sui-item-conv-event-text">
+                  {event.author === undefined ? event.text : (
+                    <>
+                      <span className="sui-item-conv-author">{event.author}</span> {event.text}
+                    </>
+                  )}
+                </span>
+                <When iso={event.createdAt} />
+              </li>
+            ))}
+          </ol>
+        )}
+        {comments.length === 0 ? null : (
+          <ol className="sui-item-conv-comments" aria-label="Comments">
+            {comments.map((comment) => (
+              <li key={comment.id} className="sui-item-conv-comment" data-pending={comment.pending}>
+                <div className="sui-item-conv-comment-meta">
+                  {comment.author === undefined ? null : <span className="sui-item-conv-author">{comment.author}</span>}
+                  <When iso={comment.createdAt} />
+                  <PendingChip pending={comment.pending} />
+                  {comment.pending === "not_sent" && comment.reason !== undefined ? (
+                    <span className="sui-item-conv-reason">{comment.reason}</span>
+                  ) : null}
+                </div>
+                <Markdown content={comment.body} variant="document" />
+                {comment.actions === undefined || comment.actions === null ? null : (
+                  <div className="sui-item-conv-comment-actions">{comment.actions}</div>
+                )}
+              </li>
+            ))}
+          </ol>
+        )}
+        {composer === undefined ? null : (
+          <form
+            className="sui-item-conv-composer"
+            onSubmit={(event) => {
               event.preventDefault();
               submit();
             }}
-          />
-          <div className="sui-item-conv-composer-actions">
-            <Button type="submit" disabled={!canSubmit}>
-              Comment
-            </Button>
-          </div>
-        </form>
-      )}
+          >
+            <label htmlFor={draftId} className="sui-sr-only">
+              {composer.label ?? "Comment"}
+            </label>
+            <Textarea
+              id={draftId}
+              value={composer.draft}
+              onChange={(event) => composer.onDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (!isSubmitChord(event)) return;
+                event.preventDefault();
+                submit();
+              }}
+            />
+            <div className="sui-item-conv-composer-actions">
+              <Button type="submit" disabled={!canSubmit}>
+                Comment
+              </Button>
+            </div>
+          </form>
+        )}
+      </div>
+      {aside === undefined || aside === null ? null : <aside className="sui-item-conv-aside">{aside}</aside>}
     </article>
   );
 }

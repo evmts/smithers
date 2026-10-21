@@ -1,9 +1,12 @@
-import { Button, EmptyState, ItemConversation, TriageControl } from "@smthrs/ui"
+import { Button, EmptyState, ItemAsideSection, ItemConversation, Kbd, TriageControl } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { useParams } from "@tanstack/react-router"
+import { useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useIssues } from "../../features/issues/components/IssuesContext"
+import { useTodos } from "../../features/todos/components/TodosContext"
+import { MAKE_TODO, MAKE_TODO_KEY, TODO } from "../../features/todos/contract"
+import { mayChange, mayMakeTodo, todosByIssue } from "../../features/todos/view"
 import { DISCARD, EDIT, NOT_FOUND } from "../../features/issues/contract"
 import {
   conversationProps,
@@ -18,7 +21,9 @@ import "./issues-screen.css"
 // /$owner/$repo/issues/$number: one issue and its comments, this device's own last with their chip, "Open on GitHub ↗",
 // its triage state with Accept, Not accepted and Run triage again for a Member and above, and the comment composer for a
 // person who may comment. A comment that wasn't sent gets Edit, back to the composer,
-// and Discard. Loading until the repository's first complete sync; then an issue the device doesn't have isn't there.
+// and Discard. A side column shows the TODOs made from it and, for a Member while none is open, Make TODO, which its
+// key `t` also presses (docs/features/todos.md#from-an-issue). Loading until the repository's first complete sync; then
+// an issue the device doesn't have isn't there.
 // A repository whose issues this person may not read shows sign-in, or Not found.
 export function IssueScreen() {
   const { owner, repo, number } = useParams({ from: "/$owner/$repo/issues/$number" })
@@ -33,6 +38,11 @@ export function IssueScreen() {
   const { data: triagePending } = useLiveQuery(queries.triagePending)
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
+  const todos = useTodos()
+  const { data: todosView } = useLiveQuery(todos.queries.view)
+  const todosRepoId = todosView?.repoId ?? ""
+  const { data: todoRows } = useLiveQuery(todos.queries.stack(todosRepoId).todos)
+  const navigate = useNavigate()
   const page = pageOf(item, synced, access)
   if (page === "sign_in") return <main className="issues-screen"><SignInButton /></main>
   if (page === "missing") return <main className="issues-screen"><EmptyState title={NOT_FOUND} /></main>
@@ -44,6 +54,8 @@ export function IssueScreen() {
     )
   }
   const shown = conversationProps(item, rows ?? [], { owner, name: repo })
+  const made = todosByIssue(todosRepoId, todoRows, owner, repo).get(number)
+  const make = mayMakeTodo(session !== undefined && mayChange(session, confirmed), shown, made)
   const control = triageControlOf(item, triagePending ?? [], {
     triage: session !== undefined && mayTriage(session, confirmed),
     flowOn: triage !== undefined && !triage.paused,
@@ -52,6 +64,22 @@ export function IssueScreen() {
     <main className="issues-screen">
       <ItemConversation
         {...shown}
+        aside={made === undefined && !make ? undefined : (
+          <ItemAsideSection title={TODO} {...(made === undefined ? {} : { links: made.links })} onNavigate={(href) => void navigate({ href })}>
+            {make
+              ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-keyshortcuts={MAKE_TODO_KEY}
+                  onClick={() => void navigate({ href: todos.actions.fromIssue(owner, repo, number) })}
+                >
+                  {MAKE_TODO} <Kbd>{MAKE_TODO_KEY}</Kbd>
+                </Button>
+              )
+              : null}
+          </ItemAsideSection>
+        )}
         headerActions={!control.shown ? undefined : (
           <TriageControl
             state={control.state}

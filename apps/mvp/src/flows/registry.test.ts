@@ -69,6 +69,7 @@ describe("the parity law", () => {
       "issue/create",
       "issue/comment",
       "todo/draft",
+      "todo/issue",
       "watch/set",
       "sandbox/run",
       "sandbox/read",
@@ -154,6 +155,7 @@ describe("names and placement", () => {
       "triage/enable",
       "triage/pause",
       "todo/draft",
+      "todo/issue",
       "todo/commit",
       "todo/drop",
       "watch/set",
@@ -197,6 +199,12 @@ describe("side effects (the registry's `changes`)", () => {
       expect([name, declares]).toEqual([name, modelInvocable(name) && !READS.includes(name)])
     }
     for (const name of READS) expect(agentFlows).toContain(name)
+  })
+
+  test("only a flow that says what it changes asks the person first, and saving or deleting your flow does", () => {
+    const asking = names.filter((name) => entryOf(name).confirm !== undefined)
+    expect(asking).toEqual(["flow/save", "flow/delete"])
+    for (const name of asking) expect([name, entryOf(name).changes !== undefined]).toEqual([name, true])
   })
 
   test("the catalog shows a flow's side effect after its own description, and nothing more for a read", () => {

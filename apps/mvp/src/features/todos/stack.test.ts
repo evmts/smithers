@@ -29,11 +29,6 @@ const check = async <A>(arbitrary: Arbitrary.Arbitrary<A>, property: (value: A) 
   expect(Arbitrary.formatCheckFailure(result)).toBeUndefined()
 }
 
-/** The run fails TODO `todo`: it keeps its place and frees its lane, as Track B's `failed` op will. */
-const failed = (stack: Stack, todo: Row): Stack => ({
-  ...stack,
-  todos: stack.todos.map((row) => (row.id === todo.id ? { ...row, state: "failed" } : row)),
-})
 
 /**
  * Plays `steps` from an empty stack, with the model alongside: the ids of the open TODOs in order. Calls `each` after
@@ -57,8 +52,8 @@ const play = (
     // Picks among every TODO ever made, settled ones included, so drops of dropped TODOs come up.
     const picked = before.todos[step.kind === "commit" ? 0 : step.pick % Math.max(before.todos.length, 1)]
     if (step.kind === "fail") {
-      if (picked === undefined || !["starting", "working"].includes(picked.state)) continue
-      stack = failed(before, picked)
+      if (picked === undefined || picked.state !== "working") continue
+      stack = apply(before, { kind: "finish", id: picked.id, ordinal: picked.attempt, state: "failed" }).stack
       if (!each({ before, after: stack, op: undefined, result: undefined, model })) return false
       continue
     }
@@ -119,7 +114,7 @@ describe("the stack's invariants, over random histories", () => {
     check(History, (history) =>
       play(history, ({ after, op, result }) => {
         if (op === undefined || result?.kind === "refused" || (result?.kind === "dropped" && !result.changed)) return true
-        const held = after.todos.filter((todo) => ["starting", "working", "needs_you", "in_review"].includes(todo.state))
+        const held = after.todos.filter((todo) => ["working", "in_review"].includes(todo.state))
         return held.length >= after.lanes || openOf(after).every((todo) => todo.state !== "queued")
       })))
 
@@ -130,7 +125,7 @@ describe("the stack's invariants, over random histories", () => {
         return result.starts.every((start) => {
           const was = before.todos.find((todo) => todo.id === start.todoId)
           const now = after.todos.find((todo) => todo.id === start.todoId)!
-          return now.state === "starting" && now.attempt === start.ordinal && start.ordinal === (was?.attempt ?? 0) + 1
+          return now.state === "working" && now.attempt === start.ordinal && start.ordinal === (was?.attempt ?? 0) + 1
         })
       })))
 })
@@ -178,7 +173,7 @@ describe("apply, case by case", () => {
       position: 1,
       starts: [{ todoId: "a", number: 1, ordinal: 1, revision: 1 }],
     })
-    expect(stack.todos[0]).toMatchObject({ state: "starting", attempt: 1 })
+    expect(stack.todos[0]).toMatchObject({ state: "working", attempt: 1 })
   })
 
   test("dropping a working TODO stops its attempt, closes the gap and starts the next", () => {
@@ -196,7 +191,7 @@ describe("apply, case by case", () => {
     })
     expect(stack.todos).toEqual([
       { ...working, state: "dropped", position: null },
-      { id: "b", number: 2, state: "starting", position: 1, attempt: 1, revision: 1 },
+      { id: "b", number: 2, state: "working", position: 1, attempt: 1, revision: 1 },
     ])
   })
 
@@ -219,7 +214,7 @@ describe("apply, case by case", () => {
     const fail: Row = { id: "a", number: 1, state: "failed", position: 1, attempt: 1, revision: 1 }
     const { stack, result } = apply({ nextNumber: 2, lanes: 1, maxOpen: 5, todos: [fail] }, { kind: "commit", id: "b" })
     expect(result).toMatchObject({ kind: "committed", position: 2, starts: [{ todoId: "b" }] })
-    expect(openOf(stack).map((todo) => [todo.id, todo.state])).toEqual([["a", "failed"], ["b", "starting"]])
+    expect(openOf(stack).map((todo) => [todo.id, todo.state])).toEqual([["a", "failed"], ["b", "working"]])
   })
 })
 
@@ -246,5 +241,65 @@ describe("violations", () => {
       .toEqual(["more TODOs open than allowed"])
     expect(violations({ nextNumber: 2, lanes: 0, maxOpen: 5, todos: [row({ id: "a", number: 1, state: "working" })] }))
       .toEqual(["more lanes held than allowed"])
+  })
+
+  test("a run that merges its TODO leaves the stack, closes the gap and starts the next", () => {
+    const working: Row = { id: "a", number: 1, state: "in_review", position: 1, attempt: 1, revision: 1 }
+    const queued = (id: string, number: number, position: number): Row => ({
+      id,
+      number,
+      state: "queued",
+      position,
+      attempt: 0,
+      revision: 1,
+    })
+    const { stack, result } = apply(
+      { nextNumber: 3, lanes: 1, maxOpen: 5, todos: [working, queued("b", 2, 2)] },
+      { kind: "finish", id: "a", ordinal: 1, state: "merged" },
+    )
+    expect(result).toEqual({
+      kind: "finished",
+      number: 1,
+      state: "merged",
+      starts: [{ todoId: "b", number: 2, ordinal: 1, revision: 1 }],
+    })
+    expect(stack.todos.map((todo) => [todo.id, todo.state, todo.position])).toEqual([["a", "merged", null], [
+      "b",
+      "working",
+      1,
+    ]])
+    expect(violations(stack)).toEqual([])
+  })
+
+  test("a PR closed on GitHub drops its TODO; a failed run keeps its place", () => {
+    const working: Row = { id: "a", number: 1, state: "working", position: 1, attempt: 2, revision: 1 }
+    const closed = apply({ nextNumber: 2, lanes: 1, maxOpen: 5, todos: [working] }, {
+      kind: "finish",
+      id: "a",
+      ordinal: 2,
+      state: "dropped",
+    })
+    expect(closed.stack.todos[0]).toMatchObject({ state: "dropped", position: null })
+    const failedRun = apply({ nextNumber: 2, lanes: 1, maxOpen: 5, todos: [working] }, {
+      kind: "finish",
+      id: "a",
+      ordinal: 2,
+      state: "failed",
+    })
+    expect(failedRun.stack.todos[0]).toMatchObject({ state: "failed", position: 1 })
+    expect(failedRun.result).toEqual({ kind: "finished", number: 1, state: "failed", starts: [] })
+  })
+
+  test("a stale run's finish changes nothing: another attempt, a dropped TODO, an unknown one", () => {
+    const working: Row = { id: "a", number: 1, state: "working", position: 1, attempt: 2, revision: 1 }
+    const dropped: Row = { id: "b", number: 2, state: "dropped", position: null, attempt: 1, revision: 1 }
+    const stack: Stack = { nextNumber: 3, lanes: 1, maxOpen: 5, todos: [working, dropped] }
+    for (const op of [
+      { kind: "finish", id: "a", ordinal: 1, state: "merged" },
+      { kind: "finish", id: "b", ordinal: 1, state: "failed" },
+      { kind: "finish", id: "z", ordinal: 1, state: "dropped" },
+    ] as const) {
+      expect(apply(stack, op)).toEqual({ stack, result: { kind: "refused", code: "stale" } })
+    }
   })
 })

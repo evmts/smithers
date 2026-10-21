@@ -44,32 +44,31 @@ export const TODO_COLUMNS = [
   "created_at",
   "updated_at",
   "settled_at",
+  "issue_number",
 ] as const
 
 /** The `todo_requests` columns a device syncs: each revision of a TODO's prompt. */
 export const TODO_REQUEST_COLUMNS = ["todo_id", "revision", "repo_id", "prompt", "acceptance", "by_login", "created_at"] as const
 
-/** A TODO's states (mvp.md §4.1). Slice 1 reaches Queued and Dropped from a person, the rest from the `todo` run. */
-export const TODO_STATES = [
-  "queued",
-  "starting",
-  "working",
-  "needs_you",
-  "in_review",
-  "merged",
-  "dropped",
-  "failed",
-] as const
+/**
+ * A TODO's states (decision 0016, the factory simplified): Queued until its run starts, Working while the run writes and
+ * publishes, In review while its pull request waits for a person, then Merged; or Dropped (a person's Drop, or its pull
+ * request closed on GitHub), or Failed with its code.
+ */
+export const TODO_STATES = ["queued", "working", "in_review", "merged", "dropped", "failed"] as const
 export type TodoState = (typeof TODO_STATES)[number]
 
 /** The states that leave the stack: their TODO has no position. */
 export const SETTLED_STATES = ["merged", "dropped"] as const satisfies ReadonlyArray<TodoState>
 
 /** The states that hold one of the stack's lanes: started and not yet settled or failed. */
-export const LANE_STATES = ["starting", "working", "needs_you", "in_review"] as const satisfies ReadonlyArray<TodoState>
+export const LANE_STATES = ["working", "in_review"] as const satisfies ReadonlyArray<TodoState>
 
-/** The `todo` run's steps (decision 0016 §2), which light a TODO's step strip. */
-export const TODO_STEPS = ["plan", "implement", "publish", "propose", "await"] as const
+/**
+ * The `todo` run's steps (decision 0016, the factory simplified): `implement` (the branch, and the agent writing the
+ * change on its machine), `publish` (the commit and the pull request), `await` (a person's merge).
+ */
+export const TODO_STEPS = ["implement", "publish", "await"] as const
 export type TodoStep = (typeof TODO_STEPS)[number]
 
 /** Why a TODO failed (decision 0016 §1). */
@@ -204,9 +203,21 @@ export const todosChannel = (engineName: string): string => `${engineName}/todos
 /** How long a TODO step waits for the tab that asked to keep its draft or queue its change. */
 export const QUEUE_WITHIN = "10 seconds"
 
-/** The app's stack routes. */
-export const stackPath = (owner: string, name: string): string => `/${owner}/${name}/stack`
+/** The stack page's two lists, as GitHub's issues: its open TODOs in merge order, and the merged and dropped. */
+export const STACK_FILTERS = ["open", "closed"] as const
+export type StackFilter = (typeof STACK_FILTERS)[number]
+
+/** The app's stack routes; `?state=closed` lists the merged and dropped TODOs. */
+export const stackPath = (owner: string, name: string, state: StackFilter = "open"): string =>
+  `/${owner}/${name}/stack${state === "closed" ? "?state=closed" : ""}`
 export const todoPath = (owner: string, name: string, number: number): string => `/${owner}/${name}/stack/${number}`
+
+/** A stack route's `?state=` as the list it names: `closed`, or else the open list. */
+export const stackFilterOf = (state: unknown): StackFilter => (state === "closed" ? "closed" : "open")
+
+/** A TODO's pull request on GitHub. */
+export const githubPullUrl = (owner: string, name: string, number: number): string =>
+  `https://github.com/${owner}/${name}/pull/${number}`
 
 /** A stack route's `$number` as the TODO number it names, or `undefined` for anything but 1 to `MAX_TODO_NUMBER`. */
 export const todoNumberOf = (text: string): number | undefined => {
@@ -224,6 +235,32 @@ export const titleOf = (prompt: string): string => {
 /** UTF-8 bytes of `text`. */
 export const bytesOf = (text: string): number => new TextEncoder().encode(text).length
 
+/** `text` cut to a prompt's limit, at a whole character, ending in `…` when cut. */
+export const clipPrompt = (text: string): string => {
+  if (bytesOf(text) <= MAX_PROMPT_BYTES) return text
+  let kept = ""
+  let bytes = bytesOf("…")
+  for (const character of text) {
+    bytes += bytesOf(character)
+    if (bytes > MAX_PROMPT_BYTES) break
+    kept += character
+  }
+  return `${kept}…`
+}
+
+/**
+ * A draft made from an issue (docs/features/todos.md#from-an-issue): a title or prompt it left out is the issue's
+ * title, or its body (its title when the body is blank), cut to a TODO's limits.
+ */
+export const draftFromIssue = <D extends { readonly title: string; readonly prompt: string }>(
+  draft: D,
+  issue: { readonly title: string; readonly body: string },
+): D => ({
+  ...draft,
+  title: draft.title !== "" ? draft.title : titleOf(issue.title),
+  prompt: draft.prompt !== "" ? draft.prompt : clipPrompt(issue.body.trim() === "" ? issue.title : issue.body),
+})
+
 /** Whether `title` is a TODO title: 1 to `MAX_TITLE_LENGTH` characters, not blank. */
 export const isTitle = (title: string): boolean => title.trim().length > 0 && title.length <= MAX_TITLE_LENGTH
 
@@ -240,7 +277,36 @@ export const STACK = "Stack"
 export const NEW_TODO = "New TODO"
 export const EDIT = "Edit"
 export const DISCARD = "Discard"
+export const DROP = "Drop"
 export const NOT_FOUND = "Not found"
+export const NO_TODOS = "No TODOs"
+export const BRANCH = "Branch"
+export const PULL_REQUEST = "Pull request"
+export const ISSUE = "Issue"
+export const TODO = "TODO"
+export const MAKE_TODO = "Make TODO"
+
+/** The key that presses Make TODO on an issue's page (`aria-keyshortcuts`, src/features/keys/keys.ts). */
+export const MAKE_TODO_KEY = "t"
+
+/** A TODO's state words (mvp.md §4.1). */
+export const TODO_STATE_WORDS: Readonly<Record<TodoState, string>> = {
+  queued: "Queued",
+  working: "Working",
+  in_review: "In review",
+  merged: "Merged",
+  dropped: "Dropped",
+  failed: "Failed",
+}
+
+/** A commit this device made that the stack hasn't numbered yet. */
+export const REQUESTED = "Requested"
+
+/** The timeline's words: a person committed a TODO. */
+export const COMMITTED = "committed"
+
+/** The Drop confirmation's title: `Drop T4?`. */
+export const dropTitle = (number: number): string => `Drop T${number}?`
 
 /** What the TODOs feature records in the browser (docs/observability.md#todos), by name, and their fields: never text. */
 export const TODOS_TELEMETRY = {

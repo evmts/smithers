@@ -14,6 +14,7 @@ export function DraftCard({ draft }: { readonly draft: Draft }) {
     <TodoDraftCard
       data-draft={draft.id}
       repo={draft.repo}
+      {...(draft.issue === undefined ? {} : { source: `#${draft.issue}` })}
       title={draft.title}
       prompt={draft.prompt}
       acceptance={draft.acceptance}

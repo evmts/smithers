@@ -33,6 +33,8 @@ export const Todo = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
   settledAt: Schema.NullOr(Schema.String),
+  /** The issue in the same repository it was made from (migration `0027_todo_issue`). */
+  issueNumber: Schema.NullOr(Schema.Number),
 })
 export type Todo = typeof Todo.Type
 
@@ -52,9 +54,10 @@ export type TodoRequest = typeof TodoRequest.Type
 export const requestKey = (row: TodoRequest): string => `${row.todoId}/${row.revision}`
 
 /**
- * A private draft on this device (decision 0016 §3): what the agent drafted, or a person started with New TODO, until
- * the person commits or discards it. `repo` is `owner/name`; `answerId` the answer whose agent drafted it, which shows
- * it under that answer; `createdAt` epoch ms orders the drafts. Kept on the device (`todo-drafts`).
+ * A private draft on this device (decision 0016 §3): what the agent drafted, or a person started with New TODO or Make
+ * TODO on an issue, until the person commits or discards it. `repo` is `owner/name`; `answerId` the answer whose agent
+ * drafted it, which shows it under that answer; `createdAt` epoch ms orders the drafts; `issue` the issue it was made
+ * from, which its TODO keeps. Kept on the device (`todo-drafts`); a draft kept before `issue` existed has none.
  */
 export const Draft = Schema.Struct({
   id: Schema.String,
@@ -65,13 +68,14 @@ export const Draft = Schema.Struct({
   acceptance: Schema.Array(Schema.String),
   answerId: Schema.NullOr(Schema.String),
   createdAt: Schema.Number,
+  issue: Schema.optionalKey(Schema.Number),
 })
 export type Draft = typeof Draft.Type
 
 /**
  * A change as a step asks the tab to queue it: its op id (a commit's is its TODO's id), the repository (`owner/name`),
- * and its fields: a commit's title, prompt and criteria, a drop's number (0 for a commit). Only a person's own press
- * queues one, so it names no door.
+ * and its fields: a commit's title, prompt, criteria and the issue it was made from, a drop's number (0 for a commit).
+ * Only a person's own press queues one, so it names no door. A change queued before `issue` existed has none.
  */
 export const QueuedOp = Schema.Struct({
   id: Schema.String,
@@ -81,6 +85,7 @@ export const QueuedOp = Schema.Struct({
   prompt: Schema.String,
   acceptance: Schema.Array(Schema.String),
   number: Schema.Number,
+  issue: Schema.optionalKey(Schema.Number),
 })
 export type QueuedOp = typeof QueuedOp.Type
 
@@ -144,8 +149,11 @@ export const TodosCall = Schema.Union([
 ])
 export type TodosCall = typeof TodosCall.Type
 
-/** What that tab answers: whether it kept the draft, or its outbox took the change. */
-export const Kept = Schema.Struct({ kept: Schema.Boolean })
+/**
+ * What that tab answers: whether it kept the draft, or its outbox took the change; for a draft from an issue, whether
+ * the device has that issue (`issue: "missing"` when it doesn't).
+ */
+export const Kept = Schema.Struct({ kept: Schema.Boolean, issue: Schema.optionalKey(Schema.Literal("missing")) })
 
 /** What `POST .../stack` answers when it takes a change: `202` with its transaction, `200` for a repeated op. */
 export const Taken = Schema.Struct({

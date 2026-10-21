@@ -196,7 +196,7 @@ describe("on a host that runs TODOs", () => {
       { attemptId: expect.any(String), todoId: expect.any(String), repoId: REPO, number: 1, ordinal: 1, revision: 1 },
     ])
     await applyOn(commit(), true)
-    expect((await todos()).map(({ state, attempt }) => [state, attempt])).toEqual([["starting", 1], ["queued", 0]])
+    expect((await todos()).map(({ state, attempt }) => [state, attempt])).toEqual([["working", 1], ["queued", 0]])
     expect(await sql(`SELECT id, ordinal, status FROM todo_attempts`)).toEqual([
       { id: started[0]!.attemptId, ordinal: 1, status: "running" },
     ])
@@ -210,7 +210,7 @@ describe("on a host that runs TODOs", () => {
         starts: [{ number: 2, ordinal: 1 }],
       },
     })
-    expect((await todos()).map(({ state, position }) => [state, position])).toEqual([["dropped", null], ["starting", 1]])
+    expect((await todos()).map(({ state, position }) => [state, position])).toEqual([["dropped", null], ["working", 1]])
   })
 
   test("without runs, nothing starts: every TODO stays Queued", async () => {
@@ -282,7 +282,7 @@ describe("concurrent writers", () => {
     const after = await loaded()
     expect(violations(after)).toEqual([])
     expect(openOf(after).map((todo) => todo.id).sort()).toEqual(changes.map((change) => change.opId).sort())
-    expect(after.todos.filter((todo) => todo.state === "starting")).toHaveLength(1)
+    expect(after.todos.filter((todo) => todo.state === "working")).toHaveLength(1)
     expect(await stack()).toEqual({ nextNumber: 13, version: 12 })
   })
 

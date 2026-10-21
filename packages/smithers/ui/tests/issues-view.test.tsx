@@ -62,18 +62,24 @@ describe("IssuesView", () => {
     expect(container!.querySelector(".sui-issues-repo")!.textContent).toBe("maya/tinyhttp");
     expect(container!.querySelector(".sui-issues-counts")!.textContent).toBe("2 open · 1 closed");
     expect(rows().map((row) => row.dataset.state)).toEqual(["open", "closed", "open"]);
+    expect(rows().map((row) => row.dataset.status)).toEqual(["open", "closed", "open"]);
     const [first, second, third] = rows();
-    expect(first!.querySelector(".sui-issues-state")!.textContent).toBe("Open");
-    expect(first!.querySelector(".sui-issues-state")!.className).toContain("sui-badge-success");
+    const icon = (row: HTMLElement) => row.querySelector<SVGElement>(".sui-issues-state")!;
+    expect([icon(first!).getAttribute("role"), icon(first!).getAttribute("aria-label"), icon(first!).dataset.kind]).toEqual([
+      "img",
+      "Open",
+      "open",
+    ]);
     expect(first!.querySelector(".sui-issues-title")!.textContent).toBe("Router drops trailing slash");
     expect([...first!.querySelectorAll(".sui-issues-label")].map((label) => label.textContent)).toEqual(["bug", "router"]);
     expect(first!.querySelector(".sui-issues-number")!.textContent).toBe("#12");
     expect(first!.querySelector(".sui-issues-author")!.textContent).toBe("maya");
     expect(first!.querySelector(".sui-issues-comments")!.getAttribute("aria-label")).toBe("3 comments");
+    // When, relative to now, with the instant in `datetime`.
     const time = first!.querySelector("time")!;
-    expect([time.getAttribute("datetime"), time.textContent]).toEqual(["2026-10-18T09:30:00Z", "2026-10-18"]);
-    expect(second!.querySelector(".sui-issues-state")!.textContent).toBe("Closed");
-    expect(second!.querySelector(".sui-issues-state")!.className).toContain("sui-badge-muted");
+    expect(time.getAttribute("datetime")).toBe("2026-10-18T09:30:00.000Z");
+    expect(time.textContent).not.toBe("");
+    expect([icon(second!).getAttribute("aria-label"), icon(second!).dataset.kind]).toEqual(["Closed", "closed"]);
     // Zero comments, no author, no date and no labels show nothing.
     expect(second!.querySelector(".sui-issues-comments")).toBeNull();
     expect(third!.querySelector(".sui-issues-author, time, .sui-issues-label, .sui-issues-comments")).toBeNull();
@@ -189,12 +195,14 @@ describe("IssuesView: pending rows, links, loading and actions", () => {
     expect(await click(rows()[0]!.querySelector("a")!)).toBe(true);
   });
 
-  test("loading with no rows shows a status and placeholders, never No issues or counts", async () => {
+  test("loading with no rows shows a status and placeholders, never No issues, counts or a spinner", async () => {
     await render(<IssuesView repo="maya/tinyhttp" issues={[]} loading />);
     const section = container!.querySelector<HTMLElement>("section")!;
     expect(section.getAttribute("aria-busy")).toBe("true");
     const status = container!.querySelector<HTMLElement>("[role=status]")!;
-    expect(status.getAttribute("aria-label")).toBe("Loading issues");
+    expect(status.textContent).toBe("Loading issues");
+    expect(status.className).toBe("sui-sr-only");
+    expect(container!.querySelector("[data-slot=spinner]")).toBeNull();
     expect(container!.querySelector("[data-slot=empty-state]")).toBeNull();
     expect(container!.textContent).not.toContain("No issues");
     expect(container!.querySelector(".sui-issues-counts")).toBeNull();
@@ -210,7 +218,7 @@ describe("IssuesView: pending rows, links, loading and actions", () => {
   test("loading with rows already known (this device's pending writes) shows them beside the status", async () => {
     await render(<IssuesView repo="r" issues={PENDING.slice(0, 1)} loading />);
     expect(rows()).toHaveLength(1);
-    expect(container!.querySelector("[role=status]")!.getAttribute("aria-label")).toBe("Loading issues");
+    expect(container!.querySelector("[role=status]")!.textContent).toBe("Loading issues");
     expect(container!.querySelector(".sui-issues-loading, [data-slot=empty-state]")).toBeNull();
   });
 

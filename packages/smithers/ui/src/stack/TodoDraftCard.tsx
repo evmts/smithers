@@ -7,11 +7,27 @@ import { Input, Textarea } from "../input";
 import { isSubmitChord } from "../item-conversation/ItemConversation";
 import { Field, Label } from "../label";
 import { useInjectUiCss } from "../styles";
-import { AcceptanceList } from "./TodoParts";
+
+/** A draft's acceptance criteria as a short list named `Acceptance criteria`. */
+function AcceptanceList({ items }: { readonly items: ReadonlyArray<string> }) {
+  const labelId = useId();
+  return (
+    <div data-slot="todo-acceptance" className="sui-todo-acceptance">
+      <span id={labelId} className="sui-todo-acceptance-label">
+        Acceptance criteria
+      </span>
+      <ul aria-labelledby={labelId} className="sui-todo-acceptance-list">
+        {items.map((item, index) => <li key={index}>{item}</li>)}
+      </ul>
+    </div>
+  );
+}
 
 export type TodoDraftCardProps = Omit<ComponentProps<"form">, "children" | "onSubmit" | "title"> & {
   /** `owner/name`, shown in the header. */
   repo?: string;
+  /** Where the draft came from, such as its issue `#12`: a chip in the header. */
+  source?: string;
   title: string;
   prompt: string;
   /** Read-only acceptance criteria the agent drafted, if any. */
@@ -38,6 +54,7 @@ export type TodoDraftCardProps = Omit<ComponentProps<"form">, "children" | "onSu
  */
 export function TodoDraftCard({
   repo,
+  source,
   title,
   prompt,
   acceptance,
@@ -74,6 +91,11 @@ export function TodoDraftCard({
         <Badge variant="muted" className="sui-todo-draft-private">
           Only you
         </Badge>
+        {source === undefined || source === "" ? null : (
+          <Badge variant="outline" className="sui-todo-draft-source">
+            {source}
+          </Badge>
+        )}
         {repo === undefined ? null : <span className="sui-todo-draft-repo">{repo}</span>}
       </header>
       <Field>

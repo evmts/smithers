@@ -488,7 +488,8 @@ The stack's route, its one writer, its shapes and the browser's TODO steps and s
 | `smithers_stack_requests` | counter | ChatApi | `op`, `outcome` |
 | `smithers_stack_ops`, `smithers_todo_transitions` | counters | ChatApi | `op`, `outcome`; `from` (`new` for a commit), `to` |
 | `stack.shape.todos`, `stack.shape.todo_requests`; `smithers_todo_shape_requests`, `smithers_todo_request_shape_requests` | log, span; counters | ChatApi | `status`, `live` |
-| `todos.draft`, `todos.queue`, `smithers_todo_drafts`, `smithers_todo_queued` | browser | the engine worker | `draftId` or `opId`, `op`, `via`, `door`, `outcome` (`kept`, `not_kept`, `tab_gone`, `agent`), `durationMs` |
+| `todos.draft`, `todos.queue`, `smithers_todo_drafts`, `smithers_todo_queued` | browser | the engine worker | `draftId` or `opId`, `op`, `via`, `door`, `outcome` (`kept`, `not_kept`, `issue_not_found`, `tab_gone`, `agent`), `fromIssue`, `durationMs` |
+| `keys.press`, `smithers_web_shortcut_presses` | browser | the tab | `key`: a one-key shortcut pressed the button that declares it, such as Make TODO's `t` |
 | `todos.send`, `todos.pending`, `smithers_todo_sends`, `smithers_todo_pending_actions` | browser | the tab | `opId`, `op`, `outcome` (`taken`, `existing`, `retry`, `refused`), `status`, `code`; `action` (`edit`, `discard`, `discard_draft`) |
 
 A refused commit or drop of the agent's (`outcome: agent`) is the defense the catalog already holds; a nonzero count means a flow call reached the step that the catalog should have refused.

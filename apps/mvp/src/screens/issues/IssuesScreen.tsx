@@ -4,6 +4,8 @@ import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useIssues } from "../../features/issues/components/IssuesContext"
+import { useTodos } from "../../features/todos/components/TodosContext"
+import { mayChange, todosByIssue, withTodos } from "../../features/todos/view"
 import {
   DISCARD,
   EDIT,
@@ -17,7 +19,8 @@ import { listProps, mayManageTriage, mayWrite, triageSwitchOf } from "../../feat
 import "./issues-screen.css"
 
 // /$owner/$repo/issues: the repository's issues, this device's own new ones first with their chip, each with its triage
-// chip, New issue for a person who may open one, and Enable triage or Pause triage for a Maintainer. A repository whose issues this person may not read shows sign-in, or Not found. A new issue that wasn't sent gets Edit, back to the form, and Discard. The route's loader
+// chip and the TODOs made from it, Make TODO in its menu for a Member (docs/features/todos.md#from-an-issue), New issue
+// for a person who may open one, and Enable triage or Pause triage for a Maintainer. A repository whose issues this person may not read shows sign-in, or Not found. A new issue that wasn't sent gets Edit, back to the form, and Discard. The route's loader
 // opens the repository (`open`); this screen only renders what the device has.
 export function IssuesScreen() {
   const { owner, repo } = useParams({ from: "/$owner/$repo/issues" })
@@ -30,6 +33,10 @@ export function IssuesScreen() {
   const { data: triagePending } = useLiveQuery(queries.triagePending)
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
+  const todos = useTodos()
+  const { data: todosView } = useLiveQuery(todos.queries.view)
+  const todosRepoId = todosView?.repoId ?? ""
+  const { data: todoRows } = useLiveQuery(todos.queries.stack(todosRepoId).todos)
   const navigate = useNavigate()
   const list = listProps(rows ?? [], synced, access, triage !== undefined && !triage.paused)
   const triageSwitch = triageSwitchOf(triage, triagePending ?? [])
@@ -43,7 +50,12 @@ export function IssuesScreen() {
       <IssuesView
         repo={`${owner}/${repo}`}
         size="full"
-        issues={list.issues}
+        issues={withTodos(
+          list.issues,
+          todosByIssue(todosRepoId, todoRows, owner, repo),
+          session !== undefined && mayChange(session, confirmed),
+          (number) => void navigate({ href: todos.actions.fromIssue(owner, repo, number) }),
+        )}
         loading={list.loading}
         href={(issue) => (issue.number === null ? undefined : issuePath(owner, repo, issue.number))}
         onNavigate={(_, href) => void navigate({ href })}

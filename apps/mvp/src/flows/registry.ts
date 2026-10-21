@@ -33,7 +33,7 @@ import { Cancel, Inspect, List, Resume, Retry } from "../features/runs/flows"
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
 import { SetTheme } from "../features/theme/flows"
-import { TodoCommit, TodoDraft, TodoDrop } from "../features/todos/flows"
+import { TodoCommit, TodoDraft, TodoDrop, TodoIssue } from "../features/todos/flows"
 import { OpenWebPage } from "../features/web/flows"
 
 // The app's flows (docs/features/flows.md#the-registry): every action a person or the agent takes is one `Flow.make`
@@ -214,6 +214,13 @@ export const registry = {
   // TODOs and the stack (decision 0016 §3): the agent drafts a TODO, privately, on the person's device; only the person
   // commits it and drops it. `/todo.new owner/repo <prompt>` drafts one; the prompt takes the rest of the line.
   "todo/draft": { flow: TodoDraft, changes: "drafts a TODO for the person", slash: { command: "todo.new", minimum: "member", fields: ["repo", "prompt"] } },
+  // Make TODO on an issue (docs/features/todos.md#from-an-issue): `/todo.issue owner/repo <n>` drafts a TODO linked to
+  // issue n, its title and prompt the issue's; the agent may pass better ones.
+  "todo/issue": {
+    flow: TodoIssue,
+    changes: "drafts a TODO from an issue for the person",
+    slash: { command: "todo.issue", minimum: "member", fields: ["repo", "issue"] },
+  },
   "todo/commit": {
     flow: TodoCommit,
     userOnlyReason: "A person commits a TODO from its draft card; the agent drafts and never commits one.",

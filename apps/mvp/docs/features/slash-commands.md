@@ -38,6 +38,7 @@ A registry entry with a `slash` door is a command ([the registry](flows.md#the-r
 | `/triage.enable` | `triage/enable` | maintainer | `repo`, then an optional daily budget in tokens |
 | `/triage.pause` | `triage/pause` | maintainer | `repo` |
 | `/todo.new` | `todo/draft` | member | `repo`, then the prompt as the rest of the line: a private draft on the stack page, to edit and commit ([TODOs](todos.md)) |
+| `/todo.issue` | `todo/issue` | member | `repo`, `issue`: a private draft from issue `#<issue>`, linked to it ([TODOs](todos.md#from-an-issue)) |
 | `/todo.drop` | `todo/drop` | member | `repo`, `number`: drops TODO `T<number>` |
 | `/copy` | `chat/copy` | anyone | none: copies Smithers' latest finished answer; `messageId` is hidden ([chat](chat.md#message-controls)) |
 | `/edit` | `chat/edit` | member | none: takes the latest question Smithers doesn't have yet back to the composer; `questionId` is hidden |

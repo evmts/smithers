@@ -1,14 +1,31 @@
+import type { IssuesViewIssue, IssuesViewLink, ItemConversationEvent, ItemStateKind, ItemStatus } from "@smthrs/ui"
 import { mayAsk, type Role } from "../auth/contract"
 import { viewerOf } from "../commands/catalog"
-import { NOT_SENT_COPY, type NotSentReason, type TodoState } from "./contract"
+import { issuePath } from "../issues/contract"
+import { hrefFor } from "../repo/paths"
+import {
+  COMMITTED,
+  DROP,
+  dropTitle,
+  githubPullUrl,
+  MAKE_TODO,
+  NOT_SENT_COPY,
+  type NotSentReason,
+  REQUESTED,
+  SETTLED_STATES,
+  TODO_STATE_WORDS,
+  type TodoState,
+  todoPath,
+} from "./contract"
 import type { Access, Draft, Requested, Sending, Todo, TodoRequest } from "./schema"
 
 // What the stack's screens show, from the rows the device has (decision 0016 §4, docs/features/todos.md#the-browser):
-// pure functions the views call with their live queries' rows, so no view decides anything. A change this device made
+// pure functions the views call with their live queries' rows, so no view decides anything. The stack is drawn as
+// GitHub's issue list (`@smthrs/ui` `IssuesView`) and one TODO as GitHub's issue page (`ItemConversation`). A change this device made
 // shows until Electric shows what it did: a commit as `T–` and Requested at the end of the stack, a drop as Requested
 // on its TODO, either as Not sent once the route refused it.
 
-/** A row of the stack as `StackList` shows it. */
+/** A row of the stack: a TODO the device has, or this device's commit the stack hasn't numbered. */
 export interface StackRow {
   readonly id: string
   readonly number: number | null
@@ -100,7 +117,7 @@ export const deliveredOf = (
     .map((row) => row.id)
 }
 
-/** One TODO at full size, as `TodoCard` shows it. */
+/** One TODO at full size: its row, its latest prompt, and this device's pending drop. */
 export interface TodoCardProps {
   readonly id: string
   readonly number: number
@@ -108,6 +125,13 @@ export interface TodoCardProps {
   readonly state: TodoState
   readonly prompt: string
   readonly acceptance: ReadonlyArray<string>
+  readonly createdLogin: string
+  readonly createdAt: string
+  readonly updatedAt: string
+  readonly settledAt: string | null
+  readonly branch: string | null
+  readonly prNumber: number | null
+  readonly issueNumber: number | null
   readonly pending?: "requested" | "not_sent"
 }
 
@@ -130,7 +154,166 @@ export const todoCardOf = (
     state: todo.state,
     prompt: request.prompt,
     acceptance: request.acceptance,
+    createdLogin: todo.createdLogin,
+    createdAt: todo.createdAt,
+    updatedAt: todo.updatedAt,
+    settledAt: todo.settledAt,
+    branch: todo.branch,
+    prNumber: todo.prNumber,
+    issueNumber: todo.issueNumber,
     ...(pending === undefined ? {} : { pending }),
+  }
+}
+
+/** Each state's icon, as GitHub draws an item's state. */
+export const STATE_KINDS: Readonly<Record<TodoState, ItemStateKind>> = {
+  queued: "queued",
+  working: "running",
+  in_review: "in_review",
+  merged: "merged",
+  dropped: "dropped",
+  failed: "failed",
+}
+
+const isSettled = (state: TodoState): boolean => (SETTLED_STATES as ReadonlyArray<TodoState>).includes(state)
+
+/** A TODO's icon and word: `Requested` until the stack numbers it, then its state's. */
+export const statusOf = (number: number | null, state: TodoState): ItemStatus =>
+  number === null ? { kind: "requested", label: REQUESTED } : { kind: STATE_KINDS[state], label: TODO_STATE_WORDS[state] }
+
+/** Postgres's `2026-10-20 10:00:00.123+00` as ISO 8601, which every browser reads. */
+export const isoOf = (at: string): string => at.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00")
+
+/** Whether a person may drop a TODO: the stack numbered it, it is still on the stack, and no change of it is pending here. */
+export const isDroppable = (todo: Pick<StackRow, "number" | "state" | "pending">): boolean =>
+  todo.number !== null && !isSettled(todo.state) && todo.pending === undefined
+
+/** A TODO's issue and branch, in the app, and its pull request, on GitHub, when it has them. */
+const linksOf = (
+  todo: Pick<Todo, "branch" | "prNumber" | "issueNumber">,
+  owner: string,
+  name: string,
+): { readonly issue?: IssuesViewLink; readonly branch?: IssuesViewLink; readonly pullRequest?: IssuesViewLink } => ({
+  ...(todo.issueNumber === null
+    ? {}
+    : { issue: { label: `#${todo.issueNumber}`, href: issuePath(owner, name, todo.issueNumber) } }),
+  ...(todo.branch === null
+    ? {}
+    : {
+      branch: {
+        label: todo.branch,
+        href: hrefFor({ owner, name, defaultBranch: null }, todo.branch, { kind: "tree", path: "" }),
+      },
+    }),
+  ...(todo.prNumber === null ? {} : { pullRequest: { label: `#${todo.prNumber}`, href: githubPullUrl(owner, name, todo.prNumber) } }),
+})
+
+/** One stack row as `IssuesView` shows it, and whether a person may drop it from its menu. */
+export interface StackItem extends IssuesViewIssue {
+  readonly id: string
+  readonly droppable: boolean
+}
+
+/**
+ * The stack page's rows, as GitHub's issue list: each TODO's icon, title and `T<n>`, who committed it and when (when
+ * it settled, once it has), its issue, branch and pull request, and this device's pending chip. Open while on the stack;
+ * merged and dropped are closed. In `rows`' order, which is the stack's.
+ */
+export const stackItemsOf = (
+  rows: ReadonlyArray<StackRow>,
+  todos: ReadonlyArray<Todo>,
+  owner: string,
+  name: string,
+): ReadonlyArray<StackItem> => {
+  const byId = new Map(todos.map((todo) => [todo.id, todo]))
+  return rows.map((row) => {
+    const todo = byId.get(row.id)
+    const links = todo === undefined ? {} : linksOf(todo, owner, name)
+    const shown = [links.issue, links.branch, links.pullRequest].filter((link) => link !== undefined)
+    return {
+      id: row.id,
+      number: row.number,
+      title: row.title,
+      state: isSettled(row.state) ? "closed" : "open",
+      status: statusOf(row.number, row.state),
+      droppable: isDroppable(row),
+      ...(todo === undefined ? {} : { author: todo.createdLogin, updatedAt: isoOf(todo.settledAt ?? todo.createdAt) }),
+      ...(shown.length === 0 ? {} : { links: shown }),
+      ...(row.pending === undefined ? {} : { pending: row.pending }),
+    }
+  })
+}
+
+/**
+ * The stack's rows with Drop in the menu of each a person may drop, when this person may change the stack: it asks
+ * `Drop T4?` first, and `drop` runs on its Drop.
+ */
+export const withDrop = (
+  items: ReadonlyArray<StackItem>,
+  may: boolean,
+  drop: (number: number) => void,
+): ReadonlyArray<IssuesViewIssue> =>
+  items.map(({ droppable, ...item }) =>
+    !may || !droppable || item.number === null
+      ? item
+      : {
+        ...item,
+        menu: [{ label: DROP, destructive: true, confirm: dropConfirm(item.number, item.title), onSelect: () => drop(item.number!) }],
+      }
+  )
+
+/** What Drop asks before it drops TODO `number`. */
+export const dropConfirm = (number: number, title: string) => ({ title: dropTitle(number), description: title, action: DROP })
+
+/** One TODO's page, as GitHub's issue page: what `ItemConversation` shows, its side column's links, and Drop. */
+export interface TodoPage {
+  readonly number: number
+  readonly title: string
+  readonly state: "open" | "closed"
+  readonly status: ItemStatus
+  readonly author: string
+  readonly createdAt: string
+  /** The prompt, then its acceptance criteria, as Markdown. */
+  readonly body: string
+  readonly events: ReadonlyArray<ItemConversationEvent>
+  readonly issue?: IssuesViewLink
+  readonly branch?: IssuesViewLink
+  readonly pullRequest?: IssuesViewLink
+  readonly pending?: "requested" | "not_sent"
+  readonly droppable: boolean
+}
+
+/**
+ * TODO `card`'s page: its prompt and acceptance criteria as the body, and a timeline of who committed it and, once it
+ * left Queued, the state it is in and since when.
+ */
+export const todoPageOf = (card: TodoCardProps, owner: string, name: string): TodoPage => {
+  const criteria = card.acceptance.length === 0
+    ? ""
+    : `\n\n**Acceptance criteria**\n\n${card.acceptance.map((line) => `- ${line}`).join("\n")}`
+  const events: Array<ItemConversationEvent> = [
+    { id: "committed", kind: "queued", author: card.createdLogin, text: COMMITTED, createdAt: isoOf(card.createdAt) },
+  ]
+  if (card.state !== "queued") {
+    events.push({
+      id: card.state,
+      kind: STATE_KINDS[card.state],
+      text: TODO_STATE_WORDS[card.state],
+      createdAt: isoOf(card.settledAt ?? card.updatedAt),
+    })
+  }
+  return {
+    number: card.number,
+    title: card.title,
+    state: isSettled(card.state) ? "closed" : "open",
+    status: statusOf(card.number, card.state),
+    author: card.createdLogin,
+    createdAt: isoOf(card.createdAt),
+    body: `${card.prompt}${criteria}`,
+    events,
+    ...linksOf(card, owner, name),
+    ...(card.pending === undefined ? {} : { pending: card.pending }),
+    droppable: isDroppable(card),
   }
 }
 
@@ -157,3 +340,74 @@ export const mayChange = (
   const viewer = viewerOf(session, confirmed)
   return viewer.signedIn && mayAsk(viewer.role)
 }
+
+/**
+ * What a TODO's route shows: its page once the device has the TODO and its prompt; `missing` once the stack's shape
+ * answered and the TODO isn't there; else `waiting`, which shows the page's frame and nothing more.
+ */
+export const todoScreenOf = (
+  card: TodoCardProps | undefined,
+  number: number,
+  todos: ReadonlyArray<Todo>,
+  access: Access["status"],
+  owner: string,
+  name: string,
+): { readonly kind: "page"; readonly page: TodoPage } | { readonly kind: "missing" | "waiting" } => {
+  if (card !== undefined) return { kind: "page", page: todoPageOf(card, owner, name) }
+  return access === "allowed" && !todos.some((todo) => todo.number === number) ? { kind: "missing" } : { kind: "waiting" }
+}
+
+/** The TODOs made from one issue, as links to their pages, and whether one of them is still on the stack. */
+export interface IssueTodos {
+  readonly links: ReadonlyArray<IssuesViewLink>
+  readonly open: boolean
+}
+
+/**
+ * The TODOs of repository `repoId` made from each of its issues, by issue number, newest first
+ * (docs/features/todos.md#from-an-issue): what an issue's row and page show, and whether Make TODO does.
+ */
+export const todosByIssue = (
+  repoId: string,
+  todos: ReadonlyArray<Todo>,
+  owner: string,
+  name: string,
+): ReadonlyMap<number, IssueTodos> => {
+  const found = new Map<number, IssueTodos>()
+  const made = todos
+    .filter((todo) => todo.repoId === repoId && todo.issueNumber !== null)
+    .sort((a, b) => b.number - a.number)
+  for (const todo of made) {
+    const was = found.get(todo.issueNumber!) ?? { links: [], open: false }
+    found.set(todo.issueNumber!, {
+      links: [...was.links, { label: `T${todo.number}`, href: todoPath(owner, name, todo.number) }],
+      open: was.open || !isSettled(todo.state),
+    })
+  }
+  return found
+}
+
+/** Whether Make TODO shows on an issue: for a person who may change the stack, on an open issue none of whose TODOs is open. */
+export const mayMakeTodo = (may: boolean, issue: { readonly state: string }, made: IssueTodos | undefined): boolean =>
+  may && issue.state === "open" && made?.open !== true
+
+/**
+ * The issues list's rows with each issue's TODOs as links in its meta line, and Make TODO in the menu of each issue it
+ * may be made from (`mayMakeTodo`): `make` runs on it.
+ */
+export const withTodos = (
+  issues: ReadonlyArray<IssuesViewIssue>,
+  made: ReadonlyMap<number, IssueTodos>,
+  may: boolean,
+  make: (number: number) => void,
+): ReadonlyArray<IssuesViewIssue> =>
+  issues.map((issue) => {
+    if (issue.number === null) return issue
+    const number = issue.number
+    const todos = made.get(number)
+    return {
+      ...issue,
+      ...(todos === undefined ? {} : { links: [...(issue.links ?? []), ...todos.links] }),
+      ...(mayMakeTodo(may, issue, todos) ? { menu: [...(issue.menu ?? []), { label: MAKE_TODO, onSelect: () => make(number) }] } : {}),
+    }
+  })

@@ -56,7 +56,10 @@ import { Button, SmithersUiStyles, StatusPill } from "@smthrs/ui";
   `framedPageTarget` and `webPageTarget`.
 - Repository home: `RepositoryHome`, the blocks a repository declares in
   `.smithers/home.json`.
-- TODOs and the stack: `StackList`, `TodoCard` and `TodoDraftCard`.
+- Lists and item pages as GitHub draws them: `IssuesView` (state icons,
+  Open and Closed tabs, a row's `⋯` menu), `ItemConversation` (a state pill,
+  a timeline and a side column of `ItemAsideSection`s), `ItemStateIcon`,
+  `ActionMenu` and `ConfirmButton`; a TODO's private draft, `TodoDraftCard`.
 - Sharing: `AvatarStack` (presence avatars with `+N`) and `ShareDialog`
   (people with access, general access and Copy link).
 - Workflow canvas: `WorkflowCanvas` node/edge/controls/panel/toolbar/minimap

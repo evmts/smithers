@@ -158,6 +158,8 @@ todo (one FlowExecution per attempt; every writer call is fenced by todo id and 
 
 ## 4. UI
 
+**Amended 2026-10-20 after Will's review of the walkthrough** ("I would expect this todo interface to look more like the github issues interface"): the stack page is `@smthrs/ui`'s `IssuesView`, as GitHub's issue list, with Open and Closed tabs, a state icon per row and Drop in a row's `⋯` menu; one TODO is `ItemConversation`, as GitHub's issue page, with Drop in its side column. `StackList` and `TodoCard` are deleted. And a TODO can be made from an issue, linked to it, through one flow `todo/issue` (Will: "we should have the ability to create TODOs from issues"); its pull request's "Fixes #n" is Track B's. [todos.md](../features/todos.md) describes both; the sketch below is the original design.
+
 ```
 ┌ octocat/hello · main                                            Code  Stack 3 ┐
 │ Stack                                                         [New TODO]      │
@@ -246,6 +248,43 @@ It is done when the four end-to-end tests pass locally and live, with their GIFs
 | T7 | `apps/mvp/worker/github/{Api,Apply}.ts` (`pull_request`) | shared with 0012 W2; signal the run | T2 |
 | T8 | `apps/mvp/e2e/todo-*.spec.ts`, `docs/features/todos.md`, `docs/observability.md` rows | proof and docs | each track |
 
+## Addendum, 2026-10-20 19:45: the factory, simplified
+
+Will, about 19:40: "make the coding factory simpler. Bugs require a minimal reproduction. Issues need to be accepted for discussion and able to be marked with what the maintainer believes the timeline and commitment to implementing it is and also come with a generate poc automatically if an issue is accepted that can be viewed and played with". This addendum replaces §1 to §8 wherever they disagree.
+
+```
+issue ─▶ (a bug: minimal repro required) ─▶ triage: accepted for discussion │ not accepted
+      ─▶ a Maintainer sets the commitment (timeline) ─▶ accepted: a POC is generated (playable)
+      ─▶ a Maintainer makes a TODO ─▶ the todo run ─▶ a PR (checks = Smithers runs) ─▶ a person merges
+                                      issue side ▲ │ ▼ TODO side
+```
+
+**The TODO side keeps:**
+
+| | Kept |
+|---|---|
+| States | `queued` ─▶ `working` ─▶ `in_review` ─▶ `merged`; or `dropped` (a person's Drop, or the PR closed on GitHub); or `failed` (with its code) |
+| The `todo` run, one per attempt on Cloudflare | `implement`: the branch `smithers/t<n>-<slug>` is created on GitHub at `main`'s head, and the agent (`AgentAction`) writes the change on that branch's machine with the sandbox tools, running the repository's tests there. `publish`: one commit with `createCommitOnBranch`, fenced by the base, then the PR into `main`, its body ending `Fixes #n` when the TODO came from issue `n`; then the checks start. `await`: re-reads the PR until it is merged or closed, and settles |
+| Checks | `checks/run`, one Smithers run per check on the PR's head SHA, recorded in `runs` with that SHA: each `.smithers/checks/<name>.sh` run on the branch's machine, and `review`, which reads the diff with the judge role and posts one comment review as the App. Checks never gate: a person reads them and merges. GitHub's own branch protection still applies |
+| Merge | a person only: Merge on the PR page (`pr/merge`, squash, head and base rechecked; never the agent, never a run credential) or GitHub's own button |
+| Screens | the stack and one TODO (Track A); the PR list and one PR page with Conversation, Commits, Checks and Files |
+| Lanes | one TODO at a time per repository, each from `main` |
+
+**Cut, and why:**
+
+- **`plan` as a step, and `todo_attempts.plan`:** the agent plans inside `implement`; a separate plan call bought no decision.
+- **`starting` and `needs_you`:** nothing asks a person mid-run in this slice, and a run that can't finish fails with its code. The writer marks a started TODO `working` at once.
+- **`propose` as a step:** opening the PR is the end of `publish`.
+- **Opening a PR by hand from a branch, the compare page, Update branch, the branches page:** every PR in the chain comes from a TODO run.
+- **GitHub check runs** (§Decision 9): Smithers writes none (0012 decision 12). The Checks tab reads `runs`.
+- **`ExecutionObject.signal`:** `await` re-reads GitHub on the engine's retry schedule, at most a minute apart; webhooks only refresh the projection.
+- **Slice 2 and later as written:** stacked bases, GitHub draft PRs, forward updates, Move, Before, Amend, out-of-order merges, restacks, machine rebases and pre-approval. Each comes back only when a person needs it.
+
+**Seams with the issue side** (a separate builder owns the repro requirement, "accepted for discussion", the commitment and the POC):
+
+1. **A TODO's issue is `todos.issue_number`** (migration 0027), set once when a person makes the TODO with `todo/issue` and never changed. The TODO side reads nothing else of the issue: not its triage, its commitment or its POC. It writes one thing back: `Fixes #n` in the PR's body, so GitHub closes the issue when the PR merges. Whether an issue may become a TODO (accepted, committed) is `todo/issue`'s check, on the issue side.
+2. **A POC hands over by name only.** A POC is its own branch, `smithers/poc-<n>`, made and run by the issue side, and it never merges. `todo/issue` may put the POC branch's name in the TODO's prompt; the TODO's run still starts from `main`, and its agent may read the POC branch from the forge as reference. A POC branch is never a TODO's base.
+
 ## Rulings on the two questions
 
 The lead ruled on both on 2026-10-20 instead of putting them to Will; Track A of slice 1 is built on them.
@@ -280,3 +319,8 @@ Both designs were written independently, then Opus merged them. Adopted claims w
 - [GH-branches] https://docs.github.com/en/rest/branches/branches (`POST /merges`)
 - [GH-drafts] https://docs.github.com/en/enterprise-server@3.9/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/changing-the-stage-of-a-pull-request; https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-pull-requests ("Draft pull requests cannot be merged")
 - [GH-checks] https://docs.github.com/en/rest/checks/runs
+
+
+## Issue lifecycle seam (2026-10-20 19:42 brief; proposed in 0018)
+
+[0018](0018-issue-lifecycle.md) owns reproduction gating, acceptance for discussion, Maintainer commitment labels and `poc/<issue>` previews. None starts a TODO run. **Make TODO** reuses the issue-to-draft flow, with source issue and POC branch as context; the person still commits the draft. This factory starts only from that committed TODO. Acceptance and Now/Next/Later/No commitment labels grant no authority to implement, approve or merge. The lifecycle builder owns this addendum; the factory builder can bind its simplified addendum to this seam.

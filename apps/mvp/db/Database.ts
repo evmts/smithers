@@ -26,6 +26,8 @@ import todos from "./migrations/0022_todos.ts"
 import branchSharing from "./migrations/0023_branch_sharing.ts"
 import sandboxCalls from "./migrations/0024_sandbox_calls.ts"
 import flowSource from "./migrations/0025_flow_source.ts"
+import textUpdates from "./migrations/0026_text_updates.ts"
+import todoIssue from "./migrations/0027_todo_issue.ts"
 
 /** The compose Postgres (`docker-compose.yml`): what `DATABASE_URL` defaults to, and the only one tests use. */
 export const LOCAL_URL = "postgresql://smithers:smithers@localhost:54321/smithers"
@@ -87,6 +89,8 @@ export const migrations = {
   "0023_branch_sharing": branchSharing,
   "0024_sandbox_calls": sandboxCalls,
   "0025_flow_source": flowSource,
+  "0026_text_updates": textUpdates,
+  "0027_todo_issue": todoIssue,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

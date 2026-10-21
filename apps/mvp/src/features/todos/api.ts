@@ -24,6 +24,8 @@ export type ChangeRequest =
     readonly title: string
     readonly prompt: string
     readonly acceptance: ReadonlyArray<string>
+    /** The issue it was made from. */
+    readonly issue?: number
   }
   | { readonly opId: string; readonly op: "drop"; readonly number: number }
 

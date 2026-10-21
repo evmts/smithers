@@ -756,6 +756,7 @@ schema it cannot read shows `Form unavailable`.
 
 ```ts
 function IssuesView(props: IssuesViewProps): JSX.Element
+function ItemStateIcon(props: ItemStateIconProps): JSX.Element
 
 type IssuesViewProps = Omit<ComponentProps<"section">, "children"> & {
   repo: string
@@ -764,7 +765,18 @@ type IssuesViewProps = Omit<ComponentProps<"section">, "children"> & {
   href?: (issue: IssuesViewIssue) => string | undefined    // the title becomes an <a href>
   onNavigate?: (issue: IssuesViewIssue, href: string) => void
   loading?: boolean                                        // first sync not complete
+  unknown?: boolean                                        // rows not known yet, and no loading state
   actions?: ReactNode                                      // in the header, such as New issue
+  filter?: IssuesViewFilter                                // Open and Closed tabs with counts
+  numberPrefix?: string                                    // default "#"; "T" for T4
+  emptyTitle?: string                                      // default "No issues"
+  ordered?: boolean                                        // an ol, for a list whose order means something
+}
+
+type IssuesViewFilter = {
+  state: "open" | "closed"                                 // the rows shown
+  href: (state: "open" | "closed") => string
+  onSelect?: (state: "open" | "closed", href: string) => void
 }
 
 type IssuesViewIssue = {
@@ -772,13 +784,21 @@ type IssuesViewIssue = {
   number: number | null                                    // null: not numbered yet, shows #–
   title: string
   state: "open" | "closed"
+  status?: ItemStatus                                      // the icon and word; default Open or Closed
   labels?: ReadonlyArray<string>
   author?: string
   comments?: number
-  updatedAt?: string
+  updatedAt?: string                                       // shown relative to now
   pending?: "requested" | "not_sent"                       // a Requested or Not sent chip
   triage?: IssuesViewTriage                                // a triage chip; absent: none
+  links?: ReadonlyArray<IssuesViewLink>                    // { label, href }: its branch, pull request, issue
+  menu?: ReadonlyArray<ActionMenuItem>                     // the row's ⋯ menu
 }
+
+type ItemStateKind = "open" | "closed" | "requested" | "queued" | "running" | "needs_you" | "in_review" | "merged" | "dropped" | "failed"
+type ItemStatus = { kind: ItemStateKind; label: string }
+type ItemStateIconProps = Omit<ComponentProps<"svg">, "children"> & { kind: ItemStateKind; label: string }
+const ITEM_STATE_VARIANTS: Readonly<Record<ItemStateKind, "success" | "muted" | "outline" | "default" | "warning" | "destructive">>
 
 type IssuesViewTriage = "proposed" | "accepted" | "not_accepted" | "conflict"
 
@@ -796,6 +816,18 @@ no rows, shows placeholders instead of `EmptyState`. A row carries
 the number: `Proposed` outline, `Accepted` success, `Not accepted` muted,
 `Conflict` warning. An empty list shows `EmptyState`. `inline` scrolls inside
 320 pixels.
+
+Lists as GitHub draws them: each row (`data-slot="issues-row"`, `data-state`,
+`data-status`) leads with `ItemStateIcon`, a 16-pixel image named by
+`status.label` and colored for its kind (`ITEM_STATE_VARIANTS`); the meta line
+ends with `links`, an `http(s)` one in a new tab and an in-app one calling
+`onNavigate` on a plain click; `menu` adds an `ActionMenu` named
+`<number> actions`. With `href`, ArrowDown, ArrowUp, Home and End move focus
+between the rows' links. `filter` replaces the name and counts with Open and
+Closed tabs (`nav` `Filter`, the current one `aria-current="page"`), each with
+its icon and count, and shows only that state's rows; a plain click on a tab
+calls `onSelect`. `unknown` hides the counts and shows nothing for an empty
+list: no empty state, placeholders or busy state.
 
 `declaredInput(document)` and `formFieldsFor(input, hints?, payload?)`, with
 their `FieldKind`, `FieldValue`, `FormDraft`, `FormField` and `FormHints`
@@ -817,15 +849,21 @@ nothing.
 function ItemConversation(props: ItemConversationProps): JSX.Element
 function IssueForm(props: IssueFormProps): JSX.Element
 
+function ItemAsideSection(props: ItemAsideSectionProps): JSX.Element
+
 type ItemConversationProps = Omit<ComponentProps<"article">, "children" | "title"> & {
   title: string
   number: number | null                         // null shows #–
+  numberPrefix?: string                         // default "#"; "T" for T4
   state: "open" | "closed"
+  status?: ItemStatus                           // the pill's icon and word; default Open or Closed
   author?: string
   createdAt?: string                            // ISO 8601
   body: string                                  // Markdown
   pending?: "requested" | "not_sent"
   comments: ReadonlyArray<ItemConversationComment>
+  events?: ReadonlyArray<ItemConversationEvent> // the timeline, after the body
+  aside?: ReactNode                             // a side column of ItemAsideSections and actions
   externalHref?: string                         // Open on GitHub ↗
   loading?: boolean
   composer?: ItemConversationComposer           // absent: no composer at all
@@ -841,6 +879,20 @@ type ItemConversationComment = {
   pending?: "requested" | "not_sent"
   reason?: string                               // shown only when not_sent
   actions?: ReactNode                           // such as Edit and Discard
+}
+
+type ItemConversationEvent = {
+  id: string
+  kind: ItemStateKind                           // its icon
+  author?: string                               // bold before text
+  text: string                                  // such as `committed`, or `Dropped` alone
+  createdAt?: string
+}
+
+type ItemAsideSectionProps = Omit<ComponentProps<"section">, "title"> & {
+  title: string
+  links?: ReadonlyArray<IssuesViewLink>         // one per line
+  onNavigate?: (href: string) => void           // a plain click on an in-app link
 }
 
 type ItemConversationComposer = {
@@ -864,8 +916,9 @@ type IssueFormProps = Omit<ComponentProps<"form">, "children" | "onSubmit"> & {
 ```
 
 `ItemConversation` renders an `article` (`data-slot="item-conversation"`,
-`data-state`, `data-pending`) named by its title heading: the title with
-`#12` or `#–`, an `Open` or `Closed` badge, a `Requested` or `Not sent` chip,
+`data-state`, `data-status`, `data-pending`) named by its title heading: the
+title with `#12` or `#–` (`numberPrefix`), a pill with the state's icon and
+word (`status`, else `Open` or `Closed`), a `Requested` or `Not sent` chip,
 the author, a `RelativeTime`, `Open on GitHub ↗` in a new tab when
 `externalHref` passes `safeHref`, and `headerActions` at the row's end. The body and each comment render through
 `Markdown` with `variant="document"`, so an HTML comment is dropped and no tag
@@ -875,6 +928,12 @@ labelled `Comments`, each `li` with `data-pending`. The composer is a labelled
 only while the trimmed draft is non-empty and `disabled` is unset. `loading`
 shows a `Loading` status and placeholders, with no header, header actions,
 comments or composer.
+
+`events` is an `ol` named `Timeline` after the body: each event's icon, its
+author and text, and when. `aside` adds a side column (`data-aside` on the
+article): beside the main column from 768 pixels, under it below. An
+`ItemAsideSection` is a `section` named by its `title`, with its `links` and
+its children.
 
 `IssueForm` labels a `Title` input and a `Description` textarea. The submit
 button, Enter in the title, and ⌘Enter or Ctrl+Enter in either field submit
@@ -1202,49 +1261,56 @@ type TodoDraftCardProps = Omit<ComponentProps<"form">, "children" | "onSubmit" |
 }
 ```
 
-`StackList` renders a `section` (`data-slot="stack-list"`, `aria-label`
-`<repo> stack`, `aria-busy` while `loading`) with an `<h2>` `Stack`, the
-`actions`, and an `ol` named by that heading. Each row is an `li` with
-`data-todo`, `data-state`, `data-pending` and `aria-current="true"` when
-`selected`: the number, the title (an `<a>` when `href` gives a link that passes
-`safeHref`), the state chip, the pending chip, and Drop. A plain click on a
-title calls `onNavigate` after `preventDefault`; a modified click keeps the
-browser's behavior. ArrowDown, ArrowUp, Home and End move focus between rows'
-links, or rows without a link, which are tab stops themselves. `loading` with no
-rows shows a `Loading stack` status and placeholders; no rows otherwise shows
-`EmptyState` `No TODOs`.
-
-Drop shows when `onDrop` is set, the TODO is numbered, not merged or dropped,
-and has no pending chip. It confirms inline once: `Drop T4` (destructive) and
-`Cancel`, with focus on `Cancel`. `Cancel` and Escape restore Drop and focus it;
-`Drop T4` calls `onDrop` once, restores Drop, and focuses the row's title or
-the card's heading.
-
-| `state` | Chip |
-|---|---|
-| `queued`, `starting` | outline |
-| `working` | default, with the status dot |
-| `needs_you` | warning |
-| `in_review` | default |
-| `merged` | success |
-| `dropped` | muted |
-| `failed` | destructive |
-
-`TodoCard` renders an `article` (`data-slot="todo-card"`, `data-state`,
-`data-pending`) named by its `<h2>` title: the number, the state and pending
-chips, the prompt through `Markdown variant="document"`, so no tag in it
-becomes an element, an `Acceptance criteria` list, and Drop in a `footer`.
-
 `TodoDraftCard` renders a `form` (`data-slot="todo-draft-card"`) named
-`TODO draft`: a header with `Draft`, a muted `Only you` badge and `repo`; a
-labelled `Title` input (`maxLength`) and `Prompt` textarea; the acceptance
-criteria; then `Commit` (submit) and `Discard` (ghost). Commit is disabled while
-`committing`, when the trimmed title or prompt is empty, or when the title is
-longer than `maxTitleLength`. Submitting, Enter in the title, and ⌘Enter or
-Ctrl+Enter in the prompt always prevent the default and call `onCommit` only
-while Commit is enabled. `refused` is a destructive `role="alert"` chip.
+`TODO draft`: a header with `Draft`, a muted `Only you` badge, an outline
+`source` chip and `repo`; a labelled `Title` input (`maxLength`) and `Prompt`
+textarea; the acceptance criteria; then `Commit` (submit) and `Discard`
+(ghost). Commit is disabled while `committing`, when the trimmed title or prompt
+is empty, or when the title is longer than `maxTitleLength`. Submitting, Enter
+in the title, and ⌘Enter or Ctrl+Enter in the prompt always prevent the default
+and call `onCommit` only while Commit is enabled. `refused` is a destructive
+`role="alert"` chip.
 
-`stackCss` is part of `smithersUiCss`.
+`todoDraftCardCss` is part of `smithersUiCss`.
+
+## Menus and confirmations
+
+A quiet menu of actions, and a button that asks before it acts. Both confirm in
+the same dialog.
+
+```ts
+function ActionMenu(props: ActionMenuProps): JSX.Element
+function ConfirmButton(props: ConfirmButtonProps): JSX.Element
+
+type ActionConfirm = { title: string; description?: string; action: string }
+type ActionMenuItem = { label: string; onSelect: () => void; destructive?: boolean; confirm?: ActionConfirm }
+
+type ActionMenuProps = Omit<ButtonProps, "children" | "onSelect"> & {
+  label: string                                 // the trigger's name, such as `T4 actions`
+  items: ReadonlyArray<ActionMenuItem>
+}
+
+type ConfirmButtonProps = Omit<ButtonProps, "onClick" | "children"> & {
+  children: ReactNode
+  confirm: ActionConfirm
+  onConfirm: () => void
+  destructive?: boolean                         // the dialog's action is destructive
+}
+```
+
+`ActionMenu` is a ghost `⋯` icon button (`data-slot="action-menu-trigger"`)
+that opens a Radix menu (`data-slot="action-menu"`) of `menuitem`s; Enter,
+Space and ArrowDown open it on its first item, and Escape closes it. A
+`destructive` item carries `data-destructive`. An item without `confirm` runs
+`onSelect` at once. One with `confirm` opens a dialog: `confirm.title`,
+`confirm.description`, `Cancel` (focused) and `confirm.action`, destructive or
+default. Only the action runs `onSelect`, once, and focus returns to the
+trigger; `Cancel`, Escape or a click outside run nothing.
+
+`ConfirmButton` is a `Button` (`data-slot="confirm-button"`) whose press opens
+the same dialog; only its action runs `onConfirm`.
+
+`actionMenuCss` is part of `smithersUiCss`.
 
 ## Related
 

@@ -98,6 +98,15 @@ describe("TodoDraftCard: layout", () => {
     expect(form().querySelector(".sui-todo-draft-repo")).toBeNull();
   });
 
+  test("source shows where the draft came from, such as its issue, as a chip after Only you; empty shows none", async () => {
+    await render(<TodoDraftCard {...props({ source: "#12" })} />);
+    const chips = [...form().querySelectorAll<HTMLElement>("header [data-slot=badge]")];
+    expect(chips.map((chip) => chip.textContent)).toEqual(["Only you", "#12"]);
+    expect(chips[1]!.className).toContain("sui-todo-draft-source");
+    await rerender(<TodoDraftCard {...props({ source: "" })} />);
+    expect(form().querySelector(".sui-todo-draft-source")).toBeNull();
+  });
+
   test("labels the Title input and the Prompt textarea, with the title capped at 120 characters by default", async () => {
     await render(<TodoDraftCard {...props()} />);
     expect([labelFor(titleField()), labelFor(promptField())]).toEqual(["Title", "Prompt"]);

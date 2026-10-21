@@ -84,7 +84,8 @@ describe("migrateAndReport", () => {
           applied: "1_messages, 2_answer_attempts, 3_paired_positions, 4_model_roles, 5_sign_in, 6_answer_parts, " +
             "7_repositories, 8_browser_answering, 9_clone_ids, 10_views, 11_question_askers, 12_model_reservations, " +
             "13_runs, 14_branch_workspace, 15_flows, 16_github_issues, 17_model_charges, 18_triage, 19_spend_alerts, " +
-            "20_notifications, 21_secrets, 22_todos, 23_branch_sharing, 24_sandbox_calls, 25_flow_source",
+            "20_notifications, 21_secrets, 22_todos, 23_branch_sharing, 24_sandbox_calls, 25_flow_source, 26_text_updates, " +
+            "27_todo_issue",
         },
         { message: ["db:migrate: up to date"], applied: "" },
       ])

@@ -24,6 +24,8 @@ export interface Change {
       readonly title: string
       readonly prompt: string
       readonly acceptance: ReadonlyArray<string>
+      /** The issue in the same repository it was drafted from (`todos.issue_number`). */
+      readonly issue?: number
     }
     | { readonly kind: "drop"; readonly number: number }
 }
@@ -155,7 +157,8 @@ export const apply = (change: Change, options: { readonly runs: boolean }) =>
         ? undefined
         : { attemptId: rows.find((row) => row.id === stop.todoId)!.attemptId!, todoId: stop.todoId }
       const receipt: Receipt = {
-        outcome: result.kind === "refused" ? result.code : result.kind,
+        // A commit or a drop answers one of the stack's outcomes; only a run's report finishes a TODO or goes stale.
+        outcome: (result.kind === "refused" ? result.code : result.kind) as StackOutcome,
         ...(result.kind === "refused" ? {} : { number: result.number }),
         starts,
         ...(stopped === undefined ? {} : { stopped }),
@@ -163,9 +166,11 @@ export const apply = (change: Change, options: { readonly runs: boolean }) =>
       if (change.op.kind === "commit" && result.kind === "committed") {
         const created = after.todos.find((todo) => todo.id === change.opId)!
         yield* sql`
-          INSERT INTO todos (id, repo_id, number, title, state, position, revision, attempt, created_by, created_login)
+          INSERT INTO todos (id, repo_id, number, title, state, position, revision, attempt, created_by, created_login,
+            issue_number)
           VALUES (${change.opId}::uuid, ${change.repoId}, ${created.number}, ${change.op.title}, ${created.state},
-            ${created.position}, ${created.revision}, ${created.attempt}, ${change.actor.id}, ${change.actor.login})`
+            ${created.position}, ${created.revision}, ${created.attempt}, ${change.actor.id}, ${change.actor.login},
+            ${change.op.issue ?? null})`
         yield* sql`
           INSERT INTO todo_requests (todo_id, revision, repo_id, prompt, acceptance, by_login)
           VALUES (${change.opId}::uuid, 1, ${change.repoId}, ${change.op.prompt},

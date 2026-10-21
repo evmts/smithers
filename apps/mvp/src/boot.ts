@@ -18,6 +18,7 @@ import { bindConnectivity } from "./features/chat/connectivity"
 import { QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "./features/chat/contract"
 import { storagePersisted } from "./features/chat/metrics"
 import { chatShortcuts } from "./features/chat/shortcuts"
+import { buttonShortcuts } from "./features/keys/keys"
 import { tabChat } from "./features/chat/tab"
 import { type ChatConfig, type ChatHost, ChatStore, chatConfig } from "./features/chat/store"
 import { Commands, type CommandsView } from "./features/commands/commands"
@@ -360,6 +361,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
       )
     )
     yield* chatShortcuts(options.target)
+    yield* buttonShortcuts(options.target)
     yield* bindConnectivity(options.target)
     yield* requestPersistentStorage(options.storage).pipe(Effect.forkScoped)
     yield* store.messages.restored.pipe(

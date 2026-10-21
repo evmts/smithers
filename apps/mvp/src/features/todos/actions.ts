@@ -84,6 +84,7 @@ export const commit = (id: string) =>
           title: draft.title.trim(),
           prompt: draft.prompt,
           ...(draft.acceptance.length === 0 ? {} : { acceptance: draft.acceptance }),
+          ...(draft.issue === undefined ? {} : { issue: draft.issue }),
         },
         { door: "button" },
       ).pipe(Effect.map((dispatched) => dispatched._tag === "Done"), Effect.orElseSucceed(() => false))
@@ -109,6 +110,22 @@ export const discardDraft = (id: string) =>
     if (Option.isNone(yield* drafts.get(id))) return
     yield* Effect.ignore(drafts.delete(id))
     yield* record("discard_draft", { draftId: id })
+  })
+
+/**
+ * Make TODO on issue `number` of `owner/name` (`todo/issue`), from its row, its page or its key: the press returns the
+ * stack's page at once, where the draft shows once the step kept it, its title and prompt the issue's.
+ */
+export const fromIssue = (owner: string, name: string, number: number) =>
+  Effect.gen(function* () {
+    const store = yield* TodosStore
+    const flows = yield* FlowDispatch
+    yield* Effect.forkIn(
+      Effect.ignore(flows.dispatch("todo/issue", { repo: `${owner}/${name}`, issue: number }, { door: "button" })),
+      store.scope,
+      { startImmediately: true },
+    )
+    return stackPath(owner, name)
   })
 
 /** Drop on TODO `number` of `owner/name` (`todo/drop`): the press returns at once, and the TODO shows Requested. */
@@ -143,6 +160,7 @@ const handle = (opId: string, action: "edit" | "discard") =>
         acceptance: change.acceptance,
         answerId: null,
         createdAt: yield* Clock.currentTimeMillis,
+        ...(change.issue === undefined ? {} : { issue: change.issue }),
       }))
     }
     yield* Effect.ignore(requested.delete(opId))

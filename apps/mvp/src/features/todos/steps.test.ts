@@ -39,8 +39,8 @@ const noTab = TabTodos.layerChannel({ name: `none-${crypto.randomUUID()}`, withi
   Layer.provide(TabChannel.layer),
 )
 
-/** A tab that answers every call with `kept`, through a button, recording what it was asked. */
-const recordingTab = (kept: boolean) => {
+/** A tab that answers every call with `kept`, through a button, recording what it was asked; `missing` its issue. */
+const recordingTab = (kept: boolean, missing = false) => {
   const asked: Array<{ readonly requester: string; readonly call: TodosCall }> = []
   return {
     asked,
@@ -50,7 +50,7 @@ const recordingTab = (kept: boolean) => {
         ask: (call) =>
           Effect.sync(() => {
             asked.push(call)
-            return Option.some({ door: "button" as const, kept })
+            return Option.some({ door: "button" as const, kept, missing })
           }),
       }),
     ),
@@ -123,5 +123,46 @@ describe("no tab answers, or it doesn't keep it", () => {
       .toEqual(new TodoStepRefused({ reason: "not_kept" }))
     expect(failure(await run(commit, PERSON, tab.layer, registry))).toEqual(new TodoStepRefused({ reason: "not_kept" }))
     expect(count(registry, drafts, { door: "button", outcome: "not_kept" })).toBe(1)
+  })
+})
+
+describe("a draft from an issue", () => {
+  test("names the issue and leaves out what the tab fills from it; a title or prompt passed goes as passed", async () => {
+    const registry: Metric.MetricRegistry = new Map()
+    const tab = recordingTab(true)
+    const exit = await run(keepDraft({ repo: "octo/hello", issue: 7 }), PERSON, tab.layer, registry)
+    expect(Exit.isSuccess(exit) && exit.value).toEqual({ draftId: expect.any(String), status: "drafted", path: "/octo/hello/stack" })
+    expect(tab.asked[0]!.call).toEqual({
+      kind: "draft",
+      draft: expect.objectContaining({ title: "", prompt: "", issue: 7, answerId: null, repoId: "github/octo/hello" }),
+    })
+    await run(keepDraft({ repo: "octo/hello", issue: 7, prompt: "## Better\n\nRefined." }), AGENT, tab.layer, registry)
+    expect(tab.asked[1]!.call).toEqual({
+      kind: "draft",
+      draft: expect.objectContaining({ title: "Better", prompt: "## Better\n\nRefined.", issue: 7, answerId: "answer-1" }),
+    })
+    expect(count(registry, drafts, { door: "button", outcome: "kept" })).toBe(1)
+    expect(count(registry, drafts, { door: "agent", outcome: "kept" })).toBe(1)
+  })
+
+  test("a draft without an issue names none", async () => {
+    const tab = recordingTab(true)
+    await run(keepDraft({ repo: "octo/hello", prompt: "x" }), PERSON, tab.layer, new Map())
+    expect(tab.asked[0]!.call.kind === "draft" && "issue" in tab.asked[0]!.call.draft).toBe(false)
+  })
+
+  test("a device without the issue: refused issue_not_found, and counted so", async () => {
+    const registry: Metric.MetricRegistry = new Map()
+    const tab = recordingTab(false, true)
+    expect(failure(await run(keepDraft({ repo: "octo/hello", issue: 99 }), PERSON, tab.layer, registry)))
+      .toEqual(new TodoStepRefused({ reason: "issue_not_found" }))
+    expect(count(registry, drafts, { door: "button", outcome: "issue_not_found" })).toBe(1)
+  })
+
+  test("a commit carries the issue it was made from; one without names none", async () => {
+    const tab = recordingTab(true)
+    await run(queueChange({ op: "commit", repo: "octo/hello", title: "T", prompt: "P", issue: 7 }), PERSON, tab.layer, new Map())
+    await run(commit, `${PERSON}-2`, tab.layer, new Map())
+    expect(tab.asked.map(({ call }) => call.kind === "queue" && call.op.issue)).toEqual([7, undefined])
   })
 })
