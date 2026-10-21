@@ -637,6 +637,9 @@ importers:
       '@fontsource/inter':
         specifier: 5.3.0
         version: 5.3.0
+      '@jitl/quickjs-wasmfile-release-sync':
+        specifier: 0.32.0
+        version: 0.32.0
       '@journeyapps/wa-sqlite':
         specifier: 1.7.2
         version: 1.7.2
@@ -751,6 +754,9 @@ importers:
       effect:
         specifier: 4.0.5
         version: 4.0.5
+      quickjs-emscripten-core:
+        specifier: 0.32.0
+        version: 0.32.0
       react:
         specifier: 19.2.8
         version: 19.2.8

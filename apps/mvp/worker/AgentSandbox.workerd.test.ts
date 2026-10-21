@@ -1,0 +1,126 @@
+// worker/AgentSandbox.ts in local workerd: the `todo` run's agent evaluates one of its cells in QuickJS on Cloudflare's
+// runtime. The test Worker (worker/test/workerd/agent.ts) is bundled with the bundler and plugins Alchemy bundles ChatApi
+// with (rolldown and `@alchemy.run/cloudflare-runtime/rolldown`, Alchemy's own copies), and run by Miniflare with each
+// output file as Cloudflare uploads it: `.js` as an ES module, `.wasm` as a compiled WebAssembly module. Node can't show
+// this: only workerd refuses to compile WebAssembly from bytes, which is why the single-file build failed there.
+import { Miniflare } from "miniflare"
+import { readFile } from "node:fs/promises"
+import { dirname, join } from "node:path"
+import { fileURLToPath, pathToFileURL } from "node:url"
+import { afterAll, beforeAll, describe, expect, test } from "vitest"
+
+const MVP = fileURLToPath(new URL("..", import.meta.url))
+const ENTRY = fileURLToPath(new URL("./test/workerd/agent.ts", import.meta.url))
+
+/** The compatibility ChatApi runs with (worker/ChatApi.ts `props`). */
+const COMPATIBILITY = { date: "2026-10-01", flags: ["nodejs_compat", "enable_request_signal", "global_fetch_strictly_public"] }
+
+/** The root of installed package `name`, found from the module `from` resolves to. */
+const packageRoot = async (from: string, name: string): Promise<string> => {
+  let dir = dirname(from)
+  for (;;) {
+    const manifest = JSON.parse(await readFile(join(dir, "package.json"), "utf8").catch(() => "{}")) as { name?: string }
+    if (manifest.name === name) return dir
+    const parent = dirname(dir)
+    if (parent === dir) throw new Error(`no ${name} above ${from}`)
+    dir = parent
+  }
+}
+
+/** The ES module entry package `root` exports at `subpath`. */
+const importEntry = async (root: string, subpath: string): Promise<string> => {
+  const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as {
+    exports: Record<string, string | { import?: string | { default: string } }>
+  }
+  const entry = manifest.exports[subpath]!
+  const target = typeof entry === "string" ? entry : entry.import!
+  return join(root, typeof target === "string" ? target : target.default)
+}
+
+/** What this test reads of rolldown's API: an app can't import rolldown's types, which only Alchemy depends on. */
+interface Rolldown {
+  readonly rolldown: (options: Record<string, unknown>) => Promise<{
+    readonly generate: (options: Record<string, unknown>) => Promise<{
+      readonly output: ReadonlyArray<
+        | { readonly type: "chunk"; readonly fileName: string; readonly code: string }
+        | { readonly type: "asset"; readonly fileName: string; readonly source: string | Uint8Array }
+      >
+    }>
+    readonly close: () => Promise<void>
+  }>
+}
+
+/** Alchemy's own rolldown and Cloudflare plugin set: the dependencies installed beside Alchemy (pnpm's layout). */
+const alchemyBundler = async () => {
+  const alchemy = await packageRoot(fileURLToPath(import.meta.resolve("alchemy")), "alchemy")
+  const [rolldown, cloudflare] = await Promise.all([
+    importEntry(join(alchemy, "..", "rolldown"), "."),
+    importEntry(join(alchemy, "..", "@alchemy.run", "cloudflare-runtime"), "./rolldown"),
+  ])
+  return {
+    rolldown: (await import(pathToFileURL(rolldown).href)) as Rolldown,
+    cloudflare: (await import(pathToFileURL(cloudflare).href)).default as (options: {
+      readonly compatibilityDate: string
+      readonly compatibilityFlags: ReadonlyArray<string>
+    }) => Array<unknown>,
+  }
+}
+
+/** The test Worker as Alchemy's bundler emits it: each output file by name, and what it is. */
+const bundle = async () => {
+  const { rolldown, cloudflare } = await alchemyBundler()
+  const build = await rolldown.rolldown({
+    input: ENTRY,
+    cwd: MVP,
+    external: ["lightningcss", "fsevents"],
+    plugins: cloudflare({ compatibilityDate: COMPATIBILITY.date, compatibilityFlags: COMPATIBILITY.flags }) as never,
+    checks: { unresolvedImport: false, ineffectiveDynamicImport: false },
+  })
+  const { output } = await build.generate({ format: "esm", entryFileNames: "worker.js", strictExecutionOrder: true })
+  await build.close()
+  return output
+}
+
+describe("the todo agent's cell sandbox on workerd", () => {
+  let worker: Miniflare | undefined
+  let wasm: Array<string> = []
+
+  beforeAll(async () => {
+    const output = await bundle()
+    wasm = output.filter((file) => file.fileName.endsWith(".wasm")).map((file) => file.fileName)
+    const modules = Object.fromEntries(output.map((file) =>
+      file.type === "chunk"
+        ? [file.fileName, { type: "esm" as const, contents: file.code }]
+        : [file.fileName, { type: "wasm" as const, contents: Buffer.from(file.source) }]
+    ))
+    worker = new Miniflare({
+      workers: [{
+        config: {
+          name: "agent",
+          compatibilityDate: COMPATIBILITY.date,
+          compatibilityFlags: COMPATIBILITY.flags,
+          manifest: { mainModule: "worker.js", modules },
+        },
+      }],
+    })
+  }, 120_000)
+
+  afterAll(async () => {
+    await worker?.dispose()
+  })
+
+  test("the bundle carries QuickJS as one compiled WebAssembly module", () => {
+    expect(wasm).toHaveLength(1)
+  })
+
+  test("a cell reads the checkout and writes a file through the run's sandbox tools, as the TODO's committer", async () => {
+    const response = await worker!.dispatchFetch("http://agent/")
+    const text = await response.text()
+    expect(response.status, text).toBe(200)
+    expect(JSON.parse(text)).toEqual({
+      outcome: { _tag: "settled", transition: { _tag: "complete", output: "README.md", value: "README.md" } },
+      calls: ["smithers/t1-greet maya list", "smithers/t1-greet maya read", "smithers/t1-greet maya write"],
+      files: { "README.md": "# hello\nHello from T1.\n" },
+    })
+  }, 60_000)
+})
