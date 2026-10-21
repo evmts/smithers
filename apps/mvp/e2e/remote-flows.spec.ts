@@ -24,6 +24,16 @@ const named = async (logs: LogTail, message: string): Promise<Array<LogRecord>> 
 const outcomes = async (logs: LogTail, message: string, where: (record: LogRecord) => boolean = () => true) =>
   (await named(logs, message)).filter(where).map((record) => field(record, "outcome"))
 
+/**
+ * Sets aside what the tab's loading watch (e2e/devices.ts) saw of the issues list: it shows loading until its
+ * repository's first complete sync, the specified state (docs/features/issues.md), not a stall.
+ */
+const issuesLoadingIsSpecified = (page: import("@playwright/test").Page) =>
+  page.evaluate(() => {
+    const busy = (window as unknown as { __busy?: Array<string> }).__busy
+    if (busy !== undefined) busy.splice(0, busy.length, ...busy.filter((seen) => !seen.includes('data-slot="issues-view"')))
+  })
+
 /** The issue links of the issues list, `/<owner>/<name>/issues/<number>`. */
 const issueLinks = (page: import("@playwright/test").Page) =>
   page.locator(`main[aria-label="Issues"] a[href^="/${REPOSITORY}/issues/"]:not([href$="/new"])`)
@@ -37,16 +47,20 @@ test("issues sync: a Member's read of the stale issues list runs github/Reconcil
   try {
     const [a] = await devices.open("A")
     const walked = (record: LogRecord) => field(record, "repoId") === `github/${REPOSITORY}`
+    await a.page.goto(`/${REPOSITORY}/issues`)
     // A read finds the sync older than 5 minutes and starts a walk; a sync fresher than that starts none until it ages,
-    // so the page is read again every half minute until a walk of this test's time has finished.
+    // so the tab reads the issues shape again every half minute, as an open list does, until a walk of this test's
+    // time has finished.
     await expect.poll(async () => {
-      await a.page.goto(`/${REPOSITORY}/issues`)
+      await a.page.request.get("/api/shapes/items?offset=-1")
       return outcomes(logs, "github.reconcile", walked)
     }, { timeout: 12 * 60_000, intervals: [30_000] }).toEqual(expect.arrayContaining([expect.stringMatching(/^(complete|partial)$/)]))
     // A walk failed or refused would be among them; none may be.
     const walks = await outcomes(logs, "github.reconcile", walked)
     expect(walks.filter((outcome) => !["complete", "partial", "superseded"].includes(String(outcome)))).toEqual([])
+    await a.page.reload()
     await expect(issueLinks(a.page).first()).toBeVisible({ timeout: 60_000 })
+    await issuesLoadingIsSpecified(a.page)
   } finally {
     await logs.dispose()
   }
@@ -62,6 +76,7 @@ test("webhook: a signed issues delivery starts github/Apply, which reads the iss
     const [a] = await devices.open("A")
     await a.page.goto(`/${REPOSITORY}/issues`)
     const href = await issueLinks(a.page).first().getAttribute("href", { timeout: 10 * 60_000 })
+    await issuesLoadingIsSpecified(a.page)
     const number = Number(href!.slice(href!.lastIndexOf("/") + 1))
     const deliveryId = randomUUID()
     const body = JSON.stringify({ action: "edited", issue: { number }, repository: { full_name: REPOSITORY } })
