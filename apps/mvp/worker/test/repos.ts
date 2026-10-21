@@ -193,7 +193,12 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
     Layer.buildWithScope(ImmutableCache.layerMemory(), scope),
   )
   const repo = await runtime.runPromise(
-    observed(RepoApi.make(database, { codeStorage: codeStorage === "none" ? Option.none() : Option.some(codeStorage) })),
+    // Its read token comes from the file's configuration, which names none: no GitHub call is made building it.
+    observed(
+      RepoApi.make(database, { codeStorage: codeStorage === "none" ? Option.none() : Option.some(codeStorage) }).pipe(
+        Effect.provide(FetchHttpClient.layer),
+      ),
+    ),
   )
   // What RepoApi calls out to: Electric, with the table in this file's schema, and GitHub's REST API, scripted.
   const github = options.github ?? scriptedGitHub()

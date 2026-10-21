@@ -276,6 +276,9 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
           ? github.contentsGranted
           : name === "pull_requests"
           ? within(github.pullsGranted, asked)
+          : name === "metadata"
+          // Every App has Metadata: read, and GitHub grants nothing more of it.
+          ? asked === "read"
           : false
       )
       if (!allowed) return { response: json({ message: "The permissions requested are not granted to this installation." }, 422) }

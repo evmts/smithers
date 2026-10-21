@@ -75,7 +75,7 @@ Migrations `0007_repositories`, `0009_clone_ids` and `0028_clone_progress`.
 
 | Step | Does | Retry policy |
 |---|---|---|
-| `repo/Inspect` | `GitRemote.head` over git's smart HTTP (no key, no REST quota): 401, 403 or 404 is `not_found`, no commits is `empty`, a detached HEAD is `unavailable`. Then GitHub's size (`GET /repos/<o>/<n>`, with `GITHUB_TOKEN` when set) and [admission](#admission) | 1 s doubling to 30 s, 2 minutes |
+| `repo/Inspect` | `GitRemote.head` over git's smart HTTP (no key, no REST quota): 401, 403 or 404 is `not_found`, no commits is `empty`, a detached HEAD is `unavailable`. Then GitHub's size (`GET /repos/<o>/<n>`, with the [read token](#configuration)) and [admission](#admission) | 1 s doubling to 30 s, 2 minutes |
 | `repo/Import` | `CodeStorage.createRepo` with the public GitHub upstream; one that exists is fine, one with another upstream is refused | the same |
 | `repo/Pull` | `CodeStorage.pullUpstream`; `sync_in_progress` is fine | the same |
 | `repo/AwaitSync` | `CodeStorage.listCommits(id, { ref: defaultBranch, limit: 1 })`: the head commit once synced; `timed_out` once `REPO_CLONE_DEADLINE` has passed since the request; otherwise `SyncPending`, retried | 2 s doubling to 30 s, after Code Storage's `Retry-After` when it sends one; an hour at most |
@@ -121,7 +121,7 @@ Every write to `code_storage_usage` recomputes this month's estimate in its tran
 
 ## About
 
-`GET /api/repos/<owner>/<name>/about` (`worker/RepoAbout.ts`) answers what GitHub says of a repository, cloned or not: its description, homepage (an `http(s)` URL only), topics, stars, watchers, forks and license; its languages by bytes; the latest release and how many there are; the first 12 contributors and how many there are; how many commits, branches and tags; the newest commit; the top folder; the README's text (512 KiB at most, text only); and where the Smithers app is installed. It is eleven GitHub calls at once through `@smthrs/integrations`' `GitHubClient` (with `GITHUB_TOKEN` when set); the counts are `GitHubClient.count`, one request each.
+`GET /api/repos/<owner>/<name>/about` (`worker/RepoAbout.ts`) answers what GitHub says of a repository, cloned or not: its description, homepage (an `http(s)` URL only), topics, stars, watchers, forks and license; its languages by bytes; the latest release and how many there are; the first 12 contributors and how many there are; how many commits, branches and tags; the newest commit; the top folder; the README's text (512 KiB at most, text only); and where the Smithers app is installed. It is eleven GitHub calls at once through `@smthrs/integrations`' `GitHubClient` (with the [read token](#configuration)); the counts are `GitHubClient.count`, one request each.
 
 - **Only the repository must answer.** GitHub's 404, or a private repository, is `404 not_found`; any other refusal of it is `503 unavailable`. A part GitHub refuses is left out (`null`, or empty), unless GitHub is rate limiting, when the whole read fails `503` with its `Retry-After` and nothing is cached.
 - **One read a window.** The answer is kept in the immutable cache under `repo.about`, the repository and the window it was read in (`REPO_ABOUT_FRESH_MINUTES`, 60), so a repository costs GitHub's quota once a window; the browser keeps it to the window's end.
@@ -217,7 +217,7 @@ It is a contribution to the repository's file view (`src/features/generated/cont
 | `CODE_STORAGE_ORG` | none | the Code Storage organization (`smithers`); without it, or without the key, the deployment clones nothing (`503 not_configured`) |
 | `CODE_STORAGE_KEY` | none | the organization's ES256 key, a PKCS#8 PEM; a redacted secret |
 | `CODE_STORAGE_API_URL` | `https://api.<org>.code.storage` | |
-| `GITHUB_TOKEN` | none | a GitHub App or bot token for the size call and the about read: 5,000 calls an hour instead of 60 per IP address |
+| `GITHUB_TOKEN` | none | a bot token for the size call and the about read. Unset, they read as the GitHub App when the deployment has one: an installation token for `GITHUB_REPOSITORY` with Metadata read only, kept until 5 minutes before it expires (`worker/github/ReadToken.ts`). Either gives 5,000 calls an hour or more; neither, 60 an hour per IP address, which a Worker shares with every other Worker on Cloudflare's addresses |
 | `GITHUB_API_URL` | `https://api.github.com` | where the about read reaches GitHub |
 | `GITHUB_APP_SLUG` | `smithers` | the Smithers GitHub App's name in its URL: where Install goes |
 | `REPO_ABOUT_FRESH_MINUTES` | `60` | how long one about read serves before GitHub is read again |

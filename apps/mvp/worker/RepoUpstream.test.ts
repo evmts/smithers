@@ -5,6 +5,7 @@ import { GitRemote } from "@smthrs/effect-code-storage"
 import { ConfigProvider, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http"
 import { describe, expect, test } from "vitest"
+import * as ReadToken from "./github/ReadToken.ts"
 import { DEFAULT_RATE_LIMIT_WAIT_MS, RepoUpstream, UpstreamUnavailable } from "./RepoUpstream.ts"
 
 const githubUp = await fetch("https://github.com/octocat/Spoon-Knife.git/info/refs?service=git-upload-pack", {
@@ -32,7 +33,9 @@ const scriptedGitHub = (answer: (url: URL) => Response) => {
 const upstream = (http: Layer.Layer<HttpClient.HttpClient>, token?: string) =>
   Effect.runPromise(
     Effect.service(RepoUpstream).pipe(
-      Effect.provide(RepoUpstream.layer({ token: Option.fromUndefinedOr(token).pipe(Option.map(Redacted.make)) })),
+      Effect.provide(
+        RepoUpstream.layer({ token: ReadToken.fixed(Option.fromUndefinedOr(token).pipe(Option.map(Redacted.make))) }),
+      ),
       Effect.provide(http),
     ),
   )

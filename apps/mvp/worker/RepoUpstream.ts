@@ -1,7 +1,8 @@
 import { GitRemote } from "@smthrs/effect-code-storage"
 import { GitHub } from "@smthrs/integrations"
-import { Clock, Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import type { HttpClient } from "effect/http"
+import * as ReadToken from "./github/ReadToken.ts"
 import type { Size } from "./Repos.ts"
 
 // What `repo/Inspect` asks GitHub before a clone (decision 0006 "Capacity and spend"): the repository's HEAD over git's
@@ -31,25 +32,28 @@ export class RepoUpstream extends Context.Service<
 >()("@smthrs/mvp/repo/RepoUpstream") {
   /**
    * GitHub over the `HttpClient` in context: git's smart HTTP for HEAD, and `GET /repos/<owner>/<name>` for the size,
-   * with `token` (a GitHub App or bot token, 5,000 calls an hour) when set, else unauthenticated (60 an hour per IP).
+   * with the token `token` answers for that call (worker/github/ReadToken.ts: a bot token or the GitHub App's, 5,000
+   * calls an hour) when it answers one, else unauthenticated (60 an hour per IP).
    */
-  static readonly layer = (options: { readonly token: Option.Option<Redacted.Redacted<string>> }) =>
+  static readonly layer = (options: { readonly token: ReadToken.ReadToken }) =>
     Layer.effect(
       RepoUpstream,
       Effect.gen(function* () {
         const http = yield* Effect.context<HttpClient.HttpClient>()
-        const token = Option.map(options.token, Redacted.value)
         // An explicit, empty environment: no ambient GITHUB_TOKEN chooses the account.
-        const github = yield* GitHub.GitHubClient.make(Option.isSome(token) ? { token: token.value } : {}, {}).pipe(
-          Effect.orDie,
-        )
+        const github = Effect.flatMap(options.token, (token) =>
+          GitHub.GitHubClient.make(Option.isSome(token) ? { token: Redacted.value(token.value) } : {}, {}).pipe(
+            Effect.orDie,
+            Effect.provideContext(http),
+          ))
         return RepoUpstream.of({
           head: (owner, name) =>
             GitRemote.head(`https://github.com/${owner}/${name}.git`).pipe(Effect.provideContext(http)),
           size: (owner, name) =>
-            github.request("GET", `/repos/${GitHub.Repository.repositoryPath(owner, name)}`, undefined, {
-              schema: Schema.Struct({ size: Schema.Number }),
-            }).pipe(
+            Effect.flatMap(github, (client) =>
+              client.request("GET", `/repos/${GitHub.Repository.repositoryPath(owner, name)}`, undefined, {
+                schema: Schema.Struct({ size: Schema.Number }),
+              })).pipe(
               Effect.map(({ size }): Sized => ({ bytes: Math.max(0, size) * 1024 })),
               Effect.catch((error) => {
                 // Every IntegrationError carries details: its reason at least.
@@ -75,8 +79,6 @@ export class RepoUpstream extends Context.Service<
       }),
     )
 
-  /** `layer` with the token from `GITHUB_TOKEN`, a redacted, optional Effect `Config`. */
-  static readonly layerConfig = Layer.unwrap(
-    Effect.map(Config.option(Config.Redacted("GITHUB_TOKEN")), (token) => RepoUpstream.layer({ token })),
-  )
+  /** `layer` with the deployment's read token: `GITHUB_TOKEN`, else the GitHub App's, else none (`ReadToken.fromConfig`). */
+  static readonly layerConfig = Layer.unwrap(Effect.map(ReadToken.fromConfig, (token) => RepoUpstream.layer({ token })))
 }

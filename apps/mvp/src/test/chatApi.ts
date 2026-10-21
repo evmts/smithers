@@ -390,6 +390,8 @@ export class TestChatApi extends Context.Service<
         // Repositories, as ChatApi routes them to RepoApi (worker/ChatApi.ts): this deployment has no Code Storage
         // organization, so a clone answers 503 `not_configured`; the `repositories` shape syncs from this schema.
         const repos = yield* RepoApi.make(database, { codeStorage: Option.none() }).pipe(
+          // Its read token comes from `config`; with no `GITHUB_TOKEN` and no App it is none, and nothing is fetched.
+          Effect.provide(FetchHttpClient.layer),
           Effect.provideService(ConfigProvider.ConfigProvider, config),
         )
         const repoCache = yield* Layer.build(ImmutableCache.layerMemory())

@@ -4,6 +4,7 @@
 import { ConfigProvider, Duration, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
+import * as ReadToken from "./github/ReadToken.ts"
 import * as RepoAbout from "./RepoAbout.ts"
 import { GITHUB_API, scriptedGitHub, spoonKnife } from "./test/githubRest.ts"
 
@@ -13,7 +14,7 @@ const SLUG = "smithers"
 const readOver = (github: ReturnType<typeof scriptedGitHub>, owner = "octocat", name = "Spoon-Knife") =>
   Effect.runPromise(
     Effect.flatMap(
-      RepoAbout.client({ token: Option.none(), apiBaseUrl: GITHUB_API, appSlug: SLUG, freshFor: Duration.hours(1) }),
+      RepoAbout.client({ token: ReadToken.fixed(Option.none()), apiBaseUrl: GITHUB_API, appSlug: SLUG, freshFor: Duration.hours(1) }),
       (client) => Effect.result(RepoAbout.read(client, owner, name, SLUG)),
     ).pipe(
       Effect.provide(FetchHttpClient.layer),
@@ -105,22 +106,28 @@ describe("RepoAbout.read", () => {
 
   test("the settings: GitHub's token only when set and not blank, the API URL, the App and the window", async () => {
     const read = (values: Record<string, string>) =>
-      Effect.runPromise(RepoAbout.settings.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values)))))
+      Effect.runPromise(
+        RepoAbout.settings.pipe(
+          Effect.provide(FetchHttpClient.layer),
+          Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values))),
+        ),
+      )
+    const tokenOf = (settings: RepoAbout.Settings) => Effect.runPromise(settings.token)
     const defaults = await read({})
-    expect(defaults).toEqual({
+    expect({ ...defaults, token: await tokenOf(defaults) }).toEqual({
       token: Option.none(),
       apiBaseUrl: "https://api.github.com",
       appSlug: "smithers",
       freshFor: Duration.minutes(60),
     })
-    expect((await read({ GITHUB_TOKEN: "   " })).token).toEqual(Option.none())
+    expect(await tokenOf(await read({ GITHUB_TOKEN: "   " }))).toEqual(Option.none())
     const set = await read({
       GITHUB_TOKEN: "ghs_token",
       GITHUB_API_URL: "https://ghe.example/api/v3",
       GITHUB_APP_SLUG: "smithers-dev",
       REPO_ABOUT_FRESH_MINUTES: "5",
     })
-    expect(Option.map(set.token, Redacted.value)).toEqual(Option.some("ghs_token"))
+    expect(Option.map(await tokenOf(set), Redacted.value)).toEqual(Option.some("ghs_token"))
     expect([set.apiBaseUrl, set.appSlug, Duration.toMinutes(set.freshFor)]).toEqual(["https://ghe.example/api/v3", "smithers-dev", 5])
     await expect(read({ GITHUB_APP_SLUG: "Not A Slug" })).rejects.toBeDefined()
     // A client builds with the token as its credential, and without one.

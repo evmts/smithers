@@ -10,6 +10,7 @@ import {
 } from "../src/features/repo/contract.ts"
 import type { About, AboutCommit, AboutEntry } from "../src/features/repo/schema.ts"
 import { DEFAULT_API_URL } from "./github/Config.ts"
+import * as ReadToken from "./github/ReadToken.ts"
 
 // What GitHub says of a repository (docs/features/repo.md#about): its description, topics, languages, latest release,
 // contributors, counts, last commit, top folder and README. The repository page shows it from the first visit, before
@@ -26,8 +27,11 @@ export class AboutRefused extends Data.TaggedError("AboutRefused")<{
 
 /** How the about read reaches GitHub, and where the Smithers App is installed. */
 export interface Settings {
-  /** `GITHUB_TOKEN`: a GitHub App or bot token, 5,000 calls an hour; unset, 60 an hour per IP address. */
-  readonly token: Option.Option<Redacted.Redacted<string>>
+  /**
+   * The token each read goes out with (worker/github/ReadToken.ts): `GITHUB_TOKEN`, else the GitHub App's, 5,000 calls
+   * an hour; neither, 60 an hour per IP address.
+   */
+  readonly token: ReadToken.ReadToken
   /** `GITHUB_API_URL`: GitHub's REST API, `https://api.github.com` unless set. */
   readonly apiBaseUrl: string
   /** `GITHUB_APP_SLUG`: the Smithers GitHub App's name in its URL, `smithers` unless set. */
@@ -38,7 +42,7 @@ export interface Settings {
 
 /** Reads {@link Settings}. */
 export const settings = Effect.gen(function* () {
-  const token = yield* Config.option(Config.Redacted("GITHUB_TOKEN"))
+  const token = yield* ReadToken.fromConfig
   const apiBaseUrl = yield* Config.String("GITHUB_API_URL").pipe(Config.withDefault(DEFAULT_API_URL))
   const appSlug = yield* Config.schema(Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,99}$/)), "GITHUB_APP_SLUG")
     .pipe(Config.withDefault("smithers"))
@@ -46,7 +50,7 @@ export const settings = Effect.gen(function* () {
     Config.withDefault(60),
   )
   return {
-    token: Option.filter(token, (value) => Redacted.value(value).trim() !== ""),
+    token,
     apiBaseUrl,
     appSlug,
     freshFor: Duration.minutes(minutes),
@@ -228,14 +232,15 @@ export const read = (client: GitHub.GitHubClient.GitHubClient, owner: string, na
 
 /** A GitHub client for the about read over the `HttpClient` in context, with `settings`' token and API URL. */
 export const client = (options: Settings): Effect.Effect<GitHub.GitHubClient.GitHubClient, never, HttpClient.HttpClient> =>
-  GitHub.GitHubClient.make(
-    {
-      apiBaseUrl: options.apiBaseUrl,
-      ...(Option.isSome(options.token) ? { token: Redacted.value(options.token.value) } : {}),
-    },
-    // An explicit, empty environment: no ambient GITHUB_TOKEN chooses the account.
-    {},
-  ).pipe(Effect.orDie)
+  Effect.flatMap(options.token, (token) =>
+    GitHub.GitHubClient.make(
+      {
+        apiBaseUrl: options.apiBaseUrl,
+        ...(Option.isSome(token) ? { token: Redacted.value(token.value) } : {}),
+      },
+      // An explicit, empty environment: no ambient GITHUB_TOKEN chooses the account.
+      {},
+    ).pipe(Effect.orDie))
 
 /** Which hour-long window `nowMs` falls in, and the seconds left in it: the cache's key and the browser's max-age. */
 export const window = (nowMs: number, freshFor: Duration.Duration) => {
