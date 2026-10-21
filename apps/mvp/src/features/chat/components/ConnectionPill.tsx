@@ -9,7 +9,8 @@ import { ENGINE_FAILED, OFFLINE, SYNC_FAILED } from "../contract"
 export function ConnectionPill() {
   const { queries, actions } = useChat()
   const { data: connection } = useLiveQuery(queries.connection)
-  const { data: queued } = useLiveQuery(queries.queued)
+  const { data: place } = useLiveQuery(queries.place)
+  const { data: queued } = useLiveQuery(queries.of(place?.conversationId).queued)
   if (connection === undefined || connection.status === "up") return null
   if (connection.status === "stopped") {
     return (

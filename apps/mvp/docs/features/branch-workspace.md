@@ -6,6 +6,10 @@ People on a shared branch type its prompt and its files together, with each othe
 
 ## The page
 
+The repository header shows the same connection status as `/app`: `Offline`,
+`Offline · <queued in this conversation>`, or a sync or engine failure with its existing recovery action.
+Its own polite live region announces changes without repeating the rest of the header.
+
 `/$owner/$repo/tree/$ref` opens the repository at `$ref` and, when `$ref` is a branch GitHub has, its workspace:
 
 ```

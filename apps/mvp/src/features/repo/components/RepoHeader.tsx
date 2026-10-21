@@ -2,6 +2,7 @@ import { Button } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useLocation } from "@tanstack/react-router"
 import { NotificationsBell } from "../../attention/components/NotificationsBell"
+import { ConnectionPill } from "../../chat/components/ConnectionPill"
 import { signInHref } from "../../auth/contract"
 import { ISSUES } from "../../issues/contract"
 import { STACK } from "../../todos/contract"
@@ -49,6 +50,9 @@ export function RepoHeader() {
           </>
         )
         : null}
+      <div role="status" aria-label="Connection" aria-live="polite">
+        <ConnectionPill />
+      </div>
       <span className="repo-header-bell">
         <NotificationsBell />
       </span>

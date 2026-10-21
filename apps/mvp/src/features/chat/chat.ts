@@ -46,6 +46,7 @@ export interface ChatQueries {
   readonly of: (conversationId: string | null | undefined) => {
     readonly conversation: Store["shown"]["tanstack"]
     readonly history: Store["historyState"]["tanstack"]
+    readonly queued: Store["queued"]["tanstack"]
   }
 }
 
@@ -119,8 +120,8 @@ export class Chat extends Context.Service<Chat, { readonly queries: ChatQueries;
               ? undefined
               : store.opened(conversationId)
             return branch === undefined
-              ? { conversation: store.shown.tanstack, history: store.historyState.tanstack }
-              : { conversation: branch.shown.tanstack, history: branch.historyState.tanstack }
+              ? { conversation: store.shown.tanstack, history: store.historyState.tanstack, queued: store.queued.tanstack }
+              : { conversation: branch.shown.tanstack, history: branch.historyState.tanstack, queued: branch.queued.tanstack }
           },
         },
         actions: {
