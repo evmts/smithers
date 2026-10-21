@@ -19,8 +19,8 @@ export function RepoHeader() {
   const { data } = useLiveQuery(queries.view)
   const location = useLocation()
   if (data === undefined || data.view.repoId === null) return null
-  const { view, repository, clone } = data
-  const header = headerOf(repository, clone, view.signedIn, view.answered)
+  const { view, repository, clone, about } = data
+  const header = headerOf(repository, clone, view.signedIn, view.answered, about)
   return (
     <header className="repo-header" aria-label="Repository">
       <h1 className="repo-header-name">
@@ -32,6 +32,9 @@ export function RepoHeader() {
       <Button asChild variant="ghost">
         <Link to="/$owner/$repo/stack" params={{ owner: view.owner, repo: view.name }}>{STACK}</Link>
       </Button>
+      {(header.kind === "clone" || header.kind === "sign_in") && header.status !== undefined
+        ? <span role="status">{header.status}</span>
+        : null}
       {header.kind === "clone"
         ? <Button onClick={() => actions.clone(view.owner, view.name)}>{CLONE}</Button>
         : null}

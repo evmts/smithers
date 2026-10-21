@@ -16,12 +16,14 @@ export const viewQuery = (
   view: Rows<ViewRow>,
   repositories: ElectricCollection.ElectricCollection<Repository>,
   clones: Rows<CloneRow>,
+  abouts: Rows<AboutRow>,
 ) =>
   LiveQuery.make((q) =>
     q
       .from({ view: view.tanstack })
       .leftJoin({ repository: repositories.tanstack }, ({ view, repository }) => Query.eq(view.repoId, repository.id))
       .leftJoin({ clone: clones.tanstack }, ({ view, clone }) => Query.eq(view.repoId, clone.id))
+      .leftJoin({ about: abouts.tanstack }, ({ view, about }) => Query.eq(view.repoId, about.key))
       .findOne(),
   )
 

@@ -132,6 +132,26 @@ describe("codeEmptyOf", () => {
 })
 
 describe("headerOf", () => {
+  test("About missing says Not found before cloning, even before the repositories shape answers", () => {
+    const about: AboutRow = { key: "github/o/n", state: "missing", about: null, message: "Not found" }
+    for (const answered of [false, true]) {
+      for (const signedIn of [true, null]) {
+        expect(headerOf(undefined, undefined, signedIn, answered, about)).toEqual({ kind: "clone", status: "Not found" })
+      }
+      expect(headerOf(undefined, undefined, false, answered, about)).toEqual({
+        kind: "sign_in", text: SIGN_IN_TO_CLONE, status: "Not found",
+      })
+    }
+    expect(headerOf(repository(), undefined, true, true, about)).toEqual({ kind: "ready" })
+    expect(headerOf(repository({ status: "cloning" }), undefined, true, true, about)).toEqual({ kind: "cloning" })
+    expect(headerOf(undefined, clone("requesting"), true, true, about)).toEqual({ kind: "cloning" })
+    expect(headerOf(undefined, clone("failed"), true, true, about)).toEqual({ kind: "refused", text: FAILURE_COPY.unavailable })
+    for (const state of ["loading", "ready", "failed"] as const) {
+      expect(headerOf(undefined, undefined, true, true, { ...about, state })).toEqual({ kind: "clone" })
+      expect(headerOf(undefined, undefined, true, false, { ...about, state })).toEqual({ kind: "unknown" })
+    }
+  })
+
   test("this tab's own request wins until Electric delivers what it did", () => {
     expect(headerOf(repository({ status: "failed", failure: "not_found" }), clone("requesting"), true)).toEqual({
       kind: "cloning",

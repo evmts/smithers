@@ -172,7 +172,7 @@ export function RepoPage({ editFiles = false }: { readonly editFiles?: boolean }
   if (repository?.status !== "ready") {
     // In place of the files, until they are ready: what the header's Clone or reason is about, with a calm bar while
     // it clones; a skeleton while the device can't tell yet.
-    const empty = codeEmptyOf(headerOf(repository, current.clone, view.signedIn, view.answered))
+    const empty = codeEmptyOf(headerOf(repository, current.clone, view.signedIn, view.answered, current.about))
     return empty === undefined ? <Skeleton className="repo-page-loading" /> : (
       <Card className="repo-page-empty">
         {empty === CLONING ? <LoadingBar loading placement="inline" /> : null}

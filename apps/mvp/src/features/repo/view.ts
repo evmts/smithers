@@ -1,4 +1,4 @@
-import { CAPACITY_COPY, CLONING, FAILURE_COPY, formatBytes, githubRawUrl, NOT_CLONED, rawRoute, SIGN_IN_TO_CLONE } from "./contract"
+import { CAPACITY_COPY, CLONING, FAILURE_COPY, formatBytes, githubRawUrl, NOT_FOUND, NOT_CLONED, rawRoute, SIGN_IN_TO_CLONE } from "./contract"
 import { Option } from "effect"
 import { folderOf } from "../generated/contract"
 import { generatedFiles } from "../generated/contribution"
@@ -92,8 +92,9 @@ export const fileProps = (row: BlobRow | undefined): FileProps => {
  * - `ready`: nothing.
  */
 export type Header =
-  | { readonly kind: "unknown" | "clone" | "cloning" | "ready" }
-  | { readonly kind: "sign_in"; readonly text: string }
+  | { readonly kind: "unknown" | "cloning" | "ready" }
+  | { readonly kind: "clone"; readonly status?: string }
+  | { readonly kind: "sign_in"; readonly text: string; readonly status?: string }
   | { readonly kind: "refused"; readonly text: string }
 
 export { formatBytes } from "./contract"
@@ -119,13 +120,15 @@ export const capacityText = (repository: Repository): string => {
  * The header for `repository` as Postgres has it, this tab's own clone request, and whether someone is signed in
  * (`null` when sign-in hasn't said). This tab's request wins until Electric delivers what it did. A repository the
  * device doesn't have is `unknown`, offering nothing, until the repositories' shape has `answered` once: until then
- * the device can't tell a repository nobody cloned from one whose row is still on its way.
+ * the device can't tell a repository nobody cloned from one whose row is still on its way. About's missing result
+ * immediately adds Not found to the available Clone or sign-in action when no repository row or clone request exists.
  */
 export const headerOf = (
   repository: Repository | undefined,
   clone: CloneRow | undefined,
   signedIn: boolean | null,
   answered = true,
+  about?: AboutRow,
 ): Header => {
   if (clone !== undefined) {
     switch (clone.status) {
@@ -138,6 +141,11 @@ export const headerOf = (
       case "failed":
         return { kind: "refused", text: FAILURE_COPY.unavailable }
     }
+  }
+  if (repository === undefined && about?.state === "missing") {
+    return signedIn === false
+      ? { kind: "sign_in", text: SIGN_IN_TO_CLONE, status: NOT_FOUND }
+      : { kind: "clone", status: NOT_FOUND }
   }
   if (repository === undefined && !answered) return { kind: "unknown" }
   if (repository === undefined) return signedIn === false ? { kind: "sign_in", text: SIGN_IN_TO_CLONE } : { kind: "clone" }

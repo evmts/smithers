@@ -340,3 +340,7 @@ Will, about 18:22: the first visit was empty, the clone showed a spinner instead
 4. **An HTML file previews in a sandboxed frame** with no network and an opaque origin, under 0017's app-frame policy.
 
 [HOST-PLAN] the lead's durable-answering plan, 2026-10-19: `@smthrs/platform-cloudflare`, the per-execution Durable Object, the engine journal in Postgres, and fencing (§5).
+
+## Missing metadata and clone refusal (2026-10-21)
+
+When no repository row exists, About's missing answer supplies the header's Not found status immediately, alongside Clone (or the signed-out sign-in action). It does not claim a clone finished. A clone request and a stored repository keep their existing status precedence. Tests establish initial absence before clicking Clone, then require the clone's own feed outcome and Try again separately. The header's live query joins the About row by repository id.

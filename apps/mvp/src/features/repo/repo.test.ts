@@ -45,8 +45,8 @@ const open = async (h: RepoHarness) => {
 }
 
 const header = (tab: Tab) => {
-  const { repository, clone, view } = tab.view()
-  return headerOf(repository, clone, view.signedIn)
+  const { repository, clone, view, about } = tab.view()
+  return headerOf(repository, clone, view.signedIn, view.answered, about)
 }
 
 const root = (owner: string, name: string) =>
@@ -497,6 +497,11 @@ describe("what GitHub says, cloned or not", () => {
     const tab = await open(h)
     tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Gone" }, {})
     await waitFor(() => expect(tab.about().about).toMatchObject({ state: "missing", message: NOT_FOUND }))
+    await waitFor(() => expect(header(tab)).toEqual({ kind: "clone", status: NOT_FOUND }))
+    expect(tab.view().about).toMatchObject({ state: "missing", message: NOT_FOUND })
+    expect(tab.view().repository).toBeUndefined()
+    expect(tab.view().clone).toBeUndefined()
+    expect(h.started()).toEqual([])
     h.github.publish("octocat", "Spoon-Knife")
     h.github.fail("", 502)
     const before = h.github.calls.length

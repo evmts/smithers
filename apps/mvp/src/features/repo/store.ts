@@ -86,7 +86,7 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
     refs,
     abouts,
     view,
-    viewState: yield* viewQuery(view, repositories, clones),
+    viewState: yield* viewQuery(view, repositories, clones, abouts),
     aboutState: yield* aboutQuery(view, abouts),
     manifestState: yield* manifestQuery(view, blobs),
     refsState: yield* refsQuery(view, refs),
