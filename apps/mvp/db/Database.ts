@@ -18,6 +18,14 @@ import branchWorkspace from "./migrations/0014_branch_workspace.ts"
 import flows from "./migrations/0015_flows.ts"
 import githubIssues from "./migrations/0016_github_issues.ts"
 import modelCharges from "./migrations/0017_model_charges.ts"
+import triage from "./migrations/0018_triage.ts"
+import spendAlerts from "./migrations/0019_spend_alerts.ts"
+import notifications from "./migrations/0020_notifications.ts"
+import secrets from "./migrations/0021_secrets.ts"
+import todos from "./migrations/0022_todos.ts"
+import branchSharing from "./migrations/0023_branch_sharing.ts"
+import sandboxCalls from "./migrations/0024_sandbox_calls.ts"
+import flowSource from "./migrations/0025_flow_source.ts"
 
 /** The compose Postgres (`docker-compose.yml`): what `DATABASE_URL` defaults to, and the only one tests use. */
 export const LOCAL_URL = "postgresql://smithers:smithers@localhost:54321/smithers"
@@ -71,6 +79,14 @@ export const migrations = {
   "0015_flows": flows,
   "0016_github_issues": githubIssues,
   "0017_model_charges": modelCharges,
+  "0018_triage": triage,
+  "0019_spend_alerts": spendAlerts,
+  "0020_notifications": notifications,
+  "0021_secrets": secrets,
+  "0022_todos": todos,
+  "0023_branch_sharing": branchSharing,
+  "0024_sandbox_calls": sandboxCalls,
+  "0025_flow_source": flowSource,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

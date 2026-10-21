@@ -72,7 +72,7 @@ export class StatusStore extends Context.Service<
         })
         const local = yield* Collection.local<Local, string>({ id: "status-local", schema: Local, getKey: (row) => row.id })
         const statuses = yield* statusesQuery(messages, runs, local)
-        const needs = yield* needsQuery(statuses, local)
+        const needs = yield* needsQuery(statuses)
         const latest = yield* latestQuery(statuses)
         const deliveries = yield* deliveriesQuery(runs)
 

@@ -3,7 +3,8 @@
 // default model is a scripted `Model` (worker/test/harness.ts), and a model an admin sets is a real HostModel reaching
 // a scripted provider on loopback HTTP. `admin/SetModel` runs on the Node host (worker/test/flowHost.ts).
 import { Model, ModelError, type ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
-import { Duration, Effect, Exit, Layer, Redacted, Schema, Stream } from "effect"
+import { HostModel } from "@smthrs/model-host"
+import { ConfigProvider, Duration, Effect, Exit, Layer, Redacted, Schema, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http"
@@ -703,6 +704,85 @@ describe("budget and metering", () => {
     expect(h.count(ModelEndpoint.usageWrites, { outcome: "kept" })).toBe(3)
   })
 
+  // A provider outage refuses each call before it produces anything. Such a call spent nothing beyond the usage its
+  // provider reported, so it settles to that usage, 0 when none: 23 refused calls once spent a 1,000,000-token day of
+  // reservations, about 43,000 each, while the provider spent nothing (docs/features/agent-evals.md, 2026-10-20).
+  const refusal = (fields: Partial<ConstructorParameters<typeof ModelError.ModelError>[0]> = {}) =>
+    Stream.fail(new ModelError.ModelError({ code: "rate_limited", message: "slow down", httpStatus: 429, ...fields }))
+
+  test("a call the provider refuses before any output settles to what it reported, 0 when nothing", async () => {
+    const script: Array<Stream.Stream<ModelEvent.ModelEvent, ModelError.ModelError>> = [
+      refusal(),
+      // A 4xx with input usage reported: it settles to that, never to its reservation.
+      Stream.make({ type: "usage", inputTokens: 7 } as const).pipe(
+        Stream.concat(refusal({ code: "invalid_request", httpStatus: 400 })),
+      ),
+      // `rate_limited` without a status, as a route that gave up on its own retries reports it.
+      Stream.make({ type: "retry", attempt: 1, code: "rate_limited", delayMillis: 0 } as const).pipe(
+        Stream.concat(refusal({ httpStatus: undefined })),
+      ),
+    ]
+    const h = await harness(runtime, () => script.shift()!, { actor: member })
+    const request = ask("hi")
+
+    const ended = [await call(h, request), await call(h, request), await call(h, request)]
+
+    expect(ended.map(({ lines }) => lines.at(-1)?.code)).toEqual(["rate_limited", "invalid_request", "rate_limited"])
+    expect(await committedToday()).toBe(7)
+    expect((await charges()).map((row) => row.charged)).toEqual([0, 7, 0])
+    expect(await reconciled()).toBe(true)
+    expect(h.count(ModelEndpoint.usageWrites, { outcome: "refused" })).toBe(3)
+    expect(h.line("model.usage").map((line) => line.annotations)).toEqual([
+      expect.objectContaining({ outcome: "refused", ended: "failed", errorCode: "rate_limited", reported: "none" }),
+      expect.objectContaining({ outcome: "refused", ended: "failed", errorCode: "invalid_request", reported: "partial" }),
+      expect.objectContaining({ outcome: "refused", ended: "failed", errorCode: "rate_limited", reported: "none" }),
+    ])
+  })
+
+  test("an outage's refused calls never spend the day's budget, so the next call is served", async () => {
+    const request = ask("hi")
+    let refusing = 25
+    const h = await harness(runtime, () => (refusing-- > 0 ? refusal() : answering()), {
+      actor: member,
+      // One reservation's worth: before the fix, the first refused call spent the whole day.
+      config: { MODEL_DAILY_TOKEN_BUDGET: String(reservationOf(request)) },
+    })
+
+    for (let index = 0; index < 25; index++) expect((await call(h, request)).status).toBe(200)
+    const served = await call(h, request)
+
+    expect(served.lines.at(-1)).toEqual({ type: "end" })
+    expect(await committedToday()).toBe(46)
+  })
+
+  test("a failure before any output that may have spent keeps its reservation: transport, 5xx, unknown", async () => {
+    const script: Array<Stream.Stream<ModelEvent.ModelEvent, ModelError.ModelError>> = [
+      transportFailure,
+      refusal({ code: "provider_internal", httpStatus: 503 }),
+      refusal({ code: "call_timeout", httpStatus: undefined }),
+    ]
+    const h = await harness(runtime, () => script.shift()!, { actor: member })
+    const request = ask("hi")
+
+    for (let index = 0; index < 3; index++) await call(h, request)
+
+    expect(await committedToday()).toBe(3 * reservationOf(request))
+    expect(h.count(ModelEndpoint.usageWrites, { outcome: "kept" })).toBe(3)
+    expect(h.count(ModelEndpoint.usageWrites, { outcome: "refused" })).toBe(0)
+  })
+
+  test("a refusal after output keeps its reservation", async () => {
+    const h = await harness(runtime, () => Stream.make(delta("paid output")).pipe(Stream.concat(refusal())), {
+      actor: member,
+    })
+    const request = ask("hi")
+
+    await call(h, request)
+
+    expect(await committedToday()).toBe(reservationOf(request))
+    expect(h.only("model.usage").annotations).toMatchObject({ outcome: "kept", ended: "failed", errorCode: "rate_limited" })
+  })
+
   test("a call that ends normally without both counts keeps its reservation", async () => {
     const script: Array<Stream.Stream<ModelEvent.ModelEvent>> = [
       Stream.make(delta("paid"), stop),
@@ -936,5 +1016,101 @@ describe("telemetry", () => {
     const exported = recorded(h)
     expect(exported).not.toContain(sentinel)
     expect(exported).not.toContain(key)
+  })
+})
+
+describe("a server flow's own calls (ModelEndpoint.local)", () => {
+  /** The `judge` seat a flow on the server calls with, over a scripted model, metered on this file's schema. */
+  const seat = async (
+    script: (request: ModelRequest.ModelRequest) => Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure>,
+    config: Record<string, string> = {},
+  ) => {
+    const requests: Array<ModelRequest.ModelRequest> = []
+    const model = Model.make({
+      stream: (request) => {
+        requests.push(request)
+        return script(request)
+      },
+    })
+    const database = await runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.database))
+    const local = await Effect.runPromise(
+      ModelEndpoint.local(database).pipe(
+        Effect.provideService(HostModel, HostModel.of({ modelId: "default-model", model, route: { prepare: () => Effect.die("unused") } })),
+        Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
+      ),
+    )
+    return { judge: local("judge"), requests }
+  }
+  const run = (judge: ModelEndpoint.Seat, request: ModelRequest.ModelRequest) =>
+    Effect.runPromiseExit(Stream.runCollect(judge.model.stream(request)))
+
+  test("streams the role's model with no person's session, bounded and metered as the endpoint's calls are", async () => {
+    const { judge, requests } = await seat(answering)
+    const exit = await run(judge, ask("judge this"))
+    expect(Exit.isSuccess(exit)).toBe(true)
+    // The role's model id and the endpoint's output cap, whatever the caller asked for.
+    expect(requests.map((request) => [request.modelId, request.params.maxTokens])).toEqual([["default-model", 8_000]])
+    expect(await usageRows()).toEqual([{ role: "judge", modelId: "default-model", inputTokens: 12, outputTokens: 34 }])
+    expect(await committedToday()).toBe(46)
+  })
+
+  test("its step keys on the endpoint's own request for the role", async () => {
+    const { judge } = await seat(answering)
+    const prepared = await Effect.runPromise(judge.route.prepare(ask("judge this")))
+    expect(prepared).toMatchObject({ routeId: "model-proxy", url: "/api/model/judge" })
+  })
+
+  test("today's budget spent: the call fails quota_exceeded and never reaches a model", async () => {
+    const { judge, requests } = await seat(answering, { MODEL_DAILY_TOKEN_BUDGET: "46" })
+    expect(Exit.isSuccess(await run(judge, ask("first")))).toBe(true)
+    const refused = await run(judge, ask("second"))
+    expect(refused).toEqual(
+      Exit.fail(new ModelError.ModelError({ code: "quota_exceeded", message: "Today's model budget is spent.", httpStatus: 429 })),
+    )
+    expect(requests).toHaveLength(1)
+  })
+
+  test("a request over MODEL_MAX_REQUEST_BYTES fails invalid_request before the budget or a model", async () => {
+    const { judge, requests } = await seat(answering, { MODEL_MAX_REQUEST_BYTES: "512" })
+    const exit = await run(judge, ask("x".repeat(1_000)))
+    expect(exit).toEqual(
+      Exit.fail(new ModelError.ModelError({ code: "invalid_request", message: "The request is too large.", httpStatus: 413 })),
+    )
+    expect(requests).toEqual([])
+    expect(await usageRows()).toEqual([])
+  })
+
+  test("a call its caller interrupts after its text keeps its whole reservation", async () => {
+    const { judge } = await seat(() => Stream.concat(Stream.make(delta("partial")), Stream.never))
+    const exit = await Effect.runPromiseExit(
+      Stream.runDrain(judge.model.stream(ask("judge this"))).pipe(Effect.timeout("200 millis")),
+    )
+    expect(Exit.isFailure(exit)).toBe(true)
+    await eventually(async () => (await ledger())[0]?.settled === true)
+    const [row] = await ledger()
+    expect((await charges())[0]!.charged).toBe(row!.reserved)
+  })
+
+  test("a call the provider refuses before any output settles to 0, as the endpoint's does", async () => {
+    const { judge } = await seat(() =>
+      Stream.fail(new ModelError.ModelError({ code: "rate_limited", message: "slow down", httpStatus: 429 }))
+    )
+    const exit = await run(judge, ask("judge this"))
+    expect(Exit.isFailure(exit)).toBe(true)
+    const [row] = await ledger()
+    expect(row).toMatchObject({ settled: true, inputTokens: 0, outputTokens: 0 })
+    expect((await charges())[0]!.charged).toBe(0)
+    expect(await committedToday()).toBe(0)
+  })
+
+  test("a call that fails after its text keeps its whole reservation, as the endpoint's does", async () => {
+    const { judge } = await seat(() =>
+      Stream.concat(Stream.make(delta("partial")), Stream.fail(new ModelError.ModelError({ code: "content_policy", message: "no" })))
+    )
+    const exit = await run(judge, ask("judge this"))
+    expect(Exit.isFailure(exit)).toBe(true)
+    const [row] = await ledger()
+    expect(row).toMatchObject({ settled: true, inputTokens: 0, outputTokens: 0 })
+    expect((await charges())[0]!.charged).toBe(row!.reserved)
   })
 })

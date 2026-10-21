@@ -1,12 +1,12 @@
 import { Context, Effect, Layer } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { answer, focus, focusFirst, hide, setDraft } from "./actions"
+import { answer, focus, focusFirst, setDraft } from "./actions"
 import type { AnswerValue } from "./schema"
 import { StatusStore } from "./store"
 
 // Agent status as a frontend sees it (decision 0015): live queries to read and plain functions to act, with no Effect
 // in sight. The conversation renders each answer's state and question from `statuses`; the header and the tab title
-// read `needs` and `latest`; the toast stack reads `needs`.
+// read `needs` and `latest`. The toast stack reads the feed (decision 0009, src/features/attention/).
 
 type Store = StatusStore["Service"]
 
@@ -22,8 +22,6 @@ export interface StatusActions {
   /** Answers run `id`'s open question: words or an option, or `true` (Approve) or `false` (Deny). */
   readonly answer: (id: string, value: AnswerValue) => void
   readonly setDraft: (id: string, text: string) => void
-  /** Hides the toast for run `id`'s question in this tab. */
-  readonly hide: (id: string) => void
   /** Brings run `id`'s question card into view and focuses it: a toast's Answer. */
   readonly focus: (id: string) => void
   /** The same for the oldest question that needs the person: the header's pill. */
@@ -44,7 +42,6 @@ export class Status extends Context.Service<Status, { readonly queries: StatusQu
         actions: {
           answer: (id, value) => run(answer(id, value)),
           setDraft: (id, text) => run(setDraft(id, text)),
-          hide: (id) => run(hide(id)),
           focus: (id) => run(focus(id)),
           focusFirst: () => run(focusFirst),
         },

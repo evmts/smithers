@@ -20,7 +20,11 @@ import { Terminal } from "./features/terminal/terminal"
 import { Issues } from "./features/issues/issues"
 import { Runs } from "./features/runs/runs"
 import { FlowsUi } from "./features/flows-ui/flowsUi"
+import { Home } from "./features/home/home"
 import { Web } from "./features/web/web"
+import { Spend } from "./features/spend/spend"
+import { Attention } from "./features/attention/attention"
+import { Todos } from "./features/todos/todos"
 import { StoragePersistence } from "@smthrs/platform-browser"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "./test/chatApi"
 import { faultyServices } from "./test/faults"
@@ -90,6 +94,10 @@ test("renders the chat, sign-in, theme, repository, slash-command, views and web
       Effect.service(Issues),
       Effect.service(Runs),
       Effect.service(FlowsUi),
+      Effect.service(Home),
+      Effect.service(Spend),
+      Effect.service(Attention),
+      Effect.service(Todos),
     ]),
   )
   expect(views[0]).toHaveLength(layers.length)

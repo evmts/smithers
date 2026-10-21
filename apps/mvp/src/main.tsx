@@ -7,6 +7,7 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { ChatProvider } from "./AppContext"
 import { type BootOptions, type Host, realServices, start } from "./boot"
+import { AttentionProvider } from "./features/attention/components/AttentionContext"
 import { AuthProvider } from "./features/auth/components/AuthContext"
 import { BranchProvider } from "./features/branch/components/BranchContext"
 import { CommandsProvider } from "./features/commands/components/CommandsContext"
@@ -14,11 +15,14 @@ import { IssuesProvider } from "./features/issues/components/IssuesContext"
 import { RepoProvider } from "./features/repo/components/RepoContext"
 import { RunsProvider } from "./features/runs/components/RunsContext"
 import { FlowsUiProvider } from "./features/flows-ui/components/FlowsUiContext"
+import { HomeProvider } from "./features/home/components/HomeContext"
 import { THEME_ATTRIBUTE, THEME_MIRROR_KEY } from "./features/theme/contract"
 import { ENGINE_NAME } from "./flows/contract"
 import { ThemeProvider } from "./features/theme/components/ThemeButton"
 import { StatusProvider } from "./features/status/components/StatusContext"
+import { SpendProvider } from "./features/spend/components/SpendContext"
 import { TerminalProvider } from "./features/terminal/components/TerminalContext"
+import { TodosProvider } from "./features/todos/components/TodosContext"
 import { ViewsProvider } from "./features/views/components/ViewsContext"
 import { WebProvider } from "./features/web/components/WebContext"
 import { router } from "./router"
@@ -115,15 +119,31 @@ const host: Host = {
         : {}),
       type: "module",
     }),
-  // The engine's Web Lock, channel and store: the one engine every tab on this origin shares (decision 0011).
-  engineName: ENGINE_NAME,
   // The tab's title, which counts the agent's open questions (decision 0015).
   title: { read: () => document.title, write: (title) => void (document.title = title) },
   // Sign-out's wipe: mark it and tell every page, this one included; each stops and loads again (src/wipe.ts).
   wipe: wipe.wipe,
 }
 
-const render: BootOptions["render"] = (chat, auth, theme, repo, commands, views, web, status, branch, terminal, issues, runs, flows) =>
+const render: BootOptions["render"] = (
+  chat,
+  auth,
+  theme,
+  repo,
+  commands,
+  views,
+  web,
+  status,
+  branch,
+  terminal,
+  issues,
+  runs,
+  flows,
+  home,
+  spend,
+  attention,
+  todos,
+) =>
   root.render(
     <StrictMode>
       <SmithersUiStyles withTheme />
@@ -135,22 +155,31 @@ const render: BootOptions["render"] = (chat, auth, theme, repo, commands, views,
                 <ViewsProvider value={views}>
                   <WebProvider value={web}>
                     <StatusProvider value={status}>
-                      <BranchProvider value={branch}>
-                        <TerminalProvider value={terminal}>
-                          {/* The routes' loaders open what they show through `repo`, `views`, `branch` and `terminal`
-                              (src/router.tsx). */}
-                          <IssuesProvider value={issues}>
-                            <RunsProvider value={runs}>
-                              <FlowsUiProvider value={flows}>
-                                <RouterProvider
-                                  router={router}
-                                  context={{ repo, views, branch, terminal, issues, runs, flows }}
-                                />
-                              </FlowsUiProvider>
-                            </RunsProvider>
-                          </IssuesProvider>
-                        </TerminalProvider>
-                      </BranchProvider>
+                      <SpendProvider value={spend}>
+                        <BranchProvider value={branch}>
+                          <TerminalProvider value={terminal}>
+                            {/* The routes' loaders open what they show through `repo`, `views`, `branch` and `terminal`
+                                (src/router.tsx). */}
+                            <IssuesProvider value={issues}>
+                              <TodosProvider value={todos}>
+                              <RunsProvider value={runs}>
+                                <FlowsUiProvider value={flows}>
+                                  <HomeProvider value={home}>
+                                    {/* The one toast stack reads the feed (decision 0009). */}
+                                    <AttentionProvider value={attention}>
+                                      <RouterProvider
+                                        router={router}
+                                        context={{ repo, home, views, branch, terminal, issues, todos, runs, flows }}
+                                      />
+                                    </AttentionProvider>
+                                  </HomeProvider>
+                                </FlowsUiProvider>
+                              </RunsProvider>
+                              </TodosProvider>
+                            </IssuesProvider>
+                          </TerminalProvider>
+                        </BranchProvider>
+                      </SpendProvider>
                     </StatusProvider>
                   </WebProvider>
                 </ViewsProvider>

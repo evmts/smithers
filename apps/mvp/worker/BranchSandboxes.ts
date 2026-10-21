@@ -1,35 +1,98 @@
 import { GitProxy } from "@smthrs/effect-code-storage"
-import { ContainerTerminal, SandboxObject as SandboxHost } from "@smthrs/platform-cloudflare"
+import { ContainerSession, ContainerTerminal, SandboxObject as SandboxHost } from "@smthrs/platform-cloudflare"
+import { SandboxTools } from "@smthrs/sandbox"
 import { RuntimeContext } from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect, Layer, Schema, Scope } from "effect"
+import { Cause, Config, Effect, Fiber, Layer, Schema, Scope } from "effect"
 import { FetchHttpClient, Headers, HttpBody, HttpServerRequest, HttpServerResponse } from "effect/http"
+import * as Database from "../db/Database.ts"
 import { BranchSandbox } from "../infra/BranchSandbox.ts"
+import { ROLES } from "../src/features/auth/contract.ts"
 import { FORGE_HOST, SANDBOX_USER, WORKSPACE } from "../src/features/terminal/contract.ts"
+import type { Role } from "./Actor.ts"
+import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.ts"
 import { checkoutArgv, forgeRemote } from "./branch/Checkout.ts"
+import * as Machine from "./branch/Machine.ts"
+import { Machines, type SleepOutcome, type ToolOutcome } from "./branch/Machines.ts"
 import { provisionArgv, userOf } from "./branch/Users.ts"
 import { Forge } from "./branch/Forge.ts"
 import {
   type Attachment,
   CheckoutFailed,
+  type Revoked,
   SandboxBranch,
   Sandboxes,
   SandboxUnavailable,
   TerminalSockets,
 } from "./branch/Sandboxes.ts"
 import { codeOf } from "./ErrorCode.ts"
+import { SecretKeys } from "./secrets/Keys.ts"
+import * as SandboxEgress from "./secrets/SandboxEgress.ts"
 
 // Branch sandboxes on Cloudflare (decision 0013 §3, decision 0005 §2, docs/features/branch-workspace.md#the-machine):
 // `SandboxObject`, one Durable Object per branch, named by the branch's id, owns that branch's container
 // (infra/BranchSandbox.ts). It wakes the box, checks the branch out, starts terminal sessions, attaches sockets to them,
 // and is the box's forge: the box's only way out is `http://forge.smithers.internal`, which the object intercepts and
 // answers with the read-only git proxy, adding the read credential the box never holds. ChatApi hosts it; the flows and
-// routes reach it through `Sandboxes` and `TerminalSockets`, which this file provides from its namespace.
+// routes reach it through `Sandboxes` and `TerminalSockets`, and the sandbox tools through `Machines`
+// (docs/features/sandbox-tools.md), which this file provides from its namespace.
 
 /** The headers only ChatApi sets on a socket it hands the object; it strips any a browser sent (worker/branch/Terminals.ts). */
 const TERMINAL_HEADER = "x-smithers-terminal"
 const ACCESS_HEADER = "x-smithers-access"
 const OWNER_HEADER = "x-smithers-owner"
+const PRINCIPAL_HEADER = "x-smithers-principal"
+const ROLE_HEADER = "x-smithers-role"
+/**
+ * The one-use ticket ChatApi takes from the object (`ticket`) for each socket it hands it. With the egress on, the box's
+ * own requests reach the object's `fetch` too, for any host; only ChatApi, which holds the namespace, can get a ticket,
+ * so the box can never attach to a terminal.
+ */
+const TICKET_HEADER = "x-smithers-ticket"
+
+/**
+ * `SANDBOX_SECRETS`: whether the box's outbound HTTP and HTTPS reach the secrets egress (worker/secrets/SandboxEgress.ts,
+ * docs/features/secrets.md#the-egress), and the box gets its placeholders. Off unless set: it stays off until an e2e
+ * proves a box gets a bound host's answer and never sees a value.
+ */
+export const sandboxSecrets = Config.Boolean("SANDBOX_SECRETS").pipe(Config.withDefault(false))
+
+/** Where Cloudflare puts the container's per-instance CA, which signs the HTTPS the egress decrypts. */
+export const CONTAINER_CA = "/etc/cloudflare/certs/cloudflare-containers-ca.crt"
+
+/**
+ * Run as root on a wake with the egress on: the box's environment file from stdin, readable by every user and sourced
+ * by every login shell (tmux starts one), and the container's CA trusted system-wide when Cloudflare provides it.
+ */
+const EGRESS_SETUP = `umask 022
+mkdir -p /run/smithers && cat >/run/smithers/env.tmp && mv -f /run/smithers/env.tmp /run/smithers/env || exit 1
+if [ -f ${CONTAINER_CA} ]; then
+  echo "NODE_EXTRA_CA_CERTS=${CONTAINER_CA}" >>/run/smithers/env
+  cp ${CONTAINER_CA} /usr/local/share/ca-certificates/cloudflare-containers-ca.crt && update-ca-certificates >/dev/null 2>&1
+fi
+printf '%s\n' '[ -r /run/smithers/env ] && { set -a; . /run/smithers/env; set +a; }' >/etc/profile.d/smithers-env.sh`
+
+/**
+ * What a log line says about a failure: its code (`codeOf`, of the failure itself, not its cause) and, for an error with
+ * no tag, its class name, such as `TypeError`. Never its message.
+ */
+const failureFields = (cause: Cause.Cause<unknown>) => {
+  const error = Cause.squash(cause)
+  return { errorCode: codeOf(error), errorName: error instanceof Error ? error.name : typeof error }
+}
+
+/** `NAME=value` lines as variables. */
+const variablesOf = (environment: string): Record<string, string> =>
+  Object.fromEntries(
+    environment.split("\n").flatMap((line) => {
+      const at = line.indexOf("=")
+      return at > 0 ? [[line.slice(0, at), line.slice(at + 1)]] : []
+    }),
+  )
+
+/** A role as its header carries it: one of the roles, else none. */
+const roleOf = (value: string | undefined): Role | null =>
+  (ROLES as ReadonlyArray<string>).includes(value ?? "") ? (value as Role) : null
 
 /** What `wake` answers: the machine's generation, or why it couldn't wake. */
 export type Woken =
@@ -42,6 +105,18 @@ export interface SandboxObjectShape {
   readonly wake: (branch: SandboxBranch) => Effect.Effect<Woken, never, RuntimeContext>
   readonly session: (terminalId: string, ownerId: string) => Effect.Effect<boolean, never, RuntimeContext>
   readonly alive: (terminalId: string, ownerId: string) => Effect.Effect<boolean, never, RuntimeContext>
+  readonly enforce: (policy: Policy, revoked: ReadonlyArray<Revoked>) => Effect.Effect<void, never, RuntimeContext>
+  readonly tool: (
+    branch: SandboxBranch,
+    ownerId: string,
+    callId: string,
+    call: SandboxTools.Call,
+  ) => Effect.Effect<ToolOutcome, never, RuntimeContext>
+  readonly sleepIfIdle: (
+    generation: number,
+    idleMs: number,
+  ) => Effect.Effect<SleepOutcome | "unavailable", never, RuntimeContext>
+  readonly ticket: () => Effect.Effect<string, never, RuntimeContext>
 }
 
 /** The `SandboxObject` Durable Object namespace: a branch's object is `getByName(branchId)`. */
@@ -49,26 +124,48 @@ export class SandboxObject extends Cloudflare.DurableObject<SandboxObject, Sandb
 
 const isBranch = Schema.is(SandboxBranch)
 
-/** The object's implementation: the branch's container, its checkout, its terminals and its forge. */
-export const live = SandboxObject.make(
+/**
+ * The object's implementation: the branch's container, its checkout, its terminals, its forge and, with
+ * `SANDBOX_SECRETS` on, its egress, which reaches Postgres through `connection`, the Hyperdrive config ChatApi binds.
+ */
+export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>) => SandboxObject.make(
   Effect.gen(function* () {
     const box = yield* BranchSandbox
     const state = yield* Cloudflare.DurableObjectState
     const self = (yield* Cloudflare.DurableObject) as Cloudflare.DurableObject<SandboxObjectShape>
     const forge = yield* Effect.service(Forge).pipe(Effect.provide(Forge.layerConfig), Effect.provide(FetchHttpClient.layer))
+    const secretsOn = yield* sandboxSecrets.pipe(Effect.orDie)
+    const secretKeys = yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layerConfig), Effect.orDie)
+    const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(connection)
+    const database = Database.layer(hyperdrive.connectionString)
     return Effect.gen(function* () {
       // This incarnation's own scope: each socket's pump runs in it for as long as its socket is open, and the object
       // stays in memory while an accepted socket is (no hibernation, which would drop the tmux client's handle).
       const pumps = yield* Scope.make()
-      // The box's forge requests come back to this very object, which answers them as the forge proxy.
-      const intercepts = [{ host: FORGE_HOST, fetcher: self.get(state.id) as unknown as Cloudflare.Fetcher }]
+      // Every socket attached now, with who attached it, so a change of the branch's sharing reaches it (`enforce`).
+      const attached = new Map<
+        WebSocket,
+        {
+          readonly principal: string
+          readonly role: Role | null
+          readonly access: "write" | "read"
+          readonly fiber: Fiber.Fiber<unknown>
+        }
+      >()
+      // The box's forge requests come back to this very object, which answers them as the forge proxy; with the egress
+      // on, every other request it makes does too, and the object answers it as the secrets egress.
+      const own = self.get(state.id) as unknown as Cloudflare.Fetcher
+      const intercepts = [{ host: FORGE_HOST, fetcher: own }]
+      const egressTo = secretsOn ? own : undefined
+      // One-use tickets ChatApi took for the sockets it is about to hand this object (TICKET_HEADER).
+      const tickets = new Set<string>()
       const branchOf = state.storage.get<SandboxBranch>("branch").pipe(
         Effect.map((value) => (value !== undefined && isBranch(value) ? value : undefined)),
       )
 
       /** Starts the box unless it runs, and advances the generation when it started it. */
       const start = Effect.gen(function* () {
-        const outcome = yield* SandboxHost.wake(box, { intercepts })
+        const outcome = yield* SandboxHost.wake(box, { intercepts, egress: egressTo })
         const generation = (yield* state.storage.get<number>("generation")) ?? 0
         if (outcome === "running" && generation > 0) return generation
         yield* state.storage.put("generation", generation + 1)
@@ -91,11 +188,14 @@ export const live = SandboxObject.make(
             )
             return { _tag: "CheckoutFailed" } as const
           }
+          // A fresh generation gets the working copy the last one saved (worker/branch/Machine.ts); once.
+          yield* Machine.restore(machine, generation)
+          if (secretsOn) yield* placeholders(branch, generation)
           return { _tag: "Woken", generation } as const
         }).pipe(
           Effect.catchCause((cause) =>
             Effect.as(
-              Effect.logWarning("sandbox.wake").pipe(Effect.annotateLogs({ errorCode: codeOf(cause) })),
+              Effect.logWarning("sandbox.wake").pipe(Effect.annotateLogs(failureFields(cause))),
               { _tag: "Unavailable" } as const,
             )
           ),
@@ -105,6 +205,92 @@ export const live = SandboxObject.make(
       /** Runs `argv` as `user`, answering its exit code. */
       const run = (argv: Array<string>, user: string) =>
         Effect.scoped(Effect.flatMap(box.exec(argv, { user }), (process) => process.exitCode))
+
+      /** The guest the box is: its repository's branch at the running generation, from this object's own state. */
+      const guestOf = (branch: SandboxBranch, generation: number): SandboxEgress.Guest => ({
+        repoId: `github/${branch.owner}/${branch.name}`,
+        branchId: branch.branchId,
+        generation,
+      })
+
+      /**
+       * With the egress on, every wake writes the generation's placeholders to /run/smithers/env and trusts the
+       * container's CA (EGRESS_SETUP), and the object keeps them for the tools' commands. Values never enter the box.
+       */
+      const placeholders = (branch: SandboxBranch, generation: number) =>
+        Effect.gen(function* () {
+          const environment = yield* SandboxEgress.environment(guestOf(branch, generation)).pipe(
+            Effect.provideService(SecretKeys, secretKeys),
+            Effect.provide(database),
+          )
+          yield* state.storage.put("environment", { generation, environment })
+          const root = yield* ContainerSession.make(box, { id: state.id.toString(), workdir: "/", user: "root" })
+          const code = yield* Effect.scoped(Effect.flatMap(
+            root.spawn(EGRESS_SETUP, { stdin: new TextEncoder().encode(environment) }),
+            (process) => process.exitCode,
+          ))
+          if (code !== 0) yield* Effect.logWarning("sandbox.egress.setup").pipe(Effect.annotateLogs({ exitCode: code }))
+        }).pipe(
+          // The box stays usable without its placeholders: its requests that need one are refused at the egress.
+          Effect.catchCause((cause) =>
+            Effect.logWarning("sandbox.egress.setup").pipe(Effect.annotateLogs(failureFields(cause)))
+          ),
+          Effect.withSpan("sandbox.egress.setup", { attributes: { "smithers.branch.id": branch.branchId } }),
+        )
+
+      /** The placeholders of the running generation, for a tool's command; none with the egress off. */
+      const environmentNow = Effect.gen(function* () {
+        if (!secretsOn) return {}
+        const kept = yield* state.storage.get<{ readonly generation: number; readonly environment: string }>("environment")
+        const generation = yield* state.storage.get<number>("generation")
+        return kept !== undefined && kept.generation === generation ? variablesOf(kept.environment) : {}
+      })
+
+      // The machine as its tools and lifecycle use it (worker/branch/Machine.ts, docs/features/sandbox-tools.md).
+      const machine: Machine.Box<RuntimeContext> = {
+        sessionAs: (user) =>
+          Effect.flatMap(environmentNow, (placeholders) =>
+            ContainerSession.make(box, {
+              id: state.id.toString(),
+              workdir: WORKSPACE,
+              user,
+              env: { ...placeholders, HOME: `/home/${user}` },
+            })),
+        run,
+        running: box.running,
+        destroy: box.destroy(),
+        storage: {
+          get: (key) => state.storage.get(key),
+          put: (key, value) => state.storage.put(key, value),
+          delete: (key) => state.storage.delete(key),
+        },
+      }
+
+      /** Saves the running generation's working copy, as a terminal comes or goes; nothing when the box is stopped. */
+      const saveNow = Effect.gen(function* () {
+        yield* Machine.touch(machine)
+        const generation = yield* state.storage.get<number>("generation")
+        if (generation === undefined || !(yield* box.running)) return
+        yield* Machine.save(machine, generation)
+      }).pipe(Effect.ignore)
+
+      /** Runs one sandbox tool on the branch's machine, waking it first (worker/branch/Machine.ts). */
+      const tool = (branch: SandboxBranch, ownerId: string, callId: string, call: SandboxTools.Call) =>
+        Effect.gen(function* () {
+          const woken = yield* wake(branch)
+          if (woken._tag !== "Woken") return woken
+          return yield* Machine.tool(machine, { ownerId, callId, call, generation: woken.generation })
+        })
+
+      const sleepIfIdle = (generation: number, idleMs: number) =>
+        Machine.sleepIfIdle(machine, generation, idleMs).pipe(
+          Effect.catchCause((cause) =>
+            Effect.as(
+              Effect.logWarning("sandbox.object.sleep").pipe(Effect.annotateLogs(failureFields(cause))),
+              "unavailable" as const,
+            )
+          ),
+        )
 
       // Each person's shell runs as their own user, made on first use (worker/branch/Users.ts).
       const session = (terminalId: string, ownerId: string) =>
@@ -127,22 +313,39 @@ export const live = SandboxObject.make(
         Effect.gen(function* () {
           const terminalId = request.headers[TERMINAL_HEADER] ?? ""
           const ownerId = request.headers[OWNER_HEADER] ?? ""
+          const principal = request.headers[PRINCIPAL_HEADER] ?? ""
           const access = request.headers[ACCESS_HEADER] === "write" ? "write" : "read"
-          if (!ContainerTerminal.isSessionName(terminalId) || ownerId === "") {
+          if (!ContainerTerminal.isSessionName(terminalId) || ownerId === "" || principal === "") {
             return HttpServerResponse.empty({ status: 400 })
           }
           const pair = new WebSocketPair()
           const [client, server] = [pair[0], pair[1]]
           server.accept()
-          yield* Effect.forkIn(
-            ContainerTerminal.attach(box, server, { name: terminalId, user: userOf(ownerId), access, cols: 80, rows: 24 }),
+          const fiber = yield* Effect.forkIn(
+            ContainerTerminal.attach(box, server, { name: terminalId, user: userOf(ownerId), access, cols: 80, rows: 24 })
+              .pipe(Effect.ensuring(Effect.sync(() => attached.delete(server))), Effect.ensuring(saveNow)),
             pumps,
           )
+          attached.set(server, { principal, role: roleOf(request.headers[ROLE_HEADER]), access, fiber })
           return HttpServerResponse.setBody(
             HttpServerResponse.empty({ status: 101 }),
             HttpBody.raw(new Response(null, { status: 101, webSocket: client })),
           )
         })
+
+      /**
+       * A request from the box to any other host, with the egress on: the secrets egress, for the guest this object's
+       * own state names, never the request.
+       */
+      const egressOut = Effect.gen(function* () {
+        const branch = yield* branchOf
+        const generation = yield* state.storage.get<number>("generation")
+        if (branch === undefined || generation === undefined) return HttpServerResponse.empty({ status: 403 })
+        return yield* SandboxEgress.forward(guestOf(branch, generation)).pipe(
+          Effect.provideService(SecretKeys, secretKeys),
+          Effect.provide(Layer.merge(database, FetchHttpClient.layer)),
+        )
+      })
 
       /** A request from the box to its forge: the read-only git proxy, with the read credential added here. */
       const egress = (request: HttpServerRequest.HttpServerRequest) =>
@@ -153,15 +356,61 @@ export const live = SandboxObject.make(
           return yield* GitProxy.uploadPack(request, upstream).pipe(Effect.provide(FetchHttpClient.layer))
         })
 
+      /**
+       * Holds every attached socket to the branch's permission list as it now stands: a viewer who lost the branch is
+       * detached for good (1008), one whose access changed reconnects (1011) and attaches with the new one. Then each
+       * revoked terminal's shell ends, which ends every socket still on it. Never starts the box.
+       */
+      const enforce = (policy: Policy, revoked: ReadonlyArray<Revoked>) =>
+        Effect.gen(function* () {
+          let detached = 0
+          for (const [socket, viewer] of attached) {
+            const now = underPolicy(policy, viewer.principal, viewer.role)
+            const code = !canView(now) ? 1008 : (canEdit(now) ? "write" : "read") !== viewer.access ? 1011 : undefined
+            if (code === undefined) continue
+            attached.delete(socket)
+            detached++
+            yield* Effect.sync(() => socket.close(code, code === 1008 ? "no access" : "access changed")).pipe(Effect.ignore)
+            yield* Fiber.interrupt(viewer.fiber)
+          }
+          if (revoked.length > 0 && (yield* box.running)) {
+            for (const terminal of revoked) {
+              if (!ContainerTerminal.isSessionName(terminal.terminalId)) continue
+              yield* run(["tmux", "kill-session", "-t", `=${terminal.terminalId}`], userOf(terminal.ownerId)).pipe(
+                Effect.ignore,
+              )
+            }
+          }
+          yield* Effect.logInfo("sandbox.enforce").pipe(
+            Effect.annotateLogs({ detached, revoked: revoked.length, attached: attached.size }),
+          )
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("sandbox.enforce").pipe(Effect.annotateLogs(failureFields(cause)))
+          ),
+          Effect.withSpan("sandbox.object.enforce"),
+        )
+
       return {
         wake,
         session,
         alive,
+        enforce,
+        tool,
+        sleepIfIdle,
+        ticket: () =>
+          Effect.sync(() => {
+            const ticket = crypto.randomUUID()
+            tickets.add(ticket)
+            return ticket
+          }),
         fetch: Effect.gen(function* () {
           const request = yield* HttpServerRequest.HttpServerRequest
           const host = new URL(request.originalUrl).host
           if (host === FORGE_HOST) return yield* egress(request)
-          if (request.headers[TERMINAL_HEADER] !== undefined) return yield* attach(request)
+          // Only ChatApi holds a ticket: a socket it hands over is attached, once per ticket.
+          if (tickets.delete(request.headers[TICKET_HEADER] ?? "")) return yield* attach(request)
+          if (egressTo !== undefined) return yield* egressOut
           return HttpServerResponse.empty({ status: 404 })
         }),
       }
@@ -172,8 +421,16 @@ export const live = SandboxObject.make(
 /** The namespace as ChatApi and the flow host hold it once they have bound it (`yield* SandboxObject`). */
 type Objects = Cloudflare.DurableObject<SandboxObjectShape>
 
-/** The flow host's `Sandboxes` over the bound namespace, for the runtime that calls it. */
-export const sandboxesOver = (objects: Objects) => Effect.gen(function* () {
+/** Starts generation `generation`'s `sandbox/Keep` (worker/flows/SandboxKeep.ts); the same generation again is a no-op. */
+export type Keep = (branchId: string, generation: number) => Effect.Effect<void, never, RuntimeContext>
+
+const noKeep: Keep = () => Effect.void
+
+/**
+ * The flow host's `Sandboxes` over the bound namespace, for the runtime that calls it. Each wake starts its
+ * generation's `sandbox/Keep` through `keep`.
+ */
+export const sandboxesOver = (objects: Objects, keep: Keep = noKeep) => Effect.gen(function* () {
   const runtime = yield* RuntimeContext
   return Sandboxes.of({
     wake: (branch) =>
@@ -184,6 +441,7 @@ export const sandboxesOver = (objects: Objects) => Effect.gen(function* () {
         )
         if (woken._tag === "CheckoutFailed") return yield* new CheckoutFailed()
         if (woken._tag === "Unavailable") return yield* new SandboxUnavailable({ reason: "start" })
+        yield* keep(branch.branchId, woken.generation).pipe(Effect.provideService(RuntimeContext, runtime))
         return { generation: woken.generation }
       }),
     session: (branchId, terminalId, ownerId) =>
@@ -206,12 +464,16 @@ export const terminalSocketsOver = (objects: Objects) => Effect.gen(function* ()
         const headers = Object.fromEntries(
           Object.entries(request.headers).filter(([name]) => !name.toLowerCase().startsWith("x-smithers-")),
         )
+        const ticket = yield* objects.getByName(branchId).ticket().pipe(Effect.provideService(RuntimeContext, runtime))
         const forwarded = request.modify({
           headers: Headers.fromInput({
             ...headers,
+            [TICKET_HEADER]: ticket,
             [TERMINAL_HEADER]: attachment.terminalId,
             [OWNER_HEADER]: attachment.ownerId,
             [ACCESS_HEADER]: attachment.access,
+            [PRINCIPAL_HEADER]: attachment.principal,
+            [ROLE_HEADER]: attachment.role ?? "",
           }),
         })
         return yield* objects.getByName(branchId).fetch(forwarded).pipe(Effect.provideService(RuntimeContext, runtime))
@@ -221,8 +483,55 @@ export const terminalSocketsOver = (objects: Objects) => Effect.gen(function* ()
         Effect.provideService(RuntimeContext, runtime),
         Effect.orElseSucceed(() => false),
       ),
+    enforce: (branchId, policy, revoked) =>
+      objects.getByName(branchId).enforce(policy, revoked).pipe(
+        Effect.provideService(RuntimeContext, runtime),
+        Effect.mapError(() => new SandboxUnavailable({ reason: "exec" })),
+      ),
   })
 })
 
 /** `Sandboxes` as a layer, built in the runtime that runs the flows (`RuntimeContext`). */
-export const sandboxesLayer = (objects: Objects) => Layer.effect(Sandboxes, sandboxesOver(objects))
+export const sandboxesLayer = (objects: Objects, keep: Keep = noKeep) =>
+  Layer.effect(Sandboxes, sandboxesOver(objects, keep))
+
+/**
+ * The flow host's `Machines` over the bound namespace (docs/features/sandbox-tools.md): a tool call runs on the
+ * branch's object, which wakes the machine; the generation it ran on gets its `sandbox/Keep` through `keep`.
+ */
+export const machinesOver = (objects: Objects, keep: Keep = noKeep) => Effect.gen(function* () {
+  const runtime = yield* RuntimeContext
+  return Machines.of({
+    tool: (branch, ownerId, callId, call) =>
+      Effect.gen(function* () {
+        const outcome: ToolOutcome = yield* objects.getByName(branch.branchId).tool(branch, ownerId, callId, call).pipe(
+          Effect.provideService(RuntimeContext, runtime),
+          Effect.orElseSucceed((): ToolOutcome => ({ _tag: "Unavailable" })),
+        )
+        switch (outcome._tag) {
+          case "Done":
+            yield* keep(branch.branchId, outcome.generation).pipe(Effect.provideService(RuntimeContext, runtime))
+            return { result: outcome.result, generation: outcome.generation }
+          case "Refused":
+            return yield* new SandboxTools.ToolRefused({ reason: outcome.reason })
+          case "Lost":
+            return yield* new SandboxTools.ToolLost()
+          case "CheckoutFailed":
+            return yield* new CheckoutFailed()
+          case "Unavailable":
+            return yield* new SandboxUnavailable({ reason: "exec" })
+        }
+      }),
+    sleepIfIdle: (branchId, generation, idleMs) =>
+      objects.getByName(branchId).sleepIfIdle(generation, idleMs).pipe(
+        Effect.provideService(RuntimeContext, runtime),
+        Effect.orElseSucceed(() => "unavailable" as const),
+        Effect.flatMap((outcome) =>
+          outcome === "unavailable" ? Effect.fail(new SandboxUnavailable({ reason: "exec" })) : Effect.succeed(outcome)
+        ),
+      ),
+  })
+})
+
+/** `Machines` as a layer, built in the runtime that runs the flows (`RuntimeContext`). */
+export const machinesLayer = (objects: Objects, keep: Keep = noKeep) => Layer.effect(Machines, machinesOver(objects, keep))

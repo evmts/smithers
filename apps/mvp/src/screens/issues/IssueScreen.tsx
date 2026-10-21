@@ -1,15 +1,23 @@
-import { Button, EmptyState, ItemConversation } from "@smthrs/ui"
+import { Button, EmptyState, ItemConversation, TriageControl } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useIssues } from "../../features/issues/components/IssuesContext"
 import { DISCARD, EDIT, NOT_FOUND } from "../../features/issues/contract"
-import { conversationProps, draftOf, mayWrite, pageOf } from "../../features/issues/view"
+import {
+  conversationProps,
+  draftOf,
+  mayTriage,
+  mayWrite,
+  pageOf,
+  triageControlOf,
+} from "../../features/issues/view"
 import "./issues-screen.css"
 
 // /$owner/$repo/issues/$number: one issue and its comments, this device's own last with their chip, "Open on GitHub ↗",
-// and the comment composer for a person who may comment. A comment that wasn't sent gets Edit, back to the composer,
+// its triage state with Accept, Not accepted and Run triage again for a Member and above, and the comment composer for a
+// person who may comment. A comment that wasn't sent gets Edit, back to the composer,
 // and Discard. Loading until the repository's first complete sync; then an issue the device doesn't have isn't there.
 // A repository whose issues this person may not read shows sign-in, or Not found.
 export function IssueScreen() {
@@ -21,6 +29,8 @@ export function IssueScreen() {
   const { data: synced } = useLiveQuery(queries.synced)
   const { data: view } = useLiveQuery(queries.view)
   const { data: access } = useLiveQuery(queries.access)
+  const { data: triage } = useLiveQuery(queries.triage)
+  const { data: triagePending } = useLiveQuery(queries.triagePending)
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
   const page = pageOf(item, synced, access)
@@ -34,10 +44,24 @@ export function IssueScreen() {
     )
   }
   const shown = conversationProps(item, rows ?? [], { owner, name: repo })
+  const control = triageControlOf(item, triagePending ?? [], {
+    triage: session !== undefined && mayTriage(session, confirmed),
+    flowOn: triage !== undefined && !triage.paused,
+  })
   return (
     <main className="issues-screen">
       <ItemConversation
         {...shown}
+        headerActions={!control.shown ? undefined : (
+          <TriageControl
+            state={control.state}
+            pending={control.pending}
+            disabled={control.disabled}
+            onAccept={control.accept ? () => actions.triage(owner, repo, number, "accept") : undefined}
+            onReject={control.reject ? () => actions.triage(owner, repo, number, "reject") : undefined}
+            onRunAgain={control.runAgain ? () => actions.runTriageAgain(owner, repo, number) : undefined}
+          />
+        )}
         comments={shown.comments.map((comment) => ({
           ...comment,
           actions: comment.editable

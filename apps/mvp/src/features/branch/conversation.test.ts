@@ -304,6 +304,8 @@ describe("syncing a branch's conversation", () => {
     await until(async () => expect(await latest()).toMatchObject({ _tag: "Some", value: { _tag: "Sent" } }))
     await tab.askIn(branch, "after the restart")
     await until(() => expect(tab.shown(branch)).toContain("user done after the restart"))
+    // The question in the answer that came back cut short reaches the device too: the restart asks for it again.
+    expect(tab.shown(branch)).toContain("user done wake the shape")
   }, WITHIN)
 })
 
@@ -332,6 +334,34 @@ describe("delivering to a branch's conversation", () => {
     // The network sent it twice: ChatApi took the first and answered the second as one it had.
     expect(tab.api.questionStatuses()).toEqual([202, 200])
     expect(await tab.rows(branch)).toEqual(["sent twice", ""])
+  }, WITHIN)
+
+  test("a branch this device never showed is blank until its conversation arrives, never empty for a frame", async () => {
+    const tab = await openChat()
+    const branch = await tab.branch("feature/flicker")
+    await tab.askIn(branch, "Asked before this device ever showed the branch")
+
+    // Every time the conversation says it has opened, its messages are already on the device.
+    await tab.chat.actions.show(branch)
+    const state = tab.store.opened(branch)!
+    const seen: Array<{ readonly opened: boolean; readonly messages: number }> = []
+    const subscription = state.history.tanstack.subscribeChanges(() => {
+      seen.push({ opened: state.history.tanstack.get("history")?.opened === true, messages: state.messages.tanstack.size })
+    }, { includeInitialState: true })
+    // The page reads the conversation as it shows it.
+    tab.shown(branch)
+    await until(() => expect([state.messages.tanstack.status, tab.history(branch)?.opened]).toEqual(["ready", true]))
+    subscription.unsubscribe()
+    expect(seen.filter((frame) => frame.opened)).not.toEqual([])
+    expect(seen.filter((frame) => frame.opened && frame.messages === 0)).toEqual([])
+  }, WITHIN)
+
+  test("a branch with no messages at all opens empty once its shape has synced", async () => {
+    const tab = await openChat()
+    const branch = await tab.branch("feature/empty")
+    await tab.chat.actions.show(branch)
+    await until(() => expect(tab.history(branch)).toMatchObject({ opened: true }))
+    expect(tab.shown(branch)).toEqual([])
   }, WITHIN)
 
   test("a branch's conversation the device can't read stays blank, never empty", async () => {

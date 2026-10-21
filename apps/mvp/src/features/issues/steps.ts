@@ -4,8 +4,23 @@ import { Clock, Context, type Duration, Effect, Layer, Metric, Option } from "ef
 import { asker } from "../../flows/askingTab"
 import type { Door } from "../../flows/dispatch"
 import { requesterOf } from "../../flows/requests"
-import { issuesChannel, QUEUE_WITHIN, WRITE_ID_NAMESPACE, type WriteVia } from "./contract"
-import { IssueComment, IssueCreate, IssueWriteRefused, QueueComment, QueueCreate, type WriteRequested } from "./flows"
+import { issuesChannel, QUEUE_WITHIN, type TriageDecision, WRITE_ID_NAMESPACE, type WriteVia } from "./contract"
+import {
+  IssueComment,
+  IssueCreate,
+  IssueTriage,
+  IssueWriteRefused,
+  QueueComment,
+  QueueCreate,
+  QueueEnable,
+  QueuePause,
+  QueueRun,
+  QueueTriage,
+  TriageEnable,
+  TriagePause,
+  TriageRunAgain,
+  type WriteRequested,
+} from "./flows"
 import { writes } from "./metrics"
 import { Queued, type QueuedWrite } from "./schema"
 
@@ -60,6 +75,16 @@ export type QueueOutcome = "queued" | "not_admitted" | "tab_gone"
 type Text =
   | { readonly op: "issue/create"; readonly repo: string; readonly title: string; readonly body?: string | undefined }
   | { readonly op: "issue/comment"; readonly repo: string; readonly number: number; readonly body: string }
+  | {
+    readonly op: "issue/triage"
+    readonly repo: string
+    readonly number: number
+    readonly decision: TriageDecision
+    readonly reason?: string | undefined
+  }
+  | { readonly op: "triage/run"; readonly repo: string; readonly number: number }
+  | { readonly op: "triage/enable"; readonly repo: string; readonly dailyTokens?: number | undefined }
+  | { readonly op: "triage/pause"; readonly repo: string }
 
 /**
  * What `issue/create/queue` and `issue/comment/queue` do: derive the write's id from the run, ask the tab that started
@@ -81,8 +106,14 @@ export const queueWrite = (text: Text) =>
       op: text.op,
       via,
       title: text.op === "issue/create" ? text.title.trim() : "",
-      number: text.op === "issue/comment" ? text.number : 0,
-      body: text.body ?? "",
+      number: "number" in text ? text.number : 0,
+      body: text.op === "issue/create" || text.op === "issue/comment"
+        ? text.body ?? ""
+        : text.op === "issue/triage"
+        ? text.reason ?? ""
+        : "",
+      ...(text.op === "issue/triage" ? { decision: text.decision } : {}),
+      ...(text.op === "triage/enable" && text.dailyTokens !== undefined ? { dailyTokens: text.dailyTokens } : {}),
     }
     const reply = yield* (yield* TabIssues).queue({ requester, write })
     // The agent's call belongs to the answer its tab asked for; a tab's own dispatch names its door in its reply.
@@ -107,7 +138,10 @@ export const queueWrite = (text: Text) =>
     return { writeId, status: "requested" } satisfies WriteRequested
   }).pipe(Effect.withSpan("issues.write.queue"))
 
-/** Registers `issue/create` and `issue/comment` with their steps, queueing through the host's `TabIssues`. */
+/**
+ * Registers `issue/create`, `issue/comment` and triage's `issue/triage`, `triage/run`, `triage/enable` and
+ * `triage/pause` with their steps, queueing through the host's `TabIssues`.
+ */
 export const registration = Layer.mergeAll(
   Interpreter.layerWithImplementations(
     IssueCreate,
@@ -116,5 +150,18 @@ export const registration = Layer.mergeAll(
   Interpreter.layerWithImplementations(
     IssueComment,
     QueueComment.toLayer((payload) => queueWrite({ op: "issue/comment", ...payload })),
+  ),
+  Interpreter.layerWithImplementations(
+    IssueTriage,
+    QueueTriage.toLayer((payload) => queueWrite({ op: "issue/triage", ...payload })),
+  ),
+  Interpreter.layerWithImplementations(TriageRunAgain, QueueRun.toLayer((payload) => queueWrite({ op: "triage/run", ...payload }))),
+  Interpreter.layerWithImplementations(
+    TriageEnable,
+    QueueEnable.toLayer((payload) => queueWrite({ op: "triage/enable", ...payload })),
+  ),
+  Interpreter.layerWithImplementations(
+    TriagePause,
+    QueuePause.toLayer((payload) => queueWrite({ op: "triage/pause", ...payload })),
   ),
 )

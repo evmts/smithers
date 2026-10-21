@@ -1,7 +1,8 @@
 // Which outside pages `app/web/open` opens (src/features/web/url.ts, docs/features/web-pages.md#which-pages): the one
 // check the flow's step, a person's `/web` and ChatApi share.
 import { describe, expect, test } from "vitest"
-import { MAX_URL_LENGTH } from "./contract"
+import { KNOWN_DOCS, MAX_URL_LENGTH } from "./contract"
+import { OpenWebPage } from "./flows"
 import { checkUrl, siteOf } from "./url"
 
 const production = { localHttp: false, appOrigin: "https://app.smithers.sh" }
@@ -106,5 +107,17 @@ describe("a host's site", () => {
     expect(siteOf("[::1]")).toBe("[::1]")
     // Wider than the real site under a two-label public suffix: a frame refuses more, never less.
     expect(siteOf("app.example.co.uk")).toBe("co.uk")
+  })
+})
+
+// The agent evals caught "show me the Effect docs" opening a guessed site in three runs of eight (2026-10-20): the
+// flow's description now names the page for each well-known docs site, and each is one the app opens in the chat.
+describe("well-known docs", () => {
+  test("the flow's description names each one's page, which opens in the chat", () => {
+    for (const [name, url] of Object.entries(KNOWN_DOCS)) {
+      expect(OpenWebPage.description).toContain(`${name} ${url}`)
+      expect([name, reason(url, "embed")]).toEqual([name, "ok"])
+    }
+    expect(KNOWN_DOCS.Effect).toBe("https://effect.website/docs")
   })
 })

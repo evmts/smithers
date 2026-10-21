@@ -118,6 +118,24 @@ describe("an engine that refuses a start", () => {
     await until(() => expect(t.flows.queries.draft.toArray[0]?.shown).toMatchObject({ busy: false, refusal: "checks" }))
   }, 180_000)
 
+  test("a flow's code the engine won't read is unavailable, and a write it won't start says it couldn't save", async () => {
+    const t = await open()
+    await readyDraft(t)
+    t.flows.actions.save()
+    await until(() => expect(t.flows.queries.flows.toArray.map((flow) => flow.name)).toEqual(["hello"]))
+    await t.flows.actions.openCode("hello")
+    expect(t.flows.queries.code.toArray[0]).toMatchObject({ state: "read", revision: 1 })
+    await t.refuse("flow/write")
+    t.flows.actions.editCode(`${t.flows.queries.code.toArray[0]!.text}// mine\n`)
+    await until(() => expect(t.flows.queries.code.toArray[0]?.text).toContain("// mine"))
+    t.flows.actions.saveCode()
+    await until(() => expect(t.flows.queries.code.toArray[0]).toMatchObject({ busy: false, refusal: "unavailable" }))
+    expect(t.refused("flow/write")).toBe(1)
+    await t.refuse("flow/read")
+    await t.flows.actions.openCode("hello")
+    expect(t.flows.queries.code.toArray[0]).toMatchObject({ name: "hello", state: "unavailable" })
+  }, 180_000)
+
   test("an act on a run the engine won't start says the engine couldn't be reached", async () => {
     const t = await open()
     t.flows.actions.setName("hello")

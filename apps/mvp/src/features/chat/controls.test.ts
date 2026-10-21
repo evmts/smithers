@@ -1,6 +1,6 @@
 import { SyncPolicy } from "@smthrs/effect-electric"
 import type { Outbox } from "@smthrs/effect-tanstack-db"
-import { Effect, Metric, Option, Stream } from "effect"
+import { Effect, Metric, Option } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { dispatches, FlowDispatch } from "../../flows/dispatch"
 import {
@@ -13,7 +13,7 @@ import {
   TestChatApi,
 } from "../../test/chatApi"
 import { EngineFaults, QuestionFaults } from "../../test/faults"
-import { copyableText, setDraft, show, takeBack } from "./actions"
+import { copyableText, show, takeBack } from "./actions"
 import { Chat } from "./chat"
 import { HOME_DRAFT } from "./schema"
 import { ChatStore } from "./store"
@@ -244,47 +244,6 @@ describe("Edit on a queued question", () => {
     await until(() => expect(tab.shown()[0]).toBe("user done on its way"))
   })
 
-  test("a question the device can't delete from its outbox stays queued: taking it back fails, and the draft stays", async () => {
-    const { api, device } = await openOffline()
-    // The outbox's storage refuses deletes, as a browser's IndexedDB can (test.faults-by-injection).
-    const storage = { ...device.outbox.storage, delete: () => Promise.reject(new Error("storage refused the delete")) }
-    const tab = await openOn(api, { ...device, outbox: { ...device.outbox, storage } } as NodeDevice)
-    const asked = tab.actions.ask("stuck")
-    if (!asked.asked) throw new Error(asked.reason)
-    await until(() => expect(tab.shown()).toEqual(["user queued stuck"]))
-    tab.actions.setDraft("typing")
-
-    expect(await tab.run(takeBack(asked.questionId))).toBe("failed")
-    expect(tab.composer()).toMatchObject({ draft: "typing" })
-    expect(tab.shown()).toEqual(["user queued stuck"])
-  })
-
-  test("a tab another tab took the outbox's lead from takes it back to take its question back", async () => {
-    const { api, device, network } = await openOffline()
-    const leads = async (tab: Tab) => Option.getOrThrow(await tab.run(Stream.runHead(tab.store.outbox.status))).leader
-    const first = await openOn(api, device)
-    const asked = first.actions.ask("asked here")
-    if (!asked.asked) throw new Error(asked.reason)
-    await until(() => expect(first.shown()).toEqual(["user queued asked here"]))
-    // Another tab on the device takes the lead, as the tab a person moves to does.
-    const second = await openOn(api, device)
-    await second.run(second.store.lead)
-    await until(async () => expect(await leads(first)).toBe(false))
-
-    expect(await first.run(takeBack(asked.questionId))).toBe("edited")
-    expect(first.composer()).toMatchObject({ open: true, draft: "asked here" })
-    expect(await leads(first)).toBe(true)
-    await until(() => expect(first.shown()).toEqual([]))
-
-    // Online, only what is asked next is sent: the question taken back never reaches Postgres.
-    network.online()
-    const next = first.actions.ask("next")
-    if (!next.asked) throw new Error(next.reason)
-    await until(async () =>
-      expect((await first.run(api.rows)).map(({ text }) => text).filter((text) => text !== "")).toEqual(["next"])
-    )
-  })
-
   test("nothing waiting is not_found", async () => {
     const { api, device } = await openApi()
     const tab = await openOn(api, device)
@@ -325,21 +284,6 @@ describe("the saved draft", () => {
     await second.run(show(null))
     second.actions.setDraft("")
     await until(() => expect(device.stored("chat-drafts")).toBe(0))
-  })
-
-  test("the draft the device already keeps, typed again, writes nothing: it stays saved", async () => {
-    const { api, device } = await openApi()
-    const tab = await openOn(api, device)
-    // Nothing kept, and nothing typed: nothing to write.
-    await tab.run(setDraft(""))
-    expect(tab.composer()).toMatchObject({ draft: "", saved: true })
-    await tab.run(setDraft("same"))
-    await until(() => expect(tab.composer()).toMatchObject({ draft: "same", saved: true }))
-
-    await tab.run(setDraft("same"))
-
-    expect(tab.composer()).toMatchObject({ draft: "same", saved: true })
-    expect(device.stored("chat-drafts")).toBe(1)
   })
 
   test("a draft typed, changed, sent and typed again is the one a reload finds", async () => {

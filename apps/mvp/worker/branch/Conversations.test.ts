@@ -44,7 +44,7 @@ describe("homeRepository", () => {
   })
 })
 
-describe("track, find and byId", () => {
+describe("track and find", () => {
   test("records a branch with its conversation once; tracking it again answers the branch as it is", async () => {
     const sha = shaOf("feature")
     const first = await runtime.runPromise(Conversations.track(REPO, "feature", "open", sha))
@@ -64,7 +64,6 @@ describe("track, find and byId", () => {
       branch: first.branch,
     })
     expect(await runtime.runPromise(Conversations.find(REPO, "feature"))).toEqual(first.branch)
-    expect(await runtime.runPromise(Conversations.byId(first.branch.branchId))).toEqual(first.branch)
     const [row] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql<{ readonly baseSha: string; readonly conversations: number }>`
         SELECT b.base_sha AS "baseSha", (SELECT count(*)::int FROM conversations WHERE branch_id = b.id) AS conversations
@@ -87,7 +86,6 @@ describe("track, find and byId", () => {
     const old = await runtime.runPromise(Conversations.track(REPO, "feature", "open", shaOf("feature")))
     await remove(old.branch.branchId)
     expect(await runtime.runPromise(Conversations.find(REPO, "feature"))).toBeUndefined()
-    expect(await runtime.runPromise(Conversations.byId(old.branch.branchId))).toBeUndefined()
 
     const renewed = await runtime.runPromise(Conversations.track(REPO, "feature", "open", shaOf("feature")))
     expect(renewed.created).toBe(true)
@@ -98,17 +96,14 @@ describe("track, find and byId", () => {
   test("a branch the app doesn't track is undefined, and so is another repository's name", async () => {
     await runtime.runPromise(Conversations.track(REPO, "feature", "open", shaOf("feature")))
     expect(await runtime.runPromise(Conversations.find("github/octocat/other", "feature"))).toBeUndefined()
-    expect(await runtime.runPromise(Conversations.byId(crypto.randomUUID()))).toBeUndefined()
   })
 })
 
-describe("home and exists", () => {
-  test("home is the conversation of the deployment repository's main, which exists; another id doesn't", async () => {
+describe("home", () => {
+  test("home is the conversation of the deployment repository's main", async () => {
     const home = await runtime.runPromise(Conversations.home)
     const main = await runtime.runPromise(Conversations.find("github/smithersai/smithers", HOME_BRANCH))
     expect(main).toMatchObject({ conversationId: home, mode: "locked" })
-    expect(await runtime.runPromise(Conversations.exists(home!))).toBe(true)
-    expect(await runtime.runPromise(Conversations.exists(crypto.randomUUID()))).toBe(false)
   })
 
   test("a deployment repository the app doesn't track has no home conversation", async () => {

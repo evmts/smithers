@@ -8,6 +8,7 @@ import {
   MAX_REQUEST_CHARS,
   NAME_PATTERN,
 } from "./contract"
+import { PLACEMENTS } from "./source"
 
 // Your own flows' rows and route bodies (decision 0014 §1): what Postgres keeps, what Electric syncs to the device and
 // what ChatApi's routes take and answer. A row stored on the device is read by the next version of the app too: change
@@ -15,6 +16,9 @@ import {
 
 /** A flow's name (contract.ts `NAME_PATTERN`). */
 export const FlowName = Schema.String.check(Schema.isPattern(NAME_PATTERN))
+
+/** Where a flow's latest revision runs (./source.ts): on the person's device, or only on a sandbox. */
+export const Placement = Schema.Literals(PLACEMENTS)
 
 /** A description: 1 to 1,024 characters. */
 export const Description = Schema.String.check(Schema.isBetweenLength(1, MAX_DESCRIPTION_CHARS))
@@ -101,12 +105,13 @@ export const Draft = Schema.Struct({
 })
 export type Draft = typeof Draft.Type
 
-/** One row of Postgres `flows` as the device keeps it: a person's live flow. */
+/** One row of Postgres `flows` as the device keeps it: a person's live flow, and where its latest revision runs. */
 export const FlowRow = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   revision: Schema.Number,
   description: Schema.String,
+  placement: Placement,
   createdAt: Schema.String,
   updatedAt: Schema.String,
 })
@@ -119,13 +124,14 @@ export const FlowList = Schema.Struct({
     name: Schema.String,
     revision: Schema.Number,
     description: Schema.String,
+    placement: Placement,
   })),
 })
 export type FlowList = typeof FlowList.Type
 
 /**
- * `POST /api/flows/save`: a ready draft's `SKILL.md`, as `flow/save` read it from the draft, with its name, its
- * description and its SHA-256. ChatApi admits it only when it is the draft's own file, unchanged.
+ * `POST /api/flows/save`: a ready draft's source, as `flow/save` read it from the draft, with its name, its description
+ * and its SHA-256. ChatApi admits it only when it is the draft's own file, unchanged.
  */
 export const SaveRequest = Schema.Struct({
   draftId: Schema.String.check(Schema.isUUID()),
@@ -136,7 +142,20 @@ export const SaveRequest = Schema.Struct({
 })
 export type SaveRequest = typeof SaveRequest.Type
 
-/** What `POST /api/flows/save` answers: the flow and the revision the draft became. */
+/**
+ * `POST /api/flows/write`: source the person wrote for their flow `name`, edited from `revision`, with its description
+ * and its SHA-256. ChatApi admits it as the next revision only while `revision` is still the latest.
+ */
+export const WriteRequest = Schema.Struct({
+  name: FlowName,
+  revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  description: Description,
+  source: Schema.String,
+  digest: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)),
+})
+export type WriteRequest = typeof WriteRequest.Type
+
+/** What `POST /api/flows/save` and `/api/flows/write` answer: the flow and the revision it became. */
 export const Saved = Schema.Struct({
   flowId: Schema.String,
   name: Schema.String,

@@ -60,6 +60,7 @@ describe("FlowsClient", () => {
       ["POST http://chat.test/api/flow-drafts/d", { txid: 3 }],
       ["POST http://chat.test/api/flow-drafts/d/answers", { txid: null }],
       ["POST http://chat.test/api/flows/save", { flowId: "f", name: "hello", revision: 1, txid: 4 }],
+      ["POST http://chat.test/api/flows/write", { flowId: "f", name: "hello", revision: 2, txid: 6 }],
       ["POST http://chat.test/api/flows/f/delete", { txid: 5 }],
     ])
     const { run, seen } = client((request) => json(answers.get(`${request.method} ${request.url}`)))
@@ -72,13 +73,20 @@ describe("FlowsClient", () => {
     expect(await run((c) => c.answer("d", { round: 0, answers: [{ id: "q", value: "a" }] }))).toEqual(Exit.void)
     expect(await run((c) => c.save({ draftId: "d", name: "hello", description: "x", source: "---", digest: "a".repeat(64) })))
       .toEqual(Exit.succeed({ flowId: "f", name: "hello", revision: 1, txid: 4 }))
+    const write = { name: "hello", revision: 1, description: "x", source: "export default 1", digest: "a".repeat(64) }
+    expect(await run((c) => c.write(write))).toEqual(Exit.succeed({ flowId: "f", name: "hello", revision: 2, txid: 6 }))
+    expect(JSON.parse(seen.at(-1)!.body)).toEqual(write)
     expect(await run((c) => c.remove("f"))).toEqual(Exit.succeed(true))
-    expect(seen.map((request) => request.method)).toEqual(["GET", "GET", "GET", "GET", "POST", "POST", "POST", "POST"])
+    expect(seen.map((request) => request.method))
+      .toEqual(["GET", "GET", "GET", "GET", "POST", "POST", "POST", "POST", "POST"])
   })
 
-  test("a 404 is a missing flow for a source and nothing to delete; elsewhere a refusal", async () => {
+  test("a 404 is a missing flow for a source or a write and nothing to delete; elsewhere a refusal", async () => {
     const { run } = client(() => json({ code: "not_found" }, 404))
     expect(failureOf(await run((c) => c.source("hello")))).toEqual({ _tag: "@smthrs/mvp/flows/FlowNotFound" })
+    expect(failureOf(await run((c) =>
+      c.write({ name: "hello", revision: 1, description: "x", source: "s", digest: "a".repeat(64) })
+    ))).toEqual({ _tag: "@smthrs/mvp/flows/FlowNotFound" })
     expect(await run((c) => c.remove("f"))).toEqual(Exit.succeed(false))
     expect(failureOf(await run((c) => c.draft("d")))).toEqual({
       _tag: "@smthrs/mvp/flows/FlowsRefused",

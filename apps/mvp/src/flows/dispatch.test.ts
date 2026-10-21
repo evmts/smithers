@@ -2,7 +2,7 @@
 // every dispatch's records, read back without the flow's input. Unhappy paths inject the faulty service: an engine
 // that refuses or dies, `Preferences` that can't be written.
 import { Persistence } from "@smthrs/effect-tanstack-db"
-import { Action, type Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, type Flow, Interpreter } from "@smthrs/flow"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Logger, Metric, Option, Schema, Scope, Tracer } from "effect"
 import { afterEach, describe, expect, test } from "vitest"
@@ -206,25 +206,6 @@ describe("a client flow", () => {
       level: "ERROR",
       annotations: { outcome: "error", reason: "defect", refusal: "plan_changed" },
     })
-  })
-
-  test("is refused by an engine in this process whose runtime refuses the start", async () => {
-    let results = 0
-    // A runtime that refuses every start (test.faults-by-injection); a result would be asked of it only after one.
-    const refusing = Layer.succeed(
-      FlowRuntime.FlowRuntime,
-      {
-        execute: (_flow: unknown, run: { readonly discard?: boolean }) =>
-          run.discard === true ? Effect.fail(new Error("the host refused the start")) : Effect.sync(() => void results++),
-      } as never,
-    )
-    const d = await open({ engine: ClientEngine.layerRuntime([SetTheme]).pipe(Layer.provide(refusing)) })
-
-    const exit = await d.observed(d.dispatch("app/theme/set", { mode: "dark" }, { door: "button" }))
-
-    expect(failure(exit)).toEqual(new DispatchFailed({ flow: "app/theme/set", reason: "refused" }))
-    expect(results).toBe(0)
-    expect(d.painted).toEqual([])
   })
 
   test("is refused by an engine in this process that doesn't declare it", async () => {

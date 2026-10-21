@@ -43,8 +43,15 @@ export interface Services {
   readonly refresh: (sessionId: string, generation: number) => Effect.Effect<void>
 }
 
-/** The access an installation token is minted with: reading issues, or writing them. */
-export type Access = "read" | "write"
+/**
+ * The access an installation token is minted with: reading issues, writing them (triage's labels included), or reading
+ * the repository's files (`contents`: triage's guidelines).
+ */
+export type Access = "read" | "write" | "contents"
+
+/** The permissions GitHub mints a token with for `access`: only what the step needs. */
+const permissionsOf = (access: Access): Readonly<Record<string, "read" | "write">> =>
+  access === "contents" ? { contents: "read" } : { issues: access }
 
 const unavailable = (error: unknown) => {
   const classified = classify(error)
@@ -105,7 +112,7 @@ export const make = (services: Services) => {
       return found.id
     })
 
-  /** An installation token for `repository`, minted with only `access` to its issues. */
+  /** An installation token for `repository`, minted with only `access` (`permissionsOf`). */
   const forInstallation = (
     repository: Repository,
     access: Access,
@@ -115,7 +122,7 @@ export const make = (services: Services) => {
       const minted = yield* services.app.installationToken({
         installationId,
         repositories: [repository.name],
-        permissions: { issues: access },
+        permissions: permissionsOf(access),
       }).pipe(Effect.result)
       if (minted._tag === "Success") {
         yield* counted("app", "minted", { access })

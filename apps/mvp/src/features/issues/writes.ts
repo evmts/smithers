@@ -75,6 +75,8 @@ export const keep = (
         title: row.title,
         number: row.number,
         body: row.body,
+        ...(row.decision === undefined ? {} : { decision: row.decision }),
+        ...(row.dailyTokens === undefined ? {} : { dailyTokens: row.dailyTokens }),
         queuedAt: row.queuedAt,
         status,
         reason,
@@ -87,10 +89,31 @@ export const keep = (
   }).pipe(Effect.orDie)
 
 /** The route's body for `row`. */
-const requestOf = (row: Sending): WriteRequest =>
-  row.op === "issue/create"
-    ? { writeId: row.id, via: row.via, op: row.op, title: row.title, body: row.body }
-    : { writeId: row.id, via: row.via, op: row.op, number: row.number, body: row.body }
+export const requestOf = (row: Sending): WriteRequest => {
+  const { id: writeId, via } = row
+  switch (row.op) {
+    case "issue/create":
+      return { writeId, via, op: row.op, title: row.title, body: row.body }
+    case "issue/comment":
+      return { writeId, via, op: row.op, number: row.number, body: row.body }
+    case "issue/triage":
+      return {
+        writeId,
+        via,
+        op: row.op,
+        number: row.number,
+        // The step sets a decision on every `issue/triage` write (steps.ts).
+        decision: row.decision!,
+        ...(row.body === "" ? {} : { reason: row.body }),
+      }
+    case "triage/run":
+      return { writeId, via, op: row.op, number: row.number }
+    case "triage/enable":
+      return { writeId, via, op: row.op, ...(row.dailyTokens === undefined ? {} : { dailyTokens: row.dailyTokens }) }
+    case "triage/pause":
+      return { writeId, via, op: row.op }
+  }
+}
 
 /**
  * Sends one queued write. ChatApi took it (202, or 200 for one it had): Requested, and done. A refusal (400, 401, 403,

@@ -24,6 +24,44 @@ export const CONVERSATION_NAMESPACE = "5b0a6f0e-2c5d-4f0e-9a43-0c1e6a7b8d91"
  */
 export const HOME_BRANCH = "main"
 
+/**
+ * `POST <route>` `{ grantee | login, access }` changes who branch `branchId` is shared with: `branch/share`. Only the
+ * branch's owner may (docs/features/branch-workspace.md#sharing).
+ */
+export const sharesRoute = (branchId: string): string => `${BRANCHES_ROUTE}/${branchId}/shares`
+
+/** `GET <route>` with `Upgrade: websocket`: branch `branchId`'s room, who is on it and where (decision 0013 §4). */
+export const roomRoute = (branchId: string): string => `${BRANCHES_ROUTE}/${branchId}/room`
+
+/** ChatApi's Electric shape proxy for one branch's permission list: `GET ?branch=<branch id>`, its owner's only. */
+export const SHARES_SHAPE_ROUTE = "/api/shapes/shares"
+
+/** A branch's permission list (db/migrations/0023_branch_sharing.ts). */
+export const SHARES_TABLE = "branch_shares"
+
+/** The grantee of the grant to anyone in the repository with the link: Members and above, never a Guest. */
+export const REPOSITORY_GRANTEE = "repository"
+
+/** What a share grants: to view the live branch, or to edit it (ask in its conversation, type in its terminals). */
+export const SHARE_ACCESSES = ["view", "edit"] as const
+export type ShareAccess = (typeof SHARE_ACCESSES)[number]
+
+/** What a person may do on a branch they can open: own it, which is also sharing it, edit it, or view it. */
+export const ACCESSES = ["owner", "edit", "view"] as const
+export type Access = (typeof ACCESSES)[number]
+
+/**
+ * Whether `login` can be a GitHub login: 1 to 39 letters, digits and single hyphens, neither first nor last. GitHub
+ * compares logins ignoring case.
+ */
+export const isLogin = (login: string): boolean => login.length <= 39 && /^[A-Za-z0-9](?:-?[A-Za-z0-9])*$/.test(login)
+
+/** The largest `POST /api/branches/<id>/shares` body. */
+export const MAX_SHARE_BODY_BYTES = 1024
+
+/** The most people one branch may be shared with by name. */
+export const MAX_SHARES = 100
+
 /** The branch modes (decision 0007 §5): `locked` (the default branch: changes only by merge), `open` and `restricted`. */
 export const MODES = ["locked", "open", "restricted"] as const
 export type Mode = (typeof MODES)[number]

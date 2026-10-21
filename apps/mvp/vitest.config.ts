@@ -7,7 +7,16 @@ import { defineConfig } from "vitest/config"
 // coverage gate measures the logic files: every `src/**/*.ts` but the tests and their hosts.
 export default defineConfig({
   test: {
-    include: ["PACKAGE.test.ts", "src/**/*.test.ts", "worker/**/*.test.ts", "db/**/*.test.ts", "infra/**/*.test.ts"],
+    include: [
+      "PACKAGE.test.ts",
+      "src/**/*.test.ts",
+      "worker/**/*.test.ts",
+      "db/**/*.test.ts",
+      "infra/**/*.test.ts",
+      "evals/**/*.test.ts",
+      // The e2e media scripts' pure parts (e2e/frames.ts); Playwright runs only e2e/*.spec.ts.
+      "e2e/**/*.test.ts",
+    ],
     environment: "node",
     // A finite budget that survives coverage-instrumented load, so a genuine hang still fails the run.
     testTimeout: 30_000,
@@ -66,24 +75,53 @@ export default defineConfig({
         // A person's own flows (docs/features/flows.md#your-own-flows).
         "worker/PersonalFlows.ts",
         "db/migrations/0015_flows.ts",
+        // Every stored prompt flow converted to flow source (docs/features/flows.md#your-own-flows).
+        "db/migrations/0025_flow_source.ts",
         // Unknown model spend keeps its reservation; reservations expire (docs/features/model-endpoint.md#budget).
         "db/migrations/0017_model_charges.ts",
+        // Model spend and its alerts to Admins (docs/features/spend-alerts.md).
+        "worker/ModelSpend.ts",
+        "worker/SpendAlerts.ts",
+        "db/migrations/0019_spend_alerts.ts",
         // Agent status: the runs routes and table (docs/features/agent-status.md).
         "worker/Runs.ts",
         "db/migrations/0013_runs.ts",
+        // Notifications: the feed's fold, routes and shape, and the run index's scope (docs/features/notifications.md).
+        "worker/Notifications.ts",
+        "db/migrations/0020_notifications.ts",
         // The git loop: GitHub's webhook, the writes route, the issues' shapes and the GitHub flows
         // (docs/features/issues.md). The scripted GitHub and the fixtures are test support.
         "worker/github/*.ts",
         "db/migrations/0016_github_issues.ts",
+        // Issue triage: its settings, decisions and pins (docs/features/issues.md#triage).
+        "db/migrations/0018_triage.ts",
+        // Repository secrets: the write routes, the flows, the shape and the sandbox egress (docs/features/secrets.md).
+        "worker/secrets/*.ts",
+        "db/migrations/0021_secrets.ts",
+        // TODOs and the stack: its one writer, its route and shapes (docs/features/todos.md).
+        "worker/stack/*.ts",
+        "db/migrations/0022_todos.ts",
         // The branch workspace: branches, their conversations and terminals (docs/features/branch-workspace.md).
-        // worker/BranchSandboxes.ts, the Cloudflare Durable Object and its container, runs only under Alchemy's
-        // bundle; e2e/branch-workspace.spec.ts drives it, and @smthrs/platform-cloudflare's workerd tests its parts.
+        // worker/BranchSandboxes.ts and worker/BranchRooms.ts, the Cloudflare Durable Objects, run only under Alchemy's
+        // bundle; e2e/branch-workspace.spec.ts and e2e/branch-sharing.spec.ts drive them, and
+        // @smthrs/platform-cloudflare's workerd and @smthrs/sync's presence tests test their parts.
         "worker/branch/*.ts",
         "db/migrations/0014_branch_workspace.ts",
+        "db/migrations/0023_branch_sharing.ts",
+        // The sandbox tools: their calls on a branch's machine (docs/features/sandbox-tools.md).
+        "db/migrations/0024_sandbox_calls.ts",
         // What the Electric gateway lets through (docs/infrastructure.md).
         "infra/ElectricAccess.ts",
         // A shape request the server can't decide is refused, never narrowed (docs/features/chat.md).
         "worker/ShapeAccess.ts",
+        // The agent evals' cases, checks, judge and report (docs/features/agent-evals.md). evals/session.ts and
+        // evals/agent.eval.ts are the program, which `pnpm eval` runs against the real model.
+        "evals/cases.ts",
+        "evals/checks.ts",
+        "evals/judge.ts",
+        "evals/report.ts",
+        // How a flow's video and GIF are paced, captioned and checked (e2e/gifs.mjs, e2e/check-gifs.mjs).
+        "e2e/frames.ts",
       ],
       // src/flows/engine.worker.ts is a program boundary, like src/main.tsx: src/flows/engine.test.ts proves what it
       // registers, and a browser proves the rest.

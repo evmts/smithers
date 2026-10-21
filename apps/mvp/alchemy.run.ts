@@ -11,6 +11,8 @@
  *   handlers.
  * - SessionSecret (infra/SignIn.ts): a random secret Alchemy generates once, bound to ChatApi as SESSION_SECRET; it
  *   signs session cookies and seals GitHub's tokens (docs/features/sign-in.md).
+ * - SecretsKey (infra/Secrets.ts): a random secret Alchemy generates once, bound to ChatApi as SECRETS_KEY; repository
+ *   secrets are sealed and sandbox placeholders derived under it (docs/features/secrets.md#keys).
  * - FlowExecution (worker/Executions.ts): the Durable Object ChatApi hosts, one per remote flow execution, which runs
  *   the durable flow engine over Postgres (schema smithers_flows) through the same Hyperdrive config
  *   (docs/features/remote-flows.md). Declaring ChatApi declares it.
@@ -34,6 +36,7 @@ import { Effect, Layer } from "effect"
 import { ChatDatabase } from "./infra/ChatDatabase.ts"
 import * as Electric from "./infra/Electric.ts"
 import ElectricGateway from "./infra/ElectricGateway.ts"
+import * as Secrets from "./infra/Secrets.ts"
 import * as SignIn from "./infra/SignIn.ts"
 import ChatApi from "./worker/ChatApi.ts"
 import DevChatApi from "./worker/DevChatApi.ts"
@@ -62,12 +65,14 @@ export default Alchemy.Stack(
     const endpoint = yield* electric
     // Sign-in's secret, in production and under `alchemy dev` alike (docs/features/sign-in.md#configuration).
     const sessionSecret = SignIn.Secret.of({ value: (yield* SignIn.SessionSecret).text })
+    // Repository secrets' key, in production and under `alchemy dev` alike (docs/features/secrets.md#keys).
+    const secretsKey = Secrets.Secret.of({ value: (yield* Secrets.SecretsKey).text })
     // Under `alchemy dev`, a local developer is signed in until the GitHub App is configured (worker/DevChatApi.ts).
     const chatApi = yield* (endpoint
       ? ChatApi.pipe(Effect.provideService(Electric.Endpoint, endpoint))
       : (yield* Alchemy.ALCHEMY_DEV)
       ? DevChatApi
-      : ChatApi).pipe(Effect.provideService(SignIn.Secret, sessionSecret))
+      : ChatApi).pipe(Effect.provideService(SignIn.Secret, sessionSecret), Effect.provideService(Secrets.Secret, secretsKey))
     const site = yield* Cloudflare.Website.Vite("smithers-mvp", {
       main: "worker/index.ts",
       compatibility: { date: "2026-10-01", flags: ["enable_request_signal"] },

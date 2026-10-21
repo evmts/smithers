@@ -2,6 +2,7 @@
 // Node host (worker/test/flowHost.ts), over this file's schema of the compose Postgres (`pnpm db:up`), with the
 // scripted GitHub (worker/github/test/scriptedGitHub.ts). The same flows and registrations run on the Cloudflare Durable
 // Object, so passing here shows they are host-agnostic. A step's records are checked by running it alone.
+import { Journal } from "@smthrs/flows"
 import { GitHub } from "@smthrs/integrations"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Cause, Effect, Exit, Layer, Logger, Metric, Option, Redacted } from "effect"
@@ -381,8 +382,27 @@ describe("github/Write", () => {
     const { services: value } = await services(runtime, github)
     expect((await runWrite(writeId, value)).exit).toEqual(Exit.succeed({ status: "done", itemNumber: 1 }))
     const { logs } = await logged(Write.steps(value).giveUp({ writeId }))
-    expect(logs.find((log) => log.message === "github.write")!.annotations).toMatchObject({ settled: false, token: "app" })
+    expect(logs.find((log) => log.message === "github.write")!.annotations).toMatchObject({ settled: false, tokenKind: "app" })
     expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done" })
+  })
+
+  test("under the host's redaction a write's record still says whose token wrote: user for a person, app for the agent", async () => {
+    // The live run on the real GitHub (2026-10-20) logged `token: "[REDACTED]"`: the flow host's RedactedLogger hides the
+    // value of any field named `token`, so no record said whether a write went as the person or as the App.
+    const github = scriptedGitHub()
+    const person = await maya(github)
+    const own = await admit(runtime, { actorId: person.personId, sessionId: person.sessionId, via: "person", payload: issueWrite() })
+    const agent = await admit(runtime, { actorId: person.personId, sessionId: null, via: "agent", payload: issueWrite() })
+    const failing = await admit(runtime, { actorId: person.personId, sessionId: person.sessionId, via: "person", payload: issueWrite() })
+    const { services: value } = await services(runtime, github)
+    const records = async (writeId: string) => {
+      const { logs } = await logged(Write.steps(value).send({ writeId }).pipe(Effect.provide(Journal.RedactedLogger.layer())))
+      return logs.filter((log) => log.message === "github.write").map((log) => log.annotations)
+    }
+    expect(await records(own)).toEqual([expect.objectContaining({ via: "person", tokenKind: "user", outcome: "done" })])
+    expect(await records(agent)).toEqual([expect.objectContaining({ via: "agent", tokenKind: "app", outcome: "done" })])
+    github.faults.push({ match: (method) => method === "POST", status: 502 })
+    expect(await records(failing)).toEqual([expect.objectContaining({ tokenKind: "user", errorCode: expect.any(String) })])
   })
 
   test("the agent acting for someone with no person row says so without a name", async () => {
@@ -518,6 +538,7 @@ describe("github/Apply", () => {
         created_at: "2026-10-20T12:00:01Z",
         updated_at: "2026-10-20T12:00:01Z",
         closed_at: null,
+        labels: [],
       }, Date.now() + 60_000),
     )
     expect((await items(runtime))[0]!.title).toBe("Newer")

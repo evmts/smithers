@@ -3,20 +3,23 @@ import { Effect, Layer, Option } from "effect"
 import { HttpClient } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
+import type { Seat } from "../ModelEndpoint.ts"
 import type { SessionKeys } from "../SessionKeys.ts"
 import * as Apply from "./Apply.ts"
 import * as GitHubConfig from "./Config.ts"
 import * as Reconcile from "./Reconcile.ts"
 import * as Tokens from "./Tokens.ts"
+import * as Triage from "./Triage.ts"
 import * as Write from "./Write.ts"
 
 // What a host needs to run the GitHub flows (docs/features/issues.md#remote-flows): the App (`GitHub.AppAuth` from
-// `@smthrs/integrations`, which signs its JWT with WebCrypto), Postgres, GitHub's HTTP and the tokens. The Durable
-// Object builds it from the deployment's config (worker/Executions.ts); the tests build it over a scripted GitHub.
-// Nothing here names a host.
+// `@smthrs/integrations`, which signs its JWT with WebCrypto), Postgres, GitHub's HTTP, the tokens, and triage's judge
+// (the `judge` model role, admitted and metered as the model endpoint's calls are). The Durable Object builds it from the
+// deployment's config (worker/Executions.ts); the tests build it over a scripted GitHub and a scripted model. Nothing
+// here names a host.
 
 /** The GitHub flows, in the order a host registers them. */
-export const flows = [Apply.Apply, Reconcile.Reconcile, Write.Write] as const
+export const flows = [Apply.Apply, Reconcile.Reconcile, Write.Write, Triage.TriageRun] as const
 
 /** The App, configured and ready: what `services` turns into the flows' services once the host knows how to refresh. */
 export interface Ready<E, R> {
@@ -45,8 +48,8 @@ export const ready = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   })
 
 /**
- * The flows' services from `ready`: sign-in's keys open a person's token (none without sign-in), and `refresh` starts
- * the session's `auth/RecheckRole`.
+ * The flows' services from `ready`: sign-in's keys open a person's token (none without sign-in), `refresh` starts the
+ * session's `auth/RecheckRole`, and `judge` is the model triage decides with (`ModelEndpoint.local`'s `judge` role).
  */
 export const services = <E, R>(
   ready: Ready<E, R>,
@@ -54,13 +57,20 @@ export const services = <E, R>(
     readonly keys: Option.Option<SessionKeys>
     readonly refresh: (sessionId: string, generation: number) => Effect.Effect<void>
   },
-): Apply.Services<E, R> => ({
+  judge: Seat,
+): Triage.Services<E, R> => ({
   database: ready.database,
   http: ready.http,
   apiBaseUrl: ready.apiBaseUrl,
   tokens: Tokens.make({ app: ready.app, keys: sessions.keys, refresh: sessions.refresh }),
+  judge,
 })
 
-/** Registers `github/Apply`, `github/Reconcile` and `github/Write` over `services`. */
-export const registration = <E, R>(services: Apply.Services<E, R>) =>
-  Layer.mergeAll(Apply.registration(services), Reconcile.registration(services), Write.registration(services))
+/** Registers `github/Apply`, `github/Reconcile`, `github/Write` and `triage/Run` over `services`. */
+export const registration = <E, R>(services: Triage.Services<E, R>) =>
+  Layer.mergeAll(
+    Apply.registration(services),
+    Reconcile.registration(services),
+    Write.registration(services),
+    Triage.registration(services),
+  )

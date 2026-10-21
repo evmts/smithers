@@ -1,7 +1,7 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { Schema } from "effect"
-import { MAX_URL_LENGTH, WEB_MODES } from "./contract"
+import { KNOWN_DOCS, MAX_URL_LENGTH, WEB_MODES } from "./contract"
 import { REFUSALS } from "./url"
 
 // `app/web/open { url, mode? }` (docs/features/web-pages.md): opens an outside web page for the person, from a person's
@@ -89,8 +89,9 @@ export const ShowPage = Action.make("app/web/show", {
 export const OpenWebPage = Flow.make("app/web/open", {
   description: "Open an outside web page (an https URL) for the person. mode \"embed\", the default, shows the page " +
     "inside the chat with its origin above it; mode \"tab\" adds a card whose Open button opens it in a new browser " +
-    "tab. Use it when the person asks to see, show, open or visit a page or a site's docs; pick the URL yourself when " +
-    "they name the site. Answers { viewId, origin, mode }.",
+    "tab. Use it when the person asks to see, show, open or visit a page or a site's docs. For these docs open exactly " +
+    `this page: ${Object.entries(KNOWN_DOCS).map(([name, url]) => `${name} ${url}`).join(", ")}. For another site, ` +
+    "pick its URL yourself. Answers { viewId, origin, mode }.",
   modelInvocable: true,
   payload,
   success: WebPageOpened,

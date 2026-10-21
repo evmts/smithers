@@ -6,7 +6,7 @@ import { Effect, Layer, Redacted } from "effect"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { BRANCHES_ROUTE } from "../../src/features/branch/contract.ts"
+import { BRANCHES_ROUTE, SHARES_SHAPE_ROUTE } from "../../src/features/branch/contract.ts"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
   MAX_OPEN_BODY_BYTES,
@@ -17,7 +17,15 @@ import {
 } from "../../src/features/terminal/contract.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import * as Flows from "../Flows.ts"
-import { branchHarness, type BranchHarness, resetBranches, terminal, terminalRows, tracked } from "../test/branch.ts"
+import {
+  branchHarness,
+  type BranchHarness,
+  resetBranches,
+  shared,
+  terminal,
+  terminalRows,
+  tracked,
+} from "../test/branch.ts"
 import { eventually, recorded, testFile } from "../test/harness.ts"
 import * as BranchApi from "./BranchApi.ts"
 import { TerminalSockets } from "./Sandboxes.ts"
@@ -198,15 +206,19 @@ describe("POST /api/terminals", () => {
     expect(h.starts.map((start) => start.executionId)).toEqual([openExecutionId(mine.terminalId)])
   })
 
-  test("only a Member writes an open branch: 401, 403 forbidden, 409 locked, 404 for a branch the app doesn't track", async () => {
+  test("only someone who may edit an open branch opens one: 401, 403 forbidden, 409 locked, 404 for no branch", async () => {
     const branch = await tracked(runtime, REPO, "feature/x")
     const main = await tracked(runtime, REPO, "main", "locked")
     const restricted = await tracked(runtime, REPO, "release", "restricted")
+    // Someone else's branch: shared with the Member to view, they may not open a terminal on it.
+    const viewOnly = await tracked(runtime, REPO, "theirs", "open", "person-owner")
+    await shared(runtime, viewOnly.branchId, "person-member", "view")
 
     expect(await json(await post(await open(null), request(branch.branchId)))).toEqual([401, { code: "authentication" }])
     for (const actor of [guest, { ...member, role: null }]) {
       expect(await json(await post(await open(actor), request(branch.branchId)))).toEqual([403, { code: "forbidden" }])
     }
+    expect(await json(await post(await open(), request(viewOnly.branchId)))).toEqual([403, { code: "forbidden" }])
     const h = await open()
     expect(await json(await post(h, request(main.branchId)))).toEqual([409, { code: "locked" }])
     expect(await json(await post(h, request(restricted.branchId)))).toEqual([409, { code: "locked" }])
@@ -292,34 +304,40 @@ describe("POST /api/terminals", () => {
 })
 
 describe("GET /api/terminals/<id>: the socket", () => {
-  /** An open terminal of `person-member` on a tracked branch. */
+  /** An open terminal of `person-member` on their own branch, which they shared with `person-other` to view. */
   const opened = async (status: "opening" | "open" | "ended" | "failed" = "open") => {
-    const branch = await tracked(runtime, REPO, "feature/x")
+    const branch = await tracked(runtime, REPO, "feature/x", "open", "person-member")
+    await shared(runtime, branch.branchId, "person-other", "view")
     const terminalId = crypto.randomUUID()
     await terminal(runtime, { id: terminalId, branchId: branch.branchId, ownerId: "person-member", status })
     return { branchId: branch.branchId, terminalId }
   }
 
-  test("attaches the owner to type and another Member to watch", async () => {
+  /** What the socket attaches as, for `actor`. */
+  const as = (terminalId: string, actor: Actor, access: "write" | "read") => ({
+    terminalId,
+    ownerId: "person-member",
+    access,
+    principal: actor.subject.id,
+    role: actor.role,
+  })
+
+  test("attaches the owner to type and someone the branch is shared with to view to watch", async () => {
     const { branchId, terminalId } = await opened()
     const owner = await open()
     const watcher = await open(other)
 
     expect(await json(await connect(owner, terminalId.toUpperCase()))).toEqual([
       200,
-      { attached: { terminalId, ownerId: "person-member", access: "write" } },
+      { attached: as(terminalId, member, "write") },
     ])
     expect(await json(await connect(watcher, terminalId, { origin: "http://chat.test", upgrade: "WebSocket" }))).toEqual([
       200,
-      { attached: { terminalId, ownerId: "person-member", access: "read" } },
+      { attached: as(terminalId, other, "read") },
     ])
 
-    expect(owner.sockets.attached).toEqual([
-      { branchId, attachment: { terminalId, ownerId: "person-member", access: "write" } },
-    ])
-    expect(watcher.sockets.attached).toEqual([
-      { branchId, attachment: { terminalId, ownerId: "person-member", access: "read" } },
-    ])
+    expect(owner.sockets.attached).toEqual([{ branchId, attachment: as(terminalId, member, "write") }])
+    expect(watcher.sockets.attached).toEqual([{ branchId, attachment: as(terminalId, other, "read") }])
     expect(owner.sockets.checked).toEqual([{ branchId, terminalId, ownerId: "person-member" }])
     expect(owner.only("terminal.connect")).toMatchObject({
       level: "INFO",
@@ -328,6 +346,21 @@ describe("GET /api/terminals/<id>: the socket", () => {
     expect(watcher.only("terminal.connect").annotations).toMatchObject({ access: "read", outcome: "attached" })
     expect(owner.count(Terminals.requests, { route: "connect", outcome: "attached" })).toBe(1)
     expect(owner.span("terminal.connect")).toHaveLength(1)
+  })
+
+  test("someone it is shared with to edit types into the owner's terminal; a viewer reads; anyone else is refused", async () => {
+    const { branchId, terminalId } = await opened()
+    await shared(runtime, branchId, "person-other", "edit")
+    const editor = await open(other)
+    expect(await json(await connect(editor, terminalId))).toEqual([200, { attached: as(terminalId, other, "write") }])
+    // A Guest shared to edit only reads: GitHub gives them no write.
+    await shared(runtime, branchId, "person-guest", "edit")
+    const guestViewer = await open(guest)
+    expect(await json(await connect(guestViewer, terminalId))).toEqual([200, { attached: as(terminalId, guest, "read") }])
+    // A Member it isn't shared with may not even watch.
+    const stranger = await open({ subject: { kind: "person", id: "person-stranger" }, role: "admin" })
+    expect(await json(await connect(stranger, terminalId))).toEqual([403, { code: "forbidden" }])
+    expect(stranger.sockets.checked).toEqual([])
   })
 
   test("only this app's own page may attach: another origin or none is 403 origin, before anything is read", async () => {
@@ -397,6 +430,7 @@ describe("GET /api/terminals/<id>: the socket", () => {
       sockets: TerminalSockets.of({
         attach: () => Effect.die(new Error("the machine went away")),
         alive: () => Effect.succeed(true),
+        enforce: () => Effect.void,
       }),
     })
     expect(await json(await connect(broken, terminalId))).toEqual([503, { code: "unavailable" }])
@@ -429,8 +463,9 @@ describe("GET /api/shapes/terminals", () => {
     return rows
   }
 
-  test("a Member syncs one branch's terminals, by the branch's id", async () => {
-    const branch = await tracked(runtime, REPO, "feature/x")
+  test("someone who may view a branch syncs its terminals, by the branch's id", async () => {
+    const branch = await tracked(runtime, REPO, "feature/x", "open", "person-owner")
+    await shared(runtime, branch.branchId, "person-member", "view")
     const elsewhere = await tracked(runtime, REPO, "feature/y")
     const [mine, theirs] = [crypto.randomUUID(), crypto.randomUUID()]
     await terminal(runtime, { id: mine, branchId: branch.branchId, ownerId: "person-member", status: "open" })
@@ -451,12 +486,15 @@ describe("GET /api/shapes/terminals", () => {
     expect(h.count(Terminals.shapes, { status: "200", live: "false" })).toBeGreaterThanOrEqual(1)
   })
 
-  test("anyone who may not watch, or names no branch, gets a shape with no branch's rows", async () => {
+  test("anyone who may not view, or names no branch, gets a shape with no branch's rows", async () => {
     const branch = await tracked(runtime, REPO, "feature/x")
+    const private_ = await tracked(runtime, REPO, "feature/private", "open", "person-owner")
     await terminal(runtime, { id: crypto.randomUUID(), branchId: branch.branchId, ownerId: "person-member", status: "open" })
     const cases: ReadonlyArray<[BranchHarness, string]> = [
       [await open(null), `branch=${branch.branchId}`],
       [await open(guest), `branch=${branch.branchId}`],
+      [await open(), `branch=${private_.branchId}`],
+      [await open(), `branch=${crypto.randomUUID()}`],
       [await open(), "branch=not-a-uuid"],
       [await open(), "where=true"],
     ]
@@ -470,19 +508,34 @@ describe("GET /api/shapes/terminals", () => {
     }
   })
 
-  test("while sessions can't be read, the request is refused 503 and Electric is never asked", async () => {
+  test("while sessions or Postgres can't be read, the request is refused 503 and Electric is never asked", async () => {
     const branch = await tracked(runtime, REPO, "feature/x")
     const unreadable = Layer.succeed(Sessions, Sessions.of({ resolve: Effect.fail(new SessionsUnavailable()) }))
     const h = await open(null, { sessions: unreadable })
     const response = await h.fetch(`${TERMINALS_SHAPE_ROUTE}?offset=-1&handle=h-1&branch=${branch.branchId}`)
     expect([response.status, response.headers.get("retry-after")]).toEqual([503, "5"])
     expect(h.electric).toEqual([])
+    const down = await open(member, {
+      database: Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers"))),
+    })
+    expect((await down.fetch(`${TERMINALS_SHAPE_ROUTE}?offset=-1&branch=${branch.branchId}`)).status).toBe(503)
+    expect(down.electric).toEqual([])
   })
 })
 
 describe("BranchApi", () => {
-  test("handles the branch and terminal routes and nothing else", () => {
-    for (const path of [BRANCHES_ROUTE, TERMINALS_ROUTE, TERMINALS_SHAPE_ROUTE, `${TERMINALS_ROUTE}/x`]) {
+  test("handles the branch, sharing, room and terminal routes and nothing else", () => {
+    for (
+      const path of [
+        BRANCHES_ROUTE,
+        `${BRANCHES_ROUTE}/x/shares`,
+        `${BRANCHES_ROUTE}/x/room`,
+        SHARES_SHAPE_ROUTE,
+        TERMINALS_ROUTE,
+        TERMINALS_SHAPE_ROUTE,
+        `${TERMINALS_ROUTE}/x`,
+      ]
+    ) {
       expect([path, BranchApi.handles(path)]).toEqual([path, true])
     }
     for (const path of ["/api/branch", "/api/terminalsx", "/api/shapes/branches", "/api/questions"]) {
@@ -490,9 +543,10 @@ describe("BranchApi", () => {
     }
   })
 
-  test("a path it doesn't handle is 404", async () => {
+  test("a path it doesn't handle is 404, a branch's other paths included", async () => {
     const h = await open()
     expect((await h.fetch("/api/nothing-here")).status).toBe(404)
+    expect((await h.fetch(`${BRANCHES_ROUTE}/x/other`)).status).toBe(404)
     expect(h.logs).toEqual([])
   })
 })

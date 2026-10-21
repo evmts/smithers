@@ -1,7 +1,16 @@
 import { Flow } from "@smthrs/flow"
 import { Context } from "effect"
 import { BranchTrack } from "../features/branch/flows"
+import { BranchShare } from "../features/sharing/flows"
 import { TerminalOpenRequest } from "../features/terminal/flows"
+import {
+  SandboxDiff,
+  SandboxList,
+  SandboxRead,
+  SandboxRun,
+  SandboxStatus,
+  SandboxWrite,
+} from "../features/sandbox/flows"
 import { Close } from "../features/agent/close"
 import { ChatCopy, ChatEdit } from "../features/chat/flows"
 import { Answer } from "../features/agent/flows"
@@ -11,16 +20,20 @@ import {
   FlowList,
   FlowNew,
   FlowPrompt,
+  FlowRead,
   FlowRun,
   FlowSave,
+  FlowWrite,
 } from "../features/flows-ui/flows"
-import { IssueComment, IssueCreate } from "../features/issues/flows"
+import { IssueComment, IssueCreate, IssueTriage, TriageEnable, TriagePause, TriageRunAgain } from "../features/issues/flows"
 import { Classify, Evaluate } from "../features/jev/flows"
 import { Cancel, Inspect, List, Resume, Retry } from "../features/runs/flows"
 import { Navigate } from "../features/navigation/flows"
 import { RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../features/repo/flows"
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
+import { Ack, WatchSet } from "../features/attention/flows"
 import { SetTheme } from "../features/theme/flows"
+import { TodoCommit, TodoDraft, TodoDrop } from "../features/todos/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { type FlowName, type FlowOf, names } from "./registry"
 
@@ -52,6 +65,8 @@ export const declarations = {
   "flow/new": FlowNew,
   "flow/answer": FlowAnswer,
   "flow/save": FlowSave,
+  "flow/read": FlowRead,
+  "flow/write": FlowWrite,
   "flow/run": FlowRun,
   "flow/run/prompt": FlowPrompt,
   "flow/delete": FlowDelete,
@@ -62,9 +77,25 @@ export const declarations = {
   "run/list": List,
   "run/inspect": Inspect,
   "branch/track": BranchTrack,
+  "branch/share": BranchShare,
   "terminal/open": TerminalOpenRequest,
   "issue/create": IssueCreate,
   "issue/comment": IssueComment,
+  "issue/triage": IssueTriage,
+  "triage/run": TriageRunAgain,
+  "triage/enable": TriageEnable,
+  "triage/pause": TriagePause,
+  "todo/draft": TodoDraft,
+  "todo/commit": TodoCommit,
+  "todo/drop": TodoDrop,
+  "watch/set": WatchSet,
+  "notification/ack": Ack,
+  "sandbox/run": SandboxRun,
+  "sandbox/read": SandboxRead,
+  "sandbox/write": SandboxWrite,
+  "sandbox/list": SandboxList,
+  "sandbox/status": SandboxStatus,
+  "sandbox/diff": SandboxDiff,
 } as const satisfies { readonly [N in FlowName]: Flow.Any & FlowOf<N> }
 
 /** The declaration registered under `name`. */

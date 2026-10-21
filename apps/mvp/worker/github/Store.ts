@@ -4,6 +4,8 @@ import { SqlClient } from "effect/sql"
 import {
   commentId,
   itemId,
+  TRIAGE_DECISIONS,
+  triageOf,
   type WriteFailure,
   type WriteOp,
   type WriteStatus,
@@ -32,32 +34,35 @@ export const shownBody = (body: string | null): string => GitHub.Issues.withoutW
 /**
  * Upserts issue `issue` of repository `repoId`, read at `fetchedAt` (epoch ms): inserted, or updated only when GitHub's
  * `updated_at` and the read time are newer than the row's and what GitHub said differs, so a repeated read writes
- * nothing and Electric sends nothing. A row seen again is no longer deleted. Returns whether the row changed.
+ * nothing and Electric sends nothing. A row seen again is no longer deleted. Its triage state is what its labels say
+ * (`triageOf`); whether a person pinned it is Smithers' own and never changes here. Returns whether the row changed.
  */
 export const upsertIssue = (repoId: string, issue: Issue, fetchedAt: number) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
+    const triage = triageOf(issue.labels.map((label) => label.name))
     const rows = yield* sql`
       INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state, state_reason, author_login, comments,
-        created_at, updated_at, closed_at, deleted_at, write_id, source_updated_at, fetched_at)
+        created_at, updated_at, closed_at, deleted_at, write_id, triage, source_updated_at, fetched_at)
       VALUES (${itemId(repoId, issue.number)}, ${repoId}, ${issue.number},
         ${issue.pull_request === undefined ? "issue" : "pull"}, ${issue.id}, ${issue.title}, ${shownBody(issue.body)},
         ${issue.state}, ${issue.state_reason}, ${issue.user?.login ?? null}, ${issue.comments},
         ${issue.created_at}::timestamptz, ${issue.updated_at}::timestamptz, ${issue.closed_at}::timestamptz, NULL,
-        ${markedWrite(issue.body)}::uuid, ${issue.updated_at}::timestamptz, ${new Date(fetchedAt).toISOString()}::timestamptz)
+        ${markedWrite(issue.body)}::uuid, ${triage}, ${issue.updated_at}::timestamptz,
+        ${new Date(fetchedAt).toISOString()}::timestamptz)
       ON CONFLICT (id) DO UPDATE SET
         kind = EXCLUDED.kind, github_id = EXCLUDED.github_id, title = EXCLUDED.title, body = EXCLUDED.body,
         state = EXCLUDED.state, state_reason = EXCLUDED.state_reason, author_login = EXCLUDED.author_login,
         comments = EXCLUDED.comments, created_at = EXCLUDED.created_at, updated_at = EXCLUDED.updated_at,
         closed_at = EXCLUDED.closed_at, deleted_at = NULL, write_id = COALESCE(EXCLUDED.write_id, items.write_id),
-        source_updated_at = EXCLUDED.source_updated_at, fetched_at = EXCLUDED.fetched_at
+        triage = EXCLUDED.triage, source_updated_at = EXCLUDED.source_updated_at, fetched_at = EXCLUDED.fetched_at
       WHERE (items.source_updated_at, items.fetched_at) < (EXCLUDED.source_updated_at, EXCLUDED.fetched_at)
         AND (items.kind, items.github_id, items.title, items.body, items.state, items.state_reason, items.author_login,
           items.comments, items.created_at, items.updated_at, items.closed_at, items.deleted_at,
-          COALESCE(EXCLUDED.write_id, items.write_id))
+          COALESCE(EXCLUDED.write_id, items.write_id), items.triage)
         IS DISTINCT FROM (EXCLUDED.kind, EXCLUDED.github_id, EXCLUDED.title, EXCLUDED.body, EXCLUDED.state,
           EXCLUDED.state_reason, EXCLUDED.author_login, EXCLUDED.comments, EXCLUDED.created_at, EXCLUDED.updated_at,
-          EXCLUDED.closed_at, NULL::timestamptz, items.write_id)
+          EXCLUDED.closed_at, NULL::timestamptz, items.write_id, EXCLUDED.triage)
       RETURNING id`
     return rows.length > 0
   })
@@ -146,6 +151,15 @@ export const receivedAt = (deliveryId: string) =>
 export const WritePayload = Schema.Union([
   Schema.Struct({ op: Schema.Literal("issue/create"), title: Schema.String, body: Schema.String }),
   Schema.Struct({ op: Schema.Literal("issue/comment"), number: Schema.Int, body: Schema.String }),
+  Schema.Struct({
+    op: Schema.Literal("issue/triage"),
+    number: Schema.Int,
+    decision: Schema.Literals(TRIAGE_DECISIONS),
+    reason: Schema.NullOr(Schema.String),
+  }),
+  Schema.Struct({ op: Schema.Literal("triage/run"), number: Schema.Int }),
+  Schema.Struct({ op: Schema.Literal("triage/enable"), dailyTokens: Schema.Int }),
+  Schema.Struct({ op: Schema.Literal("triage/pause") }),
 ])
 export type WritePayload = typeof WritePayload.Type
 const decodePayload = Schema.decodeUnknownSync(WritePayload)
@@ -240,9 +254,12 @@ export const beginAttempt = (id: string) =>
     return row!.before
   })
 
-/** How a write ended: done, with what GitHub numbered it; or failed or refused, with why. */
+/**
+ * How a write ended: done, with the issue it wrote and what GitHub gave it (none for a write that made nothing on
+ * GitHub, such as enabling triage); or failed or refused, with why.
+ */
 export type Settlement =
-  | { readonly status: "done"; readonly itemNumber: number; readonly githubId: number }
+  | { readonly status: "done"; readonly itemNumber: number | null; readonly githubId: number | null }
   | { readonly status: "failed" | "refused"; readonly failure: WriteFailure }
 
 /**

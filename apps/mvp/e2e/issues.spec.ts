@@ -1,8 +1,15 @@
 import { test as base, expect, type Browser, type BrowserContext, type Page, type TestInfo } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
 import { SIGN_IN, SIGN_OUT } from "../src/features/auth/contract"
-import { NEW_ISSUE } from "../src/features/issues/contract"
-import { flowName } from "./fixtures"
+import {
+  ACCEPT,
+  ENABLE_TRIAGE,
+  NEW_ISSUE,
+  NOT_ACCEPTED,
+  PAUSE_TRIAGE,
+  RUN_TRIAGE_AGAIN,
+} from "../src/features/issues/contract"
+import { recordActions, writeManifest } from "./fixtures"
 
 // Issues, end to end (docs/features/issues.md, decision 0012 slice G0): the real app, ChatApi, Durable Objects,
 // Postgres and Electric, two devices side by side in one video each, so `pnpm e2e:gifs` makes one GIF per flow.
@@ -17,6 +24,11 @@ import { flowName } from "./fixtures"
 //     as the test account, since this suite can't drive GitHub's sign-in page;
 //   - locally, GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY in the dev server's environment (with GITHUB_REPOSITORY set
 //     to the scratch repository and GITHUB_APP_CLIENT_ID, GITHUB_APP_CLIENT_SECRET for sign-in).
+// - "who triages" runs wherever the app runs without the App, like "who reads": a Maintainer gets Enable triage beside
+//   New issue, and a signed-out device gets neither (docs/features/issues.md#triage). It presses nothing.
+// - "triage" is G7: a Maintainer enables triage, opens an issue, runs triage on it, sees the flow's label, overrides it
+//   on another device, and runs triage again. It needs what "two devices" needs, with E2E_SESSION_COOKIE a Maintainer's
+//   on the scratch repository, and the dev server's model (CEREBRAS_API_KEY by default) for the judge.
 //
 // The issues list shows a loading state until the repository's first complete sync (0012 §2, never "No issues"
 // before), so these tests don't use the no-spinner fixtures: a loading list is the specified state, not a regression.
@@ -70,6 +82,7 @@ class Devices {
         document.body.append(badge)
       })
     }, name)
+    await recordActions(page, this.testInfo, name)
     const log: Array<string> = []
     page.on("console", (message) => log.push(`${message.type()}: ${message.text()}`))
     page.on("pageerror", (error) => log.push(`pageerror: ${error.message}`))
@@ -90,10 +103,7 @@ class Devices {
     const videos = await Promise.all(
       this.all.map(async (device) => ({ name: device.name, video: await device.page.video()?.path(), openedAt: device.openedAt })),
     )
-    await writeFile(
-      this.testInfo.outputPath("devices.json"),
-      JSON.stringify({ flow: flowName(this.testInfo), title: this.testInfo.title, status: this.testInfo.status, videos }, null, 2),
-    )
+    await writeManifest(this.testInfo, "devices.json", this.startedAt, videos)
   }
 }
 
@@ -176,4 +186,82 @@ test("two devices: A opens an issue, B sees GitHub number it and comments, A see
   // A sees B's comment once GitHub has it.
   await row(a.page).getByRole("link", { name: title }).click()
   await expect(a.page.getByText(comment)).toBeVisible({ timeout: 120_000 })
+})
+
+test("who triages: a Maintainer gets Enable triage beside New issue; signed out, neither", async ({ devices }) => {
+  test.skip(!local, "signing out on a deployment goes through GitHub; this runs against alchemy dev's local developer")
+  test.skip(
+    process.env.E2E_ISSUES_REPOSITORY !== undefined || process.env.GITHUB_APP_ID !== undefined,
+    "this case reads a repository GitHub hasn't said is public: run it on a dev server without the GitHub App",
+  )
+  const maintainer = await devices.open("Maintainer")
+  const visitor = await devices.open("signed out")
+  // alchemy dev's local developer is an Admin: the list's header has Enable triage and New issue, nothing else.
+  await maintainer.page.goto(`/${READ_REPOSITORY}/issues`)
+  const list = maintainer.page.getByRole("region", { name: `${READ_REPOSITORY} issues` })
+  await expect(list).toBeVisible({ timeout: 30_000 })
+  await expect(list.getByRole("button", { name: ENABLE_TRIAGE })).toBeVisible()
+  await expect(list.getByRole("link", { name: NEW_ISSUE })).toBeVisible()
+  await expect(list.getByRole("button", { name: PAUSE_TRIAGE })).toHaveCount(0)
+  // The repository's triage settings are a shape of their own, refused like the issues to a person who may not read.
+  expect((await maintainer.page.request.get("/api/shapes/triage-settings?offset=-1")).status()).toBe(200)
+
+  await visitor.page.goto("/app")
+  await visitor.page.getByRole("button", { name: SIGN_OUT }).click({ timeout: 30_000 })
+  await expect(visitor.page.getByRole("link", { name: SIGN_IN }).first()).toBeVisible({ timeout: 30_000 })
+  expect((await visitor.page.request.get("/api/shapes/triage-settings?offset=-1")).status()).toBe(401)
+  await visitor.page.goto(`/${READ_REPOSITORY}/issues`)
+  await expect(visitor.page.getByRole("main", { name: "Issues" }).getByRole("link", { name: SIGN_IN })).toBeVisible({
+    timeout: 30_000,
+  })
+  await expect(visitor.page.getByRole("button", { name: ENABLE_TRIAGE })).toHaveCount(0)
+  await expect(list.getByRole("button", { name: ENABLE_TRIAGE })).toBeVisible()
+})
+
+test("triage: a Maintainer enables it, the flow labels a new issue, another device overrides it, and runs it again", async ({ devices }) => {
+  test.skip(needs.length > 0, `This writes to a scratch GitHub repository: set ${needs.join(", ")}.`)
+  test.skip(/^smithersai\//i.test(scratch), "E2E_ISSUES_REPOSITORY may not be a smithersai repository")
+  test.setTimeout(300_000)
+  const raw = process.env.E2E_SESSION_COOKIE!
+  const cookie = { name: raw.slice(0, raw.indexOf("=")), value: raw.slice(raw.indexOf("=") + 1) }
+  const a = await devices.open("A", cookie)
+  const b = await devices.open("B", cookie)
+  const title = `Smithers e2e triage ${new Date().toISOString()}`
+  const triage = (page: Page) => page.getByRole("group", { name: "Triage" })
+
+  // A turns triage on: the switch says Pause once the settings sync back.
+  await a.page.goto(`/${scratch}/issues`)
+  const list = a.page.getByRole("region", { name: `${scratch} issues` })
+  const enable = list.getByRole("button", { name: ENABLE_TRIAGE })
+  if (await enable.isVisible({ timeout: 30_000 }).catch(() => false)) await enable.click()
+  await expect(list.getByRole("button", { name: PAUSE_TRIAGE })).toBeVisible({ timeout: 60_000 })
+
+  // A opens an issue; once GitHub numbers it, it shows Proposed.
+  await list.getByRole("link", { name: NEW_ISSUE }).click()
+  await a.page.getByLabel("Title").fill(title)
+  await a.page.getByLabel("Description").fill("Steps: open the issues page and press New issue with an empty title. It crashes.")
+  await a.page.getByRole("button", { name: "Create issue" }).click()
+  const row = (page: Page) => page.getByRole("listitem").filter({ hasText: title })
+  await expect(row(a.page)).toContainText(/#\d+/, { timeout: 120_000 })
+  await row(a.page).getByRole("link", { name: title }).click()
+
+  // Run triage again hands it to the flow: the judge decides, and the App's label comes back through the sync.
+  await expect(triage(a.page)).toContainText("Proposed", { timeout: 60_000 })
+  await triage(a.page).getByRole("button", { name: RUN_TRIAGE_AGAIN }).click()
+  await expect(triage(a.page)).toContainText(/Accepted|Not accepted/, { timeout: 120_000 })
+  const decided = (await triage(a.page).getAttribute("data-triage"))!
+
+  // B overrides the flow with the other button; A sees it, pinned.
+  await b.page.goto(a.page.url())
+  const other = decided === "accepted" ? NOT_ACCEPTED : ACCEPT
+  await triage(b.page).getByRole("button", { name: other }).click()
+  const overridden = decided === "accepted" ? "not_accepted" : "accepted"
+  await expect(triage(a.page)).toHaveAttribute("data-triage", overridden, { timeout: 120_000 })
+  await expect(triage(b.page)).toHaveAttribute("data-triage", overridden, { timeout: 120_000 })
+
+  // Run triage again unpins it, and the flow decides it once more.
+  await triage(a.page).getByRole("button", { name: RUN_TRIAGE_AGAIN }).click()
+  await expect(triage(a.page)).toHaveAttribute("data-pending", "requested", { timeout: 30_000 })
+  await expect(triage(a.page)).not.toHaveAttribute("data-pending", "requested", { timeout: 120_000 })
+  await expect(triage(a.page)).toHaveAttribute("data-triage", /accepted|not_accepted/)
 })

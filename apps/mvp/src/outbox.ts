@@ -1,5 +1,5 @@
 import type { Collection, Outbox } from "@smthrs/effect-tanstack-db"
-import { Context } from "effect"
+import { Context, Effect, Option } from "effect"
 
 // The device has one durable outbox (decision 0002 §3), which chat's store builds and leads
 // (src/features/chat/store.ts). A feature that writes through it hands its writes over here, from a layer built below
@@ -16,4 +16,17 @@ export class OutboxWrites extends Context.Service<
     readonly collections: Readonly<Record<string, Collection.Collection<any, any, any>>>
     readonly mutations: Readonly<Record<string, Outbox.Mutation<never>>>
   }
->()("@smthrs/mvp/OutboxWrites") {}
+>()("@smthrs/mvp/OutboxWrites") {
+  /**
+   * `writes` added to the writes a layer below handed over, if any: how a second feature hands its writes to the same
+   * outbox. Its names must be new: the earlier feature's stay as they were.
+   */
+  static readonly adding = (writes: OutboxWrites["Service"]) =>
+    Effect.map(Effect.serviceOption(OutboxWrites), (below) => {
+      const earlier = Option.getOrElse(below, () => ({ collections: {}, mutations: {} }))
+      return OutboxWrites.of({
+        collections: { ...writes.collections, ...earlier.collections },
+        mutations: { ...writes.mutations, ...earlier.mutations },
+      })
+    })
+}

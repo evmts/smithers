@@ -3,8 +3,8 @@ import { FlowDispatch } from "../../flows/dispatch"
 import type { AnswerValue, Local } from "./schema"
 import { StatusStore } from "./store"
 
-// What a person does about the agent's status (decision 0015): answer its open question, keep a draft, hide a toast,
-// and ask the card to take focus. Each finishes at once; an answer runs on as `run/answer` in the store's scope, and
+// What a person does about the agent's status (decision 0015): answer its open question, keep a draft, and ask the card
+// to take focus. Hiding its toast is the feed's (decision 0009, src/features/attention/actions.ts). Each finishes at once; an answer runs on as `run/answer` in the store's scope, and
 // the card shows it sending until the run's row says it was answered.
 
 /** This tab's row for run `id`'s question `version`, made fresh when it has none or an older question's. */
@@ -12,7 +12,7 @@ const touch = (id: string, version: number, change: (row: Local) => Partial<Loca
   Effect.gen(function* () {
     const { local } = yield* StatusStore
     const current = yield* local.get(id)
-    const fresh: Local = { id, version, draft: "", hidden: false, sending: false, focus: 0 }
+    const fresh: Local = { id, version, draft: "", sending: false, focus: 0 }
     const base = Option.isSome(current) && current.value.version === version ? current.value : fresh
     const next = { ...base, ...change(base) }
     if (Option.isNone(current)) {
@@ -40,14 +40,6 @@ export const setDraft = (id: string, text: string) =>
     const open = yield* openQuestion(id)
     if (Option.isNone(open)) return
     yield* touch(id, open.value.version, () => ({ draft: text }))
-  })
-
-/** Hides the toast for run `id`'s open question in this tab; the card and the header still show it. */
-export const hide = (id: string) =>
-  Effect.gen(function* () {
-    const open = yield* openQuestion(id)
-    if (Option.isNone(open)) return
-    yield* touch(id, open.value.version, () => ({ hidden: true }))
   })
 
 /** Asks run `id`'s card to take focus and come into view, from a toast's or the header's Answer. */

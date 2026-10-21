@@ -421,7 +421,12 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         Stream.runForEach((rows) => markEarlier(branchHistory, rows.length)),
         Effect.forkIn(scope, { startImmediately: true }),
       )
+      // Opened once the device's rows are restored, or, when it has none of this conversation yet (a branch this device
+      // never showed), once the shape has synced: switching to a branch never shows the empty state for a frame before
+      // the conversation it has arrives.
       yield* branchMessages.restored.pipe(
+        Effect.andThen(branchMessages.toArray),
+        Effect.flatMap((rows) => (rows.length > 0 ? Effect.void : branchMessages.preload)),
         Effect.catch(() => branchMessages.preload),
         Effect.andThen(branchHistory.update(HISTORY, (row) => void (row.opened = true))),
         Effect.ignore,

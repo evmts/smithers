@@ -1,11 +1,13 @@
-import { ModelProxy, ModelRequest } from "@smthrs/model"
+import type { FlowEngineLike } from "@smthrs/agent"
+import { Model, ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
 import { HostModel, HostModelUnusable } from "@smthrs/model-host"
-import { Cause, Config, Duration, Effect, type Layer, Metric, Option, Schema } from "effect"
+import { Cause, Config, Duration, Effect, Exit, type Layer, Metric, Option, Schema, Stream } from "effect"
 import type { SqlClient } from "effect/sql"
-import type { ModelRole } from "../src/features/model/contract.ts"
+import { MODEL_ROUTE, type ModelRole } from "../src/features/model/contract.ts"
 import { canAsk, Sessions } from "./Actor.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as ModelRoles from "./ModelRoles.ts"
+import * as ModelSpend from "./ModelSpend.ts"
 import * as ModelUsage from "./ModelUsage.ts"
 
 // The metered model endpoint (docs/features/model-endpoint.md): every model call the browser's agent makes is one
@@ -40,7 +42,8 @@ export const MAX_REQUEST_BYTES = 192 * 1024
 export const RESERVATION_EXPIRY = Duration.hours(1)
 
 /**
- * Settles of a served call's reservation, by `outcome`: `recorded` (settled to what it spent), `kept` (its usage was
+ * Settles of a served call's reservation, by `outcome`: `recorded` (settled to what it spent), `refused` (the provider
+ * refused it before any output, so it settled to the usage the provider reported, 0 when none), `kept` (its usage was
  * unknown, so it keeps its reservation), `expired` (it ended after its reservation expired, so it stays charged in
  * full) or `error`.
  */
@@ -62,10 +65,12 @@ const INVALID_CAPS = "Send maxTokens as a whole number above 0 and thinkingBudge
 
 /**
  * Reads `MODEL_DAILY_TOKEN_BUDGET`, `MODEL_MAX_OUTPUT_TOKENS`, `MODEL_MAX_MESSAGES`, `MODEL_MAX_REQUEST_BYTES`,
- * `MODEL_RESERVATION_EXPIRY` and the deployment's default model (`HostModel`), and returns the handler for one role.
+ * `MODEL_RESERVATION_EXPIRY` and the deployment's default model (`HostModel`), and returns what admits and meters one
+ * call on a role: `admit` bounds the request, picks the role's model and reserves the call's worst case; `meter` settles
+ * it. The endpoint (`make`) and a server flow's own calls (`local`) share them, so every call spends one budget.
  * `database` opens a Postgres client for each read and write.
  */
-export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   Effect.gen(function* () {
     const budget = yield* Config.schema(positive, "MODEL_DAILY_TOKEN_BUDGET").pipe(
       Config.withDefault(DAILY_TOKEN_BUDGET),
@@ -89,21 +94,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
      * the call's worst case is reserved: its body's bytes, each counted as a prompt token, plus its output and thinking
      * caps. The reservation is the last step, so no refusal after it leaves one behind.
      */
-    const prepare = (role: ModelRole) => (request: ModelRequest.ModelRequest, admission: ModelProxy.Admission) =>
+    const admit = (role: ModelRole) => (request: ModelRequest.ModelRequest, admission: ModelProxy.Admission) =>
       Effect.gen(function* () {
-        const sessions = yield* Sessions
-        const actor = yield* sessions.resolve.pipe(
-          Effect.tapError((error) => logFailure(role, codeOf(error))),
-          Effect.mapError(() => unavailable),
-        )
-        if (Option.isNone(actor)) {
-          return yield* refuse(401, "authentication", "Sign in to ask Smithers.")
-        }
-        // Asking is `repo:ask`, Member or above (decision 0007). `ModelError` has no permission code, so a refusal of
-        // a signed-in person is `authentication` with 403, as a provider's 403 classifies.
-        if (!canAsk(actor.value)) {
-          return yield* refuse(403, "authentication", "Asking Smithers needs the Member role.")
-        }
         if ((request.serverTools?.length ?? 0) > 0) {
           return yield* refuse(400, "invalid_request", "Send no provider-run tools.")
         }
@@ -154,11 +146,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       })
 
     /**
-     * Settles a served call's reservation, whether it succeeded, failed or lost its client. Only a call that ended
-     * normally with both counts reported settles to them. Any other usage is unknown, never zero: a call that failed or
-     * lost its client may have spent tokens the model never reported, so it keeps its reservation (`kept`). A call that
-     * ends after its reservation expired stays charged in full (`expired`). A failed write is logged and counted, never
-     * raised into the response, and leaves the reservation counted.
+     * Settles a served call's reservation, whether it succeeded, failed or lost its client. A call that ended normally
+     * with both counts reported settles to them. A call the provider refused before any output (`rate_limited`, or a
+     * provider 4xx: `ModelProxy.refusedCleanly`) spent nothing beyond what the provider reported, so it settles to
+     * that, 0 when none (`refused`). Any other usage is unknown, never zero: a call that failed or lost its client may
+     * have spent tokens the model never reported, so it keeps its reservation (`kept`). A call that ends after its
+     * reservation expired stays charged in full (`expired`). A failed write is logged and counted, never raised into
+     * the response, and leaves the reservation counted. First it records what the model reported the call spent, by
+     * role and model (`ModelSpend.record`).
      */
     const meter = (role: ModelRole) => (end: ModelProxy.End) => {
       const { inputTokens, outputTokens } = end.usage
@@ -167,18 +162,27 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         : inputTokens !== undefined || outputTokens !== undefined
         ? "partial"
         : "none"
-      const complete = end.outcome === "success" && reported === "complete"
+      const refused = ModelProxy.refusedCleanly(end)
+      const complete = (end.outcome === "success" && reported === "complete") || refused
       const ids = { role, invocationId: end.invocationId, requestId: end.requestId }
+      const failure = end.errorCode === undefined ? {} : { errorCode: end.errorCode }
       const record = (settled: boolean) => {
-        const outcome = !settled ? "expired" : complete ? "recorded" : "kept"
+        const outcome = !settled ? "expired" : refused ? "refused" : complete ? "recorded" : "kept"
         const counted = Metric.update(Metric.withAttributes(usageWrites, { outcome }), 1)
         if (outcome === "recorded") return counted
         const line = outcome === "expired"
-          ? Effect.logWarning("model.usage").pipe(Effect.annotateLogs({ ...ids, outcome, ended: end.outcome }))
-          : Effect.logInfo("model.usage").pipe(Effect.annotateLogs({ ...ids, outcome, ended: end.outcome, reported }))
+          ? Effect.logWarning("model.usage").pipe(
+            Effect.annotateLogs({ ...ids, outcome, ended: end.outcome, ...failure }),
+          )
+          : Effect.logInfo("model.usage").pipe(
+            Effect.annotateLogs({ ...ids, outcome, ended: end.outcome, reported, ...failure }),
+          )
         return Effect.andThen(counted, line)
       }
-      return ModelUsage.settle({ invocationId: end.invocationId, inputTokens, outputTokens, complete }).pipe(
+      return Effect.andThen(
+        ModelSpend.record(role, end),
+        ModelUsage.settle({ invocationId: end.invocationId, inputTokens, outputTokens, complete }),
+      ).pipe(
         Effect.provide(database),
         Effect.flatMap(record),
         Effect.catchCause((cause) =>
@@ -192,7 +196,114 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       )
     }
 
+    return { admit, meter, maxBodyBytes, logFailure, budget }
+  })
+
+/**
+ * The model endpoint's handler for one role, `POST /api/model/<role>`: it refuses a signed-out request and one from a
+ * person who may not ask (a Guest, or no role), then admits and meters the call (`metering`). Each admitted call starts
+ * its window's spend alert through `Flows.FlowStarter` (`ModelSpend.alerter`, docs/features/spend-alerts.md): on unless
+ * `MODEL_SPEND_ALERTS` says otherwise, whose default is `alerts`, on unless set.
+ */
+export const make = <E, R>(
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
+  options: { readonly alerts?: boolean } = {},
+) =>
+  Effect.gen(function* () {
+    const { admit, meter, maxBodyBytes, logFailure, budget } = yield* metering(database)
+    const alert = yield* ModelSpend.alerter(
+      yield* ModelSpend.settings(options.alerts === undefined ? {} : { on: options.alerts }),
+      budget,
+    )
+    /** Who may ask (`repo:ask`, decision 0007), then the call's admission. */
+    const prepare = (role: ModelRole) => (request: ModelRequest.ModelRequest, admission: ModelProxy.Admission) =>
+      Effect.gen(function* () {
+        const sessions = yield* Sessions
+        const actor = yield* sessions.resolve.pipe(
+          Effect.tapError((error) => logFailure(role, codeOf(error))),
+          Effect.mapError(() => unavailable),
+        )
+        if (Option.isNone(actor)) {
+          return yield* refuse(401, "authentication", "Sign in to ask Smithers.")
+        }
+        // Asking is `repo:ask`, Member or above (decision 0007). `ModelError` has no permission code, so a refusal of
+        // a signed-in person is `authentication` with 403, as a provider's 403 classifies.
+        if (!canAsk(actor.value)) {
+          return yield* refuse(403, "authentication", "Asking Smithers needs the Member role.")
+        }
+        return yield* admit(role)(request, admission).pipe(Effect.tap(() => alert))
+      })
+
     /** `POST /api/model/<role>`: one served model call. */
     return (role: ModelRole) =>
       ModelProxy.serve({ prepare: prepare(role), maxBodyBytes, attributes: { role }, onEnd: meter(role) })
+  })
+
+/** A model a server flow calls with, and the route its durable step keys on (`ModelStep.model` from `@smthrs/agent`). */
+export interface Seat {
+  readonly model: Model.Model
+  readonly route: FlowEngineLike.RouteResolver
+}
+
+/** A refusal of a server flow's own call, as the model error its caller reads: the endpoint's code and status. */
+const refusedCall = (refusal: ModelProxy.Refusal) =>
+  new ModelError.ModelError({ code: refusal.modelErrorCode, message: refusal.message, httpStatus: refusal.status })
+
+/**
+ * The model a flow running on the server calls `role` with, in process: each call is admitted and metered exactly as the
+ * endpoint's (`metering`), against the same daily budget and ledger, so a flow no person's device runs (triage on a new
+ * issue, decision 0012 §5) spends what a person's call would. It skips the endpoint's who-may-ask check: the flow that
+ * calls it was admitted under a person's role, which it re-checks itself. Its step keys on the endpoint's request
+ * (`ModelProxy.prepare`), so a resumed run replays the sealed call instead of paying for it again. A refusal fails the
+ * stream as a `ModelError` with the endpoint's code: `quota_exceeded` once the day's budget is spent.
+ */
+export const local = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+  Effect.gen(function* () {
+    const { admit, meter, maxBodyBytes } = yield* metering(database)
+    // What the database layer needs, captured here, so a model call needs nothing of its caller.
+    const context = yield* Effect.context<R>()
+    return (role: ModelRole): Seat => {
+      const prepare = ModelProxy.prepare({ url: `${MODEL_ROUTE}/${role}` })
+      const call = (request: ModelRequest.ModelRequest) =>
+        Effect.gen(function* () {
+          // The endpoint's id for a call is its own, never the caller's; so is this one.
+          const invocationId = crypto.randomUUID()
+          const encoded = yield* prepare(request)
+          if (encoded.body.byteLength > maxBodyBytes) {
+            return yield* new ModelError.ModelError({ code: "invalid_request", message: "The request is too large.", httpStatus: 413 })
+          }
+          const admission = { requestId: invocationId, invocationId, requestBytes: encoded.body.byteLength }
+          const prepared = yield* admit(role)(request, admission).pipe(Effect.mapError(refusedCall))
+          // What the model reported, merged as `ModelEvent.settledMessage` merges it: a `retry` event starts it over.
+          let usage: ModelEvent.Usage = {}
+          // Whether the model sent any output, which tells a refusal (that spent nothing) from a failure that may have.
+          let produced = false
+          return prepared.model.stream(prepared.request).pipe(
+            Stream.tap((event) =>
+              Effect.sync(() => {
+                usage = ModelEvent.settledMessage([{ type: "usage", ...usage }, event]).usage
+                produced ||= ModelProxy.producesOutput(event)
+              })
+            ),
+            Stream.onExit((exit) =>
+              meter(role)({
+                requestId: invocationId,
+                invocationId,
+                modelId: prepared.request.modelId,
+                usage,
+                produced,
+                ...(Exit.isSuccess(exit)
+                  ? { outcome: "success" as const }
+                  : Cause.hasInterruptsOnly(exit.cause)
+                  ? { outcome: "interrupted" as const }
+                  : { outcome: "failed" as const, ...ModelProxy.failureOf(exit.cause) }),
+              })
+            ),
+          )
+        }).pipe(Effect.provideContext(context))
+      return {
+        model: Model.make({ stream: (request) => Stream.unwrap(call(request)).pipe(Stream.provideContext(context)) }),
+        route: { prepare },
+      }
+    }
   })

@@ -1,5 +1,14 @@
 import { Schema } from "effect"
-import { NOT_SENT_REASONS, WRITE_FAILURES, WRITE_OPS, WRITE_STATUSES, WRITE_VIAS } from "./contract"
+import {
+  NOT_SENT_REASONS,
+  PAUSED_REASONS,
+  TRIAGE_DECISIONS,
+  TRIAGE_STATES,
+  WRITE_FAILURES,
+  WRITE_OPS,
+  WRITE_STATUSES,
+  WRITE_VIAS,
+} from "./contract"
 
 // The issues feature's rows (decision 0012 §6, docs/features/issues.md), as the Effect Schemas their collections check
 // them with. The synced rows match the contract's column lists, camelCased; timestamps are strings as Postgres prints
@@ -24,6 +33,10 @@ export const Item = Schema.Struct({
   closedAt: Schema.NullOr(Schema.String),
   deletedAt: Schema.NullOr(Schema.String),
   writeId: Schema.NullOr(Schema.String),
+  /** What GitHub's triage labels say (decision 0012 §5). */
+  triage: Schema.Literals(TRIAGE_STATES),
+  /** A person triaged it: the flow never re-decides it until a person presses Run triage again. */
+  triagePinned: Schema.Boolean,
 })
 export type Item = typeof Item.Type
 
@@ -71,9 +84,21 @@ export type SyncRow = typeof SyncRow.Type
 /** A sync row's key: `<repoId>/<stream>`. */
 export const syncKey = (row: SyncRow): string => `${row.repoId}/${row.stream}`
 
+/** One row of Postgres `triage_settings` (`TRIAGE_SETTINGS_COLUMNS`): whether triage runs on a repository. */
+export const TriageSettings = Schema.Struct({
+  repoId: Schema.String,
+  paused: Schema.Boolean,
+  pausedReason: Schema.NullOr(Schema.Literals(PAUSED_REASONS)),
+  dailyTokens: Schema.Number,
+  enabledAt: Schema.String,
+})
+export type TriageSettings = typeof TriageSettings.Type
+
 /**
  * A write as a step asks the tab to queue it: the write id the run derived, the repository (`owner/name`), who it acts
- * for, and its text. `title` is an issue's (empty for a comment), `number` a comment's issue (0 for an issue).
+ * for, and its text. `title` is an issue's (empty otherwise), `number` the issue a comment or triage acts on (0 for a new
+ * issue and the repository's triage settings), `body` a comment's text or a person's reason for Not accepted (empty for
+ * none). `decision` is a person's Accept or Not accepted; `dailyTokens` the budget Enable triage sets, when it names one.
  */
 export const QueuedWrite = Schema.Struct({
   id: Schema.String,
@@ -83,6 +108,8 @@ export const QueuedWrite = Schema.Struct({
   title: Schema.String,
   number: Schema.Number,
   body: Schema.String,
+  decision: Schema.optional(Schema.Literals(TRIAGE_DECISIONS)),
+  dailyTokens: Schema.optional(Schema.Number),
 })
 export type QueuedWrite = typeof QueuedWrite.Type
 

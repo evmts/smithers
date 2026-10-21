@@ -50,7 +50,8 @@ const open = async (options: TabOptions = {}) => {
   }
 }
 
-const sentinel = () => `sentinel-${crypto.randomUUID()}`
+// Unique, and not shaped like an id: the agent hands an answer naming an id back to be said plainly (words.ts).
+const sentinel = () => `sentinel-${crypto.randomUUID().replaceAll("-", "")}`
 const shown = (tab: Awaited<ReturnType<typeof open>>) =>
   tab.queries.conversation.toArray.map(({ role, status }) => `${role} ${status}`)
 

@@ -74,6 +74,13 @@ interface HarnessOptions {
   readonly sessions?: Layer.Layer<Actor.Sessions>
   /** The default model's id: `test-model` unless set. */
   readonly modelId?: string
+  /**
+   * The deployment's default model in place of the scripted one: the agent evals' real model (evals/agent.eval.ts).
+   * `script` and `modelId` go unused, and `requests` stays empty.
+   */
+  readonly model?: HostModel["Service"]
+  /** `MODEL_SPEND_ALERTS`' default, as the dev stack sets it to `false`; production's, on, unless set. */
+  readonly spendAlerts?: boolean
 }
 
 /** ChatApi's routes on the file's schema and a scripted model, recording every log line, span and metric. */
@@ -112,7 +119,7 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
     )
   const hostModel = Layer.succeed(
     HostModel,
-    HostModel.of({
+    options.model ?? HostModel.of({
       modelId: options.modelId ?? "test-model",
       model,
       // ChatApi calls the model only through the endpoint, which streams `model`; nothing prepares a request.
@@ -120,7 +127,11 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
     }),
   )
   const chat = await runtime.runPromise(
-    observed(Chat.make(database).pipe(Effect.provide(hostModel))),
+    observed(
+      Chat.make(database, options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }).pipe(
+        Effect.provide(hostModel),
+      ),
+    ),
   )
   const starter = options.starter ?? Flows.FlowStarter.of({
     start: (flow, { executionId, payload }) =>

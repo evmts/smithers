@@ -44,3 +44,17 @@ export const Panel = Schema.Struct({
   access: Schema.NullOr(Schema.Literals(["write", "read"])),
 })
 export type Panel = typeof Panel.Type
+
+/**
+ * One live terminal on the branch the panel shows, as its tabs list it: whose it is, whether it is this person's, and
+ * whether it is open yet.
+ */
+export const Tab = Schema.Struct({
+  id: Schema.String,
+  ownerId: Schema.String,
+  ownerLogin: Schema.String,
+  mine: Schema.Boolean,
+  status: Schema.Literals(["opening", "open"]),
+  createdAt: Schema.String,
+})
+export type Tab = typeof Tab.Type

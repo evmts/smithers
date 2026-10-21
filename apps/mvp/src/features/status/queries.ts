@@ -50,22 +50,13 @@ export const statusesQuery = (
 /** Every answer's status. */
 export type Statuses = Effect.Success<ReturnType<typeof statusesQuery>>
 
-/**
- * The questions that need the person, oldest first: open, unanswered, on an answer still streaming. `hidden` says Hide
- * was pressed on this question's toast in this tab.
- */
-export const needsQuery = (statuses: Statuses, local: Collection.Collection<Local, string>) =>
+/** The questions that need the person, oldest first: open, unanswered, on an answer still streaming. */
+export const needsQuery = (statuses: Statuses) =>
   LiveQuery.make((q) =>
     q
       .from({ status: statuses.tanstack })
       .where(({ status }) => Query.eq(status.state, "needs_you"))
-      .leftJoin({ mine: local.tanstack }, ({ status, mine }) => Query.eq(status.id, mine.id))
-      .select(({ status, mine }) => ({
-        id: status.id,
-        version: status.version,
-        wait: status.wait,
-        hidden: Query.caseWhen(Query.and(Query.eq(mine?.version, status.version), Query.eq(mine?.hidden, true)), true, false),
-      }))
+      .select(({ status }) => ({ id: status.id, version: status.version, wait: status.wait }))
       .orderBy(({ status }) => status.position),
   )
 

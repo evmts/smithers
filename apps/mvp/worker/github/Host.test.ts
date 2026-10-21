@@ -15,8 +15,9 @@ import * as Apply from "./Apply.ts"
 import * as GitHubConfig from "./Config.ts"
 import * as Host from "./Host.ts"
 import * as Reconcile from "./Reconcile.ts"
-import { admit, database, keys, reset, signedIn, writeRow } from "./test/fixtures.ts"
+import { admit, database, judgeSeat, judging, keys, reset, signedIn, writeRow } from "./test/fixtures.ts"
 import { APP_ID, appKey, SCRIPTED_API, scriptedGitHub } from "./test/scriptedGitHub.ts"
+import * as Triage from "./Triage.ts"
 import * as Write from "./Write.ts"
 
 const runtime = testFile("github_host")
@@ -119,9 +120,15 @@ describe("Host", () => {
     const sessionKeys = await keys()
     const flows = ExecutionHost.withGitHub(
       ExecutionHost.remote({ database: app, expiry: Expire.DEFAULT_EXPIRY }),
-      Effect.succeed(Host.services(made, { keys: Option.some(sessionKeys), refresh: () => Effect.void })),
+      Effect.succeed(
+        Host.services(
+          made,
+          { keys: Option.some(sessionKeys), refresh: () => Effect.void },
+          (await judgeSeat(runtime, judging("abstain"))).seat,
+        ),
+      ),
     )
-    expect(flows.flows.slice(-3)).toEqual([Apply.Apply, Reconcile.Reconcile, Write.Write])
+    expect(flows.flows.slice(-4)).toEqual([Apply.Apply, Reconcile.Reconcile, Write.Write, Triage.TriageRun])
     const values = new Map<string, unknown>()
     const storage: ExecutionHost.Storage = {
       get: <A>(storageKey: string) => Effect.sync(() => structuredClone(values.get(storageKey)) as A | undefined),

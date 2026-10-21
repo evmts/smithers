@@ -1,8 +1,8 @@
 // Your own flows and this device's runs from a tab (docs/features/flows.md#the-browser, docs/features/runs.md): the
 // browser's own layer (`appLayer`) on a Node device whose engine leads, against ChatApi's real handler and the compose
 // Postgres and Electric (src/test/chatApi.ts). A person drafts a flow, answers its question, saves it, runs it, watches
-// its run page, stops a run and retries one. The model is the only scripted piece: each model call waits for the test's
-// answer.
+// its run page, stops a run and retries one, and opens, edits and saves its code. The model is the only scripted piece:
+// each model call waits for the test's answer.
 import { Effect, type ManagedRuntime } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
@@ -10,9 +10,10 @@ import { RUNS_PATH } from "../runs/contract"
 import type { Inspection } from "../runs/schema"
 import { listRows } from "../runs/page"
 import { Runs } from "../runs/runs"
-import { formReady, savedRefusal } from "./actions"
-import { FLOWS_PATH, NEW_FLOW_PATH } from "./contract"
+import { codeSaveable, formReady, savedRefusal, writtenRefusal } from "./actions"
+import { codePath, FLOWS_PATH, NEW_FLOW_PATH, writeRefusalWords } from "./contract"
 import { FlowsUi } from "./flowsUi"
+import { placementOf, renderSource } from "./source"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -25,9 +26,12 @@ const until = (assertion: () => void | Promise<void>, timeout = 60_000) => vi.wa
 /** A test's budget: several flows, each with model calls, on a fresh device's engine, on a loaded machine. */
 const WITHIN = 180_000
 
+/** What a run of `hello` asks the model: its instructions, which the drafting prompt never holds. */
+const RUN_TASK = "Greet the person warmly."
+
 const drafted = (overrides: Record<string, unknown> = {}) => ({
   description: "Say hello.",
-  instructions: "Say hello to the person.",
+  instructions: RUN_TASK,
   flows: [],
   questions: [],
   summary: "Says hello.",
@@ -87,6 +91,23 @@ describe("the form", () => {
     expect(formReady({ name: "hello", request: "x".repeat(4097) })).toBe(false)
   })
 
+  test("a code page saves only read, changed, non-empty code with no write in flight; refusals read by their code", () => {
+    const read = { state: "read" as const, busy: false, source: "a", text: "b" }
+    expect(codeSaveable(read)).toBe(true)
+    expect(codeSaveable({ ...read, text: "a" })).toBe(false)
+    expect(codeSaveable({ ...read, text: "  " })).toBe(false)
+    expect(codeSaveable({ ...read, busy: true })).toBe(false)
+    expect(codeSaveable({ ...read, state: "loading" })).toBe(false)
+    expect(writtenRefusal({ _tag: "@smthrs/mvp/flows/FlowInvalid", check: "name" })).toBe("check:name")
+    expect(writtenRefusal({ _tag: "@smthrs/mvp/flows/FlowsRefused", code: "stale" })).toBe("stale")
+    expect(writtenRefusal({ _tag: "@smthrs/mvp/flows/FlowNotFound" })).toBe("not_found")
+    expect(writtenRefusal({ _tag: "@smthrs/mvp/flows/FlowsUnavailable" })).toBe("unavailable")
+    expect(writeRefusalWords("check:name")).toBe("Check failed: name")
+    expect(writeRefusalWords("stale")).toBe("Changed since you opened it")
+    expect(writeRefusalWords("teapot")).toBe("teapot")
+    expect(codePath("release-notes")).toBe("/app/flows/code/release-notes")
+  })
+
   test("a refused Save reads by its code", () => {
     expect(savedRefusal({ _tag: "@smthrs/mvp/flows/NameTaken" })).toBe("name_taken")
     expect(savedRefusal({ _tag: "@smthrs/mvp/flows/DraftNotReady", code: "checks" })).toBe("checks")
@@ -114,7 +135,7 @@ describe("a flow of your own, from a tab", () => {
     await until(() => expect(t.went(`${RUNS_PATH}/`)).toBeDefined())
     const runId = decodeURIComponent(t.went(`${RUNS_PATH}/`)!.slice(RUNS_PATH.length + 1))
     await t.runs.actions.openRun(runId)
-    await t.reply("The flow hello says:", 'ctx.done("Hello.")')
+    await t.reply(RUN_TASK, 'ctx.done("Hello.")')
     await until(() => expect(t.inspection()?.run).toMatchObject({ status: "completed", result: { text: '"Hello."' } }))
 
     // The steps tab, a step, the timeline, and the journal with More.
@@ -127,7 +148,7 @@ describe("a flow of your own, from a tab", () => {
 
     t.runs.actions.retry("pinned")
     await until(() => expect(t.went(`${RUNS_PATH}/retry%3A`)).toBeDefined())
-    await t.reply("The flow hello says:", 'ctx.done("Hello again.")', 1)
+    await t.reply(RUN_TASK, 'ctx.done("Hello again.")', 1)
     const retried = decodeURIComponent(t.went(`${RUNS_PATH}/retry%3A`)!.slice(RUNS_PATH.length + 1))
     expect(retried).toBe(`retry:${runId}:1/run`)
     await t.runs.actions.openRun(retried)
@@ -137,7 +158,7 @@ describe("a flow of your own, from a tab", () => {
     await until(() => expect(t.inspection()?.run.runId).toBe(runId))
     t.runs.actions.retry("current")
     await until(() => expect(t.went(`${RUNS_PATH}/retry%3A${encodeURIComponent(runId)}%3A2`)).toBeDefined())
-    await t.reply("The flow hello says:", 'ctx.done("Hello a third time.")', 2)
+    await t.reply(RUN_TASK, 'ctx.done("Hello a third time.")', 2)
 
     // The list: both runs of hello, newest first, and no act on a run.
     await t.runs.actions.openList()
@@ -205,7 +226,7 @@ describe("a flow of your own, from a tab", () => {
     const runId = decodeURIComponent(t.went(`${RUNS_PATH}/`)!.slice(RUNS_PATH.length + 1))
     await t.runs.actions.openRun(runId)
     // The model call is in flight and never answered: the run is live.
-    await until(() => expect(t.api.modelRequests("The flow hello says:")).toBe(1))
+    await until(() => expect(t.api.modelRequests(RUN_TASK)).toBe(1))
     await until(() => expect(t.inspection()?.run.status).toBe("running"))
     // A live run has nothing to retry yet.
     t.runs.actions.retry("pinned")
@@ -221,6 +242,63 @@ describe("a flow of your own, from a tab", () => {
     // Nothing read of it: no act on it.
     t.runs.actions.stop()
     expect(t.page()?.view).toMatchObject({ acting: null, refusal: null })
+  }, WITHIN)
+})
+
+describe("a flow's code, from a tab", () => {
+  test("Code reads it, an edited step label saves as sandbox code, Run then fails before the model; drafted code runs", async () => {
+    const t = await open()
+    await draftHello(t)
+    await until(() => expect(t.draft()?.draft.status).toBe("ready"))
+    t.flows.actions.save()
+    await until(() => expect(t.flows.queries.flows.toArray).toMatchObject([{ name: "hello", placement: "client" }]))
+
+    await t.flows.actions.openCode("hello")
+    const drafted = renderSource({ name: "hello", description: "Say hello.", flows: [], instructions: RUN_TASK })
+    expect(t.flows.queries.code.toArray[0]).toMatchObject({ name: "hello", state: "read", revision: 1, source: drafted, text: drafted })
+    // Unchanged code doesn't save.
+    t.flows.actions.saveCode()
+
+    // A check that fails stays on the page, by its code.
+    t.flows.actions.editCode(drafted.replace(`Flow.make("hello"`, `Flow.make("goodbye"`))
+    await until(() => expect(t.flows.queries.code.toArray[0]?.text).toContain(`Flow.make("goodbye"`))
+    t.flows.actions.saveCode()
+    await until(() => expect(t.flows.queries.code.toArray[0]).toMatchObject({ busy: false, refusal: "check:name" }))
+
+    const relabelled = drafted.replace(`"hello/agent"`, `"hello/greet"`)
+    expect(placementOf(relabelled)).toBe("sandbox")
+    t.flows.actions.editCode(relabelled)
+    await until(() => expect(t.flows.queries.code.toArray[0]?.text).toBe(relabelled))
+    const before = host(t).navigated.length
+    t.flows.actions.saveCode()
+    await until(() => expect(host(t).navigated.length).toBeGreaterThan(before))
+    expect(t.went(FLOWS_PATH)).toBe(FLOWS_PATH)
+    await until(() => expect(t.flows.queries.flows.toArray).toMatchObject([{ revision: 2, placement: "sandbox" }]))
+    expect(t.flows.queries.code.toArray[0]).toMatchObject({ busy: false, refusal: null, revision: 2, source: relabelled })
+
+    // Its run fails before any model call: the code needs a sandbox.
+    t.flows.actions.run("hello", 2)
+    await until(() => expect(t.went(`${RUNS_PATH}/`)).toBeDefined())
+    const runId = decodeURIComponent(t.went(`${RUNS_PATH}/`)!.slice(RUNS_PATH.length + 1))
+    await t.runs.actions.openRun(runId)
+    await until(() => expect(t.inspection()?.run.status).toBe("failed"))
+    expect(JSON.stringify(t.inspection()!.run.result)).toContain("FlowNeedsSandbox")
+    expect(t.api.modelRequests(RUN_TASK)).toBe(0)
+
+    // The drafted code again: it runs here.
+    await t.flows.actions.openCode("hello")
+    t.flows.actions.editCode(drafted)
+    await until(() => expect(t.flows.queries.code.toArray[0]?.text).toBe(drafted))
+    t.flows.actions.saveCode()
+    await until(() => expect(t.flows.queries.flows.toArray).toMatchObject([{ revision: 3, placement: "client" }]))
+  }, WITHIN)
+
+  test("a flow you don't have reads not found; a read that ends after the tab moved on changes nothing", async () => {
+    const t = await open()
+    await t.flows.actions.openCode("nothing")
+    expect(t.flows.queries.code.toArray[0]).toMatchObject({ name: "nothing", state: "not_found" })
+    await Promise.all([t.flows.actions.openCode("first"), t.flows.actions.openCode("second")])
+    expect(t.flows.queries.code.toArray[0]).toMatchObject({ name: "second", state: "not_found" })
   }, WITHIN)
 })
 

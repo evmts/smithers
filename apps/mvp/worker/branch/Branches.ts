@@ -7,15 +7,17 @@ import { isRepository, repoId } from "../../src/features/repo/contract.ts"
 import { Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
-import { mayWatch } from "./Access.ts"
+import { branchAccess, canView, isMember } from "./Access.ts"
 import * as Conversations from "./Conversations.ts"
 import { branchHead, defaultBranch, type Forge } from "./Forge.ts"
 
 // `POST /api/branches` (decision 0013 §2, docs/features/branch-workspace.md#tracking-a-branch): the write path of the
 // client flow `branch/track`, which a person opening a branch's page and the agent run alike. It records a branch
-// GitHub already has, with its conversation, and answers both ids. A branch the app tracks already answers at once; a
-// new one is read from its forge first (`Forge`), with the read credential the server holds, so a name GitHub doesn't
-// have is never recorded. The repository's default branch is recorded `locked` (decision 0007 §5).
+// GitHub already has, with its conversation, and answers both ids and what the person may do on it. A branch the app
+// tracks already answers at once, to those it is shared with (worker/branch/Access.ts), and 403 to anyone else; a new
+// one is read from its forge first (`Forge`), with the read credential the server holds, so a name GitHub doesn't have
+// is never recorded, and becomes the Member's who tracked it, private until they share it. The repository's default
+// branch is recorded `locked` (decision 0007 §5), and is the team's.
 
 /** `POST /api/branches` requests, by `outcome`: `tracked`, `existing`, or the refusal's code. */
 export const tracks = Metric.counter("smithers_branch_tracks", {
@@ -51,7 +53,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
       const actor = yield* (yield* Sessions).resolve
       if (Option.isNone(actor)) return refusal(401, "authentication")
-      if (!mayWatch(actor, "public")) return refusal(403, "forbidden")
       const body = yield* readBounded(request, MAX_TRACK_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
         Effect.result,
       )
@@ -63,9 +64,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       fields.repoId = repo
       const known = yield* Conversations.find(repo, ref).pipe(Effect.provide(database))
       if (known !== undefined) {
+        // The branch was read a moment ago in this request, and nothing deletes a tracked branch.
+        const found = (yield* branchAccess(actor, known.branchId).pipe(Effect.provide(database)))!
+        if (!canView(found.access)) return refusal(403, "forbidden")
         fields.outcome = "existing"
-        return HttpServerResponse.jsonUnsafe(known, { headers: noStore })
+        fields.access = found.access
+        return HttpServerResponse.jsonUnsafe({ ...known, access: found.access }, { headers: noStore })
       }
+      // Tracking a branch makes it the tracker's: only a Member or above may (`repo:branch-create`, decision 0007).
+      if (!isMember(actor)) return refusal(403, "forbidden")
       const head = yield* branchHead({ owner, name }, ref).pipe(Effect.result)
       if (head._tag === "Failure") {
         const code = head.failure.code
@@ -76,10 +83,19 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       }
       const remoteDefault = yield* defaultBranch({ owner, name }).pipe(Effect.option)
       const mode = Option.isSome(remoteDefault) && remoteDefault.value.branch === ref ? "locked" : "open"
-      const tracked = yield* Conversations.track(repo, ref, mode, head.success).pipe(Effect.provide(database))
+      const tracked = yield* Conversations.track(repo, ref, mode, head.success, actor.value.subject.id).pipe(
+        Effect.provide(database),
+      )
+      // Two people tracking one new branch at once: the one whose insert won owns it; the other may not see it.
+      const found = (yield* branchAccess(actor, tracked.branch.branchId).pipe(Effect.provide(database)))!
+      if (!canView(found.access)) return refusal(403, "forbidden")
       fields.outcome = tracked.created ? "tracked" : "existing"
       fields.mode = mode
-      return HttpServerResponse.jsonUnsafe(tracked.branch, { status: tracked.created ? 201 : 200, headers: noStore })
+      fields.access = found.access
+      return HttpServerResponse.jsonUnsafe(
+        { ...tracked.branch, access: found.access },
+        { status: tracked.created ? 201 : 200, headers: noStore },
+      )
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.sync(() => {

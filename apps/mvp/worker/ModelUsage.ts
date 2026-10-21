@@ -55,7 +55,8 @@ export const reserve = (call: Reservation, limits: Limits) =>
 
 /**
  * What a call spent, as the model reported it: `undefined` for a count it never reported, which is unknown, never zero.
- * `complete` only when the call ended normally and the model reported both counts; only then are they what it spent.
+ * `complete` when what it reported is all it spent: the call ended normally and the model reported both counts, or the
+ * provider refused it before any output (`ModelProxy.refusedCleanly`), when a count it never reported is 0.
  */
 export interface Spent {
   readonly invocationId: string

@@ -1,0 +1,197 @@
+import { Uuid } from "@smthrs/crypto"
+import { FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Clock, Context, type Duration, Effect, Layer, Metric, Option } from "effect"
+import { asker } from "../../flows/askingTab"
+import type { Door } from "../../flows/dispatch"
+import { requesterOf } from "../../flows/requests"
+import { repoId } from "../repo/contract"
+import {
+  DRAFT_ID_NAMESPACE,
+  OP_ID_NAMESPACE,
+  QUEUE_WITHIN,
+  type StackVia,
+  stackPath,
+  titleOf,
+  todosChannel,
+} from "./contract"
+import {
+  type ChangeRequested,
+  type Drafted,
+  KeepDraft,
+  QueueCommit,
+  QueueDrop,
+  TodoCommit,
+  TodoDraft,
+  TodoDrop,
+  TodoStepRefused,
+} from "./flows"
+import { drafts, queued } from "./metrics"
+import { Kept, type QueuedOp, type TodosCall } from "./schema"
+
+// The TODO flows' steps (docs/features/todos.md#flows). A step runs in the leader tab's engine worker, which has no
+// collections or outbox of its own, so it asks over the engine's todos channel for the tab that started the request
+// (src/flows/askingTab.ts) to keep the draft or queue the change: the tab whose button or slash command dispatched it,
+// or, for the agent's call, the tab whose composer asked. Ids derive from the run: a draft's and a change's are version 5
+// UUIDs of the execution id, so a step run again names the same draft or change, and the tab keeps it once. A tab that
+// doesn't answer within the wait is gone, and the retry policy asks again. Nothing records a title or a prompt.
+
+/** What the tab answered: the door it started the request through, and whether it kept the draft or change. */
+export interface Reply {
+  readonly door: Door
+  readonly kept: boolean
+}
+
+/** The tabs of this browser, as a step reaches them: only the tab that started a request answers. */
+export class TabTodos extends Context.Service<
+  TabTodos,
+  {
+    /** Asks the tab that started `requester` to act on `call`; none when no tab answered within the wait. */
+    readonly ask: (call: { readonly requester: string; readonly call: TodosCall }) => Effect.Effect<Option.Option<Reply>>
+  }
+>()("@smthrs/mvp/todos/TabTodos") {
+  /** Over the todos channel of engine `name` (`TabChannel`), waiting `within` (`QUEUE_WITHIN` unless set). */
+  static readonly layerChannel = (options: { readonly name: string; readonly within?: Duration.Input }) =>
+    Layer.effect(
+      TabTodos,
+      Effect.gen(function* () {
+        const ask = yield* asker<TodosCall, typeof Kept>({
+          channel: todosChannel(options.name),
+          output: Kept,
+          within: options.within ?? QUEUE_WITHIN,
+        })
+        return TabTodos.of({
+          ask: ({ requester, call }) =>
+            ask(requester, call).pipe(Effect.map(Option.map(({ door, output }) => ({ door, kept: output.kept })))),
+        })
+      }),
+    )
+}
+
+/** How a step ended: its tab kept it, or why not. */
+export type StepOutcome = "kept" | "not_kept" | "tab_gone" | "agent"
+
+/** The run the step belongs to, and who it acts for: the agent's call is an execution that isn't its own requester. */
+const runOf = Effect.map(FlowRuntime.FlowInstance, ({ executionId }) => {
+  const requester = requesterOf(executionId)
+  const via: StackVia = executionId !== requester ? "agent" : "person"
+  return { executionId, requester, via }
+})
+
+/** Asks the asking tab, and answers how it went and through which door. */
+const askTab = (requester: string, via: StackVia, call: TodosCall) =>
+  Effect.gen(function* () {
+    const reply = yield* (yield* TabTodos).ask({ requester, call })
+    // The agent's call belongs to the answer its tab asked for; a tab's own dispatch names its door in its reply.
+    const door: Door | "unknown" = via === "agent"
+      ? "agent"
+      : Option.match(reply, { onNone: () => "unknown" as const, onSome: (answered) => answered.door })
+    const outcome: StepOutcome = Option.isNone(reply) ? "tab_gone" : reply.value.kept ? "kept" : "not_kept"
+    return { door, outcome }
+  })
+
+/**
+ * What `todo/draft/keep` does: derives the draft's id from the run, asks the tab that started it to keep the draft on
+ * its device, and answers `drafted` with the stack's page. The agent's draft remembers the answer it belongs to, so its
+ * card shows there. Records a span `todos.draft`, a log line and a count of `drafts` by door and outcome. A tab gone,
+ * or one that couldn't keep it, fails `TodoStepRefused`.
+ */
+export const keepDraft = (payload: {
+  readonly repo: string
+  readonly prompt: string
+  readonly title?: string | undefined
+  readonly acceptance?: ReadonlyArray<string> | undefined
+}) =>
+  Effect.gen(function* () {
+    const startedAt = yield* Clock.currentTimeMillis
+    const { executionId, requester, via } = yield* runOf
+    const draftId = yield* Uuid.v5(DRAFT_ID_NAMESPACE, executionId).pipe(Effect.orDie)
+    const [owner, name] = payload.repo.split("/") as [string, string]
+    const { door, outcome } = yield* askTab(requester, via, {
+      kind: "draft",
+      draft: {
+        id: draftId,
+        repo: payload.repo,
+        repoId: repoId(owner, name),
+        title: payload.title?.trim() ?? titleOf(payload.prompt),
+        prompt: payload.prompt,
+        acceptance: payload.acceptance ?? [],
+        answerId: via === "agent" ? requester : null,
+        createdAt: startedAt,
+      },
+    })
+    yield* Metric.update(Metric.withAttributes(drafts, { door, outcome }), 1)
+    yield* Effect.annotateCurrentSpan({ draftId, via, door, outcome })
+    yield* Effect.logWithLevel(outcome === "kept" ? "Info" : "Warn")("todos.draft").pipe(
+      Effect.annotateLogs({
+        draftId,
+        via,
+        door,
+        outcome,
+        durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+        feature: "todos",
+      }),
+    )
+    if (outcome !== "kept") return yield* new TodoStepRefused({ reason: outcome })
+    return { draftId, status: "drafted", path: stackPath(owner, name) } satisfies Drafted
+  }).pipe(Effect.withSpan("todos.draft"))
+
+/** A change's fields by operation, as the step reads them from its payload. */
+type Fields =
+  | {
+    readonly op: "commit"
+    readonly repo: string
+    readonly title: string
+    readonly prompt: string
+    readonly acceptance?: ReadonlyArray<string> | undefined
+  }
+  | { readonly op: "drop"; readonly repo: string; readonly number: number }
+
+/**
+ * What `todo/commit/queue` and `todo/drop/queue` do: derive the change's op id from the run, ask the tab that started it
+ * to queue the change in the device's outbox, and answer `requested`. A commit's op id is its TODO's id. Only a person's
+ * own door queues a change: a run that is the agent's call is refused before any tab is asked, whatever its catalog
+ * offered (decision 0016 §3). Records a span `todos.queue`, a log line and a count of `queued` by operation, door and
+ * outcome, never the text. The agent's call, a tab gone, or an outbox that wouldn't take it, fails `TodoStepRefused`.
+ */
+export const queueChange = (fields: Fields) =>
+  Effect.gen(function* () {
+    const startedAt = yield* Clock.currentTimeMillis
+    const { executionId, requester, via } = yield* runOf
+    const opId = yield* Uuid.v5(OP_ID_NAMESPACE, executionId).pipe(Effect.orDie)
+    const op: QueuedOp = fields.op === "commit"
+      ? {
+        id: opId,
+        repo: fields.repo,
+        op: "commit",
+        title: fields.title.trim(),
+        prompt: fields.prompt,
+        acceptance: fields.acceptance ?? [],
+        number: 0,
+      }
+      : { id: opId, repo: fields.repo, op: "drop", title: "", prompt: "", acceptance: [], number: fields.number }
+    const { door, outcome } = via === "agent"
+      ? { door: "agent" as const, outcome: "agent" as const }
+      : yield* askTab(requester, via, { kind: "queue", op })
+    yield* Metric.update(Metric.withAttributes(queued, { op: fields.op, door, outcome }), 1)
+    yield* Effect.annotateCurrentSpan({ opId, op: fields.op, via, door, outcome })
+    yield* Effect.logWithLevel(outcome === "kept" ? "Info" : "Warn")("todos.queue").pipe(
+      Effect.annotateLogs({
+        opId,
+        op: fields.op,
+        via,
+        door,
+        outcome,
+        durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+        feature: "todos",
+      }),
+    )
+    if (outcome !== "kept") return yield* new TodoStepRefused({ reason: outcome })
+    return { opId, status: "requested" } satisfies ChangeRequested
+  }).pipe(Effect.withSpan("todos.queue"))
+
+/** Registers `todo/draft`, `todo/commit` and `todo/drop` with their steps, asking through the host's `TabTodos`. */
+export const registration = Layer.mergeAll(
+  Interpreter.layerWithImplementations(TodoDraft, KeepDraft.toLayer(keepDraft)),
+  Interpreter.layerWithImplementations(TodoCommit, QueueCommit.toLayer((payload) => queueChange({ op: "commit", ...payload }))),
+  Interpreter.layerWithImplementations(TodoDrop, QueueDrop.toLayer((payload) => queueChange({ op: "drop", ...payload }))),
+)

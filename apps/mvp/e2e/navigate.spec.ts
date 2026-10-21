@@ -13,11 +13,11 @@ const answerRow = (rows: Array<Row>, question: string) => {
   return rows.find((row) => asked !== undefined && row.question_id === asked.id)
 }
 
-/** The `app/navigate` steps an answer shows, as Postgres holds them (`messages.parts`). */
-const navigations = (row: Row | undefined): Array<string> => {
+/** The steps of flow `flow` an answer shows, as Postgres holds them (`messages.parts`), by status. */
+const steps = (row: Row | undefined, flow: string): Array<string> => {
   const parts = (row as (Row & { parts?: unknown }) | undefined)?.parts
   const list = (typeof parts === "string" ? JSON.parse(parts) : parts ?? []) as Array<{ kind: string; flow: string; status: string }>
-  return list.filter((part) => part.kind === "step" && part.flow === "app/navigate").map((part) => part.status)
+  return list.filter((part) => part.kind === "step" && part.flow === flow).map((part) => part.status)
 }
 
 /** The engine worker's `web.navigate` lines ChatApi relayed, as `[door, outcome, reason]`. */
@@ -45,7 +45,10 @@ test("navigate by the agent: asking to open octocat/Spoon-Knife takes the tab th
   await expect
     .poll(async () => answerRow(await allServerRows(request), question)?.status, { timeout: 60_000 })
     .toBe("done")
-  expect(navigations(answerRow(await allServerRows(request), question))).toContain("done")
+  expect(steps(answerRow(await allServerRows(request), question), "app/navigate")).toContain("done")
+  // Opening a page never clones: cloning spends the deployment's storage, which nobody asked to spend (the agent
+  // evals' finding of 2026-10-20; e2e/repo-clone.spec.ts has the agent asked to clone).
+  expect(steps(answerRow(await allServerRows(request), question), "repo/clone")).toEqual([])
   // The engine worker recorded it as the agent's, and ChatApi's relay kept it.
   if (logs !== undefined) {
     await expect
@@ -75,7 +78,7 @@ test("navigate refused: asking the agent to open an outside site is refused, and
   await a.expectAnswered(question, `refused-${word}`)
 
   await expect(a.page).toHaveURL(/\/app$/)
-  expect(navigations(answerRow(await allServerRows(request), question))).toEqual(["failed"])
+  expect(steps(answerRow(await allServerRows(request), question), "app/navigate")).toEqual(["failed"])
   if (logs !== undefined) {
     await expect
       .poll(async () => relayed((await logs.records()).browser), { timeout: 30_000 })

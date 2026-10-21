@@ -16,19 +16,23 @@ import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import { TerminalOpen } from "../flows/TerminalOpen.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
-import { mayWatch, mayWrite } from "./Access.ts"
-import * as Conversations from "./Conversations.ts"
+import { branchAccess, canEdit, canView } from "./Access.ts"
 import { TerminalSockets } from "./Sandboxes.ts"
+import { isUpgrade, sameOrigin } from "./Upgrade.ts"
 
 // The terminal routes (decision 0013 §2-§3, docs/features/branch-workspace.md#the-terminal):
 //
 // - `POST /api/terminals { terminalId, branchId, cols, rows }`: the write path of the client flow `terminal/open`. It
-//   admits the open (signed in, a Member, a branch that isn't locked), records the `opening` row, and starts the remote
-//   `terminal/Open`, one execution per terminal. A person has one terminal per branch: while theirs opens or is open,
-//   the answer names it instead.
-// - `GET /api/shapes/terminals?branch=<id>`: the branch's terminals, for everyone who may watch it.
-// - `GET /api/terminals/<id>` with `Upgrade: websocket`: attaches the page's socket to the terminal's shell, the owner
-//   to type and anyone else who may watch to read. Only this app's own pages may: the `Origin` must be the request's.
+//   admits the open (signed in, may edit the branch, a branch that isn't locked), records the `opening` row, and
+//   starts the remote `terminal/Open`, one execution per terminal. A person has one terminal per branch: while theirs
+//   opens or is open, the answer names it instead.
+// - `GET /api/shapes/terminals?branch=<id>`: the branch's terminals, for everyone who may view it.
+// - `GET /api/terminals/<id>` with `Upgrade: websocket`: attaches the page's socket to the terminal's shell: anyone who
+//   may edit the branch types, its owner and the people it is shared with to edit alike, and anyone who may only view
+//   it reads. Only this app's own pages may: the `Origin` must be the request's.
+//
+// Who may do what is worker/branch/Access.ts's, decided at every request; a change of sharing reaches the sockets
+// already open through `TerminalSockets.enforce` (worker/branch/Shares.ts).
 //
 // The shell's bytes never reach a log line, a span or a metric: only ids, access, outcomes and statuses.
 
@@ -92,8 +96,9 @@ const admit = (terminalId: string, branchId: string, actor: Actor) =>
         WHERE branch_id = ${branchId} AND owner_id = ${actor.subject.id} AND status = 'opening'
           AND created_at <= now() - make_interval(secs => ${OPEN_DEADLINE_SECONDS})`
       const [inserted] = yield* sql<{ readonly id: string }>`
-        INSERT INTO terminal_sessions (id, branch_id, owner_id, owner_login, status)
-        VALUES (${terminalId}, ${branchId}, ${actor.subject.id}, ${actor.login ?? actor.subject.id}, 'opening')
+        INSERT INTO terminal_sessions (id, branch_id, owner_id, owner_login, owner_role, status)
+        VALUES (${terminalId}, ${branchId}, ${actor.subject.id}, ${actor.login ?? actor.subject.id}, ${actor.role},
+          'opening')
         ON CONFLICT DO NOTHING
         RETURNING id`
       if (inserted !== undefined) {
@@ -117,12 +122,6 @@ const markLost = (terminalId: string) =>
     sql`
       UPDATE terminal_sessions SET status = 'ended', ended_reason = 'lost', ended_at = now(), updated_at = now()
       WHERE id = ${terminalId} AND status IN ('opening', 'open')`)
-
-/** Whether the request came from a page of this app: its `Origin` is the request's own. */
-const sameOrigin = (request: HttpServerRequest.HttpServerRequest) => {
-  const origin = request.headers.origin
-  return origin !== undefined && origin === new URL(request.originalUrl).origin
-}
 
 /**
  * Reads Electric's connection and returns the terminal routes over `database`, which opens a Postgres client for each
@@ -177,10 +176,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           const branchId = decoded.value.branchId.toLowerCase()
           fields.terminalId = terminalId
           fields.branchId = branchId
-          const branch = yield* Conversations.byId(branchId).pipe(Effect.provide(database))
+          const branch = yield* branchAccess(actor, branchId).pipe(Effect.provide(database))
           if (branch === undefined) return refuse(fields, 404, "not_found")
-          if (!mayWatch(actor, "public")) return refuse(fields, 403, "forbidden")
-          if (!mayWrite(actor, branch.mode)) return refuse(fields, 409, "locked")
+          if (!canEdit(branch.access)) return refuse(fields, 403, "forbidden")
+          // No terminal on a locked branch, nor yet on a restricted one, whose writers come with 0007's modes.
+          if (branch.mode !== "open") return refuse(fields, 409, "locked")
           const admitted = yield* admit(terminalId, branchId, actor.value).pipe(Effect.provide(database))
           if (admitted === undefined) return refuse(fields, 409, "id_taken")
           if (admitted.terminalId === terminalId) {
@@ -221,7 +221,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         const request = yield* HttpServerRequest.HttpServerRequest
         const named = new URL(request.url, "http://localhost").searchParams.get("branch")
         const actor = yield* ShapeAccess.actor
-        const branch = named !== null && isUuid(named) && mayWatch(actor, "public") ? named.toLowerCase() : NO_BRANCH
+        const found = named !== null && isUuid(named)
+          ? yield* branchAccess(actor, named.toLowerCase()).pipe(
+            Effect.provide(database),
+            Effect.mapError(() => ShapeAccess.unavailable),
+          )
+          : undefined
+        const branch = found !== undefined && canView(found.access) ? found.branchId : NO_BRANCH
         return { table: TERMINALS_TABLE, where: "branch_id = $1", params: { "1": branch } }
       }),
       name: "terminal.shape",
@@ -237,7 +243,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         return yield* recorded("connect", (fields) =>
           Effect.gen(function* () {
             if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
-            if ((request.headers.upgrade ?? "").toLowerCase() !== "websocket") return refuse(fields, 426, "upgrade")
+            if (!isUpgrade(request)) return refuse(fields, 426, "upgrade")
             if (!sameOrigin(request)) return refuse(fields, 403, "origin")
             if (!isUuid(terminalId)) return refuse(fields, 404, "not_found")
             fields.terminalId = terminalId.toLowerCase()
@@ -247,17 +253,24 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
                 SELECT branch_id AS "branchId", owner_id AS "ownerId", status FROM terminal_sessions
                 WHERE id = ${terminalId.toLowerCase()}`).pipe(Effect.provide(database))
             if (row === undefined) return refuse(fields, 404, "not_found")
-            const owner = Option.isSome(actor) && actor.value.subject.id === row.ownerId && mayWatch(actor, "public")
-            if (!owner && !mayWatch(actor, "public")) {
-              return refuse(fields, Option.isNone(actor) ? 401 : 403, Option.isNone(actor) ? "authentication" : "forbidden")
-            }
-            fields.access = owner ? "write" : "read"
+            if (Option.isNone(actor)) return refuse(fields, 401, "authentication")
+            const branch = yield* branchAccess(actor, row.branchId).pipe(Effect.provide(database))
+            // A terminal's branch is never deleted while its rows stand (the foreign key).
+            if (!canView(branch!.access)) return refuse(fields, 403, "forbidden")
+            const access = canEdit(branch!.access) ? "write" : "read"
+            fields.access = access
             if (row.status !== "open") return refuse(fields, 409, row.status)
             if (!(yield* sockets.alive(row.branchId, terminalId.toLowerCase(), row.ownerId))) {
               yield* markLost(terminalId.toLowerCase()).pipe(Effect.provide(database))
               return refuse(fields, 410, "lost")
             }
-            const attachment = { terminalId: terminalId.toLowerCase(), ownerId: row.ownerId, access: owner ? "write" : "read" } as const
+            const attachment = {
+              terminalId: terminalId.toLowerCase(),
+              ownerId: row.ownerId,
+              access,
+              principal: actor.value.subject.id,
+              role: actor.value.role,
+            } as const
             const attached = yield* sockets.attach(row.branchId, attachment)
               .pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
             fields.outcome = "attached"

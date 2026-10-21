@@ -53,6 +53,8 @@ export interface Options {
   /** The database: the file's schema unless set. */
   readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
   readonly fallback?: SignIn.Signed
+  /** Local development's other people, by the name their dev person cookie gives. */
+  readonly teammates?: Readonly<Record<string, SignIn.Signed>>
   /** Where the browser is: `http://smithers.test` unless set. */
   readonly origin?: string
   /** Where a request starts a role check: one that records each start in `roleChecks` unless set. */
@@ -103,6 +105,7 @@ export const signInHarness = async (runtime: Runtime, options: Options = {}) => 
       SignIn.make(options.database ?? scratch.database, {
         github: github.service,
         ...(options.fallback === undefined ? {} : { fallback: options.fallback }),
+        ...(options.teammates === undefined ? {} : { teammates: options.teammates }),
       }).pipe(Effect.provide(FetchHttpClient.layer)),
     ),
   )

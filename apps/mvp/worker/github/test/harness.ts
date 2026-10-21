@@ -25,7 +25,13 @@ import type { SqlClient } from "effect/sql"
 import { onTestFinished } from "vitest"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
 import { LOCAL_ELECTRIC_URL } from "../../../src/features/chat/contract.ts"
-import { COMMENTS_TABLE, ITEMS_TABLE, SYNC_TABLE, WRITES_TABLE } from "../../../src/features/issues/contract.ts"
+import {
+  COMMENTS_TABLE,
+  ITEMS_TABLE,
+  SYNC_TABLE,
+  TRIAGE_SETTINGS_TABLE,
+  WRITES_TABLE,
+} from "../../../src/features/issues/contract.ts"
 import * as Actor from "../../Actor.ts"
 import * as ExecutionHost from "../../ExecutionHost.ts"
 import { FlowStarter, StartConflict } from "../../Flows.ts"
@@ -34,6 +40,7 @@ import { signedIn as signedInAs, type testFile } from "../../test/harness.ts"
 import * as Api from "../Api.ts"
 import type { GitHubApp } from "../Config.ts"
 import * as Host from "../Host.ts"
+import type * as Triage from "../Triage.ts"
 import { REPOSITORY, services as flowServices } from "./fixtures.ts"
 import { APP_ID, SCRIPTED_API, type ScriptedGitHub, scriptedGitHub } from "./scriptedGitHub.ts"
 
@@ -85,6 +92,8 @@ export interface Options {
   /** Run each started flow on the Node host against `github`. */
   readonly run?: boolean
   readonly github?: ScriptedGitHub
+  /** Triage's judge for the flows `run` runs: one that abstains unless set (test/fixtures.ts `judgeSeat`). */
+  readonly judge?: Triage.Services["judge"]
   /** The database the routes use: the file's schema unless set. */
   readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
 }
@@ -125,7 +134,9 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
   let engine: Context.Context<FlowRuntime.FlowRuntime> | undefined
   const engineFor = Effect.gen(function* () {
     if (engine !== undefined) return engine
-    const { services } = yield* Effect.promise(() => flowServices(runtime, github, { database }))
+    const { services } = yield* Effect.promise(() =>
+      flowServices(runtime, github, { database, ...(options.judge === undefined ? {} : { judge: options.judge }) })
+    )
     const built = yield* build(Host.registration(services), { maxConnections: 3 }).pipe(
       Effect.provideService(Scope.Scope, scope),
       Effect.orDie,
@@ -159,7 +170,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     observed(Api.make(database, { repository: REPOSITORY, app: options.app === null ? Option.none() : Option.some(options.app ?? app()) })),
   )
   // Electric, as the routes call it: each table in this file's schema.
-  const tables = new Set([ITEMS_TABLE, COMMENTS_TABLE, WRITES_TABLE, SYNC_TABLE])
+  const tables = new Set([ITEMS_TABLE, COMMENTS_TABLE, WRITES_TABLE, SYNC_TABLE, TRIAGE_SETTINGS_TABLE])
   const electric: typeof globalThis.fetch = (input, init) => {
     const upstream = new URL(input instanceof Request ? input.url : String(input))
     const table = upstream.searchParams.get("table")

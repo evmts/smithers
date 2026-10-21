@@ -75,9 +75,6 @@ export const importRules: ReadonlyArray<ImportRule> = [
   {
     kind: "rootImportsOnly",
     packages: ["@smthrs/*"],
-    // @smthrs/ui ships its heavy renderers (Shiki, Milkdown, xterm) behind adapter subpaths so its root stays light
-    // (decision 0006 question 2); apps/mvp/docs/rules.md names this one exception.
-    allow: ["@smthrs/ui/adapters/*"],
     because: "Import Smithers packages from their root entry only. See \"Use the Smithers SDK; extend it, never " +
       "hand-roll\" in apps/mvp/AGENTS.md and \"Use the Smithers libraries\" in the root AGENTS.md."
   },
@@ -182,7 +179,7 @@ export const importRules: ReadonlyArray<ImportRule> = [
     files: [
       "src/**",
       "db/**",
-      "worker/!(ChatApi|DevChatApi|index|Executions|ExecutionHost|BranchSandboxes).ts",
+      "worker/!(ChatApi|DevChatApi|index|Executions|ExecutionHost|BranchSandboxes|BranchRooms).ts",
       "worker/*/**",
       "e2e/**",
       "bench/**"
@@ -191,7 +188,8 @@ export const importRules: ReadonlyArray<ImportRule> = [
     because: "sdk.host-agnostic-flows: the agent and every flow run on Cloudflare, in the native app or in a sandbox, " +
       "so Cloudflare reaches them only as injected layers wired in the Worker entries (worker/ChatApi.ts, " +
       "worker/DevChatApi.ts, worker/index.ts, worker/Executions.ts with worker/ExecutionHost.ts for remote flows, and " +
-      "worker/BranchSandboxes.ts for the branches' machines), alchemy.run.ts and " +
+      "worker/BranchSandboxes.ts for the branches' machines and worker/BranchRooms.ts for their rooms), " +
+      "alchemy.run.ts and " +
       "infra/. See apps/mvp/docs/rules.md."
   },
   {
@@ -386,8 +384,8 @@ export const jevRules: ReadonlyArray<JevRule> = [
     files: [...workerSources, ...browserSources],
     lookFor: "Does this flow or app module assume it runs on Cloudflare, for example by reading a Worker env " +
       "binding, a Durable Object, ExecutionContext or a Cloudflare-only API, instead of receiving that capability " +
-      "as an injected Effect service? The Worker entries worker/ChatApi.ts, worker/index.ts, worker/Executions.ts " +
-      "and worker/ExecutionHost.ts wire those layers and are exempt.",
+      "as an injected Effect service? The Worker entries worker/ChatApi.ts, worker/index.ts, worker/Executions.ts, " +
+      "worker/ExecutionHost.ts, worker/BranchSandboxes.ts and worker/BranchRooms.ts wire those layers and are exempt.",
     violation: "Flow or app code depends on Cloudflare directly instead of an injected service.",
     compliant: "The code receives host capabilities as injected services and would run unchanged on another host."
   },

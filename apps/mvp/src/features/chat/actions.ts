@@ -80,18 +80,16 @@ const keepDraft = (draft: string) =>
       : draft === ""
       ? undefined
       : yield* drafts.insert({ id: key, text: draft })
-    // Nothing to write leaves the composer as saved as it was.
-    yield* write === undefined ? Effect.void : Effect.andThen(
-      changeComposer((composer) => {
-        composer.saved = false
-      }),
-      write.persisted.pipe(
-        Effect.andThen(changeComposer((composer) => {
-          if (composer.draft === draft) composer.saved = true
-        })),
-        Effect.ignore,
-        Effect.forkIn(scope),
-      ),
+    if (write === undefined) return
+    yield* changeComposer((composer) => {
+      composer.saved = false
+    })
+    yield* write.persisted.pipe(
+      Effect.andThen(changeComposer((composer) => {
+        if (composer.draft === draft) composer.saved = true
+      })),
+      Effect.ignore,
+      Effect.forkIn(scope),
     )
   }).pipe(Effect.orDie)
 

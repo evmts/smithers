@@ -86,7 +86,7 @@ export const fileProps = (row: BlobRow | undefined): FileProps => {
  * - `ready`: nothing.
  */
 export type Header =
-  | { readonly kind: "clone" | "cloning" | "ready" }
+  | { readonly kind: "unknown" | "clone" | "cloning" | "ready" }
   | { readonly kind: "sign_in"; readonly text: string }
   | { readonly kind: "refused"; readonly text: string }
 
@@ -121,12 +121,15 @@ export const capacityText = (repository: Repository): string => {
 
 /**
  * The header for `repository` as Postgres has it, this tab's own clone request, and whether someone is signed in
- * (`null` when sign-in hasn't said). This tab's request wins until Electric delivers what it did.
+ * (`null` when sign-in hasn't said). This tab's request wins until Electric delivers what it did. A repository the
+ * device doesn't have is `unknown`, offering nothing, until the repositories' shape has `answered` once: until then
+ * the device can't tell a repository nobody cloned from one whose row is still on its way.
  */
 export const headerOf = (
   repository: Repository | undefined,
   clone: CloneRow | undefined,
   signedIn: boolean | null,
+  answered = true,
 ): Header => {
   if (clone !== undefined) {
     switch (clone.status) {
@@ -140,6 +143,7 @@ export const headerOf = (
         return { kind: "refused", text: FAILURE_COPY.unavailable }
     }
   }
+  if (repository === undefined && !answered) return { kind: "unknown" }
   if (repository === undefined) return signedIn === false ? { kind: "sign_in", text: SIGN_IN_TO_CLONE } : { kind: "clone" }
   switch (repository.status) {
     case "cloning":

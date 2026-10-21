@@ -5,6 +5,7 @@ import { AuthStore, SESSION } from "../auth/store"
 import { ask, setDraft } from "../chat/actions"
 import { COMPOSER } from "../chat/schema"
 import { ChatStore } from "../chat/store"
+import { pinConversation } from "../sandbox/actions"
 import { openWebPage, refusedPage } from "../web/actions"
 import { CANT_OPEN } from "../web/contract"
 import { type Command, commandsFor, viewerOf } from "./catalog"
@@ -86,8 +87,12 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>) =>
     const flows = yield* FlowDispatch
     // `/web … tab` opens its tab inside this keypress when the browser allows it (src/features/web/actions.ts).
     if (command.flow === "app/web/open") yield* openWebPage(payload as never, "slash", scope)
-    // A dispatch that fails is already logged and counted with the flow.
-    else yield* flows.dispatch(command.flow, payload as never, { door: "slash" }).pipe(Effect.ignore, Effect.forkIn(scope))
+    else {
+      // A sandbox tool runs on the branch of the conversation this tab shows now (src/features/sandbox/actions.ts).
+      const pinned = command.flow.startsWith("sandbox/") ? yield* pinConversation(payload) : payload
+      // A dispatch that fails is already logged and counted with the flow.
+      yield* flows.dispatch(command.flow, pinned as never, { door: "slash" }).pipe(Effect.ignore, Effect.forkIn(scope))
+    }
     yield* Metric.update(Metric.withAttributes(submits, { outcome: "run", command: command.name }), 1)
     yield* Effect.logInfo("slash.run").pipe(Effect.annotateLogs({ command: command.name, flow: command.flow }))
   })

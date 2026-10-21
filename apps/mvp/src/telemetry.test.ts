@@ -217,6 +217,7 @@ describe("the contract", () => {
       "execute_tool repo/clone": "`execute_tool ${call.flowName}`",
       "execute_tool issue/create": "`execute_tool ${call.flowName}`",
       "execute_tool issue/comment": "`execute_tool ${call.flowName}`",
+      "execute_tool todo/draft": "`execute_tool ${call.flowName}`",
       "execute_tool chat/copy": "`execute_tool ${call.flowName}`",
       // `@smthrs/observability`'s metrics are named after a prefix.
       flows_run_throughput: "`${prefix}run_throughput`",

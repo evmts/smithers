@@ -1,7 +1,9 @@
 // What the git loop's worker tests share (docs/features/issues.md#tests): this file's schema of the compose Postgres
 // emptied of the loop's rows, people with live sessions holding a sealed GitHub user token (as sign-in stores them),
 // writes admitted as the route admits them, and the GitHub flows' services over the scripted GitHub.
-import { Effect, Option, Redacted } from "effect"
+import { Model, type ModelRequest } from "@smthrs/model"
+import { HostModel } from "@smthrs/model-host"
+import { ConfigProvider, Effect, Option, Redacted, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
 import { digestSync } from "@smthrs/crypto"
@@ -10,8 +12,10 @@ import * as SessionStore from "../../SessionStore.ts"
 import type { testFile } from "../../test/harness.ts"
 import { SECRET } from "../../test/signIn.ts"
 import type * as Apply from "../Apply.ts"
+import * as ModelEndpoint from "../../ModelEndpoint.ts"
 import * as Store from "../Store.ts"
 import * as Tokens from "../Tokens.ts"
+import type * as Triage from "../Triage.ts"
 import { appKey, SCRIPTED_API, type ScriptedGitHub, scriptedApp } from "./scriptedGitHub.ts"
 
 type Runtime = ReturnType<typeof testFile>
@@ -26,7 +30,7 @@ export const reset = (runtime: Runtime) =>
       SqlClient.SqlClient,
       (sql) =>
         sql`TRUNCATE items, comments, github_writes, github_sync, github_deliveries, github_repositories, sessions,
-          sign_in_attempts, people CASCADE`,
+          sign_in_attempts, people, triage_settings, triage_decisions, model_usage, model_budget_days, model_roles CASCADE`,
     ),
   )
 
@@ -145,18 +149,69 @@ export const comments = async (runtime: Runtime) =>
 /** The sessions whose role check a person's write started, with the check each replaces. */
 export type Refreshes = Array<{ readonly sessionId: string; readonly generation: number }>
 
+/** What a scripted judge answers one judgment: each question's raw answer, as the seat's JSON. */
+export type JudgeAnswer = (request: ModelRequest.ModelRequest) => Stream.Stream<import("@smthrs/model").ModelEvent.ModelEvent, Model.ModelFailure>
+
+/** A judge that answers `decision` and `reason` sure of both, reporting 40 tokens in and 2 out. */
+export const judging = (decision: "accept" | "reject" | "abstain", reason = "other"): JudgeAnswer => () =>
+  Stream.make(
+    {
+      type: "text-delta" as const,
+      id: "t",
+      text: JSON.stringify({
+        answers: { decision: { type: "choice", choice: decision }, reason: { type: "choice", choice: reason } },
+      }),
+    },
+    { type: "usage" as const, inputTokens: 40, outputTokens: 2 },
+    { type: "settle" as const, stopReason: "stop" as const },
+  )
+
+/**
+ * The `judge` seat a host gives triage: `ModelEndpoint.local` on the file's schema, metered against `config`'s budget,
+ * over a scripted model that answers with `answer` and records each request in `requests`. The model is the only
+ * scripted seam; admission and metering are the endpoint's own.
+ */
+export const judgeSeat = async (
+  runtime: Runtime,
+  answer: JudgeAnswer,
+  options: { readonly config?: Record<string, string>; readonly database?: Apply.Services["database"] } = {},
+) => {
+  const requests: Array<ModelRequest.ModelRequest> = []
+  const model = Model.make({
+    stream: (request) => {
+      requests.push(request)
+      return answer(request)
+    },
+  })
+  const local = await Effect.runPromise(
+    ModelEndpoint.local(options.database ?? (await database(runtime))).pipe(
+      Effect.provideService(
+        HostModel,
+        HostModel.of({ modelId: "judge-model", model, route: { prepare: () => Effect.die(new Error("unused")) } }),
+      ),
+      Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(options.config ?? {}))),
+    ),
+  )
+  return { seat: local("judge"), requests }
+}
+
 /**
  * The GitHub flows' services over the scripted GitHub and the file's schema: the App with a fresh key, sign-in's keys
- * (none when `signIn` is false), and a `refresh` that records each role check started.
+ * (none when `signIn` is false), a `refresh` that records each role check started, and triage's judge (`judge`, or one
+ * that abstains).
  */
 export const services = async (
   runtime: Runtime,
   github: ScriptedGitHub,
-  options: { readonly signIn?: boolean; readonly database?: Apply.Services["database"] } = {},
+  options: {
+    readonly signIn?: boolean
+    readonly database?: Apply.Services["database"]
+    readonly judge?: Triage.Services["judge"]
+  } = {},
 ) => {
   const refreshes: Refreshes = []
   const app = await Effect.runPromise(scriptedApp(github, await appKey()))
-  const value: Apply.Services = {
+  const value: Triage.Services = {
     database: options.database ?? (await database(runtime)),
     http: github.http,
     apiBaseUrl: SCRIPTED_API,
@@ -165,6 +220,7 @@ export const services = async (
       keys: options.signIn === false ? Option.none() : Option.some(await keys()),
       refresh: (sessionId, generation) => Effect.sync(() => void refreshes.push({ sessionId, generation })),
     }),
+    judge: options.judge ?? (await judgeSeat(runtime, judging("abstain"), options)).seat,
   }
   return { services: value, refreshes }
 }

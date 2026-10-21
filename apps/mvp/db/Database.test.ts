@@ -6,6 +6,8 @@ import { promisify } from "node:util"
 import { Effect, Logger, ManagedRuntime, Redacted, References } from "effect"
 import { Migrator, SqlClient } from "effect/sql"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { digestSync } from "@smthrs/crypto"
+import { readGenerated, renderSource } from "../src/features/flows-ui/source.ts"
 import * as Database from "./Database.ts"
 import * as TestDatabase from "./TestDatabase.ts"
 
@@ -81,7 +83,8 @@ describe("migrateAndReport", () => {
           message: ["db:migrate: applied"],
           applied: "1_messages, 2_answer_attempts, 3_paired_positions, 4_model_roles, 5_sign_in, 6_answer_parts, " +
             "7_repositories, 8_browser_answering, 9_clone_ids, 10_views, 11_question_askers, 12_model_reservations, " +
-            "13_runs, 14_branch_workspace, 15_flows, 16_github_issues, 17_model_charges",
+            "13_runs, 14_branch_workspace, 15_flows, 16_github_issues, 17_model_charges, 18_triage, 19_spend_alerts, " +
+            "20_notifications, 21_secrets, 22_todos, 23_branch_sharing, 24_sandbox_calls, 25_flow_source",
         },
         { message: ["db:migrate: up to date"], applied: "" },
       ])
@@ -365,5 +368,328 @@ describe("0017_model_charges", () => {
       const refused = await on(Effect.flip(Effect.flatMap(SqlClient.SqlClient, (sql) =>
         sql`UPDATE model_usage SET charged_tokens = -1`)))
       expect(refused.reason._tag).toBe("ConstraintError")
+    }))
+})
+
+describe("0018_triage", () => {
+  test("existing issues read proposed until their next read, which the cleared cursor brings; triage writes are taken", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0017"))
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`
+          INSERT INTO items (id, repo_id, number, kind, github_id, title, state, created_at, updated_at,
+            source_updated_at, fetched_at)
+          VALUES ('github/a/b#1', 'github/a/b', 1, 'issue', 1, 't', 'open', now(), now(), now(), now())`))
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`INSERT INTO github_sync (repo_id, stream, cursor) VALUES ('github/a/b', 'issues', 'c1'), ('github/a/b', 'other', 'c2')`))
+
+      const applied = await on(through("0018"))
+
+      expect(applied.map(([id, name]) => `${id}_${name}`)).toEqual(["18_triage"])
+      const sql = <A extends object>(statement: string) =>
+        on(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe<A>(statement)))
+      expect(await sql(`SELECT triage, triage_pinned AS pinned FROM items`)).toEqual([{ triage: "proposed", pinned: false }])
+      expect(await sql(`SELECT stream, cursor FROM github_sync ORDER BY stream`)).toEqual([
+        { stream: "issues", cursor: null },
+        { stream: "other", cursor: "c2" },
+      ])
+      const hash = "0".repeat(64)
+      // Run triage again and Pause need no person's session; a person's override does.
+      await sql(`
+        INSERT INTO github_writes (id, repo_id, actor_id, session_id, via, op, payload, payload_hash)
+        VALUES ('00000000-0000-4000-8000-000000000001', 'github/a/b', 'p', NULL, 'person', 'triage/run', '{}', '${hash}')`)
+      const refused = async (statement: string) =>
+        (await on(Effect.flip(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe(statement))))).reason._tag
+      expect(await refused(`
+        INSERT INTO github_writes (id, repo_id, actor_id, session_id, via, op, payload, payload_hash)
+        VALUES ('00000000-0000-4000-8000-000000000002', 'github/a/b', 'p', NULL, 'person', 'issue/triage', '{}', '${hash}')`))
+        .toBe("ConstraintError")
+      expect(await refused(`UPDATE items SET triage = 'maybe'`)).toBe("ConstraintError")
+      expect(await refused(`
+        INSERT INTO triage_settings (repo_id, enabled_by, enabled_at, paused, paused_reason, daily_tokens)
+        VALUES ('github/a/b', 'p', now(), true, NULL, 10)`)).toBe("ConstraintError")
+      expect(await refused(`
+        INSERT INTO triage_decisions (id, repo_id, item_id, number, via, decision, abstained)
+        VALUES ('00000000-0000-4000-8000-000000000003', 'github/a/b', 'github/a/b#1', 1, 'flow', 'accept', 'budget')`))
+        .toBe("ConstraintError")
+    }))
+})
+
+describe("0019_spend_alerts", () => {
+  test("marks every earlier call as carried, so the first alert reports only later spend; alert rows are bounded", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0018"))
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`
+          INSERT INTO model_usage (invocation_id, request_id, role, model_id, input_tokens, output_tokens, day,
+            reserved_tokens, charged_tokens, expires_at, settled_at)
+          VALUES ('earlier', 'r', 'agent', 'm', 10, 5, (now() AT TIME ZONE 'UTC')::date, 100, 15, now(), now())`))
+
+      const applied = await on(through("0019"))
+
+      expect(applied.map(([id, name]) => `${id}_${name}`)).toEqual(["19_spend_alerts"])
+      const sql = <A extends object>(statement: string) =>
+        on(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe<A>(statement)))
+      expect(await sql(`SELECT spend_alert_id AS carried FROM model_usage`)).toEqual([{ carried: "before_spend_alerts" }])
+      const refused = async (statement: string) =>
+        (await on(Effect.flip(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe(statement))))).reason._tag
+      const alert = (overrides: string) => `
+        INSERT INTO spend_alerts (id, window_start, window_end, calls, tokens, cost_usd, roles, day_tokens, budget)
+        SELECT * FROM (SELECT 'a'::text, now(), now() + interval '15 minutes', 1, 10::bigint, 0.5::float8,
+          '[]'::jsonb, 10::bigint, 100::bigint) v ${overrides}`
+      await sql(alert(""))
+      expect(await sql(`SELECT kind, audience FROM spend_alerts`)).toEqual([{ kind: "model", audience: "admin" }])
+      expect(await refused(`UPDATE spend_alerts SET calls = 0`)).toBe("ConstraintError")
+      expect(await refused(`UPDATE spend_alerts SET window_end = window_start`)).toBe("ConstraintError")
+      expect(await refused(`UPDATE spend_alerts SET roles = '{}'`)).toBe("ConstraintError")
+      expect(await refused(`UPDATE spend_alerts SET audience = 'everyone'`)).toBe("ConstraintError")
+      expect(await refused(`UPDATE spend_alerts SET budget = 0`)).toBe("ConstraintError")
+    }))
+})
+
+describe("0021_secrets", () => {
+  test("keeps sealed values by repository and name, bounded bindings, and an audit that names its actor or its guest", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0020"))
+
+      const applied = await on(through("0021"))
+
+      expect(applied.map(([id, name]) => `${id}_${name}`)).toEqual(["21_secrets"])
+      const sql = <A extends object>(statement: string) =>
+        on(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe<A>(statement)))
+      const refused = async (statement: string) =>
+        (await on(Effect.flip(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe(statement))))).reason._tag
+      const secret = (name: string, hosts: string, methods = "NULL") => `
+        INSERT INTO secrets (repo_id, name, ciphertext, nonce, key_version, hosts, methods, updated_by)
+        VALUES ('github/a/b', '${name}', 'c', 'n', 1, ${hosts}, ${methods}, 'p')`
+      await sql(secret("API_KEY", "ARRAY['api.example.com']"))
+      expect(await sql(`SELECT name, hosts, methods FROM secrets`)).toEqual([
+        { name: "API_KEY", hosts: ["api.example.com"], methods: null },
+      ])
+      expect(await refused(secret("API_KEY", "ARRAY['other.example.com']"))).toBe("UniqueViolation")
+      expect(await refused(secret("api_key", "ARRAY['a.com']"))).toBe("ConstraintError")
+      expect(await refused(secret("EMPTY", "ARRAY[]::text[]"))).toBe("ConstraintError")
+      expect(await refused(secret("NO_METHODS", "ARRAY['a.com']", "ARRAY[]::text[]"))).toBe("ConstraintError")
+      expect(await refused(`UPDATE secrets SET key_version = 0`)).toBe("ConstraintError")
+      await sql(`
+        INSERT INTO secret_events (repo_id, action, names, actor_id, invocation_key)
+        VALUES ('github/a/b', 'set', ARRAY['API_KEY'], 'p', 'k1')`)
+      await sql(`
+        INSERT INTO secret_events (repo_id, action, names, scope, host, method, outcome)
+        VALUES ('github/a/b', 'use', ARRAY['API_KEY'], 'b:1', 'api.example.com', 'GET', 'forwarded')`)
+      expect(await refused(`
+        INSERT INTO secret_events (repo_id, action, names, actor_id, invocation_key)
+        VALUES ('github/a/b', 'set', ARRAY['API_KEY'], 'p', 'k1')`)).toBe("UniqueViolation")
+      expect(await refused(`INSERT INTO secret_events (repo_id, action) VALUES ('github/a/b', 'set')`))
+        .toBe("ConstraintError")
+      expect(await refused(`INSERT INTO secret_events (repo_id, action, host) VALUES ('github/a/b', 'use', 'a.com')`))
+        .toBe("ConstraintError")
+      expect(await refused(`
+        INSERT INTO secret_events (repo_id, action, actor_id, invocation_key) VALUES ('github/a/b', 'read', 'p', 'k2')`))
+        .toBe("ConstraintError")
+    }))
+})
+
+describe("0022_todos", () => {
+  test("a TODO is placed exactly while open; positions are unique per stack at each statement's end; bounds hold", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0021"))
+
+      const applied = await on(through("0022"))
+
+      expect(applied.map(([id, name]) => `${id}_${name}`)).toEqual(["22_todos"])
+      const sql = <A extends object>(statement: string) =>
+        on(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe<A>(statement)))
+      const refused = async (statement: string) =>
+        (await on(Effect.flip(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe(statement))))).reason._tag
+      await sql(`INSERT INTO stacks (repo_id) VALUES ('github/a/b')`)
+      expect(await sql(`SELECT next_number AS "next", version::int AS version, lanes, max_open AS "maxOpen" FROM stacks`))
+        .toEqual([{ next: 1, version: 0, lanes: 1, maxOpen: 50 }])
+      const todo = (n: number, fields = `'queued', ${n}, NULL`) => `
+        INSERT INTO todos (id, repo_id, number, title, state, position, settled_at, created_by, created_login)
+        VALUES ('00000000-0000-4000-8000-00000000000${n}', 'github/a/b', ${n}, 'T${n}', ${fields}, 'p', 'maya')`
+      await sql(todo(1))
+      await sql(todo(2))
+      await sql(todo(3))
+      // Closing a gap in one statement: each row passes through a position another holds.
+      await sql(`UPDATE todos SET state = 'dropped', position = NULL, settled_at = now() WHERE number = 1`)
+      await sql(`UPDATE todos SET position = position - 1 WHERE position IS NOT NULL`)
+      expect(await sql(`SELECT number, position FROM todos ORDER BY number`)).toEqual([
+        { number: 1, position: null },
+        { number: 2, position: 1 },
+        { number: 3, position: 2 },
+      ])
+      expect(await refused(`UPDATE todos SET position = 1 WHERE number = 3`)).toBe("UniqueViolation")
+      expect(await refused(todo(4, `'queued', NULL, NULL`))).toBe("ConstraintError")
+      expect(await refused(todo(5, `'merged', 3, now()`))).toBe("ConstraintError")
+      expect(await refused(todo(6, `'dropped', NULL, NULL`))).toBe("ConstraintError")
+      expect(await refused(todo(2, `'queued', 3, NULL`).replace("00000000002", "00000000009"))).toBe("UniqueViolation")
+      expect(await refused(`UPDATE todos SET title = '  ' WHERE number = 2`)).toBe("ConstraintError")
+      expect(await refused(`UPDATE todos SET state = 'paused' WHERE number = 2`)).toBe("ConstraintError")
+      const request = (acceptance: string) => `
+        INSERT INTO todo_requests (todo_id, revision, repo_id, prompt, acceptance, by_login)
+        VALUES ('00000000-0000-4000-8000-000000000002', 1, 'github/a/b', 'Do it', ${acceptance}, 'maya')`
+      await sql(request(`ARRAY['done']`))
+      expect(await refused(request(`ARRAY['again']`))).toBe("UniqueViolation")
+      expect(await refused(request(`array_fill('x'::text, ARRAY[21])`).replace(", 1, 'github", ", 2, 'github")))
+        .toBe("ConstraintError")
+      const op = (fields: string) => `
+        INSERT INTO stack_ops (id, repo_id, actor_id, via, op, payload_hash, outcome, result)
+        VALUES (gen_random_uuid(), 'github/a/b', 'p', ${fields}, '{}')`
+      await sql(op(`'person', 'commit', '${"0".repeat(64)}', 'committed'`))
+      expect(await refused(op(`'robot', 'commit', '${"0".repeat(64)}', 'committed'`))).toBe("ConstraintError")
+      expect(await refused(op(`'person', 'rename', '${"0".repeat(64)}', 'committed'`))).toBe("ConstraintError")
+      expect(await refused(op(`'person', 'commit', 'not-a-hash', 'committed'`))).toBe("ConstraintError")
+      expect(await refused(op(`'person', 'commit', '${"0".repeat(64)}', 'done'`))).toBe("ConstraintError")
+    }))
+})
+
+describe("0025_flow_source", () => {
+  /** A `SKILL.md` as 0015's prompt flows stored it (`renderSkill`, before 0025). */
+  const skill = (name: string, description: string, flows: ReadonlyArray<string>, instructions: string) =>
+    [
+      "---",
+      `name: ${name}`,
+      `description: ${JSON.stringify(description)}`,
+      "capabilities: []",
+      ...(flows.length === 0 ? [] : ["flows:", ...flows.map((flow) => `  - ${JSON.stringify(flow)}`)]),
+      "---",
+      "",
+      instructions.trim(),
+      "",
+    ].join("\n")
+
+  /** The compose Postgres migrated through 0024 in a schema of its own, `rows` inserted, then 0025 applied. */
+  const migrate = (
+    rows: ReadonlyArray<string>,
+    use: (sql: <A extends object>(statement: string) => Promise<ReadonlyArray<A>>) => Promise<void>,
+  ) =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      const sql = <A extends object>(statement: string) =>
+        on(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe<A>(statement)))
+      await on(through("0024"))
+      for (const row of rows) await sql(row)
+      const applied = await on(through("0025"))
+      expect(applied.map(([id, name]) => `${id}_${name}`)).toEqual(["25_flow_source"])
+      await use(sql)
+    })
+
+  const quoted = (text: string) => `'${text.replaceAll("'", "''")}'`
+  const flowId = "00000000-0000-4000-8000-000000000001"
+  const notes = {
+    name: "release-notes",
+    description: "Summarize merged pull requests: since \"the\" last tag.",
+    flows: ["repo/read", "repo/tree"],
+    instructions: "Read the repository.\n\nThen summarize what merged.",
+  }
+  const draft = (id: number, status: string, files: string) => `
+    INSERT INTO flow_drafts (id, actor_id, scope, request, status, files, checks)
+    VALUES ('00000000-0000-4000-8000-00000000010${id}', 'p', 'person', 'Notes', '${status}', ${files}::jsonb,
+      '[{"check": "parses", "ok": true}]'::jsonb)`
+  const files = (...entries: ReadonlyArray<readonly [string, string]>) =>
+    quoted(JSON.stringify(entries.map(([path, text]) => ({ path, text }))))
+
+  test("every revision and draft becomes flow source that reads back as drafted; placement is client", () =>
+    migrate(
+      [
+        `INSERT INTO flows (id, owner_id, name, revision, description) VALUES ('${flowId}', 'p', 'release-notes', 3, 'N')`,
+        `INSERT INTO flow_revisions (flow_id, revision, digest, source, created_by) VALUES
+          ('${flowId}', 1, '${"0".repeat(64)}', ${quoted(skill(notes.name, notes.description, notes.flows, notes.instructions))}, 'p'),
+          ('${flowId}', 2, '${"0".repeat(64)}', ${quoted(skill(notes.name, "Plain.", [], "Go."))}, 'p'),
+          ('${flowId}', 3, '${digestSync("export default 1")}', 'export default 1', 'p')`,
+        draft(1, "ready", files(["SKILL.md", skill(notes.name, notes.description, notes.flows, notes.instructions)])),
+        draft(2, "ready", "'[]'"),
+        draft(3, "saved", files(["notes.md", "Kept."], ["SKILL.md", skill("other", "Other.", [], "Do.")])),
+      ],
+      async (sql) => {
+        expect(await sql(`SELECT placement FROM flows`)).toEqual([{ placement: "client" }])
+        const revisions = await sql<{ revision: number; digest: string; source: string }>(
+          `SELECT revision, digest, source FROM flow_revisions ORDER BY revision`,
+        )
+        const first = renderSource(notes)
+        const second = renderSource({ name: notes.name, description: "Plain.", flows: [], instructions: "Go." })
+        expect(revisions).toEqual([
+          { revision: 1, digest: digestSync(first), source: first },
+          { revision: 2, digest: digestSync(second), source: second },
+          // Already source: untouched.
+          { revision: 3, digest: digestSync("export default 1"), source: "export default 1" },
+        ])
+        expect(readGenerated(first)).toEqual(notes)
+        const drafts = await sql<{ status: string; files: unknown; checks: unknown }>(
+          `SELECT status, files, checks FROM flow_drafts ORDER BY id`,
+        )
+        expect(drafts).toEqual([
+          { status: "ready", files: [{ path: "flow.ts", text: first }], checks: [{ check: "parses", ok: true }] },
+          { status: "ready", files: [], checks: [{ check: "parses", ok: true }] },
+          {
+            status: "saved",
+            files: [
+              { path: "notes.md", text: "Kept." },
+              { path: "flow.ts", text: renderSource({ name: "other", description: "Other.", flows: [], instructions: "Do." }) },
+            ],
+            checks: [{ check: "parses", ok: true }],
+          },
+        ])
+        // Placement holds only its two values.
+        await sql(`UPDATE flows SET placement = 'sandbox'`)
+        await expect(sql(`UPDATE flows SET placement = 'everywhere'`)).rejects.toBeDefined()
+      },
+    ))
+
+  test("a draft whose SKILL.md doesn't read keeps no file: it fails migrated unless it was saved", () =>
+    migrate(
+      [
+        draft(1, "needs_you", files(["SKILL.md", "No frontmatter."])),
+        draft(2, "ready", files(["SKILL.md", "---\nname: x\n---\n\nNo description.\n"])),
+        draft(3, "ready", files(["SKILL.md", "---\nname: \ndescription: \"D.\"\n---\n\nNo name.\n"])),
+        draft(4, "ready", files(["SKILL.md", "---\nname: x\ndescription: \"broken\n---\n\nGo.\n"])),
+        draft(5, "ready", files(["SKILL.md", "---\nname: x\ndescription: \"D.\"\nflows:\n  - \"broken\n---\n\nGo.\n"])),
+        draft(6, "saved", files(["SKILL.md", "No frontmatter."])),
+        draft(7, "proposed", files(["SKILL.md", "No frontmatter."])),
+      ],
+      async (sql) => {
+        const failed = { status: "failed", failure: "migrated", files: [], checks: [] }
+        expect(await sql(`SELECT status, failure, files, checks FROM flow_drafts ORDER BY id`)).toEqual([
+          failed,
+          failed,
+          failed,
+          failed,
+          failed,
+          { status: "saved", failure: null, files: [], checks: [{ check: "parses", ok: true }] },
+          { status: "proposed", failure: null, files: [], checks: [{ check: "parses", ok: true }] },
+        ])
+      },
+    ))
+
+  test("a revision that doesn't read fails the migration, naming its flow and revision, never its text", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0024"))
+      await on(Effect.flatMap(SqlClient.SqlClient, (client) =>
+        client.unsafe(`INSERT INTO flows (id, owner_id, name, revision, description) VALUES ('${flowId}', 'p', 'x', 1, 'X')`)))
+      await on(Effect.flatMap(SqlClient.SqlClient, (client) =>
+        client.unsafe(`
+          INSERT INTO flow_revisions (flow_id, revision, digest, source, created_by)
+          VALUES ('${flowId}', 1, '${"0".repeat(64)}', '---\nsecret canary\n---\n', 'p')`)))
+      const failure = await on(through("0025")).then(() => "applied", (error: unknown) => String(error))
+      expect(failure).toContain(`0025_flow_source: flow ${flowId} revision 1 doesn't read`)
+      expect(failure).not.toContain("canary")
     }))
 })

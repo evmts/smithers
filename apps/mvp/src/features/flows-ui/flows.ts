@@ -11,13 +11,16 @@ import {
   FlowDeleteReference,
   FlowInvalid,
   FlowListReference,
+  FlowNeedsSandbox,
   FlowNewReference,
   FlowNotFound,
   FlowPromptReference,
+  FlowReadReference,
   FlowRunReference,
   FlowSaveReference,
   FlowsRefused,
   FlowsUnavailable,
+  FlowWriteReference,
   NameTaken,
   Pinned,
   RouteFailure,
@@ -26,23 +29,28 @@ import {
 } from "./reference"
 import { Description } from "./schema"
 
-// Your own flows, as an engine runs them (decision 0014 §2, docs/features/flows.md#your-own-flows):
+// Your own flows, as an engine runs them (decision 0014 §2, docs/features/flows.md#your-own-flows). A person's flow is
+// flow source, a `Flow.make` module (./source.ts), whether drafted from a prompt or written by hand:
 //
 //   flow/new { name, request }          execution <draftId>:<round>; any other id starts round 0 of a new draft
 //     flow/new/open   ─ the draft row (drafting), the flow it edits, the draft so far and the person's answers
 //     flow/new/draft  ─ the agent drafts: description, instructions, flows, questions ≤ 5 (AgentAction, seat agent)
-//     flow/new/write  ─ the SKILL.md, the static checks, the row: ready, needs_you or failed
+//     flow/new/write  ─ the flow.ts it makes, the static checks, the row: ready, needs_you or failed
 //   flow/answer { draftId, round, answers } ─ records them, then starts round n + 1
 //   flow/save { draftId }               ─ a ready draft becomes your flow
+//   flow/read { name, revision? }       ─ a revision's code, and where it runs
+//   flow/write { name, revision, source } ─ code you wrote, checked, becomes the next revision
 //   flow/run { name, input?, revision? }
-//     flow/run/load   ─ the revision's SKILL.md, its digest and its checks: what it may call
+//     flow/run/load   ─ the revision's flow.ts, its digest and its checks; code not drafted as drafted needs a sandbox
 //     flow/run/prompt ─ a child execution, whose payload pins the revision and its list: the agent follows it
 //   flow/delete { flowId }, flow/list
 //
-// Every model call is a sealed step of its run through the server's model endpoint, role `agent`. A person's flow is
-// instructions the trusted agent loop reads: it reaches the world only through the calls its list allows
-// (src/flows/catalog.ts). What a step does is injected by the host (./steps.ts). This module imports @smthrs/agent, so
-// only an engine's host imports it; the tab dispatches by ./reference.ts.
+// A drafted flow's body is one agent step that follows its instructions; `flow/run/prompt` is that step as this engine
+// declares it, its payload pinned from the source, so the person's own engine runs only code the system wrote. Every
+// model call is a sealed step of its run through the server's model endpoint, role `agent`, and the agent reaches the
+// world only through the calls the flow lists (src/flows/catalog.ts). What a step does is injected by the host
+// (./steps.ts). This module imports @smthrs/agent, so only an engine's host imports it; the tab dispatches by
+// ./reference.ts.
 
 /** The steps that call ChatApi: tried for a minute while it can't answer; a refusal or a missing flow is final. */
 export const ROUTE_RETRY = RetryPolicy.make({
@@ -54,6 +62,7 @@ export const ROUTE_RETRY = RetryPolicy.make({
     "@smthrs/mvp/flows/FlowsRefused",
     "@smthrs/mvp/flows/FlowNotFound",
     "@smthrs/mvp/flows/FlowInvalid",
+    "@smthrs/mvp/flows/FlowNeedsSandbox",
     "@smthrs/mvp/flows/NameTaken",
     "@smthrs/mvp/flows/DraftNotReady",
   ],
@@ -125,7 +134,7 @@ export const DraftFlow = AgentAction.make("flow/new/draft", {
   maxFrames: MAX_FLOW_FRAMES,
 })
 
-/** `flow/new/write`: the SKILL.md, its checks and the round's status, on the draft's row. */
+/** `flow/new/write`: the flow.ts, its checks and the round's status, on the draft's row. */
 export const WriteRound = Action.make("flow/new/write", {
   payload: {
     draftId: Schema.String,
@@ -239,16 +248,22 @@ export const FlowSave = Flow.make(FlowSaveReference._tag, {
   body: Node.capture({ admit: AdmitSave.name }, ({ draftId }) => AdmitSave.call({ draftId })),
 }).annotate(Flow.Placement, Placement.client())
 
-/** `flow/run/load`: the revision's `SKILL.md`, checked, pinned with what it may call. */
+/**
+ * `flow/run/load`: the revision's flow.ts, checked, pinned with what it may call. Code that isn't a drafted flow as
+ * drafted fails `FlowNeedsSandbox`.
+ */
 export const LoadFlow = Action.make("flow/run/load", {
   payload: FlowRunReference.payloadSchema.fields,
   success: Schema.Struct(Pinned),
-  error: Schema.Union([FlowsUnavailable, FlowsRefused, FlowNotFound, FlowInvalid]),
+  error: Schema.Union([FlowsUnavailable, FlowsRefused, FlowNotFound, FlowInvalid, FlowNeedsSandbox]),
   tier: "sealed",
   retryPolicy: ROUTE_RETRY,
 })
 
-/** `flow/run/agent`: the agent follows the pinned instructions, calling only what they list. */
+/**
+ * `flow/run/agent`: the agent follows the pinned instructions, calling only what they list: the one step of a drafted
+ * flow, asked what that flow's own step asks (`renderPrompt`).
+ */
 export const PromptAgent = AgentAction.make("flow/run/agent", {
   payload: { name: Schema.String, instructions: Schema.String, allowed: Schema.Array(Schema.String), input: Schema.String },
   output: Schema.String,
@@ -320,6 +335,43 @@ export const FlowDelete = Flow.make(FlowDeleteReference._tag, {
   success: FlowDeleteReference.successSchema,
   error: FlowDeleteReference.errorSchema,
   body: Node.capture({ remove: RemoveFlow.name }, ({ flowId }) => RemoveFlow.call({ flowId })),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `flow/read/source`: one revision's code, and where it runs. */
+export const ReadCode = Action.make("flow/read/source", {
+  payload: FlowReadReference.payloadSchema.fields,
+  success: FlowReadReference.successSchema,
+  error: FlowReadReference.errorSchema,
+  retryPolicy: ROUTE_RETRY,
+})
+
+/** `flow/read`: your flow's code. */
+export const FlowRead = Flow.make(FlowReadReference._tag, {
+  description: FlowReadReference.description!,
+  modelInvocable: true,
+  payload: FlowReadReference.payloadSchema,
+  success: FlowReadReference.successSchema,
+  error: FlowReadReference.errorSchema,
+  body: Node.capture({ read: ReadCode.name }, ({ name, revision }) => ReadCode.call({ name, revision })),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `flow/write/admit`: the code, checked here, saved through ChatApi as the next revision. */
+export const AdmitWrite = Action.make("flow/write/admit", {
+  payload: FlowWriteReference.payloadSchema.fields,
+  success: FlowWriteReference.successSchema,
+  error: FlowWriteReference.errorSchema,
+  tier: "sealed",
+  retryPolicy: ROUTE_RETRY,
+})
+
+/** `flow/write`: code you wrote becomes your flow's next revision. */
+export const FlowWrite = Flow.make(FlowWriteReference._tag, {
+  description: FlowWriteReference.description!,
+  modelInvocable: true,
+  payload: FlowWriteReference.payloadSchema,
+  success: FlowWriteReference.successSchema,
+  error: FlowWriteReference.errorSchema,
+  body: Node.capture({ admit: AdmitWrite.name }, ({ name, revision, source }) => AdmitWrite.call({ name, revision, source })),
 }).annotate(Flow.Placement, Placement.client())
 
 /** `flow/list/read`: your flows. */

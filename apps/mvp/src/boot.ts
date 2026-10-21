@@ -6,6 +6,8 @@ import { Clock, type Duration, Effect, Fiber, Layer, ManagedRuntime, Metric } fr
 import { FetchHttpClient, type HttpClient } from "effect/http"
 import { Clipboard } from "./clipboard"
 import { AuthClient } from "./features/auth/api"
+import { Attention, type AttentionView } from "./features/attention/attention"
+import { AttentionNavigation, AttentionStore } from "./features/attention/store"
 import { Auth, type AuthView } from "./features/auth/auth"
 import { Branch, type BranchView } from "./features/branch/branch"
 import { DeviceWipe } from "./features/auth/device"
@@ -21,12 +23,19 @@ import { type ChatConfig, type ChatHost, ChatStore, chatConfig } from "./feature
 import { Commands, type CommandsView } from "./features/commands/commands"
 import { FlowsUi, type FlowsUiView } from "./features/flows-ui/flowsUi"
 import { FlowsUiStore } from "./features/flows-ui/store"
+import { Home, type HomeView } from "./features/home/home"
+import { HomeStore } from "./features/home/store"
 import { CommandsStore } from "./features/commands/store"
 import { IssuesClient } from "./features/issues/api"
 import { Issues, type IssuesLayer } from "./features/issues/issues"
 import { IssuesStore } from "./features/issues/store"
 import { tabIssues } from "./features/issues/tab"
 import { IssueWrites } from "./features/issues/writes"
+import { StackClient } from "./features/todos/api"
+import { TodosStore } from "./features/todos/store"
+import { tabTodos } from "./features/todos/tab"
+import { Todos, type TodosView } from "./features/todos/todos"
+import { StackWrites } from "./features/todos/writes"
 import { tabNavigation } from "./features/navigation/tab"
 import { RepoClient, REQUEST_WITHIN } from "./features/repo/api"
 import { tabClipboard } from "./features/repo/tab"
@@ -38,12 +47,15 @@ import { RunsStore } from "./features/runs/store"
 import { Status, type StatusView } from "./features/status/status"
 import { Terminal, type TerminalView } from "./features/terminal/terminal"
 import { StatusStore, TabTitle } from "./features/status/store"
+import { Spend, type SpendView } from "./features/spend/spend"
+import { SpendStore } from "./features/spend/store"
 import { type ThemeHost, ThemeStore } from "./features/theme/store"
 import { Theme, type ThemeView } from "./features/theme/theme"
 import { ViewsStore } from "./features/views/store"
 import { Views, type ViewsView } from "./features/views/views"
 import { type WebHost, WebTab } from "./features/web/actions"
 import { Web, type WebView } from "./features/web/web"
+import { ENGINE_NAME } from "./flows/contract"
 import { type ClientEngine, FlowDispatch } from "./flows/dispatch"
 import { failFastOnEngine, tabAnswers, tabEngine } from "./flows/engine"
 import type { Endpoint } from "./flows/tabPort"
@@ -78,8 +90,8 @@ export interface Host extends ChatHost {
   readonly web: WebHost
   /** Starts this tab's engine worker (src/flows/engine.worker.ts), which runs every client flow once it leads. */
   readonly engineWorker: () => BrowserEngine.WorkerLike & Endpoint
-  /** The engine's name: its Web Lock, channel and store. The browser's is `ENGINE_NAME`; each test device has its own. */
-  readonly engineName: string
+  /** The engine's name: its Web Lock, channel and store. `ENGINE_NAME` unless set, so tests can keep engines apart. */
+  readonly engineName?: string
   /**
    * Wipes what this device holds of a session that ended: its synced database, the engine's store and the outbox
    * (decision 0008 §4.6). Sign-out calls it once ChatApi has ended the session (src/features/auth/device.ts).
@@ -133,18 +145,28 @@ export const appLayer = <S = never>(
     auth,
     Theme.layer,
     Repo.layer,
+    // A repository's own home (decision 0014 §4), over the repository store and RepoApi's client.
+    Home.layer.pipe(Layer.provide(HomeStore.layer)),
     Commands.layer,
     Views.layer,
     Web.layer,
-    Status.layer,
-    // The branch workspace (docs/features/branch-workspace.md): the route's branch, and its terminal.
-    Branch.layer,
+    // Agent status, and the personal feed beside it (decision 0009): the one toast stack and the list behind `+N`.
+    Layer.merge(Status.layer, Attention.layer),
+    // Model spend alerts, which only an Admin's devices sync (docs/features/spend-alerts.md).
+    Spend.layer.pipe(Layer.provideMerge(SpendStore.layer({ origin }))),
+    // The branch workspace (docs/features/branch-workspace.md): the route's branch, who it is shared with, who is on it,
+    // and its terminal.
+    Branch.layer({ origin }),
     Terminal.layer({ origin }),
     // Git issues (decision 0012): the issue pages, and this tab's answers to the issue writes' steps it started.
     Issues.layer,
-    tabIssues({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
+    tabIssues({ name: host.engineName ?? ENGINE_NAME }).pipe(Layer.provide(TabChannel.layer)),
+    // TODOs and the stack (decision 0016): the stack pages, the drafts, and this tab's answers to the TODO steps it
+    // started.
+    Todos.layer,
+    tabTodos({ name: host.engineName ?? ENGINE_NAME }).pipe(Layer.provide(TabChannel.layer)),
     // Chat's Copy and Edit, answered by the tab that asked, from its conversation, clipboard and composer.
-    tabChat({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
+    tabChat({ name: host.engineName ?? ENGINE_NAME }).pipe(Layer.provide(TabChannel.layer)),
     // Your own flows and this device's runs (decision 0014): their pages, and the router's navigate their acts open.
     Layer.merge(Runs.layer.pipe(Layer.provide(RunsStore.layer)), FlowsUi.layer.pipe(Layer.provide(FlowsUiStore.layer({
       origin,
@@ -152,17 +174,26 @@ export const appLayer = <S = never>(
     }))))
       .pipe(Layer.provide(Layer.succeed(RunsNavigation, RunsNavigation.of({ navigate: host.navigate })))),
   ).pipe(
-    // Agent status reads chat's messages beside the runs, and answers through dispatch (decision 0015).
+    // The feed reads the conversation chat shows and who sign-in says is signed in, and opens an entry's page through
+    // the router (decision 0009). Agent status, beside it, reads chat's messages beside the runs, and answers through
+    // dispatch (decision 0015).
     Layer.provideMerge(
-      StatusStore.layer({ origin }).pipe(Layer.provideMerge(Layer.succeed(TabTitle, host.title ?? TabTitle.none))),
+      AttentionStore.layer({ origin }).pipe(
+        Layer.provideMerge(Layer.succeed(AttentionNavigation, AttentionNavigation.of({ navigate: host.navigate }))),
+        Layer.provideMerge(
+          StatusStore.layer({ origin }).pipe(Layer.provideMerge(Layer.succeed(TabTitle, host.title ?? TabTitle.none))),
+        ),
+      ),
     ),
     // The command menu completes chat's composer draft.
     Layer.provideMerge(CommandsStore.layer),
-    // Chat's store, between the issues' two: an issue write goes through the device's one outbox, which chat's store
-    // builds over the writes below it hands over (src/outbox.ts) and leads for the store above it.
+    // Chat's store, between the issues' and the TODOs' two: an issue write or a change to a stack goes through the
+    // device's one outbox, which chat's store builds over the writes below it hand over (src/outbox.ts) and leads for
+    // the stores above it.
     Layer.provideMerge(
-      IssuesStore.layer({ origin }).pipe(
+      Layer.merge(IssuesStore.layer({ origin }), TodosStore.layer({ origin })).pipe(
         Layer.provideMerge(ChatStore.layer(chatConfig(origin, chat), host)),
+        Layer.provideMerge(StackWrites.layer),
         Layer.provideMerge(IssueWrites.layer),
       ),
     ),
@@ -176,17 +207,21 @@ export const appLayer = <S = never>(
     // writes only its clipboard.
     Layer.provideMerge(
       Layer.merge(
-        tabNavigation({ name: host.engineName, origin, navigate: host.navigate }),
-        tabClipboard({ name: host.engineName }),
+        tabNavigation({ name: host.engineName ?? ENGINE_NAME, origin, navigate: host.navigate }),
+        tabClipboard({ name: host.engineName ?? ENGINE_NAME }),
       ).pipe(Layer.provide(TabChannel.layer)),
     ),
     Layer.provideMerge(FlowDispatch.layer),
     Layer.provideMerge(tabAnswers),
     Layer.provideMerge(ThemeStore.layer(host.theme)),
     Layer.provideMerge(services),
-    // Below `services`, so a test's services may give a faulty `IssuesClient` in its place.
+    // Below `services`, so a test's services may give a faulty `IssuesClient` or `StackClient` in its place.
     Layer.provideMerge(
-      Layer.merge(IssuesClient.layer({ origin, within: REQUEST_WITHIN }), RepoClient.layer({ origin, within: REQUEST_WITHIN })),
+      Layer.mergeAll(
+        IssuesClient.layer({ origin, within: REQUEST_WITHIN }),
+        StackClient.layer({ origin, within: REQUEST_WITHIN }),
+        RepoClient.layer({ origin, within: REQUEST_WITHIN }),
+      ),
     ),
     Layer.provideMerge(Clipboard.layer(host.clipboard)),
     // The device store opens through the leading tab's engine worker; if this tab's worker fails, it opens in memory
@@ -270,6 +305,10 @@ export interface BootOptions {
     issues: IssuesLayer,
     runs: RunsView,
     flows: FlowsUiView,
+    home: HomeView,
+    spend: SpendView,
+    attention: AttentionView,
+    todos: TodosView,
   ) => void
 }
 
@@ -294,9 +333,31 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const issues = yield* Issues
     const runs = yield* Runs
     const flows = yield* FlowsUi
+    const home = yield* Home
+    const spend = yield* Spend
+    const attention = yield* Attention
+    const todos = yield* Todos
     const store = yield* ChatStore
     yield* Effect.sync(() =>
-      options.render(chat, auth, theme, repo, commands, views, web, status, branch, terminal, issues, runs, flows)
+      options.render(
+        chat,
+        auth,
+        theme,
+        repo,
+        commands,
+        views,
+        web,
+        status,
+        branch,
+        terminal,
+        issues,
+        runs,
+        flows,
+        home,
+        spend,
+        attention,
+        todos,
+      )
     )
     yield* chatShortcuts(options.target)
     yield* bindConnectivity(options.target)

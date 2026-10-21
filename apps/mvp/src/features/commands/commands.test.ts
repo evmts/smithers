@@ -4,9 +4,10 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { dispatches } from "../../flows/dispatch"
 import { entryOf, names } from "../../flows/registry"
 import type { Actor } from "../../../worker/Actor.ts"
-import { openTestApp, type TabOptions } from "../../test/chatApi"
+import { openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { AuthStore, SESSION } from "../auth/store"
 import { Chat } from "../chat/chat"
+import { PLACE } from "../chat/schema"
 import { ChatStore } from "../chat/store"
 import { ThemeStore } from "../theme/store"
 import { type Command, COMMANDS, commandsFor, commandsOf, rankOf, summary, type Viewer, viewerOf } from "./catalog"
@@ -37,7 +38,7 @@ const person = (role: Actor["role"]): Actor => ({ subject: { kind: "person", id:
  */
 const open = async (options: TabOptions = {}, actor: Actor | null = person("member")) => {
   const runtime: ManagedRuntime.ManagedRuntime<
-    Commands | Chat | ChatStore | CommandsStore | ThemeStore | AuthStore,
+    Commands | Chat | ChatStore | CommandsStore | ThemeStore | AuthStore | TestChatApi,
     unknown
   > = openTestApp(options, { actor })
   runtimes.push(runtime)
@@ -73,6 +74,14 @@ const open = async (options: TabOptions = {}, actor: Actor | null = person("memb
     shown: () => chat.queries.conversation.toArray.map(({ role, text }) => `${role} ${text}`),
     theme: () => runtime.runPromise(theme.current),
     count: (metric: Metric.Metric<number, Metric.CounterState<number>>) => runtime.runSync(Metric.value(metric)).count,
+    /** Shows conversation `conversationId` in this tab, as a branch's page does. */
+    showConversation: (conversationId: string) =>
+      runtime.runPromise(chatStore.place.update(PLACE, (row) => void (row.conversationId = conversationId))),
+    /** The outcome of every request ChatApi's route `route` (a span name, such as `sandbox.call`) answered. */
+    answered: async (route: string) =>
+      (await runtime.runPromise(Effect.service(TestChatApi))).spans
+        .filter((span) => span.name === route)
+        .map((span) => span.attributes.get("outcome")),
   }
 }
 
@@ -291,6 +300,19 @@ describe("submitting", () => {
         ),
       ).toBe(1), engineWithin)
     // No question: the line went to the flow, never to the agent.
+    expect(tab.shown().filter((row) => row.startsWith("user"))).toEqual([])
+  }, 60_000)
+
+  test("/ls runs sandbox/list through dispatch, door slash, on the conversation this tab shows", async () => {
+    const tab = await open()
+    await ready(tab)
+    // A branch's conversation ChatApi doesn't know: the call reaches ChatApi there, and is refused not_found.
+    await tab.showConversation(crypto.randomUUID())
+    tab.actions.submit("/ls")
+    expect(tab.draft()).toBe("")
+    expect(tab.count(Metric.withAttributes(submits, { outcome: "run", command: "ls" }))).toBe(1)
+    await until(() => expect(tab.count(Metric.withAttributes(dispatches, { flow: "sandbox/list", door: "slash", outcome: "failed" }))).toBe(1), engineWithin)
+    expect(await tab.answered("sandbox.call")).toEqual(["not_found"])
     expect(tab.shown().filter((row) => row.startsWith("user"))).toEqual([])
   }, 60_000)
 

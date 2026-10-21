@@ -12,11 +12,16 @@ type Store = TerminalStore["Service"]
 export interface TerminalQueries {
   /** The panel this tab shows. */
   readonly panel: Store["panelState"]["tanstack"]
+  /** The live terminals on the panel's branch: its tabs. */
+  readonly tabs: Store["tabsState"]["tanstack"]
 }
 
 export interface TerminalActions {
-  /** Shows branch `branchId`'s panel, watching terminal `watching` when given; `null` shows none. */
-  readonly show: (branchId: string | null, watching?: string) => Promise<void>
+  /**
+   * Shows branch `branchId`'s panel, watching terminal `watching` when given; `null` shows none. Resolves with the
+   * terminal it shows, if any.
+   */
+  readonly show: (branchId: string | null, watching?: string) => Promise<string | null>
   /** Open terminal. */
   readonly open: () => void
   /** Attaches the frame's output to terminal `terminalId`; the function it returns detaches it. */
@@ -39,9 +44,9 @@ export class Terminal extends Context.Service<
         const run = Effect.runSyncWith(context)
         const runAsync = Effect.runPromiseWith(context)
         return Terminal.of({
-          queries: { panel: store.panelState.tanstack },
+          queries: { panel: store.panelState.tanstack, tabs: store.tabsState.tanstack },
           actions: {
-            show: (branchId, watching) => runAsync(Effect.asVoid(show(branchId, watching))),
+            show: (branchId, watching) => runAsync(show(branchId, watching)),
             open: () => void runAsync(open),
             attach: (terminalId, sink) => {
               run(attach(terminalId, sink))

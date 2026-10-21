@@ -35,6 +35,7 @@ export class BranchStore extends Context.Service<
           branchId: null,
           conversationId: null,
           mode: null,
+          access: null,
         }],
       })
       return BranchStore.of({ current, currentState: yield* currentQuery(current), scope: yield* Effect.scope })

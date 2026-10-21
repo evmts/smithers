@@ -10,7 +10,7 @@ import { type Actor, Sessions, SessionsUnavailable } from "./Actor.ts"
 import * as ChatMetrics from "./ChatMetrics.ts"
 import * as Flows from "./Flows.ts"
 import * as Expire from "./flows/Expire.ts"
-import { tracked } from "./test/branch.ts"
+import { shared, tracked } from "./test/branch.ts"
 import { answers, harness, recorded, row, rowCount, testFile, uuid } from "./test/harness.ts"
 
 const runtime = testFile("chat")
@@ -335,6 +335,21 @@ describe("a question's conversation", () => {
     expect((await h.ask({ ...ids, text: "On the branch", conversationId: conversationId.toUpperCase() })).status)
       .toBe(202)
     expect([await conversationOf(ids.id), await conversationOf(ids.answerId)]).toEqual([conversationId, conversationId])
+  })
+
+  test("someone else's branch is asked in only by the people it is shared with to edit: 403 to view, and nothing is written", async () => {
+    const h = await asMember()
+    const theirs = await tracked(runtime, "github/octocat/spoon-knife", `theirs-${uuid().slice(0, 8)}`, "open", "person-owner")
+    const ask = () => h.ask({ id: uuid(), answerId: uuid(), text: "May I?", conversationId: theirs.conversationId })
+    const unshared = await ask()
+    expect([unshared.status, await unshared.json()]).toEqual([403, { message: "You can view this branch." }])
+    await shared(runtime, theirs.branchId, "person-member", "view")
+    const viewer = await ask()
+    expect([viewer.status, await viewer.json()]).toEqual([403, { message: "You can view this branch." }])
+    expect(h.line("chat.question").map((line) => line.annotations.errorCode)).toEqual(["view_only", "view_only"])
+    expect(await rowCount(runtime)).toBe(0)
+    await shared(runtime, theirs.branchId, "person-member", "edit")
+    expect((await ask()).status).toBe(202)
   })
 
   test("one that doesn't exist is 404, and nothing is written", async () => {

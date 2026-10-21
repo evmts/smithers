@@ -1,6 +1,6 @@
 import { Context, Data, type Duration, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { type WriteOp, writesRoute, type WriteVia } from "./contract"
+import { type TriageDecision, type WriteOp, writesRoute, type WriteVia } from "./contract"
 import { WriteTaken } from "./schema"
 
 // ChatApi's writes route as the browser calls it (decision 0012 §4, docs/features/issues.md#routes), through Effect's
@@ -28,6 +28,22 @@ export type WriteRequest =
     readonly number: number
     readonly body: string
   }
+  | {
+    readonly writeId: string
+    readonly via: WriteVia
+    readonly op: Extract<WriteOp, "issue/triage">
+    readonly number: number
+    readonly decision: TriageDecision
+    readonly reason?: string
+  }
+  | { readonly writeId: string; readonly via: WriteVia; readonly op: Extract<WriteOp, "triage/run">; readonly number: number }
+  | {
+    readonly writeId: string
+    readonly via: WriteVia
+    readonly op: Extract<WriteOp, "triage/enable">
+    readonly dailyTokens?: number
+  }
+  | { readonly writeId: string; readonly via: WriteVia; readonly op: Extract<WriteOp, "triage/pause"> }
 
 const decodeTaken = Schema.decodeUnknownEffect(WriteTaken)
 

@@ -229,7 +229,8 @@ export const RequestClone = Action.make("repo/clone/request", {
 export const RepoCloneRequest = Flow.make("repo/clone", {
   description: "Clone a public GitHub repository (owner/name) so it can be browsed and read. Needs a signed-in Member. " +
     "Answers { id, txid, attempt } when a clone started, or { id, txid: null, status } when it is already cloning or " +
-    "ready. Cloning takes seconds to minutes; repo/refs answers once it is ready. " +
+    "ready. Cloning takes seconds to minutes; repo/refs answers once it is ready. Only when the person asks to clone " +
+    "or import one: opening or showing a repository's page never needs it. " +
     "RepoCloneRefused says why it may not: sign_in, forbidden, limit, invalid or not_configured.",
   modelInvocable: true,
   payload: clonePayload,

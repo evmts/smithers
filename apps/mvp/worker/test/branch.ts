@@ -3,19 +3,24 @@
 // network, as the model is: a git host that answers the two smart HTTP requests a forge read sends, `GET
 // <repo>.git/info/refs?service=git-upload-pack` (protocol v0) and `POST <repo>.git/git-upload-pack` with protocol
 // v2's `ls-refs`. The forge is the production one, `Forge.layerConfig`, over Effect's `FetchHttpClient`. Flow starts
-// are recorded, and the branch's machine is a test `TerminalSockets`, standing in for the Cloudflare Durable Object
-// binding (worker/BranchSandboxes.ts). Every log line, span and metric the routes record is kept.
+// are recorded, and the branch's machine and room are a test `TerminalSockets` and `Rooms`, standing in for the
+// Cloudflare Durable Object bindings (worker/BranchSandboxes.ts, worker/BranchRooms.ts). People are found by login in
+// the file's `people` and in the harness's `known` people. Every log line, span and metric the routes record is kept.
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { ConfigProvider, Effect, Layer, Logger, Metric, Tracer } from "effect"
 import { FetchHttpClient, HttpEffect, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../db/TestDatabase.ts"
+import { SHARES_TABLE } from "../../src/features/branch/contract.ts"
 import { TERMINALS_TABLE } from "../../src/features/terminal/contract.ts"
 import * as Actor from "../Actor.ts"
 import * as BranchApi from "../branch/BranchApi.ts"
 import * as Conversations from "../branch/Conversations.ts"
 import { Forge } from "../branch/Forge.ts"
-import { type Attachment, TerminalSockets } from "../branch/Sandboxes.ts"
+import type { Policy } from "../branch/Access.ts"
+import { Directory, type Person } from "../branch/People.ts"
+import { type Member, RoomUnavailable, Rooms } from "../branch/Rooms.ts"
+import { type Attachment, type Revoked, SandboxUnavailable, TerminalSockets } from "../branch/Sandboxes.ts"
 import * as Flows from "../Flows.ts"
 import { signedIn, type testFile } from "./harness.ts"
 
@@ -153,13 +158,15 @@ export const gitHost = () => {
 export type GitHost = ReturnType<typeof gitHost>
 
 /**
- * A branch's machine as the terminal routes reach it: every `attach` and `alive` call, in order. `alive` answers
- * `true` unless set. `attach` answers 200 with the attachment, as the host's 101 can't be a web `Response` here.
+ * A branch's machine as the terminal routes reach it: every `attach`, `alive` and `enforce` call, in order. `alive`
+ * answers `true` unless set; `enforce` succeeds unless `failing` is set. `attach` answers 200 with the attachment, as
+ * the host's 101 can't be a web `Response` here.
  */
 export const terminalSockets = () => {
-  const state = { alive: true }
+  const state = { alive: true, failing: false }
   const attached: Array<{ readonly branchId: string; readonly attachment: Attachment }> = []
   const checked: Array<{ readonly branchId: string; readonly terminalId: string; readonly ownerId: string }> = []
+  const enforced: Array<{ readonly branchId: string; readonly policy: Policy; readonly revoked: ReadonlyArray<Revoked> }> = []
   const service = TerminalSockets.of({
     attach: (branchId, attachment) =>
       Effect.sync(() => {
@@ -171,16 +178,53 @@ export const terminalSockets = () => {
         checked.push({ branchId, terminalId, ownerId })
         return state.alive
       }),
+    enforce: (branchId, policy, revoked) =>
+      state.failing
+        ? Effect.fail(new SandboxUnavailable({ reason: "exec" }))
+        : Effect.sync(() => void enforced.push({ branchId, policy, revoked })),
   })
   return {
     service,
     attached,
     checked,
+    enforced,
     set alive(value: boolean) {
       state.alive = value
     },
+    set failing(value: boolean) {
+      state.failing = value
+    },
   }
 }
+
+/**
+ * A branch's room as the routes reach it: every `join` and `enforce` call, in order. `join` answers 200 with the
+ * member, as the host's 101 can't be a web `Response` here; `enforce` succeeds unless `failing` is set.
+ */
+export const rooms = () => {
+  const state = { failing: false }
+  const joined: Array<{ readonly branchId: string; readonly member: Member }> = []
+  const enforced: Array<{ readonly branchId: string; readonly policy: Policy }> = []
+  const service = Rooms.of({
+    join: (branchId, member) =>
+      Effect.sync(() => {
+        joined.push({ branchId, member })
+        return HttpServerResponse.jsonUnsafe({ joined: member })
+      }),
+    enforce: (branchId, policy) =>
+      state.failing ? Effect.fail(new RoomUnavailable()) : Effect.sync(() => void enforced.push({ branchId, policy })),
+  })
+  return {
+    service,
+    joined,
+    enforced,
+    set failing(value: boolean) {
+      state.failing = value
+    },
+  }
+}
+
+export type TestRooms = ReturnType<typeof rooms>
 
 export type Sockets = ReturnType<typeof terminalSockets>
 
@@ -201,6 +245,10 @@ interface BranchOptions {
   readonly github?: GitHost
   /** The branch machines' sockets: a fresh `terminalSockets()` unless set. */
   readonly sockets?: TerminalSockets["Service"]
+  /** People who can be found by login beside the file's `people`, as local development's are. */
+  readonly known?: ReadonlyArray<Person>
+  /** The people directory, in place of the file's `people` and `known`. */
+  readonly directory?: Directory["Service"]
 }
 
 /** The branch workspace's routes on the file's schema, recording every log line, span, metric and Electric request. */
@@ -209,6 +257,7 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
   const database = options.database ?? scratch.database
   const github = options.github ?? gitHost()
   const sockets = terminalSockets()
+  const room = rooms()
   const spans: Array<Tracer.NativeSpan> = []
   const tracer = Tracer.make({
     span(spanOptions) {
@@ -227,9 +276,8 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
     const url = new URL(input instanceof Request ? input.url : String(input))
     if (url.hostname === "github.com") return github.fetch(input, init)
     electric.push(new URL(url))
-    if (url.searchParams.get("table") === TERMINALS_TABLE) {
-      url.searchParams.set("table", `${scratch.name}.${TERMINALS_TABLE}`)
-    }
+    const table = url.searchParams.get("table")
+    if (table === TERMINALS_TABLE || table === SHARES_TABLE) url.searchParams.set("table", `${scratch.name}.${table}`)
     return globalThis.fetch(url, init)
   }
   const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -249,6 +297,10 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
       api.fetch.pipe(
         Effect.provideService(Flows.FlowStarter, starter),
         Effect.provideService(TerminalSockets, options.sockets ?? sockets.service),
+        Effect.provideService(Rooms, room.service),
+        options.directory === undefined
+          ? Effect.provide(Directory.layer(database, options.known))
+          : Effect.provideService(Directory, options.directory),
         Effect.provide(options.sessions ?? (options.actor === undefined ? Actor.signedOut : signedIn(options.actor))),
         Effect.provide(Forge.layerConfig.pipe(Layer.provideMerge(FetchHttpClient.layer))),
         Effect.provideService(FetchHttpClient.Fetch, fetch),
@@ -260,6 +312,7 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
     fetch: (path: string, init?: RequestInit) => handler(new Request(`http://chat.test${path}`, init)),
     github,
     sockets,
+    rooms: room,
     starts,
     electric,
     count: (metric: Metric.Metric<number, Metric.CounterState<number>>, attributes: Record<string, string>) =>
@@ -293,15 +346,34 @@ export const resetBranches = (runtime: Runtime) =>
     const sql = yield* SqlClient.SqlClient
     const home = yield* Conversations.home
     yield* sql`DELETE FROM terminal_sessions`
+    yield* sql`DELETE FROM sandbox_calls`
+    yield* sql`DELETE FROM branch_shares WHERE branch_id NOT IN (SELECT branch_id FROM conversations WHERE id = ${home!})`
     yield* sql`DELETE FROM conversations WHERE id <> ${home!}`
     yield* sql`DELETE FROM branches WHERE id NOT IN (SELECT branch_id FROM conversations)`
   }))
 
-/** Records branch `name` of `repo` with its conversation, as `POST /api/branches` does: its ids. */
-export const tracked = (runtime: Runtime, repo: string, name: string, mode: "locked" | "open" | "restricted" = "open") =>
+/**
+ * Records branch `name` of `repo` with its conversation, as `POST /api/branches` does: its ids. With `owner`, it is
+ * theirs, private until they share it; without, it is the team's, open to anyone in the repository with the link.
+ */
+export const tracked = (
+  runtime: Runtime,
+  repo: string,
+  name: string,
+  mode: "locked" | "open" | "restricted" = "open",
+  owner?: string,
+) =>
   runtime.runPromise(
-    Effect.map(Conversations.track(repo, name, mode, shaOf(`${repo}:${name}`)), (result) => result.branch),
+    Effect.map(Conversations.track(repo, name, mode, shaOf(`${repo}:${name}`), owner), (result) => result.branch),
   )
+
+/** Shares branch `branchId` with `grantee` (a person's id, or `repository`) to `access`, as its owner would. */
+export const shared = (runtime: Runtime, branchId: string, grantee: string, access: "view" | "edit", login?: string) =>
+  runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql`
+      INSERT INTO branch_shares (branch_id, grantee, login, access)
+      VALUES (${branchId}, ${grantee}, ${grantee === "repository" ? null : login ?? grantee}, ${access})
+      ON CONFLICT (branch_id, grantee) DO UPDATE SET access = EXCLUDED.access`))
 
 /** A terminal's row as Postgres holds it. */
 export interface TerminalRow {
@@ -333,12 +405,13 @@ export const terminal = (
     readonly ownerId: string
     readonly status: "opening" | "open" | "ended" | "failed"
     readonly ageSeconds?: number
+    readonly ownerRole?: "admin" | "maintainer" | "member" | "guest"
   },
 ) =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql`
-      INSERT INTO terminal_sessions (id, branch_id, owner_id, owner_login, status, generation, ended_reason, failure,
-        created_at)
-      VALUES (${row.id}, ${row.branchId}, ${row.ownerId}, ${row.ownerId}, ${row.status},
+      INSERT INTO terminal_sessions (id, branch_id, owner_id, owner_login, owner_role, status, generation, ended_reason,
+        failure, created_at)
+      VALUES (${row.id}, ${row.branchId}, ${row.ownerId}, ${row.ownerId}, ${row.ownerRole ?? "member"}, ${row.status},
         ${row.status === "open" ? 1 : null}, ${row.status === "ended" ? "closed" : null},
         ${row.status === "failed" ? "unavailable" : null}, now() - make_interval(secs => ${row.ageSeconds ?? 0}))`))

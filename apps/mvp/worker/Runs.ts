@@ -8,6 +8,7 @@ import { type Report, Report as ReportSchema, type RunAnswer, RunAnswer as RunAn
 import { canAsk, Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
+import * as Notifications from "./Notifications.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 
 // Agent status in ChatApi (decision 0015, docs/features/agent-status.md#the-routes): the `runs` rows a run's own steps
@@ -20,6 +21,9 @@ import * as ShapeAccess from "./ShapeAccess.ts"
 // - `POST /api/runs/<id>/answer`: the person answers the open question `version` names. The first accepted answer
 //   settles it; the same answer again is taken as landed; anything else is `409 not_open`.
 // - `GET /api/shapes/runs`: the signed-in person's rows, without `launched_by`. Signed out, no rows.
+//
+// A report or an answer that writes the row routes it to the feed in the same transaction (worker/Notifications.ts,
+// decision 0009): the run's launcher and the people on its branch.
 
 /** Runs route requests, by `route` (`report`, `answer`) and `status`. */
 export const requests = Metric.counter("smithers_run_requests", {
@@ -85,10 +89,13 @@ const applyReport = (runId: string, launchedBy: string, report: Report) =>
       ? report.wait.kind === "approval" ? "approval" : "input"
       : null
     const wait = report.status === "needs_you" ? JSON.stringify(report.wait) : null
+    // The run works where its answer is (decision 0009 §2): the answer's conversation, its branch and repository.
     const [row] = yield* sql<{ readonly txid: string }>`
-      INSERT INTO runs AS r (id, flow, status, waiting, wait, version, launched_by)
-      VALUES (${runId}, ${AGENT_RUN_FLOW}, ${report.status}, ${waiting}, ${wait}::jsonb,
-        ${report.status === "needs_you" ? 1 : 0}, ${launchedBy})
+      INSERT INTO runs AS r (id, flow, status, waiting, wait, version, launched_by, conversation_id, branch_id, repo_id)
+      SELECT ${runId}, ${AGENT_RUN_FLOW}, ${report.status}, ${waiting}, ${wait}::jsonb,
+        ${report.status === "needs_you" ? 1 : 0}, ${launchedBy}, m.conversation_id, c.branch_id, c.repo_id
+      FROM messages m JOIN conversations c ON c.id = m.conversation_id
+      WHERE m.id = ${runId}
       ON CONFLICT (id) DO UPDATE SET
         status = EXCLUDED.status,
         waiting = EXCLUDED.waiting,
@@ -143,6 +150,18 @@ const applyAnswer = (runId: string, launchedBy: string, answer: RunAnswer) =>
 
 
 /**
+ * Runs `write` and, when it wrote, the feed's fold of the run (worker/Notifications.ts), in one transaction: the run's
+ * row and its recipients' rows land together or not at all.
+ */
+const withFold = <E, R>(write: Effect.Effect<number | undefined, E, R>, runId: string, login: string | undefined) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    return yield* sql.withTransaction(
+      Effect.tap(write, (txid) => (txid === undefined ? Effect.void : Notifications.foldRun(runId, login))),
+    )
+  })
+
+/**
  * Reads Electric's connection (`ShapeProxy.config`) and returns the runs routes: `route(rest)` for
  * `/api/runs/<rest>`, and `shape` for `GET /api/shapes/runs`. Each route request is a log line `agent.status.report`
  * or `agent.status.answer`, a span `agent.status.request` and a count; none carries a question or an answer.
@@ -153,7 +172,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
 
     /** `POST /api/runs/<id>`: the run's step reports its status. */
-    const report = (request: HttpServerRequest.HttpServerRequest, runId: string, actorId: string, fields: Fields) =>
+    const report = (
+      request: HttpServerRequest.HttpServerRequest,
+      runId: string,
+      actorId: string,
+      login: string | undefined,
+      fields: Fields,
+    ) =>
       Effect.gen(function* () {
         const body = yield* readBounded(request, MAX_RUN_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(Effect.result)
         if (body._tag === "Failure") {
@@ -168,13 +193,20 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           fields.errorCode = "not_launcher"
           return refusal(403, "forbidden")
         }
-        const txid = yield* applyReport(runId, actorId, decoded.value)
+        // The feed folds the report in its own transaction (decision 0009 decision 2): a report that lands routes.
+        const txid = yield* withFold(applyReport(runId, actorId, decoded.value), runId, login)
         if (txid === undefined) fields.existing = true
         return ok(txid ?? null)
       })
 
     /** `POST /api/runs/<id>/answer`: the person answers the open question. */
-    const answer = (request: HttpServerRequest.HttpServerRequest, runId: string, actorId: string, fields: Fields) =>
+    const answer = (
+      request: HttpServerRequest.HttpServerRequest,
+      runId: string,
+      actorId: string,
+      login: string | undefined,
+      fields: Fields,
+    ) =>
       Effect.gen(function* () {
         const body = yield* readBounded(request, MAX_RUN_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(Effect.result)
         if (body._tag === "Failure") {
@@ -190,7 +222,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           return refusal(403, "forbidden")
         }
         if (!fits(row.kind, decoded.value.value)) return refusal(400, "invalid")
-        const txid = yield* applyAnswer(runId, actorId, decoded.value)
+        // An answered question closes for every recipient in the answer's transaction.
+        const txid = yield* withFold(applyAnswer(runId, actorId, decoded.value), runId, login)
         if (txid !== undefined) return ok(txid)
         const value = typeof decoded.value.value === "string" ? decoded.value.value.trim() : decoded.value.value
         if (row.version === decoded.value.version && row.answer?.value === value) {
@@ -218,8 +251,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           if (!canAsk(actor.value)) return refusal(403, "forbidden")
           const id = runId.toLowerCase()
           const handled = kind === "report"
-            ? report(request, id, actor.value.subject.id, fields)
-            : answer(request, id, actor.value.subject.id, fields)
+            ? report(request, id, actor.value.subject.id, actor.value.login, fields)
+            : answer(request, id, actor.value.subject.id, actor.value.login, fields)
           return yield* handled.pipe(Effect.provide(database))
         }).pipe(
           Effect.catchCause((cause) =>

@@ -4,11 +4,14 @@ import type { RunsNavigation } from "../runs/actions"
 import {
   answer,
   edit,
+  editCode,
+  openCode,
   openDraft,
   openNew,
   remove,
   run,
   save,
+  saveCode,
   setAnswer,
   setForm,
   startDraft,
@@ -20,25 +23,32 @@ import { FlowsUiStore } from "./store"
 
 type Store = FlowsUiStore["Service"]
 
-/** What a frontend reads live: the person's flows and drafts, the form, the shown draft and the unsent answers. */
+/**
+ * What a frontend reads live: the person's flows and drafts, the form, the shown draft, the unsent answers and the
+ * code it shows.
+ */
 export interface FlowsUiQueries {
   readonly flows: Store["flowList"]["tanstack"]
   readonly drafts: Store["draftList"]["tanstack"]
   readonly form: Store["formRow"]["tanstack"]
   readonly draft: Store["draft"]["tanstack"]
   readonly answers: Store["answerList"]["tanstack"]
+  readonly code: Store["codeRow"]["tanstack"]
 }
 
 /** What a person does, as plain functions. Each returns at once, or with a promise a route loader awaits. */
 export interface FlowsUiActions {
   readonly openNew: (name: string | undefined) => Promise<void>
   readonly openDraft: (draftId: string) => Promise<void>
+  readonly openCode: (name: string) => Promise<void>
   readonly setName: (name: string) => void
   readonly setRequest: (request: string) => void
   readonly startDraft: () => void
   readonly setAnswer: (draftId: string, questionId: string, value: string) => void
   readonly answer: () => void
   readonly save: () => void
+  readonly editCode: (text: string) => void
+  readonly saveCode: () => void
   readonly run: (name: string, revision: number) => void
   readonly edit: (name: string) => void
   readonly remove: (flowId: string) => void
@@ -65,16 +75,20 @@ export class FlowsUi extends Context.Service<
           form: store.formRow.tanstack,
           draft: store.draft.tanstack,
           answers: store.answerList.tanstack,
+          code: store.codeRow.tanstack,
         },
         actions: {
           openNew: (name) => promise(openNew(name)),
           openDraft: (draftId) => promise(openDraft(draftId)),
+          openCode: (name) => promise(openCode(name)),
           setName: (name) => fork(setForm({ name })),
           setRequest: (request) => fork(setForm({ request })),
           startDraft: () => fork(startDraft),
           setAnswer: (draftId, questionId, value) => fork(setAnswer(draftId, questionId, value)),
           answer: () => fork(answer),
           save: () => fork(save),
+          editCode: (text) => fork(editCode(text)),
+          saveCode: () => fork(saveCode),
           run: (name, revision) => fork(run(name, revision)),
           edit: (name) => fork(edit(name)),
           remove: (flowId) => fork(remove(flowId)),

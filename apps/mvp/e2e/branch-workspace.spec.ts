@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { expect, test } from "./fixtures"
+import { expect, step, test } from "./fixtures"
 
 // The branch workspace's first slice (decision 0013 §9, docs/features/branch-workspace.md), end to end against the
 // real app, Worker, Durable Objects, Postgres, Electric and a real container: open a public repository's existing
@@ -18,39 +18,53 @@ const conversationOf = (page: Page) => page.getByRole("region", { name: "Convers
 const terminalRows = (page: Page) => page.frameLocator('iframe[title="Terminal"]').locator("body")
 
 /** Opens a branch's page and waits for its workspace: the branch's name in its chrome. */
-const openBranch = async (page: Page, branch: string, search = "") => {
-  await page.goto(`${REPO}/tree/${branch}${search}`)
-  await expect(page.getByRole("navigation", { name: "Branch" })).toContainText(branch, { timeout: 30_000 })
+const openBranch = (page: Page, branch: string, search = "") =>
+  step(`Open ${branch}${search}`, async () => {
+    await page.goto(`${REPO}/tree/${branch}${search}`)
+    await expect(page.getByRole("navigation", { name: "Branch" })).toContainText(branch, { timeout: 30_000 })
+  })
+
+/** Moves the tab to branch `to` in place, as `/navigate` does: no reload. */
+const switchBranch = async (page: Page, to: string) => {
+  const composer = page.getByRole("textbox", { name: "Message Smithers" })
+  if (!(await composer.isVisible())) await page.getByRole("button", { name: /Chat/ }).click()
+  await composer.fill(`/navigate ${REPO}/tree/${to}`)
+  await composer.press("Enter")
+  await expect(page).toHaveURL(new RegExp(`/tree/${to}$`), { timeout: 30_000 })
+  await expect(page.getByRole("navigation", { name: "Branch" })).toContainText(to, { timeout: 30_000 })
 }
 
 /** Asks Smithers `question` in the page's conversation. */
-const ask = async (page: Page, question: string) => {
-  const composer = page.getByRole("textbox", { name: "Message Smithers" })
-  if (!(await composer.isVisible())) await page.getByRole("button", { name: /Chat/ }).click()
-  await composer.fill(question)
-  await composer.press("Enter")
-  await expect(conversationOf(page).getByText(question)).toBeVisible()
-}
+const ask = (page: Page, question: string) =>
+  step(`Ask "${question}"`, async () => {
+    const composer = page.getByRole("textbox", { name: "Message Smithers" })
+    if (!(await composer.isVisible())) await page.getByRole("button", { name: /Chat/ }).click()
+    await composer.fill(question)
+    await composer.press("Enter")
+    await expect(conversationOf(page).getByText(question)).toBeVisible()
+  })
 
 /**
  * Shows the person's shell on the page's branch: the terminal still open from an earlier run, or Open terminal when
  * there is none or it ended (a dev server reload restarts the machines, so an earlier run's terminal can be `lost`).
  */
-const openTerminal = async (page: Page) => {
-  const open = page.getByRole("button", { name: "Open terminal" })
-  await expect(async () => {
-    // isVisible answers at once; isEnabled alone would wait for a button an open terminal never shows.
-    if ((await open.isVisible()) && (await open.isEnabled())) await open.click()
-    await expect(terminalRows(page)).toContainText("/workspace", { timeout: 15_000 })
-  }).toPass({ timeout: MACHINE })
-}
+const openTerminal = (page: Page) =>
+  step("Open the terminal", async () => {
+    const open = page.getByRole("button", { name: "Open terminal" })
+    await expect(async () => {
+      // isVisible answers at once; isEnabled alone would wait for a button an open terminal never shows.
+      if ((await open.isVisible()) && (await open.isEnabled())) await open.click()
+      await expect(terminalRows(page)).toContainText("/workspace", { timeout: 15_000 })
+    }).toPass({ timeout: MACHINE })
+  })
 
 /** Types `line` into the terminal frame and presses Enter. */
-const type = async (page: Page, line: string) => {
-  await page.locator('iframe[title="Terminal"]').click()
-  await page.keyboard.type(line)
-  await page.keyboard.press("Enter")
-}
+const type = (page: Page, line: string) =>
+  step(`Type "${line}"`, async () => {
+    await page.locator('iframe[title="Terminal"]').click()
+    await page.keyboard.type(line)
+    await page.keyboard.press("Enter")
+  })
 
 test("branch conversation: a question asked on a branch is stored in that branch's conversation only", async ({ page }) => {
   test.setTimeout(3 * 60_000)
@@ -121,14 +135,15 @@ test("branch views: a page opened on a branch lands in that branch's conversatio
   const conversation = conversationOf(page)
   const url = `https://example.com/?run=${Date.now()}`
 
-  // `/web` on the branch, then straight to another branch before the flow's step runs: the page stays where it was
-  // asked for, because the conversation is pinned when the person dispatched it.
+  // `/web` on the branch, then straight to another branch in the same tab (`/navigate`) before the flow's step runs:
+  // the page stays where it was asked for, because the conversation is pinned when the person dispatched it. (A reload
+  // at that instant would drop a run the engine hadn't taken yet, as it would a keystroke.)
   await page.getByRole("button", { name: /Chat/ }).click()
   const composer = page.getByRole("textbox", { name: "Message Smithers" })
   await composer.fill(`/web ${url}`)
   await composer.press("Enter")
-  await openBranch(page, "test-branch")
-  await openBranch(page, "change-the-title")
+  await switchBranch(page, "test-branch")
+  await switchBranch(page, "change-the-title")
   const view = conversation.locator("[data-view]", { has: page.locator(`iframe[src="${url}"]`) })
   await expect(view).toHaveCount(1, { timeout: 30_000 })
   const id = await view.getAttribute("data-view")

@@ -16,3 +16,7 @@
 
 .repo-commit { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
 .repo-commit > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+
+/* A repository's own home (decision 0014 §4): its Home and Code tabs, the line over the tree, and the home itself. */
+.home-tabs { display: flex; align-items: center; gap: 1rem; }
+.home-page { flex: 1; min-height: 0; }

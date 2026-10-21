@@ -7,12 +7,15 @@ import { Cause, Effect, Layer, Option, Predicate } from "effect"
 import { FetchHttpClient, HttpServerRequest } from "effect/http"
 import * as Database from "../db/Database.ts"
 import * as Electric from "../infra/Electric.ts"
+import * as SecretsInfra from "../infra/Secrets.ts"
 import * as SignInSecret from "../infra/SignIn.ts"
 import { AUTH_ROUTE } from "../src/features/auth/contract.ts"
 import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE } from "../src/features/repo/contract.ts"
 import * as BranchApi from "./branch/BranchApi.ts"
 import { Forge } from "./branch/Forge.ts"
+import { Directory } from "./branch/People.ts"
 import { TerminalSockets } from "./branch/Sandboxes.ts"
+import * as BranchRooms from "./BranchRooms.ts"
 import * as BranchSandboxes from "./BranchSandboxes.ts"
 import * as Chat from "./Chat.ts"
 import { codeOf } from "./ErrorCode.ts"
@@ -22,18 +25,14 @@ import * as Flows from "./Flows.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
 import * as GitHubApi from "./github/Api.ts"
 import * as GitHubConfig from "./github/Config.ts"
+import { DEFAULT_CHAT_MODEL } from "./ModelRoles.ts"
 import * as RepoApi from "./RepoApi.ts"
 import * as RepoConfig from "./RepoConfig.ts"
+import * as SecretsApi from "./secrets/Api.ts"
+import { SecretKeys } from "./secrets/Keys.ts"
 import * as SignIn from "./SignIn.ts"
+import * as StackApi from "./stack/Api.ts"
 import * as Throttle from "./Throttle.ts"
-
-// The model when CHAT_MODEL is unset: a Smithers configured-model record (@smthrs/rpc ConfiguredModel).
-const DEFAULT_CHAT_MODEL = {
-  protocol: "openai-chat",
-  baseUrl: "https://api.cerebras.ai",
-  modelId: "qwen-3.8-27b",
-  credential: "CEREBRAS_API_KEY",
-}
 
 /**
  * Postgres, through Hyperdrive. Its origin is `DATABASE_URL`; under `alchemy dev` the binding passes straight
@@ -69,15 +68,28 @@ export const props = {
  * ChatApi's program. Who is asking comes from sign-in (`worker/SignIn.ts`); `fallback` is who is signed in while the
  * GitHub App isn't configured: nobody in production (below), a local developer under `alchemy dev`
  * (`worker/DevChatApi.ts`). The model endpoint refuses a call with no actor. `localHttp`, which only `alchemy dev` sets,
- * keeps links to `http:` pages on `localhost` (`WEB_PAGES_LOCAL_HTTP`'s default, worker/Views.ts).
+ * keeps links to `http:` pages on `localhost` (`WEB_PAGES_LOCAL_HTTP`'s default, worker/Views.ts). `spendAlerts`,
+ * which only `alchemy dev` sets, to `false`, is `MODEL_SPEND_ALERTS`' default: a deploy alerts on any model spend
+ * unless its environment says otherwise (docs/features/spend-alerts.md).
  */
-export const program = (options: { readonly fallback?: SignIn.Signed; readonly localHttp?: boolean } = {}) =>
+export const program = (
+  options: {
+    readonly fallback?: SignIn.Signed
+    readonly teammates?: Readonly<Record<string, SignIn.Signed>>
+    readonly localHttp?: boolean
+    readonly spendAlerts?: boolean
+  } = {},
+) =>
   Effect.gen(function* () {
     yield* Electric.bind
     yield* SignInSecret.bind
+    yield* SecretsInfra.bind
     const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(ChatDatabase)
     const database = Database.layer(hyperdrive.connectionString)
-    const chat = yield* Chat.make(database, options.localHttp === undefined ? {} : { localHttp: options.localHttp })
+    const chat = yield* Chat.make(database, {
+      ...(options.localHttp === undefined ? {} : { localHttp: options.localHttp }),
+      ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
+    })
     const signIn = yield* SignIn.make(database, options).pipe(Effect.provide(FetchHttpClient.layer))
     // Repositories (docs/features/repo.md): cloning into Code Storage, the `repositories` shape, and reads at a commit,
     // cached in this Worker's Cache API.
@@ -86,9 +98,21 @@ export const program = (options: { readonly fallback?: SignIn.Signed; readonly l
     // The branch workspace (docs/features/branch-workspace.md): tracking a branch, its terminals, and the branches'
     // machines, `SandboxObject`s ChatApi hosts (worker/BranchSandboxes.ts).
     const branchApi = yield* BranchApi.make(database)
+    // Repository secrets (docs/features/secrets.md): write-only values sealed under SECRETS_KEY, off without it.
+    const secretKeys = yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layerConfig), Effect.orDie)
+    const secretsApi = yield* SecretsApi.make(yield* GitHubConfig.repository)
     const sandboxObjects = (yield* BranchSandboxes.SandboxObject) as Cloudflare.DurableObject<
       BranchSandboxes.SandboxObjectShape
     >
+    // Each branch's room, `RoomObject`s ChatApi hosts (worker/BranchRooms.ts), and the people a branch can be shared
+    // with: everyone who signed in, and local development's own people (docs/features/branch-workspace.md#sharing).
+    const roomObjects = (yield* BranchRooms.RoomObject) as Cloudflare.DurableObject<BranchRooms.RoomObjectShape>
+    const directory = Directory.layer(
+      database,
+      [options.fallback, ...Object.values(options.teammates ?? {})].flatMap((person) =>
+        person === undefined ? [] : [{ id: person.actor.subject.id, login: person.login }]
+      ),
+    )
     const forge = Forge.layerConfig.pipe(Layer.provide(FetchHttpClient.layer))
     // The git loop (docs/features/issues.md): GitHub's webhook, the writes route and the issues' shapes, for the one
     // repository sign-in reads roles on.
@@ -96,6 +120,9 @@ export const program = (options: { readonly fallback?: SignIn.Signed; readonly l
       repository: yield* GitHubConfig.repository,
       app: yield* GitHubConfig.configured,
     })
+    // TODOs and the stack (docs/features/todos.md): the one route that changes a stack, through its one writer, and the
+    // TODOs' shapes. No host runs a TODO yet (decision 0016 Track B), so every TODO stays Queued.
+    const stack = yield* StackApi.make(database)
     const repoCache = EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)
     const logs = Logger.layerStructuredJson()
     // ChatApi hosts the remote flow executions' Durable Object (worker/Executions.ts, docs/features/remote-flows.md).
@@ -178,16 +205,26 @@ export const program = (options: { readonly fallback?: SignIn.Signed; readonly l
         const path = request.url.split("?")[0]!
         if (BranchApi.handles(path)) {
           const sockets = Layer.effect(TerminalSockets, BranchSandboxes.terminalSocketsOver(sandboxObjects))
+          const rooms = BranchRooms.roomsLayer(roomObjects)
           return yield* branchApi.fetch.pipe(
             Effect.provideService(Flows.FlowStarter, starter),
             Effect.provide(signedIn),
-            Effect.provide(Layer.mergeAll(forge, sockets, FetchHttpClient.layer)),
+            Effect.provide(Layer.mergeAll(forge, sockets, rooms, directory, FetchHttpClient.layer)),
           )
         }
         // Before the repository routes: a write is `/api/repos/<owner>/<name>/writes`.
+        if (SecretsApi.handles(path)) {
+          return yield* secretsApi.fetch.pipe(
+            Effect.provideService(Flows.FlowStarter, starter),
+            Effect.provideService(SecretKeys, secretKeys),
+            Effect.provide(signedIn),
+          )
+        }
         if (GitHubApi.handles(path)) {
           return yield* github.fetch.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(signedIn))
         }
+        // Before the repository routes too: a change is `/api/repos/<owner>/<name>/stack`.
+        if (StackApi.handles(path)) return yield* stack.fetch.pipe(Effect.provide(signedIn))
         if (path === REPOS_ROUTE || path.startsWith(`${REPOS_ROUTE}/`) || path === REPOSITORIES_SHAPE_ROUTE) {
           return yield* repos.fetch.pipe(
             Effect.provideService(Flows.FlowStarter, starter),
@@ -200,7 +237,8 @@ export const program = (options: { readonly fallback?: SignIn.Signed; readonly l
     }
   }).pipe(
     Effect.provide(Executions.live(ChatDatabase)),
-    Effect.provide(BranchSandboxes.live),
+    Effect.provide(BranchSandboxes.live(ChatDatabase)),
+    Effect.provide(BranchRooms.live),
     Effect.provide(
       Layer.mergeAll(
         HostModel.layerConfig("CHAT_MODEL", DEFAULT_CHAT_MODEL),

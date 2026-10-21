@@ -1,6 +1,20 @@
 import { Context, Effect, Layer } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { comment, create, discard, edit, open, setCommentDraft, setNewBody, setNewTitle } from "./actions"
+import {
+  comment,
+  create,
+  discard,
+  edit,
+  enableTriage,
+  open,
+  pauseTriage,
+  runTriageAgain,
+  setCommentDraft,
+  setNewBody,
+  setNewTitle,
+  triage,
+} from "./actions"
+import type { TriageDecision } from "./contract"
 import { IssuesStore } from "./store"
 
 // Issues as a frontend sees it: live queries to read and plain functions to act, with no Effect in sight. React renders
@@ -22,6 +36,10 @@ export interface IssuesQueries {
   readonly synced: Store["synced"]["tanstack"]
   /** Whether this person may read the repository's issues: refused, a page shows sign in or Not found. */
   readonly access: Store["accessState"]["tanstack"]
+  /** Whether the repository's triage flow is on: none until a Maintainer enabled it. */
+  readonly triage: Store["triage"]["tanstack"]
+  /** This device's triage writes on the repository still on their way, or not sent. */
+  readonly triagePending: Store["triagePending"]["tanstack"]
 }
 
 /** What a person does, as plain functions. Each returns at once. */
@@ -39,6 +57,13 @@ export interface IssuesActions {
   readonly discard: (writeId: string) => void
   /** Edit on a write that wasn't sent: the path where its text is back in a draft. */
   readonly edit: (writeId: string) => string | undefined
+  /** Accept or Not accepted on an issue. */
+  readonly triage: (owner: string, name: string, number: number, decision: TriageDecision) => void
+  /** Run triage again on an issue. */
+  readonly runTriageAgain: (owner: string, name: string, number: number) => void
+  /** Enable or Pause the repository's triage flow. */
+  readonly enableTriage: (owner: string, name: string) => void
+  readonly pauseTriage: (owner: string, name: string) => void
 }
 
 export class Issues extends Context.Service<Issues, { readonly queries: IssuesQueries; readonly actions: IssuesActions }>()(
@@ -58,6 +83,8 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
           conversation: store.conversation.tanstack,
           synced: store.synced.tanstack,
           access: store.accessState.tanstack,
+          triage: store.triage.tanstack,
+          triagePending: store.triagePending.tanstack,
         },
         actions: {
           open: (owner, name, number) => run(open(owner, name, number)),
@@ -68,6 +95,10 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
           comment: (owner, name, number) => run(comment(owner, name, number)),
           discard: (writeId) => run(discard(writeId)),
           edit: (writeId) => run(edit(writeId)),
+          triage: (owner, name, number, decision) => run(triage(owner, name, number, decision)),
+          runTriageAgain: (owner, name, number) => run(runTriageAgain(owner, name, number)),
+          enableTriage: (owner, name) => run(enableTriage(owner, name)),
+          pauseTriage: (owner, name) => run(pauseTriage(owner, name)),
         },
       })
     }),

@@ -29,7 +29,7 @@ import { RepoStore } from "./store"
 // Copying and choosing another ref are flows too (`repo/copy`, `app/navigate`), which the agent runs as well.
 
 /** Inserts `row`, or replaces the row with its key. */
-const put = <A extends object>(collection: Collection.Collection<A, string>, key: string, row: A) =>
+export const put = <A extends object>(collection: Collection.Collection<A, string>, key: string, row: A) =>
   Effect.gen(function* () {
     if (Option.isNone(yield* collection.get(key))) yield* collection.insert(row)
     else yield* collection.update(key, (draft) => void Object.assign(draft, row))
@@ -224,7 +224,7 @@ const observeLoad = (
   })
 
 /** Waits until the repository is ready on this device, with its head: Electric delivers it, or the device has it. */
-const ready = (id: string) =>
+export const ready = (id: string) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     yield* startSync

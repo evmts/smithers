@@ -8,10 +8,12 @@ import { Cause, Deferred, Effect, Exit, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test } from "vitest"
-import { eventually, stop, testFile, usage } from "../../../worker/test/harness.ts"
+import { contents, eventually, stop, testFile, usage } from "../../../worker/test/harness.ts"
 import { answerRow as row, cell, type Engine, openAgent } from "../../test/agent"
+import { AnswerRun } from "../status/flows"
 import { AnswerSettled } from "./answers"
 import { MAX_FRAMES } from "./contract"
+import { WORD_CORRECTIONS } from "./flows"
 import { AGENT_SEAT, seats } from "./host"
 
 const runtime = testFile("agent")
@@ -208,6 +210,113 @@ describe("chat/Answer", () => {
     expect(prompts[1]).toContain("Person: First question")
     expect(prompts[1]).toContain("Smithers: Answer 1.")
     expect(await row(runtime, second)).toMatchObject({ status: "done", text: "Answer 2." })
+  })
+
+  // The agent evals caught answers quoting `app/web/open`, `flow_failed` and `WebPageRefused` (2026-10-20). The answer is
+  // declared in product words, so one that names machinery goes back to the agent in its own session to say plainly.
+  test("an answer naming machinery goes back to the agent once, and settles in the person's words", async () => {
+    const prompts: Array<string> = []
+    const replies = [
+      `ctx.done("app/theme/set failed (flow_failed): PreferencesUnavailable.")`,
+      `ctx.done("I couldn't change the theme.")`,
+    ]
+    const agent = await openAgent(runtime, (request) => {
+      prompts.push(
+        [
+          ...request.system.map((part) => part.text),
+          ...request.messages.flatMap((message) => message.content.map((part) => ("text" in part ? part.text : ""))),
+        ].join("\n"),
+      )
+      return Stream.make({ type: "text-delta" as const, id: "t", text: cell(replies.shift()!) }, usage, stop)
+    })
+    const engine = await agent.engine()
+    engines.push(engine)
+    const answerId = await agent.ask("Switch to dark mode")
+
+    const exit = await agent.answer(engine, answerId)
+
+    expect(exit).toEqual(Exit.succeed({ status: "done" }))
+    expect(await row(runtime, answerId)).toMatchObject({ status: "done", text: "I couldn't change the theme." })
+    expect(prompts).toHaveLength(2)
+    expect(prompts[1]).toContain(
+      `The person can't read "app/theme/set", "flow_failed", "PreferencesUnavailable". Say the same thing in their words`,
+    )
+  })
+
+  test("an answer that names machinery after every correction fails rather than reach the person", async () => {
+    const model = answering(`ctx.done("Done: app/theme/set.")`)
+    const agent = await openAgent(runtime, model.script)
+    const engine = await agent.engine()
+    engines.push(engine)
+    const answerId = await agent.ask("Switch to dark mode")
+
+    expect(await agent.answer(engine, answerId)).toEqual(Exit.succeed({ status: "failed" }))
+    expect((await row(runtime, answerId)).status).toBe("failed")
+    // The first answer and one more per correction.
+    expect(model.calls).toHaveLength(1 + WORD_CORRECTIONS)
+  })
+
+  // The agent evals saw the agent save a draft it was only asked to create (2026-10-20). A flow the registry marks
+  // `confirm` runs from the agent's call only once the person approves it.
+  describe("a call the person must approve (flow/save)", () => {
+    const draftId = "6a1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+    const saving = () => {
+      const seen: Array<string> = []
+      const script = (request: Parameters<Parameters<typeof openAgent>[1]>[0]) => {
+        const text = contents(request).join("\n")
+        seen.push(text)
+        const source = seen.length > 1
+          ? `ctx.done("Handled.")`
+          : `const saved = await ctx.call("flow/save", { draftId: "${draftId}" })\nconsole.log(JSON.stringify(saved))`
+        return Stream.make({ type: "text-delta" as const, id: "t", text: cell(source) }, usage, stop)
+      }
+      return { script, seen }
+    }
+    const waiting = (answerId: string) =>
+      runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly status: string; readonly wait: { readonly execution: string; readonly prompt: string } | null }>`
+          SELECT status, wait FROM runs WHERE id = ${answerId}`)).then(([row]) => row)
+    const decide = async (engine: Engine, answerId: string, approve: boolean) => {
+      await eventually(async () => (await waiting(answerId))?.status === "needs_you", 60_000)
+      const open = (await waiting(answerId))!
+      expect(open.wait).toMatchObject({ prompt: "Save this draft as your flow?" })
+      expect(open.wait!.execution).toMatch(/\/call\/0\.0\/confirm$/)
+      await Effect.runPromise(engine.flows.execute(AnswerRun, {
+        executionId: `answer-${answerId}`,
+        payload: { runId: answerId, version: 1, execution: open.wait!.execution, value: approve },
+      }))
+    }
+
+    test("denied, the flow never runs and the agent reads NotApproved", async () => {
+      const model = saving()
+      const agent = await openAgent(runtime, model.script)
+      const engine = await agent.engine()
+      engines.push(engine)
+      const answerId = await agent.ask("Save my draft")
+      const running = agent.start(engine, answerId)
+
+      await decide(engine, answerId, false)
+
+      expect(await running.done).toEqual(Exit.succeed({ status: "done" }))
+      // The call failed on the approval, before the flow ran: the flow's own failure never reached the cell.
+      expect(model.seen[1]).toContain(`"message":"Flow flow/save failed: NotApproved"`)
+    })
+
+    test("approved, the flow runs", async () => {
+      const model = saving()
+      const agent = await openAgent(runtime, model.script)
+      const engine = await agent.engine()
+      engines.push(engine)
+      const answerId = await agent.ask("Save my draft")
+      const running = agent.start(engine, answerId)
+
+      await decide(engine, answerId, true)
+
+      expect(await running.done).toEqual(Exit.succeed({ status: "done" }))
+      // It ran, and failed on its own: there is no such draft.
+      expect(model.seen[1]).not.toContain("NotApproved")
+      expect(model.seen[1]).toContain("Flow flow/save failed")
+    })
   })
 
   test("a model that refuses settles the answer failed, model_error", async () => {

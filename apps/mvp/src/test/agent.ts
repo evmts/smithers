@@ -4,6 +4,7 @@
 // @smthrs/platform-node and the compose Postgres, worker/test/flowHost.ts), with every client flow registered as the
 // browser's engine worker registers them (src/flows/registrations.ts). This device's theme is a `ThemeStore` in memory.
 import { Persistence } from "@smthrs/effect-tanstack-db"
+import type { HostModel } from "@smthrs/model-host"
 import { FlowRuntime } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
 import { EngineStore, RunStore } from "@smthrs/flows"
@@ -22,6 +23,7 @@ import { registrations } from "../flows/registrations"
 import { TabClipboard } from "../features/repo/copy"
 import { TabChat } from "../features/chat/steps"
 import { TabIssues } from "../features/issues/steps"
+import { TabTodos } from "../features/todos/steps"
 
 /** ChatApi's origin as the agent reaches it: the harness's in-process handler. */
 export const ORIGIN = "http://chat.test"
@@ -55,13 +57,22 @@ export interface Engine {
 export const openAgent = async (
   runtime: Runtime,
   script: Script,
-  options: { readonly actor?: Actor; readonly partsEvery?: `${number} millis` } = {},
+  options: {
+    readonly actor?: Actor
+    readonly partsEvery?: `${number} millis`
+    /** The deployment's default model in place of `script`: the agent evals' real model (evals/agent.eval.ts). */
+    readonly model?: HostModel["Service"]
+  } = {},
 ) => {
-  const h: Harness = await harness(runtime, script, { actor: options.actor ?? member })
-  const fetch: typeof globalThis.fetch = (input, init) => {
+  const h: Harness = await harness(runtime, script, {
+    actor: options.actor ?? member,
+    ...(options.model === undefined ? {} : { model: options.model }),
+  })
+  // Only a call: Bun's globals, which a program loading the `@smthrs/cli` root sees, add `preconnect` to `fetch`.
+  const fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input))
     return h.fetch(`${url.pathname}${url.search}`, input instanceof Request ? input : init)
-  }
+  }) as typeof globalThis.fetch
   const painted: Array<ThemeMode> = []
   const mirrored: Array<ThemeMode> = []
   const device = ThemeStore.layer({
@@ -87,11 +98,12 @@ export const openAgent = async (
       ...(engineOptions.turnWait === undefined ? {} : { turnWait: engineOptions.turnWait }),
     }).pipe(
       Layer.provide(tabPreferences),
-      // No tab listens on this engine's navigation, clipboard, issues or chat channels: a navigation, a copy, an issue
-      // write or a message's Copy or Edit here finds its tab gone.
+      // No tab listens on this engine's navigation, clipboard, issues, TODOs or chat channels: a navigation, a copy, an
+      // issue or TODO write or a message's Copy or Edit here finds its tab gone.
       Layer.provide(Tabs.layerChannel({ name: `agent-${crypto.randomUUID()}`, origin: ORIGIN })),
       Layer.provide(TabClipboard.layerChannel({ name: `agent-${crypto.randomUUID()}`, origin: ORIGIN })),
       Layer.provide(TabIssues.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
+      Layer.provide(TabTodos.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
       Layer.provide(TabChat.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
       Layer.provide(TabChannel.layer),
       // The run reads the acts on runs need, which the browser's engine provides (decision 0014 §3).

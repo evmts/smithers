@@ -25,6 +25,7 @@ const issue = {
   created_at: at,
   updated_at: at,
   closed_at: null,
+  labels: [],
 }
 const comment = (id: number) => ({
   id,

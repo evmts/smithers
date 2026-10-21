@@ -14,9 +14,13 @@ import {
   issueOf,
   listProps,
   type ListRow,
+  mayManageTriage,
+  mayTriage,
   mayWrite,
   pageOf,
   reasonText,
+  triageControlOf,
+  triageSwitchOf,
 } from "./view"
 import { accessOf } from "./store"
 import { keep } from "./writes"
@@ -29,6 +33,7 @@ const synced: ListRow = {
   author: "ben",
   comments: 2,
   updatedAt: "2026-10-20 10:00:00+00",
+  triage: "accepted",
   pending: "",
   reason: "",
   local: 0,
@@ -42,6 +47,7 @@ const mine = (id: string, pending: string, reason: unknown = ""): ListRow => ({
   author: "",
   comments: 0,
   updatedAt: "",
+  triage: "",
   pending,
   reason,
   local: 1,
@@ -61,6 +67,7 @@ describe("the list", () => {
           author: "ben",
           comments: 2,
           updatedAt: synced.updatedAt,
+          triage: "accepted",
         },
       ],
       loading: false,
@@ -226,5 +233,77 @@ describe("a repository this person may not read", () => {
     expect(accessOf({ _tag: "Stopped", error: new ElectricCollection.SyncFailed({ cause: null, status: 400 }) })).toBeUndefined()
     expect(accessOf({ _tag: "Failed", status: 503 })).toBeUndefined()
     expect(accessOf({ _tag: "Sent" })).toBeUndefined()
+  })
+})
+
+describe("triage", () => {
+  const proposed: ListRow = { ...synced, triage: "proposed" }
+
+  test("a proposed issue shows no chip while the flow is off, and Proposed once it's on; any other state always shows", () => {
+    expect(issueOf(proposed).triage).toBeUndefined()
+    expect(issueOf(proposed, true).triage).toBe("proposed")
+    for (const state of ["accepted", "not_accepted", "conflict"] as const) {
+      expect(issueOf({ ...synced, triage: state }).triage).toBe(state)
+      expect(issueOf({ ...synced, triage: state }, true).triage).toBe(state)
+    }
+    // A row with no state yet (this device's own new issue) never shows one.
+    expect(issueOf(mine("x", "requested"), true).triage).toBeUndefined()
+    expect(listProps([proposed], { syncedAt: "x" }, undefined, true).issues[0]!.triage).toBe("proposed")
+  })
+
+  test("the issue's control: buttons for a Member, Run triage again only while the flow is on, its latest write's chip", () => {
+    const item = { number: 3, triage: "not_accepted" }
+    expect(triageControlOf(item, [], { triage: false, flowOn: false })).toEqual({
+      shown: true,
+      state: "not_accepted",
+      pending: undefined,
+      accept: false,
+      reject: false,
+      runAgain: false,
+      disabled: false,
+    })
+    expect(triageControlOf({ number: 3, triage: "proposed" }, [], { triage: false, flowOn: false }).shown).toBe(false)
+    expect(triageControlOf({ number: 3, triage: "proposed" }, [], { triage: false, flowOn: true }).shown).toBe(true)
+    expect(triageControlOf({ number: 3, triage: "bogus" }, [], { triage: true, flowOn: false })).toMatchObject({
+      shown: true,
+      state: "proposed",
+      accept: true,
+      reject: true,
+      runAgain: false,
+    })
+    expect(triageControlOf(item, [], { triage: true, flowOn: true }).runAgain).toBe(true)
+    const writes = [
+      { id: "w3", op: "issue/triage", number: 3, pending: "requested" },
+      { id: "w2", op: "triage/run", number: 3, pending: "not_sent" },
+      { id: "w9", op: "issue/triage", number: 9, pending: "not_sent" },
+      { id: "e", op: "triage/enable", number: 0, pending: "requested" },
+    ]
+    expect(triageControlOf(item, writes, { triage: true, flowOn: true })).toMatchObject({ pending: "requested", disabled: true })
+    expect(triageControlOf(item, writes.slice(1), { triage: true, flowOn: true })).toMatchObject({
+      pending: "not_sent",
+      disabled: false,
+    })
+    expect(triageControlOf({ number: 5, triage: "accepted" }, writes, { triage: true, flowOn: true }).pending).toBeUndefined()
+  })
+
+  test("the list's switch: Enable while off or paused, Pause while on, disabled while one is on its way", () => {
+    expect(triageSwitchOf(undefined, [])).toEqual({ action: "enable", disabled: false })
+    expect(triageSwitchOf({ paused: true }, [])).toEqual({ action: "enable", disabled: false })
+    expect(triageSwitchOf({ paused: false }, [])).toEqual({ action: "pause", disabled: false })
+    const writes = [{ id: "a", op: "triage/pause", number: 0, pending: "requested" }]
+    expect(triageSwitchOf({ paused: false }, writes)).toEqual({ action: "pause", disabled: true })
+    expect(triageSwitchOf({ paused: false }, [{ ...writes[0]!, pending: "not_sent" }]).disabled).toBe(false)
+    expect(triageSwitchOf(undefined, [{ id: "b", op: "issue/triage", number: 1, pending: "requested" }]).disabled).toBe(false)
+  })
+
+  test("who triages: a Member and above; who enables: a Maintainer and above; signed out, neither", () => {
+    const roles = ["admin", "maintainer", "member", "guest", null] as const
+    const signedIn = (role: (typeof roles)[number]) => ({ status: "signed_in" as const, role })
+    expect(roles.map((role) => mayTriage(signedIn(role), undefined))).toEqual([true, true, true, false, false])
+    expect(roles.map((role) => mayManageTriage(signedIn(role), undefined))).toEqual([true, true, false, false, false])
+    expect(mayTriage({ status: "signed_out", role: null }, { role: "admin" })).toBe(false)
+    expect(mayManageTriage({ status: "signed_out", role: null }, { role: "admin" })).toBe(false)
+    // Offline, the role sign-in last confirmed stands.
+    expect(mayManageTriage({ status: "unreachable", role: null }, { role: "maintainer" })).toBe(true)
   })
 })

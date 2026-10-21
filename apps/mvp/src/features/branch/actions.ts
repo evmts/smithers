@@ -34,7 +34,7 @@ const statusOf = (reason: string | undefined): Current["status"] =>
  */
 export const open = (owner: string, repo: string, ref: string) =>
   Effect.gen(function* () {
-    const empty = { branchId: null, conversationId: null, mode: null }
+    const empty = { branchId: null, conversationId: null, mode: null, access: null }
     if (!isRepository(owner, repo) || !isBranchName(ref)) {
       yield* setCurrent({ owner, repo, name: ref, status: "missing", ...empty })
       return undefined
@@ -57,6 +57,7 @@ export const open = (owner: string, repo: string, ref: string) =>
         branchId: tracked.branchId,
         conversationId: tracked.conversationId,
         mode: tracked.mode,
+        access: tracked.access,
       })
       yield* Metric.update(Metric.withAttributes(opens, { outcome: "ready" }), 1)
       return tracked.branchId
@@ -72,6 +73,15 @@ export const open = (owner: string, repo: string, ref: string) =>
 
 /** Leaves the branch: this tab shows and asks in the home conversation again. */
 export const leave = Effect.gen(function* () {
-  yield* setCurrent({ owner: "", repo: "", name: "", status: "none", branchId: null, conversationId: null, mode: null })
+  yield* setCurrent({
+    owner: "",
+    repo: "",
+    name: "",
+    status: "none",
+    branchId: null,
+    conversationId: null,
+    mode: null,
+    access: null,
+  })
   yield* show(null)
 })

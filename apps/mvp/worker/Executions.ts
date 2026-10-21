@@ -9,10 +9,13 @@ import * as BranchSandboxes from "./BranchSandboxes.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Expire from "./flows/Expire.ts"
+import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
 import * as GitHubHost from "./github/Host.ts"
+import * as ModelEndpoint from "./ModelEndpoint.ts"
 import * as RepoConfig from "./RepoConfig.ts"
 import * as SignIn from "./SignIn.ts"
+import { keepExecutionId } from "../src/features/sandbox/contract.ts"
 
 // The Durable Object that runs remote flows on Cloudflare (docs/features/remote-flows.md): one object per execution,
 // named by its execution id, hosted by ChatApi. Alchemy runs its handlers; they delegate to worker/ExecutionHost.ts,
@@ -58,9 +61,11 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
       const app = { database: appDatabase, expiry: yield* Expire.expiry.pipe(Effect.orDie) }
       // `repo/Clone` runs here when this deployment has a Code Storage organization (docs/features/repo.md#the-clone).
       const repoClone = yield* RepoConfig.cloneServices(appDatabase).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
-      // The git loop's flows (`github/Apply`, `github/Reconcile`, `github/Write`) run here when the GitHub App is
-      // configured (docs/features/issues.md#remote-flows).
+      // The git loop's flows (`github/Apply`, `github/Reconcile`, `github/Write`, `triage/Run`) run here when the GitHub
+      // App is configured (docs/features/issues.md#remote-flows). Triage decides with the `judge` model role, admitted
+      // and metered in process as the model endpoint's calls are (docs/features/issues.md#triage).
       const github = yield* GitHubHost.ready(appDatabase).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
+      const judge = (yield* ModelEndpoint.local(appDatabase).pipe(Effect.orDie))("judge")
       // `terminal/Open` wakes a branch's machine, its `SandboxObject` (docs/features/branch-workspace.md#opening-a-terminal).
       const sandboxObjects = (yield* BranchSandboxes.SandboxObject) as Cloudflare.DurableObject<
         BranchSandboxes.SandboxObjectShape
@@ -79,10 +84,32 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
               wake: (executionId) => Effect.asVoid(executions.getByName(executionId).wake()),
             },
           })
-        const base = ExecutionHost.withTerminals(
-          Option.isSome(signIn) ? ExecutionHost.remoteWithSignIn(app, signIn.value) : ExecutionHost.remote(app),
+        // Each wake of a branch's machine starts that generation's `sandbox/Keep` on its own object, once
+        // (docs/features/sandbox-tools.md#sleep-and-wake).
+        const keep: BranchSandboxes.Keep = (branchId, generation) => {
+          const executionId = keepExecutionId(branchId, generation)
+          return ExecutionHost.intent(SandboxKeep.Keep, { executionId, payload: { branchId, generation } }).pipe(
+            Effect.flatMap((intent) => executions.getByName(executionId).start(intent)),
+            Effect.catchCause((cause) =>
+              Effect.logWarning("sandbox.keep.start").pipe(
+                Effect.annotateLogs({ branchId, generation, errorCode: codeOf(Cause.squash(cause)) }),
+              )
+            ),
+          )
+        }
+        // `secret/Put` and `secret/Delete` write an Admin's sealed secrets (docs/features/secrets.md#writing). The
+        // sandbox tools run on the branches' machines (docs/features/sandbox-tools.md).
+        const base = ExecutionHost.withSecrets(
+          ExecutionHost.withSandboxTools(
+            ExecutionHost.withTerminals(
+              Option.isSome(signIn) ? ExecutionHost.remoteWithSignIn(app, signIn.value) : ExecutionHost.remote(app),
+              appDatabase,
+              BranchSandboxes.sandboxesLayer(sandboxObjects, keep),
+            ),
+            appDatabase,
+            BranchSandboxes.machinesLayer(sandboxObjects, keep),
+          ),
           appDatabase,
-          BranchSandboxes.sandboxesLayer(sandboxObjects),
         )
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context.
@@ -103,7 +130,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
                   ),
                 )
               },
-            })
+            }, judge)
           })
         const withGitHub = <ROut, FE, FR>(flows: ExecutionHost.Flows<ROut, FE, FR>) =>
           Option.isSome(github)

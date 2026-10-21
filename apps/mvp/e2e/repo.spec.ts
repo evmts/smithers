@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures"
+import { expect, recordActions, test } from "./fixtures"
 
 // Clone a public GitHub repository and browse it (docs/features/repo.md, decision 0006), against the real app,
 // Worker, Durable Object, Postgres, Electric, GitHub and Code Storage. The fixture is the tiny public
@@ -30,6 +30,8 @@ test("clone: two devices see the repository open on its README once Code Storage
   const alice = await browser.newContext({ recordVideo: { dir: test.info().outputPath("alice") } })
   const bob = await browser.newContext({ recordVideo: { dir: test.info().outputPath("bob") } })
   const [a, b] = [await alice.newPage(), await bob.newPage()]
+  await recordActions(a, test.info(), "alice")
+  await recordActions(b, test.info(), "bob")
   await openReady(a)
   // The second device needs no clone of its own: Electric delivers the row Alice's clone settled.
   await b.goto(REPO)

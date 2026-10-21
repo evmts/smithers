@@ -1,6 +1,15 @@
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import { BranchTrack } from "../features/branch/flows"
+import { BranchShare } from "../features/sharing/flows"
 import { TerminalOpenRequest } from "../features/terminal/flows"
+import {
+  SandboxDiff,
+  SandboxList,
+  SandboxRead,
+  SandboxRun,
+  SandboxStatus,
+  SandboxWrite,
+} from "../features/sandbox/flows"
 import { Close } from "../features/agent/close"
 import { ChatCopy, ChatEdit } from "../features/chat/flows"
 import { AnswerReference } from "../features/agent/reference"
@@ -13,14 +22,18 @@ import {
   FlowListReference,
   FlowNewReference,
   FlowPromptReference,
+  FlowReadReference,
   FlowRunReference,
   FlowSaveReference,
+  FlowWriteReference,
 } from "../features/flows-ui/reference"
-import { IssueComment, IssueCreate } from "../features/issues/flows"
+import { IssueComment, IssueCreate, IssueTriage, TriageEnable, TriagePause, TriageRunAgain } from "../features/issues/flows"
 import { Classify, Evaluate } from "../features/jev/flows"
 import { Cancel, Inspect, List, Resume, Retry } from "../features/runs/flows"
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
+import { Ack, WatchSet } from "../features/attention/flows"
 import { SetTheme } from "../features/theme/flows"
+import { TodoCommit, TodoDraft, TodoDrop } from "../features/todos/flows"
 import { OpenWebPage } from "../features/web/flows"
 
 // The app's flows (docs/features/flows.md#the-registry): every action a person or the agent takes is one `Flow.make`
@@ -64,18 +77,30 @@ export interface Entry {
   readonly flow: BrowserEngine.FlowReference & { readonly description?: string }
   /** Why the agent may not run it; absent when it may. */
   readonly userOnlyReason?: string
+  /**
+   * What running it changes, in the person's words, for a flow the agent may run that changes something; absent for
+   * a read. The agent's catalog shows it beside the flow, and the agent runs such a flow only when the person asked for
+   * that effect (src/flows/catalog.ts). src/flows/registry.test.ts holds every model-invocable flow to one or the other.
+   */
+  readonly changes?: string
+  /**
+   * The approval the agent's call waits for before it runs, for a flow whose side effect only the person decides on:
+   * the question they Approve or Deny. A person's own button or slash command doesn't ask (src/flows/catalog.ts).
+   */
+  readonly confirm?: string
   /** Its slash command; absent when the composer doesn't offer it. */
   readonly slash?: SlashDoor
 }
 
 /** Every flow the app declares, by name. */
 export const registry = {
-  "app/theme/set": { flow: SetTheme, slash: { command: "theme", minimum: "anyone" } },
-  "app/navigate": { flow: Navigate, slash: { command: "navigate", minimum: "anyone" } },
+  "app/theme/set": { flow: SetTheme, changes: "sets this device's theme", slash: { command: "theme", minimum: "anyone" } },
+  "app/navigate": { flow: Navigate, changes: "moves the person's tab", slash: { command: "navigate", minimum: "anyone" } },
   // Adding a view writes the shared conversation, which only a Member or above may (decision 0007).
   // The tab pins the conversation it shows into the payload (src/features/web/actions.ts); a person never types it.
   "app/web/open": {
     flow: OpenWebPage,
+    changes: "adds a page to the chat",
     slash: { command: "web", minimum: "member", hints: { fields: { conversationId: { hidden: true } } } },
   },
   "chat/Answer": {
@@ -88,7 +113,7 @@ export const registry = {
   },
   // Message controls (docs/features/chat.md#message-controls): Copy on a message and `/copy`, which the agent runs to
   // copy its last answer; Edit on a question Smithers doesn't have yet and `/edit`, the person's only.
-  "chat/copy": { flow: ChatCopy, slash: { command: "copy", minimum: "anyone", hints: { fields: { messageId: { hidden: true } } } } },
+  "chat/copy": { flow: ChatCopy, changes: "writes the person's clipboard", slash: { command: "copy", minimum: "anyone", hints: { fields: { messageId: { hidden: true } } } } },
   "chat/edit": {
     flow: ChatEdit,
     userOnlyReason: "Only the person changes what they asked; the agent never edits a question.",
@@ -98,8 +123,12 @@ export const registry = {
   "repo/read": { flow: RepoRead },
   "repo/refs": { flow: RepoRefs },
   // Cloning spends the deployment's Code Storage budget, which only a Member or above may (decision 0007).
-  "repo/clone": { flow: RepoCloneRequest, slash: { command: "clone", minimum: "member" } },
-  "repo/copy": { flow: RepoCopy },
+  "repo/clone": {
+    flow: RepoCloneRequest,
+    changes: "clones the repository, which spends the deployment's storage",
+    slash: { command: "clone", minimum: "member" },
+  },
+  "repo/copy": { flow: RepoCopy, changes: "writes the person's clipboard" },
   // No slash command: a person's run would have nowhere to show its verdicts. A person asks Smithers instead.
   "app/jev/classify": { flow: Classify },
   "app/jev/evaluate": { flow: Evaluate },
@@ -111,11 +140,25 @@ export const registry = {
     userOnlyReason: "The device that holds a run delivers an answer already recorded; nobody runs it by hand.",
   },
   // Your own flows (decision 0014 §2): drafting one costs model calls, so only a Member or above drafts or runs one.
-  "flow/new": { flow: FlowNewReference, slash: { command: "flow.new", minimum: "member" } },
+  "flow/new": {
+    flow: FlowNewReference,
+    changes: "drafts a flow for the person to review, which spends model calls",
+    slash: { command: "flow.new", minimum: "member" },
+  },
   "flow/answer": { flow: FlowAnswerReference, userOnlyReason: "Only the person answers what the drafting agent asked." },
-  "flow/save": { flow: FlowSaveReference },
+  // Saving and deleting your flow are yours to decide: the agent's call asks first (the agent evals saw it save a draft
+  // it was only asked to create, 2026-10-20).
+  "flow/save": {
+    flow: FlowSaveReference,
+    changes: "saves a draft as the person's flow",
+    confirm: "Save this draft as your flow?",
+  },
+  // A flow's code (decision 0014 §1): Code on the Flows page reads it and Save writes it, and the agent can too.
+  "flow/read": { flow: FlowReadReference },
+  "flow/write": { flow: FlowWriteReference, changes: "saves new code for the person's flow" },
   "flow/run": {
     flow: FlowRunReference,
+    changes: "runs the person's flow, and whatever it does",
     // `/flow.run <name> <input>`: the revision a person never types; the latest runs.
     slash: { command: "flow.run", minimum: "member", fields: ["name", "input"] },
   },
@@ -123,24 +166,99 @@ export const registry = {
     flow: FlowPromptReference,
     userOnlyReason: "flow/run starts it with the revision it pinned; nobody starts it by hand.",
   },
-  "flow/delete": { flow: FlowDeleteReference },
+  "flow/delete": { flow: FlowDeleteReference, changes: "deletes the person's flow", confirm: "Delete this flow?" },
   "flow/list": { flow: FlowListReference },
   // Runs (decision 0014 §2): the acts on a run this device holds, and the reads. Their results show on the run page.
-  "run/cancel": { flow: Cancel },
-  "run/retry": { flow: Retry },
-  "run/resume": { flow: Resume },
+  "run/cancel": { flow: Cancel, changes: "cancels a run" },
+  "run/retry": { flow: Retry, changes: "runs a failed run again" },
+  "run/resume": { flow: Resume, changes: "resumes a run" },
   "run/list": { flow: List },
   "run/inspect": { flow: Inspect },
   // The branch workspace (decision 0013): a page opening a branch runs branch/track, and the agent can too.
-  "branch/track": { flow: BranchTrack },
+  "branch/track": { flow: BranchTrack, changes: "tracks the branch for the person" },
+  "branch/share": {
+    flow: BranchShare,
+    userOnlyReason: "Sharing a branch is its owner's own act; the agent never grants access (decision 0008).",
+  },
   "terminal/open": {
     flow: TerminalOpenRequest,
     userOnlyReason: "A terminal is the person's own shell; the agent runs commands as jobs instead (decision 0013).",
   },
   // Git writes (decision 0012 §3): opening an issue and commenting are Guest acts. `/issue owner/repo <title>` fills
   // the title with the rest of the line; the body is the form's.
-  "issue/create": { flow: IssueCreate, slash: { command: "issue", minimum: "guest", fields: ["repo", "title"] } },
-  "issue/comment": { flow: IssueComment, slash: { command: "comment", minimum: "guest" } },
+  "issue/create": { flow: IssueCreate, changes: "opens an issue on GitHub", slash: { command: "issue", minimum: "guest", fields: ["repo", "title"] } },
+  "issue/comment": { flow: IssueComment, changes: "comments on a GitHub issue", slash: { command: "comment", minimum: "guest" } },
+  // Triage (decision 0012 §5 and decision 11): a person's acts only. Accept and Not accepted, and Run triage again, are
+  // a Member's (`repo:triage`); Enable and Pause a Maintainer's (`repo:triage-flow`).
+  "issue/triage": {
+    flow: IssueTriage,
+    userOnlyReason: "Overriding triage is a person's call; the agent never accepts or rejects an issue.",
+    // `/triage owner/repo <n> accept|reject <reason>`: the reason, the last text field, takes the rest of the line.
+    slash: { command: "triage", minimum: "member" },
+  },
+  "triage/run": {
+    flow: TriageRunAgain,
+    userOnlyReason: "Handing an issue back to the triage flow is a person's call, never the agent's.",
+    slash: { command: "triage.run", minimum: "member" },
+  },
+  "triage/enable": {
+    flow: TriageEnable,
+    userOnlyReason: "A Maintainer turns the triage flow on under their own role; the agent never does.",
+    slash: { command: "triage.enable", minimum: "maintainer" },
+  },
+  "triage/pause": {
+    flow: TriagePause,
+    userOnlyReason: "A Maintainer pauses the triage flow; the agent never does.",
+    slash: { command: "triage.pause", minimum: "maintainer" },
+  },
+  // TODOs and the stack (decision 0016 §3): the agent drafts a TODO, privately, on the person's device; only the person
+  // commits it and drops it. `/todo.new owner/repo <prompt>` drafts one; the prompt takes the rest of the line.
+  "todo/draft": { flow: TodoDraft, changes: "drafts a TODO for the person", slash: { command: "todo.new", minimum: "member", fields: ["repo", "prompt"] } },
+  "todo/commit": {
+    flow: TodoCommit,
+    userOnlyReason: "A person commits a TODO from its draft card; the agent drafts and never commits one.",
+  },
+  "todo/drop": {
+    flow: TodoDrop,
+    userOnlyReason: "Dropping a TODO is a person's press; the agent never drops one.",
+    slash: { command: "todo.drop", minimum: "member" },
+  },
+  // Notifications (decision 0009): a tab showing a conversation follows its branch and repository, and the agent can
+  // too; Read, Dismiss and Hide are the person's acts on their own feed.
+  "watch/set": { flow: WatchSet, changes: "changes what the person follows" },
+  "notification/ack": {
+    flow: Ack,
+    userOnlyReason: "Read, Dismiss and Hide record what the person saw and chose; the agent never acts for them.",
+  },
+  // The sandbox tools (decision 0005 §5, docs/features/sandbox-tools.md): what the agent's hands are on a branch's
+  // machine, and a person's slash commands alike. Each runs as the person who asked, who must be able to edit the
+  // branch; the tab pins the conversation it shows, which a person never types.
+  "sandbox/run": {
+    flow: SandboxRun,
+    changes: "runs a command on the branch's machine",
+    slash: { command: "run", minimum: "member", fields: ["command"], hints: { fields: { conversationId: { hidden: true } } } },
+  },
+  "sandbox/read": {
+    flow: SandboxRead,
+    slash: { command: "read", minimum: "member", hints: { fields: { conversationId: { hidden: true } } } },
+  },
+  "sandbox/write": {
+    flow: SandboxWrite,
+    changes: "writes a file on the branch's machine",
+    slash: { command: "write", minimum: "member", fields: ["path", "content"], hints: { fields: { conversationId: { hidden: true } } } },
+  },
+  "sandbox/list": {
+    flow: SandboxList,
+    slash: { command: "ls", minimum: "member", hints: { fields: { conversationId: { hidden: true } } } },
+  },
+  "sandbox/status": {
+    flow: SandboxStatus,
+    slash: { command: "status", minimum: "member", hints: { fields: { conversationId: { hidden: true } } } },
+  },
+  "sandbox/diff": {
+    flow: SandboxDiff,
+    slash: { command: "diff", minimum: "member", hints: { fields: { conversationId: { hidden: true }, paths: { hidden: true } } } },
+  },
 } as const satisfies Record<string, Entry>
 
 /** A registered flow's name: the only thing the UI dispatches. */

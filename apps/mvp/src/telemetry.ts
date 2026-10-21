@@ -4,10 +4,12 @@
 // (src/flows/engine.ts), so the browser and the Worker share one list; src/telemetry.test.ts fails when they drift.
 // Nothing here imports a library, so every side can.
 import { AGENT_TELEMETRY } from "./features/agent/contract"
+import { ATTENTION_TELEMETRY } from "./features/attention/contract"
 import { AUTH_TELEMETRY } from "./features/auth/contract"
 import { BRANCH_TELEMETRY } from "./features/branch/contract"
 import { CHAT_TELEMETRY } from "./features/chat/contract"
 import { ISSUES_TELEMETRY } from "./features/issues/contract"
+import { TODOS_TELEMETRY } from "./features/todos/contract"
 import { JEV_TELEMETRY } from "./features/jev/contract"
 import { COMMANDS_TELEMETRY } from "./features/commands/contract"
 import { NAVIGATION_TELEMETRY } from "./features/navigation/contract"
@@ -16,9 +18,14 @@ import { THEME_TELEMETRY } from "./features/theme/contract"
 import { WEB_TELEMETRY } from "./features/web/contract"
 import { FLOWS_TELEMETRY } from "./flows/contract"
 import { FLOWS_UI_TELEMETRY } from "./features/flows-ui/contract"
+import { HOME_TELEMETRY } from "./features/home/contract"
 import { RUNS_TELEMETRY } from "./features/runs/contract"
+import { SPEND_TELEMETRY } from "./features/spend/contract"
 import { STATUS_TELEMETRY } from "./features/status/contract"
 import { TERMINAL_TELEMETRY } from "./features/terminal/contract"
+import { PRESENCE_TELEMETRY } from "./features/presence/contract"
+import { SHARING_TELEMETRY } from "./features/sharing/contract"
+import { SANDBOX_TELEMETRY } from "./features/sandbox/contract"
 
 /** Records by name (log messages, span names, metric names) and the fields a relayed line keeps. */
 export interface Telemetry {
@@ -114,11 +121,18 @@ const features: ReadonlyArray<Telemetry> = [
   WEB_TELEMETRY,
   JEV_TELEMETRY,
   ISSUES_TELEMETRY,
+  TODOS_TELEMETRY,
   FLOWS_UI_TELEMETRY,
   RUNS_TELEMETRY,
   STATUS_TELEMETRY,
   BRANCH_TELEMETRY,
+  SHARING_TELEMETRY,
+  PRESENCE_TELEMETRY,
   TERMINAL_TELEMETRY,
+  SANDBOX_TELEMETRY,
+  SPEND_TELEMETRY,
+  HOME_TELEMETRY,
+  ATTENTION_TELEMETRY,
 ]
 
 /**

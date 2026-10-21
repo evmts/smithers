@@ -6,7 +6,9 @@ import type { Signed } from "./SignIn.ts"
 // ChatApi under `alchemy dev` (alchemy.run.ts picks it only then): the same program with real sign-in once the GitHub
 // App's client id and secret are in the environment, and until then a local developer signed in as an Admin, so the
 // browser's agent can call the model endpoint on a laptop (docs/features/sign-in.md#local-development). It keeps
-// `/web … tab` links to the dev machine's own `http://localhost` pages (docs/features/web-pages.md). Production
+// `/web … tab` links to the dev machine's own `http://localhost` pages (docs/features/web-pages.md), and turns spend
+// alerts off, since a laptop's runs and the end-to-end tests spend all day (`MODEL_SPEND_ALERTS=true` turns them back
+// on; docs/features/spend-alerts.md). Production
 // bundles worker/ChatApi.ts, which never imports this file.
 
 /** The local developer: a person with the Admin role. */
@@ -18,8 +20,33 @@ export const localDeveloper: Actor.Actor = {
 
 const fallback: Signed = { actor: localDeveloper, login: "local-developer" }
 
+/**
+ * Local development's second person, a Member: a browser with the cookie `smithers_dev_person=teammate` is them, so
+ * the end-to-end tests run two people on one laptop (docs/features/notifications.md#tests).
+ */
+export const localTeammate: Actor.Actor = {
+  subject: { kind: "person", id: "local-teammate" },
+  role: "member",
+  login: "local-teammate",
+}
+
+/**
+ * Local development's Guest (GitHub read): `smithers_dev_person=guest`. A branch opens to them only when it is shared
+ * with them by name, and only to view (docs/features/branch-workspace.md#sharing).
+ */
+export const localGuest: Actor.Actor = {
+  subject: { kind: "person", id: "local-guest" },
+  role: "guest",
+  login: "local-guest",
+}
+
+const teammates: Readonly<Record<string, Signed>> = {
+  teammate: { actor: localTeammate, login: "local-teammate" },
+  guest: { actor: localGuest, login: "local-guest" },
+}
+
 export default class DevChatApi extends Cloudflare.Worker<DevChatApi>()(
   "ChatApi",
   { ...props, main: "worker/DevChatApi.ts" },
-  program({ fallback, localHttp: true }),
+  program({ fallback, teammates, localHttp: true, spendAlerts: false }),
 ) {}

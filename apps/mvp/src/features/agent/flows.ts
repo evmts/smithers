@@ -6,6 +6,7 @@ import { AnswerSettled, AnswersUnavailable, NotYourTurn, TurnOutOfTime } from ".
 import { SETTLE_RETRY } from "./close"
 import { MAX_FRAMES } from "./contract"
 import { CHAT_SYSTEM } from "./instructions"
+import { ProductWords } from "./words"
 import { AnswerReference } from "./reference"
 import { Exchange, Turn } from "./schema"
 
@@ -65,15 +66,25 @@ export const prompt = (turn: { readonly question: string; readonly history: Read
       `The person now asks: ${turn.question}`,
     ].join("\n")
 
-/** The agent: answers the question, calling the app's flows from its cells, and finishes with the answer's text. */
+/**
+ * How many times an answer that isn't in product words goes back to the agent, in its own session, before the answer
+ * fails. Each costs one model call; the agent's earlier calls stay done and aren't made again.
+ */
+export const WORD_CORRECTIONS = 2
+
+/**
+ * The agent: answers the question, calling the app's flows from its cells, and finishes with the answer's text. The
+ * text is declared `ProductWords`, so an answer naming a flow, a code or an id goes back to the agent to say plainly.
+ */
 export const Respond = AgentAction.make("chat/Respond", {
   payload: Turn,
-  output: Schema.String,
+  output: ProductWords,
   seat: "agent",
   system: CHAT_SYSTEM,
   profile: "conversation",
   prompt,
   maxFrames: MAX_FRAMES,
+  corrections: WORD_CORRECTIONS,
 })
 
 /**

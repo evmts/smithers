@@ -5,8 +5,9 @@ import { Effect, Option, Schema } from "effect"
 import { PROMPT_CALLABLE } from "../features/flows-ui/callable"
 import { AUTHOR_TOOLS } from "../features/flows-ui/contract"
 import { FlowPromptReference, FlowNewReference } from "../features/flows-ui/reference"
+import { Ask } from "../features/status/flows"
 import { declarationOf, modelInvocable } from "./declarations"
-import { type FlowName, names } from "./registry"
+import { entryOf, type FlowName, names } from "./registry"
 
 // The agent's catalog (decision 0003 §1, docs/features/flows.md#the-agents-catalog): the registry's model-invocable
 // flows, which all run on this device, bound so a cell's `ctx.call("app/theme/set", { mode })` runs the very declaration a
@@ -27,12 +28,32 @@ export const SOURCE = "app"
 export const childExecutionId = (identity: Cell.CallIdentity): string =>
   `${identity.session}/call/${identity.frame}.${identity.ordinal}`
 
+/**
+ * The person didn't approve a call that needs their approval (the registry's `confirm`): they denied it, or didn't
+ * answer in time. The cell reads `NotApproved`; the flow never ran.
+ */
+export class NotApproved extends Schema.TaggedError<NotApproved>()("@smthrs/mvp/flows/NotApproved", {}) {}
+
+/** The child execution that asks the person to approve a call before it runs: the call's own, then `/confirm`. */
+export const confirmExecutionId = (identity: Cell.CallIdentity): string => `${childExecutionId(identity)}/confirm`
+
 /** What a cell reads of a flow's failure: its kind, the last segment of its tag, never its message. */
 export const publicError = (error: unknown): string =>
   typeof error === "object" && error !== null && "_tag" in error ? String(error._tag).split("/").at(-1)! : "failed"
 
 /** The flows the agent may call: the model-invocable ones. */
 export const agentFlows: ReadonlyArray<FlowName> = names.filter(modelInvocable)
+
+/**
+ * A flow as the agent's catalog describes it: its own description, then its side effect when it changes something
+ * (the registry's `changes`), which the agent runs only when the person asked for that effect. A read says nothing
+ * more. The slash menu and the drafting agent read the declaration's own description.
+ */
+export const catalogDescription = (name: FlowName): string => {
+  const description = declarationOf(name).description ?? ""
+  const { changes } = entryOf(name)
+  return changes === undefined ? description : `${description} Side effect: ${changes}; only when the person asks for that.`
+}
 
 /** What a run's agent may call: every flow of the catalog, or only these. */
 export type Scope = "all" | ReadonlyArray<string>
@@ -81,18 +102,29 @@ export const source = Effect.gen(function* () {
     return FlowBinding.make({
       flow: {
         name,
-        description: flow.description,
+        description: catalogDescription(name),
         input: flow.payloadSchema as unknown as Schema.Codec<unknown>,
         output: flow.successSchema as unknown as Schema.Codec<unknown>,
         capabilities: [],
         effects: undefined,
         modelInvocable: true,
       },
-      handler: (input, call) =>
-        runtime.execute(flow as never, {
+      handler: (input, call) => {
+        const run = runtime.execute(flow as never, {
           executionId: childExecutionId(call.identity),
           payload: input as never,
-        }) as Effect.Effect<unknown, unknown>,
+        }) as Effect.Effect<unknown, unknown>
+        // A flow the person must approve (the registry's `confirm`) runs only once they Approve; the question is a
+        // child of the answer's run, as `app/agent/ask` is when the agent asks it.
+        const { confirm } = entryOf(name)
+        return confirm === undefined ? run : Effect.flatMap(
+          runtime.execute(Ask, {
+            executionId: confirmExecutionId(call.identity),
+            payload: { kind: "approval", prompt: confirm },
+          }),
+          (outcome): Effect.Effect<unknown, unknown> => (outcome.approved === true ? run : Effect.fail(new NotApproved())),
+        )
+      },
       publicError,
     })
   })

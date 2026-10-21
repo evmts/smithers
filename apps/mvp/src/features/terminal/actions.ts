@@ -4,7 +4,7 @@ import { FlowDispatch } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
 import { DEFAULT_COLS, DEFAULT_ROWS, OPEN_DEADLINE_SECONDS, terminalSocketRoute } from "./contract"
 import { bytes, ended, openMs, reconnects } from "./metrics"
-import { PANEL, type Panel, type TerminalRow } from "./schema"
+import { PANEL, type Panel, type Tab, type TerminalRow } from "./schema"
 import { TerminalStore } from "./store"
 
 // What a person does with a branch's terminal (decision 0013 §3, docs/features/branch-workspace.md#the-terminal), and
@@ -38,23 +38,62 @@ const mineOf = (rows: ReadonlyArray<TerminalRow>, login: string | null) =>
     ? undefined
     : rows.find((row) => row.ownerLogin === login && (row.status === "open" || row.status === "opening"))
 
+/** Makes the panel's tabs the live terminals among `rows`. */
+const mirrorTabs = (rows: ReadonlyArray<TerminalRow>) =>
+  Effect.gen(function* () {
+    const { tabs } = yield* TerminalStore
+    const login = yield* loginNow
+    const live: ReadonlyArray<Tab> = rows.flatMap((row) =>
+      row.status === "open" || row.status === "opening"
+        ? [{
+          id: row.id,
+          ownerId: row.ownerId,
+          ownerLogin: row.ownerLogin,
+          mine: row.ownerLogin === login,
+          status: row.status,
+          createdAt: row.createdAt,
+        }]
+        : []
+    )
+    const keep = new Set(live.map((tab) => tab.id))
+    const gone = (yield* tabs.toArray).filter((tab) => !keep.has(tab.id)).map((tab) => tab.id)
+    if (gone.length > 0) yield* Effect.orDie(tabs.delete(gone))
+    for (const tab of live) {
+      if (Option.isSome(yield* tabs.get(tab.id))) {
+        yield* Effect.orDie(tabs.update(tab.id, (draft) => void Object.assign(draft, tab)))
+      } else {
+        yield* Effect.orDie(tabs.insert(tab))
+      }
+    }
+  })
+
 /**
  * Shows branch `branchId`'s terminal panel: `watching`, a terminal to watch (anyone's), or else the person's own open
- * one, attached once it is open; otherwise Open terminal. `null` shows none, and lets go of the socket.
+ * one, or else the first live terminal on the branch, attached once it is open; otherwise Open terminal. Its tabs
+ * follow the branch's live terminals while it shows. `null` shows none, and lets go of the socket. Answers the
+ * terminal it shows, if any.
  */
 export const show = (branchId: string | null, watching?: string) =>
   Effect.gen(function* () {
     const store = yield* TerminalStore
     yield* FiberHandle.clear(store.attached)
+    yield* FiberHandle.clear(store.follower)
     if (branchId === null) {
-      return yield* setPanel({ branchId: null, terminalId: null, phase: "idle", access: null })
+      yield* mirrorTabs([])
+      yield* setPanel({ branchId: null, terminalId: null, phase: "idle", access: null })
+      return null
     }
     const terminals = yield* store.terminals(branchId)
     // The branch's rows first, so the panel never offers Open terminal for one that is open.
     yield* terminals.preload.pipe(Effect.timeoutOption("10 seconds"), Effect.ignore)
     const rows = yield* terminals.toArray
+    yield* mirrorTabs(rows)
+    yield* FiberHandle.run(
+      store.follower,
+      terminals.changes().pipe(Stream.runForEach(() => Effect.flatMap(terminals.toArray, mirrorTabs))),
+    )
     const shown = watching === undefined
-      ? mineOf(rows, yield* loginNow)
+      ? mineOf(rows, yield* loginNow) ?? rows.find((row) => row.status === "open" || row.status === "opening")
       : rows.find((row) => row.id === watching)
     yield* setPanel({
       branchId,
@@ -63,6 +102,7 @@ export const show = (branchId: string | null, watching?: string) =>
       access: null,
     })
     if (shown?.status === "opening") yield* Effect.forkIn(awaitOpen(branchId, shown.id, undefined), store.scope)
+    return shown?.id ?? null
   }).pipe(Effect.annotateLogs({ feature: "terminal" }))
 
 /** The panel's phase for a row that isn't open. */

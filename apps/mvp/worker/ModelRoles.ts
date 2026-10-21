@@ -28,6 +28,16 @@ export const ModelRecord = Schema.Struct({
 /** The decoded form of {@link ModelRecord}. */
 export type ModelRecord = typeof ModelRecord.Type
 
+/**
+ * The deployment's default model when `CHAT_MODEL` is unset: ChatApi's, and the agent evals' (evals/agent.eval.ts).
+ */
+export const DEFAULT_CHAT_MODEL: ModelRecord = {
+  protocol: "openai-chat",
+  baseUrl: "https://api.cerebras.ai",
+  modelId: "qwen-3.8-27b",
+  credential: "CEREBRAS_API_KEY",
+}
+
 /** The model that answers a role now, and where the choice came from. */
 export interface Resolved {
   readonly source: "setting" | "default"

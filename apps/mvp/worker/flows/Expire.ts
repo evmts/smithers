@@ -4,6 +4,7 @@ import { Config, Duration, Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { ANSWER_SETTLE_WITHIN, ANSWER_TURN_WAIT } from "../../src/features/agent/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
+import * as Notifications from "../Notifications.ts"
 
 // `chat/Expire { answerId }` (docs/features/remote-flows.md, docs/features/agent.md#settling): settles an answer whose
 // run never did. A run belongs to the browser that asked (decision 0011), so an answer whose device never comes back,
@@ -160,7 +161,8 @@ export const expiresIn = (answerId: string, after: Duration.Duration) =>
 
 /**
  * Settles `answerId` as `abandoned` if it still streams and its queue has been still for `after`, against the
- * `SqlClient` in context. One statement: the check and the update read the same snapshot.
+ * `SqlClient` in context. One statement: the check and the update read the same snapshot. In the same transaction, an
+ * abandoned answer's run fails, and the feed folds it.
  */
 export const abandon = (answerId: string, after: Duration.Duration) =>
   Effect.gen(function* () {
@@ -178,6 +180,14 @@ export const abandon = (answerId: string, after: Duration.Duration) =>
       )
       SELECT (SELECT count(*) FROM settled)::int AS abandoned, (SELECT count(*) FROM target)::int AS found,
         (SELECT count(*) FROM target WHERE status = 'streaming')::int AS streaming`
+    // The run index agrees, and the people who hear of the run see it fail (worker/Notifications.ts), in this
+    // transaction.
+    if (row!.abandoned > 0) {
+      yield* sql`
+        UPDATE runs SET status = 'failed', waiting = NULL, updated_at = now()
+        WHERE id = ${answerId} AND status NOT IN ('done', 'failed')`
+      yield* Notifications.foldRun(answerId, undefined)
+    }
     const outcome: Expired["outcome"] = row!.abandoned > 0
       ? "abandoned"
       : row!.found === 0
@@ -186,7 +196,7 @@ export const abandon = (answerId: string, after: Duration.Duration) =>
       ? "waiting"
       : "settled"
     return { outcome } satisfies Expired
-  })
+  }).pipe((effect) => Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(effect)))
 
 /**
  * One step over `database`, with its records: a `chat.answer.expire` log line and span when it fails, and when it

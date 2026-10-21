@@ -3,7 +3,14 @@ import { GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
 import { Clock, Effect, Layer, Metric, Option, type Redacted, Schema } from "effect"
 import { HttpClient } from "effect/http"
-import { agentAttribution, type WriteFailure } from "../../src/features/issues/contract.ts"
+import {
+  ACCEPTED_LABEL,
+  agentAttribution,
+  labelOf,
+  NOT_ACCEPTED_LABEL,
+  TRIAGE_LABEL_COLORS,
+  type WriteFailure,
+} from "../../src/features/issues/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import type { Services } from "./Apply.ts"
 import { classify, withToken } from "./Calls.ts"
@@ -12,12 +19,17 @@ import * as Metrics from "./Metrics.ts"
 import { fetchIssue, project } from "./Project.ts"
 import * as Store from "./Store.ts"
 import type { TokenUnavailable } from "./Tokens.ts"
+import * as TriageStore from "./TriageStore.ts"
 
 // `github/Write { writeId }` (decision 0012 §4, docs/features/issues.md#writes): the one remote flow behind every git
 // write. The writes route admitted the write and recorded it in `github_writes`; this calls GitHub once and settles the
 // row and the projection together. A person's own write runs with their GitHub token, so GitHub shows them; the agent's
 // runs as the App and its text says whom it acted for (§5). It runs remotely because it needs a token the person must
 // not hold in the browser (decision 0011 §2).
+//
+// Triage's writes go the same way (§5): a person's Accept or Not accepted (`issue/triage`) labels with their own token,
+// comments their reason when they give one, and pins the issue against the flow; Enable and Pause (`triage/enable`,
+// `triage/pause`) change only the repository's settings, so they call GitHub not at all.
 //
 //   send: token ─▶ (an earlier attempt? find our marker on GitHub; adopt it) ─▶ count the attempt ─▶ one POST
 //         ─▶ read the issue back ─▶ settle `done` with the rows, in one transaction
@@ -67,8 +79,9 @@ export const GiveUp = Action.make("github/Write/give-up", {
 
 /** `github/Write`: makes one admitted git write on GitHub. */
 export const Write = Flow.make("github/Write", {
-  description: "Make one admitted git write on GitHub (open an issue, comment) and settle it with its rows.",
-  capabilities: ["db:write:github_writes", "db:write:items", "db:write:comments"],
+  description: "Make one admitted git write on GitHub (open an issue, comment, a person's triage) or to the " +
+    "repository's triage settings, and settle it with its rows.",
+  capabilities: ["db:write:github_writes", "db:write:items", "db:write:comments", "db:write:triage_settings"],
   modelInvocable: false,
   payload: WriteRequest,
   success: Written,
@@ -105,12 +118,13 @@ const refusalOf = (status: number, token: "user" | "app"): WriteFailure =>
 export const steps = <E, R>(services: Services<E, R>) => {
   const settled = (
     write: Store.Write,
-    token: "user" | "app",
+    token: "user" | "app" | "none",
     settlement: Store.Settlement,
     project?: Effect.Effect<unknown, unknown, unknown>,
   ) =>
     Effect.gen(function* () {
-      const fields = { writeId: write.id, op: write.op, via: write.via, token }
+      // `tokenKind`, never `token`: the flow host's redaction hides the value of a field named `token`.
+      const fields = { writeId: write.id, op: write.op, via: write.via, tokenKind: token }
       const settledNow = yield* Store.settleWrite(write.id, settlement, project as Effect.Effect<unknown> | undefined)
       if (settledNow) {
         yield* Metric.update(Metric.withAttributes(Metrics.writes, { op: write.op, outcome: settlement.status, token }), 1)
@@ -146,6 +160,20 @@ export const steps = <E, R>(services: Services<E, R>) => {
         } satisfies Written
       }
       const repository = repositoryOf(write.repoId.replace(/^github\//, ""))
+      const payload = write.payload
+      // Enabling and pausing triage change the repository's settings and nothing on GitHub: no token.
+      if (payload.op === "triage/enable" || payload.op === "triage/pause") {
+        return yield* settled(
+          write,
+          "none",
+          { status: "done", itemNumber: null, githubId: null },
+          payload.op === "triage/enable"
+            ? TriageStore.enable(write.repoId, { actorId: write.actorId, login: write.login, dailyTokens: payload.dailyTokens })
+            : TriageStore.pause(write.repoId, "person"),
+        )
+      }
+      // Run triage again is admitted for `triage/Run`, which settles it; this flow never runs one.
+      if (payload.op === "triage/run") return yield* settled(write, "none", { status: "refused", failure: "invalid" })
       const kind = write.via === "person" ? "user" as const : "app" as const
       const token = yield* (write.via === "person"
         ? services.tokens.forSession(write.sessionId!)
@@ -157,35 +185,60 @@ export const steps = <E, R>(services: Services<E, R>) => {
           token.failure.retryAfterMillis === undefined ? {} : { retryAfterMillis: token.failure.retryAfterMillis },
         )
       }
-      const body = GitHub.Issues.withWriteMarker(
-        write.via === "agent" ? `${write.payload.body}\n\n${agentAttribution(write.login ?? "unknown")}` : write.payload.body,
-        write.id,
-      )
+      /** A body as GitHub gets it: the agent's says whom it acted for, and every one carries the write's marker. */
+      const marked = (text: string) =>
+        GitHub.Issues.withWriteMarker(
+          write.via === "agent" ? `${text}\n\n${agentAttribution(write.login ?? "unknown")}` : text,
+          write.id,
+        )
+      // The triage state the issue had before a person's override: what the override metric counts it from.
+      const before = payload.op === "issue/triage"
+        ? Option.match(yield* TriageStore.itemTriage(write.repoId, payload.number), {
+          onNone: () => "proposed" as const,
+          onSome: (item) => item.triage,
+        })
+        : "proposed"
       const onGitHub = (accessToken: Redacted.Redacted<string>) =>
         Effect.gen(function* () {
           const since = new Date(write.createdAt - MARKER_SLACK_MS).toISOString()
-          const payload = write.payload
           // An attempt before this one may have reached GitHub and lost its answer: look for our marker before writing.
           const earlier = (yield* Store.beginAttempt(write.id)) > 0
+          const comment = (number: number, text: string) =>
+            Effect.gen(function* () {
+              const adopted = earlier
+                ? yield* GitHub.Issues.findCommentByWrite(repository.owner, repository.name, number, { writeId: write.id, since })
+                : Option.none()
+              const made = Option.isSome(adopted)
+                ? adopted.value
+                : yield* GitHub.Issues.createComment(repository.owner, repository.name, number, marked(text))
+              return { number, githubId: made.id, adopted: Option.isSome(adopted) }
+            })
           if (payload.op === "issue/create") {
             const adopted = earlier
               ? yield* GitHub.Issues.findIssueByWrite(repository.owner, repository.name, { writeId: write.id, since })
               : Option.none()
             const issue = Option.isSome(adopted)
               ? adopted.value
-              : yield* GitHub.Issues.createIssue(repository.owner, repository.name, { title: payload.title, body })
+              : yield* GitHub.Issues.createIssue(repository.owner, repository.name, {
+                title: payload.title,
+                body: marked(payload.body),
+              })
             return { number: issue.number, githubId: issue.id, adopted: Option.isSome(adopted) }
           }
-          const adopted = earlier
-            ? yield* GitHub.Issues.findCommentByWrite(repository.owner, repository.name, payload.number, {
-              writeId: write.id,
-              since,
-            })
-            : Option.none()
-          const comment = Option.isSome(adopted)
-            ? adopted.value
-            : yield* GitHub.Issues.createComment(repository.owner, repository.name, payload.number, body)
-          return { number: payload.number, githubId: comment.id, adopted: Option.isSome(adopted) }
+          if (payload.op === "issue/comment") return yield* comment(payload.number, payload.body)
+          // A person's Accept or Not accepted: one triage label on, the other off (each idempotent, so a repeat is
+          // harmless), then their reason as their own comment when they gave one.
+          const add = labelOf(payload.decision)
+          yield* GitHub.Issues.createLabel(repository.owner, repository.name, { name: add, color: TRIAGE_LABEL_COLORS[add]! })
+          yield* GitHub.Issues.addLabels(repository.owner, repository.name, payload.number, [add])
+          yield* GitHub.Issues.removeLabel(
+            repository.owner,
+            repository.name,
+            payload.number,
+            add === ACCEPTED_LABEL ? NOT_ACCEPTED_LABEL : ACCEPTED_LABEL,
+          )
+          if (payload.reason === null) return { number: payload.number, githubId: null, adopted: false }
+          return yield* comment(payload.number, payload.reason)
         }).pipe(withToken(accessToken, services.apiBaseUrl))
       const made = yield* onGitHub(token.success).pipe(Effect.result)
       if (made._tag === "Failure") {
@@ -197,7 +250,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
           yield* Metric.update(Metric.withAttributes(Metrics.writeUnknown, { op: write.op }), 1)
         }
         yield* Effect.logWarning("github.write").pipe(
-          Effect.annotateLogs({ writeId, op: write.op, token: kind, outcome: classified.kind, errorCode: codeOf(made.failure) }),
+          Effect.annotateLogs({ writeId, op: write.op, tokenKind: kind, outcome: classified.kind, errorCode: codeOf(made.failure) }),
         )
         return yield* new WriteUnavailable(retryAfter(made.failure))
       }
@@ -206,12 +259,43 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const result = made.success
       if (result.adopted) yield* Effect.annotateCurrentSpan({ "smithers.github.adopted": true })
       const fetched = yield* fetchIssue(repository, result.number).pipe(withToken(token.success, services.apiBaseUrl))
-      return yield* settled(
+      const projected = project(repository, result.number, fetched)
+      const written = yield* settled(
         write,
         kind,
         { status: "done", itemNumber: result.number, githubId: result.githubId },
-        project(repository, result.number, fetched),
+        payload.op === "issue/triage"
+          // The override pins the issue, so the flow drops a decision in flight and never re-decides it, and is recorded
+          // as the person's decision with its receipts.
+          ? Effect.gen(function* () {
+            yield* projected
+            yield* TriageStore.pin(write.repoId, payload.number, true)
+            yield* TriageStore.recordDecision({
+              id: write.id,
+              repoId: write.repoId,
+              number: payload.number,
+              via: "person",
+              decidedBy: write.actorId,
+              runId: null,
+              writeId: write.id,
+              guidelinesSha: null,
+              inputDigest: null,
+              triageBefore: before,
+              decision: payload.decision,
+              reason: null,
+              abstained: null,
+              tokens: 0,
+              labeled: true,
+              commentGithubId: result.githubId,
+            })
+          })
+          : projected,
       )
+      if (payload.op === "issue/triage" && written.status === "done") {
+        yield* Metric.update(Metric.withAttributes(Metrics.triageDecisions, { decision: payload.decision, via: "person" }), 1)
+        yield* Metric.update(Metric.withAttributes(Metrics.triageOverrides, { from: before, to: payload.decision }), 1)
+      }
+      return written
     }).pipe(
       Effect.provideService(HttpClient.HttpClient, services.http),
       Effect.provide(services.database),

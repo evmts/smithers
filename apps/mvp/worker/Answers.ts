@@ -4,16 +4,19 @@ import { SqlClient } from "effect/sql"
 import { MAX_ANSWER_BODY_BYTES } from "../src/features/agent/contract.ts"
 import { AnswerWrite, type Turn } from "../src/features/agent/schema.ts"
 import { agentLiveSeconds } from "../src/features/model/contract.ts"
-import { canAsk, Sessions } from "./Actor.ts"
+import { type Actor, canAsk, Sessions } from "./Actor.ts"
+import { branchAccess, canEdit } from "./branch/Access.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
+import * as Notifications from "./Notifications.ts"
 import * as Messages from "./Messages.ts"
 
 // The answer routes (docs/features/agent.md#the-answer-routes): the server's write path for the answers the browser's
 // agent gives (decision 0011). The agent reads its turn here, then writes its parts while it streams and its text or
 // failure when it settles. Only the person who asked the question may (`asked_by`, recorded from their session when
-// they asked), and only while they may still ask (Member or above, decision 0007), like the model endpoint: another
-// Member can't read the turn, write, settle or learn whether a settle landed. An answer changes only while it is
+// they asked), and only while they may still ask (Member or above, decision 0007) and edit the conversation's branch
+// (worker/branch/Access.ts), like the model endpoint: another Member, or an asker whose access to the branch was taken
+// away, can't read the turn, write, settle or learn whether a settle landed. An answer changes only while it is
 // `streaming`; a settle sent again after it landed is answered as landed, so a replayed step is harmless. How long an earlier answer holds up later turns is the `agent` role's
 // liveness bound (`agentLiveSeconds`, src/features/model/contract.ts): a live run writes within it, and an answer
 // waiting its turn is touched by its turn requests, at most once a third of the bound.
@@ -133,6 +136,21 @@ const landed = (
     : write.status === "failed" && row.status === "failed" && row.failure === write.failure
 
 /**
+ * Whether `actor` may still edit the branch of answer `answerId`'s conversation: `true` when there is no such message,
+ * which the turn and write answer 404 themselves.
+ */
+const mayEdit = (actor: Actor, answerId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly conversationId: string }>`
+      SELECT conversation_id AS "conversationId" FROM messages WHERE id = ${answerId}`
+    if (row === undefined) return true
+    // Every message's conversation has its branch (the foreign keys).
+    const branch = yield* branchAccess(Option.some(actor), row.conversationId, "conversation")
+    return canEdit(branch!.access)
+  })
+
+/**
  * Reads `ANSWER_TURN_LIVE_SECONDS` and returns the answer routes' handler for one answer id: `GET` reads its turn,
  * `POST` writes it. Each request is a log line `chat.answer.turn` or `chat.answer.write`, a span
  * `chat.answer.request` and a count. `database` opens a Postgres client for the scope of each request.
@@ -177,7 +195,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         if (Option.isNone(decoded)) return refusal(400, "invalid")
         fields.write = decoded.value.status
         fields.parts = decoded.value.parts?.length ?? -1
-        const txid = yield* apply(answerId, actorId, decoded.value)
+        // A settle folds into the feed in its own transaction (worker/Notifications.ts): the answer's status is its
+        // run's.
+        const settles = decoded.value.status !== "streaming"
+        const txid = yield* (yield* SqlClient.SqlClient).withTransaction(
+          Effect.tap(apply(answerId, actorId, decoded.value), (landed) =>
+            landed !== undefined && settles ? Notifications.foldRun(answerId, undefined) : Effect.void),
+        )
         if (txid !== undefined) return ok({ txid })
         const row = yield* target(answerId, liveSeconds)
         if (row === undefined) return refusal(404, "not_found")
@@ -204,6 +228,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           if (Option.isNone(actor)) return refusal(401, "authentication")
           // A Guest, or a person with no role, may not ask, so may not write an answer either.
           if (!canAsk(actor.value)) return refusal(403, "forbidden")
+          if (!(yield* mayEdit(actor.value, answerId).pipe(Effect.provide(database)))) {
+            fields.errorCode = "view_only"
+            return refusal(403, "forbidden")
+          }
           // Only the asker, or an agent acting for them, writes their answer.
           const actorId = actor.value.subject.id
           const handled = route === "turn" ? turn(answerId, actorId, fields) : write(request, answerId, actorId, fields)

@@ -84,15 +84,14 @@ export type Run = typeof Run.Type
 
 /**
  * This tab's own row about a run's latest question, keyed by the run's id: the question's `version`, the field's
- * `draft`, whether Hide was pressed on its toast (`hidden`), whether an answer is on its way (`sending`), and how many
- * times Answer asked the card to take focus (`focus`). A row for an older version is as good as none: a new question
- * starts fresh.
+ * `draft`, whether an answer is on its way (`sending`), and how many times Answer asked the card to take focus
+ * (`focus`). A row for an older version is as good as none: a new question starts fresh. Hide on its toast is the
+ * feed's (decision 0009, src/features/attention/).
  */
 export const Local = Schema.Struct({
   id: Schema.String,
   version: Schema.Number,
   draft: Schema.String,
-  hidden: Schema.Boolean,
   sending: Schema.Boolean,
   focus: Schema.Number,
 })

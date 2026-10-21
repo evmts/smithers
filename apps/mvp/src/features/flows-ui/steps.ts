@@ -7,9 +7,10 @@ import * as AgentHost from "../agent/host"
 import { startRoot } from "../runs/start"
 import { FlowsClient } from "./api"
 import { PROMPT_CALLABLE } from "./callable"
-import { SKILL_PATH } from "./contract"
+import { checkSource, passes, readSource } from "./checks"
 import {
   AdmitSave,
+  AdmitWrite,
   DraftFlow,
   type Drafted,
   FlowAnswer,
@@ -17,28 +18,31 @@ import {
   FlowList,
   FlowNew,
   FlowPrompt,
+  FlowRead,
   FlowRun,
   FlowSave,
+  FlowWrite,
   LoadFlow,
   NextRound,
   OpenRound,
   type Opened,
   PromptAgent,
+  ReadCode,
   ReadFlows,
   RecordAnswers,
   RemoveFlow,
   WriteRound,
 } from "./flows"
-import { recordLoad, recordRound, recordSave } from "./metrics"
+import { recordLoad, recordRound, recordSave, recordWrite } from "./metrics"
 import { roundExecutionId, roundOf } from "./round"
-import { DraftNotReady, FlowInvalid, NameTaken } from "./reference"
+import { DraftNotReady, FlowInvalid, FlowNeedsSandbox, NameTaken } from "./reference"
 import type { DraftQuestion, DraftStatus } from "./schema"
-import { checkSkill, passes, readSkill, renderSkill } from "./skill"
+import { placementOf, readGenerated, renderSource, SOURCE_PATH } from "./source"
 
 // What your own flows' steps do (decision 0014 §2, docs/features/flows.md#your-own-flows): ChatApi's flows and drafts
-// routes through `FlowsClient`, the static checks over the registry's `MarkdownFlow`, and the agent through the same
-// seat, catalog and policies `chat/Answer` runs on (src/features/agent/host.ts). Only an engine's host imports this
-// module: the engine worker and the Node host.
+// routes through `FlowsClient`, the static checks over the registry's `ModuleFlow` (./checks.ts), and the agent through
+// the same seat, catalog and policies `chat/Answer` runs on (src/features/agent/host.ts). Only an engine's host imports
+// this module: the engine worker and the Node host.
 
 /** The answered questions of a round, as the drafting agent reads them. */
 const answered = (questions: ReadonlyArray<DraftQuestion>) =>
@@ -118,13 +122,13 @@ export const roundOutcome = (input: {
 }): {
   readonly status: Exclude<DraftStatus, "drafting" | "saved" | "proposed">
   readonly files: ReadonlyArray<{ readonly path: string; readonly text: string }>
-  readonly checks: ReturnType<typeof checkSkill>
+  readonly checks: ReturnType<typeof checkSource>
   readonly questions: ReadonlyArray<DraftQuestion>
   readonly summary: string | null
 } => {
   const { drafted } = input
   if (drafted === null) return { status: "failed", files: [], checks: [], questions: [], summary: null }
-  const text = renderSkill({
+  const text = renderSource({
     name: input.name,
     description: drafted.description,
     flows: drafted.flows,
@@ -138,8 +142,8 @@ export const roundOutcome = (input: {
   }))
   return {
     status: questions.some((question) => question.blocking) ? "needs_you" : "ready",
-    files: [{ path: SKILL_PATH, text }],
-    checks: checkSkill(text, input.name, PROMPT_CALLABLE),
+    files: [{ path: SOURCE_PATH, text }],
+    checks: checkSource(text, input.name, PROMPT_CALLABLE),
     questions,
     summary: drafted.summary === "" ? null : drafted.summary,
   }
@@ -200,17 +204,17 @@ export const admit = ({ draftId }: { readonly draftId: string }) =>
       Effect.andThen(recordSave(draftId, code), Effect.fail(new DraftNotReady({ code })))
     const [file] = draft.files
     if (draft.status !== "ready" && draft.status !== "saved") return yield* notReady("not_ready")
-    if (draft.name === null || file === undefined || file.path !== SKILL_PATH) return yield* notReady("not_ready")
+    if (draft.name === null || file === undefined || file.path !== SOURCE_PATH) return yield* notReady("not_ready")
     if (draft.questions.some((question) => question.blocking && question.answer === undefined)) {
       return yield* notReady("needs_you")
     }
     // Checked again where the write is admitted (decision 0014 §2): the file the round checked, as it is now.
-    if (!passes(checkSkill(file.text, draft.name, PROMPT_CALLABLE))) return yield* notReady("checks")
-    const skill = readSkill(file.text, draft.name).skill!
+    if (!passes(checkSource(file.text, draft.name, PROMPT_CALLABLE))) return yield* notReady("checks")
     const saved = yield* client.save({
       draftId,
       name: draft.name,
-      description: skill.description,
+      // The checks passed, so the registry read a description.
+      description: readSource(file.text, draft.name).description!,
       source: file.text,
       digest: digestSync(file.text),
     }).pipe(
@@ -224,25 +228,66 @@ export const admit = ({ draftId }: { readonly draftId: string }) =>
     return { flowId: saved.flowId, name: saved.name, revision: saved.revision }
   })
 
-/** `flow/run/load`: one revision's `SKILL.md`, its digest and checks verified, pinned with what it may call. */
+/**
+ * `flow/run/load`: one revision's flow.ts, its digest and checks verified, pinned with what it may call. Only a drafted
+ * flow as drafted runs here: any other code fails `FlowNeedsSandbox` before anything runs (./source.ts).
+ */
 export const load = (input: typeof LoadFlow.payloadSchema.Type) =>
   Effect.gen(function* () {
     const found = yield* (yield* FlowsClient).source(input.name, input.revision)
     const invalid = (check: string) => Effect.andThen(recordLoad(check), Effect.fail(new FlowInvalid({ check })))
     if (digestSync(found.source) !== found.digest) return yield* invalid("digest")
-    const failed = checkSkill(found.source, found.name, PROMPT_CALLABLE).find((check) => !check.ok)
+    const failed = checkSource(found.source, found.name, PROMPT_CALLABLE).find((check) => !check.ok)
     if (failed !== undefined) return yield* invalid(failed.check)
-    const skill = readSkill(found.source, found.name).skill!
+    const generated = readGenerated(found.source)
+    if (generated === undefined) return yield* Effect.andThen(recordLoad("sandbox"), Effect.fail(new FlowNeedsSandbox()))
     yield* recordLoad("loaded")
     return {
       flowId: found.flowId,
       name: found.name,
       revision: found.revision,
       digest: found.digest,
-      instructions: skill.instructions,
-      allowed: skill.flows,
+      instructions: generated.instructions,
+      allowed: generated.flows,
       input: input.input ?? "",
     }
+  })
+
+/** `flow/read/source`: one revision's code, and where it runs. */
+export const read = (input: typeof ReadCode.payloadSchema.Type) =>
+  Effect.gen(function* () {
+    const found = yield* (yield* FlowsClient).source(input.name, input.revision)
+    return {
+      flowId: found.flowId,
+      name: found.name,
+      revision: found.revision,
+      source: found.source,
+      placement: placementOf(found.source),
+    }
+  })
+
+/** How a refused write is recorded: ChatApi's code, `not_found`, or `unavailable`. */
+export const writeOutcome = (error: { readonly _tag: string; readonly code?: string }): string =>
+  error.code ?? (error._tag === "@smthrs/mvp/flows/FlowNotFound" ? "not_found" : "unavailable")
+
+/** `flow/write/admit`: the code, checked here as every revision is, saved through ChatApi as the next revision. */
+export const writeCode = (input: typeof AdmitWrite.payloadSchema.Type) =>
+  Effect.gen(function* () {
+    const placement = placementOf(input.source)
+    const failed = checkSource(input.source, input.name, PROMPT_CALLABLE).find((check) => !check.ok)
+    if (failed !== undefined) {
+      return yield* Effect.andThen(recordWrite(`check:${failed.check}`, placement), Effect.fail(new FlowInvalid({ check: failed.check })))
+    }
+    const written = yield* (yield* FlowsClient).write({
+      name: input.name,
+      revision: input.revision,
+      // The checks passed, so the registry read a description.
+      description: readSource(input.source, input.name).description!,
+      source: input.source,
+      digest: digestSync(input.source),
+    }).pipe(Effect.tapError((error) => recordWrite(writeOutcome(error), placement)))
+    yield* recordWrite("written", placement)
+    return { flowId: written.flowId, name: written.name, revision: written.revision, placement }
   })
 
 /** `flow/delete/remove`: deletes it; `deleted` is false when it was gone already. */
@@ -253,7 +298,7 @@ export const remove = ({ flowId }: { readonly flowId: string }) =>
 export const list = () =>
   Effect.flatMap(FlowsClient, (client) => client.list).pipe(
     Effect.map(({ flows }) => ({
-      flows: flows.map(({ name, description, revision }) => ({ name, description, revision })),
+      flows: flows.map(({ name, description, revision, placement }) => ({ name, description, revision, placement })),
     })),
   )
 
@@ -273,6 +318,8 @@ export const registration = Layer.mergeAll(
   Interpreter.layerWithImplementations(FlowSave, AdmitSave.toLayer(admit)),
   Interpreter.layerWithImplementations(FlowRun, LoadFlow.toLayer(load)),
   Interpreter.layerWithImplementations(FlowPrompt, PromptAgent.layer),
+  Interpreter.layerWithImplementations(FlowRead, ReadCode.toLayer(read)),
+  Interpreter.layerWithImplementations(FlowWrite, AdmitWrite.toLayer(writeCode)),
   Interpreter.layerWithImplementations(FlowDelete, RemoveFlow.toLayer(remove)),
   Interpreter.layerWithImplementations(FlowList, ReadFlows.toLayer(list)),
 )

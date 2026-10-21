@@ -15,6 +15,8 @@ import { ANSWERS_ROUTE } from "../src/features/agent/contract.ts"
 import { MODEL_ROLES, MODEL_ROUTE, type ModelRole } from "../src/features/model/contract.ts"
 import { VIEWS_ROUTE, VIEWS_SHAPE_ROUTE } from "../src/features/views/contract.ts"
 import { RUNS_ROUTE, RUNS_SHAPE_ROUTE } from "../src/features/status/contract.ts"
+import { ACK_ROUTE, NOTIFICATIONS_SHAPE_ROUTE, WATCHES_ROUTE } from "../src/features/attention/contract.ts"
+import { SPEND_ALERTS_SHAPE_ROUTE } from "../src/features/spend/contract.ts"
 import {
   FLOW_DRAFTS_ROUTE,
   FLOW_DRAFTS_SHAPE_ROUTE,
@@ -22,9 +24,9 @@ import {
   FLOWS_SHAPE_ROUTE,
 } from "../src/features/flows-ui/contract.ts"
 import { BROWSER_TELEMETRY } from "../src/telemetry.ts"
-import { canAsk, Sessions } from "./Actor.ts"
+import { type Actor, canAsk, Sessions } from "./Actor.ts"
 import * as Answers from "./Answers.ts"
-import { mayWatch } from "./branch/Access.ts"
+import { branchAccess, canEdit, canView } from "./branch/Access.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "./Body.ts"
 import * as ChatMetrics from "./ChatMetrics.ts"
@@ -33,9 +35,11 @@ import * as Flows from "./Flows.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as Messages from "./Messages.ts"
 import * as ModelEndpoint from "./ModelEndpoint.ts"
+import * as Notifications from "./Notifications.ts"
 import * as PersonalFlows from "./PersonalFlows.ts"
 import * as Runs from "./Runs.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
+import * as SpendAlerts from "./SpendAlerts.ts"
 import * as Views from "./Views.ts"
 
 // ChatApi's routes (docs/features/chat.md#contract). ChatApi.ts runs them on Cloudflare; the tests run them as they
@@ -115,24 +119,33 @@ class Refusal extends Data.TaggedError("Refusal")<{
 }> {}
 
 /**
- * Reads the configuration (`ShapeProxy.config`, `ModelEndpoint.make`, `Answers.make`, `Views.make`, with `localHttp`
- * as `WEB_PAGES_LOCAL_HTTP`'s default) and returns ChatApi's `fetch`
+ * Reads the configuration (`ShapeProxy.config`, `ModelEndpoint.make`, with `spendAlerts` as `MODEL_SPEND_ALERTS`'
+ * default, `Answers.make`, `Views.make`, with `localHttp` as `WEB_PAGES_LOCAL_HTTP`'s default) and returns ChatApi's `fetch`
  * handler. `database` opens a Postgres client for the scope that builds it: one per request. `fetch` reads who is
  * asking from `Sessions`, and starts each answer's `chat/Expire` through `Flows.FlowStarter`.
  */
 export const make = <E, R>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
-  options: { readonly localHttp?: boolean } = {},
+  options: { readonly localHttp?: boolean; readonly spendAlerts?: boolean } = {},
 ) =>
   Effect.gen(function* () {
-    // POST /api/model/<role>: the metered model endpoint (docs/features/model-endpoint.md).
-    const model = yield* ModelEndpoint.make(database)
+    // POST /api/model/<role>: the metered model endpoint (docs/features/model-endpoint.md), which starts the spend
+    // alerts (docs/features/spend-alerts.md).
+    const model = yield* ModelEndpoint.make(
+      database,
+      options.spendAlerts === undefined ? {} : { alerts: options.spendAlerts },
+    )
     // GET and POST /api/answers/<id>: the write path for the browser's agent (docs/features/agent.md).
     const answers = yield* Answers.make(database)
     // POST /api/views and GET /api/shapes/views: the conversation's views (docs/features/web-pages.md).
     const views = yield* Views.make(database, options)
     // POST /api/runs/<id>[/answer] and GET /api/shapes/runs: agent status (docs/features/agent-status.md).
     const runs = yield* Runs.make(database)
+    // POST /api/watches, POST /api/notifications/ack and GET /api/shapes/notifications: the personal feed
+    // (docs/features/notifications.md).
+    const notifications = yield* Notifications.make(database)
+    // GET /api/shapes/spend-alerts: the model spend alerts, for Admins (docs/features/spend-alerts.md).
+    const spendAlerts = yield* SpendAlerts.make
     // /api/flows, /api/flow-drafts and their shapes: a person's own flows (docs/features/flows.md#your-own-flows).
     const personalFlows = yield* PersonalFlows.make(database)
     // GET /api/shapes/messages?conversation=<id>: one conversation's `messages` (decision 0013 §1), which the browser
@@ -151,7 +164,16 @@ export const make = <E, R>(
           ? yield* Conversations.home.pipe(Effect.provide(database), Effect.mapError(() => ShapeAccess.unavailable))
           : undefined
         const actor = yield* ShapeAccess.actor
-        const watched = conversation !== undefined && mayWatch(actor, "public") ? conversation : NO_CONVERSATION
+        // Only someone who may view the conversation's branch gets its rows (worker/branch/Access.ts). Losing the
+        // branch while synced swaps the `where` under the device's handle: Electric answers it `409 must-refetch`, and
+        // the device's copy empties.
+        const found = conversation === undefined
+          ? undefined
+          : yield* branchAccess(actor, conversation, "conversation").pipe(
+            Effect.provide(database),
+            Effect.mapError(() => ShapeAccess.unavailable),
+          )
+        const watched = found !== undefined && canView(found.access) ? found.conversationId : NO_CONVERSATION
         return {
           table: MESSAGES_TABLE,
           columns: SYNCED_MESSAGE_COLUMNS,
@@ -182,7 +204,7 @@ export const make = <E, R>(
         )
         // Lowercase, as Postgres prints a uuid: one answer has one id in rows, logs and the browser's agent.
         // The asker is the session's person, never the body's: only they may write the answer (worker/Answers.ts).
-        const conversationId = yield* conversationOf(decoded.conversationId)
+        const conversationId = yield* conversationOf(decoded.conversationId, asker)
         const question = {
           id: decoded.id.toLowerCase(),
           answerId: decoded.answerId.toLowerCase(),
@@ -249,27 +271,32 @@ export const make = <E, R>(
 
     /**
      * The conversation a question belongs to: the one it names, which must exist (404 otherwise), or the home
-     * conversation when it names none (503 when there is none to bind it to).
+     * conversation when it names none (503 when there is none to bind it to). The asker must be able to edit its
+     * branch (403 otherwise): someone it is shared with to view reads the conversation, never asks in it.
      */
-    const conversationOf = (named: string | undefined) =>
+    const conversationOf = (named: string | undefined, asker: Actor) =>
       Effect.gen(function* () {
-        if (named !== undefined) {
-          const id = named.toLowerCase()
-          const found = yield* Conversations.exists(id).pipe(Effect.provide(database), Effect.mapError(refuseStore))
-          if (!found) {
-            return yield* new Refusal({
-              status: 404,
-              errorCode: "conversation_not_found",
-              explanation: "No such conversation.",
-            })
-          }
-          return id
-        }
-        const home = yield* Conversations.home.pipe(Effect.provide(database), Effect.mapError(refuseStore))
-        if (home === undefined) {
+        const id = named !== undefined
+          ? named.toLowerCase()
+          : yield* Conversations.home.pipe(Effect.provide(database), Effect.mapError(refuseStore))
+        if (id === undefined) {
           return yield* new Refusal({ status: 503, errorCode: "no_home", explanation: unreachable })
         }
-        return home
+        const found = yield* branchAccess(Option.some(asker), id, "conversation").pipe(
+          Effect.provide(database),
+          Effect.mapError(refuseStore),
+        )
+        if (found === undefined) {
+          return yield* new Refusal({
+            status: 404,
+            errorCode: "conversation_not_found",
+            explanation: "No such conversation.",
+          })
+        }
+        if (!canEdit(found.access)) {
+          return yield* new Refusal({ status: 403, errorCode: "view_only", explanation: "You can view this branch." })
+        }
+        return found.conversationId
       })
 
     const fetch = Effect.gen(function* () {
@@ -283,6 +310,10 @@ export const make = <E, R>(
       if (path === VIEWS_ROUTE) return yield* views.add
       if (path === VIEWS_SHAPE_ROUTE) return yield* views.shape
       if (path === RUNS_SHAPE_ROUTE) return yield* runs.shape
+      if (path === NOTIFICATIONS_SHAPE_ROUTE) return yield* notifications.shape
+      if (path === WATCHES_ROUTE) return yield* notifications.watch
+      if (path === ACK_ROUTE) return yield* notifications.ack
+      if (path === SPEND_ALERTS_SHAPE_ROUTE) return yield* spendAlerts
       if (path === FLOWS_SHAPE_ROUTE) return yield* personalFlows.flowsShape
       if (path === FLOW_DRAFTS_SHAPE_ROUTE) return yield* personalFlows.draftsShape
       if (path === FLOWS_ROUTE) return yield* personalFlows.flows("")

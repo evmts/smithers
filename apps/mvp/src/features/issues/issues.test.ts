@@ -12,6 +12,7 @@ import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import * as Store from "../../../worker/github/Store.ts"
+import * as TriageStore from "../../../worker/github/TriageStore.ts"
 import { CHATAPI_ORIGIN, failingWorker, nodeDevice, openTab, openTestApp, type TabOptions, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { read } from "../../test/otlp"
 import { AuthStore, SESSION } from "../auth/store"
@@ -20,11 +21,32 @@ import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands"
 import { repoId } from "../repo/contract"
 import { IssuesClient, WriteNotTaken } from "./api"
-import { commentId, ISSUES_STREAM, itemId, issuePath, newDraftKey, newIssuePath, commentDraftKey, writeExecutionId } from "./contract"
+import {
+  ACCEPTED_LABEL,
+  commentId,
+  commentDraftKey,
+  ISSUES_STREAM,
+  issuePath,
+  itemId,
+  newDraftKey,
+  newIssuePath,
+  NOT_ACCEPTED_LABEL,
+  triageRunExecutionId,
+  writeExecutionId,
+} from "./contract"
 import { Issues } from "./issues"
 import { pendingActions, sends } from "./metrics"
 import { IssuesStore } from "./store"
-import { commentOf, type CommentRow, listProps, type ListRow, pageOf } from "./view"
+import {
+  commentOf,
+  type CommentRow,
+  listProps,
+  type ListRow,
+  pageOf,
+  triageControlOf,
+  type TriagePendingRow,
+  triageSwitchOf,
+} from "./view"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -122,8 +144,14 @@ const another = async (api: TestChatApi["Service"], options: TabOptions = {}) =>
   return tabOf(runtime)
 }
 
-/** GitHub's issue as the server's flows read it. */
-const issue = (number: number, title: string, body: string, login: string | null = "maya"): GitHub.Issues.Issue => ({
+/** GitHub's issue as the server's flows read it, with `labels`. */
+const issue = (
+  number: number,
+  title: string,
+  body: string,
+  login: string | null = "maya",
+  labels: ReadonlyArray<string> = [],
+): GitHub.Issues.Issue => ({
   id: 9_000 + number,
   node_id: `I_${number}`,
   number,
@@ -136,6 +164,7 @@ const issue = (number: number, title: string, body: string, login: string | null
   created_at: "2026-10-20T10:00:00Z",
   updated_at: `2026-10-20T10:00:${String(number % 60).padStart(2, "0")}Z`,
   closed_at: null,
+  labels: labels.map((name) => ({ name })),
 })
 
 /** GitHub's comment as the server's flows read it. */
@@ -197,6 +226,32 @@ const server = (api: TestChatApi["Service"]) => ({
     ),
   synced: () =>
     Effect.runPromise(api.github.run(Store.finishSync(REPO_ID, ISSUES_STREAM, { complete: true, failure: null }))),
+  /** A Maintainer enabled triage on the repository: the settings the shape serves. */
+  triageOn: () =>
+    Effect.runPromise(
+      api.github.run(TriageStore.enable(REPO_ID, { actorId: "person-sam", login: "sam", dailyTokens: 1_000 })),
+    ),
+  /**
+   * GitHub settled the triage write `writeId`: issue `number` now carries `labels`, read later than before; a person's
+   * override pins it.
+   */
+  triaged: (writeId: string, number: number, title: string, labels: ReadonlyArray<string>, pinned: boolean) =>
+    Effect.runPromise(
+      api.github.run(
+        Store.settleWrite(
+          writeId,
+          { status: "done", itemNumber: number, githubId: null },
+          Effect.andThen(
+            Store.upsertIssue(
+              REPO_ID,
+              { ...issue(number, title, "Body", "ben", labels), updated_at: new Date().toISOString() },
+              Date.now(),
+            ),
+            TriageStore.pin(REPO_ID, number, pinned),
+          ),
+        ),
+      ),
+    ),
 })
 
 /** Sets the tab's session row as sign-in's `load` sets it from ChatApi's answer: the test ChatApi serves no sign-in routes. */
@@ -586,6 +641,153 @@ describe("doors", () => {
     await until(async () => expect(await server(tab.api).writes()).toHaveLength(2))
     tab.actions.open(OWNER, NAME, 9)
     await until(() => expect(tab.comments()).toEqual([expect.objectContaining({ body: "Looks good to me" })]))
+  }, WITHIN)
+})
+
+describe("triage", () => {
+  /** This device's triage writes on the routed repository, as the screens read them. */
+  const pending = (tab: Awaited<ReturnType<typeof tabOf>>) =>
+    tab.issues.queries.triagePending.toArray as ReadonlyArray<TriagePendingRow>
+  /** The routed issue's triage control, as the issue's page shows it to a Member. */
+  const control = (tab: Awaited<ReturnType<typeof tabOf>>, flowOn = true) => {
+    const item = tab.issues.queries.item.toArray[0] as { readonly number: number; readonly triage: string } | undefined
+    return item === undefined ? undefined : triageControlOf(item, pending(tab), { triage: true, flowOn })
+  }
+
+  test("a Member's Accept: Requested at once; ChatApi takes it as theirs; GitHub's labels settle it, pinned, everywhere", async () => {
+    const tab = await open()
+    const other = await another(tab.api)
+    await server(tab.api).seed(3, "Flaky test")
+    await server(tab.api).triageOn()
+    tab.actions.open(OWNER, NAME, 3)
+    other.actions.open(OWNER, NAME, 3)
+    await until(() => expect(control(tab)).toMatchObject({ shown: true, state: "proposed", runAgain: true, pending: undefined }))
+
+    tab.actions.triage(OWNER, NAME, 3, "accept")
+    await until(() => expect(control(tab)).toMatchObject({ state: "proposed", pending: "requested", disabled: true }))
+    const writeId = pending(tab)[0]!.id
+    await until(async () =>
+      expect(await server(tab.api).write(writeId)).toMatchObject({
+        _tag: "Some",
+        value: { via: "person", op: "issue/triage", payload: { op: "issue/triage", number: 3, decision: "accept", reason: null } },
+      })
+    )
+    expect(tab.api.github.starts).toContainEqual(expect.objectContaining({ executionId: writeExecutionId(writeId) }))
+
+    await server(tab.api).triaged(writeId, 3, "Flaky test", [ACCEPTED_LABEL], true)
+    for (const device of [tab, other]) {
+      await until(() => expect(control(device)).toMatchObject({ state: "accepted", pending: undefined, disabled: false }))
+      expect(device.issues.queries.item.toArray[0]).toMatchObject({ triage: "accepted", pinned: true })
+    }
+    // The follower dropped the requested write once its server write was done.
+    await until(() => expect(tab.store.requested.tanstack.size).toBe(0))
+  }, WITHIN)
+
+  test("Run triage again starts the flow's run under its write; Not accepted carries no reason from a button", async () => {
+    const tab = await open()
+    await server(tab.api).seed(4, "Spammy")
+    tab.actions.open(OWNER, NAME, 4)
+    tab.actions.runTriageAgain(OWNER, NAME, 4)
+    await until(() => expect(pending(tab)).toHaveLength(1))
+    const runId = pending(tab)[0]!.id
+    await until(() =>
+      expect(tab.api.github.starts).toContainEqual({
+        flow: "triage/Run",
+        executionId: triageRunExecutionId(runId),
+        payload: { repo: TEST_REPOSITORY, number: 4, trigger: "again", key: runId },
+      })
+    )
+    tab.actions.triage(OWNER, NAME, 4, "reject")
+    await until(() => expect(pending(tab)).toHaveLength(2))
+    const rejectId = pending(tab)[0]!.id
+    await until(async () =>
+      expect(await server(tab.api).write(rejectId)).toMatchObject({
+        _tag: "Some",
+        value: { payload: { op: "issue/triage", number: 4, decision: "reject", reason: null } },
+      })
+    )
+  }, WITHIN)
+
+  test("the list's chips: none while triage is off and an issue proposed; a labeled issue's always; all once it's on", async () => {
+    const tab = await open()
+    await server(tab.api).seed(5, "Plain")
+    await Effect.runPromise(
+      tab.api.github.run(Store.upsertIssue(REPO_ID, issue(6, "Rejected", "Body", "ben", [NOT_ACCEPTED_LABEL]), Date.now())),
+    )
+    tab.actions.open(OWNER, NAME)
+    const triage = () => tab.issues.queries.triage.toArray[0] as { readonly paused: boolean } | undefined
+    const chips = () =>
+      listProps(tab.issues.queries.list.toArray as ReadonlyArray<ListRow>, {}, undefined, triage() !== undefined && !triage()!.paused)
+        .issues.map((row) => [row.number, row.triage])
+    await until(() => expect(chips()).toEqual([[6, "not_accepted"], [5, undefined]]))
+    expect(triageSwitchOf(triage(), pending(tab))).toEqual({ action: "enable", disabled: false })
+    await server(tab.api).triageOn()
+    await until(() => expect(chips()).toEqual([[6, "not_accepted"], [5, "proposed"]]))
+    expect(triageSwitchOf(triage(), pending(tab))).toEqual({ action: "pause", disabled: false })
+  }, WITHIN)
+
+  test("a Maintainer's Enable and Pause go to the outbox; a Member's are refused and stay Not sent", async () => {
+    const sam: Actor = { ...maya, subject: { kind: "person", id: "person-sam" }, role: "maintainer", login: "sam" }
+    const tab = await open({}, sam)
+    tab.actions.open(OWNER, NAME)
+    tab.actions.enableTriage(OWNER, NAME)
+    await until(() => expect(triageSwitchOf(undefined, pending(tab))).toEqual({ action: "enable", disabled: true }))
+    const enableId = pending(tab)[0]!.id
+    await until(async () =>
+      expect(await server(tab.api).write(enableId)).toMatchObject({
+        _tag: "Some",
+        value: { op: "triage/enable", payload: { op: "triage/enable", dailyTokens: 200_000 } },
+      })
+    )
+    tab.actions.pauseTriage(OWNER, NAME)
+    await until(() => expect(pending(tab).map((row) => row.op)).toContain("triage/pause"))
+
+    const member = await open()
+    member.actions.open(OWNER, NAME)
+    member.actions.enableTriage(OWNER, NAME)
+    await until(() => expect(pending(member)).toEqual([expect.objectContaining({ op: "triage/enable", pending: "not_sent" })]))
+    expect(member.store.requested.tanstack.toArray[0]).toMatchObject({ status: "not_sent", reason: "forbidden" })
+  }, WITHIN)
+
+  test("/triage owner/repo <n> reject <reason> posts the reason as the person's; /triage.run runs it again", async () => {
+    const tab = await open()
+    await server(tab.api).seed(7, "Old bug")
+    tab.actions.open(OWNER, NAME, 7)
+    await signIn(tab.runtime, maya)
+    const commands = await tab.runtime.runPromise(Effect.service(Commands))
+    const send = (line: string) => {
+      commands.actions.type(line)
+      commands.actions.submit(line)
+    }
+    send(`/triage ${TEST_REPOSITORY} 7 reject Duplicate of #2, see there`)
+    await until(() => expect(pending(tab)).toHaveLength(1))
+    await until(async () =>
+      expect(await server(tab.api).write(pending(tab)[0]!.id)).toMatchObject({
+        _tag: "Some",
+        value: { payload: { op: "issue/triage", number: 7, decision: "reject", reason: "Duplicate of #2, see there" } },
+      })
+    )
+    send(`/triage.run ${TEST_REPOSITORY} 7`)
+    await until(() => expect(tab.api.github.starts.filter(({ flow }) => flow === "triage/Run")).toHaveLength(1))
+  }, WITHIN)
+
+  test("/triage.enable owner/repo <tokens> sets the flow's daily budget", async () => {
+    const sam: Actor = { ...maya, subject: { kind: "person", id: "person-sam" }, role: "maintainer", login: "sam" }
+    const tab = await open({}, sam)
+    tab.actions.open(OWNER, NAME)
+    await signIn(tab.runtime, sam)
+    const commands = await tab.runtime.runPromise(Effect.service(Commands))
+    commands.actions.type(`/triage.enable ${TEST_REPOSITORY} 5000`)
+    commands.actions.submit(`/triage.enable ${TEST_REPOSITORY} 5000`)
+    await until(() => expect(pending(tab)).toHaveLength(1))
+    await until(async () =>
+      expect(await server(tab.api).write(pending(tab)[0]!.id)).toMatchObject({
+        _tag: "Some",
+        value: { payload: { op: "triage/enable", dailyTokens: 5_000 } },
+      })
+    )
+    // The route took it: kept on the device as Requested, with its budget, until the server's write is done.
+    await until(() => expect(tab.store.requested.tanstack.toArray[0]).toMatchObject({ status: "requested", dailyTokens: 5_000 }))
   }, WITHIN)
 })
 

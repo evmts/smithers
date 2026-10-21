@@ -1,0 +1,225 @@
+import { type Sandbox, SandboxTools } from "@smthrs/sandbox"
+import { Cause, Clock, Effect, Metric } from "effect"
+import { SANDBOX_USER } from "../../src/features/terminal/contract.ts"
+import { codeOf } from "../ErrorCode.ts"
+import type { SleepOutcome, ToolOutcome } from "./Machines.ts"
+import { provisionArgv, userOf } from "./Users.ts"
+
+// What a branch's machine does for its tools and its lifecycle, over any host (decision 0005 §2-§3,
+// docs/features/sandbox-tools.md#the-machine). The branch's object (on Cloudflare, `SandboxObject` in
+// worker/BranchSandboxes.ts) holds the container and its own storage, and hands them here as a `Box`; nothing here
+// names a host, so a test runs it over a scratch directory.
+//
+// - A tool call runs as the person's own user, with `@smthrs/sandbox`'s `SandboxTools`, its command fenced in that
+//   user's home so it runs at most once, and by generation in the object's storage, so a machine that restarted never
+//   runs it again either.
+// - The working copy outlives the machine: after a call that changes it, and before the machine sleeps, the object
+//   saves a checkpoint (`SandboxTools.checkpoint`: the commit and a binary patch) in its storage, and the first wake of
+//   the next generation puts it back. A machine whose checkpoint can't be saved stays awake.
+// - Idle means nothing happened for the idle time: no call, no terminal input, and no process of a person but their
+//   shells and tmux.
+
+/** The object's durable storage, as the machine uses it. */
+export interface Store<R> {
+  readonly get: <A>(key: string) => Effect.Effect<A | undefined, never, R>
+  readonly put: (key: string, value: unknown) => Effect.Effect<void, never, R>
+  readonly delete: (key: string) => Effect.Effect<unknown, never, R>
+}
+
+/** One branch's machine as its object holds it. */
+export interface Box<R> {
+  /** A session on the running container as `user`, in /workspace. */
+  readonly sessionAs: (user: string) => Effect.Effect<Sandbox.Session, never, R>
+  /** Runs `argv` as `user`: its exit code. */
+  readonly run: (argv: Array<string>, user: string) => Effect.Effect<number, unknown, R>
+  readonly running: Effect.Effect<boolean, unknown, R>
+  /** Stops the container; its disk goes with it. */
+  readonly destroy: Effect.Effect<void, unknown, R>
+  readonly storage: Store<R>
+}
+
+/** Where a person's commands keep their fences and results: in their own home, outside the checkout. */
+export const callsDirectory = (user: string): string => `/home/${user}/.smithers/calls`
+
+/** The largest piece of a checkpoint one storage value holds. */
+export const CHUNK_BYTES = 120 * 1024
+
+/**
+ * A saved checkpoint's record in the object's storage. Its patch is in `checkpoint:<seq>:<n>` pieces: each save writes
+ * a new sequence's pieces before it switches the record to them, so a save that stops part way leaves the record on
+ * the previous checkpoint, whole.
+ */
+interface Saved {
+  readonly generation: number
+  readonly head: string
+  readonly seq: number
+  readonly pieces: number
+  readonly bytes: number
+}
+
+/** The key of piece `index` of checkpoint sequence `seq`. */
+const pieceKey = (seq: number, index: number): string => `checkpoint:${seq}:${index}`
+
+/** Checkpoints saved and restored, by `op` (`save`, `restore`) and `outcome`. */
+export const checkpoints = Metric.counter("smithers_sandbox_checkpoints", {
+  description: "Working-copy checkpoints a branch's machine saved and restored, by op and outcome",
+  incremental: true,
+})
+
+const counted = (op: "save" | "restore", outcome: string) =>
+  Effect.andThen(
+    Metric.update(Metric.withAttributes(checkpoints, { op, outcome }), 1),
+    Effect.logWithLevel(outcome === "saved" || outcome === "restored" || outcome === "none" ? "Info" : "Warn")(
+      `sandbox.checkpoint.${op}`,
+    ).pipe(Effect.annotateLogs({ outcome })),
+  )
+
+/** Records that the machine was used now: a call, or a terminal coming or going. */
+export const touch = <R>(box: Box<R>) =>
+  Effect.flatMap(Clock.currentTimeMillis, (now) => box.storage.put("activeAt", now))
+
+/**
+ * Saves the working copy of generation `generation` in the object's storage, once that generation's restore has run,
+ * so a fresh checkout never replaces the checkpoint it hasn't put back yet. Answers how it went: `saved`, `skipped`
+ * (not restored yet, or no checkout), `too_large` or `failed`.
+ */
+export const save = <R>(box: Box<R>, generation: number) =>
+  Effect.gen(function* () {
+    if ((yield* box.storage.get<number>("restored")) !== generation) return "skipped" as const
+    const session = yield* box.sessionAs(SANDBOX_USER)
+    const captured = yield* Effect.result(SandboxTools.checkpoint(session))
+    if (captured._tag === "Failure") {
+      const error = captured.failure
+      const outcome = error._tag === "@smthrs/sandbox/SandboxTools/ToolRefused"
+        ? error.reason === "too_large" ? "too_large" as const : "skipped" as const
+        : "failed" as const
+      yield* counted("save", outcome)
+      return outcome
+    }
+    const { head, patch } = captured.success
+    const before = yield* box.storage.get<Saved>("checkpoint")
+    const seq = (before?.seq ?? 0) + 1
+    const pieces = Math.ceil(patch.byteLength / CHUNK_BYTES)
+    // The new pieces first, then the record: until it switches, the record names the previous checkpoint's pieces.
+    for (let index = 0; index < pieces; index++) {
+      yield* box.storage.put(pieceKey(seq, index), patch.slice(index * CHUNK_BYTES, (index + 1) * CHUNK_BYTES))
+    }
+    yield* box.storage.put("checkpoint", { generation, head, seq, pieces, bytes: patch.byteLength } satisfies Saved)
+    for (let index = 0; index < (before?.pieces ?? 0); index++) yield* box.storage.delete(pieceKey(before!.seq, index))
+    yield* counted("save", "saved")
+    return "saved" as const
+  }).pipe(Effect.withSpan("sandbox.checkpoint.save", { attributes: { "smithers.sandbox.generation": generation } }))
+
+/**
+ * Puts the last checkpoint back on generation `generation`'s fresh checkout, once: a checkpoint of an earlier
+ * generation is applied (`restored`); there may be none (`none`). A failure is recorded and the machine stays usable.
+ */
+export const restore = <R>(box: Box<R>, generation: number) =>
+  Effect.gen(function* () {
+    if ((yield* box.storage.get<number>("restored")) === generation) return "done" as const
+    const saved = yield* box.storage.get<Saved>("checkpoint")
+    let outcome: string = "none"
+    if (saved !== undefined && saved.generation < generation) {
+      const patch = new Uint8Array(saved.bytes)
+      for (let index = 0; index < saved.pieces; index++) {
+        patch.set((yield* box.storage.get<Uint8Array>(pieceKey(saved.seq, index))) ?? new Uint8Array(), index * CHUNK_BYTES)
+      }
+      const session = yield* box.sessionAs(SANDBOX_USER)
+      const restored = yield* Effect.result(SandboxTools.restore(session, { head: saved.head, patch }))
+      outcome = restored._tag === "Success"
+        ? "restored"
+        : restored.failure._tag === "@smthrs/sandbox/SandboxTools/ToolRefused"
+        ? restored.failure.reason
+        : "failed"
+    }
+    yield* box.storage.put("restored", generation)
+    yield* counted("restore", outcome)
+    return outcome
+  }).pipe(Effect.withSpan("sandbox.checkpoint.restore", { attributes: { "smithers.sandbox.generation": generation } }))
+
+/**
+ * Runs `call` on generation `generation` as person `ownerId`'s own user, made on first use, then saves the working
+ * copy when the call changed it. The machine is awake and checked out already.
+ */
+export const tool = <R>(
+  box: Box<R>,
+  options: {
+    readonly ownerId: string
+    readonly callId: string
+    readonly call: SandboxTools.Call
+    readonly generation: number
+  },
+): Effect.Effect<ToolOutcome, never, R> =>
+  Effect.gen(function* () {
+    const user = userOf(options.ownerId)
+    if ((yield* box.run(provisionArgv(user), "root")) !== 0) return { _tag: "Unavailable" } as const
+    const session = yield* box.sessionAs(user)
+    // A command's fence lives on the machine's own disk, which a restart loses. The object remembers the generation it
+    // started each command on, so a command an earlier generation started settles lost and never runs again (0005's
+    // MachineLost): its effects went with that machine, and its result may have too.
+    if (options.call.tool === "run") {
+      const started = yield* box.storage.get<number>(`run:${options.callId}`)
+      if (started !== undefined && started !== options.generation) return { _tag: "Lost" } as const
+      if (started === undefined) yield* box.storage.put(`run:${options.callId}`, options.generation)
+    }
+    yield* touch(box)
+    const ran = yield* Effect.result(
+      SandboxTools.execute(session, options.call, { callId: options.callId, callsDirectory: callsDirectory(user) }),
+    )
+    yield* touch(box)
+    if (ran._tag === "Failure") {
+      const error = ran.failure
+      return error._tag === "@smthrs/sandbox/SandboxTools/ToolRefused"
+        ? { _tag: "Refused", reason: error.reason } as const
+        : error._tag === "@smthrs/sandbox/SandboxTools/ToolLost"
+        ? { _tag: "Lost" } as const
+        : { _tag: "Unavailable" } as const
+    }
+    if (SandboxTools.mutates(options.call.tool)) yield* save(box, options.generation)
+    return { _tag: "Done", result: ran.success, generation: options.generation } as const
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.as(
+        Effect.logWarning("sandbox.object.tool").pipe(Effect.annotateLogs({ errorCode: codeOf(Cause.squash(cause)) })),
+        { _tag: "Unavailable" } as const,
+      )
+    ),
+    Effect.withSpan("sandbox.object.tool", { attributes: { "smithers.sandbox.tool": options.call.tool } }),
+  )
+
+/**
+ * What a person's processes are doing: exit 3 when a terminal had input within `$1` seconds, or a non-root process
+ * other than PID 1, a shell or tmux runs; exit 0 when nothing does. Run as root, which may read every tmux server.
+ */
+const PROBE = `idle=$1; now=$(date +%s)
+for s in /tmp/tmux-*/default; do
+  [ -S "$s" ] || continue
+  for a in $(tmux -S "$s" list-sessions -F '#{session_activity}' 2>/dev/null); do
+    [ $((now - a)) -lt "$idle" ] && exit 3
+  done
+done
+for p in /proc/[0-9]*; do
+  [ "\${p#/proc/}" = 1 ] && continue
+  u=$(stat -c %u "$p" 2>/dev/null) || continue
+  [ "$u" = 0 ] && continue
+  case "$(cat "$p/comm" 2>/dev/null)" in sh|bash|dash|tmux*|"") ;; *) exit 3 ;; esac
+done
+exit 0`
+
+/**
+ * Puts generation `generation` to sleep when nothing happened in it for `idleMs`: it saves the working copy, then
+ * stops the container. `gone` when that generation isn't running any more; `busy` when something happened, or the
+ * checkpoint couldn't be saved.
+ */
+export const sleepIfIdle = <R>(box: Box<R>, generation: number, idleMs: number): Effect.Effect<SleepOutcome, unknown, R> =>
+  Effect.gen(function* () {
+    if ((yield* box.storage.get<number>("generation")) !== generation || !(yield* box.running)) return "gone" as const
+    const now = yield* Clock.currentTimeMillis
+    if (now - ((yield* box.storage.get<number>("activeAt")) ?? 0) < idleMs) return "busy" as const
+    const probe = ["sh", "-c", PROBE, "probe", String(Math.ceil(idleMs / 1000))]
+    if ((yield* box.run(probe, "root")) !== 0) return "busy" as const
+    const saved = yield* save(box, generation)
+    if (saved !== "saved" && saved !== "skipped") return "busy" as const
+    yield* box.destroy
+    return "slept" as const
+  }).pipe(Effect.withSpan("sandbox.object.sleep", { attributes: { "smithers.sandbox.generation": generation } }))

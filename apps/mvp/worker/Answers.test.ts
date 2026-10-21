@@ -9,6 +9,7 @@ import { AGENT_LIVE_SECONDS } from "../src/features/model/contract.ts"
 import { answerRow } from "../src/test/agent.ts"
 import type { Actor } from "./Actor.ts"
 import * as Answers from "./Answers.ts"
+import { shared, tracked } from "./test/branch.ts"
 import { harness, recorded, row, testFile } from "./test/harness.ts"
 
 const runtime = testFile("answers")
@@ -357,6 +358,22 @@ describe("who may write", () => {
     expect([afterSettle.status, await afterSettle.json()]).toEqual([403, { code: "forbidden" }])
     expect(await answerRow(runtime, answerId)).toMatchObject({ status: "done", text: "Hi." })
     expect(forger.only("chat.answer.turn").annotations).toMatchObject({ status: 403, errorCode: "not_asker" })
+  })
+
+  test("an asker whose access to the branch was taken away can neither read the turn nor write the answer", async () => {
+    const h = await open()
+    const branch = await tracked(runtime, "github/octocat/spoon-knife", `answers-${crypto.randomUUID().slice(0, 8)}`, "open", "person-owner")
+    await shared(runtime, branch.branchId, member.subject.id, "edit")
+    const question = { id: crypto.randomUUID(), answerId: crypto.randomUUID(), text: "Hi", conversationId: branch.conversationId }
+    expect((await h.ask(question)).status).toBe(202)
+    expect((await turn(h, question.answerId)).status).toBe(200)
+    await shared(runtime, branch.branchId, member.subject.id, "view")
+    const read = await turn(h, question.answerId)
+    const written = await write(h, question.answerId, { status: "done", text: "Hi." })
+    expect([read.status, await read.json()]).toEqual([403, { code: "forbidden" }])
+    expect([written.status, await written.json()]).toEqual([403, { code: "forbidden" }])
+    expect(h.line("chat.answer.write").at(-1)!.annotations).toMatchObject({ status: 403, errorCode: "view_only" })
+    expect(await answerRow(runtime, question.answerId)).toMatchObject({ status: "streaming", text: "" })
   })
 
   test("another Member's turn requests never mark a waiting answer live", async () => {

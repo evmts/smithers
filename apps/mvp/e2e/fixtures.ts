@@ -1,6 +1,6 @@
-import { test as base, expect, type Locator, type TestInfo } from "@playwright/test"
-import { writeFile } from "node:fs/promises"
-import { basename } from "node:path"
+import { test as base, expect, type Locator, type Page, type TestInfo } from "@playwright/test"
+import { readdir, writeFile } from "node:fs/promises"
+import { basename, dirname, join } from "node:path"
 
 // The status copy (docs/decisions/0002-local-first.md §2) and how many messages show before Load earlier: chat's
 // contract, which the app and these tests share.
@@ -31,16 +31,150 @@ export const watchForSpinners = () => {
 export const spinnersSeen = (page: import("@playwright/test").Page) =>
   page.evaluate(() => (window as unknown as { __busy?: Array<string> }).__busy ?? []).catch(() => [])
 
-// A flow's name, for its GIF: the spec file and the test title up to its colon, e.g. `chat-reload-mid-answer`.
-export const flowName = (testInfo: TestInfo) => {
-  const file = basename(testInfo.file).replace(/\.spec\.ts$/, "")
-  const title = testInfo.title.split(":")[0]!
-  return `${file}-${title}`
+const slug = (text: string) =>
+  text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 80)
+
+const specOf = (testInfo: TestInfo) => basename(testInfo.file).replace(/\.spec\.ts$/, "")
+
+// A flow's name, for its GIF: the spec file and the test title up to its colon, e.g. `chat-reload-mid-answer`.
+export const flowName = (testInfo: TestInfo) => slug(`${specOf(testInfo)}-${testInfo.title.split(":")[0]!}`)
+
+/** One recorded page: its label in the video, its file (relative to the manifest or absolute), and when it opened. */
+export type Video = { readonly name: string; readonly video: string | undefined; readonly openedAt: number }
+
+/**
+ * Something a test did, for its video's chapters (e2e/frames.ts `chaptersOf`): a helper's `step`, with its end, or an
+ * action a page saw. Times are ms since the epoch.
+ */
+export type Mark = { readonly start: number; readonly end?: number; readonly label: string }
+
+const marks = new WeakMap<TestInfo, Array<Mark>>()
+const marksOf = (testInfo: TestInfo) => {
+  const list = marks.get(testInfo) ?? []
+  marks.set(testInfo, list)
+  return list
 }
+
+/**
+ * A helper's user-visible action as a test step and a chapter of the test's video, named `title`. The actions inside
+ * it are part of its chapter. A failure points at the test line that called the helper.
+ */
+export const step = <T>(title: string, body: () => Promise<T>): Promise<T> => {
+  const list = marksOf(base.info())
+  return base.step(
+    title,
+    async () => {
+      const start = Date.now()
+      try {
+        return await body()
+      } finally {
+        list.push({ start, end: Date.now(), label: title })
+      }
+    },
+    { box: true },
+  )
+}
+
+/**
+ * An init script for every frame: it reports each click, typing and key press the test drives (trusted events; the
+ * app's own synthetic events are not), named by its target's accessible name, through `__e2eAction`.
+ */
+const watchActions = () => {
+  const report = (label: string) => {
+    const binding = (window as unknown as { __e2eAction?: (action: { label: string; at: number }) => Promise<unknown> }).__e2eAction
+    if (typeof binding === "function") binding({ label, at: Date.now() }).catch(() => undefined)
+  }
+  const roles: Record<string, string> = { A: "link", BUTTON: "button", INPUT: "field", TEXTAREA: "field", SELECT: "menu", SUMMARY: "toggle", IFRAME: "frame" }
+  const nameOf = (target: EventTarget | null) => {
+    const start = target instanceof Element ? target : null
+    const element = start?.closest("a, button, input, textarea, select, summary, iframe, [role], [aria-label], [contenteditable=true]") ?? start
+    if (element === null || element === document.body || element === document.documentElement) return ""
+    const text = (
+      element.getAttribute("aria-label") ??
+      element.getAttribute("title") ??
+      element.getAttribute("placeholder") ??
+      (element instanceof HTMLElement ? element.innerText : element.textContent) ??
+      ""
+    )
+      .trim()
+      .split("\n")[0]!
+      .slice(0, 48)
+    const role = element.getAttribute("role") ?? roles[element.tagName] ?? element.tagName.toLowerCase()
+    return text === "" ? role : `"${text}" ${role}`
+  }
+  addEventListener("click", (event) => event.isTrusted && report(`Click ${nameOf(event.target) || "the page"}`), true)
+  addEventListener("input", (event) => event.isTrusted && report(`Type in ${nameOf(event.target) || "the page"}`), true)
+  addEventListener(
+    "keydown",
+    (event) => {
+      const modified = event.ctrlKey || event.metaKey || event.altKey
+      if (!event.isTrusted || (event.key.length === 1 && !modified) || ["Shift", "Control", "Meta", "Alt"].includes(event.key)) return
+      const keys = [event.ctrlKey && "Control", event.metaKey && "Meta", event.altKey && "Alt", event.key].filter(Boolean).join("+")
+      const name = nameOf(event.target)
+      report(name === "" ? `Press ${keys}` : `Press ${keys} in ${name}`)
+    },
+    true,
+  )
+}
+
+/**
+ * Records what `page` does for the test's video chapters, before it loads anything: each navigation of its main frame,
+ * and each click, typing and key press the test drives in any of its frames. `who` names the device in a test with
+ * several. Every page a test drives needs it; the default page and the devices helpers' pages have it.
+ */
+export const recordActions = async (page: Page, testInfo: TestInfo, who = "") => {
+  const prefix = who === "" ? "" : `${who}: `
+  const list = marksOf(testInfo)
+  await page.exposeBinding("__e2eAction", (_source, action: { label: string; at: number }) => {
+    list.push({ start: action.at, label: `${prefix}${action.label}` })
+  })
+  await page.addInitScript(watchActions)
+  page.on("framenavigated", (frame) => {
+    if (frame !== page.mainFrame() || !frame.url().startsWith("http")) return
+    const url = new URL(frame.url())
+    list.push({ start: Date.now(), label: `${prefix}Open ${url.pathname}${url.search}` })
+  })
+}
+
+/**
+ * Writes a test's media manifest (`file`, beside its videos) with what the test did (its `step`s and recorded
+ * actions), and attaches it as `media`. e2e/gifs.mjs makes the test's video, chapters and GIF from it. `startedAt` is
+ * when the recording started, in ms since the epoch; each video's `openedAt` is seconds after it. The video lands at
+ * `videos/<spec>/<test>.mp4`, e.g. `videos/branch-workspace/branch-conversation.mp4`.
+ */
+export const writeManifest = async (
+  testInfo: TestInfo,
+  file: "flow.json" | "devices.json",
+  startedAt: number,
+  videos: ReadonlyArray<Video>,
+  extra: Record<string, unknown> = {},
+) => {
+  const path = testInfo.outputPath(file)
+  const manifest = {
+    flow: flowName(testInfo),
+    spec: specOf(testInfo),
+    test: slug(testInfo.title.split(":")[0]!),
+    title: testInfo.title,
+    status: testInfo.status,
+    startedAt,
+    ...extra,
+    videos,
+    marks: [...marksOf(testInfo)].sort((left, right) => left.start - right.start),
+  }
+  await writeFile(path, JSON.stringify(manifest, null, 2))
+  await testInfo.attach("media", { path, contentType: "application/json" })
+}
+
+/** The videos of the contexts a test opened itself, under its output directory, each named by its folder. */
+const ownVideos = async (testInfo: TestInfo): Promise<Array<Video>> =>
+  (await readdir(testInfo.outputDir, { recursive: true }))
+    .filter((path) => path.endsWith(".webm") && path.includes("/"))
+    .sort()
+    .map((path) => ({ name: dirname(path), video: join(testInfo.outputDir, path), openedAt: 0 }))
 
 const writeLog = async (path: string, log: Array<string>) => {
   await writeFile(path, log.join("\n"))
@@ -48,11 +182,14 @@ const writeLog = async (path: string, log: Array<string>) => {
 }
 
 // Every test keeps the browser's console and page errors; a failing test saves them as browser.log. Every test also
-// writes flow.json beside its video, so e2e/gifs.mjs makes one GIF per flow.
+// writes flow.json beside its video, so e2e/gifs.mjs makes one video and GIF per flow. A test that opens its own
+// contexts instead (repo.spec.ts "clone") leaves the default page blank: its manifest lists those contexts' videos.
 export const test = base.extend<{ browserLog: Array<string> }>({
   browserLog: [
     async ({ page }, use, testInfo) => {
+      const startedAt = Date.now()
       await page.addInitScript(watchForSpinners)
+      await recordActions(page, testInfo)
       const log: Array<string> = []
       page.on("console", (message) => log.push(`${message.type()}: ${message.text()}`))
       page.on("pageerror", (error) => log.push(`pageerror: ${error.message}`))
@@ -62,10 +199,8 @@ export const test = base.extend<{ browserLog: Array<string> }>({
         await testInfo.attach("browser-log", { path: await writeLog(testInfo.outputPath("browser.log"), log), contentType: "text/plain" })
       }
       // Playwright saves the page's video as video.webm beside it once the test ends.
-      await writeFile(
-        testInfo.outputPath("flow.json"),
-        JSON.stringify({ flow: flowName(testInfo), title: testInfo.title, status: testInfo.status, videos: [{ name: "", video: "video.webm", openedAt: 0 }] }, null, 2),
-      )
+      const videos = page.url() === "about:blank" ? await ownVideos(testInfo) : [{ name: "", video: "video.webm", openedAt: 0 }]
+      await writeManifest(testInfo, "flow.json", startedAt, videos)
     },
     { auto: true },
   ],

@@ -81,7 +81,8 @@ export const Navigate = Flow.make("app/navigate", {
   description: "Open a page of this app in the person's tab. `to` is the app path: /<owner>/<repo> for a " +
     "repository, /<owner>/<repo>/tree/<ref>/<dir> for a directory, /<owner>/<repo>/blob/<ref>/<file> for a file, " +
     "and ?L=12 after a file for line 12 or ?L=10-20 for lines 10 to 20. <ref> is a branch or a commit SHA. A " +
-    "github.com URL's path is the same path here. Find a file's path with repo/tree first. Only this app's paths: " +
+    "github.com URL's path is the same path here. When the person names the page, go straight there: opening a page " +
+    "never needs a clone or a read first, since the page offers what it lacks. Only this app's paths: " +
     "another site, javascript: or data: is refused (NavigationRefused). Answers { path, moved }; moved is false " +
     "when the tab that asked has closed.",
   modelInvocable: true,

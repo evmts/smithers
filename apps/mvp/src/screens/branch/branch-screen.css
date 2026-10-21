@@ -17,6 +17,7 @@
 /* The terminal takes the view's room: a fixed height, so the frame can fit its rows. */
 .terminal-panel { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
 .terminal-panel-frame { align-self: stretch; height: 28rem; }
+.terminal-panel-tabs { display: flex; flex-wrap: wrap; gap: 1rem; }
 
 .branch-screen-conversation { max-height: 40dvh; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 

@@ -61,7 +61,8 @@ export const VIEW = "view"
  * then what it resolved to once the repository is ready: the `revision` links use (a branch, a tag or a SHA), the
  * commit `sha`, the `path`, and the keys of the branches and tags, the tree, the file and the directory's README.
  * `missing` when the URL names no repository or a ref the repository doesn't have; `failure` when the branches and
- * tags the ref needed couldn't load, and why. `signedIn` is sign-in's answer, `null` until it gives one.
+ * tags the ref needed couldn't load, and why. `signedIn` is sign-in's answer, `null` until it gives one. `answered`:
+ * the repositories' shape has answered once, with its rows or a failure.
  */
 export const ViewRow = Schema.Struct({
   id: Schema.Literal(VIEW),
@@ -84,6 +85,7 @@ export const ViewRow = Schema.Struct({
   readmeKey: Schema.NullOr(Schema.String),
   readmePath: Schema.NullOr(Schema.String),
   signedIn: Schema.NullOr(Schema.Boolean),
+  answered: Schema.Boolean,
 })
 export type ViewRow = typeof ViewRow.Type
 
@@ -109,4 +111,5 @@ export const emptyView: ViewRow = {
   readmeKey: null,
   readmePath: null,
   signedIn: null,
+  answered: false,
 }

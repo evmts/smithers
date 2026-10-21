@@ -1,0 +1,35 @@
+// What a branch's page lets this person do right now (src/features/branch/view.ts, docs/features/branch-workspace.md#sharing).
+import { describe, expect, test } from "vitest"
+import { accessNow, writes } from "./view"
+
+describe("accessNow", () => {
+  test("nothing until the branch is ready; what tracking answered until the room says otherwise", () => {
+    expect(accessNow(undefined, undefined, undefined)).toBeUndefined()
+    expect(accessNow({ status: "tracking", access: null }, undefined, undefined)).toBeUndefined()
+    expect(accessNow({ status: "ready", access: null }, undefined, undefined)).toBeUndefined()
+    expect(accessNow({ status: "ready", access: "view" }, { status: "connecting" }, undefined)).toBe("view")
+  })
+
+  test("the room's roster says the access now: write is edit, read is view; the owner stays the owner", () => {
+    expect(accessNow({ status: "ready", access: "view" }, { status: "open" }, "write")).toBe("edit")
+    expect(accessNow({ status: "ready", access: "edit" }, { status: "open" }, "read")).toBe("view")
+    expect(accessNow({ status: "ready", access: "owner" }, { status: "open" }, "write")).toBe("owner")
+  })
+
+  test("a room closed for no access is no access, the owner's too", () => {
+    expect(accessNow({ status: "ready", access: "edit" }, { status: "revoked" }, "write")).toBe("none")
+    expect(accessNow({ status: "ready", access: "owner" }, { status: "revoked" }, undefined)).toBe("none")
+  })
+})
+
+describe("writes", () => {
+  test("the owner and an editor write; a viewer, no access and not yet don't", () => {
+    expect([writes("owner"), writes("edit"), writes("view"), writes("none"), writes(undefined)]).toEqual([
+      true,
+      true,
+      false,
+      false,
+      false,
+    ])
+  })
+})

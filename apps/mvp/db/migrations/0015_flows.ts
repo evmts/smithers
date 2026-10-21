@@ -1,9 +1,9 @@
 import { Effect } from "effect"
 import { SqlClient } from "effect/sql"
 
-// Decision 0014 §1's skeleton tables (docs/features/flows.md#your-own-flows): a person's own prompt flows, each saved
-// revision of one, and the drafts `flow/new` writes round by round. A person's flow is a `SKILL.md` of instructions and
-// the flows it may call; it never holds code (decision 0014 §2). `owner_id` and `actor_id` are the signed-in person's
+// Decision 0014 §1's skeleton tables (docs/features/flows.md#your-own-flows): a person's own flows, each saved revision
+// of one, and the drafts `flow/new` writes round by round. Written when a person's flow was a `SKILL.md`; 0025 made every
+// revision and draft flow source, as Will ruled on 2026-10-20. `owner_id` and `actor_id` are the signed-in person's
 // id as sign-in resolves it, text as `runs.launched_by` is, because a local developer's id isn't a uuid.
 //
 // - `flows`: one row per name a person owns. `revision` is the latest saved one; `deleted_at` hides it from every

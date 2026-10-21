@@ -1,14 +1,15 @@
 // A person's own flows in ChatApi (worker/PersonalFlows.ts, docs/features/flows.md#your-own-flows), through ChatApi's
 // real handler on this file's schema of the compose Postgres and the compose Electric (`pnpm db:up`): drafts round by
-// round, the person's answers, saving a ready draft, reading a revision, deleting, and the shapes that sync only the
-// person's own rows.
+// round, the person's answers, saving a ready draft, writing code, reading a revision, deleting, and the shapes that
+// sync only the person's own rows.
 import { digestSync } from "@smthrs/crypto"
 import { Effect, Layer, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import { MAX_SKILL_BYTES, SKILL_PATH } from "../src/features/flows-ui/contract.ts"
+import { MAX_SOURCE_BYTES } from "../src/features/flows-ui/contract.ts"
 import type { DraftWrite } from "../src/features/flows-ui/schema.ts"
+import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "./Actor.ts"
 import * as PersonalFlows from "./PersonalFlows.ts"
 import { eventually, harness, recorded, testFile } from "./test/harness.ts"
@@ -35,9 +36,9 @@ const send = (h: Harness, method: string, path: string, body?: unknown) =>
   })
 const json = async (response: Response) => [response.status, await response.json()] as const
 
-/** A `SKILL.md` for `name`. */
+/** A drafted flow's source for `name`. */
 const skill = (name: string, description = "Summarize merged pull requests.") =>
-  `---\nname: ${name}\ndescription: ${description}\nflows:\n  - repo/read\n---\n\nRead the repository and summarize.\n`
+  renderSource({ name, description, instructions: "Read the repository and summarize.", flows: ["repo/read"] })
 
 /** A round of a draft for `name`, ready to save unless overridden. */
 const round = (name: string, overrides: Partial<DraftWrite> = {}): DraftWrite => ({
@@ -47,7 +48,7 @@ const round = (name: string, overrides: Partial<DraftWrite> = {}): DraftWrite =>
   name,
   status: "ready",
   summary: "A flow that summarizes",
-  files: [{ path: SKILL_PATH, text: skill(name) }],
+  files: [{ path: SOURCE_PATH, text: skill(name) }],
   checks: [{ check: "parses", ok: true }, { check: "name", ok: true }],
   questions: [{ id: "q1", text: "Which tag pattern?", assumed: "v*", blocking: false }],
   failure: null,
@@ -62,6 +63,15 @@ const writeRound = (h: Harness, draftId: string, write: DraftWrite | string) =>
 const saving = (draftId: string, name: string, source = skill(name)) => ({
   draftId,
   name,
+  description: "Summarize merged pull requests.",
+  source,
+  digest: digestSync(source),
+})
+
+/** Code written for the flow `name`, edited from `revision`. */
+const writing = (name: string, revision: number, source = skill(name).replace(`"${name}/agent"`, `"${name}/answer"`)) => ({
+  name,
+  revision,
   description: "Summarize merged pull requests.",
   source,
   digest: digestSync(source),
@@ -91,6 +101,7 @@ describe("who may use the routes", () => {
       expect((await send(h, "GET", "/api/flows")).status).toBe(status)
       expect((await writeRound(h, draftId, round("notes"))).status).toBe(status)
       expect((await send(h, "POST", "/api/flows/save", saving(draftId, "notes"))).status).toBe(status)
+      expect((await send(h, "POST", "/api/flows/write", writing("notes", 1))).status).toBe(status)
     }
     expect(await draftRow(draftId)).toBeUndefined()
   })
@@ -152,7 +163,7 @@ describe("drafts", () => {
       name: "notes",
       status: "ready",
       round: 0,
-      files: [{ path: SKILL_PATH, text: skill("notes") }],
+      files: [{ path: SOURCE_PATH, text: skill("notes") }],
       questions: [{ id: "q1", assumed: "v*", blocking: false }],
       flowId: null,
     })
@@ -167,8 +178,8 @@ describe("drafts", () => {
     const draftId = crypto.randomUUID()
     expect(await json(await writeRound(h, draftId, "{"))).toEqual([400, { code: "invalid" }])
     expect((await writeRound(h, draftId, { ...round("notes"), scope: "repo" } as never)).status).toBe(400)
-    const huge = "x".repeat(MAX_SKILL_BYTES + 1)
-    expect(await json(await writeRound(h, draftId, round("notes", { files: [{ path: SKILL_PATH, text: huge }] }))))
+    const huge = "x".repeat(MAX_SOURCE_BYTES + 1)
+    expect(await json(await writeRound(h, draftId, round("notes", { files: [{ path: SOURCE_PATH, text: huge }] }))))
       .toEqual([413, { code: "too_large" }])
     expect(await json(await writeRound(h, draftId, JSON.stringify({ pad: "x".repeat(81 * 1024) }))))
       .toEqual([413, { code: "too_large" }])
@@ -238,12 +249,12 @@ describe("POST /api/flows/save", () => {
     const first = await saved(h, "notes")
     const draftId = crypto.randomUUID()
     const source = skill("notes", "Summarize merged pull requests by label.")
-    expect((await writeRound(h, draftId, round("notes", { flowId: first.flowId, files: [{ path: SKILL_PATH, text: source }] }))).status).toBe(200)
+    expect((await writeRound(h, draftId, round("notes", { flowId: first.flowId, files: [{ path: SOURCE_PATH, text: source }] }))).status).toBe(200)
     const [status, body] = await json(await send(h, "POST", "/api/flows/save", { ...saving(draftId, "notes", source), description: "By label." }))
     expect([status, body]).toEqual([200, { flowId: first.flowId, name: "notes", revision: 2, txid: expect.any(Number) }])
     expect(await json(await send(h, "GET", "/api/flows"))).toEqual([
       200,
-      { flows: [{ id: first.flowId, name: "notes", revision: 2, description: "By label." }] },
+      { flows: [{ id: first.flowId, name: "notes", revision: 2, description: "By label.", placement: "client" }] },
     ])
   })
 
@@ -277,7 +288,7 @@ describe("POST /api/flows/save", () => {
       ["needs_you", { questions: [{ id: "q", text: "Which?", assumed: "a", blocking: true }] }, (id) => saving(id, "notes"), 409],
       ["not_draft", {}, (id) => saving(id, "notes", skill("notes", "Another.")), 409],
       ["not_draft", { files: [] }, (id) => saving(id, "notes"), 409],
-      ["not_draft", { files: [{ path: "flow.ts", text: skill("notes") }] }, (id) => saving(id, "notes"), 409],
+      ["not_draft", { files: [{ path: "SKILL.md", text: skill("notes") }] }, (id) => saving(id, "notes"), 409],
       ["not_draft", { name: "other" }, (id) => saving(id, "notes"), 409],
     ]
     for (const [code, overrides, request, status] of cases) {
@@ -285,7 +296,7 @@ describe("POST /api/flows/save", () => {
       expect((await writeRound(h, draftId, round("notes", overrides))).status).toBe(200)
       expect([code, await json(await send(h, "POST", "/api/flows/save", request(draftId)))]).toEqual([code, [status, { code }]])
     }
-    const big = "x".repeat(MAX_SKILL_BYTES)
+    const big = "x".repeat(MAX_SOURCE_BYTES)
     const draftId = crypto.randomUUID()
     expect((await writeRound(h, draftId, round("notes"))).status).toBe(200)
     expect(await json(await send(h, "POST", "/api/flows/save", saving(draftId, "notes", `${big}x`)))).toEqual([413, { code: "too_large" }])
@@ -304,6 +315,61 @@ describe("POST /api/flows/save", () => {
   })
 })
 
+describe("POST /api/flows/write", () => {
+  test("code written by hand is the next revision, and it runs on a sandbox; drafted code again runs here", async () => {
+    const h = await open()
+    const first = await saved(h, "notes")
+    const edited = writing("notes", 1)
+    expect(await json(await send(h, "POST", "/api/flows/write", edited)))
+      .toEqual([200, { flowId: first.flowId, name: "notes", revision: 2, txid: expect.any(Number) }])
+    expect(h.line("flow.route").at(-1)).toMatchObject({ annotations: { route: "write", revision: 1, placement: "sandbox" } })
+    expect(await json(await send(h, "GET", "/api/flows"))).toEqual([200, {
+      flows: [{ id: first.flowId, name: "notes", revision: 2, description: "Summarize merged pull requests.", placement: "sandbox" }],
+    }])
+    expect(await json(await send(h, "GET", "/api/flows/source?name=notes"))).toEqual([200, {
+      flowId: first.flowId,
+      name: "notes",
+      revision: 2,
+      digest: edited.digest,
+      source: edited.source,
+    }])
+
+    expect(await json(await send(h, "POST", "/api/flows/write", writing("notes", 2, skill("notes")))))
+      .toEqual([200, { flowId: first.flowId, name: "notes", revision: 3, txid: expect.any(Number) }])
+    expect((await json(await send(h, "GET", "/api/flows")))[1]).toMatchObject({ flows: [{ revision: 3, placement: "client" }] })
+  })
+
+  test("a write from a revision another followed is stale, the same write again isn't; a flow the person hasn't is 404", async () => {
+    const h = await open()
+    const first = await saved(h, "notes")
+    expect((await send(h, "POST", "/api/flows/write", writing("notes", 1))).status).toBe(200)
+    // The same write again, as a step tried again after its answer was lost: the revision it made.
+    expect(await json(await send(h, "POST", "/api/flows/write", writing("notes", 1))))
+      .toEqual([200, { flowId: first.flowId, name: "notes", revision: 2, txid: null }])
+    // Other bytes from the same revision: stale.
+    expect(await json(await send(h, "POST", "/api/flows/write", writing("notes", 1, skill("notes", "Other.")))))
+      .toEqual([409, { code: "stale" }])
+    expect(h.line("flow.route").at(-1)).toMatchObject({ annotations: { code: "stale", status: 409 } })
+    expect(await json(await send(h, "POST", "/api/flows/write", writing("other", 1)))).toEqual([404, { code: "not_found" }])
+    expect(await json(await send(await open(other), "POST", "/api/flows/write", writing("notes", 2))))
+      .toEqual([404, { code: "not_found" }])
+  })
+
+  test("refuses what it can't admit, by code; a body that doesn't decode is 400, and GET 405", async () => {
+    const h = await open()
+    await saved(h, "notes")
+    expect(await json(await send(h, "POST", "/api/flows/write", writing("flow", 1)))).toEqual([409, { code: "name" }])
+    expect(await json(await send(h, "POST", "/api/flows/write", { ...writing("notes", 1), digest: "0".repeat(64) })))
+      .toEqual([409, { code: "digest" }])
+    const big = "x".repeat(MAX_SOURCE_BYTES + 1)
+    expect(await json(await send(h, "POST", "/api/flows/write", writing("notes", 1, big)))).toEqual([413, { code: "too_large" }])
+    expect(await json(await send(h, "POST", "/api/flows/write", { name: "notes" }))).toEqual([400, { code: "invalid" }])
+    expect((await send(h, "GET", "/api/flows/write")).status).toBe(405)
+    // Nothing was written.
+    expect((await json(await send(h, "GET", "/api/flows")))[1]).toMatchObject({ flows: [{ revision: 1 }] })
+  })
+})
+
 describe("reading flows", () => {
   test("GET /api/flows lists the person's live flows, newest first, and no one else's", async () => {
     const h = await open()
@@ -312,8 +378,8 @@ describe("reading flows", () => {
     await saved(await open(other), "theirs")
     expect(await json(await send(h, "GET", "/api/flows"))).toEqual([200, {
       flows: [
-        { id: triage.flowId, name: "triage", revision: 1, description: "Summarize merged pull requests." },
-        { id: notes.flowId, name: "notes", revision: 1, description: "Summarize merged pull requests." },
+        { id: triage.flowId, name: "triage", revision: 1, description: "Summarize merged pull requests.", placement: "client" },
+        { id: notes.flowId, name: "notes", revision: 1, description: "Summarize merged pull requests.", placement: "client" },
       ],
     }])
     expect((await send(h, "POST", "/api/flows")).status).toBe(405)
@@ -449,7 +515,7 @@ describe("telemetry", () => {
     expect((await writeRound(h, draftId, {
       ...round(`n${canary}`),
       request: `ask ${canary}`,
-      files: [{ path: SKILL_PATH, text: skill(`n${canary}`, `d ${canary}`) }],
+      files: [{ path: SOURCE_PATH, text: skill(`n${canary}`, `d ${canary}`) }],
       questions: [{ id: "q1", text: `q ${canary}`, assumed: canary, blocking: false }],
     })).status).toBe(200)
     expect((await send(h, "POST", `/api/flow-drafts/${draftId}/answers`, { round: 0, answers: [{ id: "q1", value: canary }] })).status).toBe(200)
@@ -458,6 +524,10 @@ describe("telemetry", () => {
       description: `d ${canary}`,
     })).status).toBe(200)
     expect((await send(h, "GET", `/api/flows/source?name=n${canary}`)).status).toBe(200)
+    expect((await send(h, "POST", "/api/flows/write", {
+      ...writing(`n${canary}`, 1, skill(`n${canary}`, `d ${canary}`).replace("Read the", `${canary} read the`)),
+      description: `d ${canary}`,
+    })).status).toBe(200)
     expect(recorded(h)).not.toContain(canary)
   })
 })

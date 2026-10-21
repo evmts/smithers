@@ -8,9 +8,8 @@ import {
   FLOW_DRAFTS_TABLE,
   FLOWS_TABLE,
   MAX_FLOWS_BODY_BYTES,
-  MAX_SKILL_BYTES,
+  MAX_SOURCE_BYTES,
   RESERVED_NAMES,
-  SKILL_PATH,
 } from "../src/features/flows-ui/contract.ts"
 import {
   DraftAnswers,
@@ -18,22 +17,27 @@ import {
   DraftWrite,
   FlowName,
   SaveRequest,
+  WriteRequest,
 } from "../src/features/flows-ui/schema.ts"
+import { placementOf, SOURCE_PATH } from "../src/features/flows-ui/source.ts"
 import { type Actor, canAsk, Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 
 // A person's own flows in ChatApi (decision 0014 §1 and §2, docs/features/flows.md#your-own-flows). A person's flow is
-// a prompt flow: a `SKILL.md` stored here and synced to their devices. Only its owner reads or writes it, and only a
-// person who may ask Smithers (Member or above, decision 0007) has any, because running one asks the model.
+// flow source, a `Flow.make` module stored here and synced to their devices, with where its latest revision runs
+// (`placement`, read from the source by `placementOf`). Only its owner reads or writes it, and only a person who may ask
+// Smithers (Member or above, decision 0007) has any, because running one asks the model.
 //
 // - `GET /api/flows`: the person's live flows, newest first.
-// - `GET /api/flows/source?name=<name>[&revision=<n>]`: one flow's `SKILL.md` at a revision (the latest unless set), with
+// - `GET /api/flows/source?name=<name>[&revision=<n>]`: one flow's source at a revision (the latest unless set), with
 //   its digest. A deleted flow's revisions stay readable by revision, so a run that pinned one can still be retried.
 // - `POST /api/flows/save {draftId, name, description, source, digest}`: a ready draft becomes a flow, or the next
 //   revision of the flow it edits, in one transaction that also marks the draft saved. ChatApi admits only the draft's
 //   own file, unchanged, whose checks all passed, under a name that is free; saving a saved draft answers what it saved.
+// - `POST /api/flows/write {name, revision, description, source, digest}`: source the person wrote becomes the next
+//   revision of their flow `name`, admitted only while `revision` is still its latest (`409 stale` otherwise).
 // - `POST /api/flows/<id>/delete`: deletes one; its name is free again.
 // - `GET` and `POST /api/flow-drafts/<id>`: a draft round, which only `flow/new`'s steps write. A write for an older
 //   round than the row's is stale, and a saved draft never changes.
@@ -57,7 +61,7 @@ export const shapes = Metric.counter("smithers_flow_shape_requests", {
 })
 
 /** The `flows` columns a device syncs: a live flow, without its owner's id. */
-export const SYNCED_FLOW_COLUMNS = ["id", "name", "revision", "description", "created_at", "updated_at"]
+export const SYNCED_FLOW_COLUMNS = ["id", "name", "revision", "description", "placement", "created_at", "updated_at"]
 
 /** The `flow_drafts` columns a device syncs: all of them but the author's id. */
 export const SYNCED_DRAFT_COLUMNS = [
@@ -85,6 +89,7 @@ const NOBODY = ""
 const decodeDraftWrite = Schema.decodeUnknownEffect(Schema.fromJsonString(DraftWrite))
 const decodeAnswers = Schema.decodeUnknownEffect(Schema.fromJsonString(DraftAnswers))
 const decodeSave = Schema.decodeUnknownEffect(Schema.fromJsonString(SaveRequest))
+const decodeWrite = Schema.decodeUnknownEffect(Schema.fromJsonString(WriteRequest))
 const isUuid = Schema.is(Schema.String.check(Schema.isUUID()))
 const isName = Schema.is(FlowName)
 
@@ -193,13 +198,13 @@ export const nameAllowed = (name: string): boolean =>
 /** Why a save can't be admitted, as the code the route answers, or `undefined` when it can. */
 export const saveRefusal = (draft: DraftRow, save: SaveRequest): string | undefined => {
   if (!nameAllowed(save.name)) return "name"
-  if (bytesOf(save.source) > MAX_SKILL_BYTES) return "too_large"
+  if (bytesOf(save.source) > MAX_SOURCE_BYTES) return "too_large"
   if (digestSync(save.source) !== save.digest) return "digest"
   if (draft.status !== "ready") return "not_ready"
   if (draft.checks.length === 0 || draft.checks.some((check) => !check.ok)) return "checks"
   if (draft.questions.some((question) => question.blocking && question.answer === undefined)) return "needs_you"
   const [file, ...more] = draft.files
-  if (file === undefined || more.length > 0 || file.path !== SKILL_PATH || file.text !== save.source) return "not_draft"
+  if (file === undefined || more.length > 0 || file.path !== SOURCE_PATH || file.text !== save.source) return "not_draft"
   if (draft.name !== save.name) return "not_draft"
   return undefined
 }
@@ -215,16 +220,17 @@ const save = (actorId: string, request: SaveRequest, draft: DraftRow) =>
     return yield* sql.withTransaction(Effect.gen(function* () {
       let flowId: string
       let revision: number
+      const placement = placementOf(request.source)
       if (draft.flowId === null) {
         flowId = crypto.randomUUID()
         revision = 1
         yield* sql`
-          INSERT INTO flows (id, owner_id, name, revision, description)
-          VALUES (${flowId}, ${actorId}, ${request.name}, 1, ${request.description})`
+          INSERT INTO flows (id, owner_id, name, revision, description, placement)
+          VALUES (${flowId}, ${actorId}, ${request.name}, 1, ${request.description}, ${placement})`
       } else {
         const [row] = yield* sql<{ readonly revision: number }>`
           UPDATE flows SET revision = revision + 1, name = ${request.name}, description = ${request.description},
-            updated_at = now()
+            placement = ${placement}, updated_at = now()
           WHERE id = ${draft.flowId} AND owner_id = ${actorId} AND deleted_at IS NULL
           RETURNING revision`
         if (row === undefined) return { _tag: "Gone" as const }
@@ -250,12 +256,70 @@ const savedOf = (draft: DraftRow) =>
     return row
   })
 
+/** Why a write can't be admitted before it reaches the database, as the code the route answers, or `undefined`. */
+export const writeRefusal = (write: WriteRequest): string | undefined => {
+  if (!nameAllowed(write.name)) return "name"
+  if (bytesOf(write.source) > MAX_SOURCE_BYTES) return "too_large"
+  if (digestSync(write.source) !== write.digest) return "digest"
+  return undefined
+}
+
+/**
+ * Writes the person's source as the next revision of their live flow `name`, while `revision` is still its latest:
+ * `Written`, `Stale` when another revision followed it, `Missing` when they have no such flow. One transaction. A write
+ * whose very bytes already are the revision after `revision` answers that revision, so a step tried again after its
+ * answer was lost isn't refused stale by its own write.
+ */
+const writeFlow = (actorId: string, write: WriteRequest) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    return yield* sql.withTransaction(Effect.gen(function* () {
+      const [row] = yield* sql<{ readonly id: string; readonly revision: number }>`
+        UPDATE flows SET revision = revision + 1, description = ${write.description},
+          placement = ${placementOf(write.source)}, updated_at = now()
+        WHERE owner_id = ${actorId} AND name = ${write.name} AND deleted_at IS NULL AND revision = ${write.revision}
+        RETURNING id, revision`
+      if (row === undefined) {
+        const [live] = yield* sql<{ readonly id: string; readonly digest: string | null }>`
+          SELECT f.id, r.digest FROM flows f
+          LEFT JOIN flow_revisions r ON r.flow_id = f.id AND r.revision = ${write.revision + 1}
+          WHERE f.owner_id = ${actorId} AND f.name = ${write.name} AND f.deleted_at IS NULL`
+        if (live === undefined) return { _tag: "Missing" as const }
+        if (live.digest !== write.digest) return { _tag: "Stale" as const }
+        return {
+          _tag: "Written" as const,
+          flowId: live.id,
+          name: write.name,
+          revision: write.revision + 1,
+          txid: null,
+        }
+      }
+      const [written] = yield* sql<{ readonly txid: string }>`
+        INSERT INTO flow_revisions (flow_id, revision, digest, source, created_by)
+        VALUES (${row.id}, ${row.revision}, ${write.digest}, ${write.source}, ${actorId})
+        RETURNING pg_current_xact_id()::xid::text AS txid`
+      return {
+        _tag: "Written" as const,
+        flowId: row.id,
+        name: write.name,
+        revision: row.revision,
+        txid: Number(written!.txid),
+      }
+    }))
+  })
+
 /** The person's live flows, newest first. */
 const listFlows = (actorId: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    return yield* sql<{ readonly id: string; readonly name: string; readonly revision: number; readonly description: string }>`
-      SELECT id, name, revision, description FROM flows WHERE owner_id = ${actorId} AND deleted_at IS NULL
+    return yield* sql<{
+      readonly id: string
+      readonly name: string
+      readonly revision: number
+      readonly description: string
+      readonly placement: string
+    }>`
+      SELECT id, name, revision, description, placement FROM flows WHERE owner_id = ${actorId} AND deleted_at IS NULL
       ORDER BY updated_at DESC, id`
   })
 
@@ -440,6 +504,30 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         return ok({ flowId: saved.flowId, name: saved.name, revision: saved.revision, txid: saved.txid })
       }))
 
+    /** `POST /api/flows/write`. */
+    const writeRoute = routed("write", (request, actor, fields) =>
+      Effect.gen(function* () {
+        if (request.method !== "POST") return methodNot("POST")
+        const read = yield* body(request, fields, decodeWrite)
+        if (!read.ok) return read.response
+        const write = read.value
+        fields.revision = write.revision
+        fields.placement = placementOf(write.source)
+        const refused = writeRefusal(write)
+        if (refused !== undefined) {
+          fields.code = refused
+          return refusal(refused === "too_large" ? 413 : 409, refused)
+        }
+        const written = yield* writeFlow(actor.subject.id, write)
+        if (written._tag === "Missing") return refusal(404, "not_found")
+        if (written._tag === "Stale") {
+          fields.code = "stale"
+          return refusal(409, "stale")
+        }
+        fields.flowId = written.flowId
+        return ok({ flowId: written.flowId, name: written.name, revision: written.revision, txid: written.txid })
+      }))
+
     /** `POST /api/flows/<id>/delete`. */
     const remove = (id: string) =>
       routed("delete", (request, actor, fields) =>
@@ -455,6 +543,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       if (rest === "") return list
       if (rest === "source") return source
       if (rest === "save") return saveRoute
+      if (rest === "write") return writeRoute
       const [id = "", tail, ...more] = rest.split("/")
       if (tail === "delete" && more.length === 0 && isUuid(id)) return remove(id.toLowerCase())
       return Effect.succeed(refusal(404, "not_found"))
@@ -477,7 +566,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           const write = read.value
           fields.round = write.round
           fields.outcome = write.status
-          if (write.files.reduce((sum, file) => sum + bytesOf(file.text), 0) > MAX_SKILL_BYTES) {
+          if (write.files.reduce((sum, file) => sum + bytesOf(file.text), 0) > MAX_SOURCE_BYTES) {
             return refusal(413, "too_large")
           }
           const txid = yield* writeDraft(id, actor.subject.id, write)

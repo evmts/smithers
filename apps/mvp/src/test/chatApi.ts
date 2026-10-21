@@ -32,9 +32,11 @@ import * as RepoApi from "../../worker/RepoApi.ts"
 import * as BranchApi from "../../worker/branch/BranchApi.ts"
 import { Forge } from "../../worker/branch/Forge.ts"
 import { TerminalSockets } from "../../worker/branch/Sandboxes.ts"
+import { Directory } from "../../worker/branch/People.ts"
+import { Rooms } from "../../worker/branch/Rooms.ts"
 import * as GitHubApi from "../../worker/github/Api.ts"
 import { repositoryOf } from "../../worker/github/Config.ts"
-import { type GitHost, gitHost, type Sockets, terminalSockets } from "../../worker/test/branch.ts"
+import { type GitHost, gitHost, rooms, type Sockets, terminalSockets, type TestRooms } from "../../worker/test/branch.ts"
 import { Outbox } from "@smthrs/effect-tanstack-db"
 import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
 import { BrowserEngine, BrowserRuntime, StoragePersistence, TabChannel, WebLock } from "@smthrs/platform-browser"
@@ -48,10 +50,16 @@ import { faultyServices } from "./faults"
 import { LOCAL_ELECTRIC_URL, MESSAGES_TABLE, QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "../features/chat/contract"
 import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE, REPOSITORIES_TABLE } from "../features/repo/contract"
 import { RUNS_TABLE } from "../features/status/contract"
-import { COMMENTS_TABLE, ITEMS_TABLE, SYNC_TABLE, WRITES_TABLE } from "../features/issues/contract"
+import { SPEND_ALERTS_TABLE } from "../features/spend/contract"
+import { NOTIFICATIONS_TABLE } from "../features/attention/contract"
+import { COMMENTS_TABLE, ITEMS_TABLE, SYNC_TABLE, TRIAGE_SETTINGS_TABLE, WRITES_TABLE } from "../features/issues/contract"
 import type { IssuesClient } from "../features/issues/api"
+import type { StackClient } from "../features/todos/api"
+import { TODO_REQUESTS_TABLE, TODOS_TABLE } from "../features/todos/contract"
+import * as StackApi from "../../worker/stack/Api.ts"
 import { VIEWS_TABLE } from "../features/views/contract"
 import { TERMINALS_TABLE } from "../features/terminal/contract"
+import { SHARES_TABLE } from "../features/branch/contract"
 import type { ThemeMode } from "../features/theme/contract"
 import { clientFlows } from "../flows/declarations"
 import { workerRegistrations } from "../flows/registrations"
@@ -102,7 +110,15 @@ export const TEST_REPOSITORY = "octo/hello"
 export interface ChatApiOptions {
   readonly actor?: Actor.Actor | null
   readonly origin?: string
+  /**
+   * Other people a test's devices may be, by name: a request carrying `x-test-person: <name>` is signed in as them
+   * (`asPerson`), so one ChatApi serves two people's devices.
+   */
+  readonly people?: Readonly<Record<string, Actor.Actor>>
 }
+
+/** The header a test device's requests name their person with (`ChatApiOptions.people`). */
+const PERSON_HEADER = "x-test-person"
 
 /** A remote flow a route started: the git loop's routes start them, and no remote host runs here. */
 export interface Started {
@@ -117,13 +133,19 @@ const SCHEMA_TABLES: ReadonlySet<string> = new Set([
   REPOSITORIES_TABLE,
   VIEWS_TABLE,
   RUNS_TABLE,
+  NOTIFICATIONS_TABLE,
   ITEMS_TABLE,
   COMMENTS_TABLE,
   WRITES_TABLE,
   SYNC_TABLE,
+  TRIAGE_SETTINGS_TABLE,
   FLOWS_TABLE,
   FLOW_DRAFTS_TABLE,
   TERMINALS_TABLE,
+  SHARES_TABLE,
+  SPEND_ALERTS_TABLE,
+  TODOS_TABLE,
+  TODO_REQUESTS_TABLE,
 ])
 
 /** A Postgres schema for one device's engine store, and where the device keeps the engine's leaders. */
@@ -179,13 +201,16 @@ export class TestChatApi extends Context.Service<
      * no credential (`Forge.gitHub`), and GitHub is the scripted git host `github` (worker/test/branch.ts). No remote host
      * runs here, so each `terminal/Open` a route starts is recorded in `starts`, never run, and a test settles the
      * terminal's row itself, as the remote flow does, through `run`. The branches' machines are a test
-     * `TerminalSockets` (`sockets`), standing in for the Cloudflare Durable Object binding. `refuseStarts(n)` makes the
-     * next `n` starts fail as unavailable, as a Durable Object ChatApi can't reach does.
+     * `TerminalSockets` (`sockets`), and their rooms a test `Rooms` (`rooms`), standing in for the Cloudflare Durable
+     * Object bindings. A branch is shared by login (their login, else their id) with the actor and anyone in `people`,
+     * and with whoever signed in to the schema's `people`. `refuseStarts(n)` makes the next `n` starts fail as unavailable, as a Durable Object ChatApi can't reach
+     * does.
      */
     readonly branches: {
       readonly github: GitHost
       readonly starts: ReadonlyArray<Started>
       readonly sockets: Sockets
+      readonly rooms: TestRooms
       readonly refuseStarts: (count: number) => void
       readonly run: <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => Effect.Effect<A>
     }
@@ -199,9 +224,18 @@ export class TestChatApi extends Context.Service<
         const sql = yield* SqlClient.SqlClient
         const { name: schema, database } = yield* TestDatabase.Scratch
         const actor = options.actor === undefined ? member : options.actor
+        const people = options.people ?? {}
         const sessions = actor === null
           ? Actor.signedOut
-          : Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.succeedSome(actor) }))
+          : Layer.succeed(
+            Actor.Sessions,
+            Actor.Sessions.of({
+              resolve: Effect.map(HttpServerRequest.HttpServerRequest, (request) => {
+                const named = request.headers[PERSON_HEADER]
+                return Option.some(named !== undefined && Object.hasOwn(people, named) ? people[named]! : actor)
+              }),
+            }),
+          )
 
         // Device engine stores: dropped when this ChatApi closes, after their leaders stop and every connection a
         // leader left open (named for its store) is ended, so the drop never waits on a write.
@@ -273,8 +307,8 @@ export class TestChatApi extends Context.Service<
         const repoCache = yield* Layer.build(ImmutableCache.layerMemory())
 
         // The git loop, as ChatApi routes it (worker/ChatApi.ts), with a GitHub App configured: no remote host runs
-        // here, so a write's `github/Write` and a stale read's `github/Reconcile` are recorded in `starts`, never run. A
-        // test writes their rows itself, through `github.run`.
+        // here, so a write's `github/Write`, a stale read's `github/Reconcile` and Run triage again's `triage/Run` are
+        // recorded in `starts`, never run. A test writes their rows itself, through `github.run`.
         const repository = repositoryOf(TEST_REPOSITORY)
         const github = yield* GitHubApi.make(database, {
           repository,
@@ -286,6 +320,8 @@ export class TestChatApi extends Context.Service<
             apiBaseUrl: "http://github.test",
           }),
         }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
+        // The stack's routes, as ChatApi routes them (worker/ChatApi.ts): no host runs a TODO, so every TODO stays Queued.
+        const stack = yield* StackApi.make(database).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         const starts: Array<Started> = []
         const recording = Flows.FlowStarter.of({
           start: (flow, { executionId, payload }) => Effect.sync(() => void starts.push({ flow: flow._tag, executionId, payload })),
@@ -296,6 +332,13 @@ export class TestChatApi extends Context.Service<
         const branchApi = yield* BranchApi.make(database).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         const branchGitHub = gitHost()
         const sockets = terminalSockets()
+        const branchRooms = rooms()
+        const directory = Directory.layer(
+          database,
+          [options.actor ?? member, ...Object.values(options.people ?? {})].flatMap((actor) =>
+            actor === null ? [] : [{ id: actor.subject.id, login: actor.login ?? actor.subject.id }]
+          ),
+        )
         const branchStarts: Array<Started> = []
         let refusing = 0
         const branchStarter = Flows.FlowStarter.of({
@@ -329,10 +372,13 @@ export class TestChatApi extends Context.Service<
             return branchApi.fetch.pipe(
               Effect.provideService(Flows.FlowStarter, branchStarter),
               Effect.provideService(TerminalSockets, sockets.service),
+              Effect.provideService(Rooms, branchRooms.service),
+              Effect.provide(directory),
               Effect.provide(Forge.gitHub),
             )
           }
           if (GitHubApi.handles(path)) return github.fetch.pipe(Effect.provideService(Flows.FlowStarter, recording))
+          if (StackApi.handles(path)) return stack.fetch
           return path === REPOS_ROUTE || path.startsWith(`${REPOS_ROUTE}/`) || path === REPOSITORIES_SHAPE_ROUTE
             ? Effect.provideContext(repos.fetch, repoCache)
             : chat.fetch.pipe(Effect.provideService(Flows.FlowStarter, expiries))
@@ -429,7 +475,7 @@ export class TestChatApi extends Context.Service<
             }),
           )
 
-        return TestChatApi.of({
+        const service = TestChatApi.of({
           origin,
           fetch,
           answerTo,
@@ -466,18 +512,33 @@ export class TestChatApi extends Context.Service<
             github: branchGitHub,
             starts: branchStarts,
             sockets,
+            rooms: branchRooms,
             refuseStarts: (count) => {
               refusing = count
             },
             run: (effect) => effect.pipe(Effect.provide(database), Effect.orDie),
           },
         })
+        return service
       }),
     )
 
   /** ChatApi on a scratch schema, every request signed in as a Member. */
   static readonly layer = TestChatApi.layerWith({})
 }
+
+/**
+ * `api` as person `name` of `ChatApiOptions.people` reaches it: the same ChatApi, its `fetch` signing every request in
+ * as them. A device opened on it is theirs, its engine's requests included.
+ */
+export const asPerson = (api: TestChatApi["Service"], name: string): TestChatApi["Service"] => ({
+  ...api,
+  fetch: (input, init) => {
+    const request = new Request(input, init)
+    request.headers.set(PERSON_HEADER, name)
+    return api.fetch(request)
+  },
+})
 
 // Each tab counts into its own registry, so one test's metrics never leak into another's.
 const ownMetrics = () => Layer.succeed(Metric.MetricRegistry, new Map())
@@ -719,8 +780,10 @@ const sqliteFile = (path: string, turn: ReturnType<typeof deviceTurn>) => {
  */
 export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">> & {
   readonly answers?: boolean
-  /** A client in place of the real one, for an unhappy path: a faulty `IssuesClient` (test.faults-by-injection). */
-  readonly replace?: Layer.Layer<IssuesClient, never, HttpClient.HttpClient>
+  /** A client in place of the real one, for an unhappy path: a faulty `IssuesClient` or `StackClient` (test.faults-by-injection). */
+  readonly replace?:
+    | Layer.Layer<IssuesClient, never, HttpClient.HttpClient>
+    | Layer.Layer<StackClient, never, HttpClient.HttpClient>
 }
 
 /** Switches a faulty tab throws on its shape source before it syncs. */

@@ -3,7 +3,7 @@ import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
 import type { TerminalSocket } from "@smthrs/platform-browser"
 import { Context, Effect, FiberHandle, Layer, Ref, Scope, Semaphore } from "effect"
 import { TERMINALS_SHAPE_ROUTE } from "./contract"
-import { PANEL, Panel, TerminalRow } from "./schema"
+import { PANEL, Panel, Tab, TerminalRow } from "./schema"
 
 // The branch terminal on this tab (decision 0013 §3, docs/features/branch-workspace.md#the-terminal): each branch's
 // terminals, synced from Postgres by Electric while the branch's page shows; the panel the page renders; and the one
@@ -18,6 +18,10 @@ export interface TerminalConfig {
 export const panelQuery = (panel: Collection.Collection<Panel, string>) =>
   LiveQuery.make((q) => q.from({ panel: panel.tanstack }).findOne())
 
+/** The live terminals on the panel's branch, oldest first: its tabs. */
+export const tabsQuery = (tabs: Collection.Collection<Tab, string>) =>
+  LiveQuery.make((q) => q.from({ tab: tabs.tanstack }).orderBy(({ tab }) => tab.createdAt))
+
 /** The terminals' state for one tab. */
 export class TerminalStore extends Context.Service<
   TerminalStore,
@@ -25,6 +29,11 @@ export class TerminalStore extends Context.Service<
     readonly origin: string
     readonly panel: Collection.Collection<Panel, string>
     readonly panelState: Effect.Success<ReturnType<typeof panelQuery>>
+    /** The live terminals on the panel's branch, kept equal to its rows while the panel shows it. */
+    readonly tabs: Collection.Collection<Tab, string>
+    readonly tabsState: Effect.Success<ReturnType<typeof tabsQuery>>
+    /** What keeps `tabs` equal to the branch's rows: only the latest panel's runs. */
+    readonly follower: FiberHandle.FiberHandle<void, never>
     /** A branch's terminals, synced while this tab has opened them, for as long as the store lives. */
     readonly terminals: (branchId: string) => Effect.Effect<ElectricCollection.ElectricCollection<TerminalRow>>
     /** The socket this tab holds, while it holds one: only the latest attach keeps it. */
@@ -47,6 +56,7 @@ export class TerminalStore extends Context.Service<
           getKey: (row) => row.id,
           initialData: [{ id: PANEL, branchId: null, terminalId: null, phase: "idle", access: null }],
         })
+        const tabs = yield* Collection.local<Tab, string>({ id: "terminal-tabs", schema: Tab, getKey: (row) => row.id })
         const opened = new Map<string, ElectricCollection.ElectricCollection<TerminalRow>>()
         const opening = yield* Semaphore.make(1)
         const open = (branchId: string) =>
@@ -79,6 +89,9 @@ export class TerminalStore extends Context.Service<
           origin: config.origin,
           panel,
           panelState: yield* panelQuery(panel),
+          tabs,
+          tabsState: yield* tabsQuery(tabs),
+          follower: yield* FiberHandle.make<void, never>(),
           terminals,
           attached: yield* FiberHandle.make<void, never>(),
           connection: yield* Ref.make<TerminalSocket.Connection | undefined>(undefined),

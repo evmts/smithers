@@ -7,6 +7,19 @@ export const WEB_MODES = ["embed", "tab"] as const
 /** One of {@link WEB_MODES}. */
 export type WebMode = (typeof WEB_MODES)[number]
 
+/**
+ * Well-known docs, by the name a person gives them, and the page each opens. `app/web/open` lists them in its
+ * description, so "show me the Effect docs" opens this page rather than one the model guesses: before it did, three of
+ * eight agent eval runs opened effect-ts.dev, docs.effect.website or effect-ts.github.io (2026-10-20).
+ */
+export const KNOWN_DOCS = {
+  Effect: "https://effect.website/docs",
+  React: "https://react.dev",
+  TypeScript: "https://www.typescriptlang.org/docs",
+  TanStack: "https://tanstack.com",
+  "Cloudflare Workers": "https://developers.cloudflare.com/workers",
+} as const
+
 /** The longest URL `app/web/open` takes, in characters. */
 export const MAX_URL_LENGTH = 2_048
 

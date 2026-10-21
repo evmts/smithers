@@ -9,10 +9,15 @@ import * as Pause from "./flows/Pause.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
 import * as RepoClone from "./flows/RepoClone.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
+import * as SandboxCall from "./flows/SandboxCall.ts"
+import * as SandboxKeep from "./flows/SandboxKeep.ts"
+import * as SecretFlows from "./secrets/SecretFlows.ts"
+import * as SpendAlert from "./flows/SpendAlert.ts"
 import * as TerminalOpen from "./flows/TerminalOpen.ts"
+import type { Machines } from "./branch/Machines.ts"
 import type { Sandboxes } from "./branch/Sandboxes.ts"
-import type * as GitHubApply from "./github/Apply.ts"
 import * as GitHubHost from "./github/Host.ts"
+import type * as Triage from "./github/Triage.ts"
 
 // What a remote flow execution runs on Cloudflare (docs/features/remote-flows.md): `@smthrs/platform-cloudflare`'s
 // per-execution Durable Object functions over the engine's Postgres schema. worker/Executions.ts hands it the Durable
@@ -32,12 +37,17 @@ export interface Flows<ROut, E, R> {
 }
 
 /**
- * The deployed remote flows: `probe/Pause`, whose steps log, and `chat/Expire` over `app`: the app's own tables (not
- * the engine's schema) and how old a streaming answer gets before it settles (docs/features/agent.md#settling).
+ * The deployed remote flows: `probe/Pause`, whose steps log, `chat/Expire` over `app`: the app's own tables (not
+ * the engine's schema) and how old a streaming answer gets before it settles (docs/features/agent.md#settling), and
+ * `ops/SpendAlert` over the app's tables (docs/features/spend-alerts.md).
  */
 export const remote = <E, R>(app: Expire.Services<E, R>) => ({
-  flows: [Pause.Pause, Expire.Expire],
-  registration: Layer.merge(Pause.registration(Pause.logged), Expire.registration(app)),
+  flows: [Pause.Pause, Expire.Expire, SpendAlert.SpendAlert],
+  registration: Layer.mergeAll(
+    Pause.registration(Pause.logged),
+    Expire.registration(app),
+    SpendAlert.registration(app.database),
+  ),
 })
 
 /**
@@ -67,13 +77,13 @@ export const withRepoClone = <ROut, E, R, CE, CR>(flows: Flows<ROut, E, R>, serv
 })
 
 /**
- * `flows`, plus the git loop's `github/Apply`, `github/Reconcile` and `github/Write` when this deployment has the
- * GitHub App (docs/features/issues.md#remote-flows). `services` is built when each execution's registration is: the
- * host may read what it needs to start a session's role check from the execution's own context then.
+ * `flows`, plus the git loop's `github/Apply`, `github/Reconcile`, `github/Write` and `triage/Run` when this deployment
+ * has the GitHub App (docs/features/issues.md#remote-flows). `services` is built when each execution's registration is:
+ * the host may read what it needs to start a session's role check from the execution's own context then.
  */
 export const withGitHub = <ROut, E, R, GE, GR, SE, SR>(
   flows: Flows<ROut, E, R>,
-  services: Effect.Effect<GitHubApply.Services<GE, GR>, SE, SR>,
+  services: Effect.Effect<Triage.Services<GE, GR>, SE, SR>,
 ) => ({
   flows: [...flows.flows, ...GitHubHost.flows],
   registration: Layer.merge(flows.registration, Layer.unwrap(Effect.map(services, GitHubHost.registration))),
@@ -93,6 +103,36 @@ export const withTerminals = <ROut, E, R, DE, DR, SE, SR>(
 })
 
 /**
+ * `flows`, plus the sandbox tools' `sandbox/Call` and the machines' `sandbox/Keep` over the app's tables and the
+ * branches' machines (`machines`: on Cloudflare, the `SandboxObject` namespace, worker/BranchSandboxes.ts),
+ * docs/features/sandbox-tools.md.
+ */
+export const withSandboxTools = <ROut, E, R, DE, DR, ME, MR>(
+  flows: Flows<ROut, E, R>,
+  database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
+  machines: Layer.Layer<Machines, ME, MR>,
+) => ({
+  flows: [...flows.flows, SandboxCall.SandboxCall, SandboxKeep.Keep],
+  registration: Layer.mergeAll(
+    flows.registration,
+    SandboxCall.registration(database).pipe(Layer.provide(machines)),
+    SandboxKeep.registration(database).pipe(Layer.provide(machines)),
+  ),
+})
+
+/**
+ * `flows`, plus `secret/Put` and `secret/Delete` over the app's tables: an Admin's writes of a repository's sealed
+ * secrets (docs/features/secrets.md#writing).
+ */
+export const withSecrets = <ROut, E, R, DE, DR>(
+  flows: Flows<ROut, E, R>,
+  database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
+) => ({
+  flows: [...flows.flows, SecretFlows.Put, SecretFlows.Delete],
+  registration: Layer.merge(flows.registration, SecretFlows.registration(database)),
+})
+
+/**
  * The slice of a Durable Object's storage the handlers use; `R` is what its methods require (Alchemy's
  * `RuntimeContext`, or nothing for a plain object's).
  */
@@ -104,7 +144,7 @@ export type Storage<R = never> = ExecutionObject.Storage<R>
  */
 export const intent = ExecutionObject.intent
 
-/** How long a settled execution's object keeps its state before its alarm forgets it (`ExecutionObject`'s). */
+/** How long a settled execution's Durable Object keeps its state before its alarm forgets it. */
 export const settledRetentionMs = ExecutionObject.settledRetentionMs
 
 /**

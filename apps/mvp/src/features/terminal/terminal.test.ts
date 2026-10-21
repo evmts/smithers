@@ -104,6 +104,7 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
   const branch = await runtime.runPromise(Effect.service(Branch))
   const store = await runtime.runPromise(Effect.service(TerminalStore))
   terminal.queries.panel.startSyncImmediate()
+  terminal.queries.tabs.startSyncImmediate()
   api.branches.github.publish("octo", "hello", {
     defaultBranch: "main",
     branches: { main: shaOf("main"), "feature/one": shaOf("feature/one") },
@@ -128,6 +129,8 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
     store,
     actions: terminal.actions,
     panel: () => terminal.queries.panel.toArray[0],
+    /** The panel's tabs, oldest first: whose, whether the person's own, and open yet. */
+    tabs: () => terminal.queries.tabs.toArray.map(({ id, ownerLogin, mine, status }) => ({ id, ownerLogin, mine, status })),
     /** Tracks branch `name` of `octo/hello` as `POST /api/branches` does, with no page open: its id. */
     track: (name: string, mode: "locked" | "open" = "open") =>
       runtime.runPromise(
@@ -343,9 +346,10 @@ describe("Open terminal", () => {
     host.peers[0]!.ready("read")
     await until(() => expect(tab.panel()).toMatchObject({ branchId: null, phase: "open", access: "read" }))
 
+    // Showing the branch lets go of the socket; the branch's live terminal is shown afresh, to attach again.
     await tab.actions.show(branchId)
     expect(await host.peers[0]!.closed).toBe(1000)
-    expect(tab.panel()).toMatchObject({ branchId, terminalId: null, phase: "idle", access: null })
+    expect(tab.panel()).toMatchObject({ branchId, terminalId, phase: "connecting", access: null })
   }, WITHIN)
 
   test("the person's terminal already open is shown, not a second one: Open terminal answers theirs", async () => {
@@ -471,7 +475,7 @@ describe("Open terminal settles", () => {
 })
 
 describe("the panel", () => {
-  test("shows the person's own live terminal, or the one they watch, by its row; else Open terminal", async () => {
+  test("shows the person's own live terminal, or the one they watch, by its row; else the branch's first live one, else Open terminal", async () => {
     const tab = await open()
     const branchId = await tab.track("feature/one")
     const [ended, failed, theirs] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()]
@@ -479,24 +483,31 @@ describe("the panel", () => {
     await tab.insert({ id: failed, branchId, ownerId: other, status: "failed" })
     await tab.insert({ id: theirs, branchId, ownerId: other, status: "open" })
 
-    // The person's own ended terminal and another's open one aren't theirs to show: Open terminal.
-    await tab.actions.show(branchId)
-    expect(tab.panel()).toMatchObject({ branchId, terminalId: null, phase: "idle" })
+    // The person's own ended terminal isn't theirs to show: the branch's live one is, and it is the one tab.
+    expect(await tab.actions.show(branchId)).toBe(theirs)
+    expect(tab.panel()).toMatchObject({ branchId, terminalId: theirs, phase: "connecting" })
+    expect(tab.tabs()).toEqual([{ id: theirs, ownerLogin: other, mine: false, status: "open" }])
     await tab.actions.show(branchId, ended)
     expect(tab.panel()).toMatchObject({ terminalId: ended, phase: "ended" })
     await tab.actions.show(branchId, failed)
     expect(tab.panel()).toMatchObject({ terminalId: failed, phase: "failed" })
     await tab.actions.show(branchId, theirs)
     expect(tab.panel()).toMatchObject({ terminalId: theirs, phase: "connecting" })
-    await tab.actions.show(branchId, crypto.randomUUID())
+    expect(await tab.actions.show(branchId, crypto.randomUUID())).toBeNull()
     expect(tab.panel()).toMatchObject({ terminalId: null, phase: "idle" })
 
-    // Their own terminal opening: the panel waits for its row, then shows it.
+    // Their own terminal opening: the panel waits for its row, then shows it, and the tabs follow the rows.
     const mine = crypto.randomUUID()
     await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening" })
     await until(async () => expect(await tab.synced(branchId, mine)).toBe("opening"))
     await tab.actions.show(branchId)
     expect(tab.panel()).toMatchObject({ terminalId: mine, phase: "opening" })
+    await until(() =>
+      expect(tab.tabs()).toEqual([
+        { id: theirs, ownerLogin: other, mine: false, status: "open" },
+        { id: mine, ownerLogin: member.subject.id, mine: true, status: "opening" },
+      ])
+    )
     await tab.settle(mine, "open")
     await until(() => expect(tab.panel()).toMatchObject({ terminalId: mine, phase: "connecting" }))
     // Shown from its row, not pressed: nothing to time.
@@ -504,6 +515,15 @@ describe("the panel", () => {
 
     await tab.actions.show(null)
     expect(tab.panel()).toMatchObject({ branchId: null, terminalId: null, phase: "idle", access: null })
+    expect(tab.tabs()).toEqual([])
+  }, WITHIN)
+
+  test("with no live terminal on the branch, the panel offers Open terminal", async () => {
+    const tab = await open()
+    const branchId = await tab.track("feature/one")
+    expect(await tab.actions.show(branchId)).toBeNull()
+    expect(tab.panel()).toMatchObject({ branchId, terminalId: null, phase: "idle" })
+    expect(tab.tabs()).toEqual([])
   }, WITHIN)
 
   test("a terminal that opens after the person left the branch doesn't take the panel over", async () => {

@@ -17,9 +17,17 @@ import {
   newIssuePath,
   NOT_SENT_COPY,
   NOT_SENT_REASONS,
+  ACCEPTED_LABEL,
+  labelOf,
+  NOT_ACCEPTED_LABEL,
   reconcileExecutionId,
   refusalOf,
+  rejectionComment,
   SYNC_STALE_MS,
+  TRIAGE_REASON_COPY,
+  TRIAGE_REASONS,
+  triageOf,
+  triageRunExecutionId,
   writeExecutionId,
   writesRoute,
 } from "./contract"
@@ -80,5 +88,52 @@ describe("Not sent", () => {
   test("every reason has its words", () => {
     expect(Object.keys(NOT_SENT_COPY).sort()).toEqual([...NOT_SENT_REASONS].sort())
     for (const words of Object.values(NOT_SENT_COPY)) expect(words.length).toBeGreaterThan(0)
+  })
+})
+
+describe("triage", () => {
+  /** Every subset of `items`. */
+  const subsets = <A>(items: ReadonlyArray<A>): ReadonlyArray<ReadonlyArray<A>> =>
+    items.reduce<ReadonlyArray<ReadonlyArray<A>>>((all, item) => [...all, ...all.map((set) => [...set, item])], [[]])
+
+  test("the label table, over every combination of the triage labels, their cases and other labels", () => {
+    const spellings = {
+      accepted: [ACCEPTED_LABEL, ACCEPTED_LABEL.toUpperCase(), "Smithers:Accepted"],
+      rejected: [NOT_ACCEPTED_LABEL, "SMITHERS:NOT-ACCEPTED"],
+      // A repository's own labels never count: only the `smithers:` ones do.
+      other: ["accepted", "not accepted", "smithers:proposed", "bug"],
+    }
+    let checked = 0
+    for (const accepted of [undefined, ...spellings.accepted]) {
+      for (const rejected of [undefined, ...spellings.rejected]) {
+        for (const other of subsets(spellings.other)) {
+          const labels = [...other, ...(accepted === undefined ? [] : [accepted]), ...(rejected === undefined ? [] : [rejected])]
+          for (const order of [labels, [...labels].reverse()]) {
+            const expected = accepted !== undefined && rejected !== undefined
+              ? "conflict"
+              : accepted !== undefined
+              ? "accepted"
+              : rejected !== undefined
+              ? "not_accepted"
+              : "proposed"
+            expect([order, triageOf(order)]).toEqual([order, expected])
+            checked += 1
+          }
+        }
+      }
+    }
+    expect(checked).toBe(4 * 3 * 16 * 2)
+  })
+
+  test("a decision's label; the App's comment names its reason and the enabler, and nothing else", () => {
+    expect(labelOf("accept")).toBe(ACCEPTED_LABEL)
+    expect(labelOf("reject")).toBe(NOT_ACCEPTED_LABEL)
+    for (const reason of TRIAGE_REASONS) {
+      const comment = rejectionComment(reason, "sam")
+      expect(comment).toBe(`Not accepted: ${TRIAGE_REASON_COPY[reason]}\n\nTriaged by Smithers for @sam (triage).`)
+      expect(comment.length).toBeLessThanOrEqual(300)
+      expect(comment).not.toMatch(/https?:/)
+    }
+    expect(triageRunExecutionId("d-1")).toBe("triage-run:d-1")
   })
 })

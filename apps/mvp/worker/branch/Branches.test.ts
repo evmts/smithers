@@ -2,13 +2,14 @@
 // (worker/test/branch.ts) on this file's schema of the compose Postgres (`pnpm db:up`), with GitHub scripted at the
 // network: a branch is recorded only once its forge, `Forge.layerConfig` as production builds it, says GitHub has it.
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { Effect, Layer, Redacted } from "effect"
+import { Effect, Layer, Option, Redacted } from "effect"
+import { HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import { CONVERSATION_NAMESPACE, MAX_TRACK_BODY_BYTES } from "../../src/features/branch/contract.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
-import { branchHarness, type BranchHarness, gitHost, resetBranches, shaOf, tracked } from "../test/branch.ts"
+import { branchHarness, type BranchHarness, gitHost, resetBranches, shaOf, shared, tracked } from "../test/branch.ts"
 import { recorded, testFile } from "../test/harness.ts"
 import * as Branches from "./Branches.ts"
 
@@ -68,6 +69,7 @@ describe("POST /api/branches", () => {
       repoId: "github/octocat/spoon-knife",
       name: SENTINEL,
       mode: "open",
+      access: "owner",
     })
     expect(await rows()).toEqual([
       { id: branch.branchId, name: SENTINEL, mode: "open", baseSha: shaOf(SENTINEL), conversationId: branch.conversationId },
@@ -95,8 +97,20 @@ describe("POST /api/branches", () => {
     expect(h.github.seen).toHaveLength(2)
 
     expect(h.line("branch.track").map((line) => [line.level, line.annotations])).toEqual([
-      ["INFO", expect.objectContaining({ repoId: "github/octocat/spoon-knife", outcome: "tracked", mode: "open", status: 201 })],
-      ["INFO", expect.objectContaining({ repoId: "github/octocat/spoon-knife", outcome: "existing", status: 200 })],
+      [
+        "INFO",
+        expect.objectContaining({
+          repoId: "github/octocat/spoon-knife",
+          outcome: "tracked",
+          mode: "open",
+          access: "owner",
+          status: 201,
+        }),
+      ],
+      [
+        "INFO",
+        expect.objectContaining({ repoId: "github/octocat/spoon-knife", outcome: "existing", access: "owner", status: 200 }),
+      ],
     ])
     expect(h.count(Branches.tracks, { outcome: "tracked" })).toBe(1)
     expect(h.count(Branches.tracks, { outcome: "existing" })).toBe(1)
@@ -107,9 +121,10 @@ describe("POST /api/branches", () => {
 
   test("the repository's default branch is recorded locked; a name that only starts another branch's is not GitHub's", async () => {
     const h = await open()
+    // The default branch is the team's: its tracker edits it as everyone does, and owns nothing.
     expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "main" }))).toEqual([
       201,
-      expect.objectContaining({ name: "main", mode: "locked" }),
+      expect.objectContaining({ name: "main", mode: "locked", access: "edit" }),
     ])
     expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "feat" }))).toEqual([
       404,
@@ -167,7 +182,7 @@ describe("POST /api/branches", () => {
     expect(await rows()).toEqual([])
   })
 
-  test("two people tracking the same new branch at once record it once, and both get it", async () => {
+  test("one person tracking the same new branch twice at once records it once, and gets it both times", async () => {
     const h = await open()
     const release = h.github.hold()
     const both = [
@@ -220,6 +235,46 @@ describe("POST /api/branches", () => {
     expect(h.github.seen).toEqual([])
   })
 
+  test("two people tracking one new branch at once: the first to record it owns it, and the other may not see it", async () => {
+    const h = await open({
+      sessions: Layer.succeed(Sessions, Sessions.of({
+        // Each request says who it is with its own header, as two browsers' cookies would.
+        resolve: Effect.map(
+          Effect.service(HttpServerRequest.HttpServerRequest),
+          (request) => Option.some({ ...member, subject: { kind: "person", id: request.headers["x-test-person"]! } }),
+        ),
+      })),
+    })
+    const release = h.github.hold()
+    const both = ["person-a", "person-b"].map((person) =>
+      track(h, { owner: "octocat", name: "Spoon-Knife", ref: "feature" }, { headers: { "x-test-person": person } })
+    )
+    await expect.poll(() => h.github.seen.length, { interval: 10, timeout: 5_000 }).toBe(2)
+    release()
+    const answered = await Promise.all(both.map(async (response) => json(await response)))
+    expect(answered.map(([status]) => status).sort()).toEqual([201, 403])
+    expect(answered.find(([status]) => status === 201)![1]).toMatchObject({ access: "owner" })
+    expect(answered.find(([status]) => status === 403)![1]).toEqual({ code: "forbidden" })
+    expect(await rows()).toHaveLength(1)
+  })
+
+  test("a branch someone else tracked is 403 until they share it; then it answers with what was shared", async () => {
+    const known = await tracked(runtime, "github/octocat/spoon-knife", "feature", "open", "person-owner")
+    const h = await open()
+    const body = { owner: "octocat", name: "Spoon-Knife", ref: "feature" }
+    expect(await json(await track(h, body))).toEqual([403, { code: "forbidden" }])
+    await shared(runtime, known.branchId, "person-member", "view")
+    expect(await json(await track(h, body))).toEqual([200, { ...known, access: "view" }])
+    await shared(runtime, known.branchId, "person-member", "edit")
+    expect(await json(await track(h, body))).toEqual([200, { ...known, access: "edit" }])
+    // A Guest it is shared with by name opens it, to view only; one it isn't shared with doesn't.
+    const guest = await open({ actor: { subject: { kind: "person", id: "person-guest" }, role: "guest" } })
+    expect(await json(await track(guest, body))).toEqual([403, { code: "forbidden" }])
+    await shared(runtime, known.branchId, "person-guest", "edit")
+    expect(await json(await track(guest, body))).toEqual([200, { ...known, access: "view" }])
+    expect(h.github.seen).toEqual([])
+  })
+
   test("only a Member or above tracks: 401 signed out, 403 for a Guest or a person with no role", async () => {
     const body = { owner: "octocat", name: "Spoon-Knife", ref: "feature" }
     const signedOut = await branchHarness(runtime, { github: github() })
@@ -263,7 +318,10 @@ describe("POST /api/branches", () => {
   test("a branch the app already tracks answers without asking GitHub", async () => {
     const known = await tracked(runtime, "github/octocat/spoon-knife", "feature")
     const h = await open()
-    expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "feature" }))).toEqual([200, known])
+    expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "feature" }))).toEqual([
+      200,
+      { ...known, access: "edit" },
+    ])
     expect(h.github.seen).toEqual([])
   })
 })

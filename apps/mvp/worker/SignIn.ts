@@ -125,7 +125,8 @@ const arrival = (request: HttpServerRequest.HttpServerRequest) => {
 /**
  * The cookie names over https and plain http. `__Host-` pins a cookie to this host, with `Secure` and `Path=/`; a
  * browser drops a `Secure` cookie on plain http, so local development uses the plain names (mvp.md M-28).
- * `devSignedOut` says the local developer signed out, where sign-in isn't configured and a fallback is signed in.
+ * `devSignedOut` says the local developer signed out, where sign-in isn't configured and a fallback is signed in;
+ * `devPerson` names which of local development's people a browser is (`teammates`).
  */
 const cookieNames = (secure: boolean) =>
   secure
@@ -133,8 +134,14 @@ const cookieNames = (secure: boolean) =>
       session: "__Host-smithers_session",
       signIn: "__Host-smithers_sign_in",
       devSignedOut: "__Host-smithers_dev_signed_out",
+      devPerson: "__Host-smithers_dev_person",
     }
-    : { session: "smithers_session", signIn: "smithers_sign_in", devSignedOut: "smithers_dev_signed_out" }
+    : {
+      session: "smithers_session",
+      signIn: "smithers_sign_in",
+      devSignedOut: "smithers_dev_signed_out",
+      devPerson: "smithers_dev_person",
+    }
 
 const cookieOptions = (secure: boolean, maxAge: Duration.Duration) =>
   ({ httpOnly: true, secure, sameSite: "lax", path: "/", maxAge }) as const
@@ -196,11 +203,16 @@ class CallbackFailed extends Schema.TaggedError<CallbackFailed>()("CallbackFaile
  * `Actor.Sessions` from the session cookie. Both need `RoleChecks` from the host, and `fetch` `Flows.FlowStarter`.
  * `options.github` replaces the real GitHub App (tests inject a faulty one); `options.fallback` is who is signed in
  * when sign-in isn't configured (local development's developer), else nobody. The fallback signs out and back in with
- * the dev signed-out cookie, never reaching GitHub.
+ * the dev signed-out cookie, never reaching GitHub. `options.teammates` are local development's other people: a
+ * browser whose dev person cookie names one is signed in as them instead, so two people can share a laptop's app.
  */
 export const make = <E, R>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
-  options: { readonly github?: GitHubAuth["Service"]; readonly fallback?: Signed } = {},
+  options: {
+    readonly github?: GitHubAuth["Service"]
+    readonly fallback?: Signed
+    readonly teammates?: Readonly<Record<string, Signed>>
+  } = {},
 ) =>
   Effect.gen(function* () {
     const setup = yield* configured(options.github)
@@ -225,8 +237,15 @@ export const make = <E, R>(
     const current = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
       if (Option.isNone(setup)) {
-        const signedOut = request.cookies[cookieNames(arrival(request).secure).devSignedOut] !== undefined
-        return signedOut ? Option.none() : Option.fromNullishOr(options.fallback)
+        const names = cookieNames(arrival(request).secure)
+        if (request.cookies[names.devSignedOut] !== undefined) return Option.none()
+        const person = request.cookies[names.devPerson]
+        const teammate = person === undefined || options.fallback === undefined
+          ? undefined
+          : Object.hasOwn(options.teammates ?? {}, person)
+          ? options.teammates![person]
+          : undefined
+        return Option.fromNullishOr(teammate ?? options.fallback)
       }
       const { keys, recheckAfterMs } = setup.value
       const token = yield* keys.verify("session", request.cookies[cookieNames(arrival(request).secure).session])

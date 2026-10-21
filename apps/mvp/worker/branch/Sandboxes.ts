@@ -1,5 +1,7 @@
 import { Context, type Effect, Schema } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { Role } from "../Actor.ts"
+import type { Policy } from "./Access.ts"
 
 // A branch's machine as the flows and routes reach it (decision 0013 §2-§3, decision 0005 §2): one sandbox per branch,
 // which the host provides. On Cloudflare it is the branch's `SandboxObject` Durable Object and its container
@@ -24,13 +26,23 @@ export class SandboxUnavailable extends Schema.TaggedError<SandboxUnavailable>()
 export class CheckoutFailed extends Schema.TaggedError<CheckoutFailed>()("@smthrs/mvp/branch/CheckoutFailed", {}) {}
 
 /**
- * Who a socket attaches as: the terminal's owner types (`write`); anyone else who may watch only watches (`read`). Every
- * shell runs as its owner's own user in the machine, so `ownerId` says whose tmux server the terminal is on.
+ * Who a socket attaches as: anyone who may edit the branch types (`write`), the terminal's owner and the people it is
+ * shared with to edit alike; anyone who may only view it watches (`read`). Every shell runs as its owner's own user in
+ * the machine, so `ownerId` says whose tmux server the terminal is on. `principal` and `role` are the viewer's, so a
+ * change of the branch's sharing can be applied to the socket while it is open (`enforce`).
  */
 export interface Attachment {
   readonly terminalId: string
   readonly ownerId: string
   readonly access: "write" | "read"
+  readonly principal: string
+  readonly role: Role | null
+}
+
+/** A terminal whose owner lost the branch: it ends, and its shell with it. */
+export interface Revoked {
+  readonly terminalId: string
+  readonly ownerId: string
 }
 
 /** The sandboxes of every branch, by branch id. */
@@ -65,5 +77,15 @@ export class TerminalSockets extends Context.Service<
      * machine that slept or was lost has no sessions. Never wakes a machine.
      */
     readonly alive: (branchId: string, terminalId: string, ownerId: string) => Effect.Effect<boolean>
+    /**
+     * Applies the branch's permission list to every socket attached on its machine: a viewer who may no longer view
+     * the branch is detached for good (close 1008), one whose access changed reconnects to get the new one, and each
+     * `revoked` terminal's shell ends. Never wakes a machine; doing it again changes nothing.
+     */
+    readonly enforce: (
+      branchId: string,
+      policy: Policy,
+      revoked: ReadonlyArray<Revoked>,
+    ) => Effect.Effect<void, SandboxUnavailable>
   }
 >()("@smthrs/mvp/branch/TerminalSockets") {}

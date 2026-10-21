@@ -51,6 +51,15 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
     initialData: [emptyView],
   })
 
+  // The repositories' shape's first answer, rows or a failure: until then the header offers no Clone for a repository
+  // this device hasn't seen (`headerOf`).
+  yield* repositories.sync.pipe(
+    Stream.filter((event) => event._tag !== "Sent"),
+    Stream.runHead,
+    Effect.andThen(Effect.orDie(view.update(VIEW, (row) => void (row.answered = true)))),
+    Effect.forkScoped,
+  )
+
   // Who is signed in, from sign-in's own row when the app has sign-in: Clone gives way to the sign-in link.
   const auth = yield* Effect.serviceOption(AuthStore)
   if (Option.isSome(auth)) {

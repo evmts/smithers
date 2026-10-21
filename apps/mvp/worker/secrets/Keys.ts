@@ -1,0 +1,70 @@
+import { type CredentialCipher, WebCryptoCipher } from "@smthrs/control"
+import { digestSync } from "@smthrs/crypto"
+import { Placeholder } from "@smthrs/secrets"
+import { Config, Context, Effect, Layer, Option, Redacted } from "effect"
+
+// The keys repository secrets live under (decision 0005 §4, docs/features/secrets.md#keys), both from one Worker
+// secret, SECRETS_KEY, which only ChatApi holds (infra/Secrets.ts):
+//
+// - values are sealed with AES-256-GCM (`@smthrs/control`'s `WebCryptoCipher`) under a key derived from it, with the
+//   repository, the name and the key's version as the authenticated context;
+// - placeholders are derived with HMAC-SHA-256 (`@smthrs/secrets`' `Placeholder.minter`) under another key derived from
+//   it, per sandbox generation, so the egress recognizes them without storing them.
+//
+// Without SECRETS_KEY, or with one under 32 characters, the feature is off: every secrets route and the egress answer
+// `off`.
+
+/** The version of SECRETS_KEY values are sealed under, part of every ciphertext's context. */
+export const KEY_VERSION = 1
+
+/** The shortest SECRETS_KEY accepted. Alchemy generates 64 hexadecimal characters. */
+export const MIN_KEY_LENGTH = 32
+
+/** The keys under SECRETS_KEY. */
+export interface Keys {
+  readonly cipher: CredentialCipher.Service
+  readonly minter: Placeholder.Minter
+  readonly version: number
+}
+
+/** A SHA-256 digest's 64 hexadecimal characters as the 32 bytes' base64, the key form the cipher takes. */
+const hexToBase64 = (hex: string) => btoa(String.fromCharCode(...hex.match(/../g)!.map((pair) => parseInt(pair, 16))))
+
+/** The keys under `secret`, each derived with a label of its own. Dies on a key under `MIN_KEY_LENGTH` characters. */
+export const make = (secret: Redacted.Redacted<string>): Effect.Effect<Keys> =>
+  Effect.gen(function* () {
+    const raw = Redacted.value(secret)
+    if (raw.length < MIN_KEY_LENGTH) return yield* Effect.die(new Error("SECRETS_KEY is shorter than 32 characters"))
+    const cipher = yield* WebCryptoCipher.make({
+      key: Redacted.make(hexToBase64(digestSync(`smithers-secrets-seal:${raw}`))),
+    }).pipe(Effect.orDie)
+    const minter = yield* Placeholder.minter(Redacted.make(digestSync(`smithers-secrets-placeholder:${raw}`))).pipe(
+      Effect.orDie,
+    )
+    return { cipher, minter, version: KEY_VERSION }
+  })
+
+/** The keys, or none when SECRETS_KEY is unset and secrets are off. */
+export class SecretKeys extends Context.Service<SecretKeys, Option.Option<Keys>>()("@smthrs/mvp/secrets/SecretKeys") {
+  /** From SECRETS_KEY; none, and a warning, when it is unset or shorter than `MIN_KEY_LENGTH`. */
+  static readonly layerConfig: Layer.Layer<SecretKeys, Config.ConfigError> = Layer.effect(
+    SecretKeys,
+    Effect.gen(function* () {
+      const secret = yield* Config.option(Config.Redacted("SECRETS_KEY"))
+      if (Option.isSome(secret) && Redacted.value(secret.value).length >= MIN_KEY_LENGTH) {
+        return Option.some(yield* make(secret.value))
+      }
+      yield* Effect.logWarning("secrets.off").pipe(
+        Effect.annotateLogs({ reason: Option.isNone(secret) ? "unset" : "too_short" }),
+      )
+      return Option.none()
+    }),
+  )
+
+  /** Secrets off. */
+  static readonly off: Layer.Layer<SecretKeys> = Layer.succeed(SecretKeys, Option.none())
+
+  /** The keys under `secret`. */
+  static readonly layer = (secret: Redacted.Redacted<string>): Layer.Layer<SecretKeys> =>
+    Layer.effect(SecretKeys, Effect.map(make(secret), Option.some))
+}

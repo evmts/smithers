@@ -8,7 +8,7 @@ import * as Database from "../db/Database.ts"
 import { MAX_VIEW_BODY_BYTES } from "../src/features/views/contract.ts"
 import type { Actor } from "./Actor.ts"
 import * as Conversations from "./branch/Conversations.ts"
-import { tracked } from "./test/branch.ts"
+import { shared, tracked } from "./test/branch.ts"
 import { harness, recorded, testFile } from "./test/harness.ts"
 import * as Views from "./Views.ts"
 
@@ -204,6 +204,19 @@ describe("a view's conversation", () => {
     const home = await runtime.runPromise(Conversations.home)
     expect([await conversationOf(named.id), await conversationOf(unnamed.id)]).toEqual([conversation, home])
     expect(h.line("chat.view.add").map((line) => line.annotations.conversationId)).toEqual([conversation, home])
+  })
+
+  test("someone else's branch takes a view only from the people it is shared with to edit: 403 otherwise", async () => {
+    const h = await open()
+    const theirs = await tracked(runtime, REPO, `theirs-${crypto.randomUUID().slice(0, 8)}`, "open", "person-owner")
+    const named = () => ({ ...page("https://example.com/"), conversationId: theirs.conversationId })
+    expect([(await add(h, named())).status]).toEqual([403])
+    await shared(runtime, theirs.branchId, member.subject.id, "view")
+    const viewer = await add(h, named())
+    expect([viewer.status, await viewer.json()]).toEqual([403, { code: "forbidden" }])
+    expect(await rows()).toEqual([])
+    await shared(runtime, theirs.branchId, member.subject.id, "edit")
+    expect((await add(h, named())).status).toBe(202)
   })
 
   test("a conversation that doesn't exist is 404, and nothing is kept", async () => {

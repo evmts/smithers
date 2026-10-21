@@ -3,6 +3,7 @@ import { useLiveQuery } from "@tanstack/react-db"
 import { Fragment } from "react"
 import { useChat } from "../../../AppContext"
 import { AnswerStatus } from "../../status/components/AnswerStatus"
+import { AnswerDrafts } from "../../todos/components/AnswerDrafts"
 import { useStatus } from "../../status/components/StatusContext"
 import { ConversationView } from "../../views/components/ConversationView"
 import { COPY, EDIT, NOT_SENT, QUEUED } from "../contract"
@@ -11,7 +12,8 @@ import { timeOf } from "../view"
 // The conversation on this device: never a loading state. Until it is restored or synced it is blank, never the empty
 // state. "Load earlier" heads it while the device has messages before the window. A queued question is badged only
 // while the connection pill shows, with Edit; an unsent one offers Edit or Retry, and Discard; a failed answer offers
-// Retry; a finished message offers Copy. Every message shows when it was asked or written. A view
+// Retry; a finished message offers Copy. Every message shows when it was asked or written; its time, Copy and a queued
+// question's Edit show only while the pointer is over it, focus is inside it, or it is tapped. A view
 // (src/features/views) shows where it was added, from its own row. An answer shows its agent status under it
 // (src/features/status): its question while it needs you, in place of an empty bubble.
 export function Conversation() {
@@ -53,7 +55,7 @@ export function Conversation() {
           data-answer={message.status === "streaming" ? "streaming" : undefined}
           pending={message.status === "streaming" && message.text === ""}
           pendingLabel="Smithers is answering"
-          meta={
+          actions={
             <>
             {timeOf(message) === undefined ? null : <RelativeTime ts={timeOf(message)!} />}
             {message.status === "done" ? (
@@ -61,12 +63,15 @@ export function Conversation() {
                 {COPY}
               </CopyButton>
             ) : message.status === "queued" && pill ? (
-              <>
-                <Badge variant="muted">{QUEUED}</Badge>
-                <Button variant="ghost" size="sm" onClick={() => actions.edit(message.id)}>
-                  {EDIT}
-                </Button>
-              </>
+              <Button variant="ghost" size="sm" onClick={() => actions.edit(message.id)}>
+                {EDIT}
+              </Button>
+            ) : null}
+            </>
+          }
+          meta={
+            message.status === "queued" && pill ? (
+              <Badge variant="muted">{QUEUED}</Badge>
             ) : message.status === "unsent" ? (
               <>
                 <Badge variant="destructive">{NOT_SENT}</Badge>
@@ -87,8 +92,7 @@ export function Conversation() {
               <Button variant="ghost" size="sm" onClick={() => actions.retryAnswer(message.id)}>
                 Retry
               </Button>
-            ) : null}
-            </>
+            ) : null
           }
         >
           {message.role === "assistant" ? (
@@ -99,6 +103,8 @@ export function Conversation() {
         </ChatMessage>
         )}
         {message.role === "assistant" ? <AnswerStatus id={message.id} /> : null}
+        {/* A TODO the agent drafted in this answer, private to this device until the person commits it (0016 §3). */}
+        {message.role === "assistant" ? <AnswerDrafts id={message.id} /> : null}
         </Fragment>
         ),
       )}

@@ -3,7 +3,7 @@ import { useLiveQuery } from "@tanstack/react-db"
 import { MINE, SAVE_REFUSALS } from "../contract"
 import { useFlowsUi } from "./FlowsUiContext"
 
-// One draft at full size (decision 0014 §5): its round's status, questions with the defaults it assumed, its SKILL.md
+// One draft at full size (decision 0014 §5): its round's status, questions with the defaults it assumed, its flow.ts
 // and checks, Answer while the person changed an answer, and Save once it is ready and every check passed.
 export function DraftCard() {
   const { queries, actions } = useFlowsUi()

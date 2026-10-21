@@ -2,6 +2,7 @@ import { Action } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
 import { Layer } from "effect"
 import * as AgentHost from "../features/agent/host"
+import * as Attention from "../features/attention/steps"
 import * as BranchSteps from "../features/branch/steps"
 import * as ChatSteps from "../features/chat/steps"
 import * as PersonalFlows from "../features/flows-ui/steps"
@@ -12,11 +13,14 @@ import { RepoClient, REQUEST_WITHIN } from "../features/repo/api"
 import { TabClipboard } from "../features/repo/copy"
 import * as Repo from "../features/repo/steps"
 import * as Runs from "../features/runs/steps"
+import * as SharingSteps from "../features/sharing/steps"
 import { RunsClient } from "../features/status/api"
 import * as Status from "../features/status/flows"
 import * as TerminalSteps from "../features/terminal/steps"
+import * as SandboxSteps from "../features/sandbox/steps"
 import { RunReporter } from "../features/status/reporter"
 import * as Theme from "../features/theme/flows"
+import * as TodoSteps from "../features/todos/steps"
 import { ViewsClient } from "../features/views/api"
 import * as WebPages from "../features/web/steps"
 import { type Endpoint, TabPort } from "./tabPort"
@@ -54,9 +58,9 @@ export const jev = (origin: string) => Jev.registration.pipe(Layer.provide(Jev.J
 
 /**
  * Every client flow, registered with its steps: the theme's, navigation's, web pages', the agent's, the repository's,
- * Jev's, agent status's, your own flows', the acts on runs, the issue writes and chat's Copy and Edit. Needs the
+ * Jev's, agent status's, your own flows', the acts on runs, the issue writes, chat's Copy and Edit, and the feed's. Needs the
  * host's `FlowRuntime`, `Crypto`, `HttpClient` and `RunInspection`, the theme's `Preferences`, navigation's `Tabs`, the
- * repository's `TabClipboard`, the issues' `TabIssues` and chat's `TabChat`.
+ * repository's `TabClipboard`, the issues' `TabIssues`, the TODOs' `TabTodos` and chat's `TabChat`.
  */
 export const registrations = (options: HostOptions) =>
   Layer.mergeAll(
@@ -70,9 +74,13 @@ export const registrations = (options: HostOptions) =>
     PersonalFlows.layer(options.origin),
     Runs.registration,
     BranchSteps.registrationAt(options.origin),
+    SharingSteps.registrationAt(options.origin),
     TerminalSteps.registrationAt(options.origin),
+    SandboxSteps.registrationAt(options.origin),
     Issues.registration,
+    TodoSteps.registration,
     ChatSteps.registration,
+    Attention.registrationAt(options.origin),
   ).pipe(Layer.provide(statusReports(options.origin)), Layer.provideMerge(Action.layerImplementations))
 
 /**
@@ -103,6 +111,7 @@ export const workerRegistrations = (scope: Endpoint, options: WorkerOptions) =>
     Layer.provide(Navigation.Tabs.layerChannel({ name: options.name, origin: options.origin })),
     Layer.provide(TabClipboard.layerChannel({ name: options.name, origin: options.origin })),
     Layer.provide(Issues.TabIssues.layerChannel({ name: options.name })),
+    Layer.provide(TodoSteps.TabTodos.layerChannel({ name: options.name })),
     Layer.provide(ChatSteps.TabChat.layerChannel({ name: options.name })),
     Layer.provide(TabChannel.layer),
   )

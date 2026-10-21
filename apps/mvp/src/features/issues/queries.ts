@@ -1,7 +1,18 @@
 import type { ElectricCollection } from "@smthrs/effect-electric"
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { ISSUES_STREAM } from "./contract"
-import type { Access, Comment, Draft, IssueView, Item, Requested, Sending, SyncRow, WriteRow } from "./schema"
+import type {
+  Access,
+  Comment,
+  Draft,
+  IssueView,
+  Item,
+  Requested,
+  Sending,
+  SyncRow,
+  TriageSettings,
+  WriteRow,
+} from "./schema"
 
 // What every frontend reads of issues (decision 0012 §6). Each is a live query over this device's collections, built
 // once per IssuesStore, for the repository and issue the route shows (`view`); it starts on first read. No query waits
@@ -50,6 +61,7 @@ export const listQuery = (
             author: Query.coalesce(item.authorLogin, ""),
             comments: item.comments,
             updatedAt: item.updatedAt,
+            triage: item.triage,
             pending: "",
             reason: "",
             local: 0,
@@ -69,6 +81,7 @@ export const listQuery = (
             author: "",
             comments: 0,
             updatedAt: "",
+            triage: "",
             pending: pendingOf(mine, write),
             reason: Query.coalesce(mine.reason, write?.failure, ""),
             local: 1,
@@ -90,6 +103,7 @@ export const listQuery = (
             author: "",
             comments: 0,
             updatedAt: "",
+            triage: "",
             pending: "requested",
             reason: "",
             local: 1,
@@ -117,6 +131,8 @@ export const itemQuery = (view: View, items: Synced<Item>) =>
         state: item.state,
         author: item.authorLogin,
         createdAt: item.createdAt,
+        triage: item.triage,
+        pinned: item.triagePinned,
       }))
       .findOne()
   )
@@ -228,8 +244,25 @@ export const viewQuery = (view: View, drafts: Local<Draft>) =>
       .findOne()
   )
 
-/** This device's requested writes whose GitHub row arrived: the follower drops them. */
-export const deliveredQuery = (requested: Local<Requested>, items: Synced<Item>, comments: Synced<Comment>) =>
+/** Whether `write`'s operation is one of triage's, which carry no GitHub row of their own. */
+const isTriage = (write: { readonly op: unknown }) =>
+  Query.or(
+    Query.eq(write.op, "issue/triage"),
+    Query.eq(write.op, "triage/run"),
+    Query.eq(write.op, "triage/enable"),
+    Query.eq(write.op, "triage/pause"),
+  )
+
+/**
+ * This device's requested writes whose GitHub row arrived, or, for triage's writes, which carry no row of their own,
+ * whose server write is done (the issue's row says the rest): the follower drops them.
+ */
+export const deliveredQuery = (
+  requested: Local<Requested>,
+  items: Synced<Item>,
+  comments: Synced<Comment>,
+  writes: Synced<WriteRow>,
+) =>
   LiveQuery.make((q) =>
     q.unionAll(
       q
@@ -240,7 +273,63 @@ export const deliveredQuery = (requested: Local<Requested>, items: Synced<Item>,
         .from({ ours: requested.tanstack })
         .innerJoin({ comment: comments.tanstack }, ({ ours, comment }) => Query.eq(ours.id, comment.writeId))
         .select(({ ours }) => ({ id: ours.id })),
+      q
+        .from({ triaged: requested.tanstack })
+        .innerJoin({ done: writes.tanstack }, ({ triaged, done }) => Query.eq(triaged.id, done.id))
+        .where(({ triaged, done }) => Query.and(isTriage(triaged), Query.eq(done.status, "done")))
+        .select(({ triaged }) => ({ id: triaged.id })),
     )
+  )
+
+/** The routed repository's triage settings: whether its triage flow is on, once a Maintainer enabled it. */
+export const triageSettingsQuery = (view: View, settings: Synced<TriageSettings>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ view: view.tanstack })
+      .innerJoin({ settings: settings.tanstack }, ({ view, settings }) => Query.eq(view.repoId, settings.repoId))
+      .select(({ settings }) => ({ paused: settings.paused, pausedReason: settings.pausedReason }))
+      .findOne()
+  )
+
+/**
+ * This device's triage writes on the routed repository still on their way (`requested`) or refused (`not_sent`): the
+ * issue's Accept, Not accepted and Run triage again (`number`), and Enable and Pause (number 0). Newest first.
+ */
+export const triagePendingQuery = (
+  view: View,
+  requested: Local<Requested>,
+  sending: Local<Sending>,
+  writes: Synced<WriteRow>,
+) =>
+  LiveQuery.make((q) =>
+    q
+      .unionAll(
+        q
+          .from({ routed: view.tanstack })
+          .innerJoin({ mine: requested.tanstack }, ({ routed, mine }) => Query.eq(routed.repoId, mine.repoId))
+          .leftJoin({ write: writes.tanstack }, ({ mine, write }) => Query.eq(mine.id, write.id))
+          .where(({ mine }) => isTriage(mine))
+          .select(({ mine, write }) => ({
+            id: mine.id,
+            op: mine.op,
+            number: mine.number,
+            pending: pendingOf(mine, write),
+            at: mine.queuedAt,
+          })),
+        q
+          .from({ shown: view.tanstack })
+          .innerJoin({ out: sending.tanstack }, ({ shown, out }) => Query.eq(shown.repoId, out.repoId))
+          .leftJoin({ kept: requested.tanstack }, ({ out, kept }) => Query.eq(out.id, kept.id))
+          .where(({ out, kept }) => Query.and(isTriage(out), Query.isUndefined(kept?.id)))
+          .select(({ out }) => ({
+            id: out.id,
+            op: out.op,
+            number: out.number,
+            pending: "requested",
+            at: out.queuedAt,
+          })),
+      )
+      .orderBy(({ $selected }) => $selected.at, "desc")
   )
 
 /** Whether this person may read the repository's issues, as the shape last answered. */

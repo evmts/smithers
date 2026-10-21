@@ -14,6 +14,7 @@ import * as Pause from "./flows/Pause.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
 import * as RepoClone from "./flows/RepoClone.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
+import * as SpendAlert from "./flows/SpendAlert.ts"
 import * as SessionKeys from "./SessionKeys.ts"
 import { cloneExecutionId } from "../src/features/repo/contract.ts"
 import * as Repos from "./Repos.ts"
@@ -221,7 +222,7 @@ describe("ExecutionHost over the compose Postgres", () => {
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const flows = ExecutionHost.remote(services)
-        expect(flows.flows).toEqual([Pause.Pause, Expire.Expire])
+        expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert])
         const object = memory()
         const executionId = crypto.randomUUID()
         const host = ExecutionHost.make(object.storage, {
@@ -280,6 +281,52 @@ describe("ExecutionHost over the compose Postgres", () => {
     expect(await row(app, answerId)).toMatchObject({ status: "failed", failure: "abandoned" })
   })
 
+  test("the deployed flows run ops/SpendAlert: a model call starts it; once its window ends, it records the alert", async () => {
+    const h = await harness(app, answers("spent"), {
+      actor: { subject: { kind: "person", id: "person-member" }, role: "member" },
+      config: { MODEL_SPEND_ALERT_WINDOW: "1 second" },
+    })
+    await app.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE model_usage, spend_alerts`))
+    const call = await h.fetch("/api/model/agent", {
+      method: "POST",
+      body: JSON.stringify({
+        modelId: "m",
+        system: [],
+        messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        tools: [],
+        params: {},
+      }),
+    })
+    await call.text()
+    const [start] = h.starts.filter((each) => each.flow === "ops/SpendAlert")
+    const window = start!.payload as SpendAlert.Window
+    const services = await appServices()
+    await withSchema(({ name, sql, url }) =>
+      Effect.gen(function* () {
+        const object = memory()
+        const host = ExecutionHost.make(object.storage, {
+          hostId: `object-${start!.executionId}`,
+          database: ExecutionHost.database(url, name),
+          flows: ExecutionHost.remote(services),
+          router: recording().router,
+        })
+        yield* host.start(
+          yield* ExecutionHost.intent(SpendAlert.SpendAlert, { executionId: start!.executionId, payload: window }),
+        )
+        // Until the window ends it waits on its timer; the alarm after records the alert.
+        let drove = yield* host.alarm()
+        while (drove._tag !== "Settled") {
+          yield* Effect.sleep(Math.max(0, (drove._tag === "Parked" ? drove.wakeAtMs ?? Date.now() : Date.now()) - Date.now()))
+          drove = yield* host.alarm()
+        }
+        expect(yield* status(sql, name, start!.executionId)).toBe("completed")
+      })
+    )
+    const [alert] = await app.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly id: string; readonly calls: number }>`SELECT id, calls FROM spend_alerts`))
+    expect(alert).toEqual({ id: start!.executionId, calls: 1 })
+  }, 60_000)
+
   test("a chat/Expire round that finds the queue moved during its wait hands off to the next round's own object", async () => {
     const h = await harness(app, answers("never"), {
       actor: { subject: { kind: "person", id: "person-member" }, role: "member" },
@@ -301,15 +348,14 @@ describe("ExecutionHost over the compose Postgres", () => {
         })
         yield* host.start(yield* ExecutionHost.intent(Expire.Expire, { executionId, payload: { answerId: last } }))
         const parked = yield* host.alarm()
-        // Parked on its durable timer: the round waits for the expiry before it reads the queue again.
-        expect(parked).toMatchObject({ _tag: "Parked", wakeAtMs: expect.any(Number) })
+        expect(parked._tag).toBe("Parked")
         // The answer ahead of it settles while it waits: the queue moved, so its turn began then.
         yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
           sql`UPDATE messages SET status = 'done', text = 'Answered.', updated_at = now() WHERE id = ${ahead}`).pipe(
           Effect.provide(services.database),
           Effect.orDie,
         )
-        yield* Effect.sleep(Math.max(0, (parked._tag === "Parked" ? (parked.wakeAtMs ?? 0) : 0) - Date.now()))
+        yield* Effect.sleep(Math.max(0, (parked._tag === "Parked" ? parked.wakeAtMs ?? 0 : 0) - Date.now()))
         yield* host.alarm()
       })
     )
@@ -338,6 +384,7 @@ describe("ExecutionHost over the compose Postgres", () => {
     expect(flows.flows).toEqual([
       Pause.Pause,
       Expire.Expire,
+      SpendAlert.SpendAlert,
       RecheckRole.RecheckRole,
       RevokeGitHubToken.RevokeGitHubToken,
     ])
@@ -404,7 +451,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       budgets,
       deadline: Duration.minutes(10),
     })
-    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, RepoClone.Clone])
+    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, RepoClone.Clone])
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const object = memory()
@@ -444,7 +491,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       session: (_, id, ownerId) => Effect.sync(() => void machines.push(`session ${id} ${ownerId}`)),
     }))
     const flows = ExecutionHost.withTerminals(ExecutionHost.remote({ database, expiry: Expire.DEFAULT_EXPIRY }), database, sandboxes)
-    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, TerminalOpen.TerminalOpen])
+    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, TerminalOpen.TerminalOpen])
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const object = memory()

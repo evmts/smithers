@@ -7,7 +7,7 @@ import { MAX_VIEW_BODY_BYTES, VIEWS_TABLE } from "../src/features/views/contract
 import { ViewWrite } from "../src/features/views/schema.ts"
 import { checkUrl } from "../src/features/web/url.ts"
 import { canAsk, Sessions } from "./Actor.ts"
-import { mayWatch } from "./branch/Access.ts"
+import { branchAccess, canEdit, canView } from "./branch/Access.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
@@ -123,10 +123,17 @@ export const make = <E, R>(
           ? yield* Conversations.home.pipe(Effect.provide(database), Effect.mapError(() => ShapeAccess.unavailable))
           : undefined
         const actor = yield* ShapeAccess.actor
+        // Only someone who may view the conversation's branch gets its views (worker/branch/Access.ts).
+        const found = conversation === undefined
+          ? undefined
+          : yield* branchAccess(actor, conversation, "conversation").pipe(
+            Effect.provide(database),
+            Effect.mapError(() => ShapeAccess.unavailable),
+          )
         return {
           table: VIEWS_TABLE,
           where: "conversation_id = $1",
-          params: { "1": conversation !== undefined && mayWatch(actor, "public") ? conversation : NO_CONVERSATION },
+          params: { "1": found !== undefined && canView(found.access) ? found.conversationId : NO_CONVERSATION },
         }
       }),
       name: "chat.views.shape",
@@ -169,14 +176,18 @@ export const make = <E, R>(
         // The view's conversation (decision 0013 §1): an agent's call names its answer, and the view goes to that
         // answer's conversation, only for the person who asked it; a person's names its conversation, which must
         // exist; neither means the home conversation.
-        const conversationId = write.answerId !== undefined
+        const named = write.answerId !== undefined
           ? yield* answerConversation(write.answerId.toLowerCase(), actor.value.subject.id).pipe(Effect.provide(database))
           : write.conversationId === undefined
           ? yield* Conversations.home.pipe(Effect.provide(database))
-          : (yield* Conversations.exists(write.conversationId.toLowerCase()).pipe(Effect.provide(database)))
-          ? write.conversationId.toLowerCase()
-          : undefined
-        if (conversationId === undefined) return refusal(404, "conversation_not_found")
+          : write.conversationId.toLowerCase()
+        const found = named === undefined
+          ? undefined
+          : yield* branchAccess(actor, named, "conversation").pipe(Effect.provide(database))
+        if (found === undefined) return refusal(404, "conversation_not_found")
+        // Only someone who may edit the branch adds to its conversation (worker/branch/Access.ts).
+        if (!canEdit(found.access)) return refusal(403, "forbidden")
+        const conversationId = found.conversationId
         fields.conversationId = conversationId
         const stored = { id: write.id, template: write.template, props: { url: page.page.href } }
         const txid = yield* insert(stored, conversationId).pipe(Effect.provide(database))

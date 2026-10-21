@@ -1,8 +1,11 @@
-import { createRootRouteWithContext, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router"
+import { createRootRouteWithContext, createRoute, createRouter, redirect } from "@tanstack/react-router"
 import type { BranchView } from "./features/branch/branch"
 import type { FlowsUiView } from "./features/flows-ui/flowsUi"
+import type { HomeView } from "./features/home/home"
 import { issueNumberOf } from "./features/issues/contract"
 import type { IssuesLayer } from "./features/issues/issues"
+import { todoNumberOf } from "./features/todos/contract"
+import type { TodosView } from "./features/todos/todos"
 import { lineSearch } from "./features/repo/paths"
 import type { RepoView } from "./features/repo/repo"
 import type { RunsView } from "./features/runs/runs"
@@ -10,14 +13,18 @@ import type { TerminalView } from "./features/terminal/terminal"
 import type { ViewsView } from "./features/views/views"
 import { AppScreen } from "./screens/app/AppScreen"
 import { BranchScreen } from "./screens/branch/BranchScreen"
+import { CodeScreen } from "./screens/flows/CodeScreen"
 import { DraftScreen } from "./screens/flows/DraftScreen"
 import { FlowsScreen } from "./screens/flows/FlowsScreen"
 import { NewFlowScreen } from "./screens/flows/NewFlowScreen"
 import { IssueScreen } from "./screens/issues/IssueScreen"
+import { StackScreen } from "./screens/stack/StackScreen"
 import { IssuesScreen } from "./screens/issues/IssuesScreen"
 import { NewIssueScreen } from "./screens/issues/NewIssueScreen"
 import { Landing } from "./screens/landing/Landing"
+import { RepoHomeScreen } from "./screens/repo/RepoHomeScreen"
 import { RepoScreen } from "./screens/repo/RepoScreen"
+import { Root } from "./screens/root/Root"
 import { RunScreen } from "./screens/runs/RunScreen"
 import { RunsScreen } from "./screens/runs/RunsScreen"
 import { ViewScreen } from "./screens/view/ViewScreen"
@@ -28,15 +35,17 @@ import { ViewScreen } from "./screens/view/ViewScreen"
 // the location again.
 
 /**
- * What every route's loader gets: the repository, views, branch, terminal, issues, runs and flows layers, from
- * main.tsx's `RouterProvider`.
+ * What every route's loader gets: the repository, its home, views, branch, terminal, issues, runs and flows layers,
+ * from main.tsx's `RouterProvider`.
  */
 export interface RouterContext {
   readonly repo: RepoView
+  readonly home: HomeView
   readonly views: ViewsView
   readonly branch: BranchView
   readonly terminal: TerminalView
   readonly issues: IssuesLayer
+  readonly todos: TodosView
   readonly runs: RunsView
   readonly flows: FlowsUiView
 }
@@ -50,7 +59,7 @@ const branchSearch = (search: Record<string, unknown>): { readonly L?: unknown; 
   ...(typeof search.terminal === "string" && search.terminal !== "" ? { terminal: search.terminal } : {}),
 })
 
-const rootRoute = createRootRouteWithContext<RouterContext>()({ component: Outlet })
+const rootRoute = createRootRouteWithContext<RouterContext>()({ component: Root })
 
 const landingRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: Landing })
 
@@ -59,7 +68,12 @@ const appRoute = createRoute({
   path: "/app",
   component: AppScreen,
   // The home conversation (decision 0013 §5): a tab that showed a branch asks here again.
-  loader: ({ context }) => Promise.all([context.branch.actions.leave(), context.terminal.actions.show(null)]),
+  loader: ({ context }) =>
+    Promise.all([
+      context.branch.actions.leave(),
+      context.branch.presence.actions.leave(),
+      context.terminal.actions.show(null),
+    ]),
 })
 
 /**
@@ -100,6 +114,14 @@ const draftRoute = createRoute({
   loader: ({ context, params }) => context.flows.actions.openDraft(params.draftId),
 })
 
+/** `/app/flows/code/$name`: a flow's code, to read and edit. */
+const codeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/app/flows/code/$name",
+  component: CodeScreen,
+  loader: ({ context, params }) => context.flows.actions.openCode(params.name),
+})
+
 /** `/app/runs`: every run on this device (decision 0014 §5). */
 const runsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -116,19 +138,26 @@ const runRoute = createRoute({
   loader: ({ context, params }) => context.runs.actions.openRun(params.runId),
 })
 
-/** `/$owner/$repo`: the repository's root at its default branch. */
+/**
+ * `/$owner/$repo`: the repository's own home when it declares one (decision 0014 §4), else its root at its default
+ * branch. The loader opens both the location and the home.
+ */
 const repoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo",
-  component: RepoScreen,
+  component: RepoHomeScreen,
   validateSearch: lineSearch,
   loaderDeps: ({ search }) => ({ L: search.L }),
-  loader: ({ context, params, deps }) => context.repo.actions.openRoute("tree", params, deps),
+  loader: ({ context, params, deps }) => {
+    context.repo.actions.openRoute("tree", params, deps)
+    context.home.actions.open(params.owner, params.repo)
+  },
 })
 
 /**
  * `/$owner/$repo/tree/$ref/$`: a directory at a branch or commit, and the branch's workspace (decision 0013 §5): its
- * conversation, and its terminal under `?terminal`. The loader opens the location and tracks the branch at once.
+ * conversation, its room, and its terminal under `?terminal`. The loader opens the location and tracks the branch at
+ * once, joins the branch's room and says where on the page this person is; leaving the route leaves the room.
  */
 const treeRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -139,20 +168,38 @@ const treeRoute = createRoute({
   loader: ({ context, params, deps }) =>
     Promise.all([
       context.repo.actions.openRoute("tree", params, { L: deps.L }),
-      context.branch.actions.open(params.owner, params.repo, params.ref).then((branchId) =>
-        context.terminal.actions.show(deps.terminal === undefined ? null : branchId ?? null, deps.terminal === "me" ? undefined : deps.terminal)
-      ),
+      context.branch.actions.open(params.owner, params.repo, params.ref).then(async (branchId) => {
+        const { presence } = context.branch
+        if (branchId === undefined) {
+          await context.terminal.actions.show(null)
+          return presence.actions.leave()
+        }
+        await presence.actions.join(branchId)
+        if (deps.terminal === undefined) {
+          await context.terminal.actions.show(null)
+          return presence.actions.at({ view: "code", path: params._splat ?? "" })
+        }
+        const terminalId = await context.terminal.actions.show(branchId, deps.terminal === "me" ? undefined : deps.terminal)
+        return presence.actions.at({ view: "terminal", terminalId })
+      }),
     ]),
+  onLeave: ({ context }) => void context.branch.presence.actions.leave(),
 })
 
-/** `/$owner/$repo/blob/$ref/$`: a file at a branch or commit, `?L=<n>` or `?L=<a>-<b>` marking lines. */
+/**
+ * `/$owner/$repo/blob/$ref/$`: a file at a branch or commit, `?L=<n>` or `?L=<a>-<b>` marking lines; the home is
+ * opened for its tabs.
+ */
 const blobRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/blob/$ref/$",
   component: RepoScreen,
   validateSearch: lineSearch,
   loaderDeps: ({ search }) => ({ L: search.L }),
-  loader: ({ context, params, deps }) => context.repo.actions.openRoute("blob", params, deps),
+  loader: ({ context, params, deps }) => {
+    context.repo.actions.openRoute("blob", params, deps)
+    context.home.actions.open(params.owner, params.repo)
+  },
 })
 
 /**
@@ -165,6 +212,7 @@ const rawRoute = createRoute({
   path: "/$owner/$repo/raw/$ref/$",
   component: RepoScreen,
   loader: async ({ context, params }) => {
+    context.home.actions.open(params.owner, params.repo)
     const href = await context.repo.actions.rawRoute(params)
     if (href !== undefined) throw redirect({ href, reloadDocument: true })
   },
@@ -201,6 +249,29 @@ const issueRoute = createRoute({
   loader: ({ context, params }) => context.issues.actions.open(params.owner, params.repo, params.number),
 })
 
+/** `/$owner/$repo/stack`: the repository's stack of TODOs (decision 0016 §4). */
+const stackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$owner/$repo/stack",
+  component: StackScreen,
+  loader: ({ context, params }) => context.todos.actions.open(params.owner, params.repo),
+})
+
+/** `/$owner/$repo/stack/$number`: the stack with TODO `T<number>` at full size; any other `$number` matches no route. */
+const todoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$owner/$repo/stack/$number",
+  component: StackScreen,
+  params: {
+    parse: (params) => {
+      const number = todoNumberOf(params.number)
+      return number === undefined ? false : { ...params, number }
+    },
+    stringify: (params) => ({ ...params, number: String(params.number) }),
+  },
+  loader: ({ context, params }) => context.todos.actions.open(params.owner, params.repo, params.number),
+})
+
 export const router = createRouter({
   routeTree: rootRoute.addChildren([
     landingRoute,
@@ -209,6 +280,7 @@ export const router = createRouter({
     flowsRoute,
     newFlowRoute,
     draftRoute,
+    codeRoute,
     runsRoute,
     runRoute,
     repoRoute,
@@ -218,14 +290,18 @@ export const router = createRouter({
     issuesRoute,
     newIssueRoute,
     issueRoute,
+    stackRoute,
+    todoRoute,
   ]),
   // main.tsx's `RouterProvider` gives the real one before the first load.
   context: {
     repo: undefined!,
+    home: undefined!,
     views: undefined!,
     branch: undefined!,
     terminal: undefined!,
     issues: undefined!,
+    todos: undefined!,
     runs: undefined!,
     flows: undefined!,
   },

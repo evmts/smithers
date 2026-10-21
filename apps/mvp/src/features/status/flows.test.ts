@@ -239,8 +239,9 @@ describe("app/agent/ask", { timeout: ENGINE_WITHIN }, () => {
 
 describe("chat/Answer's own reports", { timeout: ENGINE_WITHIN }, () => {
   test("an answer that waits for its turn reports waiting once, then working, then how it settled", async () => {
-    // Only the first question asks; the second just answers once its turn comes.
-    const model = asking(`{ kind: "question", prompt: "Which branch?" }`, `ctx.done("Done.")`, (text) => text.includes("Second"))
+    // Only the first question asks; the second just answers once its turn comes. "Second" is matched as a word, since
+    // the agent's catalog spells `timeoutSeconds`.
+    const model = asking(`{ kind: "question", prompt: "Which branch?" }`, `ctx.done("Done.")`, (text) => /\bSecond\b/.test(text))
     const agent = await openAgent(runtime, model.script)
     const engine = await agent.engine()
     engines.push(engine)

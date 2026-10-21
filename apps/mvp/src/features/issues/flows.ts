@@ -2,7 +2,14 @@ import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { Schema } from "effect"
 import { RepoName } from "../repo/flows"
-import { MAX_BODY_LENGTH, MAX_ISSUE_NUMBER, MAX_TITLE_LENGTH } from "./contract"
+import {
+  MAX_BODY_LENGTH,
+  MAX_ISSUE_NUMBER,
+  MAX_REASON_LENGTH,
+  MAX_TITLE_LENGTH,
+  MAX_TRIAGE_DAILY_TOKENS,
+  TRIAGE_DECISIONS,
+} from "./contract"
 
 // The issue writes (decision 0012 §3, docs/features/issues.md#flows): `issue/create` opens an issue and `issue/comment`
 // comments on one. A person's button or slash command and the agent run the same declaration. Each is one step that
@@ -87,4 +94,108 @@ export const IssueComment = Flow.make("issue/comment", {
   success: WriteRequested,
   error: IssueWriteRefused,
   body: Node.capture({ action: QueueComment.name }, (payload) => QueueComment.call(payload)),
+}).annotate(Flow.Placement, Placement.client())
+
+// Triage (decision 0012 §5, docs/features/issues.md#triage): a person's acts only, never the agent's. Accept or Not
+// accepted pins the issue against the repository's triage flow; Run triage again unpins it and decides it again; a
+// Maintainer enables or pauses the flow. Each is one step that queues the write in the asking tab's outbox, like
+// opening an issue, and answers Requested.
+
+/** A person's reason for Not accepted: 1 to `MAX_REASON_LENGTH` characters, not blank. */
+export const Reason = Schema.String.check(
+  Schema.makeFilter((value: string) => value.trim().length > 0 && value.length <= MAX_REASON_LENGTH),
+)
+
+/** What `issue/triage` takes. */
+export const triagePayload = {
+  repo: RepoName,
+  number: IssueNumber,
+  decision: Schema.Literals(TRIAGE_DECISIONS).annotate({ description: "accept, or reject for Not accepted" }),
+  reason: Schema.optional(Reason),
+}
+
+/** What `triage/run` takes. */
+export const runPayload = { repo: RepoName, number: IssueNumber }
+
+/** What `triage/enable` takes. */
+export const enablePayload = {
+  repo: RepoName,
+  dailyTokens: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MAX_TRIAGE_DAILY_TOKENS }))),
+}
+
+/** What `triage/pause` takes. */
+export const pausePayload = { repo: RepoName }
+
+/** The step: put the person's Accept or Not accepted in the asking tab's outbox. */
+export const QueueTriage = Action.make("issue/triage/queue", {
+  payload: triagePayload,
+  success: WriteRequested,
+  error: IssueWriteRefused,
+  retryPolicy: QUEUE_RETRY,
+})
+
+/** The step: put Run triage again in the asking tab's outbox. */
+export const QueueRun = Action.make("triage/run/queue", {
+  payload: runPayload,
+  success: WriteRequested,
+  error: IssueWriteRefused,
+  retryPolicy: QUEUE_RETRY,
+})
+
+/** The step: put Enable triage in the asking tab's outbox. */
+export const QueueEnable = Action.make("triage/enable/queue", {
+  payload: enablePayload,
+  success: WriteRequested,
+  error: IssueWriteRefused,
+  retryPolicy: QUEUE_RETRY,
+})
+
+/** The step: put Pause triage in the asking tab's outbox. */
+export const QueuePause = Action.make("triage/pause/queue", {
+  payload: pausePayload,
+  success: WriteRequested,
+  error: IssueWriteRefused,
+  retryPolicy: QUEUE_RETRY,
+})
+
+/** `issue/triage { repo, number, decision, reason? }`: a person accepts an issue, or doesn't. */
+export const IssueTriage = Flow.make("issue/triage", {
+  description: "Accept an issue, or mark it not accepted. It pins the issue: the repository's triage flow leaves it " +
+    "alone until someone runs triage again. A reason is posted as your comment.",
+  modelInvocable: false,
+  payload: triagePayload,
+  success: WriteRequested,
+  error: IssueWriteRefused,
+  body: Node.capture({ action: QueueTriage.name }, (payload) => QueueTriage.call(payload)),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `triage/run { repo, number }`: hands an issue back to the repository's triage flow. */
+export const TriageRunAgain = Flow.make("triage/run", {
+  description: "Run the repository's triage flow on an issue again, unpinning it.",
+  modelInvocable: false,
+  payload: runPayload,
+  success: WriteRequested,
+  error: IssueWriteRefused,
+  body: Node.capture({ action: QueueRun.name }, (payload) => QueueRun.call(payload)),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `triage/enable { repo, dailyTokens? }`: a Maintainer turns the repository's triage flow on. */
+export const TriageEnable = Flow.make("triage/enable", {
+  description: "Turn on the repository's triage flow, which decides each new issue under your role, within a daily " +
+    "model budget in tokens.",
+  modelInvocable: false,
+  payload: enablePayload,
+  success: WriteRequested,
+  error: IssueWriteRefused,
+  body: Node.capture({ action: QueueEnable.name }, (payload) => QueueEnable.call(payload)),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `triage/pause { repo }`: a Maintainer pauses the repository's triage flow. */
+export const TriagePause = Flow.make("triage/pause", {
+  description: "Pause the repository's triage flow.",
+  modelInvocable: false,
+  payload: pausePayload,
+  success: WriteRequested,
+  error: IssueWriteRefused,
+  body: Node.capture({ action: QueuePause.name }, (payload) => QueuePause.call(payload)),
 }).annotate(Flow.Placement, Placement.client())

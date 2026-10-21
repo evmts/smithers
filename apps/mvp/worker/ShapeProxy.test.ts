@@ -35,6 +35,13 @@ const SYNCED = [
 
 const runtime = testFile("shapes")
 
+/** The conversation of a team branch, which every Member may view (worker/branch/Access.ts): its id. */
+const teamConversation = (name: string) =>
+  runtime.runPromise(
+    Effect.map(Conversations.track("github/octo/shapes", name, "open", "b".repeat(40)), (tracked) =>
+      tracked.branch.conversationId),
+  )
+
 beforeAll(async () => {
   const health = `${LOCAL_ELECTRIC_URL}/v1/health`
   const response = await fetch(health).catch((error: unknown) => {
@@ -112,7 +119,7 @@ describe("a shape request the server can't decide", () => {
       }),
     )
     const h = await proxy({}, undefined, { sessions })
-    const conversation = crypto.randomUUID()
+    const conversation = await teamConversation("blip")
     const first = await h.fetch(`${SHAPE_ROUTE}?conversation=${conversation}&offset=-1`)
     expect(first.status).toBe(200)
     await first.text()
@@ -146,18 +153,20 @@ describe("a shape request the server can't decide", () => {
       sessions: Layer.succeed(Sessions, Sessions.of({ resolve: Effect.fail(new SessionsUnavailable()) })),
     })
     const statuses = []
+    // A named conversation's branch can't be read either: whose rows to serve is undecided.
+    const named = crypto.randomUUID()
     for (const h of [offline, sessionsDown]) {
       for (const route of [SHAPE_ROUTE, VIEWS_SHAPE_ROUTE]) {
-        const response = await h.fetch(`${route}?offset=-1&handle=h-1`)
-        statuses.push([route, response.status, response.headers.get("retry-after")])
+        for (const search of ["", `&conversation=${named}`]) {
+          const response = await h.fetch(`${route}?offset=-1&handle=h-1${search}`)
+          statuses.push([route, response.status, response.headers.get("retry-after")])
+        }
       }
     }
-    expect(statuses).toEqual([
-      [SHAPE_ROUTE, 503, "5"],
-      [VIEWS_SHAPE_ROUTE, 503, "5"],
-      [SHAPE_ROUTE, 503, "5"],
-      [VIEWS_SHAPE_ROUTE, 503, "5"],
-    ])
+    expect(statuses).toEqual(
+      [SHAPE_ROUTE, SHAPE_ROUTE, VIEWS_SHAPE_ROUTE, VIEWS_SHAPE_ROUTE, SHAPE_ROUTE, SHAPE_ROUTE, VIEWS_SHAPE_ROUTE,
+        VIEWS_SHAPE_ROUTE].map((route) => [route, 503, "5"]),
+    )
     expect([...offline.upstream, ...sessionsDown.upstream]).toEqual([])
   })
 })
@@ -165,9 +174,22 @@ describe("a shape request the server can't decide", () => {
 describe("GET /api/shapes/views and /api/shapes/messages", () => {
   test("are one conversation's: the one named, the home conversation's when none is, and none for anyone who may not watch", async () => {
     const h = await proxy({}, { subject: { kind: "person", id: "person-views" }, role: "member" })
-    const named = crypto.randomUUID()
+    const named = await teamConversation("views")
+    // Someone else's branch, never shared, and a conversation no branch has: neither is this person's.
+    const theirs = await runtime.runPromise(
+      Effect.map(Conversations.track("github/octo/shapes", "theirs", "open", "a".repeat(40), "person-other"), (t) =>
+        t.branch.conversationId),
+    )
     for (const route of [VIEWS_SHAPE_ROUTE, SHAPE_ROUTE]) {
-      for (const search of [`&conversation=${named.toUpperCase()}`, "&conversation=not-a-conversation", ""]) {
+      for (
+        const search of [
+          `&conversation=${named.toUpperCase()}`,
+          "&conversation=not-a-conversation",
+          "",
+          `&conversation=${theirs}`,
+          `&conversation=${crypto.randomUUID()}`,
+        ]
+      ) {
         const response = await h.fetch(`${route}?offset=-1${search}`)
         expect(response.status).toBe(200)
         await response.text()
@@ -186,9 +208,13 @@ describe("GET /api/shapes/views and /api/shapes/messages", () => {
       ["views", "conversation_id = $1", named],
       ["views", "conversation_id = $1", none],
       ["views", "conversation_id = $1", home],
+      ["views", "conversation_id = $1", none],
+      ["views", "conversation_id = $1", none],
       ["messages", "conversation_id = $1", named],
       ["messages", "conversation_id = $1", none],
       ["messages", "conversation_id = $1", home],
+      ["messages", "conversation_id = $1", none],
+      ["messages", "conversation_id = $1", none],
       ["views", "conversation_id = $1", none],
     ])
   })

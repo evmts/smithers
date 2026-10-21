@@ -9,9 +9,7 @@ import {
   RelativeTime,
   Snippet,
 } from "@smthrs/ui"
-// The one deep import the app allows: RepoView ships behind its adapter subpath so the base barrel stays light
-// (decision 0006, question 2).
-import { RepoView, type RepoViewLocation } from "@smthrs/ui/adapters/repo-view"
+import { RepoView, type RepoViewLocation } from "@smthrs/repo-view"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate } from "@tanstack/react-router"
 import {

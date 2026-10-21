@@ -73,3 +73,33 @@ export const shapes = Metric.counter("github_shape_requests", {
   description: "Electric shape requests for the git tables, by table, status and live",
   incremental: true,
 })
+
+/** Triage runs, by `outcome` (`skipped`, `abstained`, `dropped`, `labeled`, `commented`, `comment_failed`, `unavailable`). */
+export const triageRuns = Metric.counter("triage_runs", {
+  description: "Triage runs, by outcome",
+  incremental: true,
+})
+
+/** Triage decisions, by `decision` (`accept`, `reject`, `abstain`) and `via` (`flow`, `person`). */
+export const triageDecisions = Metric.counter("triage_decisions", {
+  description: "Triage decisions, by decision and who decided",
+  incremental: true,
+})
+
+/** Flow decisions that wrote nothing, by `reason` (`pinned`, `relabeled`, `edited`, `paused`, ...). */
+export const triageDropped = Metric.counter("triage_dropped", {
+  description: "Triage decisions dropped before writing, by reason",
+  incremental: true,
+})
+
+/** A person's overrides, by the state `from` and the decision `to`: overriding the flow is the flow's error rate. */
+export const triageOverrides = Metric.counter("triage_overrides", {
+  description: "A person's triage overrides, by the state before and the decision",
+  incremental: true,
+})
+
+/** Model tokens the triage flow spent. */
+export const triageTokens = Metric.counter("triage_tokens", {
+  description: "Model tokens triage decisions spent",
+  incremental: true,
+})

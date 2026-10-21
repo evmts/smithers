@@ -11,6 +11,7 @@ import {
   FlowsRefusal,
   Saved,
   type SaveRequest,
+  type WriteRequest,
   Written,
 } from "./schema"
 
@@ -37,6 +38,8 @@ export class FlowsClient extends Context.Service<
     readonly writeDraft: (draftId: string, write: DraftWrite) => Effect.Effect<void, FlowsUnavailable | FlowsRefused>
     readonly answer: (draftId: string, answers: DraftAnswers) => Effect.Effect<void, FlowsUnavailable | FlowsRefused>
     readonly save: (request: SaveRequest) => Effect.Effect<Saved, FlowsUnavailable | FlowsRefused>
+    /** Code the person wrote as their flow's next revision; `FlowNotFound` when they have no such flow. */
+    readonly write: (request: WriteRequest) => Effect.Effect<Saved, FlowsUnavailable | FlowsRefused | FlowNotFound>
     readonly remove: (flowId: string) => Effect.Effect<boolean, FlowsUnavailable | FlowsRefused>
   }
 >()("@smthrs/mvp/flows/FlowsClient") {
@@ -105,6 +108,10 @@ export class FlowsClient extends Context.Service<
               Effect.withSpan("flow.client.answer"),
             ),
           save: (request) => exchange(post(`${FLOWS_ROUTE}/save`, request), Saved).pipe(Effect.withSpan("flow.client.save")),
+          write: (request) =>
+            exchange(post(`${FLOWS_ROUTE}/write`, request), Saved, new FlowNotFound()).pipe(
+              Effect.withSpan("flow.client.write"),
+            ),
           remove: (flowId) =>
             exchange(post(`${FLOWS_ROUTE}/${flowId}/delete`, {}), Written, new FlowNotFound()).pipe(
               Effect.as(true),

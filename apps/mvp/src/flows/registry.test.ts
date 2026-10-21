@@ -7,7 +7,7 @@ import { Context, Option } from "effect"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"
-import { agentFlows, childExecutionId, publicError } from "./catalog"
+import { agentFlows, catalogDescription, childExecutionId, publicError } from "./catalog"
 import { clientFlows, declarationOf, declarations, modelInvocable } from "./declarations"
 import { entryOf, names, registry } from "./registry"
 import { requesterOf } from "./requests"
@@ -55,6 +55,8 @@ describe("the parity law", () => {
       "app/agent/ask",
       "flow/new",
       "flow/save",
+      "flow/read",
+      "flow/write",
       "flow/run",
       "flow/delete",
       "flow/list",
@@ -66,6 +68,14 @@ describe("the parity law", () => {
       "branch/track",
       "issue/create",
       "issue/comment",
+      "todo/draft",
+      "watch/set",
+      "sandbox/run",
+      "sandbox/read",
+      "sandbox/write",
+      "sandbox/list",
+      "sandbox/status",
+      "sandbox/diff",
     ])
   })
 })
@@ -74,7 +84,7 @@ describe("names and placement", () => {
   test("each entry is registered under its own flow's tag, in a namespace only the app claims", () => {
     for (const name of names) {
       expect(registry[name].flow._tag).toBe(name)
-      expect(name).toMatch(/^(app|chat|repo|ui|view|flow|run|branch|terminal|issue)\//)
+      expect(name).toMatch(/^(app|chat|repo|ui|view|flow|run|branch|terminal|issue|triage|todo|watch|notification|sandbox)\//)
     }
   })
 
@@ -123,6 +133,8 @@ describe("names and placement", () => {
       "flow/new",
       "flow/answer",
       "flow/save",
+      "flow/read",
+      "flow/write",
       "flow/run",
       "flow/run/prompt",
       "flow/delete",
@@ -133,10 +145,68 @@ describe("names and placement", () => {
       "run/list",
       "run/inspect",
       "branch/track",
+      "branch/share",
       "terminal/open",
       "issue/create",
       "issue/comment",
+      "issue/triage",
+      "triage/run",
+      "triage/enable",
+      "triage/pause",
+      "todo/draft",
+      "todo/commit",
+      "todo/drop",
+      "watch/set",
+      "notification/ack",
+      "sandbox/run",
+      "sandbox/read",
+      "sandbox/write",
+      "sandbox/list",
+      "sandbox/status",
+      "sandbox/diff",
     ])
+  })
+})
+
+describe("side effects (the registry's `changes`)", () => {
+  // The flows the agent calls that change nothing: it may call them on the way to any answer. Every other flow it
+  // calls changes something and says what, so a new flow is one or the other on purpose. The agent evals caught it
+  // cloning a repository it was only asked to open, and saving and running a flow it was only asked to create
+  // (docs/features/agent-evals.md, 2026-10-20).
+  const READS = [
+    "repo/tree",
+    "repo/read",
+    "repo/refs",
+    "app/jev/classify",
+    "app/jev/evaluate",
+    "app/agent/ask",
+    "flow/read",
+    "flow/list",
+    "run/list",
+    "run/inspect",
+    "sandbox/read",
+    "sandbox/list",
+    "sandbox/status",
+    "sandbox/diff",
+  ]
+
+  test("every flow the agent may call is a read or says what it changes, and no flow only a person runs does", () => {
+    for (const name of names) {
+      const { changes } = entryOf(name)
+      const declares = changes !== undefined && changes.length > 0
+      expect([name, declares]).toEqual([name, modelInvocable(name) && !READS.includes(name)])
+    }
+    for (const name of READS) expect(agentFlows).toContain(name)
+  })
+
+  test("the catalog shows a flow's side effect after its own description, and nothing more for a read", () => {
+    expect(catalogDescription("repo/clone")).toBe(
+      `${declarationOf("repo/clone").description} Side effect: clones the repository, which spends the deployment's ` +
+        "storage; only when the person asks for that.",
+    )
+    expect(catalogDescription("flow/save")).toContain("Side effect: saves a draft as the person's flow;")
+    expect(catalogDescription("flow/run")).toContain("Side effect: runs the person's flow")
+    expect(catalogDescription("repo/tree")).toBe(declarationOf("repo/tree").description)
   })
 })
 

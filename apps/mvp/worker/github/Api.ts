@@ -16,14 +16,22 @@ import {
   ITEMS_SHAPE_ROUTE,
   ITEMS_TABLE,
   MAX_BODY_LENGTH,
+  MAX_REASON_LENGTH,
   MAX_TITLE_LENGTH,
+  MAX_TRIAGE_DAILY_TOKENS,
   MAX_WEBHOOK_BYTES,
   MAX_WRITE_BYTES,
+  DEFAULT_TRIAGE_DAILY_TOKENS,
   reconcileExecutionId,
   SYNC_COLUMNS,
   SYNC_SHAPE_ROUTE,
   SYNC_STALE_MS,
   SYNC_TABLE,
+  TRIAGE_DECISIONS,
+  TRIAGE_SETTINGS_COLUMNS,
+  TRIAGE_SETTINGS_SHAPE_ROUTE,
+  TRIAGE_SETTINGS_TABLE,
+  triageRunExecutionId,
   WRITE_COLUMNS,
   WRITE_VIAS,
   writeExecutionId,
@@ -33,16 +41,19 @@ import {
   WRITES_TABLE,
 } from "../../src/features/issues/contract.ts"
 import { REPOS_ROUTE, repoId } from "../../src/features/repo/contract.ts"
-import { canAsk, Sessions } from "../Actor.ts"
+import { type Actor, canAsk, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { FlowStarter } from "../Flows.ts"
+import * as Notifications from "../Notifications.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
 import { Apply } from "./Apply.ts"
 import type { GitHubApp, Repository } from "./Config.ts"
 import * as Metrics from "./Metrics.ts"
 import { Reconcile } from "./Reconcile.ts"
 import * as Store from "./Store.ts"
+import { TriageRun } from "./Triage.ts"
+import * as TriageStore from "./TriageStore.ts"
 import { Write } from "./Write.ts"
 
 // The git loop's routes in ChatApi (decision 0012 §2 and §4, docs/features/issues.md#routes):
@@ -56,6 +67,9 @@ import { Write } from "./Write.ts"
 //   signed-in person with a role on it, or for anyone once GitHub said the repository is public. A read of `items`
 //   that finds the sync older than 5 minutes starts `github/Reconcile` without waiting.
 // - `GET /api/shapes/github-writes`: the signed-in person's own writes, their status only.
+// - Triage (§5): the writes route takes a person's Accept or Not accepted, Run triage again, and Enable and Pause, each
+//   at its own minimum role; `issues.opened` starts `triage/Run` while triage is on; and `GET
+//   /api/shapes/triage-settings` serves whether it is.
 // G0 syncs one repository, `GITHUB_REPOSITORY`, the one sign-in reads roles on (decision 0012, Consequences).
 
 const noStore = { "cache-control": "no-store" }
@@ -76,17 +90,74 @@ const CommentBody = Schema.String.check(
   Schema.makeFilter((value: string) => value.trim().length > 0 && value.length <= MAX_BODY_LENGTH),
 )
 
+const IssueNumber = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 2_147_483_647 }))
+const Reason = Schema.String.check(
+  Schema.makeFilter((value: string) => value.trim().length > 0 && value.length <= MAX_REASON_LENGTH),
+)
+
 /** A write as the device sends it. */
 const WriteBody = Schema.Union([
   Schema.Struct({ writeId: WriteId, via: Via, op: Schema.Literal("issue/create"), title: Title, body: IssueBody }),
+  Schema.Struct({ writeId: WriteId, via: Via, op: Schema.Literal("issue/comment"), number: IssueNumber, body: CommentBody }),
   Schema.Struct({
     writeId: WriteId,
     via: Via,
-    op: Schema.Literal("issue/comment"),
-    number: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 2_147_483_647 })),
-    body: CommentBody,
+    op: Schema.Literal("issue/triage"),
+    number: IssueNumber,
+    decision: Schema.Literals(TRIAGE_DECISIONS),
+    reason: Schema.optional(Reason),
   }),
+  Schema.Struct({ writeId: WriteId, via: Via, op: Schema.Literal("triage/run"), number: IssueNumber }),
+  Schema.Struct({
+    writeId: WriteId,
+    via: Via,
+    op: Schema.Literal("triage/enable"),
+    dailyTokens: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MAX_TRIAGE_DAILY_TOKENS }))),
+  }),
+  Schema.Struct({ writeId: WriteId, via: Via, op: Schema.Literal("triage/pause") }),
 ])
+type WriteBody = typeof WriteBody.Type
+
+/**
+ * Whether `who` may make `write` (decision 0007, decision 0012 §3): opening an issue and commenting are Guest acts;
+ * overriding triage and Run triage again Member and above (`repo:triage`); enabling and pausing it Maintainer and above
+ * (`repo:triage-flow`). Triage is a person's act only: the agent never triages.
+ */
+const mayWrite = (who: Actor, write: WriteBody): boolean => {
+  switch (write.op) {
+    case "issue/create":
+    case "issue/comment":
+      return who.role !== null
+    case "issue/triage":
+    case "triage/run":
+      return write.via === "person" && canAsk(who)
+    case "triage/enable":
+    case "triage/pause":
+      return write.via === "person" && (who.role === "admin" || who.role === "maintainer")
+  }
+}
+
+/** The writes that act on GitHub with the person's own token, so need their session. */
+const withPersonToken = (write: WriteBody): boolean =>
+  write.via === "person" && (write.op === "issue/create" || write.op === "issue/comment" || write.op === "issue/triage")
+
+/** A write's payload as it is recorded and hashed. */
+const payloadOf = (write: WriteBody): Store.WritePayload => {
+  switch (write.op) {
+    case "issue/create":
+      return { op: write.op, title: write.title.trim(), body: write.body }
+    case "issue/comment":
+      return { op: write.op, number: write.number, body: write.body }
+    case "issue/triage":
+      return { op: write.op, number: write.number, decision: write.decision, reason: write.reason ?? null }
+    case "triage/run":
+      return { op: write.op, number: write.number }
+    case "triage/enable":
+      return { op: write.op, dailyTokens: write.dailyTokens ?? DEFAULT_TRIAGE_DAILY_TOKENS }
+    case "triage/pause":
+      return { op: write.op }
+  }
+}
 const decodeWrite = Schema.decodeUnknownOption(Schema.fromJsonString(WriteBody))
 
 /** `/api/repos/<owner>/<name>/writes` as its owner and name, or `undefined` for any other path. */
@@ -101,7 +172,13 @@ export const parseWritesPath = (path: string): { readonly owner: string; readonl
   }
 }
 
-const SHAPES: ReadonlySet<string> = new Set([ITEMS_SHAPE_ROUTE, COMMENTS_SHAPE_ROUTE, WRITES_SHAPE_ROUTE, SYNC_SHAPE_ROUTE])
+const SHAPES: ReadonlySet<string> = new Set([
+  ITEMS_SHAPE_ROUTE,
+  COMMENTS_SHAPE_ROUTE,
+  WRITES_SHAPE_ROUTE,
+  SYNC_SHAPE_ROUTE,
+  TRIAGE_SETTINGS_SHAPE_ROUTE,
+])
 
 /** Whether ChatApi routes `path` here. */
 export const handles = (path: string): boolean =>
@@ -212,10 +289,25 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         if (Option.isSome(named)) {
           const number = named.value.issue.number
           fields.number = number
+          const repo = `${repository.owner}/${repository.name}`
           yield* (yield* FlowStarter).start(Apply, {
             executionId: applyExecutionId(deliveryId),
-            payload: { deliveryId, repo: `${repository.owner}/${repository.name}`, number, event },
+            payload: { deliveryId, repo, number, event },
           })
+          // A new issue, while triage is on: the repository's triage flow decides it (decision 0012 §5).
+          if (event === "issues" && action === "opened" && (yield* TriageStore.isOn(repository.id).pipe(Effect.provide(database)))) {
+            fields.triage = "started"
+            yield* (yield* FlowStarter).start(TriageRun, {
+              executionId: triageRunExecutionId(deliveryId),
+              payload: { repo, number, trigger: "opened", key: deliveryId },
+            })
+          }
+        }
+        // `main` moving and a new release reach everyone watching the repository (decision 0009 §8).
+        const now = new Date(yield* Clock.currentTimeMillis)
+        const repoEvent = Notifications.repoEventOf(event, delivered.payload, repository, now)
+        if (Option.isSome(repoEvent)) {
+          fields.notified = yield* Notifications.recordRepoEvent(repoEvent.value).pipe(Effect.provide(database))
         }
         const first = yield* Store.recordDelivery({
           deliveryId,
@@ -225,7 +317,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           subject: Option.isSome(named) ? named.value.issue.number : null,
         }).pipe(Effect.provide(database))
         if (!first) return yield* answer(200, "duplicate")
-        return yield* answer(200, Option.isSome(named) ? "applied" : "ignored")
+        return yield* answer(200, Option.isSome(named) || Option.isSome(repoEvent) ? "applied" : "ignored")
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.gen(function* () {
@@ -260,8 +352,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           if (Option.isNone(actor)) return refused(503, "unavailable")
           if (Option.isNone(actor.value)) return refused(401, "authentication")
           const who = actor.value.value
-          // Opening an issue and commenting are Guest acts (decision 0007 `repo:issue-open`, `repo:comment`): any role
-          // on the repository. No role means a repository the person can't see.
+          // Every write needs a role on the repository. No role means a repository the person can't see.
           if (who.role === null) return refused(403, "forbidden")
           if (Option.isNone(options.app)) return refused(503, "not_configured")
           if (repoId(target.owner, target.name) !== repository.id) return refused(404, "not_found")
@@ -275,32 +366,44 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           fields.op = write.op
           fields.via = write.via
           fields.writeId = write.writeId
-          // A person's own write runs with their GitHub token, which only a signed-in session holds.
-          if (write.via === "person" && who.session === undefined) return refused(401, "authentication")
+          // A person's own write to GitHub runs with their GitHub token, which only a signed-in session holds.
+          if (withPersonToken(write) && who.session === undefined) return refused(401, "authentication")
           // The agent's write runs as the App. Only a person who may ask Smithers has an agent (decision 0007
           // `repo:ask`, Member or above), so a Guest's write goes as the Guest or not at all, never as the bot.
           if (write.via === "agent" && !canAsk(who)) return refused(403, "forbidden")
-          const payload: Store.WritePayload = write.op === "issue/create"
-            ? { op: write.op, title: write.title.trim(), body: write.body }
-            : { op: write.op, number: write.number, body: write.body }
+          if (!mayWrite(who, write)) return refused(403, "forbidden")
+          // The App writes triage under the role of the person who enabled it, re-checked by their GitHub login.
+          if (write.op === "triage/enable" && who.login === undefined) return refused(401, "authentication")
+          const payload = payloadOf(write)
           const payloadHash = digestSync(JSON.stringify({ via: write.via, ...payload }))
           const inserted = yield* Store.insertWrite({
             id: write.writeId,
             repoId: repository.id,
             actorId: who.subject.id,
-            sessionId: write.via === "person" ? who.session! : null,
+            sessionId: write.via === "person" ? who.session ?? null : null,
             via: write.via,
             payload,
             payloadHash,
           }).pipe(Effect.provide(database))
           if (inserted.kind === "existing" && inserted.payloadHash !== payloadHash) return refused(409, "conflict")
           // A new write starts its run; a resend starts the same execution again, which changes nothing, so a start
-          // that never reached its Durable Object gets there now.
+          // that never reached its Durable Object gets there now. Run triage again is its own run: `triage/Run`
+          // settles the write.
           if (inserted.kind === "inserted" || inserted.status === "pending") {
-            yield* (yield* FlowStarter).start(Write, {
-              executionId: writeExecutionId(write.writeId),
-              payload: { writeId: write.writeId },
-            })
+            yield* write.op === "triage/run"
+              ? (yield* FlowStarter).start(TriageRun, {
+                executionId: triageRunExecutionId(write.writeId),
+                payload: {
+                  repo: `${repository.owner}/${repository.name}`,
+                  number: write.number,
+                  trigger: "again",
+                  key: write.writeId,
+                },
+              })
+              : (yield* FlowStarter).start(Write, {
+                executionId: writeExecutionId(write.writeId),
+                payload: { writeId: write.writeId },
+              })
           }
           if (inserted.kind === "existing") {
             fields.outcome = "existing"
@@ -435,6 +538,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       }
       if (path === COMMENTS_SHAPE_ROUTE) return yield* readable(COMMENTS_TABLE, COMMENT_COLUMNS)
       if (path === SYNC_SHAPE_ROUTE) return yield* readable(SYNC_TABLE, SYNC_COLUMNS)
+      if (path === TRIAGE_SETTINGS_SHAPE_ROUTE) return yield* readable(TRIAGE_SETTINGS_TABLE, TRIAGE_SETTINGS_COLUMNS)
       if (path === WRITES_SHAPE_ROUTE) return yield* ownWrites
       const target = parseWritesPath(path)
       if (target !== undefined) return yield* writes(target)

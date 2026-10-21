@@ -4,9 +4,9 @@ import { ConnectionPill } from "../../features/chat/components/ConnectionPill"
 import { Composer } from "../../features/chat/components/Composer"
 import { Conversation } from "../../features/chat/components/Conversation"
 import { HeaderStatus } from "../../features/status/components/HeaderStatus"
-import { NeedsYouToasts } from "../../features/status/components/NeedsYouToasts"
 import { ThemeButton } from "../../features/theme/components/ThemeButton"
 import { Link } from "@tanstack/react-router"
+import { Toasts } from "./Toasts"
 import "./app-shell.css"
 
 export function AppShell() {
@@ -29,9 +29,9 @@ export function AppShell() {
         <ThemeButton />
         <Account />
       </header>
-      {/* The needs-you toasts, under the header and its pill: the open composer docks over the column's foot, so a toast
-          there would hide behind it (decision 0015). */}
-      <NeedsYouToasts />
+      {/* The toasts, under the header and its pill: the open composer docks over the column's foot, so a toast there
+          would hide behind it (decision 0015). */}
+      <Toasts />
       <section className="app-shell-conversation" aria-label="Conversation">
         <Conversation />
       </section>

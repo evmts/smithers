@@ -1,7 +1,20 @@
 import { test as base, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
 import { faultyApp, faults } from "./faults"
-import { COULDNT_ANSWER, expect, flowName, NOT_SENT, OFFLINE, PAGE_SIZE, QUEUED, spinnersSeen, SYNC_FAILED, watchForSpinners } from "./fixtures"
+import {
+  COULDNT_ANSWER,
+  expect,
+  NOT_SENT,
+  OFFLINE,
+  PAGE_SIZE,
+  QUEUED,
+  recordActions,
+  spinnersSeen,
+  step,
+  SYNC_FAILED,
+  watchForSpinners,
+  writeManifest,
+} from "./fixtures"
 
 // Multi-device helpers for the local-first tests. A device is its own browser context: its own memory, network and
 // video. A tab is one page in a device. Every tab holds the conversation Electric syncs from Postgres, and asks
@@ -91,26 +104,34 @@ export class Device {
   ) {}
 
   // The device loses its network: no sync and no asking.
-  async offline() {
-    await this.context.setOffline(true)
-    await this.paint("offline")
+  offline() {
+    return step(`${this.name} goes offline`, async () => {
+      await this.context.setOffline(true)
+      await this.paint("offline")
+    })
   }
 
-  async online() {
-    await this.context.setOffline(false)
-    await this.paint("")
+  online() {
+    return step(`${this.name} comes back online`, async () => {
+      await this.context.setOffline(false)
+      await this.paint("")
+    })
   }
 
   // The sync service is down for this device: every shape request its tabs make from now on fails on the network,
   // as if Electric (or its proxy) were unreachable. Asking still reaches ChatApi. Only a faulty device has the switch.
-  async syncDown() {
-    for (const tab of this.faultyTabs()) await faults(tab.page).shapes.down()
-    await this.paint("sync down")
+  syncDown() {
+    return step(`${this.name}: sync goes down`, async () => {
+      for (const tab of this.faultyTabs()) await faults(tab.page).shapes.down()
+      await this.paint("sync down")
+    })
   }
 
-  async syncUp() {
-    for (const tab of this.faultyTabs()) await faults(tab.page).shapes.heal()
-    await this.paint("")
+  syncUp() {
+    return step(`${this.name}: sync comes back`, async () => {
+      for (const tab of this.faultyTabs()) await faults(tab.page).shapes.heal()
+      await this.paint("")
+    })
   }
 
   private faultyTabs() {
@@ -196,15 +217,17 @@ export class Tab {
   // the app open, which `ready` checks.
   // Closes the tab without its unload handlers, as a killed tab or a crashed browser does. Its device keeps what it
   // stored: the conversation, the outbox and the engine's journal.
-  async close() {
-    await this.page.close({ runBeforeUnload: false })
+  close() {
+    return step(`Close ${this.name}`, () => this.page.close({ runBeforeUnload: false }))
   }
 
-  async reload() {
-    await this.page.reload().catch((error: Error) => {
-      if (!error.message.includes("ERR_ABORTED")) throw error
+  reload() {
+    return step(`Reload ${this.name}`, async () => {
+      await this.page.reload().catch((error: Error) => {
+        if (!error.message.includes("ERR_ABORTED")) throw error
+      })
+      await this.ready()
     })
-    await this.ready()
   }
 
   async offline() {
@@ -268,24 +291,30 @@ export class Tab {
     )
   }
 
-  async openComposer() {
-    if (await this.composer.isHidden()) await this.page.keyboard.press("ControlOrMeta+k")
-    await expect(this.composer).toBeVisible()
+  openComposer() {
+    return step(`${this.name}: open the composer`, async () => {
+      if (await this.composer.isHidden()) await this.page.keyboard.press("ControlOrMeta+k")
+      await expect(this.composer).toBeVisible()
+    })
   }
 
   // Types a question and presses Enter once the composer is ready to send.
-  async send(text: string) {
-    await this.openComposer()
-    await expect(this.composerForm, `${this.name}: the composer is ready to send`).toHaveAttribute("data-status", "ready", { timeout: 30_000 })
-    await this.composer.fill(text)
-    await this.composer.press("Enter")
+  send(text: string) {
+    return step(`${this.name}: send "${text}"`, async () => {
+      await this.openComposer()
+      await expect(this.composerForm, `${this.name}: the composer is ready to send`).toHaveAttribute("data-status", "ready", { timeout: 30_000 })
+      await this.composer.fill(text)
+      await this.composer.press("Enter")
+    })
   }
 
   // Asks a question and checks it shows on this tab at once, whatever the network: it shows from the device.
-  async ask(text: string) {
-    await this.send(text)
-    await expect(this.question(text), `${this.name}: "${text}" shows at once`).toHaveCount(1, { timeout: 1_000 })
-    await expect(this.composer).toHaveValue("")
+  ask(text: string) {
+    return step(`${this.name}: ask "${text}"`, async () => {
+      await this.send(text)
+      await expect(this.question(text), `${this.name}: "${text}" shows at once`).toHaveCount(1, { timeout: 1_000 })
+      await expect(this.composer).toHaveValue("")
+    })
   }
 
   // The id of the question with `text`, from the conversation.
@@ -397,13 +426,33 @@ class Devices {
     return this.openOn(true, names)
   }
 
-  private async openOn(faulty: boolean, names: Array<string>) {
+  // As `open`, signed in as local development's second person, a Member (`smithers_dev_person=teammate`,
+  // worker/DevChatApi.ts), so a test has two people on one laptop. Against a deployment it needs real sign-in instead.
+  openTeammate(...names: Array<string>) {
+    return this.openOn(false, names, { name: "smithers_dev_person", value: "teammate" })
+  }
+
+  // As `open`, signed in as local development's person `person` (`teammate`, a Member, or `guest`, a Guest:
+  // worker/DevChatApi.ts), so a test has up to three people on one laptop.
+  openAs(person: "teammate" | "guest", ...names: Array<string>) {
+    return this.openOn(false, names, { name: "smithers_dev_person", value: person })
+  }
+
+  private openOn(faulty: boolean, names: Array<string>, cookie?: { readonly name: string; readonly value: string }) {
+    const how = faulty ? " on faulty services" : cookie !== undefined ? ` as the ${cookie.value}` : ""
+    return step(`Open ${names.join(", ")}${how}`, () => this.openEach(faulty, names, cookie))
+  }
+
+  private async openEach(faulty: boolean, names: Array<string>, cookie?: { readonly name: string; readonly value: string }) {
     return Promise.all(
       names.map(async (name) => {
         const context = await this.browser.newContext({
           viewport: VIEWPORT,
           recordVideo: { dir: this.testInfo.outputPath("videos"), size: VIEWPORT },
         })
+        if (cookie !== undefined) {
+          await context.addCookies([{ ...cookie, url: this.testInfo.project.use.baseURL ?? "http://localhost:1337" }])
+        }
         const device = new Device(name, context, faulty)
         this.all.push(device)
         return this.tab(device, name)
@@ -415,11 +464,16 @@ class Devices {
   // until the service worker is active, then loads again online, under its control: that is the one earlier visit an
   // offline reload needs. In production the service worker precaches the whole shell as it installs; under the dev server it keeps
   // each module a controlled page fetched, and the first page's modules came before it took control.
-  async tab(device: Device, name: string) {
+  tab(device: Device, name: string) {
+    return step(`Open tab ${name}`, () => this.openTab(device, name))
+  }
+
+  private async openTab(device: Device, name: string) {
     const first = device.tabs.length === 0
     const page = await device.context.newPage()
     await page.addInitScript(label, name)
     await page.addInitScript(watchForSpinners)
+    await recordActions(page, this.testInfo, name)
     const tab = new Tab(name, device, page, this.startedAt)
     device.tabs.push(tab)
     await page.goto(device.faulty ? faultyApp() : "/app")
@@ -461,10 +515,7 @@ class Devices {
     const videos = await Promise.all(
       tabs.map(async (tab) => ({ name: tab.name, video: await tab.page.video()?.path(), openedAt: tab.openedAt })),
     )
-    await writeFile(
-      this.testInfo.outputPath("devices.json"),
-      JSON.stringify({ flow: flowName(this.testInfo), title: this.testInfo.title, status: this.testInfo.status, word: this.word, videos }, null, 2),
-    )
+    await writeManifest(this.testInfo, "devices.json", this.startedAt, videos, { word: this.word })
   }
 }
 

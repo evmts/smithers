@@ -88,6 +88,26 @@ describe("chat/Expire", () => {
     expect(await answerRow(runtime, answerId)).toMatchObject({ status: "failed", failure: "abandoned", text: SENTINEL })
   })
 
+  test("an abandoned answer's run fails too, and its launcher's notification says so (decision 0009)", async () => {
+    const agent = await openAgent(runtime, answering("Never sent."))
+    const answerId = await agent.ask("Asked, then the tab was closed")
+    const report = await agent.fetch(`http://chat.test/api/runs/${answerId}`, {
+      method: "POST",
+      body: JSON.stringify({ status: "working" }),
+    })
+    expect(report.status).toBe(200)
+
+    expect((await run(answerId)).exit).toEqual(Exit.succeed({ outcome: "abandoned" }))
+    const runRows = (await sql(`SELECT status, waiting FROM runs WHERE id = '${answerId}'`)) as unknown as ReadonlyArray<
+      Record<string, unknown>
+    >
+    expect(runRows).toEqual([{ status: "failed", waiting: null }])
+    const notices = (await sql(
+      `SELECT state, version FROM notifications WHERE subject = 'run:${answerId}'`,
+    )) as unknown as ReadonlyArray<Record<string, unknown>>
+    expect(notices).toEqual([{ state: "failed", version: 2 }])
+  })
+
   test("waits on a durable timer until the answer is the expiry old, counted from when it was asked", async () => {
     const agent = await openAgent(runtime, answering("Never sent."))
     const answerId = await agent.ask("Asked")

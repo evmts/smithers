@@ -1,9 +1,10 @@
 import { AgentInstructions } from "@smthrs/rpc"
 import { MAX_CALLS, MAX_QUESTIONS } from "./contract"
+import { renderPrompt } from "./source"
 
 // What the agent is told when it drafts a person's flow (`flow/new/draft`) and when it runs one (`flow/run/agent`),
-// ahead of the cell contract (decision 0014 §2). A person's flow is data: its instructions reach the agent as the task,
-// never as system teaching, so a flow can't rewrite the rules it runs under.
+// ahead of the cell contract (decision 0014 §2). A drafted flow's instructions reach the agent as the task, never as
+// system teaching, so a flow can't rewrite the rules it runs under.
 
 /** The drafting agent's system teaching. */
 export const AUTHOR_SYSTEM: ReadonlyArray<string> = [
@@ -23,7 +24,10 @@ export interface CatalogEntry {
   readonly description: string
 }
 
-/** The drafting task: the flow's name, what the person asked, the draft so far and their answers, and the catalog. */
+/**
+ * The drafting task: the flow's name, what the person asked, the flow so far (its code, when it has one) and their
+ * answers, and the catalog.
+ */
 export const authorPrompt = (task: {
   readonly name: string
   readonly request: string
@@ -50,18 +54,9 @@ export const FLOW_SYSTEM: ReadonlyArray<string> = [
   "Call only the flows it lists; a call to any other is refused. Finish with ctx.done and your answer's text.",
 ]
 
-/** The task of an agent running a person's flow: its instructions, what it may call, and its input. */
-export const flowPrompt = (run: {
-  readonly name: string
-  readonly instructions: string
-  readonly allowed: ReadonlyArray<string>
-  readonly input: string
-}): string =>
-  [
-    `The flow ${run.name} says:`,
-    run.instructions,
-    "",
-    `It may call: ${run.allowed.length === 0 ? "nothing" : run.allowed.join(", ")}`,
-    "",
-    run.input === "" ? "It was given no input." : `Its input: ${run.input}`,
-  ].join("\n")
+/**
+ * The task of an agent running a person's drafted flow: what the flow's own step asks (`renderPrompt`, which its code
+ * spells out), its instructions and then its input. What it may call reaches the agent as its catalog.
+ */
+export const flowPrompt = (run: { readonly instructions: string; readonly input: string }): string =>
+  renderPrompt(run.instructions, run.input)

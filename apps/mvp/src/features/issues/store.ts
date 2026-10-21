@@ -7,6 +7,7 @@ import {
   COMMENTS_SHAPE_ROUTE,
   ITEMS_SHAPE_ROUTE,
   SYNC_SHAPE_ROUTE,
+  TRIAGE_SETTINGS_SHAPE_ROUTE,
   WRITES_SHAPE_ROUTE,
 } from "./contract"
 import {
@@ -16,6 +17,8 @@ import {
   itemQuery,
   listQuery,
   syncedQuery,
+  triagePendingQuery,
+  triageSettingsQuery,
   viewQuery,
 } from "./queries"
 import {
@@ -30,6 +33,7 @@ import {
   type Sending,
   SyncRow,
   syncKey,
+  TriageSettings,
   VIEW,
   WriteRow,
 } from "./schema"
@@ -69,6 +73,7 @@ export class IssuesStore extends Context.Service<
     readonly comments: ElectricCollection.ElectricCollection<Comment>
     readonly sync: ElectricCollection.ElectricCollection<SyncRow>
     readonly writes: ElectricCollection.ElectricCollection<WriteRow>
+    readonly triageSettings: ElectricCollection.ElectricCollection<TriageSettings>
     readonly sending: Collection.Collection<Sending, string>
     readonly requested: Collection.Collection<Requested, string>
     readonly drafts: Collection.Collection<Draft, string>
@@ -80,6 +85,8 @@ export class IssuesStore extends Context.Service<
     readonly synced: Query<typeof syncedQuery>
     readonly viewState: Query<typeof viewQuery>
     readonly accessState: Query<typeof accessQuery>
+    readonly triage: Query<typeof triageSettingsQuery>
+    readonly triagePending: Query<typeof triagePendingQuery>
     readonly scope: Scope.Scope
     readonly activate: Effect.Effect<void>
     readonly queue: (write: QueuedWrite) => Effect.Effect<Queued>
@@ -101,12 +108,14 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     parser: { int8: (value: string) => Number(value) },
   })
   const kept = { syncMode: "eager", persist: { schemaVersion: 1 } } as const
+  // Version 2: items carry their triage state and pin (decision 0012 §5).
   const items = yield* ElectricCollection.make<Item>({
     id: "issue-items",
     schema: Item,
     getKey: (row) => row.id,
     shape: shape(ITEMS_SHAPE_ROUTE),
-    ...kept,
+    syncMode: "eager",
+    persist: { schemaVersion: 2 },
   })
   const comments = yield* ElectricCollection.make<Comment>({
     id: "issue-comments",
@@ -127,6 +136,13 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     schema: WriteRow,
     getKey: (row) => row.id,
     shape: shape(WRITES_SHAPE_ROUTE),
+    ...kept,
+  })
+  const triageSettings = yield* ElectricCollection.make<TriageSettings>({
+    id: "issue-triage-settings",
+    schema: TriageSettings,
+    getKey: (row) => row.repoId,
+    shape: shape(TRIAGE_SETTINGS_SHAPE_ROUTE),
     ...kept,
   })
   const drafts = yield* Collection.persisted<Draft, string>({
@@ -151,7 +167,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
 
   // The followers: a requested write whose GitHub row arrived goes, and the synced row shows in its place; and the
   // items shape's answers say whether this person may read the repository's issues at all.
-  const delivered = yield* deliveredQuery(requested, items, comments)
+  const delivered = yield* deliveredQuery(requested, items, comments, writes)
   const started = yield* Ref.make(false)
   const activate = Effect.gen(function* () {
     if (yield* Ref.getAndSet(started, true)) return
@@ -197,6 +213,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     comments,
     sync,
     writes,
+    triageSettings,
     sending,
     requested,
     drafts,
@@ -208,6 +225,8 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     synced: yield* syncedQuery(view, sync),
     viewState: yield* viewQuery(view, drafts),
     accessState: yield* accessQuery(access),
+    triage: yield* triageSettingsQuery(view, triageSettings),
+    triagePending: yield* triagePendingQuery(view, requested, sending, writes),
     scope,
     activate,
     queue,

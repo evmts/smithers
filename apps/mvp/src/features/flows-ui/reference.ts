@@ -1,7 +1,7 @@
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import { Schema } from "effect"
-import { MAX_ANSWER_CHARS, MAX_INPUT_CHARS, MAX_QUESTIONS, RESERVED_NAMES } from "./contract"
-import { DraftStatus, FlowName, Request } from "./schema"
+import { MAX_ANSWER_CHARS, MAX_INPUT_CHARS, MAX_QUESTIONS, MAX_SOURCE_BYTES, RESERVED_NAMES } from "./contract"
+import { DraftStatus, FlowName, Placement, Request } from "./schema"
 
 // Your own flows as the tab knows them (decision 0014 §2, docs/features/flows.md#your-own-flows): each flow's name and
 // schemas, all the tab needs to start one and read how it ended. Their declarations (./flows.ts) are made from these
@@ -36,10 +36,16 @@ export class FlowsRefused extends Schema.TaggedError<FlowsRefused>()("@smthrs/mv
 /** The person has no flow by that name, or no such revision of it. */
 export class FlowNotFound extends Schema.TaggedError<FlowNotFound>()("@smthrs/mvp/flows/FlowNotFound", {}) {}
 
-/** The flow's `SKILL.md` fails a check the engine runs before it runs it, named by `check`. */
+/** The flow's source fails a check the engine runs before it runs or saves it, named by `check`. */
 export class FlowInvalid extends Schema.TaggedError<FlowInvalid>()("@smthrs/mvp/flows/FlowInvalid", {
   check: Schema.String,
 }) {}
+
+/**
+ * The flow's code isn't a flow drafted from a prompt as drafted, so it runs only on a sandbox, and no host runs a
+ * person's own code yet (decision 0014 §2, decision 0005). Final: it fails the run before anything runs.
+ */
+export class FlowNeedsSandbox extends Schema.TaggedError<FlowNeedsSandbox>()("@smthrs/mvp/flows/FlowNeedsSandbox", {}) {}
 
 /**
  * The agent following a person's flow couldn't finish: the model failed, or the run ran out of frames. A plain tagged
@@ -83,7 +89,8 @@ export const FlowNewReference = described(
     errorSchema: RouteFailure,
   },
   "Draft a flow of your own from what it should do, under name. Answers with the draft's id and status; " +
-    "the person sees the draft and saves it. A name you already have edits that flow.",
+    "the person sees the draft and saves or runs it from there, so drafting is all that asking to create a flow " +
+    "needs: don't save or run it unless they asked to. A name you already have edits that flow.",
 )
 
 /** One answer to a round's question. */
@@ -133,9 +140,17 @@ export const FlowRunReference = described(
       revision: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
     }),
     successSchema: Schema.String,
-    errorSchema: Schema.Union([FlowsUnavailable, FlowsRefused, FlowNotFound, FlowInvalid, FlowAgentFailed]),
+    errorSchema: Schema.Union([
+      FlowsUnavailable,
+      FlowsRefused,
+      FlowNotFound,
+      FlowInvalid,
+      FlowNeedsSandbox,
+      FlowAgentFailed,
+    ]),
   },
-  "Run your flow by name with input, its text to work on. Answers with the flow's answer.",
+  "Run your flow by name with input, its text to work on. Answers with the flow's answer. A flow whose code was " +
+    "edited by hand fails FlowNeedsSandbox: it runs only on a sandbox, and none is available yet.",
 )
 
 /** A loaded flow, pinned: what `flow/run/prompt` runs. */
@@ -177,9 +192,67 @@ export const FlowListReference = described(
     _tag: "flow/list",
     payloadSchema: Schema.Struct({}),
     successSchema: Schema.Struct({
-      flows: Schema.Array(Schema.Struct({ name: Schema.String, description: Schema.String, revision: Schema.Number })),
+      flows: Schema.Array(Schema.Struct({
+        name: Schema.String,
+        description: Schema.String,
+        revision: Schema.Number,
+        placement: Placement,
+      })),
     }),
     errorSchema: RouteFailure,
   },
-  "List your own flows: each one's name, description and latest revision.",
+  "List your own flows: each one's name, description, latest revision, and where it runs: client (here) or " +
+    "sandbox (not yet).",
+)
+
+/** One revision of your flow's code, and where it runs. */
+export const FlowCode = Schema.Struct({
+  flowId: Schema.String,
+  name: Schema.String,
+  revision: Schema.Number,
+  source: Schema.String,
+  placement: Placement,
+})
+export type FlowCode = typeof FlowCode.Type
+
+/** `flow/read { name, revision? }`: your flow's code at `revision`, the latest unless set. */
+export const FlowReadReference = described(
+  {
+    _tag: "flow/read",
+    payloadSchema: Schema.Struct({
+      name: FlowName.annotate({ description: "The flow's name" }),
+      revision: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+    }),
+    successSchema: FlowCode,
+    errorSchema: Schema.Union([FlowsUnavailable, FlowsRefused, FlowNotFound]),
+  },
+  "Read your flow's code, a Flow.make module, at revision, the latest unless set, and where it runs.",
+)
+
+/** What `flow/write` answers: the revision the code became, and where it runs. */
+export const WrittenFlow = Schema.Struct({
+  flowId: Schema.String,
+  name: Schema.String,
+  revision: Schema.Number,
+  placement: Placement,
+})
+
+/** `flow/write { name, revision, source }`: new code for your flow, edited from `revision`, as its next revision. */
+export const FlowWriteReference = described(
+  {
+    _tag: "flow/write",
+    payloadSchema: Schema.Struct({
+      name: FlowName.annotate({ description: "The flow's name" }),
+      revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).annotate({
+        description: "The revision the code was edited from; refused stale once another revision follows it",
+      }),
+      source: Schema.String.check(Schema.isBetweenLength(1, MAX_SOURCE_BYTES)).annotate({
+        description: "The flow's whole flow.ts: an export default Flow.make(\"<name>\", { ... }) module",
+      }),
+    }),
+    successSchema: WrittenFlow,
+    errorSchema: Schema.Union([FlowsUnavailable, FlowsRefused, FlowNotFound, FlowInvalid]),
+  },
+  "Save new code for your flow as its next revision, edited from revision. Code other than a flow drafted from a " +
+    "prompt is saved, but runs only on a sandbox, which isn't available yet.",
 )

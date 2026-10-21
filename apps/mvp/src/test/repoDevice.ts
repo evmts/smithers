@@ -1,5 +1,5 @@
 // A browser tab's repository feature in Node, as React drives it: the `Repo` layer's plain actions, lookups and live
-// queries, over the real store and client, and dispatch over this device's engine: the Node host running the
+// queries, and the repository's home (the `Home` layer), over the real store and client, and dispatch over this device's engine: the Node host running the
 // repository flows and `app/navigate` (src/features/repo/steps.ts), as the engine worker registers them. The tab answers
 // its engine's clipboard and navigation channels, as src/boot.ts composes them. RepoApi is reached through `fetch`
 // (RepoApi's real handler in repo.test.ts); an unhappy path gives the tab and its engine a faulty `RepoClient`, or a
@@ -13,6 +13,8 @@ import { type Duration, Effect, Layer, Logger, ManagedRuntime, Metric, type Sche
 import { FetchHttpClient } from "effect/http"
 import { build } from "../../worker/test/flowHost.ts"
 import type { AuthStore } from "../features/auth/store"
+import { Home } from "../features/home/home"
+import { HomeStore } from "../features/home/store"
 import * as Navigation from "../features/navigation/flows"
 import { tabNavigation } from "../features/navigation/tab"
 import { RepoClient } from "../features/repo/api"
@@ -77,7 +79,7 @@ export const openTab = async (options: DeviceOptions) => {
   )
   const engine = Layer.effectContext(Effect.map(build(registration, { maxConnections: 2 }), ({ context }) => context))
   const runtime = ManagedRuntime.make(
-    Repo.layer.pipe(
+    Layer.merge(Repo.layer, Home.layer.pipe(Layer.provide(HomeStore.layer))).pipe(
       Layer.provideMerge(
         RepoStore.layer({
           origin: options.origin,
@@ -107,10 +109,11 @@ export const openTab = async (options: DeviceOptions) => {
         Logger.layer([Logger.make((log) => void logs.push(StructuredLogger.formatStructured.log(log)))]),
       ),
     // AuthStore is there only when `auth` gave it; a test reads it only then.
-    ) as Layer.Layer<Repo | RepoStore | AuthStore>,
+    ) as Layer.Layer<Repo | Home | RepoStore | AuthStore>,
   )
   const repo = await runtime.runPromise(Effect.service(Repo))
-  for (const query of Object.values(repo.queries)) query.startSyncImmediate()
+  const home = await runtime.runPromise(Effect.service(Home))
+  for (const query of [...Object.values(repo.queries), ...Object.values(home.queries)]) query.startSyncImmediate()
   const count = (
     metric: Metric.Metric<number, Metric.CounterState<number>>,
     attributes: Record<string, string> = {},
@@ -128,6 +131,7 @@ export const openTab = async (options: DeviceOptions) => {
     ).count
   return {
     repo,
+    home,
     runtime,
     logs,
     copied,

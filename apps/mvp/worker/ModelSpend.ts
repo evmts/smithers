@@ -1,0 +1,119 @@
+import { type ModelProxy, Pricing } from "@smthrs/model"
+import { Cause, Clock, Config, Duration, Effect, Metric, Ref, Schema } from "effect"
+import type { ModelRole } from "../src/features/model/contract.ts"
+import { codeOf } from "./ErrorCode.ts"
+import { FlowStarter, StartUnavailable } from "./Flows.ts"
+import * as SpendAlert from "./flows/SpendAlert.ts"
+
+// Model spend (docs/features/spend-alerts.md): what each call the model endpoint meters spent, by role and model, and
+// the alerts it raises. Will, 2026-10-19: "anybody using the app at all shoujld alert me because we have 0 users".
+// Every admitted call makes sure its window's `ops/SpendAlert` has started, so any spend reaches the deployment's
+// Admins, at most once a window. Records carry roles, model ids, token counts and dollars, never what anyone asked.
+
+/** How long one alert's window lasts when `MODEL_SPEND_ALERT_WINDOW` is unset: 15 minutes. */
+export const ALERT_WINDOW = Duration.minutes(15)
+
+/** Tokens the model reported for each metered call, by `role` and `model`. */
+export const tokens = Metric.counter("smithers_model_spend_tokens", {
+  description: "Tokens models reported for metered calls, by role and model",
+  incremental: true,
+})
+
+/** Each metered call's estimated cost in US dollars, by `role` and `model`; an unpriced model adds nothing. */
+export const usd = Metric.counter("smithers_model_spend_usd", {
+  description: "Estimated cost of metered model calls in US dollars, by role and model",
+  incremental: true,
+})
+
+/**
+ * Records what one metered call spent: a `model.spend` log line with the tokens the model reported and the call's
+ * estimated cost (`@smthrs/model`'s `Pricing.cost`: the provider's own charge when it reported one), and both counters.
+ * A call whose model reported no tokens and no cost records nothing.
+ */
+export const record = (role: ModelRole, end: Pick<ModelProxy.End, "invocationId" | "modelId" | "usage">) =>
+  Effect.gen(function* () {
+    const { inputTokens, outputTokens } = end.usage
+    const reported = (inputTokens ?? 0) + (outputTokens ?? 0)
+    const cost = Pricing.cost(end.usage, end.modelId)
+    if (reported === 0 && cost === undefined) return
+    const attributes = { role, model: end.modelId }
+    yield* Metric.update(Metric.withAttributes(tokens, attributes), reported)
+    if (cost !== undefined) yield* Metric.update(Metric.withAttributes(usd, attributes), cost.costUsd)
+    yield* Effect.logInfo("model.spend").pipe(
+      Effect.annotateLogs({
+        role,
+        modelId: end.modelId,
+        invocationId: end.invocationId,
+        tokens: reported,
+        ...(cost === undefined ? {} : { costUsd: cost.costUsd, costSource: cost.costSource }),
+      }),
+    )
+  })
+
+/** An alert window: at least a second, and finite. */
+const Window = Schema.DurationFromString.check(
+  Schema.makeFilter((window: Duration.Duration) =>
+    Duration.isFinite(window) && Duration.toMillis(window) >= 1_000
+  ),
+)
+
+/** Whether any spend alerts, and the window that batches it. */
+export interface AlertSettings {
+  readonly on: boolean
+  readonly window: Duration.Duration
+}
+
+/**
+ * Reads `MODEL_SPEND_ALERTS` (on unless `on` says otherwise: production leaves it on; the dev stack, whose runs spend
+ * all day, passes `false`) and `MODEL_SPEND_ALERT_WINDOW` (a duration of at least a second, {@link ALERT_WINDOW}
+ * unset).
+ */
+export const settings = (defaults: { readonly on?: boolean } = {}) =>
+  Effect.gen(function* () {
+    const on = yield* Config.Boolean("MODEL_SPEND_ALERTS").pipe(Config.withDefault(defaults.on ?? true))
+    const window = yield* Config.schema(Window, "MODEL_SPEND_ALERT_WINDOW").pipe(Config.withDefault(ALERT_WINDOW))
+    return { on, window } satisfies AlertSettings
+  })
+
+/** The window `now` falls in: windows of `window` laid end to end from the epoch. */
+export const windowAt = (now: number, window: Duration.Duration) => {
+  const length = Duration.toMillis(window)
+  const from = Math.floor(now / length) * length
+  return { from, until: from + length }
+}
+
+/**
+ * Returns what each admitted call runs: it starts the current window's `ops/SpendAlert` through `FlowStarter`, once
+ * per window in this isolate. The start is the window's one execution, so other isolates starting it again are no-ops,
+ * and a start that found it started already (`StartConflict`) counts as started. A start the host can't record is an
+ * Error `model.spend.alert` line, `not_started`, and the next call starts it again; the call itself goes on. With
+ * alerts off, it does nothing.
+ */
+export const alerter = (alerting: AlertSettings, budget: number) =>
+  Effect.gen(function* () {
+    // The window this isolate last started; a cache of the starts, never their record, which is the execution.
+    const started = yield* Ref.make<number | undefined>(undefined)
+    return Effect.gen(function* () {
+      if (!alerting.on) return
+      const window = windowAt(yield* Clock.currentTimeMillis, alerting.window)
+      if ((yield* Ref.get(started)) === window.from) return
+      const starter = yield* FlowStarter
+      yield* starter.start(SpendAlert.SpendAlert, {
+        executionId: SpendAlert.executionId(window),
+        payload: { ...window, budget },
+      }).pipe(Effect.catchTag("@smthrs/mvp/flows/StartConflict", () => Effect.void))
+      yield* Ref.set(started, window.from)
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.andThen(
+          Metric.update(Metric.withAttributes(SpendAlert.alerts, { outcome: "not_started" }), 1),
+          Effect.logError("model.spend.alert").pipe(
+            Effect.annotateLogs({ outcome: "not_started", errorCode: errorCodeOf(Cause.squash(cause)) }),
+          ),
+        )
+      ),
+    )
+  })
+
+/** A failed start's code: the host's, or the failure's own. */
+const errorCodeOf = (error: unknown) => (error instanceof StartUnavailable ? error.errorCode : codeOf(error))

@@ -4,8 +4,9 @@
 /**
  * ChatApi's routes for a person's own flows:
  * - `GET /api/flows`: the person's live flows;
- * - `GET /api/flows/source?name=<name>[&revision=<n>]`: one flow's `SKILL.md` at a revision, the latest unless set;
+ * - `GET /api/flows/source?name=<name>[&revision=<n>]`: one flow's source at a revision, the latest unless set;
  * - `POST /api/flows/save`: a ready draft becomes a flow, or the next revision of the one it edits;
+ * - `POST /api/flows/write`: source the person wrote becomes the next revision of their flow;
  * - `POST /api/flows/<id>/delete`: deletes one.
  */
 export const FLOWS_ROUTE = "/api/flows"
@@ -57,8 +58,8 @@ export const MAX_DESCRIPTION_CHARS = 1024
 /** What a person asks `flow/new` for: 1 to 4,096 characters. */
 export const MAX_REQUEST_CHARS = 4096
 
-/** A `SKILL.md`, and a draft's files in all: 64 KiB. */
-export const MAX_SKILL_BYTES = 64 * 1024
+/** A flow's source, and a draft's files in all: 64 KiB. */
+export const MAX_SOURCE_BYTES = 64 * 1024
 
 /** Questions one round may ask. */
 export const MAX_QUESTIONS = 5
@@ -74,9 +75,6 @@ export const MAX_CALLS = 20
 
 /** The largest body the flows and drafts routes read: the files plus room for the rest. */
 export const MAX_FLOWS_BODY_BYTES = 80 * 1024
-
-/** The draft's one file in this slice: a person's flow is a prompt flow. */
-export const SKILL_PATH = "SKILL.md"
 
 /** How a draft round ends, and the states before and after. */
 export const DRAFT_STATUSES = ["drafting", "needs_you", "ready", "failed", "saved", "proposed"] as const
@@ -102,6 +100,9 @@ export const FLOWS_PATH = "/app/flows"
 /** The route that starts a new flow. */
 export const NEW_FLOW_PATH = "/app/flows/new"
 
+/** The route that shows a flow's code, to read and edit. */
+export const codePath = (name: string): string => `/app/flows/code/${encodeURIComponent(name)}`
+
 /**
  * What your own flows record (docs/observability.md#your-own-flows): authoring rounds and saves, and the routes. None
  * carries a request, a file, a question, an answer or a flow's name: only ids, counts and codes.
@@ -112,17 +113,20 @@ export const FLOWS_UI_TELEMETRY = {
     "smithers_flow_author_rounds",
     "flow.save",
     "flow.save.unconfirmed",
+    "flow.write",
     "flow.run.load",
     "smithers_flow_saves",
+    "smithers_flow_writes",
     "flow.client.list",
     "flow.client.source",
     "flow.client.draft",
     "flow.client.write_draft",
     "flow.client.answer",
     "flow.client.save",
+    "flow.client.write",
     "flow.client.delete",
   ],
-  fields: ["draftId", "round", "scope", "target", "outcome", "checks", "questions", "durationMs", "code", "kind"],
+  fields: ["draftId", "round", "scope", "target", "outcome", "checks", "questions", "durationMs", "code", "placement"],
 } as const
 
 /** The flows pages' buttons, links and lines (MINIMAL TEXT). */
@@ -130,8 +134,13 @@ export const NEW_FLOW = "New flow"
 export const RUN = "Run"
 export const EDIT = "Edit"
 export const DELETE = "Delete"
+export const CODE = "Code"
+export const SAVE = "Save"
 export const NO_FLOWS = "No flows yet"
 export const MINE = "Mine"
+
+/** Why a flow whose code isn't drafted from a prompt doesn't run: no host runs a person's own code yet. */
+export const NEEDS_SANDBOX = "Needs a sandbox"
 
 /** What a refused save reads as on the draft card, by its code. */
 export const SAVE_REFUSALS: Readonly<Record<string, string>> = {
@@ -141,3 +150,18 @@ export const SAVE_REFUSALS: Readonly<Record<string, string>> = {
   not_ready: "Not ready",
   unavailable: "Couldn't save. Try again.",
 }
+
+/** What a refused write of a flow's code reads as on its page, by its code. */
+export const WRITE_REFUSALS: Readonly<Record<string, string>> = {
+  stale: "Changed since you opened it",
+  not_found: "No such flow",
+  unavailable: "Couldn't save. Try again.",
+}
+
+/** A refused write's words: `check:<check>` reads `Check failed: <check>`; any other code its words, or itself. */
+export const writeRefusalWords = (code: string): string =>
+  code.startsWith("check:") ? `Check failed: ${code.slice("check:".length)}` : WRITE_REFUSALS[code] ?? code
+
+/** The code page when the flow can't be read: none by that name, or ChatApi didn't answer. */
+export const NO_SUCH_FLOW = "No such flow"
+export const COULDNT_READ_FLOW = "Couldn't read this flow"

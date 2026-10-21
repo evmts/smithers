@@ -6,7 +6,7 @@ import { Draft, FlowRow } from "./schema"
 
 // Your own flows on this tab (decision 0014 §1 "On the device", docs/features/flows.md#the-browser): the person's flows
 // and drafts, which Postgres keeps and Electric syncs to every device they sign in on, kept on the device; and this
-// tab's own form, unsent answers, the draft it shows and a draft's last refusal, in memory.
+// tab's own form, unsent answers, the draft it shows and a draft's last refusal, and the code it shows, in memory.
 
 /** Where the shapes sync from: ChatApi's origin, the site's own. */
 export interface FlowsUiConfig {
@@ -39,6 +39,23 @@ export const Shown = Schema.Struct({
 })
 export type Shown = typeof Shown.Type
 
+/**
+ * The flow whose code this tab shows: its name, how reading it went, the revision and source it read, the text as the
+ * person edited it, and a write in flight or its last refusal (`stale`, `check:<check>`, ...).
+ */
+export const CODE = "code"
+export const Code = Schema.Struct({
+  id: Schema.Literal(CODE),
+  name: Schema.String,
+  state: Schema.Literals(["loading", "read", "not_found", "unavailable"]),
+  revision: Schema.Number,
+  source: Schema.String,
+  text: Schema.String,
+  busy: Schema.Boolean,
+  refusal: Schema.NullOr(Schema.String),
+})
+export type Code = typeof Code.Type
+
 /** The draft `shown` names, once the device has it. */
 export const draftQuery = (shown: Collection.Collection<Shown, string>, drafts: Collection.Collection<Draft>) =>
   LiveQuery.make((q) =>
@@ -66,6 +83,10 @@ export const draftsQuery = (drafts: Collection.Collection<Draft>) =>
 export const formQuery = (form: Collection.Collection<Form, string>) =>
   LiveQuery.make((q) => q.from({ form: form.tanstack }).findOne())
 
+/** The code this tab shows. */
+export const codeQuery = (code: Collection.Collection<Code, string>) =>
+  LiveQuery.make((q) => q.from({ code: code.tanstack }).findOne())
+
 /** Every unsent answer. */
 export const answersQuery = (answers: Collection.Collection<AnswerRow, string>) =>
   LiveQuery.make((q) => q.from({ answer: answers.tanstack }))
@@ -81,11 +102,13 @@ export class FlowsUiStore extends Context.Service<
     readonly form: Collection.Collection<Form, string>
     readonly answers: Collection.Collection<AnswerRow, string>
     readonly shown: Collection.Collection<Shown, string>
+    readonly code: Collection.Collection<Code, string>
     readonly draft: Live<typeof draftQuery>
     readonly flowList: Live<typeof flowsQuery>
     readonly draftList: Live<typeof draftsQuery>
     readonly formRow: Live<typeof formQuery>
     readonly answerList: Live<typeof answersQuery>
+    readonly codeRow: Live<typeof codeQuery>
     readonly confirmWithin: Duration.Input
   }
 >()("@smthrs/mvp/flows/FlowsUiStore") {
@@ -107,7 +130,8 @@ export class FlowsUiStore extends Context.Service<
           schema: FlowRow,
           getKey: (row) => row.id,
           syncMode: "eager",
-          persist: { schemaVersion: 1 },
+          // 2: rows carry where the flow runs (`placement`).
+          persist: { schemaVersion: 2 },
           shape: shape(FLOWS_SHAPE_ROUTE),
         })
         const drafts = yield* ElectricCollection.make<Draft>({
@@ -135,17 +159,27 @@ export class FlowsUiStore extends Context.Service<
           getKey: (row) => row.id,
           initialData: [{ id: SHOWN, draftId: null, refusal: null, busy: false }],
         })
+        const code = yield* Collection.local<Code, string>({
+          id: "flow-code",
+          schema: Code,
+          getKey: (row) => row.id,
+          initialData: [
+            { id: CODE, name: "", state: "loading", revision: 0, source: "", text: "", busy: false, refusal: null },
+          ],
+        })
         return FlowsUiStore.of({
           flows,
           drafts,
           form,
           answers,
           shown,
+          code,
           draft: yield* draftQuery(shown, drafts),
           flowList: yield* flowsQuery(flows),
           draftList: yield* draftsQuery(drafts),
           formRow: yield* formQuery(form),
           answerList: yield* answersQuery(answers),
+          codeRow: yield* codeQuery(code),
           confirmWithin: config.confirmWithin ?? Duration.seconds(15),
         })
       }),

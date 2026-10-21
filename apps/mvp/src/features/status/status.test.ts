@@ -84,20 +84,18 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
         draft: "",
         focus: 0,
       })
-      expect(device.needs()).toEqual([expect.objectContaining({ id: answerId, version: 1, hidden: false })])
+      expect(device.needs()).toEqual([expect.objectContaining({ id: answerId, version: 1 })])
     }
     await until(() => expect(a.titles.at(-1)).toBe("(1) Smithers"))
     expect(a.count(Metric.withAttributes(shown, { surface: "conversation" }))).toBe(1)
 
-    // This tab's own rows: a draft, Hide, and Answer's focus, none of which another tab or device sees.
+    // This tab's own rows: a draft and Answer's focus, neither of which another tab or device sees.
     a.status.actions.setDraft(answerId, "docs")
     a.status.actions.focus(answerId)
     a.status.actions.focusFirst()
-    a.status.actions.hide(answerId)
     expect(a.statusOf(answerId)).toMatchObject({ draft: "docs", focus: 2 })
-    expect(a.needs()).toEqual([expect.objectContaining({ id: answerId, hidden: true })])
     expect(b.statusOf(answerId)).toMatchObject({ draft: "", focus: 0 })
-    expect(b.needs()).toEqual([expect.objectContaining({ hidden: false })])
+    expect(b.needs()).toEqual([expect.objectContaining({ id: answerId })])
 
     // The other device answers. Its engine doesn't hold the run; the device that does delivers it.
     b.status.actions.answer(answerId, "docs-v2")
@@ -124,7 +122,6 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     // Nothing is open yet: every action is a no-op.
     a.status.actions.answer(answerId, true)
     a.status.actions.setDraft(answerId, "x")
-    a.status.actions.hide(answerId)
     a.status.actions.focus(answerId)
     a.status.actions.focusFirst()
     const first = await Effect.runPromise(api.answerTo("Clean up old previews"))

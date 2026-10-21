@@ -1,7 +1,7 @@
-import type { IssuesViewIssue } from "@smthrs/ui"
-import type { Role } from "../auth/contract"
+import type { IssuesViewIssue, IssuesViewTriage } from "@smthrs/ui"
+import { mayAsk, type Role } from "../auth/contract"
 import { viewerOf } from "../commands/catalog"
-import { githubIssueUrl, MAX_BODY_LENGTH, MAX_TITLE_LENGTH, NOT_SENT_COPY } from "./contract"
+import { githubIssueUrl, MAX_BODY_LENGTH, MAX_TITLE_LENGTH, NOT_SENT_COPY, TRIAGE_STATES, type TriageState } from "./contract"
 
 type Pending = NonNullable<IssuesViewIssue["pending"]>
 
@@ -17,6 +17,8 @@ export interface ListRow {
   readonly author: string | null
   readonly comments: number
   readonly updatedAt: string
+  /** The triage state of a synced row; empty for this device's own new issue. */
+  readonly triage: string
   readonly pending: string
   readonly reason: unknown
   readonly local: number
@@ -42,19 +44,29 @@ const shown = (value: string | null): string | undefined => (value === null || v
 
 const stateOf = (state: string): "open" | "closed" => (state === "closed" ? "closed" : "open")
 
-/** One list row as `IssuesView` shows it: `#–` and its pending chip until GitHub numbers it. */
-export const issueOf = (row: ListRow): IssuesViewIssue =>
-  row.local === 0
-    ? {
-      id: row.id,
-      number: row.number,
-      title: row.title,
-      state: stateOf(row.state),
-      author: shown(row.author),
-      comments: row.comments,
-      updatedAt: row.updatedAt,
-    }
-    : { id: row.id, number: null, title: row.title, state: "open", pending: row.pending as Pending }
+/** A triage column as the chip reads it; none for a row that has no state yet (this device's own new issue). */
+const triageOf = (triage: string): TriageState | undefined =>
+  (TRIAGE_STATES as ReadonlyArray<string>).includes(triage) ? (triage as TriageState) : undefined
+
+/**
+ * One list row as `IssuesView` shows it: `#–` and its pending chip until GitHub numbers it, then its triage chip once
+ * the repository's triage flow is on (`triageOn`) or its labels say more than proposed.
+ */
+export const issueOf = (row: ListRow, triageOn = false): IssuesViewIssue => {
+  if (row.local !== 0) return { id: row.id, number: null, title: row.title, state: "open", pending: row.pending as Pending }
+  const state = triageOf(row.triage)
+  const triage = state === "proposed" && !triageOn ? undefined : state
+  return {
+    id: row.id,
+    number: row.number,
+    title: row.title,
+    state: stateOf(row.state),
+    author: shown(row.author),
+    comments: row.comments,
+    updatedAt: row.updatedAt,
+    ...(triage === undefined ? {} : { triage: triage satisfies IssuesViewTriage }),
+  }
+}
 
 /** A new issue this device made that wasn't sent: its title and why, for Edit and Discard. */
 export interface NotSent {
@@ -75,9 +87,14 @@ export const refusedOf = (access: { readonly status: string } | undefined): Refu
  * never "No issues" before the first complete sync, and never loading once the shape refused this person), why it was
  * refused, and the new issues that weren't sent.
  */
-export const listProps = (rows: ReadonlyArray<ListRow>, synced: unknown, access?: { readonly status: string }) => ({
+export const listProps = (
+  rows: ReadonlyArray<ListRow>,
+  synced: unknown,
+  access?: { readonly status: string },
+  triageOn = false,
+) => ({
   refused: refusedOf(access),
-  issues: rows.map(issueOf),
+  issues: rows.map((row) => issueOf(row, triageOn)),
   loading: refusedOf(access) === undefined && synced === undefined && rows.every((row) => row.local === 1),
   notSent: rows
     .filter((row) => row.pending === "not_sent")
@@ -154,3 +171,65 @@ export const mayWrite = (
   const viewer = viewerOf(session, confirmed)
   return viewer.signedIn && viewer.role !== null
 }
+
+/** Whether the person at the page may Accept, mark Not accepted and Run triage again: Member and above (`repo:triage`). */
+export const mayTriage = (
+  session: { readonly status: "loading" | "signed_in" | "signed_out" | "unreachable"; readonly role: Role | null },
+  confirmed: { readonly role: Role | null } | undefined,
+): boolean => {
+  const viewer = viewerOf(session, confirmed)
+  return viewer.signedIn && mayAsk(viewer.role)
+}
+
+/** Whether the person at the page may enable and pause the triage flow: Maintainer and above (`repo:triage-flow`). */
+export const mayManageTriage = (
+  session: { readonly status: "loading" | "signed_in" | "signed_out" | "unreachable"; readonly role: Role | null },
+  confirmed: { readonly role: Role | null } | undefined,
+): boolean => {
+  const viewer = viewerOf(session, confirmed)
+  return viewer.signedIn && (viewer.role === "admin" || viewer.role === "maintainer")
+}
+
+/** A row of this device's triage writes (queries.ts `triagePendingQuery`). */
+export interface TriagePendingRow {
+  readonly id: string
+  readonly op: string
+  readonly number: number
+  readonly pending: string
+}
+
+/**
+ * The triage control on issue `number`'s page: its state, and this device's latest triage write on it while on its way
+ * or not sent. `may` says which buttons the person gets (Accept and Not accepted for a Member and above; Run
+ * triage again too while the flow is on); a person who may not triage sees the state only, and nothing (`shown` false)
+ * while the issue is proposed and the flow off.
+ */
+export const triageControlOf = (
+  item: { readonly number: number; readonly triage: string },
+  pending: ReadonlyArray<TriagePendingRow>,
+  may: { readonly triage: boolean; readonly flowOn: boolean },
+) => {
+  const latest = pending.find((row) => row.number === item.number && (row.op === "issue/triage" || row.op === "triage/run"))
+  const state = triageOf(item.triage) ?? "proposed"
+  return {
+    shown: may.triage || may.flowOn || state !== "proposed",
+    state,
+    pending: latest?.pending === "requested" || latest?.pending === "not_sent" ? (latest.pending as Pending) : undefined,
+    accept: may.triage,
+    reject: may.triage,
+    runAgain: may.triage && may.flowOn,
+    disabled: latest?.pending === "requested",
+  }
+}
+
+/**
+ * The list page's triage button for a Maintainer: Enable triage while it is off or paused, Pause triage while it runs.
+ * Disabled while one of this device's Enable or Pause is on its way.
+ */
+export const triageSwitchOf = (
+  settings: { readonly paused: boolean } | undefined,
+  pending: ReadonlyArray<TriagePendingRow>,
+) => ({
+  action: settings === undefined || settings.paused ? ("enable" as const) : ("pause" as const),
+  disabled: pending.some((row) => (row.op === "triage/enable" || row.op === "triage/pause") && row.pending === "requested"),
+})

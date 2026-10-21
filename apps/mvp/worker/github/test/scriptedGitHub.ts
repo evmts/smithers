@@ -3,7 +3,9 @@
 // It keeps the GitHub rules the loop relies on: an App's JWT mints installation tokens only for an installed App and
 // only within the permissions it was granted; issues and comments are numbered, timestamped and attributed to whoever's
 // token made them; listings page by `per_page` with `Link: rel="next"`, sorted and filtered by `since` as GitHub does;
-// a deleted or transferred issue answers 404. A test arms one-shot faults per request: a status GitHub answers with
+// a deleted or transferred issue answers 404. For triage it keeps the repository's labels (adding a missing one to an
+// issue creates it, as GitHub does; creating one that exists answers 422), each issue's labels (a change moves its
+// `updated_at`), the files the contents API reads, and each collaborator's role. A test arms one-shot faults per request: a status GitHub answers with
 // (nothing applied), or `lost`, where GitHub applies a write and the answer never arrives. The real GitHub is
 // worker/github/Live.test.ts.
 import { GitHub } from "@smthrs/integrations"
@@ -40,6 +42,8 @@ export interface ScriptedIssue {
   /** Listed without the fields this app reads, as if GitHub changed its shape. */
   malformed?: boolean
   readonly comments: Array<ScriptedComment>
+  /** Its labels' names, in the order they were added. */
+  labels: Array<string>
 }
 
 /** One comment as the scripted GitHub keeps it. */
@@ -81,6 +85,17 @@ export interface ScriptedGitHub {
   installed: boolean
   /** The issues permission the App was granted: a token asking for more is refused 422. */
   granted: "read" | "write" | "none"
+  /** Whether the App was granted Contents: read; without it, a token asking for it is refused 422. */
+  contentsGranted: boolean
+  /** The repository's labels, by name without case. */
+  readonly labels: Map<string, { readonly name: string; readonly color: string }>
+  /** The repository's files on its default branch, by path, as the contents API reads them. */
+  readonly files: Map<string, string>
+  /**
+   * Each collaborator's role on the repository, by login: `admin`, `maintain`, `write`, `triage` or `read`, or an
+   * organization's custom role with the base permission GitHub reports for it.
+   */
+  readonly roles: Map<string, string | { readonly roleName: string; readonly permission: string }>
   /** Whether the repository is private. */
   private: boolean
   /** GitHub's clock, in epoch ms: the real one, moved on a second at least by each change, so `updated_at` is ordered. */
@@ -97,6 +112,8 @@ export interface ScriptedGitHub {
   readonly comment: (number: number, body: string, login?: string | null) => ScriptedComment
   /** Someone on github.com edits an issue's title. */
   readonly retitle: (number: number, title: string) => void
+  /** Someone on github.com sets an issue's labels. */
+  readonly relabel: (number: number, labels: ReadonlyArray<string>) => void
   /** The issue is deleted, or transferred away. */
   readonly remove: (number: number) => void
   /** The comment is deleted. */
@@ -118,7 +135,7 @@ const decoder = new TextDecoder()
 /** A scripted GitHub at `https://api.github.test` with the repository `owner/name`, the App installed and granted write. */
 export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub => {
   const userTokens = new Map<string, string>()
-  const installationTokens = new Map<string, "read" | "write">()
+  const installationTokens = new Map<string, "read" | "write" | "contents">()
   let ids = 1_000
   let numbers = 0
   let users = 0
@@ -128,6 +145,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
   const user = (login: string | null) => (login === null ? null : { id: login.length, login })
 
   const issueJson = (issue: ScriptedIssue) => ({
+    labels: issue.labels.map((label) => ({ id: label.length, name: label, color: "ededed" })),
     id: issue.id,
     ...(issue.malformed === true ? {} : { node_id: `I_${issue.id}` }),
     number: issue.number,
@@ -184,7 +202,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     return [...items].sort((a, b) => (a[key] - b[key]) * direction)
   }
 
-  const answer = (method: string, url: URL, token: Call["token"], login: string | undefined, body: unknown): {
+  const answer = (method: string, url: URL, token: Call["token"] | "installation-contents", login: string | undefined, body: unknown): {
     readonly response: Response
     readonly apply?: () => void
   } => {
@@ -196,11 +214,16 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     if (path === `/app/installations/${INSTALLATION_ID}/access_tokens` && method === "POST") {
       if (token !== "jwt") return { response: json({ message: "A JSON web token could not be decoded" }, 401) }
       if (!github.installed) return { response: json({ message: "Not Found" }, 404) }
-      const asked = (body as { readonly permissions?: { readonly issues?: string } }).permissions?.issues ?? "read"
-      const allowed = github.granted === "write" || (github.granted === "read" && asked === "read")
+      const permissions = (body as { readonly permissions?: { readonly issues?: string; readonly contents?: string } })
+        .permissions
+      const contents = permissions?.contents !== undefined
+      const asked = permissions?.issues ?? "read"
+      const allowed = contents
+        ? github.contentsGranted
+        : github.granted === "write" || (github.granted === "read" && asked === "read")
       if (!allowed) return { response: json({ message: "The permissions requested are not granted to this installation." }, 422) }
       const minted = `ghs_scripted_${github.minted.length + 1}`
-      installationTokens.set(minted, asked === "write" ? "write" : "read")
+      installationTokens.set(minted, contents ? "contents" : asked === "write" ? "write" : "read")
       github.minted.push({ token: minted, body })
       return { response: json({ token: minted, expires_at: iso(github.now + 3_600_000) }, 201) }
     }
@@ -209,6 +232,33 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     const rest = path.slice(apiPath.length)
     const live = [...github.issues.values()].filter((issue) => !issue.gone)
     if (rest === "" && method === "GET") return { response: json({ id: REPOSITORY_ID, private: github.private }) }
+    if (rest === "/labels" && method === "POST") {
+      const input = body as { readonly name: string; readonly color: string }
+      if (github.labels.has(input.name.toLowerCase())) {
+        return { response: json({ message: "Validation Failed", errors: [{ code: "already_exists" }] }, 422) }
+      }
+      const label = { name: input.name, color: input.color }
+      return { response: json(label, 201), apply: () => void github.labels.set(input.name.toLowerCase(), label) }
+    }
+    const contentsMatch = /^\/contents\/(.+)$/.exec(url.pathname.slice(apiPath.length))
+    if (contentsMatch !== null && method === "GET") {
+      if (token !== "installation-contents") return { response: json({ message: "Resource not accessible by integration" }, 403) }
+      const path = decodeURIComponent(contentsMatch[1]!)
+      const text = github.files.get(path)
+      if (text === undefined) return { response: json({ message: "Not Found" }, 404) }
+      const bytes = new TextEncoder().encode(text)
+      const base64 = btoa(String.fromCharCode(...bytes)).replace(/(.{60})/g, "$1\n")
+      return { response: json({ type: "file", encoding: "base64", path, sha: `sha-${text.length}`, size: bytes.length, content: base64 }) }
+    }
+    const collaborator = /^\/collaborators\/([^/]+)\/permission$/.exec(rest)
+    if (collaborator !== null && method === "GET") {
+      const role = github.roles.get(collaborator[1]!)
+      if (role === undefined) return { response: json({ message: "Not Found" }, 404) }
+      const named = typeof role === "string"
+        ? { roleName: role, permission: role === "maintain" ? "write" : role === "triage" ? "read" : role }
+        : role
+      return { response: json({ permission: named.permission, role_name: named.roleName, user: { login: collaborator[1] } }) }
+    }
     if (rest === "/issues" && method === "GET") {
       const listed = sorted(url, live.filter((issue) => issue.updatedAt >= since(url)))
       return { response: paged(url, listed.map(issueJson)) }
@@ -228,6 +278,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
         pull: false,
         gone: false,
         comments: [],
+        labels: [],
       }
       return { response: json(issueJson(issue), 201), apply: () => void github.issues.set(issue.number, issue) }
     }
@@ -235,6 +286,39 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       const comments = live.flatMap((issue) => issue.comments.filter((comment) => !comment.gone))
       const listed = sorted(url, comments.filter((comment) => comment.updatedAt >= since(url)))
       return { response: paged(url, listed.map(commentJson)) }
+    }
+    const labelsMatch = /^\/issues\/(\d+)\/labels(?:\/([^/]+))?$/.exec(url.pathname.slice(apiPath.length))
+    if (labelsMatch !== null) {
+      const labeled = github.issues.get(Number(labelsMatch[1]))
+      if (labeled === undefined || labeled.gone) return { response: json({ message: "Not Found" }, 404) }
+      const listed = () => labeled.labels.map((name) => ({ name, color: github.labels.get(name.toLowerCase())?.color }))
+      if (method === "POST" && labelsMatch[2] === undefined) {
+        const names = (body as { readonly labels: ReadonlyArray<string> }).labels
+        const added = names.filter((name) => !labeled.labels.some((label) => label.toLowerCase() === name.toLowerCase()))
+        return {
+          response: json([...labeled.labels, ...added].map((name) => ({ name }))),
+          apply: () => {
+            for (const name of added) {
+              if (!github.labels.has(name.toLowerCase())) github.labels.set(name.toLowerCase(), { name, color: "ededed" })
+              labeled.labels.push(name)
+            }
+            if (added.length > 0) labeled.updatedAt = tick()
+          },
+        }
+      }
+      if (method === "DELETE" && labelsMatch[2] !== undefined) {
+        const name = decodeURIComponent(labelsMatch[2])
+        const index = labeled.labels.findIndex((label) => label.toLowerCase() === name.toLowerCase())
+        if (index === -1) return { response: json({ message: "Label does not exist" }, 404) }
+        return {
+          response: json(listed().filter((_, at) => at !== index)),
+          apply: () => {
+            labeled.labels.splice(index, 1)
+            labeled.updatedAt = tick()
+          },
+        }
+      }
+      return { response: json({ message: "Not Found" }, 404) }
     }
     const match = /^\/issues\/(\d+)(\/comments)?$/.exec(rest)
     if (match === null) return { response: json({ message: "Not Found" }, 404) }
@@ -270,9 +354,10 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
   }
 
   /** Who a request's `Authorization` names: the App's JWT, an installation token, a user, or nobody. */
-  const caller = (authorization: string | undefined): { readonly token: Call["token"]; readonly login?: string } => {
+  const caller = (authorization: string | undefined): { readonly token: Call["token"] | "installation-contents"; readonly login?: string } => {
     const bearer = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : undefined
     if (bearer === undefined) return { token: "none" }
+    if (installationTokens.get(bearer) === "contents") return { token: "installation-contents", login: BOT_LOGIN }
     if (installationTokens.has(bearer)) return { token: "installation", login: BOT_LOGIN }
     const login = userTokens.get(bearer)
     if (login !== undefined) return { token: "user", login }
@@ -288,7 +373,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     Effect.suspend(() => {
       const method = request.method
       const who = caller(request.headers["authorization"])
-      github.calls.push({ method, path: url.pathname, token: who.token })
+      github.calls.push({ method, path: url.pathname, token: who.token === "installation-contents" ? "installation" : who.token })
       const raw = request.body._tag === "Uint8Array" ? decoder.decode(request.body.body) : undefined
       const body: unknown = raw === undefined || raw === "" ? undefined : JSON.parse(raw)
       const fault = github.faults.findIndex((candidate) => candidate.match(method, url.pathname))
@@ -299,7 +384,8 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
         )
       }
       // An installation token writes only with the permission it was minted with.
-      if (who.token === "installation" && method === "POST" && url.pathname.startsWith(apiPath)) {
+      const writing = method === "POST" || method === "DELETE"
+      if ((who.token === "installation" || who.token === "installation-contents") && writing && url.pathname.startsWith(apiPath)) {
         const bearer = request.headers["authorization"]!.slice("Bearer ".length)
         if (installationTokens.get(bearer) !== "write") {
           return Effect.succeed(
@@ -330,6 +416,10 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     faults: [],
     installed: true,
     granted: "write",
+    contentsGranted: true,
+    labels: new Map(),
+    files: new Map(),
+    roles: new Map(),
     private: false,
     now: Date.now(),
     minted: [],
@@ -353,6 +443,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
         pull: false,
         gone: false,
         comments: [],
+        labels: [],
       }
       github.issues.set(issue.number, issue)
       return issue
@@ -375,6 +466,11 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     retitle: (number, title) => {
       const issue = github.issues.get(number)!
       issue.title = title
+      issue.updatedAt = tick()
+    },
+    relabel: (number, labels) => {
+      const issue = github.issues.get(number)!
+      issue.labels = [...labels]
       issue.updatedAt = tick()
     },
     remove: (number) => void (github.issues.get(number)!.gone = true),

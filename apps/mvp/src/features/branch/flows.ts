@@ -14,8 +14,9 @@ import { Tracked } from "./schema"
 export const BranchName = Schema.String.check(Schema.makeFilter(isBranchName))
 
 /**
- * ChatApi didn't track the branch: GitHub has no such repository or branch (`not_found`), signed out (`sign_in`), not
- * a Member (`forbidden`), or a name that can't be one (`invalid`).
+ * ChatApi didn't track the branch: GitHub has no such repository or branch (`not_found`), signed out (`sign_in`), a
+ * branch this person may not open, or a new one only a Member may track (`forbidden`), or a name that can't be one
+ * (`invalid`).
  */
 export class BranchTrackRefused extends Schema.TaggedError<BranchTrackRefused>()(
   "@smthrs/mvp/branch/BranchTrackRefused",
@@ -57,7 +58,8 @@ export const TrackBranch = Action.make("branch/track/request", {
 /** `branch/track { repo, branch }`: records a branch GitHub has, with its conversation. */
 export const BranchTrack = Flow.make("branch/track", {
   description: "Track a branch of a GitHub repository (owner/name) that GitHub already has, with its conversation. " +
-    "Answers { branchId, conversationId, repoId, name, mode }: mode locked for the default branch, else open. " +
+    "Answers { branchId, conversationId, repoId, name, mode, access }: mode locked for the default branch, else open; " +
+    "access owner, edit or view. " +
     "BranchTrackRefused says why not: not_found, sign_in, forbidden or invalid.",
   modelInvocable: true,
   payload,

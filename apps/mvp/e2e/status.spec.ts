@@ -38,7 +38,9 @@ test("needs you: the agent asks, every surface on every device shows it, and an 
     await expect(card).toHaveAccessibleName(PROMPT)
     await expect(card.getByRole("button", { name: "docs-v2" })).toBeVisible()
     await expect(header, `${tab.name}: the header says the agent needs you`).toBeVisible()
-    await expect(toast, `${tab.name}: a toast says so, with Answer`).toContainText(`Needs you · ${PROMPT}`)
+    // The toast is the feed's, its own shape (docs/features/notifications.md): under the dev server's HTTP/1.1, a
+    // device's live shapes share six connections, so it can arrive a long poll after the card.
+    await expect(toast, `${tab.name}: a toast says so, with Answer`).toContainText(`Needs you · ${PROMPT}`, { timeout: 60_000 })
     // Nothing covers it, the open composer included: a trial click finds the button takes the pointer.
     await toast.getByRole("button", { name: "Answer" }).click({ trial: true })
     // Questions an earlier run left open count too.
@@ -59,7 +61,7 @@ test("needs you: the agent asks, every surface on every device shows it, and an 
     await tab.expectAnswered(question, "Deploying docs-v2.", 120_000)
     await expect(card, `${tab.name}: the question shows what was answered`).toHaveAttribute("data-state", "answered")
     await expect(card).toContainText("docs-v2")
-    await expect(toast).toHaveCount(0)
+    await expect(toast).toHaveCount(0, { timeout: 60_000 })
     // Questions an earlier run left open may close meanwhile too, so the count only has to drop.
     await expect.poll(() => titleCount(tab.page), { message: `${tab.name}: the title stops counting it` })
       .toBeLessThan(open[tab.name as "A" | "B"])

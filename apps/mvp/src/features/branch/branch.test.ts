@@ -75,7 +75,7 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
   }
 }
 
-const none = { owner: "", repo: "", name: "", status: "none", branchId: null, conversationId: null, mode: null }
+const none = { owner: "", repo: "", name: "", status: "none", branchId: null, conversationId: null, mode: null, access: null }
 
 describe("opening a branch", () => {
   test("tracking at once, then ready with its ids and mode; the tab shows and asks in its conversation", async () => {
@@ -97,6 +97,8 @@ describe("opening a branch", () => {
       branchId,
       conversationId,
       mode: "open",
+      // Tracking a new branch makes it the person's own, private until they share it.
+      access: "owner",
     })
     expect(tab.place()).toBe(conversationId)
     expect(tab.opened("ready")).toBe(1)
@@ -104,7 +106,8 @@ describe("opening a branch", () => {
 
     // The repository's default branch is locked: changes reach it only by merge.
     await tab.actions.open("octo", "hello", "main")
-    expect(tab.current()).toMatchObject({ name: "main", status: "ready", mode: "locked" })
+    // The default branch is the team's: everyone in the repository edits it, and nobody owns it.
+    expect(tab.current()).toMatchObject({ name: "main", status: "ready", mode: "locked", access: "edit" })
     expect(tab.place()).toBe(tab.current()?.conversationId)
 
     // Leaving shows the home conversation again.
@@ -231,6 +234,7 @@ const trackedBody = {
   repoId: "github/octo/hello",
   name: "feature/one",
   mode: "open",
+  access: "owner",
 }
 
 describe("the branch client", () => {

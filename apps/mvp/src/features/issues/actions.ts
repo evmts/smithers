@@ -8,6 +8,7 @@ import {
   MAX_TITLE_LENGTH,
   newDraftKey,
   newIssuePath,
+  type TriageDecision,
 } from "./contract"
 import { pendingActions } from "./metrics"
 import { type Draft, VIEW } from "./schema"
@@ -111,6 +112,36 @@ export const comment = (owner: string, name: string, number: number) =>
     yield* submit(key, flows.dispatch("issue/comment", { repo: `${owner}/${name}`, number, body }, { door: "button" }))
     return true
   })
+
+/**
+ * Runs `dispatch` in the store's scope: the press returns at once, and the write shows as Requested from the outbox. A
+ * flow that failed, or didn't run, has logged and counted why.
+ */
+const press = (dispatch: Effect.Effect<unknown, unknown, FlowDispatch>) =>
+  Effect.gen(function* () {
+    const store = yield* IssuesStore
+    yield* Effect.forkIn(Effect.ignore(dispatch), store.scope, { startImmediately: true })
+  })
+
+/** Accept or Not accepted on issue `number` of `owner/name` (`issue/triage`): pins the issue against the flow. */
+export const triage = (owner: string, name: string, number: number, decision: TriageDecision) =>
+  Effect.flatMap(FlowDispatch, (flows) =>
+    press(flows.dispatch("issue/triage", { repo: `${owner}/${name}`, number, decision }, { door: "button" })))
+
+/** Run triage again on issue `number` of `owner/name` (`triage/run`): unpins it and has the flow decide it again. */
+export const runTriageAgain = (owner: string, name: string, number: number) =>
+  Effect.flatMap(FlowDispatch, (flows) =>
+    press(flows.dispatch("triage/run", { repo: `${owner}/${name}`, number }, { door: "button" })))
+
+/** Enable triage on `owner/name` (`triage/enable`), at the default daily budget. */
+export const enableTriage = (owner: string, name: string) =>
+  Effect.flatMap(FlowDispatch, (flows) =>
+    press(flows.dispatch("triage/enable", { repo: `${owner}/${name}` }, { door: "button" })))
+
+/** Pause triage on `owner/name` (`triage/pause`). */
+export const pauseTriage = (owner: string, name: string) =>
+  Effect.flatMap(FlowDispatch, (flows) =>
+    press(flows.dispatch("triage/pause", { repo: `${owner}/${name}` }, { door: "button" })))
 
 /**
  * Edit (`edit`) or Discard on a write that wasn't sent: Edit puts its text back in its draft first. The write goes from

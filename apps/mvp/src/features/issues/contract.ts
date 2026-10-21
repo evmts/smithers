@@ -47,6 +47,8 @@ export const ITEM_COLUMNS = [
   "closed_at",
   "deleted_at",
   "write_id",
+  "triage",
+  "triage_pinned",
 ] as const
 
 /** The `comments` columns a device syncs. */
@@ -79,9 +81,23 @@ export const ISSUES_STREAM = "issues"
 export const itemId = (repoId: string, number: number): string => `${repoId}#${number}`
 export const commentId = (repoId: string, githubId: number): string => `${repoId}/comment/${githubId}`
 
-/** The writes this slice takes (decision 0012 §3): open an issue, comment on one. */
-export const WRITE_OPS = ["issue/create", "issue/comment"] as const
+/**
+ * The writes the route takes (decision 0012 §3): open an issue, comment on one, and triage's: a person's Accept or Not
+ * accepted (`issue/triage`), Run triage again (`triage/run`), and Enable and Pause (`triage/enable`, `triage/pause`).
+ */
+export const WRITE_OPS = [
+  "issue/create",
+  "issue/comment",
+  "issue/triage",
+  "triage/run",
+  "triage/enable",
+  "triage/pause",
+] as const
 export type WriteOp = (typeof WRITE_OPS)[number]
+
+/** The triage writes: a person's acts only, never the agent's (decision 0012 decision 11). */
+export const TRIAGE_OPS = ["issue/triage", "triage/run", "triage/enable", "triage/pause"] as const
+export type TriageOp = (typeof TRIAGE_OPS)[number]
 
 /**
  * Who a write acts for: the person's own act runs with their GitHub token, so GitHub shows them; the agent's runs as the
@@ -263,4 +279,127 @@ export const ISSUES_TELEMETRY = {
     "execute_tool issue/comment",
   ],
   fields: ["op", "door", "via", "outcome", "status", "writeId", "durationMs", "reason", "action"],
+} as const
+
+// Triage (decision 0012 §5, docs/features/issues.md#triage): two GitHub labels carry an issue's triage state, which is
+// independent of open and closed. A Maintainer enables the repository's triage flow; it decides each new issue with the
+// `judge` model role and a system step writes one label and, for a rejection, one comment as the App. A Member or above
+// overrides in person, which pins the issue until a person presses Run triage again.
+
+/** The label GitHub carries for an accepted issue; the `smithers:` prefix keeps a repository's own `accepted` apart. */
+export const ACCEPTED_LABEL = "smithers:accepted"
+
+/** The label GitHub carries for an issue that wasn't accepted. It stays open: closing is a person's act. */
+export const NOT_ACCEPTED_LABEL = "smithers:not-accepted"
+
+/** The triage labels' colors when Smithers creates them: GitHub's green and grey. */
+export const TRIAGE_LABEL_COLORS: Readonly<Record<string, string>> = {
+  [ACCEPTED_LABEL]: "0e8a16",
+  [NOT_ACCEPTED_LABEL]: "6e7781",
+}
+
+/** An issue's triage state: no triage label `proposed`, one of them its state, both `conflict`. */
+export const TRIAGE_STATES = ["proposed", "accepted", "not_accepted", "conflict"] as const
+export type TriageState = (typeof TRIAGE_STATES)[number]
+
+/** The triage state GitHub's `labels` say, comparing names without case as GitHub does. */
+export const triageOf = (labels: ReadonlyArray<string>): TriageState => {
+  const names = new Set(labels.map((label) => label.toLowerCase()))
+  const accepted = names.has(ACCEPTED_LABEL)
+  const rejected = names.has(NOT_ACCEPTED_LABEL)
+  return accepted && rejected ? "conflict" : accepted ? "accepted" : rejected ? "not_accepted" : "proposed"
+}
+
+/** What a person decides: Accept or Not accepted. */
+export const TRIAGE_DECISIONS = ["accept", "reject"] as const
+export type TriageDecision = (typeof TRIAGE_DECISIONS)[number]
+
+/** The label a decision adds; it removes the other. */
+export const labelOf = (decision: TriageDecision): string => (decision === "accept" ? ACCEPTED_LABEL : NOT_ACCEPTED_LABEL)
+
+/**
+ * Why the flow didn't accept an issue: one of a closed set, so issue text can't put words, mentions or links in the
+ * App's comment (decision 0012 §5, "issue text is untrusted").
+ */
+export const TRIAGE_REASONS = ["spam", "duplicate", "out_of_scope", "unclear", "other"] as const
+export type TriageReason = (typeof TRIAGE_REASONS)[number]
+
+/** A reason as the App's comment gives it. */
+export const TRIAGE_REASON_COPY: Readonly<Record<TriageReason, string>> = {
+  spam: "Spam.",
+  duplicate: "Duplicate of an existing issue.",
+  out_of_scope: "Out of scope for this repository.",
+  unclear: "Not enough information to act on.",
+  other: "Doesn't fit this repository's triage guidelines.",
+}
+
+/** The App's comment on an issue the flow didn't accept, attributed to the flow and the person who enabled it. */
+export const rejectionComment = (reason: TriageReason, enablerLogin: string): string =>
+  `Not accepted: ${TRIAGE_REASON_COPY[reason]}\n\nTriaged by Smithers for @${enablerLogin} (triage).`
+
+/** The longest reason a person gives with Not accepted, in characters. */
+export const MAX_REASON_LENGTH = 300
+
+/** The repository's triage guidelines, read at the default branch's head: data the decision reads, never code. */
+export const GUIDELINES_PATH = ".smithers/triage.md"
+
+/**
+ * What one decision reads at most, so it fits one judge call: the body's and the guidelines' first characters, and the
+ * issue's last comments, each cut short.
+ */
+export const MAX_TRIAGE_TEXT_CHARS = 8_000
+export const MAX_TRIAGE_COMMENTS = 20
+export const MAX_TRIAGE_COMMENT_CHARS = 2_000
+
+/** How sure the judge must be of accept or reject for it to stand; below it the flow abstains (`SURE_LABEL`, Jev's). */
+export const TRIAGE_SURE = 0.7
+
+/**
+ * The namespace a flow decision's id is derived in (RFC 9562 version 5, `@smthrs/crypto`'s `Uuid.v5`): the decision id
+ * of a triage run is its execution id's UUID in this namespace, so the run's steps name the same decision however often
+ * they run, and its comment's hidden marker finds it.
+ */
+export const TRIAGE_DECISION_NAMESPACE = "3b0f7d52-8c1e-4f6a-a2d9-5e4c7b1f0a63"
+
+/** The flow's daily model budget, in tokens, when the Maintainer who enables it names none. */
+export const DEFAULT_TRIAGE_DAILY_TOKENS = 200_000
+
+/** The largest daily budget a Maintainer may set, in tokens. */
+export const MAX_TRIAGE_DAILY_TOKENS = 10_000_000
+
+/** Why triage is paused: a person paused it, or the person who enabled it is no longer a Maintainer. */
+export const PAUSED_REASONS = ["person", "enabler_demoted"] as const
+export type PausedReason = (typeof PAUSED_REASONS)[number]
+
+/** The repository's triage settings: `GET`, one row per repository, never who enabled it. */
+export const TRIAGE_SETTINGS_SHAPE_ROUTE = "/api/shapes/triage-settings"
+export const TRIAGE_SETTINGS_TABLE = "triage_settings"
+export const TRIAGE_SETTINGS_COLUMNS = ["repo_id", "paused", "paused_reason", "daily_tokens", "enabled_at"] as const
+
+/**
+ * A triage run's execution: one per webhook delivery (`issues.opened`) or per person's Run triage again (its write
+ * id), so a redelivery or a resend starts the same run.
+ */
+export const triageRunExecutionId = (key: string): string => `triage-run:${key}`
+
+/** Buttons and states. */
+export const ACCEPT = "Accept"
+export const NOT_ACCEPTED = "Not accepted"
+export const RUN_TRIAGE_AGAIN = "Run triage again"
+export const ENABLE_TRIAGE = "Enable triage"
+export const PAUSE_TRIAGE = "Pause triage"
+
+/** What triage records (docs/observability.md#github), by name, and the attributes they carry: never text or logins. */
+export const TRIAGE_TELEMETRY = {
+  records: [
+    "triage.read",
+    "triage.decide",
+    "triage.apply",
+    "triage.comment",
+    "triage_decisions",
+    "triage_dropped",
+    "triage_overrides",
+    "triage_tokens",
+  ],
+  fields: ["repoId", "number", "runId", "decisionId", "decision", "reason", "via", "outcome", "dropped", "tokens"],
 } as const

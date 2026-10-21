@@ -1,0 +1,65 @@
+import { Interpreter } from "@smthrs/flow"
+import type { Inbox } from "@smthrs/notifications"
+import { Effect, Layer, Metric } from "effect"
+import { AttentionClient, type AttentionRefused } from "./api"
+import { Ack, AckRequestStep, type ActFailure, ActRefused, ActUnsent, WatchRequestStep, WatchSet } from "./flows"
+import { acks, watches } from "./metrics"
+
+// The feed's steps (docs/features/notifications.md#flows): one ChatApi request each, through `AttentionClient`. A
+// person's button, a tab showing a conversation and the agent's call run these steps on this device's engine.
+
+/** What ChatApi's refusal means to the flow: a 4xx is final, anything else is tried again. */
+export const failureOf = (refused: AttentionRefused): ActFailure =>
+  refused.status !== undefined && refused.status >= 400 && refused.status < 500
+    ? new ActRefused({ status: refused.status })
+    : new ActUnsent()
+
+/** How an outcome is recorded: `sent`, `refused` or `unsent`. */
+const outcomeOf = (failure: ActFailure) => (failure._tag === "@smthrs/mvp/attention/ActRefused" ? "refused" : "unsent")
+
+/** The fields a failed request's log line adds: ChatApi's status, when it answered. */
+const statusOf = (refused: AttentionRefused) => (refused.status === undefined ? {} : { status: refused.status })
+
+/**
+ * `watch/set/request`: one `POST /api/watches`. A log line `notifications.watch` and a count of `watches` by outcome;
+ * never what the conversation holds.
+ */
+export const requestWatch = ({ conversationId }: { readonly conversationId: string | null }) =>
+  Effect.gen(function* () {
+    const answer = yield* Effect.result((yield* AttentionClient).watch(conversationId))
+    const outcome = answer._tag === "Success" ? "sent" : outcomeOf(failureOf(answer.failure))
+    yield* Metric.update(Metric.withAttributes(watches, { outcome }), 1)
+    yield* Effect.logWithLevel(answer._tag === "Success" ? "Info" : "Warn")("notifications.watch").pipe(
+      Effect.annotateLogs({ outcome, ...(answer._tag === "Failure" ? statusOf(answer.failure) : {}) }),
+    )
+    if (answer._tag === "Failure") return yield* Effect.fail(failureOf(answer.failure))
+    return { watching: true }
+  })
+
+/** `notification/ack/request`: one `POST /api/notifications/ack`, logged and counted by act and outcome. */
+export const requestAck = (request: { readonly subject: string; readonly version: number; readonly act: Inbox.Act }) =>
+  Effect.gen(function* () {
+    const answer = yield* Effect.result((yield* AttentionClient).ack(request))
+    const outcome = answer._tag === "Success" ? "sent" : outcomeOf(failureOf(answer.failure))
+    yield* Metric.update(Metric.withAttributes(acks, { act: request.act, outcome }), 1)
+    yield* Effect.logWithLevel(answer._tag === "Success" ? "Info" : "Warn")("notifications.ack").pipe(
+      Effect.annotateLogs({
+        subject: request.subject,
+        act: request.act,
+        version: request.version,
+        outcome,
+        ...(answer._tag === "Failure" ? statusOf(answer.failure) : {}),
+      }),
+    )
+    if (answer._tag === "Failure") return yield* Effect.fail(failureOf(answer.failure))
+    return { recorded: true }
+  })
+
+/** Registers `watch/set` and `notification/ack` with their steps, asking through the host's `AttentionClient`. */
+export const registration = Layer.merge(
+  Interpreter.layerWithImplementations(WatchSet, WatchRequestStep.toLayer(requestWatch)),
+  Interpreter.layerWithImplementations(Ack, AckRequestStep.toLayer(requestAck)),
+)
+
+/** The feed's flows, asking ChatApi on `origin`. Needs the host's `HttpClient`. */
+export const registrationAt = (origin: string) => registration.pipe(Layer.provide(AttentionClient.layer({ origin })))

@@ -114,6 +114,11 @@ describe("headerOf", () => {
     expect(headerOf(undefined, undefined, true)).toEqual({ kind: "clone" })
     expect(headerOf(undefined, undefined, null)).toEqual({ kind: "clone" })
     expect(headerOf(undefined, undefined, false)).toEqual({ kind: "sign_in", text: SIGN_IN_TO_CLONE })
+    // Before the repositories' shape has answered, a repository the device hasn't seen offers nothing.
+    expect(headerOf(undefined, undefined, true, false)).toEqual({ kind: "unknown" })
+    expect(headerOf(undefined, undefined, false, false)).toEqual({ kind: "unknown" })
+    expect(headerOf(repository({ status: "ready" }), undefined, true, false)).toEqual({ kind: "ready" })
+    expect(headerOf(undefined, clone("requesting"), true, false)).toEqual({ kind: "cloning" })
   })
 
   test("a repository shows its status", () => {

@@ -12,3 +12,4 @@
 .flows-page { display: flex; flex-direction: column; gap: 1rem; }
 .flows-page-actions { display: flex; justify-content: flex-end; }
 .flows-page td:last-child { white-space: nowrap; text-align: end; }
+.flows-code [data-slot="textarea"] { width: 100%; box-sizing: border-box; }

@@ -15,10 +15,10 @@ import { Layer } from "effect"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
 import * as Catalog from "../../flows/catalog"
 import { cell, member, openAgent } from "../../test/agent"
-import { SKILL_PATH } from "./contract"
-import { FlowAnswer, FlowDelete, FlowList, FlowNew, FlowRun, FlowSave } from "./flows"
-import { renderSkill } from "./skill"
+import { FlowAnswer, FlowDelete, FlowList, FlowNew, FlowRead, FlowRun, FlowSave, FlowWrite } from "./flows"
 import { roundExecutionId, roundOf } from "./round"
+import { renderSource, SOURCE_PATH } from "./source"
+import { writeOutcome } from "./steps"
 
 const runtime = testFile("flows_ui")
 
@@ -105,7 +105,7 @@ describe("roundOf", () => {
 })
 
 describe("flow/new", () => {
-  test("one round drafts the SKILL.md, checks it and writes the draft ready, with its questions", async () => {
+  test("one round drafts the flow's source, checks it and writes the draft ready, with its questions", async () => {
     const model = scripted(() => drafted())
     const { engine, run } = await device(model.script)
     const draftId = crypto.randomUUID()
@@ -119,8 +119,8 @@ describe("flow/new", () => {
     const row = await draftRow(draftId)
     expect(row).toMatchObject({ status: "ready", round: 0, name: "dark-mode", failure: null, flowId: null })
     expect(row!.files).toEqual([{
-      path: SKILL_PATH,
-      text: renderSkill({
+      path: SOURCE_PATH,
+      text: renderSource({
         name: "dark-mode",
         description: "Switch this device to dark mode.",
         flows: ["app/theme/set"],
@@ -164,8 +164,8 @@ const readyRound = (name: string, overrides: object = {}) => ({
   status: "ready",
   summary: null,
   files: [{
-    path: SKILL_PATH,
-    text: renderSkill({ name, description: "Dark.", flows: [], instructions: "Go dark." }),
+    path: SOURCE_PATH,
+    text: renderSource({ name, description: "Dark.", flows: [], instructions: "Go dark." }),
   }],
   checks: [{ check: "parses", ok: true }],
   questions: [],
@@ -262,14 +262,16 @@ describe("flow/new, more rounds", () => {
     expect(JSON.stringify(saved)).toContain('"code":"checks"')
   }, SLOW)
 
-  test("a name you have edits that flow: the round starts from its SKILL.md, and saving makes revision 2", async () => {
+  test("a name you have edits that flow: the round starts from its source, and saving makes revision 2", async () => {
     const model = scripted(() => drafted())
     const d = await device(model.script)
     const first = await saveFlow(d, "dark-mode")
     expect(first.revision).toBe(1)
     const second = await saveFlow(d, "dark-mode")
     expect(second).toMatchObject({ flowId: first.flowId, revision: 2 })
-    expect(said(model.requests.filter(drafting).at(-1)!)).toContain("The flow so far:\n---\nname: dark-mode")
+    expect(said(model.requests.filter(drafting).at(-1)!)).toContain(
+      "The flow so far:\n// Drafted by Smithers from a prompt.",
+    )
     expect(await draftRow(second.draftId)).toMatchObject({ status: "saved", flowId: first.flowId })
   }, SLOW)
 })
@@ -339,10 +341,9 @@ describe("flow/run", () => {
     }))
     expect(exit).toEqual(Exit.succeed("Dark mode is on."))
     expect(d.agent.painted).toEqual(["dark"])
+    // Asked what the flow's own step asks: its instructions, then its input.
     const prompt = said(model.requests.find(running)!)
-    expect(prompt).toContain("The flow dark-mode says:\nSet the theme to dark, then say it is done.")
-    expect(prompt).toContain("It may call: app/theme/set")
-    expect(prompt).toContain("Its input: please")
+    expect(prompt).toContain("Set the theme to dark, then say it is done.\n\nInput: please")
   }, SLOW)
 
   test("a call outside the flow's list is refused, and the agent sees only its list", async () => {
@@ -356,8 +357,8 @@ describe("flow/run", () => {
     expect(exit).toEqual(Exit.succeed("I couldn't."))
     expect(d.agent.painted).toEqual([])
     const prompt = said(model.requests.find(running)!)
-    expect(prompt).toContain("It may call: nothing")
-    expect(prompt).toContain("It was given no input.")
+    expect(prompt).toContain("Set the theme to dark, then say it is done.")
+    expect(prompt).not.toContain("Input:")
     expect(prompt).not.toContain("app/navigate")
   }, SLOW)
 
@@ -379,7 +380,7 @@ describe("flow/run", () => {
     const tampered = await d.run(d.engine.flows.execute(FlowRun, { executionId: crypto.randomUUID(), payload: { name: "dark-mode", revision: 1 } }))
     expect(JSON.stringify(tampered)).toContain('"check":"digest"')
 
-    const forbidden = renderSkill({ name: "dark-mode", description: "Dark.", flows: ["flow/new"], instructions: "Go." })
+    const forbidden = renderSource({ name: "dark-mode", description: "Dark.", flows: ["flow/new"], instructions: "Go." })
     const { digestSync } = await import("@smthrs/crypto")
     await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql`UPDATE flow_revisions SET source = ${forbidden}, digest = ${digestSync(forbidden)} WHERE flow_id = ${saved.flowId}`))
@@ -388,12 +389,94 @@ describe("flow/run", () => {
   }, SLOW)
 })
 
+describe("a flow's code", () => {
+  /** The saved flow's source with its step relabelled: code the system didn't write. */
+  const relabelled = (source: string) => source.replace(`"dark-mode/agent"`, `"dark-mode/answer"`)
+
+  test("flow/read reads a revision's code and where it runs; a name you don't have isn't found", async () => {
+    const d = await device(scripted(() => drafted()).script)
+    const saved = await saveFlow(d, "dark-mode")
+    const read = await d.run(d.engine.flows.execute(FlowRead, { executionId: crypto.randomUUID(), payload: { name: "dark-mode" } }))
+    expect(read).toEqual(Exit.succeed({
+      flowId: saved.flowId,
+      name: "dark-mode",
+      revision: 1,
+      source: renderSource({
+        name: "dark-mode",
+        description: "Switch this device to dark mode.",
+        flows: ["app/theme/set"],
+        instructions: "Set the theme to dark, then say it is done.",
+      }),
+      placement: "client",
+    }))
+    const missing = await d.run(d.engine.flows.execute(FlowRead, { executionId: crypto.randomUUID(), payload: { name: "nothing" } }))
+    expect(JSON.stringify(missing)).toContain("FlowNotFound")
+  }, SLOW)
+
+  test("code written by hand saves as the next revision and needs a sandbox: its run fails before the agent runs", async () => {
+    const model = scripted(() => drafted(), ['ctx.done("Ran.")'])
+    const d = await device(model.script)
+    await saveFlow(d, "dark-mode")
+    const { source } = (await d.run(d.engine.flows.execute(FlowRead, {
+      executionId: crypto.randomUUID(),
+      payload: { name: "dark-mode" },
+    })) as unknown as Exit.Success<{ source: string }>).value
+
+    const written = await d.run(d.engine.flows.execute(FlowWrite, {
+      executionId: crypto.randomUUID(),
+      payload: { name: "dark-mode", revision: 1, source: relabelled(source) },
+    }))
+    expect(written).toMatchObject({ _tag: "Success", value: { name: "dark-mode", revision: 2, placement: "sandbox" } })
+    const refused = await d.run(d.engine.flows.execute(FlowRun, { executionId: crypto.randomUUID(), payload: { name: "dark-mode" } }))
+    expect(JSON.stringify(refused)).toContain("@smthrs/mvp/flows/FlowNeedsSandbox")
+    expect(model.requests.filter(running)).toEqual([])
+
+    // The drafted code again: it runs here, as revision 3.
+    expect(await d.run(d.engine.flows.execute(FlowWrite, {
+      executionId: crypto.randomUUID(),
+      payload: { name: "dark-mode", revision: 2, source },
+    }))).toMatchObject({ _tag: "Success", value: { revision: 3, placement: "client" } })
+    expect(await d.run(d.engine.flows.execute(FlowRun, { executionId: crypto.randomUUID(), payload: { name: "dark-mode" } })))
+      .toEqual(Exit.succeed("Ran."))
+  }, SLOW)
+
+  test("a write that fails a check, or from a revision another followed, is refused before or by ChatApi; one again isn't", async () => {
+    const d = await device(scripted(() => drafted()).script)
+    await saveFlow(d, "dark-mode")
+    const write = (revision: number, source: string, name = "dark-mode") =>
+      d.run(d.engine.flows.execute(FlowWrite, { executionId: crypto.randomUUID(), payload: { name, revision, source } }))
+    const good = renderSource({ name: "dark-mode", description: "Dark.", flows: [], instructions: "Go dark." })
+
+    expect(JSON.stringify(await write(1, good.replace(`Flow.make("dark-mode"`, `Flow.make("light-mode"`))))
+      .toContain('"check":"name"')
+    expect(JSON.stringify(await write(1, renderSource({ name: "dark-mode", description: "D.", flows: ["flow/new"], instructions: "Go." }))))
+      .toContain('"check":"calls"')
+    expect(await write(1, good)).toMatchObject({ _tag: "Success", value: { revision: 2 } })
+    // The same write again, as a step tried again: the revision it made. Other bytes from that revision: stale.
+    expect(await write(1, good)).toMatchObject({ _tag: "Success", value: { revision: 2 } })
+    expect(JSON.stringify(await write(1, good.replace("Go dark.", "Go darker.")))).toContain('"code":"stale"')
+    expect(JSON.stringify(await write(1, renderSource({ name: "other", description: "D.", flows: [], instructions: "Go." }), "other")))
+      .toContain("FlowNotFound")
+    // ChatApi saw only the writes the checks admitted.
+    expect(d.agent.h.line("flow.route").filter((line) => line.annotations.route === "write").map((line) => line.annotations.status))
+      .toEqual([200, 200, 409, 404])
+  }, SLOW)
+
+  test("a refused write is recorded by ChatApi's code, not_found, or unavailable", () => {
+    expect(writeOutcome({ _tag: "@smthrs/mvp/flows/FlowsRefused", code: "stale" })).toBe("stale")
+    expect(writeOutcome({ _tag: "@smthrs/mvp/flows/FlowNotFound" })).toBe("not_found")
+    expect(writeOutcome({ _tag: "@smthrs/mvp/flows/FlowsUnavailable" })).toBe("unavailable")
+  })
+})
+
 describe("flow/list and flow/delete", () => {
   test("lists your flows; deleting one removes it, and deleting it again deletes nothing", async () => {
     const d = await device(scripted(() => drafted()).script)
     const saved = await saveFlow(d, "dark-mode")
     expect(await d.run(d.engine.flows.execute(FlowList, { executionId: crypto.randomUUID(), payload: {} })))
-      .toEqual(Exit.succeed({ flows: [{ name: "dark-mode", description: "Switch this device to dark mode.", revision: 1 }] }))
+      .toEqual(Exit.succeed({
+        flows: [{ name: "dark-mode", description: "Switch this device to dark mode.", revision: 1, placement: "client" }],
+      }))
     expect(await d.run(d.engine.flows.execute(FlowDelete, { executionId: crypto.randomUUID(), payload: { flowId: saved.flowId } })))
       .toEqual(Exit.succeed({ deleted: true }))
     expect(await d.run(d.engine.flows.execute(FlowDelete, { executionId: crypto.randomUUID(), payload: { flowId: saved.flowId } })))

@@ -672,6 +672,36 @@ describe("sessions", () => {
     expect(setCookies(secureOut)["__Host-smithers_dev_signed_out"]!.line).toMatch(/; Secure/)
   })
 
+  test("local development's teammate is whoever the dev person cookie names; anyone else is the developer", async () => {
+    const teammate = { actor: { subject: { kind: "person" as const, id: "local-teammate" }, role: "member" as const }, login: "local-teammate" }
+    const dev = await signInHarness(runtime, {
+      config: {},
+      fallback: { actor: localDeveloper, login: "local-developer" },
+      teammates: { teammate },
+    })
+    expect(await dev.session({ smithers_dev_person: "teammate" })).toEqual({
+      signedIn: true,
+      login: "local-teammate",
+      role: "member",
+    })
+    for (const person of ["nobody", "toString"]) {
+      expect(await dev.session({ smithers_dev_person: person })).toEqual({
+        signedIn: true,
+        login: "local-developer",
+        role: "admin",
+      })
+    }
+    // Signed out, the cookie names nobody; without a developer, no teammate either.
+    expect(await dev.session({ smithers_dev_person: "teammate", smithers_dev_signed_out: "1" })).toEqual({
+      signedIn: false,
+      available: true,
+    })
+    const alone = await signInHarness(runtime, { config: {}, fallback: { actor: localDeveloper, login: "local-developer" } })
+    expect(await alone.session({ smithers_dev_person: "teammate" })).toMatchObject({ login: "local-developer" })
+    const none = await signInHarness(runtime, { config: {}, teammates: { teammate } })
+    expect(await none.session({ smithers_dev_person: "teammate" })).toEqual({ signedIn: false, available: false })
+  })
+
   test("configured with the GitHub App, sign-in builds the real App adapter unless one is injected", async () => {
     const setup = await runtime.runPromise(
       SignIn.configured().pipe(

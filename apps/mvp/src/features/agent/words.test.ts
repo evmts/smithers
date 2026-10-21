@@ -1,0 +1,65 @@
+// Product words (./words.ts): what the agent's answer may show a person. The names it refuses are the ones the agent
+// evals caught in answers (docs/features/agent-evals.md, 2026-10-20): `app/web/open`, `flow_failed`, `WebPageRefused`,
+// `viewId`, and an id.
+import { Schema } from "effect"
+import { describe, expect, test } from "vitest"
+import { names } from "../../flows/registry"
+import { internalNames, plainly, ProductWords } from "./words"
+
+const decode = Schema.decodeUnknownResult(ProductWords)
+
+describe("internalNames", () => {
+  test("finds the machinery the evals caught, each once, in order", () => {
+    expect(
+      internalNames(
+        "app/web/open refused the javascript: URL (flow_failed): Flow app/web/open failed: WebPageRefused. " +
+          "viewId 3f2c1d4e-0a1b-4c2d-8e9f-0123456789ab",
+      ),
+    ).toEqual(["app/web/open", "flow_failed", "WebPageRefused", "viewId", "3f2c1d4e-0a1b-4c2d-8e9f-0123456789ab"])
+  })
+
+  test("finds every registered flow's name, standing alone or in quotes, brackets or code", () => {
+    for (const name of names) {
+      expect(internalNames(`I called ${name}.`)).toEqual([name])
+      expect(internalNames(`(\`${name}\`)`)).toEqual([name])
+    }
+  })
+
+  test("finds the cell's names, the codes a failed call reads, and a typed failure's tag", () => {
+    expect(internalNames("ctx.call then ctx.done")).toEqual(["ctx.call", "ctx.done"])
+    expect(internalNames("it was rate_limited, then unknown_flow")).toEqual(["rate_limited", "unknown_flow"])
+    expect(internalNames("NavigationRefused, FlowNotFound, NameTaken, DraftNotReady")).toEqual([
+      "NavigationRefused",
+      "FlowNotFound",
+      "NameTaken",
+      "DraftNotReady",
+    ])
+  })
+
+  test("passes what a person reads: slash commands, repositories, paths, URLs, their own flows, plain words", () => {
+    for (
+      const text of [
+        "Dark mode is on. Next time, type /theme dark.",
+        "Opened /octocat/Spoon-Knife/blob/main/README.md?L=12 in your tab.",
+        "Opened the Effect docs (https://effect.website/docs) in the chat.",
+        "See https://example.com/app/navigate and https://example.com/flow/new.",
+        "Your flow effect-docs is drafted; save it from its card. Run it with /flow.run effect-docs.",
+        "I couldn't open that page: only https pages open. The run was refused, not found or denied.",
+        "main is at 6dcb09b5b57875f334f61aebed695e2e4193db5e.",
+        "",
+      ]
+    ) expect([text, internalNames(text)]).toEqual([text, []])
+  })
+})
+
+describe("ProductWords", () => {
+  test("takes an answer in the person's words as it is", () => {
+    expect(decode("Dark mode is on.")).toEqual(Schema.decodeUnknownResult(Schema.String)("Dark mode is on."))
+  })
+
+  test("refuses an answer that names machinery, telling the agent which names and to say it plainly", () => {
+    const result = decode("app/theme/set answered: dark (flow_failed).")
+    expect(result._tag).toBe("Failure")
+    expect(String(result._tag === "Failure" ? result.failure : "")).toContain(plainly(["app/theme/set", "flow_failed"]))
+  })
+})

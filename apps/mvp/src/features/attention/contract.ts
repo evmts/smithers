@@ -1,0 +1,52 @@
+// The personal feed's contract between the browser and ChatApi (decision 0009, docs/features/notifications.md): routes,
+// limits and the records the feature makes. Nothing here imports a library, so every side can.
+
+/** `POST`: the person follows the branch and the repository of a conversation they show (`watch/set`). */
+export const WATCHES_ROUTE = "/api/watches"
+
+/** `POST`: the person reads, dismisses or hides one notification of theirs (`notification/ack`). */
+export const ACK_ROUTE = "/api/notifications/ack"
+
+/** `GET`: Electric's `notifications`, only the signed-in person's rows. */
+export const NOTIFICATIONS_SHAPE_ROUTE = "/api/shapes/notifications"
+
+/** The Postgres table: 0009's per-person `notifications`. */
+export const NOTIFICATIONS_TABLE = "notifications"
+
+/** The largest body either route reads: 2 KiB. */
+export const MAX_ATTENTION_BODY_BYTES = 2 * 1024
+
+/** The longest subject a notification has: `release:<repo id>:<tag>` at most. */
+export const MAX_SUBJECT_LENGTH = 400
+
+/** Where a run of the home conversation opens: `/app`, the deployment repository's `main`. */
+export const HOME_HREF = "/app"
+
+/** How long one feed route call may take, the whole exchange included. */
+export const ATTENTION_WITHIN = "15 seconds"
+
+/** A finished run or a repository event stays in the person's list this long, unless dismissed (0009 §3). */
+export const LISTED_FOR_MS = 7 * 24 * 60 * 60 * 1000
+
+/** The longest title a toast shows: the first line of a question, a commit or a release, cut here. */
+export const MAX_TITLE_LENGTH = 80
+
+/** Where the stack shows: over a conversation, whose own runs show in it, or on any other page. */
+export type Surface = "conversation" | "page"
+
+/**
+ * What the feed records in the browser, by name, and the attributes they carry (docs/observability.md#notifications):
+ * the engine worker's watches and acks, and the tab's record of each notification shown. None carries a title, an
+ * actor or a ref. src/telemetry.ts merges them into what ChatApi's relay keeps.
+ */
+export const ATTENTION_TELEMETRY = {
+  records: [
+    "notifications.watch",
+    "notifications.ack",
+    "notifications.shown",
+    "smithers_notification_watches",
+    "smithers_notification_acks",
+    "smithers_notifications_shown",
+  ],
+  fields: ["subject", "act", "outcome", "status", "surface", "state", "kind", "version", "errorCode"],
+} as const

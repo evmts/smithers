@@ -2,11 +2,23 @@ import { Button, EmptyState, Table, TableBody, TableCell, TableHead, TableHeader
 import { draftStatusLine } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
-import { DELETE, draftPath, EDIT, NEW_FLOW, NEW_FLOW_PATH, NO_FLOWS, RUN } from "../contract"
+import {
+  CODE,
+  codePath,
+  DELETE,
+  draftPath,
+  EDIT,
+  NEEDS_SANDBOX,
+  NEW_FLOW,
+  NEW_FLOW_PATH,
+  NO_FLOWS,
+  RUN,
+} from "../contract"
 import { useFlowsUi } from "./FlowsUiContext"
 
-// Your own flows (decision 0014 §5, `/app/flows`): each one's name and description with Run, Edit and Delete, then the
-// drafts not saved yet, and New flow.
+// Your own flows (decision 0014 §5, `/app/flows`): each one's name and description with Run, Edit, Code and Delete,
+// then the drafts not saved yet, and New flow. A flow whose code was edited by hand can't run yet: Run is off, and the
+// row says why.
 export function FlowsPage() {
   const { queries, actions } = useFlowsUi()
   const { data: flows } = useLiveQuery(queries.flows)
@@ -33,8 +45,18 @@ export function FlowsPage() {
                 <TableCell>{flow.name}</TableCell>
                 <TableCell>{flow.description}</TableCell>
                 <TableCell>
-                  <Button aria-label={`${RUN} ${flow.name}`} onClick={() => actions.run(flow.name, flow.revision)}>{RUN}</Button>
+                  <Button
+                    aria-label={`${RUN} ${flow.name}`}
+                    disabled={flow.placement === "sandbox"}
+                    onClick={() => actions.run(flow.name, flow.revision)}
+                  >
+                    {RUN}
+                  </Button>
+                  {flow.placement === "sandbox" ? <span>{NEEDS_SANDBOX}</span> : null}
                   <Button aria-label={`${EDIT} ${flow.name}`} variant="ghost" onClick={() => actions.edit(flow.name)}>{EDIT}</Button>
+                  <Button asChild variant="ghost">
+                    <Link aria-label={`${CODE} ${flow.name}`} to={codePath(flow.name) as never}>{CODE}</Link>
+                  </Button>
                   <Button aria-label={`${DELETE} ${flow.name}`} variant="ghost" onClick={() => actions.remove(flow.id)}>
                     {DELETE}
                   </Button>
