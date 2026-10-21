@@ -107,6 +107,7 @@ export class RunsStore extends Context.Service<
     readonly list: Effect.Success<ReturnType<typeof runsQuery>>
     readonly readRun: (runId: string) => Effect.Effect<void>
     readonly readList: Effect.Effect<void>
+    readonly warmList: Effect.Effect<void>
     readonly readMore: (runId: string) => Effect.Effect<void>
     /**
      * Follows a run on Cloudflare (`isRemoteRun`) for as long as the store lives: each change of its row in the
@@ -241,14 +242,25 @@ export class RunsStore extends Context.Service<
 
       const readList = Effect.gen(function* () {
         const startedAt = yield* Clock.currentTimeMillis
+        const revision = Option.getOrThrow(yield* view.get(VIEW)).listRevision ?? 0
+        yield* view.update(VIEW, (row) => { row.listReady = false })
         const read = yield* Effect.result(engine.list({ limit: RUN_LIST_LIMIT }))
         if (read._tag === "Failure") return yield* recordRead("list", "unavailable", startedAt)
         const listedIds = new Set(read.success.runs.map((run) => run.runId))
         const stale = (yield* runs.toArray).filter((row) => !listedIds.has(row.id)).map((row) => row.id)
         if (stale.length > 0) yield* Effect.asVoid(runs.delete(stale))
         for (const run of read.success.runs) yield* put(runs, rowOf(run))
+        yield* view.update(VIEW, (row) => { row.listReady = (row.listRevision ?? 0) === revision })
         yield* recordRead("list", "read", startedAt)
       }).pipe(Effect.orDie)
+
+      // A hover reads the engine without opening the page. Its click reuses that snapshot; concurrent hovers share
+      // the read, and engine events below invalidate it even while the list is hidden.
+      const listWarming = yield* Semaphore.make(1)
+      const warmList = Semaphore.withPermits(listWarming, 1)(Effect.gen(function* () {
+        if (Option.getOrThrow(yield* view.get(VIEW)).listReady) return
+        yield* readList
+      }))
 
       // Presentation clock only: no engine polling, dispatch, retry or background job.
       yield* Stream.tick(Duration.seconds(1)).pipe(
@@ -265,6 +277,10 @@ export class RunsStore extends Context.Service<
         Stream.groupedWithin(Number.MAX_SAFE_INTEGER, FOLLOW_EVERY),
         Stream.runForEach((events) =>
           Effect.gen(function* () {
+            yield* view.update(VIEW, (row) => {
+              row.listRevision = (row.listRevision ?? 0) + 1
+              row.listReady = false
+            }).pipe(Effect.orDie)
             const current = Option.getOrThrow(yield* view.get(VIEW))
             if (current.runId !== null) yield* readRun(current.runId, new Set(events.map((event) => event.executionId)))
             if (current.listOpen) yield* readList
@@ -312,6 +328,7 @@ export class RunsStore extends Context.Service<
         list: yield* runsQuery(runs),
         readRun,
         readList,
+        warmList,
         readMore,
         follow,
       })

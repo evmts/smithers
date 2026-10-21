@@ -169,7 +169,7 @@ const runsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/app/runs",
   component: RunsScreen,
-  beforeLoad: (load) => enter(load, local, () => load.context.runs.actions.openList()),
+  beforeLoad: (load) => enter(load, () => load.context.runs.actions.warmList(), () => load.context.runs.actions.openList()),
 })
 
 /** `/app/settings`: the deployment's settings, for an Admin; their rows sync to an Admin's devices. */

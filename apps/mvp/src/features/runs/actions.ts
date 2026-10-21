@@ -24,10 +24,13 @@ const setView = (fields: Partial<Omit<RunView, "id">>) =>
     Effect.orDie,
   )
 
-/** The list's route loader: shows the list, and reads it. */
+/** Hovering the list's link reads it without changing the page. */
+export const warmList = Effect.flatMap(RunsStore, (store) => store.warmList)
+
+/** The list's route loader: shows the list, reusing a warm unless the engine has changed. */
 export const openList = Effect.gen(function* () {
   yield* setView({ listOpen: true })
-  yield* (yield* RunsStore).readList
+  yield* warmList
 })
 
 /** A run's route loader: shows `runId` with nothing selected, reads it, and follows it when it runs on Cloudflare. */

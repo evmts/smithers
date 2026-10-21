@@ -9,6 +9,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { RemoteReadFailed, RemoteRunsClient } from "./api"
 import type { Inspection } from "./schema"
 import { VIEW } from "./schema"
+import { openList } from "./actions"
 import { RunsStore, stateOf } from "./store"
 
 const value = (text: string) => ({ text, bytes: text.length, clipped: false })
@@ -73,7 +74,7 @@ const open = (answers: Answers) => {
   return {
     store,
     page,
-    run: <A, E>(effect: Effect.Effect<A, E>) => runtime.runPromise(effect),
+    run: <A, E>(effect: Effect.Effect<A, E, RunsStore>) => runtime.runPromise(effect),
     publish: (executionId: string) => Effect.runSync(PubSub.publish(events, { executionId, eventType: "x" })),
   }
 }
@@ -253,6 +254,65 @@ describe("a run on Cloudflare", () => {
 })
 
 describe("readList and following the engine", () => {
+  test("a slow engine is warmed without opening the list, and the click reuses it until an engine event", async () => {
+    const started = Effect.runSync(Deferred.make<void>())
+    const pending = Effect.runSync(Deferred.make<{ runs: ReadonlyArray<ReturnType<typeof summary>>; cursor: null }>())
+    let lists = 0
+    const t = open({
+      inspect: () => Effect.die("unused"),
+      // An injected slow engine: the real engine's happy path is in flows-ui/tab.test.ts.
+      list: () => Effect.gen(function* () {
+        lists++
+        yield* Deferred.succeed(started, undefined)
+        return yield* Deferred.await(pending)
+      }),
+    })
+    const warm = t.run(t.store.warmList)
+    await t.run(Deferred.await(started))
+    expect((await t.run(t.store.view.get(VIEW))).pipe(Option.getOrThrow).listOpen).toBe(false)
+    const again = t.run(t.store.warmList)
+    await t.run(Deferred.succeed(pending, { runs: [summary("a")], cursor: null }))
+    await Promise.all([warm, again])
+    await t.run(openList)
+    expect(lists).toBe(1)
+    expect((await t.run(t.store.runs.toArray)).map((row) => row.id)).toEqual(["a"])
+    expect((await t.run(t.store.view.get(VIEW))).pipe(Option.getOrThrow).listOpen).toBe(true)
+    await t.run(t.store.view.update(VIEW, (view) => { view.listOpen = false }))
+    t.publish("a")
+    await vi.waitFor(async () => expect((await t.run(t.store.view.get(VIEW))).pipe(Option.getOrThrow).listReady).toBe(false))
+    await t.run(t.store.warmList)
+    expect(lists).toBe(2)
+  })
+
+  test("an unavailable engine never leaves a warmed list behind", async () => {
+    let lists = 0
+    const t = open({ inspect: () => Effect.die("unused"), list: () => { lists++; return refused("unavailable") } })
+    await t.run(t.store.warmList)
+    await t.run(t.store.warmList)
+    expect(lists).toBe(2)
+  })
+
+  test("an engine event during a slow warm prevents the click from reusing that old snapshot", async () => {
+    const started = Effect.runSync(Deferred.make<void>())
+    const pending = Effect.runSync(Deferred.make<{ runs: ReadonlyArray<ReturnType<typeof summary>>; cursor: null }>())
+    let lists = 0
+    const t = open({
+      inspect: () => Effect.die("unused"),
+      list: () => ++lists === 1
+        ? Effect.andThen(Deferred.succeed(started, undefined), Deferred.await(pending))
+        : Effect.succeed({ runs: [summary("new")], cursor: null }),
+    })
+    const warm = t.run(t.store.warmList)
+    await t.run(Deferred.await(started))
+    t.publish("new")
+    await vi.waitFor(async () => expect((await t.run(t.store.view.get(VIEW))).pipe(Option.getOrThrow).listRevision).toBe(1))
+    await t.run(Deferred.succeed(pending, { runs: [summary("old")], cursor: null }))
+    await warm
+    await t.run(openList)
+    expect(lists).toBe(2)
+    expect((await t.run(t.store.runs.toArray)).map((row) => row.id)).toEqual(["new"])
+  })
+
   test("the list keeps the engine's runs and drops the ones it no longer lists; an event reads the open run and list", async () => {
     let listed = ["a", "b"]
     const reads: Array<string> = []

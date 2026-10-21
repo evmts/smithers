@@ -43,10 +43,11 @@ test("ask: the browser's agent answers through the model endpoint, and the answe
   const question = `Reply with exactly the word: agent-${word}`
   await a.askAndWaitTaken(question)
   await a.expectAnswered(question, `agent-${word}`)
-  // The device's engine made the model calls, each through the metered endpoint's `agent` role; ChatApi answered none
-  // of its own.
-  expect(calls.length, "the agent called the model endpoint").toBeGreaterThan(0)
-  expect(new Set(calls)).toEqual(new Set(["agent"]))
+  // `timeline/summarize` independently calls the `summary` role for settled entries (docs/features/timeline.md).
+  // The answer's own calls still come from this device, only through `agent`; ChatApi answers none of its own.
+  const answerCalls = calls.filter((role) => role !== "summary")
+  expect(answerCalls.length, "the browser's agent called the model endpoint").toBeGreaterThan(0)
+  expect(new Set(answerCalls)).toEqual(new Set(["agent"]))
 })
 
 test("theme by button: the theme button switches the mode, and the device keeps it across a reload", { annotation: [{ type: "theme", description: "light" }, { type: "summary", description: "The theme button switches light and dark, and the device keeps the choice after a reload." }] }, async ({ devices }) => {

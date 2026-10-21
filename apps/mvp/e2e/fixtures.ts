@@ -298,6 +298,6 @@ export const test = base.extend<{ browserLog: Array<string>; spendGuard: void },
 
 export { expect }
 
-// The answer bubble right after the first message that contains `question`.
+// The first answer after the user message that contains `question`.
 export const answerTo = (conversation: Locator, question: string) =>
-  conversation.locator(".sui-chat-message", { hasText: question }).first().locator("xpath=following-sibling::*[1]")
+  conversation.locator('.sui-chat-message[data-role="user"]', { hasText: question }).first().locator('xpath=following-sibling::*[@data-role="assistant"][1]')

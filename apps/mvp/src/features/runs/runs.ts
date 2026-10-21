@@ -16,6 +16,7 @@ import {
   showTab,
   steer,
   stop,
+  warmList,
 } from "./actions"
 import type { RunTab } from "./schema"
 import { RunsStore } from "./store"
@@ -44,6 +45,7 @@ const sentQuery = (writes: SteerWrites["Service"]) => LiveQuery.make((q) => q.fr
 
 /** What a person does, as plain functions. Each returns at once, or with a promise a route loader awaits. */
 export interface RunsActions {
+  readonly warmList: () => Promise<void>
   readonly openList: () => Promise<void>
   readonly openRun: (runId: string) => Promise<void>
   readonly scrub: (at: number | null) => void
@@ -83,6 +85,7 @@ export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries;
           steerSent: steerSent.tanstack,
         },
         actions: {
+          warmList: () => promise(warmList),
           openList: () => promise(openList),
           openRun: (runId) => promise(openRun(runId)),
           scrub: (at) => fork(scrub(at)),

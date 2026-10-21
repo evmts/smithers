@@ -1,3 +1,4 @@
+import { test as deviceTest } from "./devices"
 import { answerTo, expect, test } from "./fixtures"
 import { home, requires } from "./target"
 
@@ -65,14 +66,14 @@ test("reload mid-answer: the browser's agent resumes the answer after the reload
   const answer = answerTo(conversation, question)
   expect((await taken).status()).toBe(202)
   // Unfinished: "Smithers is answering", or text still streaming.
-  await expect(answer.locator('[role="status"], [data-slot="message-response"][data-streaming="true"]')).toHaveCount(1)
+  await expect(answer.locator('[role="status"], [data-slot="message-response"][data-streaming="true"]')).toHaveCount(1, { timeout: 60_000 })
   await page.reload()
 
   // After the reload the same answer finishes: its last line arrives and it stops streaming.
   await expect(answer).toContainText(`end-${word}`, { timeout: 60_000 })
   await expect(answer).toContainText(word)
   await expect(answer.locator('[data-slot="message-response"]')).toHaveAttribute("data-streaming", "false")
-  await expect(conversation.locator(".sui-chat-message", { hasText: question })).toHaveCount(1)
+  await expect(conversation.locator('.sui-chat-message[data-role="user"]', { hasText: question })).toHaveCount(1)
 
   // The composer works after the reload: it opens, and the next question gets its answer.
   const next = `after-${Date.now()}`
@@ -85,12 +86,20 @@ test("reload mid-answer: the browser's agent resumes the answer after the reload
 
 // What a person sees, not just what is in the page: `toBeInViewport`, where `toBeVisible` passes for an element
 // scrolled out of sight. The conversation keeps its newest message in view, as the transcript's bottom anchor intends.
-test("in view: opening chat shows the newest message and the Chat button, and a new question and its answer stay in view", { annotation: { type: "summary", description: "The newest message and its answer stay in view." } }, async ({ page }) => {
-  await page.goto(home())
+deviceTest("in view: opening chat shows the newest message and the Chat button, and a new question and its answer stay in view", { annotation: { type: "summary", description: "The newest message and its answer stay in view." } }, async ({ devices }) => {
+  requires("ownConversation")
+  const [a] = await devices.open("A")
+  const page = a.page
+  // A fresh branch can have no messages. Establish this test's own history, then open it again: opening must show
+  // the newest answer without scrolling, whether the conversation is /app's or a branch's.
+  const previous = `Reply with exactly the word: previous-${devices.word}`
+  await a.askAndWaitTaken(previous)
+  await a.expectAnswered(previous, `previous-${devices.word}`)
+  await a.reload()
   const chatButton = page.getByRole("button", { name: /Chat/ })
   await expect(chatButton).toBeVisible({ timeout: 30_000 })
   const conversation = page.getByRole("region", { name: "Conversation", exact: true })
-  await expect(conversation.locator(".sui-chat-message").last(), "the newest message shows without scrolling").toBeInViewport()
+  await expect(conversation.locator(".sui-chat-message").last(), "the newest message shows without scrolling").toBeInViewport({ timeout: 30_000 })
   await expect(chatButton, "the Chat button shows without scrolling").toBeInViewport()
 
   await chatButton.click()
@@ -99,7 +108,7 @@ test("in view: opening chat shows the newest message and the Chat button, and a 
   const question = `Reply with exactly the word: ${word}`
   await composer.fill(question)
   await composer.press("Enter")
-  await expect(conversation.locator(".sui-chat-message", { hasText: question }), "the question shows where the person looks").toBeInViewport()
+  await expect(a.question(question), "the question shows where the person looks").toBeInViewport()
   await expect(answerTo(conversation, question)).toContainText(word, { timeout: 60_000 })
   await expect(answerTo(conversation, question), "its answer shows without scrolling").toBeInViewport()
   await expect(composer).toBeInViewport()

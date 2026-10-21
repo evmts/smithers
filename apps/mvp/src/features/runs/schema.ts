@@ -55,6 +55,9 @@ export const RunView = Schema.Struct({
   id: Schema.Literal("view"),
   runId: Schema.NullOr(Schema.String),
   listOpen: Schema.Boolean,
+  /** A successful list read, valid until the engine next changes. */
+  listReady: Schema.optionalKey(Schema.Boolean),
+  listRevision: Schema.optionalKey(Schema.Number),
   selected: Schema.NullOr(Schema.String),
   now: Schema.optionalKey(Schema.Number),
   at: Schema.optionalKey(Schema.NullOr(Schema.Number)),

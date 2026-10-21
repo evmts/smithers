@@ -2,6 +2,7 @@ import { Clock, Effect, Metric, Option, Ref, type Types } from "effect"
 import { Clipboard } from "../../clipboard"
 import { FlowDispatch } from "../../flows/dispatch"
 import { MAX_QUESTION_LENGTH } from "./contract"
+import { persistDraft } from "./draftWrite"
 import { askFailures, composerOpens, historyLoads, questionsAsked, syncRetries, unsentActions } from "./metrics"
 import {
   type Asking,
@@ -98,7 +99,7 @@ const keepDraft = (draft: string) =>
       changeComposer((composer) => {
         composer.saved = false
       }),
-      write.persisted.pipe(
+      persistDraft(write, key).pipe(
         Effect.andThen(changeComposer((composer) => {
           if (composer.draft === draft) composer.saved = true
         })),

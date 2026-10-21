@@ -121,6 +121,11 @@ export const CHAT_TELEMETRY = {
     "queued question taken back",
     // The composer's draft: restored from the device, and whether the shown conversation's prompt is shared.
     "chat draft restored",
+    "chat draft saving",
+    "chat draft stored",
+    "chat draft failed",
+    "chat.draft.save",
+    "smithers_web_draft_writes",
     "chat prompt shared",
     // The outbox every write goes through, and the device store (@smthrs/effect-tanstack-db).
     "outbox.send",
@@ -166,6 +171,9 @@ export const CHAT_TELEMETRY = {
     "smithers.chat.door",
     "smithers.chat.outcome",
     "draft.length",
+    "transactionId",
+    "conversation",
+    "stage",
     "shared",
     "role",
   ],

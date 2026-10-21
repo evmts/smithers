@@ -68,6 +68,15 @@ const open = async () => {
 
 type Tab = Awaited<ReturnType<typeof open>>
 
+test("Runs warms the real device's engine without opening its page, then opens the warmed list", async () => {
+  const t = await open()
+  await t.runs.actions.warmList()
+  expect(t.runs.queries.view.toArray[0]).toMatchObject({ listOpen: false, listReady: true })
+  await t.runs.actions.openList()
+  expect(t.runs.queries.view.toArray[0]).toMatchObject({ listOpen: true, listReady: true })
+  expect(t.runs.queries.runs.toArray).toEqual([])
+}, WITHIN)
+
 /** Drafts `hello` from the form to ready: the draft's id. */
 const draftHello = async (t: Tab, draft = drafted(), nth?: number) => {
   t.flows.actions.setName("hello")

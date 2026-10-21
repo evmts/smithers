@@ -1,0 +1,62 @@
+import { createMemoryHistory } from "@tanstack/react-router"
+import { Effect, ManagedRuntime, Metric } from "effect"
+import { afterEach, expect, test, vi } from "vitest"
+import { appLayer, realServices } from "../../boot"
+import { failingWorker, nodeDevice, type NodeDevice } from "../../test/chatApi"
+import { Runs } from "../runs/runs"
+import { reads } from "../runs/store"
+import { Chat } from "./chat"
+import { ChatStore } from "./store"
+
+// The whole browser layer with an injected offline transport. Device storage is real SQLite, as in chatApi.ts;
+// a branch draft must save and restore even when neither ChatApi nor Electric can be reached.
+const runtimes: Array<{ dispose: () => Promise<void> }> = []
+afterEach(async () => {
+  for (const runtime of runtimes.splice(0).reverse()) await runtime.dispose()
+})
+
+const open = async (host: NodeDevice) => {
+  const options = {
+    origin: "http://offline.test",
+    host,
+    fetch: (() => Promise.reject(new TypeError("offline"))) as typeof fetch,
+    reload: () => {},
+  }
+  const runtime = ManagedRuntime.make(appLayer(options, realServices(options)))
+  runtimes.push(runtime)
+  const chat = await runtime.runPromise(Effect.service(Chat))
+  const store = await runtime.runPromise(Effect.service(ChatStore))
+  chat.queries.composer.startSyncImmediate()
+  await runtime.runPromise(store.drafts.restored)
+  await chat.actions.show("branch-draft")
+  return { runtime, chat, composer: () => chat.queries.composer.toArray[0] }
+}
+
+test("an unshared branch keeps a draft saved on the device and restores it after reload while offline", async () => {
+  const host = nodeDevice()
+  const first = await open(host)
+  first.chat.actions.setDraft("typo")
+  first.chat.actions.setDraft("")
+  first.chat.actions.setDraft("half a thought")
+  await vi.waitFor(() => expect(first.composer()).toMatchObject({ draft: "half a thought", saved: true }))
+  expect(host.stored("chat-drafts")).toBe(1)
+  await first.runtime.dispose()
+  const again = await open(host)
+  await vi.waitFor(() => expect(again.composer()).toMatchObject({ draft: "half a thought", saved: true }))
+})
+
+test("Runs hover warms before navigation; a failed engine never leaves a ready snapshot", async () => {
+  const tab = await open(nodeDevice({ engineWorker: failingWorker }))
+  const runs = await tab.runtime.runPromise(Effect.service(Runs))
+  runs.queries.view.startSyncImmediate()
+  const { router } = await import("../../router")
+  router.update({ history: createMemoryHistory({ initialEntries: ["/"] }), context: { ...router.options.context!, runs } })
+  await router.load()
+  const count = () => tab.runtime.runSync(Metric.value(Metric.withAttributes(reads, { read: "list", outcome: "unavailable" }))).count
+  const before = count()
+  await router.preloadRoute({ to: "/app/runs" })
+  expect(count() - before).toBe(1)
+  expect(runs.queries.view.toArray[0]).toMatchObject({ listOpen: false, listReady: false })
+  await runs.actions.openList()
+  expect(runs.queries.view.toArray[0]).toMatchObject({ listOpen: true, listReady: false })
+})

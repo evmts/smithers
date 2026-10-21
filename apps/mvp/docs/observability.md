@@ -67,6 +67,7 @@ Logs:
 | `unsent question handled` | Edit, Discard or Retry on an unsent question | Info | `questionId`, `action` (`edit`, `discard`, `retry`) |
 | `queued question taken back` | the tab's side of Edit on a queued question (`chat/edit`) | Info, Warn for `failed` | `questionId`, `outcome` (`edited`, `sent`, `failed`) |
 | `chat draft restored` | a reload put the kept draft back into the composer | Info | `draft.length` |
+| `chat draft saving`, `chat draft stored`, `chat draft failed` | a private draft write waits for the device, commits or fails; `chat.draft.save` spans the wait and `smithers_web_draft_writes{stage}` counts each stage (`waiting`, `stored`, `failed`) | Info / Warn on failure | `transactionId`, `conversation` (`home`, `branch`); never text or an error message |
 | `chat prompt shared` | the owner shared the branch shown, or took its last share away: the draft became the branch's prompt, or theirs again ([co-editing](features/coedit.md#the-prompt)) | Info | `shared` |
 | `outbox write withdrawn` | `Outbox.withdraw` took a write back (`@smthrs/effect-tanstack-db`) | Info | none of the write's contents |
 | `chat connection changed` | the connection pill changed | Info | `status` (`up`, `offline`, `failed`, `stopped`) |

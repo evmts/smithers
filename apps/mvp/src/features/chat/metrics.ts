@@ -6,6 +6,12 @@ import { Metric } from "effect"
 
 const MILLISECONDS = Metric.exponentialBoundaries({ start: 50, factor: 2, count: 12 })
 
+/** Device draft writes by stage: waiting, stored or failed. */
+export const draftWrites = Metric.counter("smithers_web_draft_writes", {
+  description: "Device draft writes by persistence stage",
+  incremental: true,
+})
+
 /** Composer opens, by `via`: `shortcut` (⌘K or Ctrl+K) or `button`. */
 export const composerOpens = Metric.counter("smithers_web_composer_opens", {
   description: "Times a person opened the chat composer",

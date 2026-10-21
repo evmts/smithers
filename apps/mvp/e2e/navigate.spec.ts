@@ -67,7 +67,7 @@ test("navigate by the agent: asking to open octocat/Spoon-Knife takes the tab th
   neverBlank(await framesOf(a.page))
   // The device's other tab is where it was.
   await expect(b.page).toHaveURL(atAppHome())
-  await expect(b.page.getByRole("main", { name: "App" })).toBeVisible()
+  await b.ready()
   // The answer settles with the flow call as a step: `app/navigate`, done.
   await expect
     .poll(async () => answerRow(await allServerRows(request), question)?.status, { timeout: 60_000 })
