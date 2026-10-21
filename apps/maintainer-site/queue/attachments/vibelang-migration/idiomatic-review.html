@@ -1,0 +1,1765 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Idiomatic VibeLang Review</title>
+<style>
+:root {
+  --bg: #fbfaf7; --fg: #1d1c1a; --muted: #6b675f; --line: #e4e0d8; --card: #ffffff;
+  --add-bg: #e7f6ea; --add-fg: #1f5f2e; --del-bg: #fbe9e7; --del-fg: #8a2b1f; --hunk: #eef1f8; --hunk-fg: #3b4a6b;
+  --will: #8a5a00; --will-bg: #fff3d6; --fix: #1f5f2e; --fix-bg: #e7f6ea;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161513; --fg: #ece9e3; --muted: #a39e94; --line: #2e2c28; --card: #1e1d1a;
+    --add-bg: #15301c; --add-fg: #9fe0ae; --del-bg: #3a1a16; --del-fg: #f2a99d; --hunk: #1f2533; --hunk-fg: #a9b7d6;
+    --will: #ffcf70; --will-bg: #3a2c0c; --fix: #9fe0ae; --fix-bg: #15301c;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161513; --fg: #ece9e3; --muted: #a39e94; --line: #2e2c28; --card: #1e1d1a;
+  --add-bg: #15301c; --add-fg: #9fe0ae; --del-bg: #3a1a16; --del-fg: #f2a99d; --hunk: #1f2533; --hunk-fg: #a9b7d6;
+  --will: #ffcf70; --will-bg: #3a2c0c; --fix: #9fe0ae; --fix-bg: #15301c;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 32px 16px 80px; }
+h1 { font-size: 26px; margin: 0 0 8px; }
+h2 { font-size: 18px; margin: 36px 0 12px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+p, li { color: var(--fg); }
+.muted { color: var(--muted); }
+code { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+th { font-size: 13px; color: var(--muted); font-weight: 600; }
+.tag { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+.tag.will { color: var(--will); background: var(--will-bg); }
+.tag.fix { color: var(--fix); background: var(--fix-bg); }
+details { background: var(--card); border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; }
+summary { cursor: pointer; padding: 8px 12px; display: flex; justify-content: space-between; gap: 12px; }
+summary code { overflow-wrap: anywhere; }
+.n { white-space: nowrap; font: 13px ui-monospace, monospace; }
+.a { color: var(--add-fg); } .r { color: var(--del-fg); }
+pre.diff { margin: 0; overflow-x: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; border-top: 1px solid var(--line); }
+pre.diff div { padding: 0 12px; white-space: pre; }
+.add { background: var(--add-bg); color: var(--add-fg); }
+.del { background: var(--del-bg); color: var(--del-fg); }
+.hunk { background: var(--hunk); color: var(--hunk-fg); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.stat b { display: block; font-size: 20px; }
+.stat span { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Idiomatic VibeLang Review</h1>
+<p>@smthrs/fs and @smthrs/errors rewritten from Effect TypeScript forms into VibeLang's own forms, after reading all 115 user-doc chapters.</p>
+<p class="muted">Workspace <code>idiom</code> on nyc-01 (<code>~/vibe/idiom/smithers</code>), five commits on the T2 base, nothing pushed. FsError is now <code>error FsError { … }</code> and FlowInvoker is a <code>service</code>. SmithersError stays a class because <code>error</code> can't express it yet (gap 1).</p>
+
+<div class="grid">
+  <div class="stat"><b>197 / 197</b><span>@smthrs/fs tests, 100% coverage</span></div>
+  <div class="stat"><b>67 / 67</b><span>@smthrs/errors tests, 100% coverage</span></div>
+  <div class="stat"><b>646 pass</b><span>@smthrs/integrations (GitHub live test skipped without a token)</span></div>
+  <div class="stat"><b>All green</b><span>check, checkTypes, lib, circular, test, fmt, lint, docs</span></div>
+</div>
+
+<h2>Changed identities</h2>
+<ul>
+<li><code>FsError</code>'s tag: <code>"flows/fs/FsError"</code> → <code>"FsError"</code>.</li>
+<li><code>FlowInvoker</code>'s key: <code>"/fs/FlowInvoker"</code> → <code>"@smthrs/fs/src/FlowInvoker#FlowInvoker"</code>.</li>
+<li><code>FlowInvoker.Service</code> and the <code>FsError.Code</code> schema value are gone. Nothing outside the package used them.</li>
+</ul>
+
+<h2>Language gaps</h2>
+<p class="muted">Five need your call on syntax. Five are compiler or doc defects I'm fixing.</p>
+<table>
+<tr><th></th><th>Gap</th><th>Proposed</th></tr>
+<tr><td><span class="tag will">Your call</span></td><td><code>error</code> can't express <code>SmithersError</code>: a custom constructor, a tag chosen at construction (generic <code>Tag</code>), hidden <code>name</code>/<code>_tag</code>/<code>cause</code>, and a <code>toJSON</code> override.</td><td><code>error SmithersError&lt;Tag extends string = "SmithersError"&gt; { code: …; constructor(…) { super({…}, { tag: options.name ?? "SmithersError" }) } override toJSON() {…} }</code></td></tr>
+<tr><td><span class="tag will">Your call</span></td><td>No schema-backed error: <code>error</code> always lowers to <code>Data.TaggedError</code>.</td><td><code>schema error FsError { … }</code> → <code>Schema.TaggedError</code></td></tr>
+<tr><td><span class="tag will">Your call</span></td><td><code>schema</code> declares only structs, so a literal union stays a TypeScript type.</td><td><code>schema Code = "root_missing" | "read_failed" | …</code></td></tr>
+<tr><td><span class="tag will">Your call</span></td><td>A service whose implementation is a plain value has no <code>service</code> form.</td><td><code>service Prefix: string</code></td></tr>
+<tr><td><span class="tag will">Your call</span></td><td>A hatch can't call a plain function from the same file (D229, EK4405), so <code>try((project, schema) =&gt; project(schema), mapper, projectSchema, schema)</code>.</td><td><code>try(projectSchema, mapper, schema)</code></td></tr>
+<tr><td><span class="tag fix">Fixing</span></td><td>A throw expression in a plain-contract function becomes an Effect (EK2003), against D263, so a <code>match</code> arm in plain code can't throw.</td><td>Compile it as a JavaScript throw, in <code>do</code> and <code>match</code> arms too.</td></tr>
+<tr><td><span class="tag fix">Fixing</span></td><td>A catch expression doesn't pass its contextual type to its operands, so literal <code>_tag</code>s widen.</td><td>Type both sides from the contextual type.</td></tr>
+<tr><td><span class="tag fix">Fixing</span></td><td>An exhaustive <code>match</code> without <code>default</code> emits an unreachable branch, so 100% branch coverage is impossible.</td><td>Lower the last arm of an exhaustive match unconditionally.</td></tr>
+<tr><td><span class="tag fix">Fixing</span></td><td>EK2001 garbles the member name in its message when the member is typed by context.</td><td>Print the member name.</td></tr>
+<tr><td><span class="tag fix">Fixing</span></td><td><code>Cause.findErrorOption</code> can't be called as a method (its first parameter is <code>input</code>, not <code>self</code>); the docs show <code>trusted()</code> only for <code>.ts</code>.</td><td>Add it to the data-methods table; document <code>trusted()</code> in <code>.vibe</code>.</td></tr>
+</table>
+
+<h2>Source and examples</h2>
+<details open><summary><code>apps/site/src/content/docs/docs/reference/api/fs.mdx</code><span class="n"><span class="a">+26</span> <span class="r">−26</span></span></summary><pre class="diff"><div class="hunk">@@ -300,26 +300,26 @@</div>
+<div class="ctx"> | `flow`  | `Flow.Any` | The loaded flow, from [@smthrs/core](/docs/reference/api/core/).                |</div>
+<div class="ctx"> | `input` | `unknown`  | The decoded input; see `CommandSurface` for snapshot semantics. |</div>
+<div class="ctx"> </div>
+<div class="del">-### `Service`</div>
+<div class="del">-</div>
+<div class="del">-Executes a materialized flow.</div>
+<div class="del">-</div>
+<div class="del">-| Field    | Type                                                          | Description                 |</div>
+<div class="add">+### `FlowInvoker`</div>
+<div class="add">+</div>
+<div class="add">+```ts</div>
+<div class="add">+service FlowInvoker {</div>
+<div class="add">+  invoke(invocation: Invocation): unknown!FsError</div>
+<div class="add">+}</div>
+<div class="add">+```</div>
+<div class="add">+</div>
+<div class="add">+Executes a materialized flow. The VibeLang `service` declaration is both the</div>
+<div class="add">+service key, `&quot;@smthrs/fs/src/FlowInvoker#FlowInvoker&quot;`, and, as a type, the</div>
+<div class="add">+implementation&#x27;s shape.</div>
+<div class="add">+</div>
+<div class="add">+| Member   | Type                                                          | Description                 |</div>
+<div class="ctx"> | -------- | ------------------------------------------------------------- | --------------------------- |</div>
+<div class="ctx"> | `invoke` | `(invocation: Invocation) =&gt; Effect.Effect&lt;unknown, FsError&gt;` | Runs one materialized flow. |</div>
+<div class="ctx"> </div>
+<div class="del">-### `FlowInvoker`</div>
+<div class="del">-</div>
+<div class="del">-```ts</div>
+<div class="del">-class FlowInvoker extends Context.Service&lt;FlowInvoker, Service&gt;()(&quot;/fs/FlowInvoker&quot;)</div>
+<div class="del">-```</div>
+<div class="del">-</div>
+<div class="del">-The flow invocation service tag, keyed `&quot;/fs/FlowInvoker&quot;`.</div>
+<div class="del">-</div>
+<div class="ctx"> ### `FlowInvoker.make`</div>
+<div class="ctx"> </div>
+<div class="ctx"> ```ts</div>
+<div class="del">-;((implementation: Service) =&gt; Service)</div>
+<div class="add">+;((implementation: FlowInvoker) =&gt; FlowInvoker)</div>
+<div class="ctx"> ```</div>
+<div class="ctx"> </div>
+<div class="ctx"> Constructs a frozen flow invoker from an implementation. The implementation</div>
+<div class="hunk">@@ -330,7 +330,7 @@</div>
+<div class="ctx"> ### `FlowInvoker.makeNoop`</div>
+<div class="ctx"> </div>
+<div class="ctx"> ```ts</div>
+<div class="del">-;((overrides?: Partial&lt;Service&gt;) =&gt; Service)</div>
+<div class="add">+;((overrides?: Partial&lt;FlowInvoker&gt;) =&gt; FlowInvoker)</div>
+<div class="ctx"> ```</div>
+<div class="ctx"> </div>
+<div class="ctx"> Constructs an invoker that fails every invocation with</div>
+<div class="hunk">@@ -341,7 +341,7 @@</div>
+<div class="ctx"> ### `FlowInvoker.layerNoop`</div>
+<div class="ctx"> </div>
+<div class="ctx"> ```ts</div>
+<div class="del">-;((overrides?: Partial&lt;Service&gt;) =&gt; Layer.Layer&lt;FlowInvoker&gt;)</div>
+<div class="add">+;((overrides?: Partial&lt;FlowInvoker&gt;) =&gt; Layer.Layer&lt;FlowInvoker&gt;)</div>
+<div class="ctx"> ```</div>
+<div class="ctx"> </div>
+<div class="ctx"> Provides `makeNoop` as the `FlowInvoker` layer.</div>
+<div class="hunk">@@ -371,23 +371,23 @@</div>
+<div class="ctx">   | &quot;invocation_unavailable&quot;</div>
+<div class="ctx"> ```</div>
+<div class="ctx"> </div>
+<div class="del">-Stable failure codes for routing, parsing, loading, and decoding, also</div>
+<div class="del">-exported as a `Schema.Literals` value for decoding. For the meaning and</div>
+<div class="del">-trigger of each code, see the</div>
+<div class="add">+Stable failure codes for routing, parsing, loading, and decoding. For the</div>
+<div class="add">+meaning and trigger of each code, see the</div>
+<div class="ctx"> [error codes table](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/fs/docs/contract.md#error-codes).</div>
+<div class="ctx"> </div>
+<div class="ctx"> ### `FsError`</div>
+<div class="ctx"> </div>
+<div class="ctx"> ```ts</div>
+<div class="del">-class FsError extends Schema.TaggedError&lt;FsError&gt;()(&quot;flows/fs/FsError&quot;, {</div>
+<div class="del">-  code: Code,</div>
+<div class="del">-  method: Schema.String,</div>
+<div class="del">-  description: Schema.String,</div>
+<div class="del">-  path: Schema.optional(Schema.String)</div>
+<div class="del">-})</div>
+<div class="add">+error FsError {</div>
+<div class="add">+  code: Code</div>
+<div class="add">+  method: string</div>
+<div class="add">+  description: string</div>
+<div class="add">+  path?: string | undefined</div>
+<div class="add">+}</div>
+<div class="ctx"> ```</div>
+<div class="ctx"> </div>
+<div class="del">-A recoverable file-routing failure. `method` names the surface that failed so</div>
+<div class="add">+A VibeLang `error` declaration: a tagged error class whose `_tag` is</div>
+<div class="add">+`&quot;FsError&quot;`, with readonly fields. A recoverable file-routing failure. `method` names the surface that failed so</div>
+<div class="ctx"> a CLI or an agent can report the origin without a stack trace. Raw argv,</div>
+<div class="ctx"> input values, output values, schema issues, and implementation causes are</div>
+<div class="ctx"> deliberately not retained at this boundary.</div>
+<div class="ctx">&nbsp;</div></pre></details><details open><summary><code>packages/errors/examples/handling.vibe</code><span class="n"><span class="a">+2</span> <span class="r">−2</span></span></summary><pre class="diff"><div class="hunk">@@ -34,11 +34,11 @@</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="ctx"> /**</div>
+<div class="del">- * Recovers a failure by its tag and reads its machine-readable code.</div>
+<div class="add">+ * Recovers the failure and reads its machine-readable code.</div>
+<div class="ctx">  *</div>
+<div class="ctx">  * @returns The classified code; nothing escapes.</div>
+<div class="ctx">  * @since 1.0.0</div>
+<div class="ctx">  */</div>
+<div class="ctx"> export function recoverFailure(): string!! {</div>
+<div class="del">-  return Effect.catchTag(raiseFailure(), &quot;SmithersError&quot;, (failure) =&gt; `Recovered ${failure.code}`)</div>
+<div class="add">+  return raiseFailure() catch (failure) =&gt; `Recovered ${failure.code}`</div>
+<div class="ctx"> }</div>
+<div class="ctx">&nbsp;</div></pre></details><details open><summary><code>packages/errors/src/SmithersError.vibe</code><span class="n"><span class="a">+7</span> <span class="r">−8</span></span></summary><pre class="diff"><div class="hunk">@@ -12,7 +12,6 @@</div>
+<div class="ctx">  * @since 1.0.0</div>
+<div class="ctx">  */</div>
+<div class="ctx"> </div>
+<div class="del">-import * as Data from &quot;effect/Data&quot;</div>
+<div class="ctx"> import { ERROR_REFERENCE_URL, isSmithersErrorCode, type SmithersErrorCode } from &quot;./ErrorCode.ts&quot;</div>
+<div class="ctx"> </div>
+<div class="ctx"> /**</div>
+<div class="hunk">@@ -29,16 +28,16 @@</div>
+<div class="ctx">    * always include the key. Redact provider text such as a bot token in a URL</div>
+<div class="ctx">    * or an API key in a message before attaching it.</div>
+<div class="ctx">    */</div>
+<div class="del">-  readonly cause?: unknown</div>
+<div class="add">+  cause?: unknown</div>
+<div class="ctx">   /** Set `false` to leave the documentation URL out of the message. */</div>
+<div class="del">-  readonly includeDocsUrl?: boolean</div>
+<div class="add">+  includeDocsUrl?: boolean</div>
+<div class="ctx">   /**</div>
+<div class="ctx">    * The `name` the error reports and its Effect `_tag`. Defaults to</div>
+<div class="ctx">    * `&quot;SmithersError&quot;`. Both are installed as non-enumerable own properties,</div>
+<div class="ctx">    * like `Error.prototype.name`, and `details` is an own property only when</div>
+<div class="ctx">    * the caller supplies one.</div>
+<div class="ctx">    */</div>
+<div class="del">-  readonly name?: Tag</div>
+<div class="add">+  name?: Tag</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="ctx"> /**</div>
+<div class="hunk">@@ -47,11 +46,11 @@</div>
+<div class="ctx">  */</div>
+<div class="ctx"> interface SmithersErrorFields {</div>
+<div class="ctx">   /** The machine-readable classification. */</div>
+<div class="del">-  readonly code: SmithersErrorCode</div>
+<div class="add">+  code: SmithersErrorCode</div>
+<div class="ctx">   /** The message without the appended documentation URL. */</div>
+<div class="del">-  readonly summary: string</div>
+<div class="add">+  summary: string</div>
+<div class="ctx">   /** Where the code is documented. */</div>
+<div class="del">-  readonly docsUrl: string</div>
+<div class="add">+  docsUrl: string</div>
+<div class="ctx">   /**</div>
+<div class="ctx">    * Caller-supplied context. The top-level record is copied and frozen at</div>
+<div class="ctx">    * construction, so adding, removing, or replacing a top-level key on the</div>
+<div class="hunk">@@ -60,7 +59,7 @@</div>
+<div class="ctx">    * nested record. Callers must redact credentials. Absent as an own property</div>
+<div class="ctx">    * when the caller supplies none.</div>
+<div class="ctx">    */</div>
+<div class="del">-  readonly details?: Readonly&lt;Record&lt;string, unknown&gt;&gt; | undefined</div>
+<div class="add">+  details?: Readonly&lt;Record&lt;string, unknown&gt;&gt; | undefined</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="ctx"> const hidden = (target: object, key: PropertyKey, value: unknown): void =&gt; {</div>
+<div class="ctx">&nbsp;</div></pre></details><details open><summary><code>packages/smithers/agent/fs/src/Command.vibe</code><span class="n"><span class="a">+4</span> <span class="r">−8</span></span></summary><pre class="diff"><div class="hunk">@@ -80,7 +80,7 @@</div>
+<div class="ctx"> </div>
+<div class="ctx"> function validateDecoded(schema: Schema.Top, value: unknown, field: &quot;input&quot; | &quot;output&quot;): unknown!FsError {</div>
+<div class="ctx">   const decoded = SchemaBridge.recover(</div>
+<div class="del">-    () =&gt; Schema.decodeUnknownEffect(Schema.toType(schema))(snapshotDecoded(value)),</div>
+<div class="add">+    Schema.decodeUnknownEffect(Schema.toType(schema))(snapshotDecoded(value)),</div>
+<div class="ctx">     () =&gt;</div>
+<div class="ctx">       new FsError({</div>
+<div class="ctx">         code: &quot;decode_failed&quot;,</div>
+<div class="hunk">@@ -91,8 +91,6 @@</div>
+<div class="ctx">   return snapshotDecoded(decoded)</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="del">-const descriptionOf = (route: Route.Route): string | undefined =&gt; Option.getOrUndefined(route.description)</div>
+<div class="del">-</div>
+<div class="ctx"> const routeArgv = (argv: ReadonlyArray&lt;string&gt;): ReadonlyArray&lt;string&gt; =&gt; {</div>
+<div class="ctx">   const first = argv[0]</div>
+<div class="ctx">   if (first === undefined || !first.includes(&quot;/&quot;)) return argv</div>
+<div class="hunk">@@ -123,16 +121,14 @@</div>
+<div class="ctx">     return Object.freeze({ route: resolved.route, flow, argv, input })</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="del">-  const invoke = (route: Route.Route, flow: Loaded, input: unknown): unknown!FsError!FlowInvoker.FlowInvoker =&gt; {</div>
+<div class="del">-    const invoker = FlowInvoker.FlowInvoker()</div>
+<div class="del">-    return invoker.invoke(Object.freeze({ name: route.name, flow, input }))</div>
+<div class="del">-  }</div>
+<div class="add">+  const invoke = (route: Route.Route, flow: Loaded, input: unknown) =&gt;</div>
+<div class="add">+    FlowInvoker.FlowInvoker.invoke(Object.freeze({ name: route.name, flow, input }))</div>
+<div class="ctx"> </div>
+<div class="ctx">   const listed = Object.freeze(</div>
+<div class="ctx">     CommandTree.traverse(tree).map((route) =&gt;</div>
+<div class="ctx">       Object.freeze({</div>
+<div class="ctx">         name: route.name,</div>
+<div class="del">-        description: descriptionOf(route)</div>
+<div class="add">+        description: route.description.getOrUndefined()</div>
+<div class="ctx">       })</div>
+<div class="ctx">     )</div>
+<div class="ctx">   )</div>
+<div class="ctx">&nbsp;</div></pre></details><details open><summary><code>packages/smithers/agent/fs/src/CommandTree.vibe</code><span class="n"><span class="a">+11</span> <span class="r">−11</span></span></summary><pre class="diff"><div class="hunk">@@ -5,6 +5,7 @@</div>
+<div class="ctx">  */</div>
+<div class="ctx"> </div>
+<div class="ctx"> import * as ReadonlyMap from &quot;@smthrs/canonical/ReadonlyMap&quot;</div>
+<div class="add">+import { trusted } from &quot;vibelang-runtime&quot;</div>
+<div class="ctx"> import { FsError } from &quot;./FsError.vibe&quot;</div>
+<div class="ctx"> import * as Boundary from &quot;./internal/Boundary.ts&quot;</div>
+<div class="ctx"> import * as CommandLine from &quot;./internal/CommandLine.vibe&quot;</div>
+<div class="hunk">@@ -69,7 +70,9 @@</div>
+<div class="ctx"> const resourceLimit = (method: string, description: string): FsError =&gt;</div>
+<div class="ctx">   new FsError({ code: &quot;resource_limit&quot;, method, description })</div>
+<div class="ctx"> </div>
+<div class="del">-const routeReferences = (input: ReadonlyArray&lt;Route.Route&gt;): ReadonlyArray&lt;Route.Route&gt; =&gt; {</div>
+<div class="add">+// Every reflective operation is inside the try, and every throw leaves it as an</div>
+<div class="add">+// FsError, so the trusted wrapper&#x27;s only expected failure is FsError.</div>
+<div class="add">+const routeReferences = trusted((input: ReadonlyArray&lt;Route.Route&gt;): ReadonlyArray&lt;Route.Route&gt; =&gt; {</div>
+<div class="ctx">   try {</div>
+<div class="ctx">     if (!Array.isArray(input) || Object.getPrototypeOf(input) !== Array.prototype) {</div>
+<div class="ctx">       throw new FsError({</div>
+<div class="hunk">@@ -103,14 +106,13 @@</div>
+<div class="ctx">     }</div>
+<div class="ctx">     return Object.freeze(output)</div>
+<div class="ctx">   } catch (cause) {</div>
+<div class="del">-    if (cause instanceof FsError) throw cause</div>
+<div class="del">-    throw new FsError({</div>
+<div class="add">+    throw cause instanceof FsError ? cause : new FsError({</div>
+<div class="ctx">       code: &quot;invalid_route&quot;,</div>
+<div class="ctx">       method: &quot;CommandTree.make&quot;,</div>
+<div class="ctx">       description: &quot;Routes could not be inspected without executing user code&quot;</div>
+<div class="ctx">     })</div>
+<div class="ctx">   }</div>
+<div class="del">-}</div>
+<div class="add">+}, [FsError])</div>
+<div class="ctx"> </div>
+<div class="ctx"> const freezeTree = (root: MutableTree): CommandTree =&gt; {</div>
+<div class="ctx">   const frozen = new Map&lt;MutableTree, CommandTree&gt;()</div>
+<div class="hunk">@@ -126,7 +128,7 @@</div>
+<div class="ctx">     frozen.set(</div>
+<div class="ctx">       frame.node,</div>
+<div class="ctx">       Object.freeze({</div>
+<div class="del">-        route: Option.isSome(frame.node.route) ? Object.freeze(Option.some(frame.node.route.value)) : Option.none(),</div>
+<div class="add">+        route: frame.node.route.isSome() ? Object.freeze(Option.some(frame.node.route.value)) : Option.none(),</div>
+<div class="ctx">         children: ReadonlyMap.make(entries)</div>
+<div class="ctx">       })</div>
+<div class="ctx">     )</div>
+<div class="hunk">@@ -144,9 +146,7 @@</div>
+<div class="ctx">  * @since 0.1.0</div>
+<div class="ctx">  */</div>
+<div class="ctx"> export function make(input: ReadonlyArray&lt;Route.Route&gt;): CommandTree!FsError {</div>
+<div class="del">-  // `routeReferences` catches every reflective operation and normalizes</div>
+<div class="del">-  // every throw before it leaves the synchronous boundary.</div>
+<div class="del">-  const references = try((references, input) =&gt; references(input), (cause) =&gt; cause as FsError, routeReferences, input)</div>
+<div class="add">+  const references = routeReferences(input)</div>
+<div class="ctx">   const routes = forEach(references, Route.snapshot)</div>
+<div class="ctx">   const totalSegments = routes.reduce((total, route) =&gt; total + route.segments.length, 0)</div>
+<div class="ctx">   if (totalSegments &gt; maximumTotalSegments) {</div>
+<div class="hunk">@@ -164,7 +164,7 @@</div>
+<div class="ctx">       }</div>
+<div class="ctx">       node = child</div>
+<div class="ctx">     }</div>
+<div class="del">-    if (Option.isSome(node.route)) {</div>
+<div class="add">+    if (node.route.isSome()) {</div>
+<div class="ctx">       throw new FsError({</div>
+<div class="ctx">         code: &quot;duplicate_route&quot;,</div>
+<div class="ctx">         method: &quot;CommandTree.make&quot;,</div>
+<div class="hunk">@@ -212,7 +212,7 @@</div>
+<div class="ctx">     const child = node.children.get(segment.normalize(&quot;NFC&quot;))</div>
+<div class="ctx">     if (child === undefined) break</div>
+<div class="ctx">     node = child</div>
+<div class="del">-    if (Option.isSome(child.route)) matched = { route: child.route.value, consumed: index + 1 }</div>
+<div class="add">+    if (child.route.isSome()) matched = { route: child.route.value, consumed: index + 1 }</div>
+<div class="ctx">   }</div>
+<div class="ctx">   if (matched === undefined) {</div>
+<div class="ctx">     throw new FsError({</div>
+<div class="hunk">@@ -253,7 +253,7 @@</div>
+<div class="ctx">   const stack: Array&lt;CommandTree&gt; = [tree]</div>
+<div class="ctx">   while (stack.length &gt; 0) {</div>
+<div class="ctx">     const node = stack.pop()!</div>
+<div class="del">-    if (Option.isSome(node.route)) routes.push(node.route.value)</div>
+<div class="add">+    if (node.route.isSome()) routes.push(node.route.value)</div>
+<div class="ctx">     const children = Array.from(node.children.keys()).sort().reverse()</div>
+<div class="ctx">     for (const segment of children) stack.push(node.children.get(segment)!)</div>
+<div class="ctx">   }</div>
+<div class="ctx">&nbsp;</div></pre></details><details open><summary><code>packages/smithers/agent/fs/src/FileRouter.vibe</code><span class="n"><span class="a">+8</span> <span class="r">−16</span></span></summary><pre class="diff"><div class="hunk">@@ -54,21 +54,13 @@</div>
+<div class="ctx"> const failure = (code: FsError[&quot;code&quot;], description: string): FsError =&gt;</div>
+<div class="ctx">   new FsError({ code, method: &quot;FileRouter.scan&quot;, description })</div>
+<div class="ctx"> </div>
+<div class="del">-const discoveryFailure = (cause: unknown): FsError =&gt; {</div>
+<div class="del">-  if (cause instanceof DiscoveryError) {</div>
+<div class="del">-    switch (cause.code) {</div>
+<div class="del">-      case &quot;root_missing&quot;:</div>
+<div class="del">-        return failure(&quot;root_missing&quot;, &quot;The flow root does not exist&quot;)</div>
+<div class="del">-      case &quot;invalid_root&quot;:</div>
+<div class="del">-        return failure(&quot;invalid_root&quot;, &quot;The flow root is not a readable directory&quot;)</div>
+<div class="del">-      case &quot;read_failed&quot;:</div>
+<div class="del">-        return failure(&quot;read_failed&quot;, &quot;The flow root could not be read&quot;)</div>
+<div class="del">-      case &quot;unknown&quot;:</div>
+<div class="del">-        return failure(&quot;discovery_failed&quot;, &quot;Flow discovery failed&quot;)</div>
+<div class="del">-    }</div>
+<div class="add">+const discoveryFailure = (cause: unknown): FsError =&gt;</div>
+<div class="add">+  match (cause) {</div>
+<div class="add">+    when DiscoveryError and { code: &quot;root_missing&quot; }: failure(&quot;root_missing&quot;, &quot;The flow root does not exist&quot;);</div>
+<div class="add">+    when DiscoveryError and { code: &quot;invalid_root&quot; }: failure(&quot;invalid_root&quot;, &quot;The flow root is not a readable directory&quot;);</div>
+<div class="add">+    when DiscoveryError and { code: &quot;read_failed&quot; }: failure(&quot;read_failed&quot;, &quot;The flow root could not be read&quot;);</div>
+<div class="add">+    default: failure(&quot;discovery_failed&quot;, &quot;Flow discovery failed&quot;);</div>
+<div class="ctx">   }</div>
+<div class="del">-  return failure(&quot;discovery_failed&quot;, &quot;Flow discovery failed&quot;)</div>
+<div class="del">-}</div>
+<div class="ctx"> </div>
+<div class="ctx"> const readFailure = (): FsError =&gt; failure(&quot;read_failed&quot;, &quot;A route companion could not be inspected&quot;)</div>
+<div class="ctx"> </div>
+<div class="hunk">@@ -113,7 +105,7 @@</div>
+<div class="ctx">   // Discovery confines entries, not companions: a UI module is recorded only</div>
+<div class="ctx">   // when its real path stays inside the root&#x27;s real path.</div>
+<div class="ctx">   const withinRoot = (location: string): boolean!FsError =&gt; {</div>
+<div class="del">-    const [realRoot, real] = all([fileSystem.realPath(root), fileSystem.realPath(location)]) catch () =&gt; throw readFailure()</div>
+<div class="add">+    const [realRoot, real] = all([fileSystem.realPath(root), fileSystem.realPath(location)]) catch throw readFailure()</div>
+<div class="ctx">     return real.startsWith(path.join(realRoot, path.sep))</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="hunk">@@ -137,7 +129,7 @@</div>
+<div class="ctx">     }</div>
+<div class="ctx">     const directory = path.dirname(sourcePath)</div>
+<div class="ctx">     const uiPath = path.join(directory, &quot;ui.tsx&quot;)</div>
+<div class="del">-    const hasUi = (fileSystem.exists(uiPath) catch () =&gt; throw readFailure()) &amp;&amp; withinRoot(uiPath)</div>
+<div class="add">+    const hasUi = (fileSystem.exists(uiPath) catch throw readFailure()) &amp;&amp; withinRoot(uiPath)</div>
+<div class="ctx">     const route = Route.snapshot({</div>
+<div class="ctx">       name,</div>
+<div class="ctx">       segments,</div>
+<div class="ctx">&nbsp;</div></pre></details><details open><summary><code>packages/smithers/agent/fs/src/FlowInvoker.vibe</code><span class="n"><span class="a">+8</span> <span class="r">−16</span></span></summary><pre class="diff"><div class="hunk">@@ -25,22 +25,14 @@</div>
+<div class="ctx">  * The projections in this package never execute a flow themselves: the harness</div>
+<div class="ctx">  * owns the run loop, permissions, and durability, so it supplies this service.</div>
+<div class="ctx">  *</div>
+<div class="del">- * @category models</div>
+<div class="del">- * @since 0.1.0</div>
+<div class="del">- */</div>
+<div class="del">-export interface Service {</div>
+<div class="del">-  invoke: (invocation: Invocation) =&gt; unknown!FsError</div>
+<div class="del">-}</div>
+<div class="del">-</div>
+<div class="del">-/**</div>
+<div class="del">- * The flow invocation service.</div>
+<div class="del">- *</div>
+<div class="ctx">  * @category services</div>
+<div class="ctx">  * @since 0.1.0</div>
+<div class="ctx">  */</div>
+<div class="del">-export class FlowInvoker extends Context.Service&lt;FlowInvoker, Service&gt;()(&quot;/fs/FlowInvoker&quot;) {}</div>
+<div class="add">+export service FlowInvoker {</div>
+<div class="add">+  invoke(invocation: Invocation): unknown!FsError</div>
+<div class="add">+}</div>
+<div class="ctx"> </div>
+<div class="del">-const ownInvoke = (input: unknown, description: string): Service[&quot;invoke&quot;] =&gt; {</div>
+<div class="add">+const ownInvoke = (input: unknown, description: string): FlowInvoker[&quot;invoke&quot;] =&gt; {</div>
+<div class="ctx">   if (typeof input !== &quot;object&quot; || input === null) throw new TypeError(description)</div>
+<div class="ctx">   const descriptor = Object.getOwnPropertyDescriptor(input, &quot;invoke&quot;)</div>
+<div class="ctx">   if (descriptor === undefined || !(&quot;value&quot; in descriptor) || typeof descriptor.value !== &quot;function&quot;) {</div>
+<div class="hunk">@@ -55,9 +47,9 @@</div>
+<div class="ctx">  * @category constructors</div>
+<div class="ctx">  * @since 0.1.0</div>
+<div class="ctx">  */</div>
+<div class="del">-export const make = (implementation: Service): Service =&gt; {</div>
+<div class="add">+export const make = (implementation: FlowInvoker): FlowInvoker =&gt; {</div>
+<div class="ctx">   const invoke = ownInvoke(implementation, &quot;FlowInvoker implementations require an own invoke function&quot;)</div>
+<div class="del">-  return Object.freeze(FlowInvoker.of({ invoke }))</div>
+<div class="add">+  return Object.freeze({ invoke })</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="ctx"> /**</div>
+<div class="hunk">@@ -66,7 +58,7 @@</div>
+<div class="ctx">  * @category constructors</div>
+<div class="ctx">  * @since 0.1.0</div>
+<div class="ctx">  */</div>
+<div class="del">-export const makeNoop = (overrides: Partial&lt;Service&gt; = {}): Service =&gt; {</div>
+<div class="add">+export const makeNoop = (overrides: Partial&lt;FlowInvoker&gt; = {}): FlowInvoker =&gt; {</div>
+<div class="ctx">   const descriptor = Object.getOwnPropertyDescriptor(overrides, &quot;invoke&quot;)</div>
+<div class="ctx">   if (descriptor !== undefined &amp;&amp; (!(&quot;value&quot; in descriptor) || typeof descriptor.value !== &quot;function&quot;)) {</div>
+<div class="ctx">     throw new TypeError(&quot;FlowInvoker overrides require an own invoke function&quot;)</div>
+<div class="hunk">@@ -89,5 +81,5 @@</div>
+<div class="ctx">  * @category layers</div>
+<div class="ctx">  * @since 0.1.0</div>
+<div class="ctx">  */</div>
+<div class="del">-export const layerNoop = (overrides: Partial&lt;Service&gt; = {}): Layer.Layer&lt;FlowInvoker&gt; =&gt;</div>
+<div class="add">+export const layerNoop = (overrides: Partial&lt;FlowInvoker&gt; = {}): Layer.Layer&lt;FlowInvoker&gt; =&gt;</div>
+<div class="ctx">   Layer.succeed(FlowInvoker, makeNoop(overrides))</div>
+<div class="ctx">&nbsp;</div></pre></details><details open><summary><code>packages/smithers/agent/fs/src/FsError.vibe</code><span class="n"><span class="a">+22</span> <span class="r">−31</span></span></summary><pre class="diff"><div class="hunk">@@ -10,31 +10,22 @@</div>
+<div class="ctx">  * @category models</div>
+<div class="ctx">  * @since 0.1.0</div>
+<div class="ctx">  */</div>
+<div class="del">-export const Code = Schema.Literals([</div>
+<div class="del">-  &quot;root_missing&quot;,</div>
+<div class="del">-  &quot;read_failed&quot;,</div>
+<div class="del">-  &quot;invalid_root&quot;,</div>
+<div class="del">-  &quot;discovery_failed&quot;,</div>
+<div class="del">-  &quot;parse_failed&quot;,</div>
+<div class="del">-  &quot;unknown_command&quot;,</div>
+<div class="del">-  &quot;duplicate_route&quot;,</div>
+<div class="del">-  &quot;invalid_route&quot;,</div>
+<div class="del">-  &quot;resource_limit&quot;,</div>
+<div class="del">-  &quot;load_failed&quot;,</div>
+<div class="del">-  &quot;unsupported_body&quot;,</div>
+<div class="del">-  &quot;unsupported_schema&quot;,</div>
+<div class="del">-  &quot;decode_failed&quot;,</div>
+<div class="del">-  &quot;encode_failed&quot;,</div>
+<div class="del">-  &quot;invocation_unavailable&quot;</div>
+<div class="del">-])</div>
+<div class="del">-</div>
+<div class="del">-/**</div>
+<div class="del">- * Stable failure codes for routing, parsing, loading, and decoding.</div>
+<div class="del">- *</div>
+<div class="del">- * @category models</div>
+<div class="del">- * @since 0.1.0</div>
+<div class="del">- */</div>
+<div class="del">-export type Code = typeof Code.Type</div>
+<div class="add">+export type Code =</div>
+<div class="add">+  | &quot;root_missing&quot;</div>
+<div class="add">+  | &quot;read_failed&quot;</div>
+<div class="add">+  | &quot;invalid_root&quot;</div>
+<div class="add">+  | &quot;discovery_failed&quot;</div>
+<div class="add">+  | &quot;parse_failed&quot;</div>
+<div class="add">+  | &quot;unknown_command&quot;</div>
+<div class="add">+  | &quot;duplicate_route&quot;</div>
+<div class="add">+  | &quot;invalid_route&quot;</div>
+<div class="add">+  | &quot;resource_limit&quot;</div>
+<div class="add">+  | &quot;load_failed&quot;</div>
+<div class="add">+  | &quot;unsupported_body&quot;</div>
+<div class="add">+  | &quot;unsupported_schema&quot;</div>
+<div class="add">+  | &quot;decode_failed&quot;</div>
+<div class="add">+  | &quot;encode_failed&quot;</div>
+<div class="add">+  | &quot;invocation_unavailable&quot;</div>
+<div class="ctx"> </div>
+<div class="ctx"> /**</div>
+<div class="ctx">  * A recoverable file-routing failure.</div>
+<div class="hunk">@@ -46,9 +37,9 @@</div>
+<div class="ctx">  * @category errors</div>
+<div class="ctx">  * @since 0.1.0</div>
+<div class="ctx">  */</div>
+<div class="del">-export class FsError extends Schema.TaggedError&lt;FsError&gt;()(&quot;flows/fs/FsError&quot;, {</div>
+<div class="del">-  code: Code,</div>
+<div class="del">-  method: Schema.String,</div>
+<div class="del">-  description: Schema.String,</div>
+<div class="del">-  path: Schema.optional(Schema.String)</div>
+<div class="del">-}) {}</div>
+<div class="add">+export error FsError {</div>
+<div class="add">+  code: Code</div>
+<div class="add">+  method: string</div>
+<div class="add">+  description: string</div>
+<div class="add">+  path?: string | undefined</div>
+<div class="add">+}</div>
+<div class="ctx">&nbsp;</div></pre></details><details open><summary><code>packages/smithers/agent/fs/src/Incur.vibe</code><span class="n"><span class="a">+21</span> <span class="r">−29</span></span></summary><pre class="diff"><div class="hunk">@@ -20,28 +20,24 @@</div>
+<div class="ctx"> // Incur&#x27;s ok and error callbacks throw transport control signals, so each</div>
+<div class="ctx"> // settles the call as a defect, outside the program whose failures are</div>
+<div class="ctx"> // sanitized.</div>
+<div class="del">-function execute(selected: IncurHost.SelectedRoute, context: IncurHost.Context): unknown!never!FlowInvoker.FlowInvoker {</div>
+<div class="del">-  const outcome = exit(() =&gt; {</div>
+<div class="add">+function execute(selected: IncurHost.SelectedRoute, context: IncurHost.Context): unknown!!FlowInvoker.FlowInvoker {</div>
+<div class="add">+  const outcome = exit {</div>
+<div class="ctx">     const input = selected.schema.decode(selected.schema.assemble(context.args, context.options))</div>
+<div class="del">-    const invoker = FlowInvoker.FlowInvoker()</div>
+<div class="del">-    const output = invoker.invoke(Object.freeze({</div>
+<div class="add">+    const output = FlowInvoker.FlowInvoker.invoke(Object.freeze({</div>
+<div class="ctx">       name: selected.route.name,</div>
+<div class="ctx">       flow: selected.flow,</div>
+<div class="ctx">       input</div>
+<div class="ctx">     }))</div>
+<div class="ctx">     return SchemaBridge.encodeOutput(selected.flow.output, output)</div>
+<div class="del">-  })</div>
+<div class="add">+  }</div>
+<div class="ctx">   if (outcome is Exit.Success(let output)) return context.ok(output)</div>
+<div class="ctx">   const cause = outcome.cause</div>
+<div class="del">-  const reason = cause.reasons[0]!</div>
+<div class="del">-  if (cause.reasons.length === 1 &amp;&amp; reason._tag === &quot;Fail&quot; &amp;&amp; reason.error instanceof FsError) {</div>
+<div class="del">-    return mapError(context, reason.error)</div>
+<div class="del">-  }</div>
+<div class="add">+  if (cause.reasons is [{ _tag: &quot;Fail&quot;, error: FsError and let error }]) return mapError(context, error)</div>
+<div class="ctx">   // Host diagnostics stay in Effect&#x27;s logger, never in Incur&#x27;s response.</div>
+<div class="ctx">   provide Logger.LogToStderr = true {</div>
+<div class="ctx">     logDebug(&quot;Incur invocation failed&quot;, cause)</div>
+<div class="ctx">   }</div>
+<div class="del">-  if (Cause.hasInterrupts(cause)) throw Cause.fromReasons&lt;never&gt;(cause.reasons.filter(Cause.isInterruptReason))</div>
+<div class="add">+  if (cause.hasInterrupts()) throw Cause.fromReasons&lt;never&gt;(cause.reasons.filter(Cause.isInterruptReason))</div>
+<div class="ctx">   return mapError(</div>
+<div class="ctx">     context,</div>
+<div class="ctx">     new FsError({</div>
+<div class="hunk">@@ -58,24 +54,20 @@</div>
+<div class="ctx"> </div>
+<div class="ctx"> function project(route: Route.Route): IncurHost.Projection!! {</div>
+<div class="ctx">   try {</div>
+<div class="del">-    const selected = Effect.timeoutOrElse(</div>
+<div class="del">-      () =&gt; {</div>
+<div class="del">-        const flow = Route.load(route)</div>
+<div class="del">-        const schema = SchemaBridge.toCommandSchema(route.input, flow.input)</div>
+<div class="del">-        return { route, flow, schema }</div>
+<div class="del">-      },</div>
+<div class="del">-      {</div>
+<div class="del">-        duration: &quot;5 seconds&quot;,</div>
+<div class="del">-        orElse: () =&gt; {</div>
+<div class="del">-          throw new FsError({</div>
+<div class="del">-            code: &quot;load_failed&quot;,</div>
+<div class="del">-            method: &quot;Incur.project&quot;,</div>
+<div class="del">-            description: &quot;The route metadata load timed out&quot;,</div>
+<div class="del">-            path: route.name</div>
+<div class="del">-          })</div>
+<div class="del">-        }</div>
+<div class="del">-      }</div>
+<div class="del">-    )</div>
+<div class="add">+    const selected = Effect.timeoutOrElse({</div>
+<div class="add">+      duration: &quot;5 seconds&quot;,</div>
+<div class="add">+      orElse: () =&gt;</div>
+<div class="add">+        throw new FsError({</div>
+<div class="add">+          code: &quot;load_failed&quot;,</div>
+<div class="add">+          method: &quot;Incur.project&quot;,</div>
+<div class="add">+          description: &quot;The route metadata load timed out&quot;,</div>
+<div class="add">+          path: route.name</div>
+<div class="add">+        })</div>
+<div class="add">+    }) {</div>
+<div class="add">+      const flow = Route.load(route)</div>
+<div class="add">+      const schema = SchemaBridge.toCommandSchema(route.input, flow.input)</div>
+<div class="add">+      return { route, flow, schema }</div>
+<div class="add">+    }</div>
+<div class="ctx">     return { _tag: &quot;Ready&quot;, selected }</div>
+<div class="ctx">   } catch (error) {</div>
+<div class="ctx">     return { _tag: &quot;Failed&quot;, error }</div>
+<div class="hunk">@@ -93,7 +85,7 @@</div>
+<div class="ctx">   const stack: Array&lt;CommandTree.CommandTree&gt; = [tree]</div>
+<div class="ctx">   while (stack.length &gt; 0) {</div>
+<div class="ctx">     const node = stack.pop()!</div>
+<div class="del">-    const route = Option.getOrUndefined(node.route)</div>
+<div class="add">+    const route = node.route.getOrUndefined()</div>
+<div class="ctx">     if (route !== undefined &amp;&amp; node.children.size &gt; 0) {</div>
+<div class="ctx">       if (node.children.has(IncurHost.selfSegment)) {</div>
+<div class="ctx">         throw new FsError({</div>
+<div class="ctx">&nbsp;</div></pre></details><details open><summary><code>packages/smithers/agent/fs/src/Route.vibe</code><span class="n"><span class="a">+20</span> <span class="r">−29</span></span></summary><pre class="diff"><div class="hunk">@@ -8,6 +8,7 @@</div>
+<div class="ctx"> import * as RuntimeFlow from &quot;@smthrs/flow/Flow&quot;</div>
+<div class="ctx"> import * as Descriptor from &quot;@smthrs/registry/Descriptor&quot;</div>
+<div class="ctx"> import { fileSpecifier } from &quot;@smthrs/registry/Executable&quot;</div>
+<div class="add">+import { trusted } from &quot;vibelang-runtime&quot;</div>
+<div class="ctx"> import { FsError } from &quot;./FsError.vibe&quot;</div>
+<div class="ctx"> import * as Boundary from &quot;./internal/Boundary.ts&quot;</div>
+<div class="ctx"> </div>
+<div class="hunk">@@ -118,7 +119,7 @@</div>
+<div class="ctx">  * @since 0.1.0</div>
+<div class="ctx">  */</div>
+<div class="ctx"> export type Input&lt;N extends Name&gt; = N extends keyof Manifest</div>
+<div class="del">-  ? Manifest[N] extends { readonly input: infer I } ? I : unknown</div>
+<div class="add">+  ? Manifest[N] extends { input: infer I } ? I : unknown</div>
+<div class="ctx">   : unknown</div>
+<div class="ctx"> </div>
+<div class="ctx"> /**</div>
+<div class="hunk">@@ -128,7 +129,7 @@</div>
+<div class="ctx">  * @since 0.1.0</div>
+<div class="ctx">  */</div>
+<div class="ctx"> export type Output&lt;N extends Name&gt; = N extends keyof Manifest</div>
+<div class="del">-  ? Manifest[N] extends { readonly output: infer O } ? O : unknown</div>
+<div class="add">+  ? Manifest[N] extends { output: infer O } ? O : unknown</div>
+<div class="ctx">   : unknown</div>
+<div class="ctx"> </div>
+<div class="ctx"> const invalidRoute = (path: string, description = &quot;Route metadata violates the command contract&quot;): FsError =&gt;</div>
+<div class="hunk">@@ -136,7 +137,7 @@</div>
+<div class="ctx"> </div>
+<div class="ctx"> const text = (</div>
+<div class="ctx">   value: unknown,</div>
+<div class="del">-  options: { readonly path: string; readonly maximum: number; readonly empty?: boolean | undefined }</div>
+<div class="add">+  options: { path: string; maximum: number; empty?: boolean | undefined }</div>
+<div class="ctx"> ): string =&gt; {</div>
+<div class="ctx">   if (</div>
+<div class="ctx">     typeof value !== &quot;string&quot; || (options.empty !== true &amp;&amp; value.length === 0) ||</div>
+<div class="hunk">@@ -186,8 +187,7 @@</div>
+<div class="ctx">     }</div>
+<div class="ctx">     return Object.freeze(output)</div>
+<div class="ctx">   } catch (cause) {</div>
+<div class="del">-    if (cause instanceof FsError) throw cause</div>
+<div class="del">-    throw invalidRoute(&quot;$&quot;)</div>
+<div class="add">+    throw cause instanceof FsError ? cause : invalidRoute(&quot;$&quot;)</div>
+<div class="ctx">   }</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="hunk">@@ -198,31 +198,28 @@</div>
+<div class="ctx"> ): Option.Option&lt;string&gt; =&gt; {</div>
+<div class="ctx">   try {</div>
+<div class="ctx">     if (!Option.isOption(input)) throw invalidRoute(path)</div>
+<div class="del">-    if (Option.isNone(input)) return Option.none()</div>
+<div class="del">-    return Option.some(text(input.value, { path, maximum }))</div>
+<div class="add">+    return input.map((value) =&gt; text(value, { path, maximum }))</div>
+<div class="ctx">   } catch (cause) {</div>
+<div class="del">-    if (cause instanceof FsError) throw cause</div>
+<div class="del">-    throw invalidRoute(path)</div>
+<div class="add">+    throw cause instanceof FsError ? cause : invalidRoute(path)</div>
+<div class="ctx">   }</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="ctx"> const optionPlacement = (input: unknown): Option.Option&lt;Descriptor.Placement&gt; =&gt; {</div>
+<div class="ctx">   try {</div>
+<div class="ctx">     if (!Option.isOption(input)) throw invalidRoute(&quot;$.placement&quot;)</div>
+<div class="del">-    if (Option.isNone(input)) return Option.none()</div>
+<div class="add">+    if (input.isNone()) return Option.none()</div>
+<div class="ctx">     const placement = input.value</div>
+<div class="del">-    if (placement !== &quot;client&quot; &amp;&amp; placement !== &quot;local&quot; &amp;&amp; placement !== &quot;sandbox&quot; &amp;&amp; placement !== &quot;remote&quot;) {</div>
+<div class="del">-      throw invalidRoute(&quot;$.placement&quot;)</div>
+<div class="del">-    }</div>
+<div class="add">+    if (!(placement is &quot;client&quot; or &quot;local&quot; or &quot;sandbox&quot; or &quot;remote&quot;)) throw invalidRoute(&quot;$.placement&quot;)</div>
+<div class="ctx">     return Option.some(placement)</div>
+<div class="ctx">   } catch (cause) {</div>
+<div class="del">-    if (cause instanceof FsError) throw cause</div>
+<div class="del">-    throw invalidRoute(&quot;$.placement&quot;)</div>
+<div class="add">+    throw cause instanceof FsError ? cause : invalidRoute(&quot;$.placement&quot;)</div>
+<div class="ctx">   }</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="ctx"> const schemaRef = (input: unknown, path: string): Descriptor.SchemaRef =&gt; {</div>
+<div class="ctx">   const tagged = schemaFields(input, [&quot;_tag&quot;], [&quot;path&quot;, &quot;field&quot;, &quot;document&quot;])</div>
+<div class="add">+  // This stays a switch: a match arm can only throw with a throw expression,</div>
+<div class="add">+  // and VibeLang makes a function with one an Effect, not plain JavaScript.</div>
+<div class="ctx">   switch (tagged._tag) {</div>
+<div class="ctx">     case &quot;MarkdownArgs&quot;:</div>
+<div class="ctx">       return new Descriptor.SchemaRefMarkdownArgs({})</div>
+<div class="hunk">@@ -232,7 +229,7 @@</div>
+<div class="ctx">       return new Descriptor.SchemaRefNone({})</div>
+<div class="ctx">     case &quot;Module&quot;: {</div>
+<div class="ctx">       const source = text(tagged.path, { path: `${path}.path`, maximum: maximumPathLength })</div>
+<div class="del">-      if (tagged.field !== &quot;input&quot; &amp;&amp; tagged.field !== &quot;output&quot;) throw invalidRoute(`${path}.field`)</div>
+<div class="add">+      if (!(tagged.field is &quot;input&quot; or &quot;output&quot;)) throw invalidRoute(`${path}.field`)</div>
+<div class="ctx">       return new Descriptor.SchemaRefModule({ path: source, field: tagged.field })</div>
+<div class="ctx">     }</div>
+<div class="ctx">     case &quot;Inline&quot;: {</div>
+<div class="hunk">@@ -257,13 +254,9 @@</div>
+<div class="ctx">   })</div>
+<div class="ctx">   if (!reads.ok) throw invalidRoute(`$.effects.reads${reads.path.slice(1)}`)</div>
+<div class="ctx">   if (!writes.ok) throw invalidRoute(`$.effects.writes${writes.path.slice(1)}`)</div>
+<div class="del">-  if (data.mode !== &quot;hermetic&quot; &amp;&amp; data.mode !== &quot;expected&quot;) throw invalidRoute(&quot;$.effects.mode&quot;)</div>
+<div class="del">-  if (data.onConflict !== &quot;serialize&quot; &amp;&amp; data.onConflict !== &quot;lane&quot; &amp;&amp; data.onConflict !== &quot;fail&quot;) {</div>
+<div class="del">-    throw invalidRoute(&quot;$.effects.onConflict&quot;)</div>
+<div class="del">-  }</div>
+<div class="del">-  if (data.tier !== &quot;sealed&quot; &amp;&amp; data.tier !== &quot;compensable&quot; &amp;&amp; data.tier !== &quot;irreversible&quot;) {</div>
+<div class="del">-    throw invalidRoute(&quot;$.effects.tier&quot;)</div>
+<div class="del">-  }</div>
+<div class="add">+  if (!(data.mode is &quot;hermetic&quot; or &quot;expected&quot;)) throw invalidRoute(&quot;$.effects.mode&quot;)</div>
+<div class="add">+  if (!(data.onConflict is &quot;serialize&quot; or &quot;lane&quot; or &quot;fail&quot;)) throw invalidRoute(&quot;$.effects.onConflict&quot;)</div>
+<div class="add">+  if (!(data.tier is &quot;sealed&quot; or &quot;compensable&quot; or &quot;irreversible&quot;)) throw invalidRoute(&quot;$.effects.tier&quot;)</div>
+<div class="ctx">   return Object.freeze({</div>
+<div class="ctx">     reads: reads.value,</div>
+<div class="ctx">     writes: writes.value,</div>
+<div class="hunk">@@ -277,7 +270,7 @@</div>
+<div class="ctx">   value.startsWith(&quot;file:///&quot;) || value.startsWith(&quot;/&quot;) || /^[A-Za-z]:[\\/]/.test(value)</div>
+<div class="ctx"> </div>
+<div class="ctx"> // Every reflective helper above catches foreign throws and normalizes them, so</div>
+<div class="del">-// this throws only FsError.</div>
+<div class="add">+// this throws only FsError; anything else would be a defect.</div>
+<div class="ctx"> const copyRoute = (input: Route): Route =&gt; {</div>
+<div class="ctx">   const data = fields(input, [</div>
+<div class="ctx">     &quot;name&quot;,</div>
+<div class="hunk">@@ -310,7 +303,7 @@</div>
+<div class="ctx">   if (name !== normalized.join(&quot;/&quot;)) {</div>
+<div class="ctx">     throw invalidRoute(&quot;$.name&quot;, &quot;Route name must equal its slash-joined segments&quot;)</div>
+<div class="ctx">   }</div>
+<div class="del">-  if (data.kind !== &quot;module&quot; &amp;&amp; data.kind !== &quot;markdown&quot; &amp;&amp; data.kind !== &quot;skill&quot;) throw invalidRoute(&quot;$.kind&quot;)</div>
+<div class="add">+  if (!(data.kind is &quot;module&quot; or &quot;markdown&quot; or &quot;skill&quot;)) throw invalidRoute(&quot;$.kind&quot;)</div>
+<div class="ctx">   const sourcePath = text(data.sourcePath, { path: &quot;$.sourcePath&quot;, maximum: maximumPathLength })</div>
+<div class="ctx">   if (!isAbsolutePath(sourcePath)) throw invalidRoute(&quot;$.sourcePath&quot;, &quot;Route source paths must be absolute&quot;)</div>
+<div class="ctx">   const capabilities = Boundary.stringArray(data.capabilities, {</div>
+<div class="hunk">@@ -342,9 +335,7 @@</div>
+<div class="ctx">  * @category constructors</div>
+<div class="ctx">  * @since 0.1.0</div>
+<div class="ctx">  */</div>
+<div class="del">-export function snapshot(input: Route): Route!FsError {</div>
+<div class="del">-  return try((copy, input) =&gt; copy(input), (cause) =&gt; cause as FsError, copyRoute, input)</div>
+<div class="del">-}</div>
+<div class="add">+export const snapshot = trusted(copyRoute, [FsError])</div>
+<div class="ctx"> </div>
+<div class="ctx"> /**</div>
+<div class="ctx">  * True only for routes the agent and Incur command surfaces may execute.</div>
+<div class="hunk">@@ -390,7 +381,7 @@</div>
+<div class="ctx">     })</div>
+<div class="ctx">   }</div>
+<div class="ctx">   const module = try(</div>
+<div class="del">-    async (specifier) =&gt; import(/* @vite-ignore */ specifier) as Promise&lt;{ readonly default?: unknown }&gt;,</div>
+<div class="add">+    async (specifier) =&gt; import(/* @vite-ignore */ specifier) as Promise&lt;{ default?: unknown }&gt;,</div>
+<div class="ctx">     importFailed,</div>
+<div class="ctx">     fileSpecifier(route.sourcePath)</div>
+<div class="ctx">   )</div>
+<div class="ctx">&nbsp;</div></pre></details><details open><summary><code>packages/smithers/agent/fs/src/internal/CommandLine.vibe</code><span class="n"><span class="a">+13</span> <span class="r">−21</span></span></summary><pre class="diff"><div class="hunk">@@ -77,14 +77,14 @@</div>
+<div class="ctx">   let started = false</div>
+<div class="ctx">   let escaping = false</div>
+<div class="ctx"> </div>
+<div class="del">-  const push = (): FsError | undefined =&gt; {</div>
+<div class="add">+  const push = () =&gt; {</div>
+<div class="ctx">     if (current.length &gt; maximumTokenLength) {</div>
+<div class="del">-      return resourceLimit(`A command token may contain at most ${maximumTokenLength} characters`)</div>
+<div class="add">+      throw resourceLimit(`A command token may contain at most ${maximumTokenLength} characters`)</div>
+<div class="ctx">     }</div>
+<div class="ctx">     argv.push(current)</div>
+<div class="del">-    return argv.length &gt; maximumCommandTokens</div>
+<div class="del">-      ? resourceLimit(`A command may contain at most ${maximumCommandTokens} tokens`)</div>
+<div class="del">-      : undefined</div>
+<div class="add">+    if (argv.length &gt; maximumCommandTokens) {</div>
+<div class="add">+      throw resourceLimit(`A command may contain at most ${maximumCommandTokens} tokens`)</div>
+<div class="add">+    }</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="ctx">   for (const character of commandString) {</div>
+<div class="hunk">@@ -119,8 +119,7 @@</div>
+<div class="ctx">       started = true</div>
+<div class="ctx">     } else if (/\s/.test(character)) {</div>
+<div class="ctx">       if (started) {</div>
+<div class="del">-        const failure = push()</div>
+<div class="del">-        if (failure) throw failure</div>
+<div class="add">+        push()</div>
+<div class="ctx">         current = &quot;&quot;</div>
+<div class="ctx">         started = false</div>
+<div class="ctx">       }</div>
+<div class="hunk">@@ -132,17 +131,14 @@</div>
+<div class="ctx"> </div>
+<div class="ctx">   if (escaping) current += &quot;\\&quot;</div>
+<div class="ctx">   if (quote !== undefined) throw parseError(&quot;The command contains an unterminated quote&quot;)</div>
+<div class="del">-  if (started) {</div>
+<div class="del">-    const failure = push()</div>
+<div class="del">-    if (failure) throw failure</div>
+<div class="del">-  }</div>
+<div class="add">+  if (started) push()</div>
+<div class="ctx">   return Object.freeze(argv)</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="ctx"> const validFlagName = (name: string): boolean =&gt; flagName.test(name) &amp;&amp; !reservedNames.has(name)</div>
+<div class="ctx"> </div>
+<div class="del">-const append = (options: Record&lt;string, unknown&gt;, name: string, value: unknown): FsError | undefined =&gt; {</div>
+<div class="del">-  if (!validFlagName(name)) return parseError(&quot;The command contains an invalid option name&quot;, `$.options.${name}`)</div>
+<div class="add">+const append = (options: Record&lt;string, unknown&gt;, name: string, value: unknown): void!FsError =&gt; {</div>
+<div class="add">+  if (!validFlagName(name)) throw parseError(&quot;The command contains an invalid option name&quot;, `$.options.${name}`)</div>
+<div class="ctx">   const current = Object.hasOwn(options, name) ? options[name] : undefined</div>
+<div class="ctx">   options[name] = current === undefined ? value : Array.isArray(current) ? [...current, value] : [current, value]</div>
+<div class="ctx"> }</div>
+<div class="hunk">@@ -181,24 +177,20 @@</div>
+<div class="ctx"> </div>
+<div class="ctx">     const flag = value.slice(2)</div>
+<div class="ctx">     if (flag.startsWith(&quot;no-&quot;) &amp;&amp; !flag.includes(&quot;=&quot;)) {</div>
+<div class="del">-      const failure = append(options, flag.slice(3), false)</div>
+<div class="del">-      if (failure) throw failure</div>
+<div class="add">+      append(options, flag.slice(3), false)</div>
+<div class="ctx">       continue</div>
+<div class="ctx">     }</div>
+<div class="ctx">     const equals = flag.indexOf(&quot;=&quot;)</div>
+<div class="ctx">     if (equals !== -1) {</div>
+<div class="del">-      const failure = append(options, flag.slice(0, equals), flag.slice(equals + 1))</div>
+<div class="del">-      if (failure) throw failure</div>
+<div class="add">+      append(options, flag.slice(0, equals), flag.slice(equals + 1))</div>
+<div class="ctx">       continue</div>
+<div class="ctx">     }</div>
+<div class="ctx">     const next = captured.value[index + 1]</div>
+<div class="ctx">     if (next !== undefined &amp;&amp; !next.startsWith(&quot;--&quot;)) {</div>
+<div class="del">-      const failure = append(options, flag, next)</div>
+<div class="del">-      if (failure) throw failure</div>
+<div class="add">+      append(options, flag, next)</div>
+<div class="ctx">       index += 1</div>
+<div class="ctx">     } else {</div>
+<div class="del">-      const failure = append(options, flag, true)</div>
+<div class="del">-      if (failure) throw failure</div>
+<div class="add">+      append(options, flag, true)</div>
+<div class="ctx">     }</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="ctx">&nbsp;</div></pre></details><details open><summary><code>packages/smithers/agent/fs/src/internal/SchemaBridge.vibe</code><span class="n"><span class="a">+5</span> <span class="r">−4</span></span></summary><pre class="diff"><div class="hunk">@@ -61,11 +61,12 @@</div>
+<div class="ctx">  * @private</div>
+<div class="ctx">  * @since 0.1.0</div>
+<div class="ctx">  */</div>
+<div class="del">-export function recover&lt;A&gt;(program: Effect.Effect&lt;A, unknown, unknown&gt;, failure: () =&gt; FsError!!): A!FsError {</div>
+<div class="add">+export function recover&lt;A&gt;(program: A!unknown!unknown, failure: () =&gt; FsError!!): A!FsError {</div>
+<div class="ctx">   // @vibelang-diagnostics-next-line EK4810:off</div>
+<div class="del">-  const outcome = exit(program as Effect.Effect&lt;A, unknown&gt;)</div>
+<div class="del">-  if (outcome is Exit.Failure) throw failure()</div>
+<div class="del">-  return outcome.value</div>
+<div class="add">+  return match (exit(program as A!unknown)) {</div>
+<div class="add">+    when Exit.Success(let value): value;</div>
+<div class="add">+    default: throw failure();</div>
+<div class="add">+  }</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="ctx"> const jsonValue = (value: unknown): unknown =&gt; {</div>
+<div class="ctx">&nbsp;</div></pre></details>
+
+<h2>Tests</h2>
+<details><summary><code>packages/errors/test/TaggedFailures.test.vibe</code><span class="n"><span class="a">+14</span> <span class="r">−8</span></span></summary><pre class="diff"><div class="hunk">@@ -8,16 +8,16 @@</div>
+<div class="ctx">   }</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="del">-function raise(error: SmithersError&lt;&quot;SmithersError&quot;&gt; | AdapterError): never!(SmithersError&lt;&quot;SmithersError&quot;&gt; | AdapterError) {</div>
+<div class="add">+function raise&lt;E&gt;(error: E): never!E {</div>
+<div class="ctx">   throw error</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="add">+// Routing by tag is the behavior under test, so these use Effect.catchTag</div>
+<div class="add">+// rather than a catch that matches by class.</div>
+<div class="ctx"> function recover(error: SmithersError&lt;&quot;SmithersError&quot;&gt; | AdapterError): string!! {</div>
+<div class="del">-  return Effect.catchTag(</div>
+<div class="del">-    Effect.catchTag(raise(error), &quot;AdapterError&quot;, (caught) =&gt; `adapter:${caught.summary}`),</div>
+<div class="del">-    &quot;SmithersError&quot;,</div>
+<div class="del">-    (caught) =&gt; `base:${caught.code}`</div>
+<div class="del">-  )</div>
+<div class="add">+  return raise(error)</div>
+<div class="add">+    |&gt; Effect.catchTag(%, &quot;AdapterError&quot;, (caught) =&gt; `adapter:${caught.summary}`)</div>
+<div class="add">+    |&gt; Effect.catchTag(%, &quot;SmithersError&quot;, (caught) =&gt; `base:${caught.code}`)</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="ctx"> describe(&quot;tagged failures&quot;, () =&gt; {</div>
+<div class="hunk">@@ -28,8 +28,14 @@</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.effect(&quot;tags with the reported name so a renamed instance routes by that name&quot;) {</div>
+<div class="ctx">     const renamed = new SmithersError(&quot;INTEGRATION_ERROR&quot;, &quot;x&quot;, undefined, { name: &quot;AdapterError&quot; })</div>
+<div class="del">-    const routed = Effect.catchTag(Effect.fail(renamed), &quot;AdapterError&quot;, () =&gt; &quot;adapter&quot;)</div>
+<div class="del">-    expect(routed).toBe(&quot;adapter&quot;)</div>
+<div class="add">+    expect(raise(renamed) |&gt; Effect.catchTag(%, &quot;AdapterError&quot;, () =&gt; &quot;adapter&quot;)).toBe(&quot;adapter&quot;)</div>
+<div class="add">+  }</div>
+<div class="add">+</div>
+<div class="add">+  it.effect(&quot;matches a subclass by class in a catch&quot;) {</div>
+<div class="add">+    const caught = raise(new AdapterError()) catch (error) =&gt; match (error) {</div>
+<div class="add">+      when AdapterError: error.summary;</div>
+<div class="add">+    }</div>
+<div class="add">+    expect(caught).toBe(&quot;adapter failed&quot;)</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.effect(&quot;fails the surrounding effect with the instance when thrown&quot;) {</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/errors/test/helpers.vibe</code><span class="n"><span class="a">+5</span> <span class="r">−4</span></span></summary><pre class="diff"><div class="hunk">@@ -1,8 +1,9 @@</div>
+<div class="ctx"> import { assert } from &quot;@effect/vitest&quot;</div>
+<div class="ctx"> </div>
+<div class="ctx"> /** The expected failure a program fails with; a success or a defect fails the test. */</div>
+<div class="del">-export function failureOf&lt;E&gt;(program: Effect.Effect&lt;unknown, E&gt;): E!! {</div>
+<div class="del">-  const outcome = exit(program)</div>
+<div class="del">-  if (outcome is Exit.Failure(let cause)) return Option.getOrThrow(Cause.findErrorOption(cause))</div>
+<div class="del">-  return assert.fail(&quot;expected the program to fail&quot;)</div>
+<div class="add">+export function failureOf&lt;E&gt;(program: unknown!E): E!! {</div>
+<div class="add">+  return match (exit(program)) {</div>
+<div class="add">+    when Exit.Failure(let cause): Cause.findErrorOption(cause).getOrThrow();</div>
+<div class="add">+    default: assert.fail(&quot;expected the program to fail&quot;);</div>
+<div class="add">+  }</div>
+<div class="ctx"> }</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/smithers/agent/fs/test/Command.test.vibe</code><span class="n"><span class="a">+13</span> <span class="r">−18</span></span></summary><pre class="diff"><div class="hunk">@@ -152,20 +152,20 @@</div>
+<div class="ctx">         &quot;\ud800&quot;</div>
+<div class="ctx">       ]</div>
+<div class="ctx">     ) {</div>
+<div class="del">-      expect(exit(CommandLine.lex(command))._tag).toBe(&quot;Failure&quot;)</div>
+<div class="add">+      expect(exit(CommandLine.lex(command)) is Exit.Failure).toBe(true)</div>
+<div class="ctx">     }</div>
+<div class="ctx"> </div>
+<div class="ctx">     const exact = Array.from({ length: CommandLine.maximumCommandTokens }, () =&gt; &quot;x&quot;).join(&quot; &quot;)</div>
+<div class="ctx">     expect(CommandLine.lex(exact)).toHaveLength(CommandLine.maximumCommandTokens)</div>
+<div class="ctx">     const tooMany = `${exact} x`</div>
+<div class="del">-    expect(exit(CommandLine.lex(tooMany))._tag).toBe(&quot;Failure&quot;)</div>
+<div class="add">+    expect(exit(CommandLine.lex(tooMany)) is Exit.Failure).toBe(true)</div>
+<div class="ctx"> </div>
+<div class="ctx">     const hostile = new Proxy([&quot;--safe=x&quot;], {</div>
+<div class="ctx">       ownKeys: () =&gt; {</div>
+<div class="ctx">         throw new Error(&quot;trap&quot;)</div>
+<div class="ctx">       }</div>
+<div class="ctx">     })</div>
+<div class="del">-    expect(exit(CommandLine.parseFlags(hostile))._tag).toBe(&quot;Failure&quot;)</div>
+<div class="add">+    expect(exit(CommandLine.parseFlags(hostile)) is Exit.Failure).toBe(true)</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.effect(&quot;bounds command bytes independently of the token bounds&quot;) {</div>
+<div class="hunk">@@ -205,7 +205,7 @@</div>
+<div class="ctx"> </div>
+<div class="ctx">   function surfaceFor(input: Schema.Top, output: Schema.Top) {</div>
+<div class="ctx">     const flow = { capabilities: [], effects: undefined, name: &quot;scalar&quot;, input, output } as const</div>
+<div class="del">-    vi.spyOn(Route, &quot;load&quot;).mockReturnValue(Effect.succeed(flow))</div>
+<div class="add">+    vi.spyOn(Route, &quot;load&quot;).mockImplementation(() =&gt; flow)</div>
+<div class="ctx">     return Command.make([makeRoute(&quot;scalar&quot;)])</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="hunk">@@ -219,27 +219,22 @@</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.effect(&quot;accepts decoded transforming input in call and encoded input in execute&quot;) {</div>
+<div class="ctx">     const surface = surfaceFor(Schema.NumberFromString, Schema.Number)</div>
+<div class="del">-    const invoke = vi.fn(({ input }: FlowInvoker.Invocation) =&gt; Exit.succeed(input))</div>
+<div class="add">+    const invoke = vi.fn&lt;FlowInvoker.FlowInvoker[&quot;invoke&quot;]&gt;(({ input }) =&gt; input)</div>
+<div class="ctx">     provide FlowInvoker.layerNoop({ invoke }) {</div>
+<div class="ctx">       expect(surface.call(&quot;scalar&quot;, 42)).toBe(42)</div>
+<div class="ctx">       expect(surface.execute(&quot;scalar 42&quot;)).toBe(42)</div>
+<div class="ctx">       expect(invoke.mock.calls.map(([invocation]) =&gt; invocation.input)).toEqual([42, 42])</div>
+<div class="del">-      expect(exit(surface.call(&quot;scalar&quot;, &quot;42&quot;))._tag).toBe(&quot;Failure&quot;)</div>
+<div class="add">+      expect(exit(surface.call(&quot;scalar&quot;, &quot;42&quot;)) is Exit.Failure).toBe(true)</div>
+<div class="ctx">     }</div>
+<div class="ctx">     expect(invoke).toHaveBeenCalledTimes(2)</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.effect(&quot;refuses scalar tokens that execute would otherwise drop&quot;) {</div>
+<div class="ctx">     const surface = surfaceFor(Schema.Number, Schema.NumberFromString)</div>
+<div class="del">-    const invoke = vi.fn(() =&gt; Exit.succeed(42))</div>
+<div class="add">+    const invoke = vi.fn&lt;FlowInvoker.FlowInvoker[&quot;invoke&quot;]&gt;(() =&gt; 42)</div>
+<div class="ctx">     provide FlowInvoker.layerNoop({ invoke }) {</div>
+<div class="ctx">       for (const command of [&quot;scalar 1 --typo x&quot;, &quot;scalar 1 2&quot;, &quot;scalar 1 --input 2&quot;, &quot;scalar --input 1 --typo x&quot;]) {</div>
+<div class="del">-        const outcome = exit(surface.execute(command))</div>
+<div class="del">-        expect(outcome._tag, command).toBe(&quot;Failure&quot;)</div>
+<div class="del">-        if (outcome is Exit.Failure(let cause)) {</div>
+<div class="del">-          const error = Option.getOrThrow(Cause.findErrorOption(cause))</div>
+<div class="del">-          expect(error, command).toMatchObject({ code: &quot;decode_failed&quot; })</div>
+<div class="del">-        }</div>
+<div class="add">+        expect(failureOf(surface.execute(command)), command).toMatchObject({ code: &quot;decode_failed&quot; })</div>
+<div class="ctx">       }</div>
+<div class="ctx">       expect(invoke).not.toHaveBeenCalled()</div>
+<div class="ctx">       expect(surface.execute(&quot;scalar --input 1&quot;)).toBe(&quot;42&quot;)</div>
+<div class="hunk">@@ -248,7 +243,7 @@</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.effect(&quot;refuses unsafe decoded input before loading or invoking&quot;) {</div>
+<div class="ctx">     const surface = Command.make([makeRoute(&quot;review&quot;)])</div>
+<div class="del">-    const invoke = vi.fn(({ input }: FlowInvoker.Invocation) =&gt; Exit.succeed(input))</div>
+<div class="add">+    const invoke = vi.fn&lt;FlowInvoker.FlowInvoker[&quot;invoke&quot;]&gt;(({ input }) =&gt; input)</div>
+<div class="ctx">     let getterCalls = 0</div>
+<div class="ctx">     const accessor = Object.defineProperty({}, &quot;number&quot;, {</div>
+<div class="ctx">       enumerable: true,</div>
+<div class="hunk">@@ -290,7 +285,7 @@</div>
+<div class="ctx">     })</div>
+<div class="ctx">     for (const output of [accessor, { value: &quot;x&quot;.repeat(65_537) }]) {</div>
+<div class="ctx">       provide FlowInvoker.layerNoop({ invoke: () =&gt; output }) {</div>
+<div class="del">-        expect(exit(surface.call(&quot;scalar&quot;, { value: &quot;ok&quot; }))._tag).toBe(&quot;Failure&quot;)</div>
+<div class="add">+        expect(exit(surface.call(&quot;scalar&quot;, { value: &quot;ok&quot; })) is Exit.Failure).toBe(true)</div>
+<div class="ctx">       }</div>
+<div class="ctx">     }</div>
+<div class="ctx">     expect(getterCalls).toBe(0)</div>
+<div class="hunk">@@ -307,17 +302,17 @@</div>
+<div class="ctx">     const loading = Deferred.make&lt;void&gt;()</div>
+<div class="ctx">     const release = Deferred.make&lt;typeof flow&gt;()</div>
+<div class="ctx">     vi.spyOn(Route, &quot;load&quot;).mockImplementation(() =&gt; {</div>
+<div class="del">-      Deferred.succeed(loading, undefined)</div>
+<div class="add">+      loading.succeed(undefined)</div>
+<div class="ctx">       return release.await()</div>
+<div class="ctx">     })</div>
+<div class="ctx">     const surface = Command.make([makeRoute(&quot;scalar&quot;)])</div>
+<div class="del">-    const invoke = vi.fn(({ input }: FlowInvoker.Invocation) =&gt; Exit.succeed((input as { number: number }).number))</div>
+<div class="add">+    const invoke = vi.fn&lt;FlowInvoker.FlowInvoker[&quot;invoke&quot;]&gt;(({ input }) =&gt; (input as { number: number }).number)</div>
+<div class="ctx">     const input: { mutable number: number } = { number: 1 }</div>
+<div class="ctx">     provide FlowInvoker.layerNoop({ invoke }) {</div>
+<div class="ctx">       const pending = fork surface.call(&quot;scalar&quot;, input)</div>
+<div class="ctx">       loading.await()</div>
+<div class="ctx">       input.number = 2</div>
+<div class="del">-      Deferred.succeed(release, flow)</div>
+<div class="add">+      release.succeed(flow)</div>
+<div class="ctx">       expect(join pending).toBe(1)</div>
+<div class="ctx">     }</div>
+<div class="ctx">     expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ input: { number: 1 } }))</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/smithers/agent/fs/test/FileRouter.test.vibe</code><span class="n"><span class="a">+6</span> <span class="r">−11</span></span></summary><pre class="diff"><div class="hunk">@@ -3,6 +3,7 @@</div>
+<div class="ctx"> import { expect, layer } from &quot;@effect/vitest&quot;</div>
+<div class="ctx"> import * as FileRouter from &quot;../src/FileRouter.vibe&quot;</div>
+<div class="ctx"> import { routerRoot as root } from &quot;./fixtureRoots.ts&quot;</div>
+<div class="add">+import { failureOf } from &quot;./helpers.vibe&quot;</div>
+<div class="ctx"> </div>
+<div class="ctx"> const platformLayer = Layer.merge(NodeFileSystem.layer, NodePath.layer)</div>
+<div class="ctx"> </div>
+<div class="hunk">@@ -52,7 +53,7 @@</div>
+<div class="ctx">     const result = scan()</div>
+<div class="ctx">     const review = result.routes.find((route) =&gt; route.name === &quot;review&quot;)</div>
+<div class="ctx"> </div>
+<div class="del">-    expect(Option.getOrUndefined(review?.ui ?? Option.none())).toBe(path.join(root, &quot;review&quot;, &quot;ui.tsx&quot;))</div>
+<div class="add">+    expect(review?.ui).toEqual(Option.some(path.join(root, &quot;review&quot;, &quot;ui.tsx&quot;)))</div>
+<div class="ctx">     expect(result.routes.some((route) =&gt; path.basename(route.sourcePath) === &quot;ui.tsx&quot;)).toBe(false)</div>
+<div class="ctx">     expect(result.routes.some((route) =&gt; path.basename(route.sourcePath) === &quot;flow.test.ts&quot;)).toBe(false)</div>
+<div class="ctx">   }</div>
+<div class="hunk">@@ -76,7 +77,7 @@</div>
+<div class="ctx">     const config: { mutable root: string } = { root: path.relative(path.resolve(), root) }</div>
+<div class="ctx">     // The scan starts at once, as runPromise would start it, so the root is</div>
+<div class="ctx">     // read before the caller rewrites its config.</div>
+<div class="del">-    const pending = Effect.forkChild(FileRouter.scan(config), { startImmediately: true })</div>
+<div class="add">+    const pending = fork(FileRouter.scan(config), { startImmediately: true })</div>
+<div class="ctx">     config.root = &quot;/&quot;</div>
+<div class="ctx">     const result = join pending</div>
+<div class="ctx"> </div>
+<div class="hunk">@@ -121,12 +122,7 @@</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.effect(&quot;preserves discovery error codes and refuses hostile config&quot;) {</div>
+<div class="del">-    const missing = exit(FileRouter.scan({ root: &quot;/definitely/missing/smithers-flows&quot; }))</div>
+<div class="del">-    expect(missing._tag).toBe(&quot;Failure&quot;)</div>
+<div class="del">-    if (missing is Exit.Failure(let cause)) {</div>
+<div class="del">-      const error = Option.getOrThrow(Cause.findErrorOption(cause))</div>
+<div class="del">-      expect(error.code).toBe(&quot;root_missing&quot;)</div>
+<div class="del">-    }</div>
+<div class="add">+    expect(failureOf(FileRouter.scan({ root: &quot;/definitely/missing/smithers-flows&quot; })).code).toBe(&quot;root_missing&quot;)</div>
+<div class="ctx"> </div>
+<div class="ctx">     let called = false</div>
+<div class="ctx">     const config = Object.defineProperty({}, &quot;root&quot;, {</div>
+<div class="hunk">@@ -136,8 +132,7 @@</div>
+<div class="ctx">         return root</div>
+<div class="ctx">       }</div>
+<div class="ctx">     })</div>
+<div class="del">-    const hostile = exit(FileRouter.scan(config as FileRouter.ScanConfig))</div>
+<div class="del">-    expect(hostile._tag).toBe(&quot;Failure&quot;)</div>
+<div class="add">+    expect(failureOf(FileRouter.scan(config as FileRouter.ScanConfig)).code).toBe(&quot;invalid_root&quot;)</div>
+<div class="ctx">     expect(called).toBe(false)</div>
+<div class="ctx">   }</div>
+<div class="ctx">   it.effect(&quot;never routes a flow or UI companion whose real path leaves the root&quot;) {</div>
+<div class="hunk">@@ -162,7 +157,7 @@</div>
+<div class="ctx">     const result = FileRouter.scan({ root: flows })</div>
+<div class="ctx"> </div>
+<div class="ctx">     expect(result.routes.map((route) =&gt; route.name)).toEqual([&quot;inside&quot;, &quot;linkedui&quot;])</div>
+<div class="del">-    expect(Option.isNone(result.routes.find((route) =&gt; route.name === &quot;linkedui&quot;)!.ui)).toBe(true)</div>
+<div class="add">+    expect(result.routes.find((route) =&gt; route.name === &quot;linkedui&quot;)!.ui.isNone()).toBe(true)</div>
+<div class="ctx">     expect(result.warnings).toEqual(expect.arrayContaining([</div>
+<div class="ctx">       expect.objectContaining({ code: &quot;outside_root&quot;, path: path.join(flows, &quot;dir&quot;) }),</div>
+<div class="ctx">       expect.objectContaining({ code: &quot;outside_root&quot;, path: path.join(flows, &quot;file&quot;, &quot;flow.ts&quot;) })</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/smithers/agent/fs/test/FileRouterFailures.test.vibe</code><span class="n"><span class="a">+20</span> <span class="r">−28</span></span></summary><pre class="diff"><div class="hunk">@@ -5,7 +5,7 @@</div>
+<div class="ctx"> import { vi } from &quot;vitest&quot;</div>
+<div class="ctx"> </div>
+<div class="ctx"> const discovery = vi.hoisted(() =&gt; ({</div>
+<div class="del">-  scan: undefined as undefined | ((options: unknown) =&gt; Effect.Effect&lt;unknown, unknown&gt;)</div>
+<div class="add">+  scan: undefined as undefined | ((options: unknown) =&gt; unknown!unknown)</div>
+<div class="ctx"> }))</div>
+<div class="ctx"> </div>
+<div class="ctx"> vi.mock(&quot;@smthrs/registry/Discovery&quot;, (importOriginal) =&gt;</div>
+<div class="hunk">@@ -34,13 +34,12 @@</div>
+<div class="ctx"> </div>
+<div class="ctx"> const result = (entries: ReadonlyArray&lt;Descriptor.FlowDescriptor&gt;) =&gt; ({ entries, warnings: [] })</div>
+<div class="ctx"> </div>
+<div class="del">-// A stub whose `exists` may fail with a foreign error a real file system never raises.</div>
+<div class="del">-const fileSystem = (</div>
+<div class="del">-  exists: (path: string) =&gt; Effect.Effect&lt;boolean, unknown&gt; = () =&gt; Effect.succeed(false)</div>
+<div class="del">-): FileSystem.FileSystem =&gt; ({ exists } as unknown as FileSystem.FileSystem)</div>
+<div class="add">+// A stub whose methods may fail with a foreign error a real file system never raises.</div>
+<div class="add">+const fileSystem = (methods: { exists: () =&gt; boolean!unknown; realPath?: () =&gt; string!unknown }) =&gt;</div>
+<div class="add">+  methods as unknown as FileSystem.FileSystem</div>
+<div class="ctx"> </div>
+<div class="ctx"> /** Scans `/flows` over the mocked discovery, a stub file system, and the real path service. */</div>
+<div class="del">-function scanFlows(files: FileSystem.FileSystem = fileSystem()) {</div>
+<div class="add">+function scanFlows(files: FileSystem.FileSystem = fileSystem({ exists: () =&gt; false })) {</div>
+<div class="ctx">   provide FileSystem.FileSystem = files, NodePath.layer {</div>
+<div class="ctx">     return FileRouter.scan({ root: &quot;/flows&quot; })</div>
+<div class="ctx">   }</div>
+<div class="hunk">@@ -56,11 +55,12 @@</div>
+<div class="ctx">         [&quot;unknown&quot;, &quot;discovery_failed&quot;]</div>
+<div class="ctx">       ] as const</div>
+<div class="ctx">     ) {</div>
+<div class="del">-      discovery.scan = () =&gt; Effect.fail(discoveryError({ code: source, method: &quot;scan&quot; }))</div>
+<div class="add">+      discovery.scan = () =&gt; throw discoveryError({ code: source, method: &quot;scan&quot; })</div>
+<div class="ctx">       expect(failureOf(scanFlows()).code).toBe(expected)</div>
+<div class="ctx">     }</div>
+<div class="ctx"> </div>
+<div class="del">-    discovery.scan = () =&gt; Effect.fail(new Error(&quot;TOP-SECRET&quot;))</div>
+<div class="add">+    // @vibelang-diagnostics-next-line EK4804:off</div>
+<div class="add">+    discovery.scan = () =&gt; throw new Error(&quot;TOP-SECRET&quot;)</div>
+<div class="ctx">     const foreign = failureOf(scanFlows())</div>
+<div class="ctx">     expect(foreign.code).toBe(&quot;discovery_failed&quot;)</div>
+<div class="ctx">     expect(JSON.stringify(foreign)).not.toContain(&quot;TOP-SECRET&quot;)</div>
+<div class="hunk">@@ -68,41 +68,33 @@</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.effect(&quot;bounds scan results before inspecting route companions&quot;) {</div>
+<div class="ctx">     discovery.scan = () =&gt;</div>
+<div class="del">-      Effect.succeed(result(</div>
+<div class="del">-        Array.from({ length: CommandTree.maximumRoutes + 1 }, (_, index) =&gt; descriptor(`/flows/r${index}/flow.ts`))</div>
+<div class="del">-      ))</div>
+<div class="add">+      result(Array.from({ length: CommandTree.maximumRoutes + 1 }, (_, index) =&gt; descriptor(`/flows/r${index}/flow.ts`)))</div>
+<div class="ctx">     expect(failureOf(scanFlows()).code).toBe(&quot;resource_limit&quot;)</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.effect(&quot;skips root entries and refuses paths collapsing to one route&quot;) {</div>
+<div class="del">-    discovery.scan = () =&gt;</div>
+<div class="del">-      Effect.succeed(result([</div>
+<div class="del">-        descriptor(&quot;/flows/flow.ts&quot;),</div>
+<div class="del">-        descriptor(&quot;/flows/kept/flow.ts&quot;)</div>
+<div class="del">-      ]))</div>
+<div class="add">+    discovery.scan = () =&gt; result([descriptor(&quot;/flows/flow.ts&quot;), descriptor(&quot;/flows/kept/flow.ts&quot;)])</div>
+<div class="ctx">     expect(scanFlows().routes.map((route) =&gt; route.name)).toEqual([&quot;kept&quot;])</div>
+<div class="ctx"> </div>
+<div class="del">-    discovery.scan = () =&gt;</div>
+<div class="del">-      Effect.succeed(result([</div>
+<div class="del">-        descriptor(&quot;/flows/duplicate/flow.ts&quot;),</div>
+<div class="del">-        descriptor(&quot;/flows/duplicate/other.ts&quot;)</div>
+<div class="del">-      ]))</div>
+<div class="add">+    discovery.scan = () =&gt; result([descriptor(&quot;/flows/duplicate/flow.ts&quot;), descriptor(&quot;/flows/duplicate/other.ts&quot;)])</div>
+<div class="ctx">     expect(failureOf(scanFlows()).code).toBe(&quot;duplicate_route&quot;)</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.effect(&quot;maps companion inspection failures without retaining their cause&quot;) {</div>
+<div class="del">-    discovery.scan = () =&gt; Effect.succeed(result([descriptor(&quot;/flows/route/flow.ts&quot;)]))</div>
+<div class="del">-    const error = failureOf(scanFlows(fileSystem(() =&gt; Effect.fail(new Error(&quot;TOP-SECRET&quot;)))))</div>
+<div class="add">+    discovery.scan = () =&gt; result([descriptor(&quot;/flows/route/flow.ts&quot;)])</div>
+<div class="add">+    // @vibelang-diagnostics-next-line EK4804:off</div>
+<div class="add">+    const error = failureOf(scanFlows(fileSystem({ exists: () =&gt; throw new Error(&quot;TOP-SECRET&quot;) })))</div>
+<div class="ctx">     expect(error.code).toBe(&quot;read_failed&quot;)</div>
+<div class="ctx">     expect(JSON.stringify(error)).not.toContain(&quot;TOP-SECRET&quot;)</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.effect(&quot;refuses a UI companion whose real path cannot be resolved&quot;) {</div>
+<div class="del">-    discovery.scan = () =&gt; Effect.succeed(result([descriptor(&quot;/flows/route/flow.ts&quot;)]))</div>
+<div class="del">-    const unresolvable = {</div>
+<div class="del">-      exists: () =&gt; Effect.succeed(true),</div>
+<div class="del">-      realPath: () =&gt; Effect.fail(new Error(&quot;TOP-SECRET&quot;))</div>
+<div class="del">-    } as unknown as FileSystem.FileSystem</div>
+<div class="add">+    discovery.scan = () =&gt; result([descriptor(&quot;/flows/route/flow.ts&quot;)])</div>
+<div class="add">+    const unresolvable = fileSystem({</div>
+<div class="add">+      exists: () =&gt; true,</div>
+<div class="add">+      // @vibelang-diagnostics-next-line EK4804:off</div>
+<div class="add">+      realPath: () =&gt; throw new Error(&quot;TOP-SECRET&quot;)</div>
+<div class="add">+    })</div>
+<div class="ctx">     const error = failureOf(scanFlows(unresolvable))</div>
+<div class="ctx">     expect(error.code).toBe(&quot;read_failed&quot;)</div>
+<div class="ctx">     expect(JSON.stringify(error)).not.toContain(&quot;TOP-SECRET&quot;)</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/smithers/agent/fs/test/FlowInvoker.test.vibe</code><span class="n"><span class="a">+10</span> <span class="r">−14</span></span></summary><pre class="diff"><div class="hunk">@@ -1,6 +1,7 @@</div>
+<div class="ctx"> import { describe, expect, it, vi } from &quot;@effect/vitest&quot;</div>
+<div class="ctx"> import * as FlowInvoker from &quot;../src/FlowInvoker.vibe&quot;</div>
+<div class="ctx"> import visibleFlow from &quot;./fixtures/command/visible.ts&quot;</div>
+<div class="add">+import { failureOf } from &quot;./helpers.vibe&quot;</div>
+<div class="ctx"> </div>
+<div class="ctx"> const invocation = Object.freeze({ name: &quot;visible&quot;, flow: visibleFlow, input: Object.freeze({ number: 1 }) })</div>
+<div class="ctx"> </div>
+<div class="hunk">@@ -20,9 +21,9 @@</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="ctx">   it(&quot;rejects non-record, inherited, accessor, and non-function implementations&quot;, () =&gt; {</div>
+<div class="del">-    const getter = vi.fn(() =&gt; () =&gt; Effect.void)</div>
+<div class="add">+    const getter = vi.fn(() =&gt; () =&gt; undefined)</div>
+<div class="ctx">     const accessor = Object.defineProperty({}, &quot;invoke&quot;, { enumerable: true, get: getter })</div>
+<div class="del">-    const inherited = Object.create({ invoke: () =&gt; Effect.void })</div>
+<div class="add">+    const inherited = Object.create({ invoke: () =&gt; undefined })</div>
+<div class="ctx">     for (const input of [null, 1, {}, inherited, accessor, { invoke: true }]) {</div>
+<div class="ctx">       expect(() =&gt; FlowInvoker.make(input as never)).toThrow(TypeError)</div>
+<div class="ctx">     }</div>
+<div class="hunk">@@ -31,30 +32,25 @@</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.effect(&quot;fails closed without retaining invocation data&quot;) {</div>
+<div class="ctx">     const service = FlowInvoker.makeNoop()</div>
+<div class="del">-    const secretInvocation = { ...invocation, name: &quot;TOP-SECRET&quot; }</div>
+<div class="del">-    const outcome = exit(service.invoke(secretInvocation))</div>
+<div class="add">+    const error = failureOf(service.invoke({ ...invocation, name: &quot;TOP-SECRET&quot; }))</div>
+<div class="ctx"> </div>
+<div class="ctx">     expect(Object.isFrozen(service)).toBe(true)</div>
+<div class="del">-    expect(outcome._tag).toBe(&quot;Failure&quot;)</div>
+<div class="del">-    if (outcome is Exit.Failure(let cause)) {</div>
+<div class="del">-      const error = Option.getOrThrow(Cause.findErrorOption(cause))</div>
+<div class="del">-      expect(error).toMatchObject({ code: &quot;invocation_unavailable&quot;, method: &quot;FlowInvoker.invoke&quot; })</div>
+<div class="del">-      expect(JSON.stringify(error)).not.toContain(&quot;TOP-SECRET&quot;)</div>
+<div class="del">-    }</div>
+<div class="add">+    expect(error).toMatchObject({ code: &quot;invocation_unavailable&quot;, method: &quot;FlowInvoker.invoke&quot; })</div>
+<div class="add">+    expect(JSON.stringify(error)).not.toContain(&quot;TOP-SECRET&quot;)</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.effect(&quot;accepts a valid override and provides it through the layer&quot;) {</div>
+<div class="ctx">     // The type argument makes the mocked lambda an invoker, which returns a program.</div>
+<div class="del">-    const override = vi.fn&lt;FlowInvoker.Service[&quot;invoke&quot;]&gt;(() =&gt; &quot;overridden&quot;)</div>
+<div class="add">+    const override = vi.fn&lt;FlowInvoker.FlowInvoker[&quot;invoke&quot;]&gt;(() =&gt; &quot;overridden&quot;)</div>
+<div class="ctx">     const service = FlowInvoker.makeNoop({ invoke: override })</div>
+<div class="ctx">     const result = do {</div>
+<div class="ctx">       provide FlowInvoker.FlowInvoker = service {</div>
+<div class="del">-        FlowInvoker.FlowInvoker().invoke(invocation)</div>
+<div class="add">+        FlowInvoker.FlowInvoker.invoke(invocation)</div>
+<div class="ctx">       }</div>
+<div class="ctx">     }</div>
+<div class="ctx">     const layered = do {</div>
+<div class="ctx">       provide FlowInvoker.layerNoop({ invoke: override }) {</div>
+<div class="del">-        FlowInvoker.FlowInvoker().invoke(invocation)</div>
+<div class="add">+        FlowInvoker.FlowInvoker.invoke(invocation)</div>
+<div class="ctx">       }</div>
+<div class="ctx">     }</div>
+<div class="ctx"> </div>
+<div class="hunk">@@ -64,7 +60,7 @@</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="ctx">   it(&quot;rejects accessor and non-function overrides without invoking them&quot;, () =&gt; {</div>
+<div class="del">-    const getter = vi.fn(() =&gt; () =&gt; Effect.void)</div>
+<div class="add">+    const getter = vi.fn(() =&gt; () =&gt; undefined)</div>
+<div class="ctx">     const accessor = Object.defineProperty({}, &quot;invoke&quot;, { enumerable: true, get: getter })</div>
+<div class="ctx">     for (const input of [accessor, { invoke: false }]) {</div>
+<div class="ctx">       expect(() =&gt; FlowInvoker.makeNoop(input as never)).toThrow(TypeError)</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/smithers/agent/fs/test/Incur.test.vibe</code><span class="n"><span class="a">+12</span> <span class="r">−19</span></span></summary><pre class="diff"><div class="hunk">@@ -8,7 +8,7 @@</div>
+<div class="ctx"> import * as Incur from &quot;../src/Incur.vibe&quot;</div>
+<div class="ctx"> import * as Route from &quot;../src/Route.vibe&quot;</div>
+<div class="ctx"> import visible from &quot;./fixtures/command/visible.ts&quot;</div>
+<div class="del">-import { latchedInvoke, makeRoute, recordedImports, recordedModule, refinedModule } from &quot;./helpers.vibe&quot;</div>
+<div class="add">+import { failureOf, latchedInvoke, makeRoute, recordedImports, recordedModule, refinedModule } from &quot;./helpers.vibe&quot;</div>
+<div class="ctx"> </div>
+<div class="ctx"> // Every test runs with `it.live`: a CLI keeps the services of the fiber that</div>
+<div class="ctx"> // created it, so a test clock would freeze its metadata deadline and a test</div>
+<div class="hunk">@@ -22,7 +22,7 @@</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="ctx"> /** Fails the test when a host wait outlasts its real-time deadline. */</div>
+<div class="del">-function within&lt;A, E&gt;(program: Effect.Effect&lt;A, E&gt;, milliseconds: number): A!E {</div>
+<div class="add">+function within&lt;A, E&gt;(program: A!E, milliseconds: number): A!E {</div>
+<div class="ctx">   return Effect.timeoutOrElse(program, {</div>
+<div class="ctx">     duration: milliseconds,</div>
+<div class="ctx">     orElse: () =&gt; die(new Error(&quot;Metadata wait exceeded test deadline&quot;))</div>
+<div class="hunk">@@ -48,11 +48,11 @@</div>
+<div class="ctx">     awaited(gate)</div>
+<div class="ctx">     return visible</div>
+<div class="ctx">   } finally (exit) {</div>
+<div class="del">-    if (exit is Exit.Failure(let cause) &amp;&amp; Cause.hasInterrupts(cause)) interrupted?.()</div>
+<div class="add">+    if (exit is Exit.Failure(let cause) &amp;&amp; cause.hasInterrupts()) interrupted?.()</div>
+<div class="ctx">   }</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="del">-function makeCli(routes: ReadonlyArray&lt;Route.Route&gt; = [makeRoute(&quot;review&quot;)], invoke?: FlowInvoker.Service[&quot;invoke&quot;]) {</div>
+<div class="add">+function makeCli(routes: ReadonlyArray&lt;Route.Route&gt; = [makeRoute(&quot;review&quot;)], invoke?: FlowInvoker.FlowInvoker[&quot;invoke&quot;]) {</div>
+<div class="ctx">   const seen: Array&lt;FlowInvoker.Invocation&gt; = []</div>
+<div class="ctx">   const invoker = FlowInvoker.make({</div>
+<div class="ctx">     invoke: invoke ?? ((invocation) =&gt; {</div>
+<div class="hunk">@@ -67,7 +67,7 @@</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="ctx"> /** Creates a CLI whose host logs at debug level through the given logger layer. */</div>
+<div class="del">-function debugCli(loggers: Layer.Layer&lt;never&gt;, invoker: FlowInvoker.Service) {</div>
+<div class="add">+function debugCli(loggers: Layer.Layer&lt;never&gt;, invoker: FlowInvoker.FlowInvoker) {</div>
+<div class="ctx">   provide loggers, References.MinimumLogLevel = &quot;Debug&quot;, FlowInvoker.FlowInvoker = invoker {</div>
+<div class="ctx">     return Incur.createCli(&quot;flows&quot;, [makeRoute(&quot;review&quot;)])</div>
+<div class="ctx">   }</div>
+<div class="hunk">@@ -223,7 +223,7 @@</div>
+<div class="ctx">     const controller = new AbortController()</div>
+<div class="ctx">     const reason = new Error(&quot;cancelled during startup&quot;)</div>
+<div class="ctx">     // The abort runs when the build calls `load`, before its program runs.</div>
+<div class="del">-    const load = vi.spyOn(Route, &quot;load&quot;).mockImplementationOnce((): Effect.Effect&lt;typeof visible, never, never&gt; =&gt; {</div>
+<div class="add">+    const load = vi.spyOn(Route, &quot;load&quot;).mockImplementationOnce((): typeof visible!! =&gt; {</div>
+<div class="ctx">       controller.abort(reason)</div>
+<div class="ctx">       return () =&gt; visible</div>
+<div class="ctx">     })</div>
+<div class="hunk">@@ -383,7 +383,7 @@</div>
+<div class="ctx">       input: Schema.NullOr(Schema.String),</div>
+<div class="ctx">       output: Schema.NullOr(Schema.String)</div>
+<div class="ctx">     } as const</div>
+<div class="del">-    vi.spyOn(Route, &quot;load&quot;).mockReturnValue(Effect.succeed(flow))</div>
+<div class="add">+    vi.spyOn(Route, &quot;load&quot;).mockImplementation(() =&gt; flow)</div>
+<div class="ctx">     try {</div>
+<div class="ctx">       const inputs: Array&lt;unknown&gt; = []</div>
+<div class="ctx">       const { cli } = makeCli([makeRoute(&quot;scalar&quot;)], ({ input }) =&gt; {</div>
+<div class="hunk">@@ -514,15 +514,8 @@</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.live(&quot;refuses a child route that claims the reserved self segment&quot;) {</div>
+<div class="ctx">     provide FlowInvoker.layerNoop() {</div>
+<div class="del">-      const outcome = exit(Incur.createCli(&quot;flows&quot;, [makeRoute(&quot;domains&quot;), makeRoute(`domains/${Incur.selfSegment}`)]))</div>
+<div class="del">-      expect(outcome._tag).toBe(&quot;Failure&quot;)</div>
+<div class="del">-      if (outcome is Exit.Failure(let cause)) {</div>
+<div class="del">-        const failure = Cause.findErrorOption(cause)</div>
+<div class="del">-        expect(Option.isSome(failure) &amp;&amp; failure.value).toMatchObject({</div>
+<div class="del">-          code: &quot;duplicate_route&quot;,</div>
+<div class="del">-          path: &quot;domains/self&quot;</div>
+<div class="del">-        })</div>
+<div class="del">-      }</div>
+<div class="add">+      expect(failureOf(Incur.createCli(&quot;flows&quot;, [makeRoute(&quot;domains&quot;), makeRoute(`domains/${Incur.selfSegment}`)])))</div>
+<div class="add">+        .toMatchObject({ code: &quot;duplicate_route&quot;, path: &quot;domains/self&quot; })</div>
+<div class="ctx">     }</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="hunk">@@ -744,7 +737,7 @@</div>
+<div class="ctx"> </div>
+<div class="ctx">     it.live.each([&quot;die&quot;, &quot;throw&quot;, &quot;failure&quot;])(&quot;sanitizes an invoker %s&quot;, (kind) =&gt; {</div>
+<div class="ctx">       const sentinel = &quot;SECRET_SENTINEL_credential_from_backend&quot;</div>
+<div class="del">-      const invoke: FlowInvoker.Service[&quot;invoke&quot;] = kind === &quot;throw&quot;</div>
+<div class="add">+      const invoke: FlowInvoker.FlowInvoker[&quot;invoke&quot;] = kind === &quot;throw&quot;</div>
+<div class="ctx">         // A plain function that throws instead of returning a program.</div>
+<div class="ctx">         ? (): never =&gt; {</div>
+<div class="ctx">           throw new Error(sentinel)</div>
+<div class="hunk">@@ -755,7 +748,7 @@</div>
+<div class="ctx">         : ((): never!Error =&gt; {</div>
+<div class="ctx">           // @vibelang-diagnostics-next-line EK4804:off</div>
+<div class="ctx">           throw new Error(sentinel)</div>
+<div class="del">-        }) as unknown as FlowInvoker.Service[&quot;invoke&quot;]</div>
+<div class="add">+        }) as unknown as FlowInvoker.FlowInvoker[&quot;invoke&quot;]</div>
+<div class="ctx">       const { cli } = makeCli(undefined, invoke)</div>
+<div class="ctx">       const response = call(cli, transport)</div>
+<div class="ctx">       expect(response.failed).toBe(true)</div>
+<div class="hunk">@@ -806,7 +799,7 @@</div>
+<div class="ctx">     expect(response.body).not.toContain(defect.message)</div>
+<div class="ctx">     expect(logged).toHaveLength(1)</div>
+<div class="ctx">     expect(logged[0]!.message).toEqual([&quot;Incur invocation failed&quot;])</div>
+<div class="del">-    expect(Cause.squash(logged[0]!.cause)).toBe(defect)</div>
+<div class="add">+    expect(logged[0]!.cause.squash()).toBe(defect)</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.live(&quot;keeps built-in debug diagnostics off CLI stdout&quot;) {</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/smithers/agent/fs/test/RouteBoundary.test.vibe</code><span class="n"><span class="a">+2</span> <span class="r">−2</span></span></summary><pre class="diff"><div class="hunk">@@ -12,8 +12,8 @@</div>
+<div class="ctx">     const canonical = sync(async () =&gt; (await import(&quot;./fixtures/three-projections/flows/review/flow.ts&quot;)).default)</div>
+<div class="ctx">     expect(loaded.input).toBe(canonical.payloadSchema)</div>
+<div class="ctx">     expect(loaded.output).toBe(canonical.successSchema)</div>
+<div class="del">-    expect(Schema.decodeUnknownSync(canonical.payloadSchema)({ number: 7 })).toEqual({ number: 7 })</div>
+<div class="del">-    expect(Schema.decodeUnknownSync(canonical.successSchema)({ accepted: true, number: 7 })).toEqual({</div>
+<div class="add">+    expect(Schema.decodeUnknownEffect(canonical.payloadSchema)({ number: 7 })).toEqual({ number: 7 })</div>
+<div class="add">+    expect(Schema.decodeUnknownEffect(canonical.successSchema)({ accepted: true, number: 7 })).toEqual({</div>
+<div class="ctx">       accepted: true,</div>
+<div class="ctx">       number: 7</div>
+<div class="ctx">     })</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/smithers/agent/fs/test/RuntimeVisibility.test.vibe</code><span class="n"><span class="a">+1</span> <span class="r">−1</span></span></summary><pre class="diff"><div class="hunk">@@ -26,7 +26,7 @@</div>
+<div class="ctx"> })</div>
+<div class="ctx"> </div>
+<div class="ctx"> /** Runs a program with the recording invoker. */</div>
+<div class="del">-function invoking&lt;A, E&gt;(program: Effect.Effect&lt;A, E, FlowInvoker.FlowInvoker&gt;): A!E {</div>
+<div class="add">+function invoking&lt;A, E&gt;(program: A!E!FlowInvoker.FlowInvoker): A!E {</div>
+<div class="ctx">   provide FlowInvoker.FlowInvoker = invoker {</div>
+<div class="ctx">     return program()</div>
+<div class="ctx">   }</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/smithers/agent/fs/test/SchemaBridge.test.vibe</code><span class="n"><span class="a">+20</span> <span class="r">−19</span></span></summary><pre class="diff"><div class="hunk">@@ -22,6 +22,11 @@</div>
+<div class="ctx">   (importOriginal) =&gt; importOriginal&lt;typeof import(&quot;effect/Schema&quot;)&gt;().then((module) =&gt; ({ ...module }))</div>
+<div class="ctx"> )</div>
+<div class="ctx"> </div>
+<div class="add">+// A service that a decoding transformation needs and the bridge cannot supply.</div>
+<div class="add">+service Prefix {</div>
+<div class="add">+  value: string</div>
+<div class="add">+}</div>
+<div class="add">+</div>
+<div class="ctx"> const moduleRef = new Descriptor.SchemaRefModule({ path: &quot;/absolute/flow.ts&quot;, field: &quot;input&quot; })</div>
+<div class="ctx"> </div>
+<div class="ctx"> interface Reply {</div>
+<div class="hunk">@@ -485,22 +490,19 @@</div>
+<div class="ctx">         nested: Schema.Struct({ mode: Schema.Literals([&quot;fast&quot;, &quot;slow&quot;]), count: Schema.Finite })</div>
+<div class="ctx">       })</div>
+<div class="ctx">     }</div>
+<div class="del">-    const load = vi.spyOn(Route, &quot;load&quot;).mockImplementation((route) =&gt;</div>
+<div class="del">-      Effect.succeed(</div>
+<div class="del">-        {</div>
+<div class="del">-          capabilities: [],</div>
+<div class="del">-          effects: undefined,</div>
+<div class="del">-          name: route.name,</div>
+<div class="del">-          input: inputs[route.name]!,</div>
+<div class="del">-          output: Schema.Void</div>
+<div class="del">-        } as const</div>
+<div class="del">-      )</div>
+<div class="del">-    )</div>
+<div class="add">+    const load = vi.spyOn(Route, &quot;load&quot;).mockImplementation((route) =&gt; ({</div>
+<div class="add">+      capabilities: [],</div>
+<div class="add">+      effects: undefined,</div>
+<div class="add">+      name: route.name,</div>
+<div class="add">+      input: inputs[route.name]!,</div>
+<div class="add">+      output: Schema.Void</div>
+<div class="add">+    } as const))</div>
+<div class="ctx">     try {</div>
+<div class="del">-      const cli = Effect.provide(</div>
+<div class="del">-        Incur.createCli(&quot;flows&quot;, Object.keys(inputs).map((name) =&gt; makeRoute(name))),</div>
+<div class="del">-        FlowInvoker.layerNoop()</div>
+<div class="del">-      )</div>
+<div class="add">+      const cli = do {</div>
+<div class="add">+        provide FlowInvoker.layerNoop() {</div>
+<div class="add">+          Incur.createCli(&quot;flows&quot;, Object.keys(inputs).map((name) =&gt; makeRoute(name)))</div>
+<div class="add">+        }</div>
+<div class="add">+      }</div>
+<div class="ctx">       for (let attempt = 0; attempt &lt; 2; attempt++) {</div>
+<div class="ctx">         const response = request(cli, &quot;http://localhost/openapi.json&quot;)</div>
+<div class="ctx">         expect(response.status).toBe(200)</div>
+<div class="hunk">@@ -565,20 +567,19 @@</div>
+<div class="ctx">   }</div>
+<div class="ctx"> </div>
+<div class="ctx">   it.effect(&quot;converts missing schema services into typed refusals&quot;) {</div>
+<div class="del">-    class Prefix extends Context.Service&lt;Prefix, string&gt;()(&quot;test/fs/SchemaBridge/Prefix&quot;) {}</div>
+<div class="ctx">     const ServiceSchema = Schema.String.pipe(</div>
+<div class="ctx">       Schema.decodeTo(</div>
+<div class="ctx">         Schema.String,</div>
+<div class="ctx">         SchemaTransformation.transformEffect({</div>
+<div class="del">-          decode: (value) =&gt; `${Prefix()}${value}`,</div>
+<div class="del">-          encode: (value) =&gt; value.slice(Prefix().length)</div>
+<div class="add">+          decode: (value) =&gt; `${Prefix().value}${value}`,</div>
+<div class="add">+          encode: (value) =&gt; value.slice(Prefix().value.length)</div>
+<div class="ctx">         })</div>
+<div class="ctx">       )</div>
+<div class="ctx">     )</div>
+<div class="ctx"> </div>
+<div class="ctx">     expect(failureOf(SchemaBridge.decodeInput(ServiceSchema, &quot;value&quot;)).code).toBe(&quot;decode_failed&quot;)</div>
+<div class="ctx">     expect(failureOf(SchemaBridge.encodeOutput(ServiceSchema, &quot;prefix:value&quot;)).code).toBe(&quot;encode_failed&quot;)</div>
+<div class="del">-    provide Prefix = &quot;prefix:&quot; {</div>
+<div class="add">+    provide Prefix = { value: &quot;prefix:&quot; } {</div>
+<div class="ctx">       expect(SchemaBridge.decodeInput(ServiceSchema, &quot;value&quot;)).toBe(&quot;prefix:value&quot;)</div>
+<div class="ctx">       expect(SchemaBridge.encodeOutput(ServiceSchema, &quot;prefix:value&quot;)).toBe(&quot;value&quot;)</div>
+<div class="ctx">     }</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/smithers/agent/fs/test/helpers.vibe</code><span class="n"><span class="a">+7</span> <span class="r">−6</span></span></summary><pre class="diff"><div class="hunk">@@ -13,10 +13,11 @@</div>
+<div class="ctx">  * The expected failure a program fails with; a success or a defect fails the</div>
+<div class="ctx">  * test. The program may need services that the enclosing block provides.</div>
+<div class="ctx">  */</div>
+<div class="del">-export function failureOf&lt;E, R&gt;(program: Effect.Effect&lt;unknown, E, R&gt;): E!!R {</div>
+<div class="del">-  const outcome = exit(program)</div>
+<div class="del">-  if (outcome is Exit.Failure(let cause)) return Option.getOrThrow(Cause.findErrorOption(cause))</div>
+<div class="del">-  return assert.fail(&quot;expected the program to fail&quot;)</div>
+<div class="add">+export function failureOf&lt;E, R&gt;(program: unknown!E!R): E!!R {</div>
+<div class="add">+  return match (exit(program)) {</div>
+<div class="add">+    when Exit.Failure(let cause): Cause.findErrorOption(cause).getOrThrow();</div>
+<div class="add">+    default: assert.fail(&quot;expected the program to fail&quot;);</div>
+<div class="add">+  }</div>
+<div class="ctx"> }</div>
+<div class="ctx"> </div>
+<div class="ctx"> export const makeRoute = (</div>
+<div class="hunk">@@ -45,7 +46,7 @@</div>
+<div class="ctx">  * an in-flight fiber without real timers.</div>
+<div class="ctx">  */</div>
+<div class="ctx"> export const latchedInvoke = (): {</div>
+<div class="del">-  invoke: FlowInvoker.Service[&quot;invoke&quot;]</div>
+<div class="add">+  invoke: FlowInvoker.FlowInvoker[&quot;invoke&quot;]</div>
+<div class="ctx">   started: Promise&lt;void&gt;</div>
+<div class="ctx">   finalized: Promise&lt;void&gt;</div>
+<div class="ctx">   release: () =&gt; void</div>
+<div class="hunk">@@ -70,7 +71,7 @@</div>
+<div class="ctx">           return gate</div>
+<div class="ctx">         }, begin, gate)</div>
+<div class="ctx">       } finally (exit) {</div>
+<div class="del">-        if (exit is Exit.Failure(let cause) &amp;&amp; Cause.hasInterrupts(cause)) finish()</div>
+<div class="add">+        if (exit is Exit.Failure(let cause) &amp;&amp; cause.hasInterrupts()) finish()</div>
+<div class="ctx">       }</div>
+<div class="ctx">     },</div>
+<div class="ctx">     started,</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/smithers/agent/integrations/test/BrowserBundle.test.ts</code><span class="n"><span class="a">+5</span> <span class="r">−0</span></span></summary><pre class="diff"><div class="hunk">@@ -17,11 +17,14 @@</div>
+<div class="ctx"> import { createHash, createHmac } from &quot;node:crypto&quot;</div>
+<div class="ctx"> import { fileURLToPath } from &quot;node:url&quot;</div>
+<div class="ctx"> import { createContext, runInContext } from &quot;node:vm&quot;</div>
+<div class="add">+import vibelang from &quot;vibelang-unplugin/esbuild&quot;</div>
+<div class="ctx"> import { afterEach, describe, expect, it } from &quot;vitest&quot;</div>
+<div class="ctx"> import { type Fixture, json, startFixture } from &quot;./Fixture.ts&quot;</div>
+<div class="ctx"> </div>
+<div class="ctx"> const root = fileURLToPath(new URL(&quot;..&quot;, import.meta.url))</div>
+<div class="ctx"> const conditions = [&quot;workerd&quot;, &quot;worker&quot;, &quot;browser&quot;, &quot;import&quot;, &quot;default&quot;]</div>
+<div class="add">+// The root reaches @smthrs/errors, whose source is VibeLang.</div>
+<div class="add">+const plugins = [vibelang({ root })]</div>
+<div class="ctx"> </div>
+<div class="ctx"> /** The root entry, plus the `effect` modules a caller runs it with. */</div>
+<div class="ctx"> type Realm =</div>
+<div class="hunk">@@ -84,6 +87,7 @@</div>
+<div class="ctx">     format: &quot;iife&quot;,</div>
+<div class="ctx">     globalName: &quot;realm&quot;,</div>
+<div class="ctx">     target: &quot;es2022&quot;,</div>
+<div class="add">+    plugins,</div>
+<div class="ctx">     write: false,</div>
+<div class="ctx">     logLevel: &quot;silent&quot;</div>
+<div class="ctx">   })</div>
+<div class="hunk">@@ -114,6 +118,7 @@</div>
+<div class="ctx">       platform: &quot;browser&quot;,</div>
+<div class="ctx">       conditions,</div>
+<div class="ctx">       format: &quot;esm&quot;,</div>
+<div class="add">+      plugins,</div>
+<div class="ctx">       write: false,</div>
+<div class="ctx">       logLevel: &quot;silent&quot;,</div>
+<div class="ctx">       metafile: true</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/smithers/agent/integrations/test/GitHubProxy.test.ts</code><span class="n"><span class="a">+9</span> <span class="r">−1</span></span></summary><pre class="diff"><div class="hunk">@@ -235,7 +235,15 @@</div>
+<div class="ctx">       }).pipe(Effect.provide(FetchHttpClient.layer)))</div>
+<div class="ctx">     `</div>
+<div class="ctx">     const spawn = () =&gt;</div>
+<div class="del">-      promisify(execFile)(process.execPath, [&quot;--input-type=module&quot;, &quot;-e&quot;, writer, origin], {</div>
+<div class="add">+      // The writer imports source that reaches @smthrs/errors, which is VibeLang.</div>
+<div class="add">+      promisify(execFile)(process.execPath, [</div>
+<div class="add">+        &quot;--import&quot;,</div>
+<div class="add">+        &quot;vibelang/register&quot;,</div>
+<div class="add">+        &quot;--input-type=module&quot;,</div>
+<div class="add">+        &quot;-e&quot;,</div>
+<div class="add">+        writer,</div>
+<div class="add">+        origin</div>
+<div class="add">+      ], {</div>
+<div class="ctx">         cwd: fileURLToPath(new URL(&quot;..&quot;, import.meta.url)),</div>
+<div class="ctx">         timeout: 30_000</div>
+<div class="ctx">       })</div>
+<div class="ctx">&nbsp;</div></pre></details>
+
+<h2>Config, docs and lockfile</h2>
+<details><summary><code>packages/smithers/agent/fs/docs/api.md</code><span class="n"><span class="a">+26</span> <span class="r">−26</span></span></summary><pre class="diff"><div class="hunk">@@ -291,26 +291,26 @@</div>
+<div class="ctx"> | `flow`  | `Flow.Any` | The loaded flow, from [@smthrs/core](/api/core).                |</div>
+<div class="ctx"> | `input` | `unknown`  | The decoded input; see `CommandSurface` for snapshot semantics. |</div>
+<div class="ctx"> </div>
+<div class="del">-### `Service`</div>
+<div class="del">-</div>
+<div class="del">-Executes a materialized flow.</div>
+<div class="del">-</div>
+<div class="del">-| Field    | Type                                                          | Description                 |</div>
+<div class="add">+### `FlowInvoker`</div>
+<div class="add">+</div>
+<div class="add">+```ts</div>
+<div class="add">+service FlowInvoker {</div>
+<div class="add">+  invoke(invocation: Invocation): unknown!FsError</div>
+<div class="add">+}</div>
+<div class="add">+```</div>
+<div class="add">+</div>
+<div class="add">+Executes a materialized flow. The VibeLang `service` declaration is both the</div>
+<div class="add">+service key, `&quot;@smthrs/fs/src/FlowInvoker#FlowInvoker&quot;`, and, as a type, the</div>
+<div class="add">+implementation&#x27;s shape.</div>
+<div class="add">+</div>
+<div class="add">+| Member   | Type                                                          | Description                 |</div>
+<div class="ctx"> | -------- | ------------------------------------------------------------- | --------------------------- |</div>
+<div class="ctx"> | `invoke` | `(invocation: Invocation) =&gt; Effect.Effect&lt;unknown, FsError&gt;` | Runs one materialized flow. |</div>
+<div class="ctx"> </div>
+<div class="del">-### `FlowInvoker`</div>
+<div class="del">-</div>
+<div class="del">-```ts</div>
+<div class="del">-class FlowInvoker extends Context.Service&lt;FlowInvoker, Service&gt;()(&quot;/fs/FlowInvoker&quot;)</div>
+<div class="del">-```</div>
+<div class="del">-</div>
+<div class="del">-The flow invocation service tag, keyed `&quot;/fs/FlowInvoker&quot;`.</div>
+<div class="del">-</div>
+<div class="ctx"> ### `FlowInvoker.make`</div>
+<div class="ctx"> </div>
+<div class="ctx"> ```ts</div>
+<div class="del">-;((implementation: Service) =&gt; Service)</div>
+<div class="add">+;((implementation: FlowInvoker) =&gt; FlowInvoker)</div>
+<div class="ctx"> ```</div>
+<div class="ctx"> </div>
+<div class="ctx"> Constructs a frozen flow invoker from an implementation. The implementation</div>
+<div class="hunk">@@ -321,7 +321,7 @@</div>
+<div class="ctx"> ### `FlowInvoker.makeNoop`</div>
+<div class="ctx"> </div>
+<div class="ctx"> ```ts</div>
+<div class="del">-;((overrides?: Partial&lt;Service&gt;) =&gt; Service)</div>
+<div class="add">+;((overrides?: Partial&lt;FlowInvoker&gt;) =&gt; FlowInvoker)</div>
+<div class="ctx"> ```</div>
+<div class="ctx"> </div>
+<div class="ctx"> Constructs an invoker that fails every invocation with</div>
+<div class="hunk">@@ -332,7 +332,7 @@</div>
+<div class="ctx"> ### `FlowInvoker.layerNoop`</div>
+<div class="ctx"> </div>
+<div class="ctx"> ```ts</div>
+<div class="del">-;((overrides?: Partial&lt;Service&gt;) =&gt; Layer.Layer&lt;FlowInvoker&gt;)</div>
+<div class="add">+;((overrides?: Partial&lt;FlowInvoker&gt;) =&gt; Layer.Layer&lt;FlowInvoker&gt;)</div>
+<div class="ctx"> ```</div>
+<div class="ctx"> </div>
+<div class="ctx"> Provides `makeNoop` as the `FlowInvoker` layer.</div>
+<div class="hunk">@@ -362,23 +362,23 @@</div>
+<div class="ctx">   | &quot;invocation_unavailable&quot;</div>
+<div class="ctx"> ```</div>
+<div class="ctx"> </div>
+<div class="del">-Stable failure codes for routing, parsing, loading, and decoding, also</div>
+<div class="del">-exported as a `Schema.Literals` value for decoding. For the meaning and</div>
+<div class="del">-trigger of each code, see the</div>
+<div class="add">+Stable failure codes for routing, parsing, loading, and decoding. For the</div>
+<div class="add">+meaning and trigger of each code, see the</div>
+<div class="ctx"> [error codes table](./contract.md#error-codes).</div>
+<div class="ctx"> </div>
+<div class="ctx"> ### `FsError`</div>
+<div class="ctx"> </div>
+<div class="ctx"> ```ts</div>
+<div class="del">-class FsError extends Schema.TaggedError&lt;FsError&gt;()(&quot;flows/fs/FsError&quot;, {</div>
+<div class="del">-  code: Code,</div>
+<div class="del">-  method: Schema.String,</div>
+<div class="del">-  description: Schema.String,</div>
+<div class="del">-  path: Schema.optional(Schema.String)</div>
+<div class="del">-})</div>
+<div class="add">+error FsError {</div>
+<div class="add">+  code: Code</div>
+<div class="add">+  method: string</div>
+<div class="add">+  description: string</div>
+<div class="add">+  path?: string | undefined</div>
+<div class="add">+}</div>
+<div class="ctx"> ```</div>
+<div class="ctx"> </div>
+<div class="del">-A recoverable file-routing failure. `method` names the surface that failed so</div>
+<div class="add">+A VibeLang `error` declaration: a tagged error class whose `_tag` is</div>
+<div class="add">+`&quot;FsError&quot;`, with readonly fields. A recoverable file-routing failure. `method` names the surface that failed so</div>
+<div class="ctx"> a CLI or an agent can report the origin without a stack trace. Raw argv,</div>
+<div class="ctx"> input values, output values, schema issues, and implementation causes are</div>
+<div class="ctx"> deliberately not retained at this boundary.</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/smithers/agent/fs/docs/exports.md</code><span class="n"><span class="a">+4</span> <span class="r">−6</span></span></summary><pre class="diff"><div class="hunk">@@ -1,9 +1,9 @@</div>
+<div class="ctx"> ---</div>
+<div class="ctx"> title: &quot;Exported members&quot;</div>
+<div class="del">-description: &quot;The public surface of @smthrs/fs as one index: 8 namespaces and 44 documented members.&quot;</div>
+<div class="add">+description: &quot;The public surface of @smthrs/fs as one index: 8 namespaces and 42 documented members.&quot;</div>
+<div class="ctx"> ---</div>
+<div class="ctx"> </div>
+<div class="del">-The surface of `@smthrs/fs` is 8 namespaces and 44 documented members. Anything</div>
+<div class="add">+The surface of `@smthrs/fs` is 8 namespaces and 42 documented members. Anything</div>
+<div class="ctx"> the package exports that this index does not name is internal. For signatures,</div>
+<div class="ctx"> behavior, and errors, see the [API reference](./api.md).</div>
+<div class="ctx"> </div>
+<div class="hunk">@@ -61,8 +61,7 @@</div>
+<div class="ctx"> | Export        | Kind      | Category     | Summary                                            |</div>
+<div class="ctx"> | ------------- | --------- | ------------ | -------------------------------------------------- |</div>
+<div class="ctx"> | `Invocation`  | interface | models       | One materialized invocation.                       |</div>
+<div class="del">-| `Service`     | interface | models       | Executes a materialized flow.                      |</div>
+<div class="del">-| `FlowInvoker` | class     | services     | The flow invocation service.                       |</div>
+<div class="add">+| `FlowInvoker` | service   | services     | Executes a materialized flow.                      |</div>
+<div class="ctx"> | `make`        | const     | constructors | Constructs a flow invoker from an implementation.  |</div>
+<div class="ctx"> | `makeNoop`    | const     | constructors | Constructs an invoker that fails every invocation. |</div>
+<div class="ctx"> | `layerNoop`   | const     | layers       | Provides an invoker that fails every invocation.   |</div>
+<div class="hunk">@@ -73,9 +72,8 @@</div>
+<div class="ctx"> </div>
+<div class="ctx"> | Export    | Kind  | Category | Summary                                                           |</div>
+<div class="ctx"> | --------- | ----- | -------- | ----------------------------------------------------------------- |</div>
+<div class="del">-| `Code`    | const | models   | Stable failure codes for routing, parsing, loading, and decoding. |</div>
+<div class="ctx"> | `Code`    | type  | models   | Stable failure codes for routing, parsing, loading, and decoding. |</div>
+<div class="del">-| `FsError` | class | errors   | A recoverable file-routing failure.                               |</div>
+<div class="add">+| `FsError` | error | errors   | A recoverable file-routing failure.                               |</div>
+<div class="ctx"> </div>
+<div class="ctx"> ## `Incur`</div>
+<div class="ctx"> </div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/smithers/agent/fs/package.json</code><span class="n"><span class="a">+0</span> <span class="r">−1</span></span></summary><pre class="diff"><div class="hunk">@@ -114,7 +114,6 @@</div>
+<div class="ctx">     &quot;typescript-eslint&quot;: &quot;8.69.0&quot;,</div>
+<div class="ctx">     &quot;vibelang&quot;: &quot;0.0.2&quot;,</div>
+<div class="ctx">     &quot;vibelang-vite&quot;: &quot;0.0.2&quot;,</div>
+<div class="del">-    &quot;vite&quot;: &quot;^8.2.2&quot;,</div>
+<div class="ctx">     &quot;vitest&quot;: &quot;5.0.0&quot;</div>
+<div class="ctx">   }</div>
+<div class="ctx"> }</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/smithers/agent/integrations/package.json</code><span class="n"><span class="a">+3</span> <span class="r">−0</span></span></summary><pre class="diff"><div class="hunk">@@ -504,6 +504,9 @@</div>
+<div class="ctx">     &quot;madge&quot;: &quot;8.0.0&quot;,</div>
+<div class="ctx">     &quot;typescript&quot;: &quot;5.9.3&quot;,</div>
+<div class="ctx">     &quot;typescript-eslint&quot;: &quot;8.69.0&quot;,</div>
+<div class="add">+    &quot;vibelang&quot;: &quot;0.0.2&quot;,</div>
+<div class="add">+    &quot;vibelang-unplugin&quot;: &quot;0.0.2&quot;,</div>
+<div class="add">+    &quot;vibelang-vite&quot;: &quot;0.0.2&quot;,</div>
+<div class="ctx">     &quot;vitest&quot;: &quot;5.0.0&quot;</div>
+<div class="ctx">   }</div>
+<div class="ctx"> }</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>packages/smithers/agent/integrations/vitest.config.ts</code><span class="n"><span class="a">+4</span> <span class="r">−1</span></span></summary><pre class="diff"><div class="hunk">@@ -1,9 +1,12 @@</div>
+<div class="ctx"> import { tmpdir } from &quot;node:os&quot;</div>
+<div class="ctx"> import { join } from &quot;node:path&quot;</div>
+<div class="del">-import { defineConfig } from &quot;vitest/config&quot;</div>
+<div class="add">+import vibelang from &quot;vibelang-vite&quot;</div>
+<div class="add">+import { configDefaults, defineConfig } from &quot;vitest/config&quot;</div>
+<div class="ctx"> </div>
+<div class="ctx"> export default defineConfig({</div>
+<div class="add">+  plugins: [vibelang({ project: &quot;tsconfig.test.json&quot; })],</div>
+<div class="ctx">   test: {</div>
+<div class="add">+    include: [...configDefaults.include, &quot;**/*.{test,spec}.vibe&quot;],</div>
+<div class="ctx">     environment: &quot;node&quot;,</div>
+<div class="ctx">     // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s</div>
+<div class="ctx">     // wall-clock budget so correct suites survive coverage-instrumented load</div>
+<div class="ctx">&nbsp;</div></pre></details><details><summary><code>pnpm-lock.yaml</code><span class="n"><span class="a">+10</span> <span class="r">−37</span></span></summary><pre class="diff"><div class="hunk">@@ -2012,12 +2012,9 @@</div>
+<div class="ctx">       vibelang-vite:</div>
+<div class="ctx">         specifier: link:../../../../../effectscript/packages/vite</div>
+<div class="ctx">         version: link:../../../../../effectscript/packages/vite</div>
+<div class="del">-      vite:</div>
+<div class="del">-        specifier: ^8.2.2</div>
+<div class="del">-        version: 8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)</div>
+<div class="ctx">       vitest:</div>
+<div class="ctx">         specifier: 5.0.0</div>
+<div class="del">-        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))</div>
+<div class="add">+        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))</div>
+<div class="ctx"> </div>
+<div class="ctx">   packages/smithers/agent/harness:</div>
+<div class="ctx">     dependencies:</div>
+<div class="hunk">@@ -2301,6 +2298,15 @@</div>
+<div class="ctx">       typescript-eslint:</div>
+<div class="ctx">         specifier: 8.69.0</div>
+<div class="ctx">         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)</div>
+<div class="add">+      vibelang:</div>
+<div class="add">+        specifier: link:../../../../../effectscript/packages/compiler</div>
+<div class="add">+        version: link:../../../../../effectscript/packages/compiler</div>
+<div class="add">+      vibelang-unplugin:</div>
+<div class="add">+        specifier: link:../../../../../effectscript/packages/unplugin</div>
+<div class="add">+        version: link:../../../../../effectscript/packages/unplugin</div>
+<div class="add">+      vibelang-vite:</div>
+<div class="add">+        specifier: link:../../../../../effectscript/packages/vite</div>
+<div class="add">+        version: link:../../../../../effectscript/packages/vite</div>
+<div class="ctx">       vitest:</div>
+<div class="ctx">         specifier: 5.0.0</div>
+<div class="ctx">         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))</div>
+<div class="hunk">@@ -22350,15 +22356,6 @@</div>
+<div class="ctx">     dependencies:</div>
+<div class="ctx">       &#x27;@vitest/istanbul-lib-coverage&#x27;: 1.0.1</div>
+<div class="ctx"> </div>
+<div class="del">-  &#x27;@vitest/mocker@5.0.0(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))&#x27;:</div>
+<div class="del">-    dependencies:</div>
+<div class="del">-      &#x27;@jridgewell/trace-mapping&#x27;: 0.3.31</div>
+<div class="del">-      &#x27;@vitest/spy&#x27;: 5.0.0</div>
+<div class="del">-      estree-walker: 3.0.3</div>
+<div class="del">-      magic-string: 1.2.3</div>
+<div class="del">-    optionalDependencies:</div>
+<div class="del">-      vite: 8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)</div>
+<div class="del">-</div>
+<div class="ctx">   &#x27;@vitest/mocker@5.0.0(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))&#x27;:</div>
+<div class="ctx">     dependencies:</div>
+<div class="ctx">       &#x27;@jridgewell/trace-mapping&#x27;: 0.3.31</div>
+<div class="hunk">@@ -27949,30 +27946,6 @@</div>
+<div class="ctx">     optionalDependencies:</div>
+<div class="ctx">       vite: 8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)</div>
+<div class="ctx"> </div>
+<div class="del">-  vitest@5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)):</div>
+<div class="del">-    dependencies:</div>
+<div class="del">-      &#x27;@types/chai&#x27;: 5.2.3</div>
+<div class="del">-      &#x27;@vitest/mocker&#x27;: 5.0.0(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))</div>
+<div class="del">-      chai: 6.2.2</div>
+<div class="del">-      es-module-lexer: 2.3.2</div>
+<div class="del">-      expect-type: 1.4.0</div>
+<div class="del">-      magic-string: 1.2.3</div>
+<div class="del">-      obug: 2.1.4</div>
+<div class="del">-      picomatch: 4.0.7</div>
+<div class="del">-      std-env: 4.2.0</div>
+<div class="del">-      tinybench: 6.1.4</div>
+<div class="del">-      tinyexec: 1.3.0</div>
+<div class="del">-      tinyglobby: 0.2.17</div>
+<div class="del">-      vite: 8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)</div>
+<div class="del">-      why-is-node-running: 2.3.0</div>
+<div class="del">-    optionalDependencies:</div>
+<div class="del">-      &#x27;@opentelemetry/api&#x27;: 1.9.1</div>
+<div class="del">-      &#x27;@types/node&#x27;: 26.4.1</div>
+<div class="del">-      &#x27;@vitest/coverage-v8&#x27;: 5.0.0(vitest@5.0.0)</div>
+<div class="del">-      happy-dom: 20.13.2</div>
+<div class="del">-    transitivePeerDependencies:</div>
+<div class="del">-      - msw</div>
+<div class="del">-</div>
+<div class="ctx">   vitest@5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)):</div>
+<div class="ctx">     dependencies:</div>
+<div class="ctx">       &#x27;@types/chai&#x27;: 5.2.3</div>
+<div class="ctx">&nbsp;</div></pre></details>
+</main>
+</body>
+</html>

@@ -14,6 +14,8 @@ A recording (`{ "type": "video", "path": "….mp4", "chapters": "….chapters.js
 
 A Markdown file in `media` (`.md`, or `"type": "md"`) reads like a README on GitHub: `markdown.mjs` renders it on the server, with links and images resolved beside the file through the file endpoint, and the page colours its code blocks. Links open in a new tab, `#anchors` scroll the page, `j` `k` scroll, and `o` shows the raw source.
 
+A TypeScript or JavaScript slice has three reading tools, each a key and a button. `c` hides comments, whole lines and blocks, and comments beside code; the code closes up, every line keeps its file number, and the choice stays in the browser. `z` folds every function, method, class and object body and every statement block of six lines or more, and `Z` unfolds them all. A chevron in the gutter folds one body, and a folded body reads as its first line, `{ … }`, and its line count; click the dots to open it. `O` opens the outline: the slice's declarations, members and Effect.gen's named steps (`const user = yield* …`) in file order, nested. Type to filter, `↑` `↓` to pick, and `Enter` or a click to jump; the line opens out of any fold and is marked. A `path:42` reference in the guide links to its line the same way, past hidden comments and folds. The ranges come from TypeScript's own parser on the server (`outline.mjs`), never regular expressions, so `//` in a string or a regular expression stays code.
+
 `g` marks a note as applying to every item of the item's kind (zoom, a missing timeline): a badge shows while composing, the answer records `"scope": "all"` and the kind, and a toast confirms it. Undo restores the note and its scope.
 
 A verify item with `before: { media, note, stamp }` and `after: { media }` shows before and after: two recordings side by side on one timeline (the old one follows to the same chapter and offset, and opens on Will's first stamped note, pinned where he made it), two designs or images side by side, or a diff for code with his `L42:` notes on the old lines. `b` cycles both, before and after. Without `before.media`, the after recording plays alone with the note pinned at its stamp. The curator keeps old media in `queue/before/<id>/`.
@@ -32,14 +34,16 @@ The server has no dependencies and binds to 127.0.0.1. It refuses another host n
 | `GET /api/events` | A server-sent `queue` event when `queue.json`, `coverage.json` or `answers.jsonl` changes, or a snooze ends |
 | `POST /api/answer` | Appends an answer: `{ itemId, action, option?, scope?, text }`; the server stamps `at`, `revision`, `title`, and with `scope: "all"` the item's `kind` |
 | `GET /api/file?path=…` | A file under the repository, `~/Desktop/smithers-mvp/gifs`, `~/Desktop/smithers-mvp/videos` or `queue/before`, read-only, with byte ranges so a video can seek. Refuses paths and symlinks that leave those roots, `.git`, `.jj`, `node_modules`, `.env*` and secret names. `/api/file/<path>` serves the same file so a design's relative styles load |
+| `GET /api/outline?path=…` | A TypeScript or JavaScript file's `{ supported, comments: { lines, inline }, folds, symbols }`, with the file endpoint's roots and refusals; lines 1-based, columns 0-based; `{ supported: false }` for other files. TypeScript loads from the workspace on the first request, and each outline is cached until the file changes |
 | `GET /api/markdown?path=…` | A Markdown file rendered to HTML, `{ html, title }`, with the file endpoint's roots and refusals |
 | `GET /api/stats` | Answers today, remaining by kind, and coverage |
 
 The server also serves the built site at `/`. Set `PORT`, `QUEUE_DIR`, `MAINTAINER_SITE_REPO`, `MAINTAINER_SITE_GIFS`, `MAINTAINER_SITE_VIDEOS` or `MAINTAINER_SITE_OUT` to change where it listens and reads.
 
 ```sh
-pnpm --filter @smthrs/maintainer-site test         # renderer and server tests
+pnpm --filter @smthrs/maintainer-site test         # renderer, server and outline tests
 pnpm --filter @smthrs/maintainer-site test:queue   # drives the queue by keyboard in Chromium; writes screenshots/queue-*.png
+pnpm --filter @smthrs/maintainer-site test:code    # the code tools (comments, folds, outline) by key and click in Chromium
 ```
 
 ```sh
@@ -78,7 +82,10 @@ Set `MAINTAINER_SITE_GIFS` or `MAINTAINER_SITE_OUT` to read GIFs from or write t
 | `client/site.js`, `client/site.css` | The page: hash routes for home, work, flows, graph, search and notes |
 | `markdown.test.mjs` | Renderer tests: `pnpm --filter @smthrs/maintainer-site test` |
 | `screenshots.mjs` | Opens the built site in Chromium (apps/mvp's Playwright), checks every view and fails on a console error; saves screenshots to `screenshots/` |
-| `serve.mjs` | The local server: the queue API, live events, the read-only file endpoint, and the built site |
-| `client/queue.html`, `client/queue.js`, `client/queue.css` | The queue page: keys, the code view with hand-written syntax colour, the review player for recordings, media and designs in a sandboxed frame |
+| `serve.mjs` | The local server: the queue API, live events, the read-only file endpoint, outlines, and the built site |
+| `outline.mjs` | A code file's comment ranges, folds and symbols from TypeScript's parser, for the queue's code tools |
+| `client/queue.html`, `client/queue.js`, `client/queue.css` | The queue page: keys, the code view with hand-written syntax colour and its tools (comments, folds, outline), the review player for recordings, media and designs in a sandboxed frame |
 | `test/serve.test.mjs` | Server tests: the API, append and undo, snoozes, events, byte ranges, and every file refusal |
 | `test/queue.e2e.mjs`, `test/fixtures/` | The keyboard-only check over one item of each kind; writes `screenshots/queue-<kind>-<theme>.png` |
+| `test/outline.test.mjs` | Outline tests on real repository files: comment ranges (not `//` in strings or regular expressions), folds and symbols |
+| `test/code-tools.e2e.mjs` | The code tools in Chromium, by key and click: hide comments, fold and unfold, the outline, guide line references |

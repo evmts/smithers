@@ -321,6 +321,8 @@ await press(",")
 check(await near(1.5), ", steps one frame back")
 const rate = () => video.evaluate((element) => element.playbackRate)
 await press(">")
+// The label repaints on the video's ratechange event, a task after the key.
+await page.waitForFunction(() => document.querySelector(".q-speed b")?.textContent === "1.25×", null, { timeout: 2000 }).catch(() => {})
 check((await rate()) === 1.25 && (await page.locator(".q-speed b").textContent()) === "1.25×", "> speeds up")
 for (let index = 0; index < 6; index++) await press(">")
 check((await rate()) === 2, "speed stops at 2×")

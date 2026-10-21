@@ -510,6 +510,43 @@ describe("GET /api/markdown", () => {
   })
 })
 
+describe("GET /api/outline", () => {
+  const outline = (path) => call(`/api/outline?path=${encodeURIComponent(path)}`)
+
+  test("parses a TypeScript file: comment lines, folds and symbols", async () => {
+    const response = await outline("src/shape-stream.ts")
+    assert.equal(response.status, 200)
+    const { supported, comments, folds, symbols } = response.json
+    assert.equal(supported, true)
+    assert.deepEqual(comments.lines, [[1, 1], [4, 4], [18, 18], [44, 44]])
+    assert.ok(folds.some((fold) => fold.from === 13 && fold.to === 28 && fold.kind === "class"))
+    assert.deepEqual(symbols.find((symbol) => symbol.name === "ShapeStream"), { name: "ShapeStream", kind: "class", line: 13, depth: 0, exported: true })
+  })
+
+  test("answers again after the file changes, from a fresh parse", async () => {
+    writeFileSync(join(repo, "src/changing.ts"), "export const a = 1\n")
+    assert.deepEqual((await outline("src/changing.ts")).json.symbols.map((symbol) => symbol.name), ["a"])
+    writeFileSync(join(repo, "src/changing.ts"), "// now longer\nexport const a = 1\nexport const b = 2\n")
+    const again = (await outline("src/changing.ts")).json
+    assert.deepEqual(again.symbols.map((symbol) => symbol.name), ["a", "b"])
+    assert.deepEqual(again.comments.lines, [[1, 1]])
+  })
+
+  test("says a file it cannot parse is unsupported", async () => {
+    const response = await outline("src/shape-stream.css")
+    assert.equal(response.status, 200)
+    assert.deepEqual(response.json, { supported: false })
+  })
+
+  test("keeps the file endpoint's refusals", async () => {
+    assert.equal((await outline(".env")).status, 403)
+    assert.equal((await outline("node_modules/pkg/index.js")).status, 403)
+    assert.equal((await outline("../outside/secret.txt")).status, 403)
+    assert.equal((await outline("src/missing.ts")).status, 404)
+    assert.equal((await call("/api/outline")).status, 400)
+  })
+})
+
 describe("pages", () => {
   test("serves the queue client and the built site", async () => {
     const queue = await call("/queue")

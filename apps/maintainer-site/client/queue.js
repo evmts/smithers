@@ -30,6 +30,8 @@
   }
   const draftKey = (id) => `queue:draft:${id}`
   const scopeKey = (id) => `queue:scope:${id}`
+  const COMMENTS_KEY = "queue:hide-comments"
+  const OUTLINE_KEY = "queue:outline"
 
   // ---------------------------------------------------------------------------------------------------------
   // State.
@@ -48,6 +50,12 @@
   const files = new Map() // path -> Promise<{ ok, text, type }>
   let stats = { doneToday: 0, remaining: {}, total: 0, coverage: null }
   let missing = false
+  const outlines = new Map() // path -> Promise<{ comments, folds, symbols } | null>
+  let hideComments = store.get(COMMENTS_KEY) === "1" // c, per viewer
+  let outlineOpen = store.get(OUTLINE_KEY) === "1" // O, per viewer
+  const foldedBy = new Map() // path -> Set of folded first lines, this session
+  let view = null // the code on screen with its outline; see codeView
+  let codeToken = null // the latest renderCode; an older load never takes the view
 
   const KIND_LABEL = { decision: "Decision", code: "Code", design: "Design", gif: "Flow", verify: "Verify", question: "Question" }
   const KIND_PLURAL = { decision: "decisions", code: "code reviews", design: "designs", gif: "flows", verify: "fixes to verify", question: "questions" }
@@ -92,6 +100,28 @@
     return files.get(path)
   }
 
+  // Comments, folds and symbols from the server's TypeScript parse; null for other languages or on failure. A failure
+  // is not kept, so the next view of the file asks again (a server restarted with the endpoint, a file that parses now).
+  const canOutline = (path) => /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/i.test(path ?? "")
+  const loadOutline = (path) => {
+    if (!outlines.has(path)) {
+      const failed = () => {
+        outlines.delete(path)
+        return null
+      }
+      outlines.set(
+        path,
+        canOutline(path)
+          ? fetch(`/api/outline?path=${encodeURIComponent(path)}`, { cache: "no-store" })
+              .then((response) => (response.ok ? response.json() : failed()))
+              .then((outline) => (outline?.supported ? outline : null))
+              .catch(failed)
+          : Promise.resolve(null),
+      )
+    }
+    return outlines.get(path)
+  }
+
   async function refresh() {
     let queue
     try {
@@ -124,7 +154,11 @@
   const box = () => card?.querySelector("textarea") ?? null
 
   function prefetch(item) {
-    if (item.kind === "code") for (const file of item.files ?? []) loadFile(file.path)
+    if (item.kind === "code")
+      for (const file of item.files ?? []) {
+        loadFile(file.path)
+        loadOutline(file.path)
+      }
   }
 
   // ---------------------------------------------------------------------------------------------------------
@@ -173,6 +207,7 @@
     if (sent.length || serverLast) parts.push(["u", "undo"])
     if (item) parts.push(["i", "type"], ["⌘↵", "send"], ["j k", "scroll"])
     if (item?.kind === "code" && (item.files?.length ?? 0) > 1) parts.push(["J K", "file"])
+    if (item?.kind === "code" && canOutline(item.files?.[fileIndex]?.path)) parts.push(["c", "comments"], ["z Z", "fold"], ["O", "outline"])
     if (item && comparing(item) && compareKind(item) !== "code") parts.push(["b", "before / after"])
     if (!comparing(item) && (item?.media?.length ?? 0) > 1) parts.push(["n p", "media"])
     if (item && (comparing(item) ? compareKind(item) === "video" : isVideo(item.media?.[mediaIndex] ?? afterOf(item)))) parts.push(["space", "play"], ["← →", "2 s"], [", .", "frame"], ["[ ]", "chapter"], ["< >", "speed"], ["0", "start"])
@@ -235,8 +270,30 @@
         </div>
       </section>
       ${wide ? `<section class="q-subject" tabindex="-1"></section>` : ""}`
+    if (item.kind === "code") linkRefs(element, item)
     if (wide) renderSubject(item, element.querySelector(".q-subject"))
     return element
+  }
+
+  // `path:42` in the guide links to that line of the slice, and opens it past hidden comments and folds.
+  const REF = /^([\w@./-]+\.[A-Za-z0-9]+):(\d+)(?:[-–]\d+)?$/
+  function linkRefs(element, item) {
+    for (const code of element.querySelectorAll(".q-context code")) {
+      if (code.closest("pre, a")) continue
+      const match = REF.exec(code.textContent.trim())
+      if (!match) continue
+      const index = (item.files ?? []).findIndex((file) => file.path === match[1] || file.path.endsWith(`/${match[1]}`))
+      const file = item.files?.[index]
+      const line = Number(match[2])
+      if (!file || line < (Number(file.from) || 1) || (Number(file.to) && line > Number(file.to))) continue
+      const link = document.createElement("a")
+      link.className = "q-ref"
+      link.href = `#L${line}`
+      link.dataset.refFile = String(index)
+      link.dataset.refLine = String(line)
+      code.replaceWith(link)
+      link.append(code)
+    }
   }
 
   function renderSubject(item, subject) {
@@ -249,28 +306,294 @@
     subject.innerHTML = `<p class="q-empty-subject">Nothing to show.</p>`
   }
 
-  function renderCode(item, subject) {
+  // A code slice. TypeScript and JavaScript files also get the tools: c hides comments, z and Z fold and unfold every
+  // body, a chevron folds one, O opens the outline. `line`, when given, is shown once the file is in.
+  function renderCode(item, subject, line = null, press = null) {
     const list = item.files
     fileIndex = Math.min(fileIndex, list.length - 1)
     const file = list[fileIndex]
     const range = file.from ? `L${file.from}–${file.to ?? ""}` : ""
+    const tools = canOutline(file.path)
     subject.innerHTML = `
       <nav class="q-tabs" aria-label="Files">${list
         .map((entry, index) => `<button type="button" class="q-tab${index === fileIndex ? " on" : ""}" data-file="${index}" title="${esc(entry.path)}">${esc(entry.path.split("/").pop())}</button>`)
         .join("")}${list.length > 1 ? `<span class="q-tab-keys">${kbd("J")}${kbd("K")}</span>` : ""}</nav>
-      <div class="q-file-head"><span class="q-path">${esc(file.path)}</span><span class="q-range">${esc(range)}</span>${item.revision ? `<span class="q-rev">${esc(String(item.revision).slice(0, 12))}</span>` : ""}</div>
+      <div class="q-file-head"><span class="q-path">${esc(file.path)}</span><span class="q-range">${esc(range)}</span>${item.revision ? `<span class="q-rev">${esc(String(item.revision).slice(0, 12))}</span>` : ""}${tools ? `<span class="q-tools">${toolsHtml()}</span>` : ""}</div>
       ${file.note ? `<p class="q-note">${inline(file.note)}</p>` : ""}
-      <div class="q-code-scroll"><div class="q-code loading">Loading…</div></div>`
+      <div class="q-code-body"><div class="q-code-scroll"><div class="q-code loading">Loading…</div></div>${
+        tools ? `<aside class="q-outline" aria-label="Outline"${outlineOpen ? "" : " hidden"}><input class="q-outline-filter" type="search" placeholder="Filter" aria-label="Filter symbols" spellcheck="false" autocomplete="off"><nav class="q-outline-list"><p class="q-outline-empty">Loading…</p></nav></aside>` : ""
+      }</div>`
     const target = subject.querySelector(".q-code")
-    loadFile(file.path).then((result) => {
+    const token = {}
+    codeToken = token
+    view = null
+    Promise.all([loadFile(file.path), loadOutline(file.path)]).then(([result, outline]) => {
       if (!target.isConnected) return
       target.classList.remove("loading")
       if (!result.ok) {
         target.innerHTML = `<p class="q-error">${esc(result.text)}</p>`
         return
       }
-      target.innerHTML = codeHtml(result.text, file.path, file.from, file.to)
+      if (!outline || codeToken !== token) {
+        target.innerHTML = codeHtml(result.text, file.path, file.from, file.to)
+        if (codeToken === token) renderOutline()
+        if (codeToken === token && press) say("The outline did not load", true)
+      } else {
+        view = codeView(target, result.text, file, outline)
+        press?.()
+      }
+      if (line != null && codeToken === token) revealLine(line)
     })
+  }
+
+  const toolsHtml = () =>
+    `<button type="button" class="q-tool" data-tool="comments">${kbd("c")} <span>${hideComments ? "Show comments" : "Hide comments"}</span></button>` +
+    `<button type="button" class="q-tool" data-tool="fold">${kbd("z")} <span>Fold all</span></button>` +
+    `<button type="button" class="q-tool" data-tool="unfold">${kbd("Z")} <span>Unfold all</span></button>` +
+    `<button type="button" class="q-tool" data-tool="outline" aria-pressed="${outlineOpen}">${kbd("O")} <span>Outline</span></button>`
+  function syncTools() {
+    const label = card?.querySelector("[data-tool=comments] span")
+    if (label) label.textContent = hideComments ? "Show comments" : "Hide comments"
+    card?.querySelector("[data-tool=outline]")?.setAttribute("aria-pressed", String(outlineOpen))
+  }
+
+  // ---------------------------------------------------------------------------------------------------------
+  // The code view's outline: every row keeps its file line number. Comment-only lines carry .q-cline and comments
+  // beside code .q-cm, so hiding them is one class; a fold hides its lines and shows its first line as `{ … }`.
+
+  function codeView(target, text, file, outline) {
+    const lines = lineTokens(text, file.path)
+    const start = Math.max(1, Number(file.from) || 1)
+    const end = Math.min(lines.length, Number(file.to) || lines.length)
+    const inside = (line) => line >= start && line <= end
+    const commentLines = new Set()
+    for (const [from, to] of outline.comments.lines) for (let line = Math.max(from, start); line <= Math.min(to, end); line++) commentLines.add(line)
+    const inlineComments = new Map()
+    for (const [line, from, to] of outline.comments.inline) if (inside(line)) inlineComments.set(line, [...(inlineComments.get(line) ?? []), [from, to]])
+    const folds = outline.folds.filter((fold) => fold.from >= start && fold.to <= end)
+    const symbols = outline.symbols.filter((symbol) => inside(symbol.line))
+    const base = Math.min(...symbols.map((symbol) => symbol.depth))
+    if (!foldedBy.has(file.path)) foldedBy.set(file.path, new Set())
+    const state = {
+      path: file.path,
+      root: target,
+      lines,
+      start,
+      end,
+      commentLines,
+      inlineComments,
+      folds,
+      foldAt: new Map(folds.map((fold) => [fold.from, fold])),
+      folded: foldedBy.get(file.path),
+      symbols: symbols.map((symbol) => ({ ...symbol, depth: symbol.depth - base })),
+      shown: [],
+      selected: 0,
+      rows: [],
+    }
+    const rows = []
+    for (let number = start; number <= end; number++)
+      rows.push(
+        `<div class="q-line${commentLines.has(number) ? " q-cline" : ""}"><a class="q-ln" data-line="${number}">${number}</a><span class="q-gut">${
+          state.foldAt.has(number) ? `<button type="button" class="q-chev" data-fold="${number}" tabindex="-1" aria-label="Fold" aria-expanded="true"></button>` : ""
+        }</span><span class="q-lc">${lineHtml(state, number) || " "}</span></div>`,
+      )
+    target.innerHTML = rows.join("")
+    target.classList.add("outlined")
+    target.classList.toggle("hide-comments", hideComments)
+    state.rows = [...target.children]
+    applyFolds(state)
+    view = state
+    renderOutline()
+    return state
+  }
+
+  // Line `number` from column `from` to `to`, coloured, with comments beside code wrapped so c can hide them.
+  function lineHtml(state, number, from = 0, to = Infinity) {
+    const marks = state.inlineComments.get(number) ?? []
+    let col = 0
+    let html = ""
+    for (const [cls, value] of state.lines[number - 1] ?? []) {
+      const segment = col
+      col += value.length
+      let at = Math.max(segment, from)
+      const stop = Math.min(col, to)
+      while (at < stop) {
+        const mark = marks.find(([start, end]) => start <= at && at < end)
+        const next = mark ? Math.min(stop, mark[1]) : Math.min(stop, marks.find(([start]) => start > at)?.[0] ?? stop)
+        const piece = esc(value.slice(at - segment, next - segment))
+        const span = cls ? `<span class="t${cls}">${piece}</span>` : piece
+        html += mark ? `<span class="q-cm">${span}</span>` : span
+        at = next
+      }
+    }
+    return html
+  }
+
+  // A folded body: its first line to the `{`, the dots, then the line of its `}` from there on. When that line opens
+  // another folded body (`} else {`), the chain continues on the same row.
+  function foldedHtml(state, fold) {
+    const dots = (entry) => `<button type="button" class="q-dots" data-fold="${entry.from}" tabindex="-1" title="Unfold">…</button>`
+    let html = lineHtml(state, fold.from, 0, fold.open + 1) + dots(fold)
+    let last = fold
+    for (;;) {
+      const next = state.foldAt.get(last.to)
+      if (!next || next === last || !state.folded.has(next.from) || next.open < last.close) break
+      html += lineHtml(state, last.to, last.close, next.open + 1) + dots(next)
+      last = next
+    }
+    html += lineHtml(state, last.to, last.close)
+    const count = last.to - fold.from
+    return `${html}<span class="q-fold-n">${count} ${count === 1 ? "line" : "lines"}</span>`
+  }
+
+  function applyFolds(state) {
+    const { rows, start, folds, folded } = state
+    const hidden = new Uint8Array(rows.length)
+    for (const fold of folds) if (folded.has(fold.from)) hidden.fill(1, fold.from + 1 - start, fold.to + 1 - start)
+    rows.forEach((row, index) => {
+      row.hidden = hidden[index] === 1
+    })
+    for (const fold of folds) {
+      const row = rows[fold.from - start]
+      const shut = folded.has(fold.from) && !hidden[fold.from - start]
+      if (shut) row.querySelector(".q-lc").innerHTML = foldedHtml(state, fold)
+      else if (row.classList.contains("folded")) row.querySelector(".q-lc").innerHTML = lineHtml(state, fold.from) || " "
+      row.classList.toggle("folded", shut)
+      const chevron = row.querySelector(".q-chev")
+      chevron.setAttribute("aria-expanded", String(!folded.has(fold.from)))
+      chevron.setAttribute("aria-label", folded.has(fold.from) ? "Unfold" : "Fold")
+    }
+  }
+
+  // A change to what shows keeps the line at the top of the code where it was.
+  function keepPlace(change) {
+    const scroller = view?.root.closest(".q-code-scroll")
+    if (!scroller) return change()
+    const top = scroller.getBoundingClientRect().top
+    const shows = (row) => !row.hidden && row.offsetParent !== null
+    let index = view.rows.findIndex((row) => shows(row) && row.getBoundingClientRect().bottom > top + 1)
+    const offset = index < 0 ? 0 : view.rows[index].getBoundingClientRect().top - top
+    change()
+    while (index > 0 && !shows(view.rows[index])) index--
+    if (index >= 0 && shows(view.rows[index])) scroller.scrollTop += view.rows[index].getBoundingClientRect().top - top - offset
+  }
+
+  // A tool pressed before the outline arrived, or after it failed: ask again, and press it once the outline is in.
+  function needView(press) {
+    if (view) return false
+    const file = current?.kind === "code" ? current.files?.[fileIndex] : null
+    if (!canOutline(file?.path) || !card || card.querySelector(".q-code.loading")) return true
+    renderCode(current, card.querySelector(".q-subject"), null, press)
+    return true
+  }
+
+  function toggleComments() {
+    if (needView(toggleComments)) return
+    keepPlace(() => {
+      hideComments = !hideComments
+      store.set(COMMENTS_KEY, hideComments ? "1" : "")
+      view.root.classList.toggle("hide-comments", hideComments)
+      for (const row of view.root.querySelectorAll(".reveal")) row.classList.remove("reveal")
+    })
+    syncTools()
+  }
+  function toggleFold(line) {
+    if (needView(() => toggleFold(line)) || !view.foldAt.has(line)) return
+    keepPlace(() => {
+      if (view.folded.has(line)) view.folded.delete(line)
+      else view.folded.add(line)
+      applyFolds(view)
+    })
+  }
+  function foldAll(shut) {
+    if (needView(() => foldAll(shut))) return
+    keepPlace(() => {
+      for (const fold of view.folds) {
+        if (shut) view.folded.add(fold.from)
+        else view.folded.delete(fold.from)
+      }
+      applyFolds(view)
+    })
+  }
+
+  // Shows line `number`: the folds around it open, its comment shows if hidden, and it is marked and scrolled to.
+  function revealLine(number) {
+    let row
+    if (view) {
+      if (number < view.start || number > view.end) return
+      for (const fold of view.folds) if (fold.from < number && number <= fold.to) view.folded.delete(fold.from)
+      if (hideComments && view.commentLines.has(number)) {
+        let from = number
+        let to = number
+        while (view.commentLines.has(from - 1)) from--
+        while (view.commentLines.has(to + 1)) to++
+        for (let line = from; line <= to; line++) view.rows[line - view.start].classList.add("reveal")
+      }
+      applyFolds(view)
+      row = view.rows[number - view.start]
+    } else row = card?.querySelector(`.q-code .q-ln[data-line="${number}"]`)?.parentElement
+    const scroller = row?.closest(".q-code-scroll")
+    if (!scroller) return
+    for (const old of card.querySelectorAll(".q-line.hit")) old.classList.remove("hit")
+    row.classList.add("hit")
+    scroller.scrollTop += row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - scroller.clientHeight / 3
+  }
+  function goToLine(index, line) {
+    if (!current?.files?.[index]) return
+    if (index !== fileIndex || !view) {
+      fileIndex = index
+      renderCode(current, card.querySelector(".q-subject"), line)
+      return footer()
+    }
+    revealLine(line)
+  }
+
+  // The outline: the slice's symbols in file order, indented by nesting; the box filters, ↑ ↓ pick, Enter jumps.
+  function renderOutline() {
+    const pane = card?.querySelector(".q-outline")
+    if (!pane) return
+    const list = pane.querySelector(".q-outline-list")
+    if (!view) {
+      list.innerHTML = `<p class="q-outline-empty">No outline</p>`
+      return
+    }
+    const query = pane.querySelector(".q-outline-filter").value.trim().toLowerCase()
+    view.shown = view.symbols.filter((symbol) => symbol.name.toLowerCase().includes(query))
+    view.selected = Math.max(0, Math.min(view.selected, view.shown.length - 1))
+    list.innerHTML = view.shown.length
+      ? view.shown
+          .map(
+            (symbol, index) =>
+              `<button type="button" class="q-sym${symbol.exported ? " exp" : ""}${index === view.selected ? " on" : ""}" data-sym="${index}" tabindex="-1" style="padding-left:${10 + symbol.depth * 14}px"><span class="q-sym-kind k-${esc(symbol.kind)}">${esc(symbol.kind)}</span><span class="q-sym-name">${esc(symbol.name)}</span><span class="q-sym-ln">${symbol.line}</span></button>`,
+          )
+          .join("")
+      : `<p class="q-outline-empty">No symbols</p>`
+  }
+  function toggleOutline() {
+    const pane = card?.querySelector(".q-outline")
+    if (!pane) return
+    outlineOpen = pane.hidden
+    store.set(OUTLINE_KEY, outlineOpen ? "1" : "")
+    if (outlineOpen && needView(() => card?.querySelector(".q-outline-filter")?.focus())) return syncTools()
+    pane.hidden = !outlineOpen
+    syncTools()
+    if (outlineOpen) {
+      renderOutline()
+      pane.querySelector(".q-outline-filter").focus()
+    } else if (pane.contains(document.activeElement)) document.activeElement.blur()
+  }
+  function pickSymbol(step) {
+    if (!view?.shown.length) return
+    view.selected = (view.selected + step + view.shown.length) % view.shown.length
+    for (const row of card.querySelectorAll(".q-sym")) row.classList.toggle("on", Number(row.dataset.sym) === view.selected)
+    card.querySelector(`.q-sym[data-sym="${view.selected}"]`)?.scrollIntoView({ block: "nearest" })
+  }
+  function openSymbol(index) {
+    const symbol = view?.shown[index]
+    if (!symbol) return
+    view.selected = index
+    for (const row of card.querySelectorAll(".q-sym")) row.classList.toggle("on", Number(row.dataset.sym) === index)
+    revealLine(symbol.line)
   }
 
   function renderMedia(item, subject) {
@@ -793,21 +1116,27 @@
     return out
   }
 
-  // Lines from..to (1-based, inclusive) with their real numbers; a token that spans lines is split per line.
-  function codeHtml(text, path, from, to) {
+  // The file's tokens per line, [class, text]; a token that spans lines is split per line.
+  function lineTokens(text, path) {
     const lines = [[]]
     for (const [cls, value] of tokens(text.replace(/\r\n?/g, "\n"), extOf(path))) {
-      const parts = value.split("\n")
-      parts.forEach((part, index) => {
+      value.split("\n").forEach((part, index) => {
         if (index > 0) lines.push([])
-        if (part) lines.at(-1).push(cls ? `<span class="t${cls}">${esc(part)}</span>` : esc(part))
+        if (part) lines.at(-1).push([cls, part])
       })
     }
     if (lines.length > 1 && lines.at(-1).length === 0) lines.pop()
+    return lines
+  }
+
+  // Lines from..to (1-based, inclusive) with their real numbers.
+  function codeHtml(text, path, from, to) {
+    const lines = lineTokens(text, path)
     const start = Math.max(1, Number(from) || 1)
     const end = Math.min(lines.length, Number(to) || lines.length)
     const rows = []
-    for (let number = start; number <= end; number++) rows.push(`<div class="q-line"><a class="q-ln" data-line="${number}">${number}</a><span class="q-lc">${lines[number - 1].join("") || " "}</span></div>`)
+    for (let number = start; number <= end; number++)
+      rows.push(`<div class="q-line"><a class="q-ln" data-line="${number}">${number}</a><span class="q-lc">${lines[number - 1].map(([cls, value]) => (cls ? `<span class="t${cls}">${esc(value)}</span>` : esc(value))).join("") || " "}</span></div>`)
     return rows.join("")
   }
 
@@ -823,6 +1152,8 @@
     linkIndex = -1
     closeViewer()
     player = null
+    view = null
+    codeToken = null
     stampAdded = ""
     current = item
     if (!item) {
@@ -1001,6 +1332,9 @@
     ["J K", "Next or previous file"],
     ["n p", "Next or previous media"],
     ["o", "Open a referenced file"],
+    ["c", "Hide or show comments in code"],
+    ["z Z", "Fold every body, or unfold all"],
+    ["O", "Outline: filter, ↑ ↓ pick, Enter jumps"],
     ["g", "The note applies to every item of this kind"],
     ["b", "Before and after: both, before, after"],
     ["space", "Play or pause a recording"],
@@ -1050,6 +1384,7 @@
     if (!current?.files?.length || current.files.length < 2) return
     fileIndex = (fileIndex + step + current.files.length) % current.files.length
     renderCode(current, card.querySelector(".q-subject"))
+    footer()
   }
   function switchMedia(step) {
     if (!current?.media?.length || current.media.length < 2 || comparing(current)) return
@@ -1063,6 +1398,18 @@
   // Input.
 
   document.addEventListener("keydown", (event) => {
+    // The outline's filter: ↑ ↓ pick a symbol, Enter jumps to it and hands the keys back to the queue.
+    if (event.target instanceof HTMLInputElement && event.target.classList.contains("q-outline-filter") && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault()
+        return pickSymbol(event.key === "ArrowDown" ? 1 : -1)
+      }
+      if (event.key === "Enter") {
+        event.preventDefault()
+        event.target.blur()
+        return openSymbol(view?.selected ?? 0)
+      }
+    }
     const typing = event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement
     const send = event.key === "Enter" && (event.metaKey || event.ctrlKey)
     if (typing) {
@@ -1116,6 +1463,10 @@
       n: () => switchMedia(1),
       p: () => switchMedia(-1),
       o: cycleLink,
+      c: toggleComments,
+      z: () => foldAll(true),
+      Z: () => foldAll(false),
+      O: toggleOutline,
       g: toggleScope,
       b: cycleCompare,
       f: fullScreen,
@@ -1161,7 +1512,20 @@
     const tab = target.closest("[data-file]")
     if (tab && card?.contains(tab)) {
       fileIndex = Number(tab.dataset.file)
-      return renderCode(current, card.querySelector(".q-subject"))
+      renderCode(current, card.querySelector(".q-subject"))
+      return footer()
+    }
+    // The code tools, a fold's chevron or dots, a row of the outline, a line reference in the guide.
+    const tool = target.closest("[data-tool]")
+    if (tool && card?.contains(tool)) return { comments: toggleComments, fold: () => foldAll(true), unfold: () => foldAll(false), outline: toggleOutline }[tool.dataset.tool]?.()
+    const fold = target.closest("[data-fold]")
+    if (fold && card?.contains(fold)) return toggleFold(Number(fold.dataset.fold))
+    const symbol = target.closest("[data-sym]")
+    if (symbol && card?.contains(symbol)) return openSymbol(Number(symbol.dataset.sym))
+    const ref = target.closest("a.q-ref")
+    if (ref && card?.contains(ref)) {
+      event.preventDefault()
+      return goToLine(Number(ref.dataset.refFile), Number(ref.dataset.refLine))
     }
     // Links in a rendered README open in a new tab; its own #anchors scroll the page.
     const docLink = target.closest(".q-md a[href]")
@@ -1212,6 +1576,10 @@
 
   // Drafts survive reloads and crashes.
   document.addEventListener("input", (event) => {
+    if (event.target instanceof HTMLInputElement && event.target.classList.contains("q-outline-filter") && view) {
+      view.selected = 0
+      return renderOutline()
+    }
     if (event.target instanceof HTMLTextAreaElement && current && card?.contains(event.target)) {
       store.set(draftKey(current.id), event.target.value)
       if (!bare(event.target.value) && picked) {

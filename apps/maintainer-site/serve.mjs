@@ -15,6 +15,7 @@ import { homedir } from "node:os"
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import { renderMarkdown, safeUrl } from "./markdown.mjs"
+import { OUTLINE_EXT, outlineOf } from "./outline.mjs"
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -160,6 +161,12 @@ export function coveragePercent(data) {
   return typeof percent === "number" && Number.isFinite(percent) ? Math.round(percent * 10) / 10 : null
 }
 
+// The code view's comments, folds and symbols come from TypeScript's parser, loaded on the first outline asked for so
+// the server starts without it. It resolves from the workspace root, where `typescript` is a dependency.
+let typescript = null
+const loadTypeScript = () => (typescript ??= import("typescript").then((module) => module.default ?? module))
+const OUTLINE_CACHE = 64
+
 const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 
 export function startServer(options = {}) {
@@ -221,6 +228,22 @@ export function startServer(options = {}) {
     const at = now()
     const visible = queue.items.filter((item) => !isHidden(item, stacks, at))
     return { queue, answers, stacks, last, visible, at }
+  }
+
+  // Outlines by real path, kept while the file's mtime and size hold.
+  const outlines = new Map()
+  const outline = async (real) => {
+    if (!OUTLINE_EXT.has(extname(real).toLowerCase())) return { supported: false }
+    const stat = statSync(real)
+    const key = `${stat.mtimeMs}:${stat.size}`
+    const held = outlines.get(real)
+    if (held?.key === key) return held.outline
+    const ts = await loadTypeScript()
+    const result = { supported: true, ...outlineOf(ts, readFileSync(real, "utf8"), real) }
+    outlines.delete(real)
+    outlines.set(real, { key, outline: result })
+    if (outlines.size > OUTLINE_CACHE) outlines.delete(outlines.keys().next().value)
+    return result
   }
 
   const verifies = (ref, answers) => {
@@ -483,6 +506,11 @@ export function startServer(options = {}) {
       const found = resolveFile(url.searchParams.get("path"), roots)
       if (found.error) return send(response, found.status, { error: found.error })
       return send(response, 200, renderDocument(found.real, roots[0].real))
+    }
+    if (path === "/api/outline") {
+      const found = resolveFile(url.searchParams.get("path"), roots)
+      if (found.error) return send(response, found.status, { error: found.error })
+      return send(response, 200, await outline(found.real))
     }
     if (path === "/queue" || path === "/queue/") return sendFile(response, join(clientDir, "queue.html"))
     if (path.startsWith("/queue/")) {

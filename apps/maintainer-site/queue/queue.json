@@ -1,273 +1,7 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-21T03:03:13Z",
+  "generatedAt": "2026-10-21T07:08:12Z",
   "items": [
-    {
-      "id": "verify:design:vibelang/maintainers@3ec2@2026-10-21T02:35:39.664Z",
-      "kind": "verify",
-      "title": "Check the fix: VibeLang MAINTAINERS.md draft",
-      "priority": 978,
-      "why": "Closes your loop: a fix you asked for has landed",
-      "area": "repo",
-      "addedAt": "2026-10-21T02:59:13Z",
-      "context": "You said: \"contributing.md and agents.md etc. should actually be generated files because they share a lot of content. But cached build steps etc. should be viewable as generated files and have simple ui for showing they are generated or looking at the flow that generated them. agents.md and stuff contain a lot of duplicated info that can be aggregated and deduped into a ts file that generates these files\"\n\nFix: docgen/ builds CONTRIBUTING, MAINTAINERS and AGENTS from one project.ts via a docs/generate flow, with a generated.json manifest; outputs match the approved drafts\n\nDoes it do what you meant?",
-      "files": [
-        {
-          "path": "apps/mvp/docs/design/vibelang-readme/docgen/project.ts",
-          "from": 1,
-          "to": 178
-        },
-        {
-          "path": "apps/mvp/docs/design/vibelang-readme/docgen/out/CONTRIBUTING.md",
-          "from": 1,
-          "to": 79
-        },
-        {
-          "path": "apps/mvp/docs/design/vibelang-readme/docgen/out/MAINTAINERS.md",
-          "from": 1,
-          "to": 67
-        },
-        {
-          "path": "apps/mvp/docs/design/vibelang-readme/docgen/out/AGENTS.md",
-          "from": 1,
-          "to": 22
-        },
-        {
-          "path": "apps/mvp/docs/design/vibelang-readme/docgen/.smithers/flows/docs/flow.ts",
-          "from": 1,
-          "to": 27
-        },
-        {
-          "path": "apps/mvp/docs/design/vibelang-readme/docgen/.smithers/generated.json",
-          "from": 1,
-          "to": 221
-        }
-      ],
-      "answerRef": "design:vibelang/maintainers@3ec2@2026-10-21T02:35:39.664Z",
-      "before": {
-        "media": [],
-        "note": "contributing.md and agents.md etc. should actually be generated files because they share a lot of content. But cached build steps etc. should be viewable as generated files and have simple ui for showing they are generated or looking at the flow that generated them. agents.md and stuff contain a lot of duplicated info that can be aggregated and deduped into a ts file that generates these files",
-        "stamp": null,
-        "files": [
-          {
-            "path": "apps/maintainer-site/queue/before/b6fc603c1953/MAINTAINERS.md",
-            "original": "apps/mvp/docs/design/vibelang-readme/MAINTAINERS.md",
-            "from": 1,
-            "to": 65
-          }
-        ]
-      },
-      "after": {
-        "media": [],
-        "files": [
-          {
-            "path": "apps/mvp/docs/design/vibelang-readme/docgen/project.ts",
-            "from": 1,
-            "to": 178
-          },
-          {
-            "path": "apps/mvp/docs/design/vibelang-readme/docgen/out/CONTRIBUTING.md",
-            "from": 1,
-            "to": 79
-          },
-          {
-            "path": "apps/mvp/docs/design/vibelang-readme/docgen/out/MAINTAINERS.md",
-            "from": 1,
-            "to": 67
-          },
-          {
-            "path": "apps/mvp/docs/design/vibelang-readme/docgen/out/AGENTS.md",
-            "from": 1,
-            "to": 22
-          },
-          {
-            "path": "apps/mvp/docs/design/vibelang-readme/docgen/.smithers/flows/docs/flow.ts",
-            "from": 1,
-            "to": 27
-          },
-          {
-            "path": "apps/mvp/docs/design/vibelang-readme/docgen/.smithers/generated.json",
-            "from": 1,
-            "to": 221
-          }
-        ]
-      },
-      "links": [
-        {
-          "label": "project.ts",
-          "path": "apps/mvp/docs/design/vibelang-readme/docgen/project.ts"
-        },
-        {
-          "label": "CONTRIBUTING.md",
-          "path": "apps/mvp/docs/design/vibelang-readme/docgen/out/CONTRIBUTING.md"
-        },
-        {
-          "label": "MAINTAINERS.md",
-          "path": "apps/mvp/docs/design/vibelang-readme/docgen/out/MAINTAINERS.md"
-        },
-        {
-          "label": "AGENTS.md",
-          "path": "apps/mvp/docs/design/vibelang-readme/docgen/out/AGENTS.md"
-        },
-        {
-          "label": "flow.ts",
-          "path": "apps/mvp/docs/design/vibelang-readme/docgen/.smithers/flows/docs/flow.ts"
-        },
-        {
-          "label": "generated.json",
-          "path": "apps/mvp/docs/design/vibelang-readme/docgen/.smithers/generated.json"
-        }
-      ]
-    },
-    {
-      "id": "verify:design:vibelang/readme@62f4@2026-10-21T02:31:49.112Z",
-      "kind": "verify",
-      "title": "Check the fix: VibeLang README.md draft",
-      "priority": 978,
-      "why": "Closes your loop: a fix you asked for has landed",
-      "area": "repo",
-      "addedAt": "2026-10-21T02:59:13Z",
-      "context": "You said: \"only feedback is a code example should be in why vibelang that shows off how many tokens vibelang is vs normal effect.ts typescript\"\n\nFix: README Why VibeLang now shows the same program in VibeLang (116 tokens) vs Effect TS (202 tokens), 42.6% fewer with o200k_base; both compiled and ran (token-compare/)\n\nDoes it do what you meant?",
-      "files": [
-        {
-          "path": "apps/mvp/docs/design/vibelang-readme/README.md",
-          "from": 1,
-          "to": 172
-        },
-        {
-          "path": "apps/mvp/docs/design/vibelang-readme/token-compare/REPORT.md",
-          "from": 1,
-          "to": 6
-        }
-      ],
-      "answerRef": "design:vibelang/readme@62f4@2026-10-21T02:31:49.112Z",
-      "before": {
-        "media": [],
-        "note": "only feedback is a code example should be in why vibelang that shows off how many tokens vibelang is vs normal effect.ts typescript",
-        "stamp": null,
-        "files": [
-          {
-            "path": "apps/maintainer-site/queue/before/129f28be3f21/README.md",
-            "original": "apps/mvp/docs/design/vibelang-readme/README.md",
-            "from": 1,
-            "to": 112
-          }
-        ]
-      },
-      "after": {
-        "media": [],
-        "files": [
-          {
-            "path": "apps/mvp/docs/design/vibelang-readme/README.md",
-            "from": 1,
-            "to": 172
-          },
-          {
-            "path": "apps/mvp/docs/design/vibelang-readme/token-compare/REPORT.md",
-            "from": 1,
-            "to": 6
-          }
-        ]
-      },
-      "links": [
-        {
-          "label": "README.md",
-          "path": "apps/mvp/docs/design/vibelang-readme/README.md"
-        },
-        {
-          "label": "REPORT.md",
-          "path": "apps/mvp/docs/design/vibelang-readme/token-compare/REPORT.md"
-        }
-      ]
-    },
-    {
-      "id": "gif:run-graph@9e6c",
-      "kind": "gif",
-      "title": "Watch: the run graph: follow a run, replay its journal, inspect a step",
-      "priority": 800,
-      "why": "First slice of the flows redesign you approved; flows code is review-critical",
-      "area": "flows",
-      "addedAt": "2026-10-21T02:40:47Z",
-      "context": "**Scenario:** One person runs a multi-step flow from the home conversation, then opens its run graph.\n- **Run graph**: Live graph, journal replay and step detail share one recorded run. [0:07 Graph: Click Journal] · [0:09 Graph: Press ArrowLeft in \"Run graph\" group] · [0:10 Graph: Click Attempts]\n**Working:** the graph lights up live, the journal replays step by step, and a step shows its attempts and data.",
-      "revision": "9e6c8633a389d02be37ba3cf2b9c4c8fffe0688c7b2d704a8428e194c7fc6deb",
-      "media": [
-        {
-          "path": "~/Desktop/smithers-mvp/videos/run-graph/run-graph.mp4",
-          "type": "video",
-          "chapters": [
-            {
-              "t": 0,
-              "label": "Run graph"
-            },
-            {
-              "t": 2,
-              "label": "Open Graph"
-            },
-            {
-              "t": 3,
-              "label": "Graph: Open the home conversation"
-            },
-            {
-              "t": 4.1,
-              "label": "Graph: ask \"Deploy the docs preview, lfmvhi68rpkai2\""
-            },
-            {
-              "t": 5.6,
-              "label": "Graph: Open the home conversation"
-            },
-            {
-              "t": 6.6,
-              "label": "Graph: Click Journal"
-            },
-            {
-              "t": 7.6,
-              "label": "Graph: Click \"Run\" main"
-            },
-            {
-              "t": 8.6,
-              "label": "Graph: Press ArrowLeft in \"Run graph\" group"
-            },
-            {
-              "t": 9.6,
-              "label": "Graph: Click Attempts"
-            }
-          ]
-        },
-        {
-          "path": "~/Desktop/smithers-mvp/gifs/run-graph-run-graph.gif",
-          "type": "gif"
-        }
-      ],
-      "links": [
-        {
-          "label": "Run graph, slice 1",
-          "path": "apps/mvp/docs/work/flows-run-graph-slice1.md"
-        },
-        {
-          "label": "Flows UI plan",
-          "path": "apps/mvp/docs/design/flows/PLAN.md"
-        }
-      ]
-    },
-    {
-      "id": "code:agent/src/internal/ModelStep#L0001@fad9",
-      "kind": "code",
-      "title": "Code: agent/src/internal: ModelStep.ts L1-314",
-      "priority": 595,
-      "why": "ModelStep, the durable model call; read this first; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-21T01:51:45Z",
-      "context": "# Model call records and retry budgets\n\nSlice: `code:agent/src/internal/ModelStep#L0001@fad9` · coverage revision `fad9b54735882b292547282eeff2292bac8121ea9c65113ad8dc14c6cf1f4cd2`\n\n## What\nThis defines the saved form of a model answer and the retry budgets used by the internal recorder. Older saved answers remain readable when a run resumes on newer code.\n\n## Why\nDurable calls must replay without buying a completed answer again: [0011](apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md). The internal transport ladder is an SDK policy, not a separate product ruling.\n\n## How\n- `RecordedModelStep` accepts legacy event arrays and newer objects with events, an error and a correction ordinal.\n- `normalizeRecordedModelStep` gives both formats one shape; missing correction remains missing.\n- `Failure` makes model, permission and harness failures encodable; its member order affects declaration identity.\n- The internal schedule doubles a one-second delay with jitter, bounded by five retries and 45 seconds.\n- Retryable codes exclude terminal request failures; overruns have a separate one-reissue budget. These constants do not describe public engine-mode retries.\n\n## Architecture diagram\n```text\nFlow / agent caller\n       | request + retry owner\n       v\n[THIS: record schema + internal retry policy]\n       | policy                       ^ saved events/error\n       v                              |\nrecordModelStep -> sealed action -> host journal\n       | Model.stream\n       v\nbrowser -> Worker model proxy -> provider\n(other hosts inject their own model route)\n```\n\n## Read this first\n- `packages/smithers/agent/src/internal/ModelStep.ts:45` — Legacy decoding is part of persisted-history compatibility.\n- `packages/smithers/agent/src/internal/ModelStep.ts:101` — Union ordering affects durable identity.\n- `packages/smithers/agent/src/internal/ModelStep.ts:194` — Both retry count and elapsed time bound the schedule.\n\n## Questions a reviewer should ask\n- Will older error and event records still decode after a schema change?\n- Can a caller accidentally enable both engine retries and the internal ladder?",
-      "files": [
-        {
-          "path": "packages/smithers/agent/src/internal/ModelStep.ts",
-          "from": 1,
-          "to": 314,
-          "note": "The recorded-step schema and a second retry definition: `defaultModelRetryPolicy` (a Schedule, 5 retries, 45 s window) beside the public `defaultRetryPolicy` (6 attempts). Is this one still reachable now that `run` passes `transport: \"engine\"`, or is it dead code?"
-        }
-      ],
-      "revision": "fad9b54735882b292547282eeff2292bac8121ea9c65113ad8dc14c6cf1f4cd2"
-    },
     {
       "id": "code:agent/src/internal/ModelStep#L0315@5d1c",
       "kind": "code",
@@ -288,25 +22,6 @@
       "revision": "5d1c1d1661defad69c8571136ccb786f5ca708f7fe5a38689cf9394340ee9e9f"
     },
     {
-      "id": "code:agent/src/internal/ModelStep#L0634@b9e9",
-      "kind": "code",
-      "title": "Code: agent/src/internal: ModelStep.ts L634-1007",
-      "priority": 595,
-      "why": "ModelStep, the durable model call; read this first; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-21T01:51:45Z",
-      "context": "# Sealing and replaying a model call\n\nSlice: `code:agent/src/internal/ModelStep#L0634@b9e9` · coverage revision `b9e9e08fb20055b87469e1d0aff72f740f303fb52d37b706262f8c1d82cd7ba4`\n\n## What\nThis turns a prepared model request into a stable key, then runs or replays its sealed action. It distinguishes a completed provider refusal from a capacity failure that should remain retryable.\n\n## Why\n[0011](apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md) requires durable model calls. The SDK guide `packages/smithers/agent/docs/guides/durable-model-call.md` explains the at-least-once risk when a process dies before sealing.\n\n## How\n- Capacity codes and HTTP statuses form an unconditional floor: the recorder must not seal them as completed answers.\n- `key` encodes request classes to plain JSON, strips undefined fields, and includes credential-free prepared metadata and wire bytes.\n- The byte-splicing optimization retries marker selection on collision to preserve historical key bytes.\n- `dispatch` creates a sealed `Action` with the supplied retry policy, key, failure codec and heartbeat timeout.\n- A resumed unfinished attempt emits a retry event before replacement output; a replay returns the saved record without executing the provider.\n- Unsealed usage is accounted on failed exits; counters distinguish calls, replays and mid-flight redispatches.\n\n## Architecture diagram\n```text\nPublic ModelStep / harness\n       | prepared request + policy\n       v\n[THIS: key -> sealed Action -> normalize saved record]\n       | cache miss                   ^ replay\n       v                              |\nrecorder -> Model route          engine journal\n       |                         SQLite (browser) / Postgres (remote)\n       v\nbrowser -> Worker proxy -> model provider\n          credentials applied after request preparation\n```\n\n## Read this first\n- `packages/smithers/agent/src/internal/ModelStep.ts:717` — Hash only the prepared credential-free request.\n- `packages/smithers/agent/src/internal/ModelStep.ts:910` — Sealed action owns retry and identity.\n- `packages/smithers/agent/src/internal/ModelStep.ts:960` — Failed exits must retain usage exactly once.\n\n## Questions a reviewer should ask\n- Are route preparation and the injected model guaranteed to send the same bytes?\n- Does a killed, billed call remain visibly at least once rather than being described as exactly once?\n- Can the marker optimization change any historical key?",
-      "files": [
-        {
-          "path": "packages/smithers/agent/src/internal/ModelStep.ts",
-          "from": 634,
-          "to": 1007,
-          "note": "Capacity refusals (429, 503, 504, 529) stay unsealed; the key splices canonical body bytes at a hash seam to keep historical keys byte-identical (lines ~742-772); `dispatch` counts redispatches and accounts unsealed usage uninterruptibly. Is the splice provably equal to plain canonical JSON?"
-        }
-      ],
-      "revision": "b9e9e08fb20055b87469e1d0aff72f740f303fb52d37b706262f8c1d82cd7ba4"
-    },
-    {
       "id": "code:flow/src/Action/make#L0001@0db7",
       "kind": "code",
       "title": "Code: flows/flow/src/Action: make.ts L1-320",
@@ -324,799 +39,6 @@
         }
       ],
       "revision": "0db76fe54652dcb4efdef4bb5a53ea609678ef5a188e2ede840b15ff2cd6d6ed"
-    },
-    {
-      "id": "code:flow/src/Action/make#L0321@849b",
-      "kind": "code",
-      "title": "Code: flows/flow/src/Action: make.ts L321-675",
-      "priority": 595,
-      "why": "@smthrs/flow, the flow core; read this first; landed recently; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:08:43Z",
-      "context": "# Action construction: host binding and attempt lifetime\n\n## What\nThis binds named actions to host implementations and enforces their attempt limits. It returns completed exits to the flow or propagates a durable suspension.\n\n## Why\n[Decision 0011](apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md) §6 keeps host services injected, while DUR-2 puts retries in Smithers rather than apps. These watchdogs live in that SDK layer; system actions and their trust boundary follow DUR-1 and M-47.\n\n## How\n- `toLayer` requires the registered implementation version to match the declaration.\n- It registers an internal one-action flow and provides both a typed requirement service and an optional name-indexed implementation.\n- Captured host services are merged beneath execution services; dynamically assembled payloads are schema checked.\n- `makeSystem` erases the caller requirement but keeps ordinary registration; it does not itself enforce non-overridability.\n- A per-attempt fiber races total and heartbeat timeouts; timeout interruption retains cleanup defects.\n- Infrastructure interrupts use their own optional schedule; ordinary execution delegates to `runtime.actionExecute`.\n\n## Architecture diagram\n```text\nHost composition: injected services + handler\n          | Action.toLayer(version)\n          v\n [THIS] registration + implementation table\n          | validated payload\n          v\n inline Action -> FlowRuntime.actionExecute -> journal\n          | attempt fiber\n          +-> total timer / heartbeat watchdog\n          +-> injected effect: browser, Worker or sandbox\n              network/database access belongs to that host\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/Action/make.ts:321` — version attestation rejects mismatched handlers.\n- `packages/smithers/flows/flow/src/Action/make.ts:395` — payload validation and service precedence at dynamic dispatch.\n- `packages/smithers/flows/flow/src/Action/make.ts:536` — watchdog ownership and cleanup after timeout.\n- `packages/smithers/flows/flow/src/Action/make.ts:646` — runtime owns durable action dispatch.\n\n## Questions a reviewer should ask\n- Can a nested heartbeat accidentally keep its parent alive?\n- Does an uninterruptible finalizer prevent a timeout from returning indefinitely?\n- Where is the rule preventing replacement of system handlers enforced?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/Action/make.ts",
-          "from": 321,
-          "to": 675,
-          "note": "Marked human-reviewed 2026-08-10; look at what changed since. Defines `make`, `makeSystem`, `timeoutMs`, `boundAttempt`, `isInfraInterrupt` +2. Look at: hand-rolled retry or timer (the engine owns retries); unchecked casts. Lines 321-675."
-        }
-      ],
-      "revision": "849b403394faff5437bbee78850e35a4a9d5ede8269d9ed90aafe646140c8fa6"
-    },
-    {
-      "id": "code:flow/src/Interpreter#L0001@5339",
-      "kind": "code",
-      "title": "Code: flows/flow/src: Interpreter.ts L1-320",
-      "priority": 595,
-      "why": "@smthrs/flow, the flow core; read this first; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:08:43Z",
-      "context": "# Interpreter: identities and bounded plan records\n\n## What\nThis defines the interpreter result and derives stable child execution identities. It starts the machinery that records a full plan in bounded pages for inspection.\n\n## Why\n[Decision 0011](apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md) requires crash-safe host-independent flows; [decision 0014](apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md) §6 calls for reading runs from their owning engine. This slice supports those goals with replay identity and inspectable topology; its exact byte limits are SDK policy.\n\n## How\n- `refusalCode` reads typed interpreter failures and recognizes one historical plan-change message.\n- `Interpretation` separates successful values, caught typed failures and skipped nodes.\n- `ownDataProperty` reads descriptors without running getters and catches proxy traps.\n- Child identity hashes a canonical tuple of parent id, structural node id, callee and payload digest.\n- Plan pages use a 12,000-byte target below the documented 16 KiB gateway limit; dispatch digest collection is capped at 16.\n- A plan digest covers recorded drafts and edges; stable page source ids allow replay observations to collapse.\n\n## Architecture diagram\n```text\nFlow declaration + payload\n        v\n Graph.build -> [THIS] child identity / plan page preparation\n                    |                 |\n                    | digest          | summaries + edges\n                    v                 v\n             child execution     runtime.recordNode\n                                      |\n                            browser OPFS / remote journal\n                                      v\n                              run inspection UI\n No provider, Electric or sandbox call occurs in this slice.\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/Interpreter.ts:114` — compatibility for historical persisted refusals.\n- `packages/smithers/flows/flow/src/Interpreter.ts:152` — hostile error objects cannot execute accessors here.\n- `packages/smithers/flows/flow/src/Interpreter.ts:181` — child identity must distinguish payload and callee changes.\n- `packages/smithers/flows/flow/src/Interpreter.ts:266` — plan identity and page envelope construction.\n\n## Questions a reviewer should ask\n- Can child ids alias under delimiter-like payload or node strings?\n- Does every journal host measure the complete encoded envelope?\n- Is the 16-digest cap visible enough when inspection omits later dispatch identities?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/Interpreter.ts",
-          "from": 1,
-          "to": 320,
-          "note": "The body interpreter's contract: refusal codes, deterministic child execution ids, page and digest limits (12,000 bytes, 16 digests). Are those limits justified anywhere?"
-        }
-      ],
-      "revision": "533932265d94a8aca240c7b833b7f9ede395bdf214dce13242cdf11377b40685"
-    },
-    {
-      "id": "code:flow/src/Interpreter#L0321@4274",
-      "kind": "code",
-      "title": "Code: flows/flow/src: Interpreter.ts L321-640",
-      "priority": 595,
-      "why": "@smthrs/flow, the flow core; read this first; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:08:43Z",
-      "context": "# Interpreter: paging and preflight checks\n\n## What\nThis finishes plan paging and validates the graph before running its actions. Missing operations, references or implementations become explicit refusals rather than failures after effects have started.\n\n## Why\n[Decision 0014](apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md) §6 needs complete inspectable plans, and [decision 0011](apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md) needs safe replay after deployment. The package body-plan docs explain why implementation versions and complete topology matter; these checks implement that SDK contract.\n\n## How\n- A reserved page-count width ensures the final envelope cannot grow after measurement.\n- Bisection packs dependencies and incoming edges; continuation pages repeat node summaries when needed.\n- Every page is validated before the first page is written or action dispatched.\n- Graph-building exceptions become typed refusals using safe descriptor reads and bounded fallback rendering.\n- Both arms of every branch are checked for callbacks, references, declarations and registered implementations.\n- Content-reusing sealed actions require an implementation version; registration must attest the same version.\n\n## Architecture diagram\n```text\nFlow body -> Graph.build\n                |\n                v\n [THIS] page packing -> runtime.recordNode -> host journal\n                |\n                +-> check all references/callbacks\n                +-> resolve handlers + versions\n                v\n          admitted graph -> node execution (next slice)\n Browser, Worker and sandbox hosts supply the same runtime port;\n this preflight sends no product writes or model requests.\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/Interpreter.ts:322` — page count reservation must bound actual pages.\n- `packages/smithers/flows/flow/src/Interpreter.ts:340` — bisection assumes measured size grows monotonically.\n- `packages/smithers/flows/flow/src/Interpreter.ts:521` — plan pages are written before implementation preflight.\n- `packages/smithers/flows/flow/src/Interpreter.ts:623` — keyed sealed actions cannot reuse content without a version.\n\n## Questions a reviewer should ask\n- Can a custom byte-measurement hook violate the monotonic packing assumption?\n- Should a rejected graph leave plan records even though no action ran?\n- Are missing implementations in untaken arms intentionally fatal to the whole plan?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/Interpreter.ts",
-          "from": 321,
-          "to": 640,
-          "note": "Defines `interpret`, `interpretWithPolicy`. Look at: unchecked casts. Lines 321-640."
-        }
-      ],
-      "revision": "42747f80182e044002364a41b80d2dbc6c93c9593014bdd4d7a2f04e82809c5a"
-    },
-    {
-      "id": "code:flow/src/Interpreter#L0641@514b",
-      "kind": "code",
-      "title": "Code: flows/flow/src: Interpreter.ts L641-960",
-      "priority": 595,
-      "why": "@smthrs/flow, the flow core; read this first; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:08:43Z",
-      "context": "# Interpreter: shared work and cancellation ownership\n\n## What\nThis ensures concurrent demands for the same node share one execution. It resolves planned values and identifies which losing work can be cancelled without killing work another branch still needs.\n\n## Why\n[Decision 0011](apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md) requires durable replay across hosts, and [decision 0014](apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md) §9 exposes cancellation to people. Shared execution ownership is the SDK mechanism that keeps those operations consistent under concurrent plans.\n\n## How\n- A full dependency-cycle check runs before any action can wait on its own deferred.\n- Reference projection uses `StepKey.project`, matching the value semantics used in durable keys.\n- Resolved objects use null prototypes and own data properties, preserving `__proto__` as data.\n- Synchronous lookup-and-insert creates one in-flight Deferred per node; execution fibers belong to the interpretation scope.\n- Node reports count dispatches, distinguish replay from execution and collect a bounded set of step digests.\n- Losing-work traversal preserves nodes with outside readers and their dependencies; child runs require runtime cancellation.\n\n## Architecture diagram\n```text\nConcurrent branch A ----+      branch B ----+\n                        | demand            | demand\n                        v                   v\n             [THIS] per-node Deferred / execution scope\n                        | one shared execution\n                        v\n                 Action -> runtime -> host effects\n                        |\n                   node records -> host journal\n Race loses -> reader analysis -> stop owned fibers\n                              -> runtime.cancel child runs\n Outside readers keep shared dependencies alive.\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/Interpreter.ts:649` — cycle detection covers branches the run may skip.\n- `packages/smithers/flows/flow/src/Interpreter.ts:711` — payload reconstruction must preserve dangerous-looking property names.\n- `packages/smithers/flows/flow/src/Interpreter.ts:789` — synchronous memo insertion prevents duplicate side effects.\n- `packages/smithers/flows/flow/src/Interpreter.ts:917` — shared-reader analysis determines what cancellation may stop.\n\n## Questions a reviewer should ask\n- Does a diamond dependency execute its shared action exactly once under concurrent demand?\n- Can cancellation preserve a shared node but kill a dependency it still needs?\n- Do pure interruptions leave a stale failed value or settlement record behind?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/Interpreter.ts",
-          "from": 641,
-          "to": 960,
-          "note": "Look at: correctness, naming and whether it can be smaller. Lines 641-960."
-        }
-      ],
-      "revision": "514b1a32283a45d4554910a064b46a0b083993312efe5af45f8a6e15864595ad"
-    },
-    {
-      "id": "code:flow/src/Interpreter#L0961@3d6a",
-      "kind": "code",
-      "title": "Code: flows/flow/src: Interpreter.ts L961-1280",
-      "priority": 595,
-      "why": "@smthrs/flow, the flow core; read this first; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:08:43Z",
-      "context": "# Interpreter: durable joins and node execution\n\n## What\nThis runs race, first-success and quorum joins, then interprets the main node variants. It preserves a join’s original decision on replay and applies capability ceilings when actions and child flows run.\n\n## Why\n[Decision 0003](apps/mvp/docs/decisions/0003-flows-and-the-agent.md) requires people and agents to use the same flow behavior; [decision 0011](apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md) requires durable replay. [Decision 0014](apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md) §9 motivates cancellation controls, while the join protocol here is a library implementation detail.\n\n## How\n- A join reads a durable deferred without consuming a sibling’s waiting classification.\n- Replay validates recorded member names, cancels recorded losing children and demands only the decisive members.\n- Live decisions record member order and losing child ids before requesting loser interruption.\n- Explicit sequencing waits for its entire prerequisite; branches execute only the chosen arm.\n- Catch handles typed failures and optional schema filters, while interpreter refusals and defects escape.\n- Action dispatch gets structural site identity and reduced capabilities; handoffs encode payloads, while child boundaries open separate deterministic executions.\n\n## Architecture diagram\n```text\nGraph node\n   v\n [THIS] compute / durable join\n   | sequence, branch, catch       | race decision\n   v                               v\n Action implementation       DurableDeferred -> host journal\n   | reduced capabilities          | recorded loser child ids\n   v                               v\n FlowRuntime -> host effect    runtime.interrupt(child)\n   |\n   +-> child execution: separate journal lineage\n   +-> handoff: encoded next-round payload + capability ceilings\n Browser/Worker/sandbox placement is supplied outside this walker.\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/Interpreter.ts:992` — replay must reproduce the verdict on exactly the last recorded member.\n- `packages/smithers/flows/flow/src/Interpreter.ts:1068` — decision persistence precedes cancellation.\n- `packages/smithers/flows/flow/src/Interpreter.ts:1125` — recovery cannot conceal interpreter refusals.\n- `packages/smithers/flows/flow/src/Interpreter.ts:1173` — action authority is reduced at the dispatch boundary.\n\n## Questions a reviewer should ask\n- Can a crash after the decision write leave a losing child running after resume?\n- Do races preserve shared work still demanded outside the losing subtree?\n- Can child or handoff capability propagation ever widen the caller’s authority?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/Interpreter.ts",
-          "from": 961,
-          "to": 1280,
-          "note": "Look at: unchecked casts. Lines 961-1280."
-        }
-      ],
-      "revision": "3d6a3f42183219f8e11320e7e92e3fc72f4916a5d2b01e45c5e2c71f3fff9ed9"
-    },
-    {
-      "id": "code:flow/src/Interpreter#L1281@a198",
-      "kind": "code",
-      "title": "Code: flows/flow/src: Interpreter.ts L1281-1637",
-      "priority": 595,
-      "why": "@smthrs/flow, the flow core; read this first; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:06:34Z",
-      "context": "# Interpreter: settlement and composition layers\n\n## What\nThis closes a round, reports skipped nodes and turns the root result into completion, handoff or parking. It also wires flow bodies and action implementations into one scoped runtime composition.\n\n## Why\n[Decision 0011](apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md) §6 requires the same flow code across injected hosts. [Decision 0014](apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md) §1 and FLOW-2 require one flow model; this registration path drives bodies rather than adding another handler model.\n\n## How\n- Closing the node scope interrupts remaining work before the interpretation returns.\n- Only an ended walk reports skipped nodes; a pure interruption may be a parked run that later continues.\n- Join classification treats values and typed errors as decisive, pure interrupts as pending, and defects/refusals as fatal.\n- Done unwraps an answer; To stores a handoff with capability ceilings; Park annotates the wait and suspends.\n- System handlers are memoized by implementation-table owner; reachable declarations live in the host registration scope.\n- `layerWithImplementations` supplies an isolated fresh registry, checks action requirements and defaults callback identity to stable.\n\n## Architecture diagram\n```text\nHost composition (browser / Worker / sandbox)\n       | handlers + Flow declaration\n       v\n [THIS] layerWithImplementations\n       | fresh registry + stable callback policy\n       v\n runtime.register -> interpret body -> close node scope\n                                      |\n                              settleOutcome\n                          /         |          \\\n                    answer       handoff       park\n                       |      next flow+payload wait token\n                       +------------+------------+\n                                    v\n                            injected durable engine\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/Interpreter.ts:1304` — parked nodes must not be permanently recorded as skipped.\n- `packages/smithers/flows/flow/src/Interpreter.ts:1365` — mixed causes determine whether joins can decide.\n- `packages/smithers/flows/flow/src/Interpreter.ts:1433` — handoff retains current and inherited capability ceilings.\n- `packages/smithers/flows/flow/src/Interpreter.ts:1549` — discovered child and handoff declarations outlive the parent execution.\n\n## Questions a reviewer should ask\n- Can concurrent layer owners unregister built-ins while another live flow still needs them?\n- Does a child restore its registered implementation table while retaining execution-local services?\n- Are semantic captures complete even when stable callback identity passes?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/Interpreter.ts",
-          "from": 1281,
-          "to": 1637,
-          "note": "Defines `JoinChild`, `JoinDecision`, `Decision`, `classify`, `decide` +7. Look at: correctness, naming and whether it can be smaller. Lines 1281-1637."
-        }
-      ],
-      "revision": "a198ec3d7fedcd2eca3e7c85032581f43f09689489b1d6fb6a5960aa5194858b"
-    },
-    {
-      "id": "code:flow/src/FlowRuntime/FlowRuntime@d0b6",
-      "kind": "code",
-      "title": "Code: flows/flow/src/FlowRuntime: FlowRuntime.ts",
-      "priority": 593,
-      "why": "@smthrs/flow, the flow core; read this first; landed recently; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:06:34Z",
-      "context": "# FlowRuntime: the execution boundary\n\n## What\nThis service is the contract a flow uses to run, wait, cancel and resume.\nThe flow package declares it; an engine supplies it, so authored flows do not\nchoose a database or a machine.\n\n## Why\nOne durable runtime must serve every host, rather than each feature growing\nits own job runner. See `apps/mvp/docs/decisions/0003-flows-and-the-agent.md`\nand its placement revision, `0011-the-agent-runs-in-the-browser.md`.\nThe catalog entry used here is `@smthrs/flow` in `docs/libraries.md`.\n\n## How\n- `register` binds a typed declaration to a scoped implementation.\n- `execute` accepts an execution ID and typed payload; `discard` returns the ID.\n- `poll` separates a known unfinished run from an unknown execution ID.\n- Cancellation must persist before interruption; normal cancellation keeps cleanup.\n- Conditional deferred completion checks the exact parked reason and token atomically.\n- Optional node recording preserves stable producer IDs; clocks arrange future wakes.\n\n## Architecture diagram\n```text\nFlow.execute / Action.call / DurableDeferred / DurableClock\n             | typed payloads, exits, execution IDs\n             v\n +-------- [THIS SLICE] FlowRuntime service --------+\n | register | execute | poll | cancel | resume       |\n | deferred completion | node records | clock wakes |\n +--------------------------------------------------+\n             | injected implementation\n             v\n @smthrs/engine policy -> store implementation\n             |                         |\n Browser host                     Cloudflare Worker host\n SQLite on OPFS                   durable journal / Postgres\n             ^                         ^\n             +--- wake / replay -------+\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/FlowRuntime/FlowRuntime.ts:11`: why requirements are erased at this port; verify callers above collect them.\n- `packages/smithers/flows/flow/src/FlowRuntime/FlowRuntime.ts:166`: cancellation authority and the durable-write-before-interrupt contract.\n- `packages/smithers/flows/flow/src/FlowRuntime/FlowRuntime.ts:275`: conditional completion must be one mutation, not check then write.\n- `packages/smithers/flows/flow/src/FlowRuntime/FlowRuntime.ts:300`: stable source IDs prevent duplicate replay records.\n\n## Questions a reviewer should ask\n- Can a direct port caller bypass implementation requirements or admission authority?\n- Does every durable implementation refuse stale approval tokens atomically?\n- Can a failed cancellation write ever be reported as successful cancellation?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/FlowRuntime/FlowRuntime.ts",
-          "from": 1,
-          "to": 344,
-          "note": "Marked human-reviewed 2026-08-10. The port `@smthrs/engine` implements. The doc argues the requirement channel is erased on purpose; decide whether that argument holds."
-        }
-      ],
-      "revision": "d0b6a0d2d6c5b53671d29a175b8cf4c53a6fe1ce50f1c058e7d816fab088d2af"
-    },
-    {
-      "id": "code:mvp/src/flows/catalog@bb51",
-      "kind": "code",
-      "title": "Code: mvp/src/flows: catalog.ts, catalog.test.ts, contract.ts",
-      "priority": 593,
-      "why": "the app's flows; read this first; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-21T02:13:27Z",
-      "context": "# The agent’s permitted flow calls\n\nSlice: `code:mvp/src/flows/catalog@bb51` · coverage revision `bb512fa670fa018e650e1eb7dd3567dca343f5c56d1f6ad7c16544ff6f8d25b6`\n\n## What\nThis turns registered model-invocable flows into the agent’s callable catalog. It narrows that catalog for drafting and saved prompt flows and asks for approval before selected effects run.\n\n## Why\n[0003](apps/mvp/docs/decisions/0003-flows-and-the-agent.md) requires shared declarations and completion receipts. [0014](apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md) pins a saved flow’s allowed calls.\n\n## How\n- `childExecutionId` uses session, frame and ordinal so replay names the same child execution.\n- `agentFlows` filters by declaration annotations; side-effect descriptions come from registry metadata.\n- `scopeOf` restricts drafting to author tools and intersects saved allowed calls with `PROMPT_CALLABLE`.\n- `scopeFor` reads the stored payload and fails closed to an empty catalog when it cannot decode it.\n- `source` binds schema-typed calls to `runtime.execute`; confirmed calls first execute a separate replay-stable approval child.\n- `contract.ts` defines shared door names, person doors, credential TTL and permitted telemetry metadata.\n\n## Architecture diagram\n```text\nAgent cell (QuickJS sandbox)\n          | ctx.call(name, payload, identity)\n          v\n [THIS: catalog scope -> binding -> approval if required]\n          | child execution ID                    ^ pinned allowed list\n          v                                       |\n device FlowRuntime ---------------------- EngineStore payload\n          | journal: SQLite OPFS\n          v\n same flow as person button -> Worker APIs -> Postgres / sandbox\n                               model proxy -> provider\n```\n\n## Read this first\n- `apps/mvp/src/flows/catalog.ts:68` — A stored allowed list cannot widen the prompt-callable set.\n- `apps/mvp/src/flows/catalog.ts:78` — Unreadable pinned payload yields no calls.\n- `apps/mvp/src/flows/catalog.ts:100` — Approval child must finish before the effect child runs.\n- `apps/mvp/src/flows/contract.ts:19` — A generated view is deliberately not a person door.\n\n## Questions a reviewer should ask\n- Does every execution path enforce the filtered bindings rather than merely hiding catalog descriptions?\n- Can approval be replayed safely after a restart without repeating the side effect?\n- Do pinned payload failures always leave zero authority?",
-      "files": [
-        {
-          "path": "apps/mvp/src/flows/catalog.ts",
-          "from": 1,
-          "to": 141,
-          "note": "The name the agent's catalog source carries. Exports `SOURCE`, `childExecutionId`, `NotApproved`, `confirmExecutionId`, `publicError` +6. Look at: unchecked casts."
-        },
-        {
-          "path": "apps/mvp/src/flows/catalog.test.ts",
-          "from": 1,
-          "to": 44,
-          "note": "The agent's catalog, scoped to the run that asks (src/flows/catalog.ts, decision 0014 §2): reads only while a draft is written, a person's flow's own list while one… Look at: behavior asserted through the public boundary; failure and ordering cases."
-        },
-        {
-          "path": "apps/mvp/src/flows/contract.ts",
-          "from": 1,
-          "to": 149,
-          "note": "The values the tab, its engine worker and ChatApi's relay share: the engine name, the doors a dispatch starts from, the telemetry allowlist. Check no telemetry field can carry a flow's input."
-        }
-      ],
-      "revision": "bb512fa670fa018e650e1eb7dd3567dca343f5c56d1f6ad7c16544ff6f8d25b6"
-    },
-    {
-      "id": "code:flow/src/Flow/make@16e1",
-      "kind": "code",
-      "title": "Code: flows/flow/src/Flow: make.ts",
-      "priority": 590,
-      "why": "@smthrs/flow, the flow core; read this first; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:06:34Z",
-      "context": "# Flow.make: one declaration, two authoring forms\n\n## What\nThis constructor turns a named flow and its schemas into an executable declaration. A prompt flow becomes an ordinary action call, so prompts use the same engine as code flows.\n\n## Why\nFlows need one execution model and source-readable authority. See `apps/mvp/docs/decisions/0003-flows-and-the-agent.md` and `0014-flows-authoring-debugging-and-home-view.md`; catalog entry: `@smthrs/flow`.\n\n## How\n- Reject an empty tag and anything other than exactly one body or prompt function.\n- Validate positive safe round budgets and finite deadlines before execution.\n- Convert payload fields to a struct schema; default success to Void and error to Never.\n- Lower capability, effect and model visibility literals into annotations.\n- For prompts, declare `<tag>/prompt` and capture a single dispatch; rendering belongs to the host.\n- Attach source location outside enumerable identity material.\n\n## Architecture diagram\n```text\nAuthor: Flow.make(tag, schemas, literals, body OR prompt)\n                         |\n                 [SLICE: make.ts]\n                 validate + normalize\n                  /                \\\n          pure body node       declared prompt action\n                  \\                /\n                    flow declaration\n                         |\n           Graph / Interpreter -> FlowRuntime\n                         |\n          host engine -> journal -> action implementation\n          (browser / Worker / sandbox chosen by host)\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/Flow/make.ts:206`: runtime checks back up the overloads for JavaScript callers.\n- `packages/smithers/flows/flow/src/Flow/make.ts:245`: schema defaults and casts must preserve the declared output contract.\n- `packages/smithers/flows/flow/src/Flow/make.ts:250`: prompt action inherits authority and defaults to irreversible tier.\n\n## Questions a reviewer should ask\n- Can discovery read the same literal authority the runtime enforces?\n- Can construction or planning accidentally render a prompt?\n- Are deadline and round limits rejected before any effect runs?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/Flow/make.ts",
-          "from": 1,
-          "to": 299,
-          "note": "Marked human-reviewed 2026-08-10. How `Flow.make` turns tag, payload, success, error, capabilities and effects into a declaration. Check that capabilities and effects stay literals a catalog can read without importing the module."
-        }
-      ],
-      "revision": "16e113242fda830b116a98b59dfba6f1fba783bf3546b7383f72217b6439b9af"
-    },
-    {
-      "id": "code:mvp/src/flows/registry@afd9",
-      "kind": "code",
-      "title": "Code: mvp/src/flows: registry.ts, registry.test.ts",
-      "priority": 590,
-      "why": "the app's flows; read this first; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-21T02:46:34Z",
-      "context": "# The app’s action registry\n\nSlice: `code:mvp/src/flows/registry@afd9` · coverage revision `afd963439d56db17c7a8cb8f7466c2dd7ea9c2e34f9958da9ae9dbac74e06890`\n\n## What\nThis lists the flows a person or the agent can run on this device. Each entry supplies a reference, command metadata and any person-only or approval rule.\n\n## Why\n[0003](apps/mvp/docs/decisions/0003-flows-and-the-agent.md) establishes shared flows for buttons and agents. [0017](apps/mvp/docs/decisions/0017-everything-is-a-plugin.md) supplies run-actor rules; this file is still a compiled registry, not the completed plugin loader.\n\n## How\n- `Entry.flow` carries tags and schemas so the tab can dispatch without loading agent implementations.\n- `acts` tells server-side actor classification whether a run is an agent or a background flow.\n- `userOnlyReason` records exclusions; tests check that declarations also disable model invocation.\n- `changes` describes effects to the agent; `confirm` makes selected agent calls ask first through the catalog.\n- `slash` supplies command names, minimum roles and argument hints; server authorization remains separate.\n- Parity tests compare registry names, declarations and schema object identity.\n\n## Architecture diagram\n```text\nButton / slash / view (browser tab)\n                | name + payload\n                v\n       [THIS: registry references]\n          |                       |\n          v                       v\n   FlowDispatch             agent catalog (engine worker)\n          |                       | child flow call\n          +------> device engine <-+\n                     | SQLite journal (OPFS)\n                     v\n          flow steps -> Worker APIs -> Postgres / sandbox\n                         model proxy -> model provider\n```\n\n## Read this first\n- `apps/mvp/src/flows/registry.ts:74` — Actor, effects and approval metadata are distinct fields.\n- `apps/mvp/src/flows/registry.ts:106` — Review person-only entries against declaration annotations.\n- `apps/mvp/src/flows/registry.test.ts:93` — Reference and implementation schemas must stay identical.\n\n## Questions a reviewer should ask\n- Could an entry describe a person-only act while its declaration permits model invocation?\n- Are role hints being mistaken for server enforcement?\n- Which registry contributions still need migration to the public plugin interface?",
-      "files": [
-        {
-          "path": "apps/mvp/src/flows/registry.ts",
-          "from": 1,
-          "to": 309,
-          "note": "The app's flow registry: what the UI may dispatch and what the agent may call. Every entry the agent can't run must say why (`userOnlyReason`). Check the minimum role per entry."
-        },
-        {
-          "path": "apps/mvp/src/flows/registry.test.ts",
-          "from": 1,
-          "to": 245,
-          "note": "Every source file under `src/`, tests and test support left out. Look at: behavior asserted through the public boundary; failure and ordering cases."
-        }
-      ],
-      "revision": "afd963439d56db17c7a8cb8f7466c2dd7ea9c2e34f9958da9ae9dbac74e06890"
-    },
-    {
-      "id": "code:flow/src/Flow/Flow#L0001@b64a",
-      "kind": "code",
-      "title": "Code: flows/flow/src/Flow: Flow.ts L1-313",
-      "priority": 587,
-      "why": "@smthrs/flow, the flow core; read this first; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:08:43Z",
-      "context": "# Flow types: plans, child runs and execution identity\n\n## What\nThis interface defines what a flow declaration promises to its callers. It separates an inline call, a child run and a handoff to the next round, while preserving typed inputs and results.\n\n## Why\nOne plan model must describe code and prompts across hosts. See `apps/mvp/docs/decisions/0003-flows-and-the-agent.md` and `0014-flows-authoring-debugging-and-home-view.md`; catalog entry: `@smthrs/flow`.\n\n## How\n- `BodySuccess` permits plain values, symbolic planned values and explicit outcomes.\n- `DeclarationMetadata` carries host-interpreted model seats and teaching.\n- The body is pure plan construction; action implementations supply effects.\n- `.call` expands steps inline and propagates required implementations.\n- `.child` creates a separate execution; `.to` ends this round with a next invocation.\n- `execute` collects requirements; explicit IDs, declared keys and ambient IDs choose identity.\n\n## Architecture diagram\n```text\nFlow author: typed payload + pure body\n                    |\n           [SLICE: Flow interface]\n             /          |          \\\n         .call        .child       .to\n      inline nodes   child leaf   next-round invocation\n             \\          |          /\n               Graph / Interpreter\n                       |\n              FlowRuntime / host engine\n                       |\n             journal + action implementations\n           browser OPFS / Worker durable store\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/Flow/Flow.ts:134`: purity includes captured values; source identity cannot see mutable aliases.\n- `packages/smithers/flows/flow/src/Flow/Flow.ts:215`: child drops requirements because its own driver must provide them.\n- `packages/smithers/flows/flow/src/Flow/Flow.ts:263`: execute collects requirements and exposes schema failures.\n\n## Questions a reviewer should ask\n- Can a captured mutable value change behavior without changing identity?\n- Does each child host provide the requirements omitted from its caller?\n- Does a caller retain an execution ID before retrying an effectful request?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/Flow/Flow.ts",
-          "from": 1,
-          "to": 313,
-          "note": "Marked human-reviewed 2026-08-10; look at what changed since. Defines typed durable flow declarations. Defines `BodySuccess`, `ModelSelection`, `DeclarationMetadata`, `PromptFlow`, `Flow`. Look at: deep import (root entries only). Lines 1-313."
-        }
-      ],
-      "revision": "b64ab2005b1e9799c522ce7226cb9faaecd52d0742699074a7ff36d39b2ee987"
-    },
-    {
-      "id": "code:flow/src/Flow/Flow#L0314@66f6",
-      "kind": "code",
-      "title": "Code: flows/flow/src/Flow: Flow.ts L314-576, MaxRoundsExceeded.ts",
-      "priority": 587,
-      "why": "@smthrs/flow, the flow core; read this first; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:08:43Z",
-      "context": "# Flow lifecycle types and round-budget failure\n\n## What\nThis slice defines observation, cancellation, resumption and rollback contracts. It also defines the recorded defect for a flow that asks for too many rounds.\n\n## Why\nResuming durable work must preserve its original implementations and bounds. See `apps/mvp/docs/decisions/0003-flows-and-the-agent.md` and `0011-the-agent-runs-in-the-browser.md`; catalog entry: `@smthrs/flow`.\n\n## How\n- `poll` distinguishes an unfinished known execution from an unknown ID.\n- `interrupt` requests cancellation and can fail if the durable record cannot be written.\n- `resume` relies on the context captured at registration rather than the resumer supplying implementations.\n- `executionId` treats invalid input as a defect, unlike execute's typed schema failure.\n- `withRollback` belongs to one round: success or handoff discards rollback registrations.\n- `Any` and schema-service extractors support generic hosts; `MaxRoundsExceeded` terminates the lineage.\n\n## Architecture diagram\n```text\nCaller: poll / interrupt / resume\n                  |\n        [SLICE: lifecycle contracts]\n                  v\n           FlowRuntime -> registered context\n                  |             |\n             durable store   re-drive body\n                  |             |\n              recorded exits <- round scope\n                  ^             | failed round: rollback\n                  |             | handoff: discard rollback\n       MaxRoundsExceeded <--- next round exceeds budget\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/Flow/Flow.ts:345`: resume deliberately omits Requires; inspect registration context ownership.\n- `packages/smithers/flows/flow/src/Flow/Flow.ts:385`: rollback is round-scoped, never lineage-wide.\n- `packages/smithers/flows/flow/src/Flow/Flow.ts:455`: type-erased helpers lose detail; callers must restore schema checks.\n- `packages/smithers/flows/flow/src/Flow/MaxRoundsExceeded.ts:21`: refused zero-based ordinal must equal maxRounds.\n\n## Questions a reviewer should ask\n- Could a later round fail after an earlier round discarded a necessary rollback?\n- Can resume replace the implementations registered for the original execution?\n- Do persisted round-budget failures decode with the same fields after restart?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/Flow/Flow.ts",
-          "from": 314,
-          "to": 576,
-          "note": "Marked human-reviewed 2026-08-10; look at what changed since. Defines `AnyStructSchema`, `Execution`, `Any`, `AnyWithProps`, `PayloadSchema` +3. Look at: unchecked casts. Lines 314-576."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/Flow/MaxRoundsExceeded.ts",
-          "from": 1,
-          "to": 39,
-          "note": "Defect recorded when a trampoline lineage runs past its declared round budget. Exports `MaxRoundsExceeded`. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "66f60163b1bdd92435756b7e3a4127f34112a35aa616a3dca725ee1d15f9e713"
-    },
-    {
-      "id": "code:engine/src/FlowEngine/Dispatch@5a75",
-      "kind": "code",
-      "title": "Code: flows/engine/src/FlowEngine: Dispatch.ts",
-      "priority": 583,
-      "why": "@smthrs/engine, the flow core; read this first; landed recently; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:06:34Z",
-      "context": "# Action dispatch: stable identity and one retry decision\n\n## What\nThis code gives each action invocation a replayable identity and decides whether a failed attempt may run again. It also restores compensable work to its earlier snapshot before retrying.\n\n## Why\nThe engine owns retries and recovery across hosts. See `apps/mvp/docs/decisions/0003-flows-and-the-agent.md`; catalog entry: `@smthrs/engine`. Detailed contract: `packages/smithers/flows/engine/docs/concepts/step-identity.md`.\n\n## How\n- Derive an allocation scope from action identity and graph site; nested actions add the parent invocation key.\n- Pin ordinals inside retry blocks so later attempts refer to the same invocation.\n- Read persisted attempt counts and retry origins when the store supplies them.\n- For compensable actions, restore an earlier snapshot and defer capture until real execution.\n- Decode outcomes before the single retry decision; interruptions and ordinary defects do not retry.\n- Refuse indistinguishable concurrent calls; keyed sealed actions use cache identity without ordinals.\n\n## Architecture diagram\n```text\nInterpreter node / action implementation\n           | action + attempt + structural site\n           v\n     [SLICE: Dispatch.ts]\n scope -> ordinal -> key -> retry policy\n           |                         ^\n           v                         | decoded outcome\n      Encoded store seam ------------+\n       | attempt rows / snapshots / journal\n       v\n action implementation -> injected host effects\n       | filesystem / sandbox / HTTP / model adapter\n       +--> SnapshotBoundary: restore / snapshot / diff\nBrowser or Worker host supplies storage and effect services\n```\n\n## Read this first\n- `packages/smithers/flows/engine/src/FlowEngine/Dispatch.ts:45`: reset inherited action context when starting a fresh flow body.\n- `packages/smithers/flows/engine/src/FlowEngine/Dispatch.ts:143`: default retries require repeat safety; irreversible work still needs a key.\n- `packages/smithers/flows/engine/src/FlowEngine/Dispatch.ts:262`: snapshot preparation must not run while replaying a recorded result.\n- `packages/smithers/flows/engine/src/FlowEngine/Dispatch.ts:459`: acquireUseRelease must clear the concurrency guard on interruption.\n\n## Questions a reviewer should ask\n- Can a child or timer wake inherit its parent ordinal and replay the wrong row?\n- Does a retry after restart restore the earliest pre-effect snapshot?\n- Can any path repeat an irreversible action without its idempotency key?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/engine/src/FlowEngine/Dispatch.ts",
-          "from": 1,
-          "to": 476,
-          "note": "Ordinal allocation for invocation keys, the guard that refuses indistinguishable keyless overlaps, compensable snapshots, and the engine's single retry decision. Check that a child flow and a timer-woken round don't inherit the parent's ordinal scope."
-        }
-      ],
-      "revision": "5a75c2298dd3b0c4b76e363e2028aec345b533ec9f2b3b8d033961eba4b75c3d"
-    },
-    {
-      "id": "code:mvp/worker/stack/Stack@5fb7",
-      "kind": "code",
-      "title": "Code: mvp/worker/stack: Stack.ts",
-      "priority": 577,
-      "why": "the app's flows; read this first; new, not landed yet; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-21T02:46:34Z",
-      "context": "# The stack’s single database writer\n\nSlice: `code:mvp/worker/stack/Stack@5fb7` · coverage revision `5fb79dd81c7b52538d47b6f0e6e613acfa8d4727f00e1b0c1d519039be20e06d`\n\n## What\nThis commits and drops TODOs and records progress from their runs. Each change locks the repository’s stack row and writes an operation receipt so retries can recover the same result.\n\n## Why\n[0016](apps/mvp/docs/decisions/0016-todos-and-the-stack.md) §1 requires one short transaction, replayable receipts and fenced attempt reports. TODO-2 keeps stack order in Postgres.\n\n## How\n- `Change` admits commit or drop; `Receipt` preserves numbering and the starts/stops the caller must deliver after commit.\n- `apply` locks `stacks` before reading receipts and TODO rows, then applies pure placement rules.\n- With no `TodoRuns` service the caller passes `runs: false`, so lanes are zero and TODOs remain queued.\n- One transaction writes TODOs, prompt revisions, attempts and the operation receipt; no network call holds the lock.\n- `report` rejects non-current ordinals and inactive TODOs; finish frees a lane and records replacement attempts.\n- `attemptTodo` reads the prompt revision pinned by the attempt.\n\n## Architecture diagram\n```text\nBrowser outbox -> Worker stack API       remote TODO run\n                        | Change                | RunEvent\n                        +----------+------------+\n                                   v\n                    [THIS: apply / report]\n                         | row lock + transaction\n                         v\n Postgres: stacks / todos / requests / attempts / operation receipts\n       |                                       |\n       | committed rows                        | start/stop receipts\n       v                                       v\n Electric -> browser collections       caller -> durable run host\n```\n\n## Read this first\n- `apps/mvp/worker/stack/Stack.ts:109` — Hash omits actor ID although the comment says who it acts for.\n- `apps/mvp/worker/stack/Stack.ts:131` — Every mutation must acquire the same stack row lock.\n- `apps/mvp/worker/stack/Stack.ts:315` — Fence checks ordinal/state, not attemptId ownership.\n- `apps/mvp/worker/stack/Stack.ts:435` — Attempt pins the request revision used for implementation.\n\n## Questions a reviewer should ask\n- Can another actor reuse an operation ID and receive the original receipt?\n- Should report verify attemptId, todoId and ordinal together before updating attempt rows?\n- After a committed transaction and failed launch, which durable caller retries the saved starts?",
-      "files": [
-        {
-          "path": "apps/mvp/worker/stack/Stack.ts",
-          "from": 1,
-          "to": 446,
-          "note": "The one writer for TODOs and the stack (decision 0016): one transaction that locks the `stacks` row `FOR UPDATE` and makes no network or model call. Check that refusals (`stack_full`, `merged`, `not_found`) roll back cleanly and that runs start only after commit."
-        }
-      ],
-      "revision": "5fb79dd81c7b52538d47b6f0e6e613acfa8d4727f00e1b0c1d519039be20e06d"
-    },
-    {
-      "id": "code:flow/src/internal/BoundedJson@ede7",
-      "kind": "code",
-      "title": "Code: flows/flow/src/internal: BoundedJson.ts, DeclarationSite.ts, Declaratio...",
-      "priority": 574,
-      "why": "@smthrs/flow, the flow core; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:06:34Z",
-      "context": "# Declaration metadata and bounded diagnostic helpers\n\n## What\nThese helpers attach source locations and authority metadata to declarations without changing their identity. They also bound human-facing diagnostics and define interpreter refusals that survive storage.\n\n## Why\nReviewers need source locations and stable failures without allowing diagnostics to change replay keys. See `apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md` and `0003-flows-and-the-agent.md`; catalog entries: `@smthrs/flow`, `@smthrs/canonical`.\n\n## How\n- BoundedJson delegates inert JSON admission and renders bounded Unicode-safe previews.\n- DeclarationSite parses V8 and JavaScriptCore stacks, skipping framework frames.\n- An evaluated-file mapping preserves the original entry location for loaded source.\n- A non-enumerable, non-writable own property keeps source locations out of digests.\n- lowerDeclarations turns literal capabilities, effects and visibility into one annotation bag.\n- ExecutionMiddleware wraps scoped body execution; InterpreterError enumerates persistent refusal codes.\n\n## Architecture diagram\n```text\nAuthor: Flow.make / Action.make\n            | source stack + literal authority\n            v\n [SLICE: DeclarationSite + Declarations]\n            | annotated declaration\n            v\n Graph -> Interpreter <- ExecutionMiddleware wrapper\n            |                    |\n       refusal code         scoped body effects\n            v\n Flow.Result / journal -> Inspect / review UI\n            ^\n HumanTask value -> [SLICE: BoundedJson] -> bounded diagnostic\n (generic package; browser / Worker / sandbox host supplies execution)\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/internal/BoundedJson.ts:36`: admission must detach data and avoid invoking foreign accessors.\n- `packages/smithers/flows/flow/src/internal/DeclarationSite.ts:117`: global evaluated-source mapping must not attribute unrelated declarations.\n- `packages/smithers/flows/flow/src/internal/DeclarationSite.ts:187`: first source site wins and remains invisible to canonical keys.\n- `packages/smithers/flows/flow/src/internal/InterpreterError.ts:38`: persistent error codes are compatibility-sensitive schema literals.\n\n## Questions a reviewer should ask\n- Can stack parsing or remapping guess the wrong author location?\n- Are absolute machine paths removed by journal writers before persistence?\n- Do diagnostic size limits bound encoded output as well as input traversal?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/internal/BoundedJson.ts",
-          "from": 1,
-          "to": 109,
-          "note": "Human-task diagnostics over the shared inert JSON boundary. Exports `Limits`, `encodedStringBytes`, `textFits`, `admit`, `scalarPrefix` +1. Look at: deep import (root entries only)."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/internal/DeclarationSite.ts",
-          "from": 1,
-          "to": 214,
-          "note": "Where a declaration was written: the author's file and the line it starts on. Exports `DeclaredAt`, `isFrameworkPath`, `evaluatedFrom`, `parseFrame`, `parseStack` +3. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/internal/Declarations.ts",
-          "from": 1,
-          "to": 49,
-          "note": "The lowering every declaration in this package shares: literal `capabilities`, `effects` and `modelInvocable` become entries in the annotation bag readers already… Exports `lowerDeclarations`. Look at: deep import (root entries only)."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/internal/ExecutionMiddleware.ts",
-          "from": 1,
-          "to": 29,
-          "note": "Internal interpreter seam for authoring combinators that retain execution scope state around the ordinary body. Exports `ExecutionMiddleware`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/internal/InterpreterError.ts",
-          "from": 1,
-          "to": 59,
-          "note": "The interpreter's refusal, in a module of its own so `Flow.Result` can decode it without importing the interpreter that imports `Flow.Result`. Exports `InterpreterError`. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "ede768d786139460148cd498148789293127ba8450d9189c65ae72efee4bae67"
-    },
-    {
-      "id": "code:flow/src/internal/OutcomeMarker@1f54",
-      "kind": "code",
-      "title": "Code: flows/flow/src/internal: OutcomeMarker.ts, RecordedPlan.ts, SpanFailure.ts",
-      "priority": 574,
-      "why": "@smthrs/flow, the flow core; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:06:34Z",
-      "context": "# Outcome markers, restart compatibility and safe span failures\n\n## What\nThese helpers distinguish authored flow outcomes, compare rebuilt plans after restart and withhold error text from tracing. They preserve the caller’s original failure while changing only the span’s copy.\n\n## Why\nRestart identity must tolerate harmless bundle renaming without weakening cache identity, and traces must exclude content. See `apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md` and `0011-the-agent-runs-in-the-browser.md`; catalog entries: `@smthrs/flow`, `@smthrs/plan`.\n\n## How\n- Two symbols distinguish outcome AST nodes from resolved outcome values.\n- RecordedPlan projects resumeDigest only in known callback slots.\n- Missing resume identity retains the original material and fails closed.\n- Approval digests and dispatch keys retain their stronger identity; this projection is resume-only.\n- SpanFailure replaces failure/defect text with tag or class and a restricted code; interruptions pass through.\n- Tracer wrappers are idempotent; effect, stream, function and one-span adapters preserve caller errors.\n\n## Architecture diagram\n```text\ndone / to / park -> [SLICE: OutcomeMarker] -> Graph / Interpreter\n                                             |\n rebuilt graph -> [SLICE: RecordedPlan] -> PlanRecorded digest comparison\n                                             | durable journal\n action / provider failure                    v\n          | original cause ------------> caller / typed recovery\n          |\n          +-> [SLICE: SpanFailure] -> stand-in exit -> tracer / OTLP exporter\n                   tag + restricted code; original message withheld\n Host: browser / Worker / sandbox; provider is outside this package\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/internal/RecordedPlan.ts:31`: only callback slots may use weaker resume identity; never application data.\n- `packages/smithers/flows/flow/src/internal/SpanFailure.ts:46`: tag is copied without validation; could an untrusted _tag carry private text?\n- `packages/smithers/flows/flow/src/internal/SpanFailure.ts:66`: failure replacement retains cause annotations; inspect their content policy.\n- `packages/smithers/flows/flow/src/internal/SpanFailure.ts:145`: withSpan sanitizes this span while nested spans keep the caller tracer.\n\n## Questions a reviewer should ask\n- Can weaker resume identity ever enter an approval digest or cache key?\n- Are tags and cause annotations trusted enough to export without text filtering?\n- Does wrapping a tracer leave every caller-visible failure unchanged?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/internal/OutcomeMarker.ts",
-          "from": 1,
-          "to": 19,
-          "note": "The two markers that let `Flow.isOutcome` tell an authored `done`/`to`/`park` from ordinary data. Exports `OutcomeNodeTypeId`, `OutcomeValueTypeId`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/internal/RecordedPlan.ts",
-          "from": 1,
-          "to": 60,
-          "note": "Resume compatibility is weaker than result reuse. Exports `recordedPlanDrafts`. Look at: deep import (root entries only)."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/internal/SpanFailure.ts",
-          "from": 1,
-          "to": 153,
-          "note": "Span failures with their text withheld. Exports `exit`, `tracer`, `effect`, `stream`, `fn` +1. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "1f5401f736d0d86be437e280e9589218a64bb64afb441fe857173d81f95c127d"
-    },
-    {
-      "id": "code:engine/src/FlowEngine/make@42e9",
-      "kind": "code",
-      "title": "Code: flows/engine/src/FlowEngine: make.ts",
-      "priority": 571,
-      "why": "@smthrs/engine, the flow core; read this first; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:06:34Z",
-      "context": "# Engine adapter: typed calls over stored results\n\n## What\nThis code connects authored flows to the engine that runs them. It validates results, manages handler lifetimes, and translates durable wait results between stored and typed values.\n\n## Why\nOne flow must run on different hosts without changing its declaration. Decision `apps/mvp/docs/decisions/0003-flows-and-the-agent.md` requires shared declarations; DUR-1 and DUR-2 put recovery and retries in the SDK. The catalog entry is `@smthrs/engine`; its contract is explained in `packages/smithers/flows/engine/docs/concepts/port-and-seam.md`.\n\n## How\n- `makeUnsafe(Encoded)` returns the `FlowRuntime` service consumed by flow authoring APIs.\n- A semaphore per flow tag serializes registration; a context reference rejects recursive admission.\n- Each registration owns a child scope. Closing it removes exactly that declaration.\n- Registered handlers apply deadlines, validate declared failures and successes, attenuate capabilities, and reset action context.\n- Execution goes through placement and trampoline helpers; action dispatch delegates retry decisions to `Dispatch`.\n- Deferred reads decode exits and clear consumed waiting state; conditional completion defaults to `NotWaiting` when unsupported.\n\n## Architecture diagram\n```text\nAuthored Flow / Interpreter (browser worker, server, or sandbox host)\n                  | register / execute / action / deferred\n                  v\n       +---------------------------------------+\n       | [THIS SLICE] makeUnsafe               |\n       | registration scopes + schema boundary |\n       +---------------------------------------+\n          |               |                |\n          v               v                v\n      Trampoline       Dispatch      deferred encode/decode\n          +---------------+----------------+\n                          | Encoded seam\n                          v\n               memory engine OR durable store\n                          | host-injected persistence\n              browser OPFS / server journal\n```\nNo network, Postgres, Electric, or model-provider call originates in this adapter.\n\n## Read this first\n- `packages/smithers/flows/engine/src/FlowEngine/make.ts:61` — Recursive registration and canceled waiters must not split the lock.\n- `packages/smithers/flows/engine/src/FlowEngine/make.ts:124` — Undeclared failures become defects; the proxy must redact them externally.\n- `packages/smithers/flows/engine/src/FlowEngine/make.ts:165` — Capability attenuation and action-scope reset protect execution boundaries.\n- `packages/smithers/flows/engine/src/FlowEngine/make.ts:204` — Consuming a deferred result clears its waiting annotation.\n\n## Questions a reviewer should ask\n- Can cancellation or duplicate registration retire a live handler or replace its semaphore?\n- Do all external proxy paths redact defects that this adapter deliberately preserves locally?\n- Does a handoff bypass success validation only for the round that actually handed off?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/engine/src/FlowEngine/make.ts",
-          "from": 1,
-          "to": 297,
-          "note": "Adapts a low-level `Encoded` implementation into the typed `FlowRuntime` port `@smthrs/flow` declares. Exports `makeUnsafe`. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "42e9ebe1d30503aa1d7b0e535b4869d0f633b4ea3684fffe3f7965696075cddb"
-    },
-    {
-      "id": "code:flow/src/WaitFor@628e",
-      "kind": "code",
-      "title": "Code: flows/flow/src: WaitFor.ts, index.ts",
-      "priority": 570,
-      "why": "@smthrs/flow, the flow core; new, not landed yet; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-21T01:39:39Z",
-      "context": "# Waiting for an outside answer\n\nSlice: `code:flow/src/WaitFor@628e` · coverage revision `628e6dc54a3e5c3c05493cd671b06e54327db07df6d5802ae27ae34126b4955b`\n\n## What\nThis exposes an external wait as a normal system action in a flow plan. It parks on a durable deferred and reuses the saved answer when the run resumes.\n\n## Why\n[0016](apps/mvp/docs/decisions/0016-todos-and-the-stack.md) uses `WaitFor` for outside events; DUR-1 and DUR-2 require engine-owned waits. The SDK contract is `packages/smithers/flows/flow/docs/guides/wait-for-an-external-signal.md`.\n\n## How\n- `action` is a sealed, non-overridable system declaration returning JSON or `WaitForRequestInvalid`.\n- A payload must name exactly one target: a relative name or an absolute deferred token.\n- `target` rejects malformed tokens and compares both flow name and execution ID to prevent a permanent foreign wait.\n- `deferred(name)` gives the resolver the same named address; two nodes naming it intentionally await one fact.\n- `layer` annotates waiting with the event token before awaiting the existing deferred; no second completion protocol exists.\n- `src/index.ts` exports `WaitFor` through the public package root.\n\n## Architecture diagram\n```text\nFlow body -> [THIS: system/wait-for]\n                       | validate target + event token\n                       v\n                 DurableDeferred.await\n                       | park / saved answer\n                       v\n               host engine journal (SQLite / Postgres)\n                       ^ completion by token\n                       |\nPerson / webhook -> authorized resolver -> DurableDeferred.succeed / done\nToken is an address; the resolver must authorize the caller.\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/WaitFor.ts:101` — System action is sealed and returns schema-checked JSON.\n- `packages/smithers/flows/flow/src/WaitFor.ts:158` — Validate both halves of execution identity.\n- `packages/smithers/flows/flow/src/WaitFor.ts:217` — Waiting annotation and deferred must carry the same token.\n\n## Questions a reviewer should ask\n- Does every external completion handler authorize the sender before resolving?\n- Are repeated names deliberately sharing one answer?\n- Can the host wake the parked execution when completion arrives before or after parking?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/WaitFor.ts",
-          "from": 1,
-          "to": 228,
-          "note": "The system wait point, as an ordinary declared action. Exports `WaitForRequestInvalid`, `tag`, `deferred`, `action`, `layer`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/index.ts",
-          "from": 1,
-          "to": 141,
-          "note": "Marked human-reviewed 2026-08-10; look at what changed since. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "628e6dc54a3e5c3c05493cd671b06e54327db07df6d5802ae27ae34126b4955b"
-    },
-    {
-      "id": "code:mvp/src/flows/askingTab@30d9",
-      "kind": "code",
-      "title": "Code: mvp/src/flows: askingTab.ts, askingTab.test.ts, bearer.ts",
-      "priority": 570,
-      "why": "the app's flows; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-21T02:13:27Z",
-      "context": "# Finding the tab that asked\n\nSlice: `code:mvp/src/flows/askingTab@30d9` · coverage revision `30d9eb73fb3ac442dcffa5da781847bffc342552b220916ef7057a94e4b48456`\n\n## What\nThis lets the engine ask the browser tab that started a request to perform a tab-specific action. It also supplies helpers for requests that must carry a run credential without the person’s session cookie.\n\n## Why\n[0011](apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md) puts execution in the leader worker. [0017](apps/mvp/docs/decisions/0017-everything-is-a-plugin.md) §Security separates a person’s press from delegated runs.\n\n## How\n- `Ask<I,O>` returns an optional answer carrying the remembered door and validated output.\n- `asker` subscribes before posting a UUID-correlated call and times out to no answer.\n- `answerAskingTab` validates input, checks local `TabRequests` ownership and answers calls serially until scope closes.\n- Other tabs ignore a requester they did not start; malformed or unmatched replies are ignored.\n- `withBearer` adds authorization; `withoutCookie` preserves other fetch options while forcing credentials to omit.\n\n## Architecture diagram\n```text\nLeader engine worker                    browser tabs (same origin)\n       | requester + input                        |\n       v                                          v\n[THIS: asker] -- TabChannel --> [THIS: ownership check -> answer]\n       ^       id + door + output                 | local TabRequests\n       +------------------------------------------+\nFlow HTTP request -> bearer + omit cookie -> Worker actor check\n                                            | authorized writes\n                                            v\n                                         Postgres\n```\n\n## Read this first\n- `apps/mvp/src/flows/askingTab.ts:44` — Subscribe before posting to avoid losing a fast reply.\n- `apps/mvp/src/flows/askingTab.ts:77` — Only local requester ownership permits a tab-side effect.\n- `apps/mvp/src/flows/bearer.ts:14` — Delegated requests must not carry the person’s cookie.\n\n## Questions a reviewer should ask\n- Could another same-origin sender forge a correlated reply, and is that within the trust model?\n- What does each caller do when the original tab closes before replying?\n- Are all run-originated HTTP paths using the cookie-omission helper?",
-      "files": [
-        {
-          "path": "apps/mvp/src/flows/askingTab.ts",
-          "from": 1,
-          "to": 102,
-          "note": "How a step in the leader tab's engine worker reaches the tab that asked, over a BroadcastChannel. Check it subscribes before asking, and what a step does when that tab reloaded mid-step."
-        },
-        {
-          "path": "apps/mvp/src/flows/askingTab.test.ts",
-          "from": 1,
-          "to": 111,
-          "note": "A tab that started `started` through the button, answering `channel` with the word's length; returns what it saw. Look at: behavior asserted through the public boundary; failure and ordering cases."
-        },
-        {
-          "path": "apps/mvp/src/flows/bearer.ts",
-          "from": 1,
-          "to": 19,
-          "note": "`request` carrying run credential `token`. Exports `withBearer`, `withoutCookie`. Look at: credential handling: scope, expiry, never logged."
-        }
-      ],
-      "revision": "30d9eb73fb3ac442dcffa5da781847bffc342552b220916ef7057a94e4b48456"
-    },
-    {
-      "id": "code:mvp/src/flows/declarations@0592",
-      "kind": "code",
-      "title": "Code: mvp/src/flows: declarations.ts, dispatch.ts",
-      "priority": 570,
-      "why": "the app's flows; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-21T02:39:47Z",
-      "context": "# From a button to a durable run\n\nSlice: `code:mvp/src/flows/declarations@0592` · coverage revision `059259ab93b542bbaa7b6053eff085fda8f1cf972a95b802ab3de251600b3b70`\n\n## What\nThis pairs each registered reference with its executable declaration and gives the UI one dispatch service. Dispatch distinguishes admission from completion and records outcomes without logging input.\n\n## Why\n[0003](apps/mvp/docs/decisions/0003-flows-and-the-agent.md) requires one declaration for people and agents. [0011](apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md) places those runs on the device engine.\n\n## How\n- `declarations` is keyed by `FlowName` and schema-compatible with registry references; only engine hosts import implementations.\n- `ClientEngine.layerBrowser` delegates to the leader worker; `layerRuntime` resolves references to in-process declarations.\n- `makeDispatch` registers the execution with `TabRequests`, starts it, then waits for its result.\n- An optional `admitted` Deferred settles at start, independently of the final `Done` or `Failed` result.\n- Engine refusals and defects use `DispatchFailed`; declared flow errors remain `Failed`.\n- Counters, spans and logs record flow, door and outcome; admission finalizers prevent waiting forever after interruption.\n\n## Architecture diagram\n```text\nButton / slash / composer (tab)\n       | registered name + payload\n       v\n [THIS: FlowDispatch] ---- admitted receipt ---> background launch caller\n       | reference\n       v\n BrowserEngine -> leader worker / SQLite OPFS\n                       |\n             [THIS: declarations -> actual flow body]\n                       | steps\n                       v\n              Worker API -> Postgres / sandbox / model proxy\n       ^ final Exit -> Done / Failed / DispatchFailed\n```\n\n## Read this first\n- `apps/mvp/src/flows/declarations.ts:49` — Keep executable declarations aligned with references.\n- `apps/mvp/src/flows/dispatch.ts:55` — Start records admission; result waits for completion.\n- `apps/mvp/src/flows/dispatch.ts:172` — Admitted must settle even when dispatch exits early.\n- `apps/mvp/src/flows/dispatch.ts:251` — Inspect how defects and refusal codes become UI errors.\n\n## Questions a reviewer should ask\n- Can a UI caller accidentally await the whole dispatch while trying to acknowledge a launch?\n- Do browser and in-process adapters classify undeclared failures consistently?\n- Can an execution ID be reused with different input without a clear refusal?",
-      "files": [
-        {
-          "path": "apps/mvp/src/flows/declarations.ts",
-          "from": 1,
-          "to": 119,
-          "note": "Every app flow's declaration in one place. Check it matches registry.ts one to one."
-        },
-        {
-          "path": "apps/mvp/src/flows/dispatch.ts",
-          "from": 1,
-          "to": 281,
-          "note": "The one way the UI runs a flow. Check that no span, log or count carries the flow's input, and that `refused`, `unavailable`, `invalid`, `defect` and `interrupted` each reach the person as a distinct state."
-        }
-      ],
-      "revision": "059259ab93b542bbaa7b6053eff085fda8f1cf972a95b802ab3de251600b3b70"
-    },
-    {
-      "id": "code:mvp/src/flows/doors@a3a8",
-      "kind": "code",
-      "title": "Code: mvp/src/flows: doors.ts, engine.ts, engine.test.ts +1",
-      "priority": 570,
-      "why": "the app's flows; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-21T02:34:20Z",
-      "context": "# The browser engine and its tab connections\n\nSlice: `code:mvp/src/flows/doors@a3a8` · coverage revision `a3a8999901295e31756d6b0dba3c0baf9aa7f4dbc02fc10cdee276404e1e47b3`\n\n## What\nThis starts each tab’s engine worker and connects dispatch to the elected leader. It also answers tab-local requests and makes persistence fail promptly when the engine is unavailable.\n\n## Why\n[0011](apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md) §4 chooses the leader worker and OPFS journal. [0017](apps/mvp/docs/decisions/0017-everything-is-a-plugin.md) distinguishes person doors from delegated runs.\n\n## How\n- `tabEngine` starts BrowserEngine and exposes the worker endpoint plus the dispatch adapter before device-store setup.\n- `tabDoors` answers only requests this tab started, using the shared asking-tab ownership check.\n- `failFastOnEngine` races database opening against engine failure so persistence can fall back to memory.\n- `tabAnswers` attaches theme setters after the store opens and removes handlers when the scope closes.\n- `engine.worker.ts` loads declarations and SQLite only in the worker; BrowserRuntime owns leader execution.\n- Telemetry uses an allowed span set; scripted test models are reachable only through the development branch.\n\n## Architecture diagram\n```text\nEach browser tab\n   [THIS: tabEngine + tabDoors + tabAnswers]\n        | start worker     ^ local setter / remembered door\n        v                  |\n leader worker [THIS: engine.worker.ts]\n        | Web Lock winner -> BrowserRuntime -> SQLite OPFS\n        |                                        |\n        +------ flow steps                       +-> persisted collections\n                   |\n                   v\n           Worker API / model proxy -> Postgres / model provider\nEngine failure -> open race rejects -> persistence keeps rows in memory\n```\n\n## Read this first\n- `apps/mvp/src/flows/doors.ts:14` — Only the dispatching tab attests its remembered door.\n- `apps/mvp/src/flows/engine.ts:35` — Engine startup must precede persistence initialization.\n- `apps/mvp/src/flows/engine.ts:59` — Unavailable engine must break a waiting database open.\n- `apps/mvp/src/flows/engine.worker.ts:37` — Production must exclude scripted-model imports.\n\n## Questions a reviewer should ask\n- Can an engine failure leave startup waiting on an unresolved worker endpoint?\n- Does layer disposal stop both failure watchers and tab handlers?\n- Does a closed requesting tab cause credential fallback rather than granting a person door?",
-      "files": [
-        {
-          "path": "apps/mvp/src/flows/doors.ts",
-          "from": 1,
-          "to": 15,
-          "note": "What the engine asks, and what the tab answers besides the door every reply carries: nothing more. Exports `DoorCall`, `tabDoors`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "apps/mvp/src/flows/engine.ts",
-          "from": 1,
-          "to": 88,
-          "note": "Where the engine worker's records go: ChatApi's relay on `origin` (docs/observability.md#browser), as `smithers-mvp-engine`, with only the spans the relay keeps but a… Exports `engineTelemetry`, `TabWorker`, `tabEngine`, `failFastOnEngine`, `EngineFailed` +1. Look at: Effect run outside the outer boundary?."
-        },
-        {
-          "path": "apps/mvp/src/flows/engine.test.ts",
-          "from": 1,
-          "to": 183,
-          "note": "This device's engine as the browser builds it (src/test/device.ts): a tab dispatches through `BrowserEngine` to the leader's engine worker, which runs every client flow… Look at: behavior asserted through the public boundary; failure and ordering cases."
-        },
-        {
-          "path": "apps/mvp/src/flows/engine.worker.ts",
-          "from": 1,
-          "to": 39,
-          "note": "The engine worker each tab starts (src/flows/engine.ts `tabEngine`): a program boundary, like src/main.tsx, which hands the host's capabilities to the program. Look at: network call: timeouts, typed errors, no credentials in logs."
-        }
-      ],
-      "revision": "a3a8999901295e31756d6b0dba3c0baf9aa7f4dbc02fc10cdee276404e1e47b3"
-    },
-    {
-      "id": "code:mvp/src/flows/requests@1102",
-      "kind": "code",
-      "title": "Code: mvp/src/flows: requests.ts, requests.test.ts, tab.test.ts +2",
-      "priority": 570,
-      "why": "the app's flows; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:06:34Z",
-      "context": "# Remember the requester and bridge worker calls\n\n## What\nThe request ledger remembers which actions this tab started. The port lets the engine worker call a setter in its own tab, with typed timeout and refusal results.\n\n## Why\nDecision `apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md` separates the worker engine from tab state; `apps/mvp/docs/decisions/0003-flows-and-the-agent.md` requires replay-safe setters. Catalog entry: `@smthrs/platform-browser`; feature docs: `apps/mvp/docs/features/flows.md`.\n\n## How\n- `TabRequests` keeps the latest 1,024 dispatches in memory; re-adding moves an id to the newest position.\n- `requesterOf` takes the execution-id prefix before `/`, connecting agent children to their original request.\n- `TabPort` installs one reply listener, gives each call a UUID and deferred, and registers it before posting.\n- Waiting ends on reply, timeout or cancellation; the deferred map is cleaned when that wait exits.\n- `answer` invokes a named handler using captured Effect services and returns only refused or unknown-method failure text.\n- Real message-channel tests cover round trips, silence and stop; a browser import-graph test prevents the page from loading agent, standard tools or Node.\n\n## Architecture diagram\n```text\nTab dispatch ---> [THIS SLICE: TabRequests]\n                       | requester -> door (memory only)\n                       +--> asking-tab channel ownership check\n\nLeader engine worker\n       | method + JSON input + call UUID\n       v\n [THIS SLICE: TabPort] ===== postMessage =====> own tab\n       ^                                    [answer + setters]\n       | JSON output / refused / unknown_method      |\n       +============================================+\n                         timeout if silent\n Own-tab effects update device state; no Worker or provider call is made here.\n```\n\n## Read this first\n- `apps/mvp/src/flows/requests.ts:18` — Prefix routing assumes root execution ids contain no slash.\n- `apps/mvp/src/flows/tabPort.ts:75` — Posting occurs before the cleanup-protected wait; inspect thrown postMessage behavior.\n- `apps/mvp/src/flows/tabPort.ts:99` — Stopping removes the listener but does not explicitly cancel already forked handlers.\n- `apps/mvp/src/flows/tab.test.ts:47` — The page’s full import graph is checked, including dev branches.\n\n## Questions a reviewer should ask\n- Can a thrown postMessage or cancellation between map insertion and waiting leak an entry?\n- Should stopping the responder also cancel handlers already running?\n- Can request eviction or a custom root id route an action to no tab unexpectedly?",
-      "files": [
-        {
-          "path": "apps/mvp/src/flows/requests.ts",
-          "from": 1,
-          "to": 44,
-          "note": "`requesterOf` is an execution id up to its first `/`. Check that an agent-made or crafted id can't claim another tab's run."
-        },
-        {
-          "path": "apps/mvp/src/flows/requests.test.ts",
-          "from": 1,
-          "to": 51,
-          "note": "Which tab a step reaches (src/flows/requests.ts): a tab remembers what it dispatched, latest first, and an execution's requester is the run it belongs to. Look at: behavior asserted through the public boundary; failure and ordering cases."
-        },
-        {
-          "path": "apps/mvp/src/flows/tab.test.ts",
-          "from": 1,
-          "to": 56,
-          "note": "What the tab must never import: the agent, its standard tools, and Node. Look at: behavior asserted through the public boundary; failure and ordering cases."
-        },
-        {
-          "path": "apps/mvp/src/flows/tabPort.ts",
-          "from": 1,
-          "to": 121,
-          "note": "How long a call waits for its tab. Exports `CALL_WITHIN`, `TabCallFailed`, `Endpoint`, `Handlers`, `TabPort` +1. Look at: Effect run outside the outer boundary?."
-        },
-        {
-          "path": "apps/mvp/src/flows/tabPort.test.ts",
-          "from": 1,
-          "to": 76,
-          "note": "A worker and its tab on one channel; the tab answers with `handlers` unless `answered` is false. Look at: behavior asserted through the public boundary; failure and ordering cases."
-        }
-      ],
-      "revision": "11023647b44957efac64e9fe3def528abd457438123b2fa6be894796272e17e7"
-    },
-    {
-      "id": "code:mvp/worker/flows/Expire@da8d",
-      "kind": "code",
-      "title": "Code: mvp/worker/flows: Expire.ts, Expire.test.ts",
-      "priority": 570,
-      "why": "the app's flows; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T22:50:40Z",
-      "context": "# Expire an abandoned answer without expiring a busy queue\n\n## What\nThis flow fails an answer that would otherwise keep streaming forever after its device disappears. It waits from the conversation queue’s last progress, so a burst of legitimate answers can finish in turn.\n\n## Why\nDecision `apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md` puts answering on the device and permits server work while devices are off. `apps/mvp/docs/decisions/0015-agent-status.md` and `apps/mvp/docs/decisions/0009-notifications-and-live-work.md` require the run and feed to reflect real failure. Catalog entry: `@smthrs/flow`.\n\n## How\n- One stable `chat-expire-<answerId>` execution runs `ExpiresIn`, a durable sleep, then `Abandon`.\n- `ExpiresIn` is sealed: a resumed round retains its original wait. Postgres computes a duration so host clocks need not agree.\n- `lastMoved` considers this answer’s write, the latest earlier settled answer, and earlier answers still streaming.\n- `Abandon` rechecks stillness in SQL; a moved queue produces `waiting` and a trampoline handoff into a fresh round.\n- Abandonment updates the answer, run and notification fold in one transaction; finished answers remain untouched.\n- Database errors retry through SDK policy; the default is 25 minutes and the lineage is capped at 1,000 rounds.\n\n## Architecture diagram\n```text\nChatApi accepts question ---> remote start per answer\n                                     |\n                         [THIS SLICE: chat/Expire]\n                           ExpiresIn (sealed read)\n                                     | milliseconds\n                              durable Sleep\n                                     |\n                           Abandon (SQL recheck)\n                          /          |          \\\n                  queue moved     already done    stale streaming\n                      |               |                |\n                  next round        return       transaction:\n                                                   message failed\n                                                   run failed + feed\n                                     Postgres ---> Electric ---> devices\n Late device writes are rejected by answer routes outside this slice.\n```\n\n## Read this first\n- `apps/mvp/worker/flows/Expire.ts:146` — Queue progress must use the same ordering rule as turn admission.\n- `apps/mvp/worker/flows/Expire.ts:177` — Check/update snapshot and concurrent answer writes deserve careful review.\n- `apps/mvp/worker/flows/Expire.ts:192` — Run and notification changes must roll back with message failure.\n- `apps/mvp/worker/flows/Expire.test.ts:131` — Burst regression proves expiry follows progress, not ask age.\n\n## Questions a reviewer should ask\n- Can a concurrent earlier-answer write race this snapshot and abandon a queue that just progressed?\n- What visible result occurs if a continuously moving queue exhausts 1,000 rounds?\n- Does every answer write update the progress timestamp and refuse a late settlement?",
-      "files": [
-        {
-          "path": "apps/mvp/worker/flows/Expire.ts",
-          "from": 1,
-          "to": 248,
-          "note": "How long an answer's queue may stay still before `chat/Expire` settles it, when `ANSWER_EXPIRY` is unset: 25 minutes. Exports `DEFAULT_EXPIRY`, `expiry`, `executionId`, `ExpiryFailed`, `expiries` +10. Look at: flow chat/Expire: capabilities, payload and error schemas, idempotent steps; SQL: parameters and row authorization."
-        },
-        {
-          "path": "apps/mvp/worker/flows/Expire.test.ts",
-          "from": 1,
-          "to": 288,
-          "note": "The flow's services over this file's schema, with answers expiring `after` they were asked. Look at: behavior asserted through the public boundary; failure and ordering cases."
-        }
-      ],
-      "revision": "da8d9d296beab212ac31e83fdb67cea03046168573540d91027858748cc89101"
-    },
-    {
-      "id": "code:mvp/worker/flows/Pause@9cc0",
-      "kind": "code",
-      "title": "Code: mvp/worker/flows: Pause.ts, Pause.test.ts, RecheckRole.ts",
-      "priority": 570,
-      "why": "the app's flows; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:07:22Z",
-      "context": "# Prove durable waiting; refresh a session without replaying its token\n\n## What\nThe pause flow proves that a host can stop at a durable timer and resume. The role-check flow refreshes a session’s GitHub credentials and updates its repository role without repeating a successfully recorded token redemption.\n\n## Why\nDecision `apps/mvp/docs/decisions/0008-auth.md` keeps GitHub tokens server-side; `apps/mvp/docs/decisions/0007-roles-and-tags.md` derives roles from GitHub permissions. `apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md` allows this protected-key work remotely. Catalog entry: `@smthrs/flow`.\n\n## How\n- `Pause` calls a mark action, durable sleep, and another mark; tests use the Node host with real Postgres and reject negative waits.\n- `recheckExecutionId(sessionId, generation)` deduplicates checks using the previous role-check timestamp.\n- `RedeemRefresh` refreshes near expiry and seals replacement tokens before its result enters the journal.\n- `StoreTokens` retries separately and replaces only the matching refresh digest of a live session.\n- `CheckRole` rereads current session state, revokes matching refused credentials, or records GitHub’s current permission as a role.\n- Redeem/check have five attempts; store/keep retry indefinitely. Exhausted typed failures run `KeepRole`; raw tokens and provider text stay out of telemetry.\n\n## Architecture diagram\n```text\nSign-in / protected write finds stale session\n                 | session + role-check generation\n                 v\n   [THIS SLICE: auth/RecheckRole] on remote engine\n     RedeemRefresh ---- protected refresh token ----> GitHub\n          | sealed replacement (journaled)\n          v\n     StoreTokens ------ digest-conditional write ---> Postgres sessions\n          |\n     CheckRole -------- current access token -------> GitHub permission\n          | role / revoke                                  |\n          +-----------------------------------------------+\n          | bounded failure\n       KeepRole ------ retain role + advance checked time --> Postgres\n\nHost test ---> [THIS SLICE: Pause] ---> mark / durable timer / mark\n               same declaration on Node or Worker\n```\n\n## Read this first\n- `apps/mvp/worker/flows/RecheckRole.ts:109` — Successful redemption must be sealed before store retries begin.\n- `apps/mvp/worker/flows/RecheckRole.ts:202` — Lost provider responses still leave an unavoidable single-use-token window.\n- `apps/mvp/worker/flows/RecheckRole.ts:245` — Revocation is conditional on the credential still matching.\n- `apps/mvp/worker/flows/Pause.test.ts:18` — Real timer and persisted completion are asserted through the host.\n\n## Questions a reviewer should ask\n- Can two generations overlap before role_checked_at changes and redeem the same refresh token?\n- What happens if GitHub rotates the token but the response or journal commit is lost?\n- How long can a removed permission survive repeated KeepRole fallbacks?",
-      "files": [
-        {
-          "path": "apps/mvp/worker/flows/Pause.ts",
-          "from": 1,
-          "to": 43,
-          "note": "One step: the host decides what marking `label` does, and the step's result is the label. Exports `Mark`, `Pause`, `registration`, `logged`. Look at: flow probe/Pause: capabilities, payload and error schemas, idempotent steps."
-        },
-        {
-          "path": "apps/mvp/worker/flows/Pause.test.ts",
-          "from": 1,
-          "to": 56,
-          "note": "`probe/Pause` on the Node host (worker/test/flowHost.ts), over the compose Postgres (`pnpm db:up`). Look at: behavior asserted through the public boundary; failure and ordering cases."
-        },
-        {
-          "path": "apps/mvp/worker/flows/RecheckRole.ts",
-          "from": 1,
-          "to": 329,
-          "note": "The execution that checks session `sessionId` again: named after the check it replaces, the session's `role_checked_at` in epoch milliseconds (`generation`), so every… Exports `recheckExecutionId`, `REFRESH_MARGIN_MS`, `RoleCheckFailed`, `roleChecks`, `RedeemRefresh` +10. Look at: flow auth/RecheckRole: capabilities, payload and error schemas, idempotent ste"
-        }
-      ],
-      "revision": "9cc088fc6b4aefffcb1f048dd732128f7082d924c365b155a9611f4c2b8bdb4a"
-    },
-    {
-      "id": "code:mvp/worker/flows/RevokeGitHubToken@e537",
-      "kind": "code",
-      "title": "Code: mvp/worker/flows: RevokeGitHubToken.ts, RevokeGitHubToken.test.ts",
-      "priority": 570,
-      "why": "the app's flows; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:06:34Z",
-      "context": "## What\nSigning out starts a durable flow that ends the session, revokes its GitHub access token,\nand removes the stored tokens. The flow can finish even if the original request dies.\n\n## Why\nA signed-out session must not leave tokens waiting for cleanup that nobody owns.\nSee `apps/mvp/docs/decisions/0008-auth.md` and `apps/mvp/docs/features/sign-in.md#signing-out`.\nThe library catalog's `@smthrs/flow` entry supplies the actions and engine-owned retries.\n\n## How\n- `revokeExecutionId` gives each session one stable execution name; host admission owns deduplication.\n- `EndSession` runs before `RevokeToken`; ending an already ended session is harmless.\n- `revoke` reads sealed tokens from Postgres and refuses to revoke a still-live session.\n- Injected session keys open the access token only for GitHub's revocation call.\n- Five failed revocation attempts lead to `ForgetTokens`; database-only steps retry without a limit.\n- Records contain session ids, outcomes and error codes; the tests check token and login exclusion.\n\n## Architecture diagram\n```text\nBrowser: Sign out\n       | session cookie\n       v\nWorker SignIn -> FlowStarter -> durable remote execution\n                                  |\n                     [THIS: RevokeGitHubToken]\n                       End -> Revoke -> Forget on exhaustion\n                        |       |          |\n                        +-------+----------+--> Postgres sessions\n                                |\n                         injected keys + GitHubAuth\n                                | opened access token\n                                v\n                         GitHub token revocation\nNo session/token rows go through Electric to the browser.\n```\n\n## Read this first\n- `apps/mvp/worker/flows/RevokeGitHubToken.ts:95` — fallback applies after revocation failure.\n- `apps/mvp/worker/flows/RevokeGitHubToken.ts:118` — live-session guard and token decryption boundary.\n- `apps/mvp/worker/flows/RevokeGitHubToken.ts:146` — logging wrapper must keep provider text out.\n- `apps/mvp/worker/flows/RevokeGitHubToken.test.ts:147` — exhausted retries deliberately forget tokens.\n\n## Questions a reviewer should ask\n- Does replay after GitHub succeeds but before sealing safely treat an absent token as revoked?\n- Is forgetting after five failures acceptable while the remote token may remain usable until expiry?\n- These tests use real Postgres but scripted GitHub; where is live revocation proved?",
-      "files": [
-        {
-          "path": "apps/mvp/worker/flows/RevokeGitHubToken.ts",
-          "from": 1,
-          "to": 201,
-          "note": "The execution that signs session `sessionId` out: one per session, so starting it again is a no-op. Exports `revokeExecutionId`, `RevocationFailed`, `revocations`, `EndSession`, `RevokeToken` +8. Look at: flow auth/RevokeGitHubToken: capabilities, payload and error schemas, idempotent steps; SQL: parameters and row authorization."
-        },
-        {
-          "path": "apps/mvp/worker/flows/RevokeGitHubToken.test.ts",
-          "from": 1,
-          "to": 233,
-          "note": "Signs `github`'s person in for real, then out: what the flow needs, and what sign-out started. Look at: behavior asserted through the public boundary; failure and ordering cases."
-        }
-      ],
-      "revision": "e5376423a0f944fd079725bb23dffe175206c5c436d63c3bd4a30b8e492b93f3"
-    },
-    {
-      "id": "code:mvp/worker/flows/TerminalOpen@68c0",
-      "kind": "code",
-      "title": "Code: mvp/worker/flows: TerminalOpen.ts, TerminalOpen.test.ts",
-      "priority": 570,
-      "why": "the app's flows; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:06:34Z",
-      "context": "## What\nThis flow opens a person's terminal on a branch machine. It wakes the machine, starts the\nowner's shell session, and records whether opening succeeded.\n\n## Why\nOpening must survive a request ending, while shell traffic stays outside the journal.\nSee `apps/mvp/docs/decisions/0013-branch-workspace.md` §2 and decision 6;\n`apps/mvp/docs/decisions/0011-the-agent-runs-in-the-browser.md` supplies remote placement.\nCatalog entry used: `@smthrs/flow` for durable steps and retry policies.\n\n## How\n- The route admits the person and branch first; this internal flow is not model-invocable.\n- `Wake` returns a machine generation; `Session` starts a terminal as its owner.\n- Machine actions retry for two minutes; `CheckoutFailed` is explicitly nonretryable.\n- `Failed` converts machine errors to a terminal outcome before `Record` runs.\n- `record` changes only an opening row; a late success becomes failed/unavailable.\n- Tests use Postgres and an injected scripted machine; they do not prove a real shell connection.\n\n## Architecture diagram\n```text\nBrowser open request -> Worker terminal route (role + branch admission)\n                                 | terminalId, ownerId, branch\n                                 v\nRemote flow host -> [THIS: Wake -> Session -> Record]\n                         |           |         |\n                         v           v         v\n                   branch sandbox container   Postgres terminal_sessions\n                   generation + owner shell           |\n                         ^                             v\n                         | socket shell bytes       Electric -> browser row\n                         +---------------- Browser\nShell bytes bypass the flow journal; the open outcome does not.\n```\n\n## Read this first\n- `apps/mvp/worker/flows/TerminalOpen.ts:103` — failure recovery must still reach the recording step.\n- `apps/mvp/worker/flows/TerminalOpen.ts:123` — conditional SQL protects closed rows and enforces the open deadline.\n- `apps/mvp/worker/flows/TerminalOpen.ts:174` — metrics use the requested outcome even if SQL turns a late open into failure.\n\n## Questions a reviewer should ask\n- Can the machine restart between Wake and Session, leaving the stored generation stale?\n- Should a late success log open when Postgres actually records failed?\n- After the 30-minute record retry budget expires, what settles an opening row?",
-      "files": [
-        {
-          "path": "apps/mvp/worker/flows/TerminalOpen.ts",
-          "from": 1,
-          "to": 209,
-          "note": "Postgres couldn't record the outcome. Exports `RecordUnavailable`, `opens`, `MACHINE_RETRY`, `RECORD_RETRY`, `Outcome` +8. Look at: flow terminal/Open: capabilities, payload and error schemas, idempotent steps; SQL: parameters and row authorization."
-        },
-        {
-          "path": "apps/mvp/worker/flows/TerminalOpen.test.ts",
-          "from": 1,
-          "to": 237,
-          "note": "A branch's machine that answers each call from its script, in order, recording every call. Look at: behavior asserted through the public boundary; failure and ordering cases."
-        }
-      ],
-      "revision": "68c0334cbc50009b6ff89a83c0d3a4a25a9ff4120c7689b5c3e26de6b1c7209f"
-    },
-    {
-      "id": "code:mvp/worker/stack/Access@c78f",
-      "kind": "code",
-      "title": "Code: mvp/worker/stack: Access.ts, Api.ts",
-      "priority": 560,
-      "why": "the app's flows; new, not landed yet; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-21T01:45:29Z",
-      "context": "# Who can change a TODO stack\n\nSlice: `code:mvp/worker/stack/Access@c78f` · coverage revision `c78fac7df0d1bdfb703aadb783c8a0703fd5e6f7e74ab82c3a00692d98fe831b`\n\n## What\nThis authorizes stack changes and exposes repository-scoped TODO shapes. Only a Member or above acting in person may commit or drop; a run acting for them is refused.\n\n## Why\n[0016](apps/mvp/docs/decisions/0016-todos-and-the-stack.md) reserves commit and drop for people. [0017](apps/mvp/docs/decisions/0017-everything-is-a-plugin.md) requires server-stamped delegated actors, not claims in request bodies.\n\n## How\n- `mayRead` accepts signed-in actors passing `canAsk`; `mayChange` additionally requires no delegated `act`.\n- The POST body is a bounded, schema-checked commit/drop union; the route derives identity and `via` from Sessions.\n- Person-only refusal is checked before `Stack.apply`; operation IDs are normalized to lowercase.\n- The route delivers saved attempt starts/stops after commit; a repeated operation redelivers the same receipt.\n- Launch failure returns unavailable; an applied response includes Electric’s transaction ID, while repeated responses return null.\n- ShapeProxy fixes table, columns and a parameterized repository filter; malformed repository names match no rows.\n\n## Architecture diagram\n```text\nPerson button -> browser outbox -> Worker Sessions\n                                      | server Actor + bounded body\n                                      v\n                         [THIS: Access + stack API]\n                          | person-only gate     | read gate\n                          v                      v\n                     Stack.apply           Electric ShapeProxy\n                          | transaction           ^ repo-filtered rows\n                          v                       |\n                       Postgres ------------------+\n                          |\n                   receipt -> TodoRuns host\nElectric -> TanStack DB -> TODO page\n```\n\n## Read this first\n- `apps/mvp/worker/stack/Access.ts:17` — Delegated actors never commit or drop.\n- `apps/mvp/worker/stack/Api.ts:118` — Shape authorization chooses filters server-side.\n- `apps/mvp/worker/stack/Api.ts:200` — Starts/stops occur after the database transaction.\n\n## Questions a reviewer should ask\n- Does `canAsk` intentionally grant all Members access to every imported repository’s TODO prompts?\n- Can a run supply cookies and be mistaken for a person before this gate?\n- Do repeated operations recover failed launches without duplicating attempts?",
-      "files": [
-        {
-          "path": "apps/mvp/worker/stack/Access.ts",
-          "from": 1,
-          "to": 20,
-          "note": "Who may read and change the stack: any role that may ask reads; only a person changes. The check trusts the caller-declared `via`."
-        },
-        {
-          "path": "apps/mvp/worker/stack/Api.ts",
-          "from": 1,
-          "to": 247,
-          "note": "The stack route. `via` comes from the request body, and `mayChange` allows only `via === \"person\"`. The agent runs in the same browser with the same cookie, so what stops it from claiming `person`? 0016 says Commit is a person's press."
-        }
-      ],
-      "revision": "c78fac7df0d1bdfb703aadb783c8a0703fd5e6f7e74ab82c3a00692d98fe831b"
-    },
-    {
-      "id": "code:flow/src/Action/Context@beb1",
-      "kind": "code",
-      "title": "Code: flows/flow/src/Action: Context.ts, DuplicateImplementation.ts, FileBoun...",
-      "priority": 555,
-      "why": "@smthrs/flow, the flow core; landed recently; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:06:34Z",
-      "context": "## What\nThese types carry an action's identity and ownership through retries and replay.\nThey also declare which workspace files an action may read, write or remove.\n\n## Why\nA replay must address the same work, and reusable results need complete input identity.\nThis supports `apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md`\nand root rulings DUR-1/DUR-2 and SDK-4/SDK-5. Package detail:\n`packages/smithers/flows/flow/docs/guides/reuse-a-recorded-result.md`; catalog: `@smthrs/flow`.\n\n## How\n- Absent cache environment means run-scoped keys, rather than pretending incomplete identity is reusable.\n- `OrdinalSlot` pins a sequence per allocation scope; cursors restart for each retry attempt.\n- `CurrentInvocationKey` names durable state; no supplied key means no fabricated fallback.\n- `Fence` identifies run, step, attempt and owner; an implementation must enforce it on writes.\n- `CurrentRedispatch` distinguishes adopted unfinished attempts; heartbeat reports progress.\n- File schemas require workspace-relative paths, digests and disjoint writes/removals; duplicate implementations have a named error.\n\n## Architecture diagram\n```text\nFlow/action author -> [THIS: context references + file boundary declarations]\n                              | identity, fence, read/write/remove sets\n                              v\n                       engine dispatch / prepare\n                       |                    |\n             injected host file service    | attempt context\n                       v                    v\n                workspace / sandbox     action implementation\n                       | digests            | fenced durable writes\n                       v                    v\n                 cache evidence       host store (SQL when durable)\nSame contracts can run in browser, Worker or native hosts; no host I/O here.\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/Action/Context.ts:70` — ordinal sequences must distinguish repeated same-scope dispatches.\n- `packages/smithers/flows/flow/src/Action/Context.ts:164` — an absent fence must never authorize a write needing ownership.\n- `packages/smithers/flows/flow/src/Action/FileBoundary.ts:58` — overlap validation prevents a write also becoming a deletion.\n\n## Questions a reviewer should ask\n- Do retry boundaries reset cursors without discarding pinned ordinal values?\n- Which consumers refuse when a required invocation key or fence is absent?\n- Do glob overlap checks reject every write/remove alias, including filegroups?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/Action/Context.ts",
-          "from": 1,
-          "to": 226,
-          "note": "Marked human-reviewed 2026-08-10; look at what changed since. Defines runtime context carried across action attempts. Exports `CurrentCacheEnvironment`, `layerCacheEnvironment`, `OrdinalSlot`, `CurrentOrdinal`, `CurrentAttempt` +6. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/Action/DuplicateImplementation.ts",
-          "from": 1,
-          "to": 24,
-          "note": "Defines the `DuplicateImplementation` action failure. Exports `DuplicateImplementation`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/Action/FileBoundary.ts",
-          "from": 1,
-          "to": 77,
-          "note": "Marked human-reviewed 2026-08-10; look at what changed since. An action's declaration of which files it reads and which it may write. Exports `FileBoundary`. Look at: deep import (root entries only)."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/Action/FileInput.ts",
-          "from": 1,
-          "to": 42,
-          "note": "Marked human-reviewed 2026-08-10; look at what changed since. A file path paired with the digest measured for its contents. Exports `FileInput`. Look at: deep import (root entries only)."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/Action/Filegroup.ts",
-          "from": 1,
-          "to": 16,
-          "note": "Named reusable filesystem declaration groups. Exports `make`. Look at: deep import (root entries only)."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/Action/Glob.ts",
-          "from": 1,
-          "to": 8,
-          "note": "Bazel-style workspace-relative file glob declarations. Look at: deep import (root entries only)."
-        }
-      ],
-      "revision": "beb17766728a11735da51d14c0f916fa250ea04be264986271e7870e3eb17280"
-    },
-    {
-      "id": "code:flow/src/Flow/internal@5bc4",
-      "kind": "code",
-      "title": "Code: flows/flow/src/Flow: internal.ts",
-      "priority": 555,
-      "why": "@smthrs/flow, the flow core; landed recently; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:06:34Z",
-      "context": "## What\nThis private constructor gives every flow its execution methods. It validates inputs,\nchooses execution identities and delegates work to the injected runtime.\n\n## Why\nOne flow has one body and one execution contract across hosts. See\n`apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md` decision 1\nand `packages/smithers/flows/flow/docs/concepts/execution-identity.md`.\nCatalog entry: `@smthrs/flow`; this module performs no platform I/O.\n\n## How\n- `makeProto` attaches normalized metadata to a callable function with shared methods.\n- Annotation clones preserve body, policy and declaration provenance.\n- `execute` validates payloads before resolving an explicit, declared or ambient identity.\n- Declared keys hash a JSON tuple of flow tag and key to avoid delimiter collisions.\n- `call`, `child` and `to` emit inline, boundary and handoff plan nodes.\n- `start` uses a fresh UUID; `ensure` uses a stable caller key; runtime identity conflicts become typed failures.\n\n## Architecture diagram\n```text\nApp or agent / declared parent flow\n         | payload + optional execution id\n         v\n [THIS: Flow prototype]\n   call/child/to -> plan nodes -> Interpreter\n   execute -> schema -> identity -> injected FlowRuntime\n                                      |\n                      browser engine / Worker host / native host\n                                      |\n                           durable journal + action effects\n   poll / interrupt / resume ----------^\nNo Postgres, model-provider or sandbox connection is opened in this slice.\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/Flow/internal.ts:38` — declared key takes precedence over the ambient identity source.\n- `packages/smithers/flows/flow/src/Flow/internal.ts:134` — validate before runtime dispatch; narrow defect-to-error conversion.\n- `packages/smithers/flows/flow/src/Flow/internal.ts:181` — ensure binds a stable key, so changed payloads need conflict handling.\n\n## Questions a reviewer should ask\n- Do both annotation methods preserve every execution-affecting field?\n- Does the runtime reject a reused execution id with different validated payload bytes?\n- Are unsafe casts confined to construction, with public types preserving requirements?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/Flow/internal.ts",
-          "from": 1,
-          "to": 236,
-          "note": "Private flow construction shared by declarations and action registration. Exports `makeProto`. Look at: unchecked casts; deep import (root entries only)."
-        }
-      ],
-      "revision": "5bc4882f5eef7a4471d30d61d73f49bfe5ecd830bce49182985ffe5b12c240e7"
-    },
-    {
-      "id": "code:flow/src/FlowRuntime/NodeRecord@30d0",
-      "kind": "code",
-      "title": "Code: flows/flow/src/FlowRuntime: NodeRecord.ts, WaitingAnnotation.ts, index.ts",
-      "priority": 555,
-      "why": "@smthrs/flow, the flow core; landed recently; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:06:34Z",
-      "context": "## What\nThese contracts let the interpreter describe the graph and each node's outcome to its runtime.\nA waiting annotation also tells the durable host why a run is parked and how it can wake.\n\n## Why\nInspect needs a graph tied to durable attempts, rather than disconnected log entries.\nSee `apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md`\nand `packages/smithers/flows/flow/docs/guides/inspect-the-plan.md`.\nCatalog: `@smthrs/flow`; journal storage is a runtime responsibility.\n\n## How\n- Plan and subgraph records carry stable source ids, generations and explicit page counts.\n- Repeated node summaries carry disjoint dependency slices; readers must union them.\n- `NodeScheduled` has walk attempt 1; `NodeSettled.attempts` reports durable attempt counts.\n- Step-key digests connect a settled graph node to engine attempt records.\n- `NodeSettled.value` is unbounded and unredacted here; the destination writer must constrain it.\n- `annotateWaiting` sets the current FlowInstance; deferred completion must consume the annotation.\n\n## Architecture diagram\n```text\nflow body -> Interpreter -> [THIS: NodeRecord + WaitingAnnotation contracts]\n                                      | graph pages, outcomes, wait token\n                                      v\n                              injected FlowRuntime\n                              | journal writer (bound + redact)\n                              v\n                     durable host store -> Inspect projection -> UI\n                              ^\n                    external event / timer token\nHost may be browser SQLite or remote SQL; this slice declares neither connection.\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/FlowRuntime/NodeRecord.ts:34` — dependency pages must be assembled without dropping earlier edges.\n- `packages/smithers/flows/flow/src/FlowRuntime/NodeRecord.ts:177` — raw value crosses into a writer that must redact and bound it.\n- `packages/smithers/flows/flow/src/FlowRuntime/WaitingAnnotation.ts:78` — setter alone does not clear stale waiting state.\n\n## Questions a reviewer should ask\n- Does every durable writer redact values before persistence and telemetry export?\n- Can moving declarations change graph identity despite provenance being excluded?\n- After replayed completion, is the annotation consumed before a later timer parks?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/src/FlowRuntime/NodeRecord.ts",
-          "from": 1,
-          "to": 191,
-          "note": "What a driven graph tells its runtime about itself. Exports `NodeSummary`, `EdgeSummary`, `NodeOutcome`, `PlanRecorded`, `SubgraphAppended` +3. Look at: deep import (root entries only)."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/FlowRuntime/WaitingAnnotation.ts",
-          "from": 1,
-          "to": 85,
-          "note": "Marked human-reviewed 2026-08-10; look at what changed since. Declares how a flow is about to wait before it suspends. Exports `WaitingAnnotation`, `annotateWaiting`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "packages/smithers/flows/flow/src/FlowRuntime/index.ts",
-          "from": 1,
-          "to": 17,
-          "note": "Marked human-reviewed 2026-08-10; look at what changed since. The runtime port: the execution contract flow authoring APIs require. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "30d0b8c487b8ccb1b223f944293c6ae42493a92e1be9b82b55520c09fa948595"
-    },
-    {
-      "id": "code:flow/test/Interpreter.test#L0001@95df",
-      "kind": "code",
-      "title": "Code: flows/flow/test: Interpreter.test.ts L1-320",
-      "priority": 555,
-      "why": "@smthrs/flow, the flow core; landed today; guide attached",
-      "area": "flows",
-      "addedAt": "2026-10-20T21:08:43Z",
-      "context": "## What\nThis slice tests normal interpretation, replay, safe object handling and branch selection.\nIt also starts the tests that reject behavior lost when a graph is serialized.\n\n## Why\nOne flow model needs predictable execution and useful failures before effects escape.\nSee `apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md`\ndecision 1 and `packages/smithers/flows/flow/docs/testing.md`. Catalog: `@smthrs/flow`.\nThese are authoring-package fixture tests, not production engine conformance evidence.\n\n## How\n- Local action layers record dispatch order and return concrete values; no filesystem is used.\n- The fixture runtime registers bodies and memoizes results for repeated execution ids.\n- The pipeline checks planned property/array references before mapping the final value.\n- Own __proto__ fields must stay data, without changing the resolved object prototype.\n- Branch tests check chosen values and explicitly skipped arms, including snapshotted options.\n- Detached AST tests remove callable side tables and require refusal before any upstream dispatch.\n\n## Architecture diagram\n```text\nPublic Flow.execute / Interpreter.interpret\n              | authored test graphs\n              v\n       [THIS: pipeline, replay, object and branch assertions]\n              | drives real Interpreter\n              v\n    local MemoryFlowRuntime fixture -> action layers -> calls array\n              |                              |\n              +------ result / skipped ------+\nNo browser, Worker, Postgres, Electric, sandbox or model provider is exercised.\n```\n\n## Read this first\n- `packages/smithers/flows/flow/test/Interpreter.test.ts:117` — pipeline asserts both output and dispatch order.\n- `packages/smithers/flows/flow/test/Interpreter.test.ts:144` — replay occurs within one shared fixture layer, not across a process restart.\n- `packages/smithers/flows/flow/test/Interpreter.test.ts:180` — object-valued __proto__ must not become an inherited property.\n- `packages/smithers/flows/flow/test/Interpreter.test.ts:295` — detached catch must not hide a missing executable operation.\n\n## Questions a reviewer should ask\n- Does fixture memoization accidentally make an interpreter replay defect invisible?\n- Are skipped-branch assertions enough to prove no side effect ran in that arm?\n- Which engine suite proves the same replay after persistence and restart?",
-      "files": [
-        {
-          "path": "packages/smithers/flows/flow/test/Interpreter.test.ts",
-          "from": 1,
-          "to": 320,
-          "note": "The body interpreter, against the authoring package's own runtime fixture: what each node variant does when it is driven with real values, and what the interpreter… Look at: behavior asserted through the public boundary; failure and ordering cases. Lines 1-320."
-        }
-      ],
-      "revision": "95dfc3a76afc736a3861ceaadd4d01d76632ef211638f21bc7f90e8bcaecc560"
     },
     {
       "id": "code:flow/test/Interpreter.test#L0321@9b8e",
@@ -1155,6 +77,37 @@
         }
       ],
       "revision": "06ce307559e11231a2a70f51ac3f19725bc5be8160efc7f15631361b5a843741"
+    },
+    {
+      "id": "code:flow/src/internal/OutcomeMarker@1f54",
+      "kind": "code",
+      "title": "Code: flows/flow/src/internal: OutcomeMarker.ts, RecordedPlan.ts, SpanFailure.ts",
+      "priority": 549,
+      "why": "@smthrs/flow, the flow core; landed recently; guide attached",
+      "area": "flows",
+      "addedAt": "2026-10-20T21:06:34Z",
+      "context": "# Outcome markers, restart compatibility and safe span failures\n\n## What\nThese helpers distinguish authored flow outcomes, compare rebuilt plans after restart and withhold error text from tracing. They preserve the caller’s original failure while changing only the span’s copy.\n\n## Why\nRestart identity must tolerate harmless bundle renaming without weakening cache identity, and traces must exclude content. See `apps/mvp/docs/decisions/0014-flows-authoring-debugging-and-home-view.md` and `0011-the-agent-runs-in-the-browser.md`; catalog entries: `@smthrs/flow`, `@smthrs/plan`.\n\n## How\n- Two symbols distinguish outcome AST nodes from resolved outcome values.\n- RecordedPlan projects resumeDigest only in known callback slots.\n- Missing resume identity retains the original material and fails closed.\n- Approval digests and dispatch keys retain their stronger identity; this projection is resume-only.\n- SpanFailure replaces failure/defect text with tag or class and a restricted code; interruptions pass through.\n- Tracer wrappers are idempotent; effect, stream, function and one-span adapters preserve caller errors.\n\n## Architecture diagram\n```text\ndone / to / park -> [SLICE: OutcomeMarker] -> Graph / Interpreter\n                                             |\n rebuilt graph -> [SLICE: RecordedPlan] -> PlanRecorded digest comparison\n                                             | durable journal\n action / provider failure                    v\n          | original cause ------------> caller / typed recovery\n          |\n          +-> [SLICE: SpanFailure] -> stand-in exit -> tracer / OTLP exporter\n                   tag + restricted code; original message withheld\n Host: browser / Worker / sandbox; provider is outside this package\n```\n\n## Read this first\n- `packages/smithers/flows/flow/src/internal/RecordedPlan.ts:31`: only callback slots may use weaker resume identity; never application data.\n- `packages/smithers/flows/flow/src/internal/SpanFailure.ts:46`: tag is copied without validation; could an untrusted _tag carry private text?\n- `packages/smithers/flows/flow/src/internal/SpanFailure.ts:66`: failure replacement retains cause annotations; inspect their content policy.\n- `packages/smithers/flows/flow/src/internal/SpanFailure.ts:145`: withSpan sanitizes this span while nested spans keep the caller tracer.\n\n## Questions a reviewer should ask\n- Can weaker resume identity ever enter an approval digest or cache key?\n- Are tags and cause annotations trusted enough to export without text filtering?\n- Does wrapping a tracer leave every caller-visible failure unchanged?",
+      "files": [
+        {
+          "path": "packages/smithers/flows/flow/src/internal/OutcomeMarker.ts",
+          "from": 1,
+          "to": 19,
+          "note": "The two markers that let `Flow.isOutcome` tell an authored `done`/`to`/`park` from ordinary data. Exports `OutcomeNodeTypeId`, `OutcomeValueTypeId`. Look at: correctness, naming and whether it can be smaller."
+        },
+        {
+          "path": "packages/smithers/flows/flow/src/internal/RecordedPlan.ts",
+          "from": 1,
+          "to": 60,
+          "note": "Resume compatibility is weaker than result reuse. Exports `recordedPlanDrafts`. Look at: deep import (root entries only)."
+        },
+        {
+          "path": "packages/smithers/flows/flow/src/internal/SpanFailure.ts",
+          "from": 1,
+          "to": 153,
+          "note": "Span failures with their text withheld. Exports `exit`, `tracer`, `effect`, `stream`, `fn` +1. Look at: correctness, naming and whether it can be smaller."
+        }
+      ],
+      "revision": "1f5401f736d0d86be437e280e9589218a64bb64afb441fe857173d81f95c127d"
     },
     {
       "id": "code:flow/src/Flow/Annotations@3261",
@@ -1201,12 +154,16 @@
       "why": "Not urgent: 43 GiB free; frees space under HOST-8",
       "area": "infra",
       "addedAt": "2026-10-20T22:23:24Z",
+      "confidence": {
+        "score": 85,
+        "why": "Everything recommended is rebuildable on demand; nothing personal is touched"
+      },
       "context": "Disk is healthy (43 GiB free). These could go:\n\n| Item | Size |\n|---|---|\n| `~/go/pkg/mod` (rebuildable) | 14.5 GiB |\n| `~/.microsandbox` (Oct 10 test snapshots and a layer cache) | 11.7 GiB |\n| `~/Desktop/desktopold` | 11 GiB |\n| `~/workspaces/chat-hang-20261013` | 11 GiB |\n| `~/Smithers-Ops`: Research 3.8, dispatch receipts 2.6, burndown scratch 2.4 | 8.8 GiB |\n| `~/.smithers/accounts/codex-5` | 8.4 GiB |\n| Antigravity IDE support files | 7.7 GiB |\n| `~/.ollama` | 7.1 GiB |\n| Telegram | 4.7 GiB |\n| `~/multi/.smithers` | 3.9 GiB |\n| `~/plue/node_modules` | 3.8 GiB |\n| `~/smithers-lanes/issues/scratch` | 3.6 GiB |\n| `~/Desktop/smithers-repair-20261003` | 3.2 GiB |\n| `~/smithers-parked-evidence-20261002` | 2.9 GiB |\n| Docker volume `smithers-astra-file-mode-20261008` | 1.5 GB |\n\nAbout 380 GB more sits in protected personal folders (Trash, Mail, Messages, iCloud) that only you can check.",
       "options": [
         {
           "key": "1",
           "label": "Delete the rebuildable ones; keep the rest",
-          "detail": "go mod, the .microsandbox cache, plue node_modules, lanes scratch",
+          "detail": "85% confident: Everything recommended is rebuildable on demand; nothing personal is touched. go mod, the .microsandbox cache, plue node_modules, lanes scratch",
           "recommended": true
         },
         {
@@ -1230,32 +187,6 @@
       ]
     },
     {
-      "id": "question:effectscript-repo-move",
-      "kind": "question",
-      "title": "Which repo did \"effectscript-ts\" mean?",
-      "priority": 480,
-      "why": "Blocks the repo move",
-      "area": "github",
-      "addedAt": "2026-10-20T21:03:39Z",
-      "context": "Name the repo, then transfer the repos or run `gh auth refresh -h github.com -s repo,admin:org` so the agent can.",
-      "options": [
-        {
-          "key": "1",
-          "label": "Named in the box"
-        },
-        {
-          "key": "2",
-          "label": "Drop the move"
-        }
-      ],
-      "links": [
-        {
-          "label": "Move effectscript repos",
-          "path": "apps/mvp/docs/work/move-effectscript-repos.md"
-        }
-      ]
-    },
-    {
       "id": "decision:code-storage-budgets",
       "kind": "decision",
       "title": "Code Storage budgets: 3 GB stored, 40 GB read a month?",
@@ -1263,12 +194,17 @@
       "why": "Built on the recommendation; worst-case month about $17",
       "area": "infra",
       "addedAt": "2026-10-20T21:03:39Z",
+      "confidence": {
+        "score": 70,
+        "why": "Sized from the plan's numbers (about $17 a month at worst); no ruling, and each limit is easy to change"
+      },
       "context": "3 GB stored, 40 GB read a month, 1 GB per repository, 100 repositories, $20 alert base.",
       "options": [
         {
           "key": "1",
           "label": "Yes",
-          "recommended": true
+          "recommended": true,
+          "detail": "70% confident: Sized from the plan's numbers (about $17 a month at worst); no ruling, and each limit is easy to change"
         },
         {
           "key": "2",
@@ -1283,19 +219,67 @@
       ]
     },
     {
+      "id": "code:mvp/worker/CloneFeed@aab5",
+      "kind": "code",
+      "title": "Code: mvp/worker: CloneFeed.ts, CloneFeed.test.ts, DevChatApi.ts +2",
+      "priority": 300,
+      "why": "the app's worker; landed today; guide attached",
+      "area": "infra",
+      "addedAt": "2026-10-21T04:39:50Z",
+      "context": "# Clone progress in the feed; development identity\n\nSlice: `code:mvp/worker/CloneFeed@aab5`\nCoverage revision: `aab51be3bc62f0613f580f031902660930986b9e1e7ab4c73b33ff45bea79559`\n\n## What\nCloneFeed turns a repository's clone state into one notification for the person who requested the current attempt. This regrouped slice also includes the development-only API identity adapter and a helper that keeps error messages out of logs.\n\n## Why\n[0009](apps/mvp/docs/decisions/0009-notifications-and-live-work.md) makes notifications and toasts views of real progress. [0008](apps/mvp/docs/decisions/0008-auth.md) defines sign-in; the development fallback must stay outside production. Catalog entry: `@smthrs/notifications`.\n\n## How\n- fold joins clone_requests on repository and current clone_id; missing rows or an unnamed requester produce no notification.\n- stateOf maps cloning stages to working and settled states to done or failed; old unstaged rows read as requested.\n- The existing notification is locked; unchanged state/ref writes nothing, while renewed attention advances its version.\n- The caller must include fold in the repository write transaction; the function itself does not open that transaction.\n- DevChatApi reuses ChatApi.program with local role fixtures, local HTTP enabled and spend alerts disabled by default.\n- codeOf emits SQL reason tags, other error tags or unknown; tests check messages are excluded and fold uses real Postgres.\n\n## Architecture diagram\n```text\nClone route / remote clone steps (Worker)\n       | repository write, same transaction\n       v\n Postgres repositories + clone_requests\n       | current attempt + requester\n       v\n [THIS: CloneFeed.fold] -> notifications -> Electric -> browser feed / toast\n       |\n       +--> state-only metric\nDevelopment entry (separate build)\n [THIS: DevChatApi] -> ChatApi.program -> same routes -> Postgres / model proxy\n       | local person fixtures\nProduction entry -> ChatApi (must never select DevChatApi)\nFailures -> [THIS: ErrorCode.codeOf] -> tag-only log fields\n```\n\n## Read this first\n- `apps/mvp/worker/CloneFeed.ts:57` — Only the current clone attempt determines the recipient.\n- `apps/mvp/worker/CloneFeed.ts:64` — Row lock protects existing entries; first insert still needs concurrency review.\n- `apps/mvp/worker/DevChatApi.ts:60` — The development entry grants fallback authority and must not ship as production.\n- `apps/mvp/worker/ErrorCode.ts:7` — Redaction trusts tags themselves to contain no user content.\n\n## Questions a reviewer should ask\n- Do all production fold callers share the repository write transaction, including failures?\n- Can concurrent first folds overwrite a newer notification with an older state?\n- What build check proves the development identity fallback cannot enter production?",
+      "files": [
+        {
+          "path": "apps/mvp/worker/CloneFeed.ts",
+          "from": 1,
+          "to": 77,
+          "note": "The row's columns the fold reads. Exports `fold`. Look at: SQL: parameters and row authorization."
+        },
+        {
+          "path": "apps/mvp/worker/CloneFeed.test.ts",
+          "from": 1,
+          "to": 45,
+          "note": "A clone in its asker's feed (worker/CloneFeed.ts), folded straight from rows written by hand over this file's schema of the compose Postgres: what the fold does with a… Look at: behavior asserted through the public boundary; failure and ordering cases."
+        },
+        {
+          "path": "apps/mvp/worker/DevChatApi.ts",
+          "from": 1,
+          "to": 64,
+          "note": "The local developer: a person with the Admin role. Exports `localDeveloper`, `localTeammate`, `localGuest`, `localMaintainer`, `DevChatApi`. Look at: correctness, naming and whether it can be smaller."
+        },
+        {
+          "path": "apps/mvp/worker/ErrorCode.ts",
+          "from": 1,
+          "to": 12,
+          "note": "A failure's code for a log line (docs/observability.md): `sql:<reason>` for a SQL failure, otherwise the failure's `_tag`, otherwise `unknown`. Exports `codeOf`. Look at: correctness, naming and whether it can be smaller."
+        },
+        {
+          "path": "apps/mvp/worker/ErrorCode.test.ts",
+          "from": 1,
+          "to": 22,
+          "note": "The error codes log lines carry (worker/ErrorCode.ts): a code, never a message. Look at: behavior asserted through the public boundary; failure and ordering cases."
+        }
+      ],
+      "revision": "aab51be3bc62f0613f580f031902660930986b9e1e7ab4c73b33ff45bea79559"
+    },
+    {
       "id": "decision:playground-shelf",
       "kind": "decision",
       "title": "Playground: a shelf of saved artifacts joins the playgrounds",
-      "priority": 145,
+      "priority": 143,
       "why": "Internal dev tool: ranks below the production app (Will, 14:20)",
       "area": "flows",
       "addedAt": "2026-10-20T21:03:39Z",
+      "confidence": {
+        "score": 70,
+        "why": "The design panel's choice for an internal tool; easy to change"
+      },
       "context": "`⌘S` saves the current flow, model role, view, collection, run or input as a named, typed artifact (`flow:triage-issue`, `role:fast`, `view:issue-card`) on the host. Any slot of the matching type takes it by drag, click or `⌘K`.",
       "options": [
         {
           "key": "1",
           "label": "Accept",
-          "recommended": true
+          "recommended": true,
+          "detail": "70% confident: The design panel's choice for an internal tool; easy to change"
         },
         {
           "key": "2",
@@ -1331,7 +315,7 @@
       "id": "design:playground-flows@e51e",
       "kind": "design",
       "title": "Design: Playground flows: author, run, inspect",
-      "priority": 144,
+      "priority": 142,
       "why": "Design review; nobody has judged it yet",
       "area": "flows",
       "addedAt": "2026-10-20T21:03:39Z",
@@ -1374,7 +358,7 @@
       "id": "design:playground-catalog-api@8f5f",
       "kind": "design",
       "title": "Design: Playground catalog and an API page",
-      "priority": 143,
+      "priority": 141,
       "why": "Design review; nobody has judged it yet",
       "area": "flows",
       "addedAt": "2026-10-20T21:03:39Z",
@@ -1413,7 +397,7 @@
       "id": "design:playground-agent-search@9951",
       "kind": "design",
       "title": "Design: Playground agent handoff and search",
-      "priority": 142,
+      "priority": 140,
       "why": "Design review; nobody has judged it yet",
       "area": "flows",
       "addedAt": "2026-10-20T21:03:39Z",
