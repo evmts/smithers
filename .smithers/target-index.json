@@ -66657,7 +66657,7 @@
       },
       {
         "kind": "glob",
-        "pattern": "packages/smithers/flows/engine-store/src/**/*.ts",
+        "pattern": "packages/smithers/flows/engine-store/src/**/*.{ts,vibe}",
         "exclude": []
       }
     ],
@@ -67030,12 +67030,12 @@
       },
       {
         "kind": "glob",
-        "pattern": "packages/smithers/flows/engine-store/src/**/*.ts",
+        "pattern": "packages/smithers/flows/engine-store/src/**/*.{ts,vibe}",
         "exclude": []
       },
       {
         "kind": "glob",
-        "pattern": "packages/smithers/flows/engine-store/test/**/*.ts",
+        "pattern": "packages/smithers/flows/engine-store/test/**/*.{ts,vibe}",
         "exclude": []
       },
       {

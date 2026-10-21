@@ -45,8 +45,8 @@ if (postgresUrl !== undefined) {
 const test = Smithers.NodeTest({
   runner: Smithers.entrypoint(Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs")),
   srcs: [
-    Smithers.glob("src/**/*.ts"),
-    Smithers.glob("test/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
+    Smithers.glob("test/**/*.{ts,vibe}"),
     Smithers.glob("examples/**/*.ts"),
     Smithers.file("package.json"),
     Smithers.file("vitest.config.ts"),
@@ -75,7 +75,7 @@ const disasterRecovery = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//packages/smithers/flows/engine-store/scripts/flows-backup.test.mjs")]),
   srcs: [
     Smithers.glob("//packages/smithers/flows/engine-store/scripts/flows-backup*.mjs"),
-    Smithers.glob("//packages/smithers/flows/engine-store/src/**/*.ts")
+    Smithers.glob("//packages/smithers/flows/engine-store/src/**/*.{ts,vibe}")
   ],
   deps: [],
   cwd: "packages/smithers/flows/engine-store"
