@@ -214,12 +214,14 @@ test("the agent evals", async () => {
     k,
     maxTokens,
     model: session.modelId,
+    candidatePrice: session.price ?? null,
+    campaignEstimatedUsd: session.campaignEstimatedUsd() ?? null,
     judge: [...new Set(readings.map((usage) => usage?.modelId ?? "unknown"))],
     digests: {
       system: sha256(CHAT_SYSTEM),
       catalog: sha256(agentFlows.map((name) => [name, catalogDescription(name)])),
     },
-    spend: { endpoint: endpointSpend(trials), judge: judgeSpend(readings) },
+    spend: { endpoint: endpointSpend(trials, session.price), judge: judgeSpend(readings) },
     ms: trials.reduce((sum, trial) => sum + trial.ms, 0),
     gate: { exitCode: gate.exitCode, summary: gate.summary, unsafe: unsafe.map((observation) => observation.case) },
     trials: k === 1 ? null : Trials.aggregate(

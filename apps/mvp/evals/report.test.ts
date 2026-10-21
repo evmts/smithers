@@ -75,3 +75,9 @@ describe("summary", () => {
     ])
   })
 })
+
+test('candidate prices override a global model alias and refuse unpriced routes',()=>{
+ const trials=[trial({usage:[{role:'agent',modelId:'qwen/qwen3.8-27b',inputTokens:1_000_000,outputTokens:1_000_000,chargedTokens:2_000_000}]})]
+ expect(endpointSpend(trials,{modelId:'qwen/qwen3.8-27b',input:.8,output:4}).total.costUsd).toBe(4.8)
+ expect(()=>endpointSpend(trials,{modelId:'wrong-provider',input:.8,output:4})).toThrow('Unpriced model')
+})

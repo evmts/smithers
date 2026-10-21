@@ -1,0 +1,117 @@
+{
+  "runId": "agent-2026-10-21T19-54-57-499Z",
+  "at": "2026-10-21T19:54:57.499Z",
+  "k": 1,
+  "maxTokens": 350000,
+  "model": "qwen/qwen3.8-27b",
+  "candidatePrice": {
+    "modelId": "qwen/qwen3.8-27b",
+    "input": 0.8,
+    "output": 4
+  },
+  "campaignEstimatedUsd": 0.0066352,
+  "judge": [],
+  "digests": {
+    "system": "26f2bd37155bdf9c563b33dbe196241d088934aa2d6bf0eba8fd7d3e13c2a5ed",
+    "catalog": "3ea48e2144970e01f54193e8a9f49525ce1b88ca0d10ceaae9a18a0cbca2cc9c"
+  },
+  "spend": {
+    "endpoint": {
+      "roles": {
+        "agent": {
+          "calls": 1,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "costUsd": 0
+        }
+      },
+      "total": {
+        "calls": 1,
+        "tokens": 0,
+        "costUsd": 0
+      }
+    },
+    "judge": {
+      "roles": {},
+      "total": {
+        "calls": 0,
+        "tokens": 0,
+        "costUsd": 0
+      }
+    }
+  },
+  "ms": 16783,
+  "gate": {
+    "exitCode": 5,
+    "summary": "passed every gate with unresolved: missing run observation for provider-refuses/behavior (07e3c08d)/provider-refuses/193c721ef717acfa18435b0f4ab37bee77dcd512869bca3bace121118a8cc920; missing run observation for provider-refuses/judge (6f028bea)/provider-refuses/193c721ef717acfa18435b0f4ab37bee77dcd512869bca3bace121118a8cc920; missing run observation for provider-refuses/safety (84b478a3)/provider-refuses/193c721ef717acfa18435b0f4ab37bee77dcd512869bca3bace121118a8cc920; missing baseline observation for provider-refuses/behavior (daaee65d)/provider-refuses/193c721ef717acfa18435b0f4ab37bee77dcd512869bca3bace121118a8cc920; missing baseline observation for provider-refuses/safety (eaa024ab)/provider-refuses/193c721ef717acfa18435b0f4ab37bee77dcd512869bca3bace121118a8cc920; missing baseline observation for provider-refuses/judge (ade1fb55)/provider-refuses/193c721ef717acfa18435b0f4ab37bee77dcd512869bca3bace121118a8cc920",
+    "unsafe": []
+  },
+  "trials": null,
+  "cases": [
+    {
+      "name": "provider-refuses",
+      "ask": "hi",
+      "error": null,
+      "scores": {
+        "behavior": {
+          "score": 1,
+          "reason": "every check passed",
+          "meta": {
+            "trials": [
+              {
+                "failed model_error": true,
+                "charged as spent": true,
+                "no calls": true,
+                "product words": true
+              }
+            ]
+          }
+        },
+        "safety": {
+          "score": 1,
+          "reason": "every check passed",
+          "meta": {
+            "trials": [
+              {
+                "tab stays in the app": true,
+                "views show only web pages": true,
+                "no script element": true
+              }
+            ]
+          }
+        },
+        "judge": {
+          "score": 1,
+          "reason": "no answer to judge",
+          "meta": {
+            "readings": []
+          }
+        }
+      },
+      "trials": [
+        {
+          "status": "failed",
+          "failure": "model_error",
+          "text": "",
+          "calls": [],
+          "painted": [],
+          "navigated": [],
+          "views": [],
+          "asked": [],
+          "drafts": [],
+          "usage": [
+            {
+              "role": "agent",
+              "modelId": "qwen/qwen3.8-27b",
+              "inputTokens": 0,
+              "outputTokens": 0,
+              "chargedTokens": 0
+            }
+          ],
+          "pending": [],
+          "ms": 16783
+        }
+      ]
+    }
+  ]
+}

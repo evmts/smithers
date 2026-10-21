@@ -1,0 +1,117 @@
+{
+  "model": {
+    "protocol": "openai-chat",
+    "baseUrl": "https://api.groq.com",
+    "path": "/openai/v1/chat/completions",
+    "modelId": "qwen/qwen3.8-27b",
+    "credential": "GROQ"
+  },
+  "provider": "groq",
+  "context": "mixed",
+  "cache": "cold",
+  "campaignEstimatedUsd": 0.0066352,
+  "seconds": 10,
+  "tokenCap": 20000000,
+  "chargedTokens": 5222,
+  "estimatedUsd": 0.006635199999999999,
+  "stopReason": "request_ceiling",
+  "steps": [
+    {
+      "concurrency": 1,
+      "seconds": 2.931409458,
+      "requests": 3,
+      "requestsPerSecond": 1.0233984856031668,
+      "successes": 3,
+      "errors429": 0,
+      "otherErrors": 0,
+      "errorFraction": 0,
+      "ttftMs": {
+        "p50": 316.4596249999995,
+        "p95": 332.4657874999997,
+        "p99": 333.8885574999997
+      },
+      "totalMs": {
+        "p50": 818.3006249999999,
+        "p95": 839.9457743999999,
+        "p99": 841.8697876799998
+      },
+      "outputTokensPerSecond": 261.9900123144107,
+      "decodeTokensPerSecondP50": 503.83134115173686,
+      "estimatedUsd": 0.0066352
+    }
+  ],
+  "requests": [
+    {
+      "id": 0,
+      "concurrency": 1,
+      "long": false,
+      "startedAt": "2026-10-21T19:52:01.018Z",
+      "status": 200,
+      "headers": {
+        "x-ratelimit-limit-requests": "1000",
+        "x-ratelimit-limit-tokens": "8000",
+        "x-ratelimit-remaining-requests": "999",
+        "x-ratelimit-remaining-tokens": "6262",
+        "x-ratelimit-reset-requests": "1m26.4s",
+        "x-ratelimit-reset-tokens": "13.035s"
+      },
+      "ttftMs": 334.24424999999974,
+      "totalMs": 842.3507909999998,
+      "inputTokens": 1482,
+      "outputTokens": 256,
+      "success": true,
+      "cachedInputTokens": null,
+      "stopReason": "length",
+      "chargedTokens": 1738,
+      "estimatedUsd": 0.0022096000000000004
+    },
+    {
+      "id": 1,
+      "concurrency": 1,
+      "long": false,
+      "startedAt": "2026-10-21T19:52:02.076Z",
+      "status": 200,
+      "headers": {
+        "x-ratelimit-limit-requests": "1000",
+        "x-ratelimit-limit-tokens": "8000",
+        "x-ratelimit-remaining-requests": "998",
+        "x-ratelimit-remaining-tokens": "4649",
+        "x-ratelimit-reset-requests": "2m52.8s",
+        "x-ratelimit-reset-tokens": "29.759s"
+      },
+      "ttftMs": 316.4596249999995,
+      "totalMs": 818.3006249999999,
+      "inputTokens": 1486,
+      "outputTokens": 256,
+      "success": true,
+      "cachedInputTokens": null,
+      "stopReason": "length",
+      "chargedTokens": 1742,
+      "estimatedUsd": 0.0022128
+    },
+    {
+      "id": 2,
+      "concurrency": 1,
+      "long": false,
+      "startedAt": "2026-10-21T19:52:03.023Z",
+      "status": 200,
+      "headers": {
+        "x-ratelimit-limit-requests": "1000",
+        "x-ratelimit-limit-tokens": "8000",
+        "x-ratelimit-remaining-requests": "997",
+        "x-ratelimit-remaining-tokens": "3117",
+        "x-ratelimit-reset-requests": "4m19.2s",
+        "x-ratelimit-reset-tokens": "36.622s"
+      },
+      "ttftMs": 266.09908300000006,
+      "totalMs": 801.6400829999993,
+      "inputTokens": 1486,
+      "outputTokens": 256,
+      "success": true,
+      "cachedInputTokens": null,
+      "stopReason": "length",
+      "chargedTokens": 1742,
+      "estimatedUsd": 0.0022128
+    }
+  ]
+}

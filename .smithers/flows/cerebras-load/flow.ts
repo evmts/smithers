@@ -8,8 +8,8 @@ export const Probe = Action.make('cerebras-load/probe', {
 })
 
 export default Flow.make('cerebras-load', {
-  description: 'Record one capped Cerebras load-test attempt; provider failures are benchmark observations.',
-  capabilities: ['net:post:https://api.cerebras.ai/**'],
+  description: 'Record one capped provider load-test attempt; provider failures are benchmark observations.',
+  capabilities: ['net:post:https://api.cerebras.ai/**', 'net:post:https://api.deepinfra.com/**', 'net:post:https://api.groq.com/**'],
   effects: { reads: [], writes: [], mode: 'expected', onConflict: 'serialize', tier: 'irreversible' },
   modelInvocable: false,
   payload: { id: Schema.Number },

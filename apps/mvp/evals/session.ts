@@ -12,6 +12,10 @@
 //   before any output what the provider reported, so the two agree; each trial reads both (`chargedTokens`).
 // - A refusing provider: a case with `provider: "refuses"` asks a second ChatApi whose model is the deployment's
 //   default with a key its provider rejects, so every call is a real refusal before any output.
+import { openBudget } from "../bench/cerebras-load/budget.ts"
+import { guardedModel } from "../bench/cerebras-load/guard.ts"
+import { candidateConfig, refusalConfig } from "./candidate"
+import { afterAll } from "vitest"
 import { HostModel } from "@smthrs/model-host"
 import { EgressHttpClient } from "@smthrs/platform-node"
 import { ConfigProvider, Effect, Scope, Stream } from "effect"
@@ -28,6 +32,9 @@ export const ANSWER_WITHIN_MS = 4 * 60_000
 
 /** How often a trial looks for a question the agent asked. */
 const POLL = "250 millis"
+
+const budgets = new Set<ReturnType<typeof openBudget>>()
+afterAll(() => { for (const budget of budgets) budget.close() })
 
 type Runtime = ReturnType<typeof testFile>
 type Device = Awaited<ReturnType<typeof openDevice>>
@@ -51,9 +58,7 @@ const defaultModel = (fetch: typeof globalThis.fetch) =>
 /** The default model's provider with a key it rejects: each call is refused before any output. */
 const refusedModel = (fetch: typeof globalThis.fetch) =>
   defaultModel(fetch).pipe(
-    Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({
-      [DEFAULT_CHAT_MODEL.credential]: "smithers-eval-key-the-provider-rejects",
-    }))),
+    Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(refusalConfig(process.env)))),
   )
 
 /**
@@ -65,7 +70,11 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
   const fetch = await Effect.runPromise(
     Scope.provide(Effect.runSync(Scope.make()))(EgressHttpClient.providerFetch(process.env)),
   )
-  const model = await Effect.runPromise(defaultModel(fetch))
+  const rawModel = await Effect.runPromise(defaultModel(fetch))
+  const candidate = candidateConfig(process.env)
+  const budget = candidate ? openBudget(process.env.INFERENCE_LEDGER!, process.env.INFERENCE_PROVIDER!, candidate, 'eval', 2) : undefined
+  const model = budget ? guardedModel(rawModel, budget) : rawModel
+  if (budget) budgets.add(budget)
   const agent = await openAgent(runtime, () => Stream.die(new Error("the evals' model is real")), {
     model,
     partsEvery: "250 millis",
@@ -179,7 +188,7 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
     }
   }
 
-  return { modelId: model.modelId, trial }
+  return { modelId: model.modelId, trial, price: candidate ? { modelId: model.modelId, input: candidate.input, output: candidate.output } : undefined, campaignEstimatedUsd: () => budget?.total() }
 }
 
 /** A child's input as the engine shows it: JSON when it reads, else the text. */

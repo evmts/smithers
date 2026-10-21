@@ -47,9 +47,12 @@ const totalOf = (roles: Readonly<Record<string, RoleSpend>>): Spend["total"] =>
   )
 
 /** What the metered endpoint served the trials, by role, priced at its model's list price. */
-export const endpointSpend = (trials: ReadonlyArray<Trial>): Spend => {
+export const endpointSpend = (trials: ReadonlyArray<Trial>, price?: { modelId: string; input: number; output: number }): Spend => {
   const roles: Record<string, RoleSpend> = {}
-  for (const usage of trials.flatMap((trial) => trial.usage)) add(roles, usage.role, usage)
+  for (const usage of trials.flatMap((trial) => trial.usage)) {
+    if (price && usage.modelId !== price.modelId) throw new Error('Unpriced model in candidate eval')
+    add(roles, usage.role, price ? { ...usage, costUsd: (usage.inputTokens * price.input + usage.outputTokens * price.output) / 1e6 } : usage)
+  }
   return { roles, total: totalOf(roles) }
 }
 

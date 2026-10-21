@@ -1,7 +1,3 @@
-export function reserve(tokens: number, usd: number, input: number, output: number, tokenCap = 2_000_000) {
-  const total = input + output, price = (input * .99 + output * 1.49) / 1e6
-  return tokens + total > tokenCap || usd + price > 5 ? null : { tokens: total, usd: price }
-}
 export function quantile(values: number[], p: number) {
   if (!values.length) return null
   const sorted = [...values].sort((a,b)=>a-b), rank = (sorted.length-1)*p
