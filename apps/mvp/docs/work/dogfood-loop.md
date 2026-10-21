@@ -3,7 +3,7 @@ title: Dogfood loop — Smithers builds Smithers on production
 status: in-progress
 area: app
 owner: dogfood-loop builder (Claude Opus), from 11:10 on 2026-10-21
-updated: 2026-10-21 11:20 PDT
+updated: 2026-10-21 13:45 PDT
 links: [../rulings.md, ../features/issues.md, ../features/todos.md, ../features/pulls.md, ../proposals/ci-cd-parity.md, ../decisions/0016-todos-and-the-stack.md, todos-and-stack.md, issues-to-todos.md, prod-flows.md, ci-parity-commit-statuses.md, ci-parity-job-sandbox.md, ci-parity-repo-flows.md, ci-parity-required-checks.md, sandboxes.md]
 ---
 
@@ -12,6 +12,18 @@ links: [../rulings.md, ../features/issues.md, ../features/todos.md, ../features/
 **Why:** Will, 2026-10-21 11:10: "Seeing if we can use our own product to produce an issue make todos from that issue produce a stacked diff run ci/cd on our infrastructure and merge. We likely are unable to do this yet and should prioritize unblocking it."
 
 **The issue:** `packages/smithers/flows/platform-browser` lint fails on `main`: `import()` type annotations at `src/BrowserRuntime.ts:78` and `src/internal/Engine.ts:53` (pre-existing reds, 2026-10-21 10:55). Two lines, two TODOs, nothing blocked by them.
+
+## Where it stands (2026-10-21 13:45, production 931fed70)
+
+| Step | Status | Evidence, or what's left |
+|---|---|---|
+| 1. Open the issue in the app | **Works on production** | `e2e/dogfood.spec.ts` "dogfood 1" passed at 13:10: a Member opened [smithersai/smithers#4430](https://github.com/smithersai/smithers/issues/4430) through the app, under their own account. GIF `prod/gifs/dogfood-dogfood-1-the-issue.gif` |
+| 2. Make TODOs | Built, not deployed | Make TODO stays on an open issue while its TODOs are open (lander queue) |
+| 3. A stacked diff | Built, not deployed | Stacked pull requests; waits for a rebase onto the durable-effects `todo/Begin` and `todo/Publish` |
+| 4. CI/CD on our infrastructure | Built, not deployed; blocked twice | GH-10 statuses and check jobs (registry-only egress, `.smithers/checks/lint.sh` and `check.sh`, which pass on nyc-01 for the loop's first TODO). Blocked on the App's "Commit statuses" permission (Will) and on Node 26.5 and pnpm 11.25 in the image (sandboxes builder) |
+| 5. A person merges | Unchanged | Will or a Maintainer |
+
+**The loop's TODOs** (dogfood 2): the fix to both lines, then its changeset, stacked on it. Each passes the package's lint and typecheck on its own, so both pull requests can go green.
 
 ## The map (2026-10-21 11:20, against `main@origin` c8df75af and production 78407fce)
 
@@ -34,5 +46,7 @@ links: [../rulings.md, ../features/issues.md, ../features/todos.md, ../features/
 5. **Run the loop** on production: open the issue in the app, Make TODO twice, commit both, watch two stacked pull requests go green, record each step, stop for a person's merge.
 
 ## History
+
+2026-10-21 13:45 PDT: step 1 works on production (#4430); GH-10, more TODOs per issue, stacked pull requests and check jobs built; the dogfood spec runs each step against a deployment named by `E2E_DOGFOOD=smithersai/smithers`.
 
 2026-10-21 11:20 PDT: map written by the dogfood-loop builder from `main@origin` c8df75af, the peer workspaces' unlanded commits (factory stack, prod-flows), production shapes read as `codeplanesmithers`, and `smithersai/smithers`' settings (`delete_branch_on_merge` off, the `Main` ruleset: no deletion, no force push, linear history).

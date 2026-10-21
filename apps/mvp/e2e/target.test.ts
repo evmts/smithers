@@ -62,7 +62,18 @@ describe("the target", () => {
 describe("needs", () => {
   it("are all met locally, where local development's Admin is signed in, but GitHub sign-in", () => {
     const unmet = (Object.keys(NEEDS) as Array<NeedName>).filter((name) => !NEEDS[name].met(local))
-    expect(unmet).toEqual(["webhookSecret", "alertProviders", "oldBuild", "githubSignIn", "factoryRepository", "githubScratch", "githubApp", "longRun", "docsSite"])
+    expect(unmet).toEqual([
+      "webhookSecret",
+      "alertProviders",
+      "oldBuild",
+      "githubSignIn",
+      "factoryRepository",
+      "githubScratch",
+      "dogfood",
+      "githubApp",
+      "longRun",
+      "docsSite",
+    ])
   })
 
   it("for the docs site, are met only by a deployment at its custom domain", () => {
@@ -123,6 +134,13 @@ describe("needs", () => {
     expect(NEEDS.factoryRepository.met(deployedAs("member", { E2E_FACTORY_REPOSITORY: "codeplanesmithers/factory" }))).toBe(true)
     expect(NEEDS.factoryRepository.met(deployedAs("member", { E2E_FACTORY_REPOSITORY: "smithersai/smithers" }))).toBe(false)
     expect(NEEDS.factoryRepository.met({ ...local, env: { E2E_FACTORY_REPOSITORY: "codeplanesmithers/factory" } })).toBe(false)
+  })
+
+  it("for the dogfood loop, are met only in a deployment told by name to write to smithersai/smithers", () => {
+    expect(NEEDS.dogfood.met(deployedAs("member", { E2E_DOGFOOD: "smithersai/smithers" }))).toBe(true)
+    expect(NEEDS.dogfood.met(deployedAs("member", { E2E_DOGFOOD: "1" }))).toBe(false)
+    expect(NEEDS.dogfood.met(deployedAs("member"))).toBe(false)
+    expect(NEEDS.dogfood.met({ ...local, env: { E2E_DOGFOOD: "smithersai/smithers" } })).toBe(false)
   })
 
   it("for asking, are met locally, and in a deployment only once it has its own conversation, else blocked", () => {
