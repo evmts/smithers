@@ -53,7 +53,12 @@ const ChatDatabase = Effect.gen(function* () {
 export const props = {
   main: "worker/ChatApi.ts",
   // @effect/sql-pg opens its sockets with node:net, which workerd provides under nodejs_compat.
-  compatibility: { date: "2026-10-01", flags: ["nodejs_compat", "enable_request_signal"] },
+  // global_fetch_strictly_public: ChatApi fetches Electric's gateway at its workers.dev URL, and Cloudflare refuses a
+  // Worker's fetch to another Worker of the same account there (404, error code 1042) unless fetch goes out publicly.
+  compatibility: {
+    date: "2026-10-01",
+    flags: ["nodejs_compat", "enable_request_signal", "global_fetch_strictly_public"],
+  },
   // Workers Logs keeps every JSON log line; Cloudflare.Telemetry() below turns on Workers Traces.
   observability: { enabled: true, logs: { enabled: true, invocationLogs: true, persist: true } },
   // Browsers reach it only through the site, so locally it takes any free port and the site keeps 1337.
