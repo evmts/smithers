@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto"
 import { expect, test } from "./devices"
 import { field, type LogRecord, LogTail } from "./logs"
-import { me, partly, requires } from "./target"
+import { me, requires } from "./target"
 
 // Remote flows on the deployment (docs/features/remote-flows.md): the git loop's `github/Reconcile` and `github/Apply`,
 // `ops/SpendAlert`, `chat/Expire` and `auth/RecheckRole`, each run by ChatApi's `FlowExecution` Durable Objects. Each
@@ -28,24 +28,27 @@ const outcomes = async (logs: LogTail, message: string, where: (record: LogRecor
 const issueLinks = (page: import("@playwright/test").Page) =>
   page.locator(`main[aria-label="Issues"] a[href^="/${REPOSITORY}/issues/"]:not([href$="/new"])`)
 
-test("issues sync: a Member's issues list fills from GitHub, and a stale read starts github/Reconcile", {
+test("issues sync: a Member's read of the stale issues list runs github/Reconcile, which walks GitHub and fills it", {
   annotation: { type: "summary", description: "The synced repository's issues list fills from GitHub through the remote sync." },
 }, async ({ devices }) => {
-  requires("githubApp", "member")
-  test.setTimeout(12 * 60_000)
-  const logs = partly("localLogs") ? await LogTail.start() : undefined
+  requires("githubApp", "member", "localLogs")
+  test.setTimeout(15 * 60_000)
+  const logs = await LogTail.start()
   try {
     const [a] = await devices.open("A")
-    await a.page.goto(`/${REPOSITORY}/issues`)
-    // The first walk of a large repository reads up to 50 pages before it stops `partial`; the list fills as it goes.
-    await expect(issueLinks(a.page).first()).toBeVisible({ timeout: 10 * 60_000 })
-    if (logs !== undefined) {
-      // A walk this read started, or a fresh sync that started none: never a failed one.
-      const walks = await outcomes(logs, "github.reconcile")
-      expect(walks.filter((outcome) => !["complete", "partial", "superseded"].includes(String(outcome)))).toEqual([])
-    }
+    const walked = (record: LogRecord) => field(record, "repoId") === `github/${REPOSITORY}`
+    // A read finds the sync older than 5 minutes and starts a walk; a sync fresher than that starts none until it ages,
+    // so the page is read again every half minute until a walk of this test's time has finished.
+    await expect.poll(async () => {
+      await a.page.goto(`/${REPOSITORY}/issues`)
+      return outcomes(logs, "github.reconcile", walked)
+    }, { timeout: 12 * 60_000, intervals: [30_000] }).toEqual(expect.arrayContaining([expect.stringMatching(/^(complete|partial)$/)]))
+    // A walk failed or refused would be among them; none may be.
+    const walks = await outcomes(logs, "github.reconcile", walked)
+    expect(walks.filter((outcome) => !["complete", "partial", "superseded"].includes(String(outcome)))).toEqual([])
+    await expect(issueLinks(a.page).first()).toBeVisible({ timeout: 60_000 })
   } finally {
-    await logs?.dispose()
+    await logs.dispose()
   }
 })
 

@@ -182,12 +182,15 @@ describe("auth/RevokeGitHubToken", () => {
     const github = scriptedGitHub()
     const h = await signInHarness(runtime, { github })
     const { cookies } = await h.signInAs()
-    const [{ id }] = (await sql(`SELECT id FROM sessions`)) as unknown as [{ id: string }]
+    const [{ id, personId }] = (await sql(`SELECT id, person_id AS "personId" FROM sessions`)) as unknown as [
+      { id: string; personId: string },
+    ]
     const s: SignedOut = {
       h,
       github,
       cookies,
       id,
+      personId,
       access: github.issued[0]!.accessToken,
       services: { keys: await Effect.runPromise(SessionKeys.make(Redacted.make(SECRET))), github: github.service },
       database: await runtime.runPromise(Effect.gen(function* () {
