@@ -2,7 +2,8 @@ import {
   BuildAndCheckTypeScriptPackage,
   ReviewDocsAgainstCode,
   ReviewJsdocAgainstCode,
-  ReviewTagsMigrationsAndKeys
+  ReviewTagsMigrationsAndKeys,
+  SdkRules
 } from "@smthrs/repo-targets"
 /**
  * Standard package targets.
@@ -98,6 +99,17 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+/** Will's SDK-wide rules (apps/mvp/docs/rules.md): `importRules` runs with `test`; `jevRules` is manual. */
+const { importRules, jevRules } = SdkRules({
+  cwd,
+  role: "library",
+  knownDeepImports: {
+    packages: ["@smthrs/core", "@smthrs/flow", "@smthrs/plan"],
+    because: "core reads plan's Effects, Placement and KeyMaterial modules, and its example loads core's own " +
+      "Markdown module."
+  }
+})
+
 export const Package = Smithers.Package({
   targets: {
     bunTest,
@@ -106,6 +118,8 @@ export const Package = Smithers.Package({
     docs,
     docsFiles,
     fmt,
+    importRules,
+    jevRules,
     lib,
     lint,
     reviewDocsAgainstCode,

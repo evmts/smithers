@@ -576,8 +576,9 @@ const canonical: (value: unknown) => string
 
 The RFC 8785 canonical JSON serialization of a value. A function, symbol,
 `bigint`, cyclic object, non-finite number, or top-level `undefined` has no
-canonical JSON representation; for those values this throws the `SchemaError`
-from `effect/Schema` raised through `Effect.runSync`, unwrapped.
+canonical JSON representation; for those values this throws `CanonicalError`
+from `@smthrs/canonical`, with its stable `code` and `path`. No Effect is run;
+the bytes match the `Canonical` schema's decode.
 
 ### Digest.provideSync
 
@@ -585,5 +586,5 @@ from `effect/Schema` raised through `Effect.runSync`, unwrapped.
 const provideSync: <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>) => Effect.Effect<A, E>
 ```
 
-Provides the synchronous SHA-256 service to an Effect-shaped derivation, so a
-pure constructor can run one without a platform layer.
+Provides the synchronous SHA-256 service to an Effect. The caller runs the
+returned Effect at its program boundary.

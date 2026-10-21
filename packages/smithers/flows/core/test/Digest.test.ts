@@ -1,6 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, it } from "@effect/vitest"
-import { Canonical } from "@smthrs/canonical"
+import { Canonical, CanonicalError, canonicalize } from "@smthrs/canonical"
 import * as Digest from "@smthrs/core/Digest"
 import { Sha256 } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
@@ -46,6 +46,12 @@ describe("Digest", () => {
       expect(Digest.digest(bytes)).toBe(injected)
     })))
 
+  it.effect("provides synchronous SHA-256 to a caller-run Effect", () =>
+    Digest.provideSync(Effect.gen(function*() {
+      const injected = yield* Schema.decodeUnknownEffect(Sha256)("provided")
+      expect(injected).toBe(Digest.digest("provided"))
+    })))
+
   it.effect("agrees with @smthrs/canonical on RFC 8785 serialization", () =>
     platform(Effect.gen(function*() {
       const value = { b: 1, a: [1, 2, { z: null, y: "ü" }], c: { nested: true } }
@@ -53,11 +59,18 @@ describe("Digest", () => {
       expect(Digest.canonical(value)).toBe(injected)
     })))
 
-  it("throws the canonical SchemaError unchanged for unrepresentable values", () => {
+  it("throws the same CanonicalError as canonicalize for unrepresentable values", () => {
     const cyclic: Record<string, unknown> = {}
     cyclic.self = cyclic
 
-    for (const value of [() => 1, Symbol("value"), cyclic]) {
+    for (const value of [() => 1, Symbol("value"), cyclic, 1n, NaN, undefined]) {
+      let expected: unknown
+      try {
+        canonicalize(value)
+      } catch (error) {
+        expected = error
+      }
+
       let thrown: unknown
       try {
         Digest.canonical(value)
@@ -65,8 +78,11 @@ describe("Digest", () => {
         thrown = error
       }
 
-      expect(thrown).toBeInstanceOf(Schema.SchemaError)
-      expect(thrown).toEqual(expect.objectContaining({ _tag: "SchemaError", issue: expect.anything() }))
+      expect(expected).toBeInstanceOf(CanonicalError)
+      expect(thrown).toBeInstanceOf(CanonicalError)
+      expect(thrown).toHaveProperty("code", (expected as CanonicalError).code)
+      expect(thrown).toHaveProperty("path", (expected as CanonicalError).path)
+      expect(thrown).toHaveProperty("message", (expected as CanonicalError).message)
     }
   })
 

@@ -8818,10 +8818,6 @@
       },
       {
         "kind": "file",
-        "path": "packages/smithers/ui/docs/api.md.orig"
-      },
-      {
-        "kind": "file",
         "path": "packages/smithers/ui/docs/chat-timeline.md"
       },
       {
@@ -63963,6 +63959,127 @@
       {
         "kind": "file",
         "path": "packages/smithers/flows/core/dprint.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/core/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/core:importRules",
+    "package": "packages/smithers/flows/core",
+    "name": "importRules",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/import-rules.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/core/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs}",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/import-rules.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/src/ImportRulesCheck.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/src/ImportAnalysis.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/core/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/core:jevRules",
+    "package": "packages/smithers/flows/core",
+    "name": "jevRules",
+    "rule": "JevLint",
+    "kinds": [
+      "lint"
+    ],
+    "summary": "Will's SDK-wide judgment rules, asked of Jev one file at a time.",
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/core/src/**/!(*.test).ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/core/src/**/!(*.test).tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/core/src/**/!(*.test).ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/core/src/**/!(*.test).tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/core/src/**/!(*.test).ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/core/src/**/!(*.test).tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/core/src/**/!(*.test).ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/core/src/**/!(*.test).tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/core/src/**/!(*.test).ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/core/src/**/!(*.test).tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/core/src/**/!(*.test).ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/core/src/**/!(*.test).tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/core/test/**/*.test.ts",
+        "exclude": []
       }
     ],
     "outputs": [],
