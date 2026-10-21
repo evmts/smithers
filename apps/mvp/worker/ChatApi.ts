@@ -206,30 +206,8 @@ export const program = (
       })
     })
 
-    /**
-     * Where ChatApi's routes start a remote flow (worker/Flows.ts): its own Durable Object, named by the execution id.
-     * The same intent again is a no-op; another payload under the id is `StartConflict`; any other failure, the
-     * payload's encoding or the object's RPC, is `StartUnavailable` with its code.
-     */
-    const flowStarter = Effect.gen(function* () {
-      const runtime = yield* RuntimeContext
-      return Flows.FlowStarter.of({
-        // The route built `payload` as this flow's own schema types it; `Flow.Any` can't say so in its type.
-        start: (flow, { executionId, payload }) =>
-          ExecutionHost.intent(flow, { executionId, payload: payload as never }).pipe(
-            Effect.flatMap((intent) => executions.getByName(executionId).start(intent)),
-            Effect.provideService(RuntimeContext, runtime),
-            Effect.catchCause((cause) => {
-              const error = Cause.squash(cause)
-              return Effect.fail(
-                Predicate.isTagged(error, "@smthrs/platform-cloudflare/IntentConflict")
-                  ? new Flows.StartConflict()
-                  : new Flows.StartUnavailable({ errorCode: codeOf(error) }),
-              )
-            }),
-          ),
-      })
-    })
+    /** Where ChatApi's routes start a remote flow (worker/Flows.ts): its own Durable Object, named by the execution id. */
+    const flowStarter = Executions.starter(executions)
 
     return {
       fetch: Effect.gen(function* () {
@@ -296,7 +274,10 @@ export const program = (
       }).pipe(Effect.provide(logs)),
     }
   }).pipe(
-    Effect.provide(Executions.live(ChatDatabase, options.dev === true ? { dev: true } : {})),
+    Effect.provide(Executions.live(ChatDatabase, {
+      ...(options.dev === true ? { dev: true } : {}),
+      ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
+    })),
     Effect.provide(BranchSandboxes.live(ChatDatabase)),
     Effect.provide(BranchRooms.live),
     Effect.provide(

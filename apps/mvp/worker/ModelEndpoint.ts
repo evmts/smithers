@@ -6,6 +6,7 @@ import type { SqlClient } from "effect/sql"
 import { MODEL_ROUTE, type ModelRole } from "../src/features/model/contract.ts"
 import { canAsk, Sessions } from "./Actor.ts"
 import { codeOf } from "./ErrorCode.ts"
+import { FlowStarter } from "./Flows.ts"
 import * as ModelRoles from "./ModelRoles.ts"
 import * as ModelSpend from "./ModelSpend.ts"
 import * as ModelUsage from "./ModelUsage.ts"
@@ -258,13 +259,24 @@ const refusedCall = (refusal: ModelProxy.Refusal) =>
  * calls it was admitted under a person's role, which it re-checks itself. Its step keys on the endpoint's request
  * (`ModelProxy.prepare`), so a resumed run replays the sealed call instead of paying for it again. A refusal fails the
  * stream as a `ModelError` with the endpoint's code: `quota_exceeded` once the day's budget is spent.
+ *
+ * Given `starter`, where the host starts a flow, each admitted call also starts its window's spend alert, as the
+ * endpoint's calls do (`ModelSpend.alerter`, docs/features/spend-alerts.md): a window whose only spend is a `todo` run's
+ * agent or triage's judge alerts too. `alerts` is `MODEL_SPEND_ALERTS`' default, on unless set, as `make`'s is.
  */
-export const local = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+export const local = <E, R>(
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
+  options: { readonly alerts?: boolean } = {},
+) =>
   Effect.gen(function* () {
-    const { admit, meter, maxBodyBytes } = yield* metering(database)
+    const { admit, meter, maxBodyBytes, budget } = yield* metering(database)
+    const alert = yield* ModelSpend.alerter(
+      yield* ModelSpend.settings(options.alerts === undefined ? {} : { on: options.alerts }),
+      budget,
+    )
     // What the database layer needs, captured here, so a model call needs nothing of its caller.
     const context = yield* Effect.context<R>()
-    return (role: ModelRole): Seat => {
+    return (role: ModelRole, starter?: FlowStarter["Service"]): Seat => {
       const prepare = ModelProxy.prepare({ url: `${MODEL_ROUTE}/${role}` })
       const call = (request: ModelRequest.ModelRequest) =>
         Effect.gen(function* () {
@@ -276,6 +288,7 @@ export const local = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           }
           const admission = { requestId: invocationId, invocationId, requestBytes: encoded.body.byteLength }
           const prepared = yield* admit(role)(request, admission).pipe(Effect.mapError(refusedCall))
+          if (starter !== undefined) yield* alert.pipe(Effect.provideService(FlowStarter, starter))
           // What the model reported, merged as `ModelEvent.settledMessage` merges it: a `retry` event starts it over.
           let usage: ModelEvent.Usage = {}
           // Whether the model sent any output, which tells a refusal (that spent nothing) from a failure that may have.

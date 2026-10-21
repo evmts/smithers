@@ -2,7 +2,7 @@ import { Logger } from "@smthrs/observability"
 import { EdgeCache, type ExecutionObject } from "@smthrs/platform-cloudflare"
 import { RuntimeContext } from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Cause, Effect, Layer, Option, Redacted } from "effect"
+import { Cause, Effect, Layer, Option, Predicate, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import * as Database from "../db/Database.ts"
 import * as AlertChannels from "./AlertChannels.ts"
@@ -10,6 +10,7 @@ import * as BranchSandboxes from "./BranchSandboxes.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as AgentSandbox from "./AgentSandbox.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
+import * as Flows from "./Flows.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as TodoAgent from "./flows/TodoAgent.ts"
 import * as Todo from "./flows/Todo.ts"
@@ -40,6 +41,40 @@ export interface FlowExecutionShape {
 /** The `FlowExecution` Durable Object namespace. A caller reaches one execution with `getByName(executionId)`. */
 export class FlowExecution extends Cloudflare.DurableObject<FlowExecution, FlowExecutionShape>()("FlowExecution") {}
 
+/** What `starter` reaches an execution's object through: the namespace, from ChatApi or from another execution. */
+export interface Objects {
+  readonly getByName: (executionId: string) => {
+    readonly start: FlowExecutionShape["start"]
+  }
+}
+
+/**
+ * Where a request's or an alarm's code starts a remote flow (worker/Flows.ts): its own Durable Object, named by the
+ * execution id, with the runtime of the request or alarm that builds it. The same intent again is a no-op; another
+ * payload under the id is `StartConflict`; any other failure, the payload's encoding or the object's RPC, is
+ * `StartUnavailable` with its code.
+ */
+export const starter = (objects: Objects) =>
+  Effect.gen(function* () {
+    const runtime = yield* RuntimeContext
+    return Flows.FlowStarter.of({
+      // The caller built `payload` as this flow's own schema types it; `Flow.Any` can't say so in its type.
+      start: (flow, { executionId, payload }) =>
+        ExecutionHost.intent(flow, { executionId, payload: payload as never }).pipe(
+          Effect.flatMap((intent) => objects.getByName(executionId).start(intent)),
+          Effect.provideService(RuntimeContext, runtime),
+          Effect.catchCause((cause) => {
+            const error = Cause.squash(cause)
+            return Effect.fail(
+              Predicate.isTagged(error, "@smthrs/platform-cloudflare/IntentConflict")
+                ? new Flows.StartConflict()
+                : new Flows.StartUnavailable({ errorCode: codeOf(error) }),
+            )
+          }),
+        ),
+    })
+  })
+
 /**
  * The object's implementation over `connection`, the Hyperdrive config the engine reaches Postgres through. Its id is
  * the engine's host id, the same for every incarnation of the object, so a new incarnation takes over its run at once.
@@ -48,7 +83,7 @@ export class FlowExecution extends Cloudflare.DurableObject<FlowExecution, FlowE
  */
 export const live = <E, R>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
-  options: { readonly dev?: boolean } = {},
+  options: { readonly dev?: boolean; readonly spendAlerts?: boolean } = {},
 ) =>
   FlowExecution.make(
     Effect.gen(function* () {
@@ -78,10 +113,12 @@ export const live = <E, R>(
       // App is configured (docs/features/issues.md#remote-flows). Triage decides with the `judge` model role, admitted
       // and metered in process as the model endpoint's calls are (docs/features/issues.md#triage).
       const github = yield* GitHubHost.ready(appDatabase).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
-      const seats = yield* ModelEndpoint.local(appDatabase).pipe(Effect.orDie)
-      const judge = seats("judge")
-      // The `todo` run's agent writes with the `agent` role, admitted and metered as the endpoint's calls are.
-      const agent = seats("agent")
+      // Each admitted call of a server seat starts its window's spend alert, as the endpoint's calls do: `spendAlerts`,
+      // which only `alchemy dev` sets, to `false`, is `MODEL_SPEND_ALERTS`' default (docs/features/spend-alerts.md).
+      const seats = yield* ModelEndpoint.local(
+        appDatabase,
+        options.spendAlerts === undefined ? {} : { alerts: options.spendAlerts },
+      ).pipe(Effect.orDie)
       // `ops/SpendAlert` sends by email and Telegram through the deployment's providers, from its secrets
       // (docs/features/spend-alerts.md#channels).
       const alertChannels = yield* AlertChannels.channelsConfig(options).pipe(Effect.orDie)
@@ -132,11 +169,15 @@ export const live = <E, R>(
           ),
           appDatabase,
         )
+        // Where a server seat's call starts its window's spend alert: this alarm's own runtime, on the alert's object.
+        const flowStarter = starter(executions)
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
-        // object, the one redeemer of the refresh token, with the execution's own runtime context.
+        // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
+        // review judge with the `judge` role, admitted and metered as the endpoint's calls are.
         const githubServices = <GE, GR>(ready: GitHubHost.Ready<GE, GR>) =>
           Effect.gen(function* () {
             const runtime = yield* RuntimeContext
+            const judge = seats("judge", yield* flowStarter)
             return GitHubHost.services(ready, {
               keys: Option.map(signIn, (configured) => configured.keys),
               refresh: (sessionId, generation) => {
@@ -178,7 +219,9 @@ export const live = <E, R>(
                 ExecutionHost.withGitHub(flows, githubServices(github.value)),
                 todoServices(github.value),
                 machines,
-                TodoAgent.registration(agent, appDatabase, AgentSandbox.layer),
+                // The `todo` run's agent writes with the `agent` role, admitted and metered as the endpoint's calls are.
+                Layer.unwrap(Effect.map(flowStarter, (started) =>
+                  TodoAgent.registration(seats("agent", started), appDatabase, AgentSandbox.layer))),
               ),
             )
             : hostFor(flows)

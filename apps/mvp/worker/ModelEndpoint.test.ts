@@ -14,10 +14,13 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { type Actor, CurrentActor, Sessions, SessionsUnavailable } from "./Actor.ts"
+import * as Flows from "./Flows.ts"
 import * as ModelEndpoint from "./ModelEndpoint.ts"
+import * as ModelSpend from "./ModelSpend.ts"
 import * as ModelRoles from "./ModelRoles.ts"
 import * as ModelUsage from "./ModelUsage.ts"
 import * as SetModel from "./SetModel.ts"
+import * as SpendAlert from "./flows/SpendAlert.ts"
 import { Summarize, SummaryFailed } from "../src/features/timeline/flow.ts"
 import { registration as summaries, SummarySeat } from "../src/features/timeline/steps.ts"
 import { build, runFlow } from "./test/flowHost.ts"
@@ -1042,7 +1045,7 @@ describe("a server flow's own calls (ModelEndpoint.local)", () => {
         Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
       ),
     )
-    return { judge: local("judge"), requests }
+    return { judge: local("judge"), local, requests }
   }
   const run = (judge: ModelEndpoint.Seat, request: ModelRequest.ModelRequest) =>
     Effect.runPromiseExit(Stream.runCollect(judge.model.stream(request)))
@@ -1055,6 +1058,41 @@ describe("a server flow's own calls (ModelEndpoint.local)", () => {
     expect(requests.map((request) => [request.modelId, request.params.maxTokens])).toEqual([["default-model", 8_000]])
     expect(await usageRows()).toEqual([{ role: "judge", modelId: "default-model", inputTokens: 12, outputTokens: 34 }])
     expect(await committedToday()).toBe(46)
+  })
+
+  test("given the host's starter, each admitted call starts its window's spend alert, once a window in this isolate", async () => {
+    // A window whose only spend is a server flow's (a `todo` run's agent, triage's judge) alerts too: before, no server
+    // call started one, so the alert waited for some person's call through the endpoint.
+    const starts: Array<{ readonly flow: string; readonly executionId: string; readonly payload: unknown }> = []
+    const starter = Flows.FlowStarter.of({
+      start: (flow, { executionId, payload }) => Effect.sync(() => void starts.push({ flow: flow._tag, executionId, payload })),
+    })
+    const { local } = await seat(answering)
+    const agent = local("agent", starter)
+    const before = ModelSpend.windowAt(Date.now(), ModelSpend.ALERT_WINDOW)
+    expect(Exit.isSuccess(await run(agent, ask("implement this")))).toBe(true)
+    expect(Exit.isSuccess(await run(agent, ask("and this")))).toBe(true)
+    const window = ModelSpend.windowAt(Date.now(), ModelSpend.ALERT_WINDOW)
+    // Two calls in one window start it once; a window that ended between them starts the next one.
+    expect(starts.map((start) => start.flow)).toEqual(window.from === before.from ? [SpendAlert.SpendAlert._tag] : [
+      SpendAlert.SpendAlert._tag,
+      SpendAlert.SpendAlert._tag,
+    ])
+    expect(starts[0]).toMatchObject({
+      executionId: SpendAlert.executionId(before),
+      payload: { ...before, budget: ModelEndpoint.DAILY_TOKEN_BUDGET },
+    })
+  })
+
+  test("a refused call, a seat with no starter, or alerts off start no alert", async () => {
+    const starts: Array<string> = []
+    const starter = Flows.FlowStarter.of({ start: (_flow, { executionId }) => Effect.sync(() => void starts.push(executionId)) })
+    const spent = await seat(answering, { MODEL_DAILY_TOKEN_BUDGET: "46" })
+    expect(Exit.isSuccess(await run(spent.local("judge"), ask("no starter")))).toBe(true)
+    expect(Exit.isFailure(await run(spent.local("judge", starter), ask("refused")))).toBe(true)
+    const off = await seat(answering, { MODEL_SPEND_ALERTS: "false" })
+    expect(Exit.isSuccess(await run(off.local("judge", starter), ask("alerts off")))).toBe(true)
+    expect(starts).toEqual([])
   })
 
   test("its step keys on the endpoint's own request for the role", async () => {
