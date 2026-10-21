@@ -7,6 +7,7 @@ import { type Generated, Manifest } from "./schema"
 // failing that, a header marker in its first lines says so. A manifest that doesn't read marks nothing.
 
 const decodeManifest = Schema.decodeUnknownOption(Schema.fromJsonString(Manifest))
+const encoder = new TextEncoder()
 
 /**
  * The manifest nearest `path` among the repository's `paths`: its own folder's, else each folder above it, up to the
@@ -23,12 +24,35 @@ export const nearestManifest = (paths: ReadonlySet<string>, path: string): strin
 
 /** The manifest in `text`, or none when it is too large or isn't one. */
 export const parseManifest = (text: string | undefined): Option.Option<Manifest> =>
-  text === undefined || text.length > MAX_MANIFEST_BYTES ? Option.none() : decodeManifest(text)
+  text === undefined || text.length > MAX_MANIFEST_BYTES || encoder.encode(text).byteLength > MAX_MANIFEST_BYTES
+    ? Option.none()
+    : decodeManifest(text)
 
 /** Whether `contents` opens with a generated-file marker in its first `MARKER_LINES` lines. */
 export const hasMarker = (contents: string): boolean => {
-  const head = contents.split("\n", MARKER_LINES).join("\n")
-  return MARKERS.some((marker) => marker.test(head))
+  const matches = (comment: string) => MARKERS.some((marker) => marker.test(comment.trim().replace(/^\*\s*/, "")))
+  let block: "*/" | "-->" | null = null
+  for (const line of contents.split("\n", MARKER_LINES)) {
+    const text = line.trimStart()
+    if (block !== null) {
+      const end = text.indexOf(block)
+      if (matches(end < 0 ? text : text.slice(0, end))) return true
+      if (end >= 0) block = null
+      continue
+    }
+    if (text.startsWith("/*") || text.startsWith("<!--")) {
+      const opening = text.startsWith("<!--") ? "<!--" : "/*"
+      const closing = opening === "<!--" ? "-->" : "*/"
+      const end = text.indexOf(closing, opening.length)
+      if (matches(text.slice(opening.length, end < 0 ? undefined : end))) return true
+      if (end < 0) block = closing
+      continue
+    }
+    if (text.trim() === "@generated") return true
+    const lineComment = /^(?:\/\/|#|--|;)/.exec(text)
+    if (lineComment !== null && matches(text.slice(lineComment[0].length))) return true
+  }
+  return false
 }
 
 /**

@@ -24,7 +24,7 @@ export const MARKER_LINES = 5
  * The header markers that say a file is generated, as tools write them: `@generated` (Meta's convention, which many
  * code generators follow) and Go's `Code generated … DO NOT EDIT.`, in any comment style.
  */
-export const MARKERS: ReadonlyArray<RegExp> = [/@generated\b/, /\bCode generated\b.*\bDO NOT EDIT\b/i]
+export const MARKERS: ReadonlyArray<RegExp> = [/^@generated\b/, /^Code generated\b.*\bDO NOT EDIT\b/i]
 
 /** Where a repository's file flow lives: `.smithers/flows/<tag>/flow.ts` (M-49). */
 export const flowPath = (tag: string): string => `.smithers/flows/${tag}/flow.ts`

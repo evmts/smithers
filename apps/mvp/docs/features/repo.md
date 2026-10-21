@@ -197,7 +197,7 @@ A file a flow produced, such as a cached build step's output, carries a quiet Ge
 
 What counts as generated (`src/features/generated/detect.ts`), first match wins:
 
-1. **The nearest manifest**, `.smithers/generated.json`, read at the view's commit (256 KiB at most). The repository's root and any project folder inside it may hold one; the view reads the one in the file's own folder, else the nearest folder above it (`nearestManifest`), and a manifest marks only files under its folder, by their paths from it. `docs/generate` writes one (`docs/design/vibelang-readme/docgen/.smithers/generated.json`):
+1. **The nearest manifest**, `.smithers/generated.json`, read at the view's commit (256 KiB of UTF-8 at most). The repository's root and any project folder inside it may hold one; the view reads the one in the file's own folder, else the nearest folder above it (`nearestManifest`), and a manifest marks only files under its folder, by their paths from it. `docs/generate` writes one (`docs/design/vibelang-readme/docgen/.smithers/generated.json`):
 
    ```json
    { "version": 1, "outputs": { "out/CONTRIBUTING.md": {
@@ -207,7 +207,7 @@ What counts as generated (`src/features/generated/detect.ts`), first match wins:
    ```
 
    Each output names its flow's tag, and optionally the flow's source file, its inputs (a path, or a path with the hash the build saw), its build's cache key, the output's own hash and the run that last produced it. Anything else a generator records, such as its toolchain, is ignored. A manifest that doesn't read, or has another `version`, marks nothing.
-2. **A header marker** in a file's first five lines: `@generated`, or Go's `Code generated … DO NOT EDIT`, in any comment style. It names no flow, so the chip is plain.
+2. **A header marker** in a file's first five lines: `@generated` on its own line, or `@generated` or Go's `Code generated … DO NOT EDIT` at the start of a comment. Marker text in ordinary code or prose does not count. It names no flow, so the chip is plain.
 
 It is a contribution to the repository's file view (`src/features/generated/contribution.ts`: an id, the place it draws, `repo.file`, and the pure decision), as data a plugin manifest can declare once the plugin host of decision [0017](../decisions/0017-everything-is-a-plugin.md) lands.
 
