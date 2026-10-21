@@ -105,7 +105,7 @@ The run report and answer routes (`worker/Runs.ts`) fold in their own transactio
 | Flow | Door | |
 |---|---|---|
 | `watch/set { conversationId }` | `view` (the tab), the agent | follow a conversation's branch and repository |
-| `notification/ack { subject, version, act }` | `button` | Read, Dismiss or Hide; one execution per subject, act and version. The person's only |
+| `notification/ack { subject, version, act }` | `button` | Read, Dismiss or Hide; one run per press. The person's only |
 
 ## The browser
 
@@ -124,7 +124,7 @@ The run report and answer routes (`worker/Runs.ts`) fold in their own transactio
 | `openPanel(via, subject?)`, `togglePanel`, `closePanel`, `expand`, `retry` | the panel |
 | followers | the feed (above), and the watch: `watch/set` for each conversation the tab shows, once per person after success, for a Member (or while sign-in can't say); a failed launch or failed flow releases its watch for the next place or sign-in change |
 
-A Read, Dismiss or Hide that cannot land leaves the device, so its entry shows the synced state and the person can act again. The device records `notifications.pending` and increments `smithers_notification_acts_dropped`, by `act` and `reason` (the failure tag). Acts the device still holds are sent again when the app opens, with the same execution id, so they land once.
+A Read, Dismiss or Hide that cannot land leaves the device, so its entry shows the synced state and the person can act again. The device records `notifications.pending` and increments `smithers_notification_acts_dropped`, by `act` and `reason` (the failure tag). A press after one that failed runs again rather than joining the failed run; ChatApi merges acts with `greatest()`, so an act sent twice changes nothing. An act whose tab closed before the engine took it stays on the device until the notification's next version or its synced row replaces it.
 
 The views are `@smthrs/ui`'s `ToastStack` (`onMore`, `moreCount`), `Toast` (`tone="update"`, `word`, `unread`, `hideLabel`, `onOpen`, `onExpand`, `onAnswer`, `onRead`), `NotificationPanel`, `NotificationEntry`, `NotificationBell` and `NeedsYouCard`, with `noticeDismissDelay`, `workNoticeVisible` and `NOTICE_KEYS`. Agent status keeps the header's pill, the card and the tab's title; its toast is the feed's.
 

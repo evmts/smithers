@@ -54,7 +54,7 @@ CHECKs hold the shape: `waiting` is set exactly while `waiting` or `needs_you`; 
 
 | Route | Answers |
 |---|---|
-| `POST /api/runs/<id>` `{ status, waiting?, wait? }` | `200 { txid }`; `200 { txid: null }` for a repeat on a writable run from the same launcher: the same status or question, including that question after it was answered. `409 { code: "not_writable", reason }` when it cannot write: `settled`, `other_launcher` or `no_row` (the answer belongs to no conversation). A question with a new `execution` bumps `version` and clears the answer |
+| `POST /api/runs/<id>` `{ status, waiting?, wait? }` | `200 { txid }`; `200 { txid: null }` for a repeat on a writable run from the same launcher: the same status or question, including that question after it was answered. `409 { code: "not_writable", reason }` when it cannot write: `settled` or `other_launcher`. A question with a new `execution` bumps `version` and clears the answer |
 | `POST /api/runs/<id>/answer` `{ version, value }` | `200 { txid }` for the first answer to the open question; `200 { txid: null }` for the same answer again; `409 { code: "not_open" }` once it is answered, closed or replaced; `400` for words to an approval or a decision to a question; `403 { code: "person_only" }` for anyone acting for the person |
 | `POST /api/runs/<run>/credential` `{ flow, ceiling? }` | a run's credential ([run credentials](sign-in.md#run-credentials)) |
 | `GET /api/shapes/runs` | Electric's `runs` where `launched_by` is the signed-in person, without that column. Signed out, no one's rows; when sessions can't be read, `503` with `Retry-After: 5`, so the device keeps its rows and retries |
@@ -89,7 +89,7 @@ CHECKs hold the shape: `waiting` is set exactly while `waiting` or `needs_you`; 
 | `answer(id, value)`, `setDraft`, `focus` | the card's Answer (or the notifications panel's), its field, a toast's Answer |
 | followers | delivery (`run/deliver` per answered question), the title (`TabTitle`, the host's `document.title`), and `agent.status.shown` |
 
-A branch's status queries are built once chat has it open and reused on later reads (`StatusStore.open`). The title counts `needs` across every conversation. A second Answer while one sends does nothing; an older answer settling late leaves the next question's draft.
+A branch's status queries are built as chat opens the conversation (`ChatStore.forEachOpened`), before a tab shows it, and `Status.queries.of` only looks them up. The title counts `needs` across every conversation. A second Answer while one sends does nothing; an older answer settling late leaves the next question's draft.
 
 The views are `@smthrs/ui`'s `AgentStatusPill` and `NeedsYouCard` (`components/`): `AnswerStatus` under each answer, and `HeaderStatus` first in the header row: the latest answer's Working, Waiting or Failed. Needs you shows on the top bar's bell instead, the one way in to what waits on the person, which opens the notifications panel at it (Will, 2026-10-20: "a notification type ui ux in the top bar of the app in general to bring us here"). The question's toast is the feed's ([notifications.md](notifications.md)): its row for the run's launcher reads `needs_you` with the question, its Answer runs `focus`, and Hide is synced to the person's other devices. It sits in the shell's one stack under the header (`src/screens/app/Toasts.tsx`, `ToastStack`'s `inline` placement): the open composer docks over the column's foot, so a toast there would hide behind it. A toast fades in after 300 ms, so a question answered at once never flashes.
 
@@ -97,7 +97,7 @@ The views are `@smthrs/ui`'s `AgentStatusPill` and `NeedsYouCard` (`components/`
 
 | Record | Kind | Fields |
 |---|---|---|
-| `agent.status.report`, `agent.status.answer` | log, ChatApi | `runId`, `report` or `version`, `status`, `durationMs`, `bytes`, `existing`, `errorCode` (`not_launcher`, `not_writable`, a SQL reason), `reason` (`settled`, `other_launcher`, `no_row`) |
+| `agent.status.report`, `agent.status.answer` | log, ChatApi | `runId`, `report` or `version`, `status`, `durationMs`, `bytes`, `existing`, `errorCode` (`not_launcher`, `not_writable`, a SQL reason), `reason` (`settled`, `other_launcher`) |
 | `agent.status.request` | span, ChatApi | `smithers.run.id`, `http.response.status_code` |
 | `smithers_run_requests`, `smithers_run_shape_requests` | counter, ChatApi | `route` (`report`, `answer`), `status`; `status`, `live` |
 | `agent.status.report`, `agent.status.answer` | span, engine | `smithers.run.id`, `http.response.status_code` |
@@ -105,7 +105,7 @@ The views are `@smthrs/ui`'s `AgentStatusPill` and `NeedsYouCard` (`components/`
 | `smithers_agent_status_reports` | counter, engine | `status`, `outcome` (`sent`, `skipped`, `failed`) |
 | `agent.status.answer`, `agent.status.deliver` | log, engine | `outcome` |
 | `smithers_agent_status_answers` | counter, engine | `outcome`: `recorded`, `not_open`, `refused`, `unrecorded`, `delivered`, `not_here`, `closed` |
-| `agent.status.shown`, `smithers_agent_status_shown` | log and counter, tab | `runId`, `version`, `surface` |
+| `agent.status.shown`, `smithers_agent_status_shown` | log and counter, tab | `runId`, `version`, `surface` (`title`: the tab's title counts it) |
 
 No record carries a question, an option or an answer (tests read the logs for them).
 
