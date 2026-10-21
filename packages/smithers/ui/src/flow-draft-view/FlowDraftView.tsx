@@ -7,7 +7,7 @@ import { Input, Textarea } from "../input";
 import { Field, Label } from "../label";
 import { useInjectUiCss } from "../styles";
 import {
-  changedAnswers,
+  answersToSend,
   type DraftCheck,
   type DraftFile,
   type DraftQuestion,
@@ -30,15 +30,22 @@ export type FlowDraftViewProps = Omit<ComponentProps<"section">, "children" | "o
   answers: Readonly<Record<string, string>>;
   files: ReadonlyArray<DraftFile>;
   checks: ReadonlyArray<DraftCheck>;
-  /** Why the draft failed: a closed code. */
+  /** Why the draft failed, in a few words. */
   failure?: string | null;
   onNameChange?: (name: string) => void;
   onRequestChange?: (request: string) => void;
   /** `Draft`, shown before the first round; off while the request is empty. */
   onStart?: () => void;
   onAnswerChange?: (id: string, value: string) => void;
-  /** `Answer`: sends the answers; on once any differs from what the draft holds. */
+  /**
+   * `Answer`: sends `answersToSend`; on while there is one to send: an answer
+   * that changes what the draft holds, or a blocking question's shown value.
+   */
   onAnswer?: () => void;
+  /** `Draft again`: another round of the same request; hidden without it. */
+  onRetry?: () => void;
+  /** `Delete`: deletes the draft; hidden without it. */
+  onDelete?: () => void;
   /** `Save`; hidden without it. */
   onSave?: () => void;
   saveDisabled?: boolean;
@@ -52,7 +59,7 @@ export type FlowDraftViewProps = Omit<ComponentProps<"section">, "children" | "o
  * A flow being written: where it goes, its name and what it should do (inputs
  * until the first round starts), the round's status, its questions with the
  * defaults it assumed, the drafted files, the static checks, and Draft,
- * Answer, Try, Save and Propose. Controlled throughout.
+ * Answer, Draft again, Try, Save, Propose and Delete. Controlled throughout.
  */
 export function FlowDraftView({
   where,
@@ -70,6 +77,8 @@ export function FlowDraftView({
   onStart,
   onAnswerChange,
   onAnswer,
+  onRetry,
+  onDelete,
   onSave,
   saveDisabled = false,
   onTry,
@@ -84,7 +93,7 @@ export function FlowDraftView({
     event.preventDefault();
     if (request.trim() !== "") onStart?.();
   };
-  const changed = changedAnswers(questions, answers).length > 0;
+  const answerable = answersToSend(questions, answers).length > 0;
   return (
     <Card
       data-slot="flow-draft-view"
@@ -195,10 +204,15 @@ export function FlowDraftView({
           </Button>
         ) : null}
         {!editing && questions.length > 0 && onAnswer !== undefined ? (
-          <Button variant="outline" disabled={!changed} onClick={onAnswer}>
+          <Button variant="outline" disabled={!answerable} onClick={onAnswer}>
             Answer
           </Button>
         ) : null}
+        {onRetry === undefined ? null : (
+          <Button variant="outline" onClick={onRetry}>
+            Draft again
+          </Button>
+        )}
         {onTry === undefined ? null : (
           <Button variant="outline" onClick={onTry}>
             Try
@@ -212,6 +226,11 @@ export function FlowDraftView({
         {onPropose === undefined ? null : (
           <Button variant="outline" onClick={onPropose}>
             Propose
+          </Button>
+        )}
+        {onDelete === undefined ? null : (
+          <Button variant="ghost" onClick={onDelete}>
+            Delete
           </Button>
         )}
       </CardFooter>

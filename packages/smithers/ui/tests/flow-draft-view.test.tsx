@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
+  answersToSend,
   changedAnswers,
   type DraftQuestion,
   draftStatusLine,
@@ -108,6 +109,38 @@ describe("the draft's vocabulary", () => {
   });
 });
 
+describe("what Answer sends", () => {
+  const blocking: ReadonlyArray<DraftQuestion> = [
+    { id: "mode", text: "Light or dark?", assumed: "dark", blocking: true },
+    { id: "say", text: "Say it is done?", assumed: "yes", blocking: false },
+    { id: "repo", text: "Which repository?", assumed: "", blocking: true },
+    { id: "done", text: "Which branch?", assumed: "main", blocking: true, answer: "dev" },
+  ];
+
+  test("a blocking question nobody answered sends the value its field shows, its default until a person types", () => {
+    expect(answersToSend(blocking, {})).toEqual([{ id: "mode", value: "dark" }]);
+    expect(answersToSend(blocking, { mode: "light" })).toEqual([{ id: "mode", value: "light" }]);
+  });
+
+  test("an optional question sends only a changed answer, and an answered one only a new value", () => {
+    expect(answersToSend(blocking, { say: "yes", done: "dev" })).toEqual([{ id: "mode", value: "dark" }]);
+    expect(answersToSend(blocking, { say: "no", done: "main" })).toEqual([
+      { id: "mode", value: "dark" },
+      { id: "say", value: "no" },
+      { id: "done", value: "main" },
+    ]);
+  });
+
+  test("an empty field sends nothing, a blocking one included", () => {
+    expect(answersToSend(blocking, { mode: "  " })).toEqual([]);
+    expect(answersToSend(blocking, { repo: "maya/tinyhttp" })).toEqual([
+      { id: "mode", value: "dark" },
+      { id: "repo", value: "maya/tinyhttp" },
+    ]);
+    expect(answersToSend([], {})).toEqual([]);
+  });
+});
+
 describe("FlowDraftView before its first round: the form", () => {
   test("Where, Name and What as inputs, Draft off until there is a request, and no status", async () => {
     const names: Array<string> = [];
@@ -203,6 +236,45 @@ describe("FlowDraftView once drafting", () => {
     expect(button("Answer")!.disabled).toBe(false);
     await act(async () => button("Answer")!.click());
     expect(answered).toBe(1);
+  });
+
+  test("Needs you: Answer is on with the blocking question's default shown, so the person can accept it", async () => {
+    let answered = 0;
+    const props: FlowDraftViewProps = {
+      ...base,
+      status: "needs_you",
+      questions: [{ id: "mode", text: "Light or dark?", assumed: "dark", blocking: true }],
+      onAnswer: () => answered++,
+    };
+    await render(<FlowDraftView {...props} />);
+    expect($("[role='status']")!.textContent).toBe("◆ Needs you");
+    expect(labelled("Light or dark?")!.value).toBe("dark");
+    expect(button("Answer")!.disabled).toBe(false);
+    await act(async () => button("Answer")!.click());
+    expect(answered).toBe(1);
+    // Emptied, the field has nothing to send.
+    await render(<FlowDraftView {...props} answers={{ mode: "" }} />);
+    expect(button("Answer")!.disabled).toBe(true);
+  });
+
+  test("Draft again and Delete show with their handlers", async () => {
+    const pressed: Array<string> = [];
+    await render(<FlowDraftView {...base} status="failed" failure="Model busy" />);
+    expect(button("Draft again")).toBeUndefined();
+    expect(button("Delete")).toBeUndefined();
+    await render(
+      <FlowDraftView
+        {...base}
+        status="failed"
+        failure="Model busy"
+        onRetry={() => pressed.push("again")}
+        onDelete={() => pressed.push("delete")}
+      />,
+    );
+    await act(async () => button("Draft again")!.click());
+    await act(async () => button("Delete")!.click());
+    expect(pressed).toEqual(["again", "delete"]);
+    expect($(".sui-flow-draft-failure")!.textContent).toBe("✕ Model busy");
   });
 
   test("Try, Save and Propose show with their handlers; Save can be held off", async () => {

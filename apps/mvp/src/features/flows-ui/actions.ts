@@ -1,4 +1,4 @@
-import { changedAnswers } from "@smthrs/ui"
+import { answersToSend } from "@smthrs/ui"
 import { Deferred, Effect, Option, Stream } from "effect"
 import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { RunsNavigation } from "../runs/actions"
@@ -98,12 +98,15 @@ const shownDraft = Effect.gen(function* () {
   }))
 })
 
-/** Answer: the changed answers start the draft's next round. */
+/**
+ * Answer: the changed answers, and each blocking question nobody answered at the value its field shows (its default
+ * until the person types), start the draft's next round.
+ */
 export const answer = Effect.gen(function* () {
   const shown = yield* shownDraft
   if (Option.isNone(shown)) return
   const { draft, answers, ids } = shown.value
-  const changed = changedAnswers(draft.questions, answers)
+  const changed = answersToSend(draft.questions, answers)
   if (changed.length === 0) return
   const flows = yield* FlowDispatch
   const admitted = yield* started((admitted) =>

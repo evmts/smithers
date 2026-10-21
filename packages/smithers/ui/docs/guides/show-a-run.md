@@ -76,8 +76,10 @@ button. `JsonValue` and the drafted files are `<details>` disclosures.
 a form (`Name`, `What it should do`, `Draft`); after, it shows the round's
 status, its questions with the default each assumed, the drafted files and the
 static checks. The app keeps the person's unsent answers and passes them as
-`answers`; `Answer` turns on once one changes what the draft holds. `Try`,
-`Save` and `Propose` show only with their handlers.
+`answers`; `Answer` sends `answersToSend(questions, answers)` and is on while
+that has something to send: a changed answer, or a blocking question's value
+as its field shows it, so a person can accept its default. `Draft again`,
+`Try`, `Save`, `Propose` and `Delete` show only with their handlers.
 
 ```tsx
 <FlowDraftView

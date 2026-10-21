@@ -1,7 +1,7 @@
 /**
  * The flow-draft card's vocabulary (apps/mvp decision 0014 §5): a draft's
- * status as one line, and which of the person's answers differ from what the
- * draft holds. Framework-free.
+ * status as one line, which of the person's answers differ from what the
+ * draft holds, and what Answer sends. Framework-free.
  */
 
 /** Where a draft stands. */
@@ -64,4 +64,21 @@ export const changedAnswers = (
   questions.flatMap((question) => {
     const value = answers[question.id];
     return value !== undefined && value !== (question.answer ?? question.assumed) ? [{ id: question.id, value }] : [];
+  });
+
+/**
+ * What Answer sends: each changed answer, and each blocking question nobody
+ * answered at the value its field shows, so a person can accept a blocking
+ * question's assumed default as their answer. A field left empty sends
+ * nothing.
+ */
+export const answersToSend = (
+  questions: ReadonlyArray<DraftQuestion>,
+  answers: Readonly<Record<string, string>>,
+): ReadonlyArray<{ readonly id: string; readonly value: string }> =>
+  questions.flatMap((question) => {
+    const value = questionValue(question, answers);
+    if (value.trim() === "") return [];
+    const changed = answers[question.id] !== undefined && value !== (question.answer ?? question.assumed);
+    return changed || (question.blocking && question.answer === undefined) ? [{ id: question.id, value }] : [];
   });
