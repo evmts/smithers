@@ -66,12 +66,6 @@ export const COMMENT_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, max
 /** Recording a comment that failed: while Postgres is unreachable, never giving up. */
 export const RECORD_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000 })
 
-/**
- * How far back a comment's marker search looks: the label's retries (30 minutes) and the comment's (an hour) after the
- * decision, and a minute of slack, since GitHub's `since` is by update time at a second's grain.
- */
-const MARKER_LOOKBACK_MS = 91 * 60_000
-
 const TriageState = Schema.Literals(TRIAGE_STATES)
 const Reason = Schema.Literals(TRIAGE_REASONS)
 const Decision = Schema.Literals(["accept", "reject", "abstain"])
@@ -610,15 +604,14 @@ export const steps = <E, R>(services: Services<E, R>) => {
         const writeToken = yield* token(repository, "write")
         // The App lost the installation or its permission since it labeled: trying again changes nothing.
         if (Option.isNone(writeToken)) return yield* failed({ reason: "not_installed" })
-        const now = yield* Clock.currentTimeMillis
         const attempt = yield* Effect.gen(function* () {
           // The comment is a write too: the enabler must still be a Maintainer.
           if (!(yield* maintains(repository, labeled.enabledLogin))) return Option.none()
-          // An attempt before this one may have reached GitHub and lost its answer: look for the marker first, as far
-          // back as the run's label and comment retries reach.
+          // An attempt before this one may have reached GitHub and lost its answer: look for the decision's marker in
+          // the whole thread first. Never a window back from now: a run resumed after it would miss its own comment
+          // and post a second (docs/proposals/durable-external-effects.md). A thread too long to read fails.
           const earlier = yield* GitHub.Issues.findCommentByWrite(repository.owner, repository.name, labeled.number, {
             writeId: labeled.decisionId,
-            since: new Date(now - MARKER_LOOKBACK_MS).toISOString(),
           })
           if (Option.isSome(earlier)) return Option.some(earlier.value)
           return Option.some(yield* GitHub.Issues.createComment(

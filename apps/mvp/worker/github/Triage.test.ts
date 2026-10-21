@@ -574,6 +574,29 @@ describe("triage/Run", () => {
     expect((await decisions())[0]).toMatchObject({ commented: true, commentFailed: false })
   })
 
+  // A window back from "now" missed a comment whose answer was lost once the run resumed later than the window
+  // (91 minutes), and the author got a second one. The lookup reads the whole thread instead.
+  test("the comment's answer lost and the run resumed hours later: the marker is still found, one comment", async () => {
+    const github = repository()
+    await enable()
+    github.open("Spam", "Body")
+    github.faults.push(
+      { match: (method, path) => method === "POST" && /\/comments$/.test(path), lost: true },
+      {
+        // Every later read of the thread finds the lost comment two hours older, as a resume after a long outage does.
+        match: (method, path) => {
+          if (method === "GET" && /\/comments$/.test(path)) {
+            for (const comment of github.issues.get(1)!.comments) comment.updatedAt -= 2 * 3_600_000
+          }
+          return false
+        },
+      },
+    )
+    const { value } = await judged(github, judging("reject", "duplicate"))
+    expect((await triage(value, 1)).exit).toEqual(Exit.succeed({ outcome: "commented", decisionId: expect.any(String) }))
+    expect(githubComments(github, 1)).toHaveLength(1)
+  })
+
   test("the comment failing past its retries: recorded failed, the label stands", async () => {
     const github = repository()
     await enable()
