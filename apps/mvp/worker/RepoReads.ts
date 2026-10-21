@@ -211,7 +211,7 @@ export const make = <E, R>(services: Services<E, R>) => {
       )
       if (Option.isNone(head)) return yield* new ReadRefused({ code: "not_found" })
       const entry = yield* ImmutableCache.readThrough(
-        ImmutableCache.key("repo.refs", id, head.value.sha),
+        ImmutableCache.key("repo.refs", id, head.value.sha, String(head.value.refsChangedAt)),
         Effect.gen(function* () {
           yield* admitRead
           const { listing, bytesRead } = yield* listRefs(id).pipe(Effect.mapError(refusedBy))

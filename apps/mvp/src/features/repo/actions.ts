@@ -321,7 +321,7 @@ type Location =
 const locate = (repository: Repository & { readonly headSha: string }, target: Target) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
-    const refs = refsKey(repository.id, repository.headSha)
+    const refs = refsKey(repository.id, repository.headSha, repository.refsChangedAt)
     yield* ensureRefs(repository, refs)
     let resolved = resolveRef(repository, target.ref, target.path)
     if (resolved === undefined) {
@@ -357,7 +357,7 @@ const load = (target: Target, id: string) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     const repository = yield* ready(id)
-    yield* changeView({ refsKey: refsKey(id, repository.headSha) })
+    yield* changeView({ refsKey: refsKey(id, repository.headSha, repository.refsChangedAt) })
     const location = yield* locate(repository, target)
     if (location._tag === "Failed") return yield* changeView({ failure: location.message })
     if (location._tag === "Missing") return yield* changeView({ missing: true })

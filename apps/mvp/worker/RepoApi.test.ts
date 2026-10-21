@@ -550,6 +550,21 @@ describe("branches and tags", () => {
     expect((await usageRow(runtime))!.read).toBeGreaterThan(0)
   })
 
+  test("a branch made with the default branch's head where it was is listed at once: the refs are keyed by their last change too", async () => {
+    // Before, the listing was cached under the head commit alone, so a branch the app made on the forge stayed out of
+    // every listing until the default branch moved.
+    const h = await repoHarness(runtime)
+    const { id } = await h.seed("octocat", "Spoon-Knife", branched())
+    const names = async () =>
+      ((await (await h.fetch(refsRoute("octocat", "Spoon-Knife"))).json()) as { branches: Array<{ name: string }> }).branches
+        .map((branch) => branch.name)
+    expect(await names()).toEqual(["b0", "main"])
+    // What worker/branch/Branches.ts does for a new branch: make it on the forge, then record the change.
+    await Effect.runPromise(h.scripted.client.createBranch(id, { branch: "made", from: "main" }))
+    await runtime.runPromise(Repos.refsChanged(id))
+    expect(await names()).toEqual(expect.arrayContaining(["b0", "main", "made"]))
+  })
+
   test("pages of branches and tags, stopped at REPO_MAX_REFS saying so", async () => {
     const h = await repoHarness(runtime, { config: { REPO_MAX_REFS: "120" } })
     await h.seed("octocat", "Many", branched(150))

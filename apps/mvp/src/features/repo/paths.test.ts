@@ -24,7 +24,9 @@ describe("keys", () => {
   test("name a file list and a file by repository, commit and path", () => {
     expect(treeKey("github/o/n", SHA)).toBe(`github/o/n@${SHA}`)
     expect(blobKey("github/o/n", SHA, "docs/a.md")).toBe(`github/o/n@${SHA}:docs/a.md`)
-    expect(refsKey("github/o/n", SHA)).toBe(`github/o/n@${SHA}`)
+    expect(refsKey("github/o/n", SHA)).toBe(`github/o/n@${SHA}@`)
+    expect(refsKey("github/o/n", SHA, null)).toBe(`github/o/n@${SHA}@`)
+    expect(refsKey("github/o/n", SHA, "2026-10-21T20:00:00Z")).toBe(`github/o/n@${SHA}@2026-10-21T20:00:00Z`)
   })
 })
 

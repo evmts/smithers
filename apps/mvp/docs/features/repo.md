@@ -63,11 +63,11 @@ Refusals are `{ code }` JSON with `Cache-Control: no-store`:
 
 ## Postgres
 
-Migrations `0007_repositories`, `0009_clone_ids` and `0028_clone_progress`.
+Migrations `0007_repositories`, `0009_clone_ids`, `0028_clone_progress` and `0041_refs_changed_at`.
 
 | Table | Columns | |
 |---|---|---|
-| `repositories` | `id` (key: `github/<owner>/<name>`, lowercased; also the Code Storage name), `owner`, `name`, `status` (`cloning`, `ready`, `failed`, `capacity`), `failure` (`not_found`, `empty`, `unavailable`, `timed_out`), `capacity` (`paused`, `storage`, `reads`, `too_large`, `size_unknown`), `stored_bytes`, `retry_at`, `default_branch`, `head_sha`, `head_message`, `head_author`, `head_at`, `attempt` (1, then 2 after Try again), `clone_id` (the attempt's own id, a UUID drawn when the attempt is created), `requested_at`, `settled_at`, `stage` (`requested`, `fetching`, `indexing` while `cloning`, else null), `reclaimable` (a ready copy without the Smithers app) | synced to every device by Electric; `REPLICA IDENTITY FULL` |
+| `repositories` | `id` (key: `github/<owner>/<name>`, lowercased; also the Code Storage name), `owner`, `name`, `status` (`cloning`, `ready`, `failed`, `capacity`), `failure` (`not_found`, `empty`, `unavailable`, `timed_out`), `capacity` (`paused`, `storage`, `reads`, `too_large`, `size_unknown`), `stored_bytes`, `retry_at`, `default_branch`, `head_sha`, `head_message`, `head_author`, `head_at`, `attempt` (1, then 2 after Try again), `clone_id` (the attempt's own id, a UUID drawn when the attempt is created), `requested_at`, `settled_at`, `stage` (`requested`, `fetching`, `indexing` while `cloning`, else null), `reclaimable` (a ready copy without the Smithers app), `refs_changed_at` (when its branches or tags last changed in a way the app knows of) | synced to every device by Electric; `REPLICA IDENTITY FULL` |
 | `clone_requests` | `repo_id` (key), `clone_id`, `requested_by`, `requested_at` | who asked for each repository's current attempt: the person its feed row goes to. Not synced |
 | `repo_imports` | `id` (always 1), `paused`, `changed_at` | the pause switch admission reads; its row lock serializes requests and admission |
 | `code_storage_usage` | `month` (key), `bytes_read`, `bytes_imported`, `alerted_pct` | what Code Storage served and imported each UTC month, and the highest spend alert raised |
@@ -135,7 +135,7 @@ Every write to `code_storage_usage` recomputes this month's estimate in its tran
 
 `worker/RepoReads.ts` answers the GET routes and the agent's flows alike. A read checks the immutable cache under `repo.tree` (`id`, `sha`) or `repo.blob` (`id`, `sha`, `path`, which the `raw` route shares); a hit costs Code Storage nothing and is served over budget too. A miss checks this month's read budget, reads Code Storage, meters its bytes into `code_storage_usage`, and stores the answer. A failed read is never cached. A meter Postgres refuses is logged (`repo.meter`) and the read still answers.
 
-The branches and tags (`CodeStorage.listBranches` and `listTags`) are fixed by the repository's one public sync, so they are cached under `repo.refs` (`id`, the head commit Settle wrote), the commit that names that sync. A refs read first reads the `ready` row's `default_branch` and `head_sha` from Postgres (`Repos.readyHead`), then the listing through the cache.
+The branches and tags (`CodeStorage.listBranches` and `listTags`) change when a clone attempt settles `ready` and when the app makes a branch on the forge (`worker/branch/Branches.ts`), which may leave the default branch's head where it was. Both write the row's `refs_changed_at`, and the listing is cached under `repo.refs` (`id`, the head commit Settle wrote, `refs_changed_at`). A refs read first reads the `ready` row's `default_branch`, `head_sha` and `refs_changed_at` from Postgres (`Repos.readyHead`), then the listing through the cache. A device keys the refs it keeps the same way (`refsKey`), so a new branch shows the next time the view opens.
 
 ## Flows
 

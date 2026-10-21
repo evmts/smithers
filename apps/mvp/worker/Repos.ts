@@ -270,10 +270,14 @@ export const indexing = (clone: Attempt) =>
     }))
   })
 
-/** A ready repository's default branch and its head commit, as Settle wrote them. */
+/**
+ * A ready repository's default branch and its head commit, as Settle wrote them, and when its refs last changed (epoch
+ * ms; 0 for never since migration 0038): what the refs it lists are keyed by.
+ */
 export interface ReadyHead {
   readonly defaultBranch: string
   readonly sha: string
+  readonly refsChangedAt: number
 }
 
 /** Repository `id`'s default branch and head commit when it is `ready`; none for any other row, or no row. */
@@ -281,9 +285,18 @@ export const readyHead = (id: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<ReadyHead>`
-      SELECT default_branch AS "defaultBranch", head_sha AS sha FROM repositories WHERE id = ${id} AND status = 'ready'`
+      SELECT default_branch AS "defaultBranch", head_sha AS sha,
+        COALESCE((extract(epoch FROM refs_changed_at) * 1000)::float8, 0) AS "refsChangedAt"
+      FROM repositories WHERE id = ${id} AND status = 'ready'`
     return Option.fromNullishOr(row)
   })
+
+/**
+ * Records that `id`'s branches or tags changed (a branch the app made on its forge), so the refs every device and
+ * RepoApi keep for it are read again. A repository with no row changes nothing.
+ */
+export const refsChanged = (id: string) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE repositories SET refs_changed_at = now() WHERE id = ${id}`)
 
 /** A clone's head commit once Code Storage has synced it. */
 export interface Head {
@@ -340,7 +353,8 @@ export const settle = (clone: Attempt, outcome: Outcome, limits: Budgets) =>
           retry_at: outcome.retryAt === null ? null : new Date(outcome.retryAt).toISOString(),
         }
       const [row] = yield* sql<{ readonly bytes: string | null }>`
-        UPDATE repositories SET ${sql.update(fields)}, stage = NULL, settled_at = now()
+        UPDATE repositories SET ${sql.update(fields)}, stage = NULL, settled_at = now(),
+          refs_changed_at = CASE WHEN ${outcome.status} = 'ready' THEN now() ELSE refs_changed_at END
         WHERE id = ${clone.id} AND clone_id = ${clone.cloneId} AND status = 'cloning'
         RETURNING stored_bytes::text AS bytes`
       if (row === undefined) return { settled: false, spend: null }

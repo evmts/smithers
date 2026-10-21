@@ -28,6 +28,11 @@ export const Repository = Schema.Struct({
   requestedAt: Schema.String,
   settledAt: Schema.NullOr(Schema.String),
   /**
+   * When its branches or tags last changed in a way the app knows of (a ready clone, a branch the app made); the refs a
+   * device keeps are keyed by it. Absent from a database before migration 0038, and null until such a change.
+   */
+  refsChangedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  /**
    * How far a `cloning` row has come; `null` otherwise. Absent from a database before migration 0028, which the device
    * reads as no stage.
    */

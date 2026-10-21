@@ -8,6 +8,7 @@ import { Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { branchAccess, canView, isMember } from "./Access.ts"
+import * as Repos from "../Repos.ts"
 import * as Conversations from "./Conversations.ts"
 import { branchHead, createBranch, defaultBranch, type Forge } from "./Forge.ts"
 
@@ -95,6 +96,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         resolvedDefault = from.success.branch
         const made = yield* createBranch({ owner, name }, ref, from.success.branch).pipe(Effect.result)
         fields.created = made._tag === "Success" ? "created" : made.failure.code
+        // A new ref with the default branch's head where it was: the refs devices keep for the repository read again.
+        if (made._tag === "Success") yield* Repos.refsChanged(repo).pipe(Effect.provide(database))
         if (made._tag === "Failure") {
           if (made.failure.code === "exists") {
             fields.outcome = "exists"

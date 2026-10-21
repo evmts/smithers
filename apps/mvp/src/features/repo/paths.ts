@@ -9,8 +9,12 @@ export const treeKey = (id: string, sha: string): string => `${id}@${sha}`
 /** The key of a file at `sha`. */
 export const blobKey = (id: string, sha: string, path: string): string => `${id}@${sha}:${path}`
 
-/** The key of a repository's branches and tags as of the sync whose default branch is at `headSha`. */
-export const refsKey = (id: string, headSha: string): string => `${id}@${headSha}`
+/**
+ * The key of a repository's branches and tags as of the sync whose default branch is at `headSha` and the last ref
+ * change after it (`refsChangedAt`, the row's): a ref that moves without the head moving reads them again.
+ */
+export const refsKey = (id: string, headSha: string, refsChangedAt?: string | null): string =>
+  `${id}@${headSha}@${refsChangedAt ?? ""}`
 
 /** The README of directory `dir` (`""` is the root): its direct entry named `README.md`, in any case. */
 export const readmeOf = (paths: ReadonlyArray<string>, dir: string): string | undefined => {

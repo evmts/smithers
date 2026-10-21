@@ -16,6 +16,7 @@ import { RepoCloneRequest, RepoCopy, RepoCopyRefused, RepoRead, RepoRefs, RepoTr
 import { aboutLoadMs, blobLoadMs, clones, copies, refsLoadMs, treeLoadMs } from "./metrics"
 import { NotCopied } from "./repo"
 import { aboutOf, generatedLinksFor, headerOf, previewReadmeOf, previewTreeOf } from "./view"
+import * as Repos from "../../../worker/Repos.ts"
 
 // The repository state machine on a tab, driven as React drives it, with no React: through the `Repo` layer's plain
 // actions, reading its live queries. The tab reaches RepoApi's real handler (worker/RepoApi.ts) over the compose
@@ -263,7 +264,8 @@ describe("branches, tags and commits", () => {
     at(tab, "tree", "main")
     await waitFor(() => expect(tab.refs().refs?.state).toBe("ready"))
     expect(tab.refs().refs).toMatchObject({
-      key: `${id}@${headSha}`,
+      // The sync's head and the last ref change after it, which the ready clone itself is.
+      key: expect.stringMatching(new RegExp(`^${id}@${headSha}@.+$`)),
       branches: [
         { name: "feature/x", sha: shaOf("feature/x") },
         { name: "main", sha: headSha },
@@ -288,6 +290,22 @@ describe("branches, tags and commits", () => {
     expect(h.scripted.calls.filter((call) => call.startsWith("listBranches"))).toHaveLength(1)
     at(tab, "tree", "no-such-branch")
     await waitFor(() => expect(tab.view().view.missing).toBe(true))
+  })
+
+  test("a branch made while the default branch's head stays where it was shows the next time the view opens", async () => {
+    // Before, the device kept the refs under the head commit alone, so the new branch never showed until main moved.
+    const h = await repoHarness(server)
+    const { id } = await h.seed("octocat", "Spoon-Knife", branched())
+    const tab = await open(h)
+    at(tab, "tree", "main")
+    await waitFor(() => expect(tab.refs().refs?.state).toBe("ready"))
+    const before = tab.view().repository?.refsChangedAt
+    // What worker/branch/Branches.ts does for a new branch: make it on the forge, then record the change.
+    await Effect.runPromise(h.scripted.client.createBranch(id, { branch: "made", from: "main" }))
+    await server.runPromise(Repos.refsChanged(id))
+    await waitFor(() => expect(tab.view().repository?.refsChangedAt).not.toBe(before))
+    at(tab, "tree", "main")
+    await waitFor(() => expect(tab.refs().refs?.branches.map((branch) => branch.name)).toContain("made"))
   })
 
   test("a ref chosen in the picker runs app/navigate, which moves this tab", async () => {
