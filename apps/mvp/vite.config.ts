@@ -53,6 +53,9 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: SHELL,
+        // The app's bundle and the engine worker are each over Workbox's 2 MiB default (2.7 and 2.3 MB on
+        // 2026-10-20), which fails `vite build`; an offline reload needs both precached.
+        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         navigateFallback: "index.html",
         navigateFallbackDenylist: [API],
         cleanupOutdatedCaches: true,
