@@ -356,14 +356,14 @@ export const steps = <E, R>(services: Services<E, R>) => {
               hasReproCandidate([current.issue.body ?? "", ...current.comments.map((comment) => comment.body ?? "")])) return
             yield* GitHub.Issues.createLabel(repository.owner, repository.name, { name: NEEDS_REPRO_LABEL, color: "d4c5f9" })
             yield* GitHub.Issues.addLabels(repository.owner, repository.name, request.number, [NEEDS_REPRO_LABEL])
+            // One request per issue, keyed by the issue: a new delivery, a rerun or a lost answer finds it in the
+            // thread instead of asking twice. A thread too long to read fails rather than post a second.
             const marker = yield* Uuid.v5(REPRO_COMMENT_NAMESPACE, `${repository.id}#${request.number}`).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
-            const earlier = yield* GitHub.Issues.findCommentByWrite(repository.owner, repository.name, request.number, { writeId: marker, since: current.issue.created_at })
-            if (Option.isNone(earlier)) {
-              // A truncated conversation cannot prove the request was never posted. Fail closed on publication.
-              if (!current.complete) return yield* new TriageUnavailable({})
-              yield* GitHub.Issues.createComment(repository.owner, repository.name, request.number,
-                GitHub.Issues.withWriteMarker(NEEDS_REPRO_COMMENT, marker))
-            }
+            yield* Action.once(
+              "repro",
+              GitHub.Once.comment(repository.owner, repository.name, request.number, NEEDS_REPRO_COMMENT),
+              { key: marker },
+            )
             yield* project(repository, request.number, yield* fetchIssue(repository, request.number))
           }).pipe(withToken(writeToken.value, services.apiBaseUrl))
           return yield* skip("needs_repro")
@@ -607,19 +607,19 @@ export const steps = <E, R>(services: Services<E, R>) => {
         const attempt = yield* Effect.gen(function* () {
           // The comment is a write too: the enabler must still be a Maintainer.
           if (!(yield* maintains(repository, labeled.enabledLogin))) return Option.none()
-          // An attempt before this one may have reached GitHub and lost its answer: look for the decision's marker in
-          // the whole thread first. Never a window back from now: a run resumed after it would miss its own comment
-          // and post a second (docs/proposals/durable-external-effects.md). A thread too long to read fails.
-          const earlier = yield* GitHub.Issues.findCommentByWrite(repository.owner, repository.name, labeled.number, {
-            writeId: labeled.decisionId,
-          })
-          if (Option.isSome(earlier)) return Option.some(earlier.value)
-          return Option.some(yield* GitHub.Issues.createComment(
-            repository.owner,
-            repository.name,
-            labeled.number,
+          // One comment per decision, keyed by the decision: an attempt after a lost answer finds it in the whole
+          // thread, never only a window back from now (docs/proposals/durable-external-effects.md). A thread too long
+          // to read fails rather than post a second.
+          return Option.some(yield* Action.once(
+            "rejection",
             // Decide gives every rejection a reason, and the label step labels only for an enabler with a login.
-            GitHub.Issues.withWriteMarker(rejectionComment(labeled.reason!, labeled.enabledLogin!), labeled.decisionId),
+            GitHub.Once.comment(
+              repository.owner,
+              repository.name,
+              labeled.number,
+              rejectionComment(labeled.reason!, labeled.enabledLogin!),
+            ),
+            { key: labeled.decisionId },
           ))
         }).pipe(withToken(writeToken.value, services.apiBaseUrl), Effect.result)
         if (attempt._tag === "Failure") {
