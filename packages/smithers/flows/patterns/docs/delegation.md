@@ -178,24 +178,32 @@ patterns use: `true`, `"approved"`, `{ approved: true }`, or
 
 ### Declaring
 
-`DelegationChain.make(options)` declares the conservative chain: the derisk
-loop unrolled to `maxDeriskRounds`, then `maxDepth` tier ladders, then review
-and settle. `DelegationChain.bound(bounds)` is the flow-call count that
-declaration contains:
+`DelegationChain.make(options)` declares the chain in two durable rounds. The
+first round refines the input into a goal and runs the derisk loop, unrolled to
+`maxDeriskRounds`, then hands the goal and the loop's outcome to the execution
+round with `Flow.to`. The execution round reads the derisked plan as data,
+validates it against the envelope `{ fuel, depth, fanout }`, all `maxDepth`,
+and declares one tier ladder per leaf the plan names, with the leaf's real goal
+and path. Review and settle follow, and settle receives every leaf output in
+plan order and whether the derisk loop ran out of rounds. A crash resumes at
+the round boundary.
+
+A declared ladder escalates when a tier's call fails, after the engine has
+spent the `retryPolicy` of the tier's actions, or when the review rejects its
+output. A ladder no tier settles fails `DelegationError` with code
+`leaf_failed` at the leaf's path, and no later stage runs. A plan outside the
+envelope fails with the `TrellisError` that names the bound, and no leaf runs.
+
+`DelegationChain.bound(bounds)` is the most flow calls the two rounds make:
 
 ```text
 4 + 2 * maxDeriskRounds + maxDepth * 2 * tierOrder.length
 ```
 
 Four calls are fixed (refine, the derisk loop, the chain review, settle). Each
-depth slot contributes one execute plus one review call per tier. A supplied
-flow whose own body calls other flows adds those on top; an action's retries
-are attempts of one call, not more calls.
-
-Every declared call carries the payload `run` sends. Two values a declaration
-cannot know stand in for themselves: the authored plan stands in for the leaf
-goals, and `deriskExhausted` is declared `false`, the answer `run` gives when
-the derisk loop approves.
+of the at most `maxDepth` leaves contributes one execute plus one review call
+per tier it climbs. A supplied flow whose own body calls other flows adds those
+on top; an action's retries are attempts of one call, not more calls.
 
 The ladder is declared here rather than with `Escalation.make` because that
 constructor asks one shared `accept` flow about every rung, and the review `run`

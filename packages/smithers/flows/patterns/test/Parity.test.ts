@@ -868,9 +868,7 @@ const delegationChain: Pattern<Record<string, never>> = {
     input: { prompt: "notes" },
     options: {},
     script: delegationScript,
-    diverges: "the plan is authored at run time, so make declares maxDepth tier ladders over the authored plan",
-    expected: { settled: ["weak-output"] },
-    declared: { settled: "weak-output" }
+    expected: { settled: ["weak-output"] }
   }]
 }
 

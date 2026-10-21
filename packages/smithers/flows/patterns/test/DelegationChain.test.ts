@@ -15,13 +15,15 @@
 import { describe, it } from "@effect/vitest"
 import { Action, Flow, Graph, RetryPolicy } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
+import type * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as DelegationChain from "../src/DelegationChain.ts"
 import { PatternError } from "../src/PatternError.ts"
 import * as Trellis from "../src/Trellis.ts"
-import { execute } from "./Execute.ts"
+import { execute, executeExit } from "./Execute.ts"
 import { callsTo, payloadOf } from "./Graphs.ts"
 
 /**
@@ -374,13 +376,22 @@ describe("DelegationChain", () => {
       expect((failure as DelegationChain.DelegationError & { readonly cause?: unknown }).cause).toBe(reviewFailure)
     }))
 
-  it("declares the documented number of flow calls", () => {
+  it("declares at most the documented number of flow calls across its two rounds", () => {
     const chain = DelegationChain.make(makeOptions)
-    const graph = Graph.build(chain, { input: "ship it" })
     expect(Flow.isFlow(chain)).toBe(true)
-    expect(memberCalls(graph)).toHaveLength(DelegationChain.bound(makeOptions))
-    // 4 fixed calls + 2 per derisk round + one escalation ladder per depth
-    // slot: an execute and a review call per tier.
+    // The widest plan the envelope admits: maxDepth leaves in one container.
+    const widest: Trellis.Plan = { parallel: [{ agent: { goal: "a" } }, { agent: { goal: "b" } }] }
+    const first = Graph.build(chain, { input: "ship it" })
+    const second = Graph.build(chain, {
+      input: "ship it",
+      execution: { goal: "goal", derisked: { _tag: "Approved", output: widest } }
+    })
+    // The first round's handoff to the execution round is not a member call.
+    const members = (graph: Graph.Graph) =>
+      memberCalls(graph).filter((node) => (node.ast as { readonly flow?: string }).flow !== chain._tag)
+    expect(members(first).length + members(second).length).toBe(DelegationChain.bound(makeOptions))
+    // 4 fixed calls + 2 per derisk round + an execute and a review call per
+    // tier for each of the maxDepth leaves.
     expect(DelegationChain.bound(makeOptions)).toBe(16)
   })
 
@@ -422,13 +433,19 @@ describe("DelegationChain", () => {
         settle: (request) => Effect.sync(() => (settlement = keys(request as never), request.leaves))
       })
 
-      const graph = Graph.build(DelegationChain.make({ ...makeOptions, budget }), { input: "ship it" })
+      const graph = Graph.build(DelegationChain.make({ ...makeOptions, budget }), {
+        input: "ship it",
+        execution: {
+          goal: "goal",
+          derisked: { _tag: "Approved", output: { sequence: [{ agent: { goal: "a" } }, { agent: { goal: "b" } }] } }
+        }
+      })
       const declaredWork = callsTo(graph, "weak").map(payloadOf)
       const declaredReviews = callsTo(graph, "review").map(payloadOf)
       const declaredSettle = payloadOf(callsTo(graph, "settle")[0] as Graph.GraphNode)
 
-      // One weakest-tier call per slot, each carrying the tier it is and the
-      // run budget.
+      // One weakest-tier call per leaf the plan names, each carrying the tier it
+      // is and the run budget.
       expect(declaredWork).toHaveLength(makeOptions.maxDepth)
       expect(declaredWork.map(keys)).toEqual(declaredWork.map(() => executed[0]))
       expect(declaredWork.map((work) => work.tier)).toEqual(declaredWork.map(() => "weak"))
@@ -437,8 +454,9 @@ describe("DelegationChain", () => {
         declaredWork.map(() => ["goal", "path"])
       )
       expect(declaredWork.map((work) => (work.leaf as { readonly path: string }).path)).toEqual(
-        ["slot-0", "slot-1"]
+        ["root.sequence[0]", "root.sequence[1]"]
       )
+      expect(declaredWork.map((work) => (work.leaf as { readonly goal: string }).goal)).toEqual(["a", "b"])
       // The leaf review names the tier that produced the output, as run does.
       const leafReviews = declaredReviews.filter((request) => request.stage === "leaf")
       expect(leafReviews.map(keys)).toEqual(leafReviews.map(() => reviewed[0]))
@@ -489,34 +507,46 @@ describe("DelegationChain", () => {
 const chainCalls: Array<{ readonly role: string; readonly payload: unknown }> = []
 /** The tier whose output the scripted reviewer approves, set per case. */
 let approvesTier = "weak"
+/** The plan the scripted planner answers, set per case. */
+let planned: Trellis.Plan = { agent: { goal: "a" } }
+/** A tier whose call fails, set per case. */
+let failingTier: string | undefined
+/** What the weak tier answers instead of its own output, set per case. */
+let escalateOutput: unknown
 
 const chainStep = Action.make("delegation/step", {
   payload: { role: Schema.String, payload: Schema.Unknown },
   success: Schema.Unknown,
-  error: Schema.Never
+  error: Schema.Unknown
 })
 
 const chainLayer = chainStep.toLayer(({ payload, role }) =>
-  Effect.sync(() => {
+  Effect.suspend(() => {
     chainCalls.push({ role, payload })
-    switch (role) {
-      case "refine":
-        return "goal"
-      case "plan":
-        return { agent: { goal: "a" } }
-      case "derisk":
-        return { approved: true }
-      case "review": {
-        const request = payload as { readonly stage?: string; readonly tier?: string }
-        return { approved: request.stage === "chain" || request.tier === approvesTier }
-      }
-      case "settle":
-        return "settled"
-      default:
-        return `${role} result`
-    }
+    return role === failingTier ? Effect.fail(`${role} failed`) : Effect.succeed(answer(role, payload))
   })
 )
+
+const answer = (role: string, payload: unknown): unknown => {
+  switch (role) {
+    case "refine":
+      return "goal"
+    case "plan":
+      return planned
+    case "derisk":
+      return { approved: true }
+    case "review": {
+      const request = payload as { readonly stage?: string; readonly tier?: string }
+      return { approved: request.stage === "chain" || request.tier === approvesTier }
+    }
+    case "settle":
+      return "settled"
+    case "weak":
+      return escalateOutput ?? `weak:${(payload as { readonly leaf: Trellis.Leaf }).leaf.goal}`
+    default:
+      return `${role} result`
+  }
+}
 
 const opaque = Schema.optionalKey(Schema.Unknown)
 
@@ -531,7 +561,7 @@ const roleFlow = (role: string, fields: Schema.Struct.Fields): Scripted =>
     })
   }) as unknown as Scripted
 
-const scriptedChain = (): DelegationChain.DelegationChainFlow =>
+const scriptedChain = (maxDepth = 1): DelegationChain.DelegationChainFlow =>
   DelegationChain.make({
     refine: roleFlow("refine", { prompt: opaque }),
     plan: roleFlow("plan", { input: opaque, output: opaque, review: opaque, round: opaque }),
@@ -558,7 +588,7 @@ const scriptedChain = (): DelegationChain.DelegationChainFlow =>
       deriskExhausted: opaque
     }),
     tierOrder: ["weak", "strong"],
-    maxDepth: 1,
+    maxDepth,
     maxDeriskRounds: 1
   })
 
@@ -566,6 +596,7 @@ const scriptedChain = (): DelegationChain.DelegationChainFlow =>
 const settle = (approves: string, executionId: string): Promise<unknown> => {
   chainCalls.length = 0
   approvesTier = approves
+  planned = { agent: { goal: "a" } }
   return execute(scriptedChain() as never, { input: "ship it" }, executionId, chainLayer)
 }
 
@@ -670,10 +701,170 @@ describe("DelegationChain declaration execution", () => {
   })
 
   it("declares both arms of every rung, so a plan carries the topology a run may take", () => {
-    const graph = Graph.build(scriptedChain(), { input: "ship it" })
+    const first = Graph.build(scriptedChain(), { input: "ship it" })
+    const second = Graph.build(scriptedChain(), {
+      input: "ship it",
+      execution: { goal: "goal", derisked: { _tag: "Approved", output: { agent: { goal: "a" } } } }
+    })
 
-    // Three decisions: the derisk loop's one approval round, and one rung
-    // decision per tier for the single depth slot.
-    expect(Graph.nodes(graph).filter((node) => node.kind === "Branch")).toHaveLength(3)
+    // The derisk loop's one approval decision in the first round; in the
+    // execution round, a failure check and a verdict per tier for the leaf,
+    // with each next rung declared once.
+    expect(Graph.nodes(first).filter((node) => node.kind === "Branch")).toHaveLength(1)
+    expect(Graph.nodes(second).filter((node) => node.kind === "Branch")).toHaveLength(4)
+  })
+
+  it("hands settle every leaf output of the derisked plan, in plan order", async () => {
+    chainCalls.length = 0
+    approvesTier = "weak"
+    planned = {
+      sequence: [{ agent: { goal: "a", seat: "drafter" } }, {
+        parallel: [{ agent: { goal: "b" } }, { agent: { goal: "c" } }]
+      }]
+    }
+    const settled = await execute(scriptedChain(3) as never, { input: "ship it" }, "delegation-plan-order", chainLayer)
+
+    expect(settled).toBe("settled")
+    const weak = chainCalls.filter((call) => call.role === "weak").map((call) =>
+      (call.payload as { readonly leaf: Trellis.Leaf }).leaf
+    )
+    expect([...weak].sort((left, right) => left.path.localeCompare(right.path))).toEqual(Trellis.leaves(planned))
+    const settlement = chainCalls.find((call) => call.role === "settle")!.payload as { readonly leaves: unknown }
+    // Each output names its leaf, so a permuted settlement cannot pass.
+    expect(settlement.leaves).toEqual(["weak:a", "weak:b", "weak:c"])
+    // The sequence runs its first leaf before either member of the parallel group.
+    const order = chainCalls.filter((call) => call.role === "weak").map((call) =>
+      (call.payload as { readonly leaf: Trellis.Leaf }).leaf.goal
+    )
+    expect(order[0]).toBe("a")
+  })
+
+  it("fails leaf_failed at the leaf's path when no tier settles it, and never settles", async () => {
+    chainCalls.length = 0
+    approvesTier = "none"
+    planned = { agent: { goal: "a" } }
+    const exit = await executeExit(scriptedChain() as never, { input: "ship it" }, "delegation-exhausted", chainLayer)
+
+    expect(exit._tag).toBe("Failure")
+    const failure = Cause.findErrorOption((exit as Exit.Failure<unknown, unknown>).cause)
+    expect(failure._tag === "Some" ? failure.value : undefined).toMatchObject({
+      code: "leaf_failed",
+      path: "root",
+      message: "No tier settled the leaf at root"
+    })
+    expect(chainCalls.map((call) => call.role)).toEqual([
+      "refine",
+      "plan",
+      "derisk",
+      "weak",
+      "review",
+      "strong",
+      "review"
+    ])
+  })
+
+  it("escalates a tier whose call fails to the next tier", async () => {
+    chainCalls.length = 0
+    approvesTier = "strong"
+    planned = { agent: { goal: "a" } }
+    failingTier = "weak"
+    try {
+      expect(await execute(scriptedChain() as never, { input: "ship it" }, "delegation-tier-fails", chainLayer))
+        .toBe("settled")
+    } finally {
+      failingTier = undefined
+    }
+
+    expect(chainCalls.map((call) => call.role)).toEqual([
+      "refine",
+      "plan",
+      "derisk",
+      "weak",
+      "strong",
+      "review",
+      "review",
+      "settle"
+    ])
+  })
+
+  it("declares an error schema that encodes its own failures to JSON and back", () => {
+    const chain = scriptedChain()
+    const failures = [
+      new DelegationChain.DelegationError({
+        code: "leaf_failed",
+        path: "root",
+        message: "No tier settled the leaf at root"
+      }),
+      new Trellis.TrellisError({
+        code: "fanout_exceeded",
+        path: "root",
+        message: "sequence declares 2 members, above the envelope fan-out 1",
+        cause: { rounds: [], remaining: 1, refusals: [{ code: "fanout_exceeded", path: "root", message: "m" }] }
+      })
+    ]
+    for (const failure of failures) {
+      const encoded = Schema.encodeUnknownSync(chain.errorSchema)(failure)
+      expect(JSON.parse(JSON.stringify(encoded))).toEqual(encoded)
+      expect(Schema.decodeUnknownSync(chain.errorSchema)(encoded)).toEqual(failure)
+    }
+  })
+
+  it("keeps a tier output that looks like the internal escalation marker", async () => {
+    chainCalls.length = 0
+    approvesTier = "weak"
+    planned = { agent: { goal: "a" } }
+    escalateOutput = { _tag: "flows/patterns/DelegationChain/Escalate" }
+    try {
+      expect(await execute(scriptedChain() as never, { input: "ship it" }, "delegation-marker", chainLayer))
+        .toBe("settled")
+    } finally {
+      escalateOutput = undefined
+    }
+
+    expect(chainCalls.map((call) => call.role)).toEqual([
+      "refine",
+      "plan",
+      "derisk",
+      "weak",
+      "review",
+      "review",
+      "settle"
+    ])
+    const settlement = chainCalls.find((call) => call.role === "settle")!.payload as { readonly leaves: unknown }
+    expect(settlement.leaves).toEqual([{ _tag: "flows/patterns/DelegationChain/Escalate" }])
+  })
+
+  it("refuses execution state whose derisk outcome is malformed", async () => {
+    for (
+      const derisked of [null, "plan", { _tag: "Approved" }, { _tag: "Unknown", output: { agent: { goal: "a" } } }]
+    ) {
+      chainCalls.length = 0
+      const exit = await executeExit(
+        scriptedChain() as never,
+        { input: "ship it", execution: { goal: "goal", derisked } },
+        `delegation-forged-${JSON.stringify(derisked)}`,
+        chainLayer
+      )
+
+      const failure = Cause.findErrorOption((exit as Exit.Failure<unknown, unknown>).cause)
+      expect(failure._tag === "Some" ? failure.value : undefined).toMatchObject({ code: "derisk_failed", path: "root" })
+      expect(chainCalls).toEqual([])
+    }
+  })
+
+  it("refuses a derisked plan outside the envelope before any leaf runs", async () => {
+    chainCalls.length = 0
+    approvesTier = "weak"
+    planned = { sequence: [{ agent: { goal: "a" } }, { agent: { goal: "b" } }] }
+    const exit = await executeExit(scriptedChain() as never, { input: "ship it" }, "delegation-refused", chainLayer)
+
+    const failure = Cause.findErrorOption((exit as Exit.Failure<unknown, unknown>).cause)
+    expect(failure._tag === "Some" ? failure.value : undefined).toMatchObject({
+      code: "fanout_exceeded",
+      path: "root",
+      message: "sequence declares 2 members, above the envelope fan-out 1",
+      cause: { rounds: [], remaining: 1 }
+    })
+    expect(chainCalls.map((call) => call.role)).toEqual(["refine", "plan", "derisk"])
   })
 })

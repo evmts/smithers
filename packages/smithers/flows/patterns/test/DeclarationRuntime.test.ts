@@ -465,6 +465,6 @@ describe("ported pattern declaration execution", () => {
         { input: "prompt" },
         "delegationchain"
       )
-    ).toBe("output")
+    ).toEqual(["output"])
   })
 })
