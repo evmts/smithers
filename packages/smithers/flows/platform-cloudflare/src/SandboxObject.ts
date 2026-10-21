@@ -26,6 +26,7 @@
 
 import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
+import * as Schema from "effect/Schema"
 import * as Observed from "./internal/Observed.ts"
 
 /**
@@ -86,6 +87,8 @@ export type Instance =
  *   every wake.
  * - `instance`: the instance type a stopped container starts on; Cloudflare's
  *   default, `lite`, when absent.
+ * - `startTimeoutMs`: the longest a stopped container's start may take before
+ *   {@link wake} fails {@link StartTimedOut}; unbounded when absent.
  * - `inactivityTimeoutMs`: how long the container runs with no activity on
  *   its Durable Object before Cloudflare stops it. Defaults to
  *   {@link defaultInactivityTimeoutMs}.
@@ -101,6 +104,7 @@ export type Instance =
 export interface WakeOptions<F> {
   readonly intercepts: ReadonlyArray<Intercept<F>>
   readonly instance?: Instance | undefined
+  readonly startTimeoutMs?: number | undefined
   readonly inactivityTimeoutMs?: number | undefined
   readonly egress?: F | undefined
 }
@@ -135,6 +139,29 @@ export const wakes = Metric.counter("smithers_cloudflare_sandbox_wakes", {
 })
 
 /**
+ * A stopped container didn't finish starting within {@link WakeOptions}'
+ * `startTimeoutMs`. The start was abandoned; a later wake starts it again.
+ *
+ * @category errors
+ * @since 1.0.0-rc.17
+ */
+export class StartTimedOut extends Schema.TaggedError<StartTimedOut>()(
+  "@smthrs/platform-cloudflare/StartTimedOut",
+  { timeoutMs: Schema.Number }
+) {}
+
+/**
+ * Container starts that ran past their `startTimeoutMs` ({@link StartTimedOut}).
+ *
+ * @category metrics
+ * @since 1.0.0-rc.17
+ */
+export const startTimeouts = Metric.counter("smithers_cloudflare_sandbox_start_timeouts", {
+  description: "Container Durable Object starts that ran past their start timeout",
+  incremental: true
+})
+
+/**
  * {@link rearm} calls, by `outcome`: `rearmed`, `stopped` or `failed`.
  *
  * @category metrics
@@ -150,7 +177,8 @@ export const rearms = Metric.counter("smithers_cloudflare_sandbox_rearms", {
  *
  * 1. Starts it when it is not running, with `enableInternet: false` and
  *    `instance` when given: the box reaches nothing but the intercepted
- *    hosts.
+ *    hosts. A start that runs past `startTimeoutMs` fails
+ *    {@link StartTimedOut} and counts in {@link startTimeouts}.
  * 2. Arms its inactivity timeout, `inactivityTimeoutMs`. A restarted Durable
  *    Object loses the timeout, so every wake sets it again.
  * 3. Registers each intercept, in order, then, with `egress`, every other
@@ -167,14 +195,24 @@ export const rearms = Metric.counter("smithers_cloudflare_sandbox_rearms", {
  * @category operations
  * @since 1.0.0-rc.17
  */
-export const wake = <F, E, R>(machine: Machine<F, E, R>, options: WakeOptions<F>): Effect.Effect<WakeOutcome, E, R> =>
+export const wake = <F, E, R>(
+  machine: Machine<F, E, R>,
+  options: WakeOptions<F>
+): Effect.Effect<WakeOutcome, E | StartTimedOut, R> =>
   Effect.gen(function*() {
     const running = yield* machine.running
     if (!running) {
-      yield* machine.start(
+      const start = machine.start(
         options.instance === undefined
           ? { enableInternet: false }
           : { enableInternet: false, instance: options.instance }
+      )
+      const timeoutMs = options.startTimeoutMs
+      yield* timeoutMs === undefined ? start : start.pipe(
+        Effect.timeoutOrElse({
+          duration: timeoutMs,
+          orElse: () => Effect.andThen(Metric.update(startTimeouts, 1), Effect.fail(new StartTimedOut({ timeoutMs })))
+        })
       )
     }
     yield* machine.setInactivityTimeout(options.inactivityTimeoutMs ?? defaultInactivityTimeoutMs)

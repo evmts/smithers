@@ -8319,7 +8319,7 @@
         "ContainerTerminal.d.ts": "20fd8b66daa34b88a858b6cf5bac5dad89b0f5a312a26a908ef67f7d4429dfb3",
         "EdgeCache.d.ts": "bc463a0d333b9377c4366182d6b185faca297a27d999eb67315a83ca24d4639e",
         "ExecutionObject.d.ts": "4301e8cf954b0a82b261579de0c934778ae705f9f4c7390b6ab4a4cd1c701599",
-        "SandboxObject.d.ts": "723952fc77138f31af66dc4eba484b330e7917863ff86e6ca9bf06facebcb495",
+        "SandboxObject.d.ts": "cb2b361fe7a91acf8c2c94ce58dbf2ba3253e0c28dac6340077007a76211b164",
         "index.d.ts": "c1d014d9436a966fd69f69ff6946c0a92b63cf9f698b8183046956f37bcc1a16",
         "internal/FailureDetail.d.ts": "30335930f24652e664b9708ff201f87e4e70d0d4946251cd92fc09b6a284f595",
         "internal/Observed.d.ts": "efc5dc0462e213c38b8314ad4fbbbab89f19ffe9d1a610a43ca5370c3aa90482",

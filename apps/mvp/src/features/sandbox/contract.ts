@@ -23,6 +23,7 @@ export type CallStatus = (typeof CALL_STATUSES)[number]
  */
 export const CALL_FAILURES = [
   "unavailable",
+  "start_timeout",
   "checkout",
   "lost",
   "path",

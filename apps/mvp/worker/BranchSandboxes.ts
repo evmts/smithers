@@ -23,6 +23,7 @@ import {
   type Revoked,
   SandboxBranch,
   Sandboxes,
+  SandboxStartTimedOut,
   SandboxUnavailable,
   TerminalSockets,
 } from "./branch/Sandboxes.ts"
@@ -71,6 +72,16 @@ export const sandboxInstance = Config.schema(
   "SANDBOX_INSTANCE",
 ).pipe(Config.withDefault("standard-1" as const))
 
+/**
+ * `SANDBOX_START_TIMEOUT_SECONDS`: the longest a stopped machine's container may take to start before its wake fails
+ * `start_timeout`, 150 seconds unless set: a typed failure a call or a terminal settles on, where an unbounded start
+ * (312 s seen) kept a call `running` until the browser gave up.
+ */
+export const sandboxStartTimeoutSeconds = Config.schema(
+  Schema.Int.check(Schema.isGreaterThan(0)),
+  "SANDBOX_START_TIMEOUT_SECONDS",
+).pipe(Config.withDefault(150))
+
 /** Where Cloudflare puts the container's per-instance CA, which signs the HTTPS the egress decrypts. */
 export const CONTAINER_CA = "/etc/cloudflare/certs/cloudflare-containers-ca.crt"
 
@@ -94,6 +105,9 @@ const failureFields = (cause: Cause.Cause<unknown>) => {
   const error = Cause.squash(cause)
   return { errorCode: codeOf(error), errorName: error instanceof Error ? error.name : typeof error }
 }
+
+/** Whether a wake failed because the container didn't finish starting in time (`SANDBOX_START_TIMEOUT_SECONDS`). */
+const startTimedOut = (cause: Cause.Cause<unknown>) => Cause.squash(cause) instanceof SandboxHost.StartTimedOut
 
 /** The step of a wake a failure happened in, as its `sandbox.wake` log line names it. */
 type WakeStage = "start" | "checkout" | "restore" | "placeholders"
@@ -142,7 +156,7 @@ interface Loopback {
 /** What `wake` answers: the machine's generation, or why it couldn't wake. */
 export type Woken =
   | { readonly _tag: "Woken"; readonly generation: number }
-  | { readonly _tag: "Unavailable" }
+  | { readonly _tag: "Unavailable"; readonly reason?: "start_timeout" }
   | { readonly _tag: "CheckoutFailed" }
 
 /** The object's methods, as ChatApi and the flow host call them. */
@@ -180,6 +194,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
     const forge = yield* Effect.service(Forge).pipe(Effect.provide(Forge.layerConfig), Effect.provide(FetchHttpClient.layer))
     const secretsOn = yield* sandboxSecrets.pipe(Effect.orDie)
     const instance = yield* sandboxInstance.pipe(Effect.orDie)
+    const startTimeoutMs = (yield* sandboxStartTimeoutSeconds.pipe(Effect.orDie)) * 1000
     const secretKeys = yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layerConfig), Effect.orDie)
     const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(connection)
     const database = Database.layer(hyperdrive.connectionString)
@@ -222,7 +237,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
 
       /** Starts the box unless it runs, and advances the generation when it started it. */
       const start = Effect.gen(function* () {
-        const outcome = yield* SandboxHost.wake(box, { intercepts, egress: egressTo, instance })
+        const outcome = yield* SandboxHost.wake(box, { intercepts, egress: egressTo, instance, startTimeoutMs })
         const generation = (yield* state.storage.get<number>("generation")) ?? 0
         if (outcome === "running" && generation > 0) return generation
         yield* state.storage.put("generation", generation + 1)
@@ -263,7 +278,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
                 Effect.logWarning("sandbox.wake").pipe(
                   Effect.annotateLogs({ branchId: branch.branchId, stage, ...failureFields(cause) }),
                 ),
-                { _tag: "Unavailable" } as const,
+                startTimedOut(cause) ? { _tag: "Unavailable", reason: "start_timeout" } as const : { _tag: "Unavailable" } as const,
               )
             ),
           )
@@ -637,7 +652,9 @@ export const machinesOver = (objects: Objects, keep: Keep = noKeep) => Effect.ge
           case "CheckoutFailed":
             return yield* new CheckoutFailed()
           case "Unavailable":
-            return yield* new SandboxUnavailable({ reason: "exec" })
+            return yield* outcome.reason === "start_timeout"
+              ? new SandboxStartTimedOut()
+              : new SandboxUnavailable({ reason: "exec" })
         }
       }),
     sleepIfIdle: (branchId, generation, idleMs) =>

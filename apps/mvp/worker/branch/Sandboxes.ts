@@ -27,6 +27,15 @@ export class SandboxUnavailable extends Schema.TaggedError<SandboxUnavailable>()
   { reason: Schema.Literals(["start", "exec"]) },
 ) {}
 
+/**
+ * The branch's machine didn't finish starting within SANDBOX_START_TIMEOUT_SECONDS. A call settles `start_timeout`
+ * rather than waiting on a start that may never end; not retried, since the start was just given its whole time.
+ */
+export class SandboxStartTimedOut extends Schema.TaggedError<SandboxStartTimedOut>()(
+  "@smthrs/mvp/branch/SandboxStartTimedOut",
+  {},
+) {}
+
 /** The branch couldn't be checked out in the machine: its forge refused the clone. Not retried. */
 export class CheckoutFailed extends Schema.TaggedError<CheckoutFailed>()("@smthrs/mvp/branch/CheckoutFailed", {}) {}
 

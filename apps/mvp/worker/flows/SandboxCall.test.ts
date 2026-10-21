@@ -9,7 +9,7 @@ import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { Machines } from "../branch/Machines.ts"
-import { CheckoutFailed, type SandboxBranch, SandboxUnavailable } from "../branch/Sandboxes.ts"
+import { CheckoutFailed, type SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { resetBranches, tracked } from "../test/branch.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
@@ -125,6 +125,8 @@ describe("sandbox/Call on the Node host", () => {
     ["too_large", Effect.fail(new SandboxTools.ToolRefused({ reason: "too_large" })), "too_large"],
     ["a lost command", Effect.fail(new SandboxTools.ToolLost()), "lost"],
     ["a refused checkout", Effect.fail(new CheckoutFailed()), "checkout"],
+    // The machine's start ran past SANDBOX_START_TIMEOUT_SECONDS: the call settles, never left `running`.
+    ["a start that timed out", Effect.fail(new SandboxStartTimedOut()), "start_timeout"],
   ])("%s isn't retried: the call settles failed with why", async (_, answer, failure) => {
     const started = await running("read")
     const machines = machine([answer])
@@ -194,7 +196,7 @@ describe("the steps", () => {
     expect(JSON.stringify(lost.lines)).not.toContain(SENTINEL)
   })
 
-  test("failed names the failure: a refusal's reason, lost, checkout, else unavailable", async () => {
+  test("failed names the failure: a refusal's reason, lost, checkout, start_timeout, else unavailable", async () => {
     const steps = SandboxCall.steps(await database())
     const failed = (error: Parameters<typeof steps.failed>[0]["error"]) => Effect.runPromise(steps.failed({ error }))
     expect(await failed(new SandboxTools.ToolRefused({ reason: "not_a_directory" }))).toEqual({
@@ -203,6 +205,7 @@ describe("the steps", () => {
     })
     expect(await failed(new SandboxTools.ToolLost())).toEqual({ status: "failed", failure: "lost" })
     expect(await failed(new CheckoutFailed())).toEqual({ status: "failed", failure: "checkout" })
+    expect(await failed(new SandboxStartTimedOut())).toEqual({ status: "failed", failure: "start_timeout" })
     for (const reason of ["start", "exec"] as const) {
       expect(await failed(new SandboxUnavailable({ reason }))).toEqual({ status: "failed", failure: "unavailable" })
     }

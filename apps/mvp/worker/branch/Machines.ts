@@ -1,6 +1,6 @@
 import { SandboxTools } from "@smthrs/sandbox"
 import { Context, type Effect, Schema } from "effect"
-import type { CheckoutFailed, SandboxBranch, SandboxUnavailable } from "./Sandboxes.ts"
+import type { CheckoutFailed, SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "./Sandboxes.ts"
 
 // What a branch's machine does for the sandbox tools and its own lifecycle (decision 0005 §2-§3,
 // docs/features/sandbox-tools.md): run one tool call as the person who asked, and go to sleep when nothing happens in
@@ -13,7 +13,8 @@ export const ToolOutcome = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("Refused"), reason: SandboxTools.ToolRefused.fields.reason }),
   Schema.Struct({ _tag: Schema.Literal("Lost") }),
   Schema.Struct({ _tag: Schema.Literal("CheckoutFailed") }),
-  Schema.Struct({ _tag: Schema.Literal("Unavailable") }),
+  // `start_timeout` when the machine didn't finish starting within SANDBOX_START_TIMEOUT_SECONDS.
+  Schema.Struct({ _tag: Schema.Literal("Unavailable"), reason: Schema.optional(Schema.Literal("start_timeout")) }),
 ])
 export type ToolOutcome = typeof ToolOutcome.Type
 
@@ -41,7 +42,10 @@ export class Machines extends Context.Service<
       ownerId: string,
       callId: string,
       call: SandboxTools.Call,
-    ) => Effect.Effect<Ran, SandboxTools.ToolRefused | SandboxTools.ToolLost | SandboxUnavailable | CheckoutFailed>
+    ) => Effect.Effect<
+      Ran,
+      SandboxTools.ToolRefused | SandboxTools.ToolLost | SandboxUnavailable | SandboxStartTimedOut | CheckoutFailed
+    >
     /**
      * Puts generation `generation` of the branch's machine to sleep when nothing happened in it for `idleMs`: no call,
      * no terminal input, and no process but the shells. It saves the working copy first, and stays awake when it can't.

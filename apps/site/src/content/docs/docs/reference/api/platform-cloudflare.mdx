@@ -362,6 +362,7 @@ const wake: <F, E, R>(
 interface WakeOptions<F> {
   readonly intercepts: ReadonlyArray<{ readonly host: string; readonly fetcher: F }>
   readonly instance?: SandboxObject.Instance | undefined
+  readonly startTimeoutMs?: number | undefined
   readonly inactivityTimeoutMs?: number | undefined
   readonly egress?: F | undefined
 }
@@ -377,7 +378,11 @@ type Instance = "lite" | "basic" | "standard-1" | "standard-2" | "standard-3" | 
 
 1. Starts the container with `{ enableInternet: false }`, and `instance` when
    given, when `running` is false. Without `instance`, Cloudflare starts it on
-   `lite`: 1/16 vCPU, 256 MiB of memory and 2 GB of disk.
+   `lite`: 1/16 vCPU, 256 MiB of memory and 2 GB of disk. A start that runs
+   past `startTimeoutMs` is abandoned and fails `SandboxObject.StartTimedOut
+   { timeoutMs }`, a typed error a caller can settle on, counted in
+   `smithers_cloudflare_sandbox_start_timeouts`; without it the start is
+   unbounded.
 2. Arms the inactivity timeout: `inactivityTimeoutMs`, default
    `SandboxObject.defaultInactivityTimeoutMs` (30 minutes).
 3. Registers each intercept with `interceptOutboundHttp(host, fetcher)`, in
@@ -431,10 +436,11 @@ start and container errors and `R = RuntimeContext`.
 
 ### Metrics
 
-| Export                 | Name                                 | Attributes                                  |
-| ---------------------- | ------------------------------------ | ------------------------------------------- |
-| `SandboxObject.wakes`  | `smithers_cloudflare_sandbox_wakes`  | `outcome`: `started`, `running` or `failed` |
-| `SandboxObject.rearms` | `smithers_cloudflare_sandbox_rearms` | `outcome`: `rearmed`, `stopped` or `failed` |
+| Export                        | Name                                         | Attributes                                  |
+| ----------------------------- | -------------------------------------------- | ------------------------------------------- |
+| `SandboxObject.wakes`         | `smithers_cloudflare_sandbox_wakes`          | `outcome`: `started`, `running` or `failed` |
+| `SandboxObject.rearms`        | `smithers_cloudflare_sandbox_rearms`         | `outcome`: `rearmed`, `stopped` or `failed` |
+| `SandboxObject.startTimeouts` | `smithers_cloudflare_sandbox_start_timeouts` | none                                        |
 
 ## ContainerTerminal
 

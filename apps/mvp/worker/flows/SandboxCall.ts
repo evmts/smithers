@@ -5,7 +5,7 @@ import { Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { CALL_FAILURES } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
-import { CheckoutFailed, SandboxBranch, SandboxUnavailable } from "../branch/Sandboxes.ts"
+import { CheckoutFailed, SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { codeOf } from "../ErrorCode.ts"
 
 // `sandbox/Call { callId, ownerId, branch, call }` (decision 0005 §3 and §5, docs/features/sandbox-tools.md#the-remote-flow):
@@ -46,6 +46,7 @@ export const TOOL_RETRY = RetryPolicy.make({
     "@smthrs/sandbox/SandboxTools/ToolRefused",
     "@smthrs/sandbox/SandboxTools/ToolLost",
     "@smthrs/mvp/branch/CheckoutFailed",
+    "@smthrs/mvp/branch/SandboxStartTimedOut",
   ],
 })
 
@@ -65,7 +66,13 @@ export const Outcome = Schema.Union([
 export type Outcome = typeof Outcome.Type
 
 /** What the tool step can fail with. */
-const ToolError = Schema.Union([SandboxTools.ToolRefused, SandboxTools.ToolLost, SandboxUnavailable, CheckoutFailed])
+const ToolError = Schema.Union([
+  SandboxTools.ToolRefused,
+  SandboxTools.ToolLost,
+  SandboxUnavailable,
+  SandboxStartTimedOut,
+  CheckoutFailed,
+])
 type ToolError = typeof ToolError.Type
 
 /** Wakes the branch's machine and runs the tool in it as the person's own user: the done outcome. */
@@ -125,6 +132,8 @@ export const failureOf = (error: ToolError): Outcome => ({
     ? "lost"
     : error._tag === "@smthrs/mvp/branch/CheckoutFailed"
     ? "checkout"
+    : error._tag === "@smthrs/mvp/branch/SandboxStartTimedOut"
+    ? "start_timeout"
     : "unavailable",
 })
 

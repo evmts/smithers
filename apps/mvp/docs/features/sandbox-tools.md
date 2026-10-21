@@ -61,7 +61,7 @@ sandbox/Tool (wake the machine, run the tool as the person's user) ─▶ sandbo
      └ refused, lost, no machine, no checkout ─▶ sandbox/ToolFailed ─▶ sandbox/Settle (failed, with why)
 ```
 
-The tool's result is `sandbox/Tool`'s journaled success, so a replay reads it and never runs the tool again. A step tried again after an interrupted attempt finds the command's fence and answers what the first attempt recorded, or settles `lost` when that attempt never finished or its machine restarted since: a command never runs twice. Refusals, `lost` and a refused checkout aren't retried; an unreachable machine is, for 2 minutes.
+The tool's result is `sandbox/Tool`'s journaled success, so a replay reads it and never runs the tool again. A step tried again after an interrupted attempt finds the command's fence and answers what the first attempt recorded, or settles `lost` when that attempt never finished or its machine restarted since: a command never runs twice. Refusals, `lost`, a refused checkout and a start that ran past `SANDBOX_START_TIMEOUT_SECONDS` (`start_timeout`) aren't retried; an unreachable machine is, for 2 minutes.
 
 `sandbox_calls` (`db/migrations/0024_sandbox_calls.ts`) keeps one row per call: the branch, the person, the answer for the agent's calls, the tool, `running`, `done` with the result, or `failed` with why. The result is content for the person who asked; nothing logs it, and it isn't synced.
 
@@ -91,6 +91,7 @@ The tool's result is `sandbox/Tool`'s journaled success, so a replay reads it an
 |---|---|---|
 | `SANDBOX_IDLE_SECONDS` | `900` | how long a machine stays awake with nothing happening in it before `sandbox/Keep` puts it to sleep. Read by the `FlowExecution` Durable Object |
 | `SANDBOX_INSTANCE` | `standard-1` | the Cloudflare instance type a machine starts on: `lite`, `basic` or `standard-1` to `standard-4`. Read by `SandboxObject` |
+| `SANDBOX_START_TIMEOUT_SECONDS` | `150` | the longest a stopped machine's container may take to start. Past it the wake fails: a tool call settles `failed` with `start_timeout` (not retried) instead of staying `running`, and the start counts in `smithers_cloudflare_sandbox_start_timeouts`. Read by `SandboxObject` |
 | `SANDBOX_SECRETS` | `false` | whether the box's other outbound requests reach the secrets egress and it gets its placeholders ([secrets](secrets.md#wiring-into-the-box)). Read by `SandboxObject` |
 
 ## Observability

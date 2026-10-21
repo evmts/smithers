@@ -41,6 +41,30 @@ describe("SandboxObject.wake", () => {
       expect(running.calls.map((call) => call._tag)).toEqual(["timeout"])
     }))
 
+  it.live("a start that runs past startTimeoutMs fails StartTimedOut and is counted; a quick one is not bounded", () => {
+    const t = Telemetry.make()
+    return Effect.gen(function*() {
+      const stuck: SandboxObject.Machine<string, MemoryContainer.ContainerFailure> = {
+        ...MemoryContainer.machine(false).machine,
+        start: () => Effect.never
+      }
+      const error = yield* Effect.flip(SandboxObject.wake(stuck, { intercepts, startTimeoutMs: 20 }))
+      expect(error).toEqual(new SandboxObject.StartTimedOut({ timeoutMs: 20 }))
+      const quick = MemoryContainer.machine(false)
+      expect(yield* SandboxObject.wake(quick.machine, { intercepts: [], startTimeoutMs: 60_000 })).toBe("started")
+      expect(quick.calls.map((call) => call._tag)).toEqual(["start", "timeout"])
+    }).pipe(
+      t.observed,
+      Effect.andThen(Effect.sync(() => {
+        expect(t.count(SandboxObject.startTimeouts, {})).toBe(1)
+        expect(t.count(SandboxObject.wakes, { outcome: "failed" })).toBe(1)
+        expect(Object.fromEntries(t.named("sandbox.wake")[0]!.attributes)).toMatchObject({
+          "error.type": "@smthrs/platform-cloudflare/StartTimedOut"
+        })
+      }))
+    )
+  })
+
   it.effect("a running container is not started again; its timeout and intercepts are set again", () =>
     Effect.gen(function*() {
       const { calls, machine } = MemoryContainer.machine(true)
