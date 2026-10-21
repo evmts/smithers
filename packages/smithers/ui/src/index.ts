@@ -244,7 +244,8 @@ export {
 export { Progress, type ProgressProps } from "./progress";
 export { Separator } from "./separator";
 export { Skeleton } from "./skeleton";
-export { Spinner, spinnerVariants, type SpinnerProps } from "./spinner";
+export { LOADING_DELAY_MS, LoadingBar, type LoadingBarProps } from "./loading";
+export { intentPath, LinkIntent, type LinkIntentProps } from "./link-intent";
 export { formatRelativeTime } from "./time/formatRelativeTime";
 export { RelativeTime, useRelativeTime, type RelativeTimeProps } from "./time/RelativeTime";
 export { useDialogFocusTrap, type UseDialogFocusTrapOptions } from "./internal/useDialogFocusTrap";
@@ -252,6 +253,16 @@ export { EmptyState, type EmptyStateProps } from "./empty-state";
 export { Breadcrumbs, type BreadcrumbItem, type BreadcrumbsProps } from "./breadcrumbs";
 export { Popover, PopoverTrigger, PopoverContent } from "./popover";
 export { RefPicker, type RefPickerProps, type RefPickerRef, type RefPickerRefs } from "./ref-picker";
+export { GeneratedChip, type GeneratedChipLink, type GeneratedChipProps } from "./generated-chip";
+export {
+  formatCount,
+  languageShares,
+  RepoAbout,
+  type RepoAboutContributor,
+  type RepoAboutLanguage,
+  type RepoAboutProps,
+  type RepoAboutRelease,
+} from "./repo-about";
 export { CopyButton, type CopyButtonProps } from "./copy-button";
 export { Kbd, type KbdProps } from "./kbd";
 export { SegmentedControl, type SegmentedControlOption, type SegmentedControlProps } from "./segmented-control";
@@ -259,6 +270,16 @@ export { CommandPalette, type CommandPaletteItem, type CommandPaletteProps } fro
 export { commandPaletteCss, kbdCss, segmentedControlCss } from "./commandCss";
 // Branch sharing: presence avatars and the share dialog.
 export { AvatarStack, type AvatarStackPerson, type AvatarStackProps } from "./avatar-stack";
+export {
+  type Collaborator,
+  CollaboratorCarets,
+  type CollaboratorCaretsProps,
+  type FieldSelection,
+  selectionOf,
+  useSharedSelection,
+} from "./collaborators";
+export { collaboratorsCss } from "./collaboratorsCss";
+export { PERSON_LANES, personLane } from "./internal/person";
 export {
   ShareDialog,
   type ShareAccess,
@@ -799,7 +820,7 @@ export {
 } from "./item-conversation";
 export { TriageControl, triageControlCss, type TriageControlProps } from "./triage-control";
 // The agent's status (apps/mvp decision 0015): the pill, the needs-you card, the toast stack and the tab title; and
-// notices (decision 0009 §4): their words and glyphs, and when a notice's toast shows.
+// notices (decision 0009 §4): their words, glyphs and keys, when a notice's toast shows, and the notifications panel.
 export {
   AGENT_STATES,
   AGENT_STATUS_GLYPHS,
@@ -809,10 +830,17 @@ export {
   agentStatusTitle,
   answerText,
   isAgentState,
+  isNoticeHotkey,
+  isTypingTarget,
   NeedsYouCard,
   NOTICE_GLYPHS,
+  NOTICE_KEYS,
   NOTICE_WORDS,
   noticeDismissDelay,
+  noticeKeyAction,
+  NotificationBell,
+  NotificationEntry,
+  NotificationPanel,
   Toast,
   ToastStack,
   workNoticeVisible,
@@ -821,7 +849,13 @@ export {
   type NeedsYouAnswer,
   type NeedsYouCardProps,
   type NeedsYouKind,
+  type NoticeKeyAction,
+  type NoticeKeyEvent,
   type NoticeState,
+  type NotificationBellProps,
+  type NotificationEntryProps,
+  type NotificationPanelProps,
+  type NotificationStep,
   type ToastProps,
   type ToastStackProps,
 } from "./agent-status";
@@ -885,7 +919,20 @@ export {
   questionValue,
 } from "./flow-draft-view";
 // A repository's home: the blocks its `.smithers/home.json` declares (`Home` in `@smthrs/views`).
-export { RepositoryHome, repositoryHomeCss, type RepositoryHomeFile, type RepositoryHomeProps } from "./repository-home";
+export { LinkTabs, type LinkTabsProps } from "./link-tabs";
+export {
+  RepositoryHome,
+  repositoryHomeCss,
+  type RepositoryHomeEntry,
+  type RepositoryHomeFile,
+  type RepositoryHomeFlow,
+  type RepositoryHomeIssues,
+  type RepositoryHomeList,
+  type RepositoryHomeLive,
+  type RepositoryHomeNotice,
+  type RepositoryHomeProps,
+  type RepositoryHomeRuns,
+} from "./repository-home";
 // A TODO's private draft (apps/mvp decision 0016 §3); the stack itself is an `IssuesView`, and one TODO an `ItemConversation`.
 export { TodoDraftCard, todoDraftCardCss, type TodoDraftCardProps } from "./stack";
 // An outside web page: in a sandboxed frame, or as a card that opens a tab.
@@ -897,6 +944,7 @@ export {
   webPageCss,
   webPageTarget,
   type WebLinkCardProps,
+  type WebPagePreview,
   type WebPageTarget,
   type WebPageViewProps,
 } from "./web-page";
@@ -909,3 +957,6 @@ export {
   type FormField,
   type FormHints,
 } from "./flow-form";
+export * from "./flow-graph";
+
+export { ChatTimeline, timelineKey, timelineLabel, timelineCapacity, timelineLevelCount, timelineLevels, type TimelineBlock, type TimelineLevel, type ChatTimelineEntry, type ChatTimelineProps } from "./chat/ChatTimeline";

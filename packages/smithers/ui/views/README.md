@@ -21,16 +21,11 @@ decision [0004](../../../../apps/mvp/docs/decisions/0004-agent-ui-codemode-and-r
 
 ## Install
 
-The package is private in this repository. Add it as a workspace dependency
-with its peer dependency:
+Install it with its peer dependency; it is published under the `next` tag
+with the rest of Smithers' packages:
 
-```json
-{
-  "dependencies": {
-    "@smthrs/views": "workspace:*",
-    "effect": "4.0.5"
-  }
-}
+```sh
+npm install @smthrs/views@next effect@4.0.5
 ```
 
 It imports no Node built-in, so it runs in a browser, a Cloudflare Worker,

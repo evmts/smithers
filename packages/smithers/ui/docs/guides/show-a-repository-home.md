@@ -1,12 +1,13 @@
 ---
 title: "Show a repository home"
-description: "Draw the blocks a repository declares in .smithers/home.json with RepositoryHome: text, links, Markdown files, a prompt and app buttons, read with Home.read from @smthrs/views."
+description: "Draw the sections a repository declares in .smithers/home.json with RepositoryHome: a landing page's hero, code, cards, stats and releases, the live issues, stack, runs and flows, actions with their keys, and who each section is for."
 ---
 
 A repository declares its home in `.smithers/home.json`. `Home.read` from
-`@smthrs/views` checks the file and answers its blocks. `RepositoryHome` draws
-those blocks. A home is data: the component runs nothing on arrival, and a
-button acts only when a person presses it.
+`@smthrs/views` checks the file and answers its sections, each for an
+audience: everyone, contributors or maintainers. `RepositoryHome` draws the
+sections you give it. A home is data: the component runs nothing on arrival,
+and a button acts only when a person presses it.
 
 ```tsx
 import { Home } from "@smthrs/views"
@@ -17,49 +18,92 @@ const home = Home.read(homeJsonText)
 {home._tag === "Declared" ? (
   <RepositoryHome
     aria-label="maya/tinyhttp home"
-    blocks={home.blocks}
+    sections={Home.visible(home.sections, Home.widen(audience, home.contributors))}
     files={{ "README.md": { state: "text", text: readme } }}
     askHref="/maya/tinyhttp?ask=1"
     onAsk={(flow) => router.navigate({ to: "/maya/tinyhttp", search: { ask: 1, flow } })}
     offered={(flow) => catalog.has(flow)}
+    live={{ stack: { entries, total: entries.length, href: "/maya/tinyhttp/stack" } }}
+    onNavigate={(href) => router.navigate({ href })}
+    onRun={(flow) => run(flow)}
+    running={runningFlows}
   />
 ) : null}
 ```
 
+Pass only the sections the viewer may see: the component draws every section
+it is given. Who the viewer is, and so their audience, is your host's to
+decide, on the server where a section's data is private.
+
 When `Home.read` answers `Invalid`, show the file tree with one line, such as
-`Home is invalid`. When no block draws, `RepositoryHome` renders nothing, so
+`Home is invalid`. When nothing draws, `RepositoryHome` renders nothing, so
 show the tree then too.
+
+## Sections
+
+Each section with something to draw is a `<section>` with
+`data-slot="repository-home-section"` and `data-audience`, named by its title.
+A section with a title, or one for contributors or maintainers, has a heading:
+the title as an `<h2>`, and a label, `Contributors` or `Maintainers`, so the
+people who see it know others don't. Action blocks that lead a section with a
+heading sit in it, to the right.
 
 ## What each block draws
 
 Each drawn block is a `div` with `data-slot="repository-home-block"` and
 `data-kind` set to the block's `type`. A block's `title`, when present, is an
-`<h2>`.
+`<h3>`.
 
 | Block | Draws |
 | --- | --- |
+| `hero` | The project's name as a large `<h2>`, its tagline, a line, up to three links (the first primary), the install command with Copy, and an announcement above the name. External links open in a new tab. |
+| `code` | A `<figure>` named by its file (else its language, else `Code`) with Copy and the source as text, colored for `ts`, `tsx`, `js`, `jsx` and `vibe`. A `hero` and the `code` block right after it share two columns on a wide home. |
+| `cards` | A grid of cards, each a link when it has a URL, with its label, title (`<h4>`) and line, and a link to the rest. |
+| `stats` | A `<dl>`: each stat's label is the term and its value the description, drawn value over label. |
+| `releases` | A list: each release's name links to its page, with its line and its date as a `<time>`. |
 | `text` | Its text in a paragraph, line breaks kept. Always text, never markup. |
-| `links` | A list of links that open in a new tab with `rel="noopener noreferrer"`. A URL that isn't absolute `http` or `https` is not drawn. |
+| `links` | Links that open in a new tab with `rel="noopener noreferrer"`. A URL that isn't absolute `http` or `https` is not drawn. |
 | `markdown` | The file at `path` from `files`, as a document. |
-| `prompt` | A link styled as an outline button to `askHref`, labelled by `placeholder`, or `Ask Smithers`. |
+| `prompt` | A band with its title and a link to `askHref`, named by `placeholder`, or `Ask Smithers`. |
 | `app` | A link styled as an outline button to `askHref`, labelled by `title`, with `data-picture` set to its picture. Adjacent app blocks share one wrapping row. |
-| `flows`, `stack`, `view` | Nothing yet. |
+| `action` | A primary `<button>` that calls `onRun(flow)`, with its key in a `<kbd>` and `aria-keyshortcuts`. Drawn only with `onRun` and when `offered(flow)`. |
+| `issues`, `stack`, `runs`, `flows` | The rows you pass in `live`; nothing without them. |
+| `view` | Nothing yet. |
 
-`flows`, `stack` and `view` need rows the page doesn't have in this release:
-the repository's flow catalog, its stack of changes, and a flow's view in the
-presentation realm.
+## Live blocks
+
+The live blocks carry no rows in the file: you read them under your own access
+checks and pass them in `live`.
+
+| `live` | Draws |
+| --- | --- |
+| `issues: { proposed, accepted, notAccepted, triage, pulls, href }` | Four counts that link to `href` (Proposed warns when above zero), then panels Needs triage and Pull requests waiting. |
+| `stack: { entries, total, href? }` | A panel of the stack's rows. Adjacent `stack` and `runs` blocks share one grid. |
+| `runs: { entries, total, failed, href? }` | A panel of runs; its count says how many failed. |
+| `flows: [{ flow, name, title }]` | A button per flow to `askHref`; a plain click calls `onAsk(flow)`. |
+| `{ notice }` for `issues`, `stack` or `runs` | The block's heading and that one line, such as `Not synced` or `Sign in`. |
+
+A row (`RepositoryHomeEntry`) is `{ key, label?, title, href, status?, at? }`:
+its handle, its title linking to `href`, a `StatusPill` for `status`, and how
+long ago `at` was. An `href` in the app calls `onNavigate` on a plain click;
+an `http` or `https` one opens in a new tab.
 
 ## Props
 
 | Prop | Meaning |
 | --- | --- |
-| `blocks` | The declared blocks, in order, as `Home.read` answered them. |
+| `sections` | The sections to draw, in order: the ones the viewer may see. |
 | `files` | Each markdown block's file by its repository path: `{ state: "loading" }`, `{ state: "text", text }` or `{ state: "failed" }`. |
-| `askHref` | Where a prompt or app button goes. Without it, prompt and app blocks aren't drawn. |
-| `onAsk` | Called on a plain click on a prompt or app button, with the block's `flow`, or `undefined` for a prompt without one. The click's default is prevented, so your router navigates. Without it, the buttons are plain links. |
-| `offered` | Whether this page has an app block's flow. Without it, no app block is drawn. |
+| `askHref` | Where a prompt, app or flow button goes. Without it, those blocks aren't drawn. |
+| `onAsk` | Called on a plain click on a prompt, app or flow button, with its flow, or `undefined` for a prompt without one. The click's default is prevented, so your router navigates. Without it, the buttons are plain links. |
+| `offered` | Whether this page has an app or action block's flow. Without it, neither is drawn. |
+| `live` | The live blocks' rows. |
+| `onNavigate` | Called on a plain click on a link in the app, such as a row or a count. Without it, they are plain links. |
+| `onCopy` | Copies an install command or a code block, your way. Without it, the browser's clipboard. |
+| `onRun` | Runs an action block's flow. Without it, no action block is drawn. |
+| `running` | The action flows running now: their buttons are disabled and their keys do nothing. |
 
-Other props go to the `<section>` (`data-slot="repository-home"`).
+Other props go to the outer `<section>` (`data-slot="repository-home"`).
 
 ## Markdown files
 
@@ -73,11 +117,15 @@ the home's commit and pass what you have in `files`:
 
 ## Keyboard
 
-Every prompt and app button and every listed link is a real link, so Tab
-reaches it and Enter follows it. With `onAsk`, a plain click or Enter calls it
-instead of following the link. A click with ⌘, Ctrl, Shift or Alt, or with the
-middle button, keeps the browser's own behavior, such as opening a new tab, and
-doesn't call `onAsk`.
+Every prompt, app and flow button and every link is a real link, so Tab
+reaches it and Enter follows it. With `onAsk` or `onNavigate`, a plain click
+or Enter calls it instead of following the link. A click with ⌘, Ctrl, Shift
+or Alt, or with the middle button, keeps the browser's own behavior, such as
+opening a new tab.
+
+An action's `key` presses it from anywhere on the page while the person isn't
+typing in a field: never with ⌘, Ctrl, Alt or Shift, never a repeat, never a
+key another handler took.
 
 ## Related
 

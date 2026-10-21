@@ -1,6 +1,6 @@
 /**
  * The agent's status as a person reads it (apps/mvp decision 0015): five
- * states, one word and one glyph each. `working` pulses in brand, `waiting` is
+ * states, one word and one glyph each. `working` is brand, `waiting` is
  * quiet, `needs_you` is gold, `failed` is ember and `done` shows nothing in a
  * status bar. Framework-free, so a terminal frontend reads the same words.
  */

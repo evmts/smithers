@@ -2,6 +2,7 @@
 import { type ComponentProps, type FormEvent, useEffect, useId, useRef } from "react";
 import { Button } from "../button";
 import { cn } from "../cn";
+import { type Collaborator, CollaboratorCarets, type FieldSelection, selectionOf, useSharedSelection } from "../collaborators";
 import { Input } from "../input";
 import { useInjectUiCss } from "../styles";
 import { AgentStatusPill } from "./AgentStatusPill";
@@ -20,7 +21,8 @@ export type NeedsYouCardProps = Omit<ComponentProps<"div">, "children" | "onChan
   options?: ReadonlyArray<string>;
   /** The field's text: the app keeps the draft. */
   value: string;
-  onValueChange: (value: string) => void;
+  /** The person typed: the new value, and where their selection is in it. */
+  onValueChange: (value: string, selection: FieldSelection) => void;
   onAnswer: (answer: NeedsYouAnswer) => void;
   /** The accepted answer: the card collapses to it. */
   answered?: NeedsYouAnswer | undefined;
@@ -28,6 +30,20 @@ export type NeedsYouCardProps = Omit<ComponentProps<"div">, "children" | "onChan
   sending?: boolean;
   /** Focuses the field and scrolls the card into view each time it changes, for a toast's or header's Answer. */
   focusRequest?: number | undefined;
+  /**
+   * Only the controls: no pill, no box, and the prompt only for screen readers, where the question shows already, such
+   * as a notification's row.
+   */
+  compact?: boolean;
+  /**
+   * An answer the person's devices type at once: the other devices' carets, drawn over the field. Set it, even empty,
+   * to edit together.
+   */
+  collaborators?: ReadonlyArray<Collaborator>;
+  /** Where this person's selection now is, after another device's typing changed `value`. */
+  selection?: FieldSelection;
+  /** The person moved their caret or selection in the field. */
+  onSelectionChange?: (selection: FieldSelection) => void;
 };
 
 /** How an accepted answer reads. */
@@ -50,6 +66,10 @@ export function NeedsYouCard({
   answered,
   sending = false,
   focusRequest,
+  compact = false,
+  collaborators,
+  selection,
+  onSelectionChange,
   className,
   ...props
 }: NeedsYouCardProps) {
@@ -57,6 +77,7 @@ export function NeedsYouCard({
   const promptId = useId();
   const card = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
+  const typed = useSharedSelection(field, value, selection);
   const approve = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (focusRequest === undefined) return;
@@ -82,6 +103,22 @@ export function NeedsYouCard({
     );
   }
 
+  const input = (
+    <Input
+      ref={field}
+      className="sui-needs-you-field"
+      value={value}
+      placeholder="Your answer"
+      aria-label="Your answer"
+      disabled={sending}
+      onChange={(event) => {
+        typed(event.currentTarget.value);
+        onValueChange(event.currentTarget.value, selectionOf(event.currentTarget));
+      }}
+      onSelect={(event) => onSelectionChange?.(selectionOf(event.currentTarget))}
+    />
+  );
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const text = value.trim();
@@ -96,13 +133,16 @@ export function NeedsYouCard({
       data-slot="needs-you"
       data-state="open"
       data-kind={kind}
+      data-compact={compact ? "" : undefined}
       className={cn("sui-needs-you", className)}
       {...props}
     >
-      <div>
-        <AgentStatusPill state="needs_you" />
-      </div>
-      <p id={promptId} className="sui-needs-you-prompt">
+      {compact ? null : (
+        <div>
+          <AgentStatusPill state="needs_you" />
+        </div>
+      )}
+      <p id={promptId} className={compact ? "sui-sr-only" : "sui-needs-you-prompt"}>
         {prompt}
       </p>
       {kind === "approval" ? (
@@ -126,15 +166,12 @@ export function NeedsYouCard({
             </div>
           ) : null}
           <form className="sui-needs-you-row" onSubmit={submit}>
-            <Input
-              ref={field}
-              className="sui-needs-you-field"
-              value={value}
-              placeholder="Your answer"
-              aria-label="Your answer"
-              disabled={sending}
-              onChange={(event) => onValueChange(event.currentTarget.value)}
-            />
+            {collaborators === undefined ? input : (
+              <div className="sui-collaborative-field sui-needs-you-field">
+                {input}
+                <CollaboratorCarets field={field} value={value} collaborators={collaborators} />
+              </div>
+            )}
             <Button type="submit" disabled={sending || value.trim() === ""}>
               Answer
             </Button>

@@ -362,7 +362,9 @@ describe("PromptInput", () => {
     await act(async () => root!.render(view("submitted")));
     expect(submit().disabled).toBe(true);
     expect(submit().getAttribute("data-status")).toBe("submitted");
-    expect(submit().querySelector('[data-slot="spinner"]')).not.toBeNull();
+    expect(submit().getAttribute("aria-busy")).toBe("true");
+    expect(submit().querySelector('[data-slot="loading-bar"]')!.getAttribute("data-state")).toBe("loading");
+    expect(submit().querySelector('[data-slot="spinner"]')).toBeNull();
     await act(async () => root!.render(view("streaming")));
     expect(submit().disabled).toBe(true);
     await act(async () => root!.render(view("error")));

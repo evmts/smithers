@@ -1,3 +1,5 @@
+import { chatTimelineCss } from "./chat/chatTimelineCss";
+import { flowGraphCss } from "./flow-graph/flowGraphCss";
 /**
  * The complete stylesheet for @smthrs/ui, as a plain string.
  *
@@ -28,6 +30,8 @@
  *   999px pills), padding/gap on a 2px grid, and font weights 400/500/650
  *   with 700 reserved for KPI numerals.
  */
+import { reducedMotionCss } from "@smthrs/ui-styleguide";
+import { LOADING_DELAY_MS } from "./loading-delay";
 import { tokens as t } from "./tokens";
 import { statusColors } from "./status";
 import { conversationFoundationCss } from "./chat/conversationFoundationCss";
@@ -43,7 +47,7 @@ import { canvasCss } from "./canvas/canvasCss";
 import { calendarCss } from "./calendar/calendarCss";
 import { vaultCss } from "./vault/vaultCss";
 import { wordmarkCss } from "./wordmark/wordmarkCss";
-import { breadcrumbsCss, directoryListingCss, popoverCss, refPickerCss } from "./repositoryCss";
+import { breadcrumbsCss, directoryListingCss, generatedChipCss, popoverCss, refPickerCss, repoAboutCss } from "./repositoryCss";
 import { flowFormViewCss } from "./flow-form-view/flowFormViewCss";
 import { generatedViewCss } from "./generated-view/generatedViewCss";
 import { issuesViewCss } from "./issues-view/issuesViewCss";
@@ -58,6 +62,7 @@ import { repositoryHomeCss } from "./repository-home/repositoryHomeCss";
 import { todoDraftCardCss } from "./stack/todoDraftCardCss";
 import { actionMenuCss } from "./action-menu/actionMenuCss";
 import { avatarStackCss, shareDialogCss } from "./sharingCss";
+import { collaboratorsCss } from "./collaboratorsCss";
 import { commandPaletteCss, kbdCss, segmentedControlCss } from "./commandCss";
 
 const shadowCard = t.shadow2;
@@ -66,10 +71,8 @@ const focusRing = `outline:none; border-color:${t.ringBorder}; box-shadow:0 0 0 
 /** The one house interaction speed for background/border/color feedback. */
 const interaction = "transition:background-color .12s ease, border-color .12s ease, color .12s ease;";
 
-/** Standalone component hosts need the same global policy as the styleguide. */
-export const reducedMotionCss = `@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-delay:0ms !important; animation-duration:0.001ms !important; animation-iteration-count:1 !important; scroll-behavior:auto !important; transition-delay:0ms !important; transition-duration:0.001ms !important; }
-}`;
+/** Standalone component hosts need the same global policy as the styleguide: it is the styleguide's. */
+export { reducedMotionCss };
 
 /**
  * Utilities every sheet may reference, defined exactly once: the visually
@@ -95,6 +98,8 @@ export const buttonCss = `
 .sui-button:active:not(:disabled) { background:color-mix(in srgb, ${t.foreground} 6%, ${t.secondary}); }
 .sui-button:focus-visible { ${focusRing} }
 .sui-button:disabled, .sui-button[aria-disabled='true'] { cursor:not-allowed; opacity:.45; }
+/* A loading button holds its label; its LoadingBar runs along the top edge (loadingCss). */
+.sui-button[aria-busy='true'] { position:relative; overflow:hidden; }
 .sui-button svg { flex:none; }
 .sui-button-default { border-color:color-mix(in srgb, ${t.primary} 40%, transparent); background:color-mix(in srgb, ${t.primary} 10%, ${t.card}); color:${t.primary}; font-weight:650; }
 .sui-button-default:hover { background:color-mix(in srgb, ${t.primary} 10%, ${t.card}); border-color:color-mix(in srgb, ${t.primary} 65%, transparent); }
@@ -202,11 +207,10 @@ export const chatCss = `
 .sui-chat-message:focus { outline:none; }
 .sui-chat-bubble > :first-child { margin-top:0; }
 .sui-chat-bubble > :last-child { margin-bottom:0; }
-.sui-chat-bubble-pending { display:inline-flex; align-items:center; padding:14px; }
-.sui-chat-typing { display:inline-flex; align-items:center; gap:6px; }
-.sui-chat-typing span { width:7px; height:7px; border-radius:${t.radiusFull}; background:${t.placeholder}; animation:sui-chat-typing 1.3s ease-in-out infinite; }
-.sui-chat-typing span:nth-child(2) { animation-delay:.2s; }
-.sui-chat-typing span:nth-child(3) { animation-delay:.4s; }
+/* An answer that hasn't started: its bubble, holding one skeleton line the height of the answer's first, shows only
+   once the wait has lasted the loading delay (loadingCss). */
+.sui-chat-bubble-pending { --motion-hold:${LOADING_DELAY_MS}ms; animation:sui-loading-appear .2s ease-out ${LOADING_DELAY_MS}ms both; }
+.sui-chat-pending-line { width:14ch; max-width:100%; height:1.5em; min-height:0; padding:.45em 0; box-sizing:border-box; background-clip:content-box; }
 .sui-chat-composer { position:relative; display:grid; gap:12px; width:min(100%, 720px); margin:0 auto; padding:16px; border:1px solid ${t.border}; border-radius:${t.radiusBubble}; background:${t.glass}; -webkit-backdrop-filter:blur(20px) saturate(180%); backdrop-filter:blur(20px) saturate(180%); box-shadow:0 1px 2px rgb(${t.shadowRgb} / 0.04), 0 16px 40px rgb(${t.shadowRgb} / 0.10); transition:border-color .15s ease, box-shadow .15s ease; }
 .sui-chat-composer:focus-within { border-color:color-mix(in srgb, ${t.primary} 32%, ${t.border}); box-shadow:0 0 0 4px color-mix(in srgb, ${t.primary} 12%, transparent), 0 1px 2px rgb(${t.shadowRgb} / 0.05), 0 20px 48px rgb(${t.shadowRgb} / 0.14); }
 .sui-chat-composer[data-docked='true'] { position:fixed; right:24px; bottom:max(18px, env(safe-area-inset-bottom)); left:24px; z-index:40; }
@@ -227,7 +231,6 @@ export const chatCss = `
 .sui-completion-label { flex:none; color:${t.foreground}; font-family:${t.fontMono}; }
 .sui-completion-detail { min-width:0; color:${t.mutedForeground}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 @keyframes sui-chat-message-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
-@keyframes sui-chat-typing { 0%, 60%, 100% { opacity:.3; } 30% { opacity:1; } }
 @media (max-width: 620px) { .sui-chat-messages { padding:24px 14px 146px; } .sui-chat-bubble { max-width:90%; } .sui-chat-composer[data-docked='true'] { right:12px; left:12px; bottom:max(10px, env(safe-area-inset-bottom)); } }
 `;
 
@@ -440,16 +443,27 @@ export const progressCss = `
 .sui-progress-indicator { width:100%; height:100%; border-radius:${t.radiusFull}; background:${t.primary}; transition:transform .3s ease; }
 `;
 
-export const skeletonCss = `
-.sui-skeleton { display:block; min-height:14px; border-radius:${t.radiusControl}; background:color-mix(in srgb, ${t.mutedForeground} 14%, transparent); animation:sui-skeleton-pulse 1.6s ease-in-out infinite; }
-@keyframes sui-skeleton-pulse { 0%, 100% { opacity:1; } 50% { opacity:.45; } }
-`;
-
-export const spinnerCss = `
-.sui-spinner { display:inline-block; width:14px; height:14px; flex:none; border:2px solid color-mix(in srgb, currentColor 25%, transparent); border-top-color:currentColor; border-radius:${t.radiusFull}; animation:sui-spin .7s linear infinite; }
-.sui-spinner-sm { width:11px; height:11px; border-width:1.5px; }
-.sui-spinner-lg { width:20px; height:20px; }
-@keyframes sui-spin { to { transform:rotate(360deg); } }
+/**
+ * The one loading pattern (LoadingBar, Skeleton): nothing for the first
+ * LOADING_DELAY_MS, so a fast load shows nothing; then a thin bar at the top
+ * or a skeleton in place, which keeps the content's box. Each settles with a
+ * fade. Each names its wait in `--motion-hold`, so under reduced motion
+ * (reducedMotionCss) the wait holds while nothing moves or fades: the bar's
+ * sweep rests at its full width, and the skeleton stops pulsing.
+ */
+export const loadingCss = `
+@keyframes sui-loading-appear { from { opacity:0; } to { opacity:1; } }
+.sui-loading-bar { position:fixed; top:0; right:0; left:0; z-index:60; height:2px; overflow:hidden; pointer-events:none; opacity:0; transition:opacity .2s ease; }
+.sui-loading-bar[data-placement='inline'] { position:absolute; z-index:1; }
+.sui-loading-bar[data-state='loading'] { --motion-hold:${LOADING_DELAY_MS}ms; opacity:1; transition:opacity .15s ease ${LOADING_DELAY_MS}ms; }
+/* A bar that mounts already loading (a button's) waits too. */
+@starting-style { .sui-loading-bar[data-state='loading'] { opacity:0; } }
+.sui-loading-bar::before { content:''; position:absolute; inset:0; transform-origin:left center; background:${t.primary}; animation:sui-loading-sweep 1.4s cubic-bezier(.4, 0, .2, 1) infinite; }
+.sui-loading-bar[data-state='idle']::before { animation-play-state:paused; }
+@keyframes sui-loading-sweep { from { transform:translateX(-40%) scaleX(.4); } to { transform:translateX(100%) scaleX(.4); } }
+.sui-skeleton { --motion-hold:${LOADING_DELAY_MS}ms; display:block; min-height:14px; border-radius:${t.radiusControl}; background-color:color-mix(in srgb, ${t.mutedForeground} 14%, transparent); animation:sui-loading-appear .2s ease-out ${LOADING_DELAY_MS}ms both, sui-skeleton-pulse 1.6s ease-in-out ${LOADING_DELAY_MS + 200}ms infinite; }
+@keyframes sui-skeleton-pulse { 50% { background-color:color-mix(in srgb, ${t.mutedForeground} 8%, transparent); } }
+.sui-link-intent { display:contents; }
 `;
 
 export const separatorCss = `
@@ -694,6 +708,7 @@ export const agenticReasoningCss = `
 
 /** All component sheets, composed in a stable order. */
 export const smithersUiCss = [
+  chatTimelineCss,
   sharedCss,
   buttonCss,
   badgeCss,
@@ -709,8 +724,7 @@ export const smithersUiCss = [
   agenticPlanCss,
   selectCss,
   progressCss,
-  skeletonCss,
-  spinnerCss,
+  loadingCss,
   separatorCss,
   timeCss,
   emptyStateCss,
@@ -727,6 +741,8 @@ export const smithersUiCss = [
   agentOutputCss,
   popoverCss,
   refPickerCss,
+  repoAboutCss,
+  generatedChipCss,
   stageStripCss,
   agenticReasoningCss,
   conversationFoundationCss,
@@ -751,12 +767,14 @@ export const smithersUiCss = [
   agentStatusCss,
   jsonValueCss,
   runPageCss,
+  flowGraphCss,
   flowDraftViewCss,
   repositoryHomeCss,
   todoDraftCardCss,
   actionMenuCss,
   avatarStackCss,
   shareDialogCss,
+  collaboratorsCss,
   kbdCss,
   segmentedControlCss,
   commandPaletteCss,
@@ -764,3 +782,4 @@ export const smithersUiCss = [
 ]
   .map((block) => block.trim())
   .join("\n");
+

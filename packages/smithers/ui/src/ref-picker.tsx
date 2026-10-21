@@ -6,7 +6,7 @@ import { cn } from "./cn";
 import { Input } from "./input";
 import { isPlainNavigationClick } from "./internal/navigationClick";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
-import { Spinner } from "./spinner";
+import { Skeleton } from "./skeleton";
 import { useInjectUiCss } from "./styles";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./tabs";
 
@@ -150,7 +150,15 @@ export function RefPicker({
               <code className="sui-ref-picker-name">{commit.slice(0, 7)}</code>
             </a>
           )}
-          {refs.state === "loading" ? <div className="sui-ref-picker-note"><Spinner /></div> : null}
+          {refs.state === "loading" ?
+            (
+              <div className="sui-ref-picker-loading" role="status" aria-label="Loading branches and tags">
+                <Skeleton className="sui-ref-picker-skeleton" />
+                <Skeleton className="sui-ref-picker-skeleton" />
+                <Skeleton className="sui-ref-picker-skeleton" />
+              </div>
+            ) :
+            null}
           {refs.state === "failed" ? <div className="sui-ref-picker-note" role="alert">{refs.message}</div> : null}
           {refs.state === "ready" ?
             (

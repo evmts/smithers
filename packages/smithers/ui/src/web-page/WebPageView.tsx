@@ -1,10 +1,11 @@
 /** @jsxImportSource react */
-import type { ComponentProps, ReactNode } from "react";
+import { type ComponentProps, type ReactNode, useState } from "react";
 import { Button } from "../button";
 import { cn } from "../cn";
 import { EmptyState } from "../empty-state";
 import { useInjectUiCss } from "../styles";
 import { hostOrigin } from "./hostOrigin";
+import { PagePreview, type WebPagePreview } from "./PagePreview";
 import { framedPageTarget } from "./webPageUrl";
 
 /**
@@ -25,21 +26,34 @@ export type WebPageViewProps = Omit<ComponentProps<"figure">, "children" | "titl
   title?: string;
   /** Controls placed in the top bar before `Open in new tab`. */
   actions?: ReactNode;
+  /** What the page says about itself, shown over the frame until it loads. */
+  preview?: WebPagePreview;
 };
 
 /**
  * An outside web page in a sandboxed frame, under a bar with its origin and an
- * always-visible `Open in new tab` link: many sites refuse framing, and the
- * page cannot tell.
+ * always-visible `Open in new tab` link. Until the frame loads, its preview
+ * (icon, title, description, domain) covers it, so a page that never loads
+ * still says what it is. Many sites refuse framing and the page cannot tell:
+ * check before framing (`@smthrs/views`' `WebPage.check`) and show a
+ * `WebLinkCard` for a page that refuses.
  */
-export function WebPageView({ url, size = "inline", title, actions, className, ...props }: WebPageViewProps) {
+export function WebPageView({ url, size = "inline", title, actions, preview = {}, className, ...props }: WebPageViewProps) {
   useInjectUiCss();
+  const [loaded, setLoaded] = useState<string | null>(null);
   const target = framedPageTarget(url, hostOrigin());
   if (target === null) {
     return <EmptyState {...props} className={className} title="Can't show this page" data-slot="web-page-view" data-refused="true" />;
   }
+  const pending = loaded !== target.href;
   return (
-    <figure {...props} className={cn("sui-web-page-view", className)} data-slot="web-page-view" data-size={size}>
+    <figure
+      {...props}
+      className={cn("sui-web-page-view", className)}
+      data-slot="web-page-view"
+      data-size={size}
+      data-state={pending ? "loading" : "loaded"}
+    >
       <figcaption className="sui-web-page-bar">
         <span data-slot="web-page-origin" className="sui-web-page-origin">
           {target.origin}
@@ -53,15 +67,23 @@ export function WebPageView({ url, size = "inline", title, actions, className, .
           </Button>
         </span>
       </figcaption>
-      <iframe
-        data-slot="web-page-frame"
-        className="sui-web-page-frame"
-        title={title ?? `Web page from ${target.host}`}
-        src={target.href}
-        sandbox={WEB_PAGE_SANDBOX}
-        referrerPolicy="no-referrer"
-        loading="lazy"
-      />
+      <div className="sui-web-page-stage">
+        <iframe
+          data-slot="web-page-frame"
+          className="sui-web-page-frame"
+          title={title ?? `Web page from ${target.host}`}
+          src={target.href}
+          sandbox={WEB_PAGE_SANDBOX}
+          referrerPolicy="no-referrer"
+          loading="lazy"
+          onLoad={() => setLoaded(target.href)}
+        />
+        {pending ? (
+          <div data-slot="web-page-pending" className="sui-web-page-pending" aria-hidden="true">
+            <PagePreview target={target} preview={preview} />
+          </div>
+        ) : null}
+      </div>
     </figure>
   );
 }

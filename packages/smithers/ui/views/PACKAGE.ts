@@ -8,15 +8,13 @@ import {
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 import { Package as harnessPackage } from "../../agent/harness/PACKAGE.ts"
-import { Package as targetsPackage } from "../../build/targets/PACKAGE.ts"
 import { Package as cryptoPackage } from "../../flows/crypto/PACKAGE.ts"
 import { Package as flowPackage } from "../../flows/flow/PACKAGE.ts"
 
 const cwd = "packages/smithers/ui/views"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
-  // `@smthrs/targets` for test/HomeTargets.test.ts only: the home it writes, read back here.
-  deps: [harnessPackage.lib, cryptoPackage.lib, flowPackage.lib, targetsPackage.lib],
+  deps: [harnessPackage.lib, cryptoPackage.lib, flowPackage.lib],
   sources: Input.glob("{src,examples}/**/*.ts"),
   cwd
 })

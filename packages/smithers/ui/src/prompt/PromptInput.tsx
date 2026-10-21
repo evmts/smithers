@@ -18,7 +18,7 @@ import {
 } from "react";
 import { Attachment, AttachmentGroup } from "../chat/Attachment";
 import { cn } from "../cn";
-import { Spinner } from "../spinner";
+import { LoadingBar } from "../loading";
 import { useInjectUiCss } from "../styles";
 import type { AttachmentState } from "../chat/Attachment";
 
@@ -716,9 +716,11 @@ export function PromptInputSubmit({ className, ...props }: ComponentProps<"butto
       aria-label="Send message"
       title="Send message"
       disabled={!canSubmit}
+      {...(status === "submitted" ? { "aria-busy": true } : {})}
       {...props}
     >
-      {status === "submitted" ? <Spinner size="sm" aria-label="Sending" /> : <span aria-hidden="true">↑</span>}
+      <span aria-hidden="true">↑</span>
+      <LoadingBar loading={status === "submitted"} placement="inline" />
     </button>
   );
 }

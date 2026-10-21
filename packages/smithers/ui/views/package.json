@@ -1,9 +1,8 @@
 {
   "name": "@smthrs/views",
   "type": "module",
-  "version": "0.1.0",
+  "version": "1.0.0-rc.16",
   "license": "MIT",
-  "private": true,
   "smthrs": {
     "group": "agent"
   },
@@ -46,12 +45,20 @@
     "docs/"
   ],
   "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/esm/index.d.ts",
-        "import": "./dist/esm/index.js",
-        "require": "./dist/cjs/index.js"
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -66,9 +73,9 @@
   },
   "dependencies": {
     "@babel/parser": "8.0.4",
-    "@smthrs/crypto": "workspace:*",
-    "@smthrs/flow": "workspace:*",
-    "@smthrs/harness": "workspace:*",
+    "@smthrs/crypto": "1.0.0-rc.16",
+    "@smthrs/flow": "1.0.0-rc.16",
+    "@smthrs/harness": "1.0.0-rc.16",
     "sucrase": "3.35.1"
   },
   "devDependencies": {
@@ -76,7 +83,6 @@
     "@eslint/js": "9.39.5",
     "@jitl/quickjs-singlefile-browser-release-sync": "0.32.0",
     "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
-    "@smthrs/targets": "workspace:*",
     "@types/node": "26.4.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",

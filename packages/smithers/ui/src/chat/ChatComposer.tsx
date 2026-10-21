@@ -11,6 +11,7 @@ import {
 } from "react";
 import { Button } from "../button";
 import { cn } from "../cn";
+import { type Collaborator, CollaboratorCarets, type FieldSelection, selectionOf, useSharedSelection } from "../collaborators";
 import type { DataAttributes } from "../data-attributes";
 import { useInjectUiCss } from "../styles";
 import { type ChatComposerCompletions, clampHighlight, CompletionList, completionOptionId } from "./CompletionList";
@@ -24,9 +25,10 @@ const COMPOSER_INPUT_MAX_HEIGHT = 160;
 /** Mirrors PromptInput's `submit-failed`: `onSubmit` threw or its promise rejected. */
 export type ChatComposerError = { code: "submit-failed"; cause: unknown; };
 
-export type ChatComposerProps = Omit<ComponentProps<"form">, "onSubmit" | "onError"> & {
+export type ChatComposerProps = Omit<ComponentProps<"form">, "onSubmit" | "onError" | "onSelect"> & {
   value: string;
-  onValueChange: (value: string) => void;
+  /** The person typed: the new value, and where their selection is in it. */
+  onValueChange: (value: string, selection: FieldSelection) => void;
   onSubmit: (value: string) => void | Promise<void>;
   /** Receives a thrown or rejected `onSubmit`. Without it the cause goes to `globalThis.reportError`. The draft is never touched. */
   onError?: (error: ChatComposerError) => void;
@@ -72,6 +74,17 @@ export type ChatComposerProps = Omit<ComponentProps<"form">, "onSubmit" | "onErr
    * composer's own Enter and Escape.
    */
   completions?: ChatComposerCompletions;
+  /**
+   * A draft several people type at once: everyone else's carets, drawn over the input in their colors and flagged with
+   * their names. Set it, even empty, to edit together.
+   */
+  collaborators?: ReadonlyArray<Collaborator>;
+  /** Where this person's selection now is, after someone else's typing changed `value`. */
+  selection?: FieldSelection;
+  /** The person moved their caret or selection. */
+  onSelectionChange?: (selection: FieldSelection) => void;
+  /** Shows the draft without letting the person change or send it, as for someone who may only view it. */
+  readOnly?: boolean;
 };
 
 /** Controlled glass chat composer. Enter submits and Shift+Enter inserts a line. */
@@ -96,6 +109,10 @@ export function ChatComposer({
   stopProps,
   textareaProps,
   completions,
+  collaborators,
+  selection,
+  onSelectionChange,
+  readOnly = false,
   className,
   ...props
 }: ChatComposerProps) {
@@ -104,9 +121,10 @@ export function ChatComposer({
   const listed = completions !== undefined && completions.items.length > 0 ? completions : undefined;
   const highlighted = listed === undefined ? 0 : clampHighlight(listed.highlighted, listed.items.length);
   const busy = lifecycleStatus === "submitted" || lifecycleStatus === "streaming";
-  const canSubmit = !disabled && (!busy || submitWhileBusy) && value.trim().length > 0;
+  const canSubmit = !disabled && !readOnly && (!busy || submitWhileBusy) && value.trim().length > 0;
   const stopAccessibleLabel = typeof stopLabel === "string" && stopLabel !== "■" ? stopLabel : "Stop generating";
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const typed = useSharedSelection(textareaRef, value, selection);
 
   const autogrow = (element: HTMLTextAreaElement) => {
     element.style.height = "auto";
@@ -128,7 +146,7 @@ export function ChatComposer({
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextValue = value.trim();
-    if (!nextValue || disabled || (busy && !submitWhileBusy)) return;
+    if (!nextValue || disabled || readOnly || (busy && !submitWhileBusy)) return;
     // The host owns the draft, so a failure only reports; it never clears.
     const fail = (cause: unknown) => {
       if (onError) onError({ code: "submit-failed", cause });
@@ -158,6 +176,34 @@ export function ChatComposer({
     }
   };
 
+  const input = (
+    <textarea
+      aria-autocomplete={completions === undefined ? undefined : "list"}
+      aria-haspopup={completions === undefined ? undefined : "listbox"}
+      aria-controls={listed === undefined ? undefined : listId}
+      aria-activedescendant={listed === undefined ? undefined : completionOptionId(listId, highlighted)}
+      {...textareaProps}
+      ref={setTextareaRef}
+      className={cn("sui-chat-composer-input", textareaProps?.className)}
+      aria-label={textareaProps?.["aria-label"] ?? inputAriaLabel}
+      rows={textareaProps?.rows ?? 1}
+      value={value}
+      placeholder={placeholder}
+      disabled={disabled}
+      readOnly={readOnly}
+      onChange={(event) => {
+        autogrow(event.currentTarget);
+        typed(event.currentTarget.value);
+        onValueChange(event.currentTarget.value, selectionOf(event.currentTarget));
+      }}
+      onSelect={(event) => {
+        textareaProps?.onSelect?.(event);
+        onSelectionChange?.(selectionOf(event.currentTarget));
+      }}
+      onKeyDown={onKeyDown}
+    />
+  );
+
   return (
     <form
       data-slot="chat-composer"
@@ -168,25 +214,12 @@ export function ChatComposer({
       {...props}
     >
       {listed === undefined ? null : <CompletionList id={listId} completions={listed} />}
-      <textarea
-        aria-autocomplete={completions === undefined ? undefined : "list"}
-        aria-haspopup={completions === undefined ? undefined : "listbox"}
-        aria-controls={listed === undefined ? undefined : listId}
-        aria-activedescendant={listed === undefined ? undefined : completionOptionId(listId, highlighted)}
-        {...textareaProps}
-        ref={setTextareaRef}
-        className={cn("sui-chat-composer-input", textareaProps?.className)}
-        aria-label={textareaProps?.["aria-label"] ?? inputAriaLabel}
-        rows={textareaProps?.rows ?? 1}
-        value={value}
-        placeholder={placeholder}
-        disabled={disabled}
-        onChange={(event) => {
-          autogrow(event.currentTarget);
-          onValueChange(event.currentTarget.value);
-        }}
-        onKeyDown={onKeyDown}
-      />
+      {collaborators === undefined ? input : (
+        <div className="sui-collaborative-field">
+          {input}
+          <CollaboratorCarets field={textareaRef} value={value} collaborators={collaborators} />
+        </div>
+      )}
       <div className="sui-chat-composer-toolbar">
         <div className="sui-chat-composer-status" aria-live="polite">
           {statusText}
@@ -207,18 +240,20 @@ export function ChatComposer({
               <span aria-hidden="true">{stopLabel}</span>
             </Button>
           ) : null}
-          <Button
-            type="submit"
-            variant="solid"
-            size="icon"
-            className="sui-chat-composer-send"
-            aria-label={submitLabel}
-            title={submitLabel}
-            disabled={!canSubmit}
-            {...submitProps}
-          >
-            <span aria-hidden="true">{sendLabel}</span>
-          </Button>
+          {readOnly ? null : (
+            <Button
+              type="submit"
+              variant="solid"
+              size="icon"
+              className="sui-chat-composer-send"
+              aria-label={submitLabel}
+              title={submitLabel}
+              disabled={!canSubmit}
+              {...submitProps}
+            >
+              <span aria-hidden="true">{sendLabel}</span>
+            </Button>
+          )}
         </div>
       </div>
     </form>

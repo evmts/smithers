@@ -25,8 +25,9 @@ export type AgentStatusPillProps = Omit<ComponentProps<"span">, "children" | "on
 
 /**
  * One of the agent's five states as glyph, tone and word (`◆ Needs you`).
- * Working pulses unless the person prefers reduced motion. With `onClick` it
- * is a button, so a status bar's pill can take the person to what needs them.
+ * Working shows only once it has lasted `LOADING_DELAY_MS`, and holds still.
+ * With `onClick` it is a button, so a status bar's pill can take the person
+ * to what needs them.
  */
 export function AgentStatusPill({ state, count, onClick, label, className, ...props }: AgentStatusPillProps) {
   useInjectUiCss();

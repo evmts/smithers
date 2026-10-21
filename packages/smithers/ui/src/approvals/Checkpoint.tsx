@@ -7,7 +7,6 @@
 import { type ComponentProps, createContext, type ReactNode, useContext } from "react";
 import { Button } from "../button";
 import { cn } from "../cn";
-import { Spinner } from "../spinner";
 import { useInjectUiCss } from "../styles";
 import { dateFromMs } from "../time/dateFromMs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../tooltip";
@@ -194,9 +193,9 @@ export function CheckpointActions({
             data-action={kind}
             className="sui-checkpoint-action"
             disabled={isDisabled}
+            loading={isBusy}
             onClick={() => onAction(kind)}
           >
-            {isBusy ? <Spinner size="sm" /> : null}
             {CHECKPOINT_ACTION_LABELS[kind]}
           </Button>
         );

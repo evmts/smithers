@@ -52,7 +52,7 @@ const className: string = buttonVariants({ variant: "ghost", size: "sm" })
 ```
 
 The exported recipes are `buttonVariants`, `badgeVariants`, `alertVariants`,
-`spinnerVariants`, and `bubbleVariants`.
+and `bubbleVariants`.
 
 ## `asChild` renders your element
 
@@ -72,9 +72,9 @@ One limit is worth knowing. Under `asChild`, `Button` forwards its disabled,
 `aria-disabled`, and `aria-busy` state onto the child, and `disabled` or
 `loading` make the child inert: clicks and Enter or Space are cancelled in the
 capture phase, so the child's handlers and link navigation never run, while
-the element stays focusable. It does not inject a `Spinner` for `loading`:
-`Slot` merges props onto an arbitrary element and cannot add a child to it.
-Render your own indicator in that case.
+the element stays focusable. It does not inject its `LoadingBar` for
+`loading`: `Slot` merges props onto an arbitrary element and cannot add a
+child to it. Put a `LoadingBar placement="inline"` in the child yourself.
 
 ## Host props pass through
 

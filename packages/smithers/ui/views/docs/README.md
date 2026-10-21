@@ -51,6 +51,9 @@ page: GeneratedView ─▶ iframe sandbox="allow-scripts" srcdoc (ViewCsp) ─�
   tested.
 - [Read a repository's home](read-a-home.md): the blocks a repository
   declares in `.smithers/home.json`, read where the home is shown.
+- [Check a web page before framing it](check-a-web-page.md): ask from a
+  server whether an outside page shows in a frame, and read the card shown
+  in its place.
 - [API reference](api.md)
 
 ## Tests

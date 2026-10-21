@@ -95,7 +95,41 @@ describe("WebPageView", () => {
     expect(link.className).toContain("sui-button");
     // The figcaption precedes the frame.
     expect(figure.firstElementChild).toBe(caption);
-    expect(figure.lastElementChild!.tagName).toBe("IFRAME");
+    expect(figure.lastElementChild!.firstElementChild!.tagName).toBe("IFRAME");
+  });
+
+  test("covers the frame with the page's preview until it loads, and again for a new page", async () => {
+    await render(
+      <WebPageView
+        url="https://example.com/guide"
+        preview={{ title: "Example guide", description: "Frames welcome.", icon: "https://example.com/i.png" }}
+      />,
+    );
+    const figure = $("figure")!;
+    expect(figure.dataset.state).toBe("loading");
+    const pending = $("[data-slot=web-page-pending]")!;
+    expect(pending.getAttribute("aria-hidden")).toBe("true");
+    expect(pending.querySelector("[data-slot=web-page-title]")!.textContent).toBe("Example guide");
+    expect(pending.querySelector("[data-slot=web-page-description]")!.textContent).toBe("Frames welcome.");
+    expect(pending.querySelector("[data-slot=web-page-domain]")!.textContent).toBe("example.com");
+    expect(pending.querySelector("img")!.getAttribute("src")).toBe("https://example.com/i.png");
+    // The frame stays first, so the cover sits over it, and only the bar's link opens the page.
+    expect(figure.lastElementChild!.firstElementChild!.tagName).toBe("IFRAME");
+    expect(pending.querySelectorAll("a")).toHaveLength(0);
+
+    await act(async () => {
+      $("iframe")!.dispatchEvent(new Event("load"));
+    });
+    expect(figure.dataset.state).toBe("loaded");
+    expect($("[data-slot=web-page-pending]")).toBeNull();
+
+    await act(async () => root!.render(<WebPageView url="https://example.org/" />));
+    expect(figure.dataset.state).toBe("loading");
+    // With no preview, the cover names the domain.
+    expect($("[data-slot=web-page-pending] [data-slot=web-page-title]")!.textContent).toBe("example.org");
+    const sheet = document.head.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)!.textContent!;
+    expect(sheet).toContain("animation:sui-web-page-pending 160ms ease 600ms forwards;");
+    expect(sheet).toContain(".sui-web-page-pending { --motion-hold:600ms; position:absolute; inset:0;");
   });
 
   test("renders the normalized URL it checked, never the raw input", async () => {

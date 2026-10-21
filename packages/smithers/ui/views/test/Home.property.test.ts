@@ -21,7 +21,7 @@ const field = fc.oneof(text, fc.integer(), fc.boolean(), fc.constant(null))
 /** A block-shaped object: a known kind or another, with fields of any type. */
 const block = fc.record(
   {
-    type: fc.oneof(fc.constantFrom(...Home.kinds), fc.constantFrom("chart", "runs", ""), fc.integer()),
+    type: fc.oneof(fc.constantFrom(...Home.kinds), fc.constantFrom("chart", "board", ""), fc.integer()),
     title: field,
     text: field,
     path: field,
@@ -31,13 +31,37 @@ const block = fc.record(
     links: fc.oneof(
       fc.array(fc.record({ label: field, url: field }, { requiredKeys: [] }), { maxLength: 3 }),
       field
+    ),
+    code: field,
+    key: fc.oneof(fc.constantFrom("b", "B", ""), text),
+    language: fc.oneof(fc.constantFrom("ts", "sh", "TS"), text),
+    cards: fc.oneof(fc.array(fc.record({ title: field, text: field, url: field }, { requiredKeys: [] }), { maxLength: 3 }), field),
+    stats: fc.oneof(fc.array(fc.record({ value: field, label: field }, { requiredKeys: [] }), { maxLength: 3 }), field),
+    releases: fc.oneof(
+      fc.array(
+        fc.record({ name: field, url: field, date: fc.oneof(fc.constantFrom("2026-10-15", "2026-02-30"), text) }, {
+          requiredKeys: []
+        }),
+        { maxLength: 3 }
+      ),
+      field
     )
   },
   { requiredKeys: ["type"] }
 )
 
+const blocks = fc.array(fc.oneof(block, field), { maxLength: 40 })
+
+const section = fc.record(
+  { title: field, audience: fc.oneof(fc.constantFrom(...Home.audiences), text), blocks: fc.oneof(blocks, field) },
+  { requiredKeys: ["blocks"] }
+)
+
 const document = fc.oneof(
-  fc.record({ blocks: fc.array(fc.oneof(block, field), { maxLength: 40 }) }),
+  fc.record({ blocks }),
+  fc.record({ sections: fc.array(section, { maxLength: 10 }), contributors: fc.oneof(fc.constantFrom(...["role", "anyone"]), field) }, {
+    requiredKeys: ["sections"]
+  }),
   fc.anything()
 ).map((value) => JSON.stringify(value) ?? "")
 
@@ -65,12 +89,20 @@ describe("Home.read, fuzzed", () => {
       fc.property(document, (input) => {
         const read = Home.read(input)
         if (read._tag === "Invalid") return
-        expect(read.blocks.length + read.skipped).toBeLessThanOrEqual(Home.maximumBlocks)
-        for (const each of read.blocks) {
+        const all = read.sections.flatMap((each) => each.blocks)
+        expect(all.length + read.skipped).toBeLessThanOrEqual(Home.maximumBlocks)
+        expect(read.sections.length).toBeLessThanOrEqual(Home.maximumSections)
+        for (const each of read.sections) expect(Home.audiences).toContain(each.audience)
+        for (const each of all) {
           expect(Home.kinds).toContain(each.type)
-          for (const value of strings(each)) expect(Home.htmlPattern.test(value)).toBe(false)
+          // A code block's source is drawn as text, so it may hold `<`; every other string may not.
+          const { code: _code, ...rest } = each as { readonly code?: string }
+          for (const value of strings(rest)) expect(Home.htmlPattern.test(value)).toBe(false)
         }
-        expect(Home.read(JSON.stringify({ blocks: read.blocks }))).toEqual({ ...read, skipped: 0 })
+        expect(Home.read(JSON.stringify({ sections: read.sections, contributors: read.contributors }))).toEqual({
+          ...read,
+          skipped: 0
+        })
       }),
       {
         numRuns: 2000,

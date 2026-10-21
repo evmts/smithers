@@ -147,8 +147,9 @@ sourced from a host cannot resolve through `Object.prototype`.
 | `Tooltip`, `TooltipProvider`, `TooltipTrigger`, `TooltipContent`                            | Element props                  | Radix Tooltip.                                                                                |
 | `Select`, `SelectGroup`, `SelectValue`, `SelectTrigger`, `SelectContent`, `SelectLabel`, `SelectItem`, `SelectSeparator` | Element props | Radix Select.                                                       |
 | `Progress`                                                                                  | `ProgressProps`                | Radix Progress.                                                                               |
-| `Separator`, `Skeleton`                                                                     | Element props                  | Hairline rule and loading placeholder.                                                        |
-| `Spinner`, `spinnerVariants`                                                                | `SpinnerProps`                 | Sizes through the CVA recipe.                                                                 |
+| `Separator`, `Skeleton`                                                                     | Element props                  | Hairline rule, and a placeholder in the place of loading content: hidden for `LOADING_DELAY_MS`, then a gentle pulse, still under reduced motion. |
+| `LinkIntent`, `intentPath`                                                                  | `LinkIntentProps`              | Reports the intent to follow a plain same-origin link inside it (`onIntent(path)`) once the pointer or focus has rested on it for `delayMs`, as a router's own links preload on hover; a pointer that leaves first reports nothing. `display: contents`. |
+| `LoadingBar`, `LOADING_DELAY_MS`                                                            | `LoadingBarProps`              | The one loading indicator: a thin bar at the top (`placement="page"`) or a container's top edge (`"inline"`), shown once `loading` has lasted `LOADING_DELAY_MS` (300). There is no spinner. |
 | `EmptyState`                                                                                | `EmptyStateProps`              | `icon`, `title`, `description`, `action`.                                                     |
 | `SectionHeader`, `Eyebrow`                                                                  | `SectionHeaderProps`           | `title`, `eyebrow`, `actions`.                                                                |
 | `RowButton`                                                                                 | `RowButtonProps`               | `active` applies the house selected-row recipe.                                               |
@@ -160,6 +161,8 @@ sourced from a host cannot resolve through `Object.prototype`.
 | `Breadcrumbs`                                                                               | `BreadcrumbsProps`, `BreadcrumbItem` | A path trail. Every step but the last is an `<a href>`, and the last is `aria-current="page"`. `onNavigate` takes a plain click; a modified click stays the browser's. |
 | `Popover`, `PopoverTrigger`, `PopoverContent`                                               | Radix Popover props            | A panel anchored to its trigger, in a portal, on the overlay tokens. `PopoverContent` aligns to the trigger's start, 6px below it, unless `align` or `sideOffset` say otherwise. Escape, a click outside and the trigger close it. |
 | `RefPicker`                                                                                 | `RefPickerProps`, `RefPickerRef`, `RefPickerRefs` | A branch and tag picker for a repository view's revision: a button showing `current`, opening a filter over `refs` (`loading`, `ready` with `branches`, `tags` and `truncated`, or `failed` with a `message`) on two tabs counted by length. Each choice is an `<a href>` from `href(ref)` with its short SHA; `selected` is marked and `defaultBranch` badged `default`. A full 40-hex SHA typed in the filter is offered too. `onSelect(ref)` takes a plain click or Enter on the first match; a modified click stays the browser's. |
+| `RepoAbout` | `RepoAboutProps`, `RepoAboutRelease`, `RepoAboutContributor`, `RepoAboutLanguage` | A repository's about panel, as GitHub's sidebar: `description`, an `http(s)` `homepage` (anything else isn't drawn), `topics`, `stars`, `watchers`, `forks`, `license`, the latest `release` with `releases` counted, the first `contributors` with `contributorCount`, and `languages` as a bar and legend (`languageShares`; under 0.1% folds into Other). A part the host doesn't pass isn't drawn; `loading` runs the shared `LoadingBar`; `footer` sits under it. Links open in a new tab with no opener. `formatCount` writes counts as GitHub does (`14.1k`). |
+| `GeneratedChip` | `GeneratedChipProps`, `GeneratedChipLink` | A quiet Generated chip for a file a flow produced. Pressed, it opens the `flow`, its last `run` and its `sources`, each `{ label, href? }`: a real link where `href` is given, a plain click handed to `onNavigate`, a modified click left to the browser. With nothing to name it is a plain chip. |
 | `CopyButton`                                                                                | `CopyButtonProps`              | A `Button` that copies through the host's `onCopy`, which resolves once the text is on the clipboard and rejects when it isn't. Shows `copiedLabel` ("Copied") for `copiedDurationMs` (2,000), sets `data-copy-failed` on a rejection, and ignores clicks while a copy is in flight (`data-copying`). It never touches the clipboard itself. |
 | `DirectoryListing`                                                                          | `DirectoryListingProps`, `DirectoryEntry`, `DirectoryTarget` | One directory's entries as links with folder and file icons, under a `..` row when `parent` is set. `href` builds each link, `onOpen` takes a plain click, and `empty` shows when there is nothing to list. |
 | `useDialogFocusTrap`                                                                        | `UseDialogFocusTrapOptions`    | `{ active, containerRef, initialFocusRef, onClose }`. Focus containment for a custom overlay. |
@@ -802,7 +805,7 @@ const ITEM_STATE_VARIANTS: Readonly<Record<ItemStateKind, "success" | "muted" | 
 
 type IssuesViewTriage = "proposed" | "accepted" | "not_accepted" | "conflict"
 
-const TRIAGE_WORDS: Readonly<Record<IssuesViewTriage, string>>   // Proposed, Accepted, Not accepted, Conflict
+const TRIAGE_WORDS: Readonly<Record<IssuesViewTriage, string>>   // Proposed, Accepted for discussion, Not accepted, Conflict
 ```
 
 The `issues` template, and the issue list (`/issues`) of apps/mvp decision
@@ -813,7 +816,7 @@ plain click calls `onNavigate` after `preventDefault`, and a modified click
 sets `aria-busy`, replaces the counts with a `Loading issues` status and, with
 no rows, shows placeholders instead of `EmptyState`. A row carries
 `data-pending`. `triage` adds a chip (`sui-issues-triage`, `data-triage`) after
-the number: `Proposed` outline, `Accepted` success, `Not accepted` muted,
+the number: `Proposed` outline, `Accepted for discussion` success, `Not accepted` muted,
 `Conflict` warning. An empty list shows `EmptyState`. `inline` scrolls inside
 320 pixels.
 
@@ -1075,25 +1078,39 @@ type WebPageViewProps = Omit<ComponentProps<"figure">, "children" | "title" | "r
   size?: "inline" | "full"     // default "inline"
   title?: string               // the frame's title; default `Web page from ${host}`
   actions?: ReactNode          // in the bar, before Open in new tab
+  preview?: WebPagePreview     // covers the frame until it loads
 }
 
-type WebLinkCardProps = Omit<ComponentProps<"section">, "children" | "ref" | "dangerouslySetInnerHTML"> & {
-  url: string
-  openLabel?: string           // default "Open"
-  onOpen?: () => void          // on click; never prevents it
-}
+type WebLinkCardProps = Omit<ComponentProps<"section">, "children" | "ref" | "dangerouslySetInnerHTML" | "title"> &
+  WebPagePreview & {
+    url: string
+    openLabel?: string         // default "Open in new tab"
+    onOpen?: () => void        // on click or Enter; never prevents it
+  }
 
+type WebPagePreview = { readonly title?: string; readonly description?: string; readonly icon?: string }
 type WebPageTarget = { readonly href: string; readonly origin: string; readonly host: string }
 ```
 
-`WebPageView` renders a `figure` (`data-slot="web-page-view"`, `data-size`):
-a `figcaption` with the origin (`web-page-origin`), `actions` and an
-`Open in new tab` link (`web-page-open`), then an `iframe` (`web-page-frame`)
-with `sandbox` set to `WEB_PAGE_SANDBOX`, `referrerPolicy="no-referrer"`,
-`loading="lazy"` and no `allow` attribute. `inline` is 28rem high; `full` fills
-its container. `WebLinkCard` renders a `Card` (`web-link-card`) with the origin
-(`web-link-origin`) and an anchor styled as a `Button` (`web-link-open`). Both
-links have `target="_blank"` and `rel="noopener noreferrer"`.
+`WebPageView` renders a `figure` (`data-slot="web-page-view"`, `data-size`,
+`data-state` `loading` or `loaded`): a `figcaption` with the origin
+(`web-page-origin`), `actions` and an `Open in new tab` link
+(`web-page-open`), then the `iframe` (`web-page-frame`) with `sandbox` set to
+`WEB_PAGE_SANDBOX`, `referrerPolicy="no-referrer"`, `loading="lazy"` and no
+`allow` attribute. Until the frame's `load` event, the page's preview
+(`web-page-pending`, `aria-hidden`) covers it, fading in after 600 ms; a new
+`url` covers it again. `inline` is 28rem high; `full` fills its container.
+
+`WebLinkCard` renders a `Card` (`web-link-card`) with the page's preview and
+an anchor styled as a `Button` (`web-link-open`): `Open in new tab` and a
+`↵` key (`aria-keyshortcuts="Enter"`), named `Open in new tab: <title or
+host>`. The preview (`web-page-preview`) is the icon (`web-page-icon`: the
+`https:` `icon`, else the host's first letter, also when the image fails to
+load), the title (`web-page-title`), the description
+(`web-page-description`) and the domain (`web-page-domain`): the host for an
+`https:` page, the whole origin for any other. Without a title, the domain is
+the title and isn't repeated. Blank text counts as none. Both links have
+`target="_blank"` and `rel="noopener noreferrer"`.
 
 `webPageTarget`, `WebLinkCard`'s guard, accepts only an absolute `https:` or
 `http:` URL with no credentials, and refuses one on `hostOrigin`.
@@ -1115,8 +1132,12 @@ pulsing), `waiting` (`○ Waiting`, quiet), `needs_you` (`◆ Needs you`, gold:
 | Export | Props type | Notes |
 | --- | --- | --- |
 | `AgentStatusPill` | `AgentStatusPillProps` | `state`, `count` (shown above 1), `onClick` (renders a button), `label` (the button's name). `data-slot="agent-status"`, `data-state`. |
-| `NeedsYouCard` | `NeedsYouCardProps` | `kind` (`question` or `approval`), `prompt`, `options`, `value` and `onValueChange` (the app keeps the draft), `onAnswer` (the words or option, or `true` for Approve and `false` for Deny), `sending`, `answered` (collapses to the answer), `focusRequest` (each new value focuses the field and scrolls the card into view). |
-| `ToastStack`, `Toast` | `ToastStackProps`, `ToastProps` | The stack is a polite live region, `max` toasts (3) then `+N`. `more` holds the person's other entries, shown only while expanded, after the toasts. `+N` counts the toasts past `max` plus the `more` entries, and shows even with no toasts; expanded, it reads `Less` (`aria-expanded`) and collapses the stack. The stack renders nothing with no toasts and no `more` entries. `placement` `fixed` (the default) floats at the bottom-left, full width on a phone; `inline` sits where it is rendered, such as above a composer. A toast has a `tone` (a notice state), `word` (shown in bold in place of the state's word), a one-line `detail`, at most one `action`, Hide (`onHide`, named by `hideLabel`, default `Hide`), `unread` (`data-unread`, a brand dot and `Unread` for screen readers), and `delayed`, which fades it in after 300 ms. |
+| `NeedsYouCard` | `NeedsYouCardProps` | `kind` (`question` or `approval`), `prompt`, `options`, `value` and `onValueChange` (the app keeps the draft), `onAnswer` (the words or option, or `true` for Approve and `false` for Deny), `sending`, `answered` (collapses to the answer), `focusRequest` (each new value focuses the field and scrolls the card into view), `compact` (only the controls, `data-compact`: no pill, no box, the prompt for screen readers only, where the question shows already). |
+| `ToastStack`, `Toast` | `ToastStackProps`, `ToastProps` | The stack is a polite live region, `max` toasts (3) then `+N`. With `onMore`, `+N` counts the toasts past `max` plus `moreCount` and calls `onMore` (`aria-haspopup="dialog"`, `data-notifications-trigger`), such as to open a `NotificationPanel`. Without it, `more` holds the person's other entries, shown only while expanded, after the toasts: `+N` counts the toasts past `max` plus the `more` entries; expanded, it reads `Less` (`aria-expanded`) and collapses the stack. `+N` shows even with no toasts; the stack renders nothing with nothing to show. `placement` `fixed` (the default) floats at the bottom-left, full width on a phone; `inline` sits where it is rendered, such as above a composer. Alt+T focuses its first toast from anywhere; arrows, J and K, Home and End move between toasts; Escape gives focus back. A toast has a `tone` (a notice state), `word` (shown in bold in place of the state's word), a one-line `detail`, at most one `action`, Hide (`onHide`, named by `hideLabel`, default `Hide`), `unread` (`data-unread`, a brand dot and `Unread` for screen readers), and `delayed`, which fades it in after 300 ms. With `onOpen` its words are one button (`data-slot="toast-open"`) that opens what it is about. Focused, it takes O (`onOpen`), E (`onExpand`), A (`onAnswer`), H (`onHide`) and R (`onRead`). |
+| `NotificationPanel` | `NotificationPanelProps` | The person's notifications at the window's top-right, full width on a phone: a non-modal dialog (`data-slot="notification-panel"`) with a heading (`label`, default `Notifications`), ×, and its entries in a list that scrolls, or `No notifications`. Controlled by `open` and `onOpenChange`. Alt+N toggles it from anywhere while it is mounted. Opening focuses `focus`'s entry or the first; arrows, J and K, Home and End move between entries; Escape, × or a pointer down outside it close it and give focus back. A pointer down inside an element marked `data-notifications-trigger` isn't outside. |
+| `NotificationEntry` | `NotificationEntryProps` | One notification (`data-slot="notification"`, `data-entry`, `data-tone`, `data-unread`, `data-expanded`): a row button with the unread dot, glyph, word, detail and `time`, and × (`onHide`, `hideLabel`). Clicking the row, Enter or Space toggles `expanded` (`onExpandedChange`); expanded, the body shows the whole detail, `meta`, the last `steps` (`NotificationStep`: `running`, `done`, `failed`), a `note`, `children`, then `actions` and Open (`onOpen`, `openLabel`). The focused row takes O, E, A (`onAnswer`), H and R (`onRead`). |
+| `NotificationBell` | `NotificationBellProps` | The top bar's one way in to the person's notifications: a bell button that opens the panel. `unread` shows as a count (`99+` past 99); `needsYou`, above 0, adds `◆ Needs you` in gold (`data-needs-you`, the count above 1); both are in its name (`Notifications: 1 needs you, 3 unread`). `expanded` is its `aria-expanded`; `aria-keyshortcuts="Alt+N"`, `data-notifications-trigger`. |
+| `NOTICE_KEYS`, `noticeKeyAction(event)`, `isNoticeHotkey(event, hotkey)`, `isTypingTarget(target)` | `NoticeKeyAction`, `NoticeKeyEvent` | The keys notices answer to: Alt+T (`toasts`), Alt+N (`notifications`), O, E, A, H and R. `noticeKeyAction` maps a key to `open`, `expand`, `answer`, `hide`, `read`, `next`, `previous`, `first`, `last` or `close`; any key held with Alt, Ctrl or ⌘ is none. `isNoticeHotkey` reads Alt+T and Alt+N by the key's `code`. `isTypingTarget` says a field keeps its letters. |
 | `AGENT_STATES`, `AGENT_STATUS_WORDS`, `AGENT_STATUS_GLYPHS`, `isAgentState` | `AgentState` | The vocabulary, most urgent first. |
 | `NOTICE_WORDS`, `NOTICE_GLYPHS` | `NoticeState` | A notice's states: the agent's five plus `update` (`● Updated`, muted), an event such as a repository's main moving. |
 | `noticeDismissDelay(state)` | `NoticeState` | Milliseconds a toast shows before it hides on its own: 4000 for `done` and `update`, `Infinity` for the rest. |
@@ -1161,9 +1182,9 @@ The pure helpers the components use, for a terminal or a test:
 
 ## Repository home
 
-The blocks a repository declares in `.smithers/home.json`, as `Home.read`
-from `@smthrs/views` answers them (apps/mvp decision 0014). See
-[show a repository home](./guides/show-a-repository-home.md).
+The sections a repository declares in `.smithers/home.json`, as `Home.read`
+from `@smthrs/views` answers them, or a host's curated home (apps/mvp decision
+0014). See [show a repository home](./guides/show-a-repository-home.md).
 
 ```ts
 function RepositoryHome(props: RepositoryHomeProps): JSX.Element | null
@@ -1176,78 +1197,77 @@ type RepositoryHomeFile =
   | { readonly state: "failed" }
 
 type RepositoryHomeProps = Omit<ComponentProps<"section">, "children"> & {
-  blocks: ReadonlyArray<Home.Block>                      // from @smthrs/views
+  sections: ReadonlyArray<Home.Section>                  // from @smthrs/views: the ones the viewer may see
   files?: Readonly<Record<string, RepositoryHomeFile>>   // by path; absent shows as loading
-  askHref?: string                                       // a prompt or app button's link; without it neither draws
+  askHref?: string                                       // a prompt, app or flow button's link; without it none draws
   onAsk?: (flow: string | undefined) => void             // a plain click: default prevented, the host navigates
-  offered?: (flow: string) => boolean                    // an app block draws only when true; default none
+  offered?: (flow: string) => boolean                    // an app or action block draws only when true; default none
+  live?: RepositoryHomeLive                              // the live blocks' rows; a live block without them doesn't draw
+  onNavigate?: (href: string) => void                    // a plain click on a link in the app
+  onCopy?: (text: string) => void | Promise<void>        // Copy, the host's way; default the browser's clipboard
+  onRun?: (flow: string) => void                         // an action block's button or key; without it none draws
+  running?: ReadonlyArray<string>                        // action flows running: disabled, their keys idle
 }
+
+type RepositoryHomeLive = {
+  issues?: RepositoryHomeIssues | RepositoryHomeNotice   // { proposed, accepted, notAccepted, triage, pulls, href }
+  stack?: RepositoryHomeList | RepositoryHomeNotice      // { entries, total, href? }
+  runs?: RepositoryHomeRuns | RepositoryHomeNotice       // the list and how many failed
+  flows?: ReadonlyArray<RepositoryHomeFlow>              // { flow, name, title }
+}
+
+type RepositoryHomeEntry = { key: string; label?: string; title: string; href: string; status?: { status: string; label: string }; at?: number }
+type RepositoryHomeNotice = { notice: string }
 ```
 
-`RepositoryHome` renders a `section` (`data-slot="repository-home"`). Each
-drawn block is a `div` (`repository-home-block`, `data-kind` its `type`) under
-its optional `title` as an `<h2>`: `text` in a pre-wrapped paragraph, never
-markup; `links` as a list of links with `target="_blank"` and
-`rel="noopener noreferrer"`, absolute `http` and `https` only; `markdown` as a
-`Spinner` named `Loading <path>`, `Markdown variant="document"`, or the status
-line `Couldn't read <path>`; `prompt` as a `Button asChild variant="outline"`
-link to `askHref` labelled `placeholder ?? "Ask Smithers"`; and `app` as the
-same link labelled `title` with `data-picture`, adjacent app blocks in one
-wrapping row (`repository-home-apps`). With `onAsk`, a plain click on either
-prevents its default and calls `onAsk(flow)`; a modified or non-primary click
-keeps the browser's behavior. `flows`, `stack` and `view` are not
-drawn yet. When no block draws, it renders `null`. `repositoryHomeCss` is part
-of `smithersUiCss`.
+`RepositoryHome` renders a `section` (`data-slot="repository-home"`) holding a
+`section` per given section with something to draw
+(`repository-home-section`, `data-audience`, named by its title), headed by
+its `<h2>` title and its audience's label, `Contributors` or `Maintainers`,
+with leading action blocks in the heading. Each drawn block is a `div`
+(`repository-home-block`, `data-kind` its `type`) under its optional `title`
+as an `<h3>`. `hero` is the name as a large `<h2>`, a tagline, a line, up to
+three links (the first primary) and the install command with Copy; `code` a
+`<figure>` with Copy, colored for TypeScript, JavaScript and VibeLang, beside a
+`hero` right before it; `cards` a grid of cards (`<h4>`); `stats` a `<dl>`;
+`releases` a list of links with `<time>` dates; `text` a pre-wrapped paragraph,
+never markup; `links` links with `target="_blank"` and
+`rel="noopener noreferrer"`, absolute `http` and `https` only; `markdown` a
+spinner named `Loading <path>`, `Markdown variant="document"`, or the status
+line `Couldn't read <path>`; `prompt` a band with a link to `askHref`; `app` a
+`Button asChild variant="outline"` link with `data-picture`, adjacent ones in
+one row (`repository-home-apps`); `action` a primary button that calls
+`onRun(flow)`, its key in a `<kbd>` and `aria-keyshortcuts`, pressed by that
+key anywhere while the person isn't typing; and the live blocks the rows in
+`live`, `stack` and `runs` sharing one grid (`repository-home-panels`), a
+notice as the block's heading and one status line. With `onAsk` or
+`onNavigate`, a plain click prevents its default and calls it; a modified or
+non-primary click keeps the browser's behavior. `view` is not drawn yet. When
+nothing draws, it renders `null`. `repositoryHomeCss` is part of
+`smithersUiCss`.
+
+```ts
+function LinkTabs(props: ComponentProps<"nav">): JSX.Element
+```
+
+`LinkTabs` is a row of page tabs that are links, such as a repository's Home
+and Code: a `<nav>` (`data-slot="link-tabs"`) whose child links, the host's
+router's own, draw as tabs, the one with `aria-current="page"` underlined.
+Name it with `aria-label`.
 
 ## TODOs and the stack
 
-A repository's stack, one TODO at full size, and the private draft a person
-commits (apps/mvp decision 0016 §4). All three are controlled. See
+A TODO's private draft, which a person edits and commits (apps/mvp decision
+0016 §3). A repository's stack is an `IssuesView` (`ordered`, `numberPrefix="T"`,
+`filter`), and one TODO an `ItemConversation`. See
 [show a stack](./guides/show-a-stack.md).
 
 ```ts
-type TodoState = "queued" | "starting" | "working" | "needs_you" | "in_review" | "merged" | "dropped" | "failed"
-type TodoPending = "requested" | "not_sent"
-
-const TODO_STATE_WORDS: Readonly<Record<TodoState, string>>      // Queued … Failed
-const TODO_PENDING_WORDS: Readonly<Record<TodoPending, string>>  // Requested, Not sent
-function todoNumberText(number: number | null): string           // T4, or T– when null
-
-function StackList(props: StackListProps): JSX.Element
-function TodoCard(props: TodoCardProps): JSX.Element
 function TodoDraftCard(props: TodoDraftCardProps): JSX.Element
-
-type StackListTodo = {
-  id: string
-  number: number | null                        // null shows T–
-  title: string
-  state: TodoState
-  pending?: TodoPending                        // a Requested or Not sent chip
-}
-
-type StackListProps = Omit<ComponentProps<"section">, "children" | "onDrop"> & {
-  repo: string                                 // names the section `<repo> stack`
-  todos: ReadonlyArray<StackListTodo>          // in the host's order
-  href?: (todo: StackListTodo) => string | undefined
-  onNavigate?: (todo: StackListTodo, href: string) => void
-  onDrop?: (todo: StackListTodo) => void       // Drop on droppable rows; absent: none
-  loading?: boolean
-  actions?: ReactNode                          // in the header, such as New TODO
-  selected?: string                            // this row gets aria-current="true"
-}
-
-type TodoCardProps = Omit<ComponentProps<"article">, "children" | "title" | "onDrop"> & {
-  number: number | null
-  title: string
-  state: TodoState
-  prompt: string                               // Markdown, untrusted
-  acceptance?: ReadonlyArray<string>
-  pending?: TodoPending
-  onDrop?: () => void
-}
 
 type TodoDraftCardProps = Omit<ComponentProps<"form">, "children" | "onSubmit" | "title"> & {
   repo?: string
+  source?: string                              // where it came from, such as its issue #12: a chip
   title: string
   prompt: string
   acceptance?: ReadonlyArray<string>           // read only
@@ -1323,3 +1343,11 @@ the same dialog; only its action runs `onConfirm`.
 ## Clipboard (`@smthrs/ui/copy`)
 
 This isolated entry point exports `copyText`, `CopyResult`, and `CopyFailureCode` without importing Vault or autosave. Views import `copyText` from this subpath. The root export remains available. See [clipboard contracts](./reference/contracts.md#clipboard).
+
+### Read-only run graphs
+
+`FlowGraph` takes `nodes`, `edges`, `selected`, `onSelect` and `onInspect`. Nodes use the canonical monitor's `next`, `current`, `done`, `failed` and `waiting` states. Edges optionally carry the recorded `value`, `continuation` or `failure` reason; an unknown reason remains unspecified. Arrow keys follow dependencies, Enter or `i` inspects, and the canvas supports pan, zoom and fit. `graphLayout` and `fitGraph` are pure, deterministic longest-path/barycenter layout functions. The layout follows the approved small-DAG exception: there is no catalogued layout library, and adding a second node-state store is unnecessary for tens of nodes.
+
+`StepInspector` accepts a `StepRow`, redacted `input`, `output`, `logs`, `attempts`, `now` and optional wait/actions. Its tabs are Output, Input, Logs and Attempts. It renders values through `JsonValue` and never executes them. `JournalScrubber` accepts ordered journal ticks, a nullable `at` and `onChange`; null follows live. `journalPosition` moves through sparse event sequences or recorded step boundaries. Selection and replay position belong to the host, so plugins need no private interface.
+
+`RunWaterfall` additionally accepts `cursorMs` and `segments` (`stepId`, `startedAtMs`, `endedAtMs`, `state`). Waiting segments are hatched; failed segments use the failure color. Nested rows use the existing `StepRow.depth`. Existing callers retain their behavior.

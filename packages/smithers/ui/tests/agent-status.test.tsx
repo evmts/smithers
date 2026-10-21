@@ -308,6 +308,10 @@ describe("agent-status sheet", () => {
     expect(smithersUiCss).toContain(".sui-needs-you {");
     expect(smithersUiCss).toContain(".sui-toast[data-tone='needs_you'] { border-left-color:var(--warning,");
     expect(smithersUiCss).toContain(".sui-toast[data-tone='failed'] { border-left-color:var(--danger,");
-    expect(smithersUiCss).toContain("@keyframes sui-agent-status-pulse");
+    // Working waits the loading delay before it shows, and never pulses.
+    expect(smithersUiCss).toContain(
+      ".sui-agent-status[data-state='working'] { --motion-hold:300ms; animation:sui-loading-appear .2s ease-out 300ms both; }",
+    );
+    expect(smithersUiCss).not.toContain("sui-agent-status-pulse");
   });
 });

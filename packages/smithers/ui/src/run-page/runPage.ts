@@ -95,10 +95,11 @@ export const isSettled = (state: RunState): boolean =>
   state === "completed" || state === "failed" || state === "cancelled";
 
 /** A step's state as the run's journal records it. */
-export type StepState = "running" | "completed" | "failed" | "waiting" | "skipped";
+export type StepState = "pending" | "running" | "completed" | "failed" | "waiting" | "skipped";
 
 /** The glyph each step state shows. */
 export const STEP_GLYPHS: Readonly<Record<StepState, string>> = Object.freeze({
+  pending: "○",
   running: "◌",
   completed: "✓",
   failed: "✕",
@@ -108,6 +109,7 @@ export const STEP_GLYPHS: Readonly<Record<StepState, string>> = Object.freeze({
 
 /** The word each step state reads as, for screen readers and the detail pane. */
 export const STEP_WORDS: Readonly<Record<StepState, string>> = Object.freeze({
+  pending: "Queued",
   running: "Working",
   completed: "Done",
   failed: "Failed",

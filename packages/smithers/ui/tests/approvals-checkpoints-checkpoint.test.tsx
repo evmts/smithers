@@ -132,12 +132,15 @@ describe("CheckpointActions", () => {
     expect(fired).toEqual(["rewind"]);
   });
 
-  test("busy disables every action and spins the busy one", async () => {
+  test("busy disables every action and marks the busy one loading, with no spinner", async () => {
     await render(<CheckpointActions actions={["replay", "fork"]} busy="fork" onAction={() => {}} />);
     const buttons = container!.querySelectorAll<HTMLButtonElement>("[data-slot='checkpoint-action']");
     buttons.forEach((button) => expect(button.disabled).toBe(true));
-    expect(container!.querySelector("[data-action='fork'] [data-slot='spinner']")).not.toBeNull();
-    expect(container!.querySelector("[data-action='replay'] [data-slot='spinner']")).toBeNull();
+    expect(container!.querySelector("[data-action='fork']")!.getAttribute("aria-busy")).toBe("true");
+    expect(container!.querySelector("[data-action='fork'] [data-slot='loading-bar']")!.getAttribute("data-state")).toBe("loading");
+    expect(container!.querySelector("[data-action='replay']")!.hasAttribute("aria-busy")).toBe(false);
+    expect(container!.querySelector("[data-action='replay'] [data-slot='loading-bar']")).toBeNull();
+    expect(container!.querySelector("[data-slot='spinner']")).toBeNull();
   });
 
   test("disabled greys individual kinds", async () => {

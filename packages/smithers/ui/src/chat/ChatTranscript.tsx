@@ -13,6 +13,8 @@ import {
 export type ChatTranscriptProps = ComponentProps<"div"> & {
   /** Whether a reply is currently being generated or streamed. */
   pending?: boolean;
+  /** Public chat rail contribution; it reserves no transcript space. */
+  rail?: ReactNode;
   /** Accessible text for the pending assistant bubble. */
   pendingLabel?: string;
   /** Content shown when there are no messages. */
@@ -21,6 +23,7 @@ export type ChatTranscriptProps = ComponentProps<"div"> & {
 
 /** Scrollable, accessible transcript container for Smithers chat surfaces. */
 export function ChatTranscript({
+  rail,
   pending = false,
   pendingLabel,
   empty,
@@ -38,6 +41,14 @@ export function ChatTranscript({
       className={cn("sui-chat-transcript", className)}
       {...props}
     >
+      {rail ? <details className="sui-timeline-disclosure" onKeyDown={event => {
+        if (event.key !== "Escape" || !event.currentTarget.open) return;
+        event.currentTarget.open = false;
+        event.currentTarget.querySelector("summary")?.focus();
+      }}>
+        <summary>Timeline</summary>
+        {rail}
+      </details> : null}
       <MessageScrollerProvider scrollAnchor="bottom">
         <div data-slot="message-scroller" className="sui-msg-scroller" data-streaming={pending ? "true" : "false"}>
           <MessageScrollerViewport fade>

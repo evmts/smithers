@@ -1,15 +1,13 @@
 /**
  * The run page's sheet: the header line, the run list, the step tree, the
  * step detail, the timeline and the journal. Waiting is quiet, failures are
- * ember (`--danger`), live work is brand and pulses unless the person prefers
- * reduced motion.
+ * ember (`--danger`), live work is brand and holds still: the house loading
+ * pattern never pulses a glyph.
  */
 import { tokens as t } from "../tokens";
 
 export const runPageCss = `
 .sui-run-status-glyph { flex:none; font-size:11px; line-height:1; }
-.sui-run-status[data-word='Working'] .sui-run-status-glyph, .sui-run-status[data-word='Stopping'] .sui-run-status-glyph { animation:sui-run-status-pulse 1.6s ease-in-out infinite; }
-@keyframes sui-run-status-pulse { 0%, 100% { opacity:1; } 50% { opacity:.35; } }
 .sui-run-header { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 12px; min-width:0; }
 .sui-run-header-line { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0; color:${t.mutedForeground}; font-size:13px; }
 .sui-run-header-title { margin:0; color:${t.foreground}; font-size:16px; font-weight:650; overflow-wrap:anywhere; }

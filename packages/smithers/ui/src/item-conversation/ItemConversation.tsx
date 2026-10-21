@@ -10,7 +10,6 @@ import { ItemLink, type ItemLinkTarget } from "../issues-view/ItemLink";
 import { safeHref } from "../internal/safeHref";
 import { Markdown } from "../primitives/markdown";
 import { Skeleton } from "../skeleton";
-import { Spinner } from "../spinner";
 import { useInjectUiCss } from "../styles";
 import { RelativeTime } from "../time/RelativeTime";
 
@@ -176,7 +175,7 @@ export function ItemConversation({
         className={cn("sui-item-conv", className)}
         {...props}
       >
-        <Spinner aria-label="Loading" className="sui-item-conv-loading-status" />
+        <span className="sui-sr-only" role="status">Loading</span>
         <div className="sui-item-conv-loading" aria-hidden>
           <Skeleton className="sui-item-conv-skeleton-title" />
           <Skeleton className="sui-item-conv-skeleton-body" />

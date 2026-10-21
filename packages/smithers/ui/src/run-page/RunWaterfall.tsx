@@ -2,11 +2,15 @@
 import type { ComponentProps } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { STEP_WORDS, stepDuration, stepElapsed, type StepRow, waterfallBars } from "./runPage";
+import { STEP_WORDS, stepDuration, stepElapsed, type StepRow, waterfallAxis, waterfallBars } from "./runPage";
 
 export type RunWaterfallProps = Omit<ComponentProps<"div">, "children" | "onSelect"> & {
   steps: ReadonlyArray<StepRow>;
   now: number;
+  /** Replay cursor on the shared axis. */
+  cursorMs?: number;
+  /** Recorded attempts, waits and agent cells; child rows use StepRow.depth. */
+  segments?: ReadonlyArray<{ readonly stepId: string; readonly startedAtMs: number; readonly endedAtMs: number | null; readonly state: string }>;
   selected?: string | null;
   /** With it, each bar is a button that selects its step. */
   onSelect?: (id: string) => void;
@@ -17,21 +21,27 @@ export type RunWaterfallProps = Omit<ComponentProps<"div">, "children" | "onSele
  * start to the latest end. An open step runs to `now`; a step that ended where
  * it began is a marker.
  */
-export function RunWaterfall({ steps, now, selected = null, onSelect, className, ...props }: RunWaterfallProps) {
+export function RunWaterfall({ steps, now, selected = null, onSelect, cursorMs, segments = [], className, ...props }: RunWaterfallProps) {
   useInjectUiCss();
   const bars = waterfallBars(steps, now);
+  const axis = waterfallAxis(steps, now);
+  const percent = (ms: number) => Math.max(0, Math.min(100, (ms - axis.start) / Math.max(1, axis.end - axis.start) * 100));
   return (
     <div role="list" aria-label="Timeline" data-slot="run-waterfall" className={cn("sui-waterfall", className)} {...props}>
       {steps.map((step, index) => {
         const bar = bars[index]!;
         const name = `${step.label}, ${STEP_WORDS[step.state]}, ${stepDuration(stepElapsed(step, now))}`;
         const shape = (
+          <>
           <span
             className="sui-waterfall-bar"
             data-instant={bar.instant ? "true" : undefined}
             data-open={bar.open ? "true" : undefined}
             style={{ left: `${bar.left}%`, width: bar.instant ? undefined : `${bar.width}%` }}
           />
+          {segments.filter((segment) => segment.stepId === step.id).map((segment, i) => <span key={i} className="sui-waterfall-segment" data-state={segment.state} style={{ left: `${percent(segment.startedAtMs)}%`, width: `${Math.max(0, percent(segment.endedAtMs ?? now) - percent(segment.startedAtMs))}%` }} />)}
+          {cursorMs === undefined ? null : <span className="sui-waterfall-cursor" style={{ left: `${percent(cursorMs)}%` }} />}
+          </>
         );
         return (
           <div
@@ -42,7 +52,7 @@ export function RunWaterfall({ steps, now, selected = null, onSelect, className,
             data-selected={step.id === selected ? "true" : undefined}
             className="sui-waterfall-row"
           >
-            <span className="sui-waterfall-label" aria-hidden>
+            <span className="sui-waterfall-label" style={{ paddingInlineStart: `${step.depth * 12}px` }} aria-hidden>
               {step.label}
             </span>
             {onSelect === undefined ? (

@@ -5,9 +5,16 @@ import { paletteThemeCss } from "./paletteThemeCss.ts";
  * Keeping this selector global means late-injected adapter styles, monitor
  * animations, and component transitions inherit the same preference without
  * component-specific media queries.
+ *
+ * Reduced motion ends every animation and transition at once, and drops its
+ * delay, unless the element names a hold in `--motion-hold`: a wait is not
+ * motion, so a loading state that stays hidden for its first moments (so a
+ * fast load never flashes) keeps that wait. The property doesn't inherit, so
+ * a hold covers only the element that names it.
  */
-export const reducedMotionCss = `@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-delay:0ms !important; animation-duration:0.001ms !important; animation-iteration-count:1 !important; scroll-behavior:auto !important; transition-delay:0ms !important; transition-duration:0.001ms !important; }
+export const reducedMotionCss = `@property --motion-hold { syntax:'<time>'; inherits:false; initial-value:0ms; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-delay:var(--motion-hold, 0ms) !important; animation-duration:0.001ms !important; animation-iteration-count:1 !important; scroll-behavior:auto !important; transition-delay:var(--motion-hold, 0ms) !important; transition-duration:0.001ms !important; }
 }`;
 
 const standaloneCss = [

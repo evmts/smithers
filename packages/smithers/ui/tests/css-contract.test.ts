@@ -162,7 +162,7 @@ describe("css contract", () => {
     expect(reducedMotionCss).toContain("*, *::before, *::after");
     expect(reducedMotionCss).toContain("animation-duration:0.001ms !important");
     expect(reducedMotionCss).toContain("transition-duration:0.001ms !important");
-    expect(smithersUiCss.indexOf(".sui-spinner")).toBeLessThan(smithersUiCss.indexOf(reducedMotionCss));
+    expect(smithersUiCss.indexOf(".sui-loading-bar")).toBeLessThan(smithersUiCss.indexOf(reducedMotionCss));
     expect(smithersUiCss.indexOf(".sui-skeleton")).toBeLessThan(smithersUiCss.indexOf(reducedMotionCss));
   });
 
@@ -180,9 +180,11 @@ describe("css contract", () => {
 describe("geometry contract", () => {
   // The --fs steps (11/12/13/15/17/20) plus the named exceptions: 10px
   // micro-labels (tab counts, file chips, citation chips), 16px composer
-  // inputs (an iOS input under 16px triggers page zoom on focus), and 18px
-  // icon glyphs (chevrons, close/remove/send marks).
-  const FONT_SIZES = new Set([10, 11, 12, 13, 15, 16, 17, 18, 20]);
+  // inputs (an iOS input under 16px triggers page zoom on focus), 18px
+  // icon glyphs (chevrons, close/remove/send marks), and 40px and 56px, a
+  // repository home's hero name: the one display size, narrow and wide
+  // (apps/mvp/docs/design/repo-home/repo-home.html).
+  const FONT_SIZES = new Set([10, 11, 12, 13, 15, 16, 17, 18, 20, 40, 56]);
   // 400 body, 500 de-emphasis, 650 the one emphasis weight; 700 is reserved
   // for KPI numerals and pinned to exactly one rule below.
   const FONT_WEIGHTS = new Set([400, 500, 650, 700]);
@@ -194,6 +196,11 @@ describe("geometry contract", () => {
   test("every raw font-size sits on the type scale or a named exception", () => {
     const sizes = [...smithersUiCss.matchAll(/font-size:([\d.]+)px/g)].map((m) => Number(m[1]));
     expect(sizes.length).toBeGreaterThan(20);
+    // The display size belongs to the hero name alone.
+    for (const display of ["40px", "56px"]) {
+      const rules = smithersUiCss.match(new RegExp(`[^{}]+\\{[^}]*font-size:${display}[^}]*\\}`, "g")) ?? [];
+      expect(rules.map((rule) => rule.trim().split(" {")[0])).toEqual([".sui-rh-hero-title"]);
+    }
     for (const size of sizes) {
       expect(FONT_SIZES.has(size), `font-size:${size}px is off the type scale`).toBe(true);
     }

@@ -7,7 +7,9 @@
  * shows the HTML in a frame {@link ViewCsp} writes. The frame talks back over
  * the {@link Bridge}, sending only the events the module's
  * {@link Interactions} declare. {@link Home} reads the blocks a repository
- * declares as its own home, which a page draws from data.
+ * declares as its own home, which a page draws from data. {@link WebPage}
+ * asks, from a server, whether an outside page shows in a frame, and reads
+ * the card shown in its place.
  *
  * @since 0.1.0
  */
@@ -53,3 +55,9 @@ export * as ViewCode from "./ViewCode.ts"
  * @since 0.1.0
  */
 export * as ViewCsp from "./ViewCsp.ts"
+
+/**
+ * @category framing
+ * @since 0.1.0
+ */
+export * as WebPage from "./WebPage.ts"

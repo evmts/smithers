@@ -60,7 +60,7 @@ describe("TriageControl: the state chip", () => {
   test("each state shows its word in its badge variant", async () => {
     const expected: Record<IssuesViewTriage, [string, string]> = {
       proposed: ["Proposed", "sui-badge-outline"],
-      accepted: ["Accepted", "sui-badge-success"],
+      accepted: ["Accepted for discussion", "sui-badge-success"],
       not_accepted: ["Not accepted", "sui-badge-muted"],
       conflict: ["Conflict", "sui-badge-warning"],
     };

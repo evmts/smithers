@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Every export of @smthrs/repo-view: RepoView, CodeFileView and its worker pool, PierreDiffView and its helpers, MarkdownEditor, and the package's style sheet."
+description: "Every export of @smthrs/repo-view: RepoView, CodeFileView and its worker pool, PierreDiffView and its helpers, MarkdownEditor, the live editors CodeEditor and LiveMarkdownEditor, and the package's style sheet."
 sidebar:
   order: 1
 ---
@@ -43,6 +43,12 @@ type RepoViewFile =
   | { state: "failed"; message: ReactNode }
 type RepoViewSize = "inline" | "full"
 type RepoViewMarkdownMode = "preview" | "source"
+type RepoViewHtmlMode = "code" | "preview" | "split"
+
+function HtmlPreview(props: HtmlPreviewProps): JSX.Element
+function previewDocument(html: string): string
+const HTML_PREVIEW_CSP: string
+const HTML_PREVIEW_SANDBOX: "allow-scripts"
 ```
 
 `RepoView` (`RepoViewProps`) is a repository browser. It shows the file tree
@@ -50,7 +56,9 @@ beside a directory's listing and its README, or a file as code or as a
 Markdown document.
 
 - **It fetches nothing.**
-  - `tree` is every file's path at the revision.
+  - `tree` is every file's path at the revision. A ready tree's `directories`
+    names folders known without their files, such as a repository's top level
+    as GitHub lists it before a clone: they list and open as folders.
   - `file` is the file at a `blob` location.
   - `readme` (`{ path, file }`) is a directory's README, which the host
     chooses.
@@ -69,13 +77,29 @@ Markdown document.
 - **Markdown:** a file renders as a read-only WYSIWYG document by default.
   Preview and Code switch it to its source and back, through `markdownMode`
   and `onMarkdownModeChange`, controlled or not.
+- **HTML:** a file opens as code; Preview shows the page live and Split shows
+  the source beside it, as CodePen does, through `htmlMode` and
+  `onHtmlModeChange`, controlled or not. The page is `HtmlPreview`: a frame
+  sandboxed to `allow-scripts` alone, so it is an opaque origin that can't
+  reach the app, its storage or its cookies, and opens no popup, form,
+  download or top-level navigation. Its document (`previewDocument`) starts
+  with `HTML_PREVIEW_CSP`: inline script and style only, images and fonts only
+  from `data:` and `blob:`, and no network. A page that navigates itself anyway
+  is put back on the file: the frame's second load remounts it.
+- **The repository page:** `aside` draws a column on the right of a `full`
+  view, such as an about panel, and moves under the content below 1,024 px of
+  the view's width. `fileTree={false}` drops the tree on the left, as GitHub's
+  repository page has none.
 - **The host's slots:** `revision` leads the header, `actions` trails it,
-  `summary` sits between the header and the content, and `fileActions` trails
-  a file's toolbar.
-- **Other props:** `codeMode` sets the code theme. `markdownEditor` passes the
-  editor's `fallback` and `loadEditor` seams.
+  `summary` sits between the header and the content, `fileBadges` follows a
+  file's stats and `fileActions` trails its toolbar.
+- **Other props:** `codeMode` sets the code theme. `code` (`RepoViewCode`)
+  passes a language server's help to the shown file's `CodeFileView`: its
+  `marks`, `cursor`, `hover`, `annotations` and gestures. `markdownEditor`
+  passes the editor's `fallback` and `loadEditor` seams.
 - **States:**
-  - A tree or file still `loading` shows a spinner.
+  - A tree or file still `loading` shows skeleton lines in its place, named
+    `Loading files` or `Loading <path>`, after `@smthrs/ui`'s `LOADING_DELAY_MS`.
   - A `failed` one shows its message as an alert.
   - A location that isn't in the tree shows "Not found".
   - A binary or too-large file shows its size.
@@ -106,6 +130,16 @@ must memoize the array because a new one redraws the rows. `onTokenRest` fires
 once per token after the pointer rests for `CODE_VIEW_REST_MS`, reporting a
 `CodeTokenPosition`; `onTokenActivate` fires on ⌘-click or Ctrl-click.
 
+A language server's answers draw through the rest, with no state of their own:
+
+| Prop | What it draws |
+|---|---|
+| `marks` (`CodeMark`) | `symbol` highlights the token starting at a 1-based `line` and `column`; `error`, `warning` and `info` underline the tokens starting from `column` up to `end` (exclusive, at most 200 columns) and mark the line in the gutter. They become one sheet in pierre's shadow root (`codeMarksCss`). |
+| `cursor` | Outlines the token at the keyboard cursor and scrolls it into view once per move. |
+| `hover` (`CodeHover`) | A card under its token: `signature` as code, `body`, then `problems` (`CodeProblem`) by severity. The code names it with `aria-describedby`. |
+| `onTokenSelect` | A plain click on a token that ended no text selection. |
+| `onCursorMove`, `onKeyDown` | Either one makes the code focusable. The arrow keys move the cursor through the symbols pierre drew (`moveCursor`: identifiers that aren't reserved words, `isSymbolText`); focus from the keyboard without a cursor lands it on the first symbol at or after `line`. Every other key, and an arrow with a modifier, goes to `onKeyDown`. |
+
 `languageForFile` answers `null` when no grammar claims the name, which is the
 signal to keep your own plain text. Until the highlighter paints, the component
 renders a plain `<pre>`.
@@ -113,6 +147,28 @@ renders a plain `<pre>`.
 The views share one worker pool per page. `currentCodeViewPool` and
 `subscribeCodeViewPool` read its state; `disposeCodeViewPool` releases it after
 a page unmounts its code views.
+
+## Symbols pane
+
+```ts
+function SymbolsPane(props: SymbolsPaneProps): JSX.Element
+
+interface SymbolsPaneLocation { path: string; line: number; text: string }
+interface SymbolsPaneOutlineItem { name: string; kind: string; line: number; depth: number }
+interface SymbolsPaneSymbol {
+  name: string
+  definitions: ReadonlyArray<SymbolsPaneLocation> | undefined
+  references: ReadonlyArray<SymbolsPaneLocation> | undefined
+}
+```
+
+`SymbolsPane` is the pane GitHub's code view keeps on the right, for
+`RepoView`'s `aside`. With a `symbol`, it lists its definitions and its
+references, grouped by file with a count, each row a line number and that
+line's text; a list that is `undefined` is still loading and shows no rows.
+Without one, it shows `outline` with a filter, each entry indented by `depth`.
+Every row is a link built by `href`; a plain click or Enter calls `onOpen`.
+↑ and ↓ move between rows, and Escape or Close calls `onClose`.
 
 ## Pierre diff view
 
@@ -182,3 +238,28 @@ the alt text.
 editor also injects it in the browser. `MarkdownEditorError` carries a `code`
 and the original `cause`; both codes are described in
 [Failure codes](./reference/contracts.md).
+
+## Live editors
+
+```ts
+function CodeEditor(props: CodeEditorProps): JSX.Element
+function LiveMarkdownEditor(props: LiveMarkdownEditorProps): JSX.Element
+```
+
+Both edit a text several people change at once, such as `@smthrs/sync`'s
+`SharedText`. Each is controlled: `value` is the text as everyone wrote it,
+and each of the person's own edits comes out through `onChange` with `base`,
+the text the edit was made on, so the host can merge it past edits that
+arrived meanwhile (`SharedText.replace(value, { base, caret })`). A `value`
+that changes from outside goes in without coming back out as an edit.
+
+- `CodeEditor` is CodeMirror. An outside `value` goes in as one change that
+  CodeMirror maps the person's selection through. `onChange` also carries the
+  selection after the edit, and `onSelectionChange` the selection when only it
+  moves. `collaborators` (`@smthrs/ui`'s `Collaborator`) draws everyone else's
+  carets and selections in their colors, flagged with their names, with
+  `@smthrs/ui`'s styles on the page. `readOnly` shows the text without editing.
+- `LiveMarkdownEditor` is `MarkdownEditor` over a shared document: an outside
+  `value` goes in through `setMarkdown`, which keeps the caret. It takes every
+  other `MarkdownEditor` prop. It draws no carets: the editor shows rendered
+  Markdown, not its source positions.

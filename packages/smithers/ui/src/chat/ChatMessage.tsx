@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../cn";
+import { Skeleton } from "../skeleton";
 import { useInjectUiCss } from "../styles";
 
 export type ChatMessageRole = "assistant" | "user" | "system";
@@ -20,9 +21,12 @@ export type ChatMessageProps = Omit<ComponentProps<"article">, "role"> & {
   actions?: ReactNode;
   /** Monospace treatment for terminal or tool output. */
   variant?: "default" | "terminal";
-  /** Render the shared three-dot assistant typing state. */
+  /**
+   * The answer hasn't started: a one-line skeleton in its bubble, the size of the answer's first line, so the text
+   * takes its place without a jump. Like every loading state, nothing shows for the first `LOADING_DELAY_MS`.
+   */
   pending?: boolean;
-  /** Accessible text for the typing state. */
+  /** Accessible text for the pending state. */
   pendingLabel?: string;
 };
 
@@ -61,11 +65,7 @@ export function ChatMessage({
         {pending ? (
           <>
             <span className="sui-sr-only">{pendingLabel}</span>
-            <span className="sui-chat-typing" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
+            <Skeleton className="sui-chat-pending-line" />
           </>
         ) : (
           children

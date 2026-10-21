@@ -27,7 +27,7 @@ export type IssuesViewTriage = "proposed" | "accepted" | "not_accepted" | "confl
 /** The chip each triage state shows. */
 export const TRIAGE_WORDS: Readonly<Record<IssuesViewTriage, string>> = {
   proposed: "Proposed",
-  accepted: "Accepted",
+  accepted: "Accepted for discussion",
   not_accepted: "Not accepted",
   conflict: "Conflict",
 };

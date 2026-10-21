@@ -3,7 +3,7 @@ import { cloneElement, isValidElement, type ComponentProps, type KeyboardEvent, 
 import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
 import { cn } from "./cn";
-import { Spinner } from "./spinner";
+import { LoadingBar } from "./loading";
 import { useInjectUiCss } from "./styles";
 
 export const buttonVariants = cva("sui-button", {
@@ -37,11 +37,12 @@ export type ButtonProps = ComponentProps<"button"> &
     /** Render the child element instead of a `<button>` (Radix Slot). */
     asChild?: boolean;
     /**
-     * Render a Spinner before the children, mark the button `aria-busy`, and
-     * disable interaction while work is in flight. Under `asChild`, disabled,
-     * busy, and aria-disabled semantics are forwarded, click and Enter/Space
-     * activation are blocked, and no Spinner is injected (the Slot cannot
-     * inject one into an arbitrary child element).
+     * Mark the button `aria-busy`, disable interaction while work is in
+     * flight, and run a thin `LoadingBar` along its top edge once the work
+     * has lasted `LOADING_DELAY_MS`. The label stays, so nothing shifts.
+     * Under `asChild`, disabled, busy, and aria-disabled semantics are
+     * forwarded, click and Enter/Space activation are blocked, and no bar is
+     * injected (the Slot cannot inject one into an arbitrary child element).
      */
     loading?: boolean;
   };
@@ -124,8 +125,8 @@ export function Button({
       disabled={interactionDisabled}
       {...(loading ? { "aria-busy": true } : {})}
     >
-      {loading ? <Spinner size="sm" aria-hidden="true" /> : null}
       {children}
+      {loading ? <LoadingBar loading placement="inline" /> : null}
     </button>
   );
 }

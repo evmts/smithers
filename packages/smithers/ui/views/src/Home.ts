@@ -4,16 +4,23 @@
  *
  * A home is data, never code. Each block is one of a closed set of kinds,
  * every string in it is bounded, and a string carrying an HTML tag is
- * refused, so a page draws a home from these values and runs nothing the
- * repository wrote. A button a block names runs only when a person presses
- * it.
+ * refused (a `code` block's source excepted: a page draws it as text), so a
+ * page draws a home from these values and runs nothing the repository
+ * wrote. A button a block names runs only when a person presses it.
+ *
+ * Blocks sit in sections, and each section names its {@link Audience}: who
+ * may see it. A page shows a viewer only the sections {@link sees} allows,
+ * and {@link visible} picks them. A file with a bare `blocks` array is one
+ * section for everyone. The live blocks (`issues`, `runs`, `flows`,
+ * `stack`) carry no rows: the page reads them itself, through its own
+ * access checks.
  *
  * {@link read} is the reader a page uses: it takes the file's text and
- * answers the blocks to draw, skipping a kind it doesn't know so a newer
+ * answers the sections to draw, skipping a kind it doesn't know so a newer
  * declaration still shows on an older page, or says the file is invalid.
- * `@smthrs/targets` writes the same document from `.smithers/FACTORY.ts`
- * (`Smithers.Factory.Home`); `test/HomeTargets.test.ts` holds the two
- * together.
+ * This module is the format's one copy: `@smthrs/targets` writes the same
+ * document from `.smithers/FACTORY.ts` (`Smithers.Factory.Home`) with these
+ * very schemas.
  *
  * @since 0.1.0
  */
@@ -60,6 +67,56 @@ export const maximumUrlLength = 2048
  * @since 0.1.0
  */
 export const maximumBlocks = 32
+
+/**
+ * Maximum number of sections one home declares.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const maximumSections = 8
+
+/**
+ * Maximum number of entries in one list a block carries: a `cards` block's
+ * cards, a `releases` block's releases.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const maximumEntries = 12
+
+/**
+ * Maximum number of a `stats` block's stats.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const maximumStats = 6
+
+/**
+ * Maximum number of a `hero` block's actions.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const maximumActions = 3
+
+/**
+ * Maximum length of a short line of prose: a card's text, a release's summary,
+ * a hero's tagline.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const maximumLineLength = 280
+
+/**
+ * Maximum length of a `code` block's source.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const maximumCodeLength = 4096
 
 /**
  * The shape of raw HTML in a string: a tag, a closing tag, a comment, or a
@@ -132,6 +189,124 @@ export const RepositoryPath = Schema.NonEmptyString.check(
 export const FlowName = Schema.NonEmptyString.check(Schema.isPattern(/^[a-z0-9_-]+(?:[./][a-z0-9_-]+)*$/))
 
 /**
+ * A short line of prose: non-empty, one line, at most
+ * {@link maximumLineLength} characters, no HTML.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Line = Schema.NonEmptyString.check(
+  Schema.isMaxLength(maximumLineLength),
+  Schema.isPattern(/^[^\r\n]*$/),
+  noHtml
+)
+
+/**
+ * A shell command a person copies, such as `npm install effect`: one line, at
+ * most {@link maximumLineLength} characters, no HTML. A page shows it as text
+ * and runs nothing.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Command = Line
+
+/**
+ * A `code` block's source: non-empty, at most {@link maximumCodeLength}
+ * characters, no NUL. It may hold `<` and `>`, since source code does, and a
+ * page draws it as text, never as markup.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Code = Schema.NonEmptyString.check(Schema.isMaxLength(maximumCodeLength), Schema.isPattern(/^[^\u0000]*$/))
+
+/**
+ * The language a `code` block is written in, as a lowercase name such as
+ * `ts`, `tsx`, `sh` or `json`: a page may color it, and shows it as plain
+ * text otherwise.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Language = Schema.NonEmptyString.check(Schema.isPattern(/^[a-z][a-z0-9+#-]{0,19}$/))
+
+/**
+ * A calendar date, `YYYY-MM-DD`, that exists.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const IsoDate = Schema.String.check(
+  Schema.makeFilter<string>((value) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+    if (match === null) return "must be a date, YYYY-MM-DD"
+    const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
+    const date = new Date(Date.UTC(year, month - 1, day))
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+      ? true
+      : "must be a date that exists"
+  })
+)
+
+/**
+ * A link: a label and the absolute `http` or `https` URL it opens.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Link = Schema.Struct({ label: Title, url: Url })
+
+/**
+ * Who may see a section:
+ *
+ * - `everyone`: anyone who may open the repository's page, signed out
+ *   included;
+ * - `contributor`: anyone signed in with a role on the repository, a Guest
+ *   included, and anyone at all when the home opens its contributors'
+ *   sections ({@link Contributors});
+ * - `maintainer`: a Maintainer and above.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Audience = Schema.Literals(["everyone", "contributor", "maintainer"])
+
+/**
+ * Who may see a section.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Audience = typeof Audience.Type
+
+/**
+ * The audiences, from the widest to the narrowest.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const audiences: ReadonlyArray<Audience> = ["everyone", "contributor", "maintainer"]
+
+/**
+ * Who counts as a contributor to a home: `role`, a person signed in with a
+ * role on the repository (the default); or `anyone`, everyone with the link,
+ * for a repository that welcomes contributions from anyone.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Contributors = Schema.Literals(["role", "anyone"])
+
+/**
+ * Who counts as a contributor to a home.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Contributors = typeof Contributors.Type
+
+/**
  * A paragraph of plain text under an optional title.
  *
  * @category schemas
@@ -152,7 +327,7 @@ export const TextBlock = Schema.Struct({
 export const LinksBlock = Schema.Struct({
   type: Schema.Literal("links"),
   title: Schema.optional(Title),
-  links: Schema.NonEmptyArray(Schema.Struct({ label: Title, url: Url }))
+  links: Schema.NonEmptyArray(Link)
 })
 
 /**
@@ -239,6 +414,164 @@ export const ViewBlock = Schema.Struct({
 })
 
 /**
+ * A project's opening: its name, a tagline, a paragraph, the command that
+ * installs it, up to {@link maximumActions} links (the first is the primary
+ * one) and an announcement above the name.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const HeroBlock = Schema.Struct({
+  type: Schema.Literal("hero"),
+  title: Title,
+  tagline: Schema.optional(Line),
+  text: Schema.optional(Line),
+  install: Schema.optional(Command),
+  actions: Schema.optional(Schema.NonEmptyArray(Link).check(Schema.isMaxLength(maximumActions))),
+  announcement: Schema.optional(Link)
+})
+
+/**
+ * Source code shown as an example, with the file it would live in and its
+ * language.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const CodeBlock = Schema.Struct({
+  type: Schema.Literal("code"),
+  title: Schema.optional(Title),
+  file: Schema.optional(Title),
+  language: Schema.optional(Language),
+  code: Code
+})
+
+/**
+ * One card: a title, a line under it, a small label above it (such as a
+ * package's name) and the URL it opens.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Card = Schema.Struct({
+  title: Title,
+  text: Schema.optional(Line),
+  label: Schema.optional(Title),
+  url: Schema.optional(Url)
+})
+
+/**
+ * A grid of up to {@link maximumEntries} cards, with a link to the rest.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const CardsBlock = Schema.Struct({
+  type: Schema.Literal("cards"),
+  title: Schema.optional(Title),
+  cards: Schema.NonEmptyArray(Card).check(Schema.isMaxLength(maximumEntries)),
+  more: Schema.optional(Link)
+})
+
+/**
+ * One stat: a short value over its label, such as `MIT` over `License`.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Stat = Schema.Struct({ value: Title, label: Title })
+
+/**
+ * A row of up to {@link maximumStats} declared facts. They are the
+ * repository's own words, never counted by the page.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const StatsBlock = Schema.Struct({
+  type: Schema.Literal("stats"),
+  title: Schema.optional(Title),
+  stats: Schema.NonEmptyArray(Stat).check(Schema.isMaxLength(maximumStats))
+})
+
+/**
+ * One release: its name, the page that describes it, its date and a line of
+ * what changed.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Release = Schema.Struct({
+  name: Title,
+  url: Url,
+  date: IsoDate,
+  summary: Schema.optional(Line)
+})
+
+/**
+ * Up to {@link maximumEntries} releases, newest first as declared, with a link
+ * to the rest.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const ReleasesBlock = Schema.Struct({
+  type: Schema.Literal("releases"),
+  title: Schema.optional(Title),
+  releases: Schema.NonEmptyArray(Release).check(Schema.isMaxLength(maximumEntries)),
+  more: Schema.optional(Link)
+})
+
+/**
+ * The repository's issues and pull requests at a glance, which the page
+ * reads itself: how many are proposed, accepted and not accepted, the ones
+ * that need triage, and the pull requests waiting. The block carries no rows.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const IssuesBlock = Schema.Struct({
+  type: Schema.Literal("issues"),
+  title: Schema.optional(Title)
+})
+
+/**
+ * A key a person presses for an `action` block's button: one lowercase letter.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Key = Schema.String.check(Schema.isPattern(/^[a-z]$/))
+
+/**
+ * A primary button that runs one flow when a person presses it, or presses
+ * its `key` while not typing, such as New branch: unlike an `app` block, it
+ * starts the flow at once rather than opening the composer. A page shows it
+ * only when it has that flow.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const ActionBlock = Schema.Struct({
+  type: Schema.Literal("action"),
+  flow: FlowName,
+  title: Title,
+  key: Schema.optional(Key)
+})
+
+/**
+ * Recent flow runs, which the page reads itself, failures first. The block
+ * carries no rows.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const RunsBlock = Schema.Struct({
+  type: Schema.Literal("runs"),
+  title: Schema.optional(Title)
+})
+
+/**
  * One declared block.
  *
  * @category schemas
@@ -252,7 +585,15 @@ export const Block = Schema.Union([
   MarkdownBlock,
   StackBlock,
   AppBlock,
-  ViewBlock
+  ViewBlock,
+  HeroBlock,
+  CodeBlock,
+  CardsBlock,
+  StatsBlock,
+  ReleasesBlock,
+  IssuesBlock,
+  RunsBlock,
+  ActionBlock
 ])
 
 /**
@@ -277,15 +618,63 @@ export const kinds: ReadonlyArray<Block["type"]> = [
   "markdown",
   "stack",
   "app",
-  "view"
+  "view",
+  "hero",
+  "code",
+  "cards",
+  "stats",
+  "releases",
+  "issues",
+  "runs",
+  "action"
 ]
+
+/**
+ * The kinds of block whose rows a page reads itself, under its own access
+ * checks: the declaration names the block, never its data.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const liveKinds: ReadonlyArray<Block["type"]> = ["flows", "stack", "issues", "runs"]
+
+/**
+ * A section's heading and audience, as declared. A section's blocks are read
+ * one by one, so a block of a kind this reader doesn't know is skipped there
+ * as anywhere.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const SectionHeading = Schema.Struct({
+  title: Schema.optional(Title),
+  audience: Schema.optional(Audience)
+})
+
+/**
+ * One section of a home: an optional heading, who may see it, and its blocks.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Section {
+  readonly title?: string
+  readonly audience: Audience
+  readonly blocks: ReadonlyArray<Block>
+}
 
 /**
  * Why a file is not a home:
  *
  * - `json`: the text is not JSON;
- * - `shape`: it is not an object with a `blocks` array;
- * - `blocks`: it declares more than {@link maximumBlocks} blocks;
+ * - `shape`: it is not an object with either a `blocks` array or a
+ *   `sections` array (both is refused too), or its `contributors` isn't one
+ *   of {@link Contributors};
+ * - `sections`: it declares more than {@link maximumSections} sections;
+ * - `section`: a section is not an object with a `blocks` array, or its title
+ *   or audience breaks its bounds;
+ * - `blocks`: it declares more than {@link maximumBlocks} blocks in all,
+ *   unknown kinds included;
  * - `block`: a block of a known kind breaks its bounds, such as a title over
  *   {@link maximumTitleLength} characters, HTML in a string or a link that
  *   isn't `http` or `https`.
@@ -293,22 +682,29 @@ export const kinds: ReadonlyArray<Block["type"]> = [
  * @category models
  * @since 0.1.0
  */
-export type Invalid = "json" | "shape" | "blocks" | "block"
+export type Invalid = "json" | "shape" | "sections" | "section" | "blocks" | "block"
 
 /**
- * What {@link read} answers: the blocks to draw, in order, and how many it
- * skipped because their kind is unknown; or why the file is not a home. A
- * home may declare no blocks at all.
+ * What {@link read} answers: the sections to draw, in order, each with its
+ * blocks, and how many blocks it skipped because their kind is unknown; or
+ * why the file is not a home. A home may declare no blocks at all.
  *
  * @category models
  * @since 0.1.0
  */
 export type Read =
-  | { readonly _tag: "Declared"; readonly blocks: ReadonlyArray<Block>; readonly skipped: number }
+  | {
+    readonly _tag: "Declared"
+    readonly sections: ReadonlyArray<Section>
+    readonly contributors: Contributors
+    readonly skipped: number
+  }
   | { readonly _tag: "Invalid"; readonly reason: Invalid }
 
 const known = new Set<unknown>(kinds)
 const decodeBlock = Schema.decodeUnknownResult(Block)
+const decodeHeading = Schema.decodeUnknownResult(SectionHeading)
+const isContributors = Schema.is(Contributors)
 
 /** A block that names a kind as a string this reader doesn't know: a newer declaration's. */
 const unknownKind = (value: unknown): boolean => {
@@ -317,19 +713,27 @@ const unknownKind = (value: unknown): boolean => {
   return typeof type === "string" && !known.has(type)
 }
 
+const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
 /**
- * Reads `.smithers/home.json`'s text: the blocks it declares, or why it is
- * not a home. A block of a kind this reader doesn't know is skipped and
- * counted; any other block that breaks its schema makes the whole file
- * invalid, so a page never draws half of a home. The answer carries no text
- * from the file but the blocks themselves.
+ * Reads `.smithers/home.json`'s text: the sections it declares, or why it is
+ * not a home. A file with `blocks` is one section for everyone; a file with
+ * `sections` names each section's audience, `everyone` when it names none, and
+ * may say `"contributors": "anyone"` to show its contributors' sections to
+ * everyone with the link. A
+ * block of a kind this reader doesn't know is skipped and counted; any other
+ * block that breaks its schema makes the whole file invalid, so a page never
+ * draws half of a home. The answer carries no text from the file but the
+ * sections themselves.
  *
  * @example
  * ```ts
  * import { Home } from "@smthrs/views"
  *
  * const home = Home.read('{"blocks":[{"type":"text","text":"Hello."},{"type":"chart"}]}')
- * // { _tag: "Declared", blocks: [{ type: "text", text: "Hello." }], skipped: 1 }
+ * // { _tag: "Declared", sections: [{ audience: "everyone", blocks: [{ type: "text", text: "Hello." }] }],
+ * //   contributors: "role", skipped: 1 }
  * ```
  *
  * @category reading
@@ -342,22 +746,89 @@ export const read = (text: string): Read => {
   } catch {
     return { _tag: "Invalid", reason: "json" }
   }
-  if (typeof document !== "object" || document === null || Array.isArray(document)) {
-    return { _tag: "Invalid", reason: "shape" }
+  if (!isObject(document)) return { _tag: "Invalid", reason: "shape" }
+  const { blocks, sections, contributors = "role" } = document
+  if (!isContributors(contributors)) return { _tag: "Invalid", reason: "shape" }
+  const declared: ReadonlyArray<unknown> | undefined = Array.isArray(blocks) && sections === undefined
+    ? [{ blocks }]
+    : Array.isArray(sections) && blocks === undefined
+    ? sections
+    : undefined
+  if (declared === undefined) return { _tag: "Invalid", reason: "shape" }
+  if (declared.length > maximumSections) return { _tag: "Invalid", reason: "sections" }
+  let count = 0
+  for (const section of declared) {
+    if (!isObject(section) || !Array.isArray(section.blocks)) return { _tag: "Invalid", reason: "section" }
+    count += section.blocks.length
   }
-  const entries: unknown = (document as { readonly blocks?: unknown }).blocks
-  if (!Array.isArray(entries)) return { _tag: "Invalid", reason: "shape" }
-  if (entries.length > maximumBlocks) return { _tag: "Invalid", reason: "blocks" }
-  const blocks: Array<Block> = []
+  if (count > maximumBlocks) return { _tag: "Invalid", reason: "blocks" }
+  const read: Array<Section> = []
   let skipped = 0
-  for (const entry of entries) {
-    if (unknownKind(entry)) {
-      skipped++
-      continue
+  for (const section of declared as ReadonlyArray<Readonly<Record<string, unknown>>>) {
+    const heading = decodeHeading(section)
+    if (Result.isFailure(heading)) return { _tag: "Invalid", reason: "section" }
+    const drawn: Array<Block> = []
+    for (const entry of section.blocks as ReadonlyArray<unknown>) {
+      if (unknownKind(entry)) {
+        skipped++
+        continue
+      }
+      const decoded = decodeBlock(entry)
+      if (Result.isFailure(decoded)) return { _tag: "Invalid", reason: "block" }
+      drawn.push(decoded.success)
     }
-    const decoded = decodeBlock(entry)
-    if (Result.isFailure(decoded)) return { _tag: "Invalid", reason: "block" }
-    blocks.push(decoded.success)
+    const { title, audience = "everyone" } = heading.success
+    read.push(title === undefined ? { audience, blocks: drawn } : { title, audience, blocks: drawn })
   }
-  return { _tag: "Declared", blocks, skipped }
+  return { _tag: "Declared", sections: read, contributors, skipped }
 }
+
+/**
+ * Whether a viewer of audience `viewer` may see a section for `section`: a
+ * maintainer sees every section, a contributor every section but a
+ * maintainer's, and anyone else only `everyone`'s.
+ *
+ * @example
+ * ```ts
+ * import { Home } from "@smthrs/views"
+ *
+ * Home.sees("contributor", "maintainer") // false
+ * Home.sees("maintainer", "contributor") // true
+ * ```
+ *
+ * @category audiences
+ * @since 0.1.0
+ */
+export const sees = (viewer: Audience, section: Audience): boolean =>
+  audiences.indexOf(viewer) >= audiences.indexOf(section)
+
+/**
+ * The sections a viewer of audience `viewer` may see, in order. A page that
+ * holds a whole home calls this before drawing it; a server that answers a
+ * home calls it before sending one, so a viewer never receives a section
+ * meant for others.
+ *
+ * @category audiences
+ * @since 0.1.0
+ */
+export const visible = (sections: ReadonlyArray<Section>, viewer: Audience): ReadonlyArray<Section> =>
+  sections.filter((section) => sees(viewer, section.audience))
+
+/**
+ * The audience a viewer has on a home that says who counts as a contributor:
+ * with `anyone`, everyone is at least a contributor; otherwise the audience
+ * stands.
+ *
+ * @example
+ * ```ts
+ * import { Home } from "@smthrs/views"
+ *
+ * Home.widen("everyone", "anyone") // "contributor"
+ * Home.widen("everyone", "role") // "everyone"
+ * ```
+ *
+ * @category audiences
+ * @since 0.1.0
+ */
+export const widen = (viewer: Audience, contributors: Contributors): Audience =>
+  viewer === "everyone" && contributors === "anyone" ? "contributor" : viewer

@@ -258,7 +258,7 @@ describe("IssuesView: triage", () => {
     await render(<IssuesView repo="maya/tinyhttp" issues={TRIAGED} />);
     const expected: ReadonlyArray<[IssuesViewTriage, string, string]> = [
       ["proposed", "Proposed", "sui-badge-outline"],
-      ["accepted", "Accepted", "sui-badge-success"],
+      ["accepted", "Accepted for discussion", "sui-badge-success"],
       ["not_accepted", "Not accepted", "sui-badge-muted"],
       ["conflict", "Conflict", "sui-badge-warning"],
     ];

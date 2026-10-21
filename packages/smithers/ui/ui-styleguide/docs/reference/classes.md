@@ -166,6 +166,12 @@ component needs its own media query. It is already composed into
 `workflowUiThemeCss` and `standaloneThemeCss()`, always last, so it wins over
 the transitions above it.
 
+It drops every delay too, except one an element names in `--motion-hold`
+(registered with `@property` as a `<time>` that doesn't inherit). A wait is not
+motion: a loading state that stays hidden for its first 300 ms, so a fast load
+never flashes, sets `--motion-hold: 300ms` and keeps that wait under reduced
+motion, then appears at once.
+
 ## Related
 
 - [Token reference](./tokens.md): the properties these rules read.

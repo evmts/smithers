@@ -71,6 +71,14 @@ describe("ui styleguide", () => {
     expect(workflowUiThemeCss.indexOf(".run-row {")).toBeLessThan(workflowUiThemeCss.indexOf(reducedMotionCss));
   });
 
+  test("reduced motion drops every delay except a hold an element names, which no child inherits", () => {
+    expect(reducedMotionCss).toContain("@property --motion-hold { syntax:'<time>'; inherits:false; initial-value:0ms; }");
+    expect(reducedMotionCss).toContain("animation-delay:var(--motion-hold, 0ms) !important;");
+    expect(reducedMotionCss).toContain("transition-delay:var(--motion-hold, 0ms) !important;");
+    expect(reducedMotionCss).not.toContain("animation-delay:0ms");
+    expect(reducedMotionCss).not.toContain("transition-delay:0ms");
+  });
+
   test("declares the theme-invariant font block exactly once", () => {
     // Every palette's light variant reports `colorScheme: "light"`, so keying
     // the font block off that field emitted it in all eight `:root` rules. The

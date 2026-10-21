@@ -3,14 +3,17 @@
  *
  * The heavy views of a repository: the repository browser (`RepoView`), one
  * file highlighted by Shiki (`CodeFileView`), a highlighted diff
- * (`PierreDiffView`) and the Milkdown Markdown editor (`MarkdownEditor`).
+ * (`PierreDiffView`), the Milkdown Markdown editor (`MarkdownEditor`) and a
+ * file's text in CodeMirror, edited together (`CodeEditor`).
  * They live apart from `@smthrs/ui` so a page that shows no code never pays
  * for `@pierre/diffs`, Shiki or Milkdown. Grammars, themes and the editor's
  * modules still load only when a view needs them.
  */
 export {
   RepoView,
+  type RepoViewCode,
   type RepoViewFile,
+  type RepoViewHtmlMode,
   type RepoViewLocation,
   type RepoViewMarkdownMode,
   type RepoViewProps,
@@ -18,14 +21,33 @@ export {
   type RepoViewTree,
 } from "./RepoView";
 export {
+  HTML_PREVIEW_CSP,
+  HTML_PREVIEW_SANDBOX,
+  HtmlPreview,
+  type HtmlPreviewProps,
+  previewDocument,
+} from "./HtmlPreview";
+export {
   CODE_VIEW_REST_MS,
   CodeFileView,
+  codeMarksCss,
   languageForFile,
   type CodeFileViewProps,
+  type CodeHover,
   type CodeLineAnnotation,
+  type CodeMark,
+  type CodeProblem,
   type CodeTokenPosition,
   type CodeViewMode,
 } from "./CodeFileView";
+export { type CodeSymbol, type CursorKey, isSymbolText, moveCursor } from "./symbols";
+export {
+  SymbolsPane,
+  type SymbolsPaneLocation,
+  type SymbolsPaneOutlineItem,
+  type SymbolsPaneProps,
+  type SymbolsPaneSymbol,
+} from "./SymbolsPane";
 export {
   CODE_VIEW_POOL_DEADLINE_MS,
   currentCodeViewPool,
@@ -44,6 +66,8 @@ export {
   type PierreDiffMode,
   type PierreDiffViewProps,
 } from "./PierreDiffView";
+export { CodeEditor, type CodeEditorProps } from "./CodeEditor";
+export { LiveMarkdownEditor, type LiveMarkdownEditorProps } from "./LiveMarkdownEditor";
 export {
   MarkdownEditor,
   MarkdownEditorStyles,

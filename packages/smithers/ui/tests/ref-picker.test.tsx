@@ -175,11 +175,14 @@ describe("RefPicker", () => {
     expect(filter().value).toBe("");
   });
 
-  test("loading shows a spinner, a failure says why, and a cut list says more aren't shown", async () => {
+  test("loading shows skeleton rows and no spinner, a failure says why, and a cut list says more aren't shown", async () => {
     await picker({ state: "loading" });
     await click(trigger());
     expect(panel()!.querySelector('[role="tab"]')).toBeNull();
-    expect(panel()!.querySelector(".sui-ref-picker-note")).not.toBeNull();
+    const loading = panel()!.querySelector('[role="status"]')!;
+    expect(loading.getAttribute("aria-label")).toBe("Loading branches and tags");
+    expect(loading.querySelectorAll('[data-slot="skeleton"]').length).toBe(3);
+    expect(panel()!.querySelector('[data-slot="spinner"]')).toBeNull();
     await act(async () => root!.unmount());
     root = undefined;
     container!.remove();

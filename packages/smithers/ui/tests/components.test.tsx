@@ -29,10 +29,11 @@ import {
   RowButton,
   SectionHeader,
   Separator,
+  LoadingBar,
+  LOADING_DELAY_MS,
   Skeleton,
   SmithersUiStyles,
   smithersUiCss,
-  Spinner,
   StageStrip,
   stageTone,
   StatusPill,
@@ -85,7 +86,7 @@ describe("Button", () => {
     expect(html).not.toContain("<button");
   });
 
-  test("asChild forwards loading semantics without injecting a spinner", () => {
+  test("asChild forwards loading semantics without injecting a bar", () => {
     const html = renderToStaticMarkup(
       <Button asChild loading>
         <a href="/runs/123">Open run</a>
@@ -93,7 +94,17 @@ describe("Button", () => {
     );
     expect(html).toContain('aria-disabled="true"');
     expect(html).toContain('aria-busy="true"');
+    expect(html).not.toContain("sui-loading-bar");
+  });
+
+  test("loading keeps the label first and runs an inline bar, with no spinner", () => {
+    const html = renderToStaticMarkup(<Button loading>Save</Button>);
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("disabled");
+    expect(html.indexOf("Save")).toBeLessThan(html.indexOf("sui-loading-bar"));
+    expect(html).toContain('data-placement="inline"');
     expect(html).not.toContain("sui-spinner");
+    expect(renderToStaticMarkup(<Button>Save</Button>)).not.toContain("sui-loading-bar");
   });
 
   test("keeps consumer className and explicit submit type", () => {
@@ -255,7 +266,11 @@ describe("chat", () => {
     expect(html).toContain('role="region"');
     expect(html).toContain('aria-label="Terminal output"');
     expect(html).toContain('tabindex="0"');
-    expect(html).toContain("sui-chat-typing");
+    // The pending answer is a skeleton line in its bubble: no typing dots and no spinner.
+    expect(html).toContain("sui-chat-bubble-pending");
+    expect(html).toContain('class="sui-skeleton sui-chat-pending-line"');
+    expect(html).not.toContain("sui-chat-typing");
+    expect(html).not.toContain("sui-spinner");
   });
 
   test("renders the controlled glass composer with accessible submit state", () => {
@@ -393,13 +408,38 @@ describe("Tabs", () => {
 });
 
 describe("misc primitives", () => {
-  test("Spinner announces status; Skeleton is aria-hidden", () => {
-    const spinner = renderToStaticMarkup(<Spinner />);
-    expect(spinner).toContain('role="status"');
-    expect(spinner).toContain("sui-spinner");
+  test("LoadingBar is a named progressbar only while loading with a label, and stays mounted idle; Skeleton is aria-hidden", () => {
+    const loading = renderToStaticMarkup(<LoadingBar loading label="Loading page" />);
+    expect(loading).toContain('role="progressbar"');
+    expect(loading).toContain('aria-label="Loading page"');
+    expect(loading).toContain('data-state="loading"');
+    expect(loading).toContain('data-placement="page"');
+    const idle = renderToStaticMarkup(<LoadingBar loading={false} placement="inline" label="Loading page" />);
+    expect(idle).toContain('data-state="idle"');
+    expect(idle).toContain('data-placement="inline"');
+    expect(idle).toContain('aria-hidden="true"');
+    expect(idle).not.toContain("role=");
+    // Without a label it is decorative even while loading: the control it sits in says it is busy.
+    const decorative = renderToStaticMarkup(<LoadingBar loading placement="inline" />);
+    expect(decorative).toContain('data-state="loading"');
+    expect(decorative).toContain('aria-hidden="true"');
+    expect(decorative).not.toContain("role=");
     const skeleton = renderToStaticMarkup(<Skeleton style={{ width: 120 }} />);
     expect(skeleton).toContain("sui-skeleton");
     expect(skeleton).toContain("aria-hidden");
+  });
+
+  test("every loading state waits LOADING_DELAY_MS before it shows, and names that wait as its reduced-motion hold", () => {
+    expect(LOADING_DELAY_MS).toBe(300);
+    const rule = (selector: string) => smithersUiCss.split("\n").find((line) => line.startsWith(`${selector} {`))!;
+    expect(rule(".sui-skeleton")).toContain("--motion-hold:300ms;");
+    expect(rule(".sui-skeleton")).toContain("animation:sui-loading-appear .2s ease-out 300ms both");
+    expect(rule(".sui-loading-bar")).toContain("opacity:0;");
+    expect(rule(".sui-loading-bar[data-state='loading']")).toContain("--motion-hold:300ms;");
+    expect(rule(".sui-loading-bar[data-state='loading']")).toContain("transition:opacity .15s ease 300ms;");
+    expect(rule(".sui-chat-bubble-pending")).toContain("--motion-hold:300ms;");
+    expect(smithersUiCss).not.toContain("sui-spinner");
+    expect(smithersUiCss).not.toContain("sui-chat-typing");
   });
 
   test("Progress carries value semantics and the translated indicator", () => {

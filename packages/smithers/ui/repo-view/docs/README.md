@@ -11,9 +11,12 @@ exported from the package root.
 | View             | Shows                                                             | Renderer                     |
 | ---------------- | ----------------------------------------------------------------- | ---------------------------- |
 | `RepoView`       | A repository's file tree, a directory with its README, or a file | The three below              |
-| `CodeFileView`   | One file, syntax highlighted                                      | `@pierre/diffs`, Shiki       |
+| `CodeFileView`   | One file, syntax highlighted, with a language server's marks, hover card and keyboard cursor | `@pierre/diffs`, Shiki       |
+| `SymbolsPane`    | A symbol's definitions and references, or a file's outline        | `@smthrs/ui`                 |
 | `PierreDiffView` | A unified patch, syntax highlighted                               | `@pierre/diffs`, Shiki       |
 | `MarkdownEditor` | A Markdown document, edited or read in place                      | Milkdown Crepe               |
+| `CodeEditor`     | A file's text, edited by several people at once, with their carets | CodeMirror                   |
+| `LiveMarkdownEditor` | A Markdown document several people edit at once                | Milkdown Crepe               |
 
 The light pieces stay in `@smthrs/ui`: `FileTree`, `Breadcrumbs`,
 `DirectoryListing`, the `Markdown` renderer, `DiffHunks` and `CodeBlock`.

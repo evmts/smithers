@@ -1,10 +1,11 @@
 /** @jsxImportSource react */
 import { getFiletypeFromFileName, type FileOptions, type LineAnnotation } from "@pierre/diffs";
 import { File, WorkerPoolContext, useStableCallback } from "@pierre/diffs/react";
-import { cn, type ResolvedPalette, useResolvedPalette, useResolvedTheme } from "@smthrs/ui";
-import { useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { cn, type ResolvedPalette, tokens as t, useResolvedPalette, useResolvedTheme } from "@smthrs/ui";
+import { type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, useId, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { diffsThemeForMode, type PierreDiffMode } from "./PierreDiffView";
 import { useInjectRepoViewCss } from "./styles";
+import { type CodeSymbol, CURSOR_KEYS, type CursorKey, isSymbolText, moveCursor } from "./symbols";
 import { registerVibe } from "./vibe";
 import { codeViewWorkerPool, currentCodeViewPool, subscribeCodeViewPool } from "./workerPool";
 
@@ -47,6 +48,14 @@ registerVibe();
  * `onTokenActivate`. Positions are 1-based, the LSP wire's convention. The
  * rest timer is pierre's own token enter/leave pair plus a timeout held in a
  * ref, cleared on leave and on unmount through the frame's ref callback.
+ *
+ * A language server's answers draw through four more, still without state:
+ * `marks` (symbol highlights, and problems as a wavy underline with a bar in
+ * the gutter) and `cursor` become one `<style>` in pierre's shadow root,
+ * written from a keyed sentinel's ref callback and from `onPostRender`;
+ * `hover` is a card under its token, placed by its own ref callback; the
+ * arrow keys move the cursor through the symbols pierre drew
+ * (`onCursorMove`), and every other key goes to `onKeyDown`.
  */
 
 /** The theme axis the view follows, the same two values the diff view takes. */
@@ -77,7 +86,108 @@ export interface CodeLineAnnotation {
   readonly node: ReactNode;
 }
 
+/**
+ * A mark on the code, 1-based: `symbol` highlights the token starting at
+ * `column` (every occurrence of a selected symbol); a problem underlines the
+ * tokens starting from `column` up to `end` (exclusive, same line) and marks
+ * the line in the gutter.
+ */
+export interface CodeMark {
+  readonly line: number;
+  readonly column: number;
+  readonly end?: number | undefined;
+  readonly kind: "symbol" | "error" | "warning" | "info";
+}
+
+/** A problem a hover card lists. */
+export interface CodeProblem {
+  readonly severity: "error" | "warning" | "info";
+  readonly message: string;
+}
+
+/** A card under the token at `line` and `column` (1-based): its signature as code, then `body`, then problems. */
+export interface CodeHover {
+  readonly line: number;
+  readonly column: number;
+  readonly signature?: string | undefined;
+  readonly body?: ReactNode;
+  readonly problems?: ReadonlyArray<CodeProblem> | undefined;
+}
+
 type AnnotationMeta = { readonly key: string; readonly node: ReactNode };
+
+/** The selector of the token pierre drew starting at a 1-based `line` and `column`. */
+const tokenSelector = (line: number, column: number) => `[data-line="${line}"] [data-char="${column - 1}"]`;
+
+/** The most columns one problem underlines, so a long range stays a short sheet. */
+const MAX_MARKED_COLUMNS = 200;
+
+const PROBLEM_COLORS: Readonly<Record<CodeProblem["severity"], string>> = {
+  error: t.destructive,
+  warning: t.warning,
+  info: t.info,
+};
+
+/** The sheet the marks and the cursor become inside pierre's shadow root. */
+export const codeMarksCss = (
+  marks: ReadonlyArray<CodeMark>,
+  cursor: { readonly line: number; readonly column: number } | undefined,
+): string => {
+  const rules = marks.map((mark) => {
+    if (mark.kind === "symbol") {
+      return `${tokenSelector(mark.line, mark.column)}{background:color-mix(in srgb, ${t.primary} 22%, transparent);border-radius:3px}`;
+    }
+    const color = PROBLEM_COLORS[mark.kind];
+    const last = Math.min(Math.max(mark.end ?? mark.column + 1, mark.column + 1), mark.column + MAX_MARKED_COLUMNS);
+    const tokens = Array.from({ length: last - mark.column }, (_, offset) => tokenSelector(mark.line, mark.column + offset));
+    return `${tokens.join(",")}{text-decoration:underline wavy ${color};text-decoration-skip-ink:none;text-underline-offset:3px}` +
+      `[data-column-number="${mark.line}"]{box-shadow:inset 3px 0 ${color}}`;
+  });
+  if (cursor !== undefined) {
+    rules.push(`${tokenSelector(cursor.line, cursor.column)}{outline:2px solid ${t.primary};outline-offset:1px;border-radius:3px}`);
+  }
+  return rules.join("\n");
+};
+
+/** Every symbol pierre drew in `host`'s shadow root, in document order. */
+const symbolsIn = (host: Element | null): Array<CodeSymbol> =>
+  [...(host?.shadowRoot?.querySelectorAll<HTMLElement>("[data-line] [data-char]") ?? [])].flatMap((token) => {
+    const text = token.textContent ?? "";
+    const line = Number(token.closest("[data-line]")?.getAttribute("data-line"));
+    return isSymbolText(text) ? [{ line, column: Number(token.getAttribute("data-char")) + 1, text }] : [];
+  });
+
+const MARKS_SLOT = "code-view-marks";
+
+/** Writes `css` into `host`'s shadow root, in one `<style>` the view owns. Answers false before pierre made the root. */
+const writeMarks = (host: Element | null | undefined, css: string): boolean => {
+  const root = host?.shadowRoot;
+  if (root == null) return false;
+  let sheet = root.querySelector<HTMLStyleElement>(`style[data-slot="${MARKS_SLOT}"]`);
+  if (sheet === null) {
+    sheet = document.createElement("style");
+    sheet.setAttribute("data-slot", MARKS_SLOT);
+    root.appendChild(sheet);
+  }
+  if (sheet.textContent !== css) sheet.textContent = css;
+  return true;
+};
+
+/** Puts `card` under the token it describes, inside the frame; answers false while the token isn't drawn. */
+const placeHover = (card: HTMLElement | null, hover: CodeHover | undefined): boolean => {
+  const frame = card?.parentElement;
+  if (card == null || frame == null || hover === undefined) return false;
+  const root = frame.querySelector("diffs-container")?.shadowRoot;
+  const target = root?.querySelector<HTMLElement>(tokenSelector(hover.line, hover.column)) ??
+    root?.querySelector<HTMLElement>(`[data-line="${hover.line}"]`);
+  if (target == null) return false;
+  const box = frame.getBoundingClientRect();
+  const token = target.getBoundingClientRect();
+  card.style.top = `${token.bottom - box.top + 4}px`;
+  card.style.left = `${Math.max(0, token.left - box.left)}px`;
+  card.setAttribute("data-placed", "");
+  return true;
+};
 
 /** The default pointer rest before a token counts as hovered. */
 export const CODE_VIEW_REST_MS = 300;
@@ -116,6 +226,21 @@ export type CodeFileViewProps = {
   restMs?: number | undefined;
   /** ⌘-click (macOS) or Ctrl-click on a token. */
   onTokenActivate?: ((token: CodeTokenPosition) => void) | undefined;
+  /** A plain click on a token, when it selected no text. */
+  onTokenSelect?: ((token: CodeTokenPosition) => void) | undefined;
+  /** Symbol highlights and problems; the consumer memoizes the array. */
+  marks?: ReadonlyArray<CodeMark> | undefined;
+  /** The keyboard cursor, outlined and kept in view. */
+  cursor?: { readonly line: number; readonly column: number } | undefined;
+  /**
+   * An arrow key moved the cursor, or the view took focus without one: the
+   * symbol it lands on. Present, the code takes focus like a control.
+   */
+  onCursorMove?: ((token: CodeTokenPosition) => void) | undefined;
+  /** Any other key while the code has focus. */
+  onKeyDown?: ((event: ReactKeyboardEvent<HTMLDivElement>) => void) | undefined;
+  /** A card under a token: what a language server said about it. */
+  hover?: CodeHover | undefined;
 };
 
 /**
@@ -159,6 +284,12 @@ export function CodeFileView({
   onTokenRest,
   restMs = CODE_VIEW_REST_MS,
   onTokenActivate,
+  onTokenSelect,
+  marks,
+  cursor,
+  onCursorMove,
+  onKeyDown,
+  hover,
 }: CodeFileViewProps) {
   useInjectRepoViewCss();
   const houseTheme = useResolvedTheme();
@@ -193,9 +324,33 @@ export function CodeFileView({
    */
   const revealed = useRef<number | null>(null);
 
+  /*
+   * The marks and the cursor, as one sheet in pierre's shadow root. The
+   * sentinel keyed by the sheet writes it whenever it changes; onPostRender
+   * writes it once pierre has made the root. A cursor that moved is scrolled
+   * into view once.
+   */
+  const marksCss = useMemo(() => codeMarksCss(marks ?? [], cursor), [marks, cursor]);
+  const scrolledTo = useRef<string | null>(null);
+  const applyMarks = (container: Element | null | undefined): void => {
+    if (!writeMarks(container, marksCss) || cursor === undefined) return;
+    const key = `${cursor.line}:${cursor.column}`;
+    const token = container?.shadowRoot?.querySelector<HTMLElement>(tokenSelector(cursor.line, cursor.column));
+    if (token == null || scrolledTo.current === key) return;
+    scrolledTo.current = key;
+    token.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  };
+  const marksFromSentinel = (sentinel: HTMLElement | null): void => {
+    if (sentinel !== null) applyMarks(sentinel.parentElement?.querySelector("diffs-container"));
+  };
+  const hoverCard = useRef<HTMLElement | null>(null);
+  const hoverId = useId();
+
   const onPostRender = useStableCallback((node: HTMLElement) => {
     if (node.shadowRoot?.querySelector("[data-line]") == null) return;
     node.parentElement?.setAttribute("data-state", "ready");
+    applyMarks(node);
+    placeHover(hoverCard.current, hover);
     if (line === undefined) {
       revealed.current = null;
       return;
@@ -236,12 +391,45 @@ export function CodeFileView({
   const onTokenLeave = useStableCallback(() => disarm());
   const onTokenClick = useStableCallback(
     (token: { lineNumber: number; lineCharStart: number; tokenText: string }, event: MouseEvent) => {
-      if (onTokenActivate === undefined || !(event.metaKey || event.ctrlKey)) return;
-      event.preventDefault();
-      onTokenActivate({ line: token.lineNumber, column: token.lineCharStart + 1, text: token.tokenText });
+      const position = { line: token.lineNumber, column: token.lineCharStart + 1, text: token.tokenText };
+      if (event.metaKey || event.ctrlKey) {
+        if (onTokenActivate === undefined) return;
+        event.preventDefault();
+        onTokenActivate(position);
+        return;
+      }
+      if (onTokenSelect !== undefined && window.getSelection()?.isCollapsed !== false) onTokenSelect(position);
     },
   );
-  const interactive = onTokenRest !== undefined || onTokenActivate !== undefined;
+  const interactive = onTokenRest !== undefined || onTokenActivate !== undefined || onTokenSelect !== undefined ||
+    onCursorMove !== undefined;
+
+  /*
+   * The keyboard. The arrow keys move the cursor through the symbols pierre
+   * drew; taking focus from the keyboard without a cursor lands it on the
+   * first symbol at or after the anchored line (a pointer that focuses the
+   * code picks its own token). Every other key is the consumer's.
+   */
+  const pointerFocus = useRef(false);
+  const keyboard = onCursorMove !== undefined || onKeyDown !== undefined;
+  const container = (frame: HTMLElement) => frame.querySelector("diffs-container");
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const plain = !event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey;
+    if (onCursorMove !== undefined && plain && CURSOR_KEYS.has(event.key)) {
+      event.preventDefault();
+      const next = moveCursor(symbolsIn(container(event.currentTarget)), cursor, event.key as CursorKey, line);
+      if (next !== undefined) onCursorMove(next);
+      return;
+    }
+    onKeyDown?.(event);
+  };
+  const handleFocus = (event: ReactFocusEvent<HTMLDivElement>) => {
+    const byPointer = pointerFocus.current;
+    pointerFocus.current = false;
+    if (byPointer || onCursorMove === undefined || cursor !== undefined || event.target !== event.currentTarget) return;
+    const first = moveCursor(symbolsIn(container(event.currentTarget)), undefined, "ArrowRight", line);
+    if (first !== undefined) onCursorMove(first);
+  };
 
   /*
    * Stable across renders: pierre compares options by key identity and a new
@@ -286,6 +474,12 @@ export function CodeFileView({
       data-language={language ?? "text"}
       data-interactive={interactive ? "" : undefined}
       data-highlighter={manager === undefined ? "main-thread" : "worker"}
+      tabIndex={keyboard ? 0 : undefined}
+      aria-label={keyboard ? name : undefined}
+      aria-describedby={hover === undefined ? undefined : hoverId}
+      onKeyDown={keyboard ? handleKeyDown : undefined}
+      onFocus={keyboard ? handleFocus : undefined}
+      onPointerDown={keyboard ? () => void (pointerFocus.current = true) : undefined}
     >
       <pre className="sui-code-view-plain">{contents}</pre>
       <WorkerPoolContext.Provider value={manager}>
@@ -300,6 +494,30 @@ export function CodeFileView({
         />
       </WorkerPoolContext.Provider>
       <span key={line ?? "unanchored"} hidden ref={revealFromSentinel} data-slot="code-view-anchor" />
+      <span key={marksCss} hidden ref={marksFromSentinel} data-slot="code-view-marks-anchor" />
+      {hover === undefined ? null : (
+        <div
+          key={`${hover.line}:${hover.column}`}
+          id={hoverId}
+          role="tooltip"
+          className="sui-code-hover"
+          data-slot="code-view-hover"
+          ref={(card) => {
+            hoverCard.current = card;
+            placeHover(card, hover);
+          }}
+        >
+          {hover.signature === undefined ? null : <pre className="sui-code-hover-signature">{hover.signature}</pre>}
+          {hover.body === undefined || hover.body === null ? null : <div className="sui-code-hover-body">{hover.body}</div>}
+          {hover.problems === undefined || hover.problems.length === 0 ? null : (
+            <ul className="sui-code-hover-problems">
+              {hover.problems.map((problem, index) => (
+                <li key={index} data-severity={problem.severity}>{problem.message}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }

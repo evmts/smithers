@@ -49,7 +49,6 @@ export const itemConversationCss = `
 .sui-item-conv-comment-actions { display:flex; flex-wrap:wrap; gap:6px; }
 .sui-item-conv-composer { min-width:0; display:grid; gap:8px; }
 .sui-item-conv-composer-actions, .sui-issue-form-actions { display:flex; justify-content:flex-end; gap:6px; }
-.sui-item-conv-loading-status { color:${t.mutedForeground}; }
 .sui-item-conv-loading { display:grid; gap:10px; }
 .sui-item-conv-skeleton-title { width:min(100%, 420px); height:24px; }
 .sui-item-conv-skeleton-body { height:64px; }

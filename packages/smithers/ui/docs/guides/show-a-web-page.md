@@ -1,19 +1,23 @@
 ---
 title: "Show a web page"
-description: "Show an outside web page in a sandboxed frame with WebPageView, or as a card that opens it in a new tab with WebLinkCard, and what the URL guards refuse."
+description: "Show an outside web page in a sandboxed frame with WebPageView, or as a card with its title, description and icon that opens it in a new tab with WebLinkCard, and what the URL guards refuse."
 ---
 
 Two components show a page from another site. `WebPageView` frames the page
-under a bar with its origin. `WebLinkCard` shows the origin and an Open link
-that opens the page in a new tab.
+under a bar with its origin. `WebLinkCard` shows the page's icon, title,
+description and domain, and an `Open in new tab` link.
 
 ```tsx
 import { WebLinkCard, WebPageView } from "@smthrs/ui"
 
-<WebPageView url="https://example.com/docs" />
+<WebPageView url="https://example.com/docs" preview={{ title, description, icon }} />
 <WebPageView url={url} size="full" actions={<a href={fullScreenHref}>Full screen</a>} />
-<WebLinkCard url="https://example.com/docs" onOpen={() => opened.increment()} />
+<WebLinkCard url="https://example.com/docs" title={title} description={description} icon={icon} onOpen={() => opened.increment()} />
 ```
+
+The title, description and icon come from the page's head, read by your
+server: `@smthrs/views`' `WebPage.check` reads them and says whether the page
+frames at all.
 
 ## Choose a component
 
@@ -21,6 +25,12 @@ import { WebLinkCard, WebPageView } from "@smthrs/ui"
 | --- | --- |
 | `WebPageView` | The person reads or uses the page next to the conversation. `inline` is a 28rem frame for a message; `full` fills its container, so give it a flex column or a full-height parent. |
 | `WebLinkCard` | The page belongs in its own tab: it signs the person in, refuses framing, or needs the whole window. |
+
+Check before you frame. A page that refuses framing leaves the frame blank or
+showing the browser's error, and the page around it can't read why. Ask from
+your server with `WebPage.check` (`@smthrs/views`) and show `WebPageView` only
+when it answers `allowed`; show `WebLinkCard`, with the preview it read, for
+`refused` and `unknown`.
 
 Both components take the URL as a string and check it themselves. Check it
 against your own policy first; the components' check is the last guard, not
@@ -64,17 +74,24 @@ fails, and check only the URL you were asked to show.
 
 ## The Open in new tab link
 
-`WebPageView` always shows `Open in new tab`, in both sizes. Many sites refuse
-framing with `X-Frame-Options` or a `frame-ancestors` policy, and the browser
-then shows an empty or error frame that the host page cannot detect. The link
-is the way out. Pass your own controls, such as a full-screen link, as
-`actions`; they render between the origin and that link.
+`WebPageView` always shows `Open in new tab`, in both sizes: a page can pass
+the check and still fail in the frame, such as one that answers browsers
+differently, and the frame can't tell the page around it. Until the frame
+loads, the page's preview covers it, fading in after 600 ms so a quick page
+never flashes it, so a page that never loads still says what it is. Pass your
+own controls, such as a full-screen link, as `actions`; they render between
+the origin and that link.
 
-`WebLinkCard`'s Open is a real anchor with `target="_blank"` and
-`rel="noopener noreferrer"`, styled as a `Button`. A person's click on a link
-opens the tab, and popup blockers allow it, so the component never calls
-`window.open`. `onOpen` runs on that click for your telemetry and never
-prevents it.
+`WebLinkCard`'s `Open in new tab` is a real anchor with `target="_blank"` and
+`rel="noopener noreferrer"`, styled as a `Button`, with a `↵` key: focused,
+Enter opens it. A person's click or key on a link opens the tab, and popup
+blockers allow it, so the component never calls `window.open`. `onOpen` runs
+on that click for your telemetry and never prevents it.
+
+The card's icon is an `<img>` with `referrerpolicy="no-referrer"` and only
+for an `https:` URL; without one, or when it fails to load, the card shows
+the host's first letter. Its domain is the host for an `https:` page and the
+whole origin for any other, so an `http:` page shows its scheme.
 
 ## The URL guards
 

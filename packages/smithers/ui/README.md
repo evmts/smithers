@@ -26,7 +26,7 @@ import { Button, SmithersUiStyles, StatusPill } from "@smthrs/ui";
 
 - Base primitives: `Button`, `Badge`, `Card`, `Input`, `Label`, `Alert`,
   `Table`, `Tabs`, `Dialog`, `Tooltip`, `Select`, `Progress`, `Separator`,
-  `Skeleton`, `Spinner`, `EmptyState`, `SectionHeader`, `RowButton`, `KpiStat`,
+  `Skeleton`, `LoadingBar`, `EmptyState`, `SectionHeader`, `RowButton`, `KpiStat`,
   `StageStrip`, `CollapsiblePanel`, `DiffHunks`, `FileTree`, `Markdown`,
   `Kbd`, `SegmentedControl`, `CommandPalette`.
 - Conversation: `Message` family, `MessageBranch` family, `Bubble` family,

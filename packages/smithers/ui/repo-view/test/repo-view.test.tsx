@@ -138,7 +138,9 @@ describe("RepoView", () => {
     expect(q('[data-testid="summary"]')!.parentElement!.className).toBe("sui-repo-summary");
     const readme = q('article[aria-label="README.md"]')!;
     expect(readme.querySelector("a")!.getAttribute("href")).toBe("#/blob/README.md");
-    expect(readme.querySelector('[data-slot="spinner"]')).not.toBeNull();
+    expect(readme.querySelector('[role="status"]')!.getAttribute("aria-label")).toBe("Loading README.md");
+    expect(readme.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
+    expect(readme.querySelector('[data-slot="spinner"]')).toBeNull();
   });
 
   test("a README renders as a Markdown document; its name opens it", async () => {
@@ -269,7 +271,9 @@ describe("RepoView", () => {
   test("each file state: loading, binary, too large, empty and failed", async () => {
     const { element } = view({ location: { kind: "blob", path: "assets/logo.png" } });
     await render(element());
-    expect(q('article [data-slot="spinner"]')).not.toBeNull();
+    expect(q('article [role="status"]')!.getAttribute("aria-label")).toBe("Loading assets/logo.png");
+    expect(q('article [data-slot="skeleton"]')).not.toBeNull();
+    expect(q('[data-slot="spinner"]')).toBeNull();
     expect(q(".sui-repo-stats")).toBeNull();
     await render(element({ file: { state: "binary", size: 2048 } }));
     expect(q("article .sui-repo-note")!.textContent).toBe("Binary file");
@@ -287,8 +291,13 @@ describe("RepoView", () => {
   test("the tree loading, failed, truncated and empty; a location that isn't there", async () => {
     const { element } = view({ location: { kind: "tree", path: "" }, tree: { state: "loading" } });
     await render(element());
-    expect(q('.sui-repo-content [data-slot="spinner"]')).not.toBeNull();
-    expect(q("aside")).toBeNull();
+    expect(q('.sui-repo-content [role="status"]')!.getAttribute("aria-label")).toBe("Loading files");
+    expect(q(".sui-repo-content .sui-repo-box.sui-repo-loading")!.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(4);
+    expect(q('[data-slot="spinner"]')).toBeNull();
+    // The tree's column holds its place, empty, so the content sits in its own column and never jumps when the
+    // files arrive (a loading view used to draw its content in the tree's 240 px column).
+    expect(q('aside[aria-label="Files"]')!.childElementCount).toBe(0);
+    expect(q('aside[aria-label="Files"]')!.nextElementSibling!.className).toBe("sui-repo-main");
     await render(element({ tree: { state: "failed", message: "Couldn't list the files." } }));
     expect(q('.sui-repo-content [role="alert"]')!.textContent).toBe("Couldn't list the files.");
     await render(element({ tree: { state: "ready", paths: PATHS, truncated: true } }));

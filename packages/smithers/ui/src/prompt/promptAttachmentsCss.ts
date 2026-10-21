@@ -29,7 +29,7 @@ export const promptAttachmentsCss = `
 .sui-prompt-button:hover { background:${t.secondary}; color:${t.foreground}; }
 .sui-prompt-button:focus-visible { ${focusRing} }
 .sui-prompt-button:disabled { cursor:not-allowed; opacity:.45; }
-.sui-prompt-submit { width:30px; height:30px; min-height:30px; display:inline-flex; align-items:center; justify-content:center; padding:0; border:1px solid ${t.primary}; border-radius:${t.radiusControl}; background:${t.primary}; color:${t.primaryForeground}; font:inherit; font-size:15px; cursor:pointer; flex:none; }
+.sui-prompt-submit { position:relative; overflow:hidden; width:30px; height:30px; min-height:30px; display:inline-flex; align-items:center; justify-content:center; padding:0; border:1px solid ${t.primary}; border-radius:${t.radiusControl}; background:${t.primary}; color:${t.primaryForeground}; font:inherit; font-size:15px; cursor:pointer; flex:none; }
 .sui-prompt-submit:hover:not(:disabled) { background:color-mix(in srgb, ${t.primary} 88%, ${t.foreground}); }
 .sui-prompt-submit:focus-visible { ${focusRing} }
 .sui-prompt-submit:disabled { cursor:not-allowed; opacity:.45; }

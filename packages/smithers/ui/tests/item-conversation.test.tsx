@@ -362,7 +362,8 @@ describe("ItemConversation: loading and themes", () => {
     );
     expect(article().getAttribute("aria-busy")).toBe("true");
     expect(article().getAttribute("aria-label")).toBe("Loading");
-    expect(article().querySelector("[role=status]")!.getAttribute("aria-label")).toBe("Loading");
+    expect(article().querySelector("[role=status]")!.textContent).toBe("Loading");
+    expect(article().querySelector("[data-slot=spinner]")).toBeNull();
     expect(article().querySelectorAll(".sui-item-conv-loading [data-slot=skeleton]")).toHaveLength(3);
     expect(article().querySelectorAll("header, h1, ol, form, textarea, button, .sui-item-conv-state")).toHaveLength(0);
     await rerender(<ItemConversation {...BASE} />);

@@ -15,5 +15,26 @@ export {
   type NeedsYouCardProps,
   type NeedsYouKind,
 } from "./NeedsYouCard";
-export { NOTICE_GLYPHS, NOTICE_WORDS, noticeDismissDelay, type NoticeState, workNoticeVisible } from "./notices";
+export {
+  isNoticeHotkey,
+  isTypingTarget,
+  NOTICE_GLYPHS,
+  NOTICE_KEYS,
+  NOTICE_WORDS,
+  noticeDismissDelay,
+  type NoticeKeyAction,
+  type NoticeKeyEvent,
+  noticeKeyAction,
+  type NoticeState,
+  workNoticeVisible,
+} from "./notices";
+export {
+  NotificationBell,
+  type NotificationBellProps,
+  NotificationEntry,
+  type NotificationEntryProps,
+  NotificationPanel,
+  type NotificationPanelProps,
+  type NotificationStep,
+} from "./NotificationPanel";
 export { Toast, ToastStack, type ToastProps, type ToastStackProps } from "./ToastStack";

@@ -24,18 +24,28 @@ export function ancestorsOf(path: string): ReadonlyArray<string> {
   return parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/"));
 }
 
-/** Every directory the files sit under. */
-export function directoriesOf(paths: ReadonlyArray<string>): ReadonlySet<string> {
+/** Every directory the files sit under, and every one `folders` names whose files aren't listed. */
+export function directoriesOf(paths: ReadonlyArray<string>, folders: ReadonlyArray<string> = []): ReadonlySet<string> {
   const directories = new Set<string>();
   for (const path of paths) for (const directory of ancestorsOf(path)) directories.add(directory);
+  for (const folder of folders) {
+    for (const directory of [...ancestorsOf(folder), folder]) if (directory !== "") directories.add(directory);
+  }
   return directories;
 }
 
-/** A directory's own entries, directories first, each group by {@link compareNames}. */
-export function directoryEntries(paths: ReadonlyArray<string>, directory: string): ReadonlyArray<DirectoryEntry> {
+/**
+ * A directory's own entries, directories first, each group by {@link compareNames}. `folders` are directories known
+ * without their files, such as a repository's top level as GitHub lists it before a clone.
+ */
+export function directoryEntries(
+  paths: ReadonlyArray<string>,
+  directory: string,
+  folders: ReadonlyArray<string> = [],
+): ReadonlyArray<DirectoryEntry> {
   const prefix = directory === "" ? "" : `${directory}/`;
   const entries = new Map<string, DirectoryEntry>();
-  for (const path of paths) {
+  for (const path of [...paths, ...folders.map((folder) => `${folder}/`)]) {
     if (!path.startsWith(prefix) || path.length === prefix.length) continue;
     const rest = path.slice(prefix.length);
     const slash = rest.indexOf("/");
@@ -62,6 +72,11 @@ export function treeOrder(paths: ReadonlyArray<string>): ReadonlyArray<string> {
     // Git never holds a path that is both a file and a directory, so only a duplicate gets here.
     return 0;
   });
+}
+
+/** Whether a file name is an HTML page, which the view can show live beside its source. */
+export function isHtml(path: string): boolean {
+  return /\.html?$/i.test(path);
 }
 
 /** Whether a file name is Markdown, which the view renders as a document. */

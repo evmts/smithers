@@ -122,7 +122,9 @@ claims, so these are guarantees rather than intentions:
   of the library.
 - One document-wide reduced-motion policy is composed after every component
   block, so `prefers-reduced-motion: reduce` neutralizes animation and
-  transition durations across the sheet.
+  transition durations across the sheet. A delay an element names in
+  `--motion-hold` survives it: that is how `LoadingBar` and `Skeleton` keep
+  their first `LOADING_DELAY_MS` hidden under reduced motion.
 
 ## Motion the stylesheet cannot reach
 

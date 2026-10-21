@@ -63,19 +63,75 @@ async function defaultPreventedBeforeHost(link: HTMLElement): Promise<boolean> {
 }
 
 describe("WebLinkCard", () => {
-  test("shows the origin and an Open link, styled as a button, to the page in a new tab", async () => {
+  test("shows the domain and an Open in new tab link with its key, styled as a button, to the page in a new tab", async () => {
     await render(<WebLinkCard url="https://example.com/docs?q=1" />);
     const card = $("[data-slot=web-link-card]")!;
     expect(card.className).toContain("sui-web-link-card");
-    expect(card.querySelector("[data-slot=web-link-origin]")!.textContent).toBe("https://example.com");
+    // No title from the page: the domain is the title, shown once, beside the host's first letter.
+    expect(card.querySelector("[data-slot=web-page-title]")!.textContent).toBe("example.com");
+    expect(card.querySelectorAll("[data-slot=web-page-domain], [data-slot=web-page-description], img")).toHaveLength(0);
+    expect(card.querySelector("[data-slot=web-page-icon]")!.textContent).toBe("E");
     const link = card.querySelector<HTMLAnchorElement>("a[data-slot=web-link-open]")!;
-    expect(link.textContent).toBe("Open");
+    expect(link.textContent).toBe("Open in new tab↵");
+    expect(link.querySelector("kbd")!.getAttribute("aria-hidden")).toBe("true");
+    expect(link.getAttribute("aria-keyshortcuts")).toBe("Enter");
     expect(link.getAttribute("href")).toBe("https://example.com/docs?q=1");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(link.getAttribute("aria-label")).toBe("Open https://example.com");
+    expect(link.getAttribute("aria-label")).toBe("Open in new tab: example.com");
     expect(link.className.split(" ")).toEqual(expect.arrayContaining(["sui-button", "sui-button-default", "sui-button-sm"]));
     expect(container!.querySelectorAll("a, iframe")).toHaveLength(1);
+  });
+
+  test("shows the page's title, description, domain and https icon", async () => {
+    await render(
+      <WebLinkCard
+        url="https://www.example.com:8443/guide"
+        title=" Example guide "
+        description="How to frame pages, and what to do when they refuse."
+        icon="https://cdn.example.com/icon.png"
+      />,
+    );
+    const card = $("[data-slot=web-link-card]")!;
+    expect(card.querySelector("[data-slot=web-page-title]")!.textContent).toBe("Example guide");
+    expect(card.querySelector("[data-slot=web-page-description]")!.textContent).toBe(
+      "How to frame pages, and what to do when they refuse.",
+    );
+    expect(card.querySelector("[data-slot=web-page-domain]")!.textContent).toBe("www.example.com:8443");
+    const icon = card.querySelector<HTMLImageElement>("[data-slot=web-page-icon] img")!;
+    expect([icon.getAttribute("src"), icon.getAttribute("alt"), icon.getAttribute("referrerpolicy")]).toEqual([
+      "https://cdn.example.com/icon.png",
+      "",
+      "no-referrer",
+    ]);
+    expect(card.querySelector("[data-slot=web-page-icon]")!.getAttribute("aria-hidden")).toBe("true");
+    expect($("a")!.getAttribute("aria-label")).toBe("Open in new tab: Example guide");
+  });
+
+  test("an icon that fails to load, or isn't https, shows the host's first letter", async () => {
+    await render(<WebLinkCard url="https://www.example.com/" title="Example" icon="https://cdn.example.com/missing.png" />);
+    const img = $("[data-slot=web-page-icon] img")!;
+    await act(async () => {
+      img.dispatchEvent(new Event("error"));
+    });
+    expect($("[data-slot=web-page-icon] img")).toBeNull();
+    expect($("[data-slot=web-page-icon]")!.textContent).toBe("E");
+    // A new icon is tried again.
+    await act(async () => root!.render(<WebLinkCard url="https://www.example.com/" title="Example" icon="https://cdn.example.com/other.png" />));
+    expect($("[data-slot=web-page-icon] img")!.getAttribute("src")).toBe("https://cdn.example.com/other.png");
+    for (const icon of ["http://cdn.example.com/i.png", "data:image/png;base64,AAAA", "https://u:p@cdn.example.com/i.png", "not a url", " "]) {
+      await act(async () => root!.render(<WebLinkCard url="https://www.example.com/" icon={icon} />));
+      expect([icon, $("[data-slot=web-page-icon] img")]).toEqual([icon, null]);
+    }
+  });
+
+  test("an http page shows its whole origin, so the scheme shows; blank text is no text", async () => {
+    await render(<WebLinkCard url="http://localhost:5173/" title="Local" description="  " />);
+    expect($("[data-slot=web-page-domain]")!.textContent).toBe("http://localhost:5173");
+    expect($("[data-slot=web-page-description]")).toBeNull();
+    await act(async () => root!.render(<WebLinkCard url="http://localhost:5173/" title="   " />));
+    expect($("[data-slot=web-page-title]")!.textContent).toBe("http://localhost:5173");
+    expect($("[data-slot=web-page-domain]")).toBeNull();
   });
 
   test("takes an Open label, a class and pass-through attributes", async () => {
@@ -84,7 +140,7 @@ describe("WebLinkCard", () => {
     expect([card.id, card.dataset.turn]).toEqual(["card", "7"]);
     expect(card.className.split(" ")).toEqual(expect.arrayContaining(["sui-web-link-card", "extra"]));
     const link = $("a")!;
-    expect([link.textContent, link.getAttribute("aria-label")]).toEqual(["Read", "Read http://localhost:5173"]);
+    expect([link.textContent, link.getAttribute("aria-label")]).toEqual(["Read↵", "Read: localhost:5173"]);
   });
 
   test("calls onOpen once per click and leaves the click to open the tab", async () => {
