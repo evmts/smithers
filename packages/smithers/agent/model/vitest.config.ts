@@ -1,14 +1,16 @@
 import { fileURLToPath } from "node:url"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import vibelang from "vibelang-vite"
 import { defineConfig } from "vitest/config"
 
 export default defineConfig({
+  plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
     globalSetup: [fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)), fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))],
     environment: "node",
     // `scripts/provider-live.test.mjs` is a node:test suite with its own target.
-    include: ["test/**/*.test.ts"],
+    include: ["test/**/*.test.{ts,vibe}"],
     // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s
     // wall-clock budget so correct suites survive coverage-instrumented load
     // while a genuine hang still fails the run.

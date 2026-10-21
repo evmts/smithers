@@ -239,7 +239,9 @@ describe("coverage conformance", () => {
     assert.doesNotMatch(coverage!, /\b(?:include|exclude):\s*\[[^\]]*\]\s*\.map\(/)
     const included = [...(/\binclude\s*:\s*\[([^\]]*)\]/.exec(coverage ?? "")?.[1] ?? "")
       .matchAll(/"([^"]+)"/g)].map((match) => match[1]!)
-    assert.equal(included.some((entry) => entry === "src/**" || entry === "src/**/*.ts"), true)
+    // Both denominators count every production module, VibeLang's too: `src/**`
+    // and `src/**/*.{ts,vibe}`. `src/**/*.ts` would leave `.vibe` modules out.
+    assert.equal(included.some((entry) => entry === "src/**" || entry === "src/**/*.{ts,vibe}"), true)
     // Additional positive entries widen the denominator (testing also owns
     // kernel's HostContract). Negated entries would silently subtract files.
     assert.deepEqual(included.filter((entry) => entry.startsWith("!")), [])
@@ -278,6 +280,7 @@ describe("coverage conformance", () => {
     assert.ok((block(`// without coverage: a comment {\n${coverage}`, "coverage"))!.includes("enabled: true"))
     assert.equal(block("coverage: { enabled: true", "coverage"), null)
     assertCoverageDenominator("testing", coverage)
+    assertCoverageDenominator("testing", coverage.replace("\"src/**\"", "\"src/**/*.{ts,vibe}\""))
     assertCoverageDenominator(
       "testing",
       coverage.replace("[\"src/**\"]", "[\"src/**\", \"../smithers/flows/kernel/src/test/HostContract.ts\"]")
@@ -285,6 +288,8 @@ describe("coverage conformance", () => {
     for (
       const mutated of [
         coverage.replace("\"src/**\"", "\"src/One.ts\""),
+        // A TypeScript-only glob drops the package's .vibe modules from the gate.
+        coverage.replace("\"src/**\"", "\"src/**/*.ts\""),
         coverage.replace("[\"src/**\"]", "[\"src/**\"].map((pattern) => join(import.meta.dirname, pattern))"),
         coverage.replace("[\"src/**\"]", "[\"src/**\", \"!src/Hidden.ts\"]"),
         coverage.replace("enabled: true", "enabled: false"),
@@ -434,7 +439,7 @@ describe("coverage conformance", () => {
       // silently un-enforced with its own suite green.
       assertCoverageDenominator(name, source)
       // Both shipped shapes cover every production module: `src/**` and the
-      // equivalent `src/**/*.ts`.
+      // equivalent `src/**/*.{ts,vibe}`.
       // The thresholds object must be FLAT (issue #147): `[^{}]*` refuses a
       // nested object, because vitest's v8 provider treats a glob key
       // (`"src/risky.ts": { lines: 0 }`) as a per-file override that removes
@@ -691,7 +696,8 @@ describe("coverage conformance", () => {
       return entries.flatMap((entry) =>
         entry.isDirectory()
           ? sourceFiles(join(directory, entry.name))
-          : entry.name.endsWith(".ts")
+          // A VibeLang module carries hints the way a TypeScript one does.
+          : /\.(?:ts|vibe)$/.test(entry.name)
           ? [join(directory, entry.name)]
           : []
       )

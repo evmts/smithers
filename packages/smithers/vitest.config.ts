@@ -1,9 +1,12 @@
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
+  // Tests start Node on source that reaches VibeLang packages; register: true loads .vibe in those processes.
+  plugins: [vibelang({ project: "tsconfig.test.json", register: true })],
   test: {
     globalSetup: [
       fileURLToPath(new URL("../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
@@ -13,7 +16,7 @@ export default defineConfig({
     // `vitest.faults.config.ts` instead, serially and without coverage: its
     // cases kill process groups and bind ports, which no unit suite sharing
     // this machine can survive beside them.
-    include: ["test/**/*.test.ts"],
+    include: ["test/**/*.test.{ts,vibe}"],
     exclude: [...configDefaults.exclude, "test/faults/**"],
     environment: "node",
     setupFiles: ["./test/setup.ts"],

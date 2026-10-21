@@ -896,6 +896,7 @@
     "typescript-eslint": "8.69.0",
     "vibelang": "0.0.3",
     "vibelang-unplugin": "0.0.3",
+    "vibelang-vite": "0.0.3",
     "vitest": "5.0.0",
     "@effect/platform-node": "4.0.5",
     "@effect/platform-node-shared": "4.0.5",

@@ -1,13 +1,15 @@
 import { fileURLToPath } from "node:url"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import vibelang from "vibelang-vite"
 import { defineConfig } from "vitest/config"
 
 export default defineConfig({
+  plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
     globalSetup: [fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)), fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))],
     environment: "node",
-    include: ["test/**/*.test.ts"],
+    include: ["test/**/*.test.{ts,vibe}"],
     // Execution fixtures launch real toolchains, containers, and child CLIs;
     // planner fixtures copy and fingerprint production implementation trees.
     // Keep the file pool serial so the package does not multiply host-wide

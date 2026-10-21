@@ -1,12 +1,14 @@
 import { fileURLToPath } from "node:url"
+import vibelang from "vibelang-vite"
 import { defineConfig } from "vitest/config"
 
 // `pnpm eval`: the agent evals (docs/features/agent-evals.md). They call the real model through ChatApi's metered
 // endpoint and spend tokens, so `pnpm test` never runs them.
 export default defineConfig({
   root: fileURLToPath(new URL("..", import.meta.url)),
+  plugins: [vibelang()],
   test: {
-    include: ["evals/*.eval.ts"],
+    include: ["evals/*.eval.{ts,vibe}"],
     environment: "node",
     // A whole suite runs inside one test: up to 37 agent answers in turn, each a few model calls, and a pause of a
     // minute before each trial its model failed (evals/suite.ts).

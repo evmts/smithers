@@ -1,11 +1,14 @@
 import { fileURLToPath } from "node:url"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { defineConfig } from "vitest/config"
+import vibelang from "vibelang-vite"
+import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
+  plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
     globalSetup: [fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)), fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))],
+    include: [...configDefaults.include, "**/*.{test,spec}.vibe"],
     environment: "node",
     // Keep package workers serial: child startup and dense graph compilation
     // must not compete with every other file in the recursive workspace gate.

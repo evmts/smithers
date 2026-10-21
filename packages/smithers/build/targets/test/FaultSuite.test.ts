@@ -41,10 +41,11 @@ describe("FaultSuite", () => {
   it("declares the package's own cases, harness, sources, and faults config", () => {
     const attrs = attrsOf(FaultSuite({ cwd: "packages/smithers/flows" }))
     expect(attrs.cwd).toBe("packages/smithers/flows")
-    expect(attrs.tests).toEqual([Input.glob("test/faults/**/*.test.ts")])
+    // A package's VibeLang cases and modules key the run as its TypeScript ones do.
+    expect(attrs.tests).toEqual([Input.glob("test/faults/**/*.test.{ts,vibe}")])
     expect(attrs.sources).toEqual([
-      Input.glob("src/**/*.ts"),
-      Input.glob("test/faults/**/*", { exclude: ["test/faults/**/*.test.ts"] })
+      Input.glob("src/**/*.{ts,vibe}"),
+      Input.glob("test/faults/**/*", { exclude: ["test/faults/**/*.test.{ts,vibe}"] })
     ])
     expect(attrs.config).toEqual(Input.file("vitest.faults.config.ts"))
     expect(attrs.deps).toEqual([])
@@ -143,10 +144,10 @@ describe("FaultSuite", () => {
     // edited harness, which is the failure the old `//e2e:faults` target
     // avoided by declaring `harness/`, `fixtures/`, and `budgets/` as inputs.
     const inputs = Target.metadata(FaultSuite({ cwd: "packages/smithers/flows" })).inputs
-    expect(inputs).toContainEqual(Input.glob("test/faults/**/*.test.ts"))
+    expect(inputs).toContainEqual(Input.glob("test/faults/**/*.test.{ts,vibe}"))
     expect(inputs).toContainEqual(
-      Input.glob("test/faults/**/*", { exclude: ["test/faults/**/*.test.ts"] })
+      Input.glob("test/faults/**/*", { exclude: ["test/faults/**/*.test.{ts,vibe}"] })
     )
-    expect(inputs).toContainEqual(Input.glob("src/**/*.ts"))
+    expect(inputs).toContainEqual(Input.glob("src/**/*.{ts,vibe}"))
   })
 })

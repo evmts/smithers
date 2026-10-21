@@ -1,3 +1,7 @@
+# .vibe modules, this package's or those of a workspace package it imports,
+# load through VibeLang's Bun runtime plugin, vibelang/bun.
+preload = ["vibelang/bun"]
+
 # Radix primitives capture `globalThis.document` at module-load time (their
 # SSR-safe useLayoutEffect shim resolves to a no-op when no document exists),
 # and ESM imports are hoisted above any in-file GlobalRegistrator.register()
@@ -5,4 +9,4 @@
 # radix-ui loads, so portals and layout effects run in tests. Follows the
 # gateway-react preload precedent (happy-dom-ws-guard).
 [test]
-preload = ["./tests/happy-dom-preload.ts"]
+preload = ["vibelang/bun", "./tests/happy-dom-preload.ts"]

@@ -1,8 +1,10 @@
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import vibelang from "vibelang-vite"
 import { defineConfig } from "vitest/config"
 export default defineConfig({
+  plugins: [vibelang({ project: "tsconfig.json" })],
   test: {
     globalSetup: [
       fileURLToPath(new URL("../../packages/repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),

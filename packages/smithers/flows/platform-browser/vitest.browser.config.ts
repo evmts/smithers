@@ -1,3 +1,4 @@
+import vibelang from "vibelang-vite"
 import { defineConfig } from "vitest/config"
 
 /**
@@ -6,9 +7,10 @@ import { defineConfig } from "vitest/config"
  * to the coverage the Node suites measure.
  */
 export default defineConfig({
+  plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
     environment: "node",
-    include: ["test/browser/**/*.test.ts"],
+    include: ["test/browser/**/*.test.{ts,vibe}"],
     testTimeout: 120_000,
     hookTimeout: 60_000
   }

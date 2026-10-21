@@ -10,12 +10,15 @@
  * never instruments, and `vitest.config.ts` beside this file stays the coverage
  * gate for `src`.
  */
+import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
+  // Tests start Node on source that reaches VibeLang packages; register: true loads .vibe in those processes.
+  plugins: [vibelang({ project: "tsconfig.test.json", register: true })],
   test: {
     environment: "node",
-    include: ["test/faults/**/*.test.ts"],
+    include: ["test/faults/**/*.test.{ts,vibe}"],
     exclude: [...configDefaults.exclude],
     // A fault case drives real processes, real SQLite files, and real sockets.
     // The budget stays finite so a wedged case still fails instead of sitting

@@ -22,9 +22,15 @@ export interface Options {
   readonly cwd: string
   /** @default [] */
   readonly deps?: ReadonlyArray<Target.AnyTarget> | undefined
-  /** The source tree the run keys on. Defaults to the package `src` tree. */
+  /**
+   * The source tree the run keys on. Defaults to the package `src` tree,
+   * its `.ts` and `.vibe` modules.
+   */
   readonly sources?: Input.Glob | undefined
-  /** The suite the run keys on. Defaults to the package `test` tree. */
+  /**
+   * The suite the run keys on. Defaults to the package `test` tree, its
+   * `*.test.ts` and `*.test.vibe` files.
+   */
   readonly tests?: Input.Glob | undefined
   /**
    * The vitest config the run names. It defaults to the package's own
@@ -67,8 +73,8 @@ export interface Options {
 export const BunSuite = (options: Options): ReturnType<typeof Vitest> =>
   Vitest({
     runtime: Runtime.Bun({ version: options.version ?? ">=1.4.0" }),
-    tests: [options.tests ?? Input.glob("test/**/*.test.ts")],
-    sources: [options.sources ?? Input.glob("src/**/*.ts")],
+    tests: [options.tests ?? Input.glob("test/**/*.test.{ts,vibe}")],
+    sources: [options.sources ?? Input.glob("src/**/*.{ts,vibe}")],
     deps: options.deps ?? [],
     config: options.config === undefined ? Input.file("vitest.config.ts") : options.config,
     environment: options.environment ?? "node",

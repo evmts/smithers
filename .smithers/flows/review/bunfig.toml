@@ -1,0 +1,6 @@
+# .vibe modules, this package's or those of a workspace package it imports,
+# load through VibeLang's Bun runtime plugin, vibelang/bun.
+preload = ["vibelang/bun"]
+
+[test]
+preload = ["vibelang/bun"]

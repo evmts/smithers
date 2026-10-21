@@ -20,6 +20,7 @@
     "alchemy": "2.0.0-beta.82",
     "bun-types": "^1.4.0",
     "effect": "4.0.5",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "vibelang": "0.0.3"
   }
 }

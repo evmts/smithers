@@ -29,9 +29,15 @@ export interface Options {
   readonly cwd: string
   /** @default [] */
   readonly deps?: ReadonlyArray<Target.AnyTarget> | undefined
-  /** The source tree the run keys on. Defaults to the package `src` tree. */
+  /**
+   * The source tree the run keys on. Defaults to the package `src` tree,
+   * its `.ts` and `.vibe` modules.
+   */
   readonly sources?: Input.Glob | undefined
-  /** The cases the run keys on. Defaults to the package `test/faults` tree. */
+  /**
+   * The cases the run keys on. Defaults to the package `test/faults` tree,
+   * its `*.test.ts` and `*.test.vibe` files.
+   */
   readonly tests?: Input.Glob | undefined
   /**
    * The harness, fixtures, and budgets the cases read. They are separate from
@@ -117,10 +123,10 @@ export interface Options {
 export const FaultSuite = (options: Options): ReturnType<typeof Vitest> =>
   Vitest({
     ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
-    tests: [options.tests ?? Input.glob("test/faults/**/*.test.ts")],
+    tests: [options.tests ?? Input.glob("test/faults/**/*.test.{ts,vibe}")],
     sources: [
-      options.sources ?? Input.glob("src/**/*.ts"),
-      options.fixtures ?? Input.glob("test/faults/**/*", { exclude: ["test/faults/**/*.test.ts"] })
+      options.sources ?? Input.glob("src/**/*.{ts,vibe}"),
+      options.fixtures ?? Input.glob("test/faults/**/*", { exclude: ["test/faults/**/*.test.{ts,vibe}"] })
     ],
     deps: options.deps ?? [],
     config: options.config === undefined ? Input.file("vitest.faults.config.ts") : options.config,

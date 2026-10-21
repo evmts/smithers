@@ -1,11 +1,14 @@
 import { fileURLToPath } from "node:url"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { defineConfig } from "vitest/config"
+import vibelang from "vibelang-vite"
+import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
+  plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
     globalSetup: [fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)), fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))],
+    include: [...configDefaults.include, "**/*.{test,spec}.vibe"],
     environment: "node",
     // Vitest's 5 s default is a wall-clock budget, but no suite in this repo
     // asserts on elapsed time — each is bounded by an explicit iteration,
@@ -30,7 +33,7 @@ export default defineConfig({
       // directory error and the other enforces 100% against a partial
       // profile with every test passing (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-kernel-coverage-${process.pid}`),
-      include: ["src/**/*.ts"],
+      include: ["src/**/*.{ts,vibe}"],
       // The published host-contract runner is exercised by the concrete host
       // suites in @smthrs/testing, which owns its cross-platform coverage.
       exclude: ["src/test/HostContract.ts"],

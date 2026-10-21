@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { join } from "node:path"
-import { defineConfig } from "vitest/config"
+import vibelang from "vibelang-vite"
+import { configDefaults, defineConfig } from "vitest/config"
 
 // Each Node runner owns a private report directory. Keep it until reporting has
 // finished, including failed runs, then remove it when the runner exits.
@@ -13,7 +14,9 @@ const reportsDirectory = process.versions.bun ? undefined : (() => {
 })()
 
 export default defineConfig({
+  plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
+    include: [...configDefaults.include, "**/*.{test,spec}.vibe"],
     environment: "node",
     setupFiles: ["./test/BunRuntime.setup.ts"],
     // Like platform-node, these contracts exercise real filesystem operations,
@@ -28,7 +31,7 @@ export default defineConfig({
       clean: false,
       provider: "v8",
       ...(reportsDirectory === undefined ? {} : { reportsDirectory }),
-      include: ["src/**/*.ts"],
+      include: ["src/**/*.{ts,vibe}"],
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }
     }
   }

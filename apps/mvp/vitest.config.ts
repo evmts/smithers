@@ -1,12 +1,14 @@
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import vibelang from "vibelang-vite"
 import { defineConfig } from "vitest/config"
 
 // Unit tests in Node: the browser's framework-free chat layer (src/), ChatApi's handlers (worker/) and the database
 // (db/), against the compose Postgres and Electric (`pnpm db:up`). View regressions in tests/ use a DOM environment;
 // Playwright covers real browsers. The coverage gate measures logic: every src/**/*.ts but tests and their hosts.
 export default defineConfig({
+  plugins: [vibelang({ project: "tsconfig.json" })],
   test: {
     globalSetup: [
       fileURLToPath(new URL("../../packages/repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
@@ -16,20 +18,20 @@ export default defineConfig({
     ],
     include: [
       "PACKAGE.test.ts",
-      "tests/**/*.test.ts",
-      "src/**/*.test.ts",
+      "tests/**/*.test.{ts,vibe}",
+      "src/**/*.test.{ts,vibe}",
       // The built-in plugins' tabs (decision 0017, plugins/<id>/src/tab.ts).
-      "plugins/**/*.test.ts",
-      "worker/**/*.test.ts",
-      "db/**/*.test.ts",
-      "infra/**/*.test.ts",
-      "evals/**/*.test.ts",
+      "plugins/**/*.test.{ts,vibe}",
+      "worker/**/*.test.{ts,vibe}",
+      "db/**/*.test.{ts,vibe}",
+      "infra/**/*.test.{ts,vibe}",
+      "evals/**/*.test.{ts,vibe}",
       // The e2e media scripts' pure parts (e2e/frames.ts); Playwright runs only e2e/*.spec.ts.
-      "e2e/**/*.test.ts",
+      "e2e/**/*.test.{ts,vibe}",
       // The dev server's HTTPS and HTTP/2 front (dev/https.ts).
-      "dev/**/*.test.ts",
+      "dev/**/*.test.{ts,vibe}",
       // Dashboards as code (ops/grafana/README.md) against the telemetry contract.
-      "ops/**/*.test.ts"
+      "ops/**/*.test.{ts,vibe}"
     ],
     environment: "node",
     // A finite budget that survives coverage-instrumented load, so a genuine hang still fails the run.
@@ -42,7 +44,7 @@ export default defineConfig({
       provider: "v8",
       reportsDirectory: join(tmpdir(), `mvp-coverage-${process.pid}`),
       include: [
-        "src/**/*.ts",
+        "src/**/*.{ts,vibe}",
         "plugins/*/src/**/*.ts",
         // Production's hostname and the docs site's routes on it (docs/infrastructure.md#domain).
         "infra/Domain.ts",
@@ -51,7 +53,7 @@ export default defineConfig({
         "worker/ExecutionHost.ts",
         "worker/index.ts",
         "worker/ci/*.ts",
-        "worker/flows/**/*.ts",
+        "worker/flows/**/*.{ts,vibe}",
         // The metered model endpoint and admin/SetModel (docs/features/model-endpoint.md).
         "worker/Actor.ts",
         "worker/ErrorCode.ts",
@@ -124,7 +126,7 @@ export default defineConfig({
         "db/migrations/0020_notifications.ts",
         // The git loop: GitHub's webhook, the writes route, the issues' shapes and the GitHub flows
         // (docs/features/issues.md). The scripted GitHub and the fixtures are test support.
-        "worker/github/*.ts",
+        "worker/github/*.{ts,vibe}",
         "db/migrations/0016_github_issues.ts",
         "db/migrations/0048_github_projection_fences.ts",
         "db/migrations/0049_triage_write_claims.ts",
@@ -153,7 +155,7 @@ export default defineConfig({
         // worker/BranchSandboxes.ts and worker/BranchRooms.ts, the Cloudflare Durable Objects, run only under Alchemy's
         // bundle; e2e/branch-workspace.spec.ts and e2e/branch-sharing.spec.ts drive them, and
         // @smthrs/platform-cloudflare's workerd and @smthrs/sync's presence tests test their parts.
-        "worker/branch/*.ts",
+        "worker/branch/*.{ts,vibe}",
         "db/migrations/0014_branch_workspace.ts",
         "db/migrations/0023_branch_sharing.ts",
         // Your conversations (docs/features/conversations.md).
@@ -187,10 +189,10 @@ export default defineConfig({
       // registers, and a browser proves the rest.
       // src/features/code-intel/language.worker.ts is one too: src/test/languageServer.ts runs the same server in Node.
       exclude: [
-        "src/**/*.test.ts",
-        "plugins/**/*.test.ts",
+        "src/**/*.test.{ts,vibe}",
+        "plugins/**/*.test.{ts,vibe}",
         "src/test/**",
-        "worker/**/*.test.ts",
+        "worker/**/*.test.{ts,vibe}",
         "src/flows/engine.worker.ts",
         "src/features/code-intel/language.worker.ts"
       ],

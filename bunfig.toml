@@ -1,0 +1,6 @@
+# .vibe modules of the workspace packages a root-level bun run or bun test
+# reaches load through VibeLang's Bun runtime plugin, vibelang/bun.
+preload = ["vibelang/bun"]
+
+[test]
+preload = ["vibelang/bun"]

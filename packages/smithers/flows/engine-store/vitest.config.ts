@@ -1,9 +1,11 @@
 import { fileURLToPath } from "node:url"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import vibelang from "vibelang-vite"
 import { defineConfig } from "vitest/config"
 
 export default defineConfig({
+  plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
     globalSetup: [fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)), fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))],
     environment: "node",
@@ -13,7 +15,7 @@ export default defineConfig({
     // it, where it fails as "No test suite found" because it registers with
     // `node:test` rather than with Vitest. Naming the include keeps each
     // runner to the files it owns.
-    include: ["test/**/*.test.ts"],
+    include: ["test/**/*.test.{ts,vibe}"],
     // Vitest's 5 s default is a wall-clock budget, but no suite in this repo
     // asserts on elapsed time — each is bounded by an explicit iteration,
     // cycle, or completion count. The real gate runs those counts under v8

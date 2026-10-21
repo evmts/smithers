@@ -53,6 +53,7 @@
     "eslint-plugin-import": "2.32.0",
     "eslint-plugin-unicorn": "65.0.0",
     "typescript": "~5.9.3",
-    "typescript-eslint": "8.69.0"
+    "typescript-eslint": "8.69.0",
+    "vibelang": "0.0.3"
   }
 }

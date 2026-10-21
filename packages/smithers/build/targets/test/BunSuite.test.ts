@@ -71,8 +71,9 @@ describe("BunSuite", () => {
   it("declares the package's own suite, sources, and vitest config", () => {
     const attrs = attrsOf(BunSuite({ cwd: "packages/smithers/flows/keys" }))
     expect(attrs.cwd).toBe("packages/smithers/flows/keys")
-    expect(attrs.tests).toEqual([Input.glob("test/**/*.test.ts")])
-    expect(attrs.sources).toEqual([Input.glob("src/**/*.ts")])
+    // A package's VibeLang modules key the suite as its TypeScript ones do.
+    expect(attrs.tests).toEqual([Input.glob("test/**/*.test.{ts,vibe}")])
+    expect(attrs.sources).toEqual([Input.glob("src/**/*.{ts,vibe}")])
     expect(attrs.config).toEqual(Input.file("vitest.config.ts"))
     expect(attrs.deps).toEqual([])
     expect(attrs.environment).toBe("node")
@@ -126,7 +127,7 @@ describe("BunSuite", () => {
     // there resolved against `ci/`, not against the package the suite belongs
     // to, so it expanded to nothing and read as a contract it was not.
     const inputs = Target.metadata(BunSuite({ cwd: "packages/smithers/flows/keys" })).inputs
-    expect(inputs).toContainEqual(Input.glob("test/**/*.test.ts"))
-    expect(inputs).toContainEqual(Input.glob("src/**/*.ts"))
+    expect(inputs).toContainEqual(Input.glob("test/**/*.test.{ts,vibe}"))
+    expect(inputs).toContainEqual(Input.glob("src/**/*.{ts,vibe}"))
   })
 })

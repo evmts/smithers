@@ -1,16 +1,18 @@
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
+  plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
     globalSetup: [fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)), fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url)), fileURLToPath(new URL("./test/RequireWasm.ts", import.meta.url))],
     // The fault tier lives under `test/faults` and runs from
     // `vitest.faults.config.ts` instead, serially and without coverage: its
     // cases kill process groups and bind ports, which no unit suite sharing
     // this machine can survive beside them.
-    include: ["test/**/*.test.ts"],
+    include: ["test/**/*.test.{ts,vibe}"],
     exclude: [...configDefaults.exclude, "test/faults/**"],
     environment: "node",
     // Keep package workers serial: child startup and WASM conformance tests
@@ -23,7 +25,7 @@ export default defineConfig({
       enabled: true,
       provider: "v8",
       reportsDirectory: join(tmpdir(), `flows-jj-coverage-${process.pid}`),
-      include: ["src/**/*.ts"],
+      include: ["src/**/*.{ts,vibe}"],
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }
     }
   }

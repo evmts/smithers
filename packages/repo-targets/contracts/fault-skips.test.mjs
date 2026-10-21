@@ -369,10 +369,11 @@ describe("the fault matrix is wired to a gate", () => {
         /fileParallelism: false/,
         `packages/${name}'s fault config runs its cases in parallel; they kill process groups and bind ports`
       )
+      // A fault case may be TypeScript or VibeLang; a `.ts`-only glob would drop the latter unseen.
       assert.match(
         text,
-        /include: \["test\/faults\/\*\*\/\*\.test\.ts"\]/,
-        `packages/${name}'s fault config does not select test/faults`
+        /include: \["test\/faults\/\*\*\/\*\.test\.\{ts,vibe\}"\]/,
+        `packages/${name}'s fault config does not select test/faults' .ts and .vibe cases`
       )
     }
   })

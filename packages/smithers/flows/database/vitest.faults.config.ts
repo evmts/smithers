@@ -10,12 +10,14 @@
  * never instruments, and `vitest.config.ts` beside this file stays the coverage
  * gate for `src`.
  */
+import vibelang from "vibelang-vite"
 import { defineConfig } from "vitest/config"
 
 export default defineConfig({
+  plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
     environment: "node",
-    include: ["test/faults/**/*.test.ts"],
+    include: ["test/faults/**/*.test.{ts,vibe}"],
     // A fault case drives real processes, real SQLite files, and real sockets.
     // The budget stays finite so a wedged case still fails instead of sitting
     // until the CI job timeout.

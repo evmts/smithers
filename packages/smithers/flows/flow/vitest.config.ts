@@ -1,12 +1,15 @@
 import { fileURLToPath } from "node:url"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { defineConfig } from "vitest/config"
+import vibelang from "vibelang-vite"
+import { configDefaults, defineConfig } from "vitest/config"
 import { parseCLI } from "vitest/node"
 import { coversWholeSuite } from "./test/CoverageGate.ts"
 
 export default defineConfig({
+  plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
+    include: [...configDefaults.include, "**/*.{test,spec}.vibe"],
     environment: "node",
     // Vitest's 5 s default is a wall-clock budget, but no suite in this repo
     // asserts on elapsed time — each is bounded by an explicit iteration,

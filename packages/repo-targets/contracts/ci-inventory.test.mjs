@@ -37,7 +37,7 @@ const assertE2eRunner = (row) => {
       "cd packages/smithers/flows/platform-browser && npx vitest run --config vitest.browser.config.ts"])
     assert.ok(row.inputs.some((input) => input.path === "vitest.browser.config.ts"), "the browser config must be a declared input")
     const config = readFileSync(join(root, "packages/smithers/flows/platform-browser/vitest.browser.config.ts"), "utf8")
-    assert.match(config, /include: \["test\/browser\/\*\*\/\*\.test\.ts"\]/)
+    assert.match(config, /include: \["test\/browser\/\*\*\/\*\.test\.\{ts,vibe\}"\]/)
     const harness = readFileSync(join(root, "packages/smithers/flows/platform-browser/test/browser/Harness.ts"), "utf8")
     assert.match(harness, /import \{[^}]*\bchromium\b[^}]*\} from "playwright"/)
     assert.match(harness, /chromium\.launchPersistentContext\(/)

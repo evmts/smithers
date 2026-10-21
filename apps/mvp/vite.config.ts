@@ -1,5 +1,6 @@
 import { join } from "node:path"
 import react from "@vitejs/plugin-react"
+import vibelang from "vibelang-vite"
 import { defineConfig } from "vite"
 import vibelang from "vibelang-vite"
 import { VitePWA } from "vite-plugin-pwa"
