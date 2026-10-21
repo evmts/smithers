@@ -7,7 +7,7 @@ export const THEME_MODES = ["light", "dark"] as const
 /** One of {@link THEME_MODES}. */
 export type ThemeMode = (typeof THEME_MODES)[number]
 
-/** The attribute `@smthrs/ui`'s palette reads on `<html>`: absent follows the system, else `light` or `dark`. */
+/** The attribute `@smthrs/ui`'s palette reads on `<html>`: startup paints the saved mode, else the system's. */
 export const THEME_ATTRIBUTE = "data-theme"
 
 /** The `localStorage` key index.html paints from before the device store opens: the mode, mirrored. */

@@ -15,12 +15,13 @@
       html[data-theme="dark"] { background: #0d1514; }
     </style>
     <script>
-      // This device's theme, painted before the app opens its store: the store mirrors the mode here
-      // (src/features/theme/store.ts, THEME_MIRROR_KEY).
+      // Resolve this device's theme before any route opens. A system default is only painted, never saved as a choice.
+      let mode
       try {
-        const mode = localStorage.getItem("smithers.theme")
-        if (mode === "light" || mode === "dark") document.documentElement.dataset.theme = mode
+        mode = localStorage.getItem("smithers.theme")
       } catch {}
+      if (mode !== "light" && mode !== "dark") mode = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+      document.documentElement.setAttribute("data-theme", mode)
     </script>
   </head>
   <body>

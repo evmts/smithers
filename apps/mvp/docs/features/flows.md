@@ -95,6 +95,7 @@ The execution id is minted once per dispatch unless the caller passes one. A doo
 | the Node host in tests | the `ThemeStore` in Node |
 
 - **The store.** `ThemeStore` keeps `preferences` on the device (`Collection.persisted`, never synced), with one row, `{ id: "theme", mode }`.
+- **First paint.** Before any route or store opens, `index.html` sets `<html data-theme>` to a valid mirrored mode or the system's mode. Missing, invalid or blocked storage falls back to the system. This default paints the page without saving a preference.
 - **The follower.** It paints each change onto `<html data-theme>`, the `@smthrs/ui` palette's attribute, and mirrors the mode into `localStorage` (`smithers.theme`). A deleted preference paints the system's mode again. No component owns the theme.
 - **Before paint.** `index.html` paints from the mirror before the store opens.
 - **The button.** `ThemeButton` (`src/features/theme/components/ThemeButton.tsx`) is an icon button labelled for assistive tech only. It reads the mode the page shows (the preference; before the device's row is restored, what index.html painted from the mirror; else the system's) and calls `toggle`, which dispatches `app/theme/set` with the other mode, door `button`.
