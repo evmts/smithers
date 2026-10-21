@@ -65,11 +65,13 @@ const wipe = pageWipe(
 let deviceOwner: DeviceOwner | undefined
 try { deviceOwner = readOwner(localStorage.getItem(OWNER_KEY)) } catch {}
 let identityWorker: Worker | undefined
+let activationPrepared!: () => void
+const preparation = new Promise<void>((resolve) => { activationPrepared = resolve })
 const activation = activationGate(30_000, (reason) => {
   // A leader from an earlier build cannot report ownership. End this tab's engine as well as selecting memory.
   identityWorker?.terminate()
   identityWorker?.dispatchEvent(new ErrorEvent("error", { error: new DeviceIdentityRefused({ reason: `activation_${reason}` }) }))
-})
+}, preparation)
 const identityKnown = activation.ready
 const memoryOutbox = memoryStorage()
 let retainedOutbox: IndexedDBAdapter | undefined
@@ -308,6 +310,8 @@ void wipe.open().then(async (wiped) => {
     } catch {}
   }
   if (!wiped || retainedSession) activation.refuse()
+  // Wipe-lock waits and the session preflight are not part of the worker's activation deadline.
+  activationPrepared()
   const opened = wiped && !retainedSession ? page : { ...page, host: unwiped(host) }
   const leaving = (stop: () => Promise<void>) =>
     wipe.started(() => {

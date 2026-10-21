@@ -129,8 +129,8 @@ export const readSession = (value: unknown): typeof SessionState.Type | undefine
 export const readOwner = (text: string | null): DeviceOwner | undefined =>
   text === null ? undefined : Option.getOrUndefined(Schema.decodeUnknownOption(Schema.fromJsonString(Owner))(text))
 
-/** A single bounded host handshake. A missing/old leader can only select memory, and a late receipt cannot reopen it. */
-export const activationGate = (withinMs: number, refused: (reason: "refused" | "timeout") => void) => {
+/** A bounded host handshake, timed only after preparation. A late receipt cannot reopen refused stores. */
+export const activationGate = (withinMs: number, refused: (reason: "refused" | "timeout") => void, prepared?: Promise<void>) => {
   let state: "pending" | "retained" | "memory" = "pending"
   let resolve!: () => void
   const ready = new Promise<void>((done) => { resolve = done })
@@ -142,6 +142,11 @@ export const activationGate = (withinMs: number, refused: (reason: "refused" | "
     resolve()
     return true
   }
-  const deadline = setTimeout(() => { settle("memory", "timeout") }, withinMs)
+  let deadline: ReturnType<typeof setTimeout> | undefined
+  const arm = () => {
+    if (state === "pending") deadline = setTimeout(() => { settle("memory", "timeout") }, withinMs)
+  }
+  if (prepared === undefined) arm()
+  else void prepared.then(arm, () => { settle("memory") })
   return { ready, state: () => state, allow: () => settle("retained"), refuse: () => settle("memory") }
 }

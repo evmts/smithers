@@ -2,7 +2,7 @@ import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { DatabaseSync } from "node:sqlite"
 import { Effect, Exit, Logger, Metric } from "effect"
-import { describe, expect, test } from "vitest"
+import { describe, expect, test, vi } from "vitest"
 import { AuthUnreachable } from "../features/auth/api"
 import { activationGate, authorizeDevice, boundFetch, checks, DeviceIdentityRefused, readOwner, readSession } from "./identity"
 
@@ -264,4 +264,54 @@ test("stable bootstrap ownership does not depend on an interrupted collection re
     await Effect.runPromise(authorizeDevice({ database: device.database, session: session(alice.personId, alice.login), report: (owner, outcome) => reports.push({ owner, outcome }) }))
     expect(reports).toEqual([{ owner: alice, outcome: "verified" }])
   } finally { device.close() }
+})
+
+test("activation timeout starts after wipe locks and session preflight finish", async () => {
+  let prepared!: () => void
+  const preflight = new Promise<void>((resolve) => { prepared = resolve })
+  vi.useFakeTimers()
+  try {
+    const gate = activationGate(10, () => {}, preflight)
+    await vi.advanceTimersByTimeAsync(40)
+    const before = gate.state()
+    prepared()
+    expect(before).toBe("pending")
+    expect(gate.allow()).toBe(true)
+    await gate.ready
+    expect(gate.state()).toBe("retained")
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test("a prepared activation still times out when no leader responds", async () => {
+  const reasons: string[] = []
+  const gate = activationGate(5, (reason) => { reasons.push(reason) }, Promise.resolve())
+  await gate.ready
+  expect(gate.state()).toBe("memory")
+  expect(reasons).toEqual(["timeout"])
+})
+
+test("a refused activation cannot arm a deadline when preparation finishes later", async () => {
+  let prepared!: () => void
+  const reasons: string[] = []
+  vi.useFakeTimers()
+  try {
+    const gate = activationGate(5, (reason) => { reasons.push(reason) }, new Promise<void>((resolve) => { prepared = resolve }))
+    expect(gate.refuse()).toBe(true)
+    prepared()
+    await vi.advanceTimersByTimeAsync(20)
+    expect(reasons).toEqual(["refused"])
+    expect(gate.state()).toBe("memory")
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test("failed preparation refuses retained activation", async () => {
+  const reasons: string[] = []
+  const gate = activationGate(5, (reason) => { reasons.push(reason) }, Promise.reject(new Error("preparation failed")))
+  await gate.ready
+  expect(gate.state()).toBe("memory")
+  expect(reasons).toEqual(["refused"])
 })

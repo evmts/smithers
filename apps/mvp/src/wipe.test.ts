@@ -21,15 +21,17 @@ afterEach(() => {
 const browser = () => {
   const profile = `wipe-${crypto.randomUUID()}`
   const marks = new Map<string, string>()
+  const markReads = { refused: false }
   // OPFS: `smithers/<engine>` until removed; `fail` makes a removal throw, as a handle another worker holds does.
   const entries = new Set([targets.engine])
   const removed: Array<string> = []
-  const opfs = { parent: true, fail: undefined as Error | undefined }
+  const opfs = { parent: true, lookupFailure: undefined as Error | undefined, fail: undefined as Error | undefined }
   // IndexedDB: a delete waits while `connections` is above zero, and fails with `failDelete` when set.
   const deleted: Array<string> = []
   const idb = { connections: 0, failDelete: false, waiting: [] as Array<() => void> }
   const directory: Awaited<ReturnType<WipeHost["directory"]>> = {
     getDirectoryHandle: async (name: string) => {
+      if (opfs.lookupFailure !== undefined) throw opfs.lookupFailure
       if (name !== ENGINES_DIRECTORY || !opfs.parent) throw new DOMException("no such directory", "NotFoundError")
       return {
         removeEntry: async (entry: string) => {
@@ -67,7 +69,10 @@ const browser = () => {
       {
         locks,
         marks: {
-          getItem: (key) => marks.get(key) ?? null,
+          getItem: (key) => {
+            if (markReads.refused) throw new DOMException("blocked", "SecurityError")
+            return marks.get(key) ?? null
+          },
           setItem: (key, value) => void marks.set(key, value),
           removeItem: (key) => void marks.delete(key),
         },
@@ -107,7 +112,7 @@ const browser = () => {
     idb.connections--
     for (const finish of idb.waiting.splice(0)) finish()
   }
-  return { marks, entries, removed, deleted, opfs, idb, page, pending, holdLock, closeConnection }
+  return { marks, markReads, entries, removed, deleted, opfs, idb, page, pending, holdLock, closeConnection }
 }
 
 test("a page that still holds the device's data holds a sign-out's wipe off until it ends; the wipe then deletes both stores and clears the mark", async () => {
@@ -206,7 +211,7 @@ test("a delete that fails keeps the mark, and the page opens unwiped; the next b
   expect(device.marks.has(WIPE)).toBe(false)
 })
 
-test("an unmarked page opens without the wipe's lock; storage that refuses reads as unmarked", async () => {
+test("an unmarked page opens without the wipe's lock; storage that refuses reads cannot prove the device clean", async () => {
   const device = browser()
   const wiped = await device.holdLock(WIPE)
   expect(await device.page().open()).toBe(true)
@@ -230,7 +235,7 @@ test("an unmarked page opens without the wipe's lock; storage that refuses reads
     targets,
   )
   closing.push(refusing.close)
-  expect(await refusing.open()).toBe(true)
+  expect(await refusing.open()).toBe(false)
 })
 
 test("leaving loads the page again once, after its program stops, even when stopping fails or nothing started yet", async () => {
@@ -267,4 +272,37 @@ test("a page whose wipe failed starts on stores that aren't the device's: memory
   const engine = await runtime.runPromise(Effect.service(BrowserEngine.BrowserEngine))
   expect(await runtime.runPromise(engine.unavailable)).toMatchObject({ reason: "worker-failed", error: "WipeUnfinished" })
   await runtime.dispose()
+})
+
+test("a directory lookup failure retains the wipe marker and engine data", async () => {
+  const device = browser()
+  device.marks.set(WIPE, "1")
+  device.opfs.lookupFailure = new DOMException("storage unavailable", "UnknownError")
+  expect(await device.page().open()).toBe(false)
+  expect(device.marks.get(WIPE)).toBe("1")
+  expect(device.entries.has(targets.engine)).toBe(true)
+  expect(device.deleted).toEqual([])
+})
+
+test("a synchronous stop failure still reloads once", async () => {
+  const device = browser()
+  const page = device.page(() => { throw new Error("synchronous stop failure") })
+  await page.wipe()
+  await until(() => expect(page.events).toEqual(["stop", "reload"]))
+  await page.wipe()
+  expect(page.events).toEqual(["stop", "reload"])
+})
+
+test("a marker that becomes unreadable while waiting for the wipe lock preserves retained stores", async () => {
+  const device = browser()
+  device.marks.set(WIPE, "1")
+  const release = await device.holdLock(WIPE)
+  const opened = device.page().open()
+  await until(async () => expect(await device.pending()).toContain(`${WIPE} exclusive`))
+  device.markReads.refused = true
+  release()
+  expect(await opened).toBe(false)
+  expect(device.marks.get(WIPE)).toBe("1")
+  expect(device.entries.has(targets.engine)).toBe(true)
+  expect(device.deleted).toEqual([])
 })

@@ -88,7 +88,7 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
   const released = new Promise<void>((resolve) => (release = resolve))
 
   const leave = () =>
-    (leaving ??= Promise.resolve(stop?.())
+    (leaving ??= Promise.resolve().then(() => stop?.())
       .catch(() => undefined)
       .then(() => host.reload()))
   const hearing = host.channel(WIPE)
@@ -98,14 +98,17 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
     try {
       return host.marks.getItem(WIPE) !== null
     } catch {
-      return false
+      return undefined
     }
   }
 
   // Every page that had the data open is gone, and no engine worker holds the directory: delete, then clear the mark.
   const remove = async () => {
     const root = await host.directory()
-    const engines = await root.getDirectoryHandle(ENGINES_DIRECTORY).catch(() => undefined)
+    const engines = await root.getDirectoryHandle(ENGINES_DIRECTORY).catch((error) => {
+      if (error instanceof DOMException && error.name === "NotFoundError") return undefined
+      throw error
+    })
     if (engines !== undefined) await removeEntry(engines, targets.engine)
     await deleteDatabase(host.indexedDB, targets.outbox)
     host.marks.removeItem(OWNER_KEY)
@@ -113,10 +116,14 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
   }
 
   const finish = async (): Promise<boolean> => {
-    if (!marked()) return true
+    const pending = marked()
+    if (pending === undefined) return false
+    if (!pending) return true
     return host.locks.request(WIPE, { mode: "exclusive" }, async () => {
-      // Another page finished it while this one waited.
-      if (!marked()) return true
+      // Another page finished it while this one waited. An unreadable mark proves nothing.
+      const pending = marked()
+      if (pending === undefined) return false
+      if (!pending) return true
       try {
         await host.locks.request(DATA_LOCK, { mode: "exclusive" }, () =>
           host.locks.request(targets.engine, { mode: "exclusive" }, remove))
