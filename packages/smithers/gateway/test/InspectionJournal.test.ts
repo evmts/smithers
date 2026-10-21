@@ -64,7 +64,9 @@ test("child boundaries are opt-in and never expose the root flow as a step", asy
     ] } }),
     event(2, "flows.engine.node-scheduled", { nodeId: "root", kind: "FlowCall", attempt: 1 }),
     event(3, "flows.engine.node-scheduled", { nodeId: "a", kind: "ActionCall", attempt: 1 }),
-    event(4, "flows.engine.node-scheduled", { nodeId: "child", kind: "FlowCall", attempt: 1 }),
+    // The child follows `a`: it starts once `a` settled.
+    event(4, "flows.engine.node-settled", { nodeId: "a", outcome: "built", attempts: 1 }),
+    event(5, "flows.engine.node-scheduled", { nodeId: "child", kind: "FlowCall", attempt: 1 }),
   ])
   expect(monitorFromJournal(run, recorded).attempts[0]!.graph.map((n) => n.label)).toEqual(["first"])
   const shown = monitorFromJournal(run, recorded, undefined, { childBoundaries: true }).attempts[0]!

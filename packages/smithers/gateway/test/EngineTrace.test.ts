@@ -98,6 +98,105 @@ describe("recorded engine evidence in the run trace", () => {
     expect(traceFromJournal(run, [scheduled]).rows.find((row) => row.id === node.id)?.status).toBe("running")
   })
 
+  test("a node the engine schedules ahead of what it depends on waits, next, and starts when the last of them settles", () => {
+    // As a flow's planned continuations are (Node.bindPlanned): scheduled with the plan, run one after another.
+    const node = (id: string, dependsOn: ReadonlyArray<string>) => ({
+      id,
+      kind: "ActionCall",
+      dependsOn,
+      tier: "sealed",
+      action: `todo/${id}`
+    })
+    const plan = wrap(1, "native", "flows.engine.plan-recorded", {
+      graph: { nodes: [node("implement", []), node("publish", ["implement"]), node("await", ["publish"])] }
+    })
+    const scheduled = (seq: number, id: string) =>
+      wrap(seq, "native", "flows.engine.node-scheduled", {
+        nodeId: id,
+        kind: "ActionCall",
+        attempt: 1,
+        action: `todo/${id}`
+      })
+    const settled = (seq: number, id: string, outcome = "built") =>
+      wrap(seq, "native", "flows.engine.node-settled", { nodeId: id, outcome, attempts: 1 })
+    const records = [
+      plan,
+      scheduled(2, "implement"),
+      scheduled(3, "publish"),
+      scheduled(4, "await"),
+      settled(5, "implement"),
+      settled(6, "publish"),
+      settled(7, "await")
+    ]
+    const nodes = (upTo: number) =>
+      traceFromJournal(run, records.slice(0, upTo)).rows.filter((row) => row.id.startsWith("engine-node:")).map((
+        row
+      ) => [row.status, row.startedAt])
+    // Mid-implement: the two after it wait.
+    expect(nodes(4)).toEqual([["running", 102], ["pending", 103], ["pending", 104]])
+    // Each starts when what it follows settles, from then.
+    expect(nodes(5)).toEqual([["completed", 102], ["running", 105], ["pending", 104]])
+    expect(nodes(6)).toEqual([["completed", 102], ["completed", 105], ["running", 106]])
+    expect(nodes(7)).toEqual([["completed", 102], ["completed", 105], ["completed", 106]])
+    // The monitor shows a waiting node next, and no step of it yet.
+    const graph = (at: number) => monitorFromJournal(run, records, at).attempts[0]!
+    expect(graph(4).graph.map((entry) => entry.state)).toEqual(["current", "next", "next"])
+    expect(graph(4).steps.map((step) => step.label)).toEqual(["todo/implement"])
+    expect(graph(5).graph.map((entry) => entry.state)).toEqual(["done", "current", "next"])
+    expect(graph(7).graph.map((entry) => entry.state)).toEqual(["done", "done", "done"])
+  })
+
+  test("no node waits on the run's own root, which encloses it; a node merely named root still holds its dependents", () => {
+    const plan = (rootKind: string) =>
+      wrap(1, "native", "flows.engine.plan-recorded", {
+        graph: {
+          nodes: [
+            { id: "root", kind: rootKind, dependsOn: ["a"], tier: "sealed", action: "todo" },
+            { id: "a", kind: "ActionCall", dependsOn: ["root"], tier: "sealed", action: "todo/a" }
+          ]
+        }
+      })
+    const scheduled = (seq: number, id: string) =>
+      wrap(seq, "native", "flows.engine.node-scheduled", { nodeId: id, kind: "ActionCall", attempt: 1 })
+    const statusOf = (rootKind: string) =>
+      traceFromJournal(run, [plan(rootKind), scheduled(2, "root"), scheduled(3, "a")]).rows.find((row) =>
+        row.id.includes(":a#")
+      )?.status
+    expect(statusOf("FlowCall")).toBe("running")
+    expect(statusOf("ActionCall")).toBe("pending")
+  })
+
+  test("a dependency scheduled again, or settled deferred, keeps what waits on it waiting", () => {
+    const plan = wrap(1, "native", "flows.engine.plan-recorded", {
+      graph: {
+        nodes: [
+          { id: "a", kind: "ActionCall", dependsOn: [], tier: "sealed", action: "todo/a" },
+          { id: "b", kind: "ActionCall", dependsOn: ["a"], tier: "sealed", action: "todo/b" }
+        ]
+      }
+    })
+    const scheduled = (seq: number, id: string) =>
+      wrap(seq, "native", "flows.engine.node-scheduled", {
+        nodeId: id,
+        kind: "ActionCall",
+        attempt: 1,
+        action: `todo/${id}`
+      })
+    const settled = (seq: number, id: string, outcome: string) =>
+      wrap(seq, "native", "flows.engine.node-settled", { nodeId: id, outcome, attempts: 1 })
+    const statusOf = (records: ReadonlyArray<JournalRecord>, id: string) =>
+      traceFromJournal(run, records).rows.filter((row) => row.id.includes(`:${id}#`)).at(-1)?.status
+    // a settled, then scheduled again: b, scheduled after, waits for a's new settling.
+    const rescheduled = [plan, scheduled(2, "a"), settled(3, "a", "built"), scheduled(4, "a"), scheduled(5, "b")]
+    expect(statusOf(rescheduled, "b")).toBe("pending")
+    expect(statusOf([...rescheduled, settled(6, "a", "built")], "b")).toBe("running")
+    // a deferred hasn't settled: b waits.
+    const deferred = [plan, scheduled(2, "a"), scheduled(3, "b"), settled(4, "a", "deferred")]
+    expect(statusOf(deferred, "b")).toBe("pending")
+    // A node that settles while it waits, as evidence of its dependencies may be missing, settles as recorded.
+    expect(statusOf([...deferred, settled(5, "b", "built")], "b")).toBe("completed")
+  })
+
   test("each native rescheduling retains its own step instance and generation", () => {
     const schedule = (seq: number, generation = 0) =>
       wrap(seq, "native", "flows.engine.node-scheduled", {

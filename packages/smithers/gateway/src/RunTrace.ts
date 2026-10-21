@@ -2581,8 +2581,9 @@ export const monitorFromJournal = (run: TraceRun, records: ReadonlyArray<Journal
   const nodeShapes = engineNodeShapes(journal)
   const calls = trace.rows.filter((row) => {
     // A tool call an agent made inside a step is a cell of that step's
-    // transcript (step:<scope>/…), never a step of its own.
-    if (row.kind !== "call" || bookkeeping(row) || row.id.startsWith("step:")) return false
+    // transcript (step:<scope>/…), never a step of its own. A node the engine
+    // scheduled ahead of what it waits on (`pending`) hasn't begun: it is next.
+    if (row.kind !== "call" || row.status === "pending" || bookkeeping(row) || row.id.startsWith("step:")) return false
     const shape = nodeShapes.get(row.id.replace(/#\d+$/, ""))
     return shape === undefined || (!structural(shape.kind) && !(shape.kind === "FlowCall" && /:root#\d+$/.test(row.id)))
   })

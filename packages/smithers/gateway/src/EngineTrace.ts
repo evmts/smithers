@@ -88,7 +88,15 @@ interface Execution {
   graph?: EngineEvent.NodeGraph | undefined
   result?: { readonly value: unknown; readonly sequence: number } | undefined
   failure?: EngineExecutionEvidence["failure"] | undefined
+  /** Nodes that settled (any outcome but `deferred`): what a dependent waits for. */
+  settledNodes?: Set<string> | undefined
+  /** Scheduled nodes still waiting on a dependency that hasn't settled, by node id. */
+  waitingNodes?: Map<string, { readonly span: TraceBuilder; readonly dependsOn: ReadonlyArray<string> }> | undefined
 }
+
+/** Whether `nodeId` is the run's own root in `graph`: the `root` FlowCall that encloses every other node. */
+const isRunRoot = (graph: EngineEvent.NodeGraph | undefined, nodeId: string): boolean =>
+  nodeId === "root" && graph?.nodes.some((node) => node.id === "root" && node.kind === "FlowCall") === true
 
 /**
  * A render-only view of the same decoded execution facts; never persisted.
@@ -316,10 +324,36 @@ const foldEngineJournal = (records: ReadonlyArray<JournalRecord>) => {
       }
       if (action !== undefined) node.label = inspectLabel(action)
       node.detail = { ...detail(row, envelope), sequence: node.detail.sequence }
+      const settledNodes: Set<string> = execution.settledNodes ??= new Set()
+      const waitingNodes: NonNullable<Execution["waitingNodes"]> = execution.waitingNodes ??= new Map()
       if (Option.isSome(scheduled)) {
-        node.status = "running"
+        // Scheduled again, it hasn't settled: what waits on it waits again.
+        settledNodes.delete(recorded.nodeId)
+        // The engine schedules a planned continuation as soon as its plan is known, ahead of the node it follows.
+        // Until every node it depends on has settled it waits (`pending`), and it starts when the last of them does.
+        // The run's own root, the `root` FlowCall (hidden from the monitor too), encloses every node and settles last:
+        // no node waits on it.
+        const dependsOn = (execution.graph?.nodes.find((candidate) =>
+          candidate.id === recorded.nodeId
+        )?.dependsOn ?? [])
+          .filter((dependency) => !isRunRoot(execution.graph, dependency))
+        if (dependsOn.every((dependency) => settledNodes.has(dependency))) node.status = "running"
+        else {
+          node.status = "pending"
+          waitingNodes.set(recorded.nodeId, { span: node, dependsOn })
+        }
       } else {
         const value = Option.getOrThrow(settled)
+        waitingNodes.delete(recorded.nodeId)
+        if (value.outcome !== "deferred") {
+          settledNodes.add(recorded.nodeId)
+          for (const [id, waiting] of waitingNodes) {
+            if (!waiting.dependsOn.every((dependency) => settledNodes.has(dependency))) continue
+            waiting.span.status = "running"
+            waiting.span.startedAt = envelope.emittedAtMs
+            waitingNodes.delete(id)
+          }
+        }
         node.status = value.outcome === "failed" ?
           "failed"
           : value.outcome === "deferred" ?
